@@ -10,14 +10,9 @@ import { ModelCombobox } from './ModelCombobox';
 import { setBudgetField, summarizeBudget } from './guardrail-budget-model';
 import {
   EMPTY_COMMAND,
-  EMPTY_CRITIC,
-  VERIFIER_OFF,
   argsText,
-  isVerifierOff,
   setCommandField,
-  setCriticField,
   summarizeCommands,
-  summarizeCritic,
 } from './verification-override-model';
 import { Switch } from './Switch';
 import { Modal } from './Modal';
@@ -86,7 +81,10 @@ export function WorkspaceSettingsPage({
         autoRunnerEnabled: local.autoRunnerEnabled,
         contextReuseTokenLimit: local.contextReuseTokenLimit,
         verificationCommand: local.verificationCommand,
-        verificationCritic: local.verificationCritic,
+        reviewEnabled: local.reviewEnabled,
+        reviewPrompt: local.reviewPrompt,
+        reviewModel: local.reviewModel,
+        reviewHarness: local.reviewHarness,
         guardrailBudget: local.guardrailBudget,
         guardrailProgress: local.guardrailProgress,
       });
@@ -116,6 +114,11 @@ export function WorkspaceSettingsPage({
   // defaultModel) — chat and Tasks can pin different models of one Harness.
   const effectiveChatHarness = local.chatHarness ?? config.chat.harness;
   const chatModels = config.harnesses[effectiveChatHarness]?.models ?? [];
+
+  // The review model override's option list tracks the *effective* review
+  // harness (mirrors the Task/chat harness→model pairing above): overriding
+  // the review harness repoints the model options to that harness's models.
+  const reviewHarnessEff = (local.reviewHarness ?? config.verify.review.harness) || undefined;
 
   return (
     <div>
@@ -633,87 +636,86 @@ export function WorkspaceSettingsPage({
               </InheritField>
             </div>
             <div>
-              <InheritField
-                label="Agent critic"
-                value={local.verificationCritic}
-                inherited={config.verify.review.enabled && config.verify.review.prompt && config.verify.review.model
-                  ? { prompt: config.verify.review.prompt, model: config.verify.review.model, ...(config.verify.review.harness ? { harness: config.verify.review.harness } : {}) }
-                  : EMPTY_CRITIC}
-                format={summarizeCritic}
-                onChange={(verificationCritic) => set('verificationCritic', verificationCritic)}
+              <InheritField<boolean>
+                label="Review enabled"
+                value={local.reviewEnabled}
+                inherited={config.verify.review.enabled}
+                format={(on) => (on ? 'On' : 'Off')}
+                onChange={(reviewEnabled) => set('reviewEnabled', reviewEnabled)}
               >
-                {({ value, onChange }) => {
-                  // The critic keeps its tri-state off sentinel (issue #174): an
-                  // overridden value can be the { off: true } sentinel, which reads
-                  // as "overridden" to InheritField, so narrow it here.
-                  if (isVerifierOff(value)) {
-                    return (
-                      <div className="flex flex-col gap-3">
-                        <Switch
-                          checked={false}
-                          onChange={() => onChange(
-                            config.verify.review.enabled && config.verify.review.prompt && config.verify.review.model
-                              ? { prompt: config.verify.review.prompt, model: config.verify.review.model, ...(config.verify.review.harness ? { harness: config.verify.review.harness } : {}) }
-                              : EMPTY_CRITIC,
-                          )}
-                        >
-                          Enabled
-                        </Switch>
-                        <p className="text-small text-muted">
-                          Disabled for this workspace — this verifier will not run here.
-                        </p>
-                      </div>
-                    );
-                  }
-                  return (
-                    <div className="flex flex-col gap-3">
-                      <Switch checked={true} onChange={() => onChange(VERIFIER_OFF)}>
-                        Enabled
-                      </Switch>
-                      <div>
-                        <label className={fieldLabel} htmlFor="workspace-critic-harness">Harness</label>
-                        <select
-                          id="workspace-critic-harness"
-                          className={`${selectField} w-full`}
-                          value={value.harness ?? ''}
-                          onChange={(e) => onChange(setCriticField(value, 'harness', e.target.value))}
-                        >
-                          <option value="">Same as task</option>
-                          {Object.keys(config.harnesses).map((h) => (
-                            <option key={h} value={h}>
-                              {h}
-                            </option>
-                          ))}
-                        </select>
-                        <FieldError message={fieldErrors['verificationCritic.harness']} />
-                      </div>
-                      <div>
-                        <label className={fieldLabel} htmlFor="workspace-critic-model">Model</label>
-                        <ModelCombobox
-                          id="workspace-critic-model"
-                          value={value.model}
-                          onChange={(m) => onChange(setCriticField(value, 'model', m))}
-                          options={value.harness ? (config.harnesses[value.harness]?.models ?? []) : []}
-                        />
-                        <FieldError message={fieldErrors['verificationCritic.model']} />
-                      </div>
-                      <div>
-                        <label className={fieldLabel} htmlFor="workspace-critic-prompt">Review prompt</label>
-                        <textarea
-                          id="workspace-critic-prompt"
-                          rows={3}
-                          className={field}
-                          placeholder="Review the change against issue {ref}: {title}. Read the code and the issue to decide."
-                          value={value.prompt}
-                          onChange={(e) => onChange(setCriticField(value, 'prompt', e.target.value))}
-                        />
-                        <FieldError message={fieldErrors['verificationCritic.prompt']} />
-                        <PlaceholderList placeholders={DRIVE_PLACEHOLDERS} />
-                        <PromptPreview text={compileCriticPreview(value.prompt)} />
-                      </div>
-                    </div>
-                  );
-                }}
+                {({ value, onChange }) => (
+                  <Switch checked={value} onChange={onChange}>
+                    Enabled
+                  </Switch>
+                )}
+              </InheritField>
+              <FieldError message={fieldErrors['reviewEnabled']} />
+            </div>
+            <div>
+              <InheritField<string>
+                label="Review harness"
+                htmlFor="workspace-review-harness"
+                value={local.reviewHarness}
+                inherited={config.verify.review.harness ?? (Object.keys(config.harnesses)[0] ?? '')}
+                format={(h) => h || 'Same as task (builder harness)'}
+                onChange={(reviewHarness) => set('reviewHarness', reviewHarness)}
+              >
+                {({ id, value, onChange }) => (
+                  <select id={id} className={`${selectField} w-full`} value={value} onChange={(e) => onChange(e.target.value)}>
+                    {Object.keys(config.harnesses).map((h) => (
+                      <option key={h} value={h}>
+                        {h}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </InheritField>
+              <FieldError message={fieldErrors['reviewHarness']} />
+            </div>
+            <div>
+              <InheritField<string>
+                label="Review model"
+                htmlFor="workspace-review-model"
+                value={local.reviewModel}
+                inherited={config.verify.review.model ?? ''}
+                format={(m) => m || 'Not configured'}
+                onChange={(reviewModel) => set('reviewModel', reviewModel)}
+              >
+                {({ id, value, onChange }) => (
+                  <ModelCombobox
+                    id={id}
+                    value={value}
+                    onChange={onChange}
+                    options={reviewHarnessEff ? (config.harnesses[reviewHarnessEff]?.models ?? []) : []}
+                  />
+                )}
+              </InheritField>
+              <FieldError message={fieldErrors['reviewModel']} />
+            </div>
+            <div>
+              <InheritField<string>
+                label="Review prompt"
+                htmlFor="workspace-review-prompt"
+                value={local.reviewPrompt}
+                inherited={config.verify.review.prompt ?? ''}
+                format={(p) => (p ? 'Custom prompt' : 'Not configured')}
+                onChange={(reviewPrompt) => set('reviewPrompt', reviewPrompt)}
+              >
+                {({ id, value, onChange }) => (
+                  <>
+                    <textarea
+                      id={id}
+                      rows={3}
+                      className={field}
+                      placeholder="Review the change against issue {ref}: {title}. Read the code and the issue to decide."
+                      value={value}
+                      onChange={(e) => onChange(e.target.value)}
+                    />
+                    <FieldError message={fieldErrors['reviewPrompt']} />
+                    <PlaceholderList placeholders={DRIVE_PLACEHOLDERS} />
+                    <PromptPreview text={compileCriticPreview(value)} />
+                  </>
+                )}
               </InheritField>
             </div>
           </div>

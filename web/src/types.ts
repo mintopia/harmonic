@@ -214,17 +214,22 @@ export interface Workspace {
   /** Per-workspace attempt cap; null inherits `config.maxAttempts`. */
   maxAttempts: number | null;
   contextReuseTokenLimit: number | null;
-  /** Verification overrides (ADR-0021, issues #132/#138/#165/#174/#338). The
+  /** Verification overrides (ADR-0021, issues #132/#138/#165/#174/#337/#338). The
    * command verifier is list-grain, exactly mirroring the global editor: `null`
    * inherits the global `config.verify.commands` list, an empty array turns
    * verification off for this Workspace (no commands run here), and a
-   * non-empty array overrides the whole ordered list. The critic stays
-   * tri-state: `null` inherits the global `config.verify` default,
-   * {@link VerifierOff} explicitly disables it for this Workspace, and a
-   * configured object overrides it. Both read back as the shape they were
-   * PATCHed as. */
+   * non-empty array overrides the whole ordered list. It reads back as the
+   * shape it was PATCHed as. */
   verificationCommand: VerificationCommand[] | null;
-  verificationCritic: VerificationCritic | VerifierOff | null;
+  /**
+   * Critic-review override (issue #337, ADR-0044 §C), decomposed into four
+   * independently-inheritable scalars: null inherits the matching global
+   * `config.verify.review.*`, a value overrides it. "Off" is `reviewEnabled:false`.
+   */
+  reviewEnabled: boolean | null;
+  reviewPrompt: string | null;
+  reviewModel: string | null;
+  reviewHarness: string | null;
   /** Guardrail overrides (ADR-0019, issue #166); `null` inherits
    * `config.guardrails.{budget,progress}`. The budget reads back as the parsed
    * object shape it was PATCHed as. */
@@ -259,12 +264,6 @@ export interface VerificationReview {
   prompt?: string;
   model?: string;
   harness?: string;
-}
-
-/** The sentinel a Workspace stores to force a verifier off for itself (issue
- * #174), distinct from inheriting the global default. Mirrors `verifierOffSchema`. */
-export interface VerifierOff {
-  off: true;
 }
 
 /** The budget Guardrail (ADR-0019): a mandatory wall-clock bound per afk Run

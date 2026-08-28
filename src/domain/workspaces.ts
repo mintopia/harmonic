@@ -18,9 +18,9 @@ import { DomainError } from './errors.js';
 import { deleteRunsAndChildrenAsync } from './run-cascade.js';
 import {
   verificationCommandOverrideSchema,
-  verificationCriticOverrideSchema,
   budgetGuardrailSchema,
   MERGE_FATES,
+  HARNESS_IDS,
 } from '../config.js';
 
 export const createWorkspaceInputSchema = z.object({
@@ -65,11 +65,14 @@ export const workspaceOverridesSchema = z.object({
    */
   verificationCommand: verificationCommandOverrideSchema.nullable().optional(),
   /**
-   * Critic-verifier override (issue #132), tri-state (issue #174): null/absent
-   * inherits `config.verification.critic`, a verifier object overrides it, and
-   * `{ off: true }` explicitly disables the verifier for this Workspace.
+   * Critic-review override (issue #337, ADR-0044 §C), decomposed into four
+   * independently-inheritable scalars: null/absent inherits the matching global
+   * `config.verify.review.*`, a value overrides it. "Off" is `reviewEnabled:false`.
    */
-  verificationCritic: verificationCriticOverrideSchema.nullable().optional(),
+  reviewEnabled: z.boolean().nullable().optional().meta({ example: true }),
+  reviewPrompt: z.string().min(1).nullable().optional().meta({ example: 'Review the diff for correctness.' }),
+  reviewModel: z.string().min(1).nullable().optional().meta({ example: 'claude-opus-5' }),
+  reviewHarness: z.enum(HARNESS_IDS).nullable().optional().meta({ example: 'claude' }),
   /** Budget-Guardrail override (issue #126); null inherits `config.guardrails.budget`. */
   guardrailBudget: budgetGuardrailSchema.nullable().optional(),
   /** Progress-detector toggle override (issue #126); null inherits `config.guardrails.progress`. */
@@ -197,7 +200,10 @@ export class WorkspaceService {
           maxAttempts: patch(input.maxAttempts, current.maxAttempts),
           contextReuseTokenLimit: patch(input.contextReuseTokenLimit, current.contextReuseTokenLimit),
           verificationCommand: patchJson(input.verificationCommand, current.verificationCommand),
-          verificationCritic: patchJson(input.verificationCritic, current.verificationCritic),
+          reviewEnabled: patch(input.reviewEnabled, current.reviewEnabled),
+          reviewPrompt: patch(input.reviewPrompt, current.reviewPrompt),
+          reviewModel: patch(input.reviewModel, current.reviewModel),
+          reviewHarness: patch(input.reviewHarness, current.reviewHarness),
           guardrailBudget: patchJson(input.guardrailBudget, current.guardrailBudget),
           guardrailProgress: patch(input.guardrailProgress, current.guardrailProgress),
           toolTimeoutMinutes: patch(input.toolTimeoutMinutes, current.toolTimeoutMinutes),

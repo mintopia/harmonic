@@ -47,7 +47,10 @@ describe('Settings registry (issue #336) — single authority for scope', () => 
     'maxAttempts',
     'contextReuseTokenLimit',
     'verificationCommand',
-    'verificationCritic',
+    'reviewEnabled',
+    'reviewPrompt',
+    'reviewModel',
+    'reviewHarness',
     'guardrailBudget',
     'guardrailProgress',
     // Reclassified into the overridable set (ADR-0044, issue #339).
@@ -113,7 +116,13 @@ describe('tab taxonomy (ADR-0044) — settings group into Settings UI tabs', () 
   });
 
   it('settingsForTab("verification") returns exactly the verification settings', () => {
-    expect(settingsForTab('verification')).toEqual(['verificationCommand', 'verificationCritic']);
+    expect(settingsForTab('verification')).toEqual([
+      'verificationCommand',
+      'reviewEnabled',
+      'reviewPrompt',
+      'reviewModel',
+      'reviewHarness',
+    ]);
   });
 
   it('settingsForTab("general") returns exactly the general settings', () => {
@@ -227,7 +236,13 @@ describe('scope changes control live resolution (registry is the single authorit
     const globalCommand = { command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 };
     const wsCommand = { command: 'pnpm', args: ['lint'], env: {}, timeoutSeconds: 300 };
     const config = { verify: { commands: [globalCommand], review: { enabled: false } } } as never;
-    const ws = { verificationCommand: JSON.stringify([wsCommand]), verificationCritic: null };
+    const ws = {
+      verificationCommand: JSON.stringify([wsCommand]),
+      reviewEnabled: null,
+      reviewPrompt: null,
+      reviewModel: null,
+      reviewHarness: null,
+    };
 
     expect(resolveVerifiers(ws, config).commands).toEqual([wsCommand]); // overridable
     withScope('verificationCommand', 'global-only', () => {

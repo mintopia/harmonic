@@ -111,11 +111,15 @@ export const workspaces = sqliteTable('workspaces', {
    * sentinel (migrated away in 0057). Resolved at read time by `resolveVerifiers`
    * (setting-override.ts). */
   verificationCommand: text('verification_command'),
-  /** Per-Workspace critic-verifier override (issue #132), tri-state (issue #174):
-   * JSON of `verificationCriticSchema` to override, the sentinel `{"off":true}`
-   * to explicitly disable the verifier for this Workspace, or null to inherit
-   * `config.verification.critic`. */
-  verificationCritic: text('verification_critic'),
+  /** Per-Workspace critic-review override (issue #337, ADR-0044 §C), decomposed
+   * into four independently-inheritable scalar columns — each null inherits the
+   * matching `config.verify.review.*` field. Resolved at read time by
+   * `resolveVerifiers` (setting-override.ts). Replaces the old atomic
+   * `verification_critic` blob + `{"off":true}` sentinel (migrated in 0059). */
+  reviewEnabled: integer('review_enabled', { mode: 'boolean' }),
+  reviewPrompt: text('review_prompt'),
+  reviewModel: text('review_model'),
+  reviewHarness: text('review_harness'),
   /** Per-Workspace budget-Guardrail override (issue #126, ADR-0019): JSON of
    * `budgetGuardrailSchema`, or null to inherit `config.guardrails.budget`.
    * Resolved by `resolveGuardrails` (setting-override.ts). */

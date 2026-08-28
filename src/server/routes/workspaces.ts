@@ -7,7 +7,6 @@ import type { ResolvedTracker } from '../../tracker/adapter.js';
 import { createWorkspaceInputSchema, updateWorkspaceInputSchema } from '../../domain/workspaces.js';
 import {
   verificationCommandOverrideSchema,
-  verificationCriticOverrideSchema,
   budgetGuardrailSchema,
   unpricedModelsForCostCap,
   costCapMessage,
@@ -63,10 +62,14 @@ const workspaceSchema = z
     // shape, so a client reads a set override the same shape it PATCHes. The
     // command is list-grain (ADR-0044 §D, issue #338): null ⇒ inherit
     // `config.verify.commands`, a non-empty array overrides the whole list, `[]` ⇒
-    // off (run no commands here). The critic stays tri-state (issue #174): null ⇒
-    // inherit, an object overrides, `{ off: true }` ⇒ explicitly disabled.
+    // off (run no commands here). The review is decomposed into four independently-
+    // inheritable scalars (issue #337, ADR-0044 §C): each null ⇒ inherit the
+    // matching `config.verify.review.*` field.
     verificationCommand: verificationCommandOverrideSchema.nullable().meta({ example: null }),
-    verificationCritic: verificationCriticOverrideSchema.nullable().meta({ example: null }),
+    reviewEnabled: z.boolean().nullable().meta({ example: null }),
+    reviewPrompt: z.string().nullable().meta({ example: null }),
+    reviewModel: z.string().nullable().meta({ example: null }),
+    reviewHarness: z.string().nullable().meta({ example: null }),
     guardrailBudget: budgetGuardrailSchema.nullable().meta({ example: null }),
     guardrailProgress: z.boolean().nullable().meta({ example: null }),
     /** Tool-timeout bound override (ADR-0044); null inherits `config.guardrails.toolTimeoutMinutes`. */
@@ -98,12 +101,13 @@ export async function workspaceRoutes(fastify: FastifyInstance): Promise<void> {
         : { ok: false, label: null, code: r.code, reason: r.reason };
 
   /** A Workspace row plus its live Resolved Tracker, as every workspace endpoint returns it.
-   * The two verifier overrides are stored as JSON text; parse them back so the
-   * response carries the same object shape a client PATCHes (issue #132). */
+   * The verifier-list and budget overrides are stored as JSON text; parse them
+   * back so the response carries the same object shape a client PATCHes (issue
+   * #132). The four review-override columns are plain scalars and pass through
+   * via `...ws` unchanged. */
   const serialize = (ws: WorkspaceRow) => ({
     ...ws,
     verificationCommand: ws.verificationCommand ? JSON.parse(ws.verificationCommand) : null,
-    verificationCritic: ws.verificationCritic ? JSON.parse(ws.verificationCritic) : null,
     guardrailBudget: ws.guardrailBudget ? JSON.parse(ws.guardrailBudget) : null,
     resolvedTracker: serializeResolvedTracker(ctx.trackerManager.resolvedTracker(ws.id)),
   });

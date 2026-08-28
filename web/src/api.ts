@@ -19,9 +19,7 @@ import type {
   TicketTimelineEvent,
   VerificationAttempt,
   VerificationCommand,
-  VerificationCritic,
   VerifierStatus,
-  VerifierOff,
   Workspace,
 } from './types.js';
 import type { Epic, EpicIntegrateOutcome } from './epic-model.js';
@@ -130,7 +128,10 @@ export const api = {
       autoRunnerEnabled?: boolean | null;
       contextReuseTokenLimit?: number | null;
       verificationCommand?: VerificationCommand[] | null;
-      verificationCritic?: VerificationCritic | VerifierOff | null;
+      reviewEnabled?: boolean | null;
+      reviewPrompt?: string | null;
+      reviewModel?: string | null;
+      reviewHarness?: string | null;
       guardrailBudget?: BudgetGuardrail | null;
       guardrailProgress?: boolean | null;
     },

@@ -123,12 +123,33 @@ export const settingsRegistry = {
     label: 'Verification command',
     help: 'Command verifier(s) run against a candidate before merging.',
   },
-  verificationCritic: {
+  reviewEnabled: {
     scope: 'overridable',
-    control: 'verifier',
+    control: 'toggle',
     tab: 'verification',
-    label: 'Verification critic',
-    help: 'Critic reviewer run against a candidate before merging.',
+    label: 'Review enabled',
+    help: 'Whether an agent critic reviews a candidate before merging.',
+  },
+  reviewPrompt: {
+    scope: 'overridable',
+    control: 'text',
+    tab: 'verification',
+    label: 'Review prompt',
+    help: 'Prompt the critic reviewer runs with; inherits the global prompt unless overridden.',
+  },
+  reviewModel: {
+    scope: 'overridable',
+    control: 'select',
+    tab: 'verification',
+    label: 'Review model',
+    help: 'Model the critic reviewer uses; inherits the global model unless overridden.',
+  },
+  reviewHarness: {
+    scope: 'overridable',
+    control: 'select',
+    tab: 'verification',
+    label: 'Review harness',
+    help: 'Harness the critic reviewer runs on; inherits the global harness (or the builder task) unless overridden.',
   },
   guardrailBudget: {
     scope: 'overridable',

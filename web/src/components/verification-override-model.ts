@@ -1,4 +1,4 @@
-import type { VerificationCommand, VerificationCritic, VerifierOff } from '../types.js';
+import type { VerificationCommand, VerificationCritic } from '../types.js';
 
 /**
  * Verification-override editing (ADR-0021, issues #165/#338). The Workspace
@@ -21,13 +21,6 @@ import type { VerificationCommand, VerificationCritic, VerifierOff } from '../ty
  * {@link summarizeCritic} read an empty seed back as "not configured" so an
  * inheriting Workspace with no global default reads honestly rather than as a
  * blank verifier.
- *
- * The critic can also be turned fully off for a Workspace (issue #174) — the
- * tri-state is inherit / off / override, layered on top of InheritField's own
- * inherit/override axis: {@link VERIFIER_OFF} is the sentinel value an
- * "Enabled" switch writes into the override when switched off, and
- * {@link isVerifierOff} narrows an override value to that sentinel. The
- * command verifier has no such sentinel — its "off" is simply the empty array.
  */
 
 /** Seed for a freshly enabled command override when no global default exists. */
@@ -35,14 +28,6 @@ export const EMPTY_COMMAND: VerificationCommand = { command: '', args: [], env: 
 
 /** Seed for a freshly enabled critic override when no global default exists. */
 export const EMPTY_CRITIC: VerificationCritic = { prompt: '', model: '' };
-
-/** The sentinel an override field stores to force its verifier off (issue #174). */
-export const VERIFIER_OFF: VerifierOff = { off: true };
-
-/** Narrow an override value to the {@link VERIFIER_OFF} sentinel. */
-export function isVerifierOff(v: unknown): v is VerifierOff {
-  return typeof v === 'object' && v !== null && (v as { off?: unknown }).off === true;
-}
 
 /** An editable dimension of the command verifier. `args` is a whitespace-joined string in the UI. */
 export type CommandField = 'command' | 'args' | 'timeoutSeconds';

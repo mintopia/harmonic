@@ -182,7 +182,10 @@ export interface RunnerOptions {
         | 'guardrailProgress'
         | 'toolTimeoutMinutes'
         | 'verificationCommand'
-        | 'verificationCritic'
+        | 'reviewEnabled'
+        | 'reviewPrompt'
+        | 'reviewModel'
+        | 'reviewHarness'
         | 'maxAttempts'
         | 'contextReuseTokenLimit'
         | 'taskPrompt'
@@ -1365,7 +1368,7 @@ export class Runner {
     const config = this.getConfig();
     const ws = await this.getWorkspace?.(task.workspaceId);
     const { commands, review } = resolveVerifiers(
-      ws ?? { verificationCommand: null, verificationCritic: null },
+      ws ?? { verificationCommand: null, reviewEnabled: null, reviewPrompt: null, reviewModel: null, reviewHarness: null },
       config,
     );
 
@@ -1418,7 +1421,7 @@ export class Runner {
       }
     }
 
-    if (criticEnabled && review.enabled && verdicts.every((entry) => entry.verdict === 'pass')) {
+    if (criticEnabled && review.enabled && review.prompt && review.model && verdicts.every((entry) => entry.verdict === 'pass')) {
       // The agent critic (issue #136/#164, ADR-0021, reliability-design Unit B;
       // containment relaxed by the 2026-08 amendment): a second verdict folded
       // into the same `combineVerdicts`. It reads the frozen candidate from a

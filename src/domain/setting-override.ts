@@ -1,7 +1,5 @@
 import type { WorkspaceRow } from '../db/schema.js';
 import {
-  verificationReviewSchema,
-  verificationCriticSchema,
   type AppConfig,
   type VerificationCommand,
   type VerificationCritic,
@@ -74,14 +72,15 @@ export type ResolvedVerifiers = {
  * `workspace ?? global` rule applies: only `null` inherits, an empty array is a
  * real override.
  *
- * The **critic** is still tri-state per issue #174: an unset column inherits, a
- * stored critic object overrides, and a stored `{ off: true }` sentinel forces it
- * off. With nothing configured anywhere, commands resolve to `[]` and the review
- * to disabled — an empty verifier set, so a Run behaves exactly as today. No
+ * The **review** is decomposed into four independently-inheritable scalar
+ * columns (issue #337, ADR-0044 §C): each of `reviewEnabled`/`reviewPrompt`/
+ * `reviewModel`/`reviewHarness` resolves `workspace ?? global` on its own. With
+ * nothing configured anywhere, commands resolve to `[]` and the review to
+ * disabled — an empty verifier set, so a Run behaves exactly as today. No
  * verifier executes here — this only resolves the config.
  */
 export function resolveVerifiers(
-  ws: Pick<WorkspaceRow, 'verificationCommand' | 'verificationCritic'>,
+  ws: Pick<WorkspaceRow, 'verificationCommand' | 'reviewEnabled' | 'reviewPrompt' | 'reviewModel' | 'reviewHarness'>,
   config: Pick<AppConfig, 'verify'>,
 ): ResolvedVerifiers {
   // The command column stores the whole list as JSON (or null to inherit). Parse
@@ -89,9 +88,7 @@ export function resolveVerifiers(
   // `workspace ?? global` rule — an empty array survives as a real override.
   const commandStored = ws.verificationCommand == null ? null : (JSON.parse(ws.verificationCommand) as VerificationCommand[]);
   const commands = resolveScoped('verificationCommand', commandStored, config.verify.commands);
-  // The critic keeps its bespoke tri-state; route its column through the registry.
-  const criticStored = isOverridable('verificationCritic') ? ws.verificationCritic : null;
-  const review = resolveReview(criticStored, config.verify.review);
+  const review = resolveReview(ws, config.verify.review);
   return {
     commands,
     review,
@@ -100,17 +97,36 @@ export function resolveVerifiers(
   };
 }
 
-/** True when a parsed critic override column is the explicit off sentinel (issue #174). */
-function isVerifierOff(v: unknown): boolean {
-  return typeof v === 'object' && v !== null && (v as { off?: unknown }).off === true;
-}
-
-function resolveReview(stored: string | null | undefined, globalDefault: VerificationReview): VerificationReview {
-  if (!stored) return verificationReviewSchema.parse(globalDefault);
-  const parsed = JSON.parse(stored) as unknown;
-  if (isVerifierOff(parsed)) return { enabled: false };
-  if (typeof parsed === 'object' && parsed !== null && 'enabled' in parsed) return verificationReviewSchema.parse(parsed);
-  return { enabled: true, ...verificationCriticSchema.parse(parsed) };
+/**
+ * Resolve the four decomposed review fields (issue #337, ADR-0044 §C), each its
+ * own registry-scoped `workspace ?? global` key — enabling review in a Workspace
+ * flips one boolean while prompt/model/harness independently inherit. No sentinel:
+ * "off" is just `reviewEnabled = false`.
+ */
+function resolveReview(
+  ws: Pick<WorkspaceRow, 'reviewEnabled' | 'reviewPrompt' | 'reviewModel' | 'reviewHarness'>,
+  globalDefault: VerificationReview,
+): VerificationReview {
+  const enabledToggle = resolveScoped('reviewEnabled', ws.reviewEnabled, globalDefault.enabled);
+  const prompt = resolveScoped('reviewPrompt', ws.reviewPrompt, globalDefault.prompt);
+  const model = resolveScoped('reviewModel', ws.reviewModel, globalDefault.model);
+  const harness = resolveScoped<VerificationReview['harness']>(
+    'reviewHarness',
+    ws.reviewHarness as VerificationReview['harness'],
+    globalDefault.harness,
+  );
+  // A review only runs when it is toggled on AND has both a prompt and a model
+  // resolved from some layer — enabling review with nothing to run on is not a
+  // runnable review. Folding runnability into `enabled` defines it once here, so
+  // the Runner, the `critic` alias, and the ADR-0042 status classification all
+  // agree on whether the critic actually runs (issue #337).
+  const enabled = Boolean(enabledToggle && prompt && model);
+  return {
+    enabled,
+    ...(prompt ? { prompt } : {}),
+    ...(model ? { model } : {}),
+    ...(harness ? { harness } : {}),
+  };
 }
 
 /** A Workspace's effective Guardrail config: the budget bounds, progress

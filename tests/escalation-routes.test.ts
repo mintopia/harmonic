@@ -4,7 +4,6 @@ import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
-import { verificationCriticSchema } from '../src/config.js';
 import { VerificationAttemptStore } from '../src/domain/verification-attempts.js';
 import { RunFactStore } from '../src/domain/run-facts.js';
 import { AttemptStore } from '../src/domain/attempts.js';
@@ -27,8 +26,8 @@ function makeRepo(): string {
   return dir;
 }
 
-const critic = () =>
-  verificationCriticSchema.parse({ prompt: 'Review the diff for correctness.', model: 'stub-model' });
+/** The decomposed review-override fields (issue #337) for a configured critic. */
+const critic = () => ({ reviewEnabled: true, reviewPrompt: 'Review the diff for correctness.', reviewModel: 'stub-model' });
 
 /**
  * ADR-0041's escalation surface on a worktree ticket the critic rejected twice:
@@ -64,7 +63,7 @@ describe('escalation actions on a worktree ticket (ADR-0041)', () => {
     await server.app.ctx.workspaces.update(workspaceId, {
       isolationMode: 'worktree',
       verificationCommand: null,
-      verificationCritic: critic(),
+      ...critic(),
     });
   });
 

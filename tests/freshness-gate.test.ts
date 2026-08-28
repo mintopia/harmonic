@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startServer, stubHarness, waitFor, seedLocalMarkdownTicket, type TestServer } from './helpers.js';
-import { verificationCommandSchema, verificationCriticSchema } from '../src/config.js';
+import { verificationCommandSchema } from '../src/config.js';
 import type { CriticHarnessDrive } from '../src/verification/critic.js';
 import type { MirrorInput } from '../src/domain/tasks.js';
 import { mergeJournal, runFacts, sessions } from '../src/db/schema.js';
@@ -465,7 +465,9 @@ describe('merging freshness gate (issue #313, ADR-0041)', () => {
     await server.app.ctx.workspaces.update(wsId, {
       workingDir: repo,
       verificationCommand: [baseMovingVerifier(repo, flag)],
-      verificationCritic: verificationCriticSchema.parse({ prompt: 'Review the diff.', model: 'stub-model' }),
+      reviewEnabled: true,
+      reviewPrompt: 'Review the diff.',
+      reviewModel: 'stub-model',
     });
     await server.app.ctx.configStore.update({
       drive: { prompt: JSON.stringify({ writeFiles: { 'impl-{ref}.txt': 'implementation {ref}\n' }, mcpFinish: true }) },

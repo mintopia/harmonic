@@ -128,40 +128,46 @@ describe('Workspace CRUD (ADR-0008, issue #41)', () => {
     rmSync(repo, { recursive: true, force: true });
   });
 
-  it('round-trips per-Workspace verifier overrides through PATCH and GET (issue #132)', async () => {
+  it('round-trips per-Workspace verifier overrides through PATCH and GET (issue #132, #337)', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'harmonic-workspace-verify-'));
     const created = await server.api('POST', '/api/workspaces', { name: 'Verified', workingDir: dir });
     expect(created.status).toBe(201);
     // A fresh Workspace inherits every verifier (null), not write-only holes.
     expect(created.body.verificationCommand).toBeNull();
-    expect(created.body.verificationCritic).toBeNull();
+    expect(created.body.reviewEnabled).toBeNull();
+    expect(created.body.reviewPrompt).toBeNull();
+    expect(created.body.reviewModel).toBeNull();
     expect(created.body).not.toHaveProperty('verificationAutoAccept'); // the review gate's knob is gone (ADR-0041)
 
     const set = await server.api('PATCH', `/api/workspaces/${created.body.id}`, {
       verificationCommand: [{ command: 'npm', args: ['test'] }],
-      verificationCritic: { enabled: true, prompt: 'review the diff', model: 'claude-opus-5' },
+      reviewEnabled: true,
+      reviewPrompt: 'review the diff',
+      reviewModel: 'claude-opus-5',
     });
     expect(set.status).toBe(200);
-    // The override reads back as the same shape it was PATCHed as (zod fills
-    // the command's defaults), not the raw JSON string and not dropped.
+    // The command override reads back as the same shape it was PATCHed as (zod
+    // fills the command's defaults), not the raw JSON string and not dropped.
     expect(set.body.verificationCommand).toMatchObject([{ command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }]);
-    expect(set.body.verificationCritic).toEqual({ enabled: true, prompt: 'review the diff', model: 'claude-opus-5' });
+    // The review fields are plain scalars, so they round-trip exactly as PATCHed.
+    expect(set.body.reviewEnabled).toBe(true);
+    expect(set.body.reviewPrompt).toBe('review the diff');
+    expect(set.body.reviewModel).toBe('claude-opus-5');
 
     const fetched = await server.api('GET', `/api/workspaces/${created.body.id}`);
     expect(fetched.body.verificationCommand).toMatchObject([{ command: 'npm', args: ['test'] }]);
 
-    // A review-shaped override round-trips its `enabled` flag faithfully: an
-    // explicit `enabled: false` must NOT be stripped and silently re-enabled (the
-    // critic union member is matched strictly so it can't swallow this shape).
+    // Each review scalar is independently inheritable: flipping reviewEnabled to
+    // false leaves reviewPrompt/reviewModel untouched (no sentinel to swallow them).
     const disabled = await server.api('PATCH', `/api/workspaces/${created.body.id}`, {
-      verificationCritic: { enabled: false, prompt: 'off for now', model: 'claude-opus-5' },
+      reviewEnabled: false,
     });
     expect(disabled.status).toBe(200);
-    expect(disabled.body.verificationCritic).toEqual({ enabled: false, prompt: 'off for now', model: 'claude-opus-5' });
+    expect(disabled.body.reviewEnabled).toBe(false);
+    expect(disabled.body.reviewPrompt).toBe('review the diff'); // untouched
+    expect(disabled.body.reviewModel).toBe('claude-opus-5'); // untouched
     // Restore the enabled override the rest of the test asserts against.
-    await server.api('PATCH', `/api/workspaces/${created.body.id}`, {
-      verificationCritic: { enabled: true, prompt: 'review the diff', model: 'claude-opus-5' },
-    });
+    await server.api('PATCH', `/api/workspaces/${created.body.id}`, { reviewEnabled: true });
 
     // null clears back to inherit.
     const cleared = await server.api('PATCH', `/api/workspaces/${created.body.id}`, {
@@ -169,7 +175,8 @@ describe('Workspace CRUD (ADR-0008, issue #41)', () => {
     });
     expect(cleared.status).toBe(200);
     expect(cleared.body.verificationCommand).toBeNull();
-    expect(cleared.body.verificationCritic).toMatchObject({ enabled: true, prompt: 'review the diff' }); // untouched
+    expect(cleared.body.reviewEnabled).toBe(true); // untouched
+    expect(cleared.body.reviewPrompt).toBe('review the diff'); // untouched
     rmSync(dir, { recursive: true, force: true });
   });
 
