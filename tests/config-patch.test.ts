@@ -24,6 +24,18 @@ describe('PATCH /api/config verification', () => {
     expect(after.body.verify).not.toHaveProperty('autoAccept');
   });
 
+  it('accepts a drive.continueAttempts patch and round-trips it (ADR-0044/#339 — parity with appConfig)', async () => {
+    // configPatchBodySchema.drive was missing continueAttempts, so a client could
+    // never PATCH it though appConfigSchema.drive declares it. It now round-trips.
+    const patched = await server.api('PATCH', '/api/config', { drive: { continueAttempts: 4, mergeFate: 'open-PR' } });
+    expect(patched.status).toBe(200);
+    expect(patched.body.drive.continueAttempts).toBe(4);
+    expect(patched.body.drive.mergeFate).toBe('open-PR');
+
+    const after = await server.api('GET', '/api/config');
+    expect(after.body.drive.continueAttempts).toBe(4);
+  });
+
   it('accepts a command verifier and fills its defaults', async () => {
     const patched = await server.api('PATCH', '/api/config', {
       verify: { commands: [{ command: 'npm', args: ['test'] }] },

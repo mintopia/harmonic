@@ -443,9 +443,22 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // Auto-drive mirrored Tasks (issue #33): the Drive Prompt + completion /
   // failure decisions. Its {url} comes from the Task's Workspace poll loop's
   // last scan; the manager is built below, so bind it late through this holder.
+  // A Task's Workspace row, resolved for per-Workspace setting overrides
+  // (ADR-0012/ADR-0044). Shared by AutoDrive's `drive.*` resolution and the
+  // Runner's guardrail/prompt resolution so both read the same source.
+  const getWorkspaceRow = async (id: number | null) => {
+    if (id == null) return undefined;
+    try {
+      return await workspaces.get(id);
+    } catch {
+      return undefined;
+    }
+  };
   const autoDrive = new AutoDrive(
     () => configStore.get(),
     (task) => trackerManagerRef?.urlFor(task.workspaceId, task.trackerRef) ?? null,
+    undefined,
+    getWorkspaceRow,
   );
   // The merging effects an operator Accept applies (issue #115, ADR-0041): a
   // worktree Task's merge, journaled as `target-ref` (idempotency identity is
@@ -545,14 +558,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     // The critic's `{url}` interpolation token (same resolver AutoDrive uses);
     // independent of autoDrive so native Runs interpolate too.
     urlFor: (task) => trackerManagerRef?.urlFor(task.workspaceId, task.trackerRef) ?? null,
-    getWorkspace: async (id) => {
-      if (id == null) return undefined;
-      try {
-        return await workspaces.get(id);
-      } catch {
-        return undefined;
-      }
-    },
+    getWorkspace: getWorkspaceRow,
   });
   // Close the forward reference the merge train's heal/escalate callbacks hold
   // (issue #163) — exactly as `trackerManagerRef = trackerManager` does below.

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolve, resolveCap, resolveVerifiers, resolveGuardrails } from '../src/domain/setting-override.js';
+import { resolve, resolveCap, resolveVerifiers, resolveGuardrails, resolveDrive } from '../src/domain/setting-override.js';
 import { verificationCriticOverrideSchema } from '../src/config.js';
 
 describe('Setting Override resolution (ADR-0012, issue #59)', () => {
@@ -222,7 +222,7 @@ describe('Setting Override resolution (ADR-0012, issue #59)', () => {
     };
 
     it('inherits the global budget + progress when both Workspace columns are null', () => {
-      const resolved = resolveGuardrails({ guardrailBudget: null, guardrailProgress: null }, config as any);
+      const resolved = resolveGuardrails({ guardrailBudget: null, guardrailProgress: null, toolTimeoutMinutes: null }, config as any);
       expect(resolved.budget).toEqual(config.guardrails.budget);
       expect(resolved.progress).toBe(true);
     });
@@ -230,7 +230,7 @@ describe('Setting Override resolution (ADR-0012, issue #59)', () => {
     it('uses a Workspace budget override (stored JSON) over the global default, progress still inherits', () => {
       const override = { wallClockMinutes: 30, tokens: 500000, costUsd: 5 };
       const resolved = resolveGuardrails(
-        { guardrailBudget: JSON.stringify(override), guardrailProgress: null },
+        { guardrailBudget: JSON.stringify(override), guardrailProgress: null, toolTimeoutMinutes: null },
         config as any,
       );
       expect(resolved.budget).toEqual(override);
@@ -238,9 +238,77 @@ describe('Setting Override resolution (ADR-0012, issue #59)', () => {
     });
 
     it('uses a Workspace progress override, keeping an explicit false distinct from inherit; budget still inherits', () => {
-      const resolved = resolveGuardrails({ guardrailBudget: null, guardrailProgress: false }, config as any);
+      const resolved = resolveGuardrails({ guardrailBudget: null, guardrailProgress: false, toolTimeoutMinutes: null }, config as any);
       expect(resolved.progress).toBe(false); // an explicit "off", not inherit
       expect(resolved.budget).toEqual(config.guardrails.budget); // budget still inherits its own global
+    });
+
+    it('resolves toolTimeoutMinutes per-Workspace now (ADR-0044/#339): value wins, null inherits', () => {
+      const cfg = { guardrails: { ...config.guardrails, toolTimeoutMinutes: 20 } };
+      expect(
+        resolveGuardrails({ guardrailBudget: null, guardrailProgress: null, toolTimeoutMinutes: 45 }, cfg as any).toolTimeoutMinutes,
+      ).toBe(45);
+      expect(
+        resolveGuardrails({ guardrailBudget: null, guardrailProgress: null, toolTimeoutMinutes: null }, cfg as any).toolTimeoutMinutes,
+      ).toBe(20);
+    });
+  });
+
+  describe('resolveDrive (ADR-0044, issue #339) — five independently-inheritable fields', () => {
+    const config = {
+      drive: {
+        prompt: 'GLOBAL PROMPT',
+        unattendedReminder: 'GLOBAL REMINDER',
+        continuePrompt: 'GLOBAL CONTINUE',
+        mergeFate: 'auto-merge' as const,
+        continueAttempts: 1,
+      },
+    };
+    const noOverrides = {
+      drivePrompt: null,
+      driveUnattendedReminder: null,
+      driveContinuePrompt: null,
+      driveMergeFate: null,
+      driveContinueAttempts: null,
+    };
+
+    it('inherits every global drive default when no Workspace column is set', () => {
+      expect(resolveDrive(noOverrides, config as any)).toEqual({
+        prompt: 'GLOBAL PROMPT',
+        unattendedReminder: 'GLOBAL REMINDER',
+        continuePrompt: 'GLOBAL CONTINUE',
+        mergeFate: 'auto-merge',
+        continueAttempts: 1,
+      });
+    });
+
+    it('inherits every global drive default when no Workspace is resolved (undefined)', () => {
+      expect(resolveDrive(undefined, config as any).prompt).toBe('GLOBAL PROMPT');
+      expect(resolveDrive(undefined, config as any).mergeFate).toBe('auto-merge');
+    });
+
+    it('overrides each field independently — one set field never disturbs the others', () => {
+      const resolved = resolveDrive(
+        { ...noOverrides, driveMergeFate: 'open-PR', driveContinueAttempts: 3 },
+        config as any,
+      );
+      expect(resolved.mergeFate).toBe('open-PR'); // overridden
+      expect(resolved.continueAttempts).toBe(3); // overridden
+      expect(resolved.prompt).toBe('GLOBAL PROMPT'); // still inherited
+      expect(resolved.continuePrompt).toBe('GLOBAL CONTINUE'); // still inherited
+    });
+
+    it('keeps continueAttempts 0 (a falsy-but-set value) as an override, not inherit', () => {
+      expect(resolveDrive({ ...noOverrides, driveContinueAttempts: 0 }, config as any).continueAttempts).toBe(0);
+    });
+
+    it('overrides the prompt and reminder strings when set', () => {
+      const resolved = resolveDrive(
+        { ...noOverrides, drivePrompt: 'WS PROMPT', driveUnattendedReminder: 'WS REMINDER' },
+        config as any,
+      );
+      expect(resolved.prompt).toBe('WS PROMPT');
+      expect(resolved.unattendedReminder).toBe('WS REMINDER');
     });
   });
 });

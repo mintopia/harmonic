@@ -7,6 +7,7 @@ import {
   type VerificationCritic,
   type VerificationReview,
   type BudgetGuardrail,
+  type MergeFate,
 } from '../config.js';
 import { isOverridable, type SettingKey } from './settings-registry.js';
 
@@ -122,31 +123,68 @@ export type ResolvedGuardrails = {
 
 /**
  * Resolve a Workspace's effective Guardrail config (issue #126, ADR-0019). Each
- * member is its own key: a Workspace's stored budget JSON or progress toggle
- * overrides the global default, `null` (or an unset column) inherits it — the
- * same `workspace ?? global` rule as every scalar override. This only resolves
- * config; nothing is enforced (#126). The Runner snapshots the result onto the
- * Run at start so a later config change can't retroactively change a trip.
+ * member is its own key: a Workspace's stored budget JSON, progress toggle, or
+ * tool-timeout bound overrides the global default, `null` (or an unset column)
+ * inherits it — the same `workspace ?? global` rule as every scalar override.
+ * This only resolves config; nothing is enforced (#126). The Runner snapshots
+ * the result onto the Run at start so a later config change can't retroactively
+ * change a trip.
  *
- * `toolTimeoutMinutes` (issue #131) is global-only: there is no per-Workspace
- * override column for it, so it always resolves straight from `config`.
+ * `toolTimeoutMinutes` (issue #131) moved from global-only into the overridable
+ * set (ADR-0044): repos differ in tolerance for slow tools, so it now resolves
+ * `workspace ?? global` through the registry like the other guardrail members.
  */
 export function resolveGuardrails(
-  ws: Pick<WorkspaceRow, 'guardrailBudget' | 'guardrailProgress'>,
+  ws: Pick<WorkspaceRow, 'guardrailBudget' | 'guardrailProgress' | 'toolTimeoutMinutes'>,
   config: Pick<AppConfig, 'guardrails'>,
 ): ResolvedGuardrails {
   return {
     budget: resolveScoped('guardrailBudget', parseGuardrailBudget(ws.guardrailBudget), config.guardrails.budget),
     progress: resolveScoped('guardrailProgress', ws.guardrailProgress, config.guardrails.progress),
-    // `toolTimeoutMinutes` is `global-only` in the registry: instance-wide. It has
-    // no Workspace column, so it still routes through the scoped resolver (which
-    // returns the global default for a global-only key) — the registry, not this
-    // line, is the authority for its scope.
-    toolTimeoutMinutes: resolveScoped('toolTimeoutMinutes', undefined, config.guardrails.toolTimeoutMinutes),
+    toolTimeoutMinutes: resolveScoped('toolTimeoutMinutes', ws.toolTimeoutMinutes, config.guardrails.toolTimeoutMinutes),
   };
 }
 
 /** Parse a stored budget override column; an unset/empty column means inherit (null). */
 function parseGuardrailBudget(stored: string | null | undefined): BudgetGuardrail | null {
   return stored ? (JSON.parse(stored) as BudgetGuardrail) : null;
+}
+
+/** A Workspace's effective auto-drive config: the five independently-inheritable
+ * `drive.*` fields, each resolved `workspace ?? global` (ADR-0044). */
+export type ResolvedDrive = {
+  prompt: string;
+  unattendedReminder: string;
+  continuePrompt: string;
+  mergeFate: MergeFate;
+  continueAttempts: number;
+};
+
+/**
+ * Resolve a Workspace's effective auto-drive config (ADR-0044). The `drive.*`
+ * block decomposes into five independently-inheritable scalars — each its own
+ * registry key — so a Workspace can override, say, its Merge Fate while still
+ * inheriting the global Drive Prompt. Every field routes through the scoped
+ * resolver, so the registry stays the single authority for overridability. A
+ * missing/undefined `ws` (no Workspace resolved) inherits every global default.
+ */
+export function resolveDrive(
+  ws:
+    | Pick<
+        WorkspaceRow,
+        'drivePrompt' | 'driveUnattendedReminder' | 'driveContinuePrompt' | 'driveMergeFate' | 'driveContinueAttempts'
+      >
+    | null
+    | undefined,
+  config: Pick<AppConfig, 'drive'>,
+): ResolvedDrive {
+  return {
+    prompt: resolveScoped('drivePrompt', ws?.drivePrompt, config.drive.prompt),
+    unattendedReminder: resolveScoped('driveUnattendedReminder', ws?.driveUnattendedReminder, config.drive.unattendedReminder),
+    continuePrompt: resolveScoped('driveContinuePrompt', ws?.driveContinuePrompt, config.drive.continuePrompt),
+    // The column is validated to a MergeFate on write (`z.enum(MERGE_FATES)`), so
+    // the stored string is always a valid fate; cast past the raw `text` column type.
+    mergeFate: resolveScoped('driveMergeFate', ws?.driveMergeFate as MergeFate | null | undefined, config.drive.mergeFate),
+    continueAttempts: resolveScoped('driveContinueAttempts', ws?.driveContinueAttempts, config.drive.continueAttempts),
+  };
 }

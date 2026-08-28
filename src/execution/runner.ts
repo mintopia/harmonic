@@ -10,7 +10,7 @@ import { LiveUsageTailer, type TailerCadence } from './live-usage-tailer.js';
 import { codeIndexRepoGuidance, driveFields, promptForTask } from './prompt-template.js';
 import { indexWorktree, dropIndexForPath } from './code-index.js';
 import type { AutoDrive } from './auto-drive.js';
-import type { AppConfig, HarnessConfig } from '../config.js';
+import type { AppConfig, HarnessConfig, MergeFate } from '../config.js';
 import type { TaskRow, RunRow, WorkspaceRow, SessionRow } from '../db/schema.js';
 import { AcpDriver, type AcpInitializeResult } from '../acp/driver.js';
 import { SessionStore } from '../domain/sessions.js';
@@ -180,10 +180,12 @@ export interface RunnerOptions {
         WorkspaceRow,
         | 'guardrailBudget'
         | 'guardrailProgress'
+        | 'toolTimeoutMinutes'
         | 'verificationCommand'
         | 'verificationCritic'
         | 'maxAttempts'
         | 'contextReuseTokenLimit'
+        | 'taskPrompt'
       > &
         Partial<Pick<WorkspaceRow, 'workingDir'>>)
     | undefined
@@ -682,7 +684,7 @@ export class Runner {
     const config = this.getConfig();
     const harness = config.harnesses[task.harness as keyof typeof config.harnesses];
     if (!harness) throw new DomainError('validation', `harness '${task.harness}' is not configured`);
-    const ws = (await this.getWorkspace?.(task.workspaceId)) ?? { guardrailBudget: null, guardrailProgress: null };
+    const ws = (await this.getWorkspace?.(task.workspaceId)) ?? { guardrailBudget: null, guardrailProgress: null, toolTimeoutMinutes: null };
     const snapshot: RunGuardrailSnapshot = {
       guardrailConfig: resolveGuardrails(ws, config),
       priceTable: resolvePrices(config.prices),
@@ -1679,18 +1681,21 @@ export class Runner {
     // verification pass, so a base that keeps moving escalates plainly rather than
     // spinning. Resolved per-Task (Task → Workspace → global default).
     const maxReentries = task.integrationRetries;
+    // The auto-drive Merge Fate resolves per-Workspace now (ADR-0044), so resolve
+    // it once for this completion rather than re-reading it inside the loop.
+    const mergeFate = autoDriven ? await this.autoDrive!.mergeFateFor(task) : undefined;
     for (let reentries = 0; ; reentries += 1) {
       const freshness = await this.mergeFreshness(task, current);
       let stale = freshness.fresh ? null : freshness.reason;
       let train: MergeTrainOutcome | null = null;
       if (stale === null) {
-        const member = autoDriven ? this.epicMemberFor(task, current, freshness.oid) : null;
+        const member = autoDriven ? this.epicMemberFor(task, current, freshness.oid, mergeFate) : null;
         if (member) {
           train = await this.mergeTrain!.submit(member);
           if (train.status === 'stale') stale = train.reason;
         } else if (
           task.isolationMode === 'worktree' && current.branch && current.baseBranch &&
-          (!autoDriven || this.autoDrive?.mergeFateFor(task) === 'auto-merge')
+          (!autoDriven || mergeFate === 'auto-merge')
         ) {
           const merged = await mergeIntoBaseAndRunPostMerge({
             repoDir: task.workingDir,
@@ -2140,12 +2145,12 @@ export class Runner {
    * deliberately never touch the integration branch, so they keep
    * `onCompleted`'s behaviour. `verifiedTip` is the only object the train merges.
    */
-  private epicMemberFor(task: TaskRow, run: RunRow, verifiedTip: string): MergeTrainMember | null {
+  private epicMemberFor(task: TaskRow, run: RunRow, verifiedTip: string, mergeFate: MergeFate | undefined): MergeTrainMember | null {
     if (!this.mergeTrain) return null;
     if (task.isolationMode !== 'worktree') return null;
     if (!run.branch || !run.baseBranch) return null;
     if (parseIntegrationBranch(run.baseBranch) === null) return null;
-    if (this.autoDrive?.mergeFateFor(task) !== 'auto-merge') return null;
+    if (mergeFate !== 'auto-merge') return null;
     return {
       runId: run.id,
       taskId: task.id,
@@ -3080,8 +3085,11 @@ export class Runner {
       // prompt tells the agent, so a bare `cd $workingDir` merges there and cannot
       // commit onto the protected branch the canonical checkout is parked on.
       let promptText = autoDriven
-        ? this.autoDrive!.prompt(task)
-        : promptForTask({ ...task, workingDir: workspace.cwd }, this.getConfig().taskPrompt);
+        ? await this.autoDrive!.prompt(task)
+        : promptForTask(
+            { ...task, workingDir: workspace.cwd },
+            resolveScoped('taskPrompt', (await this.getWorkspace?.(task.workspaceId))?.taskPrompt, this.getConfig().taskPrompt),
+          );
       // An operator continuation of a settled warm Session ({@link steerSettled}):
       // this Run bound the prior Session (session/load), so its first turn is just
       // the operator's follow-up message — the conversation already holds the task
@@ -3157,9 +3165,9 @@ export class Runner {
         }
         if (!autoDriven) break; // native Run with nothing queued → settle the single turn
         if (active.agentFinished) break; // explicit finish signal — the execution-complete signal (#139)
-        if (attempt > this.autoDrive!.continueAttempts()) break; // budget spent → unresolved
+        if (attempt > (await this.autoDrive!.continueAttempts(task))) break; // budget spent → unresolved
         record('lifecycle', { event: 'continue', attempt });
-        promptText = this.autoDrive!.continuePrompt(task);
+        promptText = await this.autoDrive!.continuePrompt(task);
         active.idle = false; // a new turn is in flight — not parked, don't stop it
         result = await driver.prompt([{ type: 'text', text: promptText }]);
         active.idle = true;

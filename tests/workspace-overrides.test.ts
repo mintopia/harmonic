@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { WorkspaceService } from '../src/domain/workspaces.js';
 import { verificationCommandSchema, budgetGuardrailSchema } from '../src/config.js';
-import { resolveVerifiers } from '../src/domain/setting-override.js';
+import { resolveVerifiers, resolveDrive } from '../src/domain/setting-override.js';
 
 /**
  * Per-workspace setting overrides on the Workspace API (ADR-0012, issue #64).
@@ -43,6 +43,14 @@ describe('WorkspaceService override persistence (issue #64)', () => {
     expect(ws.verificationCritic).toBeNull();
     expect(ws.guardrailBudget).toBeNull();
     expect(ws.guardrailProgress).toBeNull();
+    // Drive/taskPrompt/toolTimeout overrides (ADR-0044, issue #339) also inherit.
+    expect(ws.drivePrompt).toBeNull();
+    expect(ws.driveUnattendedReminder).toBeNull();
+    expect(ws.driveContinuePrompt).toBeNull();
+    expect(ws.driveMergeFate).toBeNull();
+    expect(ws.driveContinueAttempts).toBeNull();
+    expect(ws.taskPrompt).toBeNull();
+    expect(ws.toolTimeoutMinutes).toBeNull();
   });
 
   it('sets explicit overrides', async () => {
@@ -198,5 +206,57 @@ describe('WorkspaceService override persistence (issue #64)', () => {
     expect(off.guardrailProgress).toBe(false); // an explicit "off", not inherit
     const untouched = await workspaces.update(ws.id, { name: ws.name });
     expect(untouched.guardrailProgress).toBe(false);
+  });
+
+  // ADR-0044 / issue #339: drive.* decomposes into five independently-inheritable
+  // fields, plus taskPrompt and toolTimeoutMinutes, each round-tripping through
+  // PATCH as its own nullable override column.
+  it('sets, clears, and independently patches the drive/taskPrompt/toolTimeout overrides (#339)', async () => {
+    const ws = (await workspaces.list())[0]!;
+    const set = await workspaces.update(ws.id, {
+      drivePrompt: 'WS drive prompt',
+      driveUnattendedReminder: 'WS reminder',
+      driveContinuePrompt: 'WS continue',
+      driveMergeFate: 'open-PR',
+      driveContinueAttempts: 3,
+      taskPrompt: 'WS task prompt',
+      toolTimeoutMinutes: 45,
+    });
+    expect(set.drivePrompt).toBe('WS drive prompt');
+    expect(set.driveUnattendedReminder).toBe('WS reminder');
+    expect(set.driveContinuePrompt).toBe('WS continue');
+    expect(set.driveMergeFate).toBe('open-PR');
+    expect(set.driveContinueAttempts).toBe(3);
+    expect(set.taskPrompt).toBe('WS task prompt');
+    expect(set.toolTimeoutMinutes).toBe(45);
+
+    // An omitted field is left untouched; only what is sent is patched.
+    const renamed = await workspaces.update(ws.id, { name: 'Renamed' });
+    expect(renamed.driveMergeFate).toBe('open-PR');
+    expect(renamed.toolTimeoutMinutes).toBe(45);
+
+    // null clears one field back to inherit, leaving the others set.
+    const cleared = await workspaces.update(ws.id, { driveMergeFate: null, toolTimeoutMinutes: null });
+    expect(cleared.driveMergeFate).toBeNull();
+    expect(cleared.toolTimeoutMinutes).toBeNull();
+    expect(cleared.drivePrompt).toBe('WS drive prompt'); // untouched
+    expect(cleared.driveContinueAttempts).toBe(3); // untouched
+  });
+
+  it('keeps a driveContinueAttempts 0 override distinct from inherit, and resolveDrive reads it (#339)', async () => {
+    const ws = (await workspaces.list())[0]!;
+    const zero = await workspaces.update(ws.id, { driveContinueAttempts: 0 });
+    expect(zero.driveContinueAttempts).toBe(0); // an explicit 0, not inherit
+    const resolved = resolveDrive(zero, {
+      drive: {
+        prompt: 'g',
+        unattendedReminder: 'g',
+        continuePrompt: 'g',
+        mergeFate: 'auto-merge',
+        continueAttempts: 1,
+      },
+    } as any);
+    expect(resolved.continueAttempts).toBe(0); // the stored override wins over the global 1
+    expect(resolved.mergeFate).toBe('auto-merge'); // an unset field still inherits
   });
 });

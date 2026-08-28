@@ -18,7 +18,7 @@
 export type SettingScope = 'global-only' | 'overridable';
 
 /** The UI control a setting renders as (consumed by the Phase-2 Settings UI). */
-export type SettingControl = 'select' | 'toggle' | 'number' | 'json' | 'verifier';
+export type SettingControl = 'select' | 'toggle' | 'number' | 'text' | 'json' | 'verifier';
 
 /** The tab a setting groups under in the Settings UI (ADR-0044 Decision G). */
 export type SettingTab = 'general' | 'execution' | 'verification' | 'prompts' | 'integrations' | 'security';
@@ -145,11 +145,56 @@ export const settingsRegistry = {
     help: 'Whether the progress guardrail is armed for Runs.',
   },
   toolTimeoutMinutes: {
-    scope: 'global-only',
+    scope: 'overridable',
     control: 'number',
     tab: 'execution',
     label: 'Tool timeout (minutes)',
-    help: 'Hard per-tool-call timeout; instance-wide, not overridable.',
+    help: 'Hard per-tool-call timeout; overridable per Workspace (ADR-0044) — repos differ in tolerance for slow tools.',
+  },
+  // Drive settings (ADR-0044): the `drive.*` block decomposes into five
+  // independently-inheritable fields, each overridable per Workspace — repos
+  // genuinely differ in merge policy and how a mirrored Task is framed/driven.
+  drivePrompt: {
+    scope: 'overridable',
+    control: 'text',
+    tab: 'prompts',
+    label: 'Drive Prompt',
+    help: 'Template Harmonic injects to auto-drive a mirrored Task; inherits the global Drive Prompt when unset.',
+  },
+  driveUnattendedReminder: {
+    scope: 'overridable',
+    control: 'text',
+    tab: 'prompts',
+    label: 'Unattended reminder',
+    help: 'Appended to every auto-driven turn to keep the agent working unattended; inherits the global default when unset.',
+  },
+  driveContinuePrompt: {
+    scope: 'overridable',
+    control: 'text',
+    tab: 'prompts',
+    label: 'Continue prompt',
+    help: 'Re-prompt nudge for an auto-driven Run that ended its turn without finishing; inherits the global default when unset.',
+  },
+  driveMergeFate: {
+    scope: 'overridable',
+    control: 'select',
+    tab: 'execution',
+    label: 'Merge fate',
+    help: 'What becomes of a completed auto-driven Run — auto-merge, open a PR, or leave an artifact; inherits the global default when unset.',
+  },
+  driveContinueAttempts: {
+    scope: 'overridable',
+    control: 'number',
+    tab: 'execution',
+    label: 'Continue attempts',
+    help: 'How many times an unfinished auto-driven Run is re-prompted before it is treated as unresolved; inherits the global default when unset.',
+  },
+  taskPrompt: {
+    scope: 'overridable',
+    control: 'text',
+    tab: 'prompts',
+    label: 'Task Prompt',
+    help: "Template wrapping a native Task's own prompt; inherits the global Task Prompt when unset.",
   },
 } as const satisfies Record<string, SettingSpec>;
 

@@ -127,6 +127,24 @@ export const workspaces = sqliteTable('workspaces', {
   maxAttempts: integer('max_attempts'),
   /** Per-Workspace context-reuse token limit; null inherits the global default. */
   contextReuseTokenLimit: integer('context_reuse_token_limit'),
+  // --- Drive + Task Prompt overrides (ADR-0044): the `drive.*` block decomposes
+  // into five independently-inheritable fields, plus the Task Prompt and the
+  // tool-timeout bound. Null ⇒ inherit the global default; resolved at read time
+  // (`resolveDrive` / `resolveScoped`, setting-override.ts). ---
+  /** Per-Workspace Drive Prompt override; null inherits `config.drive.prompt`. */
+  drivePrompt: text('drive_prompt'),
+  /** Per-Workspace unattended-reminder override; null inherits `config.drive.unattendedReminder`. */
+  driveUnattendedReminder: text('drive_unattended_reminder'),
+  /** Per-Workspace continue-prompt override; null inherits `config.drive.continuePrompt`. */
+  driveContinuePrompt: text('drive_continue_prompt'),
+  /** Per-Workspace Merge Fate override; null inherits `config.drive.mergeFate`. */
+  driveMergeFate: text('drive_merge_fate'),
+  /** Per-Workspace continue-attempts override; null inherits `config.drive.continueAttempts`. */
+  driveContinueAttempts: integer('drive_continue_attempts'),
+  /** Per-Workspace Task Prompt override; null inherits `config.taskPrompt`. */
+  taskPrompt: text('task_prompt'),
+  /** Per-Workspace tool-timeout override (ADR-0044); null inherits `config.guardrails.toolTimeoutMinutes`. */
+  toolTimeoutMinutes: integer('tool_timeout_minutes'),
   createdAt: integer('created_at').notNull(),
   updatedAt: integer('updated_at').notNull(),
 }, (t) => [

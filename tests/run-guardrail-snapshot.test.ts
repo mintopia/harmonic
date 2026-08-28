@@ -38,7 +38,7 @@ describe('RunStore.create Guardrail snapshot (issue #126, ADR-0019)', () => {
     const task = await tasks.create({ prompt: 'snapshot me', state: 'ready' });
     const config = defaultConfig();
     const snapshot = {
-      guardrailConfig: resolveGuardrails({ guardrailBudget: null, guardrailProgress: null }, config),
+      guardrailConfig: resolveGuardrails({ guardrailBudget: null, guardrailProgress: null, toolTimeoutMinutes: null }, config),
       priceTable: resolvePrices(config.prices),
     };
 
@@ -52,7 +52,7 @@ describe('RunStore.create Guardrail snapshot (issue #126, ADR-0019)', () => {
     const task = await tasks.create({ prompt: 'frozen snapshot', state: 'ready' });
     const config = defaultConfig();
     const originalSnapshot = {
-      guardrailConfig: resolveGuardrails({ guardrailBudget: null, guardrailProgress: null }, config),
+      guardrailConfig: resolveGuardrails({ guardrailBudget: null, guardrailProgress: null, toolTimeoutMinutes: null }, config),
       priceTable: resolvePrices(config.prices),
     };
 

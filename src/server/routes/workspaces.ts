@@ -69,6 +69,16 @@ const workspaceSchema = z
     verificationCritic: verificationCriticOverrideSchema.nullable().meta({ example: null }),
     guardrailBudget: budgetGuardrailSchema.nullable().meta({ example: null }),
     guardrailProgress: z.boolean().nullable().meta({ example: null }),
+    /** Tool-timeout bound override (ADR-0044); null inherits `config.guardrails.toolTimeoutMinutes`. */
+    toolTimeoutMinutes: z.number().nullable().meta({ example: null }),
+    // Drive.* overrides (ADR-0044): each null ⇒ inherit the matching `config.drive.*`.
+    drivePrompt: z.string().nullable().meta({ example: null }),
+    driveUnattendedReminder: z.string().nullable().meta({ example: null }),
+    driveContinuePrompt: z.string().nullable().meta({ example: null }),
+    driveMergeFate: z.string().nullable().meta({ example: null }),
+    driveContinueAttempts: z.number().nullable().meta({ example: null }),
+    /** Task Prompt override (ADR-0044); null inherits `config.taskPrompt`. */
+    taskPrompt: z.string().nullable().meta({ example: null }),
     createdAt: z.number().meta({ example: 1784030400000 }),
     updatedAt: z.number().meta({ example: 1784032260000 }),
   })

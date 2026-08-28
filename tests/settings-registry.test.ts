@@ -50,6 +50,14 @@ describe('Settings registry (issue #336) — single authority for scope', () => 
     'verificationCritic',
     'guardrailBudget',
     'guardrailProgress',
+    // Reclassified into the overridable set (ADR-0044, issue #339).
+    'toolTimeoutMinutes',
+    'drivePrompt',
+    'driveUnattendedReminder',
+    'driveContinuePrompt',
+    'driveMergeFate',
+    'driveContinueAttempts',
+    'taskPrompt',
   ];
 
   it('declares every Workspace override column as overridable', () => {
@@ -59,9 +67,22 @@ describe('Settings registry (issue #336) — single authority for scope', () => 
     }
   });
 
-  it('declares toolTimeoutMinutes global-only (a Workspace can never override it)', () => {
-    expect(settingSpec('toolTimeoutMinutes').scope).toBe('global-only');
-    expect(isOverridable('toolTimeoutMinutes')).toBe(false);
+  it('declares toolTimeoutMinutes overridable (reclassified from global-only, ADR-0044/#339)', () => {
+    expect(settingSpec('toolTimeoutMinutes').scope).toBe('overridable');
+    expect(isOverridable('toolTimeoutMinutes')).toBe(true);
+  });
+
+  it('declares every reclassified drive/task-prompt field overridable (ADR-0044/#339)', () => {
+    for (const key of [
+      'drivePrompt',
+      'driveUnattendedReminder',
+      'driveContinuePrompt',
+      'driveMergeFate',
+      'driveContinueAttempts',
+      'taskPrompt',
+    ] as const) {
+      expect(isOverridable(key), `'${key}' should be overridable`).toBe(true);
+    }
   });
 
   it('gives every setting a control, label, and help — the seam a later UI consumes', () => {
@@ -108,8 +129,16 @@ describe('tab taxonomy (ADR-0044) — settings group into Settings UI tabs', () 
     expect(execution).not.toContain('chatHarness');
   });
 
+  it('settingsForTab("prompts") returns the drive + task prompt fields (ADR-0044/#339)', () => {
+    expect(settingsForTab('prompts')).toEqual([
+      'drivePrompt',
+      'driveUnattendedReminder',
+      'driveContinuePrompt',
+      'taskPrompt',
+    ]);
+  });
+
   it('settingsForTab returns [] for tabs with no registry-declared fields', () => {
-    expect(settingsForTab('prompts')).toEqual([]);
     expect(settingsForTab('integrations')).toEqual([]);
     expect(settingsForTab('security')).toEqual([]);
   });
@@ -138,10 +167,20 @@ describe('resolveScoped — the scoped resolver reads scope from the registry', 
     expect(resolveScoped('autoRunnerEnabled', false, true)).toBe(false);
   });
 
-  it('ignores any Workspace value for a global-only setting and always returns the global default', () => {
-    // Even a set value cannot override a global-only setting.
-    expect(resolveScoped('toolTimeoutMinutes', 99, 20)).toBe(20);
+  it('a now-overridable setting lets the Workspace value win (toolTimeoutMinutes, #339)', () => {
+    // toolTimeoutMinutes was reclassified overridable (ADR-0044): a set Workspace
+    // value now wins, and null/undefined still inherits the global default.
+    expect(resolveScoped('toolTimeoutMinutes', 99, 20)).toBe(99);
     expect(resolveScoped('toolTimeoutMinutes', null, 20)).toBe(20);
+  });
+
+  it('ignores any Workspace value for a global-only setting and always returns the global default', () => {
+    // No registry key is global-only today, so flip one at runtime to prove the
+    // scoped resolver ignores a set Workspace value for a global-only setting.
+    withScope('harness', 'global-only', () => {
+      expect(resolveScoped('harness', 'codex', 'claude')).toBe('claude');
+      expect(resolveScoped('harness', null, 'claude')).toBe('claude');
+    });
   });
 });
 
@@ -169,7 +208,7 @@ describe('scope changes control live resolution (registry is the single authorit
   it('resolveGuardrails: flipping guardrailBudget/guardrailProgress to global-only ignores the Workspace columns', () => {
     const config = { guardrails: { budget: { wallClockMinutes: 60, tokens: null, costUsd: null }, progress: true } } as never;
     const wsOverride = { wallClockMinutes: 30, tokens: 500000, costUsd: 5 };
-    const ws = { guardrailBudget: JSON.stringify(wsOverride), guardrailProgress: false };
+    const ws = { guardrailBudget: JSON.stringify(wsOverride), guardrailProgress: false, toolTimeoutMinutes: null };
 
     const before = resolveGuardrails(ws, config);
     expect(before.budget).toEqual(wsOverride); // overridable → Workspace budget wins

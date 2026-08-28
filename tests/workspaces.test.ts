@@ -201,6 +201,7 @@ describe('Workspace CRUD (ADR-0008, issue #41)', () => {
       {
         guardrailBudget: JSON.stringify(fetched.body.guardrailBudget),
         guardrailProgress: fetched.body.guardrailProgress,
+        toolTimeoutMinutes: null,
       },
       { guardrails: { budget: { wallClockMinutes: 60, tokens: null, costUsd: null }, progress: true } } as any,
     );

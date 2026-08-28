@@ -1,7 +1,15 @@
 import { type AppConfig, type MergeFate } from '../config.js';
-import type { TaskRow, RunRow } from '../db/schema.js';
+import type { TaskRow, RunRow, WorkspaceRow } from '../db/schema.js';
 import { resolveTrackerAdapter, type TrackerAdapter } from '../tracker/adapter.js';
+import { resolveDrive, type ResolvedDrive } from '../domain/setting-override.js';
 import { driveFields, fillTemplate, splitTitleBody } from './prompt-template.js';
+
+/** The Workspace columns auto-drive resolution reads (ADR-0044). A full
+ * `WorkspaceRow` satisfies it, so the app can pass its shared resolver. */
+type DriveWorkspace = Pick<
+  WorkspaceRow,
+  'drivePrompt' | 'driveUnattendedReminder' | 'driveContinuePrompt' | 'driveMergeFate' | 'driveContinueAttempts'
+>;
 
 /**
  * The auto-drive half of afk mirrored-Task execution (issue #33): the Drive
@@ -17,6 +25,9 @@ export class AutoDrive {
     private readonly getConfig: () => AppConfig,
     private readonly urlFor: (task: TaskRow) => string | null,
     private readonly resolveAdapter: (repoRoot: string) => Promise<TrackerAdapter> = resolveTrackerAdapter,
+    /** Resolves a Task's Workspace so `drive.*` inherits its per-Workspace
+     * overrides (ADR-0044); absent → every field resolves the global default. */
+    private readonly getWorkspace?: (workspaceId: number | null) => Promise<DriveWorkspace | undefined>,
   ) {}
 
   /** The auto-driven path: a mirrored Task Harmonic runs unattended. */
@@ -24,20 +35,28 @@ export class AutoDrive {
     return task.origin === 'mirrored';
   }
 
-  /** The Drive Prompt for a mirrored Task — the global template filled from it. */
-  prompt(task: TaskRow): string {
-    const drive = fillTemplate(this.getConfig().drive.prompt, driveFields(task, this.urlFor));
+  /** This Task's effective auto-drive config: each `drive.*` field resolved
+   * `workspace ?? global` (ADR-0044). One Workspace read per call. */
+  private async resolvedDrive(task: TaskRow): Promise<ResolvedDrive> {
+    const ws = await this.getWorkspace?.(task.workspaceId);
+    return resolveDrive(ws, this.getConfig());
+  }
+
+  /** The Drive Prompt for a mirrored Task — the resolved template filled from it. */
+  async prompt(task: TaskRow): Promise<string> {
+    const drive = await this.resolvedDrive(task);
+    const filled = fillTemplate(drive.prompt, driveFields(task, this.urlFor));
     // A re-queued mirrored Task carries operator feedback in its column (the
     // prompt is re-derived from the ticket each poll). Append it so the retry
     // sees it — same section the native review/re-attempt path uses (run-prompt.ts).
     const feedback = task.feedback?.trim();
-    const withFeedback = feedback ? `${drive}\n\n## Feedback from the previous attempt\n\n${feedback}` : drive;
-    return `${withFeedback}\n\n${this.unattendedReminder(task)}`;
+    const withFeedback = feedback ? `${filled}\n\n## Feedback from the previous attempt\n\n${feedback}` : filled;
+    return `${withFeedback}\n\n${this.reminderFrom(drive, task)}`;
   }
 
   /** The operator-editable unattended reminder with this Task's id filled in (initial + continue). */
-  private unattendedReminder(task: TaskRow): string {
-    return this.getConfig().drive.unattendedReminder.replace(/\{taskId\}/g, String(task.id));
+  private reminderFrom(drive: ResolvedDrive, task: TaskRow): string {
+    return drive.unattendedReminder.replace(/\{taskId\}/g, String(task.id));
   }
 
   /**
@@ -45,19 +64,20 @@ export class AutoDrive {
    * Nudges the agent to resume rather than idle-wait, and re-states the
    * unattended reminder (working memory is short across turns).
    */
-  continuePrompt(task: TaskRow): string {
-    const nudge = this.getConfig().drive.continuePrompt.replace(/\{taskId\}/g, String(task.id));
-    return `${nudge}\n\n${this.unattendedReminder(task)}`;
+  async continuePrompt(task: TaskRow): Promise<string> {
+    const drive = await this.resolvedDrive(task);
+    const nudge = drive.continuePrompt.replace(/\{taskId\}/g, String(task.id));
+    return `${nudge}\n\n${this.reminderFrom(drive, task)}`;
   }
 
   /** How many times to re-prompt an unfinished Run before treating it as unresolved. */
-  continueAttempts(): number {
-    return this.getConfig().drive.continueAttempts;
+  async continueAttempts(task: TaskRow): Promise<number> {
+    return (await this.resolvedDrive(task)).continueAttempts;
   }
 
-  /** research is always an artifact; otherwise the global default (per-Task override deferred). */
-  private mergeFate(task: TaskRow): MergeFate {
-    return task.wayfinderType === 'research' ? 'artifact' : this.getConfig().drive.mergeFate;
+  /** research is always an artifact; otherwise the resolved (Workspace ?? global) fate. */
+  private async mergeFate(task: TaskRow): Promise<MergeFate> {
+    return task.wayfinderType === 'research' ? 'artifact' : (await this.resolvedDrive(task)).mergeFate;
   }
 
   /**
@@ -68,7 +88,7 @@ export class AutoDrive {
    * untouched (the work stays on the candidate/private ref). Single source of
    * truth so recovery merging never diverges from `onCompleted`'s fate.
    */
-  mergeFateFor(task: TaskRow): MergeFate {
+  async mergeFateFor(task: TaskRow): Promise<MergeFate> {
     return this.mergeFate(task);
   }
 
@@ -97,7 +117,7 @@ export class AutoDrive {
    */
   async onCompleted(task: TaskRow, run: RunRow): Promise<'completed' | 'escalate'> {
     const worktree = task.isolationMode === 'worktree' && !!run.branch && !!run.baseBranch;
-    const fate = this.mergeFate(task);
+    const fate = await this.mergeFate(task);
 
     if (fate === 'open-PR') {
       if (worktree) {
