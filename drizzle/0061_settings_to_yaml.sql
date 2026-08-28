@@ -1,9 +1,12 @@
 -- Migrate persisted settings out of SQLite into the YAML settings file
--- (issue #391, ADR-0009): the global config already lived in the `settings`
--- KV table's `config` row (still there, just unused now — the table also
--- holds unrelated keys); these are the per-Workspace setting-override
--- columns, now owned by `SettingsStore`'s `settings.yaml`. Clean break: no
--- data migration, an operator's existing overrides are not carried forward.
+-- (issue #391, ADR-0009): global config lived in the `settings` KV table's
+-- `config` row and the per-Workspace setting overrides in the columns below,
+-- both now owned by `SettingsStore`'s `settings.yaml`. Clean break: no data
+-- migration, an operator's existing config/overrides are not carried forward.
+-- The `config` row itself is left in place, not deleted: the boot-time
+-- backfill (`backfillDefaultWorkspaceAsync`) still reads its legacy tracker /
+-- workingDir carry-over onto the Default Workspace on first upgrade. It is no
+-- longer read as configuration. Only the override columns move here.
 ALTER TABLE `workspaces` DROP COLUMN `harness`;--> statement-breakpoint
 ALTER TABLE `workspaces` DROP COLUMN `model`;--> statement-breakpoint
 ALTER TABLE `workspaces` DROP COLUMN `chat_harness`;--> statement-breakpoint
