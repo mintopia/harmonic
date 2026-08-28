@@ -441,6 +441,24 @@ export const Git = {
   diffRange: (dir: string, base: string, oid: string) => git(dir, 'diff', `${base}..${oid}`),
 
   /**
+   * Diffstat of a live worktree's current state — committed AND uncommitted
+   * tracked changes — against `baseOid` (the fork point). For a running Run whose
+   * work is not yet snapshotted or committed, `base...branch` in the canonical
+   * checkout shows nothing; this shows what the agent has actually done so far.
+   * `--no-optional-locks` so a read never contends with the agent's index writes;
+   * read-only — never touches the worktree's index or HEAD. Untracked (never-added)
+   * files are not included, exactly as `git diff <commit>` omits them.
+   */
+  worktreeDiffStat: (worktreeDir: string, baseOid: string) =>
+    git(worktreeDir, '--no-optional-locks', 'diff', '--stat', baseOid),
+
+  /** Full unified diff of a live worktree's current state (committed + uncommitted
+   * tracked changes) against `baseOid`. The hunk-level companion to
+   * {@link worktreeDiffStat}; same read-only, lock-free contract. */
+  worktreeDiffUnified: (worktreeDir: string, baseOid: string) =>
+    git(worktreeDir, '--no-optional-locks', 'diff', baseOid),
+
+  /**
    * Whether `branch` is already merged into `baseBranch` — i.e. `git
    * merge-base --is-ancestor <branch> <baseBranch>` exits 0. Used by
    * crash-recovery (issue #117) to ask the world "is this merging's branch

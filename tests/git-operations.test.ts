@@ -171,3 +171,44 @@ describe('Git.mergeCleanliness (read-only merge-tree fact for the critic, ADR-00
     expect(await Git.mergeCleanliness(repo, 'no-such-branch', candidate)).toBeNull();
   });
 });
+
+describe('worktreeDiff — live diff of a running Run against its fork point', () => {
+  it('includes committed AND uncommitted tracked changes', async () => {
+    const repo = makeRepo();
+    const forkPoint = git(repo, 'rev-parse', 'HEAD');
+    const wt = mkdtempSync(join(tmpdir(), 'harmonic-git-operations-livewt-'));
+    tmpDirs.push(wt);
+    await Git.addWorktree(repo, wt, 'work', 'main');
+    // One change committed on the branch, one left uncommitted in the worktree.
+    writeFileSync(join(wt, 'committed.txt'), 'committed\n');
+    git(wt, 'add', '-A');
+    git(wt, 'commit', '-m', 'committed work');
+    writeFileSync(join(wt, 'base.txt'), 'edited but not committed\n');
+
+    const base = await Git.mergeBase(repo, 'main', 'work');
+    expect(base).toBe(forkPoint);
+
+    const stat = await Git.worktreeDiffStat(wt, base);
+    const unified = await Git.worktreeDiffUnified(wt, base);
+    // The whole live state shows — both the committed file and the uncommitted edit.
+    expect(stat).toContain('committed.txt');
+    expect(stat).toContain('base.txt');
+    expect(unified).toContain('edited but not committed');
+  });
+
+  it('surfaces in-progress work the committed base...branch range misses (the task-340 bug)', async () => {
+    const repo = makeRepo();
+    const wt = mkdtempSync(join(tmpdir(), 'harmonic-git-operations-livewt2-'));
+    tmpDirs.push(wt);
+    await Git.addWorktree(repo, wt, 'work2', 'main');
+    // Nothing committed on the branch — only an uncommitted edit, as for a running
+    // attempt whose agent has not committed yet.
+    writeFileSync(join(wt, 'base.txt'), 'uncommitted only\n');
+
+    // The committed three-dot range (the old endpoint computation) sees nothing…
+    expect(await Git.diffStat(repo, 'main', 'work2')).toBe('');
+    // …but the live worktree diff surfaces the in-progress edit.
+    const base = await Git.mergeBase(repo, 'main', 'work2');
+    expect(await Git.worktreeDiffStat(wt, base)).toContain('base.txt');
+  });
+});

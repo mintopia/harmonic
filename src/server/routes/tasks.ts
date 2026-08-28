@@ -405,6 +405,27 @@ function parseUnifiedDiff(raw: string): DiffFile[] {
   return files;
 }
 
+/**
+ * For a Run whose work is still live in a worktree (running, before the settle
+ * snapshot), the worktree path and the fork-point OID to diff its current state
+ * against — so the review pane reflects committed AND uncommitted work rather
+ * than the empty `base...branch` range a not-yet-committed attempt produces.
+ * Null when the branch is not checked out in a worktree (settled / cleaned up)
+ * or the base can't be resolved, so the caller falls back to the committed range.
+ */
+async function liveWorktreeDiff(
+  workingDir: string,
+  branch: string | null,
+  baseBranch: string | null,
+): Promise<{ worktree: string; baseOid: string } | null> {
+  if (!branch || !baseBranch) return null;
+  const worktree = await Git.branchCheckedOutAt(workingDir, branch).catch(() => null);
+  if (!worktree) return null;
+  const baseOid = await Git.mergeBase(workingDir, baseBranch, branch).catch(() => null);
+  if (!baseOid) return null;
+  return { worktree, baseOid };
+}
+
 export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
   const { ctx } = fastify as App;
   const app = fastify.withTypeProvider<ZodTypeProvider>();
@@ -1060,10 +1081,22 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       const run = await ctx.runs.get(req.params.id);
       if (!run.branch || !run.baseBranch) return { branch: null, baseBranch: null, stat: null };
       // Prefer the settle-time snapshot so this endpoint and the board card can
-      // never show two different stats (issue #36); only compute live for a run
-      // that predates the snapshot column.
+      // never show two different stats (issue #36). Before settle, show the live
+      // worktree stat (committed + uncommitted) for a running Run, falling back to
+      // the committed `base...branch` range when no worktree is checked out. Any
+      // git failure yields a null stat (the empty-state contract), never a 500.
       const task = await ctx.tasks.get(run.taskId);
-      const stat = run.stat ?? (await Git.diffStat(task.workingDir, run.baseBranch, run.branch));
+      let stat = run.stat;
+      if (stat === null) {
+        try {
+          const live = await liveWorktreeDiff(task.workingDir, run.branch, run.baseBranch);
+          stat = live
+            ? await Git.worktreeDiffStat(live.worktree, live.baseOid)
+            : await Git.diffStat(task.workingDir, run.baseBranch, run.branch);
+        } catch {
+          stat = null;
+        }
+      }
       return { branch: run.branch, baseBranch: run.baseBranch, stat };
     },
   );
@@ -1086,11 +1119,21 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       const { limit, offset } = req.query;
       let files: DiffFile[];
       try {
-        const raw = run.diffBaseOid && run.diffHeadOid
-          ? await Git.diffRange(task.workingDir, run.diffBaseOid, run.diffHeadOid)
-          : run.branch && run.baseBranch
-            ? await Git.diffUnified(task.workingDir, run.baseBranch, run.branch)
-            : '';
+        let raw: string;
+        if (run.diffBaseOid && run.diffHeadOid) {
+          // Settled: the immutable snapshot revisions, outliving the branch.
+          raw = await Git.diffRange(task.workingDir, run.diffBaseOid, run.diffHeadOid);
+        } else {
+          // Running: the live worktree diff (committed + uncommitted) against the
+          // fork point, so an attempt still editing files shows its work. Falls
+          // back to the committed range when no worktree is checked out.
+          const live = await liveWorktreeDiff(task.workingDir, run.branch, run.baseBranch);
+          raw = live
+            ? await Git.worktreeDiffUnified(live.worktree, live.baseOid)
+            : run.branch && run.baseBranch
+              ? await Git.diffUnified(task.workingDir, run.baseBranch, run.branch)
+              : '';
+        }
         files = parseUnifiedDiff(raw);
       } catch {
         // A missing revision (legacy row or pruned object) is "nothing to diff",
