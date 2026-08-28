@@ -13,7 +13,7 @@ import {
 } from '../prompt-preview-model';
 import { ModelCombobox } from './ModelCombobox';
 import { Switch } from './Switch';
-import { EMPTY_CRITIC, setCriticField, summarizeCommands } from './verification-override-model';
+import { EMPTY_CRITIC, missingReviewInput, reviewUnrunnable, setCriticField, summarizeCommands } from './verification-override-model';
 import { setBudgetField, summarizeBudget } from './guardrail-budget-model';
 import { CommandListEditor } from './CommandListEditor';
 import { ConfigField, registryField, toOptions, withCurrent, type FieldOption, type ScalarDescriptor } from './settings-fields';
@@ -691,6 +691,21 @@ const continuePromptField = prompt(
 
 // ── Bespoke section renderers ─────────────────────────────────────────────────
 
+/** A loud, visible flag for an enabled-but-unrunnable review — toggled on yet
+ * resolving to no model or prompt, so it can never run (ADR-0044 §F, issue #340).
+ * Shared by both verification sections so the global and workspace surfaces flag
+ * the same resolved state identically, rather than saving a silent no-op. */
+function ReviewUnrunnableNote({ review }: { review: { enabled: boolean; model?: string | null; prompt?: string | null } }) {
+  if (!reviewUnrunnable(review)) return null;
+  const missing = missingReviewInput(review);
+  return (
+    <p className="rounded-sm bg-fail-tint px-2.5 py-2 text-small text-fail">
+      Review is enabled but resolves to no {missing} — it will be flagged unrunnable and never run. Set a review {missing}{' '}
+      or turn review off.
+    </p>
+  );
+}
+
 /** The global Verification section: the command list plus a review toggle whose
  * harness/model/prompt reveal when enabled. */
 function GlobalVerification({ ctx }: { ctx: GlobalRenderCtx }) {
@@ -707,6 +722,7 @@ function GlobalVerification({ ctx }: { ctx: GlobalRenderCtx }) {
   const setCritic = (critic: VerificationCritic) => setReview({ enabled: true, ...critic });
   return (
     <div className="flex flex-col gap-4 sm:max-w-md">
+      <ReviewUnrunnableNote review={{ enabled: v.review.enabled, model: v.review.model, prompt: v.review.prompt }} />
       <CommandListEditor
         commands={v.commands}
         onChange={(commands) => onChange({ ...v, commands })}
@@ -832,20 +848,16 @@ const reviewPromptField: OverridablePrompt = {
 function WorkspaceVerification({ ctx }: { ctx: WorkspaceRenderCtx }) {
   const { config, workspace, errors } = ctx;
   // A review that resolves to enabled-without-a-prompt/model here can never run
-  // (ADR-0044 §F, issue #340): compute the resolved review (workspace ?? global)
-  // and flag it loudly, rather than letting the operator save a silent no-op.
-  const resolvedReviewEnabled = workspace.reviewEnabled ?? config.verify.review.enabled;
-  const resolvedReviewModel = workspace.reviewModel ?? config.verify.review.model;
-  const resolvedReviewPrompt = workspace.reviewPrompt ?? config.verify.review.prompt;
-  const reviewUnrunnable = Boolean(resolvedReviewEnabled) && !(resolvedReviewModel && resolvedReviewPrompt);
+  // (ADR-0044 §F, issue #340): resolve the review (workspace ?? global) and flag
+  // it loudly, rather than letting the operator save a silent no-op.
+  const resolvedReview = {
+    enabled: Boolean(workspace.reviewEnabled ?? config.verify.review.enabled),
+    model: workspace.reviewModel ?? config.verify.review.model,
+    prompt: workspace.reviewPrompt ?? config.verify.review.prompt,
+  };
   return (
     <div className="flex flex-col gap-4 sm:max-w-md">
-      {reviewUnrunnable && (
-        <p className="rounded-sm bg-fail-tint px-2.5 py-2 text-small text-fail">
-          Review is enabled here but resolves to no {!resolvedReviewModel ? 'model' : 'prompt'} — it will be flagged
-          unrunnable and never run. Set a review {!resolvedReviewModel ? 'model' : 'prompt'} or turn review off.
-        </p>
-      )}
+      <ReviewUnrunnableNote review={resolvedReview} />
       <div>
         <InheritField
           label="Command verifier"

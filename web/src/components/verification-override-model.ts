@@ -23,6 +23,24 @@ import type { VerificationCommand, VerificationCritic } from '../types.js';
  * blank verifier.
  */
 
+/**
+ * A review is enabled-but-unrunnable when its toggle resolves on yet it has no
+ * resolved model or prompt from any layer — so it can never run and Harmonic
+ * would silently skip it (ADR-0044 §F, issue #340). The settings surface flags
+ * this loudly instead. `enabled` is the resolved review toggle (`requested` in
+ * `resolveReview`, src/domain/setting-override.ts); this mirrors that resolver's
+ * `requested && !(prompt && model)` fold on already-resolved values so the
+ * global and workspace verification sections judge runnability identically.
+ */
+export function reviewUnrunnable(review: { enabled: boolean; model?: string | null; prompt?: string | null }): boolean {
+  return review.enabled && !(review.model && review.prompt);
+}
+
+/** Which resolved review input is missing, for the unrunnable copy — model first. */
+export function missingReviewInput(review: { model?: string | null; prompt?: string | null }): 'model' | 'prompt' {
+  return !review.model ? 'model' : 'prompt';
+}
+
 /** Seed for a freshly enabled command override when no global default exists. */
 export const EMPTY_COMMAND: VerificationCommand = { command: '', args: [], env: {}, timeoutSeconds: 600 };
 

@@ -39,7 +39,10 @@ export function InheritField<T, R extends T = T>({
       {overridden ? (
         <>
           {children({ id: htmlFor, value: effective, onChange })}
-          <button type="button" className={`mt-1.5 ${btnQuiet} text-label`} onClick={() => onChange(null)}>
+          <p className="mt-1.5 text-small text-muted">
+            {format(effective as R)} · Overridden here
+          </p>
+          <button type="button" className={`mt-1 ${btnQuiet} text-label`} onClick={() => onChange(null)}>
             Reset to default
           </button>
         </>

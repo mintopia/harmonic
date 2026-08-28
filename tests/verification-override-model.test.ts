@@ -3,6 +3,8 @@ import {
   EMPTY_COMMAND,
   EMPTY_CRITIC,
   argsText,
+  missingReviewInput,
+  reviewUnrunnable,
   setCommandField,
   setCriticField,
   summarizeCommand,
@@ -13,6 +15,34 @@ import type { VerificationCommand, VerificationCritic } from '../web/src/types.j
 
 const baseCommand: VerificationCommand = { command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 };
 const baseCritic: VerificationCritic = { prompt: 'review the diff', model: 'claude-opus-5' };
+
+describe('reviewUnrunnable (ADR-0044 §F, issue #340)', () => {
+  it('flags a review toggled on with no resolved model', () => {
+    expect(reviewUnrunnable({ enabled: true, model: '', prompt: 'review the diff' })).toBe(true);
+  });
+
+  it('flags a review toggled on with no resolved prompt', () => {
+    expect(reviewUnrunnable({ enabled: true, model: 'claude-opus-5', prompt: '' })).toBe(true);
+  });
+
+  it('is runnable when toggled on with both model and prompt resolved', () => {
+    expect(reviewUnrunnable({ enabled: true, model: 'claude-opus-5', prompt: 'review the diff' })).toBe(false);
+  });
+
+  it('is never unrunnable when the review is toggled off', () => {
+    expect(reviewUnrunnable({ enabled: false, model: '', prompt: '' })).toBe(false);
+  });
+
+  it('treats a missing (undefined/null) model or prompt as unresolved', () => {
+    expect(reviewUnrunnable({ enabled: true })).toBe(true);
+    expect(reviewUnrunnable({ enabled: true, model: null, prompt: null })).toBe(true);
+  });
+
+  it('names the missing input, model before prompt', () => {
+    expect(missingReviewInput({ model: '', prompt: '' })).toBe('model');
+    expect(missingReviewInput({ model: 'claude-opus-5', prompt: '' })).toBe('prompt');
+  });
+});
 
 describe('setCommandField (issue #165)', () => {
   it('sets the executable from a text input', () => {
