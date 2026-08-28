@@ -8,6 +8,7 @@ import { defaultDataDir } from './config.js';
 import { acquireLock, daemonStatus, logFilePath, releaseLock, stopDaemon, writeDaemon } from './daemon.js';
 import { initializeTelemetry, resolveTelemetryOptions } from './telemetry.js';
 import { logger } from './logger.js';
+import { installProcessSafetyNet } from './reliability/process-safety-net.js';
 
 const HELP = `harmonic — queue, run, and review autonomous agent tasks
 
@@ -134,6 +135,9 @@ async function main(): Promise<void> {
     );
     process.exit(1);
   }
+  // Last-resort net for any fire-and-forget rejection that slips a per-site
+  // `.catch` — log it instead of letting Node make it fatal (issue #371).
+  installProcessSafetyNet();
   const password = values.password ?? process.env.HARMONIC_PASSWORD;
   const telemetry = initializeTelemetry(
     resolveTelemetryOptions({
