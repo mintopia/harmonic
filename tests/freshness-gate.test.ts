@@ -557,4 +557,34 @@ describe('merging freshness gate (issue #313, ADR-0041)', () => {
       criticSideEffect = null;
     }
   });
+
+  // A Run that escalates still has its work committed on the run branch. The
+  // diffstat used to be snapshotted only on the merge path, so an escalated Run
+  // persisted none and the review pane went blank exactly when a human needs to
+  // see the work. The settle now snapshots the diff on every terminal path.
+  it('an escalated worktree Run snapshots its diff so the review pane is never blank', async () => {
+    const repo = makeRepo();
+    await server.app.ctx.workspaces.update(wsId, {
+      workingDir: repo,
+      maxAttempts: 1,
+      verificationCommand: verificationCommandSchema.parse({
+        command: process.execPath,
+        args: ['-e', 'process.exit(1)'], // a verifier that always fails → escalate at the cap
+        timeoutSeconds: 30,
+      }),
+    });
+    await server.app.ctx.configStore.update({
+      drive: { prompt: JSON.stringify({ writeFiles: { 'impl-{ref}.txt': 'implementation {ref}\n' }, mcpFinish: true }) },
+    });
+
+    const { taskId, runId, trackerRef } = await launchAfk();
+    await waitFor(async () => ((await server.app.ctx.tasks.get(taskId)).state === 'escalated' ? true : undefined));
+
+    const run = await server.app.ctx.runs.get(runId);
+    expect(run.state).toBe('failed');
+    expect(run.branch).not.toBeNull();
+    expect(run.stat).toContain(`impl-${trackerRef}.txt`);
+    expect(run.diffBaseOid).not.toBeNull();
+    expect(run.diffHeadOid).not.toBeNull();
+  });
 });
