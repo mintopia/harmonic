@@ -300,13 +300,13 @@
                     "type": "string",
                     "enum": [
                       "continued-within-limits",
-                      "context-usage",
+                      "context-tokens",
                       "session-cold",
-                      "missing-context-usage",
+                      "missing-context-tokens",
                       "missing-warm-window"
                     ]
                   },
-                  "contextUsage": {
+                  "contextTokens": {
                     "anyOf": [
                       {
                         "type": "number"
@@ -316,7 +316,7 @@
                       }
                     ]
                   },
-                  "contextReuseThreshold": {
+                  "contextReuseTokenLimit": {
                     "type": "number"
                   },
                   "lastActiveAt": {
@@ -339,8 +339,8 @@
                 "required": [
                   "path",
                   "reason",
-                  "contextUsage",
-                  "contextReuseThreshold",
+                  "contextTokens",
+                  "contextReuseTokenLimit",
                   "lastActiveAt",
                   "lastActiveAgeMs",
                   "warmWindowMs"
@@ -1169,6 +1169,18 @@
             "type": "string",
             "example": "normal"
           },
+          "integrationRetries": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "example": 5
+          },
+          "conflictResolveTurns": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "example": 2
+          },
           "state": {
             "type": "string",
             "enum": [
@@ -1370,19 +1382,49 @@
                   }
                 ],
                 "example": null
+              },
+              "integrationRetries": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "example": null
+              },
+              "conflictResolveTurns": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "example": null
               }
             },
             "required": [
               "harness",
               "model",
               "isolationMode",
-              "priority"
+              "priority",
+              "integrationRetries",
+              "conflictResolveTurns"
             ],
             "example": {
               "harness": null,
               "model": "opus-4.8",
               "isolationMode": null,
-              "priority": null
+              "priority": null,
+              "integrationRetries": null,
+              "conflictResolveTurns": null
             }
           }
         },
@@ -1396,6 +1438,8 @@
           "isolationMode",
           "baseBranch",
           "priority",
+          "integrationRetries",
+          "conflictResolveTurns",
           "state",
           "escalationReason",
           "feedback",
@@ -1462,6 +1506,18 @@
             "type": "string",
             "example": "normal"
           },
+          "integrationRetries": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "example": 5
+          },
+          "conflictResolveTurns": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "example": 2
+          },
           "state": {
             "type": "string",
             "enum": [
@@ -1663,19 +1719,49 @@
                   }
                 ],
                 "example": null
+              },
+              "integrationRetries": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "example": null
+              },
+              "conflictResolveTurns": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "example": null
               }
             },
             "required": [
               "harness",
               "model",
               "isolationMode",
-              "priority"
+              "priority",
+              "integrationRetries",
+              "conflictResolveTurns"
             ],
             "example": {
               "harness": null,
               "model": "opus-4.8",
               "isolationMode": null,
-              "priority": null
+              "priority": null,
+              "integrationRetries": null,
+              "conflictResolveTurns": null
             }
           },
           "summary": {
@@ -1842,6 +1928,507 @@
           "isolationMode",
           "baseBranch",
           "priority",
+          "integrationRetries",
+          "conflictResolveTurns",
+          "state",
+          "escalationReason",
+          "feedback",
+          "continuationChoice",
+          "origin",
+          "trackerRef",
+          "workflow",
+          "wayfinderType",
+          "mapRef",
+          "createdAt",
+          "updatedAt",
+          "dependsOn",
+          "dependents",
+          "blockedOnFailed",
+          "openBlockerCount",
+          "agentWorkable",
+          "humanOnly",
+          "overrides",
+          "summary",
+          "cost",
+          "url",
+          "mapTitle",
+          "branch",
+          "stat",
+          "runStartedAt",
+          "toolCount",
+          "runId",
+          "phase",
+          "contextTokens",
+          "contextWindow",
+          "skipReason",
+          "candidateRef"
+        ]
+      },
+      "TaskListRowInput": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "example": 4821
+          },
+          "workspaceId": {
+            "type": "number",
+            "example": 1
+          },
+          "harness": {
+            "type": "string",
+            "example": "claude"
+          },
+          "model": {
+            "type": "string",
+            "example": "sonnet-5"
+          },
+          "workingDir": {
+            "type": "string",
+            "example": "/home/dev/harmonic"
+          },
+          "isolationMode": {
+            "type": "string",
+            "example": "worktree"
+          },
+          "baseBranch": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "integration/epic-42"
+          },
+          "priority": {
+            "type": "string",
+            "example": "normal"
+          },
+          "integrationRetries": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "example": 5
+          },
+          "conflictResolveTurns": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "example": 2
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "ready",
+              "working",
+              "escalated",
+              "done",
+              "cancelled"
+            ],
+            "example": "working"
+          },
+          "escalationReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "feedback": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "continuationChoice": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "full",
+                  "condensed"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "origin": {
+            "type": "string",
+            "enum": [
+              "native",
+              "mirrored"
+            ],
+            "example": "native"
+          },
+          "trackerRef": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "workflow": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "wayfinder",
+                  "implement"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "wayfinderType": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "research",
+                  "prototype",
+                  "grilling",
+                  "task"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "mapRef": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "createdAt": {
+            "type": "number",
+            "example": 1784030400000
+          },
+          "updatedAt": {
+            "type": "number",
+            "example": 1784032260000
+          },
+          "dependsOn": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            },
+            "example": [
+              4818
+            ]
+          },
+          "dependents": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            },
+            "example": [
+              4830
+            ]
+          },
+          "blockedOnFailed": {
+            "type": "boolean",
+            "example": false
+          },
+          "openBlockerCount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "example": 1
+          },
+          "agentWorkable": {
+            "type": "boolean",
+            "example": false
+          },
+          "humanOnly": {
+            "type": "boolean",
+            "example": false
+          },
+          "overrides": {
+            "type": "object",
+            "properties": {
+              "harness": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "example": null
+              },
+              "model": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "example": "opus-4.8"
+              },
+              "isolationMode": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "example": null
+              },
+              "priority": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "example": null
+              },
+              "integrationRetries": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "example": null
+              },
+              "conflictResolveTurns": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "example": null
+              }
+            },
+            "required": [
+              "harness",
+              "model",
+              "isolationMode",
+              "priority",
+              "integrationRetries",
+              "conflictResolveTurns"
+            ],
+            "example": {
+              "harness": null,
+              "model": "opus-4.8",
+              "isolationMode": null,
+              "priority": null,
+              "integrationRetries": null,
+              "conflictResolveTurns": null
+            }
+          },
+          "summary": {
+            "type": "string",
+            "example": "Add rate limiting to POST /api/tasks"
+          },
+          "cost": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CostInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "https://github.com/mintopia/harmonic/issues/35"
+          },
+          "mapTitle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "Wayfinder"
+          },
+          "branch": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "agent/4821-rate-limiting"
+          },
+          "stat": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": " src/server/rate-limit.ts | 96 ++++++++++++++\n 1 file changed, 96 insertions(+)"
+          },
+          "runStartedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 1784032020000
+          },
+          "toolCount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 12
+          },
+          "runId": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 41
+          },
+          "phase": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "executing",
+                  "validating",
+                  "verifying",
+                  "merging",
+                  "terminal"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "verifying"
+          },
+          "contextTokens": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 48210
+          },
+          "contextWindow": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 200000
+          },
+          "skipReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "blocked-by #12"
+          },
+          "candidateRef": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "refs/harmonic/candidate/run-9137"
+          }
+        },
+        "required": [
+          "id",
+          "workspaceId",
+          "harness",
+          "model",
+          "workingDir",
+          "isolationMode",
+          "baseBranch",
+          "priority",
+          "integrationRetries",
+          "conflictResolveTurns",
           "state",
           "escalationReason",
           "feedback",
@@ -2723,6 +3310,28 @@
             ],
             "example": null
           },
+          "integrationRetries": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "conflictResolveTurns": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "maxConcurrentRuns": {
             "anyOf": [
               {
@@ -2756,7 +3365,7 @@
             ],
             "example": null
           },
-          "contextReuseThreshold": {
+          "contextReuseTokenLimit": {
             "anyOf": [
               {
                 "type": "number"
@@ -3045,10 +3654,12 @@
           "chatModel",
           "isolationMode",
           "priority",
+          "integrationRetries",
+          "conflictResolveTurns",
           "maxConcurrentRuns",
           "autoRunnerEnabled",
           "maxAttempts",
-          "contextReuseThreshold",
+          "contextReuseTokenLimit",
           "verificationCommand",
           "verificationCritic",
           "guardrailBudget",
@@ -3372,6 +3983,18 @@
                   "low"
                 ],
                 "example": "normal"
+              },
+              "integrationRetries": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991,
+                "example": 5
+              },
+              "conflictResolveTurns": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991,
+                "example": 2
               }
             }
           },
@@ -3414,11 +4037,11 @@
             "maximum": 9007199254740991,
             "example": 2
           },
-          "contextReuseThreshold": {
-            "type": "number",
+          "contextReuseTokenLimit": {
+            "type": "integer",
             "minimum": 0,
-            "maximum": 1,
-            "example": 0.2
+            "maximum": 9007199254740991,
+            "example": 200000
           },
           "drive": {
             "type": "object",
@@ -3448,7 +4071,7 @@
           },
           "agentReview": {
             "example": false,
-            "description": "Deprecated (#140): folded into verification.autoAccept; retained so a pre-upgrade client PATCHing it still applies non-exposing behaviour.",
+            "description": "Deprecated (#140): folded into verification.autoAccept; retained so a pre-upgrade client PATCHing it still merges non-exposing behaviour.",
             "type": "boolean"
           },
           "verification": {
@@ -4038,13 +4661,13 @@
                     "type": "string",
                     "enum": [
                       "continued-within-limits",
-                      "context-usage",
+                      "context-tokens",
                       "session-cold",
-                      "missing-context-usage",
+                      "missing-context-tokens",
                       "missing-warm-window"
                     ]
                   },
-                  "contextUsage": {
+                  "contextTokens": {
                     "anyOf": [
                       {
                         "type": "number"
@@ -4054,7 +4677,7 @@
                       }
                     ]
                   },
-                  "contextReuseThreshold": {
+                  "contextReuseTokenLimit": {
                     "type": "number"
                   },
                   "lastActiveAt": {
@@ -4077,8 +4700,8 @@
                 "required": [
                   "path",
                   "reason",
-                  "contextUsage",
-                  "contextReuseThreshold",
+                  "contextTokens",
+                  "contextReuseTokenLimit",
                   "lastActiveAt",
                   "lastActiveAgeMs",
                   "warmWindowMs"
@@ -4921,6 +5544,18 @@
             "type": "string",
             "example": "normal"
           },
+          "integrationRetries": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "example": 5
+          },
+          "conflictResolveTurns": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "example": 2
+          },
           "state": {
             "type": "string",
             "enum": [
@@ -5122,20 +5757,50 @@
                   }
                 ],
                 "example": null
+              },
+              "integrationRetries": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "example": null
+              },
+              "conflictResolveTurns": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "example": null
               }
             },
             "required": [
               "harness",
               "model",
               "isolationMode",
-              "priority"
+              "priority",
+              "integrationRetries",
+              "conflictResolveTurns"
             ],
             "additionalProperties": false,
             "example": {
               "harness": null,
               "model": "opus-4.8",
               "isolationMode": null,
-              "priority": null
+              "priority": null,
+              "integrationRetries": null,
+              "conflictResolveTurns": null
             }
           }
         },
@@ -5149,6 +5814,8 @@
           "isolationMode",
           "baseBranch",
           "priority",
+          "integrationRetries",
+          "conflictResolveTurns",
           "state",
           "escalationReason",
           "feedback",
@@ -5216,6 +5883,18 @@
             "type": "string",
             "example": "normal"
           },
+          "integrationRetries": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "example": 5
+          },
+          "conflictResolveTurns": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "example": 2
+          },
           "state": {
             "type": "string",
             "enum": [
@@ -5417,20 +6096,50 @@
                   }
                 ],
                 "example": null
+              },
+              "integrationRetries": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "example": null
+              },
+              "conflictResolveTurns": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "example": null
               }
             },
             "required": [
               "harness",
               "model",
               "isolationMode",
-              "priority"
+              "priority",
+              "integrationRetries",
+              "conflictResolveTurns"
             ],
             "additionalProperties": false,
             "example": {
               "harness": null,
               "model": "opus-4.8",
               "isolationMode": null,
-              "priority": null
+              "priority": null,
+              "integrationRetries": null,
+              "conflictResolveTurns": null
             }
           },
           "summary": {
@@ -5597,6 +6306,509 @@
           "isolationMode",
           "baseBranch",
           "priority",
+          "integrationRetries",
+          "conflictResolveTurns",
+          "state",
+          "escalationReason",
+          "feedback",
+          "continuationChoice",
+          "origin",
+          "trackerRef",
+          "workflow",
+          "wayfinderType",
+          "mapRef",
+          "createdAt",
+          "updatedAt",
+          "dependsOn",
+          "dependents",
+          "blockedOnFailed",
+          "openBlockerCount",
+          "agentWorkable",
+          "humanOnly",
+          "overrides",
+          "summary",
+          "cost",
+          "url",
+          "mapTitle",
+          "branch",
+          "stat",
+          "runStartedAt",
+          "toolCount",
+          "runId",
+          "phase",
+          "contextTokens",
+          "contextWindow",
+          "skipReason",
+          "candidateRef"
+        ],
+        "additionalProperties": false
+      },
+      "TaskListRow": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "example": 4821
+          },
+          "workspaceId": {
+            "type": "number",
+            "example": 1
+          },
+          "harness": {
+            "type": "string",
+            "example": "claude"
+          },
+          "model": {
+            "type": "string",
+            "example": "sonnet-5"
+          },
+          "workingDir": {
+            "type": "string",
+            "example": "/home/dev/harmonic"
+          },
+          "isolationMode": {
+            "type": "string",
+            "example": "worktree"
+          },
+          "baseBranch": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "integration/epic-42"
+          },
+          "priority": {
+            "type": "string",
+            "example": "normal"
+          },
+          "integrationRetries": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "example": 5
+          },
+          "conflictResolveTurns": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "example": 2
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "ready",
+              "working",
+              "escalated",
+              "done",
+              "cancelled"
+            ],
+            "example": "working"
+          },
+          "escalationReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "feedback": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "continuationChoice": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "full",
+                  "condensed"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "origin": {
+            "type": "string",
+            "enum": [
+              "native",
+              "mirrored"
+            ],
+            "example": "native"
+          },
+          "trackerRef": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "workflow": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "wayfinder",
+                  "implement"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "wayfinderType": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "research",
+                  "prototype",
+                  "grilling",
+                  "task"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "mapRef": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "createdAt": {
+            "type": "number",
+            "example": 1784030400000
+          },
+          "updatedAt": {
+            "type": "number",
+            "example": 1784032260000
+          },
+          "dependsOn": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            },
+            "example": [
+              4818
+            ]
+          },
+          "dependents": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            },
+            "example": [
+              4830
+            ]
+          },
+          "blockedOnFailed": {
+            "type": "boolean",
+            "example": false
+          },
+          "openBlockerCount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "example": 1
+          },
+          "agentWorkable": {
+            "type": "boolean",
+            "example": false
+          },
+          "humanOnly": {
+            "type": "boolean",
+            "example": false
+          },
+          "overrides": {
+            "type": "object",
+            "properties": {
+              "harness": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "example": null
+              },
+              "model": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "example": "opus-4.8"
+              },
+              "isolationMode": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "example": null
+              },
+              "priority": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "example": null
+              },
+              "integrationRetries": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "example": null
+              },
+              "conflictResolveTurns": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "example": null
+              }
+            },
+            "required": [
+              "harness",
+              "model",
+              "isolationMode",
+              "priority",
+              "integrationRetries",
+              "conflictResolveTurns"
+            ],
+            "additionalProperties": false,
+            "example": {
+              "harness": null,
+              "model": "opus-4.8",
+              "isolationMode": null,
+              "priority": null,
+              "integrationRetries": null,
+              "conflictResolveTurns": null
+            }
+          },
+          "summary": {
+            "type": "string",
+            "example": "Add rate limiting to POST /api/tasks"
+          },
+          "cost": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Cost"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "https://github.com/mintopia/harmonic/issues/35"
+          },
+          "mapTitle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "Wayfinder"
+          },
+          "branch": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "agent/4821-rate-limiting"
+          },
+          "stat": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": " src/server/rate-limit.ts | 96 ++++++++++++++\n 1 file changed, 96 insertions(+)"
+          },
+          "runStartedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 1784032020000
+          },
+          "toolCount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 12
+          },
+          "runId": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 41
+          },
+          "phase": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "executing",
+                  "validating",
+                  "verifying",
+                  "merging",
+                  "terminal"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "verifying"
+          },
+          "contextTokens": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 48210
+          },
+          "contextWindow": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 200000
+          },
+          "skipReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "blocked-by #12"
+          },
+          "candidateRef": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "refs/harmonic/candidate/run-9137"
+          }
+        },
+        "required": [
+          "id",
+          "workspaceId",
+          "harness",
+          "model",
+          "workingDir",
+          "isolationMode",
+          "baseBranch",
+          "priority",
+          "integrationRetries",
+          "conflictResolveTurns",
           "state",
           "escalationReason",
           "feedback",
@@ -6496,6 +7708,28 @@
             ],
             "example": null
           },
+          "integrationRetries": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "conflictResolveTurns": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "maxConcurrentRuns": {
             "anyOf": [
               {
@@ -6529,7 +7763,7 @@
             ],
             "example": null
           },
-          "contextReuseThreshold": {
+          "contextReuseTokenLimit": {
             "anyOf": [
               {
                 "type": "number"
@@ -6838,10 +8072,12 @@
           "chatModel",
           "isolationMode",
           "priority",
+          "integrationRetries",
+          "conflictResolveTurns",
           "maxConcurrentRuns",
           "autoRunnerEnabled",
           "maxAttempts",
-          "contextReuseThreshold",
+          "contextReuseTokenLimit",
           "verificationCommand",
           "verificationCritic",
           "guardrailBudget",
@@ -7170,6 +8406,18 @@
                   "low"
                 ],
                 "example": "normal"
+              },
+              "integrationRetries": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991,
+                "example": 5
+              },
+              "conflictResolveTurns": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991,
+                "example": 2
               }
             },
             "additionalProperties": false
@@ -7215,11 +8463,11 @@
             "maximum": 9007199254740991,
             "example": 2
           },
-          "contextReuseThreshold": {
-            "type": "number",
+          "contextReuseTokenLimit": {
+            "type": "integer",
             "minimum": 0,
-            "maximum": 1,
-            "example": 0.2
+            "maximum": 9007199254740991,
+            "example": 200000
           },
           "drive": {
             "type": "object",
@@ -7250,7 +8498,7 @@
           },
           "agentReview": {
             "example": false,
-            "description": "Deprecated (#140): folded into verification.autoAccept; retained so a pre-upgrade client PATCHing it still applies non-exposing behaviour.",
+            "description": "Deprecated (#140): folded into verification.autoAccept; retained so a pre-upgrade client PATCHing it still merges non-exposing behaviour.",
             "type": "boolean"
           },
           "verification": {
@@ -7573,918 +8821,6 @@
           "entries"
         ],
         "additionalProperties": false
-      },
-      "TaskListRow": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "number",
-            "example": 4821
-          },
-          "workspaceId": {
-            "type": "number",
-            "example": 1
-          },
-          "harness": {
-            "type": "string",
-            "example": "claude"
-          },
-          "model": {
-            "type": "string",
-            "example": "sonnet-5"
-          },
-          "workingDir": {
-            "type": "string",
-            "example": "/home/dev/harmonic"
-          },
-          "isolationMode": {
-            "type": "string",
-            "example": "worktree"
-          },
-          "baseBranch": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": "integration/epic-42"
-          },
-          "priority": {
-            "type": "string",
-            "example": "normal"
-          },
-          "state": {
-            "type": "string",
-            "enum": [
-              "draft",
-              "ready",
-              "working",
-              "escalated",
-              "done",
-              "cancelled"
-            ],
-            "example": "working"
-          },
-          "escalationReason": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": null
-          },
-          "feedback": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": null
-          },
-          "continuationChoice": {
-            "anyOf": [
-              {
-                "type": "string",
-                "enum": [
-                  "full",
-                  "condensed"
-                ]
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": null
-          },
-          "origin": {
-            "type": "string",
-            "enum": [
-              "native",
-              "mirrored"
-            ],
-            "example": "native"
-          },
-          "trackerRef": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": null
-          },
-          "workflow": {
-            "anyOf": [
-              {
-                "type": "string",
-                "enum": [
-                  "wayfinder",
-                  "implement"
-                ]
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": null
-          },
-          "wayfinderType": {
-            "anyOf": [
-              {
-                "type": "string",
-                "enum": [
-                  "research",
-                  "prototype",
-                  "grilling",
-                  "task"
-                ]
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": null
-          },
-          "mapRef": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": null
-          },
-          "createdAt": {
-            "type": "number",
-            "example": 1784030400000
-          },
-          "updatedAt": {
-            "type": "number",
-            "example": 1784032260000
-          },
-          "dependsOn": {
-            "type": "array",
-            "items": {
-              "type": "number"
-            },
-            "example": [
-              4818
-            ]
-          },
-          "dependents": {
-            "type": "array",
-            "items": {
-              "type": "number"
-            },
-            "example": [
-              4830
-            ]
-          },
-          "blockedOnFailed": {
-            "type": "boolean",
-            "example": false
-          },
-          "openBlockerCount": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 9007199254740991,
-            "example": 1
-          },
-          "agentWorkable": {
-            "type": "boolean",
-            "example": false
-          },
-          "humanOnly": {
-            "type": "boolean",
-            "example": false
-          },
-          "overrides": {
-            "type": "object",
-            "properties": {
-              "harness": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "example": null
-              },
-              "model": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "example": "opus-4.8"
-              },
-              "isolationMode": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "example": null
-              },
-              "priority": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "example": null
-              }
-            },
-            "required": [
-              "harness",
-              "model",
-              "isolationMode",
-              "priority"
-            ],
-            "additionalProperties": false,
-            "example": {
-              "harness": null,
-              "model": "opus-4.8",
-              "isolationMode": null,
-              "priority": null
-            }
-          },
-          "summary": {
-            "type": "string",
-            "example": "Add rate limiting to POST /api/tasks"
-          },
-          "cost": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Cost"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "url": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": "https://github.com/mintopia/harmonic/issues/35"
-          },
-          "mapTitle": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": "Wayfinder"
-          },
-          "branch": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": "agent/4821-rate-limiting"
-          },
-          "stat": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": " src/server/rate-limit.ts | 96 ++++++++++++++\n 1 file changed, 96 insertions(+)"
-          },
-          "runStartedAt": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": 1784032020000
-          },
-          "toolCount": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": 12
-          },
-          "runId": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": 41
-          },
-          "phase": {
-            "anyOf": [
-              {
-                "type": "string",
-                "enum": [
-                  "executing",
-                  "validating",
-                  "verifying",
-                  "merging",
-                  "terminal"
-                ]
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": "verifying"
-          },
-          "contextTokens": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": 48210
-          },
-          "contextWindow": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": 200000
-          },
-          "skipReason": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": "blocked-by #12"
-          },
-          "candidateRef": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": "refs/harmonic/candidate/run-9137"
-          }
-        },
-        "required": [
-          "id",
-          "workspaceId",
-          "harness",
-          "model",
-          "workingDir",
-          "isolationMode",
-          "baseBranch",
-          "priority",
-          "state",
-          "escalationReason",
-          "feedback",
-          "continuationChoice",
-          "origin",
-          "trackerRef",
-          "workflow",
-          "wayfinderType",
-          "mapRef",
-          "createdAt",
-          "updatedAt",
-          "dependsOn",
-          "dependents",
-          "blockedOnFailed",
-          "openBlockerCount",
-          "agentWorkable",
-          "humanOnly",
-          "overrides",
-          "summary",
-          "cost",
-          "url",
-          "mapTitle",
-          "branch",
-          "stat",
-          "runStartedAt",
-          "toolCount",
-          "runId",
-          "phase",
-          "contextTokens",
-          "contextWindow",
-          "skipReason",
-          "candidateRef"
-        ],
-        "additionalProperties": false
-      },
-      "TaskListRowInput": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "number",
-            "example": 4821
-          },
-          "workspaceId": {
-            "type": "number",
-            "example": 1
-          },
-          "harness": {
-            "type": "string",
-            "example": "claude"
-          },
-          "model": {
-            "type": "string",
-            "example": "sonnet-5"
-          },
-          "workingDir": {
-            "type": "string",
-            "example": "/home/dev/harmonic"
-          },
-          "isolationMode": {
-            "type": "string",
-            "example": "worktree"
-          },
-          "baseBranch": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": "integration/epic-42"
-          },
-          "priority": {
-            "type": "string",
-            "example": "normal"
-          },
-          "state": {
-            "type": "string",
-            "enum": [
-              "draft",
-              "ready",
-              "working",
-              "escalated",
-              "done",
-              "cancelled"
-            ],
-            "example": "working"
-          },
-          "escalationReason": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": null
-          },
-          "feedback": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": null
-          },
-          "continuationChoice": {
-            "anyOf": [
-              {
-                "type": "string",
-                "enum": [
-                  "full",
-                  "condensed"
-                ]
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": null
-          },
-          "origin": {
-            "type": "string",
-            "enum": [
-              "native",
-              "mirrored"
-            ],
-            "example": "native"
-          },
-          "trackerRef": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": null
-          },
-          "workflow": {
-            "anyOf": [
-              {
-                "type": "string",
-                "enum": [
-                  "wayfinder",
-                  "implement"
-                ]
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": null
-          },
-          "wayfinderType": {
-            "anyOf": [
-              {
-                "type": "string",
-                "enum": [
-                  "research",
-                  "prototype",
-                  "grilling",
-                  "task"
-                ]
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": null
-          },
-          "mapRef": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": null
-          },
-          "createdAt": {
-            "type": "number",
-            "example": 1784030400000
-          },
-          "updatedAt": {
-            "type": "number",
-            "example": 1784032260000
-          },
-          "dependsOn": {
-            "type": "array",
-            "items": {
-              "type": "number"
-            },
-            "example": [
-              4818
-            ]
-          },
-          "dependents": {
-            "type": "array",
-            "items": {
-              "type": "number"
-            },
-            "example": [
-              4830
-            ]
-          },
-          "blockedOnFailed": {
-            "type": "boolean",
-            "example": false
-          },
-          "openBlockerCount": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 9007199254740991,
-            "example": 1
-          },
-          "agentWorkable": {
-            "type": "boolean",
-            "example": false
-          },
-          "humanOnly": {
-            "type": "boolean",
-            "example": false
-          },
-          "overrides": {
-            "type": "object",
-            "properties": {
-              "harness": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "example": null
-              },
-              "model": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "example": "opus-4.8"
-              },
-              "isolationMode": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "example": null
-              },
-              "priority": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "example": null
-              }
-            },
-            "required": [
-              "harness",
-              "model",
-              "isolationMode",
-              "priority"
-            ],
-            "example": {
-              "harness": null,
-              "model": "opus-4.8",
-              "isolationMode": null,
-              "priority": null
-            }
-          },
-          "summary": {
-            "type": "string",
-            "example": "Add rate limiting to POST /api/tasks"
-          },
-          "cost": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/CostInput"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "url": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": "https://github.com/mintopia/harmonic/issues/35"
-          },
-          "mapTitle": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": "Wayfinder"
-          },
-          "branch": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": "agent/4821-rate-limiting"
-          },
-          "stat": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": " src/server/rate-limit.ts | 96 ++++++++++++++\n 1 file changed, 96 insertions(+)"
-          },
-          "runStartedAt": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": 1784032020000
-          },
-          "toolCount": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": 12
-          },
-          "runId": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": 41
-          },
-          "phase": {
-            "anyOf": [
-              {
-                "type": "string",
-                "enum": [
-                  "executing",
-                  "validating",
-                  "verifying",
-                  "merging",
-                  "terminal"
-                ]
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": "verifying"
-          },
-          "contextTokens": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": 48210
-          },
-          "contextWindow": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": 200000
-          },
-          "skipReason": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": "blocked-by #12"
-          },
-          "candidateRef": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": "refs/harmonic/candidate/run-9137"
-          }
-        },
-        "required": [
-          "id",
-          "workspaceId",
-          "harness",
-          "model",
-          "workingDir",
-          "isolationMode",
-          "baseBranch",
-          "priority",
-          "state",
-          "escalationReason",
-          "feedback",
-          "continuationChoice",
-          "origin",
-          "trackerRef",
-          "workflow",
-          "wayfinderType",
-          "mapRef",
-          "createdAt",
-          "updatedAt",
-          "dependsOn",
-          "dependents",
-          "blockedOnFailed",
-          "openBlockerCount",
-          "agentWorkable",
-          "humanOnly",
-          "overrides",
-          "summary",
-          "cost",
-          "url",
-          "mapTitle",
-          "branch",
-          "stat",
-          "runStartedAt",
-          "toolCount",
-          "runId",
-          "phase",
-          "contextTokens",
-          "contextWindow",
-          "skipReason",
-          "candidateRef"
-        ]
       }
     }
   },
@@ -8548,6 +8884,18 @@
                       "normal",
                       "low"
                     ]
+                  },
+                  "integrationRetries": {
+                    "example": 5,
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                  },
+                  "conflictResolveTurns": {
+                    "example": 2,
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
                   },
                   "state": {
                     "example": "ready",
@@ -8892,6 +9240,32 @@
                       }
                     ]
                   },
+                  "integrationRetries": {
+                    "anyOf": [
+                      {
+                        "example": 5,
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "conflictResolveTurns": {
+                    "anyOf": [
+                      {
+                        "example": 2,
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "baseBranch": {
                     "anyOf": [
                       {
@@ -9179,7 +9553,7 @@
         "tags": [
           "Tasks"
         ],
-        "description": "Steer a running task: send an operator message to its active run. When the harness supports ACP mid-turn steering, the message is injected into the running turn immediately — pre-empting the current generation without cancelling it. Otherwise, or when the agent is parked between turns, the message is queued and delivered as a fresh prompt turn at the next turn boundary. Use it to redirect an agent that has gone off-track, or to nudge one that ended its turn and parked. Operator only.",
+        "description": "Steer a running task: send an operator message to its active run. When the harness supports ACP mid-turn steering, the message is injected into the running turn immediately — pre-empting the current generation without cancelling it. Otherwise, or when the agent is parked between turns, the message is queued and delivered as a fresh prompt turn at the next turn boundary. When no run is active but the task's last run left a still-warm, resumable session (an escalated task that ended without closure), the message continues that session in a fresh run — a follow-up in the same conversation. Use it to redirect an agent that has gone off-track, nudge one that ended its turn and parked, or continue one whose run just ended while its session is still warm. Operator only.",
         "requestBody": {
           "required": true,
           "content": {
@@ -9215,7 +9589,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The message was injected into the running turn, or queued for the next turn boundary, of the task's active run.",
+            "description": "The message was injected into the running turn or queued at the next boundary of the task's active run, or continued its last run's still-warm session in a fresh run.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9225,7 +9599,7 @@
             }
           },
           "409": {
-            "description": "The task has no active run to steer (it is not running here).",
+            "description": "The task has no active run to steer and no warm, resumable session to continue.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9419,7 +9793,7 @@
             }
           },
           "409": {
-            "description": "The task is not escalated, has no verified branch head to merge, or the merge failed (the detail says why); it stays escalated.",
+            "description": "The task is not escalated, has no verified branch head to merge, or the merging failed (the detail says why); it stays escalated.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9436,7 +9810,7 @@
         "tags": [
           "Tasks"
         ],
-        "description": "Reject an escalated ticket with guidance (ADR-0041): the guidance becomes feedback for the next Attempt, the attempt budget resets, and the loop resumes on the same ticket with a fresh Run cut from the base branch (the escalated Run's branch is retained as evidence until its Session retires). Human-only.",
+        "description": "Reject an escalated ticket with guidance (ADR-0041, amended by ADR-0048): the guidance becomes feedback for the next Attempt and the attempt budget resets. The ticket requeues to `ready` — the Auto-Runner starts the next Attempt when capacity frees; it is not force-started here unless `start: true` (the warm-Session \"start now\" override, which bypasses the capacity ceiling). The escalated Run's branch is retained as evidence until its Session retires. Human-only.",
         "requestBody": {
           "required": true,
           "content": {
@@ -9448,6 +9822,10 @@
                     "type": "string",
                     "minLength": 1,
                     "example": "The limiter is per-process; it needs to be shared across workers."
+                  },
+                  "start": {
+                    "example": false,
+                    "type": "boolean"
                   }
                 },
                 "required": [
@@ -9839,7 +10217,7 @@
         "tags": [
           "Tasks"
         ],
-        "description": "A chronological projection of the ticket lifecycle, verification, guardrail, operator, and merge event logs.",
+        "description": "A chronological projection of the ticket lifecycle, verification, guardrail, operator, and merging event logs.",
         "parameters": [
           {
             "schema": {
@@ -9914,7 +10292,7 @@
                               "escalation",
                               "operator-accept",
                               "operator-reject",
-                              "merge",
+                              "merging",
                               "fact"
                             ]
                           },
@@ -10577,10 +10955,6 @@
                             ],
                             "example": "verifying"
                           },
-                          "mutated": {
-                            "type": "boolean",
-                            "example": false
-                          },
                           "hasTranscript": {
                             "type": "boolean",
                             "example": false
@@ -10597,7 +10971,6 @@
                           "summary",
                           "output",
                           "phase",
-                          "mutated",
                           "hasTranscript"
                         ],
                         "additionalProperties": false
@@ -11256,7 +11629,7 @@
         "tags": [
           "Maps"
         ],
-        "description": "The derived Map rollup: every Map from the last tracker poll with its member Tasks and per-state counts, each stamped with its Workspace. `?workspaceId=` scopes to one Workspace's board (issue #45). Query-time (no table); empty when tracker mirroring is off or before the first poll. Reachable with a read-scoped API Key.",
+        "description": "The derived Map rollup: every Map from the last tracker poll with its member Tasks and per-state counts, each stamped with its Workspace. `?workspaceId=` scopes to one Workspace's board (issue #45). Searched (`q`, case-insensitive substring over the Map title) and paginated (`limit`/`offset`, with a `total`). Query-time (no table); empty when tracker mirroring is off or before the first poll. Reachable with a read-scoped API Key.",
         "parameters": [
           {
             "schema": {
@@ -11289,6 +11662,15 @@
             },
             "in": "query",
             "name": "offset",
+            "required": false
+          },
+          {
+            "schema": {
+              "example": "Wayfinder",
+              "type": "string"
+            },
+            "in": "query",
+            "name": "q",
             "required": false
           }
         ],
@@ -11695,6 +12077,32 @@
                       }
                     ]
                   },
+                  "integrationRetries": {
+                    "example": 5,
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "conflictResolveTurns": {
+                    "example": 2,
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "maxConcurrentRuns": {
                     "example": 2,
                     "anyOf": [
@@ -11732,13 +12140,13 @@
                       }
                     ]
                   },
-                  "contextReuseThreshold": {
-                    "example": 0.2,
+                  "contextReuseTokenLimit": {
+                    "example": 200000,
                     "anyOf": [
                       {
-                        "type": "number",
+                        "type": "integer",
                         "minimum": 0,
-                        "maximum": 1
+                        "maximum": 9007199254740991
                       },
                       {
                         "type": "null"
@@ -13366,13 +13774,27 @@
                             "low"
                           ],
                           "example": "normal"
+                        },
+                        "integrationRetries": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 9007199254740991,
+                          "example": 5
+                        },
+                        "conflictResolveTurns": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991,
+                          "example": 2
                         }
                       },
                       "required": [
                         "harness",
                         "workingDir",
                         "isolationMode",
-                        "priority"
+                        "priority",
+                        "integrationRetries",
+                        "conflictResolveTurns"
                       ],
                       "additionalProperties": false
                     },
@@ -13426,12 +13848,12 @@
                       "minimum": 1,
                       "maximum": 9007199254740991
                     },
-                    "contextReuseThreshold": {
-                      "default": 0.2,
-                      "example": 0.2,
-                      "type": "number",
+                    "contextReuseTokenLimit": {
+                      "default": 200000,
+                      "example": 200000,
+                      "type": "integer",
                       "minimum": 0,
-                      "maximum": 1
+                      "maximum": 9007199254740991
                     },
                     "drive": {
                       "type": "object",
@@ -13657,7 +14079,7 @@
                     "chat",
                     "autoRunner",
                     "maxAttempts",
-                    "contextReuseThreshold",
+                    "contextReuseTokenLimit",
                     "drive",
                     "taskPrompt",
                     "conversationIdleTimeoutMinutes",
@@ -13907,13 +14329,27 @@
                             "low"
                           ],
                           "example": "normal"
+                        },
+                        "integrationRetries": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 9007199254740991,
+                          "example": 5
+                        },
+                        "conflictResolveTurns": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991,
+                          "example": 2
                         }
                       },
                       "required": [
                         "harness",
                         "workingDir",
                         "isolationMode",
-                        "priority"
+                        "priority",
+                        "integrationRetries",
+                        "conflictResolveTurns"
                       ],
                       "additionalProperties": false
                     },
@@ -13967,12 +14403,12 @@
                       "minimum": 1,
                       "maximum": 9007199254740991
                     },
-                    "contextReuseThreshold": {
-                      "default": 0.2,
-                      "example": 0.2,
-                      "type": "number",
+                    "contextReuseTokenLimit": {
+                      "default": 200000,
+                      "example": 200000,
+                      "type": "integer",
                       "minimum": 0,
-                      "maximum": 1
+                      "maximum": 9007199254740991
                     },
                     "drive": {
                       "type": "object",
@@ -14198,7 +14634,7 @@
                     "chat",
                     "autoRunner",
                     "maxAttempts",
-                    "contextReuseThreshold",
+                    "contextReuseTokenLimit",
                     "drive",
                     "taskPrompt",
                     "conversationIdleTimeoutMinutes",
@@ -14423,13 +14859,27 @@
                           "low"
                         ],
                         "example": "normal"
+                      },
+                      "integrationRetries": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 9007199254740991,
+                        "example": 5
+                      },
+                      "conflictResolveTurns": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991,
+                        "example": 2
                       }
                     },
                     "required": [
                       "harness",
                       "workingDir",
                       "isolationMode",
-                      "priority"
+                      "priority",
+                      "integrationRetries",
+                      "conflictResolveTurns"
                     ]
                   },
                   "chat": {
@@ -14480,12 +14930,12 @@
                     "minimum": 1,
                     "maximum": 9007199254740991
                   },
-                  "contextReuseThreshold": {
-                    "default": 0.2,
-                    "example": 0.2,
-                    "type": "number",
+                  "contextReuseTokenLimit": {
+                    "default": 200000,
+                    "example": 200000,
+                    "type": "integer",
                     "minimum": 0,
-                    "maximum": 1
+                    "maximum": 9007199254740991
                   },
                   "drive": {
                     "default": {},
@@ -14904,13 +15354,27 @@
                             "low"
                           ],
                           "example": "normal"
+                        },
+                        "integrationRetries": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 9007199254740991,
+                          "example": 5
+                        },
+                        "conflictResolveTurns": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991,
+                          "example": 2
                         }
                       },
                       "required": [
                         "harness",
                         "workingDir",
                         "isolationMode",
-                        "priority"
+                        "priority",
+                        "integrationRetries",
+                        "conflictResolveTurns"
                       ],
                       "additionalProperties": false
                     },
@@ -14964,12 +15428,12 @@
                       "minimum": 1,
                       "maximum": 9007199254740991
                     },
-                    "contextReuseThreshold": {
-                      "default": 0.2,
-                      "example": 0.2,
-                      "type": "number",
+                    "contextReuseTokenLimit": {
+                      "default": 200000,
+                      "example": 200000,
+                      "type": "integer",
                       "minimum": 0,
-                      "maximum": 1
+                      "maximum": 9007199254740991
                     },
                     "drive": {
                       "type": "object",
@@ -15195,7 +15659,7 @@
                     "chat",
                     "autoRunner",
                     "maxAttempts",
-                    "contextReuseThreshold",
+                    "contextReuseTokenLimit",
                     "drive",
                     "taskPrompt",
                     "conversationIdleTimeoutMinutes",
@@ -17166,7 +17630,7 @@
         "tags": [
           "Epics"
         ],
-        "description": "Every derived Epic for a Workspace's last tracker poll scan (issue #167, ADR-0026), each folded with its member merge state, integration-branch tip, and whole-Epic integrate/verification state. Operator only.",
+        "description": "Every derived Epic for a Workspace's last tracker poll scan (issue #167, ADR-0026), each folded with its member merge state, integration-branch tip, and whole-Epic integrate/verification state. Searched (`q`, case-insensitive substring over the Epic title) and paginated (`limit`/`offset`, with a `total`). Operator only.",
         "parameters": [
           {
             "schema": {
@@ -17188,6 +17652,15 @@
             },
             "in": "query",
             "name": "offset",
+            "required": false
+          },
+          {
+            "schema": {
+              "example": "operator UI",
+              "type": "string"
+            },
+            "in": "query",
+            "name": "q",
             "required": false
           },
           {
