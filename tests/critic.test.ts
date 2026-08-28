@@ -1,5 +1,5 @@
 import { describe, it, expect, afterAll, afterEach } from 'vitest';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -123,6 +123,39 @@ describe('runCritic (issue #136)', () => {
       harness: 'claude',
       sessionId: null,
     });
+  });
+
+  it('given the base revision, drives the CANDIDATE checkout and reaps both worktrees (two-revision plumbing)', async () => {
+    const { repo, oid } = await makeCandidate('refs/harmonic/candidate/run-critic-two-rev');
+    // The candidate's parent is the fork point the critic gets as the base.
+    const baseOid = git(repo, 'rev-parse', `${oid}~1`);
+    let drivenCwd: string | null = null;
+    const drive: CriticHarnessDrive = {
+      run: async (req: CriticDriveRequest) => {
+        drivenCwd = req.cwd;
+        return { output: '{"verdict":"pass","summary":"ok"}', permissionRequests: [] };
+      },
+    };
+    const worktreePath = freshWorktreePath('harmonic-critic-wt-two-rev-');
+
+    const attempt = await runCritic({
+      repoDir: repo,
+      candidateOid: oid,
+      baseOid,
+      fields: FIELDS,
+      worktreePath,
+      critic: { prompt: 'Review the diff.', model: 'stub-model' },
+      harness: FAKE_HARNESS,
+      harnessId: 'claude',
+      drive,
+    });
+
+    expect(attempt.verdict).toBe('pass');
+    // The critic always reviews from the candidate checkout, never the base worktree.
+    expect(drivenCwd).toBe(worktreePath);
+    // Both disposable worktrees (candidate + `${path}-base`) are torn down.
+    expect(existsSync(worktreePath)).toBe(false);
+    expect(existsSync(`${worktreePath}-base`)).toBe(false);
   });
 
   it('resolves a critic transcript already flushed at the turn boundary, and returns the sessionId', async () => {

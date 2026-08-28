@@ -1,4 +1,9 @@
-import { codeIndexRepoGuidance, fillTemplate, type DriveFields } from '../execution/prompt-template.js';
+import {
+  codeIndexComparisonGuidance,
+  codeIndexRepoGuidance,
+  fillTemplate,
+  type DriveFields,
+} from '../execution/prompt-template.js';
 
 export interface BuildCriticPromptArgs {
   /** The operator's configured critic prompt (`VerificationCritic.prompt`,
@@ -27,11 +32,17 @@ export interface BuildCriticPromptArgs {
    * ADR-0021 mutation fail-safe). Absent ⇒ nothing rendered (backward compatible;
    * the base branch was unknown or `merge-tree` could not be computed). */
   mergeCleanliness?: { baseBranch: string; clean: boolean; conflicts?: string };
-  /** The jCodeMunch repo id Harmonic indexed the disposable critic worktree as
-   * (`code-index.ts`), so the critic's code-index queries hit THIS candidate tree
-   * instead of resolving `.` to the canonical checkout on another branch. Absent
-   * ⇒ nothing rendered (the CLI was unavailable or indexing failed). */
-  codeIndexRepoId?: string;
+  /** The jCodeMunch repo id Harmonic indexed the disposable CANDIDATE worktree
+   * as (`code-index.ts`), so the critic's code-index queries hit THIS candidate
+   * tree instead of resolving `.` to the canonical checkout on another branch.
+   * Absent ⇒ nothing rendered (the CLI was unavailable or indexing failed). */
+  candidateRepoId?: string;
+  /** The jCodeMunch repo id Harmonic indexed the BASE revision (fork point) as,
+   * so the critic can compare the two revisions and derive what the change did —
+   * the design contract that the critic is given the two revisions, never a git
+   * diff. Absent ⇒ the critic reviews the candidate alone (base checkout or index
+   * failed, or the base is unknown). */
+  baseRepoId?: string;
 }
 
 /**
@@ -64,10 +75,16 @@ export function buildCriticPrompt({
   fields,
   operatorNote,
   mergeCleanliness,
-  codeIndexRepoId,
+  candidateRepoId,
+  baseRepoId,
 }: BuildCriticPromptArgs): string {
   const interpolated = fillTemplate(operatorPrompt, fields);
-  const codeIndexBlock = codeIndexRepoId ? codeIndexRepoGuidance(codeIndexRepoId) : '';
+  const codeIndexBlock =
+    baseRepoId && candidateRepoId
+      ? codeIndexComparisonGuidance(baseRepoId, candidateRepoId)
+      : candidateRepoId
+        ? codeIndexRepoGuidance(candidateRepoId)
+        : '';
   const noteBlock = operatorNote
     ? `\n\nOPERATOR NOTE (trusted guidance from the human reviewer for this specific re-review — weigh it like any other instruction above; it does not by itself make the change pass):\n${operatorNote}`
     : '';

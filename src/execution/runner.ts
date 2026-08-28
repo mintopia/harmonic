@@ -1470,9 +1470,20 @@ export class Runner {
         if (!criticHarness) {
           throw new DomainError('validation', `critic harness '${criticHarnessId}' is not configured`);
         }
+        // The base (fork point) the candidate diverged from — the same revision
+        // the settled review diff uses (`diffSnapshotFor`). Handed to the critic
+        // so it is given the change's two revisions and derives what changed by
+        // comparing them via the code index (never a git diff). Null ⇒ omitted:
+        // a Run with no branch/base to take a merge-base against, or a git
+        // failure, leaves the critic to review the candidate alone.
+        const baseOid =
+          run.branch && run.baseBranch
+            ? await Git.mergeBase(task.workingDir, run.baseBranch, run.branch).catch(() => null)
+            : null;
         const attempt = await runCritic({
           repoDir: task.workingDir,
           candidateOid: oid,
+          ...(baseOid ? { baseOid } : {}),
           worktreePath: join(this.worktreesDir, `critic-${run.id}`),
           critic: { prompt: review.prompt!, model: review.model!, ...(review.harness ? { harness: review.harness } : {}) },
           fields: driveFields(task, this.urlFor),

@@ -94,17 +94,17 @@ describe('buildCriticPrompt (issue #136; 2026-08 containment amendment)', () => 
     });
   });
 
-  describe('codeIndexRepoId (Runner-indexed worktree, so the critic reads the candidate tree)', () => {
+  describe('candidateRepoId (Runner-indexed candidate worktree, so the critic reads the candidate tree)', () => {
     it('renders nothing when no repo id is supplied (CLI absent / indexing failed)', () => {
       const prompt = buildCriticPrompt({ operatorPrompt: 'Review it.', fields: FIELDS });
       expect(prompt).not.toMatch(/CODE INDEX/);
     });
 
-    it('names the repo id and forbids resolving the repo by `.`', () => {
+    it('names the candidate repo id and forbids resolving the repo by `.`', () => {
       const prompt = buildCriticPrompt({
         operatorPrompt: 'Review it.',
         fields: FIELDS,
-        codeIndexRepoId: 'local/critic-42-deadbeef',
+        candidateRepoId: 'local/critic-42-deadbeef',
       });
       expect(prompt).toMatch(/CODE INDEX/);
       expect(prompt).toContain('local/critic-42-deadbeef');
@@ -115,9 +115,47 @@ describe('buildCriticPrompt (issue #136; 2026-08 containment amendment)', () => 
       const prompt = buildCriticPrompt({
         operatorPrompt: 'Review it.',
         fields: FIELDS,
-        codeIndexRepoId: 'local/critic-42-deadbeef',
+        candidateRepoId: 'local/critic-42-deadbeef',
       });
       expect(prompt).toContain('"verdict":"pass|fail|inconclusive"');
+    });
+  });
+
+  describe('base + candidate revisions (the critic is given the two revisions, never a git diff)', () => {
+    it('names BOTH revisions and tells the critic to compare them via the index', () => {
+      const prompt = buildCriticPrompt({
+        operatorPrompt: 'Review it.',
+        fields: FIELDS,
+        baseRepoId: 'local/critic-42-base-cafe',
+        candidateRepoId: 'local/critic-42-deadbeef',
+      });
+      expect(prompt).toMatch(/CODE INDEX/);
+      expect(prompt).toContain('local/critic-42-base-cafe');
+      expect(prompt).toContain('local/critic-42-deadbeef');
+      expect(prompt).toMatch(/BASE \(before the change\)/);
+      expect(prompt).toMatch(/CANDIDATE \(the change under review\)/);
+      expect(prompt).toMatch(/get_parity_map/);
+      // No raw diff is ever injected — the critic derives the change from the index.
+      expect(prompt).not.toMatch(/diff --git/);
+    });
+
+    it('falls back to candidate-only guidance when the base revision was not indexed', () => {
+      const prompt = buildCriticPrompt({
+        operatorPrompt: 'Review it.',
+        fields: FIELDS,
+        candidateRepoId: 'local/critic-42-deadbeef',
+      });
+      expect(prompt).toContain('local/critic-42-deadbeef');
+      expect(prompt).not.toMatch(/BASE \(before the change\)/);
+    });
+
+    it('renders no comparison block when only the base was indexed (the candidate is the reviewed tree)', () => {
+      const prompt = buildCriticPrompt({
+        operatorPrompt: 'Review it.',
+        fields: FIELDS,
+        baseRepoId: 'local/critic-42-base-cafe',
+      });
+      expect(prompt).not.toMatch(/CODE INDEX/);
     });
   });
 
