@@ -120,6 +120,14 @@ export function WorkspaceSettingsPage({
   // the review harness repoints the model options to that harness's models.
   const reviewHarnessEff = (local.reviewHarness ?? config.verify.review.harness) || undefined;
 
+  // A review that resolves to enabled-without-a-prompt/model here can never run
+  // (ADR-0044 §F, issue #340): compute the resolved review (workspace ?? global)
+  // and flag it loudly, rather than letting the operator save a silent no-op.
+  const resolvedReviewEnabled = local.reviewEnabled ?? config.verify.review.enabled;
+  const resolvedReviewModel = local.reviewModel ?? config.verify.review.model;
+  const resolvedReviewPrompt = local.reviewPrompt ?? config.verify.review.prompt;
+  const reviewUnrunnable = Boolean(resolvedReviewEnabled) && !(resolvedReviewModel && resolvedReviewPrompt);
+
   return (
     <div>
       <div className="max-w-3xl">
@@ -547,6 +555,11 @@ export function WorkspaceSettingsPage({
           description="Commands run in order and stop at the first failure. Review runs only after they pass. This Workspace can override the global default."
         >
           <div className="flex flex-col gap-4 sm:max-w-md">
+            {reviewUnrunnable && (
+              <p className="rounded-sm bg-fail-tint px-2.5 py-2 text-small text-fail">
+                Review is enabled here but resolves to no {!resolvedReviewModel ? 'model' : 'prompt'} — it will be flagged unrunnable and never run. Set a review {!resolvedReviewModel ? 'model' : 'prompt'} or turn review off.
+              </p>
+            )}
             <div>
               <InheritField
                 label="Command verifier"

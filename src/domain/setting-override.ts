@@ -52,10 +52,16 @@ export function resolveCap(workspaceCap: number | null | undefined, machineCeili
   return Math.min(resolveScoped('maxConcurrentRuns', workspaceCap, machineCeiling), machineCeiling);
 }
 
+/** A resolved review, carrying the raw toggle (`requested`) alongside runnability
+ *  (`enabled`). When `requested` is true but `enabled` is false the review is
+ *  enabled-but-unrunnable: toggled on yet missing a resolved prompt or model, so
+ *  it can never run (ADR-0044 §F, issue #340). */
+export type ResolvedReview = VerificationReview & { requested: boolean };
+
 /** A Workspace's effective Verification verifiers, each null when unconfigured. */
 export type ResolvedVerifiers = {
   commands: VerificationCommand[];
-  review: VerificationReview;
+  review: ResolvedReview;
   /** Compatibility aliases during the Run-to-Attempt migration. */
   command: VerificationCommand | null;
   critic: VerificationCritic | null;
@@ -102,12 +108,18 @@ export function resolveVerifiers(
  * own registry-scoped `workspace ?? global` key — enabling review in a Workspace
  * flips one boolean while prompt/model/harness independently inherit. No sentinel:
  * "off" is just `reviewEnabled = false`.
+ *
+ * `requested` is the raw toggle (`reviewEnabled` resolved); `enabled` is
+ * runnability — `requested` AND a resolved prompt AND a resolved model. The two
+ * diverge when a Workspace turns review on but no prompt/model resolves from any
+ * layer: that review is enabled-but-unrunnable, not indistinguishable from off
+ * (ADR-0044 §F, issue #340).
  */
 function resolveReview(
   ws: Pick<WorkspaceRow, 'reviewEnabled' | 'reviewPrompt' | 'reviewModel' | 'reviewHarness'>,
   globalDefault: VerificationReview,
-): VerificationReview {
-  const enabledToggle = resolveScoped('reviewEnabled', ws.reviewEnabled, globalDefault.enabled);
+): ResolvedReview {
+  const requested = resolveScoped('reviewEnabled', ws.reviewEnabled, globalDefault.enabled);
   const prompt = resolveScoped('reviewPrompt', ws.reviewPrompt, globalDefault.prompt);
   const model = resolveScoped('reviewModel', ws.reviewModel, globalDefault.model);
   const harness = resolveScoped<VerificationReview['harness']>(
@@ -120,9 +132,10 @@ function resolveReview(
   // runnable review. Folding runnability into `enabled` defines it once here, so
   // the Runner, the `critic` alias, and the ADR-0042 status classification all
   // agree on whether the critic actually runs (issue #337).
-  const enabled = Boolean(enabledToggle && prompt && model);
+  const enabled = Boolean(requested && prompt && model);
   return {
     enabled,
+    requested,
     ...(prompt ? { prompt } : {}),
     ...(model ? { model } : {}),
     ...(harness ? { harness } : {}),

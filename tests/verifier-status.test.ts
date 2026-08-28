@@ -7,7 +7,7 @@ describe('verifierStatuses', () => {
       verifierStatuses({
         verifiers: {
           commands: [{ command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }],
-          review: { enabled: true, prompt: 'Review it.', model: 'stub-model' },
+          review: { enabled: true, requested: true, prompt: 'Review it.', model: 'stub-model' },
         },
         attempts: [
           { mechanism: 'command', seq: 1, verdict: 'fail' },
@@ -26,7 +26,7 @@ describe('verifierStatuses', () => {
       verifierStatuses({
         verifiers: {
           commands: [{ command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }],
-          review: { enabled: true, prompt: 'Review it.', model: 'stub-model' },
+          review: { enabled: true, requested: true, prompt: 'Review it.', model: 'stub-model' },
         },
         attempts: [],
       }),
@@ -39,12 +39,31 @@ describe('verifierStatuses', () => {
   it('keeps disabled verifier categories visible', () => {
     expect(
       verifierStatuses({
-        verifiers: { commands: [], review: { enabled: false } },
+        verifiers: { commands: [], review: { enabled: false, requested: false } },
         attempts: [],
       }),
     ).toEqual([
       { mechanism: 'command', state: 'disabled', reason: 'No command verifier is configured.' },
       { mechanism: 'critic', state: 'disabled', reason: 'Critic verification is disabled.' },
+    ]);
+  });
+
+  it('shows an enabled-but-unrunnable critic distinctly from disabled (ADR-0044 §F, issue #340)', () => {
+    expect(
+      verifierStatuses({
+        verifiers: {
+          commands: [],
+          review: { enabled: false, requested: true, prompt: 'x' },
+        },
+        attempts: [],
+      }),
+    ).toEqual([
+      { mechanism: 'command', state: 'disabled', reason: 'No command verifier is configured.' },
+      {
+        mechanism: 'critic',
+        state: 'unrunnable',
+        reason: 'Review is enabled but resolves to no model, so it cannot run. Set a review model or turn review off.',
+      },
     ]);
   });
 });

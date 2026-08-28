@@ -42,6 +42,7 @@ describe('attempt timeline model', () => {
     expect(verifierStatusTone('inconclusive')).toBe('failed');
     expect(verifierStatusTone('skipped')).toBe('neutral');
     expect(verifierStatusTone('disabled')).toBe('neutral');
+    expect(verifierStatusTone('unrunnable')).toBe('failed');
   });
 
   it('uses the latest attempt-level verification proof', () => {

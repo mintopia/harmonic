@@ -12,6 +12,7 @@ import {
   costCapMessage,
 } from '../../config.js';
 import { DomainError } from '../../domain/errors.js';
+import { resolveVerifiers } from '../../domain/setting-override.js';
 import { idParamsSchema, errorResponse } from '../schemas.js';
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
 
@@ -197,6 +198,31 @@ export async function workspaceRoutes(fastify: FastifyInstance): Promise<void> {
         const unpriced = unpricedModelsForCostCap(req.body.guardrailBudget, ctx.configStore.get());
         if (unpriced.length > 0) {
           throw new DomainError('validation', `guardrailBudget.costUsd: ${costCapMessage(unpriced)}`);
+        }
+      }
+      // A review override that resolves to enabled-without-a-model can never run
+      // (ADR-0044 §F, issue #340): block the save instead of letting the critic be
+      // silently skipped. Validate the *resolved* review — the patched Workspace over
+      // the current global. Field-pathed so the settings form surfaces it inline.
+      if (
+        req.body.reviewEnabled !== undefined ||
+        req.body.reviewPrompt !== undefined ||
+        req.body.reviewModel !== undefined ||
+        req.body.reviewHarness !== undefined
+      ) {
+        const current = await ctx.workspaces.get(req.params.id);
+        const merged = {
+          ...current,
+          reviewEnabled: req.body.reviewEnabled === undefined ? current.reviewEnabled : req.body.reviewEnabled,
+          reviewPrompt: req.body.reviewPrompt === undefined ? current.reviewPrompt : req.body.reviewPrompt,
+          reviewModel: req.body.reviewModel === undefined ? current.reviewModel : req.body.reviewModel,
+          reviewHarness: req.body.reviewHarness === undefined ? current.reviewHarness : req.body.reviewHarness,
+        };
+        const { review } = resolveVerifiers(merged, ctx.configStore.get());
+        if (review.requested && !review.enabled) {
+          const missing = !review.model ? 'reviewModel' : 'reviewPrompt';
+          const noun = missing === 'reviewModel' ? 'model' : 'prompt';
+          throw new DomainError('validation', `${missing}: review is enabled but resolves to no ${noun} — set one or turn review off`);
         }
       }
       const workspace = await ctx.workspaces.update(req.params.id, req.body);

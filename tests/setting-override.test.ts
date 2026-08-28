@@ -47,7 +47,7 @@ describe('Setting Override resolution (ADR-0012, issue #59)', () => {
         ),
       ).toEqual({
         commands: [],
-        review: { enabled: false },
+        review: { enabled: false, requested: false },
         command: null,
         critic: null,
       });
@@ -252,6 +252,32 @@ describe('Setting Override resolution (ADR-0012, issue #59)', () => {
       );
       expect(resolved.review.enabled).toBe(false);
       expect(resolved.critic).toBeNull();
+    });
+
+    it('surfaces enabled-but-unrunnable distinctly: reviewEnabled=true with no model anywhere (ADR-0044 §F, issue #340)', () => {
+      const config = { verify: { commands: [], review: { enabled: false } } };
+      const resolved = resolveVerifiers(
+        {
+          verificationCommand: null,
+          reviewEnabled: true,
+          reviewPrompt: null,
+          reviewModel: null,
+          reviewHarness: null,
+        },
+        config as any,
+      );
+      expect(resolved.review.enabled).toBe(false);
+      expect(resolved.review.requested).toBe(true);
+      expect(resolved.critic).toBeNull();
+    });
+
+    it('resolves requested to false when everything inherits from a disabled global (issue #340)', () => {
+      const config = { verify: { commands: [], review: { enabled: false } } };
+      const resolved = resolveVerifiers(
+        { verificationCommand: null, reviewEnabled: null, reviewPrompt: null, reviewModel: null, reviewHarness: null },
+        config as any,
+      );
+      expect(resolved.review.requested).toBe(false);
     });
   });
 

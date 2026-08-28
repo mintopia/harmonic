@@ -3,7 +3,7 @@ import type { ResolvedVerifiers } from './setting-override.js';
 import type { Verdict } from '../verification/critic-schema.js';
 
 /** The operator-facing state of one verifier category for a Run. */
-export type VerifierStatusState = 'passed' | 'failed' | 'inconclusive' | 'skipped' | 'disabled';
+export type VerifierStatusState = 'passed' | 'failed' | 'inconclusive' | 'skipped' | 'disabled' | 'unrunnable';
 
 /** A read-time reconciliation of configured verifiers and their recorded attempts. */
 export interface VerifierStatus {
@@ -54,6 +54,17 @@ export function verifierStatuses({
         mechanism,
         state: 'skipped',
         reason: `No ${mechanism} verification attempt was recorded for this run.`,
+      };
+    }
+    // The critic has a third case commands don't: toggled on but unrunnable —
+    // `reviewEnabled` resolved true yet no prompt/model resolved, so it was never
+    // going to run (ADR-0044 §F, issue #340). Distinct from plain 'disabled' so the
+    // operator sees the stuck toggle instead of a silent no-op.
+    if (mechanism === 'critic' && verifiers.review.requested) {
+      return {
+        mechanism,
+        state: 'unrunnable',
+        reason: 'Review is enabled but resolves to no model, so it cannot run. Set a review model or turn review off.',
       };
     }
     return {

@@ -180,6 +180,31 @@ describe('Workspace CRUD (ADR-0008, issue #41)', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
+  it('rejects a review override that resolves to enabled-without-a-model (ADR-0044 §F, issue #340)', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'harmonic-workspace-review-unrunnable-'));
+    const created = await server.api('POST', '/api/workspaces', { name: 'Unrunnable review', workingDir: dir });
+    expect(created.status).toBe(201);
+
+    // The global review is disabled with no model (test default), so toggling
+    // reviewEnabled alone resolves to enabled-but-unrunnable — blocked, not saved.
+    const rejected = await server.api('PATCH', `/api/workspaces/${created.body.id}`, { reviewEnabled: true });
+    expect(rejected.status).toBe(400);
+    expect(rejected.body.error.message).toContain('reviewModel');
+    // The rejected write didn't clobber the prior state.
+    expect((await server.api('GET', `/api/workspaces/${created.body.id}`)).body.reviewEnabled).toBeNull();
+
+    // Setting a resolvable prompt/model alongside the toggle succeeds.
+    const accepted = await server.api('PATCH', `/api/workspaces/${created.body.id}`, {
+      reviewEnabled: true,
+      reviewModel: 'claude-opus-5',
+      reviewPrompt: 'review it',
+    });
+    expect(accepted.status).toBe(200);
+    expect(accepted.body.reviewEnabled).toBe(true);
+    expect(accepted.body.reviewModel).toBe('claude-opus-5');
+    rmSync(dir, { recursive: true, force: true });
+  });
+
   it('round-trips per-Workspace guardrail overrides and rejects an unmeasurable cost cap (issue #166)', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'harmonic-workspace-guardrail-'));
     const created = await server.api('POST', '/api/workspaces', { name: 'Guarded', workingDir: dir });

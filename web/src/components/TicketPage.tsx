@@ -371,11 +371,17 @@ function Verification({ attempts, statuses, run }: { attempts: VerificationAttem
           <div key={status.mechanism} className="flex items-start gap-3">
             <span
               className={`mt-px grid size-[18px] shrink-0 place-items-center rounded-md ${
-                status.state === 'failed' ? 'bg-fail-tint text-fail' : status.state === 'passed' ? 'bg-merged-tint text-merged' : 'bg-raised text-muted'
+                status.state === 'failed' || status.state === 'unrunnable'
+                  ? 'bg-fail-tint text-fail'
+                  : status.state === 'passed'
+                    ? 'bg-merged-tint text-merged'
+                    : 'bg-raised text-muted'
               }`}
             >
               {status.state === 'failed' ? (
                 <span className="text-[11px] leading-none">✕</span>
+              ) : status.state === 'unrunnable' ? (
+                <span className="text-[11px] leading-none font-bold">!</span>
               ) : status.state === 'passed' ? (
                 <Icon name="check" className="size-3" />
               ) : (

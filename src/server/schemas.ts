@@ -69,7 +69,7 @@ export const attemptTaskSchema = z
 export const verifierStatusSchema = z
   .object({
     mechanism: z.enum(['command', 'critic']).meta({ example: 'critic' }),
-    state: z.enum(['passed', 'failed', 'inconclusive', 'skipped', 'disabled']).meta({ example: 'passed' }),
+    state: z.enum(['passed', 'failed', 'inconclusive', 'skipped', 'disabled', 'unrunnable']).meta({ example: 'passed' }),
     reason: z.string().nullable().meta({ example: null }),
   })
   .meta({ id: 'VerifierStatus' });

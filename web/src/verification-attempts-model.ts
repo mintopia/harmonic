@@ -62,6 +62,7 @@ export function criticUnavailableReason(
 ): string | null {
   if (hasTranscript) return null;
   if (state === 'disabled') return 'Critic disabled for this workspace.';
+  if (state === 'unrunnable') return 'Review is enabled but resolves to no model — it cannot run.';
   if (!hasAttempt) return 'Critic did not run.';
   return 'Critic session log was not captured.';
 }

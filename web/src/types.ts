@@ -84,7 +84,7 @@ export type VerificationMechanism = 'critic' | 'command';
 /** One verifier category's current read-time status, including categories that did not run. */
 export interface VerifierStatus {
   mechanism: VerificationMechanism;
-  state: 'passed' | 'failed' | 'inconclusive' | 'skipped' | 'disabled';
+  state: 'passed' | 'failed' | 'inconclusive' | 'skipped' | 'disabled' | 'unrunnable';
   reason: string | null;
 }
 
