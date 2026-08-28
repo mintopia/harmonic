@@ -324,22 +324,45 @@ describe('epic refresh corrective turn (issue #315)', () => {
     expect(git(repo, 'worktree', 'list').split('\n').filter(Boolean)).toHaveLength(1);
   });
 
-  it('no running member escalates with the conflict detail', async () => {
-    const runner = makeRunner(async () => {
-      throw new Error('no turn should run without a host member');
+  it('a finished Epic with no running member still resolves via the default harness', async () => {
+    const driveCalls: CriticDriveRequest[] = [];
+    const escalations: string[] = [];
+    const retryOutcomes: EpicRefreshOutcome[] = [];
+    const sharedTrain = train();
+    const runner = makeRunner(async (req) => {
+      driveCalls.push(req);
+      expect(git(req.cwd, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('epic/5');
+      expect(git(req.cwd, 'status', '--porcelain')).toContain('UU shared.txt');
+      writeFileSync(join(req.cwd, 'shared.txt'), 'resolved\n');
+      git(req.cwd, 'add', '-A');
+      git(req.cwd, 'commit', '--no-edit');
+    }, sharedTrain);
+    // No member is `working` — the Epic is done. The refresh must still run the
+    // corrective turn, borrowing the Workspace default harness/model.
+    git(repo, 'checkout', '--detach');
+
+    const target = { ref: 5, repoDir: repo, defaultBranch: 'develop' };
+    const coordinator: EpicRefreshCoordinator = new EpicRefreshCoordinator({
+      train: sharedTrain,
+      dispatchResolve: (t, detail) =>
+        runner.enqueueEpicRefreshResolution(t, detail, (_ref, reason) => { escalations.push(reason); }, async () => {
+          const outcome = await coordinator.refresh(t);
+          retryOutcomes.push(outcome);
+          return outcome;
+        }),
+      escalate: (_ref, reason) => { escalations.push(reason); },
     });
 
-    const outcome = await runner.enqueueEpicRefreshResolution(
-      { ref: 5, repoDir: repo, defaultBranch: 'develop' },
-      'both changed shared.txt',
-      () => {},
-      async () => {
-        throw new Error('retry must not run for a failed dispatch');
-      },
-    );
-    expect(outcome).toEqual({
-      status: 'escalated',
-      reason: 'no active Epic member is available to resolve refresh conflict for epic/5: both changed shared.txt',
-    });
+    await expect(coordinator.refresh(target)).resolves.toMatchObject({ status: 'resolving' });
+
+    await waitFor(async () => retryOutcomes.length === 1);
+    expect(retryOutcomes[0]).toMatchObject({ status: 'refreshed' });
+    expect(escalations).toEqual([]);
+    // The corrective turn ran on the default harness (no member to borrow from).
+    const cfg = defaultConfig();
+    expect(driveCalls).toHaveLength(1);
+    expect(driveCalls[0]!.harnessId).toBe(cfg.defaults.harness);
+    expect(driveCalls[0]!.model).toBe(cfg.harnesses[cfg.defaults.harness]!.defaultModel);
+    git(repo, 'merge-base', '--is-ancestor', 'develop', 'epic/5');
   });
 });

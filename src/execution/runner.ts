@@ -2051,8 +2051,9 @@ export class Runner {
    * integration branch: check `epic/<ref>` out into a dedicated worktree,
    * reproduce the conflicted merge of the default branch there (markers +
    * `MERGE_HEAD` left in place), and drive one agent turn against that
-   * worktree to resolve and commit it. A running member is still required —
-   * it supplies the harness/model the turn runs on; with none, escalate.
+   * worktree to resolve and commit it. A live member supplies the harness/model
+   * when one is running; when the Epic is finished (no `working` member) the
+   * Workspace default harness is used, so a completed Epic still refreshes.
    *
    * Called inside the coordinator's merge-train slot for `epic/<ref>`, so the
    * worktree + reproduction here are race-free against member merges, and
@@ -2079,14 +2080,21 @@ export class Runner {
       await escalate(target.ref, reason);
       return { status: 'escalated', reason };
     };
+    const config = this.getConfig();
+    // Prefer a live member's harness/model so the corrective turn runs on the
+    // same agent the Epic's work used. When the Epic is finished — every member
+    // done, so none is `working` — fall back to the Workspace's default harness:
+    // the turn runs standalone in the `epic/<ref>` worktree (no builder Session),
+    // so it needs *a* harness/model, not a member Run to host it. Without this a
+    // develop-advance conflict on a completed Epic wedged forever behind a silent
+    // recordRefreshBehind log (ADR-0046).
     const host = (await this.taskService.list({ state: 'working' })).find((task) => task.baseBranch === branch);
-    if (!host) {
-      return escalated(`no active Epic member is available to resolve refresh conflict for ${branch}: ${detail}`);
-    }
-    const harness = this.getConfig().harnesses[host.harness as keyof AppConfig['harnesses']];
+    const harnessId = host?.harness ?? config.defaults.harness;
+    const harness = config.harnesses[harnessId as keyof AppConfig['harnesses']];
     if (!harness) {
-      return escalated(`harness '${host.harness}' is not configured to run the refresh corrective turn for ${branch}: ${detail}`);
+      return escalated(`harness '${harnessId}' is not configured to run the refresh corrective turn for ${branch}: ${detail}`);
     }
+    const model = host?.model ?? harness.defaultModel;
 
     mkdirSync(this.worktreesDir, { recursive: true });
     const worktreePath = join(this.worktreesDir, `epic-refresh-${target.ref}`);
@@ -2114,8 +2122,8 @@ export class Runner {
         conflicted: !reproduced.ok,
         conflictDetail: reproduced.detail ?? detail,
         harness,
-        harnessId: host.harness,
-        model: host.model,
+        harnessId,
+        model,
       });
     void (this.mergeTrain ? this.mergeTrain.runOnIntegrationBranch(branch, turn) : turn())
       .then(() => retry())
