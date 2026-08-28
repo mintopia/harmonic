@@ -176,7 +176,8 @@ export const api = {
   continuationPreview: (id: number) => request<ContinuationPreview>('GET', `/api/tasks/${id}/continuation`),
   // The three escalation actions (ADR-0041), escalated tickets only.
   acceptTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/accept`),
-  rejectTask: (id: number, guidance: string) => request<Task>('POST', `/api/tasks/${id}/reject`, { guidance }),
+  rejectTask: (id: number, guidance: string, start = false) =>
+    request<Task>('POST', `/api/tasks/${id}/reject`, { guidance, start }),
   closeTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/close`),
   // Hard-delete (issue #162, ADR-0025): cascades the Task's Runs/history and
   // vanishes it from the board/graph via the `task_removed` WS broadcast

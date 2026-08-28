@@ -30,7 +30,7 @@ describe('EscalationService', () => {
   let runStore: RunStore;
   let settle: RunSettleCoordinator;
   let merging: MergeCoordinator;
-  let resumed: Array<{ taskId: number; guidance: string }>;
+  let resumed: Array<{ taskId: number; guidance: string; startNow: boolean }>;
   let cleaned: Array<{ taskId: number; runId: number | undefined }>;
   let effects: MergeEffectExec[];
   let service: EscalationService;
@@ -47,8 +47,8 @@ describe('EscalationService', () => {
     cleaned = [];
     effects = [];
     service = new EscalationService(runStore, tasks, merging, () => effects, {
-      resume: async (task, guidance) => {
-        resumed.push({ taskId: task.id, guidance });
+      resume: async (task, guidance, startNow) => {
+        resumed.push({ taskId: task.id, guidance, startNow });
       },
       cleanup: async (task, run) => {
         cleaned.push({ taskId: task.id, runId: run?.id });
@@ -128,11 +128,17 @@ describe('EscalationService', () => {
   });
 
   describe('reject with guidance', () => {
-    it('hands the trimmed guidance to the loop and nothing else', async () => {
+    it('hands the trimmed guidance to the loop and requeues without a forced start by default', async () => {
       const { task } = await escalated();
       await service.reject(task.id, '  use the shared limiter  ');
-      expect(resumed).toEqual([{ taskId: task.id, guidance: 'use the shared limiter' }]);
+      expect(resumed).toEqual([{ taskId: task.id, guidance: 'use the shared limiter', startNow: false }]);
       expect(cleaned).toEqual([]);
+    });
+
+    it('propagates the warm-Session "start now" override when requested', async () => {
+      const { task } = await escalated();
+      await service.reject(task.id, 'use the shared limiter', true);
+      expect(resumed).toEqual([{ taskId: task.id, guidance: 'use the shared limiter', startNow: true }]);
     });
 
     it('requires guidance (validation), and does not resume without it', async () => {

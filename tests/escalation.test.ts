@@ -85,10 +85,13 @@ describe('escalation: the three actions (direct mode)', () => {
     expect((await server.api('GET', `/api/tasks/${taskId}`)).body.state).toBe('escalated');
   });
 
-  it('Reject with guidance resumes the loop: the guidance is feedback and the budget resets', async () => {
+  it('Reject with start now resumes the loop: the guidance is feedback and the budget resets', async () => {
     const taskId = await runToEscalated();
+    // start:true is the warm-Session "start now" override (ADR-0048); without it a
+    // reject requeues to `ready` and, with the Auto-Runner off in tests, waits.
     const rejected = await server.api('POST', `/api/tasks/${taskId}/reject`, {
       guidance: 'Do not crash; write the CSV header first.',
+      start: true,
     });
     expect(rejected.status).toBe(200);
     // The loop resumed on the spot: a fresh Run is working (or, the scripted
@@ -116,6 +119,26 @@ describe('escalation: the three actions (direct mode)', () => {
     expect(runs[1].attempt).toBe(2);
     expect(runs[1].prompt).toContain('Do not crash; write the CSV header first.');
     expect(runs[1].prompt).toContain('crash-before-response'); // the original prompt is kept
+  });
+
+  it('Reject without start requeues to ready and records the guidance, but does not force-start (ADR-0048)', async () => {
+    const taskId = await runToEscalated();
+    const rejected = await server.api('POST', `/api/tasks/${taskId}/reject`, {
+      guidance: 'Do not crash; write the CSV header first.',
+    });
+    expect(rejected.status).toBe(200);
+    // Requeued, not force-started: with the Auto-Runner off in tests the ticket
+    // stays `ready` instead of stampeding into a fresh Run.
+    expect(rejected.body.state).toBe('ready');
+    // Give any (absent) auto-start a chance to fire, then confirm it did not.
+    await new Promise((r) => setTimeout(r, 50));
+    expect((await server.api('GET', `/api/tasks/${taskId}`)).body.state).toBe('ready');
+    const runs = (await server.api('GET', `/api/tasks/${taskId}/runs`)).body.runs;
+    expect(runs).toHaveLength(1); // only the original escalated Run; no new one
+    // The guidance is recorded as the next Attempt's feedback all the same.
+    expect((await timeline(taskId)).find((a) => a.number === 1)!.feedback).toBe(
+      'Do not crash; write the CSV header first.',
+    );
   });
 
   it('Reject without guidance is a validation error and changes nothing', async () => {

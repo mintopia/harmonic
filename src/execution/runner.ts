@@ -601,7 +601,7 @@ export class Runner {
    * branch (the escalated Run's branch stays as evidence until its Session
    * retires).
    */
-  async resumeWithGuidance(task: TaskRow, guidance: string): Promise<void> {
+  async resumeWithGuidance(task: TaskRow, guidance: string, startNow = false): Promise<void> {
     const run = (await this.runStore.listForTask(task.id)).at(-1);
     const escalated = (await this.attempts.listForTask(task.id)).findLast((attempt) => attempt.state === 'escalated');
     if (escalated) await this.attempts.setFeedback(escalated.id, guidance);
@@ -616,7 +616,10 @@ export class Runner {
     // The condensed section is composed at dispatch (from the prior Session), not
     // baked into the Task prompt, which must stay the operator's text plus feedback.
     await this.taskService.requeue(task.id, guidance, choice);
-    await this.start(task.id);
+    // Reject requeues to `ready`; the Auto-Runner picks it up when capacity frees
+    // (ADR-0048). Force-start now only for the warm-Session "start now" override,
+    // which deliberately bypasses the ceiling the way a manual Run does.
+    if (startNow) await this.start(task.id);
   }
 
   /**

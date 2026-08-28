@@ -9,6 +9,11 @@ self-heal, are corrected to **coexistence**. Those remain load-bearing (and are
 relied on by ADR-0042 and ADR-0046); only the double-booked attempt counter is
 unified onto the Attempt ledger. The rest of this ADR stands.
 
+Amended by: 0048-reject-requeues-without-forced-start.md — "Reject with guidance …
+loop resumes" is narrowed: Reject **requeues** to `ready` and never force-starts;
+the loop resumes by Auto-Runner capacity, or by an explicit operator "start now"
+when a warm Session is available to reuse. The rest of this ADR stands.
+
 ## Context
 
 The ticket/task workflow has grown three loop mechanisms at three granularities:

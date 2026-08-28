@@ -126,7 +126,7 @@ describe('run execution over ACP (direct mode)', () => {
     await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'escalated');
     const firstAttempts = (await server.api('GET', `/api/runs/${runId}`)).body.attempt;
 
-    const rejected = await server.api('POST', `/api/tasks/${taskId}/reject`, { guidance: 'try again' });
+    const rejected = await server.api('POST', `/api/tasks/${taskId}/reject`, { guidance: 'try again', start: true });
     expect(rejected.status).toBe(200);
 
     const second = await waitFor(async () => {

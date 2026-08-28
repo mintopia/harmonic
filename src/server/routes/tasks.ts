@@ -25,7 +25,13 @@ import { listResponse, paginate, paginationQuerySchema } from '../pagination.js'
 
 /** The operator's guidance on an escalated ticket (ADR-0041 "Reject with guidance"): becomes the next Attempt's feedback. */
 const guidanceExample = 'The limiter is per-process; it needs to be shared across workers.';
-const rejectInputSchema = z.object({ guidance: z.string().trim().min(1).meta({ example: guidanceExample }) });
+const rejectInputSchema = z.object({
+  guidance: z.string().trim().min(1).meta({ example: guidanceExample }),
+  /** ADR-0048: force-start the next Attempt now (the warm-Session "start now"
+   * override, bypassing Auto-Runner capacity). Omitted/false requeues to `ready`
+   * and lets capacity pick it up. */
+  start: z.boolean().optional().meta({ example: false }),
+});
 const cancelInputSchema = z.object({ withDependents: z.boolean().optional().meta({ example: true }) }).nullish();
 /** The reject dialog's continuation preview (issue #170, deterministic since
  * #311): what the continuation rule will do with this Task's live Session, so
@@ -679,7 +685,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       schema: {
         tags: ['Tasks'],
         description:
-          'Reject an escalated ticket with guidance (ADR-0041): the guidance becomes feedback for the next Attempt, the attempt budget resets, and the loop resumes on the same ticket with a fresh Run cut from the base branch (the escalated Run\'s branch is retained as evidence until its Session retires). Human-only.',
+          'Reject an escalated ticket with guidance (ADR-0041, amended by ADR-0048): the guidance becomes feedback for the next Attempt and the attempt budget resets. The ticket requeues to `ready` — the Auto-Runner starts the next Attempt when capacity frees; it is not force-started here unless `start: true` (the warm-Session "start now" override, which bypasses the capacity ceiling). The escalated Run\'s branch is retained as evidence until its Session retires. Human-only.',
         params: idParamsSchema,
         body: rejectInputSchema,
         response: {
@@ -689,7 +695,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
         },
       },
     },
-    async (req) => await withDeps(await ctx.escalation.reject(req.params.id, req.body.guidance)),
+    async (req) => await withDeps(await ctx.escalation.reject(req.params.id, req.body.guidance, req.body.start ?? false)),
   );
 
   app.post(

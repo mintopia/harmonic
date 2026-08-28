@@ -16,8 +16,10 @@ export type MergeEffectsHook = (task: TaskRow, run: RunRow) => MergeEffectExec[]
 
 export interface EscalationHooks {
   /** Resume the Attempt loop with the operator's guidance (Reject). Owns the
-   * attempt bookkeeping, the requeue, and the fresh Run. */
-  resume: (task: TaskRow, guidance: string) => Promise<void>;
+   * attempt bookkeeping and the requeue. Starts the next Attempt immediately
+   * only when `startNow` is set (the warm-Session "start now" override,
+   * ADR-0048); otherwise the requeued Ticket waits for Auto-Runner capacity. */
+  resume: (task: TaskRow, guidance: string, startNow: boolean) => Promise<void>;
   /** Remove the ticket branch and worktree, and close the tracker issue (Close). Best-effort. */
   cleanup: (task: TaskRow, run: RunRow | undefined) => Promise<void>;
 }
@@ -28,7 +30,9 @@ export interface EscalationHooks {
  * `MergeCoordinator` (so the disposition is race-safe against a concurrent
  * cancel and outranks the retained `escalate` fact) and the success path
  * continues — merge, close the ticket, clean up. Reject with guidance records
- * the guidance as feedback, resets the attempt budget, and resumes the loop.
+ * the guidance as feedback, resets the attempt budget, and requeues the ticket
+ * to `ready` (ADR-0048): the loop resumes by Auto-Runner capacity, or at once
+ * when the caller passes `startNow` (the warm-Session "start now" override).
  * Close cancels the ticket and cleans up. Nothing else moves a ticket out of
  * `escalated`.
  */
@@ -68,11 +72,11 @@ export class EscalationService {
     return await this.taskService.get(taskId);
   }
 
-  async reject(taskId: number, guidance: string): Promise<TaskRow> {
+  async reject(taskId: number, guidance: string, startNow = false): Promise<TaskRow> {
     const trimmed = guidance.trim();
     if (!trimmed) throw new DomainError('validation', 'guidance is required to reject an escalated task');
     const { task } = await this.escalated(taskId);
-    await this.hooks.resume(task, trimmed);
+    await this.hooks.resume(task, trimmed, startNow);
     return await this.taskService.get(taskId);
   }
 
