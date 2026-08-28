@@ -109,9 +109,14 @@ describe('merging freshness gate (issue #313, ADR-0041)', () => {
   // The fake critic's verdict and its per-Run invocation count (ADR-0046): the
   // critic must review the candidate ONCE, never per rebase re-entry.
   let criticCalls = 0;
+  // Side effect fired inside the critic's review, null by default so the sibling
+  // tests are untouched: a critic-only Task advances its base here to reproduce
+  // the verify→merge window without a deterministic verifier moving it.
+  let criticSideEffect: (() => void) | null = null;
   const criticDrive: CriticHarnessDrive = {
     run: async () => {
       criticCalls += 1;
+      criticSideEffect?.();
       return { output: JSON.stringify({ verdict: 'pass', summary: 'looks correct' }), permissionRequests: [] };
     },
   };
@@ -490,5 +495,66 @@ describe('merging freshness gate (issue #313, ADR-0041)', () => {
     expect(verifications.filter((e) => e.mechanism === 'command')).toHaveLength(2);
     expect(verifications.filter((e) => e.mechanism === 'critic')).toHaveLength(1);
     expect(criticCalls).toBe(1);
+  });
+
+  // Regression guard for the Task 345 spin: a critic-only Task (no deterministic
+  // verifier) whose base advances once. On re-entry the critic is disabled, so
+  // nothing re-blesses the replayed tree — before the carry-forward fix the
+  // freshness gate stayed frozen on the pre-rebase verified-head and spun to the
+  // re-entry cap, escalating with a bogus "base kept advancing". It must instead
+  // carry the prior pass onto the rebased tip and merge in a single re-entry.
+  it('critic-only Task whose base advances once during review: carry the prior pass onto the rebased tip and merge, never spin to the re-entry cap', async () => {
+    const repo = makeRepo();
+    criticCalls = 0;
+    let moved = false;
+    criticSideEffect = () => {
+      if (moved) return;
+      moved = true;
+      git(repo, 'commit', '--allow-empty', '-m', 'base advances during critic review');
+    };
+    try {
+      await server.app.ctx.workspaces.update(wsId, {
+        workingDir: repo,
+        verificationCommand: { off: true }, // zero deterministic verifiers: critic only
+        verificationCritic: verificationCriticSchema.parse({ prompt: 'Review the diff.', model: 'stub-model' }),
+      });
+      await server.app.ctx.configStore.update({
+        drive: { prompt: JSON.stringify({ writeFiles: { 'impl-{ref}.txt': 'implementation {ref}\n' }, mcpFinish: true }) },
+      });
+
+      const { taskId, runId, trackerRef } = await launchAfk();
+      const task = await waitFor(async () => {
+        const t = await server.app.ctx.tasks.get(taskId);
+        if (t.state === 'escalated') throw new Error(`escalated instead of merging: ${(await server.app.ctx.runs.get(runId)).reason}`);
+        return t.state === 'done' ? t : undefined;
+      });
+      expect(task.state).toBe('done');
+      expect(moved).toBe(true); // the base really moved during the one critic review
+
+      // Converged on Attempt 1; the critic reviewed the candidate exactly once
+      // (the re-entry disables it) and the rebased tip merged as a fast-forward.
+      const run = await server.app.ctx.runs.get(runId);
+      expect(run.attempt).toBe(1);
+      expect(criticCalls).toBe(1);
+      expect(git(repo, 'log', '--merges', 'main')).toBe('');
+      expect(git(repo, 'show', `main:impl-${trackerRef}.txt`)).toBe(`implementation ${trackerRef}`);
+      expect(run.candidateOid).toBe(git(repo, 'rev-parse', 'main')); // the merge asserted the rebased SHA
+
+      const events = await lifecycle(runId);
+      expect(events.filter((e) => e.event === 'rebase-required')).toEqual([
+        { event: 'rebase-required', reason: "base 'main' advanced after verification" },
+      ]);
+      expect(events.map((e) => e.event)).not.toContain('escalated');
+
+      // The carry-forward recorded a fresh verified-head for the rebased tip, so
+      // the gate converged in a single re-entry instead of spinning to the cap.
+      const facts = await server.app.ctx.asyncDb.read((d) => d.select().from(runFacts).where(eq(runFacts.runId, runId)).all());
+      const verifiedHeads = facts.filter((f) => f.type === 'verified-head').map((f) => JSON.parse(f.payload).sha as string);
+      expect(verifiedHeads).toContain(run.candidateOid);
+      const movingBaseFacts = facts.filter((f) => f.type === 'moving-base');
+      expect(JSON.parse(movingBaseFacts.at(-1)!.payload)).toEqual({ retries: 1 });
+    } finally {
+      criticSideEffect = null;
+    }
   });
 });
