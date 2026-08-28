@@ -26,6 +26,9 @@ Before the final test run, run `npm run typecheck` and `npm run lint`.
 Run `npm test` once when the work is complete. It starts ACP harnesses and
 covers shared-lock integration cases, so it is slower than a focused test.
 
+When running tests, run them sequentially, not in parallel. Running them in
+parallel risks killing the server running the tests.
+
 ### Branching and rebasing
 
 Work only on the branch you start on. The integration line is `develop` and the
