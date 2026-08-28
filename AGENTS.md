@@ -29,6 +29,9 @@ covers shared-lock integration cases, so it is slower than a focused test.
 When running tests, run them sequentially, not in parallel. Running them in
 parallel risks killing the server running the tests.
 
+Run the full suite only when work is completed. If tests fail, fix the issue
+and re-run just those tests.
+
 ### Branching and rebasing
 
 Work only on the branch you start on. The integration line is `develop` and the
