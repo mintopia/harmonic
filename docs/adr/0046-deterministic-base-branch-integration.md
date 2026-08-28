@@ -134,6 +134,47 @@ which is member-gated and where an irreconcilable drift genuinely surfaces. The
 one bounded corrective turn (issue #315) still runs; only its loud, sticky,
 never-releasing escalation is removed.
 
+## Amendment (2026-08-28): the builder worktree is per-Task, reused across Attempts
+
+The original decision left the builder worktree keyed on the **Run** — a
+`run-<runId>` checkout on a `harmonic/task-<id>-run-<attempt>` branch — and
+`resumeWithGuidance` cut a **fresh Run from the base branch** on every
+reject/escalate, stranding the prior candidate as "evidence until its Session
+retires". In practice this meant a subsequent Attempt started from base and redid
+the work from scratch: a critic asking for a small change, or an operator
+rejecting with guidance, threw away the whole working copy. That was never the
+intended workflow. The worktree is created when a Task is started and merged back
+when the Task is done; nothing ever said it should be reset or recreated between
+Attempts.
+
+So the builder worktree is now **per-Task**: one checkout at
+`task-<id>` on a stable `harmonic/task-<id>` branch, created on the first Attempt
+and **reused by every subsequent Attempt** — each Attempt iterates on the prior
+candidate in the same working copy. The first Attempt cuts the branch from the
+resolved base (develop, or `epic/<ref>` for an Epic member); later Attempts reuse
+the existing worktree, or re-check-out the retained branch if the worktree was
+reclaimed. Resetting to base is something the operator asks for in the guidance,
+never the default. The Work Context lease key follows the same per-Task path +
+branch, and only one Run of a Task is ever active, so the shared key never
+double-admits.
+
+**Worktree teardown ownership moves from the Session to the Task.** Removal was
+owned by Session retirement (issue #148) under a 24 h retention TTL — correct when
+a worktree was per-Attempt evidence, but wrong for a checkout shared across
+Attempts, which that timer would reap mid-Task. The retention TTL is now **null by
+default**: a non-merge ending leaves the Session `idle` with **no deadline**
+(reason `task-active`), so the worktree is retained until the Task reaches a
+terminal disposition. Merge (`merged`) and cancel/Close (`operator-disposition`)
+remain the sole removers — i.e. the worktree is removed only at Task done. The
+sweep machinery survives for legacy idle rows and can be re-armed by configuring a
+TTL, but is off by default.
+
+Consequences: a near-miss rejection resumes the prior work instead of paying a
+full redo; an escalated Task holds its worktree until an operator acts, rather
+than losing it to a 24 h timer (the orphan-worktree reconciler and operator Close
+are the backstops for a truly abandoned Task). Epic members are unchanged — they
+still fork off `epic/<ref>` on the first Attempt and merge through the train.
+
 ## Supersedes
 
 None. Refines ADR-0041's landing-freshness gate and preserves ADR-0043

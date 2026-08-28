@@ -200,13 +200,15 @@ describe('escalation actions on a worktree ticket (ADR-0041)', () => {
       expect(attempts[1]!.feedback).toBe('The timeout is intentional; see the linked ticket.');
 
       // The same ticket, a fresh Run for the resumed loop — not a detached
-      // re-attempt task. The new Run cuts its own branch from the base; the
-      // escalated Run's branch stays as evidence until its Session retires.
+      // re-attempt task. The new Run reuses the Task's existing worktree and
+      // branch (ADR-0046): the next Attempt resumes the prior candidate in the
+      // same working copy rather than cutting a fresh branch from the base.
       const runs = (await server.api('GET', `/api/tasks/${taskId}/runs`)).body.runs;
       expect(runs).toHaveLength(2);
       expect(runs[1].attempt).toBe(3);
       expect(runs[1].prompt).toContain('The timeout is intentional');
-      expect(runs[1].branch).toBe(`harmonic/task-${taskId}-run-3`);
+      expect(branch).toBe(`harmonic/task-${taskId}`); // per-Task, no -run-<attempt> suffix
+      expect(runs[1].branch).toBe(branch); // same working copy across Attempts
       expect(runs[0].branch).toBe(branch);
     });
 

@@ -352,11 +352,11 @@ export const Git = {
     ),
 
   /**
-   * Add a worktree that checks out an EXISTING branch (no `-b`). A self-heal
-   * turn (issue #137) resumes the Run's prior work on its
-   * `harmonic/task-<id>-run-<attempt>` branch, which already exists from the
-   * first turn's finalize commit — {@link addWorktree}'s create-only `-b` form
-   * would fail on it.
+   * Add a worktree that checks out an EXISTING branch (no `-b`). Used to resume
+   * work on the Task's `harmonic/task-<id>` branch when its worktree was
+   * reclaimed but the branch survives (a self-heal turn, issue #137, or a later
+   * Attempt reusing the retained branch, ADR-0046) — {@link addWorktree}'s
+   * create-only `-b` form would fail on an existing branch.
    */
   addWorktreeCheckout: (dir: string, worktreePath: string, branch: string) =>
     withRepoLock(dir, () => git(dir, 'worktree', 'add', worktreePath, branch)),

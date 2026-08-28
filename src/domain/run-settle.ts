@@ -165,10 +165,10 @@ export class RunSettleCoordinator {
   /**
    * Map the winning disposition to the retirement cause a Session needs (issue
    * #148): an operator cancel retires immediately; any `completed` Run merged
-   * (the phase machine only completes via merging); every other ending
-   * (escalate, guardrail-trip, process-death) is retained
-   * under the retention-TTL backstop — an escalated ticket's branch is the
-   * evidence its Accept merges.
+   * (the phase machine only completes via merging); every other ending (escalate,
+   * guardrail-trip, process-death) retains the Task's worktree until its terminal
+   * disposition (ADR-0046) — the next Attempt resumes in it, and an escalated
+   * ticket's branch is the candidate its Accept merges.
    */
   private retirementCause(disposition: Disposition | null, winner: SettleProjection): RetirementCause {
     if (disposition === 'operator-cancel') return 'operator-cancel';

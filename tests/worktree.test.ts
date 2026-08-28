@@ -55,7 +55,7 @@ describe('worktree isolation mode', () => {
     const { taskId, runId } = await runWorktreeTask(repo, { 'feature.txt': 'made by agent\n' });
 
     const run = (await server.api('GET', `/api/runs/${runId}`)).body;
-    expect(run.branch).toBe(`harmonic/task-${taskId}-run-1`);
+    expect(run.branch).toBe(`harmonic/task-${taskId}`);
     expect(run.baseBranch).toBe('main');
 
     // The branch exists and carries the file; the checkout was never touched.
@@ -133,7 +133,7 @@ describe('worktree isolation mode', () => {
     );
 
     const run = (await server.api('GET', `/api/runs/${runId}`)).body;
-    expect(run.branch).toBe(`harmonic/task-${taskId}-run-1`);
+    expect(run.branch).toBe(`harmonic/task-${taskId}`);
     // The explicit base is persisted on the run, not the resolved-from-current default.
     expect(run.baseBranch).toBe('feature-base');
     // Proof of the fork point: the run branch carries feature-base's marker
@@ -211,7 +211,7 @@ describe('worktree isolation mode', () => {
 
     const diff = await server.api('GET', `/api/runs/${runId}/diff`);
     expect(diff.status).toBe(200);
-    expect(diff.body.branch).toBe(`harmonic/task-${(await server.api('GET', `/api/runs/${runId}`)).body.taskId}-run-1`);
+    expect(diff.body.branch).toBe(`harmonic/task-${(await server.api("GET", `/api/runs/${runId}`)).body.taskId}`);
     expect(diff.body.stat).toContain('feature.txt');
   });
 
@@ -244,7 +244,7 @@ describe('worktree isolation mode', () => {
     // clobbered another mid-mutation.
     for (const { taskId, runId } of results) {
       const run = (await server.api('GET', `/api/runs/${runId}`)).body;
-      expect(run.branch).toBe(`harmonic/task-${taskId}-run-1`);
+      expect(run.branch).toBe(`harmonic/task-${taskId}`);
       expect(git(repo, 'branch', '--list', run.branch)).toContain(run.branch);
     }
     expect(git(repo, 'show', `${(await server.api('GET', `/api/runs/${results[0].runId}`)).body.branch}:a.txt`)).toBe('A');
@@ -262,9 +262,9 @@ describe('worktree isolation mode', () => {
 
   it('two worktree Runs on the same base repo both proceed — distinct {path,branch} keys admit both (issue #119)', async () => {
     const repo = makeRepo();
-    // Same base repo, both worktree mode: each Run gets its own worktree path
-    // (`run-<runId>`) and branch (`harmonic/task-<id>-run-<attempt>`), so the
-    // Work Context lease key is distinct per Run — worktree mode is genuinely
+    // Same base repo, different Tasks, both worktree mode: each Task gets its own
+    // worktree path (`task-<id>`) and branch (`harmonic/task-<id>`), so the Work
+    // Context lease key is distinct per Task — worktree mode is genuinely
     // concurrent-safe here, unlike direct mode's single shared checkout
     // (ADR-0022's deliberate asymmetry).
     const [a, b] = await Promise.all([
@@ -322,7 +322,7 @@ describe('worktree isolation mode', () => {
     expect(git(repo, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('HEAD');
     expect(git(repo, 'status', '--porcelain')).toBe('');
     expect(git(repo, 'worktree', 'list').split('\n')).toHaveLength(worktreesBefore);
-    expect(git(repo, 'branch', '--list', `harmonic/task-${created.body.id}-run-*`)).toBe('');
+    expect(git(repo, 'branch', '--list', `harmonic/task-${created.body.id}`)).toBe('');
 
     // The Task is handed back to a human (escalated), not silently failed.
     const task = (await server.api('GET', `/api/tasks/${created.body.id}`)).body;
@@ -380,7 +380,7 @@ describe('worktree isolation mode', () => {
 
     // The base repo is untouched: no worktree added, no run branch forged.
     expect(git(repo, 'worktree', 'list').split('\n')).toHaveLength(worktreesBefore);
-    expect(git(repo, 'branch', '--list', `harmonic/task-${created.body.id}-run-*`)).toBe('');
+    expect(git(repo, 'branch', '--list', `harmonic/task-${created.body.id}`)).toBe('');
   });
 
   it('an Epic member (mapRef) never forks off the current branch: an unresolved epic base re-queues instead (issue #334)', async () => {
@@ -417,7 +417,7 @@ describe('worktree isolation mode', () => {
     expect(runs[0].baseBranch ?? null).toBeNull(); // never resolved to main
     // Base repo untouched: no worktree, no run branch forged off main.
     expect(git(repo, 'worktree', 'list').split('\n')).toHaveLength(worktreesBefore);
-    expect(git(repo, 'branch', '--list', `harmonic/task-${created.body.id}-run-*`)).toBe('');
+    expect(git(repo, 'branch', '--list', `harmonic/task-${created.body.id}`)).toBe('');
   });
 });
 

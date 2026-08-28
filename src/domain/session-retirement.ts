@@ -3,11 +3,13 @@ import type { SessionStatus, SessionRetireReason } from '../db/schema.js';
 /**
  * Session retirement decision (issue #148, reliability-design Unit C).
  *
- * **Session retirement is the sole owner of builder-worktree removal.** A
- * worktree Session's checkout is retained through the human-rejection window (so
- * a reject-and-continue merges in the same workspace) and its builder worktree is
- * removed **only** at retirement — never at `finalizeWorkspace` / reaching
- * `terminal` (reliability-design §0.2). This module is the pure decision half of
+ * **Session retirement is the sole owner of builder-worktree removal**, and the
+ * builder worktree is per-Task (ADR-0046): one checkout, reused by every Attempt,
+ * removed **only** when the Task reaches a terminal disposition — merge or cancel
+ * — never at `finalizeWorkspace` / reaching `terminal`, and never on a timer by
+ * default. A non-merge ending (fail / escalate / reject) leaves the Session idle
+ * with no deadline so the next Attempt resumes in the same working copy. This
+ * module is the pure decision half of
  * that policy: given the cause of a Run's terminal settle it says whether the
  * Run's Session should retire *now* or go *idle* under a retention deadline — no
  * database, no clock, no git, so the deadline policy and the legal state graph
@@ -26,19 +28,22 @@ import type { SessionStatus, SessionRetireReason } from '../db/schema.js';
  * Tunable retention deadlines (issue #148). Cost/UX estimates, not correctness
  * gates — a retained worktree is only ever *evidence* + a *warm continuation
  * surface*, so these bound how long an idle Session may keep its worktree before
- * the sweep reclaims it, and are deliberately generous.
+ * the sweep reclaims it.
  */
 export interface RetentionConfig {
-  /** Backstop retention for any other non-merge ending (a failed/escalated
-   * Run whose git state is evidence): retained this long for diagnosis, then
-   * swept (`retention-ttl`) so no idle Session keeps its worktree forever. An
-   * operator disposition can retire it sooner. */
-  retentionTtlMs: number;
+  /** Optional time-boxed backstop for a non-merge ending. `null` (the default)
+   * means the idle Session's worktree is **retained until the Task reaches a
+   * terminal disposition** (ADR-0046: the builder worktree is per-Task and lives
+   * across every Attempt) — merge or cancel is what removes it, never a timer. A
+   * number reinstates a TTL sweep, so an idle Session past that many ms is
+   * reclaimed even without a disposition. */
+  retentionTtlMs: number | null;
 }
 
-/** Default retention window (issue #148): 24 h as the backstop for a failed/escalated Run's evidence. */
+/** Default retention (ADR-0046): no TTL — a failed/escalated Run's worktree is
+ * retained until its Task is merged or cancelled, so every Attempt reuses it. */
 export const DEFAULT_RETENTION: RetentionConfig = {
-  retentionTtlMs: 24 * 60 * 60 * 1000,
+  retentionTtlMs: null,
 };
 
 /**
@@ -48,8 +53,8 @@ export const DEFAULT_RETENTION: RetentionConfig = {
  *   an operator Accept): the work is banked, retire immediately.
  * - `operator-cancel` — an operator disposition (cancel / Close): retire.
  * - `other` — any other non-merge ending (generic fail, escalate,
- *   guardrail-trip, process-death): retain as evidence under
- *   the retention-TTL backstop.
+ *   guardrail-trip, process-death): retain the Task's worktree until its terminal
+ *   disposition (no deadline by default; a configured TTL can still sweep it).
  */
 export type RetirementCause = 'merged' | 'operator-cancel' | 'other';
 
@@ -60,13 +65,14 @@ export type RetirementCause = 'merged' | 'operator-cancel' | 'other';
  */
 export type RetirementAction =
   | { kind: 'retire'; reason: SessionRetireReason }
-  | { kind: 'idle'; reason: SessionRetireReason; retireDeadline: number };
+  | { kind: 'idle'; reason: SessionRetireReason; retireDeadline: number | null };
 
 /**
  * Decide what a Run's Session should do when the Run settles terminal, from the
- * settle `cause`. Pure and total: a merge or cancel retires now; any other
- * ending goes idle under the retention deadline computed from `now`. Recomputing over the same inputs always yields the same
- * action.
+ * settle `cause`. Pure and total: a merge or cancel retires now; any other ending
+ * goes idle, with no deadline by default (retained until the Task's disposition)
+ * or under `now + config.retentionTtlMs` when a TTL is configured. Recomputing
+ * over the same inputs always yields the same action.
  */
 export function decideRetirement(
   cause: RetirementCause,
@@ -78,12 +84,12 @@ export function decideRetirement(
       return { kind: 'retire', reason: 'merged' };
     case 'operator-cancel':
       return { kind: 'retire', reason: 'operator-disposition' };
-    case 'other':
-      return {
-        kind: 'idle',
-        reason: 'retention-ttl',
-        retireDeadline: now + config.retentionTtlMs,
-      };
+    case 'other': {
+      const ttl = config.retentionTtlMs;
+      return ttl === null
+        ? { kind: 'idle', reason: 'task-active', retireDeadline: null }
+        : { kind: 'idle', reason: 'retention-ttl', retireDeadline: now + ttl };
+    }
   }
 }
 

@@ -1067,9 +1067,11 @@ export type SessionStatus = (typeof SESSION_STATUSES)[number];
 /**
  * Why a Session retired (issue #148), for the operator-legible record: `merged`
  * (a successful merge + terminal success), `operator-disposition` (cancel / Close),
- * `retention-ttl` (the backstop so no idle Session retains its worktree forever).
+ * `retention-ttl` (the optional backstop when a retention TTL is configured),
+ * `task-active` (idle, no deadline — the Task's worktree is retained across
+ * Attempts until its terminal disposition; ADR-0046).
  */
-export const SESSION_RETIRE_REASONS = ['merged', 'operator-disposition', 'retention-ttl'] as const;
+export const SESSION_RETIRE_REASONS = ['merged', 'operator-disposition', 'retention-ttl', 'task-active'] as const;
 export type SessionRetireReason = (typeof SESSION_RETIRE_REASONS)[number];
 
 /**

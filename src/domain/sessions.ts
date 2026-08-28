@@ -304,10 +304,12 @@ export class SessionStore {
   }
 
   /** Move the Session to `idle` under a retention `deadline` (issue #148),
-   * carrying the `reason` the sweep will retire it under. No-op (returns the row
-   * unchanged) once the Session is already `retiring`/`retired` — a retirement
-   * decision, once made, is never walked back to a retained state. */
-  async markIdle(id: number, retireDeadline: number, reason: SessionRetireReason, now: number): Promise<SessionRow> {
+   * carrying the `reason` the sweep will retire it under. A `null` deadline means
+   * retain until the Task's terminal disposition (ADR-0046) — the sweep never
+   * fires. No-op (returns the row unchanged) once the Session is already
+   * `retiring`/`retired` — a retirement decision, once made, is never walked back
+   * to a retained state. */
+  async markIdle(id: number, retireDeadline: number | null, reason: SessionRetireReason, now: number): Promise<SessionRow> {
     return this.db.write(async (db) => {
       const row = await db.select().from(sessions).where(eq(sessions.id, id)).get();
       if (!row) throw new DomainError('not_found', `session ${id} not found`);

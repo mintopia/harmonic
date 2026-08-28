@@ -50,7 +50,7 @@ export interface MergeTrainMember {
   repoDir: string;
   /** e.g. `epic/42` — the chain key this member's merge attempt serialises on. */
   integrationBranch: string;
-  /** e.g. `harmonic/task-<id>-run-<n>`. */
+  /** e.g. `harmonic/task-<id>`. */
   memberBranch: string;
   /** The branch tip verification recorded; the only object the train merges. */
   verifiedTip: string;
