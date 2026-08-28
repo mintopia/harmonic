@@ -1265,6 +1265,17 @@ export class Runner {
     const path = this.worktreePathForTask(task);
     mkdirSync(this.worktreesDir, { recursive: true });
 
+    // The per-Task worktree is created once and reused by every Attempt
+    // (ADR-0046), so the recorded directory can outlive its git registration:
+    // deregistered but left on disk (its `.git` gitlink / backing admin dir
+    // gone). Reusing such an orphan runs the Attempt's rebase inside a
+    // non-repository, which git walks up to the mount boundary and fails as
+    // infra doubt → the Run escalates (Task 340). Detect it and clear the stray
+    // directory so the reuse branches below re-create the worktree cleanly.
+    if (existsSync(path) && !(await Git.isValidWorktree(task.workingDir, path))) {
+      await Git.discardOrphanWorktree(task.workingDir, path);
+    }
+
     if (resume) {
       // Self-heal turn (issue #137): resume the Run's prior work in the SAME
       // run-keyed worktree. Since issue #148 the first turn's `finalizeWorkspace`

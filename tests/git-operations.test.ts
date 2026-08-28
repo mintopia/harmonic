@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { trace } from '@opentelemetry/api';
@@ -154,5 +154,55 @@ describe('worktreeDiff — live diff of a running Run against its fork point', (
     // …but the live worktree diff surfaces the in-progress edit.
     const base = await Git.mergeBase(repo, 'main', 'work2');
     expect(await Git.worktreeDiffStat(wt, base)).toContain('base.txt');
+  });
+});
+
+describe('isValidWorktree / discardOrphanWorktree — orphaned per-task worktree heal (Task 340)', () => {
+  it('heals a deregistered-but-present worktree so a later rebase succeeds', async () => {
+    const repo = makeRepo();
+    const root = mkdtempSync(join(tmpdir(), 'harmonic-git-operations-orphan-'));
+    tmpDirs.push(root);
+    const wt = join(root, 'task-1');
+    await Git.addWorktree(repo, wt, 'harmonic/task-1', 'main');
+    // A freshly-created worktree is live and registered.
+    expect(await Git.isValidWorktree(repo, wt)).toBe(true);
+
+    // Simulate the orphan: the directory survives on disk but its git
+    // registration is gone (gitlink + backing admin dir removed), exactly the
+    // state that made the live rebase run inside a non-repository.
+    rmSync(join(wt, '.git'), { recursive: true, force: true });
+    rmSync(join(repo, '.git', 'worktrees', 'task-1'), { recursive: true, force: true });
+    expect(await Git.isValidWorktree(repo, wt)).toBe(false);
+    // A rebase inside the orphan fails the way production did.
+    const baseOid = git(repo, 'rev-parse', 'main');
+    const brokenRebase = await Git.rebaseOnto(wt, baseOid);
+    expect(brokenRebase.ok).toBe(false);
+
+    // Heal: clear the stray directory, then re-create the worktree on the
+    // surviving branch — the reuse path in prepareWorkspace.
+    await Git.discardOrphanWorktree(repo, wt);
+    expect(existsSync(wt)).toBe(false);
+    await Git.addWorktreeCheckout(repo, wt, 'harmonic/task-1');
+    expect(await Git.isValidWorktree(repo, wt)).toBe(true);
+
+    // Move the base and rebase in the healed worktree — it now succeeds instead
+    // of failing with "not a git repository".
+    writeFileSync(join(repo, 'moved.txt'), 'moved\n');
+    git(repo, 'add', '-A');
+    git(repo, 'commit', '-m', 'advance base');
+    const movedOid = git(repo, 'rev-parse', 'main');
+    const healedRebase = await Git.rebaseOnto(wt, movedOid);
+    expect(healedRebase.ok).toBe(true);
+  });
+
+  it('removeWorktree leaves no orphaned directory behind', async () => {
+    const repo = makeRepo();
+    const root = mkdtempSync(join(tmpdir(), 'harmonic-git-operations-rm-'));
+    tmpDirs.push(root);
+    const wt = join(root, 'task-2');
+    await Git.addWorktree(repo, wt, 'harmonic/task-2', 'main');
+    expect(existsSync(wt)).toBe(true);
+    await Git.removeWorktree(repo, wt);
+    expect(existsSync(wt)).toBe(false);
   });
 });

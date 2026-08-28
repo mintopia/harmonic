@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import type { Attributes } from '@opentelemetry/api';
@@ -362,7 +362,50 @@ export const Git = {
     withRepoLock(dir, () => git(dir, 'worktree', 'add', worktreePath, branch)),
 
   removeWorktree: (dir: string, worktreePath: string) =>
-    withRepoLock(dir, () => git(dir, 'worktree', 'remove', '--force', worktreePath)),
+    withRepoLock(dir, async () => {
+      await git(dir, 'worktree', 'remove', '--force', worktreePath);
+      // `worktree remove` normally deletes the directory, but a worktree whose
+      // registration git considers broken can be dropped while its directory is
+      // left behind — an orphan a later reuse would run git inside (Task 340).
+      // Force-remove any residue so removal never leaves a stray directory.
+      rmSync(worktreePath, { recursive: true, force: true });
+    }),
+
+  /**
+   * Whether `worktreePath` is a live, registered git worktree of the base repo
+   * at `dir`. True requires BOTH that git resolves a work tree rooted *at* the
+   * path — not a parent repository it walked up into — AND that the path is in
+   * the base repo's `worktree list`. A directory that exists on disk but was
+   * deregistered (its `.git` gitlink or backing admin dir gone) is false, so a
+   * reuse path can heal it (Task 340) instead of running git inside a
+   * non-repository, which walks up to the mount boundary and fails.
+   */
+  async isValidWorktree(dir: string, worktreePath: string): Promise<boolean> {
+    if (!existsSync(worktreePath)) return false;
+    let top: string;
+    try {
+      top = await git(worktreePath, 'rev-parse', '--show-toplevel');
+    } catch {
+      return false;
+    }
+    const target = realpathSync(worktreePath);
+    if (realpathSync(top) !== target) return false;
+    const registered = await Git.listWorktrees(dir);
+    return registered.some((w) => existsSync(w.path) && realpathSync(w.path) === target);
+  },
+
+  /**
+   * Clear a per-task worktree directory that is no longer a live git worktree —
+   * present on disk but deregistered (Task 340) — so the path is free for a
+   * fresh {@link addWorktree}. Removes the stray directory and prunes any
+   * dangling registration under the base-repo lock. `worktree remove` can't do
+   * this: git refuses to act on a path it no longer tracks.
+   */
+  discardOrphanWorktree: (dir: string, worktreePath: string) =>
+    withRepoLock(dir, async () => {
+      rmSync(worktreePath, { recursive: true, force: true });
+      await git(dir, 'worktree', 'prune');
+    }),
 
   /**
    * Remove an orphaned worktree and the branch that was checked out there as
