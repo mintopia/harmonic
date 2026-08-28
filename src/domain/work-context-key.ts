@@ -28,15 +28,12 @@ export interface WorkContextKeyInput {
  *   catch that conflict rather than missing it because the branch strings
  *   happened to differ.
  * - `worktree` mode keys on the canonical *worktree* path AND the branch.
- *   Each worktree Run gets its own working tree (the Runner derives a
- *   per-Run path `run-<runId>` and a per-Run branch
- *   `harmonic/task-<id>-run-<attempt>`), so the key is unique per Run by
- *   construction: two concurrent worktree Runs off the same base repo are
- *   genuinely isolated and both admit. The `branch` component is part of the
- *   key so the identity stays meaningful even if a caller ever reuses a
- *   worktree path, but it is not what creates the distinctness today — the
- *   per-Run path already does. There is deliberately no "collapse two
- *   worktree Runs onto one key" case: worktree isolation is the whole point.
+ *   The builder worktree is per-Task (ADR-0046): the Runner derives a
+ *   per-Task path `task-<id>` and branch `harmonic/task-<id>`, reused by every
+ *   Attempt. Distinct Tasks get distinct keys by construction, so worktree Runs
+ *   off the same base repo are genuinely isolated. Only ever one Run of a Task
+ *   is active at a time, so the shared per-Task key never double-admits; the
+ *   `branch` component keeps the identity meaningful and pairs with the path.
  *
  * `worktree` mode requires both `worktreePath` and `branch` — a key that
  * silently dropped either would under-scope the lease, so both are validated

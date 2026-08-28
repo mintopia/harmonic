@@ -29,28 +29,21 @@ describe('decideRetirement (issue #148)', () => {
     });
   });
 
-  it('goes idle under the retention-TTL backstop on any other ending (escalate/guardrail/crash) — an escalated ticket keeps its branch as evidence', () => {
+  it('applies a configured TTL backstop on any other ending (escalate/guardrail/crash)', () => {
     expect(decideRetirement('other', now, cfg)).toEqual({
       kind: 'idle',
       reason: 'retention-ttl',
-      retireDeadline: now + cfg.retentionTtlMs,
+      retireDeadline: now + (cfg.retentionTtlMs ?? 0),
     });
   });
 
-  it('uses the default retention windows when none is passed', () => {
+  it('by default retains until the Task disposition — idle with no deadline (ADR-0046)', () => {
+    expect(DEFAULT_RETENTION.retentionTtlMs).toBeNull();
     expect(decideRetirement('other', 0)).toEqual({
       kind: 'idle',
-      reason: 'retention-ttl',
-      retireDeadline: DEFAULT_RETENTION.retentionTtlMs,
+      reason: 'task-active',
+      retireDeadline: null,
     });
-    expect(decideRetirement('other', 0)).toEqual({
-      kind: 'idle',
-      reason: 'retention-ttl',
-      retireDeadline: DEFAULT_RETENTION.retentionTtlMs,
-    });
-  });
-
-  it('default reject window is shorter than the retention-TTL backstop', () => {
   });
 });
 

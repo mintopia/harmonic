@@ -52,7 +52,7 @@ describe('task list payload: latest run branch', () => {
     gitSpies.forEach((s) => s.mockRestore());
 
     const task = list.body.tasks.find((t: any) => t.id === created.body.id);
-    expect(task.branch).toBe(`harmonic/task-${created.body.id}-run-1`);
+    expect(task.branch).toBe(`harmonic/task-${created.body.id}`);
     // The diffstat was snapshotted at settle and rides the same payload.
     expect(task.stat).toContain('insertion');
     // The run-scoped endpoint serves that same snapshot, so the card and Task

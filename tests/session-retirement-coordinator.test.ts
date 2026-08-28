@@ -132,7 +132,7 @@ describe('Session retirement (issue #148)', () => {
     it('retains under the retention-TTL backstop on any other ending', async () => {
       const s = await dispatch();
       await makeCoord().onRunSettled(await runForSession(s.id), 'other', now);
-      expect(await sessions.get(s.id)).toMatchObject({ status: 'idle', retireReason: 'retention-ttl', retireDeadline: now + cfg.retentionTtlMs });
+      expect(await sessions.get(s.id)).toMatchObject({ status: 'idle', retireReason: 'retention-ttl', retireDeadline: now + (cfg.retentionTtlMs ?? 0) });
     });
 
     it('is a no-op for a Run with no Session', async () => {

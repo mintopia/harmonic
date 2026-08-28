@@ -575,9 +575,11 @@ export class Runner {
    * ADR-0041 "Reject with guidance": the operator's guidance becomes the
    * feedback of the escalated Attempt and of the next one, the attempt budget
    * restarts (`AttemptStore.budgetBase` — history numbering is untouched), and
-   * the loop resumes on the same ticket with a fresh Run cut from the base
-   * branch (the escalated Run's branch stays as evidence until its Session
-   * retires).
+   * the loop resumes on the same ticket. The next Run reuses the Task's existing
+   * worktree and branch (ADR-0046): the next Attempt iterates on the prior
+   * candidate in the same working copy rather than cutting fresh from base.
+   * Resetting to base is something the operator asks for in the guidance, never
+   * the default; the worktree lives until the Task reaches a terminal disposition.
    */
   async resumeWithGuidance(task: TaskRow, guidance: string, startNow = false): Promise<void> {
     const run = (await this.runStore.listForTask(task.id)).at(-1);
@@ -692,7 +694,7 @@ export class Runner {
     const chainId = await this.chainStore.resolveForTask(task);
     const created = await this.runStore.create(task.id, snapshot, chainId);
     await this.attempts.ensureForRun(task.id, created.attempt, created.startedAt);
-    const key = this.workContextKeyFor(task, created);
+    const key = this.workContextKeyFor(task);
     // Resolved ahead of the claim: look up whoever holds the Work Context key and
     // whether they share this Run's line of work, exactly what `sharesLineOfWork`
     // computed inside the single run+lease transaction before RunStore (ADR-0029
@@ -917,16 +919,30 @@ export class Runner {
 
   /** The Work Context lease key for this Run, matching prepareWorkspace's
    * worktree path/branch exactly so the claimed key and the actual checkout agree. */
-  private workContextKeyFor(task: TaskRow, run: RunRow): string {
+  private workContextKeyFor(task: TaskRow): string {
     if (task.isolationMode === 'worktree') {
       return workContextKey({
         isolationMode: 'worktree',
         workingDir: task.workingDir,
-        worktreePath: join(this.worktreesDir, `run-${run.id}`),
-        branch: `harmonic/task-${task.id}-run-${run.attempt}`,
+        worktreePath: this.worktreePathForTask(task),
+        branch: this.branchForTask(task),
       });
     }
     return workContextKey({ isolationMode: 'direct', workingDir: task.workingDir });
+  }
+
+  /** The builder worktree is per-Task, not per-Run: one checkout created on the
+   * first Attempt, reused by every subsequent Attempt, removed only when the Task
+   * reaches a terminal disposition (merge / cancel). The path and branch are
+   * therefore keyed on the Task id — `run.attempt` never appears — and both
+   * {@link workContextKeyFor} and {@link prepareWorkspace} derive them from here so
+   * the leased key and the actual checkout can never drift. */
+  private worktreePathForTask(task: TaskRow): string {
+    return join(this.worktreesDir, `task-${task.id}`);
+  }
+
+  private branchForTask(task: TaskRow): string {
+    return `harmonic/task-${task.id}`;
   }
 
   /** Kill the harness of a task's active run (task cancellation).
@@ -1212,9 +1228,10 @@ export class Runner {
   }
 
   /**
-   * Direct mode runs in place, unlocked. Worktree mode gets a temporary
-   * git worktree on branch `harmonic/task-<id>-run-<n>` cut from the
-   * {@link resolveBaseBranch resolved base branch}.
+   * Direct mode runs in place, unlocked. Worktree mode gets the Task's per-Task
+   * worktree on branch `harmonic/task-<id>` (ADR-0046): cut from the
+   * {@link resolveBaseBranch resolved base branch} on the first Attempt, then
+   * reused in place by every subsequent Attempt so the work carries forward.
    */
   private async prepareWorkspace(task: TaskRow, run: RunRow, resume = false): Promise<Workspace> {
     if (task.isolationMode !== 'worktree') {
@@ -1239,7 +1256,7 @@ export class Runner {
       return workspace;
     }
 
-    const path = join(this.worktreesDir, `run-${run.id}`);
+    const path = this.worktreePathForTask(task);
     mkdirSync(this.worktreesDir, { recursive: true });
 
     if (resume) {
@@ -1253,7 +1270,7 @@ export class Runner {
       // out branch. The candidate is re-parented on the SAME validated base the
       // first turn recorded, so the re-verify judges the full diff.
       const persisted = await this.runStore.get(run.id);
-      const branch = persisted.branch ?? `harmonic/task-${task.id}-run-${run.attempt}`;
+      const branch = persisted.branch ?? this.branchForTask(task);
       // The base the first turn already validated against wins; otherwise a
       // resumed Run resolves the same base a fresh one would (issue #157).
       const baseBranch = persisted.baseBranch ?? (await this.resolveBaseBranch(task));
@@ -1264,21 +1281,35 @@ export class Runner {
     }
 
     const baseBranch = await this.resolveBaseBranch(task);
-    // Backstop to the start-funnel gate (issue #159): if the resolved base is an
-    // Epic integration branch that has gone missing between its assignment and
-    // now (a restart / degraded scan / retire raced the spawn), don't let the
-    // `worktree add` fast-fail escalate as a false PERMANENT git error — surface
-    // it as the transient it is, so the Run re-queues and the reconcile re-cuts.
+    const branch = this.branchForTask(task);
+    if (existsSync(path)) {
+      // A prior Attempt's retained worktree (issue #148 retention, now Task-owned):
+      // reuse it in place so every Attempt iterates in the same working copy. The
+      // base is re-resolved each Attempt; the completion CAS rebases the accumulated
+      // candidate onto whatever the base tip is now.
+      await this.runStore.update(run.id, { branch, baseBranch });
+      return { cwd: path, env: {}, worktree: { repoDir: task.workingDir, path }, baseRev: baseBranch, startDirty: false };
+    }
+    if (await Git.branchExists(task.workingDir, branch)) {
+      // The Task branch survived but its worktree was reclaimed — check it back out
+      // so the Attempt resumes the prior candidate rather than cutting anew.
+      await Git.addWorktreeCheckout(task.workingDir, path, branch);
+      await this.runStore.update(run.id, { branch, baseBranch });
+      return { cwd: path, env: {}, worktree: { repoDir: task.workingDir, path }, baseRev: baseBranch, startDirty: false };
+    }
+    // First Attempt of the Task: cut the worktree + branch from the resolved base.
+    // Backstop to the start-funnel gate (issue #159): if the base is an Epic
+    // integration branch that went missing between assignment and now (a restart /
+    // degraded scan / retire raced the spawn), surface it as the transient it is —
+    // the `worktree add` fast-fail would otherwise escalate as a false PERMANENT git
+    // error — so the Run re-queues and the reconcile re-cuts.
     if (parseIntegrationBranch(baseBranch) !== null && !(await Git.branchExists(task.workingDir, baseBranch))) {
       throw new EpicBaseNotReady(
         `Epic integration branch ${baseBranch} does not exist yet; it is cut/re-cut on the next tracker poll`,
       );
     }
-    const branch = `harmonic/task-${task.id}-run-${run.attempt}`;
     await Git.addWorktree(task.workingDir, path, branch, baseBranch);
     await this.runStore.update(run.id, { branch, baseBranch });
-    // A fresh worktree is clean by construction; the base branch is the
-    // validated base the candidate is parented on.
     return { cwd: path, env: {}, worktree: { repoDir: task.workingDir, path }, baseRev: baseBranch, startDirty: false };
   }
 
@@ -2728,7 +2759,7 @@ export class Runner {
     // `lease-ttl.ts`, keyed by the Run's current phase.
     let leaseHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
     const armLeaseHeartbeat = async () => {
-      const key = this.workContextKeyFor(task, run);
+      const key = this.workContextKeyFor(task);
       const beat = async () => {
         if (active.externallySettled) return;
         const now = await this.runStore.get(run.id);
@@ -3628,7 +3659,7 @@ export class Runner {
         // Worktree runs executed (and logged) under the worktree path;
         // the directory is gone but the log slug derives from the string. A
         // direct run has no branch and executed in the live working dir.
-        const cwd = run.branch ? join(this.worktreesDir, `run-${run.id}`) : task.workingDir;
+        const cwd = run.branch ? this.worktreePathForTask(task) : task.workingDir;
         const fresh = collectUsage({
           harnessId: task.harness,
           harness,

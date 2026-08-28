@@ -107,7 +107,7 @@ describe('Runner merge-train adapters (issue #163)', () => {
         taskId: task.id,
         repoDir: '/repo',
         integrationBranch: 'epic/1',
-        memberBranch: `harmonic/task-${task.id}-run-1`,
+        memberBranch: `harmonic/task-${task.id}`,
         verifiedTip: 'a'.repeat(40),
       },
     };
