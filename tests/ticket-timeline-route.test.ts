@@ -44,14 +44,14 @@ describe('GET /api/tasks/:id/timeline (issue #328)', () => {
 
     expect(response.status).toBe(200);
     expect(response.body.events.map((event: { kind: string }) => event.kind)).toEqual([
-      'attempt-started', 'run-started', 'verification', 'guardrail', 'escalation', 'verification', 'operator-accept', 'merge', 'attempt-finished', 'verification', 'run-finished', 'lifecycle',
+      'attempt-started', 'run-started', 'verification', 'guardrail', 'escalation', 'verification', 'operator-accept', 'merging', 'attempt-finished', 'verification', 'run-finished', 'lifecycle',
     ]);
     expect(response.body.events.map((event: { ts: number }) => event.ts)).toEqual([50, 100, 200, 250, 300, 400, 700, 800, 850, 900, 900, expect.any(Number)]);
     expect(response.body.events.every((event: { runId: number | null }) => event.runId === null || event.runId === run.id)).toBe(true);
     expect(response.body.events.find((event: { kind: string }) => event.kind === 'verification')).toMatchObject({ data: {
       verdict: 'pass', summary: 'checks passed', mechanism: 'command',
     } });
-    expect(response.body.events.find((event: { kind: string }) => event.kind === 'merge')).toMatchObject({ data: {
+    expect(response.body.events.find((event: { kind: string }) => event.kind === 'merging')).toMatchObject({ data: {
       effect: 'target-ref', payload: { ok: true },
     } });
     expect(response.body.events.find((event: { data: { outcome?: string } }) => event.data.outcome === 'skipped')).toMatchObject({ data: { outcome: 'skipped' } });

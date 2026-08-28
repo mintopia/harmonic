@@ -160,7 +160,7 @@ type TicketTimelineKind =
   | 'escalation'
   | 'operator-accept'
   | 'operator-reject'
-  | 'merge'
+  | 'merging'
   | 'fact';
 
 export interface ApiTicketTimelineEvent {
@@ -236,7 +236,7 @@ export async function ticketTimelineToApi(ctx: AppContext, taskId: number): Prom
     const kind: TicketTimelineKind = fact.type === 'escalate' ? 'escalation' : fact.type === 'operator-accept' ? 'operator-accept' : 'fact';
     add({ runId: fact.runId, ts: fact.ts, kind, data: { type: fact.type, payload: JSON.parse(fact.payload) } }, 4);
   });
-  await forEachYielding(mergeEntries, async ({ entry }) => { add({ runId: entry.runId, ts: entry.ts, kind: 'merge', data: { kind: entry.kind, effect: entry.effect, idempotencyKey: entry.idempotencyKey, payload: JSON.parse(entry.payload) } }, 6); });
+  await forEachYielding(mergeEntries, async ({ entry }) => { add({ runId: entry.runId, ts: entry.ts, kind: 'merging', data: { kind: entry.kind, effect: entry.effect, idempotencyKey: entry.idempotencyKey, payload: JSON.parse(entry.payload) } }, 6); });
 
   return {
     events: pending
