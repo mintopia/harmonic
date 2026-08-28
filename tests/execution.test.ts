@@ -79,6 +79,42 @@ describe('run execution over ACP (direct mode)', () => {
     );
   });
 
+  it('a native Run resolves and uses the Workspace Task Prompt override, else inherits the global default (ADR-0044/#339)', async () => {
+    const wsId = (await server.api('GET', '/api/workspaces')).body.workspaces[0].id;
+    const promptOf = async (runId: number) =>
+      (await server.app.ctx.asyncDb.read((d) => d.select().from(runs).where(eq(runs.id, runId)).get()))!.prompt;
+    const settle = async (taskId: number) =>
+      waitFor(async () => ((await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'done' ? true : undefined), {
+        timeoutMs: 20_000,
+      });
+    const scenarioObj = { updates: [{ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'ok' } }], stopReason: 'end_turn' };
+
+    // Baseline: no override → the native Run inherits the global Task Prompt
+    // (`{prompt}`), so the text it sends is the Task's own prompt verbatim.
+    const inherit = await createAndRun(scenarioObj);
+    await settle(inherit.taskId);
+    const inheritPrompt = await promptOf(inherit.runId);
+
+    // Override: the Workspace pins its own Task Prompt template. The next native
+    // Run must resolve `workspace ?? global` and actually send the overridden
+    // framing — the wiring the critic flagged as missing. `finally` resets the
+    // shared server's override so a failure can never leak it to later tests.
+    let overridePrompt: string | null;
+    try {
+      expect((await server.api('PATCH', `/api/workspaces/${wsId}`, { taskPrompt: 'WS-TASKPROMPT::{prompt}' })).status).toBe(200);
+      const override = await createAndRun(scenarioObj);
+      await settle(override.taskId);
+      overridePrompt = await promptOf(override.runId);
+    } finally {
+      await server.api('PATCH', `/api/workspaces/${wsId}`, { taskPrompt: null });
+    }
+
+    expect(inheritPrompt).not.toBeNull();
+    expect(overridePrompt).not.toBeNull();
+    expect(inheritPrompt!.startsWith(scenario(scenarioObj))).toBe(true); // global `{prompt}` → verbatim
+    expect(overridePrompt!.startsWith('WS-TASKPROMPT::')).toBe(true); // the override reached the harness prompt
+  });
+
   it('a native Run merges terminal exactly once — done is final and the escalation actions refuse (ADR-0041)', async () => {
     const { taskId, runId } = await createAndRun({
       updates: [{ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'done' } }],

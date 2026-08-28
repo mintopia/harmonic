@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolve, resolveCap, resolveVerifiers, resolveGuardrails, resolveDrive } from '../src/domain/setting-override.js';
+import { resolve, resolveCap, resolveVerifiers, resolveGuardrails, resolveDrive, resolveTaskPrompt } from '../src/domain/setting-override.js';
 import { verificationCriticOverrideSchema } from '../src/config.js';
 
 describe('Setting Override resolution (ADR-0012, issue #59)', () => {
@@ -309,6 +309,22 @@ describe('Setting Override resolution (ADR-0012, issue #59)', () => {
       );
       expect(resolved.prompt).toBe('WS PROMPT');
       expect(resolved.unattendedReminder).toBe('WS REMINDER');
+    });
+  });
+
+  describe('resolveTaskPrompt (ADR-0044, issue #339) — native Task framing overridable per-Workspace', () => {
+    const config = { taskPrompt: 'GLOBAL {prompt}' };
+
+    it('inherits the global Task Prompt when the Workspace column is null', () => {
+      expect(resolveTaskPrompt({ taskPrompt: null }, config as any)).toBe('GLOBAL {prompt}');
+    });
+
+    it('inherits the global Task Prompt when no Workspace is resolved (undefined)', () => {
+      expect(resolveTaskPrompt(undefined, config as any)).toBe('GLOBAL {prompt}');
+    });
+
+    it('uses the Workspace Task Prompt override over the global default', () => {
+      expect(resolveTaskPrompt({ taskPrompt: 'WS {prompt}' }, config as any)).toBe('WS {prompt}');
     });
   });
 });

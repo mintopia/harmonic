@@ -35,7 +35,7 @@ import type { SessionRetirementHook } from '../domain/session-retirement-coordin
 import type { RunPhase } from '../domain/run-phases.js';
 import type { RunFactType } from '../db/schema.js';
 import type { TaskService } from '../domain/tasks.js';
-import { resolveGuardrails, resolveVerifiers, resolveScoped, type ResolvedGuardrails } from '../domain/setting-override.js';
+import { resolveGuardrails, resolveVerifiers, resolveScoped, resolveTaskPrompt, type ResolvedGuardrails } from '../domain/setting-override.js';
 import { hasWorkspaceOverride } from '../domain/settings-registry.js';
 import { VerificationAttemptStore } from '../domain/verification-attempts.js';
 import { GuardrailEventStore } from '../domain/guardrail-events.js';
@@ -3088,7 +3088,9 @@ export class Runner {
         ? await this.autoDrive!.prompt(task)
         : promptForTask(
             { ...task, workingDir: workspace.cwd },
-            resolveScoped('taskPrompt', (await this.getWorkspace?.(task.workspaceId))?.taskPrompt, this.getConfig().taskPrompt),
+            // Native Task framing resolves per-Workspace (ADR-0044/#339): the
+            // Workspace's Task Prompt override wins, else the global default.
+            resolveTaskPrompt(await this.getWorkspace?.(task.workspaceId), this.getConfig()),
           );
       // An operator continuation of a settled warm Session ({@link steerSettled}):
       // this Run bound the prior Session (session/load), so its first turn is just

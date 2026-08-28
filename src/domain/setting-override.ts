@@ -188,3 +188,20 @@ export function resolveDrive(
     continueAttempts: resolveScoped('driveContinueAttempts', ws?.driveContinueAttempts, config.drive.continueAttempts),
   };
 }
+
+/**
+ * Resolve a Workspace's effective Task Prompt (ADR-0044, issue #339): the
+ * global-default template wrapping a native Task's own prompt (`{prompt}` /
+ * `{id}` / `{workingDir}` / …), resolved `workspace ?? global` through the
+ * registry like every other overridable scalar. A native Run reads this to build
+ * the text it sends the harness (`runner.ts` → `promptForTask`), so a Workspace
+ * that pins its own framing overrides the global template while an unset column
+ * inherits it. A missing/undefined `ws` (no Workspace resolved) inherits the
+ * global default.
+ */
+export function resolveTaskPrompt(
+  ws: Pick<WorkspaceRow, 'taskPrompt'> | null | undefined,
+  config: Pick<AppConfig, 'taskPrompt'>,
+): string {
+  return resolveScoped('taskPrompt', ws?.taskPrompt, config.taskPrompt);
+}
