@@ -571,11 +571,13 @@ describe('merging freshness gate (issue #313, ADR-0041)', () => {
     await server.app.ctx.workspaces.update(wsId, {
       workingDir: repo,
       maxAttempts: 1,
-      verificationCommand: verificationCommandSchema.parse({
-        command: process.execPath,
-        args: ['-e', 'process.exit(1)'], // a verifier that always fails → escalate at the cap
-        timeoutSeconds: 30,
-      }),
+      verificationCommand: [
+        verificationCommandSchema.parse({
+          command: process.execPath,
+          args: ['-e', 'process.exit(1)'], // a verifier that always fails → escalate at the cap
+          timeoutSeconds: 30,
+        }),
+      ],
     });
     await server.app.ctx.configStore.update({
       drive: { prompt: JSON.stringify({ writeFiles: { 'impl-{ref}.txt': 'implementation {ref}\n' }, mcpFinish: true }) },
