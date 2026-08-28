@@ -239,9 +239,13 @@ export function isOverridable(key: SettingKey): boolean {
  * 'workspace' vs 'default'), so provenance decisions honour the same single
  * authority as value resolution — flip a setting to `global-only` and no column
  * value counts as an override anywhere.
+ *
+ * Presence is `!= null`, not truthiness: for a boolean scalar like `reviewEnabled`
+ * or `guardrailProgress`, an explicit `false` is a deliberate override (the
+ * Workspace turned the setting off) and must be distinguished from `null`/inherit.
  */
 export function hasWorkspaceOverride(key: SettingKey, columnValue: unknown): boolean {
-  return isOverridable(key) && Boolean(columnValue);
+  return isOverridable(key) && columnValue != null;
 }
 
 /** The Settings UI tab strip, in display order (ADR-0044 Decision G). Both the

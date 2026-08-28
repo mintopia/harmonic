@@ -257,4 +257,13 @@ describe('scope changes control live resolution (registry is the single authorit
     });
     expect(hasWorkspaceOverride('guardrailBudget', null)).toBe(false); // set-ness still required
   });
+
+  it('hasWorkspaceOverride: an explicit boolean false counts as an override (not truthiness)', () => {
+    // reviewEnabled=false means the Workspace deliberately turned review off — a
+    // real override, distinct from null/inherit. Presence is != null, not Boolean().
+    expect(hasWorkspaceOverride('reviewEnabled', false)).toBe(true);
+    expect(hasWorkspaceOverride('reviewEnabled', true)).toBe(true);
+    expect(hasWorkspaceOverride('reviewEnabled', null)).toBe(false);
+    expect(hasWorkspaceOverride('guardrailProgress', false)).toBe(true);
+  });
 });
