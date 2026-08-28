@@ -561,7 +561,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // their session logs are settled on disk by now.
   await runner.backfillUsage();
   const escalation = new EscalationService(runs, tasks, merging, mergeEffectsFor, {
-    resume: (task, guidance) => runner.resumeWithGuidance(task, guidance),
+    resume: (task, guidance, startNow) => runner.resumeWithGuidance(task, guidance, startNow),
     cleanup: (task, run) => runner.cleanupClosed(task, run),
   });
   // Session-retirement drain at boot (issue #148): reclaim any builder worktree

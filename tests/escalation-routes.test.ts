@@ -181,6 +181,7 @@ describe('escalation actions on a worktree ticket (ADR-0041)', () => {
       criticResult = { verdict: 'pass', summary: 'the guidance was followed' };
       const rejected = await server.api('POST', `/api/tasks/${taskId}/reject`, {
         guidance: 'The timeout is intentional; see the linked ticket.',
+        start: true,
       });
       expect(rejected.status).toBe(200);
       expect(rejected.body.escalationReason).toBeNull();
