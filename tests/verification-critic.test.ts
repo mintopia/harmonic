@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
-import { verificationCommandSchema, verificationCriticSchema, type VerificationCommand } from '../src/config.js';
+import { verificationCommandSchema, type VerificationCommand, type HarnessId } from '../src/config.js';
 import { VerificationAttemptStore } from '../src/domain/verification-attempts.js';
 import type { CriticHarnessDrive } from '../src/verification/critic.js';
 import type { Verdict } from '../src/verification/critic-schema.js';
@@ -24,15 +24,13 @@ function makeRepo(): string {
   return dir;
 }
 
-/** A critic verifier config; the fake drive supplies the verdict, so the model
- * is just a placeholder the schema accepts. */
-const critic = () =>
-  verificationCriticSchema.parse({ prompt: 'Review the diff for correctness.', model: 'stub-model' });
+/** The decomposed review-override fields (issue #337) for a configured critic;
+ * the fake drive supplies the verdict, so the model is just a placeholder. */
+const critic = () => ({ reviewEnabled: true, reviewPrompt: 'Review the diff for correctness.', reviewModel: 'stub-model' });
 
-/** A critic verifier config pinned to a specific reviewer harness (issue #174
- * FIX 2) rather than "Same as task". */
-const criticWithHarness = (harness: string) =>
-  verificationCriticSchema.parse({ prompt: 'Review the diff for correctness.', model: 'stub-model', harness });
+/** Same, pinned to a specific reviewer harness (issue #174 FIX 2) rather than
+ * "Same as task". */
+const criticWithHarness = (harness: HarnessId) => ({ ...critic(), reviewHarness: harness });
 
 /** A `VerificationCommand` running an inline node script with the given exit code. */
 const exitCommand = (code: number): VerificationCommand =>
@@ -110,7 +108,10 @@ describe('agent critic end-to-end (issue #164)', () => {
     await server.app.ctx.workspaces.update(workspaceId, {
       isolationMode: 'worktree',
       verificationCommand: null,
-      verificationCritic: null,
+      reviewEnabled: null,
+      reviewPrompt: null,
+      reviewModel: null,
+      reviewHarness: null,
     });
   });
 
@@ -138,7 +139,7 @@ describe('agent critic end-to-end (issue #164)', () => {
 
   it('AC1/AC2: a passing critic merges a native Run to done; the attempt persists at the verified head OID', async () => {
     criticResult = { verdict: 'pass', summary: 'looks correct' };
-    await server.app.ctx.workspaces.update(workspaceId, { verificationCritic: critic() });
+    await server.app.ctx.workspaces.update(workspaceId, critic());
     const { taskId, runId } = await createAndRun();
 
     const task = await waitFor(async () => {
@@ -164,7 +165,7 @@ describe('agent critic end-to-end (issue #164)', () => {
 
   it('AC3: a failing critic records feedback on attempt 1 and escalates after attempt 2', async () => {
     criticResult = { verdict: 'fail', summary: 'the change breaks the contract' };
-    await server.app.ctx.workspaces.update(workspaceId, { verificationCritic: critic() });
+    await server.app.ctx.workspaces.update(workspaceId, critic());
     const baseOidBefore = git(repoDir, 'rev-parse', 'main');
     const { taskId, runId } = await createAndRun();
 
@@ -197,7 +198,7 @@ describe('agent critic end-to-end (issue #164)', () => {
 
   it('AC3: an inconclusive critic consumes the same bounded Attempt loop', async () => {
     criticResult = { verdict: 'inconclusive', summary: 'cannot tell from the diff alone' };
-    await server.app.ctx.workspaces.update(workspaceId, { verificationCritic: critic() });
+    await server.app.ctx.workspaces.update(workspaceId, critic());
     const { runId } = await createAndRun();
 
     const run = await waitFor(async () => {
@@ -215,8 +216,8 @@ describe('agent critic end-to-end (issue #164)', () => {
   it('AC1: the critic verdict combines with the command verdict — command pass + critic fail still Escalates', async () => {
     criticResult = { verdict: 'fail', summary: 'logic is wrong despite green tests' };
     await server.app.ctx.workspaces.update(workspaceId, {
-      verificationCommand: exitCommand(0),
-      verificationCritic: critic(),
+      verificationCommand: [exitCommand(0)],
+      ...critic(),
     });
     const { taskId, runId } = await createAndRun();
 
@@ -245,8 +246,8 @@ describe('agent critic end-to-end (issue #164)', () => {
   it('AC1: command pass + critic pass together merges the Run (all verifiers passed)', async () => {
     criticResult = { verdict: 'pass', summary: 'correct and complete' };
     await server.app.ctx.workspaces.update(workspaceId, {
-      verificationCommand: exitCommand(0),
-      verificationCritic: critic(),
+      verificationCommand: [exitCommand(0)],
+      ...critic(),
     });
     const { taskId, runId } = await createAndRun();
 
@@ -268,8 +269,8 @@ describe('agent critic end-to-end (issue #164)', () => {
     criticResult = { verdict: 'pass', summary: 'correct and complete' };
     const command = exitCommand(0);
     await server.app.ctx.workspaces.update(workspaceId, {
-      verificationCommand: command,
-      verificationCritic: critic(),
+      verificationCommand: [command],
+      ...critic(),
     });
     const { taskId, runId } = await createAndRun();
 
@@ -316,7 +317,7 @@ describe('agent critic end-to-end (issue #164)', () => {
   it('a configured critic with no committed implementation fails closed', async () => {
     await server.app.ctx.workspaces.update(workspaceId, {
       isolationMode: 'direct',
-      verificationCritic: critic(),
+      ...critic(),
     });
     writeFileSync(join(repoDir, 'uncommitted-critic.txt'), 'dirty\n');
 
@@ -352,7 +353,7 @@ describe('agent critic end-to-end (issue #164)', () => {
         codex: { command: process.execPath, args: [], models: ['stub-model'], defaultModel: 'stub-model' },
       },
     });
-    await server.app.ctx.workspaces.update(workspaceId, { verificationCritic: criticWithHarness('codex') });
+    await server.app.ctx.workspaces.update(workspaceId, criticWithHarness('codex'));
     const { taskId } = await createAndRun();
 
     const task = await waitFor(async () => {

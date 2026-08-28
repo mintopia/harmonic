@@ -7,12 +7,12 @@ import type { ResolvedTracker } from '../../tracker/adapter.js';
 import { createWorkspaceInputSchema, updateWorkspaceInputSchema } from '../../domain/workspaces.js';
 import {
   verificationCommandOverrideSchema,
-  verificationCriticOverrideSchema,
   budgetGuardrailSchema,
   unpricedModelsForCostCap,
   costCapMessage,
 } from '../../config.js';
 import { DomainError } from '../../domain/errors.js';
+import { resolveVerifiers } from '../../domain/setting-override.js';
 import { idParamsSchema, errorResponse } from '../schemas.js';
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
 
@@ -59,15 +59,30 @@ const workspaceSchema = z
     /** Per-workspace attempt cap; null inherits `config.maxAttempts`. */
     maxAttempts: z.number().nullable().meta({ example: null }),
     contextReuseTokenLimit: z.number().nullable().meta({ example: null }),
-    // Verification verifier overrides (issue #132), tri-state (issue #174): the
-    // raw JSON columns parsed back into their object shape, so a client reads a
-    // set override the same shape it PATCHes. null ⇒ inherit
-    // `config.verification.{command,critic}`; `{ off: true }` ⇒ explicitly
-    // disabled for this Workspace.
+    // Verification verifier overrides: the raw JSON columns parsed back into their
+    // shape, so a client reads a set override the same shape it PATCHes. The
+    // command is list-grain (ADR-0044 §D, issue #338): null ⇒ inherit
+    // `config.verify.commands`, a non-empty array overrides the whole list, `[]` ⇒
+    // off (run no commands here). The review is decomposed into four independently-
+    // inheritable scalars (issue #337, ADR-0044 §C): each null ⇒ inherit the
+    // matching `config.verify.review.*` field.
     verificationCommand: verificationCommandOverrideSchema.nullable().meta({ example: null }),
-    verificationCritic: verificationCriticOverrideSchema.nullable().meta({ example: null }),
+    reviewEnabled: z.boolean().nullable().meta({ example: null }),
+    reviewPrompt: z.string().nullable().meta({ example: null }),
+    reviewModel: z.string().nullable().meta({ example: null }),
+    reviewHarness: z.string().nullable().meta({ example: null }),
     guardrailBudget: budgetGuardrailSchema.nullable().meta({ example: null }),
     guardrailProgress: z.boolean().nullable().meta({ example: null }),
+    /** Tool-timeout bound override (ADR-0044); null inherits `config.guardrails.toolTimeoutMinutes`. */
+    toolTimeoutMinutes: z.number().nullable().meta({ example: null }),
+    // Drive.* overrides (ADR-0044): each null ⇒ inherit the matching `config.drive.*`.
+    drivePrompt: z.string().nullable().meta({ example: null }),
+    driveUnattendedReminder: z.string().nullable().meta({ example: null }),
+    driveContinuePrompt: z.string().nullable().meta({ example: null }),
+    driveMergeFate: z.string().nullable().meta({ example: null }),
+    driveContinueAttempts: z.number().nullable().meta({ example: null }),
+    /** Task Prompt override (ADR-0044); null inherits `config.taskPrompt`. */
+    taskPrompt: z.string().nullable().meta({ example: null }),
     createdAt: z.number().meta({ example: 1784030400000 }),
     updatedAt: z.number().meta({ example: 1784032260000 }),
   })
@@ -87,12 +102,13 @@ export async function workspaceRoutes(fastify: FastifyInstance): Promise<void> {
         : { ok: false, label: null, code: r.code, reason: r.reason };
 
   /** A Workspace row plus its live Resolved Tracker, as every workspace endpoint returns it.
-   * The two verifier overrides are stored as JSON text; parse them back so the
-   * response carries the same object shape a client PATCHes (issue #132). */
+   * The verifier-list and budget overrides are stored as JSON text; parse them
+   * back so the response carries the same object shape a client PATCHes (issue
+   * #132). The four review-override columns are plain scalars and pass through
+   * via `...ws` unchanged. */
   const serialize = (ws: WorkspaceRow) => ({
     ...ws,
     verificationCommand: ws.verificationCommand ? JSON.parse(ws.verificationCommand) : null,
-    verificationCritic: ws.verificationCritic ? JSON.parse(ws.verificationCritic) : null,
     guardrailBudget: ws.guardrailBudget ? JSON.parse(ws.guardrailBudget) : null,
     resolvedTracker: serializeResolvedTracker(ctx.trackerManager.resolvedTracker(ws.id)),
   });
@@ -182,6 +198,31 @@ export async function workspaceRoutes(fastify: FastifyInstance): Promise<void> {
         const unpriced = unpricedModelsForCostCap(req.body.guardrailBudget, ctx.configStore.get());
         if (unpriced.length > 0) {
           throw new DomainError('validation', `guardrailBudget.costUsd: ${costCapMessage(unpriced)}`);
+        }
+      }
+      // A review override that resolves to enabled-without-a-model can never run
+      // (ADR-0044 §F, issue #340): block the save instead of letting the critic be
+      // silently skipped. Validate the *resolved* review — the patched Workspace over
+      // the current global. Field-pathed so the settings form surfaces it inline.
+      if (
+        req.body.reviewEnabled !== undefined ||
+        req.body.reviewPrompt !== undefined ||
+        req.body.reviewModel !== undefined ||
+        req.body.reviewHarness !== undefined
+      ) {
+        const current = await ctx.workspaces.get(req.params.id);
+        const merged = {
+          ...current,
+          reviewEnabled: req.body.reviewEnabled === undefined ? current.reviewEnabled : req.body.reviewEnabled,
+          reviewPrompt: req.body.reviewPrompt === undefined ? current.reviewPrompt : req.body.reviewPrompt,
+          reviewModel: req.body.reviewModel === undefined ? current.reviewModel : req.body.reviewModel,
+          reviewHarness: req.body.reviewHarness === undefined ? current.reviewHarness : req.body.reviewHarness,
+        };
+        const { review } = resolveVerifiers(merged, ctx.configStore.get());
+        if (review.requested && !review.enabled) {
+          const missing = !review.model ? 'reviewModel' : 'reviewPrompt';
+          const noun = missing === 'reviewModel' ? 'model' : 'prompt';
+          throw new DomainError('validation', `${missing}: review is enabled but resolves to no ${noun} — set one or turn review off`);
         }
       }
       const workspace = await ctx.workspaces.update(req.params.id, req.body);

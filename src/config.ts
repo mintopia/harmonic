@@ -148,24 +148,14 @@ export const verificationReviewSchema = z
 export type VerificationReview = z.infer<typeof verificationReviewSchema>;
 
 /**
- * The sentinel a Workspace stores to force a verifier OFF for itself (issue #174),
- * distinct from inheriting the global default. At this layer `null`/absent means
- * inherit; a configured verifier object means override; `{ off: true }` means the
- * Workspace has explicitly disabled the verifier regardless of the global setting.
+ * A Workspace's command-verifier override is **list-grain** (ADR-0044 §D, issue
+ * #338): the whole command list inherits or overrides as a unit. At the field
+ * level `null`/absent = inherit the global list; here a non-empty array overrides
+ * it with that exact ordered list, and an explicit empty array is *off* — run no
+ * commands in this Workspace. There is no per-command inheritance and no
+ * `{ off: true }` sentinel: an empty array *is* off.
  */
-export const verifierOffSchema = z.object({ off: z.literal(true) });
-export type VerifierOff = z.infer<typeof verifierOffSchema>;
-export const verificationCommandOverrideSchema = z.union([z.array(verificationCommandSchema), verificationCommandSchema, verifierOffSchema]);
-// Order matters: verificationReviewSchema is permissive enough (enabled defaults
-// false, prompt/model optional) to swallow a bare critic object or the off
-// sentinel and coerce it to a disabled review, so the stricter members must be
-// tried first — otherwise enabling the critic for a workspace persists as off.
-// The critic member is matched `.strict()` so a review-shaped object (one that
-// carries `enabled`) is NOT silently accepted here with `enabled` stripped —
-// which would drop an explicit `enabled: false` and let `resolveReview` re-wrap
-// it as enabled. Strict-rejecting the extra key lets it fall through to the
-// review schema, which round-trips `enabled` faithfully.
-export const verificationCriticOverrideSchema = z.union([verifierOffSchema, verificationCriticSchema.strict(), verificationReviewSchema]);
+export const verificationCommandOverrideSchema = z.array(verificationCommandSchema);
 
 /**
  * The budget Guardrail (issue #108/#126, ADR-0019): a mandatory wall-clock bound

@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { card, labelType } from '../ui';
+import { card, field, labelType } from '../ui';
 
 export function SettingsSection({
   title,
@@ -48,6 +48,55 @@ export function PromptPreview({ text }: { text: string }) {
 export function FieldError({ message }: { message?: string }) {
   if (!message) return null;
   return <p className="mt-1 text-label text-fail">{message}</p>;
+}
+
+/**
+ * One prompt-template textarea with its placeholder legend and compiled preview
+ * (the `{token}` help + the "Compiled preview" pane). Shared by both settings
+ * surfaces so the drive/task/review prompt editors are written once: the global
+ * page passes a `label`; the workspace page omits it (its `InheritField` wrapper
+ * supplies the label) and drives it from the override slot. `preview` is
+ * precomputed by the caller (via the `compile*Preview` helpers) so this stays a
+ * dumb presentational field.
+ */
+export function PromptField({
+  id,
+  label,
+  description,
+  value,
+  onChange,
+  placeholders,
+  preview,
+  error,
+  rows,
+  textareaClass = field,
+}: {
+  id: string;
+  /** Omit when a wrapper (e.g. InheritField) already renders the label. */
+  label?: string;
+  description?: ReactNode;
+  value: string;
+  onChange: (value: string) => void;
+  placeholders: [string, string][];
+  preview: string;
+  error?: string;
+  rows?: number;
+  textareaClass?: string;
+}) {
+  return (
+    <div>
+      {label && (
+        <label className={fieldLabel} htmlFor={id}>
+          {label}
+        </label>
+      )}
+      {description && <p className="mb-1 text-small text-muted">{description}</p>}
+      <textarea id={id} rows={rows} className={textareaClass} value={value} onChange={(e) => onChange(e.target.value)} />
+      <FieldError message={error} />
+      <PlaceholderList placeholders={placeholders} />
+      <PromptPreview text={preview} />
+    </div>
+  );
 }
 
 /** Server validation errors arrive as one `path: message; path: message`

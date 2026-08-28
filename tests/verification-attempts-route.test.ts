@@ -88,7 +88,7 @@ describe('GET /api/runs/:id/verification-attempts (issue #169)', () => {
 
       expect(res.status).toBe(200);
       expect(res.body.verifierStatuses).toEqual([
-        { mechanism: 'command', state: 'skipped', reason: 'No command verification attempt was recorded for this run.' },
+        { mechanism: 'command', state: 'skipped', reason: 'No command verification attempt was recorded for this run.', commands: ['npm test'] },
         { mechanism: 'critic', state: 'passed', reason: null },
       ]);
     } finally {
@@ -120,7 +120,7 @@ describe('GET /api/runs/:id/verification-attempts (issue #169)', () => {
 
       expect(res.status).toBe(200);
       expect(res.body.verifierStatuses).toEqual([
-        { mechanism: 'command', state: 'skipped', reason: 'No command verification attempt was recorded for this run.' },
+        { mechanism: 'command', state: 'skipped', reason: 'No command verification attempt was recorded for this run.', commands: ['npm test'] },
         { mechanism: 'critic', state: 'passed', reason: null },
       ]);
     } finally {

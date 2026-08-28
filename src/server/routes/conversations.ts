@@ -4,7 +4,7 @@ import { z } from 'zod';
 import type { App } from '../app.js';
 import { HARNESS_IDS } from '../../config.js';
 import { CONVERSATION_STATES } from '../../db/schema.js';
-import { resolve as resolveOverride } from '../../domain/setting-override.js';
+import { resolveScoped } from '../../domain/setting-override.js';
 import { DomainError } from '../../domain/errors.js';
 import { conversationToApi } from '../serialize.js';
 import { costSchema, errorResponse, idParamsSchema, okResponseSchema, runUsageSchema } from '../schemas.js';
@@ -123,13 +123,13 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
     async (req, reply) => {
       const config = ctx.configStore.get();
       const workspace = await ctx.workspaces.resolve(req.body.workspaceId);
-      const harness = req.body.harness ?? resolveOverride(workspace.chatHarness, config.chat.harness);
+      const harness = req.body.harness ?? resolveScoped('chatHarness', workspace.chatHarness, config.chat.harness);
       const harnessConfig = config.harnesses[harness as keyof typeof config.harnesses];
       if (!harnessConfig) throw new DomainError('validation', `harness '${harness}' is not configured`);
       const conversation = await ctx.conversations.create({
         workspaceId: workspace.id,
         harness,
-        model: req.body.model ?? resolveOverride(workspace.chatModel, config.chat.model),
+        model: req.body.model ?? resolveScoped('chatModel', workspace.chatModel, config.chat.model),
         workingDir: req.body.workingDir ?? workspace.workingDir,
       });
       return reply.status(201).send(await conversationToApi(ctx, conversation));

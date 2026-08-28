@@ -26,10 +26,12 @@ export function attemptTone(state: AttemptState): TimelineTone {
   return 'neutral';
 }
 
-/** Failed and inconclusive verification need attention; absent verification stays neutral. */
+/** Failed and inconclusive verification need attention; a review enabled but
+ * unrunnable (no model) also needs attention; absent verification stays neutral. */
 export function verifierStatusTone(state: VerifierStatus['state']): TimelineTone {
   if (state === 'passed') return 'passed';
   if (state === 'failed' || state === 'inconclusive') return 'failed';
+  if (state === 'unrunnable') return 'failed';
   return 'neutral';
 }
 

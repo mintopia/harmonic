@@ -2,18 +2,47 @@ import { describe, expect, it } from 'vitest';
 import {
   EMPTY_COMMAND,
   EMPTY_CRITIC,
-  VERIFIER_OFF,
   argsText,
-  isVerifierOff,
+  missingReviewInput,
+  reviewUnrunnable,
   setCommandField,
   setCriticField,
   summarizeCommand,
+  summarizeCommands,
   summarizeCritic,
 } from '../web/src/components/verification-override-model.js';
 import type { VerificationCommand, VerificationCritic } from '../web/src/types.js';
 
 const baseCommand: VerificationCommand = { command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 };
 const baseCritic: VerificationCritic = { prompt: 'review the diff', model: 'claude-opus-5' };
+
+describe('reviewUnrunnable (ADR-0044 §F, issue #340)', () => {
+  it('flags a review toggled on with no resolved model', () => {
+    expect(reviewUnrunnable({ requested: true, model: '', prompt: 'review the diff' })).toBe(true);
+  });
+
+  it('flags a review toggled on with no resolved prompt', () => {
+    expect(reviewUnrunnable({ requested: true, model: 'claude-opus-5', prompt: '' })).toBe(true);
+  });
+
+  it('is runnable when toggled on with both model and prompt resolved', () => {
+    expect(reviewUnrunnable({ requested: true, model: 'claude-opus-5', prompt: 'review the diff' })).toBe(false);
+  });
+
+  it('is never unrunnable when the review is toggled off', () => {
+    expect(reviewUnrunnable({ requested: false, model: '', prompt: '' })).toBe(false);
+  });
+
+  it('treats a missing (undefined/null) model or prompt as unresolved', () => {
+    expect(reviewUnrunnable({ requested: true })).toBe(true);
+    expect(reviewUnrunnable({ requested: true, model: null, prompt: null })).toBe(true);
+  });
+
+  it('names the missing input, model before prompt', () => {
+    expect(missingReviewInput({ model: '', prompt: '' })).toBe('model');
+    expect(missingReviewInput({ model: 'claude-opus-5', prompt: '' })).toBe('prompt');
+  });
+});
 
 describe('setCommandField (issue #165)', () => {
   it('sets the executable from a text input', () => {
@@ -56,6 +85,23 @@ describe('summarizeCommand (issue #165)', () => {
   });
 });
 
+describe('summarizeCommands (issue #338)', () => {
+  it('reads an empty list as "No commands"', () => {
+    expect(summarizeCommands([])).toBe('No commands');
+  });
+
+  it('joins each command summary for a non-empty list', () => {
+    const lint: VerificationCommand = { command: 'npm', args: ['run', 'lint'], env: {}, timeoutSeconds: 120 };
+    expect(summarizeCommands([baseCommand, lint])).toBe(
+      'npm test · 600s timeout · npm run lint · 120s timeout',
+    );
+  });
+
+  it('summarizes a single-command list the same as summarizeCommand', () => {
+    expect(summarizeCommands([baseCommand])).toBe(summarizeCommand(baseCommand));
+  });
+});
+
 describe('setCriticField (issue #165)', () => {
   it('sets a free-text field', () => {
     expect(setCriticField(baseCritic, 'model', 'gpt-5')).toEqual({ ...baseCritic, model: 'gpt-5' });
@@ -70,20 +116,5 @@ describe('summarizeCritic (issue #165)', () => {
 
   it('reads the empty seed back as "Not configured"', () => {
     expect(summarizeCritic(EMPTY_CRITIC)).toBe('Not configured');
-  });
-});
-
-describe('isVerifierOff / VERIFIER_OFF (issue #174)', () => {
-  it('recognises the off sentinel', () => {
-    expect(isVerifierOff(VERIFIER_OFF)).toBe(true);
-    expect(isVerifierOff({ off: true })).toBe(true);
-  });
-
-  it('rejects a configured verifier and other non-sentinel values', () => {
-    expect(isVerifierOff(baseCommand)).toBe(false);
-    expect(isVerifierOff(baseCritic)).toBe(false);
-    expect(isVerifierOff(null)).toBe(false);
-    expect(isVerifierOff(undefined)).toBe(false);
-    expect(isVerifierOff({ off: false })).toBe(false);
   });
 });

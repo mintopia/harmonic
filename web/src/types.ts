@@ -84,8 +84,10 @@ export type VerificationMechanism = 'critic' | 'command';
 /** One verifier category's current read-time status, including categories that did not run. */
 export interface VerifierStatus {
   mechanism: VerificationMechanism;
-  state: 'passed' | 'failed' | 'inconclusive' | 'skipped' | 'disabled';
+  state: 'passed' | 'failed' | 'inconclusive' | 'skipped' | 'disabled' | 'unrunnable' | 'planned';
   reason: string | null;
+  /** The ordered command plan; `command` mechanism only. */
+  commands?: string[];
 }
 
 /** One persisted Verification-attempt event (issue #169, part of #109), as
@@ -213,18 +215,38 @@ export interface Workspace {
   /** Per-workspace attempt cap; null inherits `config.maxAttempts`. */
   maxAttempts: number | null;
   contextReuseTokenLimit: number | null;
-  /** Verification overrides (ADR-0021, issues #132/#138/#165/#174), tri-state for
-   * the command and critic: `null` inherits the global `config.verify` default,
-   * {@link VerifierOff} explicitly disables the verifier for this Workspace, and a
-   * configured object overrides it. Both read back as the shape they were PATCHed
-   * as. */
-  verificationCommand: VerificationCommand | VerifierOff | null;
-  verificationCritic: VerificationCritic | VerifierOff | null;
+  /** Verification overrides (ADR-0021, issues #132/#138/#165/#174/#337/#338). The
+   * command verifier is list-grain, exactly mirroring the global editor: `null`
+   * inherits the global `config.verify.commands` list, an empty array turns
+   * verification off for this Workspace (no commands run here), and a
+   * non-empty array overrides the whole ordered list. It reads back as the
+   * shape it was PATCHed as. */
+  verificationCommand: VerificationCommand[] | null;
+  /**
+   * Critic-review override (issue #337, ADR-0044 §C), decomposed into four
+   * independently-inheritable scalars: null inherits the matching global
+   * `config.verify.review.*`, a value overrides it. "Off" is `reviewEnabled:false`.
+   */
+  reviewEnabled: boolean | null;
+  reviewPrompt: string | null;
+  reviewModel: string | null;
+  reviewHarness: string | null;
   /** Guardrail overrides (ADR-0019, issue #166); `null` inherits
    * `config.guardrails.{budget,progress}`. The budget reads back as the parsed
    * object shape it was PATCHed as. */
   guardrailBudget: BudgetGuardrail | null;
   guardrailProgress: boolean | null;
+  /** Tool-timeout override (ADR-0044); `null` inherits `config.guardrails.toolTimeoutMinutes`. */
+  toolTimeoutMinutes: number | null;
+  /** Drive overrides (ADR-0044 §C), decomposed into independently-inheritable
+   * fields; each `null` inherits the matching global `config.drive.*`. */
+  drivePrompt: string | null;
+  driveUnattendedReminder: string | null;
+  driveContinuePrompt: string | null;
+  driveMergeFate: 'auto-merge' | 'open-PR' | 'artifact' | null;
+  driveContinueAttempts: number | null;
+  /** Task Prompt override (ADR-0044); `null` inherits `config.taskPrompt`. */
+  taskPrompt: string | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -254,12 +276,6 @@ export interface VerificationReview {
   prompt?: string;
   model?: string;
   harness?: string;
-}
-
-/** The sentinel a Workspace stores to force a verifier off for itself (issue
- * #174), distinct from inheriting the global default. Mirrors `verifierOffSchema`. */
-export interface VerifierOff {
-  off: true;
 }
 
 /** The budget Guardrail (ADR-0019): a mandatory wall-clock bound per afk Run
@@ -731,9 +747,9 @@ export interface AppConfig {
     commands: VerificationCommand[];
     review: VerificationReview;
   };
-  /** Run Guardrails (ADR-0019): the global-default budget bounds and progress
-   * toggle a Workspace inherits until it overrides them (issue #166).
-   * `toolTimeoutMinutes` is global-only (no per-Workspace override). */
+  /** Run Guardrails (ADR-0019): the global-default budget bounds, progress
+   * toggle, and tool-timeout a Workspace inherits until it overrides them
+   * (issue #166; toolTimeoutMinutes reclassified overridable per ADR-0044). */
   guardrails: { budget: BudgetGuardrail; progress: boolean; toolTimeoutMinutes: number };
   /** How mirrored Tasks are driven (issue #33): prompt and branch fate. */
   drive: {

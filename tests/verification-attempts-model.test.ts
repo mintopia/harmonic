@@ -224,6 +224,10 @@ describe('criticUnavailableReason (#331)', () => {
     expect(criticUnavailableReason('inconclusive', false, false)).toBe('Critic did not run.');
   });
 
+  it('says unrunnable when enabled but resolving to no model', () => {
+    expect(criticUnavailableReason('unrunnable', false, false)).toBe('Review is enabled but resolves to no model — it cannot run.');
+  });
+
   it('says not-captured when the critic ran but its log was not captured', () => {
     expect(criticUnavailableReason('passed', true, false)).toBe('Critic session log was not captured.');
     expect(criticUnavailableReason('failed', true, false)).toBe('Critic session log was not captured.');

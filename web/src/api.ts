@@ -19,9 +19,7 @@ import type {
   TicketTimelineEvent,
   VerificationAttempt,
   VerificationCommand,
-  VerificationCritic,
   VerifierStatus,
-  VerifierOff,
   Workspace,
 } from './types.js';
 import type { Epic, EpicIntegrateOutcome } from './epic-model.js';
@@ -128,11 +126,22 @@ export const api = {
       conflictResolveTurns?: number | null;
       maxConcurrentRuns?: number | null;
       autoRunnerEnabled?: boolean | null;
+      maxAttempts?: number | null;
       contextReuseTokenLimit?: number | null;
-      verificationCommand?: VerificationCommand | VerifierOff | null;
-      verificationCritic?: VerificationCritic | VerifierOff | null;
+      verificationCommand?: VerificationCommand[] | null;
+      reviewEnabled?: boolean | null;
+      reviewPrompt?: string | null;
+      reviewModel?: string | null;
+      reviewHarness?: string | null;
       guardrailBudget?: BudgetGuardrail | null;
       guardrailProgress?: boolean | null;
+      toolTimeoutMinutes?: number | null;
+      drivePrompt?: string | null;
+      driveUnattendedReminder?: string | null;
+      driveContinuePrompt?: string | null;
+      driveMergeFate?: 'auto-merge' | 'open-PR' | 'artifact' | null;
+      driveContinueAttempts?: number | null;
+      taskPrompt?: string | null;
     },
   ) => request<Workspace>('PATCH', `/api/workspaces/${id}`, patch),
   // Deletes the Workspace and cascades its board; the server 204s (empty body,

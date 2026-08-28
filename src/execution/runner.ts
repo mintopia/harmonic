@@ -10,7 +10,7 @@ import { LiveUsageTailer, type TailerCadence } from './live-usage-tailer.js';
 import { codeIndexRepoGuidance, driveFields, promptForTask } from './prompt-template.js';
 import { indexWorktree, dropIndexForPath } from './code-index.js';
 import type { AutoDrive } from './auto-drive.js';
-import type { AppConfig, HarnessConfig } from '../config.js';
+import type { AppConfig, HarnessConfig, MergeFate } from '../config.js';
 import type { TaskRow, RunRow, WorkspaceRow, SessionRow } from '../db/schema.js';
 import { AcpDriver, type AcpInitializeResult } from '../acp/driver.js';
 import { SessionStore } from '../domain/sessions.js';
@@ -35,7 +35,8 @@ import type { SessionRetirementHook } from '../domain/session-retirement-coordin
 import type { RunPhase } from '../domain/run-phases.js';
 import type { RunFactType } from '../db/schema.js';
 import type { TaskService } from '../domain/tasks.js';
-import { resolveGuardrails, resolveVerifiers, type ResolvedGuardrails } from '../domain/setting-override.js';
+import { resolveGuardrails, resolveVerifiers, resolveScoped, resolveTaskPrompt, type ResolvedGuardrails } from '../domain/setting-override.js';
+import { hasWorkspaceOverride } from '../domain/settings-registry.js';
 import { VerificationAttemptStore } from '../domain/verification-attempts.js';
 import { GuardrailEventStore } from '../domain/guardrail-events.js';
 import {
@@ -179,10 +180,15 @@ export interface RunnerOptions {
         WorkspaceRow,
         | 'guardrailBudget'
         | 'guardrailProgress'
+        | 'toolTimeoutMinutes'
         | 'verificationCommand'
-        | 'verificationCritic'
+        | 'reviewEnabled'
+        | 'reviewPrompt'
+        | 'reviewModel'
+        | 'reviewHarness'
         | 'maxAttempts'
         | 'contextReuseTokenLimit'
+        | 'taskPrompt'
       > &
         Partial<Pick<WorkspaceRow, 'workingDir'>>)
     | undefined
@@ -683,7 +689,7 @@ export class Runner {
     const config = this.getConfig();
     const harness = config.harnesses[task.harness as keyof typeof config.harnesses];
     if (!harness) throw new DomainError('validation', `harness '${task.harness}' is not configured`);
-    const ws = (await this.getWorkspace?.(task.workspaceId)) ?? { guardrailBudget: null, guardrailProgress: null };
+    const ws = (await this.getWorkspace?.(task.workspaceId)) ?? { guardrailBudget: null, guardrailProgress: null, toolTimeoutMinutes: null };
     const snapshot: RunGuardrailSnapshot = {
       guardrailConfig: resolveGuardrails(ws, config),
       priceTable: resolvePrices(config.prices),
@@ -1392,7 +1398,7 @@ export class Runner {
     const config = this.getConfig();
     const ws = await this.getWorkspace?.(task.workspaceId);
     const { commands, review } = resolveVerifiers(
-      ws ?? { verificationCommand: null, verificationCritic: null },
+      ws ?? { verificationCommand: null, reviewEnabled: null, reviewPrompt: null, reviewModel: null, reviewHarness: null },
       config,
     );
 
@@ -1445,7 +1451,7 @@ export class Runner {
       }
     }
 
-    if (criticEnabled && review.enabled && verdicts.every((entry) => entry.verdict === 'pass')) {
+    if (criticEnabled && review.enabled && review.prompt && review.model && verdicts.every((entry) => entry.verdict === 'pass')) {
       // The agent critic (issue #136/#164, ADR-0021, reliability-design Unit B;
       // containment relaxed by the 2026-08 amendment): a second verdict folded
       // into the same `combineVerdicts`. It reads the frozen candidate from a
@@ -1719,18 +1725,21 @@ export class Runner {
     // verification pass, so a base that keeps moving escalates plainly rather than
     // spinning. Resolved per-Task (Task → Workspace → global default).
     const maxReentries = task.integrationRetries;
+    // The auto-drive Merge Fate resolves per-Workspace now (ADR-0044), so resolve
+    // it once for this completion rather than re-reading it inside the loop.
+    const mergeFate = autoDriven ? await this.autoDrive!.mergeFateFor(task) : undefined;
     for (let reentries = 0; ; reentries += 1) {
       const freshness = await this.mergeFreshness(task, current);
       let stale = freshness.fresh ? null : freshness.reason;
       let train: MergeTrainOutcome | null = null;
       if (stale === null) {
-        const member = autoDriven ? this.epicMemberFor(task, current, freshness.oid) : null;
+        const member = autoDriven ? this.epicMemberFor(task, current, freshness.oid, mergeFate) : null;
         if (member) {
           train = await this.mergeTrain!.submit(member);
           if (train.status === 'stale') stale = train.reason;
         } else if (
           task.isolationMode === 'worktree' && current.branch && current.baseBranch &&
-          (!autoDriven || this.autoDrive?.mergeFateFor(task) === 'auto-merge')
+          (!autoDriven || mergeFate === 'auto-merge')
         ) {
           const merged = await mergeIntoBaseAndRunPostMerge({
             repoDir: task.workingDir,
@@ -1892,7 +1901,7 @@ export class Runner {
    */
   private async drive(task: TaskRow, run: RunRow, harness: HarnessConfig, parent: SpanContext): Promise<void> {
     const workspace = await this.getWorkspace?.(task.workspaceId);
-    const maxAttempts = workspace?.maxAttempts ?? this.getConfig().maxAttempts;
+    const maxAttempts = resolveScoped('maxAttempts', workspace?.maxAttempts, this.getConfig().maxAttempts);
     // The Session key for this Run's turn queue. There is no first-class Session
     // entity yet (reliability-design §0), so the globally-unique Run id anchors
     // it — stable across heal turns even as each turn's ACP session id changes.
@@ -1984,7 +1993,7 @@ export class Runner {
       harness: task.harness,
       contextTokens,
       lastActiveAt: session?.lastActiveAt ?? now,
-      contextReuseTokenLimit: workspace?.contextReuseTokenLimit ?? this.getConfig().contextReuseTokenLimit,
+      contextReuseTokenLimit: resolveScoped('contextReuseTokenLimit', workspace?.contextReuseTokenLimit, this.getConfig().contextReuseTokenLimit),
       now,
     });
   }
@@ -2188,12 +2197,12 @@ export class Runner {
    * deliberately never touch the integration branch, so they keep
    * `onCompleted`'s behaviour. `verifiedTip` is the only object the train merges.
    */
-  private epicMemberFor(task: TaskRow, run: RunRow, verifiedTip: string): MergeTrainMember | null {
+  private epicMemberFor(task: TaskRow, run: RunRow, verifiedTip: string, mergeFate: MergeFate | undefined): MergeTrainMember | null {
     if (!this.mergeTrain) return null;
     if (task.isolationMode !== 'worktree') return null;
     if (!run.branch || !run.baseBranch) return null;
     if (parseIntegrationBranch(run.baseBranch) === null) return null;
-    if (this.autoDrive?.mergeFateFor(task) !== 'auto-merge') return null;
+    if (mergeFate !== 'auto-merge') return null;
     return {
       runId: run.id,
       taskId: task.id,
@@ -2554,7 +2563,7 @@ export class Runner {
       // (issue #126); a live workspace lookup at fire time (possibly long after)
       // could attribute the snapshotted limit to a since-changed override.
       const ws = await this.getWorkspace?.(task.workspaceId);
-      const configSource = ws?.guardrailBudget ? 'workspace' : 'default';
+      const configSource = hasWorkspaceOverride('guardrailBudget', ws?.guardrailBudget) ? 'workspace' : 'default';
       const remaining = Math.max(0, wallClockBudgetMs(budget) - (Date.now() - started.startedAt));
       guardrailTimer = setTimeout(async () => {
         guardrailTimer = null;
@@ -2644,7 +2653,7 @@ export class Runner {
       const priceTable: PriceTable = started.priceTable ? (JSON.parse(started.priceTable) as PriceTable) : {};
       // Resolved at arm time, not fire time — same provenance rule as `armGuardrail`.
       const ws = await this.getWorkspace?.(task.workspaceId);
-      const configSource: 'default' | 'workspace' = ws?.guardrailBudget ? 'workspace' : 'default';
+      const configSource: 'default' | 'workspace' = hasWorkspaceOverride('guardrailBudget', ws?.guardrailBudget) ? 'workspace' : 'default';
       // Prior cumulative spend of this Run's Execution Chain (issue #129): the
       // token/cost already charged by the sibling Runs that continued the same
       // line of work before this one (retry / crash-resume).
@@ -2807,8 +2816,10 @@ export class Runner {
       ? (JSON.parse(progressStart.guardrailConfig) as ResolvedGuardrails)
       : null;
     const progressEnabled = progressSnapshot?.progress === true;
-    const progressConfigSource: 'default' | 'workspace' = (await this.getWorkspace?.(task.workspaceId))
-      ?.guardrailProgress
+    const progressConfigSource: 'default' | 'workspace' = hasWorkspaceOverride(
+      'guardrailProgress',
+      (await this.getWorkspace?.(task.workspaceId))?.guardrailProgress,
+    )
       ? 'workspace'
       : 'default';
     const toolTimeoutMs =
@@ -3126,8 +3137,13 @@ export class Runner {
       // prompt tells the agent, so a bare `cd $workingDir` merges there and cannot
       // commit onto the protected branch the canonical checkout is parked on.
       let promptText = autoDriven
-        ? this.autoDrive!.prompt(task)
-        : promptForTask({ ...task, workingDir: workspace.cwd }, this.getConfig().taskPrompt);
+        ? await this.autoDrive!.prompt(task)
+        : promptForTask(
+            { ...task, workingDir: workspace.cwd },
+            // Native Task framing resolves per-Workspace (ADR-0044/#339): the
+            // Workspace's Task Prompt override wins, else the global default.
+            resolveTaskPrompt(await this.getWorkspace?.(task.workspaceId), this.getConfig()),
+          );
       // An operator continuation of a settled warm Session ({@link steerSettled}):
       // this Run bound the prior Session (session/load), so its first turn is just
       // the operator's follow-up message — the conversation already holds the task
@@ -3203,9 +3219,9 @@ export class Runner {
         }
         if (!autoDriven) break; // native Run with nothing queued → settle the single turn
         if (active.agentFinished) break; // explicit finish signal — the execution-complete signal (#139)
-        if (attempt > this.autoDrive!.continueAttempts()) break; // budget spent → unresolved
+        if (attempt > (await this.autoDrive!.continueAttempts(task))) break; // budget spent → unresolved
         record('lifecycle', { event: 'continue', attempt });
-        promptText = this.autoDrive!.continuePrompt(task);
+        promptText = await this.autoDrive!.continuePrompt(task);
         active.idle = false; // a new turn is in flight — not parked, don't stop it
         result = await driver.prompt([{ type: 'text', text: promptText }]);
         active.idle = true;

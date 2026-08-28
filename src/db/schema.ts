@@ -103,17 +103,23 @@ export const workspaces = sqliteTable('workspaces', {
   /** Per-Workspace Auto-Runner enable; null inherits the global default. Gated
    * by the global master switch — a Task runs only if `master ∧ resolved`. */
   autoRunnerEnabled: integer('auto_runner_enabled', { mode: 'boolean' }),
-  /** Per-Workspace command-verifier override (issue #132, ADR-0021), tri-state
-   * (issue #174): JSON of `verificationCommandSchema` to override, the sentinel
-   * `{"off":true}` to explicitly disable the verifier for this Workspace, or
-   * null to inherit `config.verification.command`. Resolved per-key at read
-   * time by `resolveVerifiers` (setting-override.ts). */
+  /** Per-Workspace command-verifier override (issue #132, ADR-0021), list-grain
+   * (ADR-0044 §D, issue #338): a JSON array of `verificationCommandSchema` that
+   * overrides the whole global list — a non-empty array is that ordered list, an
+   * empty array `[]` is *off* (run no commands here) — or null to inherit
+   * `config.verify.commands`. No per-command inheritance and no `{"off":true}`
+   * sentinel (migrated away in 0057). Resolved at read time by `resolveVerifiers`
+   * (setting-override.ts). */
   verificationCommand: text('verification_command'),
-  /** Per-Workspace critic-verifier override (issue #132), tri-state (issue #174):
-   * JSON of `verificationCriticSchema` to override, the sentinel `{"off":true}`
-   * to explicitly disable the verifier for this Workspace, or null to inherit
-   * `config.verification.critic`. */
-  verificationCritic: text('verification_critic'),
+  /** Per-Workspace critic-review override (issue #337, ADR-0044 §C), decomposed
+   * into four independently-inheritable scalar columns — each null inherits the
+   * matching `config.verify.review.*` field. Resolved at read time by
+   * `resolveVerifiers` (setting-override.ts). Replaces the old atomic
+   * `verification_critic` blob + `{"off":true}` sentinel (migrated in 0059). */
+  reviewEnabled: integer('review_enabled', { mode: 'boolean' }),
+  reviewPrompt: text('review_prompt'),
+  reviewModel: text('review_model'),
+  reviewHarness: text('review_harness'),
   /** Per-Workspace budget-Guardrail override (issue #126, ADR-0019): JSON of
    * `budgetGuardrailSchema`, or null to inherit `config.guardrails.budget`.
    * Resolved by `resolveGuardrails` (setting-override.ts). */
@@ -125,6 +131,24 @@ export const workspaces = sqliteTable('workspaces', {
   maxAttempts: integer('max_attempts'),
   /** Per-Workspace context-reuse token limit; null inherits the global default. */
   contextReuseTokenLimit: integer('context_reuse_token_limit'),
+  // --- Drive + Task Prompt overrides (ADR-0044): the `drive.*` block decomposes
+  // into five independently-inheritable fields, plus the Task Prompt and the
+  // tool-timeout bound. Null ⇒ inherit the global default; resolved at read time
+  // (`resolveDrive` / `resolveScoped`, setting-override.ts). ---
+  /** Per-Workspace Drive Prompt override; null inherits `config.drive.prompt`. */
+  drivePrompt: text('drive_prompt'),
+  /** Per-Workspace unattended-reminder override; null inherits `config.drive.unattendedReminder`. */
+  driveUnattendedReminder: text('drive_unattended_reminder'),
+  /** Per-Workspace continue-prompt override; null inherits `config.drive.continuePrompt`. */
+  driveContinuePrompt: text('drive_continue_prompt'),
+  /** Per-Workspace Merge Fate override; null inherits `config.drive.mergeFate`. */
+  driveMergeFate: text('drive_merge_fate'),
+  /** Per-Workspace continue-attempts override; null inherits `config.drive.continueAttempts`. */
+  driveContinueAttempts: integer('drive_continue_attempts'),
+  /** Per-Workspace Task Prompt override; null inherits `config.taskPrompt`. */
+  taskPrompt: text('task_prompt'),
+  /** Per-Workspace tool-timeout override (ADR-0044); null inherits `config.guardrails.toolTimeoutMinutes`. */
+  toolTimeoutMinutes: integer('tool_timeout_minutes'),
   createdAt: integer('created_at').notNull(),
   updatedAt: integer('updated_at').notNull(),
 }, (t) => [

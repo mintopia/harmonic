@@ -130,7 +130,7 @@ export async function attemptTimelineToApi(ctx: AppContext, taskId: number): Pro
         verifiedSha,
         escalationReason,
         continuation: continuationToApi(attempt.continuation),
-        verifierStatuses: verifierStatuses({ verifiers: configuredVerifiers, attempts: verificationAttempts }),
+        verifierStatuses: verifierStatuses({ verifiers: configuredVerifiers, attempts: verificationAttempts, phase: run?.phase ?? null }),
         tasks: tasks.map(attemptTaskToApi),
       };
     })),
@@ -140,13 +140,13 @@ export async function attemptTimelineToApi(ctx: AppContext, taskId: number): Pro
 /** The configured-or-recorded verifier rows for one Run's always-visible read model. */
 export async function verifierStatusesToApi(
   ctx: AppContext,
-  run: Pick<RunRow, 'id' | 'taskId'>,
+  run: Pick<RunRow, 'id' | 'taskId' | 'phase'>,
   recordedAttempts?: readonly VerificationAttemptRow[],
 ): Promise<VerifierStatus[]> {
   const task = await ctx.tasks.get(run.taskId);
   const workspace = await ctx.workspaces.get(atRestWorkspaceId(task.workspaceId));
   const attempts = recordedAttempts ?? await ctx.verificationAttempts.list(run.id);
-  return verifierStatuses({ verifiers: resolveVerifiers(workspace, ctx.configStore.get()), attempts });
+  return verifierStatuses({ verifiers: resolveVerifiers(workspace, ctx.configStore.get()), attempts, phase: run.phase });
 }
 
 type TicketTimelineKind =

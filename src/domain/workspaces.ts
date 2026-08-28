@@ -18,8 +18,9 @@ import { DomainError } from './errors.js';
 import { deleteRunsAndChildrenAsync } from './run-cascade.js';
 import {
   verificationCommandOverrideSchema,
-  verificationCriticOverrideSchema,
   budgetGuardrailSchema,
+  MERGE_FATES,
+  HARNESS_IDS,
 } from '../config.js';
 
 export const createWorkspaceInputSchema = z.object({
@@ -57,21 +58,41 @@ export const workspaceOverridesSchema = z.object({
   maxAttempts: z.number().int().min(1).nullable().optional().meta({ example: 2 }),
   contextReuseTokenLimit: z.number().int().min(0).nullable().optional().meta({ example: 200_000 }),
   /**
-   * Command-verifier override (issue #132), tri-state (issue #174): null/absent
-   * inherits `config.verification.command`, a verifier object overrides it, and
-   * `{ off: true }` explicitly disables the verifier for this Workspace.
+   * Command-verifier override (issue #132), list-grain (ADR-0044 §D, issue #338):
+   * null/absent inherits `config.verify.commands`, a non-empty array overrides the
+   * whole list, and an explicit empty array `[]` runs no commands here (off). No
+   * per-command inheritance, no `{ off: true }` sentinel.
    */
   verificationCommand: verificationCommandOverrideSchema.nullable().optional(),
   /**
-   * Critic-verifier override (issue #132), tri-state (issue #174): null/absent
-   * inherits `config.verification.critic`, a verifier object overrides it, and
-   * `{ off: true }` explicitly disables the verifier for this Workspace.
+   * Critic-review override (issue #337, ADR-0044 §C), decomposed into four
+   * independently-inheritable scalars: null/absent inherits the matching global
+   * `config.verify.review.*`, a value overrides it. "Off" is `reviewEnabled:false`.
    */
-  verificationCritic: verificationCriticOverrideSchema.nullable().optional(),
+  reviewEnabled: z.boolean().nullable().optional().meta({ example: true }),
+  reviewPrompt: z.string().min(1).nullable().optional().meta({ example: 'Review the diff for correctness.' }),
+  reviewModel: z.string().min(1).nullable().optional().meta({ example: 'claude-opus-5' }),
+  reviewHarness: z.enum(HARNESS_IDS).nullable().optional().meta({ example: 'claude' }),
   /** Budget-Guardrail override (issue #126); null inherits `config.guardrails.budget`. */
   guardrailBudget: budgetGuardrailSchema.nullable().optional(),
   /** Progress-detector toggle override (issue #126); null inherits `config.guardrails.progress`. */
   guardrailProgress: z.boolean().nullable().optional(),
+  /** Tool-timeout bound override (ADR-0044); null inherits `config.guardrails.toolTimeoutMinutes`. */
+  toolTimeoutMinutes: z.number().positive().nullable().optional().meta({ example: 20 }),
+  // Drive.* overrides (ADR-0044): five independently-inheritable fields. Each is
+  // nullable — null clears back to inherit the matching `config.drive.*` default.
+  /** Drive Prompt override; null inherits `config.drive.prompt`. */
+  drivePrompt: z.string().min(1).nullable().optional(),
+  /** Unattended-reminder override; null inherits `config.drive.unattendedReminder`. */
+  driveUnattendedReminder: z.string().min(1).nullable().optional(),
+  /** Continue-prompt override; null inherits `config.drive.continuePrompt`. */
+  driveContinuePrompt: z.string().min(1).nullable().optional(),
+  /** Merge Fate override; null inherits `config.drive.mergeFate`. */
+  driveMergeFate: z.enum(MERGE_FATES).nullable().optional().meta({ example: 'auto-merge' }),
+  /** Continue-attempts override; null inherits `config.drive.continueAttempts`. */
+  driveContinueAttempts: z.number().int().min(0).nullable().optional().meta({ example: 1 }),
+  /** Task Prompt override; null inherits `config.taskPrompt`. */
+  taskPrompt: z.string().min(1).nullable().optional(),
 });
 
 export const updateWorkspaceInputSchema = createWorkspaceInputSchema
@@ -179,9 +200,19 @@ export class WorkspaceService {
           maxAttempts: patch(input.maxAttempts, current.maxAttempts),
           contextReuseTokenLimit: patch(input.contextReuseTokenLimit, current.contextReuseTokenLimit),
           verificationCommand: patchJson(input.verificationCommand, current.verificationCommand),
-          verificationCritic: patchJson(input.verificationCritic, current.verificationCritic),
+          reviewEnabled: patch(input.reviewEnabled, current.reviewEnabled),
+          reviewPrompt: patch(input.reviewPrompt, current.reviewPrompt),
+          reviewModel: patch(input.reviewModel, current.reviewModel),
+          reviewHarness: patch(input.reviewHarness, current.reviewHarness),
           guardrailBudget: patchJson(input.guardrailBudget, current.guardrailBudget),
           guardrailProgress: patch(input.guardrailProgress, current.guardrailProgress),
+          toolTimeoutMinutes: patch(input.toolTimeoutMinutes, current.toolTimeoutMinutes),
+          drivePrompt: patch(input.drivePrompt, current.drivePrompt),
+          driveUnattendedReminder: patch(input.driveUnattendedReminder, current.driveUnattendedReminder),
+          driveContinuePrompt: patch(input.driveContinuePrompt, current.driveContinuePrompt),
+          driveMergeFate: patch(input.driveMergeFate, current.driveMergeFate),
+          driveContinueAttempts: patch(input.driveContinueAttempts, current.driveContinueAttempts),
+          taskPrompt: patch(input.taskPrompt, current.taskPrompt),
           updatedAt: Date.now(),
         })
         .where(eq(workspaces.id, id))

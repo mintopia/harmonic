@@ -350,15 +350,31 @@ function Verification({ attempts, statuses, run }: { attempts: VerificationAttem
   // session per pass, and the operator needs to see all of them, not just the
   // latest (ADR-0040).
   const criticSessions = attempts.filter((a) => a.mechanism === 'critic' && a.hasTranscript);
+  const hasPlanned = statuses.some((status) => status.state === 'planned');
+  // The gate-on-pass caption: commands run in order, review (if in the plan)
+  // gates on all of them passing (issue #345).
+  const commandRow = rows.find(({ status }) => status.mechanism === 'command');
+  const commandCount = commandRow?.status.commands?.length ?? 0;
+  const reviewRow = rows.find(({ status }) => status.mechanism === 'critic');
+  const reviewInPlan = reviewRow ? reviewRow.status.state !== 'disabled' : false;
+  // "review gates on all commands passing" only reads true when commands exist;
+  // with none it would be a vacuous sentence. A lone step needs no ordering line.
+  const gateCaption =
+    reviewInPlan && commandCount >= 1
+      ? 'Runs top to bottom — review gates on all commands passing.'
+      : commandCount + (reviewInPlan ? 1 : 0) >= 2
+        ? 'Runs top to bottom.'
+        : null;
   return (
     <div className="mt-2">
       <div className="flex items-center">
         <span className={sectionCaps}>Verification</span>
         <span className={`ml-auto inline-flex items-center gap-1.5 text-[12.5px] font-semibold ${attempts.length > 0 ? OUTCOME_TONE[decision.outcome] ?? 'text-muted' : 'text-muted'}`}>
           <span className="size-2 rounded-full bg-current" />
-          {attempts.length > 0 ? decision.outcome : 'not run'}
+          {attempts.length > 0 ? decision.outcome : hasPlanned ? 'planned' : 'not run'}
         </span>
       </div>
+      {gateCaption && <p className="mt-1 text-[12px] text-muted">{gateCaption}</p>}
       <div className="mt-3 flex flex-col gap-3">
         {rows.map(({ status, attempt }) => {
           // With no critic-session log to show, say *why* (driven by the #327
@@ -371,13 +387,21 @@ function Verification({ attempts, statuses, run }: { attempts: VerificationAttem
           <div key={status.mechanism} className="flex items-start gap-3">
             <span
               className={`mt-px grid size-[18px] shrink-0 place-items-center rounded-md ${
-                status.state === 'failed' ? 'bg-fail-tint text-fail' : status.state === 'passed' ? 'bg-merged-tint text-merged' : 'bg-raised text-muted'
+                status.state === 'failed' || status.state === 'unrunnable'
+                  ? 'bg-fail-tint text-fail'
+                  : status.state === 'passed'
+                    ? 'bg-merged-tint text-merged'
+                    : 'bg-raised text-muted'
               }`}
             >
               {status.state === 'failed' ? (
                 <span className="text-[11px] leading-none">✕</span>
+              ) : status.state === 'unrunnable' ? (
+                <span className="text-[11px] leading-none font-bold">!</span>
               ) : status.state === 'passed' ? (
                 <Icon name="check" className="size-3" />
+              ) : status.state === 'planned' ? (
+                <span className="size-2 rounded-full border border-current" />
               ) : (
                 <span className="text-[11px] leading-none">–</span>
               )}
@@ -389,6 +413,16 @@ function Verification({ attempts, statuses, run }: { attempts: VerificationAttem
               >
                 {attempt ? (attempt.mechanism === 'critic' ? <Markdown source={attempt.summary} className="text-muted" /> : attempt.summary) : status.reason}
               </div>
+              {status.commands && status.commands.length > 0 && (
+                <ol className="mt-1 flex flex-col gap-0.5">
+                  {status.commands.map((cmd, i) => (
+                    <li key={i} className="text-[12px] text-muted">
+                      <span className="mr-1.5 tabular-nums text-edge">{i + 1}.</span>
+                      <code className="rounded-[5px] bg-raised px-[5px] py-px font-data text-[12px]">{cmd}</code>
+                    </li>
+                  ))}
+                </ol>
+              )}
               {status.mechanism === 'critic' && criticSessions.length > 0 && (
                 <div className="mt-2 flex flex-col gap-1">
                   {criticSessions.map((c, i) => (

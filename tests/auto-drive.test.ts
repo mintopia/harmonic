@@ -110,49 +110,75 @@ describe('Drive Prompt fill (issue #33)', () => {
     expect(filled).toBe('/implement #42 https://x/42\n\n# Add rate limiting\n\nCap POST /tasks');
   });
 
-  it('AutoDrive.prompt uses the global template, the ticket url, and the workflow skill', () => {
+  it('AutoDrive.prompt uses the global template, the ticket url, and the workflow skill', async () => {
     const config: AppConfig = {
       ...defaultConfig(),
       drive: { ...defaultConfig().drive, prompt: '{skill} {ref} {url}\n\n{title}::{body}' },
     };
     const research = worktreeTask({ trackerRef: 9, wayfinderType: 'research', prompt: 'Investigate X\n\nwhy' });
     const drive = new AutoDrive(() => config, (task) => (task.trackerRef === 9 ? 'https://x/9' : null));
-    expect(drive.prompt(research)).toBe(`/research 9 https://x/9\n\nInvestigate X::why\n\n${reminder(1)}`);
+    expect(await drive.prompt(research)).toBe(`/research 9 https://x/9\n\nInvestigate X::why\n\n${reminder(1)}`);
   });
 
-  it('appends a re-queued mirrored Task’s feedback so the afk retry sees it', () => {
+  it('appends a re-queued mirrored Task’s feedback so the afk retry sees it', async () => {
     const config: AppConfig = {
       ...defaultConfig(),
       drive: { ...defaultConfig().drive, prompt: '{skill} {ref}\n\n{title}::{body}' },
     };
     const drive = new AutoDrive(() => config, () => null);
     const withFeedback = worktreeTask({ trackerRef: 9, prompt: 'Fix it\n\ndetails', feedback: '  tests are red  ' });
-    expect(drive.prompt(withFeedback)).toBe(
+    expect(await drive.prompt(withFeedback)).toBe(
       `/implement 9\n\nFix it::details\n\n## Feedback from the previous attempt\n\ntests are red\n\n${reminder(1)}`,
     );
     // No feedback column → the drive prompt is just template + reminder.
     const plain = worktreeTask({ trackerRef: 9, prompt: 'Fix it\n\ndetails', feedback: null });
-    expect(drive.prompt(plain)).toBe(`/implement 9\n\nFix it::details\n\n${reminder(1)}`);
+    expect(await drive.prompt(plain)).toBe(`/implement 9\n\nFix it::details\n\n${reminder(1)}`);
   });
 
-  it('the unattended reminder names both signal tools and this Task’s id', () => {
+  it('the unattended reminder names both signal tools and this Task’s id', async () => {
     const config: AppConfig = { ...defaultConfig(), drive: { ...defaultConfig().drive, prompt: '{skill}' } };
     const drive = new AutoDrive(() => config, () => null);
-    const text = drive.prompt(worktreeTask({ id: 42 }));
+    const text = await drive.prompt(worktreeTask({ id: 42 }));
     expect(text).toContain('finish_task');
     expect(text).toContain('escalate_task');
     expect(text).toContain('taskId=42');
     expect(text).toMatch(/running unattended/i);
   });
 
-  it('continuePrompt nudges the agent to resume and carries the reminder', () => {
+  it('continuePrompt nudges the agent to resume and carries the reminder', async () => {
     const config: AppConfig = { ...defaultConfig(), drive: { ...defaultConfig().drive, continueAttempts: 3 } };
     const drive = new AutoDrive(() => config, () => null);
-    const text = drive.continuePrompt(worktreeTask({ id: 7 }));
+    const text = await drive.continuePrompt(worktreeTask({ id: 7 }));
     expect(text).toMatch(/isn't finished/i);
     expect(text).toContain('finish_task');
     expect(text).toContain('taskId=7');
-    expect(drive.continueAttempts()).toBe(3);
+    expect(await drive.continueAttempts(worktreeTask({ id: 7 }))).toBe(3);
+  });
+
+  it('resolves every drive.* field per-Workspace via the injected resolver (ADR-0044/#339)', async () => {
+    const config: AppConfig = {
+      ...defaultConfig(),
+      drive: { ...defaultConfig().drive, prompt: 'GLOBAL {ref}', continueAttempts: 1, mergeFate: 'auto-merge' },
+    };
+    const wsOverride = {
+      drivePrompt: 'WS {ref}',
+      driveUnattendedReminder: 'ws-reminder {taskId}',
+      driveContinuePrompt: 'ws-continue {taskId}',
+      driveMergeFate: 'open-PR',
+      driveContinueAttempts: 5,
+    };
+    // 4th ctor arg is the Workspace resolver (ADR-0044): drive.* resolves against it.
+    const drive = new AutoDrive(() => config, () => null, undefined, async () => wsOverride as never);
+    const task = worktreeTask({ id: 3, trackerRef: 9, workspaceId: 2 });
+    expect(await drive.prompt(task)).toBe('WS 9\n\nws-reminder 3'); // WS prompt + WS reminder
+    expect(await drive.continuePrompt(task)).toBe('ws-continue 3\n\nws-reminder 3');
+    expect(await drive.continueAttempts(task)).toBe(5);
+    expect(await drive.mergeFateFor(task)).toBe('open-PR');
+
+    // A Task whose Workspace resolves to no overrides inherits every global default.
+    const globalDrive = new AutoDrive(() => config, () => null, undefined, async () => undefined);
+    expect(await globalDrive.mergeFateFor(task)).toBe('auto-merge');
+    expect(await globalDrive.continueAttempts(task)).toBe(1);
   });
 
   it('closeTicket is idempotent and carries the caller\'s comment (the operator Close)', async () => {

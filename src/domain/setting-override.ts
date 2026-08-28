@@ -1,13 +1,13 @@
 import type { WorkspaceRow } from '../db/schema.js';
 import {
-  verificationReviewSchema,
-  verificationCriticSchema,
   type AppConfig,
   type VerificationCommand,
   type VerificationCritic,
   type VerificationReview,
   type BudgetGuardrail,
+  type MergeFate,
 } from '../config.js';
+import { isOverridable, type SettingKey } from './settings-registry.js';
 
 /**
  * Setting Overrides (ADR-0012, issue #59). An overridable setting resolves as
@@ -28,40 +28,73 @@ export function resolve<T>(workspaceVal: T | null | undefined, globalDefault: T)
 }
 
 /**
+ * Resolve an overridable setting by its registry key: the scoped resolver. The
+ * settings registry (issue #336) is the single authority for scope, so a
+ * `global-only` setting ignores any per-Workspace value and always resolves to
+ * the global default — a Workspace can never override it. An `overridable`
+ * setting resolves exactly like {@link resolve} (`workspace ?? global`).
+ *
+ * Every per-Workspace override path routes through here (or a specialised
+ * resolver below that itself consults the registry) so overridability lives in
+ * one place, not at each call site.
+ */
+export function resolveScoped<T>(key: SettingKey, workspaceVal: T | null | undefined, globalDefault: T): T {
+  return isOverridable(key) ? resolve(workspaceVal, globalDefault) : globalDefault;
+}
+
+/**
  * A Workspace's concurrency cap resolves like any override, then is clamped to
  * the Machine Ceiling: a per-Workspace override can never breach the machine's
  * safety limit, so total concurrency across all Workspaces still cannot exceed
  * the ceiling (ADR-0012). Inherit (`null`) resolves straight to the ceiling.
  */
 export function resolveCap(workspaceCap: number | null | undefined, machineCeiling: number): number {
-  return Math.min(resolve(workspaceCap, machineCeiling), machineCeiling);
+  return Math.min(resolveScoped('maxConcurrentRuns', workspaceCap, machineCeiling), machineCeiling);
 }
+
+/** A resolved review, carrying the raw toggle (`requested`) alongside runnability
+ *  (`enabled`). When `requested` is true but `enabled` is false the review is
+ *  enabled-but-unrunnable: toggled on yet missing a resolved prompt or model, so
+ *  it can never run (ADR-0044 §F, issue #340). */
+export type ResolvedReview = VerificationReview & { requested: boolean };
 
 /** A Workspace's effective Verification verifiers, each null when unconfigured. */
 export type ResolvedVerifiers = {
   commands: VerificationCommand[];
-  review: VerificationReview;
+  review: ResolvedReview;
   /** Compatibility aliases during the Run-to-Attempt migration. */
   command: VerificationCommand | null;
   critic: VerificationCritic | null;
 };
 
 /**
- * Resolve a Workspace's effective Verification verifiers (issue #132, ADR-0021),
- * tri-state per verifier (issue #174). Each verifier is its own key: an unset
- * column inherits the global default, a stored verifier object overrides it, and
- * a stored `{ off: true }` sentinel forces the verifier off for this Workspace
- * regardless of the global default. With nothing configured (global default null
- * and no Workspace override) both resolve to null: an empty verifier set, so a
- * Run behaves exactly as it does today. No verifier executes here — this only
- * resolves the config.
+ * Resolve a Workspace's effective Verification verifiers (issue #132, ADR-0021).
+ *
+ * The **command list** overrides at the list grain (ADR-0044 §D, issue #338): an
+ * unset column (`null`) inherits the global list, an explicit array overrides it
+ * whole — a non-empty array is that ordered list, an empty array is *off* (run no
+ * commands here). There is no per-command inheritance. It routes through
+ * {@link resolveScoped}, so the registry decides overridability and the plain
+ * `workspace ?? global` rule applies: only `null` inherits, an empty array is a
+ * real override.
+ *
+ * The **review** is decomposed into four independently-inheritable scalar
+ * columns (issue #337, ADR-0044 §C): each of `reviewEnabled`/`reviewPrompt`/
+ * `reviewModel`/`reviewHarness` resolves `workspace ?? global` on its own. With
+ * nothing configured anywhere, commands resolve to `[]` and the review to
+ * disabled — an empty verifier set, so a Run behaves exactly as today. No
+ * verifier executes here — this only resolves the config.
  */
 export function resolveVerifiers(
-  ws: Pick<WorkspaceRow, 'verificationCommand' | 'verificationCritic'>,
+  ws: Pick<WorkspaceRow, 'verificationCommand' | 'reviewEnabled' | 'reviewPrompt' | 'reviewModel' | 'reviewHarness'>,
   config: Pick<AppConfig, 'verify'>,
 ): ResolvedVerifiers {
-  const commands = resolveCommands(ws.verificationCommand, config.verify.commands);
-  const review = resolveReview(ws.verificationCritic, config.verify.review);
+  // The command column stores the whole list as JSON (or null to inherit). Parse
+  // then hand to resolveScoped, which applies the registry's scope and the
+  // `workspace ?? global` rule — an empty array survives as a real override.
+  const commandStored = ws.verificationCommand == null ? null : (JSON.parse(ws.verificationCommand) as VerificationCommand[]);
+  const commands = resolveScoped('verificationCommand', commandStored, config.verify.commands);
+  const review = resolveReview(ws, config.verify.review);
   return {
     commands,
     review,
@@ -70,29 +103,43 @@ export function resolveVerifiers(
   };
 }
 
-/** True when a parsed verifier override column is the explicit off sentinel (issue #174). */
-function isVerifierOff(v: unknown): boolean {
-  return typeof v === 'object' && v !== null && (v as { off?: unknown }).off === true;
-}
-
 /**
- * Resolve a single verifier column, tri-state: an unset/empty column inherits
- * the global default, a stored `{ off: true }` sentinel resolves to null (off)
- * regardless of the global default, and any other stored object overrides it.
+ * Resolve the four decomposed review fields (issue #337, ADR-0044 §C), each its
+ * own registry-scoped `workspace ?? global` key — enabling review in a Workspace
+ * flips one boolean while prompt/model/harness independently inherit. No sentinel:
+ * "off" is just `reviewEnabled = false`.
+ *
+ * `requested` is the raw toggle (`reviewEnabled` resolved); `enabled` is
+ * runnability — `requested` AND a resolved prompt AND a resolved model. The two
+ * diverge when a Workspace turns review on but no prompt/model resolves from any
+ * layer: that review is enabled-but-unrunnable, not indistinguishable from off
+ * (ADR-0044 §F, issue #340).
  */
-function resolveCommands(stored: string | null | undefined, globalDefault: VerificationCommand[]): VerificationCommand[] {
-  if (!stored) return globalDefault;
-  const parsed = JSON.parse(stored) as unknown;
-  if (isVerifierOff(parsed)) return [];
-  return Array.isArray(parsed) ? parsed as VerificationCommand[] : [parsed as VerificationCommand];
-}
-
-function resolveReview(stored: string | null | undefined, globalDefault: VerificationReview): VerificationReview {
-  if (!stored) return verificationReviewSchema.parse(globalDefault);
-  const parsed = JSON.parse(stored) as unknown;
-  if (isVerifierOff(parsed)) return { enabled: false };
-  if (typeof parsed === 'object' && parsed !== null && 'enabled' in parsed) return verificationReviewSchema.parse(parsed);
-  return { enabled: true, ...verificationCriticSchema.parse(parsed) };
+function resolveReview(
+  ws: Pick<WorkspaceRow, 'reviewEnabled' | 'reviewPrompt' | 'reviewModel' | 'reviewHarness'>,
+  globalDefault: VerificationReview,
+): ResolvedReview {
+  const requested = resolveScoped('reviewEnabled', ws.reviewEnabled, globalDefault.enabled);
+  const prompt = resolveScoped('reviewPrompt', ws.reviewPrompt, globalDefault.prompt);
+  const model = resolveScoped('reviewModel', ws.reviewModel, globalDefault.model);
+  const harness = resolveScoped<VerificationReview['harness']>(
+    'reviewHarness',
+    ws.reviewHarness as VerificationReview['harness'],
+    globalDefault.harness,
+  );
+  // A review only runs when it is toggled on AND has both a prompt and a model
+  // resolved from some layer — enabling review with nothing to run on is not a
+  // runnable review. Folding runnability into `enabled` defines it once here, so
+  // the Runner, the `critic` alias, and the ADR-0042 status classification all
+  // agree on whether the critic actually runs (issue #337).
+  const enabled = Boolean(requested && prompt && model);
+  return {
+    enabled,
+    requested,
+    ...(prompt ? { prompt } : {}),
+    ...(model ? { model } : {}),
+    ...(harness ? { harness } : {}),
+  };
 }
 
 /** A Workspace's effective Guardrail config: the budget bounds, progress
@@ -105,27 +152,85 @@ export type ResolvedGuardrails = {
 
 /**
  * Resolve a Workspace's effective Guardrail config (issue #126, ADR-0019). Each
- * member is its own key: a Workspace's stored budget JSON or progress toggle
- * overrides the global default, `null` (or an unset column) inherits it — the
- * same `workspace ?? global` rule as every scalar override. This only resolves
- * config; nothing is enforced (#126). The Runner snapshots the result onto the
- * Run at start so a later config change can't retroactively change a trip.
+ * member is its own key: a Workspace's stored budget JSON, progress toggle, or
+ * tool-timeout bound overrides the global default, `null` (or an unset column)
+ * inherits it — the same `workspace ?? global` rule as every scalar override.
+ * This only resolves config; nothing is enforced (#126). The Runner snapshots
+ * the result onto the Run at start so a later config change can't retroactively
+ * change a trip.
  *
- * `toolTimeoutMinutes` (issue #131) is global-only: there is no per-Workspace
- * override column for it, so it always resolves straight from `config`.
+ * `toolTimeoutMinutes` (issue #131) moved from global-only into the overridable
+ * set (ADR-0044): repos differ in tolerance for slow tools, so it now resolves
+ * `workspace ?? global` through the registry like the other guardrail members.
  */
 export function resolveGuardrails(
-  ws: Pick<WorkspaceRow, 'guardrailBudget' | 'guardrailProgress'>,
+  ws: Pick<WorkspaceRow, 'guardrailBudget' | 'guardrailProgress' | 'toolTimeoutMinutes'>,
   config: Pick<AppConfig, 'guardrails'>,
 ): ResolvedGuardrails {
   return {
-    budget: resolve(parseGuardrailBudget(ws.guardrailBudget), config.guardrails.budget),
-    progress: resolve(ws.guardrailProgress, config.guardrails.progress),
-    toolTimeoutMinutes: config.guardrails.toolTimeoutMinutes,
+    budget: resolveScoped('guardrailBudget', parseGuardrailBudget(ws.guardrailBudget), config.guardrails.budget),
+    progress: resolveScoped('guardrailProgress', ws.guardrailProgress, config.guardrails.progress),
+    toolTimeoutMinutes: resolveScoped('toolTimeoutMinutes', ws.toolTimeoutMinutes, config.guardrails.toolTimeoutMinutes),
   };
 }
 
 /** Parse a stored budget override column; an unset/empty column means inherit (null). */
 function parseGuardrailBudget(stored: string | null | undefined): BudgetGuardrail | null {
   return stored ? (JSON.parse(stored) as BudgetGuardrail) : null;
+}
+
+/** A Workspace's effective auto-drive config: the five independently-inheritable
+ * `drive.*` fields, each resolved `workspace ?? global` (ADR-0044). */
+export type ResolvedDrive = {
+  prompt: string;
+  unattendedReminder: string;
+  continuePrompt: string;
+  mergeFate: MergeFate;
+  continueAttempts: number;
+};
+
+/**
+ * Resolve a Workspace's effective auto-drive config (ADR-0044). The `drive.*`
+ * block decomposes into five independently-inheritable scalars — each its own
+ * registry key — so a Workspace can override, say, its Merge Fate while still
+ * inheriting the global Drive Prompt. Every field routes through the scoped
+ * resolver, so the registry stays the single authority for overridability. A
+ * missing/undefined `ws` (no Workspace resolved) inherits every global default.
+ */
+export function resolveDrive(
+  ws:
+    | Pick<
+        WorkspaceRow,
+        'drivePrompt' | 'driveUnattendedReminder' | 'driveContinuePrompt' | 'driveMergeFate' | 'driveContinueAttempts'
+      >
+    | null
+    | undefined,
+  config: Pick<AppConfig, 'drive'>,
+): ResolvedDrive {
+  return {
+    prompt: resolveScoped('drivePrompt', ws?.drivePrompt, config.drive.prompt),
+    unattendedReminder: resolveScoped('driveUnattendedReminder', ws?.driveUnattendedReminder, config.drive.unattendedReminder),
+    continuePrompt: resolveScoped('driveContinuePrompt', ws?.driveContinuePrompt, config.drive.continuePrompt),
+    // The column is validated to a MergeFate on write (`z.enum(MERGE_FATES)`), so
+    // the stored string is always a valid fate; cast past the raw `text` column type.
+    mergeFate: resolveScoped('driveMergeFate', ws?.driveMergeFate as MergeFate | null | undefined, config.drive.mergeFate),
+    continueAttempts: resolveScoped('driveContinueAttempts', ws?.driveContinueAttempts, config.drive.continueAttempts),
+  };
+}
+
+/**
+ * Resolve a Workspace's effective Task Prompt (ADR-0044, issue #339): the
+ * global-default template wrapping a native Task's own prompt (`{prompt}` /
+ * `{id}` / `{workingDir}` / …), resolved `workspace ?? global` through the
+ * registry like every other overridable scalar. A native Run reads this to build
+ * the text it sends the harness (`runner.ts` → `promptForTask`), so a Workspace
+ * that pins its own framing overrides the global template while an unset column
+ * inherits it. A missing/undefined `ws` (no Workspace resolved) inherits the
+ * global default.
+ */
+export function resolveTaskPrompt(
+  ws: Pick<WorkspaceRow, 'taskPrompt'> | null | undefined,
+  config: Pick<AppConfig, 'taskPrompt'>,
+): string {
+  return resolveScoped('taskPrompt', ws?.taskPrompt, config.taskPrompt);
 }

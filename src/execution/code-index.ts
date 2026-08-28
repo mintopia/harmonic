@@ -104,6 +104,11 @@ async function repoIdForPath(absPath: string): Promise<string | null> {
  */
 export async function indexWorktree(absPath: string): Promise<string | null> {
   if (!(await codeIndexAvailable())) return null;
+  // jCodeMunch keys its index by source_root, so re-indexing a REUSED worktree
+  // path (e.g. `critic-<runId>`, reused across a Run's reviews) otherwise serves
+  // the prior checkout's cached index and the critic reviews a stale tree. Drop
+  // the path's index first to force a fresh parse of the current checkout.
+  await dropIndexForPath(absPath);
   const indexed = await cli(['index', '--no-ai-summaries', absPath], INDEX_TIMEOUT_MS);
   if (indexed === null) return null;
   return repoIdForPath(absPath);
