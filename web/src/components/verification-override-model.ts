@@ -24,20 +24,32 @@ import type { VerificationCommand, VerificationCritic } from '../types.js';
  */
 
 /**
- * A review is enabled-but-unrunnable when its toggle resolves on yet it has no
- * resolved model or prompt from any layer — so it can never run and Harmonic
- * would silently skip it (ADR-0044 §F, issue #340). The settings surface flags
- * this loudly instead. `enabled` is the resolved review toggle (`requested` in
- * `resolveReview`, src/domain/setting-override.ts); this mirrors that resolver's
- * `requested && !(prompt && model)` fold on already-resolved values so the
- * global and workspace verification sections judge runnability identically.
+ * The already-resolved review inputs the settings surface needs to judge
+ * runnability: the raw on/off toggle plus whatever model/prompt resolved from any
+ * layer. `requested` mirrors `resolveReview`'s raw toggle (src/domain/
+ * setting-override.ts) and is kept deliberately distinct from that resolver's
+ * runnability-folded `enabled`, so the two are never conflated here.
  */
-export function reviewUnrunnable(review: { enabled: boolean; model?: string | null; prompt?: string | null }): boolean {
-  return review.enabled && !(review.model && review.prompt);
+export interface ResolvedReviewInputs {
+  requested: boolean;
+  model?: string | null;
+  prompt?: string | null;
+}
+
+/**
+ * A review is enabled-but-unrunnable when it is toggled on yet has no resolved
+ * model or prompt from any layer — so it can never run and Harmonic would
+ * silently skip it (ADR-0044 §F, issue #340). The settings surface flags this
+ * loudly instead. Mirrors `resolveReview`'s `requested && !(prompt && model)`
+ * fold on already-resolved values so the global and workspace verification
+ * sections judge runnability identically.
+ */
+export function reviewUnrunnable(review: ResolvedReviewInputs): boolean {
+  return review.requested && !(review.model && review.prompt);
 }
 
 /** Which resolved review input is missing, for the unrunnable copy — model first. */
-export function missingReviewInput(review: { model?: string | null; prompt?: string | null }): 'model' | 'prompt' {
+export function missingReviewInput(review: Pick<ResolvedReviewInputs, 'model' | 'prompt'>): 'model' | 'prompt' {
   return !review.model ? 'model' : 'prompt';
 }
 

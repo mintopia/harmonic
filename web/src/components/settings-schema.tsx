@@ -13,7 +13,14 @@ import {
 } from '../prompt-preview-model';
 import { ModelCombobox } from './ModelCombobox';
 import { Switch } from './Switch';
-import { EMPTY_CRITIC, missingReviewInput, reviewUnrunnable, setCriticField, summarizeCommands } from './verification-override-model';
+import {
+  EMPTY_CRITIC,
+  missingReviewInput,
+  reviewUnrunnable,
+  setCriticField,
+  summarizeCommands,
+  type ResolvedReviewInputs,
+} from './verification-override-model';
 import { setBudgetField, summarizeBudget } from './guardrail-budget-model';
 import { CommandListEditor } from './CommandListEditor';
 import { ConfigField, registryField, toOptions, withCurrent, type FieldOption, type ScalarDescriptor } from './settings-fields';
@@ -695,7 +702,7 @@ const continuePromptField = prompt(
  * resolving to no model or prompt, so it can never run (ADR-0044 §F, issue #340).
  * Shared by both verification sections so the global and workspace surfaces flag
  * the same resolved state identically, rather than saving a silent no-op. */
-function ReviewUnrunnableNote({ review }: { review: { enabled: boolean; model?: string | null; prompt?: string | null } }) {
+function ReviewUnrunnableNote({ review }: { review: ResolvedReviewInputs }) {
   if (!reviewUnrunnable(review)) return null;
   const missing = missingReviewInput(review);
   return (
@@ -722,7 +729,7 @@ function GlobalVerification({ ctx }: { ctx: GlobalRenderCtx }) {
   const setCritic = (critic: VerificationCritic) => setReview({ enabled: true, ...critic });
   return (
     <div className="flex flex-col gap-4 sm:max-w-md">
-      <ReviewUnrunnableNote review={{ enabled: v.review.enabled, model: v.review.model, prompt: v.review.prompt }} />
+      <ReviewUnrunnableNote review={{ requested: v.review.enabled, model: v.review.model, prompt: v.review.prompt }} />
       <CommandListEditor
         commands={v.commands}
         onChange={(commands) => onChange({ ...v, commands })}
@@ -850,8 +857,8 @@ function WorkspaceVerification({ ctx }: { ctx: WorkspaceRenderCtx }) {
   // A review that resolves to enabled-without-a-prompt/model here can never run
   // (ADR-0044 §F, issue #340): resolve the review (workspace ?? global) and flag
   // it loudly, rather than letting the operator save a silent no-op.
-  const resolvedReview = {
-    enabled: Boolean(workspace.reviewEnabled ?? config.verify.review.enabled),
+  const resolvedReview: ResolvedReviewInputs = {
+    requested: Boolean(workspace.reviewEnabled ?? config.verify.review.enabled),
     model: workspace.reviewModel ?? config.verify.review.model,
     prompt: workspace.reviewPrompt ?? config.verify.review.prompt,
   };
