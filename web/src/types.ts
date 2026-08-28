@@ -84,8 +84,10 @@ export type VerificationMechanism = 'critic' | 'command';
 /** One verifier category's current read-time status, including categories that did not run. */
 export interface VerifierStatus {
   mechanism: VerificationMechanism;
-  state: 'passed' | 'failed' | 'inconclusive' | 'skipped' | 'disabled' | 'unrunnable';
+  state: 'passed' | 'failed' | 'inconclusive' | 'skipped' | 'disabled' | 'unrunnable' | 'planned';
   reason: string | null;
+  /** The ordered command plan; `command` mechanism only. */
+  commands?: string[];
 }
 
 /** One persisted Verification-attempt event (issue #169, part of #109), as

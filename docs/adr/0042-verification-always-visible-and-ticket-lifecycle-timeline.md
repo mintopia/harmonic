@@ -3,6 +3,8 @@
 Status: accepted
 Date: 2026-08-26
 
+Amended by ADR-0044 (2026-08-26): the always-visible verification read model gains a `planned` state — see Decision A.
+
 ## Context
 
 Two review surfaces exist in the ticket page today but read as absent to an
@@ -59,6 +61,15 @@ by reconciling `resolveVerifiers()` (configured) against the recorded attempts:
   candidate (e.g. no frozen candidate to review, gate short-circuited).
 - `disabled` — the verifier is not configured (critic off in settings / no
   command). Still rendered, as a muted "disabled" row, never omitted.
+
+**Amended by ADR-0044.** The read model gains a `planned` state, distinct from
+`skipped`: before a run reaches the `verifying` phase, each configured verifier is
+`planned` — it will run — and flips to `passed`/`failed`/`inconclusive` as attempts
+are recorded, or to `skipped` if the gate short-circuits it. This drives the per-run
+*verification plan* surface: the ordered, gate-on-pass sequence (commands in order,
+then the review) a run will execute, reconciled against `resolveVerifiers()`.
+`skipped` keeps its meaning — configured, verification reached, but no attempt
+produced for this candidate.
 
 This status is exposed on the run verification read model
 (`GET /api/runs/{id}/verification-attempts`) and on the task attempt timeline
