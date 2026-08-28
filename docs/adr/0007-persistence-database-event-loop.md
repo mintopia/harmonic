@@ -48,6 +48,16 @@ a no-op), then `foreign_key_check` surfaces any genuine integrity break, then
 foreign keys are enabled for runtime. Any table-rebuild migration is safe
 under this ordering; runtime writes keep full referential integrity.
 
+**Clean-break policy (owner decision, 2026-08-28)**: Harmonic has one operator
+and no external consumers, so there are **no data-compatibility guarantees**
+across versions. Migrations may be destructive, may discard stored history
+outright rather than re-keying it, and the migration chain may be squashed to
+a single baseline schema — on a breaking upgrade the DB is recreated from it.
+Anything worth keeping across versions lives in git or the tracker, never only
+in the DB; execution history (attempts, usage snapshots, journals) is
+disposable by definition. The ordering rule above still governs whatever
+migrations do exist.
+
 ## The DB stores aggregates, not event streams
 
 The DB does **not** persist the session event stream (the pre-reset
