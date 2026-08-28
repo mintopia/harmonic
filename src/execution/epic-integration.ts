@@ -428,11 +428,14 @@ export class EpicIntegrationCoordinator {
    */
   async retireIntegrationBranch(epicRef: number): Promise<void> {
     const branch = integrationBranchName(epicRef);
-    const retainedBranch = await this.git.symbolicBranch(this.workingDir);
-    if (retainedBranch === null) return;
+    // The default branch an integration branch retires into is the working dir's
+    // symbolic HEAD (issue #157); a detached HEAD can't name it, so defer — retire
+    // is idempotent and re-runs on the next integrate/reconcile pass.
+    const defaultBranch = await this.git.symbolicBranch(this.workingDir);
+    if (defaultBranch === null) return;
     if (!(await this.git.branchExists(this.workingDir, branch))) return;
     if ((await this.git.branchCheckedOutAt(this.workingDir, branch)) !== null) return;
-    if (!(await this.git.isAncestor(this.workingDir, retainedBranch, branch))) return;
+    if (!(await this.git.isAncestor(this.workingDir, defaultBranch, branch))) return;
     await this.git.deleteBranch(this.workingDir, branch);
   }
 }
