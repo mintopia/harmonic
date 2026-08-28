@@ -3665,8 +3665,9 @@ export class Runner {
     await this.runStore.backfillCosts(resolvePrices(config.prices));
   }
 
-  /** The settled worktree diff's exact revisions and stat. Git metadata is
-   * decorative, so a failure leaves all three fields null. */
+  /** The settled worktree diff's exact revisions and stat. A git failure is
+   * logged and leaves all three fields null (the review diff then falls back to
+   * a live computation on read). */
   private async diffSnapshotFor(
     task: TaskRow,
     runId: number,
@@ -3682,7 +3683,13 @@ export class Runner {
         Git.diffStat(task.workingDir, run.baseBranch, run.branch),
       ]);
       return { stat, diffBaseOid, diffHeadOid };
-    } catch {
+    } catch (err) {
+      logger.warn('diff snapshot failed; review diff will be blank for this run', {
+        runId,
+        branch: run.branch,
+        baseBranch: run.baseBranch,
+        err: err instanceof Error ? err.message : String(err),
+      });
       return { stat: null, diffBaseOid: null, diffHeadOid: null };
     }
   }
@@ -3701,6 +3708,15 @@ export class Runner {
     projection: SettleProjection,
     patch: Partial<RunRow> = {},
   ): Promise<void> {
+    // Snapshot the worktree diff for any terminal settle that didn't already
+    // capture it. The merge path snapshots pre-merge (before the base
+    // fast-forwards, issue #36) and passes it in `patch.stat`; escalation and
+    // other terminal paths pass none, which would leave an escalated Run with a
+    // blank review diff exactly when a human needs to see the work. No-op
+    // without a branch, and never recomputed over the merge-time snapshot.
+    if (patch.stat === undefined && run.branch && run.baseBranch) {
+      patch = { ...patch, ...(await this.diffSnapshotFor(task, run.id)) };
+    }
     await this.settleCoordinator.settle(task, run, type, projection, patch);
     const attempt = await this.attempts.getForTaskNumber(task.id, run.attempt);
     if (attempt) {
