@@ -3,11 +3,11 @@ import { api } from '../api';
 import { SecuritySection } from './SecuritySection';
 import { ChannelsSection } from './Channels';
 import { PermissionRules } from './PermissionRules';
-import type { AppConfig, Channel, VerificationCommand, VerificationCritic, VerificationReview } from '../types';
+import type { AppConfig, Channel, VerificationCritic, VerificationReview } from '../types';
 import { changedChannelEvents, channelsDirty, toggleChannelEvent } from '../channels-save-model';
 import { displayTitle, field, selectField } from '../ui';
 import { HarnessesSection, PriceOverridesSection } from './HarnessSettings';
-import { FieldError, PlaceholderList, PromptPreview, SettingsSection, fieldLabel, parseFieldErrors } from './SettingsSection';
+import { FieldError, PromptField, SettingsSection, fieldLabel, parseFieldErrors } from './SettingsSection';
 import {
   DRIVE_PLACEHOLDERS,
   TASK_ID_PLACEHOLDER,
@@ -20,7 +20,8 @@ import {
 import { FloatingSaveBar } from './FloatingSaveBar';
 import { ModelCombobox } from './ModelCombobox';
 import { Switch } from './Switch';
-import { EMPTY_COMMAND, EMPTY_CRITIC, argsText, setCommandField, setCriticField } from './verification-override-model';
+import { EMPTY_CRITIC, setCriticField } from './verification-override-model';
+import { CommandListEditor } from './CommandListEditor';
 import { ConfigField, registryField, toOptions, withCurrent, type ScalarDescriptor } from './settings-fields';
 import { Tabs } from './Tabs';
 import { SETTING_TABS, type SettingTab } from '../../../src/domain/settings-registry.js';
@@ -153,9 +154,6 @@ function VerificationFields({
   onChange: (verify: AppConfig['verify']) => void;
 }) {
   const v = config.verify;
-  const setCommands = (commands: VerificationCommand[]) => onChange({ ...v, commands });
-  const setCommand = (index: number, command: VerificationCommand) =>
-    setCommands(v.commands.map((current, currentIndex) => (currentIndex === index ? command : current)));
   const setReview = (review: VerificationReview) => onChange({ ...v, review });
   const reviewCritic: VerificationCritic = {
     prompt: v.review.prompt ?? '',
@@ -165,68 +163,14 @@ function VerificationFields({
   const setCritic = (critic: VerificationCritic) => setReview({ enabled: true, ...critic });
   return (
     <div className="flex flex-col gap-4 sm:max-w-md">
-      <div>
-        <div className="flex items-center justify-between">
-          <span className={fieldLabel}>Verification commands</span>
-          <button type="button" className="text-small text-accent" onClick={() => setCommands([...v.commands, EMPTY_COMMAND])}>
-            Add command
-          </button>
-        </div>
-        {v.commands.length === 0 ? (
-          <p className="mt-2 text-small text-muted">No commands configured.</p>
-        ) : (
-          <div className="mt-3 flex flex-col gap-5">
-            {v.commands.map((command, index) => (
-              <div key={index} className="flex flex-col gap-3 border-l-2 border-edge pl-3">
-                <div className="flex items-center justify-between">
-                  <span className={fieldLabel}>Command {index + 1}</span>
-                  <button
-                    type="button"
-                    className="text-small text-failed"
-                    onClick={() => setCommands(v.commands.filter((_, commandIndex) => commandIndex !== index))}
-                  >
-                    Remove
-                  </button>
-                </div>
-            <div>
-                  <label className={fieldLabel} htmlFor={`settings-verify-command-${index}`}>Command</label>
-              <input
-                    id={`settings-verify-command-${index}`}
-                className={`${field} font-data`}
-                placeholder="npm"
-                    value={command.command}
-                    onChange={(e) => setCommand(index, setCommandField(command, 'command', e.target.value))}
-              />
-                  <FieldError message={fieldErrors[`verify.commands.${index}.command`]} />
-            </div>
-            <div>
-                  <label className={fieldLabel} htmlFor={`settings-verify-args-${index}`}>
-                Arguments <span className="normal-case text-muted">(space-separated)</span>
-              </label>
-              <input
-                    id={`settings-verify-args-${index}`}
-                className={`${field} font-data`}
-                placeholder="test"
-                    value={argsText(command)}
-                    onChange={(e) => setCommand(index, setCommandField(command, 'args', e.target.value))}
-              />
-            </div>
-            <div>
-                  <label className={fieldLabel} htmlFor={`settings-verify-timeout-${index}`}>Timeout (seconds)</label>
-              <input
-                    id={`settings-verify-timeout-${index}`}
-                type="number"
-                min={1}
-                className={`${field} w-40 tabular-nums`}
-                    value={command.timeoutSeconds}
-                    onChange={(e) => setCommand(index, setCommandField(command, 'timeoutSeconds', e.target.value))}
-              />
-            </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+      <CommandListEditor
+        commands={v.commands}
+        onChange={(commands) => onChange({ ...v, commands })}
+        idPrefix="settings-verify"
+        errorPrefix="verify.commands"
+        fieldErrors={fieldErrors}
+        emptyText="No commands configured."
+      />
       <div>
         <div className="flex items-center justify-between">
           <span className={fieldLabel}>Review</span>
@@ -263,24 +207,17 @@ function VerificationFields({
               />
               <FieldError message={fieldErrors['verify.review.model']} />
             </div>
-            <div>
-              <label className={fieldLabel} htmlFor="settings-critic-prompt">Review prompt</label>
-              <p className="mb-1 text-small text-muted">
-                The critic reads the candidate checkout and the issue itself (read-only). Harmonic appends the
-                read-only instruction and the JSON verdict contract — see the compiled preview.
-              </p>
-              <textarea
-                id="settings-critic-prompt"
-                rows={3}
-                className={field}
-                placeholder="Review the change against issue {ref}: {title}. Read the code and the issue to decide."
-                value={reviewCritic.prompt}
-                onChange={(e) => setCritic(setCriticField(reviewCritic, 'prompt', e.target.value))}
-              />
-              <FieldError message={fieldErrors['verify.review.prompt']} />
-              <PlaceholderList placeholders={DRIVE_PLACEHOLDERS} />
-              <PromptPreview text={compileCriticPreview(reviewCritic.prompt)} />
-            </div>
+            <PromptField
+              id="settings-critic-prompt"
+              label="Review prompt"
+              description="The critic reads the candidate checkout and the issue itself (read-only). Harmonic appends the read-only instruction and the JSON verdict contract — see the compiled preview."
+              rows={3}
+              value={reviewCritic.prompt}
+              onChange={(prompt) => setCritic(setCriticField(reviewCritic, 'prompt', prompt))}
+              placeholders={DRIVE_PLACEHOLDERS}
+              preview={compileCriticPreview(reviewCritic.prompt)}
+              error={fieldErrors['verify.review.prompt']}
+            />
           </div>
         )}
       </div>
@@ -298,18 +235,16 @@ function TaskPromptFields({
   onChange: (taskPrompt: string) => void;
 }) {
   return (
-    <div>
-      <label className={fieldLabel} htmlFor="settings-task-prompt">Task prompt</label>
-      <textarea
-        id="settings-task-prompt"
-        className={`${field} min-h-36`}
-        value={config.taskPrompt}
-        onChange={(e) => onChange(e.target.value)}
-      />
-      <FieldError message={fieldErrors['taskPrompt']} />
-      <PlaceholderList placeholders={TASK_PLACEHOLDERS} />
-      <PromptPreview text={compileTaskPreview(config.taskPrompt)} />
-    </div>
+    <PromptField
+      id="settings-task-prompt"
+      label="Task prompt"
+      textareaClass={`${field} min-h-36`}
+      value={config.taskPrompt}
+      onChange={onChange}
+      placeholders={TASK_PLACEHOLDERS}
+      preview={compileTaskPreview(config.taskPrompt)}
+      error={fieldErrors['taskPrompt']}
+    />
   );
 }
 
@@ -325,48 +260,38 @@ function DriveFields({
   const d = config.drive;
   return (
     <div className="flex flex-col gap-4">
-      <div>
-        <label className={fieldLabel} htmlFor="settings-drive-prompt">Drive prompt</label>
-        <textarea
-          id="settings-drive-prompt"
-          className={`${field} min-h-36`}
-          value={d.prompt}
-          onChange={(e) => onChange({ ...d, prompt: e.target.value })}
-        />
-        <FieldError message={fieldErrors['drive.prompt']} />
-        <PlaceholderList placeholders={DRIVE_PLACEHOLDERS} />
-        <PromptPreview text={compileDrivePreview(d.prompt)} />
-      </div>
-      <div>
-        <label className={fieldLabel} htmlFor="settings-unattended-reminder">Unattended reminder</label>
-        <p className="mb-1 text-small text-muted">
-          Appended to every auto-driven turn — the checkpoint reminder and the finish/escalate signals.
-        </p>
-        <textarea
-          id="settings-unattended-reminder"
-          className={`${field} min-h-36`}
-          value={d.unattendedReminder}
-          onChange={(e) => onChange({ ...d, unattendedReminder: e.target.value })}
-        />
-        <FieldError message={fieldErrors['drive.unattendedReminder']} />
-        <PlaceholderList placeholders={TASK_ID_PLACEHOLDER} />
-        <PromptPreview text={compileTaskIdPreview(d.unattendedReminder)} />
-      </div>
-      <div>
-        <label className={fieldLabel} htmlFor="settings-continue-prompt">Continue prompt</label>
-        <p className="mb-1 text-small text-muted">
-          The re-prompt nudge when a turn ends without finishing. The unattended reminder is appended after it.
-        </p>
-        <textarea
-          id="settings-continue-prompt"
-          className={`${field} min-h-24`}
-          value={d.continuePrompt}
-          onChange={(e) => onChange({ ...d, continuePrompt: e.target.value })}
-        />
-        <FieldError message={fieldErrors['drive.continuePrompt']} />
-        <PlaceholderList placeholders={TASK_ID_PLACEHOLDER} />
-        <PromptPreview text={compileTaskIdPreview(d.continuePrompt)} />
-      </div>
+      <PromptField
+        id="settings-drive-prompt"
+        label="Drive prompt"
+        textareaClass={`${field} min-h-36`}
+        value={d.prompt}
+        onChange={(prompt) => onChange({ ...d, prompt })}
+        placeholders={DRIVE_PLACEHOLDERS}
+        preview={compileDrivePreview(d.prompt)}
+        error={fieldErrors['drive.prompt']}
+      />
+      <PromptField
+        id="settings-unattended-reminder"
+        label="Unattended reminder"
+        description="Appended to every auto-driven turn — the checkpoint reminder and the finish/escalate signals."
+        textareaClass={`${field} min-h-36`}
+        value={d.unattendedReminder}
+        onChange={(unattendedReminder) => onChange({ ...d, unattendedReminder })}
+        placeholders={TASK_ID_PLACEHOLDER}
+        preview={compileTaskIdPreview(d.unattendedReminder)}
+        error={fieldErrors['drive.unattendedReminder']}
+      />
+      <PromptField
+        id="settings-continue-prompt"
+        label="Continue prompt"
+        description="The re-prompt nudge when a turn ends without finishing. The unattended reminder is appended after it."
+        textareaClass={`${field} min-h-24`}
+        value={d.continuePrompt}
+        onChange={(continuePrompt) => onChange({ ...d, continuePrompt })}
+        placeholders={TASK_ID_PLACEHOLDER}
+        preview={compileTaskIdPreview(d.continuePrompt)}
+        error={fieldErrors['drive.continuePrompt']}
+      />
       <div className="flex flex-wrap items-start gap-x-8 gap-y-4">
         <div>
           <label className={fieldLabel} htmlFor="settings-merge-fate">Merge fate</label>
@@ -381,6 +306,18 @@ function DriveFields({
             <option value="artifact">artifact</option>
           </select>
           <FieldError message={fieldErrors['drive.mergeFate']} />
+        </div>
+        <div>
+          <label className={fieldLabel} htmlFor="settings-continue-attempts">Continue attempts</label>
+          <input
+            id="settings-continue-attempts"
+            type="number"
+            min={0}
+            className={`${field} w-28 tabular-nums`}
+            value={d.continueAttempts}
+            onChange={(e) => onChange({ ...d, continueAttempts: Number(e.target.value) })}
+          />
+          <FieldError message={fieldErrors['drive.continueAttempts']} />
         </div>
       </div>
     </div>

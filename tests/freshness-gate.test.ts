@@ -517,8 +517,10 @@ describe('merging freshness gate (issue #313, ADR-0041)', () => {
     try {
       await server.app.ctx.workspaces.update(wsId, {
         workingDir: repo,
-        verificationCommand: { off: true }, // zero deterministic verifiers: critic only
-        verificationCritic: verificationCriticSchema.parse({ prompt: 'Review the diff.', model: 'stub-model' }),
+        verificationCommand: [], // zero deterministic verifiers: critic only (ADR-0044 §D: empty list = off)
+        reviewEnabled: true,
+        reviewPrompt: 'Review the diff.',
+        reviewModel: 'stub-model',
       });
       await server.app.ctx.configStore.update({
         drive: { prompt: JSON.stringify({ writeFiles: { 'impl-{ref}.txt': 'implementation {ref}\n' }, mcpFinish: true }) },

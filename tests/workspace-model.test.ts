@@ -43,6 +43,13 @@ const ws = (id: number, name = `ws-${id}`): Workspace => ({
   reviewHarness: null,
   guardrailBudget: null,
   guardrailProgress: null,
+  toolTimeoutMinutes: null,
+  drivePrompt: null,
+  driveUnattendedReminder: null,
+  driveContinuePrompt: null,
+  driveMergeFate: null,
+  driveContinueAttempts: null,
+  taskPrompt: null,
   createdAt: id,
   updatedAt: id,
 });

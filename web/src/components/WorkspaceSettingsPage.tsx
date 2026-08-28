@@ -1,21 +1,394 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 import type { AppConfig, Workspace } from '../types';
-import { btnDestructive, btnGhost, displayTitle, field, selectField } from '../ui';
-import { FieldError, PlaceholderList, PromptPreview, SettingsSection, fieldLabel, parseFieldErrors } from './SettingsSection';
-import { DRIVE_PLACEHOLDERS, compileCriticPreview } from '../prompt-preview-model';
+import { btnDestructive, btnGhost, displayTitle, field } from '../ui';
+import { FieldError, PromptField, SettingsSection, fieldLabel, parseFieldErrors } from './SettingsSection';
+import {
+  DRIVE_PLACEHOLDERS,
+  TASK_ID_PLACEHOLDER,
+  TASK_PLACEHOLDERS,
+  compileCriticPreview,
+  compileDrivePreview,
+  compileTaskIdPreview,
+  compileTaskPreview,
+} from '../prompt-preview-model';
 import { FloatingSaveBar } from './FloatingSaveBar';
 import { InheritField } from './InheritField';
 import { ModelCombobox } from './ModelCombobox';
 import { setBudgetField, summarizeBudget } from './guardrail-budget-model';
-import {
-  EMPTY_COMMAND,
-  argsText,
-  setCommandField,
-  summarizeCommands,
-} from './verification-override-model';
+import { summarizeCommands } from './verification-override-model';
+import { CommandListEditor } from './CommandListEditor';
+import { OverrideField, type OverridableDescriptor } from './settings-override-fields';
+import { toOptions, withCurrent, type FieldOption } from './settings-fields';
+import { settingsRegistry, workspaceTabs, type SettingKey, type SettingTab } from '../../../src/domain/settings-registry.js';
 import { Switch } from './Switch';
+import { Tabs } from './Tabs';
 import { Modal } from './Modal';
+
+/** All harnesses as options, keeping a Workspace's pinned-but-unconfigured
+ * harness visible/selectable rather than snapping to another (mirrors the
+ * global model field's `withCurrent` affordance). */
+function harnessOptions(config: AppConfig, current: string | null | undefined): FieldOption[] {
+  const options = toOptions(Object.keys(config.harnesses));
+  if (current && !config.harnesses[current]) return [...options, { value: current, label: `${current} (not configured)` }];
+  return options;
+}
+
+/** One-line summary of a possibly-multi-line prompt for the inheriting read-only
+ * line: its first line, truncated, or "Not configured" when empty. */
+function summarizePrompt(prompt: string): string {
+  const trimmed = prompt.trim();
+  if (trimmed === '') return 'Not configured';
+  const firstLine = trimmed.split('\n')[0] ?? trimmed;
+  return firstLine.length > 60 ? `${firstLine.slice(0, 60)}…` : firstLine;
+}
+
+const TASK_DEFAULT_FIELDS: OverridableDescriptor[] = [
+  {
+    key: 'harness',
+    id: 'workspace-harness',
+    errorKey: 'harness',
+    get: (w) => w.harness,
+    set: (w, v) => ({ ...w, harness: v as string | null }),
+    inherited: (c) => c.defaults.harness,
+    options: (c, w) => harnessOptions(c, w.harness),
+  },
+  {
+    key: 'model',
+    id: 'workspace-model',
+    errorKey: 'model',
+    get: (w) => w.model,
+    set: (w, v) => ({ ...w, model: v as string | null }),
+    // The model default follows the *effective* harness (mirrors
+    // TaskService.resolveExecution): overriding the harness repoints the
+    // inherited model and the option list to that harness.
+    inherited: (c, w) => c.harnesses[w.harness ?? c.defaults.harness]?.defaultModel ?? '',
+    options: (c, w) => withCurrent(toOptions(c.harnesses[w.harness ?? c.defaults.harness]?.models ?? []), w.model ?? ''),
+  },
+  {
+    key: 'isolationMode',
+    id: 'workspace-isolation',
+    errorKey: 'isolationMode',
+    get: (w) => w.isolationMode,
+    set: (w, v) => ({ ...w, isolationMode: v as 'direct' | 'worktree' | null }),
+    inherited: (c) => c.defaults.isolationMode,
+    options: () => toOptions(['direct', 'worktree']),
+  },
+  {
+    key: 'priority',
+    id: 'workspace-priority',
+    errorKey: 'priority',
+    get: (w) => w.priority,
+    set: (w, v) => ({ ...w, priority: v as 'high' | 'normal' | 'low' | null }),
+    inherited: (c) => c.defaults.priority,
+    options: () => toOptions(['high', 'normal', 'low']),
+  },
+  {
+    key: 'integrationRetries',
+    id: 'workspace-integration-retries',
+    errorKey: 'integrationRetries',
+    get: (w) => w.integrationRetries,
+    set: (w, v) => ({ ...w, integrationRetries: v as number | null }),
+    inherited: (c) => c.defaults.integrationRetries,
+    min: 1,
+  },
+  {
+    key: 'conflictResolveTurns',
+    id: 'workspace-conflict-turns',
+    errorKey: 'conflictResolveTurns',
+    get: (w) => w.conflictResolveTurns,
+    set: (w, v) => ({ ...w, conflictResolveTurns: v as number | null }),
+    inherited: (c) => c.defaults.conflictResolveTurns,
+    min: 0,
+  },
+];
+
+const CHAT_DEFAULT_FIELDS: OverridableDescriptor[] = [
+  {
+    key: 'chatHarness',
+    id: 'workspace-chat-harness',
+    errorKey: 'chatHarness',
+    label: 'Harness',
+    get: (w) => w.chatHarness,
+    set: (w, v) => ({ ...w, chatHarness: v as string | null }),
+    inherited: (c) => c.chat.harness,
+    options: (c, w) => harnessOptions(c, w.chatHarness),
+  },
+  {
+    key: 'chatModel',
+    id: 'workspace-chat-model',
+    errorKey: 'chatModel',
+    label: 'Model',
+    // Chat inherits the standalone global chat model (not the harness default),
+    // but its option list still tracks the effective chat harness (ADR-0012).
+    get: (w) => w.chatModel,
+    set: (w, v) => ({ ...w, chatModel: v as string | null }),
+    inherited: (c) => c.chat.model,
+    options: (c, w) => withCurrent(toOptions(c.harnesses[w.chatHarness ?? c.chat.harness]?.models ?? []), w.chatModel ?? ''),
+  },
+];
+
+const AUTORUNNER_FIELDS: OverridableDescriptor[] = [
+  {
+    key: 'autoRunnerEnabled',
+    id: 'workspace-autorunner-enabled',
+    errorKey: 'autoRunnerEnabled',
+    label: 'Enabled',
+    switchLabel: 'Run ready tasks unattended',
+    get: (w) => w.autoRunnerEnabled,
+    set: (w, v) => ({ ...w, autoRunnerEnabled: v as boolean | null }),
+    inherited: (c) => c.autoRunner.enabled,
+    format: (v) => (v ? 'On' : 'Off'),
+  },
+  {
+    key: 'maxConcurrentRuns',
+    id: 'workspace-max-runs',
+    errorKey: 'maxConcurrentRuns',
+    label: 'Concurrency cap',
+    get: (w) => w.maxConcurrentRuns,
+    set: (w, v) => ({ ...w, maxConcurrentRuns: v as number | null }),
+    inherited: (c) => c.autoRunner.maxConcurrentRuns,
+    min: 1,
+    // The Machine Ceiling is the hard limit an override can't breach (ADR-0012);
+    // clamping is read-time (#60), so this input `max` just guides.
+    max: (c) => c.autoRunner.maxConcurrentRuns,
+  },
+];
+
+const ATTEMPT_FIELDS: OverridableDescriptor[] = [
+  {
+    key: 'maxAttempts',
+    id: 'workspace-max-attempts',
+    errorKey: 'maxAttempts',
+    get: (w) => w.maxAttempts,
+    set: (w, v) => ({ ...w, maxAttempts: v as number | null }),
+    inherited: (c) => c.maxAttempts,
+    min: 1,
+  },
+];
+
+const SESSION_FIELDS: OverridableDescriptor[] = [
+  {
+    key: 'contextReuseTokenLimit',
+    id: 'workspace-context-reuse-token-limit',
+    errorKey: 'contextReuseTokenLimit',
+    get: (w) => w.contextReuseTokenLimit,
+    set: (w, v) => ({ ...w, contextReuseTokenLimit: v as number | null }),
+    inherited: (c) => c.contextReuseTokenLimit,
+    min: 0,
+    step: 10_000,
+  },
+];
+
+const GUARDRAIL_SCALAR_FIELDS: OverridableDescriptor[] = [
+  {
+    key: 'guardrailProgress',
+    id: 'workspace-guardrail-progress',
+    errorKey: 'guardrailProgress',
+    label: 'Progress detector',
+    switchLabel: 'Trip a stalled Run to Escalation',
+    get: (w) => w.guardrailProgress,
+    set: (w, v) => ({ ...w, guardrailProgress: v as boolean | null }),
+    inherited: (c) => c.guardrails.progress,
+    format: (v) => (v ? 'On' : 'Off'),
+  },
+  {
+    key: 'toolTimeoutMinutes',
+    id: 'workspace-tool-timeout',
+    errorKey: 'toolTimeoutMinutes',
+    get: (w) => w.toolTimeoutMinutes,
+    set: (w, v) => ({ ...w, toolTimeoutMinutes: v as number | null }),
+    inherited: (c) => c.guardrails.toolTimeoutMinutes,
+    min: 1,
+  },
+];
+
+const REVIEW_SCALAR_FIELDS: OverridableDescriptor[] = [
+  {
+    key: 'reviewEnabled',
+    id: 'workspace-review-enabled',
+    errorKey: 'reviewEnabled',
+    switchLabel: 'Enabled',
+    get: (w) => w.reviewEnabled,
+    set: (w, v) => ({ ...w, reviewEnabled: v as boolean | null }),
+    inherited: (c) => c.verify.review.enabled,
+    format: (v) => (v ? 'On' : 'Off'),
+  },
+  {
+    key: 'reviewHarness',
+    id: 'workspace-review-harness',
+    errorKey: 'reviewHarness',
+    get: (w) => w.reviewHarness,
+    set: (w, v) => ({ ...w, reviewHarness: v as string | null }),
+    inherited: (c) => c.verify.review.harness ?? (Object.keys(c.harnesses)[0] ?? ''),
+    options: (c) => toOptions(Object.keys(c.harnesses)),
+    format: (h) => (h ? String(h) : 'Same as task (builder harness)'),
+  },
+  {
+    key: 'reviewModel',
+    id: 'workspace-review-model',
+    errorKey: 'reviewModel',
+    get: (w) => w.reviewModel,
+    set: (w, v) => ({ ...w, reviewModel: v as string | null }),
+    inherited: (c) => c.verify.review.model ?? '',
+    format: (m) => (m ? String(m) : 'Not configured'),
+    // The review model's option list tracks the effective review harness
+    // (mirrors the Task/chat harness→model pairing).
+    renderControl: ({ id, value, onChange }, { config, workspace }) => {
+      const reviewHarnessEff = (workspace.reviewHarness ?? config.verify.review.harness) || undefined;
+      return (
+        <ModelCombobox
+          id={id}
+          value={String(value)}
+          onChange={onChange}
+          options={reviewHarnessEff ? (config.harnesses[reviewHarnessEff]?.models ?? []) : []}
+        />
+      );
+    },
+  },
+];
+
+const DRIVE_SCALAR_FIELDS: OverridableDescriptor[] = [
+  {
+    key: 'driveMergeFate',
+    id: 'workspace-merge-fate',
+    errorKey: 'driveMergeFate',
+    get: (w) => w.driveMergeFate,
+    set: (w, v) => ({ ...w, driveMergeFate: v as 'auto-merge' | 'open-PR' | 'artifact' | null }),
+    inherited: (c) => c.drive.mergeFate,
+    options: () => toOptions(['auto-merge', 'open-PR', 'artifact']),
+  },
+  {
+    key: 'driveContinueAttempts',
+    id: 'workspace-continue-attempts',
+    errorKey: 'driveContinueAttempts',
+    get: (w) => w.driveContinueAttempts,
+    set: (w, v) => ({ ...w, driveContinueAttempts: v as number | null }),
+    inherited: (c) => c.drive.continueAttempts,
+    min: 0,
+  },
+];
+
+/** An overridable prompt-template field: the shared {@link InheritField} +
+ * {@link PromptField}, mirroring the scalar {@link OverridableDescriptor} for
+ * the textarea-with-preview controls (drive/task/review prompts). */
+interface OverridablePrompt {
+  key: SettingKey;
+  id: string;
+  errorKey: string;
+  label?: string;
+  description?: string;
+  get: (w: Workspace) => string | null;
+  set: (w: Workspace, value: string | null) => Workspace;
+  inherited: (c: AppConfig) => string;
+  placeholders: [string, string][];
+  compile: (text: string) => string;
+  rows?: number;
+  textareaClass?: string;
+}
+
+function OverridePrompt({
+  descriptor,
+  config,
+  workspace,
+  errors,
+  onWorkspace,
+}: {
+  descriptor: OverridablePrompt;
+  config: AppConfig;
+  workspace: Workspace;
+  errors: Record<string, string>;
+  onWorkspace: (w: Workspace) => void;
+}) {
+  const d = descriptor;
+  const spec = settingsRegistry[d.key];
+  return (
+    <InheritField<string>
+      label={d.label ?? spec.label}
+      htmlFor={d.id}
+      value={d.get(workspace)}
+      inherited={d.inherited(config)}
+      format={summarizePrompt}
+      onChange={(next) => onWorkspace(d.set(workspace, next))}
+    >
+      {({ id, value, onChange }) => (
+        <PromptField
+          id={id ?? d.id}
+          description={d.description}
+          value={value}
+          onChange={onChange}
+          placeholders={d.placeholders}
+          preview={d.compile(value)}
+          error={errors[d.errorKey]}
+          rows={d.rows}
+          textareaClass={d.textareaClass}
+        />
+      )}
+    </InheritField>
+  );
+}
+
+const DRIVE_PROMPT_FIELDS: OverridablePrompt[] = [
+  {
+    key: 'drivePrompt',
+    id: 'workspace-drive-prompt',
+    errorKey: 'drivePrompt',
+    get: (w) => w.drivePrompt,
+    set: (w, v) => ({ ...w, drivePrompt: v }),
+    inherited: (c) => c.drive.prompt,
+    placeholders: DRIVE_PLACEHOLDERS,
+    compile: compileDrivePreview,
+    textareaClass: `${field} min-h-36`,
+  },
+  {
+    key: 'driveUnattendedReminder',
+    id: 'workspace-unattended-reminder',
+    errorKey: 'driveUnattendedReminder',
+    description: 'Appended to every auto-driven turn — the checkpoint reminder and the finish/escalate signals.',
+    get: (w) => w.driveUnattendedReminder,
+    set: (w, v) => ({ ...w, driveUnattendedReminder: v }),
+    inherited: (c) => c.drive.unattendedReminder,
+    placeholders: TASK_ID_PLACEHOLDER,
+    compile: compileTaskIdPreview,
+    textareaClass: `${field} min-h-36`,
+  },
+  {
+    key: 'driveContinuePrompt',
+    id: 'workspace-continue-prompt',
+    errorKey: 'driveContinuePrompt',
+    description: 'The re-prompt nudge when a turn ends without finishing. The unattended reminder is appended after it.',
+    get: (w) => w.driveContinuePrompt,
+    set: (w, v) => ({ ...w, driveContinuePrompt: v }),
+    inherited: (c) => c.drive.continuePrompt,
+    placeholders: TASK_ID_PLACEHOLDER,
+    compile: compileTaskIdPreview,
+    textareaClass: `${field} min-h-24`,
+  },
+];
+
+const TASK_PROMPT_FIELD: OverridablePrompt = {
+  key: 'taskPrompt',
+  id: 'workspace-task-prompt',
+  errorKey: 'taskPrompt',
+  get: (w) => w.taskPrompt,
+  set: (w, v) => ({ ...w, taskPrompt: v }),
+  inherited: (c) => c.taskPrompt,
+  placeholders: TASK_PLACEHOLDERS,
+  compile: compileTaskPreview,
+  textareaClass: `${field} min-h-36`,
+};
+
+const REVIEW_PROMPT_FIELD: OverridablePrompt = {
+  key: 'reviewPrompt',
+  id: 'workspace-review-prompt',
+  errorKey: 'reviewPrompt',
+  get: (w) => w.reviewPrompt,
+  set: (w, v) => ({ ...w, reviewPrompt: v }),
+  inherited: (c) => c.verify.review.prompt ?? '',
+  placeholders: DRIVE_PLACEHOLDERS,
+  compile: compileCriticPreview,
+  rows: 3,
+};
 
 export function WorkspaceSettingsPage({
   workspace,
@@ -38,6 +411,7 @@ export function WorkspaceSettingsPage({
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [tab, setTab] = useState<SettingTab>('general');
 
   useEffect(() => {
     setPristine(workspace);
@@ -48,8 +422,7 @@ export function WorkspaceSettingsPage({
 
   const dirty = JSON.stringify(local) !== JSON.stringify(pristine);
 
-  const set = <K extends keyof Workspace>(key: K, value: Workspace[K]) =>
-    setLocal((w) => ({ ...w, [key]: value }));
+  const set = <K extends keyof Workspace>(key: K, value: Workspace[K]) => setLocal((w) => ({ ...w, [key]: value }));
 
   const discard = () => {
     setLocal(pristine);
@@ -79,6 +452,7 @@ export function WorkspaceSettingsPage({
         conflictResolveTurns: local.conflictResolveTurns,
         maxConcurrentRuns: local.maxConcurrentRuns,
         autoRunnerEnabled: local.autoRunnerEnabled,
+        maxAttempts: local.maxAttempts,
         contextReuseTokenLimit: local.contextReuseTokenLimit,
         verificationCommand: local.verificationCommand,
         reviewEnabled: local.reviewEnabled,
@@ -87,6 +461,13 @@ export function WorkspaceSettingsPage({
         reviewHarness: local.reviewHarness,
         guardrailBudget: local.guardrailBudget,
         guardrailProgress: local.guardrailProgress,
+        toolTimeoutMinutes: local.toolTimeoutMinutes,
+        drivePrompt: local.drivePrompt,
+        driveUnattendedReminder: local.driveUnattendedReminder,
+        driveContinuePrompt: local.driveContinuePrompt,
+        driveMergeFate: local.driveMergeFate,
+        driveContinueAttempts: local.driveContinueAttempts,
+        taskPrompt: local.taskPrompt,
       });
       setPristine(updated);
       setLocal(updated);
@@ -100,26 +481,6 @@ export function WorkspaceSettingsPage({
     }
   };
 
-  // The model override's inherited value and option list track the *effective*
-  // harness (mirrors TaskService.resolveExecution): overriding the harness
-  // repoints the model to that harness's default and models.
-  const effectiveHarness = local.harness ?? config.defaults.harness;
-  const harnessConfig = config.harnesses[effectiveHarness];
-  const inheritedModel = harnessConfig?.defaultModel ?? '';
-  const models = harnessConfig?.models ?? [];
-
-  // Chat defaults resolve independently of the Task defaults (ADR-0012): the
-  // effective chat harness drives the model option list, but the inherited
-  // model is the global chat model (a standalone value, not the harness's
-  // defaultModel) — chat and Tasks can pin different models of one Harness.
-  const effectiveChatHarness = local.chatHarness ?? config.chat.harness;
-  const chatModels = config.harnesses[effectiveChatHarness]?.models ?? [];
-
-  // The review model override's option list tracks the *effective* review
-  // harness (mirrors the Task/chat harness→model pairing above): overriding
-  // the review harness repoints the model options to that harness's models.
-  const reviewHarnessEff = (local.reviewHarness ?? config.verify.review.harness) || undefined;
-
   // A review that resolves to enabled-without-a-prompt/model here can never run
   // (ADR-0044 §F, issue #340): compute the resolved review (workspace ?? global)
   // and flag it loudly, rather than letting the operator save a silent no-op.
@@ -127,6 +488,14 @@ export function WorkspaceSettingsPage({
   const resolvedReviewModel = local.reviewModel ?? config.verify.review.model;
   const resolvedReviewPrompt = local.reviewPrompt ?? config.verify.review.prompt;
   const reviewUnrunnable = Boolean(resolvedReviewEnabled) && !(resolvedReviewModel && resolvedReviewPrompt);
+
+  const overrideGrid = (fields: OverridableDescriptor[], gridClass: string) => (
+    <div className={gridClass}>
+      {fields.map((f) => (
+        <OverrideField key={f.id} descriptor={f} config={config} workspace={local} errors={fieldErrors} onWorkspace={setLocal} />
+      ))}
+    </div>
+  );
 
   return (
     <div>
@@ -138,619 +507,282 @@ export function WorkspaceSettingsPage({
         </p>
       </div>
 
-      <div className="mt-5 grid gap-4 xl:grid-cols-2 xl:items-start">
-        <SettingsSection title="Identity" description="This Workspace's name and the project directory it points at.">
-          <div className="grid gap-3.5 sm:grid-cols-2">
-            <div>
-              <label className={fieldLabel} htmlFor="workspace-name">Name</label>
-              <input
-                id="workspace-name"
-                className={field}
-                value={local.name}
-                onChange={(e) => set('name', e.target.value)}
-              />
-              <FieldError message={fieldErrors['name']} />
-            </div>
-            <div>
-              <span className={fieldLabel}>Working directory</span>
-              <p className="truncate font-data text-ink" title={local.workingDir}>
-                {local.workingDir}
-              </p>
-              <p className="mt-1 text-small text-muted">
-                Fixed once a Workspace is created — make a new Workspace to point at a different repo.
-              </p>
-            </div>
-          </div>
-        </SettingsSection>
+      <div className="mt-5">
+        <Tabs tabs={workspaceTabs()} active={tab} onChange={(id) => setTab(id as SettingTab)} label="Workspace settings sections" />
+      </div>
 
-        <SettingsSection
-          title="Tracker mirroring"
-          description="Poll this Workspace's issue tracker and mirror its issues onto the board as Tasks. Needs docs/agents/issue-tracker.md in the repo and gh (GitHub) auth."
-        >
-          <div className="flex flex-wrap items-start gap-x-8 gap-y-4">
-            <div>
-              <span className={fieldLabel}>Enabled</span>
-              <div className="pt-1">
-                <Switch
-                  checked={local.trackerEnabled}
-                  onChange={(trackerEnabled) => set('trackerEnabled', trackerEnabled)}
-                >
-                  Mirror tracker issues onto the board
-                </Switch>
+      <div
+        id={`settings-panel-${tab}`}
+        role="tabpanel"
+        aria-labelledby={`settings-tab-${tab}`}
+        className="mt-5 grid gap-4 xl:grid-cols-2 xl:items-start"
+      >
+        {tab === 'general' && (
+          <>
+            <SettingsSection title="Identity" description="This Workspace's name and the project directory it points at.">
+              <div className="grid gap-3.5 sm:grid-cols-2">
+                <div>
+                  <label className={fieldLabel} htmlFor="workspace-name">Name</label>
+                  <input
+                    id="workspace-name"
+                    className={field}
+                    value={local.name}
+                    onChange={(e) => set('name', e.target.value)}
+                  />
+                  <FieldError message={fieldErrors['name']} />
+                </div>
+                <div>
+                  <span className={fieldLabel}>Working directory</span>
+                  <p className="truncate font-data text-ink" title={local.workingDir}>
+                    {local.workingDir}
+                  </p>
+                  <p className="mt-1 text-small text-muted">
+                    Fixed once a Workspace is created — make a new Workspace to point at a different repo.
+                  </p>
+                </div>
               </div>
-            </div>
-            <div>
-              <label className={fieldLabel} htmlFor="workspace-poll-interval">Poll interval (seconds)</label>
-              <input
-                id="workspace-poll-interval"
-                type="number"
-                min={5}
-                className={`${field} w-28 tabular-nums`}
-                value={local.trackerPollIntervalSeconds}
-                onChange={(e) => set('trackerPollIntervalSeconds', Number(e.target.value))}
-              />
-              <FieldError message={fieldErrors['trackerPollIntervalSeconds']} />
-            </div>
-            <div>
-              <span className={fieldLabel}>Resolved tracker</span>
-              <ResolvedTrackerValue workspace={pristine} />
-            </div>
-          </div>
-        </SettingsSection>
+            </SettingsSection>
 
-        <SettingsSection
-          title="Auto-runner"
-          description="Whether ready Tasks here run unattended, and how many at once. Both inherit the global defaults until overridden; a cap override can never exceed the Machine Ceiling."
-        >
-          <div className="flex flex-col gap-4 sm:max-w-md">
-            <div>
-              <InheritField
-                label="Enabled"
-                value={local.autoRunnerEnabled}
-                inherited={config.autoRunner.enabled}
-                format={(v) => (v ? 'On' : 'Off')}
-                onChange={(autoRunnerEnabled) => set('autoRunnerEnabled', autoRunnerEnabled)}
-              >
-                {({ value, onChange }) => (
-                  <Switch checked={value} onChange={onChange}>
-                    Run ready tasks unattended
-                  </Switch>
-                )}
-              </InheritField>
-              <FieldError message={fieldErrors['autoRunnerEnabled']} />
-            </div>
-            <div>
-              <InheritField
-                label="Concurrency cap"
-                htmlFor="workspace-max-runs"
-                value={local.maxConcurrentRuns}
-                inherited={config.autoRunner.maxConcurrentRuns}
-                onChange={(maxConcurrentRuns) => set('maxConcurrentRuns', maxConcurrentRuns)}
-              >
-                {({ id, value, onChange }) => (
-                  <input
-                    id={id}
-                    type="number"
-                    min={1}
-                    // The ceiling is the hard limit an override can't breach
-                    // (ADR-0012); clamping is read-time (#60), this just guides.
-                    max={config.autoRunner.maxConcurrentRuns}
-                    className={`${field} w-28 tabular-nums`}
-                    value={value}
-                    onChange={(e) => onChange(Number(e.target.value))}
-                  />
-                )}
-              </InheritField>
-              <FieldError message={fieldErrors['maxConcurrentRuns']} />
-            </div>
-          </div>
-        </SettingsSection>
-
-        <SettingsSection
-          title="Session reuse"
-          description="Reuse a warm session into the next attempt while its context is below this many tokens; at or above it, a condensed new session starts. Inherits the global default until overridden."
-        >
-          <div>
-            <InheritField
-              label="Context reuse token limit"
-              htmlFor="workspace-context-reuse-token-limit"
-              value={local.contextReuseTokenLimit}
-              inherited={config.contextReuseTokenLimit}
-              onChange={(contextReuseTokenLimit) => set('contextReuseTokenLimit', contextReuseTokenLimit)}
+            <SettingsSection
+              title="Tracker mirroring"
+              description="Poll this Workspace's issue tracker and mirror its issues onto the board as Tasks. Needs docs/agents/issue-tracker.md in the repo and gh (GitHub) auth."
             >
-              {({ id, value, onChange }) => (
-                <input
-                  id={id}
-                  type="number"
-                  min={0}
-                  step={10_000}
-                  className={`${field} w-36 tabular-nums`}
-                  value={value}
-                  onChange={(e) => onChange(Number(e.target.value))}
-                />
-              )}
-            </InheritField>
-            <FieldError message={fieldErrors['contextReuseTokenLimit']} />
-          </div>
-        </SettingsSection>
-
-        <SettingsSection
-          title="Task defaults"
-          description="Pre-filled into every new Task in this Workspace. Each inherits the global default until overridden; a Task can still override them one by one."
-        >
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <InheritField
-                label="Harness"
-                htmlFor="workspace-harness"
-                value={local.harness}
-                inherited={config.defaults.harness}
-                onChange={(harness) => set('harness', harness)}
-              >
-                {({ id, value, onChange }) => (
-                  <select id={id} className={`${selectField} w-full`} value={value} onChange={(e) => onChange(e.target.value)}>
-                    {Object.keys(config.harnesses).map((h) => (
-                      <option key={h} value={h}>
-                        {h}
-                      </option>
-                    ))}
-                    {value && !config.harnesses[value] && <option value={value}>{value} (not configured)</option>}
-                  </select>
-                )}
-              </InheritField>
-              <FieldError message={fieldErrors['harness']} />
-            </div>
-            <div>
-              <InheritField
-                label="Model"
-                htmlFor="workspace-model"
-                value={local.model}
-                inherited={inheritedModel}
-                onChange={(model) => set('model', model)}
-              >
-                {({ id, value, onChange }) => (
-                  <select id={id} className={`${selectField} w-full`} value={value} onChange={(e) => onChange(e.target.value)}>
-                    {models.map((m) => (
-                      <option key={m} value={m}>
-                        {m}
-                      </option>
-                    ))}
-                    {value && !models.includes(value) && (
-                      <option value={value}>{value} (not in models list)</option>
-                    )}
-                  </select>
-                )}
-              </InheritField>
-              <FieldError message={fieldErrors['model']} />
-            </div>
-            <div>
-              <InheritField
-                label="Isolation mode"
-                htmlFor="workspace-isolation"
-                value={local.isolationMode}
-                inherited={config.defaults.isolationMode}
-                onChange={(isolationMode) => set('isolationMode', isolationMode)}
-              >
-                {({ id, value, onChange }) => (
-                  <select
-                    id={id}
-                    className={`${selectField} w-full`}
-                    value={value}
-                    onChange={(e) => onChange(e.target.value as 'direct' | 'worktree')}
-                  >
-                    <option value="direct">direct</option>
-                    <option value="worktree">worktree</option>
-                  </select>
-                )}
-              </InheritField>
-              <FieldError message={fieldErrors['isolationMode']} />
-            </div>
-            <div>
-              <InheritField
-                label="Priority"
-                htmlFor="workspace-priority"
-                value={local.priority}
-                inherited={config.defaults.priority}
-                onChange={(priority) => set('priority', priority)}
-              >
-                {({ id, value, onChange }) => (
-                  <select
-                    id={id}
-                    className={`${selectField} w-full`}
-                    value={value}
-                    onChange={(e) => onChange(e.target.value as 'high' | 'normal' | 'low')}
-                  >
-                    <option value="high">high</option>
-                    <option value="normal">normal</option>
-                    <option value="low">low</option>
-                  </select>
-                )}
-              </InheritField>
-              <FieldError message={fieldErrors['priority']} />
-            </div>
-            <div>
-              <InheritField
-                label="Integration retries"
-                htmlFor="workspace-integration-retries"
-                value={local.integrationRetries}
-                inherited={config.defaults.integrationRetries}
-                onChange={(integrationRetries) => set('integrationRetries', integrationRetries)}
-              >
-                {({ id, value, onChange }) => (
-                  <input
-                    id={id}
-                    type="number"
-                    min={1}
-                    className={`${field} w-28 tabular-nums`}
-                    value={value}
-                    onChange={(e) => onChange(Number(e.target.value))}
-                  />
-                )}
-              </InheritField>
-              <FieldError message={fieldErrors['integrationRetries']} />
-            </div>
-            <div>
-              <InheritField
-                label="Conflict resolve turns"
-                htmlFor="workspace-conflict-turns"
-                value={local.conflictResolveTurns}
-                inherited={config.defaults.conflictResolveTurns}
-                onChange={(conflictResolveTurns) => set('conflictResolveTurns', conflictResolveTurns)}
-              >
-                {({ id, value, onChange }) => (
-                  <input
-                    id={id}
-                    type="number"
-                    min={0}
-                    className={`${field} w-28 tabular-nums`}
-                    value={value}
-                    onChange={(e) => onChange(Number(e.target.value))}
-                  />
-                )}
-              </InheritField>
-              <FieldError message={fieldErrors['conflictResolveTurns']} />
-            </div>
-          </div>
-        </SettingsSection>
-
-        <SettingsSection
-          title="Chat defaults"
-          description="The Harness and model new Conversations in this Workspace start with. Each inherits the global chat default until overridden; every chat can still change them before its first turn."
-        >
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <InheritField
-                label="Harness"
-                htmlFor="workspace-chat-harness"
-                value={local.chatHarness}
-                inherited={config.chat.harness}
-                onChange={(chatHarness) => set('chatHarness', chatHarness)}
-              >
-                {({ id, value, onChange }) => (
-                  <select id={id} className={`${selectField} w-full`} value={value} onChange={(e) => onChange(e.target.value)}>
-                    {Object.keys(config.harnesses).map((h) => (
-                      <option key={h} value={h}>
-                        {h}
-                      </option>
-                    ))}
-                    {value && !config.harnesses[value] && <option value={value}>{value} (not configured)</option>}
-                  </select>
-                )}
-              </InheritField>
-              <FieldError message={fieldErrors['chatHarness']} />
-            </div>
-            <div>
-              <InheritField
-                label="Model"
-                htmlFor="workspace-chat-model"
-                value={local.chatModel}
-                inherited={config.chat.model}
-                onChange={(chatModel) => set('chatModel', chatModel)}
-              >
-                {({ id, value, onChange }) => (
-                  <select id={id} className={`${selectField} w-full`} value={value} onChange={(e) => onChange(e.target.value)}>
-                    {chatModels.map((m) => (
-                      <option key={m} value={m}>
-                        {m}
-                      </option>
-                    ))}
-                    {value && !chatModels.includes(value) && (
-                      <option value={value}>{value} (not in models list)</option>
-                    )}
-                  </select>
-                )}
-              </InheritField>
-              <FieldError message={fieldErrors['chatModel']} />
-            </div>
-          </div>
-        </SettingsSection>
-
-        <SettingsSection
-          title="Run guardrails"
-          description="The budget caps and stall detector that trip a Run here to Escalation (ADR-0019). Each inherits the global default until overridden; wall-clock always guards, the token and cost caps are opt-in. tool-timeout is global-only and set on the global settings page."
-        >
-          <div className="flex flex-col gap-4 sm:max-w-md">
-            <div>
-              <InheritField
-                label="Budget"
-                value={local.guardrailBudget}
-                inherited={config.guardrails.budget}
-                format={summarizeBudget}
-                onChange={(guardrailBudget) => set('guardrailBudget', guardrailBudget)}
-              >
-                {({ value, onChange }) => (
-                  <div className="flex flex-col gap-3">
-                    <div>
-                      <label className={fieldLabel} htmlFor="workspace-budget-wallclock">
-                        Wall-clock (minutes)
-                      </label>
-                      <input
-                        id="workspace-budget-wallclock"
-                        type="number"
-                        min={1}
-                        className={`${field} w-40 tabular-nums`}
-                        value={value.wallClockMinutes}
-                        onChange={(e) => onChange(setBudgetField(value, 'wallClockMinutes', e.target.value))}
-                      />
-                      <FieldError message={fieldErrors['guardrailBudget.wallClockMinutes']} />
-                    </div>
-                    <div>
-                      <label className={fieldLabel} htmlFor="workspace-budget-tokens">
-                        Token cap <span className="normal-case text-muted">(blank = no cap)</span>
-                      </label>
-                      <input
-                        id="workspace-budget-tokens"
-                        type="number"
-                        min={1}
-                        placeholder="No cap"
-                        className={`${field} w-40 tabular-nums`}
-                        value={value.tokens ?? ''}
-                        onChange={(e) => onChange(setBudgetField(value, 'tokens', e.target.value))}
-                      />
-                      <FieldError message={fieldErrors['guardrailBudget.tokens']} />
-                    </div>
-                    <div>
-                      <label className={fieldLabel} htmlFor="workspace-budget-cost">
-                        Cost cap (USD) <span className="normal-case text-muted">(blank = no cap)</span>
-                      </label>
-                      <input
-                        id="workspace-budget-cost"
-                        type="number"
-                        min={0}
-                        step="0.01"
-                        placeholder="No cap"
-                        className={`${field} w-40 tabular-nums`}
-                        value={value.costUsd ?? ''}
-                        onChange={(e) => onChange(setBudgetField(value, 'costUsd', e.target.value))}
-                      />
-                      {/* A cost cap with no token fallback is rejected server-side
-                          when a configured model is unpriced (ADR-0019, #166). */}
-                      <FieldError message={fieldErrors['guardrailBudget.costUsd']} />
-                    </div>
+              <div className="flex flex-wrap items-start gap-x-8 gap-y-4">
+                <div>
+                  <span className={fieldLabel}>Enabled</span>
+                  <div className="pt-1">
+                    <Switch
+                      checked={local.trackerEnabled}
+                      onChange={(trackerEnabled) => set('trackerEnabled', trackerEnabled)}
+                    >
+                      Mirror tracker issues onto the board
+                    </Switch>
                   </div>
-                )}
-              </InheritField>
-            </div>
-            <div>
-              <InheritField
-                label="Progress detector"
-                value={local.guardrailProgress}
-                inherited={config.guardrails.progress}
-                format={(v) => (v ? 'On' : 'Off')}
-                onChange={(guardrailProgress) => set('guardrailProgress', guardrailProgress)}
-              >
-                {({ value, onChange }) => (
-                  <Switch checked={value} onChange={onChange}>
-                    Trip a stalled Run to Escalation
-                  </Switch>
-                )}
-              </InheritField>
-              <FieldError message={fieldErrors['guardrailProgress']} />
-            </div>
-          </div>
-        </SettingsSection>
+                </div>
+                <div>
+                  <label className={fieldLabel} htmlFor="workspace-poll-interval">Poll interval (seconds)</label>
+                  <input
+                    id="workspace-poll-interval"
+                    type="number"
+                    min={5}
+                    className={`${field} w-28 tabular-nums`}
+                    value={local.trackerPollIntervalSeconds}
+                    onChange={(e) => set('trackerPollIntervalSeconds', Number(e.target.value))}
+                  />
+                  <FieldError message={fieldErrors['trackerPollIntervalSeconds']} />
+                </div>
+                <div>
+                  <span className={fieldLabel}>Resolved tracker</span>
+                  <ResolvedTrackerValue workspace={pristine} />
+                </div>
+              </div>
+            </SettingsSection>
 
-        <SettingsSection
-          title="Verification"
-          description="Commands run in order and stop at the first failure. Review runs only after they pass. This Workspace can override the global default."
-        >
-          <div className="flex flex-col gap-4 sm:max-w-md">
-            {reviewUnrunnable && (
-              <p className="rounded-sm bg-fail-tint px-2.5 py-2 text-small text-fail">
-                Review is enabled here but resolves to no {!resolvedReviewModel ? 'model' : 'prompt'} — it will be flagged unrunnable and never run. Set a review {!resolvedReviewModel ? 'model' : 'prompt'} or turn review off.
-              </p>
-            )}
-            <div>
-              <InheritField
-                label="Command verifier"
-                value={local.verificationCommand}
-                inherited={config.verify.commands}
-                format={summarizeCommands}
-                onChange={(verificationCommand) => set('verificationCommand', verificationCommand)}
-              >
-                {({ value, onChange }) => (
-                  <div className="flex flex-col gap-4">
-                    <div className="flex items-center justify-between">
-                      <span className={fieldLabel}>Commands</span>
-                      <button
-                        type="button"
-                        className="text-small text-accent"
-                        onClick={() => onChange([...value, EMPTY_COMMAND])}
-                      >
-                        Add command
-                      </button>
-                    </div>
-                    {value.length === 0 ? (
-                      <p className="text-small text-muted">
-                        No commands — verification runs nothing in this workspace.
-                      </p>
-                    ) : (
-                      <div className="flex flex-col gap-5">
-                        {value.map((command, index) => (
-                          <div key={index} className="flex flex-col gap-3 border-l-2 border-edge pl-3">
-                            <div className="flex items-center justify-between">
-                              <span className={fieldLabel}>Command {index + 1}</span>
-                              <button
-                                type="button"
-                                className="text-small text-failed"
-                                onClick={() => onChange(value.filter((_, commandIndex) => commandIndex !== index))}
-                              >
-                                Remove
-                              </button>
-                            </div>
-                            <div>
-                              <label className={fieldLabel} htmlFor={`workspace-verify-command-${index}`}>Command</label>
-                              <input
-                                id={`workspace-verify-command-${index}`}
-                                className={`${field} font-data`}
-                                placeholder="npm"
-                                value={command.command}
-                                onChange={(e) =>
-                                  onChange(value.map((c, i) => (i === index ? setCommandField(c, 'command', e.target.value) : c)))
-                                }
-                              />
-                              <FieldError message={fieldErrors[`verificationCommand.${index}.command`]} />
-                            </div>
-                            <div>
-                              <label className={fieldLabel} htmlFor={`workspace-verify-args-${index}`}>
-                                Arguments <span className="normal-case text-muted">(space-separated)</span>
-                              </label>
-                              <input
-                                id={`workspace-verify-args-${index}`}
-                                className={`${field} font-data`}
-                                placeholder="test"
-                                value={argsText(command)}
-                                onChange={(e) =>
-                                  onChange(value.map((c, i) => (i === index ? setCommandField(c, 'args', e.target.value) : c)))
-                                }
-                              />
-                            </div>
-                            <div>
-                              <label className={fieldLabel} htmlFor={`workspace-verify-timeout-${index}`}>Timeout (seconds)</label>
-                              <input
-                                id={`workspace-verify-timeout-${index}`}
-                                type="number"
-                                min={1}
-                                className={`${field} w-40 tabular-nums`}
-                                value={command.timeoutSeconds}
-                                onChange={(e) =>
-                                  onChange(
-                                    value.map((c, i) => (i === index ? setCommandField(c, 'timeoutSeconds', e.target.value) : c)),
-                                  )
-                                }
-                              />
-                            </div>
-                          </div>
-                        ))}
+            <SettingsSection
+              title="Chat defaults"
+              description="The Harness and model new Conversations in this Workspace start with. Each inherits the global chat default until overridden; every chat can still change them before its first turn."
+            >
+              {overrideGrid(CHAT_DEFAULT_FIELDS, 'grid gap-4 sm:grid-cols-2')}
+            </SettingsSection>
+
+            <SettingsSection
+              title="Delete workspace"
+              description="Removes this Workspace and everything on its board — Tasks, Runs, and Conversations. This cannot be undone."
+            >
+              <button type="button" className={btnGhost} onClick={() => setConfirmingDelete(true)}>
+                Delete workspace…
+              </button>
+              {blockedByRunningTask && (
+                <p className="mt-2 text-small text-muted">
+                  A Task is running here — stop it before this Workspace can be deleted.
+                </p>
+              )}
+            </SettingsSection>
+          </>
+        )}
+
+        {tab === 'execution' && (
+          <>
+            <SettingsSection
+              title="Task defaults"
+              description="Pre-filled into every new Task in this Workspace. Each inherits the global default until overridden; a Task can still override them one by one."
+            >
+              {overrideGrid(TASK_DEFAULT_FIELDS, 'grid gap-4 sm:grid-cols-2')}
+            </SettingsSection>
+
+            <SettingsSection
+              title="Auto-runner"
+              description="Whether ready Tasks here run unattended, and how many at once. Both inherit the global defaults until overridden; a cap override can never exceed the Machine Ceiling."
+            >
+              {overrideGrid(AUTORUNNER_FIELDS, 'flex flex-col gap-4 sm:max-w-md')}
+            </SettingsSection>
+
+            <SettingsSection
+              title="Attempt limit"
+              description="The maximum implementation attempts before a Task escalates. Inherits the global cap until overridden."
+            >
+              {overrideGrid(ATTEMPT_FIELDS, '')}
+            </SettingsSection>
+
+            <SettingsSection
+              title="Session reuse"
+              description="Reuse a warm session into the next attempt while its context is below this many tokens; at or above it, a condensed new session starts. Inherits the global default until overridden."
+            >
+              {overrideGrid(SESSION_FIELDS, '')}
+            </SettingsSection>
+
+            <SettingsSection
+              title="Run guardrails"
+              description="The budget caps, stall detector, and tool timeout that trip a Run here to Escalation (ADR-0019). Each inherits the global default until overridden; wall-clock always guards, the token and cost caps are opt-in."
+            >
+              <div className="flex flex-col gap-4 sm:max-w-md">
+                <div>
+                  <InheritField
+                    label="Budget"
+                    value={local.guardrailBudget}
+                    inherited={config.guardrails.budget}
+                    format={summarizeBudget}
+                    onChange={(guardrailBudget) => set('guardrailBudget', guardrailBudget)}
+                  >
+                    {({ value, onChange }) => (
+                      <div className="flex flex-col gap-3">
+                        <div>
+                          <label className={fieldLabel} htmlFor="workspace-budget-wallclock">
+                            Wall-clock (minutes)
+                          </label>
+                          <input
+                            id="workspace-budget-wallclock"
+                            type="number"
+                            min={1}
+                            className={`${field} w-40 tabular-nums`}
+                            value={value.wallClockMinutes}
+                            onChange={(e) => onChange(setBudgetField(value, 'wallClockMinutes', e.target.value))}
+                          />
+                          <FieldError message={fieldErrors['guardrailBudget.wallClockMinutes']} />
+                        </div>
+                        <div>
+                          <label className={fieldLabel} htmlFor="workspace-budget-tokens">
+                            Token cap <span className="normal-case text-muted">(blank = no cap)</span>
+                          </label>
+                          <input
+                            id="workspace-budget-tokens"
+                            type="number"
+                            min={1}
+                            placeholder="No cap"
+                            className={`${field} w-40 tabular-nums`}
+                            value={value.tokens ?? ''}
+                            onChange={(e) => onChange(setBudgetField(value, 'tokens', e.target.value))}
+                          />
+                          <FieldError message={fieldErrors['guardrailBudget.tokens']} />
+                        </div>
+                        <div>
+                          <label className={fieldLabel} htmlFor="workspace-budget-cost">
+                            Cost cap (USD) <span className="normal-case text-muted">(blank = no cap)</span>
+                          </label>
+                          <input
+                            id="workspace-budget-cost"
+                            type="number"
+                            min={0}
+                            step="0.01"
+                            placeholder="No cap"
+                            className={`${field} w-40 tabular-nums`}
+                            value={value.costUsd ?? ''}
+                            onChange={(e) => onChange(setBudgetField(value, 'costUsd', e.target.value))}
+                          />
+                          {/* A cost cap with no token fallback is rejected server-side
+                              when a configured model is unpriced (ADR-0019, #166). */}
+                          <FieldError message={fieldErrors['guardrailBudget.costUsd']} />
+                        </div>
                       </div>
                     )}
-                  </div>
-                )}
-              </InheritField>
-            </div>
-            <div>
-              <InheritField<boolean>
-                label="Review enabled"
-                value={local.reviewEnabled}
-                inherited={config.verify.review.enabled}
-                format={(on) => (on ? 'On' : 'Off')}
-                onChange={(reviewEnabled) => set('reviewEnabled', reviewEnabled)}
-              >
-                {({ value, onChange }) => (
-                  <Switch checked={value} onChange={onChange}>
-                    Enabled
-                  </Switch>
-                )}
-              </InheritField>
-              <FieldError message={fieldErrors['reviewEnabled']} />
-            </div>
-            <div>
-              <InheritField<string>
-                label="Review harness"
-                htmlFor="workspace-review-harness"
-                value={local.reviewHarness}
-                inherited={config.verify.review.harness ?? (Object.keys(config.harnesses)[0] ?? '')}
-                format={(h) => h || 'Same as task (builder harness)'}
-                onChange={(reviewHarness) => set('reviewHarness', reviewHarness)}
-              >
-                {({ id, value, onChange }) => (
-                  <select id={id} className={`${selectField} w-full`} value={value} onChange={(e) => onChange(e.target.value)}>
-                    {Object.keys(config.harnesses).map((h) => (
-                      <option key={h} value={h}>
-                        {h}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </InheritField>
-              <FieldError message={fieldErrors['reviewHarness']} />
-            </div>
-            <div>
-              <InheritField<string>
-                label="Review model"
-                htmlFor="workspace-review-model"
-                value={local.reviewModel}
-                inherited={config.verify.review.model ?? ''}
-                format={(m) => m || 'Not configured'}
-                onChange={(reviewModel) => set('reviewModel', reviewModel)}
-              >
-                {({ id, value, onChange }) => (
-                  <ModelCombobox
-                    id={id}
-                    value={value}
-                    onChange={onChange}
-                    options={reviewHarnessEff ? (config.harnesses[reviewHarnessEff]?.models ?? []) : []}
-                  />
-                )}
-              </InheritField>
-              <FieldError message={fieldErrors['reviewModel']} />
-            </div>
-            <div>
-              <InheritField<string>
-                label="Review prompt"
-                htmlFor="workspace-review-prompt"
-                value={local.reviewPrompt}
-                inherited={config.verify.review.prompt ?? ''}
-                format={(p) => (p ? 'Custom prompt' : 'Not configured')}
-                onChange={(reviewPrompt) => set('reviewPrompt', reviewPrompt)}
-              >
-                {({ id, value, onChange }) => (
-                  <>
-                    <textarea
-                      id={id}
-                      rows={3}
-                      className={field}
-                      placeholder="Review the change against issue {ref}: {title}. Read the code and the issue to decide."
-                      value={value}
-                      onChange={(e) => onChange(e.target.value)}
-                    />
-                    <FieldError message={fieldErrors['reviewPrompt']} />
-                    <PlaceholderList placeholders={DRIVE_PLACEHOLDERS} />
-                    <PromptPreview text={compileCriticPreview(value)} />
-                  </>
-                )}
-              </InheritField>
-            </div>
-          </div>
-        </SettingsSection>
+                  </InheritField>
+                </div>
+                {overrideGrid(GUARDRAIL_SCALAR_FIELDS, 'flex flex-col gap-4')}
+              </div>
+            </SettingsSection>
+          </>
+        )}
 
-        <SettingsSection
-          title="Delete workspace"
-          description="Removes this Workspace and everything on its board — Tasks, Runs, and Conversations. This cannot be undone."
-        >
-          <button
-            type="button"
-            className={btnGhost}
-            onClick={() => setConfirmingDelete(true)}
+        {tab === 'verification' && (
+          <SettingsSection
+            title="Verification"
+            description="Commands run in order and stop at the first failure. Review runs only after they pass. This Workspace can override the global default."
           >
-            Delete workspace…
-          </button>
-          {blockedByRunningTask && (
-            <p className="mt-2 text-small text-muted">
-              A Task is running here — stop it before this Workspace can be deleted.
-            </p>
-          )}
-        </SettingsSection>
+            <div className="flex flex-col gap-4 sm:max-w-md">
+              {reviewUnrunnable && (
+                <p className="rounded-sm bg-fail-tint px-2.5 py-2 text-small text-fail">
+                  Review is enabled here but resolves to no {!resolvedReviewModel ? 'model' : 'prompt'} — it will be
+                  flagged unrunnable and never run. Set a review {!resolvedReviewModel ? 'model' : 'prompt'} or turn
+                  review off.
+                </p>
+              )}
+              <div>
+                <InheritField
+                  label="Command verifier"
+                  value={local.verificationCommand}
+                  inherited={config.verify.commands}
+                  format={summarizeCommands}
+                  onChange={(verificationCommand) => set('verificationCommand', verificationCommand)}
+                >
+                  {({ value, onChange }) => (
+                    <CommandListEditor
+                      commands={value}
+                      onChange={onChange}
+                      idPrefix="workspace-verify"
+                      errorPrefix="verificationCommand"
+                      fieldErrors={fieldErrors}
+                      emptyText="No commands — verification runs nothing in this workspace."
+                    />
+                  )}
+                </InheritField>
+              </div>
+              {overrideGrid(REVIEW_SCALAR_FIELDS, 'flex flex-col gap-4')}
+              <OverridePrompt
+                descriptor={REVIEW_PROMPT_FIELD}
+                config={config}
+                workspace={local}
+                errors={fieldErrors}
+                onWorkspace={setLocal}
+              />
+            </div>
+          </SettingsSection>
+        )}
+
+        {tab === 'prompts' && (
+          <>
+            <SettingsSection
+              title="Task prompt"
+              description="Wraps a native Task's own prompt before it's sent to the agent. Inherits the global Task Prompt until overridden; mirrored tickets use the Drive prompt instead."
+            >
+              <OverridePrompt
+                descriptor={TASK_PROMPT_FIELD}
+                config={config}
+                workspace={local}
+                errors={fieldErrors}
+                onWorkspace={setLocal}
+              />
+            </SettingsSection>
+
+            <SettingsSection
+              title="Drive prompt"
+              description="How Harmonic drives a mirrored Task unattended here. Each field inherits the global default until overridden; merge fate governs what happens to completed work."
+            >
+              <div className="flex flex-col gap-4">
+                {DRIVE_PROMPT_FIELDS.map((d) => (
+                  <OverridePrompt
+                    key={d.id}
+                    descriptor={d}
+                    config={config}
+                    workspace={local}
+                    errors={fieldErrors}
+                    onWorkspace={setLocal}
+                  />
+                ))}
+                {overrideGrid(DRIVE_SCALAR_FIELDS, 'flex flex-wrap items-start gap-x-8 gap-y-4')}
+              </div>
+            </SettingsSection>
+          </>
+        )}
       </div>
 
       {dirty && <FloatingSaveBar error={error} saving={saving} onDiscard={discard} onSave={save} />}

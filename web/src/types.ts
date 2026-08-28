@@ -234,6 +234,17 @@ export interface Workspace {
    * object shape it was PATCHed as. */
   guardrailBudget: BudgetGuardrail | null;
   guardrailProgress: boolean | null;
+  /** Tool-timeout override (ADR-0044); `null` inherits `config.guardrails.toolTimeoutMinutes`. */
+  toolTimeoutMinutes: number | null;
+  /** Drive overrides (ADR-0044 §C), decomposed into independently-inheritable
+   * fields; each `null` inherits the matching global `config.drive.*`. */
+  drivePrompt: string | null;
+  driveUnattendedReminder: string | null;
+  driveContinuePrompt: string | null;
+  driveMergeFate: 'auto-merge' | 'open-PR' | 'artifact' | null;
+  driveContinueAttempts: number | null;
+  /** Task Prompt override (ADR-0044); `null` inherits `config.taskPrompt`. */
+  taskPrompt: string | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -734,9 +745,9 @@ export interface AppConfig {
     commands: VerificationCommand[];
     review: VerificationReview;
   };
-  /** Run Guardrails (ADR-0019): the global-default budget bounds and progress
-   * toggle a Workspace inherits until it overrides them (issue #166).
-   * `toolTimeoutMinutes` is global-only (no per-Workspace override). */
+  /** Run Guardrails (ADR-0019): the global-default budget bounds, progress
+   * toggle, and tool-timeout a Workspace inherits until it overrides them
+   * (issue #166; toolTimeoutMinutes reclassified overridable per ADR-0044). */
   guardrails: { budget: BudgetGuardrail; progress: boolean; toolTimeoutMinutes: number };
   /** How mirrored Tasks are driven (issue #33): prompt and branch fate. */
   drive: {
@@ -747,6 +758,8 @@ export interface AppConfig {
     /** The re-prompt nudge sent when a turn ends without finish/escalate, with {taskId} placeholder. */
     continuePrompt: string;
     mergeFate: 'auto-merge' | 'open-PR' | 'artifact';
+    /** How many times an unfinished auto-driven Run is re-prompted before it is treated as unresolved. */
+    continueAttempts: number;
   };
   /** Maximum implementation attempts before the ticket is escalated. */
   maxAttempts: number;

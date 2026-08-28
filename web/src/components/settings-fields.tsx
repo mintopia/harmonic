@@ -73,12 +73,104 @@ export function toOptions(values: readonly string[]): FieldOption[] {
   return values.map((v) => ({ value: v, label: v }));
 }
 
+/** The scalar controls a {@link ScalarControl} can render. */
+export type ScalarControlKind = 'text' | 'number' | 'select' | 'toggle';
+
 /**
- * Renders one scalar setting, dispatching on its `control`. Presentational: the
- * caller passes the config and a change handler that folds the field's write
- * back into the whole config. This is the schema-driven form engine's field
- * renderer — every scalar settings input flows through it, so no field's
- * `<label>/<input>/<FieldError>` markup is written by hand per setting.
+ * The bare input for one scalar setting, dispatching on `control` — no label,
+ * no FieldError, no surrounding layout. This is the single control renderer both
+ * settings surfaces share: {@link ConfigField} wraps it in a label + error for
+ * the global page, and the workspace `OverrideField` wraps it in an
+ * `InheritField`'s override slot, so the same select/number/text/toggle markup
+ * is never written twice (ADR-0044 Decision G).
+ */
+export function ScalarControl({
+  id,
+  control,
+  value,
+  onChange,
+  options,
+  disabled = false,
+  min,
+  max,
+  step,
+  placeholder,
+  switchLabel,
+  widthClass,
+}: {
+  id?: string;
+  control: ScalarControlKind;
+  value: string | number | boolean;
+  onChange: (raw: string | number | boolean) => void;
+  options?: FieldOption[];
+  disabled?: boolean;
+  min?: number;
+  max?: number;
+  step?: number;
+  placeholder?: string;
+  switchLabel?: string;
+  widthClass?: string;
+}) {
+  if (control === 'toggle') {
+    return (
+      <Switch checked={Boolean(value)} onChange={(v) => onChange(v)} disabled={disabled}>
+        {switchLabel}
+      </Switch>
+    );
+  }
+
+  if (control === 'select') {
+    return (
+      <select
+        id={id}
+        className={`${selectField} w-full`}
+        value={String(value)}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.value)}
+      >
+        {(options ?? []).map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+    );
+  }
+
+  if (control === 'number') {
+    return (
+      <input
+        id={id}
+        type="number"
+        min={min}
+        max={max}
+        step={step}
+        disabled={disabled}
+        className={`${fieldClass} ${widthClass ?? 'w-28'} tabular-nums`}
+        value={Number(value)}
+        onChange={(e) => onChange(Number(e.target.value))}
+      />
+    );
+  }
+
+  return (
+    <input
+      id={id}
+      className={fieldClass}
+      placeholder={placeholder}
+      disabled={disabled}
+      value={String(value)}
+      onChange={(e) => onChange(e.target.value)}
+    />
+  );
+}
+
+/**
+ * Renders one scalar setting bound to the global AppConfig: label, the shared
+ * {@link ScalarControl}, and its FieldError. Presentational: the caller passes
+ * the config and a change handler that folds the field's write back into the
+ * whole config. Every scalar settings input on the global page flows through
+ * here, so no field's `<label>/<input>/<FieldError>` markup is written by hand.
  */
 export function ConfigField({
   descriptor,
@@ -95,81 +187,42 @@ export function ConfigField({
   const errorKey = typeof d.errorKey === 'function' ? d.errorKey(config) : d.errorKey;
   const error = errors[errorKey];
   const disabled = d.disabled?.(config) ?? false;
-  const change = (raw: string | number | boolean) => onConfig(d.set(config, raw));
+  const control = (
+    <ScalarControl
+      id={d.id}
+      control={d.control}
+      value={d.get(config)}
+      onChange={(raw) => onConfig(d.set(config, raw))}
+      options={d.options?.(config)}
+      disabled={disabled}
+      min={d.min}
+      step={d.step}
+      placeholder={d.placeholder}
+      switchLabel={d.switchLabel}
+      widthClass={d.control === 'number' ? d.widthClass : undefined}
+    />
+  );
 
+  // A toggle labels itself via its inline switch text; the others take a
+  // `<label htmlFor>` above the control.
   if (d.control === 'toggle') {
     return (
       <div>
         <span className={fieldLabel}>{d.label}</span>
-        <div className="pt-1">
-          <Switch checked={Boolean(d.get(config))} onChange={(v) => change(v)} disabled={disabled}>
-            {d.switchLabel}
-          </Switch>
-        </div>
+        <div className="pt-1">{control}</div>
         <FieldError message={error} />
       </div>
     );
   }
 
-  if (d.control === 'select') {
-    const options = d.options?.(config) ?? [];
-    return (
-      <div>
-        <label className={fieldLabel} htmlFor={d.id}>
-          {d.label}
-        </label>
-        <select
-          id={d.id}
-          className={`${selectField} w-full`}
-          value={String(d.get(config))}
-          disabled={disabled}
-          onChange={(e) => change(e.target.value)}
-        >
-          {options.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </select>
-        <FieldError message={error} />
-      </div>
-    );
-  }
-
-  if (d.control === 'number') {
-    return (
-      <div>
-        <label className={fieldLabel} htmlFor={d.id}>
-          {d.label}
-        </label>
-        <input
-          id={d.id}
-          type="number"
-          min={d.min}
-          step={d.step}
-          disabled={disabled}
-          className={`${fieldClass} ${d.widthClass ?? 'w-28'} tabular-nums`}
-          value={Number(d.get(config))}
-          onChange={(e) => change(Number(e.target.value))}
-        />
-        <FieldError message={error} />
-      </div>
-    );
-  }
-
+  // Only text/select/number reach here (toggle returned above); the width
+  // utility applies to the text wrapper, harmless on the others.
   return (
-    <div className={d.widthClass}>
+    <div className={d.control === 'text' ? d.widthClass : undefined}>
       <label className={fieldLabel} htmlFor={d.id}>
         {d.label}
       </label>
-      <input
-        id={d.id}
-        className={fieldClass}
-        placeholder={d.placeholder}
-        disabled={disabled}
-        value={String(d.get(config))}
-        onChange={(e) => change(e.target.value)}
-      />
+      {control}
       <FieldError message={error} />
     </div>
   );

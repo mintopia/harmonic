@@ -6,6 +6,7 @@ import {
   settingSpec,
   SETTING_TABS,
   settingsForTab,
+  workspaceTabs,
   type SettingKey,
   type SettingScope,
   type SettingTab,
@@ -157,6 +158,27 @@ describe('tab taxonomy (ADR-0044) — settings group into Settings UI tabs', () 
       for (const key of settingsForTab(tab)) {
         expect(settingSpec(key).tab).toBe(tab);
       }
+    }
+  });
+
+  it('workspaceTabs drops the tabs with no overridable field (ADR-0044 Decision G)', () => {
+    // The Workspace surface is the same taxonomy minus the global-only tabs;
+    // Integrations/Security have no registry-declared field, so they fall off.
+    expect(workspaceTabs().map((t) => t.id)).toEqual(['general', 'execution', 'verification', 'prompts']);
+  });
+
+  it('a tab whose only field turns global-only drops off the Workspace surface', () => {
+    // Prompts holds only overridable fields today; flip them all global-only and
+    // the tab must disappear from workspaceTabs — proving the filter reads scope
+    // from the registry, not a hand-kept exclusion list.
+    const promptKeys = settingsForTab('prompts');
+    const mutable = settingsRegistry as unknown as Record<SettingKey, { scope: SettingScope }>;
+    const originals = promptKeys.map((key) => [key, mutable[key].scope] as const);
+    for (const key of promptKeys) mutable[key].scope = 'global-only';
+    try {
+      expect(workspaceTabs().map((t) => t.id)).not.toContain('prompts');
+    } finally {
+      for (const [key, scope] of originals) mutable[key].scope = scope;
     }
   });
 });

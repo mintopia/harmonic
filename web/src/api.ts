@@ -126,6 +126,7 @@ export const api = {
       conflictResolveTurns?: number | null;
       maxConcurrentRuns?: number | null;
       autoRunnerEnabled?: boolean | null;
+      maxAttempts?: number | null;
       contextReuseTokenLimit?: number | null;
       verificationCommand?: VerificationCommand[] | null;
       reviewEnabled?: boolean | null;
@@ -134,6 +135,13 @@ export const api = {
       reviewHarness?: string | null;
       guardrailBudget?: BudgetGuardrail | null;
       guardrailProgress?: boolean | null;
+      toolTimeoutMinutes?: number | null;
+      drivePrompt?: string | null;
+      driveUnattendedReminder?: string | null;
+      driveContinuePrompt?: string | null;
+      driveMergeFate?: 'auto-merge' | 'open-PR' | 'artifact' | null;
+      driveContinueAttempts?: number | null;
+      taskPrompt?: string | null;
     },
   ) => request<Workspace>('PATCH', `/api/workspaces/${id}`, patch),
   // Deletes the Workspace and cascades its board; the server 204s (empty body,

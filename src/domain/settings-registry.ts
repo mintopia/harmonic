@@ -265,3 +265,14 @@ export const SETTING_TABS: readonly { readonly id: SettingTab; readonly label: s
 export function settingsForTab(tab: SettingTab): SettingKey[] {
   return (Object.keys(settingsRegistry) as SettingKey[]).filter((key) => settingsRegistry[key].tab === tab);
 }
+
+/**
+ * The tab strip the per-Workspace surface renders (ADR-0044 Decision G: "the
+ * same renderer with the inherit layer enabled and `global-only` tabs hidden").
+ * A tab appears only when it holds at least one overridable field, so tabs whose
+ * settings are all instance-wide (Integrations, Security) drop off the Workspace
+ * surface by construction rather than by a hand-kept exclusion list.
+ */
+export function workspaceTabs(): { readonly id: SettingTab; readonly label: string }[] {
+  return SETTING_TABS.filter((tab) => settingsForTab(tab.id).some((key) => isOverridable(key)));
+}
