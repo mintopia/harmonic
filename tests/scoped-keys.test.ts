@@ -9,11 +9,9 @@ describe('run-scoped key restrictions', () => {
   let scopedToken: string;
 
   beforeAll(async () => {
-    // Copilot, not Claude: this describe deliberately keeps a hung Run alive for
-    // the scoped key AND separately escalates a Task (the escalation
-    // -gate test). The whole-run Claude harness lock (#237) makes those two
-    // Claude Runs mutually exclusive; a non-mutexed harness lets them coexist as
-    // they did before #237 (these tests are harness-agnostic).
+    // This describe deliberately keeps a hung Run alive for the scoped key AND
+    // separately escalates a Task (the escalation-gate test); the harness is
+    // arbitrary (these tests are harness-agnostic).
     server = await startServer({ ...stubHarness('copilot'), defaults: { harness: 'copilot' } });
     // Capture a scoped key from a hanging run, kept alive so the key stays valid
     // while we probe with it.
@@ -21,9 +19,8 @@ describe('run-scoped key restrictions', () => {
     scopedToken = env.HARMONIC_API_KEY as string;
   });
   afterAll(async () => {
-    // Cancel this describe's still-running (hung) Runs before teardown so the
-    // process-global Claude harness lock (#237) is released for the next
-    // describe — a plain server.close() leaves them `running` and wedged.
+    // Cancel this describe's still-running (hung) Runs before teardown; a plain
+    // server.close() would leave them `running` with a leaked harness process.
     await cancelRunningTasks(server);
     await server.close();
   });
@@ -90,9 +87,8 @@ describe('read-scoped key (issue #35)', () => {
     readToken = body.token;
   });
   afterAll(async () => {
-    // Cancel this describe's still-running (hung) Runs before teardown so the
-    // process-global Claude harness lock (#237) is released for the next
-    // describe — a plain server.close() leaves them `running` and wedged.
+    // Cancel this describe's still-running (hung) Runs before teardown; a plain
+    // server.close() would leave them `running` with a leaked harness process.
     await cancelRunningTasks(server);
     await server.close();
   });
