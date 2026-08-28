@@ -1738,10 +1738,18 @@ export class Runner {
       record('lifecycle', { event: 'phase', phase: 'verifying' });
       // Deterministic verifiers only on the replayed tree (ADR-0046); see the
       // `criticEnabled` param on runVerification.
-      const { decision } = await this.runVerification(task, current, rebase.tip, signal, record, parent, false);
+      const { decision, ran } = await this.runVerification(task, current, rebase.tip, signal, record, parent, false);
       if (this.shuttingDown) return { kind: 'turn', outcome: { kind: 'terminal' } };
       if (decision.outcome !== 'proceed') {
         return { kind: 'turn', outcome: await this.verificationFailTurn(run, decision, record) };
+      }
+      if (!ran) {
+        // Critic-only Tasks disable the critic on re-entry (ADR-0046), so a clean
+        // rebase leaves no verifier to re-bless the replayed tree. Carry the prior
+        // pass onto the rebased tip; else the freshness gate stays frozen on the
+        // pre-rebase verified-head and spins every re-entry against a stationary base.
+        const { branch } = await this.runStore.get(run.id);
+        await this.runFacts.append(run.id, 'verified-head', { sha: rebase.tip, branch: branch ?? null });
       }
     }
   }
