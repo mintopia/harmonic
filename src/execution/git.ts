@@ -699,4 +699,103 @@ export const Git = {
       }),
     );
   },
+
+  /**
+   * Merge `branch` into `worktreeDir`'s checked-out HEAD, ALWAYS creating a
+   * merge commit (`--no-ff`) — step 2 of the one merge policy (ADR-0001,
+   * "One merge policy, everywhere"): base movement since verification is
+   * irrelevant and is never resolved away by a fast-forward. On a textual
+   * conflict the conflicted merge is LEFT IN PROGRESS (markers + `MERGE_HEAD`)
+   * for the caller's bounded resolve turns, mirroring {@link mergeLeavingConflict}'s
+   * contract; any other failure (e.g. a dirty tree, nothing to merge) aborts
+   * cleanly instead.
+   */
+  async mergeNoFf(
+    worktreeDir: string,
+    branch: string,
+  ): Promise<{ ok: true; mergeOid: string } | { ok: false; conflict: boolean; detail: string }> {
+    return withGitOperation(
+      'git.merge',
+      { 'git.branch': branch, 'git.ref': 'HEAD' },
+      async () => {
+        try {
+          await git(worktreeDir, ...IDENTITY, 'merge', '--no-ff', '--no-edit', branch);
+          return { ok: true, mergeOid: await Git.revParse(worktreeDir, 'HEAD') };
+        } catch (err) {
+          const detail = err instanceof GitError ? err.message : String(err);
+          const conflict = await git(worktreeDir, 'rev-parse', '--verify', '--quiet', 'MERGE_HEAD').then(
+            () => true,
+            () => false,
+          );
+          if (!conflict) {
+            try {
+              await git(worktreeDir, 'merge', '--abort');
+            } catch {
+              // No merge in progress (e.g. it failed before starting).
+            }
+          }
+          return { ok: false, conflict, detail };
+        }
+      },
+    );
+  },
+
+  /**
+   * Distinct paths git considers unmerged in `worktreeDir` (ADR-0001's bounded
+   * conflict-resolve turn needs the file list, not the raw conflict dump).
+   * `ls-files -u` prints one line per stage per conflicted path; deduped down
+   * to the paths themselves. Empty once nothing is conflicted.
+   */
+  async unmergedPaths(worktreeDir: string): Promise<string[]> {
+    const out = await git(worktreeDir, 'ls-files', '-u');
+    if (out.length === 0) return [];
+    const paths = new Set<string>();
+    for (const line of out.split('\n')) {
+      const path = line.split('\t')[1];
+      if (path) paths.add(path);
+    }
+    return [...paths];
+  },
+
+  /**
+   * Finalise an in-progress merge once conflicts are resolved and staged
+   * (ADR-0001): `git commit --no-edit` under the Harmonic identity. Fails
+   * (never throws) when unmerged paths remain, so the caller can tell "still
+   * conflicted" from "committed" without inspecting the tree itself.
+   */
+  async completeMerge(worktreeDir: string): Promise<{ ok: true; mergeOid: string } | { ok: false; detail: string }> {
+    return withGitOperation('git.merge-complete', { 'git.ref': 'HEAD' }, async () => {
+      try {
+        await git(worktreeDir, ...IDENTITY, 'commit', '--no-edit');
+        return { ok: true, mergeOid: await Git.revParse(worktreeDir, 'HEAD') };
+      } catch (err) {
+        return { ok: false, detail: err instanceof GitError ? err.message : String(err) };
+      }
+    });
+  },
+
+  /** Abort an in-progress merge, best-effort — there may be none in progress
+   * (ADR-0001's escalation path aborts before composing its plain-language
+   * message, whether or not one was actually left open). */
+  async abortMerge(worktreeDir: string): Promise<void> {
+    try {
+      await git(worktreeDir, 'merge', '--abort');
+    } catch {
+      // No merge in progress.
+    }
+  },
+
+  /**
+   * Revert merge commit `mergeOid` relative to its first parent (`-m 1`) —
+   * the one merge policy's response to a red post-merge check (ADR-0001): the
+   * base is never left red, and reverting a merge commit costs seconds versus
+   * the pre-merge serialisability this ADR removes. Lets a `GitError`
+   * propagate; there is no fallback if the revert itself fails.
+   */
+  async revertMergeCommit(worktreeDir: string, mergeOid: string): Promise<string> {
+    return withGitOperation('git.revert', { 'git.ref': mergeOid }, async () => {
+      await git(worktreeDir, ...IDENTITY, 'revert', '-m', '1', '--no-edit', mergeOid);
+      return Git.revParse(worktreeDir, 'HEAD');
+    });
+  },
 };

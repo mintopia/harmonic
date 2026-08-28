@@ -348,6 +348,20 @@ export const appConfigSchema = z.object({
     })
     .prefault({}),
   /**
+   * Merge-policy config (ADR-0001): the one merge policy runs a deterministic
+   * post-merge check on the merged base tip under the repo mutex. `postMergeCheck`
+   * is the off-switch for slow suites — default on, since the branch was already
+   * script- and critic-verified and the check verifies what the base actually
+   * becomes. Global-only for now: ADR-0009 classifies it an overridable
+   * setting, but the per-Workspace override column rides with the settings
+   * migration, not this primitive.
+   */
+  merge: z
+    .object({
+      postMergeCheck: z.boolean().default(true),
+    })
+    .prefault({}),
+  /**
    * Global-default Guardrail config (issue #108/#126, ADR-0019): the budget
    * Guardrail (mandatory wall-clock, optional tokens/cost) and the progress
    * (stall/loop) detector toggle, off by default until trace-validated. Resolve
@@ -510,6 +524,7 @@ export function defaultConfig(): AppConfig {
       commands: [],
       review: { enabled: false },
     },
+    merge: { postMergeCheck: true },
     guardrails: {
       budget: { wallClockMinutes: 60, tokens: null, costUsd: null },
       progress: false,
