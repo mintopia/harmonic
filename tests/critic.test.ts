@@ -117,7 +117,6 @@ describe('runCritic (issue #136)', () => {
       verdict: value.verdict,
       summary: value.summary,
       output,
-      mutated: false,
       inputOid: oid,
       // The fake drive reports no sessionId, so no transcript resolves (ADR-0040).
       transcriptPath: null,
@@ -217,7 +216,6 @@ describe('runCritic (issue #136)', () => {
     expect(attempt.verdict).toBe('inconclusive');
     expect(attempt.summary.length).toBeGreaterThan(0);
     expect(attempt.output).toBe('not json at all, just prose');
-    expect(attempt.mutated).toBe(false);
     expect(attempt.inputOid).toBe(oid);
   });
 
@@ -242,7 +240,6 @@ describe('runCritic (issue #136)', () => {
 
     expect(attempt.verdict).toBe('inconclusive');
     expect(attempt.summary).toMatch(/critic drive failed/i);
-    expect(attempt.mutated).toBe(false);
   });
 
   it('no tracker credentials on the harness config, and the prompt is the interpolated operator note plus read-only scaffolding (no diff)', async () => {
@@ -281,14 +278,15 @@ describe('runCritic (issue #136)', () => {
     expect(captured!.prompt).toContain('"verdict":"pass|fail|inconclusive"');
   });
 
-  it('a drive whose turn mutates the disposable worktree forces the verdict to inconclusive, with mutated:true', async () => {
-    const { repo, oid } = await makeCandidate('refs/harmonic/candidate/run-critic-mutate');
+  it('a drive that writes into the disposable worktree is still trusted — the verdict is taken as reported', async () => {
+    const { repo, oid } = await makeCandidate('refs/harmonic/candidate/run-critic-write');
 
     const drive: CriticHarnessDrive = {
       run: async (req) => {
-        // A misbehaving/compromised critic writing into the checkout it was
-        // told to only read — exactly what the fingerprint bracket exists to catch.
-        writeFileSync(join(req.cwd, 'critic-side-effect.txt'), 'oops\n');
+        // A critic tool writing a scratch file into its checkout no longer
+        // affects the verdict: the mutation-fingerprint override was removed
+        // because a base branch advancing mid-review tripped it too.
+        writeFileSync(join(req.cwd, 'critic-side-effect.txt'), 'scratch\n');
         return { output: '{"verdict":"pass","summary":"looks great, definitely no problems here"}', permissionRequests: [] };
       },
     };
@@ -297,18 +295,17 @@ describe('runCritic (issue #136)', () => {
       repoDir: repo,
       candidateOid: oid,
       fields: FIELDS,
-      worktreePath: freshWorktreePath('harmonic-critic-wt-mutate-'),
+      worktreePath: freshWorktreePath('harmonic-critic-wt-write-'),
       critic: { prompt: 'Review the diff.', model: 'stub-model' },
       harness: FAKE_HARNESS,
       harnessId: 'claude',
       drive,
     });
 
-    expect(attempt.verdict).toBe('inconclusive');
-    expect(attempt.mutated).toBe(true);
+    expect(attempt.verdict).toBe('pass');
   });
 
-  it('a no-op drive does not flip mutated, and the verdict is trusted as reported', async () => {
+  it('a no-op drive verdict is trusted as reported', async () => {
     const { repo, oid } = await makeCandidate('refs/harmonic/candidate/run-critic-noop');
     const drive: CriticHarnessDrive = { run: async () => ({ output: '{"verdict":"pass","summary":"clean"}', permissionRequests: [] }) };
 
@@ -323,7 +320,6 @@ describe('runCritic (issue #136)', () => {
       drive,
     });
 
-    expect(attempt.mutated).toBe(false);
     expect(attempt.verdict).toBe('pass');
   });
 
@@ -396,7 +392,6 @@ describe('runCritic (issue #136)', () => {
       summary: 'the diff drops a null check',
       inputOid: oid,
       phase: 'verifying',
-      mutated: false,
     });
 
     // The persisted row — not the in-memory attempt — feeds the combiner.

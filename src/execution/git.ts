@@ -1,7 +1,6 @@
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import type { Attributes } from '@opentelemetry/api';
@@ -217,27 +216,6 @@ export const Git = {
     return false;
   },
 
-  /**
-   * Capture the full working-tree content of `workspaceDir` (tracked, staged,
-   * untracked, and deletions) as a git tree object, relative to `baseRev`, and
-   * return its OID. Uses a private throwaway `GIT_INDEX_FILE` seeded from
-   * `baseRev` then `add -A`, so neither the workspace's real index nor its
-   * checkout is disturbed — the snapshot is hermetic. The tree's blobs/subtrees
-   * are written into the shared object store, so they are reachable by a later
-   * `commit-tree` in the base repo.
-   */
-  async writeWorkspaceTree(workspaceDir: string, baseRev: string): Promise<string> {
-    const indexDir = mkdtempSync(join(tmpdir(), 'harmonic-idx-'));
-    const env = { GIT_INDEX_FILE: join(indexDir, 'index') };
-    try {
-      await gitEnv(workspaceDir, env, 'read-tree', baseRev);
-      await gitEnv(workspaceDir, env, 'add', '-A');
-      return await gitEnv(workspaceDir, env, 'write-tree');
-    } finally {
-      rmSync(indexDir, { recursive: true, force: true });
-    }
-  },
-
   /** Create a commit object from a tree + single parent under the fixed
    * Harmonic identity, returning its OID. Writes only an object — moves no
    * ref, touches no branch or checkout. */
@@ -260,11 +238,6 @@ export const Git = {
    * against, or the heal would verify the stale, still-failing candidate.
    */
   setRef: (dir: string, ref: string, oid: string) => git(dir, 'update-ref', ref, oid),
-
-  /** Every ref with its object id, one per line — the ref half of a
-   * verification fingerprint (a verifier can mutate shared refs via the common
-   * git dir, not just tracked files). */
-  forEachRef: (dir: string) => git(dir, 'for-each-ref', '--format=%(objectname) %(refname)'),
 
   /** Add a disposable worktree with a DETACHED HEAD at `oid` — no branch is
    * created or moved, so a verifier sees a stable tree it cannot merge. */

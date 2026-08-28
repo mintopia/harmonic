@@ -45,7 +45,6 @@ describe('VerificationAttemptStore (issue #136)', () => {
       verdict: 'pass',
       summary: 'looks good',
       output: '{"verdict":"pass","summary":"looks good"}',
-      mutated: false,
     });
     expect(row).toMatchObject({
       runId,
@@ -55,7 +54,6 @@ describe('VerificationAttemptStore (issue #136)', () => {
       verdict: 'pass',
       summary: 'looks good',
       phase: 'verifying',
-      mutated: false,
     });
 
     const [back] = await attempts.list(runId);
@@ -69,7 +67,6 @@ describe('VerificationAttemptStore (issue #136)', () => {
       verdict: 'pass',
       summary: 's1',
       output: 'o1',
-      mutated: false,
     });
     const second = await attempts.append(runId, {
       mechanism: 'critic',
@@ -77,7 +74,6 @@ describe('VerificationAttemptStore (issue #136)', () => {
       verdict: 'fail',
       summary: 's2',
       output: 'o2',
-      mutated: false,
     });
     expect(second.seq).toBe(2);
 
@@ -87,7 +83,6 @@ describe('VerificationAttemptStore (issue #136)', () => {
       verdict: 'inconclusive',
       summary: 's3',
       output: 'o3',
-      mutated: true,
     });
     expect(other.seq).toBe(1); // a fresh Run starts at 1 regardless of other Runs
   });
@@ -99,7 +94,6 @@ describe('VerificationAttemptStore (issue #136)', () => {
       verdict: 'pass',
       summary: 's1',
       output: 'o1',
-      mutated: false,
     });
     await attempts.append(runId, {
       mechanism: 'critic',
@@ -107,7 +101,6 @@ describe('VerificationAttemptStore (issue #136)', () => {
       verdict: 'fail',
       summary: 's2',
       output: 'o2',
-      mutated: false,
     });
     await attempts.append(otherRunId, {
       mechanism: 'critic',
@@ -115,7 +108,6 @@ describe('VerificationAttemptStore (issue #136)', () => {
       verdict: 'pass',
       summary: 's3',
       output: 'o3',
-      mutated: false,
     });
 
     const log = await attempts.list(runId);
@@ -130,7 +122,6 @@ describe('VerificationAttemptStore (issue #136)', () => {
       verdict: 'pass',
       summary: 's1',
       output: 'o1',
-      mutated: false,
     }); // seq 1
 
     // Force a raw duplicate seq against the same file — the store never does
@@ -138,8 +129,8 @@ describe('VerificationAttemptStore (issue #136)', () => {
     const raw = createClient({ url: `file:${join(dir, 'harmonic.db')}` });
     await expect(
       raw.execute({
-        sql: `insert into verification_attempts (run_id, seq, ts, mechanism, input_oid, verdict, summary, output, phase, mutated)
-       values (?, 1, ?, 'critic', ?, 'fail', 's', 'o', 'verifying', 0)`,
+        sql: `insert into verification_attempts (run_id, seq, ts, mechanism, input_oid, verdict, summary, output, phase)
+       values (?, 1, ?, 'critic', ?, 'fail', 's', 'o', 'verifying')`,
         args: [runId, Date.now(), 'b'.repeat(40)],
       }),
     ).rejects.toThrow(/UNIQUE constraint failed/);
@@ -147,8 +138,8 @@ describe('VerificationAttemptStore (issue #136)', () => {
     // A different seq for the same Run is fine.
     await expect(
       raw.execute({
-        sql: `insert into verification_attempts (run_id, seq, ts, mechanism, input_oid, verdict, summary, output, phase, mutated)
-       values (?, 2, ?, 'critic', ?, 'fail', 's', 'o', 'verifying', 0)`,
+        sql: `insert into verification_attempts (run_id, seq, ts, mechanism, input_oid, verdict, summary, output, phase)
+       values (?, 2, ?, 'critic', ?, 'fail', 's', 'o', 'verifying')`,
         args: [runId, Date.now(), 'b'.repeat(40)],
       }),
     ).resolves.toBeDefined();
@@ -162,7 +153,6 @@ describe('VerificationAttemptStore (issue #136)', () => {
       verdict: 'pass',
       summary: 'looks good',
       output: 'o',
-      mutated: false,
       transcriptPath: '/home/u/.claude/projects/x/sess.jsonl',
       harness: 'claude',
     });
@@ -176,7 +166,6 @@ describe('VerificationAttemptStore (issue #136)', () => {
       verdict: 'pass',
       summary: 'ok',
       output: 'o',
-      mutated: false,
     });
     expect(noLocator).toMatchObject({ transcriptPath: null, harness: null });
   });
@@ -188,7 +177,6 @@ describe('VerificationAttemptStore (issue #136)', () => {
       verdict: 'fail',
       summary: 'lint failed',
       output: 'eslint output...',
-      mutated: false,
     });
     expect(row.mechanism).toBe('command');
   });

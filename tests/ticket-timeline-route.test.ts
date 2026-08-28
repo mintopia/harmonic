@@ -28,7 +28,7 @@ describe('GET /api/tasks/:id/timeline (issue #328)', () => {
     await facts.append(run.id, 'escalate', { reason: 'needs an operator' }, 300);
     await facts.append(run.id, 'operator-accept', {}, 700);
     await server.app.ctx.verificationAttempts.append(run.id, {
-      mechanism: 'command', inputOid: 'abc123', verdict: 'pass', summary: 'checks passed', output: '', mutated: false,
+      mechanism: 'command', inputOid: 'abc123', verdict: 'pass', summary: 'checks passed', output: '',
     }, 200);
     await server.app.ctx.guardrailEvents.append(run.id, {
       dimension: 'wall-clock', phase: 'executing', limitValue: 60_000, observedValue: 60_001, configSource: 'default',

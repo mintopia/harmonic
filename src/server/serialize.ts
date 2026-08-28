@@ -226,7 +226,7 @@ export async function ticketTimelineToApi(ctx: AppContext, taskId: number): Prom
     if (rejected?.state === 'escalated' && rejected.feedback !== null) add({ runId: null, ts: attempt.startedAt, kind: 'operator-reject', data: { attempt: rejected.number, feedback: rejected.feedback } }, 4);
   });
   await forEachYielding(lifecycle, async ({ event }) => { add({ runId: event.runId, ts: event.ts, kind: 'lifecycle', data: { type: event.type, payload: JSON.parse(event.payload) } }, 3); });
-  await forEachYielding(verification, async ({ attempt }) => { add({ runId: attempt.runId, ts: attempt.ts, kind: 'verification', data: { mechanism: attempt.mechanism, verdict: attempt.verdict, summary: attempt.summary, inputOid: attempt.inputOid, phase: attempt.phase, mutated: attempt.mutated } }, 2); });
+  await forEachYielding(verification, async ({ attempt }) => { add({ runId: attempt.runId, ts: attempt.ts, kind: 'verification', data: { mechanism: attempt.mechanism, verdict: attempt.verdict, summary: attempt.summary, inputOid: attempt.inputOid, phase: attempt.phase } }, 2); });
   await forEachYielding(skippedVerification, async ({ task }) => {
     if (task.type !== 'verification' || task.state !== 'skipped' || task.endedAt === null) return;
     add({ runId: null, ts: task.endedAt, kind: 'verification', data: { outcome: 'skipped', command: task.command, verdict: task.verdict } }, 2);

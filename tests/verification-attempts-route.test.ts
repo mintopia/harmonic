@@ -28,7 +28,6 @@ describe('GET /api/runs/:id/verification-attempts (issue #169)', () => {
       verdict: 'pass',
       summary: 'ok',
       output: '',
-      mutated: false,
     });
     await ctx().verificationAttempts.append(run.id, {
       mechanism: 'critic',
@@ -36,7 +35,6 @@ describe('GET /api/runs/:id/verification-attempts (issue #169)', () => {
       verdict: 'fail',
       summary: 'nope',
       output: 'details',
-      mutated: true,
     });
 
     const res = await server.api('GET', `/api/runs/${run.id}/verification-attempts`);
@@ -50,7 +48,6 @@ describe('GET /api/runs/:id/verification-attempts (issue #169)', () => {
       verdict: 'pass',
       summary: 'ok',
       output: '',
-      mutated: false,
     });
     expect(res.body.verificationAttempts[1]).toMatchObject({
       runId: run.id,
@@ -60,7 +57,6 @@ describe('GET /api/runs/:id/verification-attempts (issue #169)', () => {
       verdict: 'fail',
       summary: 'nope',
       output: 'details',
-      mutated: true,
     });
     expect(res.body.verifierStatuses).toEqual(expect.arrayContaining([
       { mechanism: 'command', state: 'passed', reason: null },
@@ -86,8 +82,7 @@ describe('GET /api/runs/:id/verification-attempts (issue #169)', () => {
         verdict: 'pass',
         summary: 'looks good',
         output: '',
-        mutated: false,
-      });
+        });
 
       const res = await configured.api('GET', `/api/runs/${run.id}/verification-attempts`);
 
@@ -119,8 +114,7 @@ describe('GET /api/runs/:id/verification-attempts (issue #169)', () => {
         verdict: 'pass',
         summary: 'looks good',
         output: '',
-        mutated: false,
-      });
+        });
 
       const res = await configured.api('GET', `/api/runs/${run.id}/verification-attempts`);
 

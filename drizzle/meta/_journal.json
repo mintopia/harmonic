@@ -400,6 +400,13 @@
       "when": 1787739500000,
       "tag": "0056_purge_land_vocab",
       "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "6",
+      "when": 1787739600000,
+      "tag": "0057_drop_verification_mutated",
+      "breakpoints": true
     }
   ]
 }

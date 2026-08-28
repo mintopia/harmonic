@@ -41,9 +41,6 @@ export interface CommandAttempt {
   summary: string;
   /** Combined stdout+stderr, capped at {@link OUTPUT_CHAR_CAP}. */
   output: string;
-  /** Whether the command mutated the disposable checkout — informational for a
-   * command (a build/test legitimately writes), never a verdict override. */
-  mutated: boolean;
   /** The candidate OID this attempt verified. */
   inputOid: string;
 }
@@ -230,7 +227,7 @@ export interface RunCommandVerifierArgs {
  * {@link CommandAttempt} (issue #135, reliability-design Unit B).
  *
  * 1. Checks the candidate out in a disposable detached worktree
- *    (`withDetachedWorktree`, #134), bracketed by the before/after fingerprint.
+ *    (`withDetachedWorktree`, #134), torn down when the command exits.
  * 2. Spawns the configured command at the checkout root (plus the command's
  *    optional relative `cwd`), captures capped output, and enforces the
  *    timeout + cancellation.
@@ -238,9 +235,8 @@ export interface RunCommandVerifierArgs {
  * 4. If setting up the worktree itself failed (bad OID, git/FS error), that is a
  *    genuine infra failure folded into `inconclusive`, never a thrown error.
  *
- * Never throws for a verdict outcome. `mutated` is reported for audit but,
- * unlike the critic, never overrides the verdict — a command is expected to
- * write to its disposable checkout.
+ * Never throws for a verdict outcome — a command is expected to write to its
+ * disposable checkout, so only its exit code decides the verdict.
  */
 export async function runCommandVerifier(args: RunCommandVerifierArgs): Promise<CommandAttempt> {
   const operation = args.parent
@@ -268,9 +264,8 @@ async function runCommandVerifierUnchecked(args: RunCommandVerifierArgs): Promis
   let summary = '';
   let output = '';
 
-  let proof: { mutated: boolean };
   try {
-    proof = await withDetachedWorktree(args.repoDir, args.candidateOid, args.worktreePath, async (dir) => {
+    await withDetachedWorktree(args.repoDir, args.candidateOid, args.worktreePath, async (dir) => {
       const cwd = args.command.cwd ? join(dir, args.command.cwd) : dir;
       const result = await spawner.run({
         command: args.command,
@@ -293,12 +288,11 @@ async function runCommandVerifierUnchecked(args: RunCommandVerifierArgs): Promis
       verdict: 'inconclusive',
       summary: `command verifier could not check out the candidate: ${err instanceof Error ? err.message : String(err)}`,
       output: '',
-      mutated: false,
       inputOid: args.candidateOid,
     };
   }
 
-  return { verifier: 'command', verdict, summary, output, mutated: proof.mutated, inputOid: args.candidateOid };
+  return { verifier: 'command', verdict, summary, output, inputOid: args.candidateOid };
 }
 
 /**
@@ -314,6 +308,5 @@ export function commandAttemptToInput(attempt: CommandAttempt): VerificationAtte
     verdict: attempt.verdict,
     summary: attempt.summary,
     output: attempt.output,
-    mutated: attempt.mutated,
   };
 }

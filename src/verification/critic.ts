@@ -59,10 +59,9 @@ function grantOptionId(request: unknown): string | null {
  *
  * Everything the critic sees is bracketed by `withDetachedWorktree`
  * (`execution/detached-worktree.ts`): the fixed OID is checked out into a
- * disposable detached worktree, and the before/after fingerprint proves
- * whether the "read-only" critic actually mutated anything. Belt-and-braces
- * with the ACP-level containment below (empty `mcpServers`, deny-all
- * permission handler) — either one failing is still caught by the other.
+ * disposable detached worktree that is torn down when the turn ends. The
+ * critic is kept read-only by the ACP-level containment below (empty
+ * `mcpServers`, deny-all permission handler).
  */
 
 /** What a drive of one critic turn produced. */
@@ -264,8 +263,6 @@ export interface CriticAttempt {
   summary: string;
   /** The critic's raw agent output — the un-parsed text `parseCriticOutput` read. */
   output: string;
-  /** Whether the critic mutated the disposable checkout it ran against. */
-  mutated: boolean;
   /** The candidate OID this attempt verified. */
   inputOid: string;
   /** The critic's native transcript locator + the harness that wrote it
@@ -290,8 +287,7 @@ const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000;
  * relaxed by the 2026-08 ADR-0021 amendment).
  *
  * 1. Checks the candidate out in a disposable detached worktree
- *    (`withDetachedWorktree`, #134), bracketed by the before/after
- *    fingerprint that proves whether the critic mutated anything.
+ *    (`withDetachedWorktree`, #134), torn down when the turn ends.
  * 2. Builds the read-only review prompt (`buildCriticPrompt`) from the
  *    operator's configured note — Drive-Prompt tokens interpolated from
  *    {@link RunCriticArgs.fields} — plus the read-only + verdict scaffolding.
@@ -304,12 +300,6 @@ const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000;
  *    the error's message as the reason. Same for a failure setting up the
  *    worktree: this function is a `CriticAttempt` factory, not a thing that
  *    fails a Run.
- * 5. After the bracket closes: if the fingerprint shows the critic mutated
- *    the checkout (`proof.mutated`), the verdict is force-overridden to
- *    `inconclusive` regardless of what the critic said — a read-only critic
- *    that mutated the tree it was reviewing is not a critic whose answer can
- *    be trusted (fail-safe, ADR-0021) — while `mutated: true` is still
- *    reported so the caller can see the anomaly.
  *
  * Never throws for a verdict outcome: every failure mode above is folded
  * into an `inconclusive` `CriticAttempt`, not an exception.
@@ -339,9 +329,8 @@ async function runCriticUnchecked(args: RunCriticArgs): Promise<CriticAttempt> {
   let output = '';
   let sessionId: string | null = null;
 
-  let proof: { mutated: boolean };
   try {
-    proof = await withDetachedWorktree(args.repoDir, args.candidateOid, args.worktreePath, async (dir) => {
+    await withDetachedWorktree(args.repoDir, args.candidateOid, args.worktreePath, async (dir) => {
       // Index this disposable checkout as its own jCodeMunch repo and hand the
       // critic that id, so its code-index queries hit the candidate tree rather
       // than resolving `.` to the canonical checkout on another branch
@@ -393,18 +382,11 @@ async function runCriticUnchecked(args: RunCriticArgs): Promise<CriticAttempt> {
       verdict: 'inconclusive',
       summary: `critic could not check out the candidate: ${err instanceof Error ? err.message : String(err)}`,
       output: '',
-      mutated: false,
       inputOid: args.candidateOid,
       transcriptPath: null,
       harness: args.harnessId,
       sessionId: null,
     };
-  }
-
-  if (proof.mutated) {
-    // Fail-safe (ADR-0021): a "read-only" critic that mutated the tree it
-    // reviewed cannot be trusted, whatever verdict it returned.
-    verdict = 'inconclusive';
   }
 
   // Resolve the native transcript locator now the turn is done (ADR-0040): the
@@ -430,7 +412,6 @@ async function runCriticUnchecked(args: RunCriticArgs): Promise<CriticAttempt> {
     verdict,
     summary,
     output,
-    mutated: proof.mutated,
     inputOid: args.candidateOid,
     transcriptPath,
     harness: args.harnessId,
@@ -456,7 +437,6 @@ export function criticAttemptToInput(attempt: CriticAttempt): VerificationAttemp
     verdict: attempt.verdict,
     summary: attempt.summary,
     output: attempt.output,
-    mutated: attempt.mutated,
     transcriptPath: attempt.transcriptPath,
     harness: attempt.harness,
   };

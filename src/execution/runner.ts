@@ -1303,7 +1303,6 @@ export class Runner {
       verdict: 'inconclusive',
       summary: 'no committed branch head to verify',
       output: '',
-      mutated: false,
     });
     const attempt = await this.attempts.getForTaskNumber(task.id, run.attempt);
     if (attempt) {

@@ -41,36 +41,22 @@ describe('withDetachedWorktree', () => {
     expect(git(repo, 'worktree', 'list', '--porcelain')).not.toContain(checkout);
   });
 
-  it('reports mutations to the detached checkout', async () => {
+  it('returns the verifier result and removes the checkout when it resolves', async () => {
     const repo = makeRepo();
-    const proof = await withDetachedWorktree(
+    const checkout = join(repo, '.harmonic-verification');
+
+    const result = await withDetachedWorktree(
       repo,
       git(repo, 'rev-parse', 'HEAD'),
-      join(repo, '.harmonic-verification'),
-      async (checkout) => {
-        writeFileSync(join(checkout, 'generated.txt'), 'generated\n');
+      checkout,
+      async (dir) => {
+        expect(existsSync(join(dir, 'README.md'))).toBe(true);
         return 'done';
       },
     );
 
-    expect(proof.result).toBe('done');
-    expect(proof.mutated).toBe(true);
-    expect(proof.before).not.toBe(proof.after);
-  });
-
-  it('excludes Harmonic private refs from the mutation fingerprint', async () => {
-    const repo = makeRepo();
-    const proof = await withDetachedWorktree(
-      repo,
-      git(repo, 'rev-parse', 'HEAD'),
-      join(repo, '.harmonic-verification'),
-      async () => {
-        git(repo, 'update-ref', 'refs/harmonic/test-verifier', 'HEAD');
-        return undefined;
-      },
-    );
-
-    expect(proof.mutated).toBe(false);
-    expect(proof.before).toBe(proof.after);
+    expect(result).toBe('done');
+    expect(existsSync(checkout)).toBe(false);
+    expect(git(repo, 'worktree', 'list', '--porcelain')).not.toContain(checkout);
   });
 });
