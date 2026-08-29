@@ -158,7 +158,7 @@ describe('agent critic end-to-end (issue #164)', () => {
 
     const run = (await server.api('GET', `/api/tasks/${taskId}/attempts/current`)).body;
     expect(run).toMatchObject({ state: 'completed' });
-    expect(run.candidateOid).toMatch(/^[0-9a-f]{40}$/);
+    expect(run.verifiedHeadOid).toMatch(/^[0-9a-f]{40}$/);
 
     // AC2: a critic attempt persisted during a real Run, at the verified branch head.
     const rows = await attempts(taskId);
@@ -190,7 +190,7 @@ describe('agent critic end-to-end (issue #164)', () => {
     const rows = await attempts(taskId);
     expect(rows).toHaveLength(2);
     expect(rows.every((row) => row.mechanism === 'critic' && row.verdict === 'fail')).toBe(true);
-    expect(rows.at(-1)).toMatchObject({ inputOid: run.candidateOid });
+    expect(rows.at(-1)).toMatchObject({ inputOid: run.verifiedHeadOid });
     expect(rows.at(-1)!.inputOid).toMatch(/^[0-9a-f]{40}$/);
     const timeline = await server.api('GET', `/api/tasks/${taskId}/attempts/timeline`);
     expect(timeline.body.attempts.map((attempt: { number: number; state: string }) => ({ number: attempt.number, state: attempt.state }))).toEqual([
@@ -344,7 +344,7 @@ describe('agent critic end-to-end (issue #164)', () => {
       return body.state === 'failed' ? body : undefined;
     });
     expect(run.state).toBe('failed');
-    expect(run.candidateOid).toBeNull();
+    expect(run.verifiedHeadOid).toBeNull();
 
     const rows = await attempts(taskId);
     expect(rows).toHaveLength(1);

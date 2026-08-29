@@ -10,7 +10,7 @@ import type { ResumeIncompatibilityReason } from './session-resume.js';
  * or a capability the live harness no longer advertises — Harmonic falls back
  * **exactly once** to a brand-new Session seeded with a summary it builds
  * *itself*, deterministically, from what it already recorded: the Run's
- * `run_events`, its terminal outcome, the candidate OID/status, and the
+ * `run_events`, its terminal outcome, the verified-head OID/status, and the
  * Task's tracker links. It **never asks the dead Session to summarize
  * itself**, so the fallback is available even when the original harness
  * process is long gone — the whole point of resume being a fresh spawn, not a
@@ -18,7 +18,7 @@ import type { ResumeIncompatibilityReason } from './session-resume.js';
  *
  * Like its sibling seams (`session-resume.ts`, `session-retirement.ts`,
  * `task-deletion.ts`) this is a **pure decision + a pure builder**: no database,
- * no clock, no I/O. The caller reads the persisted events/outcome/candidate/
+ * no clock, no I/O. The caller reads the persisted events/outcome/verified head/
  * tracker rows and passes them in; recomputing over the same inputs always
  * yields the same summary and the same plan, so both halves are exhaustively
  * unit-testable in isolation. The live wiring (drive the reload, mint the
@@ -153,7 +153,7 @@ export interface FallbackTrackerLink {
 
 /**
  * Everything {@link buildResumeFallbackSummary} needs — the persisted inputs
- * the design mandates (`run_events` + the terminal outcome + candidate
+ * the design mandates (`run_events` + the terminal outcome + verified head
  * OID/status + tracker links) plus the dead Session's identity and the
  * classified trigger, so the summary can open by stating *why* it exists.
  */
@@ -163,8 +163,8 @@ export interface FallbackSummaryInput {
   detail: string;
   /** The dead Session's identity, for the summary header. */
   session: { harness: string; model: string; cwd: string; harnessSessionId: string };
-  /** The frozen candidate the prior work produced and its recorded status. */
-  candidate: { oid: string | null; status: string | null };
+  /** The verified head the prior work produced and its recorded status. */
+  verifiedHead: { oid: string | null; status: string | null };
   /** The prior Attempt's terminal disposition; null when it never settled. */
   outcome: FallbackSummaryOutcome | null;
   /** The prior Attempt's persisted events, in any order (the builder sorts by `seq`). */
@@ -214,9 +214,9 @@ export function buildResumeFallbackSummary(input: FallbackSummaryInput): string 
   lines.push(`- Harness session id: ${input.session.harnessSessionId}`);
 
   lines.push('');
-  lines.push('## Candidate');
-  lines.push(`- Commit OID: ${input.candidate.oid ?? '(none produced)'}`);
-  lines.push(`- Status: ${input.candidate.status ?? '(unknown)'}`);
+  lines.push('## Verified head');
+  lines.push(`- Commit OID: ${input.verifiedHead.oid ?? '(none produced)'}`);
+  lines.push(`- Status: ${input.verifiedHead.status ?? '(unknown)'}`);
 
   lines.push('');
   lines.push('## Tracker');

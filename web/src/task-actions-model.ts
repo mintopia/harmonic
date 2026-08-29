@@ -54,7 +54,7 @@ export interface EscalationActions {
 }
 
 /** Which of the three escalation actions an escalated ticket can take right now; null off the surface. */
-export function escalationActions(task: Pick<Task, 'candidateRef' | 'state'>): EscalationActions | null {
+export function escalationActions(task: Pick<Task, 'verifiedRef' | 'state'>): EscalationActions | null {
   if (task.state !== 'escalated') return null;
-  return { accept: task.candidateRef !== null, reject: true, close: true };
+  return { accept: task.verifiedRef !== null, reject: true, close: true };
 }

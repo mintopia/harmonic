@@ -102,7 +102,7 @@ describe('command verifier end-to-end (issue #135)', () => {
 
     const run = (await server.api('GET', `/api/tasks/${taskId}/attempts/current`)).body;
     expect(run).toMatchObject({ state: 'completed' });
-    expect(run.candidateOid).toMatch(/^[0-9a-f]{40}$/);
+    expect(run.verifiedHeadOid).toMatch(/^[0-9a-f]{40}$/);
 
     // AC3/AC5: the attempt is persisted at the branch head the command saw.
     const rows = await attempts(taskId);
@@ -132,14 +132,14 @@ describe('command verifier end-to-end (issue #135)', () => {
     const run = (await server.api('GET', `/api/tasks/${taskId}/attempts/current`)).body;
     // The candidate is the agent's own commit, and it already sits on the live
     // base branch — the branch advanced forward in place, nothing was merged.
-    expect(run.candidateOid).toMatch(/^[0-9a-f]{40}$/);
-    expect(git(repoDir, 'rev-parse', 'main')).toBe(run.candidateOid);
-    expect(run.candidateOid).not.toBe(baseBefore);
+    expect(run.verifiedHeadOid).toMatch(/^[0-9a-f]{40}$/);
+    expect(git(repoDir, 'rev-parse', 'main')).toBe(run.verifiedHeadOid);
+    expect(run.verifiedHeadOid).not.toBe(baseBefore);
     // No private direct ref, and no operator-facing run branch: direct isolation
     // has no candidate ref at all now.
     expect(git(repoDir, 'for-each-ref', 'refs/harmonic/')).toBe('');
     expect(run.branch).toBeNull();
-    expect(run.candidateRef).toBeNull();
+    expect(run.verifiedRef).toBeNull();
   });
 
   it('a pre-existing dirty tree does not fail a direct Run; its candidate is the agent\'s own commit (ADR-0046)', async () => {
@@ -157,7 +157,7 @@ describe('command verifier end-to-end (issue #135)', () => {
     });
     expect(task.state).toBe('done'); // tolerated — never escalated for the dirty tree
     const run = (await server.api('GET', `/api/tasks/${taskId}/attempts/current`)).body;
-    expect(run.candidateOid).toMatch(/^[0-9a-f]{40}$/);
+    expect(run.verifiedHeadOid).toMatch(/^[0-9a-f]{40}$/);
 
     rmSync(join(repoDir, 'operator-scratch.txt'), { force: true });
   });
@@ -183,7 +183,7 @@ describe('command verifier end-to-end (issue #135)', () => {
     expect(rows).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ mechanism: 'command', verdict: 'fail' }),
-        expect.objectContaining({ mechanism: 'command', verdict: 'fail', inputOid: run.candidateOid }),
+        expect.objectContaining({ mechanism: 'command', verdict: 'fail', inputOid: run.verifiedHeadOid }),
       ]),
     );
     const timeline = await server.api('GET', `/api/tasks/${taskId}/attempts/timeline`);
@@ -235,7 +235,7 @@ describe('command verifier end-to-end (issue #135)', () => {
       return body.state === 'failed' ? body : undefined;
     });
     expect(run.state).toBe('failed');
-    expect(run.candidateOid).toBeNull();
+    expect(run.verifiedHeadOid).toBeNull();
 
     const rows = await attempts(taskId);
     expect(rows).toHaveLength(1);
@@ -293,11 +293,11 @@ describe('command verifier end-to-end (issue #135)', () => {
     });
 
     const run = (await server.api('GET', `/api/tasks/${taskId}/attempts/current`)).body;
-    expect(run.candidateOid).toBeTruthy();
+    expect(run.verifiedHeadOid).toBeTruthy();
     // The one merge policy: an ordinary `git merge --no-ff` — main's merge
     // commit has the run's verified branch tip as its second parent, and
     // shows up in `--merges` history (never a fast-forward).
-    expect(git(repoDir, 'rev-parse', 'main^2')).toBe(run.candidateOid);
+    expect(git(repoDir, 'rev-parse', 'main^2')).toBe(run.verifiedHeadOid);
     expect(git(repoDir, 'log', '--merges', 'main')).not.toBe('');
   });
 

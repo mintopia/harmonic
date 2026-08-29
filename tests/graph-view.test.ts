@@ -44,7 +44,7 @@ const task = (id: number, origin: Task['origin']): Task => ({
   currentStep: null,
   contextTokens: null,
   contextWindow: null,
-  candidateRef: null,
+  verifiedRef: null,
   skipReason: null,
 });
 

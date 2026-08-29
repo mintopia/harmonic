@@ -24,7 +24,7 @@ function baseInput(overrides: Partial<FallbackSummaryInput> = {}): FallbackSumma
     trigger: 'adapter-version-mismatch',
     detail: 'stored adapter claude@1 != current claude@2',
     session: { harness: 'claude', model: 'opus', cwd: '/repo', harnessSessionId: 'sess-abc' },
-    candidate: { oid: 'deadbeef', status: 'created' },
+    verifiedHead: { oid: 'deadbeef', status: 'created' },
     outcome: { state: 'completed', reason: null },
     events: [
       { seq: 1, type: 'session_update', payload: { chunk: 'a' } },
@@ -130,7 +130,7 @@ describe('buildResumeFallbackSummary — deterministic Harmonic-built summary (i
     expect(out).toContain('the prior Session was not asked to summarize itself');
   });
 
-  it('renders the persisted inputs: session, candidate, tracker links, outcome, events', () => {
+  it('renders the persisted inputs: session, verified head, tracker links, outcome, events', () => {
     const out = buildResumeFallbackSummary(baseInput());
     expect(out).toContain('- Harness: claude');
     expect(out).toContain('- Harness session id: sess-abc');
@@ -150,10 +150,10 @@ describe('buildResumeFallbackSummary — deterministic Harmonic-built summary (i
     expect(out).toContain('- Terminal state: failed (escalate)');
   });
 
-  it('handles the empty case: no candidate, no tracker links, no outcome, no events', () => {
+  it('handles the empty case: no verified head, no tracker links, no outcome, no events', () => {
     const out = buildResumeFallbackSummary(
       baseInput({
-        candidate: { oid: null, status: null },
+        verifiedHead: { oid: null, status: null },
         outcome: null,
         events: [],
         trackerLinks: [],

@@ -170,8 +170,8 @@ export class TrackerPollerManager {
       };
       epicIntegrate = new EpicIntegrateCoordinator({
         repoDir: ws.workingDir,
-        verify: async ({ repoDir, candidateOid }) =>
-          verifyEpicIntegration({ repoDir, candidateOid, verifiers: await resolveWorkspaceVerifiers() }),
+        verify: async ({ repoDir, verifiedHeadOid }) =>
+          verifyEpicIntegration({ repoDir, verifiedHeadOid, verifiers: await resolveWorkspaceVerifiers() }),
         integrate: ({ repoDir, epicRef, defaultBranch, integrationBranch }) =>
           mergeEpicIntegration({
             repoDir,
@@ -183,7 +183,7 @@ export class TrackerPollerManager {
             runPostMergeCheck: async (mergeOid) => {
               const decision = await verifyEpicIntegration({
                 repoDir,
-                candidateOid: mergeOid,
+                verifiedHeadOid: mergeOid,
                 verifiers: await resolveWorkspaceVerifiers(),
               });
               return { pass: decision.outcome === 'proceed', output: decision.outcome === 'proceed' ? '' : decision.reason };

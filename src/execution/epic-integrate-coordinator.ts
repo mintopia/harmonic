@@ -68,7 +68,7 @@ export interface EpicIntegrateGit {
  * the coordinator stays decoupled from the verifier plumbing; the wire builds an
  * adapter around {@link verifyEpicIntegration} (`epic-verification.ts`) that
  * supplies the Workspace's resolved verifiers. */
-export type EpicVerify = (args: { repoDir: string; candidateOid: string }) => Promise<VerificationDecision>;
+export type EpicVerify = (args: { repoDir: string; verifiedHeadOid: string }) => Promise<VerificationDecision>;
 
 /** Merge the Epic's integration branch into the default branch under the one
  * merge policy (ADR-0001): `git merge --no-ff` under the base repo mutex, bounded
@@ -294,7 +294,7 @@ export class EpicIntegrateCoordinator {
     }
 
     // Verify the integrated whole against the integration branch tip.
-    const candidateOid = await this.git.revParse(this.repoDir, branch);
+    const verifiedHeadOid = await this.git.revParse(this.repoDir, branch);
     this.lastVerification.set(target.ref, 'pending');
     let verification: VerificationDecision;
     try {
@@ -302,8 +302,8 @@ export class EpicIntegrateCoordinator {
         repoDir: this.repoDir,
         epicRef: target.ref,
         type: 'verify',
-        attributes: { 'git.candidate_oid': candidateOid },
-        work: () => this.verify({ repoDir: this.repoDir, candidateOid }),
+        attributes: { 'git.verified_head_oid': verifiedHeadOid },
+        work: () => this.verify({ repoDir: this.repoDir, verifiedHeadOid }),
       });
     } catch (err) {
       // A verification-harness failure is genuine infra doubt: fail-safe to

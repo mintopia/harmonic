@@ -83,7 +83,7 @@ describe('operator Accept merge (ADR-0001, issue #383)', () => {
       return t.state === 'escalated' ? t : undefined;
     });
     expect(escalated.escalationReason).toMatch(/attempt 2 of 2 failed/);
-    const verified = (await server.app.ctx.attempts.get(runId)).candidateOid;
+    const verified = (await server.app.ctx.attempts.get(runId)).verifiedHeadOid;
     expect(verified).toMatch(/^[0-9a-f]{40}$/);
 
     // The base moves non-conflictingly while the ticket sits escalated — the

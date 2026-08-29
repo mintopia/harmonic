@@ -29,7 +29,7 @@ export async function verifyEpicIntegration(args: {
   /** The base repo owning the integration branch and object store. */
   repoDir: string;
   /** The integration branch tip OID to Verify. */
-  candidateOid: string;
+  verifiedHeadOid: string;
   verifiers: ResolvedVerifiers;
   /** Cancellation, wired to server shutdown; an abort kills the verifier child. */
   signal?: AbortSignal;
@@ -43,7 +43,7 @@ export async function verifyEpicIntegration(args: {
     try {
       const attempt = await runCommandVerifier({
         repoDir: args.repoDir,
-        candidateOid: args.candidateOid,
+        verifiedHeadOid: args.verifiedHeadOid,
         worktreePath: join(parent, `command-${index}`),
         command,
         ...(args.signal ? { signal: args.signal } : {}),

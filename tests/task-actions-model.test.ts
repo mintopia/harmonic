@@ -63,12 +63,12 @@ describe('taskActions', () => {
 // guidance and Close never depend on a candidate.
 describe('escalationActions', () => {
   it('is null off the escalation surface, even with a candidate', () => {
-    expect(escalationActions({ state: 'ready', candidateRef: 'refs/harmonic/candidate/run-9137' })).toBeNull();
-    expect(escalationActions({ state: 'working', candidateRef: 'refs/harmonic/candidate/run-9137' })).toBeNull();
+    expect(escalationActions({ state: 'ready', verifiedRef: 'refs/harmonic/direct/attempt-9137' })).toBeNull();
+    expect(escalationActions({ state: 'working', verifiedRef: 'refs/harmonic/direct/attempt-9137' })).toBeNull();
   });
 
   it('offers all three when the escalated ticket has a verified branch head', () => {
-    expect(escalationActions({ state: 'escalated', candidateRef: 'refs/harmonic/candidate/run-9137' })).toEqual({
+    expect(escalationActions({ state: 'escalated', verifiedRef: 'refs/harmonic/direct/attempt-9137' })).toEqual({
       accept: true,
       reject: true,
       close: true,
@@ -76,6 +76,6 @@ describe('escalationActions', () => {
   });
 
   it('withholds only Accept when no run ever produced a verified head', () => {
-    expect(escalationActions({ state: 'escalated', candidateRef: null })).toEqual({ accept: false, reject: true, close: true });
+    expect(escalationActions({ state: 'escalated', verifiedRef: null })).toEqual({ accept: false, reject: true, close: true });
   });
 });

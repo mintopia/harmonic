@@ -92,13 +92,13 @@ describe('runCritic (issue #136)', () => {
     ['fail', { verdict: 'fail', summary: 'the change breaks the build' }],
     ['inconclusive', { verdict: 'inconclusive', summary: 'cannot tell from the diff alone' }],
   ] as const)('a fake drive returning a valid %s verdict resolves to a matching CriticAttempt', async (_name, value) => {
-    const { repo, oid } = await makeCandidate(`refs/harmonic/candidate/run-critic-${value.verdict}`);
+    const { repo, oid } = await makeCandidate(`refs/harmonic/direct/attempt-critic-${value.verdict}`);
     const output = JSON.stringify(value);
     const drive: CriticHarnessDrive = { run: async () => ({ output, permissionRequests: [] }) };
 
     const attempt = await runCritic({
       cwd: repo,
-      candidateOid: oid,
+      verifiedHeadOid: oid,
       fields: FIELDS,
       critic: { prompt: 'Review the diff.', model: 'stub-model' },
       harness: FAKE_HARNESS,
@@ -120,7 +120,7 @@ describe('runCritic (issue #136)', () => {
   });
 
   it('given the base revision, drives the in-place cwd and names both revisions in the prompt', async () => {
-    const { repo, oid } = await makeCandidate('refs/harmonic/candidate/run-critic-two-rev');
+    const { repo, oid } = await makeCandidate('refs/harmonic/direct/attempt-critic-two-rev');
     // The candidate's parent is the fork point the critic gets as the base.
     const baseOid = git(repo, 'rev-parse', `${oid}~1`);
     let drivenCwd: string | null = null;
@@ -135,7 +135,7 @@ describe('runCritic (issue #136)', () => {
 
     const attempt = await runCritic({
       cwd: repo,
-      candidateOid: oid,
+      verifiedHeadOid: oid,
       baseOid,
       fields: FIELDS,
       critic: { prompt: 'Review the diff.', model: 'stub-model' },
@@ -156,7 +156,7 @@ describe('runCritic (issue #136)', () => {
     // (single shot, no blocking retry). A log not yet flushed stays null and is
     // filled by the runner's deferred poll — so this covers the flushed case and
     // the sessionId that the deferred poll needs (#331, ADR-0040).
-    const { repo, oid } = await makeCandidate('refs/harmonic/candidate/run-critic-flushed-transcript');
+    const { repo, oid } = await makeCandidate('refs/harmonic/direct/attempt-critic-flushed-transcript');
     const sessionLogDir = mkdtempSync(join(tmpdir(), 'harmonic-critic-logs-'));
     tmpDirs.push(sessionLogDir);
     const sessionId = 'critic-flushed-transcript';
@@ -171,7 +171,7 @@ describe('runCritic (issue #136)', () => {
 
     const attempt = await runCritic({
       cwd: repo,
-      candidateOid: oid,
+      verifiedHeadOid: oid,
       fields: FIELDS,
       critic: { prompt: 'Review the diff.', model: 'stub-model' },
       harness: { ...FAKE_HARNESS, sessionLogDir },
@@ -184,7 +184,7 @@ describe('runCritic (issue #136)', () => {
   });
 
   it('opens a verify.critic child operation under the run span when a parent context is supplied', async () => {
-    const { repo, oid } = await makeCandidate('refs/harmonic/candidate/run-critic-operation');
+    const { repo, oid } = await makeCandidate('refs/harmonic/direct/attempt-critic-operation');
     const exporter = new InMemorySpanExporter();
     const registry = new OperationRegistry();
     const provider = new NodeTracerProvider({ spanProcessors: [registry, new SimpleSpanProcessor(exporter)] });
@@ -195,7 +195,7 @@ describe('runCritic (issue #136)', () => {
     const attempt = await parent.run(() =>
       runCritic({
         cwd: repo,
-        candidateOid: oid,
+        verifiedHeadOid: oid,
         fields: FIELDS,
         critic: { prompt: 'Review the diff.', model: 'stub-model' },
         harness: FAKE_HARNESS,
@@ -223,12 +223,12 @@ describe('runCritic (issue #136)', () => {
   });
 
   it('a fake drive returning garbage resolves to inconclusive, never throwing', async () => {
-    const { repo, oid } = await makeCandidate('refs/harmonic/candidate/run-critic-garbage');
+    const { repo, oid } = await makeCandidate('refs/harmonic/direct/attempt-critic-garbage');
     const drive: CriticHarnessDrive = { run: async () => ({ output: 'not json at all, just prose', permissionRequests: [] }) };
 
     const attempt = await runCritic({
       cwd: repo,
-      candidateOid: oid,
+      verifiedHeadOid: oid,
       fields: FIELDS,
       critic: { prompt: 'Review the diff.', model: 'stub-model' },
       harness: FAKE_HARNESS,
@@ -243,7 +243,7 @@ describe('runCritic (issue #136)', () => {
   });
 
   it('a throwing drive (timeout/death/spawn-fail stand-in) resolves to inconclusive, never throwing', async () => {
-    const { repo, oid } = await makeCandidate('refs/harmonic/candidate/run-critic-drive-throws');
+    const { repo, oid } = await makeCandidate('refs/harmonic/direct/attempt-critic-drive-throws');
     const drive: CriticHarnessDrive = {
       run: async () => {
         throw new Error('harness exited before finishing');
@@ -252,7 +252,7 @@ describe('runCritic (issue #136)', () => {
 
     const attempt = await runCritic({
       cwd: repo,
-      candidateOid: oid,
+      verifiedHeadOid: oid,
       fields: FIELDS,
       critic: { prompt: 'Review the diff.', model: 'stub-model' },
       harness: FAKE_HARNESS,
@@ -265,7 +265,7 @@ describe('runCritic (issue #136)', () => {
   });
 
   it('no tracker credentials on the harness config, and the prompt is the interpolated operator note plus read-only scaffolding (no diff)', async () => {
-    const { repo, oid } = await makeCandidate('refs/harmonic/candidate/run-critic-readonly');
+    const { repo, oid } = await makeCandidate('refs/harmonic/direct/attempt-critic-readonly');
 
     let captured: CriticDriveRequest | undefined;
     const drive: CriticHarnessDrive = {
@@ -277,7 +277,7 @@ describe('runCritic (issue #136)', () => {
 
     await runCritic({
       cwd: repo,
-      candidateOid: oid,
+      verifiedHeadOid: oid,
       fields: FIELDS,
       critic: { prompt: 'Review issue {ref}: {title}.', model: 'stub-model' },
       harness: FAKE_HARNESS,
@@ -300,7 +300,7 @@ describe('runCritic (issue #136)', () => {
   });
 
   it('a drive that writes into its checkout is still trusted — the verdict is taken as reported', async () => {
-    const { repo, oid } = await makeCandidate('refs/harmonic/candidate/run-critic-write');
+    const { repo, oid } = await makeCandidate('refs/harmonic/direct/attempt-critic-write');
 
     const drive: CriticHarnessDrive = {
       run: async (req) => {
@@ -315,7 +315,7 @@ describe('runCritic (issue #136)', () => {
 
     const attempt = await runCritic({
       cwd: repo,
-      candidateOid: oid,
+      verifiedHeadOid: oid,
       fields: FIELDS,
       critic: { prompt: 'Review the diff.', model: 'stub-model' },
       harness: FAKE_HARNESS,
@@ -327,12 +327,12 @@ describe('runCritic (issue #136)', () => {
   });
 
   it('a no-op drive verdict is trusted as reported', async () => {
-    const { repo, oid } = await makeCandidate('refs/harmonic/candidate/run-critic-noop');
+    const { repo, oid } = await makeCandidate('refs/harmonic/direct/attempt-critic-noop');
     const drive: CriticHarnessDrive = { run: async () => ({ output: '{"verdict":"pass","summary":"clean"}', permissionRequests: [] }) };
 
     const attempt = await runCritic({
       cwd: repo,
-      candidateOid: oid,
+      verifiedHeadOid: oid,
       fields: FIELDS,
       critic: { prompt: 'Review the diff.', model: 'stub-model' },
       harness: FAKE_HARNESS,
@@ -351,12 +351,12 @@ describe('runCritic (issue #136)', () => {
     ] as const;
 
     for (const c of cases) {
-      const { repo, oid } = await makeCandidate(`refs/harmonic/candidate/run-critic-combine-${c.verdict}`);
+      const { repo, oid } = await makeCandidate(`refs/harmonic/direct/attempt-critic-combine-${c.verdict}`);
       const drive: CriticHarnessDrive = { run: async () => ({ output: c.output, permissionRequests: [] }) };
 
       const attempt = await runCritic({
         cwd: repo,
-        candidateOid: oid,
+        verifiedHeadOid: oid,
         fields: FIELDS,
         critic: { prompt: 'Review the diff.', model: 'stub-model' },
         harness: FAKE_HARNESS,
@@ -376,13 +376,13 @@ describe('runCritic (issue #136)', () => {
     // list -> map row to a VerifierVerdict -> combineVerdicts. The glue under
     // test is `criticAttemptToInput` mapping `verifier:'critic'` to the store's
     // `mechanism` (the field the integration ticket will persist through).
-    const { repo, oid } = await makeCandidate('refs/harmonic/candidate/run-critic-persist');
+    const { repo, oid } = await makeCandidate('refs/harmonic/direct/attempt-critic-persist');
     const drive: CriticHarnessDrive = {
       run: async () => ({ output: '{"verdict":"fail","summary":"the diff drops a null check"}', permissionRequests: [] }),
     };
     const attempt = await runCritic({
       cwd: repo,
-      candidateOid: oid,
+      verifiedHeadOid: oid,
       fields: FIELDS,
       critic: { prompt: 'Review the diff.', model: 'stub-model' },
       harness: FAKE_HARNESS,

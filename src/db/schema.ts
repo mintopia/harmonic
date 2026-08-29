@@ -309,15 +309,15 @@ export const attempts = sqliteTable('attempts', {
    * #134, reshaped by the unified lifecycle): the branch-head OID captured at
    * implementation end, before finalize restores the checkout. Null when there
    * is nothing verifiable — a pre-feature Attempt, an escalated Attempt, or an
-   * Attempt that left no new commit (the fail-closed no-candidate path).
-   * Folded from `runs.candidate_oid` (ADR-0001 #388 S-G). */
-  candidateOid: text('candidate_oid'),
+   * Attempt that left no new commit (the fail-closed no-verified-head path).
+   * Folded from `runs.verified_head_oid` (ADR-0001 #388 S-G). */
+  verifiedHeadOid: text('verified_head_oid'),
   /** The private Harmonic ref (`refs/harmonic/direct/attempt-<id>`) a **direct**
    * Attempt's head is pinned to, from which it is rematerialized for verification
    * or a later corrective turn. Null for worktree Attempts — their own branch owns
-   * the head — so it can be null while `candidateOid` is set. Folded from
-   * `runs.candidate_ref` (ADR-0001 #388 S-G). */
-  candidateRef: text('candidate_ref'),
+   * the head — so it can be null while `verifiedHeadOid` is set. Folded from
+   * `runs.verified_ref` (ADR-0001 #388 S-G). */
+  verifiedRef: text('verified_ref'),
   /** JSON: aggregate usage from the ACP prompt result. Folded from `runs.usage` (ADR-0001 #388 S-G). */
   usage: text('usage'),
   /** JSON: Cost frozen when the Attempt's final Usage is recorded (ADR-0035).
@@ -569,7 +569,7 @@ export type VerificationMechanism = (typeof VERIFICATION_MECHANISMS)[number];
 
 /**
  * The persisted record of one Verification attempt against a Run's frozen
- * candidate OID (issue #136, ADR-0021, reliability-design Unit B). Mirrors
+ * verified-head OID (issue #136, ADR-0021, reliability-design Unit B). Mirrors
  * `guardrail_events`'s discipline exactly: append-only, `seq` assigned by the
  * store as `max(seq)+1`, and the `(attempt_id, seq)` unique index is the same
  * monotonicity guarantee — two attempts can never share a seq within an
@@ -579,10 +579,10 @@ export type VerificationMechanism = (typeof VERIFICATION_MECHANISMS)[number];
  * execution ledger, ADR-0007); was `run_id` before.
  *
  * `inputOid` is recorded per-row (not just implied by the Run's
- * `candidateOid` column) because a Run can be re-verified against more than
- * one candidate over its lifetime — a self-heal turn re-enters `validating`
- * and produces a fresh candidate (reliability-design Unit B), and the attempt
- * log is how a later reader tells which candidate each verdict actually
+ * `verifiedHeadOid` column) because a Run can be re-verified against more than
+ * one verified head over its lifetime — a self-heal turn re-enters `validating`
+ * and produces a fresh verified head (reliability-design Unit B), and the attempt
+ * log is how a later reader tells which head each verdict actually
  * judged. `output` stores the verifier's raw output (the critic's agent
  * text); the caller is expected to cap it before it reaches here so an
  * unbounded or adversarial transcript can't grow the row without limit.
@@ -604,8 +604,8 @@ export const verificationAttempts = sqliteTable('verification_attempts', {
   ts: integer('ts').notNull(),
   /** 'critic' today; 'command' reserved for the sibling verifier ticket. */
   mechanism: text('mechanism').$type<VerificationMechanism>().notNull(),
-  /** The candidate OID this attempt verified (see the class doc — a Run may
-   * be re-verified against more than one candidate across self-heal turns). */
+  /** The verified-head OID this attempt checked (see the class doc — an Attempt may
+   * be re-verified against more than one head across self-heal turns). */
   inputOid: text('input_oid').notNull(),
   /** 'pass' | 'fail' | 'inconclusive' (`verification/critic-schema.ts`'s `Verdict`). */
   verdict: text('verdict').$type<Verdict>().notNull(),

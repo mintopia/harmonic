@@ -56,7 +56,7 @@ export class EscalationService {
 
   async accept(taskId: number): Promise<TaskRow> {
     const { task, run } = await this.escalated(taskId);
-    if (!run || run.candidateOid == null) {
+    if (!run || run.verifiedHeadOid == null) {
       throw new DomainError('conflict', `task ${taskId} has no verified branch head to accept`);
     }
     // The one merge policy, everywhere (ADR-0001): the `target-ref` effect runs

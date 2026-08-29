@@ -56,7 +56,7 @@ const task = (id: number, state: TaskState, extra: Partial<Task> = {}): Task => 
   currentStep: null,
   contextTokens: null,
   contextWindow: null,
-  candidateRef: null,
+  verifiedRef: null,
   skipReason: null,
   ...extra,
 });

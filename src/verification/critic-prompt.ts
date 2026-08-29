@@ -13,7 +13,7 @@ export interface BuildCriticPromptArgs {
   fields: DriveFields;
   /** The candidate revision the worktree is checked out at — named so the critic
    * knows which revision it is judging and can bound its own comparison. */
-  candidateOid: string;
+  verifiedHeadOid: string;
   /** The base revision (fork point) the candidate diverged from. Named so the
    * critic derives what the change did by comparing the two revisions itself —
    * the design contract that it is given the two revisions, never a git diff.
@@ -47,16 +47,16 @@ export interface BuildCriticPromptArgs {
 export function buildCriticPrompt({
   operatorPrompt,
   fields,
-  candidateOid,
+  verifiedHeadOid,
   baseOid,
 }: BuildCriticPromptArgs): string {
   const interpolated = fillTemplate(operatorPrompt, fields);
   const revisionBlock = baseOid
-    ? `You are reviewing the candidate revision ${candidateOid}, which branched from the
+    ? `You are reviewing the candidate revision ${verifiedHeadOid}, which branched from the
 base revision ${baseOid}. Derive what the change did by comparing the two
 revisions yourself — read the files and run read-only git commands (for example,
-\`git diff ${baseOid} ${candidateOid}\`). You are NOT handed a diff.`
-    : `You are reviewing the candidate revision ${candidateOid}. The base revision it
+\`git diff ${baseOid} ${verifiedHeadOid}\`). You are NOT handed a diff.`
+    : `You are reviewing the candidate revision ${verifiedHeadOid}. The base revision it
 diverged from is unknown, so review the candidate on its own merits.`;
   return `${interpolated}
 

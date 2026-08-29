@@ -1206,7 +1206,7 @@ export class Runner {
    * their verdicts into a single Verification decision (issue #135, ADR-0021,
    * reliability-design Unit B). Runs in `verifying`, after `finalize()` has
    * torn the leased workspace down — verification reads the *persisted*
-   * candidate ref (`refs/harmonic/candidate/run-<id>`) in the base repo, never
+   * verified-head ref in the base repo, never
    * the workspace, exactly as the sibling critic would.
    *
    * Both verifiers are wired: the command verifier (#135) and the agent critic
@@ -1266,7 +1266,7 @@ export class Runner {
           // pins `worktree.repoDir = task.workingDir`); the leased worktree is
           // already gone by now.
           repoDir: task.workingDir,
-          candidateOid: oid,
+          verifiedHeadOid: oid,
           worktreePath: join(this.worktreesDir, `cmdverify-${run.id}`),
           command,
           signal,
@@ -1330,7 +1330,7 @@ export class Runner {
         const criticCwd = run.branch ? this.worktreePathForTask(task) : task.workingDir;
         const attempt = await runCritic({
           cwd: criticCwd,
-          candidateOid: oid,
+          verifiedHeadOid: oid,
           ...(baseOid ? { baseOid } : {}),
           critic: { prompt: review.prompt!, model: review.model!, ...(review.harness ? { harness: review.harness } : {}) },
           fields: driveFields(task, this.urlFor),
@@ -1562,7 +1562,7 @@ export class Runner {
         // candidate". Carrying the outgoing Attempt's candidate forward lets
         // the capture site (driveOnce) fall back to it and re-verify the
         // standing candidate instead.
-        candidateOid: run.candidateOid,
+        verifiedHeadOid: run.verifiedHeadOid,
       });
       await this.attempts.setContinuation(run.id, continuation);
       healCtx = {
@@ -1619,7 +1619,7 @@ export class Runner {
       '## Prior session (condensed)',
       'This attempt starts a fresh Session under the deterministic continuation rule.',
       `Prior Session: ${session.harness} / ${session.model} / ${session.harnessSessionId}`,
-      `Candidate: ${current.candidateOid ?? '(none produced)'}`,
+      `Verified head: ${current.verifiedHeadOid ?? '(none produced)'}`,
       `Run events: ${events.length}.`,
     ].join('\n');
   }
@@ -1902,7 +1902,7 @@ export class Runner {
         for (const command of commands) {
           const attempt = await runCommandVerifier({
             repoDir: baseDir,
-            candidateOid: mergeOid,
+            verifiedHeadOid: mergeOid,
             worktreePath: join(this.worktreesDir, `postmerge-${run.id}`),
             command,
             signal,
@@ -2999,8 +2999,8 @@ export class Runner {
         ]);
         if (head && head !== base) {
           implementationHead = head;
-          await this.attempts.update(run.id, { candidateOid: head });
-        } else if (run.candidateOid) {
+          await this.attempts.update(run.id, { verifiedHeadOid: head });
+        } else if (run.verifiedHeadOid) {
           // A corrective turn (direct mode) re-resolves `baseRev` from the
           // worktree's live HEAD (issue #157) — which, on a resume, is already
           // the standing candidate a prior Attempt committed. Adding no further
@@ -3009,7 +3009,7 @@ export class Runner {
           // required a candidate on the outgoing Attempt (ADR-0041), and this
           // row carried it forward (`drive`'s advance step). Re-verify that
           // standing candidate rather than reporting a fresh "no candidate".
-          implementationHead = run.candidateOid;
+          implementationHead = run.verifiedHeadOid;
         }
       }
       await finalize();
@@ -3075,7 +3075,7 @@ export class Runner {
           // so the Task surfaces with a null candidate (Accept 409s on it). With
           // a candidate, infra doubt consumes the same bounded Attempt loop as
           // an actionable fail.
-          if ((await this.attempts.get(run.id)).candidateOid == null) {
+          if ((await this.attempts.get(run.id)).verifiedHeadOid == null) {
             const reason = `verification ${decision.outcome}: ${decision.reason}`;
             record('lifecycle', { event: 'escalated', reason });
             await this.settleEscalated(task, run, reason, patch);
@@ -3093,7 +3093,7 @@ export class Runner {
           // unless a verifier vouched for it. A finished Run (finish_task) merges on
           // `proceed` as before; and an early-finished Run WHOSE verifiers pass now
           // merges too — the point of verifying an early-finished Run's work.
-          if (afkUnresolved && (!verifierRan || (await this.attempts.get(run.id)).candidateOid == null)) {
+          if (afkUnresolved && (!verifierRan || (await this.attempts.get(run.id)).verifiedHeadOid == null)) {
             record('lifecycle', { event: 'unresolved', reason: 'no finish_task signal and no verifier vouched for the work' });
             return { kind: 'actionable-fail', reason: 'run ended without an execution-complete (finish_task) signal', output: '' };
           }

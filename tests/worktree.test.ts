@@ -63,7 +63,7 @@ describe('worktree isolation mode', () => {
     // The verified head merged onto main as an ordinary merge commit (ADR-0001,
     // #381: the one merge policy — no human gate, and never a fast-forward).
     expect(git(repo, 'show', 'main:feature.txt')).toBe('made by agent');
-    expect(git(repo, 'rev-parse', 'main^2')).toBe(run.candidateOid);
+    expect(git(repo, 'rev-parse', 'main^2')).toBe(run.verifiedHeadOid);
     expect(git(repo, 'log', '--merges', 'main')).not.toBe('');
 
     // Issue #148: merging retires the Session, which is the sole owner of
@@ -93,8 +93,8 @@ describe('worktree isolation mode', () => {
     const run = (await server.api('GET', `/api/attempts/${started.body.id}`)).body;
     // A real candidate was captured (non-null) and merged onto main as an
     // ordinary merge commit (ADR-0001, #381 — never a fast-forward).
-    expect(run.candidateOid).toBeTruthy();
-    expect(git(repo, 'rev-parse', 'main^2')).toBe(run.candidateOid);
+    expect(run.verifiedHeadOid).toBeTruthy();
+    expect(git(repo, 'rev-parse', 'main^2')).toBe(run.verifiedHeadOid);
     expect(git(repo, 'show', 'main:feature.txt')).toBe('uncommitted work');
   });
 
@@ -181,7 +181,7 @@ describe('worktree isolation mode', () => {
     expect(existsSync(join(repo, 'feature.txt'))).toBe(false);
     // An ordinary merge commit, never a fast-forward — and main itself never
     // took the run's work; the merge landed only on feature-base.
-    expect(git(repo, 'rev-parse', 'feature-base^2')).toBe(run.candidateOid);
+    expect(git(repo, 'rev-parse', 'feature-base^2')).toBe(run.verifiedHeadOid);
     expect(git(repo, 'log', '--merges', 'feature-base')).not.toBe('');
     expect(() => git(repo, 'show', 'main:feature.txt')).toThrow();
   });

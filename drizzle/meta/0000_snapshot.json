@@ -334,15 +334,15 @@
           "notNull": false,
           "autoincrement": false
         },
-        "candidate_oid": {
-          "name": "candidate_oid",
+        "verified_head_oid": {
+          "name": "verified_head_oid",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
         },
-        "candidate_ref": {
-          "name": "candidate_ref",
+        "verified_ref": {
+          "name": "verified_ref",
           "type": "text",
           "primaryKey": false,
           "notNull": false,

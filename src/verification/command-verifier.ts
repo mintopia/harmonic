@@ -208,7 +208,7 @@ export interface RunCommandVerifierArgs {
   /** The base repo owning the candidate ref and object store. */
   repoDir: string;
   /** The fixed commit the command verifies. */
-  candidateOid: string;
+  verifiedHeadOid: string;
   /** Where to check out the disposable detached worktree for this attempt. */
   worktreePath: string;
   command: VerificationCommand;
@@ -265,7 +265,7 @@ async function runCommandVerifierUnchecked(args: RunCommandVerifierArgs): Promis
   let output = '';
 
   try {
-    await withDetachedWorktree(args.repoDir, args.candidateOid, args.worktreePath, async (dir) => {
+    await withDetachedWorktree(args.repoDir, args.verifiedHeadOid, args.worktreePath, async (dir) => {
       const cwd = args.command.cwd ? join(dir, args.command.cwd) : dir;
       const result = await spawner.run({
         command: args.command,
@@ -288,11 +288,11 @@ async function runCommandVerifierUnchecked(args: RunCommandVerifierArgs): Promis
       verdict: 'inconclusive',
       summary: `command verifier could not check out the candidate: ${err instanceof Error ? err.message : String(err)}`,
       output: '',
-      inputOid: args.candidateOid,
+      inputOid: args.verifiedHeadOid,
     };
   }
 
-  return { verifier: 'command', verdict, summary, output, inputOid: args.candidateOid };
+  return { verifier: 'command', verdict, summary, output, inputOid: args.verifiedHeadOid };
 }
 
 /**

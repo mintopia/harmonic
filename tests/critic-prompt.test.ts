@@ -18,7 +18,7 @@ describe('buildCriticPrompt (issue #136; 2026-08 containment amendment)', () => 
     const prompt = buildCriticPrompt({
       operatorPrompt: 'Review issue {ref} ({url}): {title}. Skill {skill}. Body: {body}',
       fields: FIELDS,
-      candidateOid: CANDIDATE,
+      verifiedHeadOid: CANDIDATE,
     });
     expect(prompt).toContain('Review issue 123 (https://tracker.example/issues/123): Fix the timeout.');
     expect(prompt).toContain('Skill /implement.');
@@ -28,13 +28,13 @@ describe('buildCriticPrompt (issue #136; 2026-08 containment amendment)', () => 
   });
 
   it('injects no diff and no nonce/delimiter markers', () => {
-    const prompt = buildCriticPrompt({ operatorPrompt: 'Review it.', fields: FIELDS, candidateOid: CANDIDATE });
+    const prompt = buildCriticPrompt({ operatorPrompt: 'Review it.', fields: FIELDS, verifiedHeadOid: CANDIDATE });
     expect(prompt).not.toContain('HARMONIC_UNTRUSTED_DIFF');
     expect(prompt).not.toContain('<<<END');
   });
 
   it('states the read-only contract — may read/fetch, must not modify', () => {
-    const prompt = buildCriticPrompt({ operatorPrompt: 'Review it.', fields: FIELDS, candidateOid: CANDIDATE });
+    const prompt = buildCriticPrompt({ operatorPrompt: 'Review it.', fields: FIELDS, verifiedHeadOid: CANDIDATE });
     expect(prompt).toMatch(/READ-ONLY/i);
     expect(prompt).toMatch(/must not edit/i);
     expect(prompt).toMatch(/may read/i);
@@ -42,19 +42,19 @@ describe('buildCriticPrompt (issue #136; 2026-08 containment amendment)', () => 
   });
 
   it('warns that file contents and fetched pages are untrusted data', () => {
-    const prompt = buildCriticPrompt({ operatorPrompt: 'Review it.', fields: FIELDS, candidateOid: CANDIDATE });
+    const prompt = buildCriticPrompt({ operatorPrompt: 'Review it.', fields: FIELDS, verifiedHeadOid: CANDIDATE });
     expect(prompt).toMatch(/untrusted/i);
     expect(prompt).toMatch(/never instructions/i);
   });
 
   it('specifies the exact JSON output contract', () => {
-    const prompt = buildCriticPrompt({ operatorPrompt: 'Review it.', fields: FIELDS, candidateOid: CANDIDATE });
+    const prompt = buildCriticPrompt({ operatorPrompt: 'Review it.', fields: FIELDS, verifiedHeadOid: CANDIDATE });
     expect(prompt).toContain('"verdict":"pass|fail|inconclusive"');
     expect(prompt).toContain('"summary"');
   });
 
   it('is pure — same inputs give the same output', () => {
-    const args = { operatorPrompt: 'Review it.', fields: FIELDS, candidateOid: CANDIDATE } as const;
+    const args = { operatorPrompt: 'Review it.', fields: FIELDS, verifiedHeadOid: CANDIDATE } as const;
     expect(buildCriticPrompt(args)).toBe(buildCriticPrompt(args));
   });
 
@@ -63,7 +63,7 @@ describe('buildCriticPrompt (issue #136; 2026-08 containment amendment)', () => 
       const prompt = buildCriticPrompt({
         operatorPrompt: 'Review it.',
         fields: FIELDS,
-        candidateOid: CANDIDATE,
+        verifiedHeadOid: CANDIDATE,
         baseOid: BASE,
       });
       expect(prompt).toContain(CANDIDATE);
@@ -79,7 +79,7 @@ describe('buildCriticPrompt (issue #136; 2026-08 containment amendment)', () => 
       const prompt = buildCriticPrompt({
         operatorPrompt: 'Review it.',
         fields: FIELDS,
-        candidateOid: CANDIDATE,
+        verifiedHeadOid: CANDIDATE,
       });
       expect(prompt).toContain(CANDIDATE);
       expect(prompt).toMatch(/on its own merits/i);
@@ -88,7 +88,7 @@ describe('buildCriticPrompt (issue #136; 2026-08 containment amendment)', () => 
     });
 
     it('is pure with both revisions present', () => {
-      const args = { operatorPrompt: 'Review it.', fields: FIELDS, candidateOid: CANDIDATE, baseOid: BASE } as const;
+      const args = { operatorPrompt: 'Review it.', fields: FIELDS, verifiedHeadOid: CANDIDATE, baseOid: BASE } as const;
       expect(buildCriticPrompt(args)).toBe(buildCriticPrompt(args));
     });
   });

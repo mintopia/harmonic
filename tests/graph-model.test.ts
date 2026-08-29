@@ -61,7 +61,7 @@ const task = (
   currentStep: null,
   contextTokens: null,
   contextWindow: null,
-  candidateRef: null,
+  verifiedRef: null,
   skipReason: null,
   ...extra,
 });

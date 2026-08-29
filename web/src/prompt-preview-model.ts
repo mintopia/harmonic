@@ -22,8 +22,8 @@ export const SAMPLE_DRIVE_FIELDS: DriveFields = {
 /** Illustrative value for the `{taskId}` token. */
 export const SAMPLE_TASK_ID = '123';
 
-/** Illustrative candidate/base revisions for the critic preview's revision block. */
-const SAMPLE_CANDIDATE_OID = 'c4nd1da7e0000000000000000000000000000000';
+/** Illustrative verified-head/base revisions for the critic preview's revision block. */
+const SAMPLE_VERIFIED_HEAD_OID = 'ec5ed1f1edead000000000000000000000000000';
 const SAMPLE_BASE_OID = 'ba5e0000000000000000000000000000000000000';
 
 /** Placeholder metadata (token, description) shared by the drive prompt and the
@@ -74,7 +74,7 @@ export function compileCriticPreview(operatorPrompt: string): string {
   return buildCriticPrompt({
     operatorPrompt,
     fields: SAMPLE_DRIVE_FIELDS,
-    candidateOid: SAMPLE_CANDIDATE_OID,
+    verifiedHeadOid: SAMPLE_VERIFIED_HEAD_OID,
     baseOid: SAMPLE_BASE_OID,
   });
 }

@@ -401,7 +401,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     for (const command of commands) {
       const cmdAttempt = await runCommandVerifier({
         repoDir: baseDir,
-        candidateOid: mergeOid,
+        verifiedHeadOid: mergeOid,
         worktreePath: join(worktreesDir, `crash-recovery-postmerge-${run.id}`),
         command,
         attributes: { 'task.id': task.id, 'attempt.id': run.id },
@@ -487,7 +487,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
       });
     }
     if (task.isolationMode !== 'worktree') return effects;
-    if (!run.branch || !run.baseBranch || !run.candidateOid) return effects;
+    if (!run.branch || !run.baseBranch || !run.verifiedHeadOid) return effects;
     const baseBranch = run.baseBranch;
     const branch = run.branch;
     return [

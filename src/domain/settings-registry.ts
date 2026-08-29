@@ -114,14 +114,14 @@ export const settingsRegistry = {
     control: 'verifier',
     tab: 'verification',
     label: 'Verification command',
-    help: 'Command verifier(s) run against a candidate before merging.',
+    help: 'Command verifier(s) run against the verified head before merging.',
   },
   reviewEnabled: {
     scope: 'overridable',
     control: 'toggle',
     tab: 'verification',
     label: 'Review enabled',
-    help: 'Whether an agent critic reviews a candidate before merging.',
+    help: 'Whether an agent critic reviews the verified head before merging.',
   },
   reviewPrompt: {
     scope: 'overridable',

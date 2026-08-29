@@ -110,11 +110,11 @@ describe('escalation actions on a worktree ticket (ADR-0041)', () => {
     const { taskId } = await escalateViaCriticFail();
     expect(await verificationAttempts(taskId)).toHaveLength(2);
     const run = (await server.api('GET', `/api/tasks/${taskId}/attempts/current`)).body;
-    expect(run.candidateOid).toMatch(/^[0-9a-f]{40}$/);
-    expect(git(repoDir, 'rev-parse', '--verify', run.branch)).toBe(run.candidateOid);
+    expect(run.verifiedHeadOid).toMatch(/^[0-9a-f]{40}$/);
+    expect(git(repoDir, 'rev-parse', '--verify', run.branch)).toBe(run.verifiedHeadOid);
     const attempts = await ticketAttempts(taskId);
     expect(attempts.map((a) => a.state)).toEqual(['failed', 'escalated']);
-    expect((await server.api('GET', `/api/tasks/${taskId}`)).body.candidateRef).not.toBeNull();
+    expect((await server.api('GET', `/api/tasks/${taskId}`)).body.verifiedRef).not.toBeNull();
   });
 
   describe('POST /tasks/:id/accept', () => {
@@ -165,7 +165,7 @@ describe('escalation actions on a worktree ticket (ADR-0041)', () => {
           const { body } = await server.api('GET', `/api/tasks/${created.body.id}`);
           return body.state === 'escalated' ? body : undefined;
         });
-        expect(task.candidateRef).toBeNull();
+        expect(task.verifiedRef).toBeNull();
 
         const res = await server.api('POST', `/api/tasks/${created.body.id}/accept`);
         expect(res.status).toBe(409);

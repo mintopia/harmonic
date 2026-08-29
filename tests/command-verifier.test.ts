@@ -128,7 +128,7 @@ describe('command verifier (issue #135)', () => {
     const { repo, oid } = await repoWithCandidate();
     const attempt = await runCommandVerifier({
       repoDir: repo,
-      candidateOid: oid,
+      verifiedHeadOid: oid,
       worktreePath: freshWorktreePath(),
       command: nodeCommand('process.exit(0)'),
       spawn: fakeSpawn({ code: 0, signal: null, output: 'ok' }),
@@ -153,7 +153,7 @@ describe('command verifier (issue #135)', () => {
     const attempt = await parent.run(() =>
       runCommandVerifier({
         repoDir: repo,
-        candidateOid: oid,
+        verifiedHeadOid: oid,
         worktreePath: freshWorktreePath(),
         command: nodeCommand('process.exit(1)'),
         spawn: fakeSpawn({ code: 1, signal: null, output: 'nope' }),
@@ -182,7 +182,7 @@ describe('command verifier (issue #135)', () => {
     const { repo, oid } = await repoWithCandidate();
     const attempt = await runCommandVerifier({
       repoDir: repo,
-      candidateOid: oid,
+      verifiedHeadOid: oid,
       worktreePath: freshWorktreePath(),
       command: nodeCommand('process.exit(1)'),
       spawn: fakeSpawn({ code: 1, signal: null, output: '' }),
@@ -194,7 +194,7 @@ describe('command verifier (issue #135)', () => {
     const { repo, oid } = await repoWithCandidate();
     const attempt = await runCommandVerifier({
       repoDir: repo,
-      candidateOid: oid,
+      verifiedHeadOid: oid,
       worktreePath: freshWorktreePath(),
       command: {
         command: 'definitely-not-a-real-command-xyzzy',
@@ -212,7 +212,7 @@ describe('command verifier (issue #135)', () => {
     const { repo, oid } = await repoWithCandidate();
     const attempt = await runCommandVerifier({
       repoDir: repo,
-      candidateOid: oid,
+      verifiedHeadOid: oid,
       worktreePath: freshWorktreePath(),
       // Sleeps well past the timeout; the spawner SIGKILLs it.
       command: nodeCommand('setTimeout(() => {}, 60000)'),
@@ -228,7 +228,7 @@ describe('command verifier (issue #135)', () => {
     repos.push(repo);
     const attempt = await runCommandVerifier({
       repoDir: repo,
-      candidateOid: '0000000000000000000000000000000000000000',
+      verifiedHeadOid: '0000000000000000000000000000000000000000',
       worktreePath: freshWorktreePath(),
       command: nodeCommand('process.exit(0)'),
     });
@@ -242,7 +242,7 @@ describe('command verifier (issue #135)', () => {
     setTimeout(() => ac.abort(), 100);
     const attempt = await runCommandVerifier({
       repoDir: repo,
-      candidateOid: oid,
+      verifiedHeadOid: oid,
       worktreePath: freshWorktreePath(),
       command: nodeCommand('setTimeout(() => {}, 60000)'),
       spawn: createChildProcessSpawn(),
@@ -257,7 +257,7 @@ describe('command verifier (issue #135)', () => {
     const { repo, oid } = await repoWithCandidate();
     const attempt = await runCommandVerifier({
       repoDir: repo,
-      candidateOid: oid,
+      verifiedHeadOid: oid,
       worktreePath: freshWorktreePath(),
       // work.txt exists only in the candidate, not the base commit — a pass here
       // proves the command ran against the frozen candidate checkout.
@@ -271,7 +271,7 @@ describe('command verifier (issue #135)', () => {
     const { repo, oid } = await repoWithCandidate();
     const attempt = await runCommandVerifier({
       repoDir: repo,
-      candidateOid: oid,
+      verifiedHeadOid: oid,
       worktreePath: freshWorktreePath(),
       // Writes a file into the disposable checkout then exits 0.
       command: nodeCommand('require("node:fs").writeFileSync("artifact.txt", "built"); process.exit(0)'),
@@ -284,7 +284,7 @@ describe('command verifier (issue #135)', () => {
     const { repo, oid } = await repoWithCandidate();
     const attempt = await runCommandVerifier({
       repoDir: repo,
-      candidateOid: oid,
+      verifiedHeadOid: oid,
       worktreePath: freshWorktreePath(),
       // Write well past the cap in chunks and let the process exit naturally, so
       // stdout fully drains to the parent before close (a `process.exit` would

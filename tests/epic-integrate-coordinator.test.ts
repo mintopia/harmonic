@@ -51,7 +51,7 @@ class FakeGit implements EpicIntegrateGit {
 
 const merged = (mergeOid = 'integrated-oid'): MergePolicyOutcome => ({ kind: 'merged', mergeOid });
 
-type VerifyFn = (args: { repoDir: string; candidateOid: string }) => Promise<VerificationDecision>;
+type VerifyFn = (args: { repoDir: string; verifiedHeadOid: string }) => Promise<VerificationDecision>;
 
 const build = (opts: {
   git?: FakeGit;
@@ -116,7 +116,7 @@ describe('EpicIntegrateCoordinator', () => {
     const { coord, verify, integrate, retire, escalate } = build();
     const out = await coord.submit({ ref: 42, members: members('completed', 'completed') });
     expect(out).toEqual({ status: 'integrated', oid: 'integrated-oid' });
-    expect(verify).toHaveBeenCalledWith(expect.objectContaining({ candidateOid: 'oid-epic-42' }));
+    expect(verify).toHaveBeenCalledWith(expect.objectContaining({ verifiedHeadOid: 'oid-epic-42' }));
     expect(integrate).toHaveBeenCalledWith(expect.objectContaining({ repoDir: '/repo', epicRef: 42, defaultBranch: 'develop', integrationBranch: 'epic/42' }));
     expect(retire).toHaveBeenCalledWith(42);
     expect(escalate).not.toHaveBeenCalled();

@@ -335,8 +335,8 @@ export type ApiAttemptSummary = {
   diffBaseOid: string | null;
   diffHeadOid: string | null;
   stat: string | null;
-  candidateOid: string | null;
-  candidateRef: string | null;
+  verifiedHeadOid: string | null;
+  verifiedRef: string | null;
   usage: RunUsage | null;
   cost: Cost | null;
   startedAt: number;
@@ -372,8 +372,8 @@ export function attemptToApi(_ctx: AppContext, run: AttemptRow): ApiAttemptSumma
     diffBaseOid: run.diffBaseOid,
     diffHeadOid: run.diffHeadOid,
     stat: run.stat,
-    candidateOid: run.candidateOid,
-    candidateRef: run.candidateRef,
+    verifiedHeadOid: run.verifiedHeadOid,
+    verifiedRef: run.verifiedRef,
     usage: parseUsage(run.usage),
     cost: parseCost(run.cost),
     startedAt: run.startedAt,
@@ -437,12 +437,12 @@ export type ApiTask = Omit<TaskWithDeps, 'workspaceId' | TrackerFactColumns> & {
    * dependency, capacity, disabled Workspace, or missing integration branch;
    * null when it is not waiting (issue #238). */
   skipReason: string | null;
-  /** The latest run's frozen verification candidate ref (issue #134); null
-   * when no run has produced a candidate yet (pre-feature, escalated before
+  /** The latest attempt's verified-head ref; null
+   * when no attempt has produced one yet (pre-feature, escalated before
    * `validating`, or a dirty direct-mode context). Surfaced so an escalated
-   * Task's stranded candidate can be adopted for review, or re-reviewed with
+   * Task's stranded verified head can be adopted for review, or re-reviewed with
    * an operator note, without a fresh builder run (issue #191). */
-  candidateRef: string | null;
+  verifiedRef: string | null;
 };
 
 /** A lean list row (ADR-0045, issue #350): every {@link ApiTask} field except
@@ -527,7 +527,7 @@ function stripTrackerFactCols(task: TaskWithDeps): Omit<TaskWithDeps, TrackerFac
  * branch (ADR-0046) — so this is null for it. */
 function latestVerifiedRef(run: AttemptRow | undefined): string | null {
   if (!run) return null;
-  return run.candidateRef ?? (run.candidateOid && run.branch ? run.branch : null);
+  return run.verifiedRef ?? (run.verifiedHeadOid && run.branch ? run.branch : null);
 }
 
 function taskToApiWithRuns(ctx: AppContext, task: TaskWithDeps, runs: AttemptRow[], toolCount: number | null, currentStep: StepType | null): ApiTask {
@@ -551,7 +551,7 @@ function taskToApiWithRuns(ctx: AppContext, task: TaskWithDeps, runs: AttemptRow
     contextTokens: running ? (parseUsage(running.usage)?.contextTokens ?? null) : null,
     contextWindow: contextWindowOf(ctx, task.model),
     skipReason: ctx.autoRunner.skipReasonFor(task.id) ?? null,
-    candidateRef: latestVerifiedRef(runs.at(-1)),
+    verifiedRef: latestVerifiedRef(runs.at(-1)),
   };
 }
 

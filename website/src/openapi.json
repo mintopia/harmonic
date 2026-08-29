@@ -1942,7 +1942,7 @@
             ],
             "example": "blocked-by #12"
           },
-          "candidateRef": {
+          "verifiedRef": {
             "anyOf": [
               {
                 "type": "string"
@@ -1951,7 +1951,7 @@
                 "type": "null"
               }
             ],
-            "example": "refs/harmonic/candidate/run-9137"
+            "example": "refs/harmonic/direct/attempt-9137"
           }
         },
         "required": [
@@ -1996,7 +1996,7 @@
           "contextTokens",
           "contextWindow",
           "skipReason",
-          "candidateRef"
+          "verifiedRef"
         ]
       },
       "TaskListRowInput": {
@@ -2419,7 +2419,7 @@
             ],
             "example": "blocked-by #12"
           },
-          "candidateRef": {
+          "verifiedRef": {
             "anyOf": [
               {
                 "type": "string"
@@ -2428,7 +2428,7 @@
                 "type": "null"
               }
             ],
-            "example": "refs/harmonic/candidate/run-9137"
+            "example": "refs/harmonic/direct/attempt-9137"
           }
         },
         "required": [
@@ -2472,7 +2472,7 @@
           "contextTokens",
           "contextWindow",
           "skipReason",
-          "candidateRef"
+          "verifiedRef"
         ]
       },
       "AttemptSummaryInput": {
@@ -2577,7 +2577,7 @@
             ],
             "example": "main"
           },
-          "candidateOid": {
+          "verifiedHeadOid": {
             "anyOf": [
               {
                 "type": "string"
@@ -2588,7 +2588,7 @@
             ],
             "example": "0f758cd2200565e7605902a86c2827c65ad25ce0"
           },
-          "candidateRef": {
+          "verifiedRef": {
             "anyOf": [
               {
                 "type": "string"
@@ -2597,7 +2597,7 @@
                 "type": "null"
               }
             ],
-            "example": "refs/harmonic/candidate/run-9137"
+            "example": "refs/harmonic/direct/attempt-9137"
           },
           "usage": {
             "anyOf": [
@@ -2647,8 +2647,8 @@
           "prompt",
           "branch",
           "baseBranch",
-          "candidateOid",
-          "candidateRef",
+          "verifiedHeadOid",
+          "verifiedRef",
           "usage",
           "startedAt",
           "finishedAt",
@@ -6146,7 +6146,7 @@
             ],
             "example": "blocked-by #12"
           },
-          "candidateRef": {
+          "verifiedRef": {
             "anyOf": [
               {
                 "type": "string"
@@ -6155,7 +6155,7 @@
                 "type": "null"
               }
             ],
-            "example": "refs/harmonic/candidate/run-9137"
+            "example": "refs/harmonic/direct/attempt-9137"
           }
         },
         "required": [
@@ -6200,7 +6200,7 @@
           "contextTokens",
           "contextWindow",
           "skipReason",
-          "candidateRef"
+          "verifiedRef"
         ],
         "additionalProperties": false
       },
@@ -6625,7 +6625,7 @@
             ],
             "example": "blocked-by #12"
           },
-          "candidateRef": {
+          "verifiedRef": {
             "anyOf": [
               {
                 "type": "string"
@@ -6634,7 +6634,7 @@
                 "type": "null"
               }
             ],
-            "example": "refs/harmonic/candidate/run-9137"
+            "example": "refs/harmonic/direct/attempt-9137"
           }
         },
         "required": [
@@ -6678,7 +6678,7 @@
           "contextTokens",
           "contextWindow",
           "skipReason",
-          "candidateRef"
+          "verifiedRef"
         ],
         "additionalProperties": false
       },
@@ -6784,7 +6784,7 @@
             ],
             "example": "main"
           },
-          "candidateOid": {
+          "verifiedHeadOid": {
             "anyOf": [
               {
                 "type": "string"
@@ -6795,7 +6795,7 @@
             ],
             "example": "0f758cd2200565e7605902a86c2827c65ad25ce0"
           },
-          "candidateRef": {
+          "verifiedRef": {
             "anyOf": [
               {
                 "type": "string"
@@ -6804,7 +6804,7 @@
                 "type": "null"
               }
             ],
-            "example": "refs/harmonic/candidate/run-9137"
+            "example": "refs/harmonic/direct/attempt-9137"
           },
           "usage": {
             "anyOf": [
@@ -6854,8 +6854,8 @@
           "prompt",
           "branch",
           "baseBranch",
-          "candidateOid",
-          "candidateRef",
+          "verifiedHeadOid",
+          "verifiedRef",
           "usage",
           "startedAt",
           "finishedAt",

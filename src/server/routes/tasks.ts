@@ -176,10 +176,10 @@ const taskSchema = taskWithDepsSchema
      * capacity limit, disabled Workspace, or missing integration branch;
      * null when it is not waiting (issue #238). */
     skipReason: z.string().nullable().meta({ example: 'blocked-by #12' }),
-    /** The latest run's verified branch head ref (issue #134's Run `candidateRef`),
+    /** The latest run's verified branch head ref (issue #134's Run `verifiedRef`),
      * surfaced so an escalated Task shows whether Accept has work to merge; null
-     * when no run has produced a candidate yet. */
-    candidateRef: z.string().nullable().meta({ example: 'refs/harmonic/candidate/run-9137' }),
+     * when no attempt has produced a verified head yet. */
+    verifiedRef: z.string().nullable().meta({ example: 'refs/harmonic/direct/attempt-9137' }),
   })
   .meta({ id: 'Task' });
 
@@ -217,13 +217,13 @@ const attemptSchema = z
     /** Worktree mode: the attempt's branch and the branch it was cut from. */
     branch: z.string().nullable().meta({ example: 'agent/4821-rate-limiting' }),
     baseBranch: z.string().nullable().meta({ example: 'main' }),
-    /** The frozen verification candidate (issue #134): the `commit-tree` OID
+    /** The verified head (ADR-0001): the `commit-tree` OID
      * captured in `validating` and the private Harmonic ref it is pinned to,
-     * built without moving the target branch. Null when no candidate was
+     * built without moving the target branch. Null when no verified head was
      * produced (pre-feature, escalated before `validating`, or a dirty
      * direct-mode context). */
-    candidateOid: z.string().nullable().meta({ example: '0f758cd2200565e7605902a86c2827c65ad25ce0' }),
-    candidateRef: z.string().nullable().meta({ example: 'refs/harmonic/candidate/run-9137' }),
+    verifiedHeadOid: z.string().nullable().meta({ example: '0f758cd2200565e7605902a86c2827c65ad25ce0' }),
+    verifiedRef: z.string().nullable().meta({ example: 'refs/harmonic/direct/attempt-9137' }),
     usage: runUsageSchema.nullable(),
     startedAt: z.number().meta({ example: 1784032020000 }),
     finishedAt: z.number().nullable().meta({ example: 1784032260000 }),

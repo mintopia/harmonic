@@ -62,7 +62,7 @@ describe('EscalationService', () => {
     const created = await tasks.create({ prompt: 'p', state: 'ready' });
     await tasks.setState(created.id, 'working');
     let run = await attempts.create(created.id);
-    if (candidate) run = await attempts.update(run.id, { candidateOid: 'b'.repeat(40) });
+    if (candidate) run = await attempts.update(run.id, { verifiedHeadOid: 'b'.repeat(40) });
     await settle.settle(await tasks.get(created.id), run, 'escalate', {
       runState: 'failed',
       taskAction: 'escalate',

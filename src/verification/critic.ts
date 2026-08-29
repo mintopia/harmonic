@@ -205,12 +205,12 @@ export function createAcpCriticDrive(): CriticHarnessDrive {
 
 export interface RunCriticArgs {
   /** The directory the critic reviews in place — the Task's worktree, or the
-   * live checkout in direct mode — already checked out at {@link candidateOid}. */
+   * live checkout in direct mode — already checked out at {@link verifiedHeadOid}. */
   cwd: string;
   /** The candidate revision under review (the Task branch's current head, or the
    * direct-mode candidate). Named to the critic and recorded as the attempt's
    * `inputOid`; the critic reads it in place rather than from a checkout. */
-  candidateOid: string;
+  verifiedHeadOid: string;
   /** The base revision (fork point) the candidate diverged from — the "before"
    * of the change. Named to the critic so it derives what changed by comparing
    * the two revisions itself, never a git diff (the standing design contract).
@@ -305,7 +305,7 @@ async function runCriticUnchecked(args: RunCriticArgs): Promise<CriticAttempt> {
   const prompt = buildCriticPrompt({
     operatorPrompt: args.critic.prompt,
     fields: args.fields,
-    candidateOid: args.candidateOid,
+    verifiedHeadOid: args.verifiedHeadOid,
     ...(args.baseOid ? { baseOid: args.baseOid } : {}),
   });
   try {
@@ -352,7 +352,7 @@ async function runCriticUnchecked(args: RunCriticArgs): Promise<CriticAttempt> {
     verdict,
     summary,
     output,
-    inputOid: args.candidateOid,
+    inputOid: args.verifiedHeadOid,
     transcriptPath,
     harness: args.harnessId,
     sessionId,
