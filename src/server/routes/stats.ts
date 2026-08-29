@@ -3,7 +3,7 @@ import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { App } from '../app.js';
 import { mergeUsage, type AttemptUsage } from '../../execution/usage.js';
-import { costOfRuns } from '../serialize.js';
+import { costOfAttempts } from '../serialize.js';
 import { buildDaySeries } from '../stats-series.js';
 import { costSchema, modelUsageSchema, toolTokenUsageSchema } from '../schemas.js';
 import { yieldToEventLoop } from '../../reliability/yield.js';
@@ -204,13 +204,13 @@ export async function statsRoutes(fastify: FastifyInstance): Promise<void> {
         .filter((d): d is number => d !== null);
       const durationMs = durationPercentiles(durations);
 
-      const series = buildDaySeries(rows, costOfRuns);
+      const series = buildDaySeries(rows, costOfAttempts);
 
       // A day with runs but no priceable usage shows as unpriceable (null) in
       // the series. A range total that spans such a day is a floor, not an
       // exact figure — keep the headline Cost honest with the chart's "at
       // least" so the visible total and the accessible label agree (issue #92).
-      const cost = costOfRuns(rows);
+      const cost = costOfAttempts(rows);
       const flooredCost =
         cost && !cost.incomplete && series.some((s) => s.totalUsd === null) ? { ...cost, incomplete: true } : cost;
 

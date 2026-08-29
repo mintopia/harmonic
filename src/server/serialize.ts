@@ -567,7 +567,7 @@ async function runningToolCount(ctx: AppContext, run: AttemptRow): Promise<numbe
 }
 
 /** Cost of an arbitrary set of Runs, summed from their frozen values. */
-export function costOfRuns(runs: AttemptRow[]): Cost | null {
+export function costOfAttempts(runs: AttemptRow[]): Cost | null {
   return sumCosts(runs.map((run) => parseCost(run.cost)));
 }
 

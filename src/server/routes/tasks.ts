@@ -18,7 +18,7 @@ import { Git } from '../../execution/git.js';
 import { DomainError } from '../../domain/errors.js';
 import { mergeUsage, type AttemptUsage } from '../../execution/usage.js';
 import { readTranscriptLog, withOperatorMessages, type OperatorMessage } from '../../execution/transcript-log.js';
-import { attemptTimelineToApi, atRestWorkspaceId, costOfRuns, attemptToApi, taskToApi, tasksToApi, ticketTimelineToApi, verifierStatusesToApi } from '../serialize.js';
+import { attemptTimelineToApi, atRestWorkspaceId, costOfAttempts, attemptToApi, taskToApi, tasksToApi, ticketTimelineToApi, verifierStatusesToApi } from '../serialize.js';
 import { attemptTimelineResponseSchema, errorResponse, idParamsSchema, costSchema, attemptUsageSchema, okResponseSchema, verifierStatusSchema } from '../schemas.js';
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
 
@@ -1081,7 +1081,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
         .filter((u): u is AttemptUsage => u !== null);
       return {
         ...(mergeUsage(usages) ?? { models: {}, totals: null, toolCalls: {}, source: null }),
-        cost: costOfRuns(runs),
+        cost: costOfAttempts(runs),
         attemptCount: usages.length,
       };
     },

@@ -44,7 +44,7 @@ export const settingsRegistry = {
     control: 'select',
     tab: 'execution',
     label: 'Model',
-    help: 'Default model for Task Runs; inherits the harness default when unset.',
+    help: 'Default model for Task Attempts; inherits the harness default when unset.',
   },
   chatHarness: {
     scope: 'overridable',
@@ -78,7 +78,7 @@ export const settingsRegistry = {
     scope: 'overridable',
     control: 'number',
     tab: 'execution',
-    label: 'Max concurrent Runs',
+    label: 'Max concurrent Attempts',
     help: 'Per-Workspace concurrency cap, clamped to the Machine Ceiling.',
   },
   autoRunnerEnabled: {
@@ -156,7 +156,7 @@ export const settingsRegistry = {
     control: 'toggle',
     tab: 'execution',
     label: 'Progress guardrail',
-    help: 'Whether the progress guardrail is armed for Runs.',
+    help: 'Whether the progress guardrail is armed for Attempts.',
   },
   toolTimeoutMinutes: {
     scope: 'overridable',

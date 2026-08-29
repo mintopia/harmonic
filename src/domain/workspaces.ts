@@ -240,7 +240,7 @@ export class WorkspaceService {
    * mid-run guard #42 deferred deletion for). Deleting the last Workspace is
    * allowed (issue #61): the app merges in the empty state (#68), and the
    * default-Workspace fallback (ADR-0008) resolves the next one created.
-   * Cascades in a transaction: its Tasks (+ their Runs, Run events, Dependency
+   * Cascades in a transaction: its Tasks (+ their Attempts, Attempt events, Dependency
    * edges, Channel links) and Conversations (+ their events) go first, since no
    * FK declares ON DELETE CASCADE.
    */
