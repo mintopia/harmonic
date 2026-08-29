@@ -1,9 +1,10 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import { logger } from '../src/logger.js';
 import { resolveTracker, resolveTrackerAdapter } from '../src/tracker/adapter.js';
 import { githubAdapter, type GhRunner } from '../src/tracker/github.js';
 import { gitlabAdapter, type GlabRunner } from '../src/tracker/gitlab.js';
@@ -80,6 +81,30 @@ describe('github tracker adapter', () => {
     const { run, calls } = fakeGh();
     await githubAdapter('/repo', run).close({ number: 29 } as any, '');
     expect(calls).toContainEqual(['issue', 'close', '29']);
+  });
+
+  it('scan asks gh for well past the old 1000-issue cap', async () => {
+    const { run, calls } = fakeGh();
+    await githubAdapter('/repo', run).scan();
+    const call = calls.find((c) => c[0] === 'issue' && c[1] === 'list')!;
+    const limit = Number(call[call.indexOf('--limit') + 1]);
+    expect(limit).toBeGreaterThan(1000);
+  });
+
+  it('warns loudly (never truncates silently) when the safety valve is hit', async () => {
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    let limitUsed = 0;
+    const run: GhRunner = async (args) => {
+      if (args[0] === 'issue' && args[1] === 'list') {
+        limitUsed = Number(args[args.indexOf('--limit') + 1]);
+        return JSON.stringify(Array.from({ length: limitUsed }, (_, i) => ({ ...issue29, number: i + 1 })));
+      }
+      return '';
+    };
+    const tickets = await githubAdapter('/repo', run).scan();
+    expect(tickets).toHaveLength(limitUsed);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining(String(limitUsed)));
+    warnSpy.mockRestore();
   });
 });
 
@@ -563,5 +588,37 @@ describe('gitlab tracker adapter', () => {
     expect(put.path).toContain('7'); // our user id assigned
     expect(writes.some((w) => w.method === 'POST' && /\/issues\/36\/notes\?body=done/.test(w.path))).toBe(true);
     expect(writes.some((w) => w.method === 'PUT' && /\/issues\/36\?state_event=close/.test(w.path))).toBe(true);
+  });
+
+  it('scan follows pages past the old 1000-issue (10-page) cap', async () => {
+    const totalIssues = 1250; // 12 full pages + a partial 13th — past the old cap
+    const run: GlabRunner = async (args) => {
+      const path = args[args.length - 1]!;
+      const page = Number(new URLSearchParams(path.split('?')[1]).get('page') ?? '1');
+      const start = (page - 1) * 100;
+      const batch = Array.from({ length: Math.max(0, Math.min(100, totalIssues - start)) }, (_, i) => ({
+        ...issues[36],
+        iid: start + i + 1,
+      }));
+      return JSON.stringify(batch);
+    };
+    const tickets = await gitlabAdapter(cfg, run).scan();
+    expect(tickets).toHaveLength(totalIssues);
+  });
+
+  it('warns loudly (never truncates silently) when the page safety valve is hit', async () => {
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    // Every page comes back full (100 issues), so the loop never sees a short
+    // page to break on and runs all the way to the valve.
+    const run: GlabRunner = async (args) => {
+      const path = args[args.length - 1]!;
+      const page = Number(new URLSearchParams(path.split('?')[1]).get('page') ?? '1');
+      const start = (page - 1) * 100;
+      return JSON.stringify(Array.from({ length: 100 }, (_, i) => ({ ...issues[36], iid: start + i + 1 })));
+    };
+    const tickets = await gitlabAdapter(cfg, run).scan();
+    expect(tickets.length).toBeGreaterThan(0);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('safety valve'));
+    warnSpy.mockRestore();
   });
 });

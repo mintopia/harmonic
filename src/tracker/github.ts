@@ -1,8 +1,15 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { logger } from '../logger.js';
 import { MAP_LABEL, type Ticket, type TicketRef, type TicketState, type WritableTrackerAdapter } from './adapter.js';
 
 const execFileAsync = promisify(execFile);
+
+// `gh issue list` pages internally (GraphQL cursors) to satisfy whatever `--limit`
+// asks for, so raising this is what turns "one page" into "the whole tracker".
+// It's still a ceiling, not true unbounded pagination, so a repo that somehow
+// exceeds it gets a loud warning instead of a silent truncation.
+const SCAN_SAFETY_VALVE = 10_000;
 
 /** The `gh` fields that normalise straight onto a `Ticket` — one bulk read covers relationships. */
 const FIELDS =
@@ -125,8 +132,19 @@ export function githubAdapter(repoRoot: string, run: GhRunner = defaultGh): Writ
     name: 'github',
 
     async scan() {
-      // ponytail: 1000-issue ceiling; add gh pagination if a tracker outgrows one page.
-      const raw = await json<RawIssue[]>(['issue', 'list', '--state', 'all', '--limit', '1000', '--json', FIELDS]);
+      const raw = await json<RawIssue[]>([
+        'issue',
+        'list',
+        '--state',
+        'all',
+        '--limit',
+        String(SCAN_SAFETY_VALVE),
+        '--json',
+        FIELDS,
+      ]);
+      if (raw.length >= SCAN_SAFETY_VALVE) {
+        logger.warn(`GitHub tracker scan hit the ${SCAN_SAFETY_VALVE}-issue safety valve — results may be truncated`);
+      }
       return raw.map(normalise);
     },
 

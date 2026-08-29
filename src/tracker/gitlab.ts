@@ -1,8 +1,13 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { logger } from '../logger.js';
 import { MAP_LABEL, type Ticket, type TicketRef, type TicketState, type WritableTrackerAdapter } from './adapter.js';
 
 const execFileAsync = promisify(execFile);
+
+// Bounds the page loop against a runaway tracker; hitting it warns loudly rather
+// than truncating silently, matching the GitHub adapter's safety valve.
+const SCAN_SAFETY_VALVE_PAGES = 100; // 100 * per_page(100) = 10,000 issues
 
 /** GitLab connection: the project (`group/repo` or numeric id) and the repo whose `glab` auth/host to use. */
 export interface GitlabConfig {
@@ -154,13 +159,16 @@ export function gitlabAdapter(config: GitlabConfig, run: GlabRunner = defaultGla
     await api(`${proj}/issues/${iid}${assigneeQuery(ids)}`, 'PUT');
   };
 
-  // ponytail: 1000-issue ceiling (10 pages), matching the GitHub adapter.
   const scanAll = async (): Promise<Ticket[]> => {
     const raws: RawIssue[] = [];
-    for (let page = 1; page <= 10; page++) {
+    let page = 1;
+    for (; page <= SCAN_SAFETY_VALVE_PAGES; page++) {
       const batch = await api<RawIssue[]>(`${proj}/issues?per_page=100&page=${page}`);
       raws.push(...batch);
       if (batch.length < 100) break;
+    }
+    if (page > SCAN_SAFETY_VALVE_PAGES) {
+      logger.warn(`GitLab tracker scan hit the ${SCAN_SAFETY_VALVE_PAGES}-page safety valve — results may be truncated`);
     }
     return synthesise(raws);
   };
