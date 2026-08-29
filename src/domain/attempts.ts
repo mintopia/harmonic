@@ -20,8 +20,7 @@ import type { AttemptUsage } from '../execution/usage.js';
 import { forEachYielding } from '../reliability/yield.js';
 
 /** The Guardrail state an Attempt captures at start (issue #126): the effective
- * config and price table, frozen so a later change can't retroactively trip it.
- * Folded from `domain/runs.ts`'s `RunGuardrailSnapshot` (ADR-0001 #388 S-G). */
+ * config and price table, frozen so a later change can't retroactively trip it. */
 export interface AttemptGuardrailSnapshot {
   guardrailConfig: ResolvedGuardrails;
   priceTable: PriceTable;
@@ -61,29 +60,24 @@ function deserializeAttemptEvent(row: AttemptEventRow): PersistedAttemptEvent {
 
 /** Durable ticket timeline.
  *
- * The single execution ledger (ADR-0001 #388 S-G, ADR-0007): one row per pass
+ * The single execution ledger (ADR-0001, ADR-0007): one row per pass
  * through a Ticket's implement -> verify loop, carrying both its timeline
  * identity (number/state/Steps) and the live execution facts (branch, usage,
- * cost, diff OIDs, …) formerly split across a parallel `runs` row. Subsumes
- * every still-used responsibility of the deleted `RunStore`.
+ * cost, diff OIDs, …).
  */
 export class AttemptStore {
   constructor(private readonly db: AsyncDbHandle) {}
 
   /**
    * Allocate a fresh Attempt for `taskId`: its own next `number` and
-   * `startedAt`, never derived from a separate Run row (ADR-0001 #388 S-G —
-   * the Runner's drive loop threads this ONE object from here on). Read-then-
-   * write as one write-queue unit so the number CAS can't race a concurrent
-   * create for the same Task (ADR-0029 §3). Moved from `RunStore.create`.
+   * `startedAt` (ADR-0001 — the Runner's drive loop threads this ONE object
+   * from here on). Read-then-write as one write-queue unit so the number CAS
+   * can't race a concurrent create for the same Task (ADR-0029 §3).
    *
    * Upserts onto an existing `running` row rather than blindly inserting:
    * `resumeWithGuidance` pre-creates the next Attempt's row (via
    * {@link ensureForRun}, defaulting `running`) to hang feedback/continuation
-   * off it before a requeued Task is actually picked back up. There is no
-   * longer a separate Run-creation step with its own independent numbering
-   * that happens to land on the same number by coincidence (the old
-   * `RunStore.create` + `AttemptStore.ensureForRun` pair) — a number-based
+   * off it before a requeued Task is actually picked back up. A number-based
    * lookup here would always miss (the placeholder's own number already
    * counts toward "next"), so this looks for the Task's live placeholder
    * directly and fills it in, only allocating a fresh number when none exists.
@@ -119,8 +113,8 @@ export class AttemptStore {
   /**
    * The single `running` Attempt for a Task, or `undefined` when none is
    * (the Task never started, or its last Attempt already settled). The Runner's
-   * self-heal loop finishes one Attempt before creating the next (ADR-0001 #388
-   * S-G), so at most one row is ever `running` per Task — this is the DB-truth
+   * self-heal loop finishes one Attempt before creating the next (ADR-0001),
+   * so at most one row is ever `running` per Task — this is the DB-truth
    * replacement for threading a mutable "current attempt number" cursor through
    * every guardrail/verification closure: querying live state is crash-safe by
    * construction, where a threaded cursor would need its own persistence.
@@ -149,7 +143,7 @@ export class AttemptStore {
     return this.db.read((db) => db.select().from(attempts).where(eq(attempts.taskId, taskId)).orderBy(asc(attempts.number)).all());
   }
 
-  /** Attempts for a task list, ordered as {@link listForTask} orders each task's Attempts. Moved from `RunStore.listForTasks`. */
+  /** Attempts for a task list, ordered as {@link listForTask} orders each task's Attempts. */
   async listForTasks(taskIds: number[]): Promise<AttemptRow[]> {
     if (taskIds.length === 0) return [];
     return this.db.read((db) =>
@@ -158,14 +152,14 @@ export class AttemptStore {
   }
 
   /** Every Attempt row, unfiltered. Branch retirement scans it to find
-   * Attempts to retire. Moved from `RunStore.listAll`. */
+   * Attempts to retire. */
   listAll(): Promise<AttemptRow[]> {
     return this.db.read((db) => db.select().from(attempts).all());
   }
 
   /** Every running Attempt. Its builder and disposable verification worktrees
    * are live until the Attempt settles, even when no durable Session owns
-   * them. Moved from `RunStore.listAllRunning`. */
+   * them. */
   listAllRunning(): Promise<AttemptRow[]> {
     return this.db.read((db) => db.select().from(attempts).where(eq(attempts.state, 'running')).all());
   }
@@ -173,8 +167,7 @@ export class AttemptStore {
   /** Every Attempt bound to one durable Session (issue #148), oldest first —
    * the Attempts that share the Session's builder worktree across a retry /
    * reject continuation. Session retirement uses this to check no live
-   * Attempt of the Session is still active (`running`). Moved from
-   * `RunStore.listForSession`. */
+   * Attempt of the Session is still active (`running`). */
   listForSession(sessionRowId: number): Promise<AttemptRow[]> {
     return this.db.read((db) =>
       db.select().from(attempts).where(eq(attempts.sessionRowId, sessionRowId)).orderBy(asc(attempts.number)).all(),
@@ -182,7 +175,7 @@ export class AttemptStore {
   }
 
   /** General patch write (branch/session/diff/usage bookkeeping that isn't a
-   * terminal transition). Moved from `RunStore.update`. */
+   * terminal transition). */
   update(id: number, patch: Partial<AttemptRow>): Promise<AttemptRow> {
     return this.db.write((db) =>
       db.update(attempts).set(patch).where(eq(attempts.id, id)).returning().get(),
@@ -190,7 +183,7 @@ export class AttemptStore {
   }
 
   /** Write a final Usage and its Cost atomically. Once present, Cost never
-   * changes. Moved from `RunStore.updateWithFrozenCost`. */
+   * changes. */
   async updateWithFrozenCost(id: number, patch: Partial<AttemptRow>): Promise<AttemptRow> {
     return this.db.write(async (db) => {
       const current = await db.select().from(attempts).where(eq(attempts.id, id)).get();
@@ -201,8 +194,7 @@ export class AttemptStore {
     });
   }
 
-  /** One deliberate migration backfill for Attempts that predate stored Cost.
-   * Moved from `RunStore.backfillCosts`. */
+  /** One deliberate migration backfill for Attempts that predate stored Cost. */
   async backfillCosts(fallbackPrices: PriceTable): Promise<void> {
     const candidates = await this.db.read((db) =>
       db
@@ -222,7 +214,7 @@ export class AttemptStore {
   }
 
   /** Remove an Attempt row (used to simulate/handle a row removed out from
-   * under the Runner mid-flight). Moved from `RunStore.delete`. */
+   * under the Runner mid-flight). */
   async delete(id: number): Promise<void> {
     await this.db.write((db) => db.delete(attempts).where(eq(attempts.id, id)).run());
   }
@@ -230,10 +222,9 @@ export class AttemptStore {
   /**
    * Crash recovery, run at boot: any Attempt still marked `running` was
    * orphaned by a restart. Fail it (`reason: 'process-death'`, the same
-   * disposition vocabulary `attempts.reason` already carries — ADR-0001 #388
-   * S-E/S-G) and return it so the caller can fail its task (and notify) —
-   * never silently re-run on a possibly dirty working directory. Moved from
-   * `RunStore.markInterrupted`.
+   * disposition vocabulary `attempts.reason` already carries — ADR-0001) and
+   * return it so the caller can fail its task (and notify) — never silently
+   * re-run on a possibly dirty working directory.
    *
    * Sole caller: `CrashRecoveryCoordinator.reconcile` (domain/crash-recovery.ts),
    * always as its second pass — a worktree-mode Attempt whose merge already
@@ -256,7 +247,7 @@ export class AttemptStore {
   }
 
   /** Actively-executing Attempt count, for the Auto-Runner's Machine-Ceiling
-   * concurrency cap (ADR-0012). Moved from `RunStore.countRunning`. */
+   * concurrency cap (ADR-0012). */
   async countRunning(): Promise<number> {
     const row = await this.db.read((db) =>
       db
@@ -270,7 +261,7 @@ export class AttemptStore {
 
   /** The Attempts that consume Machine-Ceiling capacity — the same predicate
    * as {@link countRunning}, so Activity cannot silently diverge from
-   * scheduling. Moved from `RunStore.listRunning`. */
+   * scheduling. */
   async listRunning(): Promise<AttemptRow[]> {
     return this.db.read((db) => db.select().from(attempts).where(eq(attempts.state, 'running')).all());
   }
@@ -281,7 +272,7 @@ export class AttemptStore {
    * Workspace column, so the count joins through the Task; the same source as
    * {@link countRunning}, so the per-Workspace tallies and the Machine-Ceiling
    * total can never disagree. Workspaces with no running Attempt are absent
-   * (read as 0). Moved from `RunStore.countRunningByWorkspace`.
+   * (read as 0).
    */
   async countRunningByWorkspace(): Promise<Map<number, number>> {
     const rows = await this.db.read((db) =>
@@ -301,7 +292,7 @@ export class AttemptStore {
   /**
    * Finished Attempts that never got a per-model usage split — their end
    * collection raced the harness's session-log flush. Candidates for the
-   * boot-time backfill. Moved from `RunStore.listUsageBackfillCandidates`.
+   * boot-time backfill.
    */
   listUsageBackfillCandidates(): Promise<AttemptRow[]> {
     return this.db.read(async (db) => {
@@ -331,7 +322,7 @@ export class AttemptStore {
   /**
    * The Task's CURRENT (latest) Attempt — the follow-forward read a poller
    * needs now that self-heal advances to a NEW Attempt row each turn
-   * (ADR-0001 #388 S-G: one row per turn, not a stable row live-updated in
+   * (ADR-0001: one row per turn, not a stable row live-updated in
    * place). Backs `GET /tasks/:id/attempts/current`, so a client that
    * dispatched a Task keeps reflecting that execution's current state
    * without tracking which Attempt is live.
@@ -348,9 +339,8 @@ export class AttemptStore {
   /**
    * The batched form of {@link getForTaskNumber}'s `.id` projection, keyed by
    * `taskId` — the bridge every attempt-keyed satellite table's batched
-   * reader uses to resolve a Run's CURRENT attempt id (`runs.attempt`)
-   * without one query per Run (ADR-0001 #388 S-F). Mirrors
-   * {@link currentStepTypes}'s query shape.
+   * reader uses to resolve a Task's CURRENT attempt id without one query per
+   * Task. Mirrors {@link currentStepTypes}'s query shape.
    */
   async idsFor(taskAttempts: readonly { taskId: number; number: number }[]): Promise<Map<number, number>> {
     const result = new Map<number, number>();
@@ -372,8 +362,8 @@ export class AttemptStore {
    * none is (the gap between Steps, most notably the mechanical merge after
    * the last Step passes, or before the Attempt's first Step starts). This is
    * the single derivation every wall-clock/spend/tool-timeout Guardrail check
-   * shares (`guardrail-budget.ts`'s `countsTowardExecutionBudget`), so a Run's
-   * "what is it doing right now" reads the same way everywhere.
+   * shares (`guardrail-budget.ts`'s `countsTowardExecutionBudget`), so an
+   * Attempt's "what is it doing right now" reads the same way everywhere.
    */
   async currentStepType(taskId: number, number: number): Promise<StepType | null> {
     const attempt = await this.getForTaskNumber(taskId, number);
@@ -385,7 +375,7 @@ export class AttemptStore {
   /**
    * The batched form of {@link currentStepType}, keyed by `taskId` — one
    * query for the Attempts, one for their Steps, regardless of how many Tasks
-   * are asked about (the Board's active-card badge, issue #100/#388).
+   * are asked about (the Board's active-card badge, issue #100).
    */
   async currentStepTypes(taskAttempts: readonly { taskId: number; number: number }[]): Promise<Map<number, StepType | null>> {
     const result = new Map<number, StepType | null>();
@@ -448,7 +438,7 @@ export class AttemptStore {
 
   /**
    * Close an Attempt out: terminal `state` + `endedAt`, plus the disposition-
-   * kind audit hedge on `reason` (ADR-0001 #388 S-E — the whole coordination
+   * kind audit hedge on `reason` (ADR-0001 — the whole coordination
    * spine collapsed onto this column; see `AttemptSettleCoordinator.settle`).
    * `feedback`/`reason` are omitted (not merely undefined) when the caller
    * doesn't pass them, so a caller that already set one earlier (e.g. a failed
@@ -470,10 +460,8 @@ export class AttemptStore {
 
   /**
    * Append an Attempt event (lifecycle / permission_request — ADR-0007's "small
-   * structured facts"; the `session_update` firehose was pruned outright at
-   * migration 0042 and is never persisted), assigning the next monotonic `seq`
-   * as `max(seq)+1` (1-based). Moved here from `RunStore.appendEvent` at
-   * ADR-0001 #388 S-F (`attempt_events`, re-keyed off `attempt_id`).
+   * structured facts"; the `session_update` firehose is never persisted),
+   * assigning the next monotonic `seq` as `max(seq)+1` (1-based).
    */
   async appendEvent(attemptId: number, event: AttemptEventInput): Promise<PersistedAttemptEvent> {
     const row = await this.db.write(async (db) => {
@@ -494,8 +482,7 @@ export class AttemptStore {
     return deserializeAttemptEvent(row);
   }
 
-  /** An Attempt's persisted event log, in `seq` order. Moved here from
-   * `RunStore.listEvents` at ADR-0001 #388 S-F. */
+  /** An Attempt's persisted event log, in `seq` order. */
   async listEvents(attemptId: number): Promise<PersistedAttemptEvent[]> {
     await this.get(attemptId); // 404 on unknown attempt
     const rows = await this.db.read((db) =>
@@ -505,9 +492,7 @@ export class AttemptStore {
   }
 
   /** Per-Attempt tool-call snapshot, overwritten by the Runner's in-memory
-   * rollup on the ADR-0010 coarse cadence and when a turn finishes (ADR-0031).
-   * Moved here from `RunStore.replaceToolCalls` at ADR-0001 #388 S-F
-   * (`attempt_tool_calls`, re-keyed off `attempt_id`). */
+   * rollup on the ADR-0010 coarse cadence and when a turn finishes (ADR-0031). */
   async replaceToolCalls(attemptId: number, totals: ReadonlyMap<string, number>): Promise<void> {
     await this.db.write(async (db) => {
       await db.delete(attemptToolCalls).where(eq(attemptToolCalls.attemptId, attemptId)).run();
@@ -516,7 +501,6 @@ export class AttemptStore {
     });
   }
 
-  /** Moved here from `RunStore.listToolCalls` at ADR-0001 #388 S-F. */
   async listToolCalls(attemptId: number): Promise<Map<string, number>> {
     const rows = await this.db.read((db) =>
       db.select({ toolName: attemptToolCalls.toolName, count: attemptToolCalls.count }).from(attemptToolCalls).where(eq(attemptToolCalls.attemptId, attemptId)).all(),
@@ -525,8 +509,7 @@ export class AttemptStore {
   }
 
   /** Total persisted tool calls for each supplied Attempt, for board list
-   * serialization. Moved here from `RunStore.toolCallCounts` at ADR-0001
-   * #388 S-F. */
+   * serialization. */
   async toolCallCounts(attemptIds: number[]): Promise<Map<number, number>> {
     if (attemptIds.length === 0) return new Map();
     const rows = await this.db.read((db) =>
@@ -546,7 +529,7 @@ function frozenCost(usage: string | null, rawPrices: string | null): string | nu
   return JSON.stringify(costOfUsages([JSON.parse(usage) as AttemptUsage], JSON.parse(rawPrices) as PriceTable));
 }
 
-/** The attempt/card API projection of one Attempt row. Moved from `domain/runs.ts`'s `serializeRun`. */
+/** The attempt/card API projection of one Attempt row. */
 export function serializeAttempt(attempt: AttemptRow): Record<string, unknown> {
   // liveUsage is the Activity view's snapshot (streamed as `attempt_usage`), not
   // part of the agent-facing attempt shape.

@@ -103,9 +103,8 @@ const stepToApi = (step: StepRow): ApiStep => ({
 });
 
 /** The immutable branch tip an Attempt's verification proved: the latest
- * passing verification attempt's `inputOid` (ADR-0001 #388 S-E — verification
- * already has a durable home in `verification_attempts`; the `verified-head`
- * fact was a redundant second copy). Null when nothing passed. */
+ * passing verification attempt's `inputOid` — verification's durable home is
+ * `verification_attempts` (ADR-0001). Null when nothing passed. */
 function verifiedShaOf(verificationAttempts: readonly VerificationAttemptRow[]): string | null {
   const passing = verificationAttempts.filter((v) => v.verdict === 'pass');
   return passing.length ? passing[passing.length - 1]!.inputOid : null;
@@ -123,16 +122,15 @@ export async function attemptTimelineToApi(ctx: AppContext, taskId: number): Pro
   return {
     budgetBase,
     attempts: await Promise.all(rows.map(async (attempt) => {
-      // `verification_attempts` is keyed by `attempt_id` (ADR-0001 #388 S-F),
-      // so this Attempt's own id is the read key directly — no more bridging
-      // through a matching Run row.
+      // `verification_attempts` is keyed by `attempt_id`, so this Attempt's
+      // own id is the read key directly.
       const [stepRows, verificationAttempts] = await Promise.all([
         ctx.attempts.listSteps(attempt.id),
         ctx.verificationAttempts.list(attempt.id),
       ]);
       const stepType = [...stepRows].reverse().find((row) => row.state === 'running')?.type ?? null;
       // The Attempt's disposition-kind `reason` is the cheap audit hedge
-      // (ADR-0001 #388 S-E), not the free-text detail — that only survives
+      // (ADR-0001), not the free-text detail — that only survives
       // while the ticket is actually escalated, on `tasks.escalationReason`.
       const escalationReason = attempt.state === 'escalated' ? attempt.reason : null;
       return {
@@ -182,10 +180,8 @@ type TicketTimelineKind =
   | 'operator-reject';
 
 export interface ApiTicketTimelineEvent {
-  /** The Attempt this event pertains to, when there is one (ADR-0001 #388
-   * S-F: `attempt_events`/`verification_attempts`/`guardrail_events` are now
-   * keyed off `attempt_id`, not `run_id`); null for a source with no single
-   * owning Attempt. */
+  /** The Attempt this event pertains to, when there is one; null for a
+   * source with no single owning Attempt. */
   attemptId: number | null;
   ts: number;
   kind: TicketTimelineKind;
@@ -196,8 +192,8 @@ type PendingTicketTimelineEvent = ApiTicketTimelineEvent & { order: number };
 
 /**
  * Ticket-wide event projection for issue #328. Each persisted source is read
- * once for the ticket, then folded in memory. The fixed query count avoids the
- * per-Run and per-event read pattern that would starve the shared event loop.
+ * once for the ticket, then folded in memory. The fixed query count avoids a
+ * per-Attempt and per-event read pattern that would starve the shared event loop.
  */
 const TICKET_TIMELINE_SOURCE_LIMIT = 1_000;
 
@@ -213,7 +209,7 @@ export async function ticketTimelineToApi(ctx: AppContext, taskId: number): Prom
   const workspace = await ctx.workspaces.get(atRestWorkspaceId(task.workspaceId));
   const configuredVerifiers = resolveVerifiers(workspace, ctx.configStore.get());
   const attemptsByNumber = new Map<number, AttemptRow>(taskAttempts.map((a) => [a.number, a]));
-  // Grouped by Attempt id (ADR-0001 #388 S-G: Attempt is the single execution
+  // Grouped by Attempt id (ADR-0001: Attempt is the single execution
   // ledger, so the "configured verifier never ran" derived note below asks
   // "did THIS Attempt see this mechanism at all" directly — no Run bridge).
   const verificationByAttempt = new Map<number, VerificationAttemptRow[]>();
@@ -480,9 +476,9 @@ export async function tasksToApi(ctx: AppContext, tasks: TaskWithDeps[]): Promis
     const run = task.state === 'working' ? runsByTask.get(task.id)?.find((candidate) => candidate.state === 'running') : undefined;
     return run ? [run] : [];
   });
-  // `attempt_tool_calls` is keyed off `attempt_id` (ADR-0001 #388 S-F): resolve
-  // each running Run's current Attempt id first, then batch the tool-call totals
-  // by Attempt — `toolCountByTask` re-keys the result back onto the Task id every
+  // `attempt_tool_calls` is keyed off `attempt_id`: resolve each running
+  // Task's current Attempt id first, then batch the tool-call totals by
+  // Attempt — `toolCountByTask` re-keys the result back onto the Task id every
   // list-row render already has to hand.
   const attemptIdByTask = await ctx.attempts.idsFor(running.map((run) => ({ taskId: run.taskId, number: run.number })));
   const [toolCountsByAttempt, currentSteps] = await Promise.all([
@@ -555,8 +551,7 @@ function taskToApiWithRuns(ctx: AppContext, task: TaskWithDeps, runs: AttemptRow
   };
 }
 
-/** Total tool calls of a running run from its native aggregate (ADR-0031;
- * `attempt_tool_calls` is keyed off `attempt_id`, ADR-0001 #388 S-F). */
+/** Total tool calls of a running Attempt from its native aggregate (ADR-0031). */
 async function runningToolCount(ctx: AppContext, run: AttemptRow): Promise<number> {
   const attempt = await ctx.attempts.getForTaskNumber(run.taskId, run.number);
   if (!attempt) return 0;

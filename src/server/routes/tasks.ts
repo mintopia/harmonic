@@ -235,8 +235,7 @@ const attemptsListResponseSchema = listResponse('attempts', attemptSchema);
 
 const attemptEventSchema = z.object({
   id: z.number().meta({ example: 55210 }),
-  /** The Attempt this event is keyed to (`attempt_events.attempt_id`,
-   * ADR-0001 #388 S-F — was `attemptId` before). */
+  /** The Attempt this event is keyed to (`attempt_events.attempt_id`). */
   attemptId: z.number().meta({ example: 61 }),
   seq: z.number().meta({ example: 42 }),
   ts: z.number().meta({ example: 1784032140000 }),
@@ -264,8 +263,7 @@ const attemptLogResponseSchema = z.discriminatedUnion('status', [
 /** A Guardrail-trip event as the REST API serves it (`domain/guardrail-events.ts` `GuardrailEventRow`, issue #171). */
 const guardrailEventSchema = z.object({
   id: z.number().meta({ example: 812 }),
-  /** The Attempt this event is keyed to (`guardrail_events.attempt_id`,
-   * ADR-0001 #388 S-F — was `attemptId` before). */
+  /** The Attempt this event is keyed to (`guardrail_events.attempt_id`). */
   attemptId: z.number().meta({ example: 61 }),
   seq: z.number().meta({ example: 1 }),
   ts: z.number().meta({ example: 1784032140000 }),
@@ -286,8 +284,7 @@ const guardrailEventsListResponseSchema = listResponse('guardrailEvents', guardr
 /** One persisted verification attempt as the REST API serves it (`domain/verification-attempts.ts` `VerificationAttemptRow`, issue #169, part of #109). */
 const verificationAttemptSchema = z.object({
   id: z.number().meta({ example: 4210 }),
-  /** The Attempt this row is keyed to (`verification_attempts.attempt_id`,
-   * ADR-0001 #388 S-F — was `attemptId` before). */
+  /** The Attempt this row is keyed to (`verification_attempts.attempt_id`). */
   attemptId: z.number().meta({ example: 61 }),
   seq: z.number().meta({ example: 1 }),
   ts: z.number().meta({ example: 1784032140000 }),

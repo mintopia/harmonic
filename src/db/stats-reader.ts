@@ -13,7 +13,7 @@ export interface StatsRange {
 
 export interface StatsReadResult {
   rows: AttemptRow[];
-  /** Failed-only Attempts' disposition (ADR-0001 #388 S-E/S-G): `attempts.reason`
+  /** Failed-only Attempts' disposition (ADR-0001): `attempts.reason`
    * keyed by `runId` (the Attempt's own id — one execution ledger). */
   attemptReasons: Array<{ runId: number; reason: string | null }>;
   toolTotals: ToolCallTotals;

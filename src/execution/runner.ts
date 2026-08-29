@@ -189,7 +189,7 @@ interface Workspace {
 
 interface ActiveRun {
   /** The Attempt this driveOnce call is driving — `attempts.id`, the single
-   * execution ledger identity (ADR-0001 #388 S-G: `attemptId` IS the Attempt id,
+   * execution ledger identity (ADR-0001: `attemptId` IS the Attempt id,
    * so there is no separate `attemptId` to track alongside it). */
   attemptId: number;
   taskId: number;
@@ -382,7 +382,7 @@ export class Runner {
   private readonly pendingOperatorSeed = new Map<number, string>();
   /** Keyed by taskId: a Reject-with-guidance's pre-computed DeterministicContinuation
    * for the "start now" override, whose next Attempt row `beginRun` creates
-   * fresh (ADR-0001 #388 S-G — no pre-created placeholder to hang it off).
+   * fresh (ADR-0001 — no pre-created placeholder to hang it off).
    * Set by {@link resumeWithGuidance}, consumed once by `beginRun`. */
   private readonly pendingContinuation = new Map<number, DeterministicContinuation>();
   /** Reduced, bounded progress traces. Raw ACP payloads are discarded at
@@ -453,7 +453,7 @@ export class Runner {
   /**
    * The single `running` Attempt for `task` — the bridge every
    * attempt_events/attempt_tool_calls/verification_attempts/guardrail_events
-   * writer/reader uses (ADR-0001 #388 S-F/S-G, ADR-0007 "Attempt is the single
+   * writer/reader uses (ADR-0001, ADR-0007 "Attempt is the single
    * execution ledger"). Reads DB truth (`AttemptStore.getRunningForTask`)
    * rather than a threaded "current attempt number" cursor, so it stays
    * correct across self-heal turns without any Runner-side bookkeeping.
@@ -533,7 +533,7 @@ export class Runner {
     // which deliberately bypasses the ceiling the way a manual Run does.
     //
     // The next Attempt's row is NOT pre-created here: Attempt is the single
-    // execution ledger now (ADR-0001 #388 S-G), so any row in `attempts` is a
+    // execution ledger now (ADR-0001), so any row in `attempts` is a
     // real, API-visible Run — creating one before the Task is actually picked
     // back up would show a phantom Run that never started. `beginRun` creates
     // it at real dispatch time; if that happens right now (`startNow`), stash
@@ -1504,7 +1504,7 @@ export class Runner {
       for (;;) {
       const outcome = await this.driveOnce(task, run, harness, parent, healCtx, attemptNumber);
       if (outcome.kind === 'terminal') return;
-      // `run` already IS the just-driven Attempt (ADR-0001 #388 S-G — one
+      // `run` already IS the just-driven Attempt (ADR-0001 — one
       // object, not a run+attempt pair): `driveOnce` was called with it for
       // exactly this `attemptNumber`, so no separate lookup is needed to close
       // it out. Refresh it first: `driveOnce` wrote branch/session/usage/
@@ -1522,7 +1522,7 @@ export class Runner {
         // here — `settleEscalated` (via `AttemptSettleCoordinator.settle`) owns
         // the terminal write; pre-finishing it here would trip its own guard
         // (`before.state === 'running'`) into a silent no-op, since Attempt
-        // is now the single execution ledger being guarded (ADR-0001 #388 S-G).
+        // is now the single execution ledger being guarded (ADR-0001).
         await this.settleEscalated(task, run, `attempt ${attemptNumber - budgetBase} of ${maxAttempts} failed: ${outcome.reason}`, { feedback });
         return;
       }
@@ -1976,7 +1976,7 @@ export class Runner {
 
   /**
    * Persist a turn's Attempt event, fire-and-forget, on the hottest drive path
-   * (ADR-0001 #388 S-F: `attempt_events`, re-keyed off `attempt_id`). A racing
+   * (ADR-0001: `attempt_events`, re-keyed off `attempt_id`). A racing
    * task-delete cascade can remove the Attempt row mid-turn — the same race the
    * old `attemptId`-keyed append tolerated against the Run row — so a resolution
    * miss or an append FK-violation is dropped as "attempt row gone", not a
@@ -2028,7 +2028,7 @@ export class Runner {
     // Resolved once up front (idempotent — `beginRun`/the self-heal loop
     // already ensured this attempt-number's row exists): the bridge every
     // attempt_tool_calls/attempt_events write below uses now that those
-    // tables are keyed by `attempt_id`, not `run_id` (ADR-0001 #388 S-F). The
+    // tables are keyed by `attempt_id`, not `run_id` (ADR-0001). The
     // in-memory `toolCallTotals` rollup stays keyed by `run.id` — it is
     // Run-scoped bookkeeping the tailer/live-usage machinery already shares —
     // only the DB persistence calls move to the Attempt id.
@@ -2050,7 +2050,7 @@ export class Runner {
     // ADR-0001 Vocabulary) — a transition here only ever touches the `steps`
     // table. The Attempt itself stays `running` through merging: its terminal
     // state/reason is the settling disposition (`AttemptSettleCoordinator.settle`,
-    // ADR-0001 #388 S-E) — closing it `passed` here, before the merge outcome
+    // ADR-0001) — closing it `passed` here, before the merge outcome
     // is known, would leave a post-merge-check revert unable to correct it.
     const advanceTask = async (to: 'verifying' | 'merging') => {
       const attempt = await this.attempts.ensureForRun(task.id, attemptNumber, run.startedAt);
@@ -2511,7 +2511,7 @@ export class Runner {
     //     watchdog backstops that rule: a tool call outstanding past the
     //     generous configured bound emits a `tool-timeout` `guardrail_events`
     //     row and Escalates under `guardrail-trip`. When it and the wall-clock
-    //     both fire, the coordinator's guarded transition (ADR-0001 #388 S-E)
+    //     both fire, the coordinator's guarded transition (ADR-0001)
     //     is first-writer-wins: whichever settles first decides the primary
     //     reason, and the second's settle no-ops — no dimension-priority table
     //     needed.
@@ -3379,14 +3379,10 @@ export class Runner {
   }
 
   /** The live tool-call rollup for `attemptId`: the in-memory cache while a
-   * `driveOnce` owns it, else the persisted Attempt-keyed snapshot (ADR-0001
-   * #388 S-F: `attempt_tool_calls` is keyed by `attempt_id`, not `run_id`, so
-   * a cache-miss caller must resolve the Run's current Attempt first). */
+   * `driveOnce` owns it, else the persisted Attempt-keyed snapshot. */
   private async toolCallsFor(attemptId: number): Promise<Map<string, number>> {
     const cached = this.toolCallTotals.get(attemptId);
     if (cached) return cached;
-    // `attemptId` already IS the Attempt id (ADR-0001 #388 S-G: one execution
-    // ledger, no separate Run identity to resolve through).
     return this.attempts.listToolCalls(attemptId);
   }
 
@@ -3472,9 +3468,9 @@ export class Runner {
   /**
    * The Runner's settle entry point (issue #113/#114): delegate to the shared
    * {@link AttemptSettleCoordinator}, which applies the guarded state transition
-   * (ADR-0001 #388 S-E) to the Run row and its Attempt. Extracted so the
-   * operator Accept merges through the *same* coordinator, with identical
-   * race-safety, rather than racing the Runner around the Run row.
+   * (ADR-0001) to the Attempt. Extracted so the operator Accept merges through
+   * the *same* coordinator, with identical race-safety, rather than racing the
+   * Runner around the Attempt row.
    */
   private async coordinateSettle(
     task: TaskRow,

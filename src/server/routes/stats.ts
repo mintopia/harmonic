@@ -195,9 +195,9 @@ export async function statsRoutes(fastify: FastifyInstance): Promise<void> {
           activeExecutionDurationMs({
             startedAt: r.startedAt,
             finishedAt: r.endedAt,
-            // No dedicated agent-finish signal since the disposition-fact log
-            // collapsed onto `attempts.reason` (ADR-0001 #388 S-E): wall-clock
-            // `finished − started` for every Run now.
+            // No dedicated agent-finish signal — the disposition lives on
+            // `attempts.reason` (ADR-0001): wall-clock `finished − started`
+            // for every Attempt.
             agentFinishTs: null,
           }),
         )

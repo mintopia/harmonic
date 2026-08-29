@@ -60,7 +60,7 @@ export type GuardrailDimension = 'wall-clock' | 'tokens' | 'cost' | 'progress' |
  * progress); `payload` carries dimension-specific evidence. */
 export interface GuardrailEvent {
   id: number;
-  /** The Attempt this event is keyed to (ADR-0001 #388 S-F — was `attemptId` before). */
+  /** The Attempt this event is keyed to. */
   attemptId: number;
   seq: number;
   ts: number;
@@ -87,14 +87,14 @@ export interface VerifierStatus {
 
 /** One persisted Verification-attempt event (issue #169, part of #109), as
  * `GET /api/attempts/:id/verification-attempts` serves it — mirrors the server's
- * `VerificationAttemptRow` (`domain/verification-attempts.ts`). A Run's
+ * `VerificationAttemptRow` (`domain/verification-attempts.ts`). A Task's
  * self-heal retries append further attempts for the same `mechanism`, so the
  * log is append-only and `seq`-ordered; the latest attempt per mechanism is
  * the one that currently governs the Verification outcome (see
  * `verification-attempts-model.ts`). */
 export interface VerificationAttempt {
   id: number;
-  /** The Attempt this row is keyed to (ADR-0001 #388 S-F — was `attemptId` before). */
+  /** The Attempt this row is keyed to. */
   attemptId: number;
   seq: number;
   ts: number;
@@ -473,8 +473,7 @@ export interface DiffFile {
 
 export interface AttemptEvent {
   id: number;
-  /** The Attempt this event is keyed to (`attempt_events.attempt_id`,
-   * ADR-0001 #388 S-F — was `attemptId` before). */
+  /** The Attempt this event is keyed to (`attempt_events.attempt_id`). */
   attemptId: number;
   seq: number;
   ts: number;

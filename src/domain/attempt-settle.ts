@@ -10,13 +10,12 @@ export interface AttemptBranchRetirementHook {
 
 /** The Attempt's terminal surface disposition (never `running`), before the
  * one operator-escalate exception can still promote it to `escalated`
- * (see {@link attemptTerminalState}). Folded from `runs.state` (ADR-0001
- * #388 S-G): 'completed'/'failed'/'cancelled' map onto AttemptState's
- * 'passed'/'failed'/'cancelled'. */
+ * (see {@link attemptTerminalState}): 'completed'/'failed'/'cancelled' map
+ * onto AttemptState's 'passed'/'failed'/'cancelled'. */
 export type AttemptTerminalState = 'completed' | 'failed' | 'cancelled';
 
 /**
- * What the coordinator does to the owning Task when the Run settles. `none`
+ * What the coordinator does to the owning Task when the Attempt settles. `none`
  * leaves the Task untouched — the operator cancel/force-complete flow already
  * transitioned it through the Task service, so the coordinator must not fight
  * that. `done` merges the ticket, `ready` re-queues it (a transient fault the
@@ -27,7 +26,7 @@ export type AttemptTerminalState = 'completed' | 'failed' | 'cancelled';
  */
 export type SettleTaskAction = 'done' | 'escalate' | 'ready' | 'none';
 
-/** The terminal projection a disposition intends for the Run/Task. */
+/** The terminal projection a disposition intends for the Attempt/Task. */
 export interface SettleProjection {
   runState: AttemptTerminalState;
   taskAction: SettleTaskAction;
@@ -36,8 +35,8 @@ export interface SettleProjection {
 
 /**
  * Every ending-signal kind `settle` can be called with — the disposition's
- * audit value persisted verbatim to `attempts.reason` (ADR-0001 #388 S-E: the
- * append-only fact log + precedence replay collapsed into this one column).
+ * audit value persisted verbatim to `attempts.reason` (ADR-0001: the whole
+ * coordination spine is `state` + `reason`, nothing replayed from a log).
  * Open for extension in spirit (a caller may pass any string), but these are
  * every kind a live emitter produces today.
  */
@@ -91,9 +90,8 @@ export class AttemptSettleCoordinator {
    * and `type` is not an operator override — the idempotent "settle exactly
    * once" contract a racing straggler (a post-SIGKILL harness-exit fact after
    * an operator cancel, a second guardrail trip) relies on. `patch`
-   * (usage/stat/stopReason/…) rides with the write, matching prior semantics
-   * — the Attempt is now the single execution ledger (ADR-0001 #388 S-G), so
-   * one write closes it out instead of a paired Run+Attempt write.
+   * (usage/stat/stopReason/…) rides with the write — the Attempt is the
+   * single execution ledger (ADR-0001), so one write closes it out.
    */
   async settle(
     task: TaskRow,
@@ -112,9 +110,8 @@ export class AttemptSettleCoordinator {
       state: attemptTerminalState(type, projection),
       reason: type,
       // The free-text detail behind `reason` (a git/harness error, a
-      // guardrail's `budget: …` summary, "escalated to human: …") — folded
-      // from `runs.reason` onto its own column (ADR-0001 #388 S-G) so it
-      // survives alongside the structured `reason` on the same row.
+      // guardrail's `budget: …` summary, "escalated to human: …") — its own
+      // column so it survives alongside the structured `reason`.
       detail: projection.reason,
       endedAt: before.endedAt ?? Date.now(),
     });

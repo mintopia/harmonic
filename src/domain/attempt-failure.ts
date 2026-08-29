@@ -15,7 +15,7 @@ export function isExecutionFailure({ state }: AttemptOutcome): boolean {
   return state === 'failed' || state === 'escalated';
 }
 
-/** A failed Attempt's classification input (ADR-0001 #388 S-E): its
+/** A failed Attempt's classification input (ADR-0001): its
  *  disposition-kind `reason` (the structured, low-cardinality category) and
  *  the free-text `detail` fallback for a row with no structured disposition. */
 export interface FailedAttempt {

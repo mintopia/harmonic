@@ -35,9 +35,8 @@ async function readStats({ from, to, workspaceId }: StatsRange): Promise<StatsRe
             .all()
         ).map((row) => row.attempts);
 
-  // Failed-only Attempts' disposition (ADR-0001 #388 S-E/S-G): the Attempt IS
-  // the single execution ledger now, so its own `reason` column is the read
-  // directly — no more Run/Attempt bridge join.
+  // Failed-only Attempts' disposition (ADR-0001): the Attempt is the single
+  // execution ledger, so its own `reason` column is read directly.
   const attemptReasons =
     workspaceId === undefined
       ? await db

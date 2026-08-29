@@ -9,8 +9,8 @@ import type { ResumeIncompatibilityReason } from './session-resume.js';
  * as an incompatible harness/adapter version, an unrestorable working directory,
  * or a capability the live harness no longer advertises — Harmonic falls back
  * **exactly once** to a brand-new Session seeded with a summary it builds
- * *itself*, deterministically, from what it already recorded: the Run's
- * `run_events`, its terminal outcome, the verified-head OID/status, and the
+ * *itself*, deterministically, from what it already recorded: the Attempt's
+ * persisted events, its terminal outcome, the verified-head OID/status, and the
  * Task's tracker links. It **never asks the dead Session to summarize
  * itself**, so the fallback is available even when the original harness
  * process is long gone — the whole point of resume being a fresh spawn, not a
@@ -122,9 +122,9 @@ export function planResumeFallback(
 }
 
 /**
- * The prior Run's terminal disposition (ADR-0001 #388 S-E): its Attempt's
- * ending-kind `reason` (`AttemptSettleCoordinator.settle`'s audit hedge), or
- * `null` when the Run never reached a terminal disposition.
+ * The prior Attempt's terminal disposition (ADR-0001): its ending-kind
+ * `reason` (`AttemptSettleCoordinator.settle`'s audit hedge), or `null` when
+ * it never reached a terminal disposition.
  */
 export interface FallbackSummaryOutcome {
   state: string;
@@ -153,8 +153,8 @@ export interface FallbackTrackerLink {
 
 /**
  * Everything {@link buildResumeFallbackSummary} needs — the persisted inputs
- * the design mandates (`run_events` + the terminal outcome + verified head
- * OID/status + tracker links) plus the dead Session's identity and the
+ * the design mandates (the Attempt's events + the terminal outcome + verified
+ * head OID/status + tracker links) plus the dead Session's identity and the
  * classified trigger, so the summary can open by stating *why* it exists.
  */
 export interface FallbackSummaryInput {

@@ -14,8 +14,8 @@ export interface ToolCallRange {
 }
 
 /**
- * Read-only rollups over the per-Attempt tool-call snapshot (ADR-0031;
- * re-keyed off `attempt_id` at ADR-0001 #388 S-F). Epic is derived from the
+ * Read-only rollups over the per-Attempt tool-call snapshot (ADR-0031).
+ * Epic is derived from the
  * mirrored Task's parent tracker ref (`mapRef`); native and unparented Tasks
  * therefore contribute only to their Task total.
  */

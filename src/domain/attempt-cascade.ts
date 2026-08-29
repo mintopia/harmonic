@@ -16,9 +16,8 @@ import {
  * statement awaited. Deletes a Task's whole Attempt timeline together with
  * every row that references it (issue #162): `steps`, and the Attempt-keyed
  * satellites `verification_attempts`, `guardrail_events`, `attempt_tool_calls`,
- * `attempt_events` (ADR-0001 #388 S-F), plus the non-FK-declared scoped
- * `api_keys` rows that would otherwise dangle once their Attempt is gone
- * (folded from the legacy `runs`-scoped key at ADR-0001 #388 S-G), then the
+ * `attempt_events`, plus the non-FK-declared scoped
+ * `api_keys` rows that would otherwise dangle once their Attempt is gone, then the
  * `attempts` rows themselves (their own FK to `tasks.id` would otherwise
  * block the Task delete under runtime FK enforcement, ADR-0007). This is the
  * one place the Task-owned child set is enumerated, so both
