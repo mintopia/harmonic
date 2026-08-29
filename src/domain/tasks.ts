@@ -43,7 +43,6 @@ export const createTaskInputSchema = z.object({
   workingDir: z.string().min(1).optional().meta({ example: '/home/dev/harmonic' }),
   isolationMode: z.enum(ISOLATION_MODES).optional().meta({ example: 'worktree' }),
   priority: z.enum(PRIORITIES).optional().meta({ example: 'normal' }),
-  integrationRetries: z.number().int().min(1).optional().meta({ example: 5 }),
   conflictResolveTurns: z.number().int().min(0).optional().meta({ example: 2 }),
   state: z.enum(['draft', 'ready']).optional().meta({ example: 'ready' }),
   dependsOn: z.array(z.number().int().positive()).optional().meta({ example: [4818] }),
@@ -68,7 +67,6 @@ export const updateTaskInputSchema = createTaskInputSchema
     model: createTaskInputSchema.shape.model.nullable(),
     isolationMode: createTaskInputSchema.shape.isolationMode.nullable(),
     priority: createTaskInputSchema.shape.priority.nullable(),
-    integrationRetries: createTaskInputSchema.shape.integrationRetries.nullable(),
     conflictResolveTurns: createTaskInputSchema.shape.conflictResolveTurns.nullable(),
     // Nullable so an operator can clear an explicit base branch back to
     // "inherit the current branch at spawn" (issue #157), same null-clears
@@ -83,7 +81,6 @@ export interface TaskOverrides {
   model: string | null;
   isolationMode: string | null;
   priority: string | null;
-  integrationRetries: number | null;
   conflictResolveTurns: number | null;
 }
 
@@ -221,7 +218,6 @@ export class TaskService {
       model: over.model ?? resolveScoped('model', workspace.model, harnessConfig?.defaultModel ?? ''),
       isolationMode: over.isolationMode ?? resolveScoped('isolationMode', workspace.isolationMode, config.defaults.isolationMode),
       priority: over.priority ?? resolveScoped('priority', workspace.priority, config.defaults.priority),
-      integrationRetries: over.integrationRetries ?? resolveScoped('integrationRetries', workspace.integrationRetries, config.defaults.integrationRetries),
       conflictResolveTurns: over.conflictResolveTurns ?? resolveScoped('conflictResolveTurns', workspace.conflictResolveTurns, config.defaults.conflictResolveTurns),
     };
   }
@@ -239,7 +235,6 @@ export class TaskService {
       model: raw.model,
       isolationMode: raw.isolationMode,
       priority: raw.priority,
-      integrationRetries: raw.integrationRetries,
       conflictResolveTurns: raw.conflictResolveTurns,
     };
   }
@@ -323,7 +318,6 @@ export class TaskService {
           model: input.model ?? null,
           isolationMode: input.isolationMode ?? null,
           priority: input.priority ?? null,
-          integrationRetries: input.integrationRetries ?? null,
           conflictResolveTurns: input.conflictResolveTurns ?? null,
           baseBranch: input.baseBranch ?? null,
           workingDir: input.workingDir ?? workspace.workingDir,
@@ -437,7 +431,6 @@ export class TaskService {
           model: null,
           isolationMode: null,
           priority: null,
-          integrationRetries: null,
           conflictResolveTurns: null,
           workingDir: workspace.workingDir,
           state: input.closed ? 'done' : 'ready',

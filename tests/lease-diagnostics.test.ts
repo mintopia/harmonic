@@ -54,7 +54,6 @@ function task(overrides: Partial<TaskRow> & Pick<TaskRow, 'id'>): TaskRow {
     workingDir: '/tmp/repo',
     isolationMode: 'direct',
     priority: 'normal',
-    integrationRetries: 5,
     conflictResolveTurns: 2,
     baseBranch: null,
     state: 'working',

@@ -92,8 +92,6 @@ const taskWithDepsSchema = z
     baseBranch: z.string().nullable().meta({ example: 'integration/epic-42' }),
     /** 'high' | 'normal' | 'low' (config.ts PRIORITIES); stored as plain text. */
     priority: z.string().meta({ example: 'normal' }),
-    /** Resolved integration-retry bound (ADR-0046). */
-    integrationRetries: z.number().int().meta({ example: 5 }),
     /** Resolved conflict-resolve-turn bound (ADR-0046). */
     conflictResolveTurns: z.number().int().meta({ example: 2 }),
     /** ADR-0041: draft → ready → working → done, plus escalated (the one human surface) and cancelled. Blocked-ness is derived (`openBlockerCount`), never stored. */
@@ -136,10 +134,9 @@ const taskWithDepsSchema = z
         model: z.string().nullable().meta({ example: 'opus-4.8' }),
         isolationMode: z.string().nullable().meta({ example: null }),
         priority: z.string().nullable().meta({ example: null }),
-        integrationRetries: z.number().int().nullable().meta({ example: null }),
         conflictResolveTurns: z.number().int().nullable().meta({ example: null }),
       })
-      .meta({ example: { harness: null, model: 'opus-4.8', isolationMode: null, priority: null, integrationRetries: null, conflictResolveTurns: null } }),
+      .meta({ example: { harness: null, model: 'opus-4.8', isolationMode: null, priority: null, conflictResolveTurns: null } }),
   })
   .meta({ id: 'TaskWithDeps' });
 

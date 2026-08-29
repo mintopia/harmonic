@@ -32,7 +32,6 @@ const ws = (id: number, name = `ws-${id}`): Workspace => ({
   chatModel: null,
   isolationMode: null,
   priority: null,
-  integrationRetries: null,
   conflictResolveTurns: null,
   maxConcurrentRuns: null,
   autoRunnerEnabled: null,

@@ -56,7 +56,6 @@ export function TaskForm({
       model: null,
       isolationMode: null,
       priority: null,
-      integrationRetries: null,
       conflictResolveTurns: null,
     },
   );
@@ -196,26 +195,6 @@ export function TaskForm({
                 <option value="normal">normal</option>
                 <option value="low">low</option>
               </select>
-            )}
-          </InheritField>
-
-          <InheritField
-            label="Integration retries"
-            htmlFor="task-integration-retries"
-            value={ov.integrationRetries}
-            inherited={workspace?.integrationRetries ?? config.defaults.integrationRetries}
-            inheritedFrom={inheritSource(workspace?.integrationRetries)}
-            onChange={(integrationRetries) => set('integrationRetries', integrationRetries)}
-          >
-            {({ id, value, onChange }) => (
-              <input
-                id={id}
-                type="number"
-                min={1}
-                className={`${field} w-full tabular-nums`}
-                value={value}
-                onChange={(e) => onChange(Number(e.target.value))}
-              />
             )}
           </InheritField>
 

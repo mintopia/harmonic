@@ -24,7 +24,6 @@ export const OVERRIDE_KEYS = [
   'chatModel',
   'isolationMode',
   'priority',
-  'integrationRetries',
   'conflictResolveTurns',
   'maxConcurrentRuns',
   'autoRunnerEnabled',

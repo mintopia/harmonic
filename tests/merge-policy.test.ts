@@ -71,6 +71,72 @@ describe('runMergePolicy (ADR-0001, "One merge policy, everywhere")', () => {
     expect(Number(git(repo, 'rev-list', '--count', '--merges', 'HEAD'))).toBeGreaterThanOrEqual(1);
   });
 
+  it('checks the base branch out before merging when the base repo is on a different branch', async () => {
+    // The shared base repo is parked on an unrelated branch (as it is in the
+    // runner: worktree tasks never sit it on their base branch). The policy must
+    // still land the merge on `main`, not on whatever HEAD happened to be.
+    const repo = makeRepo();
+    const mainTip = git(repo, 'rev-parse', 'main');
+    git(repo, 'checkout', '-b', 'parked');
+    writeFileSync(join(repo, 'parked.txt'), 'parked work\n');
+    git(repo, 'add', '-A');
+    git(repo, 'commit', '-m', 'parked commit');
+    await makeTaskBranch(repo, 'task-elsewhere', (wt) => {
+      writeFileSync(join(wt, 'feature.txt'), 'feature\n');
+    });
+
+    const deps: MergePolicyDeps = {
+      resolveConflictTurn: neverCalled('resolveConflictTurn'),
+      runPostMergeCheck: vi.fn(async () => ({ pass: true, output: '' })),
+      escalate: vi.fn(async () => {}),
+    };
+
+    const outcome = await runMergePolicy(
+      { baseDir: repo, baseBranch: 'main', taskBranch: 'task-elsewhere', conflictResolveTurns: 2, postMergeCheck: true },
+      deps,
+    );
+
+    expect(outcome.kind).toBe('merged');
+    expect(git(repo, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('main');
+    // `main` advanced past its old tip with a merge commit; `parked` is untouched.
+    expect(git(repo, 'rev-parse', 'main')).not.toBe(mainTip);
+    expect(git(repo, 'rev-parse', 'HEAD^2')).toBeTruthy();
+    expect(() => git(repo, 'show', 'main:feature.txt')).not.toThrow();
+  });
+
+  it('runs a post-merge check that adds a worktree on the same repo without deadlocking', async () => {
+    // The runner's real post-merge check runs the command verifier, which adds
+    // a detached worktree (a repo-locked op) on the base repo — while the policy
+    // still holds that repo's merge lock. This guards that the lock is reentrant
+    // so the ADR-0001 "check under the mutex" wiring cannot self-deadlock.
+    const repo = makeRepo();
+    await makeTaskBranch(repo, 'task-postmerge', (wt) => {
+      writeFileSync(join(wt, 'feature.txt'), 'feature\n');
+    });
+
+    const deps: MergePolicyDeps = {
+      resolveConflictTurn: neverCalled('resolveConflictTurn'),
+      runPostMergeCheck: vi.fn(async (mergeOid: string, baseDir: string) => {
+        const wt = mkdtempSync(join(tmpdir(), 'harmonic-postmerge-wt-'));
+        tmpDirs.push(wt);
+        const checkout = join(wt, 'check');
+        await Git.addDetachedWorktree(baseDir, checkout, mergeOid);
+        await Git.removeWorktree(baseDir, checkout);
+        return { pass: true, output: '' };
+      }),
+      escalate: vi.fn(async () => {}),
+    };
+
+    const outcome = await runMergePolicy(
+      { baseDir: repo, baseBranch: 'main', taskBranch: 'task-postmerge', conflictResolveTurns: 2, postMergeCheck: true },
+      deps,
+    );
+
+    expect(outcome.kind).toBe('merged');
+    expect(deps.runPostMergeCheck).toHaveBeenCalledOnce();
+    expect(deps.escalate).not.toHaveBeenCalled();
+  });
+
   it('resolves a same-line conflict via one agentic turn and still merges cleanly', async () => {
     const repo = makeRepo();
     await makeTaskBranch(repo, 'task-resolvable', (wt) => {

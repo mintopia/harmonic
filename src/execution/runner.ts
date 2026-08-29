@@ -67,14 +67,14 @@ import { resolvePrices, costOfUsages, type PriceTable } from './pricing.js';
 import { workContextKey } from '../domain/work-context-key.js';
 import { isForeignKeyViolation, type WorkContextLeaseStore } from '../domain/work-context-leases.js';
 import { logger } from '../logger.js';
-import { mergeIntoBaseAndRunPostMerge, type PostMergeHook } from './branch-merge.js';
-import { singleFlight } from '../reliability/single-flight.js';
+import type { PostMergeHook } from './branch-merge.js';
+import { runMergePolicy, type MergePolicyDeps } from './merge-policy.js';
 import { integrationBranchName, parseIntegrationBranch } from './epic-integration.js';
 import type {
   EpicRefreshResolveDispatchOutcome,
   EpicRefreshTarget,
 } from './epic-refresh-coordinator.js';
-import type { MergeTrainCoordinator, MergeTrainMember, MergeTrainOutcome } from './merge-train-coordinator.js';
+import type { MergeTrainCoordinator, MergeTrainMember } from './merge-train-coordinator.js';
 import type { AsyncDbHandle } from '../db/async.js';
 import type { SpanContext } from '@opentelemetry/api';
 import { startOperation, type Operation } from '../telemetry/operations.js';
@@ -346,15 +346,6 @@ type TurnOutcome =
   | { kind: 'terminal' }
   | { kind: 'actionable-fail'; reason: string; output: string };
 
-/** The merging freshness gate's verdict (ADR-0041): merge at `oid`, hand a
- * failed re-entry (rebase conflict / verification fail) up to the unified
- * Attempt loop, or Escalate. `train` is set for an Epic member — its merge-train
- * outcome, obtained inside the same fresh window. */
-type MergeGate =
-  | { kind: 'fresh'; oid: string; train: MergeTrainOutcome | null }
-  | { kind: 'turn'; outcome: TurnOutcome }
-  | { kind: 'escalate'; reason: string };
-
 /** Wall-clock bound on one integration-refresh corrective turn (issue #315) —
  * a merge-conflict resolution, so double the critic's read-only bound. */
 const EPIC_REFRESH_RESOLVE_TIMEOUT_MS = 10 * 60 * 1000;
@@ -379,11 +370,6 @@ export class Runner {
   /** The single-writer merge train an Epic member's Run merges through (issue
    * #163); undefined on a server with no parallel-Epic execution. */
   private readonly mergeTrain: MergeTrainCoordinator | undefined;
-  /** Per-Task single-flight gate over the integration-completion loop (ADR-0046):
-   * a Task runs at most one integration attempt at a time, so an overlapping
-   * completion coalesces onto the in-flight one instead of racing it. Keyed by
-   * `task.id`; the entry is dropped once the completion resolves. */
-  private readonly completionGates = new Map<number, () => Promise<MergeGate>>();
   /** Injectable agent-critic drive (issue #164); undefined → `runCritic` falls
    * back to the real `createAcpCriticDrive`. */
   private readonly criticDrive: RunnerOptions['criticDrive'];
@@ -1517,59 +1503,14 @@ export class Runner {
       }
     }
 
-    if (oid && verdicts.length > 0 && verdicts.every((entry) => entry.verdict === 'pass')) {
-      // The recorded branch comes from the store (null for a direct Run, which
-      // has no branch), so the freshness gate reads it back off the fact.
-      const { branch } = await this.runStore.get(run.id);
-      await this.runFacts.append(run.id, 'verified-head', { sha: oid, branch: branch ?? null });
-    }
-
     return { decision: combineVerdicts(verdicts), ran: verdicts.length > 0 };
-  }
-
-  /**
-   * Merging may only consume the exact branch tip verification recorded, and
-   * that tip must already contain the base's current tip so the merge is a
-   * fast-forward of the verified tree (ADR-0041). `oid` is the tip to merge —
-   * the verified SHA, or the current head when nothing was verified (zero
-   * configured verifiers, no candidate).
-   */
-  private async mergeFreshness(
-    task: TaskRow,
-    run: RunRow,
-  ): Promise<{ fresh: true; oid: string } | { fresh: false; reason: string; oid: string }> {
-    const facts = await this.runFacts.list(run.id);
-    const fact = [...facts].reverse().find((entry) => entry.type === 'verified-head');
-    let verified: { sha?: unknown; branch?: unknown } = {};
-    if (fact) {
-      try {
-        verified = JSON.parse(fact.payload) as typeof verified;
-      } catch {
-        // Unparseable fact: fall back to the candidate below rather than merge blind.
-      }
-    }
-    // A direct Run has no branch — its verified tip is HEAD on the live base
-    // branch (ADR-0046); a worktree Run's tip is on the recorded run branch.
-    const rev = typeof verified.branch === 'string' && verified.branch ? verified.branch : (run.branch ?? 'HEAD');
-    const head = await Git.revParse(task.workingDir, rev).catch(() => null);
-    const expected = (typeof verified.sha === 'string' ? verified.sha : run.candidateOid) ?? head;
-    if (expected === null) return { fresh: true, oid: '' };
-    if (head !== expected) return { fresh: false, reason: 'branch head moved after verification', oid: expected };
-    if (run.baseBranch) {
-      const baseTip = await Git.revParse(task.workingDir, run.baseBranch).catch(() => null);
-      if (baseTip !== null && !(await Git.isAncestor(task.workingDir, expected, baseTip))) {
-        return { fresh: false, reason: `base '${run.baseBranch}' advanced after verification`, oid: expected };
-      }
-    }
-    return { fresh: true, oid: expected };
   }
 
   /**
    * The Attempt's Rebase Task (ADR-0041): rebase the ticket branch checked out
    * at `worktreePath` onto the base's current tip, recording one timeline row
-   * with the real outcome. The single place a rebase row is written — at
-   * Attempt start and on a merging freshness re-entry alike. A conflict is
-   * left in progress in the worktree: resolving it is the agent's work.
+   * with the real outcome. Runs once, at Attempt start. A conflict is left in
+   * progress in the worktree: resolving it is the agent's work.
    */
   private async runRebaseTask(
     task: TaskRow,
@@ -1615,218 +1556,6 @@ export class Runner {
     record('lifecycle', { event: 'verification-actionable-fail', reason: decision.reason });
     const reason = decision.outcome === 'block' ? decision.reason : `verification ${decision.outcome}: ${decision.reason}`;
     return { kind: 'actionable-fail', reason, output };
-  }
-
-  /**
-   * Integration completion (ADR-0046), single-flight per Task: a Task runs at
-   * most one integration attempt at a time, so an overlapping completion
-   * coalesces onto the in-flight one rather than racing it onto the base. The
-   * loop body is {@link completeIntegration}; the gate is dropped once it
-   * resolves.
-   */
-  private freshenForMerge(
-    task: TaskRow,
-    run: RunRow,
-    workspace: Workspace,
-    attemptNumber: number,
-    autoDriven: boolean,
-    signal: AbortSignal,
-    record: (type: 'lifecycle', payload: unknown) => void,
-    parent: SpanContext,
-  ): Promise<MergeGate> {
-    const inFlight = this.completionGates.get(task.id);
-    if (inFlight) return inFlight();
-    const gate = singleFlight(() =>
-      this.completeIntegration(task, run, workspace, attemptNumber, autoDriven, signal, record, parent),
-    );
-    this.completionGates.set(task.id, gate);
-    return (async () => {
-      try {
-        return await gate();
-      } finally {
-        this.completionGates.delete(task.id);
-      }
-    })();
-  }
-
-  /**
-   * The completion loop (ADR-0046). Publishes a fresh candidate — an Epic member
-   * through the merge train, any other worktree Run through {@link mergeIntoBase}'s
-   * checkout-aware CAS (`casUpdateRef` off a checked-out base, a coherent
-   * fast-forward on it), which re-asserts freshness so a concurrent publish is
-   * refused rather than overwritten. A moved base is NORMAL, not a failure: the
-   * Run re-enters Rebase → Verification on the SAME Attempt and Session and
-   * re-verifies the replayed tree with the DETERMINISTIC verifiers only (the
-   * critic reviewed this diff once on the candidate). The one skip of that
-   * re-verify is a pure no-op fast-forward (base already an ancestor of the
-   * candidate); there is no path-intersection shortcut. Bounded by the configured
-   * integration-retry limit (`task.integrationRetries`); a base that keeps
-   * advancing escalates plainly rather than tight-retrying. A rebase conflict or
-   * a failing re-verification is a failed Attempt for the unified loop; direct
-   * mode (no branch) or a git fault Escalates.
-   *
-   * A thin wrapper over {@link completionLoop} that, on any exit, records one
-   * terminal `moving-base` run-fact with the final retry count (ADR-0046, #368) —
-   * derived from the loop's own `moving-base` lifecycle events so it is crash-safe
-   * and needs no persisted counter; absent when the base never moved.
-   */
-  private async completeIntegration(
-    task: TaskRow,
-    run: RunRow,
-    workspace: Workspace,
-    attemptNumber: number,
-    autoDriven: boolean,
-    signal: AbortSignal,
-    record: (type: 'lifecycle', payload: unknown) => void,
-    parent: SpanContext,
-  ): Promise<MergeGate> {
-    // The loop's own moving-base retry tally — transient loop state, never a
-    // persisted per-retry counter (ADR-0046, #368). Reading it back here rather
-    // than re-counting the event log means the terminal fact is the exact final
-    // count, independent of whether the fire-and-forget per-retry events have
-    // flushed yet.
-    const retries = { count: 0 };
-    try {
-      return await this.completionLoop(task, run, workspace, attemptNumber, autoDriven, signal, record, parent, retries);
-    } finally {
-      // Best-effort terminal telemetry; never let it mask the loop's outcome.
-      if (retries.count > 0) await this.runFacts.append(run.id, 'moving-base', { retries: retries.count }).catch(() => {});
-    }
-  }
-
-  private async completionLoop(
-    task: TaskRow,
-    run: RunRow,
-    workspace: Workspace,
-    attemptNumber: number,
-    autoDriven: boolean,
-    signal: AbortSignal,
-    record: (type: 'lifecycle', payload: unknown) => void,
-    parent: SpanContext,
-    retries: { count: number },
-  ): Promise<MergeGate> {
-    let current = await this.runStore.get(run.id);
-    // How many times this completion may re-enter Rebase → Verification because
-    // the base advanced meanwhile (ADR-0046). Each re-entry costs a deterministic
-    // verification pass, so a base that keeps moving escalates plainly rather than
-    // spinning. Resolved per-Task (Task → Workspace → global default).
-    const maxReentries = task.integrationRetries;
-    // The auto-drive Merge Fate resolves per-Workspace now (ADR-0044), so resolve
-    // it once for this completion rather than re-reading it inside the loop.
-    const mergeFate = autoDriven ? await this.autoDrive!.mergeFateFor(task) : undefined;
-    for (let reentries = 0; ; reentries += 1) {
-      const freshness = await this.mergeFreshness(task, current);
-      let stale = freshness.fresh ? null : freshness.reason;
-      let train: MergeTrainOutcome | null = null;
-      if (stale === null) {
-        const member = autoDriven ? this.epicMemberFor(task, current, freshness.oid, mergeFate) : null;
-        if (member) {
-          train = await this.mergeTrain!.submit(member);
-          if (train.status === 'stale') stale = train.reason;
-        } else if (
-          task.isolationMode === 'worktree' && current.branch && current.baseBranch &&
-          (!autoDriven || mergeFate === 'auto-merge')
-        ) {
-          const merged = await mergeIntoBaseAndRunPostMerge({
-            repoDir: task.workingDir,
-            baseBranch: current.baseBranch,
-            branch: current.branch,
-            expectedOid: freshness.oid,
-            leaseHeld: true,
-            parent,
-            attributes: { 'task.id': task.id, 'run.id': run.id },
-          }, this.postMerge);
-          if (!merged.ok) {
-            if (merged.reason !== 'stale-head' && merged.reason !== 'stale-base' && merged.reason !== 'target-advanced') {
-              return { kind: 'escalate', reason: `merging failed (${merged.reason}): ${merged.detail}` };
-            }
-            stale = merged.detail;
-          } else {
-            record('lifecycle', { event: 'merged', oid: merged.oid, mode: merged.mode, baseBranch: merged.baseBranch });
-          }
-        }
-      }
-      if (stale === null) return { kind: 'fresh', oid: freshness.oid, train };
-      record('lifecycle', { event: 'rebase-required', reason: stale });
-      if (!workspace.worktree || !current.baseBranch) {
-        return { kind: 'escalate', reason: `${stale}; no ticket branch to rebase` };
-      }
-      if (reentries >= maxReentries) {
-        return { kind: 'escalate', reason: `${stale}; unresolved after ${maxReentries} rebase+verify re-entries` };
-      }
-      // A moving base is normal, not an alarm (ADR-0046, #368): record each rebase
-      // re-entry as a fire-and-forget lifecycle event carrying its attempt index
-      // (`3/5`) so the UI shows a single quiet collapsed line whose prominence
-      // rises only near the bound. The UI derives its cumulative count from these
-      // events; the tally here feeds only the terminal fact, never a persisted
-      // per-retry counter.
-      retries.count += 1;
-      record('lifecycle', { event: 'moving-base', attempt: retries.count, of: maxReentries });
-      const rebase = await this.runRebaseTask(task, attemptNumber, run.startedAt, workspace.worktree.path, current.baseBranch);
-      if (!rebase.ok) {
-        // A raw GitError never reaches the operator (git.ts): the rebase Task row
-        // keeps the git detail for diagnosis. A git fault is infra doubt.
-        if (!rebase.conflict) {
-          return { kind: 'escalate', reason: `could not rebase onto '${current.baseBranch}' (git error); see the rebase step` };
-        }
-        return this.resolveConflictOrEscalate(task, run, current.branch, current.baseBranch, record);
-      }
-      current = await this.runStore.update(run.id, { candidateOid: rebase.tip });
-      record('lifecycle', { event: 'phase', phase: 'verifying' });
-      // Deterministic verifiers only on the replayed tree (ADR-0046); see the
-      // `criticEnabled` param on runVerification.
-      const { decision, ran } = await this.runVerification(task, current, rebase.tip, signal, record, parent, false);
-      if (this.shuttingDown) return { kind: 'turn', outcome: { kind: 'terminal' } };
-      if (decision.outcome !== 'proceed') {
-        return { kind: 'turn', outcome: await this.verificationFailTurn(run, decision, record) };
-      }
-      if (!ran) {
-        // Critic-only Tasks disable the critic on re-entry (ADR-0046), so a clean
-        // rebase leaves no verifier to re-bless the replayed tree. Carry the prior
-        // pass onto the rebased tip; else the freshness gate stays frozen on the
-        // pre-rebase verified-head and spins every re-entry against a stationary base.
-        const { branch } = await this.runStore.get(run.id);
-        await this.runFacts.append(run.id, 'verified-head', { sha: rebase.tip, branch: branch ?? null });
-      }
-    }
-  }
-
-  /**
-   * A completion-rebase content conflict (ADR-0046): up to `N`
-   * (`task.conflictResolveTurns`) agentic resolve-turns, then escalate plainly.
-   * The count is the `conflict-resolve-turn` event tally rather than an in-memory
-   * counter so the bound survives the corrective turn, re-entries, and a
-   * crash-resume; messaging never carries the raw git conflict dump. `N === 0`
-   * escalates on the first conflict.
-   */
-  private async resolveConflictOrEscalate(
-    task: TaskRow,
-    run: RunRow,
-    branch: string | null,
-    baseBranch: string,
-    record: (type: 'lifecycle', payload: unknown) => void,
-  ): Promise<MergeGate> {
-    const budget = task.conflictResolveTurns;
-    const spent = (await this.runStore.listEvents(run.id)).filter(
-      (event) => event.type === 'lifecycle' && (event.payload as { event?: string }).event === 'conflict-resolve-turn',
-    ).length;
-    if (spent >= budget) {
-      const where = branch ? `branch '${branch}' onto '${baseBranch}'` : `onto '${baseBranch}'`;
-      const after = budget === 0 ? '' : ` after ${budget} resolve ${budget === 1 ? 'turn' : 'turns'}`;
-      return {
-        kind: 'escalate',
-        reason: `content conflict rebasing ${where}${after}; review this run's diff and resolve it`,
-      };
-    }
-    record('lifecycle', { event: 'conflict-resolve-turn', baseBranch, turn: spent + 1, of: budget });
-    return {
-      kind: 'turn',
-      outcome: {
-        kind: 'actionable-fail',
-        reason: `rebase onto '${baseBranch}' hit a content conflict — resolve the conflicts in the checkout, then finish`,
-        output: '',
-      },
-    };
   }
 
   /**
@@ -2204,6 +1933,86 @@ export class Runner {
       integrationBranch: run.baseBranch,
       memberBranch: run.branch,
       verifiedTip,
+    };
+  }
+
+  /**
+   * The {@link MergePolicyDeps} for {@link runMergePolicy} (ADR-0001): the
+   * variable behaviour the one merge policy delegates back to the caller.
+   * `resolveConflictTurn` drives one bounded agentic turn — modelled on
+   * {@link runEpicRefreshResolveTurn} — against the conflicted base checkout,
+   * telling the agent which paths to resolve and to `git add` (never commit;
+   * the policy completes the merge itself once nothing remains unmerged).
+   * `runPostMergeCheck` runs only the DETERMINISTIC command verifiers once
+   * against the merged tip — no critic, since the critic already reviewed
+   * this diff on the candidate. `escalate` is the sole settle authority for a
+   * merge-policy escalation, mirroring {@link settleEscalatedForMember}.
+   */
+  private mergePolicyDeps(
+    task: TaskRow,
+    run: RunRow,
+    record: (type: 'lifecycle', payload: unknown) => void,
+    parent: SpanContext,
+    signal: AbortSignal,
+    patch: Partial<RunRow>,
+  ): MergePolicyDeps {
+    return {
+      resolveConflictTurn: async (ctx) => {
+        try {
+          const config = this.getConfig();
+          const harnessId = task.harness;
+          const harness = config.harnesses[harnessId as keyof typeof config.harnesses];
+          if (!harness) return;
+          const drive = this.criticDrive ?? createAcpCriticDrive();
+          const prompt =
+            `## Merge conflict resolution (turn ${ctx.turn})\n` +
+            `Merging \`${ctx.taskBranch}\` into \`${ctx.baseBranch}\` conflicted in:\n` +
+            ctx.unmergedPaths.map((path) => `- ${path}`).join('\n') +
+            `\n\nThis checkout (\`${ctx.baseDir}\`) has \`${ctx.baseBranch}\` checked out with that merge in progress — conflict ` +
+            `markers are present in the listed paths. Resolve the conflicts so the result keeps both \`${ctx.baseBranch}\`'s and ` +
+            `\`${ctx.taskBranch}\`'s work, then \`git add\` the resolved paths. Do not run \`git commit\`, do not create or switch ` +
+            `branches, do not push, and do not change anything beyond what resolving this merge requires.`;
+          await drive.run({
+            harness,
+            harnessId,
+            model: task.model,
+            cwd: ctx.baseDir,
+            prompt,
+            timeoutMs: EPIC_REFRESH_RESOLVE_TIMEOUT_MS,
+          });
+        } catch {
+          // Never throw: the policy re-checks unmergedPaths after the turn and
+          // escalates plainly if conflicts remain (merge-policy.ts).
+        }
+      },
+      runPostMergeCheck: async (mergeOid, baseDir) => {
+        const config = this.getConfig();
+        const ws = await this.getWorkspace?.(task.workspaceId);
+        const { commands } = resolveVerifiers(
+          ws ?? { verificationCommand: null, reviewEnabled: null, reviewPrompt: null, reviewModel: null, reviewHarness: null },
+          config,
+        );
+        if (commands.length === 0) return { pass: true, output: '' };
+        mkdirSync(this.worktreesDir, { recursive: true });
+        for (const command of commands) {
+          const attempt = await runCommandVerifier({
+            repoDir: baseDir,
+            candidateOid: mergeOid,
+            worktreePath: join(this.worktreesDir, `postmerge-${run.id}`),
+            command,
+            signal,
+            parent,
+            attributes: { 'task.id': task.id, 'run.id': run.id },
+          });
+          await this.verificationAttempts.append(run.id, commandAttemptToInput(attempt));
+          record('lifecycle', { event: 'verification', mechanism: 'command', verdict: attempt.verdict, summary: attempt.summary });
+          if (attempt.verdict !== 'pass') return { pass: false, output: attempt.output };
+        }
+        return { pass: true, output: '' };
+      },
+      escalate: async (reason) => {
+        await this.settleEscalated(task, run, reason, patch);
+      },
     };
   }
 
@@ -3381,50 +3190,80 @@ export class Runner {
             return { kind: 'actionable-fail', reason: 'run ended without an execution-complete (finish_task) signal', output: '' };
           }
           // Harmonic merges every passing Run itself — there is no human gate
-          // (ADR-0041) — so the merging freshness gate runs first: the branch
-          // must still sit at its verified tip and that tip must contain the
-          // base's current tip. A moved base re-enters Rebase → Verification on
-          // this same Attempt (no counter increment, no implementation turn)
-          // before merging. The diffstat is snapshotted before the merge
-          // fast-forwards the base onto the branch tip (issue #36).
+          // (ADR-0041). The one merge policy, everywhere (ADR-0001): an ordinary
+          // `git merge --no-ff` under the base repo's mutex, with a deterministic
+          // post-merge check and a `git revert -m 1` on red. A moved base is
+          // NORMAL and is never detected/classified — the merge commit reconciles
+          // it. The diffstat is snapshotted before the merge (issue #36).
           const diff = await this.diffSnapshotFor(task, run.id);
-          const gate = await this.freshenForMerge(task, run, workspace, attemptNumber, autoDriven, active.verifyAbort.signal, record, parent);
-          if (gate.kind === 'turn') return gate.outcome;
-          if (gate.kind === 'escalate') {
-            record('lifecycle', { event: 'escalated', reason: gate.reason });
-            await this.settleEscalated(task, run, gate.reason, patch);
-            return { kind: 'terminal' };
-          }
+          const current = await this.runStore.get(run.id);
+          const verifiedTip = current.candidateOid;
+          const worktreeMerge = task.isolationMode === 'worktree' && !!current.branch && !!current.baseBranch;
+          const deps = this.mergePolicyDeps(task, run, record, parent, active.verifyAbort.signal, patch);
+          // Merge the verified worktree branch via the one merge policy (ADR-0001).
+          // Returns false when the merge escalated — the primitive already settled
+          // the Run (its own `escalate`), so the caller only records and stops.
+          // `this.postMerge` is a distinct concept: a success-only hook that fires
+          // the develop→epic refresh (#382), not the ADR-0001 post-merge check.
+          const mergeWorktreeBranch = async (): Promise<boolean> => {
+            const outcome = await runMergePolicy(
+              {
+                baseDir: task.workingDir,
+                baseBranch: current.baseBranch!,
+                taskBranch: current.branch!,
+                conflictResolveTurns: task.conflictResolveTurns,
+                postMergeCheck: this.getConfig().merge.postMergeCheck,
+              },
+              deps,
+            );
+            if (outcome.kind === 'escalated') {
+              record('lifecycle', { event: 'escalated', reason: outcome.message });
+              return false;
+            }
+            record('lifecycle', { event: 'merged', oid: outcome.mergeOid, baseBranch: current.baseBranch });
+            await this.postMerge?.({ repoDir: task.workingDir, baseBranch: current.baseBranch! });
+            return true;
+          };
+
           if (!autoDriven) {
-            // A native worktree Run's branch was merged by the gate (SHA-asserted,
-            // fast-forward-only); a native direct Run's commits already sit on
-            // the live branch. Nothing more to merge: settle done.
+            // A native worktree Run merges its branch onto the base; a native
+            // direct Run's commits already sit on the live branch. Nothing more
+            // to merge in the direct case: settle done.
+            if (worktreeMerge && !(await mergeWorktreeBranch())) return { kind: 'terminal' };
             await advanceTask('merging');
             record('lifecycle', { event: 'phase', phase: 'merging' });
             await this.settleAutoCompleted(task, run, { ...patch, ...diff });
             return { kind: 'terminal' };
           }
+
           // A mirrored Run: executing → validating → verifying → merging →
-          // terminal. A worktree auto-merge Run's branch was merged by the gate
-          // above (SHA-asserted, fast-forward-only); a direct Run's verified
-          // commits already sit on the live base branch (ADR-0046), so there is
-          // nothing to merge. Either way the Merge Fate then applies the rest in
-          // onCompleted — open a PR, or (auto-merge) close the ticket — Harmonic
-          // owns the close, only after verify + merge (#139). A fate that can't be
-          // applied (PR that can't be created, ticket close that fails)
-          // Escalates; the ticket is not closed.
+          // terminal. Either the merge above lands the branch, or a direct Run's
+          // verified commits already sit on the live base branch (ADR-0046).
+          // The Merge Fate then applies the rest — open a PR, or (auto-merge)
+          // close the ticket — Harmonic owns the close, only after verify + merge
+          // (#139). A fate that can't be applied (PR that can't be created,
+          // ticket close that fails) Escalates; the ticket is not closed.
           //
           // Parallel-Epic member merge (issue #163): a worktree auto-merge Run
           // whose base is an Epic integration branch (`epic/<ref>`) merges through
-          // the single-writer merge train — a fast-forward of the verified tip,
-          // ordered per integration branch — instead of `onCompleted`'s unordered
-          // plain merge. The gate above already submitted it (and re-entered
-          // rebase+verify on a `stale` outcome), so `gate.train` is its result.
-          if (gate.train) {
-            if (gate.train.status === 'escalated') {
+          // the single-writer merge train instead of the plain merge policy.
+          const mergeFate = await this.autoDrive!.mergeFateFor(task);
+          const member = verifiedTip ? this.epicMemberFor(task, current, verifiedTip, mergeFate) : null;
+          if (member) {
+            const train = await this.mergeTrain!.submit(member);
+            if (train.status === 'escalated') {
               // The coordinator's `escalate` callback (→ settleEscalatedForMember)
               // already settled the Run; only record + stop here (no double-settle).
-              record('lifecycle', { event: 'escalated', reason: gate.train.reason });
+              record('lifecycle', { event: 'escalated', reason: train.reason });
+              return { kind: 'terminal' };
+            }
+            if (train.status === 'stale') {
+              // DEGRADED until #382 (no rebase re-entry post-ADR-0001): a base
+              // that advanced before this member could merge escalates plainly
+              // rather than retrying.
+              const reason = `epic integration branch advanced before ${current.branch} could merge (${train.reason})`;
+              record('lifecycle', { event: 'escalated', reason });
+              await this.settleEscalated(task, run, reason, patch);
               return { kind: 'terminal' };
             }
             // merged | already-merged: the work is on the integration branch.
@@ -3438,6 +3277,10 @@ export class Runner {
               record('lifecycle', { event: 'phase', phase: 'merging' });
               await this.settleAutoCompleted(task, run, { ...patch, ...diff });
             }
+            return { kind: 'terminal' };
+          }
+
+          if (worktreeMerge && mergeFate === 'auto-merge' && !(await mergeWorktreeBranch())) {
             return { kind: 'terminal' };
           }
 

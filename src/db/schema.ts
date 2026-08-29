@@ -93,7 +93,7 @@ export type WorkspaceIdentityRow = typeof workspaces.$inferSelect;
  */
 export type WorkspaceRow = WorkspaceIdentityRow & {
   harness: string | null; model: string | null; chatHarness: string | null; chatModel: string | null;
-  isolationMode: string | null; priority: string | null; integrationRetries: number | null;
+  isolationMode: string | null; priority: string | null;
   conflictResolveTurns: number | null; maxConcurrentRuns: number | null; autoRunnerEnabled: boolean | null;
   maxAttempts: number | null; contextReuseTokenLimit: number | null; verificationCommand: string | null;
   reviewEnabled: boolean | null; reviewPrompt: string | null; reviewModel: string | null; reviewHarness: string | null;
@@ -132,8 +132,6 @@ export const tasks = sqliteTable('tasks', {
   workingDir: text('working_dir').notNull(),
   isolationMode: text('isolation_mode'),
   priority: text('priority'),
-  /** Integration-retry bound override (ADR-0046); null inherits `config.defaults.integrationRetries`. */
-  integrationRetries: integer('integration_retries'),
   /** Conflict-resolve-turn bound override (ADR-0046); null inherits `config.defaults.conflictResolveTurns`. */
   conflictResolveTurns: integer('conflict_resolve_turns'),
   state: text('state').$type<TaskState>().notNull(),
@@ -554,13 +552,12 @@ export type RawTaskRow = typeof tasks.$inferSelect;
  * list/etc. return this; storage speaks `RawTaskRow`. */
 export type TaskRow = Omit<
   RawTaskRow,
-  'harness' | 'model' | 'isolationMode' | 'priority' | 'integrationRetries' | 'conflictResolveTurns'
+  'harness' | 'model' | 'isolationMode' | 'priority' | 'conflictResolveTurns'
 > & {
   harness: string;
   model: string;
   isolationMode: string;
   priority: string;
-  integrationRetries: number;
   conflictResolveTurns: number;
 };
 

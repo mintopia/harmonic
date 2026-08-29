@@ -309,7 +309,6 @@ describe('WorkspaceService override persistence (issue #64)', () => {
       chatModel: null,
       isolationMode: null,
       priority: null,
-      integrationRetries: null,
       conflictResolveTurns: null,
       maxConcurrentRuns: null,
       autoRunnerEnabled: null,

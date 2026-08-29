@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -19,6 +20,11 @@ export function repoKey(dir: string): string {
 /** One promise chain per base-repo key; the tail is the current holder. */
 const chains = new Map<string, Promise<void>>();
 
+/** The set of repo keys the current async call stack already holds. A nested
+ * acquisition of a key already in this set runs inline (reentrant) instead of
+ * chaining behind itself and deadlocking. */
+const heldKeys = new AsyncLocalStorage<ReadonlySet<string>>();
+
 /**
  * Run `fn` under a short mutual-exclusion lock scoped to the base
  * repository `dir` (issue #121).
@@ -30,9 +36,21 @@ const chains = new Map<string, Promise<void>>();
  * repos never block each other, so Runs on different checkouts keep
  * running in parallel. The lock is held only for the duration of `fn`
  * and released on both success and failure.
+ *
+ * **Reentrant**: a nested `withRepoLock` on a repo the current call stack
+ * already holds runs `fn` inline rather than waiting on itself. Without this a
+ * critical section that must call a locked git primitive under the held lock —
+ * e.g. the one merge policy (ADR-0001) running its post-merge check, whose
+ * verifier adds a detached worktree ({@link Git.addDetachedWorktree}, itself
+ * locked) — would deadlock on a non-reentrant mutex. Reentrancy can only
+ * resolve such self-deadlocks: any caller re-locking the same repo under a held
+ * lock already hangs today, so none can depend on the blocking behaviour.
  */
 export async function withRepoLock<T>(dir: string, fn: () => Promise<T>): Promise<T> {
   const key = repoKey(dir);
+  const outer = heldKeys.getStore();
+  if (outer?.has(key)) return fn();
+
   // Our turn begins once the previous holder settles (ignore its outcome).
   const prev = chains.get(key) ?? Promise.resolve();
 
@@ -45,8 +63,10 @@ export async function withRepoLock<T>(dir: string, fn: () => Promise<T>): Promis
   chains.set(key, tail);
 
   await prev.catch(() => {});
+  const nested = new Set(outer ?? []);
+  nested.add(key);
   try {
-    return await fn();
+    return await heldKeys.run(nested, fn);
   } finally {
     release();
     // Drop the entry when we're still the tail so keys don't leak; a newer

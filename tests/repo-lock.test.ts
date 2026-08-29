@@ -108,6 +108,63 @@ describe('repo-operation lock (issue #121)', () => {
       expect(critMax).toBe(1); // mutation windows serialised
     });
 
+    it('is reentrant: a nested acquisition of a held key runs inline instead of deadlocking', async () => {
+      // The one merge policy (ADR-0001) holds the repo lock across its
+      // post-merge check, whose verifier calls a locked git primitive on the
+      // same repo. A non-reentrant mutex would self-deadlock; reentrancy runs it
+      // inline. Fails by timing out rather than asserting if reentrancy regresses.
+      const repo = '/repo/reentrant';
+      const result = await withRepoLock(repo, async () => {
+        const inner = await withRepoLock(repo, async () => 'inner');
+        return `outer:${inner}`;
+      });
+      expect(result).toBe('outer:inner');
+    });
+
+    it('reentrancy does not weaken exclusion against a concurrent holder', async () => {
+      // A reentrant nested acquisition must not let a *different* async stack's
+      // acquisition of the same key run concurrently with the held section.
+      const repo = '/repo/reentrant-excl';
+      let active = 0;
+      let maxActive = 0;
+      const held = (label: string) =>
+        withRepoLock(repo, async () => {
+          active++;
+          maxActive = Math.max(maxActive, active);
+          await tick();
+          if (label === 'A') {
+            // Reentrant hop while A still holds the outer lock.
+            await withRepoLock(repo, async () => {
+              await tick();
+            });
+          }
+          await tick();
+          active--;
+        });
+
+      await Promise.all([held('A'), held('B')]);
+      expect(maxActive).toBe(1);
+    });
+
+    it('a nested acquisition of a DIFFERENT key still serialises normally', async () => {
+      // Reentrancy is per-key: holding /repo/x does not grant /repo/y.
+      const x = '/repo/nest-x';
+      const y = '/repo/nest-y';
+      let yActive = 0;
+      let yMax = 0;
+      const op = () =>
+        withRepoLock(x, async () => {
+          await withRepoLock(y, async () => {
+            yActive++;
+            yMax = Math.max(yMax, yActive);
+            await tick();
+            yActive--;
+          });
+        });
+      await Promise.all([op(), op()]);
+      expect(yMax).toBe(1);
+    });
+
     it('a failed op does not corrupt ordering for later ops on the same key', async () => {
       const repo = '/repo/mixed';
       const trace: string[] = [];

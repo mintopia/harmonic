@@ -3,10 +3,11 @@
  * A self-contained, dependency-injected primitive: it knows nothing about
  * TaskService, the runner, config, or the DB — every variable behaviour
  * (resolving a conflict turn, running the post-merge check, escalating) is
- * injected by the caller. NOT wired into the completion loop yet.
+ * injected by the caller — the runner's completion path and operator Accept
+ * both drive it through this one entry point.
  *
- * Precondition: the caller ensures `input.baseBranch` is the checked-out HEAD
- * of `input.baseDir` before calling {@link runMergePolicy}.
+ * The primitive checks `input.baseBranch` out at `input.baseDir` under the
+ * mutex before merging, so the caller need not pre-position the base checkout.
  */
 import { Git } from './git.js';
 import { withRepoLock } from './repo-lock.js';
@@ -104,6 +105,16 @@ async function resolveConflict(
 
 export async function runMergePolicy(input: MergePolicyInput, deps: MergePolicyDeps): Promise<MergePolicyOutcome> {
   const outcome = await withRepoLock(input.baseDir, async (): Promise<MergePolicyOutcome> => {
+    // The base repo is a shared per-Workspace checkout that worktree tasks never
+    // sit on their base branch, and sibling tasks may target different bases —
+    // so point it at this task's base branch before merging in place. Non-force:
+    // an unexpectedly dirty base checkout fails loudly here rather than having
+    // its uncommitted work discarded. Runs under the mutex, so no sibling merge
+    // races the checkout.
+    if ((await Git.currentBranch(input.baseDir).catch(() => null)) !== input.baseBranch) {
+      await Git.checkout(input.baseDir, input.baseBranch);
+    }
+
     const merge = await Git.mergeNoFf(input.baseDir, input.taskBranch);
 
     let mergeOid: string;

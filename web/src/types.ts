@@ -207,8 +207,7 @@ export interface Workspace {
   chatModel: string | null;
   isolationMode: 'direct' | 'worktree' | null;
   priority: 'high' | 'normal' | 'low' | null;
-  /** Integration bounds (ADR-0046); `null` inherits `config.defaults.*`. */
-  integrationRetries: number | null;
+  /** Conflict-resolve bound (ADR-0046); `null` inherits `config.defaults.*`. */
   conflictResolveTurns: number | null;
   maxConcurrentRuns: number | null;
   autoRunnerEnabled: boolean | null;
@@ -310,8 +309,7 @@ export interface Task {
    * current branch. */
   baseBranch: string | null;
   priority: 'high' | 'normal' | 'low';
-  /** Resolved integration bounds (ADR-0046). */
-  integrationRetries: number;
+  /** Resolved conflict-resolve bound (ADR-0046). */
   conflictResolveTurns: number;
   /** The defaults as stored: `null` ⇒ inherited (tracks the Workspace/
    * global default), a value ⇒ pinned to this Task. The editor seeds its
@@ -321,7 +319,6 @@ export interface Task {
     model: string | null;
     isolationMode: 'direct' | 'worktree' | null;
     priority: 'high' | 'normal' | 'low' | null;
-    integrationRetries: number | null;
     conflictResolveTurns: number | null;
   };
   state: TaskState;
@@ -730,8 +727,7 @@ export interface AppConfig {
     workingDir: string;
     isolationMode: 'direct' | 'worktree';
     priority: 'high' | 'normal' | 'low';
-    /** Integration bounds (ADR-0046). */
-    integrationRetries: number;
+    /** Conflict-resolve bound (ADR-0046). */
     conflictResolveTurns: number;
   };
   /** The default Harness and model a new Conversation ("chat") starts with,

@@ -50,8 +50,6 @@ const workspaceSchema = z
     chatModel: z.string().nullable().meta({ example: null }),
     isolationMode: z.string().nullable().meta({ example: null }),
     priority: z.string().nullable().meta({ example: null }),
-    /** Integration-retry bound (ADR-0046); null inherits `config.defaults.integrationRetries`. */
-    integrationRetries: z.number().nullable().meta({ example: null }),
     /** Conflict-resolve-turn bound (ADR-0046); null inherits `config.defaults.conflictResolveTurns`. */
     conflictResolveTurns: z.number().nullable().meta({ example: null }),
     maxConcurrentRuns: z.number().nullable().meta({ example: null }),

@@ -267,6 +267,14 @@ export const Git = {
   checkoutForce: (dir: string, branch: string) => git(dir, 'checkout', '-f', branch),
 
   /**
+   * Check `branch` out at `dir` WITHOUT `-f`: git refuses (throws) rather than
+   * overwrite uncommitted local changes. The safe way to point a shared base
+   * repo at a task's base branch before an in-place merge (ADR-0001) — a dirty
+   * or otherwise unmovable checkout fails loudly instead of destroying work.
+   */
+  checkout: (dir: string, branch: string) => git(dir, 'checkout', branch),
+
+  /**
    * Re-point HEAD at `branch` with a metadata-only `symbolic-ref` — no checkout,
    * no index or working-tree write. Unlike {@link checkoutForce} this moves NO
    * data, so it is coherent ONLY when the working tree already matches `branch`'s

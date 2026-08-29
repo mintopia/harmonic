@@ -121,9 +121,11 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
     expect(git(repoDir, 'show', `${baseOidAfter}:marker.txt`)).toBe('ok');
 
     // AC2: the FULL suite reran — two attempts against two candidates: the first
-    // fail, then the heal's pass (not just the failed check re-run).
+    // fail, then the heal's pass (not just the failed check re-run). A third
+    // `pass` follows: the one merge policy's post-merge check (ADR-0001, #381)
+    // re-running the same deterministic verifier against the merged tip.
     const rows = await attempts(runId);
-    expect(rows.map((r) => r.verdict)).toEqual(['fail', 'pass']);
+    expect(rows.map((r) => r.verdict)).toEqual(['fail', 'pass', 'pass']);
     expect(rows[0]!.inputOid).not.toBe(rows[1]!.inputOid); // a fresh candidate per turn
 
     const attemptsByTicket = await ticketAttempts(taskId);

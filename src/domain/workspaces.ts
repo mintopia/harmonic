@@ -51,8 +51,6 @@ export const workspaceOverridesSchema = z.object({
   chatModel: z.string().min(1).nullable().optional().meta({ example: 'gpt-5.6-sol' }),
   isolationMode: z.enum(['direct', 'worktree']).nullable().optional().meta({ example: 'worktree' }),
   priority: z.enum(['high', 'normal', 'low']).nullable().optional().meta({ example: 'high' }),
-  /** Integration-retry bound (ADR-0046) override; null inherits `config.defaults.integrationRetries`. */
-  integrationRetries: z.number().int().min(1).nullable().optional().meta({ example: 5 }),
   /** Conflict-resolve-turn bound (ADR-0046) override; null inherits `config.defaults.conflictResolveTurns`. */
   conflictResolveTurns: z.number().int().min(0).nullable().optional().meta({ example: 2 }),
   maxConcurrentRuns: z.number().int().min(1).nullable().optional().meta({ example: 2 }),
@@ -148,7 +146,6 @@ export class WorkspaceService {
       chatModel: o.chatModel,
       isolationMode: o.isolationMode,
       priority: o.priority,
-      integrationRetries: o.integrationRetries,
       conflictResolveTurns: o.conflictResolveTurns,
       maxConcurrentRuns: o.maxConcurrentRuns,
       autoRunnerEnabled: o.autoRunnerEnabled,

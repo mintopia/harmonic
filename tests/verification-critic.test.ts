@@ -260,9 +260,14 @@ describe('agent critic end-to-end (issue #164)', () => {
     const run = (await server.api('GET', `/api/runs/${runId}`)).body;
     expect(run).toMatchObject({ state: 'completed', phase: 'terminal' });
 
+    // The one merge policy (ADR-0001, #381) runs a deterministic post-merge
+    // check on the merged tip after the worktree merge lands — a second
+    // `command` attempt, never the critic (it already reviewed this diff on
+    // the candidate). So a worktree merge with a real command verifier now
+    // persists three attempts, not two.
     const rows = await attempts(runId);
-    expect(rows).toHaveLength(2);
-    expect(rows.map((r) => `${r.mechanism}:${r.verdict}`).sort()).toEqual(['command:pass', 'critic:pass']);
+    expect(rows).toHaveLength(3);
+    expect(rows.map((r) => `${r.mechanism}:${r.verdict}`).sort()).toEqual(['command:pass', 'command:pass', 'critic:pass']);
   });
 
   it('records implementation, verification, and review outcomes in the Attempt timeline', async () => {

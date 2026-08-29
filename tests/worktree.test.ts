@@ -60,9 +60,11 @@ describe('worktree isolation mode', () => {
 
     // The branch exists and carries the file; the checkout was never touched.
     expect(git(repo, 'show', `${run.branch}:feature.txt`)).toBe('made by agent');
-    // The verified head merged on main by fast-forward (ADR-0041: no human gate).
+    // The verified head merged onto main as an ordinary merge commit (ADR-0001,
+    // #381: the one merge policy — no human gate, and never a fast-forward).
     expect(git(repo, 'show', 'main:feature.txt')).toBe('made by agent');
-    expect(git(repo, 'rev-parse', 'main')).toBe(run.candidateOid);
+    expect(git(repo, 'rev-parse', 'main^2')).toBe(run.candidateOid);
+    expect(git(repo, 'log', '--merges', 'main')).not.toBe('');
 
     // Issue #148: merging retires the Session, which is the sole owner of
     // builder-worktree removal; the async retirement drain reclaims it.
@@ -89,9 +91,10 @@ describe('worktree isolation mode', () => {
     );
 
     const run = (await server.api('GET', `/api/runs/${started.body.id}`)).body;
-    // A real candidate was captured (non-null) and merged onto main by fast-forward.
+    // A real candidate was captured (non-null) and merged onto main as an
+    // ordinary merge commit (ADR-0001, #381 — never a fast-forward).
     expect(run.candidateOid).toBeTruthy();
-    expect(git(repo, 'rev-parse', 'main')).toBe(run.candidateOid);
+    expect(git(repo, 'rev-parse', 'main^2')).toBe(run.candidateOid);
     expect(git(repo, 'show', 'main:feature.txt')).toBe('uncommitted work');
   });
 
@@ -163,14 +166,21 @@ describe('worktree isolation mode', () => {
     // Proof of the fork point: the run branch carries feature-base's marker
     // commit, which never touched main.
     expect(git(repo, 'show', `${run.branch}:base-marker.txt`)).toBe('from feature-base');
-    expect(git(repo, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('main');
 
     // The merging put the run onto feature-base — the recorded base — not main.
+    // The one merge policy (ADR-0001, #381) merges IN PLACE in the shared base
+    // repo: `runMergePolicy` checks the repo out onto the task's own
+    // `baseBranch` under the mutex before merging, so by the time the Task
+    // settles the repo's checkout sits on feature-base, not main.
     expect((await server.api('GET', `/api/tasks/${taskId}`)).body.state).toBe('done');
+    expect(git(repo, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('feature-base');
     expect(git(repo, 'show', 'feature-base:feature.txt')).toBe('made on feature-base');
-    // main's checkout was never touched by either the fork or the merging.
-    expect(existsSync(join(repo, 'feature.txt'))).toBe(false);
-    expect(git(repo, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('main');
+    expect(existsSync(join(repo, 'feature.txt'))).toBe(true);
+    // An ordinary merge commit, never a fast-forward — and main itself never
+    // took the run's work; the merge landed only on feature-base.
+    expect(git(repo, 'rev-parse', 'feature-base^2')).toBe(run.candidateOid);
+    expect(git(repo, 'log', '--merges', 'feature-base')).not.toBe('');
+    expect(() => git(repo, 'show', 'main:feature.txt')).toThrow();
   });
 
   it('two Runs forking the same main and touching the same file: the first merges, the conflicting second never merges a tree nobody verified', async () => {
@@ -194,17 +204,23 @@ describe('worktree isolation mode', () => {
       });
     const [ta, tb] = [await settled(a!), await settled(b!)];
 
-    // Exactly one merged (the other's stale merging re-entered Rebase, where
-    // the conflict is agent work the stub never resolves — a failed Attempt
-    // per try, escalated at the cap). Nothing half-merged, no merge commit.
+    // Exactly one merged, as an ordinary merge commit (ADR-0001, #381: the one
+    // merge policy — no rebase re-entry). The other hits a real merge conflict
+    // against the now-moved base, runs its bounded `conflictResolveTurns`
+    // (the stub agent never resolves it), and escalates — nothing half-merged.
     const states = [ta.state, tb.state].sort();
     expect(states).toEqual(['done', 'escalated']);
     const escalated = ta.state === 'escalated' ? ta : tb;
-    expect(escalated.escalationReason).toMatch(/rebase|advanced after verification|branch head moved/);
+    expect(escalated.escalationReason).toMatch(
+      /hit conflicts that \d+ automated resolve turns? could not settle; a human needs to resolve them/,
+    );
     expect(git(repo, 'status', '--porcelain')).toBe('');
-    expect(git(repo, 'log', '--merges', 'main')).toBe('');
+    // The winner's merge really did land as a merge commit.
+    expect(git(repo, 'log', '--merges', 'main')).not.toBe('');
     expect(['version A', 'version B']).toContain(git(repo, 'show', 'main:conflict.txt'));
-    expect(git(repo, 'rev-list', '--count', 'main')).toBe('2');
+    // main = init, the winner's own implementation commit, and the merge
+    // commit that reconciled them.
+    expect(git(repo, 'rev-list', '--count', 'main')).toBe('3');
   });
 
   it('Close on an escalated worktree ticket removes its branch and leaves the base branch unchanged', async () => {

@@ -439,16 +439,6 @@ const priority = scalar(
   },
 );
 
-const integrationRetries = scalar(null, {
-  key: 'integrationRetries',
-  id: 'workspace-integration-retries',
-  errorKey: 'integrationRetries',
-  get: (w) => w.integrationRetries,
-  set: (w, v) => ({ ...w, integrationRetries: v as number | null }),
-  inherited: (c) => c.defaults.integrationRetries,
-  min: 1,
-});
-
 const conflictResolveTurns = scalar(null, {
   key: 'conflictResolveTurns',
   id: 'workspace-conflict-turns',
@@ -1168,7 +1158,7 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
         'Pre-filled into every new Task in this Workspace. Each inherits the global default until overridden; a Task can still override them one by one.',
     },
     body: (ctx) =>
-      grid(twoColGrid(ctx.surface), [taskHarness, taskModel, isolationMode, priority, integrationRetries, conflictResolveTurns], ctx),
+      grid(twoColGrid(ctx.surface), [taskHarness, taskModel, isolationMode, priority, conflictResolveTurns], ctx),
   },
   {
     tab: 'execution',

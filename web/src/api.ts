@@ -122,7 +122,6 @@ export const api = {
       chatModel?: string | null;
       isolationMode?: 'direct' | 'worktree' | null;
       priority?: 'high' | 'normal' | 'low' | null;
-      integrationRetries?: number | null;
       conflictResolveTurns?: number | null;
       maxConcurrentRuns?: number | null;
       autoRunnerEnabled?: boolean | null;
@@ -156,13 +155,12 @@ export const api = {
   updateTask: (
     id: number,
     input: Partial<
-      Omit<Task, 'harness' | 'model' | 'isolationMode' | 'priority' | 'integrationRetries' | 'conflictResolveTurns'>
+      Omit<Task, 'harness' | 'model' | 'isolationMode' | 'priority' | 'conflictResolveTurns'>
     > & {
       harness?: string | null;
       model?: string | null;
       isolationMode?: 'direct' | 'worktree' | null;
       priority?: 'high' | 'normal' | 'low' | null;
-      integrationRetries?: number | null;
       conflictResolveTurns?: number | null;
     },
   ) => request<Task>('PATCH', `/api/tasks/${id}`, input),

@@ -71,7 +71,6 @@ export function WorkspaceSettingsPage({
         chatModel: local.chatModel,
         isolationMode: local.isolationMode,
         priority: local.priority,
-        integrationRetries: local.integrationRetries,
         conflictResolveTurns: local.conflictResolveTurns,
         maxConcurrentRuns: local.maxConcurrentRuns,
         autoRunnerEnabled: local.autoRunnerEnabled,

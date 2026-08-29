@@ -102,13 +102,6 @@ export const settingsRegistry = {
     label: 'Context reuse token limit',
     help: 'Token ceiling above which a Session is not reused for continuation.',
   },
-  integrationRetries: {
-    scope: 'overridable',
-    control: 'number',
-    tab: 'execution',
-    label: 'Integration retries',
-    help: 'How many times a Run re-attempts integrating when its base branch moves underneath it before deferring.',
-  },
   conflictResolveTurns: {
     scope: 'overridable',
     control: 'number',

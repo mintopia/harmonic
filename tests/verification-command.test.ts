@@ -267,7 +267,14 @@ describe('command verifier end-to-end (issue #135)', () => {
     rmSync(join(repoDir, 'nudge-me.txt'), { force: true });
   });
 
-  it('a pass records a verified-head fact at the exact SHA, and the gate refuses a moved tip', async () => {
+  // Was "a pass records a verified-head fact at the exact SHA, and the gate
+  // refuses a moved tip" — the `verified-head` run-fact and the Runner's
+  // `mergeFreshness` freshness gate are BOTH deleted by #381 (ADR-0001, the
+  // one merge policy): a moved base is normal and is never re-verified, the
+  // merge commit reconciles it. The surviving purpose — a command pass
+  // actually merges the Run's work onto the base — is now proven by asserting
+  // the merge landed as a real merge commit (never a fast-forward).
+  it('a pass merges the Run onto the base as an ordinary merge commit (ADR-0001)', async () => {
     await server.app.ctx.workspaces.update(workspaceId, {
       isolationMode: 'worktree',
       verificationCommand: [exitCommand(0)],
@@ -279,28 +286,12 @@ describe('command verifier end-to-end (issue #135)', () => {
     });
 
     const run = (await server.api('GET', `/api/runs/${runId}`)).body;
-    const fact = (await new RunFactStore(server.app.ctx.asyncDb).list(runId)).find(
-      (f) => f.type === 'verified-head',
-    );
-    expect(fact).toBeDefined();
-    const payload = JSON.parse(fact!.payload) as { sha: string; branch: string | null };
-    expect(payload.sha).toBe(run.candidateOid);
-    expect(payload.branch).toBe(run.branch);
-
-    // The merging gate accepts the tip verification recorded…
-    const runner = server.app.ctx.runner as unknown as {
-      mergeFreshness(task: unknown, run: unknown): Promise<{ fresh: boolean; oid: string; reason?: string }>;
-    };
-    const taskRow = await server.app.ctx.tasks.get(taskId);
-    const runRow = await server.app.ctx.runs.get(runId);
-    await expect(runner.mergeFreshness(taskRow, runRow)).resolves.toEqual({ fresh: true, oid: payload.sha });
-    // …and refuses once the branch tip moved after verification.
-    git(repoDir, 'update-ref', `refs/heads/${payload.branch}`, git(repoDir, 'rev-parse', 'main~1'));
-    await expect(runner.mergeFreshness(taskRow, runRow)).resolves.toEqual({
-      fresh: false,
-      oid: payload.sha,
-      reason: 'branch head moved after verification',
-    });
+    expect(run.candidateOid).toBeTruthy();
+    // The one merge policy: an ordinary `git merge --no-ff` — main's merge
+    // commit has the run's verified branch tip as its second parent, and
+    // shows up in `--merges` history (never a fast-forward).
+    expect(git(repoDir, 'rev-parse', 'main^2')).toBe(run.candidateOid);
+    expect(git(repoDir, 'log', '--merges', 'main')).not.toBe('');
   });
 
   it('opens every Attempt with a recorded Rebase Task, including a clean no-op rebase', async () => {
