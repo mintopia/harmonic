@@ -161,7 +161,7 @@ export async function statsRoutes(fastify: FastifyInstance): Promise<void> {
         ...(workspaceId === undefined ? {} : { workspaceId }),
       });
 
-      const attemptReasonByRun = new Map(attemptReasons.map((r) => [r.runId, r.reason]));
+      const attemptReasonById = new Map(attemptReasons.map((r) => [r.attemptId, r.reason]));
 
       // Hand the loop back between the blocking reads and the heavy JS
       // aggregation below (issue #200), so a large Stats request interleaves
@@ -187,7 +187,7 @@ export async function statsRoutes(fastify: FastifyInstance): Promise<void> {
       const failures = rows.filter(isExecutionFailure);
       const failedAttempts = failures.length;
       const failReasons = failuresByReason(
-        failures.map((r) => ({ attemptReason: attemptReasonByRun.get(r.id) ?? null, detailReason: r.reason })),
+        failures.map((r) => ({ attemptReason: attemptReasonById.get(r.id) ?? null, detailReason: r.reason })),
       );
 
       const durations = rows

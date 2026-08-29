@@ -40,12 +40,12 @@ async function readStats({ from, to, workspaceId }: StatsRange): Promise<StatsRe
   const attemptReasons =
     workspaceId === undefined
       ? await db
-          .select({ runId: attempts.id, reason: attempts.reason })
+          .select({ attemptId: attempts.id, reason: attempts.reason })
           .from(attempts)
           .where(and(eq(attempts.state, 'failed'), gte(attempts.startedAt, from), lte(attempts.startedAt, to)))
           .all()
       : await db
-          .select({ runId: attempts.id, reason: attempts.reason })
+          .select({ attemptId: attempts.id, reason: attempts.reason })
           .from(attempts)
           .innerJoin(tasks, eq(attempts.taskId, tasks.id))
           .where(

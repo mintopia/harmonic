@@ -13,9 +13,9 @@ export interface StatsRange {
 
 export interface StatsReadResult {
   rows: AttemptRow[];
-  /** Failed-only Attempts' disposition (ADR-0001): `attempts.reason`
-   * keyed by `runId` (the Attempt's own id — one execution ledger). */
-  attemptReasons: Array<{ runId: number; reason: string | null }>;
+  /** Failed-only Attempts' disposition (ADR-0001): `attempts.reason` keyed
+   * by the Attempt's id. */
+  attemptReasons: Array<{ attemptId: number; reason: string | null }>;
   toolTotals: ToolCallTotals;
 }
 
@@ -87,7 +87,7 @@ function isStatsReadResult(value: unknown): value is StatsReadResult {
     && value.rows.every(isRecord)
     && Array.isArray(value.attemptReasons)
     && value.attemptReasons.every(
-      (row) => isRecord(row) && typeof row.runId === 'number' && (row.reason === null || typeof row.reason === 'string'),
+      (row) => isRecord(row) && typeof row.attemptId === 'number' && (row.reason === null || typeof row.reason === 'string'),
     )
     && isRecord(value.toolTotals)
     && isTotalsDimension(value.toolTotals.byTask)
