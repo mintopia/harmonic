@@ -13,7 +13,7 @@ import {
   verifiedSha,
   verificationAttemptId,
 } from '../web/src/attempt-timeline-model.js';
-import type { Attempt, Step, Run } from '../web/src/types.js';
+import type { Attempt, Step, AttemptSummary } from '../web/src/types.js';
 
 const task = (over: Partial<Step> = {}): Step => ({
   id: 1, attemptId: 1, type: 'verification', position: 3, state: 'passed', command: 'npm test', verdict: 'pass', logLocator: null, startedAt: 1_000, endedAt: 3_000, ...over,
@@ -21,8 +21,8 @@ const task = (over: Partial<Step> = {}): Step => ({
 const attempt = (over: Partial<Attempt> = {}): Attempt => ({
   id: 1, taskId: 7, number: 1, state: 'failed', startedAt: 1_000, endedAt: 3_000, feedback: null, verifiedSha: null, escalationReason: null, verifierStatuses: [], continuation: null, steps: [], ...over,
 });
-const run = (over: Partial<Run> = {}): Run => ({
-  id: 1, taskId: 7, attempt: 1, state: 'running', reason: null, stopReason: null, sessionId: null, prompt: null, branch: null, baseBranch: null,
+const run = (over: Partial<AttemptSummary> = {}): AttemptSummary => ({
+  id: 1, taskId: 7, number: 1, state: 'running', reason: null, stopReason: null, sessionId: null, prompt: null, branch: null, baseBranch: null,
   usage: null, cost: null, startedAt: 1_000_000, finishedAt: null, ...over,
 });
 
@@ -83,7 +83,7 @@ describe('attempt timeline model', () => {
   });
 
   it('maps an attempt to the run whose counter first reached it', () => {
-    const runs = [run({ id: 10, attempt: 2 }), run({ id: 20, attempt: 3 })];
+    const runs = [run({ id: 10, number: 2 }), run({ id: 20, number: 3 })];
     expect(runForAttempt(runs, { number: 1 })?.id).toBe(10);
     expect(runForAttempt(runs, { number: 2 })?.id).toBe(10);
     expect(runForAttempt(runs, { number: 3 })?.id).toBe(20);
@@ -100,8 +100,8 @@ describe('attempt timeline model', () => {
       lastActiveAgeMs: 2_000,
       warmWindowMs: 30_000,
     };
-    expect(runFailureBannerLabel(run({ state: 'failed', reason: 'workspace disconnected' }), attempt())).toBe('Run failed');
-    expect(runFailureBannerLabel(run({ state: 'failed', reason: 'workspace disconnected', attempt: 2 }), attempt({ number: 2, continuation: continued }))).toBe('Resume failed');
+    expect(runFailureBannerLabel(run({ state: 'failed', reason: 'workspace disconnected' }), attempt())).toBe('Attempt failed');
+    expect(runFailureBannerLabel(run({ state: 'failed', reason: 'workspace disconnected', number: 2 }), attempt({ number: 2, continuation: continued }))).toBe('Resume failed');
     expect(runFailureBannerLabel(run({ state: 'running', reason: 'workspace disconnected' }), attempt({ continuation: continued }))).toBeNull();
     expect(runFailureBannerLabel(run({ state: 'failed', reason: null }), attempt({ continuation: continued }))).toBeNull();
   });

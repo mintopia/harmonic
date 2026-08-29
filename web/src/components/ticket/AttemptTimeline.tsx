@@ -11,7 +11,7 @@ import {
   verifierStatusTone,
   type TimelineTone,
 } from '../../attempt-timeline-model.js';
-import type { Attempt, Step, Run, Task, VerifierStatus } from '../../types.js';
+import type { Attempt, Step, AttemptSummary, Task, VerifierStatus } from '../../types.js';
 import { escalationActions } from '../../task-actions-model.js';
 import { btnAccept, btnGhost, btnQuietDestructive, railSectionCount, railSectionHead } from '../../ui.js';
 import { toastError, toastSuccess } from '../../toast.js';
@@ -144,7 +144,7 @@ export function AttemptTimeline({
   task,
   maxAttempts,
   now,
-  selectedRunId,
+  selectedSummaryId,
   selectedAttemptId,
   selectedTaskId,
   selectedFile,
@@ -154,12 +154,12 @@ export function AttemptTimeline({
   layout = 'rail',
 }: {
   attempts: Attempt[];
-  runs: Run[];
+  runs: AttemptSummary[];
   task: Task;
   maxAttempts: number | null;
   now: number;
-  selectedRunId: number | null;
-  /** Explicit attempt pick; null falls back to the selected Run's latest attempt. */
+  selectedSummaryId: number | null;
+  /** Explicit attempt pick; null falls back to the selected AttemptSummary's latest attempt. */
   selectedAttemptId: number | null;
   selectedTaskId: number | null;
   selectedFile: string | null;
@@ -170,7 +170,7 @@ export function AttemptTimeline({
 }) {
   const strip = layout === 'strip';
   const currentAttemptId =
-    selectedAttemptId ?? [...attempts].reverse().find((attempt) => runForAttempt(runs, attempt)?.id === selectedRunId)?.id ?? null;
+    selectedAttemptId ?? [...attempts].reverse().find((attempt) => runForAttempt(runs, attempt)?.id === selectedSummaryId)?.id ?? null;
   const isAttemptSelected = (attempt: Attempt) =>
     selectedFile === null && attempt.id === currentAttemptId && !attempt.steps.some((row) => row.id === selectedTaskId);
   // The escalation surface rides the attempt that escalated; an escalation with

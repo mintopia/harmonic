@@ -79,7 +79,7 @@ describe('boot crash-recovery', () => {
 
     const task = await server.api('GET', `/api/tasks/${created.body.id}`);
     expect(task.body.state).toBe('done');
-    const run = await server.api('GET', `/api/runs/${started.body.id}`);
+    const run = await server.api('GET', `/api/attempts/${started.body.id}`);
     expect(run.body.state).toBe('completed');
   });
 
@@ -108,7 +108,7 @@ describe('boot crash-recovery', () => {
 
     const task = await server.api('GET', `/api/tasks/${created.body.id}`);
     expect(task.body).toMatchObject({ state: 'escalated', escalationReason: before.body.escalationReason });
-    const run = await server.api('GET', `/api/runs/${runId}`);
+    const run = await server.api('GET', `/api/attempts/${runId}`);
     expect(run.body.state).toBe('failed');
     await server.app.close();
     expect(await attemptSnapshot()).toEqual(attemptsBefore);
@@ -129,7 +129,7 @@ describe('boot crash-recovery', () => {
       const runId: number = started.body.id;
       await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'done');
       const dataDir = server.dataDir;
-      const runBefore = await server.api('GET', `/api/runs/${runId}`);
+      const runBefore = await server.api('GET', `/api/attempts/${runId}`);
       expect(runBefore.body.state).toBe('completed');
       const mainTipAfterMerge = git(repo, 'rev-parse', 'main');
 
@@ -147,7 +147,7 @@ describe('boot crash-recovery', () => {
 
       // Reconciled without touching git again: `main` is exactly where the
       // original merge left it (no re-merge, no duplicate commit).
-      const run = await server.api('GET', `/api/runs/${runId}`);
+      const run = await server.api('GET', `/api/attempts/${runId}`);
       expect(run.body.state).toBe('completed');
       const task = await server.api('GET', `/api/tasks/${taskId}`);
       expect(task.body.state).toBe('done');
@@ -156,7 +156,7 @@ describe('boot crash-recovery', () => {
       // A second boot: the Run already left `running`, so nothing re-checks it.
       await server.app.close();
       server = await startServer({ ...stubHarness(), defaults: { isolationMode: 'worktree' }, maxAttempts: 1 }, { dataDir });
-      const runAgain = await server.api('GET', `/api/runs/${runId}`);
+      const runAgain = await server.api('GET', `/api/attempts/${runId}`);
       expect(runAgain.body.state).toBe('completed');
       expect(git(repo, 'rev-parse', 'main')).toBe(mainTipAfterMerge);
     },

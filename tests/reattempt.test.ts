@@ -34,7 +34,7 @@ describe('unified corrective attempts', () => {
   }
 
   const timeline = async (taskId: number) => {
-    const response = await server.api('GET', `/api/tasks/${taskId}/attempts`);
+    const response = await server.api('GET', `/api/tasks/${taskId}/attempts/timeline`);
     expect(response.status).toBe(200);
     return response.body.attempts as { number: number; state: string; feedback: string | null; steps: { type: string }[] }[];
   };

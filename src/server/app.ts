@@ -120,7 +120,7 @@ const PUBLIC_API_PATHS = new Set([
 /**
  * What an ephemeral scoped key (a Run Key or a Conversation Key) may reach:
  * the agent surface from issue 13 — task CRUD, dependencies, queue/cancel,
- * runs and events, and MCP (which gates its own tool list). The escalation
+ * attempts and events, and MCP (which gates its own tool list). The escalation
  * actions (Accept / Reject with guidance / Close) are always human-only.
  * Everything else — key management, config, channels, Conversations — is
  * operator-only.
@@ -150,13 +150,13 @@ function scopedKeyAllowed(path: string): boolean {
   if (/^\/api\/tasks\/\d+\/(accept|reject|close)$/.test(path)) return false;
   if (/^\/api\/tasks\/\d+\/channels(\/|$)/.test(path)) return false;
   if (path === '/api/tasks' || path.startsWith('/api/tasks/')) return true;
-  if (path.startsWith('/api/runs')) return true;
+  if (path.startsWith('/api/attempts')) return true;
   return false;
 }
 
 /**
  * What a `read`-scoped key reaches (issue #35): read-only board access for a
- * viz client — GET tasks/runs/maps, the instance-wide Activity snapshot, and
+ * viz client — GET tasks/attempts/maps, the instance-wide Activity snapshot, and
  * the WS handshake. Every mutation is blocked (GET-only), as is the operator
  * surface (keys, config, channels, Conversations). The per-Task channel
  * overrides are operator config, so they're excluded even though they hang off
@@ -173,7 +173,7 @@ function readScopeAllowed(path: string, method: string): boolean {
   if (/^\/api\/workspaces\/\d+\/epics(\/\d+)?$/.test(path)) return false;
   if (/^\/api\/tasks\/\d+\/channels(\/|$)/.test(path)) return false;
   if (path === '/api/tasks' || path.startsWith('/api/tasks/')) return true;
-  if (path.startsWith('/api/runs')) return true;
+  if (path.startsWith('/api/attempts')) return true;
   if (path === '/api/maps' || path.startsWith('/api/maps/')) return true;
   if (path === '/api/activity') return true;
   if (path === '/api/operations') return true;

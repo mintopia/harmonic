@@ -20,7 +20,7 @@ describe('escalation: the three actions (direct mode)', () => {
   });
 
   const timeline = async (taskId: number) =>
-    (await server.api('GET', `/api/tasks/${taskId}/attempts`)).body.attempts as Array<{
+    (await server.api('GET', `/api/tasks/${taskId}/attempts/timeline`)).body.attempts as Array<{
       number: number;
       state: string;
       feedback: string | null;
@@ -56,9 +56,9 @@ describe('escalation: the three actions (direct mode)', () => {
     expect((await server.api('POST', `/api/tasks/${taskId}/close`)).status).toBe(409);
 
     // Harmonic merged it itself: the default merge disposition, never the operator's.
-    const run = (await server.api('GET', `/api/tasks/${taskId}/runs`)).body.runs[0];
+    const run = (await server.api('GET', `/api/tasks/${taskId}/attempts`)).body.attempts[0];
     expect(run).toMatchObject({ state: 'completed' });
-    const attempt = await new AttemptStore(server.app.ctx.asyncDb).getForTaskNumber(taskId, run.attempt);
+    const attempt = await new AttemptStore(server.app.ctx.asyncDb).getForTaskNumber(taskId, run.number);
     expect(attempt).toMatchObject({ state: 'passed', reason: 'agent-finish/unresolved' });
   });
 
@@ -70,7 +70,7 @@ describe('escalation: the three actions (direct mode)', () => {
 
     const attempts = await timeline(taskId);
     expect(attempts.map((attempt) => attempt.state)).toEqual(['escalated']);
-    const run = (await server.api('GET', `/api/tasks/${taskId}/runs`)).body.runs[0];
+    const run = (await server.api('GET', `/api/tasks/${taskId}/attempts`)).body.attempts[0];
     expect(run.state).toBe('failed');
     expect(run.reason).toContain('escalated to human');
   });
@@ -112,9 +112,9 @@ describe('escalation: the three actions (direct mode)', () => {
       { number: 2, state: 'escalated' },
     ]);
     expect(attemptsAfter[0]!.feedback).toBe('Do not crash; write the CSV header first.');
-    const runs = (await server.api('GET', `/api/tasks/${taskId}/runs`)).body.runs;
+    const runs = (await server.api('GET', `/api/tasks/${taskId}/attempts`)).body.attempts;
     expect(runs).toHaveLength(2);
-    expect(runs[1].attempt).toBe(2);
+    expect(runs[1].number).toBe(2);
     expect(runs[1].prompt).toContain('Do not crash; write the CSV header first.');
     expect(runs[1].prompt).toContain('crash-before-response'); // the original prompt is kept
   });
@@ -131,7 +131,7 @@ describe('escalation: the three actions (direct mode)', () => {
     // Give any (absent) auto-start a chance to fire, then confirm it did not.
     await new Promise((r) => setTimeout(r, 50));
     expect((await server.api('GET', `/api/tasks/${taskId}`)).body.state).toBe('ready');
-    const runs = (await server.api('GET', `/api/tasks/${taskId}/runs`)).body.runs;
+    const runs = (await server.api('GET', `/api/tasks/${taskId}/attempts`)).body.attempts;
     expect(runs).toHaveLength(1); // only the original escalated Run; no new one
     // The guidance is recorded as the next Attempt's feedback all the same.
     expect((await timeline(taskId)).find((a) => a.number === 1)!.feedback).toBe(

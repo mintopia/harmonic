@@ -48,8 +48,8 @@ describe('dispatching a Run persists a durable Session (issue #141)', () => {
       return body.state === 'done' ? body : undefined;
     });
     expect(task.state).toBe('done');
-    const runApi = (await server.api('GET', `/api/runs/${runId}`)).body;
-    expect(runApi).toMatchObject({ taskId, attempt: 1, state: 'completed', stopReason: 'end_turn' });
+    const runApi = (await server.api('GET', `/api/attempts/${runId}`)).body;
+    expect(runApi).toMatchObject({ taskId, number: 1, state: 'completed', stopReason: 'end_turn' });
 
     // --- The rest reads the durable rows directly (sessionRowId/session
     // internals aren't on the public Run API — same pattern execution.test.ts

@@ -119,7 +119,7 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
     });
     expect(task.state).toBe('done');
 
-    const run = (await server.api('GET', `/api/runs/${runId}`)).body;
+    const run = (await server.api('GET', `/api/tasks/${taskId}/attempts/current`)).body;
     expect(run.state).toBe('completed');
 
     // The healed work merged: the base branch moved and carries the fixed marker.
@@ -171,7 +171,7 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
       verificationCommand: [markerCommand('ok')],
       contextReuseTokenLimit: 20,
     });
-    const { taskId, runId } = await runWorktreeTask({
+    const { taskId } = await runWorktreeTask({
       turns: [
         { writeFiles: { 'marker.txt': 'bad\n' }, usage: { inputTokens, outputTokens: 1 } },
         { writeFiles: { 'marker.txt': 'ok\n' } },
@@ -181,12 +181,11 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
     const attemptsByTicket = await ticketAttempts(taskId);
     expect(attemptsByTicket.map((a) => a.state)).toEqual(['failed', 'passed']);
     const [first, second] = await Promise.all([implementationSession(attemptsByTicket[0]!.id), implementationSession(attemptsByTicket[1]!.id)]);
-    // `runId` is the FIRST Attempt's id; each self-heal turn is its own new
-    // Attempt row now (ADR-0001 #388 S-G), so the "current state of this
-    // Run" read has to follow forward to the latest Attempt, exactly like
-    // the `/api/runs/:id` routes do.
-    const run = await server.app.ctx.attempts.resolveLatest(runId);
-    const reloaded = (await server.api('GET', `/api/runs/${runId}/events`)).body.events
+    // Each self-heal turn is its own new Attempt row (ADR-0001 #388 S-G), so
+    // the "current state of this execution" read follows forward via the Task,
+    // exactly like `/api/tasks/:id/attempts/current` does.
+    const run = await server.app.ctx.attempts.currentForTask(taskId);
+    const reloaded = (await server.api('GET', `/api/attempts/${run.id}/events`)).body.events
       .filter((event: { payload: { event?: string } }) => event.payload.event === 'session-reloaded')
       .map((event: { payload: { sessionId: string } }) => event.payload.sessionId);
     return { continuation: JSON.parse(attemptsByTicket[1]!.continuation!), first, second, run, reloaded };
@@ -231,7 +230,7 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
     });
     expect(task.state).toBe('escalated');
 
-    const run = (await server.api('GET', `/api/runs/${runId}`)).body;
+    const run = (await server.api('GET', `/api/tasks/${taskId}/attempts/current`)).body;
     expect(run.state).toBe('failed');
 
     // The verifier runs once per Attempt and the failed Attempt retains feedback.
@@ -250,7 +249,7 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
     const { taskId, runId } = await runWorktreeTask({ writeFiles: { 'marker.txt': 'bad\n' } });
 
     const run = await waitFor(async () => {
-      const { body } = await server.api('GET', `/api/runs/${runId}`);
+      const { body } = await server.api('GET', `/api/tasks/${taskId}/attempts/current`);
       return body.state === 'failed' ? body : undefined;
     });
     expect(run.state).toBe('failed');
@@ -275,7 +274,7 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
     const { taskId, runId } = await runWorktreeTask({ writeFiles: { 'marker.txt': 'bad\n' } });
 
     const run = await waitFor(async () => {
-      const { body } = await server.api('GET', `/api/runs/${runId}`);
+      const { body } = await server.api('GET', `/api/tasks/${taskId}/attempts/current`);
       return body.state === 'failed' ? body : undefined;
     });
     expect(run.state).toBe('failed');

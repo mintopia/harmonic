@@ -18,7 +18,7 @@ import { Git } from '../../execution/git.js';
 import { DomainError } from '../../domain/errors.js';
 import { mergeUsage, type RunUsage } from '../../execution/usage.js';
 import { readTranscriptLog, withOperatorMessages, type OperatorMessage } from '../../execution/transcript-log.js';
-import { attemptTimelineToApi, atRestWorkspaceId, costOfRuns, runToApi, taskToApi, tasksToApi, ticketTimelineToApi, verifierStatusesToApi } from '../serialize.js';
+import { attemptTimelineToApi, atRestWorkspaceId, costOfRuns, attemptToApi, taskToApi, tasksToApi, ticketTimelineToApi, verifierStatusesToApi } from '../serialize.js';
 import { attemptTimelineResponseSchema, errorResponse, idParamsSchema, costSchema, runUsageSchema, okResponseSchema, verifierStatusSchema } from '../schemas.js';
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
 
@@ -191,32 +191,30 @@ const taskListRowSchema = taskSchema.omit({ prompt: true }).meta({ id: 'TaskList
 const tasksListResponseSchema = listResponse('tasks', taskListRowSchema);
 
 /**
- * A run as the REST API and WebSocket both serve it (serialize.ts `ApiRun`).
- * Attempt is the single execution ledger now (ADR-0001 #388 S-G) — this is a
- * translated projection of `AttemptRow` (`runToApi`), not a raw dump: the wire
- * contract (`attempt`/`finishedAt`/the 4-value `state`) is unchanged from
- * before the fold, so REST/WS consumers see no shape change from this
- * internal store consolidation.
+ * An Attempt as the REST API and WebSocket both serve it (serialize.ts
+ * `ApiAttempt`) — a translated projection of `AttemptRow` (`attemptToApi`),
+ * not a raw dump: `number`/`finishedAt`/the 4-value `state` are deliberate
+ * wire choices (ADR-0001, #390).
  */
-const runSchema = z
+const attemptSchema = z
   .object({
     id: z.number().meta({ example: 9137 }),
     taskId: z.number().meta({ example: 4821 }),
-    attempt: z.number().meta({ example: 1 }),
+    number: z.number().meta({ example: 1 }),
     state: z.enum(['running', 'completed', 'failed', 'cancelled']).meta({ example: 'completed' }),
     /** Failure reason: 'interrupted', an error message, or null. */
     reason: z.string().nullable().meta({ example: null }),
     /** ACP stopReason from the session/prompt result. */
     stopReason: z.string().nullable().meta({ example: 'end_turn' }),
     sessionId: z.string().nullable().meta({ example: 'a3f2c1d0-8b4e-4c1a-9f7d-2e6b5a0c3d91' }),
-    /** The durable Harmonic Session (issue #141) this Run bound to on dispatch;
+    /** The durable Harmonic Session (issue #141) this Attempt bound to on dispatch;
      * a retry/reject continuation (issue #147) inherits its predecessor's, so two
-     * Runs sharing a `sessionRowId` continued the same ACP conversation. */
+     * Attempts sharing a `sessionRowId` continued the same ACP conversation. */
     sessionRowId: z.number().nullable().meta({ example: 42 }),
-    /** The exact prompt text sent to the harness for this Run; null for
-     * pre-feature Runs and until the prompt turn is sent. */
+    /** The exact prompt text sent to the harness for this Attempt; null for
+     * pre-feature Attempts and until the prompt turn is sent. */
     prompt: z.string().nullable().meta({ example: 'Fix the rate-limiting bug in src/api.ts' }),
-    /** Worktree mode: the run's branch and the branch it was cut from. */
+    /** Worktree mode: the attempt's branch and the branch it was cut from. */
     branch: z.string().nullable().meta({ example: 'agent/4821-rate-limiting' }),
     baseBranch: z.string().nullable().meta({ example: 'main' }),
     /** The frozen verification candidate (issue #134): the `commit-tree` OID
@@ -231,11 +229,11 @@ const runSchema = z
     finishedAt: z.number().nullable().meta({ example: 1784032260000 }),
     cost: costSchema.nullable(),
   })
-  .meta({ id: 'Run' });
+  .meta({ id: 'AttemptSummary' });
 
-const runsListResponseSchema = listResponse('runs', runSchema);
+const attemptsListResponseSchema = listResponse('attempts', attemptSchema);
 
-const runEventSchema = z.object({
+const attemptEventSchema = z.object({
   id: z.number().meta({ example: 55210 }),
   /** The Attempt this event is keyed to (`attempt_events.attempt_id`,
    * ADR-0001 #388 S-F — was `runId` before). */
@@ -250,7 +248,7 @@ const runEventSchema = z.object({
   }),
 });
 
-const eventsListResponseSchema = listResponse('events', runEventSchema);
+const eventsListResponseSchema = listResponse('events', attemptEventSchema);
 const ticketTimelineEventSchema = z.object({
   attemptId: z.number().nullable(),
   ts: z.number(),
@@ -258,8 +256,8 @@ const ticketTimelineEventSchema = z.object({
   data: z.unknown(),
 });
 const ticketTimelineResponseSchema = listResponse('events', ticketTimelineEventSchema);
-const runLogResponseSchema = z.discriminatedUnion('status', [
-  z.object({ status: z.literal('available'), events: z.array(runEventSchema), liveCursor: z.number() }),
+const attemptLogResponseSchema = z.discriminatedUnion('status', [
+  z.object({ status: z.literal('available'), events: z.array(attemptEventSchema), liveCursor: z.number() }),
   z.object({ status: z.literal('unavailable'), liveCursor: z.number() }),
 ]);
 
@@ -779,20 +777,20 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
     '/tasks/:id/run',
     {
       schema: {
-        tags: ['Runs'],
-        description: 'Start a run for a ready task. Reachable with a run-scoped Run Key.',
+        tags: ['Attempts'],
+        description: 'Start an attempt for a ready task. Reachable with a run-scoped Run Key.',
         params: idParamsSchema,
-        response: { 201: runSchema.describe('The run that just started.') },
+        response: { 201: attemptSchema.describe('The attempt that just started.') },
       },
     },
     async (req, reply) => {
       const run = await ctx.runner.start(req.params.id);
-      return reply.status(201).send(runToApi(ctx, run));
+      return reply.status(201).send(attemptToApi(ctx, run));
     },
   );
 
   app.get(
-    '/tasks/:id/attempts',
+    '/tasks/:id/attempts/timeline',
     {
       schema: {
         tags: ['Attempts'],
@@ -832,55 +830,73 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
   );
 
   app.get(
-    '/tasks/:id/runs',
+    '/tasks/:id/attempts',
     {
       schema: {
-        tags: ['Runs'],
-        description: "List a task's runs (retries included). Reachable with a run-scoped Run Key.",
+        tags: ['Attempts'],
+        description: "List a task's attempts (retries included). Reachable with a run-scoped Run Key.",
         params: idParamsSchema,
         querystring: paginationQuerySchema,
-        response: { 200: runsListResponseSchema.describe("Every run for the task, including failed retries, oldest first.") },
+        response: { 200: attemptsListResponseSchema.describe("Every attempt for the task, including failed retries, oldest first.") },
       },
     },
     async (req) => {
       await ctx.tasks.assertExists(req.params.id);
       const { limit, offset } = req.query;
-      const runs = (await ctx.attempts.listForTask(req.params.id)).map((run) => runToApi(ctx, run));
-      const { items, total } = paginate(runs, { limit, offset });
-      return { runs: items, total };
+      const list = (await ctx.attempts.listForTask(req.params.id)).map((run) => attemptToApi(ctx, run));
+      const { items, total } = paginate(list, { limit, offset });
+      return { attempts: items, total };
     },
   );
 
   app.get(
-    '/runs/:id',
+    '/tasks/:id/attempts/current',
     {
       schema: {
-        tags: ['Runs'],
-        description: 'Get one run with its Usage and Cost. Reachable with a run-scoped Run Key.',
+        tags: ['Attempts'],
+        description:
+          "The task's current (latest) attempt — the follow-forward read for pollers: self-heal advances to a new Attempt row each turn, and this always reflects the live one. Reachable with a run-scoped Run Key.",
         params: idParamsSchema,
         response: {
-          200: runSchema.describe('The run, with its Usage and Cost.'),
-          404: errorResponse('No run has that id, or it belongs to another task.'),
+          200: attemptSchema.describe('The current attempt, with its Usage and Cost.'),
+          404: errorResponse('No task has that id, or it has no attempts yet.'),
         },
       },
     },
-    async (req) => runToApi(ctx, await ctx.attempts.resolveLatest(req.params.id)),
+    async (req) => {
+      await ctx.tasks.assertExists(req.params.id);
+      return attemptToApi(ctx, await ctx.attempts.currentForTask(req.params.id));
+    },
   );
 
   app.get(
-    '/runs/:id/log',
+    '/attempts/:id',
     {
       schema: {
-        tags: ['Runs'],
-        description: "Read a Run's native harness transcript. Missing or unreadable transcripts are explicitly unavailable.",
+        tags: ['Attempts'],
+        description: 'Get one attempt with its Usage and Cost. Reachable with a run-scoped Run Key.',
         params: idParamsSchema,
-        response: { 200: runLogResponseSchema.describe('The native transcript events, or an explicit unavailable state.') },
+        response: {
+          200: attemptSchema.describe('The attempt, with its Usage and Cost.'),
+          404: errorResponse('No attempt has that id.'),
+        },
+      },
+    },
+    async (req) => attemptToApi(ctx, await ctx.attempts.get(req.params.id)),
+  );
+
+  app.get(
+    '/attempts/:id/log',
+    {
+      schema: {
+        tags: ['Attempts'],
+        description: "Read an Attempt's native harness transcript. Missing or unreadable transcripts are explicitly unavailable.",
+        params: idParamsSchema,
+        response: { 200: attemptLogResponseSchema.describe('The native transcript events, or an explicit unavailable state.') },
       },
     },
     async (req) => {
-      // `run` already IS the Attempt (ADR-0001 #388 S-G); `resolveLatest`
-      // follows a `runId` handle forward to its Task's current self-heal turn.
-      const run = await ctx.attempts.resolveLatest(req.params.id);
+      const run = await ctx.attempts.get(req.params.id);
       if (run.sessionRowId === null) return { status: 'unavailable' as const, liveCursor: ctx.bus.latestRunLogSeq({ runId: run.id }) };
       let session;
       try {
@@ -918,18 +934,18 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
   );
 
   app.get(
-    '/runs/:id/events',
+    '/attempts/:id/events',
     {
       schema: {
-        tags: ['Runs'],
-        description: 'Replay a run\'s persisted events, in order — the same records streamed live over the WebSocket. Reachable with a run-scoped Run Key.',
+        tags: ['Attempts'],
+        description: 'Replay an attempt\'s persisted events, in order — the same records streamed live over the WebSocket. Reachable with a run-scoped Run Key.',
         params: idParamsSchema,
         querystring: paginationQuerySchema,
-        response: { 200: eventsListResponseSchema.describe('The run\'s persisted events in sequence order.') },
+        response: { 200: eventsListResponseSchema.describe('The attempt\'s persisted events in sequence order.') },
       },
     },
     async (req) => {
-      const run = await ctx.attempts.resolveLatest(req.params.id);
+      const run = await ctx.attempts.get(req.params.id);
       const { limit, offset } = req.query;
       const { items, total } = paginate(await ctx.attempts.listEvents(run.id), { limit, offset });
       return { events: items, total };
@@ -937,21 +953,21 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
   );
 
   app.get(
-    '/runs/:id/guardrail-events',
+    '/attempts/:id/guardrail-events',
     {
       schema: {
-        tags: ['Runs'],
-        description: "Replay a run's Guardrail-trip event log, in sequence order (issue #171). Reachable with a run-scoped Run Key.",
+        tags: ['Attempts'],
+        description: "Replay an attempt's Guardrail-trip event log, in sequence order (issue #171). Reachable with a run-scoped Run Key.",
         params: idParamsSchema,
         querystring: paginationQuerySchema,
         response: {
-          200: guardrailEventsListResponseSchema.describe("The run's Guardrail-trip events in sequence order."),
-          404: errorResponse('No run has that id.'),
+          200: guardrailEventsListResponseSchema.describe("The attempt's Guardrail-trip events in sequence order."),
+          404: errorResponse('No attempt has that id.'),
         },
       },
     },
     async (req) => {
-      const run = await ctx.attempts.resolveLatest(req.params.id);
+      const run = await ctx.attempts.get(req.params.id);
       const { limit, offset } = req.query;
       const guardrailEvents = (await ctx.guardrailEvents.list(run.id)).map((r) => ({
         ...r,
@@ -963,22 +979,22 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
   );
 
   app.get(
-    '/runs/:id/verification-attempts',
+    '/attempts/:id/verification-attempts',
     {
       schema: {
-        tags: ['Runs'],
+        tags: ['Attempts'],
         description:
-          "Replay a run's verification-attempt log (per-verifier verdicts + summaries), in sequence order (issue #169, part of #109). Reachable with a run-scoped Run Key.",
+          "Replay an attempt's verification-attempt log (per-verifier verdicts + summaries), in sequence order (issue #169, part of #109). Reachable with a run-scoped Run Key.",
         params: idParamsSchema,
         querystring: paginationQuerySchema,
         response: {
-          200: verificationAttemptsListResponseSchema.describe("The run's verification attempts in sequence order."),
-          404: errorResponse('No run has that id.'),
+          200: verificationAttemptsListResponseSchema.describe("The attempt's verification attempts in sequence order."),
+          404: errorResponse('No attempt has that id.'),
         },
       },
     },
     async (req) => {
-      const run = await ctx.attempts.resolveLatest(req.params.id);
+      const run = await ctx.attempts.get(req.params.id);
       const { limit, offset } = req.query;
       const attempts = await ctx.verificationAttempts.list(run.id);
       // verifierStatuses is derived from the whole attempt set, so compute it
@@ -1020,12 +1036,12 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
     '/verification-attempts/:id/log',
     {
       schema: {
-        tags: ['Runs'],
+        tags: ['Attempts'],
         description:
           "Read a critic verification attempt's native harness transcript (ADR-0040) — what the critic itself read, ran, and reasoned. Missing or unreadable transcripts are explicitly unavailable.",
         params: idParamsSchema,
         response: {
-          200: runLogResponseSchema.describe('The critic session transcript events, or an explicit unavailable state.'),
+          200: attemptLogResponseSchema.describe('The critic session transcript events, or an explicit unavailable state.'),
         },
       },
     },
@@ -1050,11 +1066,11 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
     '/tasks/:id/usage',
     {
       schema: {
-        tags: ['Runs'],
+        tags: ['Attempts'],
         description:
-          "Usage and Cost rolled up across all of a task's runs, retries included. Reachable with a run-scoped Run Key.",
+          "Usage and Cost rolled up across all of a task's attempts, retries included. Reachable with a run-scoped Run Key.",
         params: idParamsSchema,
-        response: { 200: usageResponseSchema.describe('Usage and Cost rolled up across the task\'s runs.') },
+        response: { 200: usageResponseSchema.describe('Usage and Cost rolled up across the task\'s attempts.') },
       },
     },
     async (req) => {
@@ -1072,18 +1088,18 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
   );
 
   app.get(
-    '/runs/:id/diff',
+    '/attempts/:id/diff',
     {
       schema: {
-        tags: ['Runs'],
+        tags: ['Attempts'],
         description:
-          'Branch and diffstat for the review inbox (worktree-mode runs only; other fields are null). Reachable with a run-scoped Run Key.',
+          'Branch and diffstat for the review inbox (worktree-mode attempts only; other fields are null). Reachable with a run-scoped Run Key.',
         params: idParamsSchema,
-        response: { 200: diffResponseSchema.describe('The run\'s branch and its diffstat against the base; nulls outside worktree mode.') },
+        response: { 200: diffResponseSchema.describe('The attempt\'s branch and its diffstat against the base; nulls outside worktree mode.') },
       },
     },
     async (req) => {
-      const run = await ctx.attempts.resolveLatest(req.params.id);
+      const run = await ctx.attempts.get(req.params.id);
       if (!run.branch || !run.baseBranch) return { branch: null, baseBranch: null, stat: null };
       // Prefer the settle-time snapshot so this endpoint and the board card can
       // never show two different stats (issue #36). Before settle, show the live
@@ -1107,19 +1123,19 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
   );
 
   app.get(
-    '/runs/:id/diff/files',
+    '/attempts/:id/diff/files',
     {
       schema: {
-        tags: ['Runs'],
+        tags: ['Attempts'],
         description:
-          'Per-file unified-diff hunks for the review pane (worktree-mode runs only). Empty `files` outside worktree mode or when the branch/worktree is gone. Reachable with a run-scoped Run Key.',
+          'Per-file unified-diff hunks for the review pane (worktree-mode attempts only). Empty `files` outside worktree mode or when the branch/worktree is gone. Reachable with a run-scoped Run Key.',
         params: idParamsSchema,
         querystring: paginationQuerySchema,
-        response: { 200: diffFilesResponseSchema.describe("The run's changed files with parsed +/- hunks; empty outside worktree mode.") },
+        response: { 200: diffFilesResponseSchema.describe("The attempt's changed files with parsed +/- hunks; empty outside worktree mode.") },
       },
     },
     async (req) => {
-      const run = await ctx.attempts.resolveLatest(req.params.id);
+      const run = await ctx.attempts.get(req.params.id);
       const task = await ctx.tasks.get(run.taskId);
       const { limit, offset } = req.query;
       let files: DiffFile[];

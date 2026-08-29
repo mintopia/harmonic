@@ -1,5 +1,5 @@
 import { formatScheduledJobDuration } from './scheduled-jobs-model.js';
-import type { Attempt, AttemptState, Step, StepState, Run, VerifierStatus } from './types.js';
+import type { Attempt, AttemptState, Step, StepState, AttemptSummary, VerifierStatus } from './types.js';
 
 export type TimelineTone = 'running' | 'passed' | 'failed' | 'neutral';
 
@@ -75,21 +75,21 @@ export function verifiedSha(attempts: readonly Attempt[]): string | null {
   return null;
 }
 
-/** A Run carries every corrective Attempt it drove and `run.attempt` is the
- * last of them, so the Run that owns Attempt N is the earliest one whose
- * counter reached N. */
-export function runForAttempt(runs: readonly Run[], attempt: Pick<Attempt, 'number'>): Run | null {
-  let owner: Run | null = null;
+/** An Attempt summary carries every corrective turn it drove and `run.number`
+ * is the last of them, so the summary that owns Attempt N is the earliest one
+ * whose counter reached N. */
+export function runForAttempt(runs: readonly AttemptSummary[], attempt: Pick<Attempt, 'number'>): AttemptSummary | null {
+  let owner: AttemptSummary | null = null;
   for (const run of runs) {
-    if (run.attempt < attempt.number) continue;
-    if (!owner || run.attempt < owner.attempt) owner = run;
+    if (run.number < attempt.number) continue;
+    if (!owner || run.number < owner.number) owner = run;
   }
   return owner;
 }
 
-export function runFailureBannerLabel(run: Run | null | undefined, attempt: Pick<Attempt, 'continuation'> | null | undefined): string | null {
+export function runFailureBannerLabel(run: AttemptSummary | null | undefined, attempt: Pick<Attempt, 'continuation'> | null | undefined): string | null {
   if (run?.state !== 'failed' || !run.reason) return null;
-  return attempt?.continuation ? 'Resume failed' : 'Run failed';
+  return attempt?.continuation ? 'Resume failed' : 'Attempt failed';
 }
 
 export type StepLogSource =
@@ -98,7 +98,7 @@ export type StepLogSource =
   | { kind: 'run' };
 
 /** Where a step row's log lives: command output and critic transcripts are
- * keyed by their verification attempt; implementation work is the Run's own
+ * keyed by their verification attempt; implementation work is the AttemptSummary's own
  * harness transcript (the ACP events the main pane already streams). */
 export function stepLogSource(step: Step): StepLogSource | null {
   const id = verificationAttemptId(step.logLocator);

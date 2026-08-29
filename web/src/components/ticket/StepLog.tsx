@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../api.js';
 import { stepLabel, stepLogSource } from '../../attempt-timeline-model.js';
-import type { Step, RunLogEvent } from '../../types.js';
+import type { Step, AttemptLogEvent } from '../../types.js';
 import { sectionLabel } from '../../ui.js';
 import { TranscriptTimeline } from '../TranscriptTimeline.js';
 
@@ -9,7 +9,7 @@ type Loaded =
   | { status: 'loading' }
   | { status: 'unavailable' }
   | { status: 'output'; summary: string; output: string }
-  | { status: 'critic'; events: RunLogEvent[] };
+  | { status: 'critic'; events: AttemptLogEvent[] };
 
 /** The selected timeline row's own log in the main pane: a verify command's
  * captured output, or the critic's native session transcript (ADR-0040).

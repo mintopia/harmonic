@@ -91,7 +91,7 @@ describe('escalation actions on a worktree ticket (ADR-0041)', () => {
       return body.state === 'escalated' ? body : undefined;
     });
     expect(task.escalationReason).toMatch(/attempt 2 of 2 failed/);
-    expect((await server.api('GET', `/api/runs/${runId}`)).body).toMatchObject({ state: 'failed' });
+    expect((await server.api('GET', `/api/tasks/${taskId}/attempts/current`)).body).toMatchObject({ state: 'failed' });
     return { taskId, runId, file };
   }
 
@@ -107,9 +107,9 @@ describe('escalation actions on a worktree ticket (ADR-0041)', () => {
   };
 
   it('escalates with the exhausted Attempt marked escalated, its verified head retained, and the branch kept as evidence', async () => {
-    const { taskId, runId } = await escalateViaCriticFail();
+    const { taskId } = await escalateViaCriticFail();
     expect(await verificationAttempts(taskId)).toHaveLength(2);
-    const run = (await server.api('GET', `/api/runs/${runId}`)).body;
+    const run = (await server.api('GET', `/api/tasks/${taskId}/attempts/current`)).body;
     expect(run.candidateOid).toMatch(/^[0-9a-f]{40}$/);
     expect(git(repoDir, 'rev-parse', '--verify', run.branch)).toBe(run.candidateOid);
     const attempts = await ticketAttempts(taskId);
@@ -120,13 +120,13 @@ describe('escalation actions on a worktree ticket (ADR-0041)', () => {
   describe('POST /tasks/:id/accept', () => {
     it('merges the verified head into the base branch and moves the ticket to done — an operator accept overrides the escalated Attempt', async () => {
       const baseOidBefore = git(repoDir, 'rev-parse', 'main');
-      const { taskId, runId, file } = await escalateViaCriticFail();
+      const { taskId, file } = await escalateViaCriticFail();
 
       const accepted = await server.api('POST', `/api/tasks/${taskId}/accept`);
       expect(accepted.status).toBe(200);
       expect(accepted.body).toMatchObject({ state: 'done', escalationReason: null });
 
-      const run = (await server.api('GET', `/api/runs/${runId}`)).body;
+      const run = (await server.api('GET', `/api/tasks/${taskId}/attempts/current`)).body;
       expect(run).toMatchObject({ state: 'completed' });
 
       // The operator's accept is the one disposition allowed to move an
@@ -180,8 +180,8 @@ describe('escalation actions on a worktree ticket (ADR-0041)', () => {
 
   describe('POST /tasks/:id/reject', () => {
     it('resumes the loop on the same ticket and branch with the guidance as feedback and the budget reset', async () => {
-      const { taskId, runId } = await escalateViaCriticFail();
-      const branch = (await server.api('GET', `/api/runs/${runId}`)).body.branch as string;
+      const { taskId } = await escalateViaCriticFail();
+      const branch = (await server.api('GET', `/api/tasks/${taskId}/attempts/current`)).body.branch as string;
 
       criticResult = { verdict: 'pass', summary: 'the guidance was followed' };
       const rejected = await server.api('POST', `/api/tasks/${taskId}/reject`, {
@@ -212,9 +212,9 @@ describe('escalation actions on a worktree ticket (ADR-0041)', () => {
       // the Task's existing worktree and branch (ADR-0046): it resumes the
       // prior candidate in the same working copy rather than cutting a fresh
       // branch from the base.
-      const runs = (await server.api('GET', `/api/tasks/${taskId}/runs`)).body.runs;
+      const runs = (await server.api('GET', `/api/tasks/${taskId}/attempts`)).body.attempts;
       expect(runs).toHaveLength(3);
-      expect(runs[2].attempt).toBe(3);
+      expect(runs[2].number).toBe(3);
       expect(runs[2].prompt).toContain('The timeout is intentional');
       expect(branch).toBe(`harmonic/task-${taskId}`); // per-Task, no -run-<attempt> suffix
       expect(runs[2].branch).toBe(branch); // same working copy across Attempts
@@ -231,8 +231,8 @@ describe('escalation actions on a worktree ticket (ADR-0041)', () => {
 
   describe('POST /tasks/:id/close', () => {
     it('cancels the ticket and removes its branch and worktree', async () => {
-      const { taskId, runId } = await escalateViaCriticFail();
-      const run = (await server.api('GET', `/api/runs/${runId}`)).body;
+      const { taskId } = await escalateViaCriticFail();
+      const run = (await server.api('GET', `/api/tasks/${taskId}/attempts/current`)).body;
       expect(git(repoDir, 'branch', '--list', run.branch)).not.toBe('');
       const session = await server.app.ctx.sessions.get(run.sessionRowId);
       expect(session.worktreePath && existsSync(session.worktreePath)).toBe(true);

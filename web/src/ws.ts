@@ -3,9 +3,9 @@ import type {
   Conversation,
   ConversationEvent,
   PermissionAcpRequest,
-  Run,
-  RunEvent,
-  RunLogEvent,
+  AttemptSummary,
+  AttemptEvent,
+  AttemptLogEvent,
   RunUsageEvent,
   Task,
 } from './types.js';
@@ -29,15 +29,15 @@ export interface OperationEvent {
 }
 
 export type ServerMessage =
-  | { type: 'run_event'; event: RunEvent }
-  | { type: 'run_log_event'; event: RunLogEvent }
-  | { type: 'run_changed'; run: Run }
+  | { type: 'run_event'; event: AttemptEvent }
+  | { type: 'run_log_event'; event: AttemptLogEvent }
+  | { type: 'run_changed'; run: AttemptSummary }
   | { type: 'task_changed'; task: Task }
   | { type: 'attempt_timeline_changed'; taskId: number; attempts: Attempt[]; budgetBase: number }
   // Hard-delete (issue #162): the Task is gone server-side (Runs/history
   // cascaded); drop it from local state so the board/graph lose it too.
   | { type: 'task_removed'; id: number }
-  // Live Run usage (ADR 0010): the Activity view merges these deltas into its
+  // Live AttemptSummary usage (ADR 0010): the Activity view merges these deltas into its
   // rows so tokens/context/cost tick live. Sent to read keys too.
   | ({ type: 'run_usage' } & RunUsageEvent)
   | { type: 'operations'; event: OperationEvent }
@@ -112,7 +112,7 @@ export function subscribe(onMessage: (msg: ServerMessage) => void): () => void {
   return subscribeWithOpen(onMessage);
 }
 
-/** A cursor-resumable subscription to one Run's transient ACP transcript. */
+/** A cursor-resumable subscription to one AttemptSummary's transient ACP transcript. */
 export function subscribeRunLog({
   runId,
   after,
@@ -120,7 +120,7 @@ export function subscribeRunLog({
 }: {
   runId: number;
   after: () => number;
-  onEvent: (event: RunLogEvent) => void;
+  onEvent: (event: AttemptLogEvent) => void;
 }): () => void {
   let firstSubscription = true;
   return subscribeWithOpen((message) => {

@@ -52,7 +52,7 @@ describe('auto-runner', () => {
 
     // Run ids are allocated at start: they encode the actual start order.
     const runIdOf = async (taskId: number) =>
-      (await server.api('GET', `/api/tasks/${taskId}/runs`)).body.runs[0].id;
+      (await server.api('GET', `/api/tasks/${taskId}/attempts`)).body.attempts[0].id;
     const order = [
       await runIdOf(high.body.id),
       await runIdOf(normal1.body.id),

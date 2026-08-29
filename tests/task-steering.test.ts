@@ -66,7 +66,7 @@ describe('steering a running task', () => {
         return body.state === 'done' ? body : undefined;
       });
 
-      const { body } = await noSteerServer.api('GET', `/api/runs/${runId}/events`);
+      const { body } = await noSteerServer.api('GET', `/api/attempts/${runId}/events`);
       const lifecycle = body.events.filter((e: any) => e.type === 'lifecycle');
       expect(lifecycle.find((e: any) => e.payload.event === 'steer_queued')?.payload.text).toBe('reread the tests first');
       expect(lifecycle.find((e: any) => e.payload.event === 'steer_delivered')?.payload.text).toBe('reread the tests first');
@@ -114,7 +114,7 @@ describe('steering a running task', () => {
       return body.state === 'done' ? body : undefined;
     });
 
-    const { body } = await server.api('GET', `/api/runs/${runId}/events`);
+    const { body } = await server.api('GET', `/api/attempts/${runId}/events`);
     const lifecycle = body.events.filter((e: any) => e.type === 'lifecycle');
     expect(lifecycle.find((e: any) => e.payload.event === 'steer_injected')?.payload.text).toBe(
       'switch to the other approach',

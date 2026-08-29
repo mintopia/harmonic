@@ -12,10 +12,10 @@ import { failuresByReason, isExecutionFailure } from '../../domain/run-failure.j
 import { logger } from '../../logger.js';
 import type { AttemptState } from '../../db/schema.js';
 
-/** The stats view's `runsByState` keys, unchanged by the internal Run→Attempt
- * fold (ADR-0001 #388 S-G): `passed` reads as `completed`, and `escalated` (an
- * Attempt-only state) folds into the generic `failed` bucket, matching the
- * `apiRunState` translation `runToApi` applies to the Run resource itself. */
+/** The stats view's `runsByState` keys: `passed` reads as `completed`, and
+ * `escalated` (an Attempt-only state) folds into the generic `failed` bucket,
+ * matching the `apiAttemptState` translation `attemptToApi` applies to the
+ * Attempt resource itself. */
 function statsRunState(state: AttemptState): 'running' | 'completed' | 'failed' | 'cancelled' {
   if (state === 'passed') return 'completed';
   if (state === 'escalated') return 'failed';

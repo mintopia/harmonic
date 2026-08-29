@@ -3,7 +3,7 @@
   "info": {
     "title": "@mintopia/harmonic",
     "version": "1.0.0",
-    "description": "Queue, run, and review autonomous coding-agent tasks over ACP\n\n## MCP\n\n`POST /mcp` is a stateless streamable-HTTP MCP server (not a REST\nendpoint, so it has no entry in this spec's paths). It authenticates the\nsame way as the REST API — a bearer token, either an operator API key or\nthe Run Key Harmonic injects into a spawned harness — and exposes the\nagent task surface as MCP tools (task CRUD, dependencies, queue/cancel,\nruns and events). Accept/Reject are human-only and are never exposed as\nMCP tools — a verifier's pass is the accept (#140, ADR-0021). A run-scoped\nRun Key may call `/mcp` regardless of the REST restrictions noted per\nendpoint below. Work Context lease diagnostics/supersede/unlock\n(`list_leases`, `supersede_lease`, `unlock_lease`, issue #125) are\noperator-only tools, the same footing as Accept/Reject: a Run Key can call\n`/mcp` but gets a `forbidden` error from these three specifically — only\nan operator API key (`scope: 'full'`) or an authenticated session may call\nthem.\n\n## WebSocket\n\n`GET /api/ws` is a single firehose WebSocket (also outside this spec's\npaths): every run event, run state change, task state change/removal, and\nConversation event/change is broadcast to every connected client as JSON\nmessages of the form `{ type: 'run_event' | 'run_changed' | 'run_usage' |\n'task_changed' | 'task_removed' | 'conversation_event' | 'conversation_changed' |\n'permission_request' | 'scheduled-jobs' | 'operations', ... }`, using the same Task/Run/Conversation/Scheduled Job/Operation shapes\nserved over REST. `run_usage` is a live-usage snapshot for a running Run\n(tokens, context fill, derived Cost, current-activity line, and Process\nTree), pushed about once a second while the Run tails its native log.\n`task_removed` (issue #162) announces a hard-deleted Task's id (`{ type:\n'task_removed', id }`) — the row is gone, not another state change.\n`scheduled-jobs` announces the full Scheduled Job registry snapshot, matching\n`GET /api/scheduled-jobs` (ADR-0038).\n`operations` announces an Operation lifecycle event, matching the operation shape\nserved by `GET /api/operations`.\n`permission_request` announces a Harness blocked on an\noperator permission decision in a Conversation (ADR-0007), answered via\n`POST /conversations/:id/permissions/:reqId`. Authenticate by passing the\nsession token or an API key as `?token=` (WebSocket clients cannot set an\nAuthorization header). A `read`-scoped key gets a filtered firehose — only\n`task_changed`, `task_removed`, `run_changed`, `run_event`, `run_usage`, and\n`operations` — with the Conversation and permission traffic dropped.\n\n## Read scope\n\nA `read`-scoped API key (created via `POST /api/keys` with\n`{ \"scope\": \"read\" }`) is a viz-client credential: it may `GET` tasks,\nruns, maps, Operations (`/api/operations`), and the instance-wide Activity snapshot (`/api/activity`,\nfiltered to Runs only for a read key), and open the WebSocket (filtered as\nabove). Every mutation and the whole operator surface (keys, config,\nchannels, Conversations) is blocked. There is no `map_changed` event — a\nclient re-fetches `/maps` on reconnect or when it sees a `mapRef` it has\nnot resolved yet."
+    "description": "Queue, run, and review autonomous coding-agent tasks over ACP\n\n## MCP\n\n`POST /mcp` is a stateless streamable-HTTP MCP server (not a REST\nendpoint, so it has no entry in this spec's paths). It authenticates the\nsame way as the REST API — a bearer token, either an operator API key or\nthe Run Key Harmonic injects into a spawned harness — and exposes the\nagent task surface as MCP tools (task CRUD, dependencies, queue/cancel,\nruns and events). Accept/Reject are human-only and are never exposed as\nMCP tools — a verifier's pass is the accept (#140, ADR-0021). A run-scoped\nRun Key may call `/mcp` regardless of the REST restrictions noted per\nendpoint below. `force_integrate_epic` is an operator-only tool, the same\nfooting as Accept/Reject: a Run Key can call `/mcp` but gets a `forbidden`\nerror from it specifically — only an operator API key (`scope: 'full'`) or\nan authenticated session may call it.\n\n## WebSocket\n\n`GET /api/ws` is a single firehose WebSocket (also outside this spec's\npaths): every run event, run state change, task state change/removal, and\nConversation event/change is broadcast to every connected client as JSON\nmessages of the form `{ type: 'run_event' | 'run_changed' | 'run_usage' |\n'task_changed' | 'task_removed' | 'conversation_event' | 'conversation_changed' |\n'permission_request' | 'scheduled-jobs' | 'operations', ... }`, using the same Task/Run/Conversation/Scheduled Job/Operation shapes\nserved over REST. `run_usage` is a live-usage snapshot for a running Run\n(tokens, context fill, derived Cost, current-activity line, and Process\nTree), pushed about once a second while the Run tails its native log.\n`task_removed` (issue #162) announces a hard-deleted Task's id (`{ type:\n'task_removed', id }`) — the row is gone, not another state change.\n`scheduled-jobs` announces the full Scheduled Job registry snapshot, matching\n`GET /api/scheduled-jobs` (ADR-0038).\n`operations` announces an Operation lifecycle event, matching the operation shape\nserved by `GET /api/operations`.\n`permission_request` announces a Harness blocked on an\noperator permission decision in a Conversation (ADR-0007), answered via\n`POST /conversations/:id/permissions/:reqId`. Authenticate by passing the\nsession token or an API key as `?token=` (WebSocket clients cannot set an\nAuthorization header). A `read`-scoped key gets a filtered firehose — only\n`task_changed`, `task_removed`, `run_changed`, `run_event`, `run_usage`, and\n`operations` — with the Conversation and permission traffic dropped.\n\n## Read scope\n\nA `read`-scoped API key (created via `POST /api/keys` with\n`{ \"scope\": \"read\" }`) is a viz-client credential: it may `GET` tasks,\nruns, maps, Operations (`/api/operations`), and the instance-wide Activity snapshot (`/api/activity`,\nfiltered to Runs only for a read key), and open the WebSocket (filtered as\nabove). Every mutation and the whole operator surface (keys, config,\nchannels, Conversations) is blocked. There is no `map_changed` event — a\nclient re-fetches `/maps` on reconnect or when it sees a `mapRef` it has\nnot resolved yet."
   },
   "components": {
     "securitySchemes": {
@@ -60,7 +60,7 @@
           "ok": true
         }
       },
-      "AttemptTaskInput": {
+      "StepInput": {
         "type": "object",
         "properties": {
           "id": {
@@ -186,7 +186,9 @@
               "failed",
               "inconclusive",
               "skipped",
-              "disabled"
+              "disabled",
+              "unrunnable",
+              "planned"
             ],
             "example": "passed"
           },
@@ -200,6 +202,15 @@
               }
             ],
             "example": null
+          },
+          "commands": {
+            "example": [
+              "npm test"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "required": [
@@ -357,10 +368,10 @@
               "$ref": "#/components/schemas/VerifierStatusInput"
             }
           },
-          "tasks": {
+          "steps": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/AttemptTaskInput"
+              "$ref": "#/components/schemas/StepInput"
             }
           }
         },
@@ -376,7 +387,7 @@
           "escalationReason",
           "continuation",
           "verifierStatuses",
-          "tasks"
+          "steps"
         ]
       },
       "AttemptTimelineResponseInput": {
@@ -785,8 +796,9 @@
             "type": "string",
             "enum": [
               "running",
-              "completed",
+              "passed",
               "failed",
+              "escalated",
               "cancelled",
               "active",
               "ended"
@@ -1001,6 +1013,17 @@
             ],
             "example": null
           },
+          "lastOperationSpanId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "a1b2c3d4e5f60718"
+          },
           "nextRunAt": {
             "anyOf": [
               {
@@ -1023,7 +1046,64 @@
           "lastStatus",
           "lastDurationMs",
           "lastError",
+          "lastOperationSpanId",
           "nextRunAt"
+        ]
+      },
+      "FlaggedWorktreeInput": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "example": "/data/worktrees/task-42"
+          },
+          "repoDir": {
+            "type": "string",
+            "example": "/home/operator/repo"
+          },
+          "workspaceId": {
+            "type": "number",
+            "example": 1
+          },
+          "taskId": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 42
+          },
+          "branch": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "harmonic/task-42"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "dirty",
+              "unreadable",
+              "unrecognized"
+            ],
+            "example": "dirty"
+          }
+        },
+        "required": [
+          "path",
+          "repoDir",
+          "workspaceId",
+          "taskId",
+          "branch",
+          "reason"
         ]
       },
       "OperationInput": {
@@ -1169,12 +1249,6 @@
             "type": "string",
             "example": "normal"
           },
-          "integrationRetries": {
-            "type": "integer",
-            "minimum": -9007199254740991,
-            "maximum": 9007199254740991,
-            "example": 5
-          },
           "conflictResolveTurns": {
             "type": "integer",
             "minimum": -9007199254740991,
@@ -1383,19 +1457,6 @@
                 ],
                 "example": null
               },
-              "integrationRetries": {
-                "anyOf": [
-                  {
-                    "type": "integer",
-                    "minimum": -9007199254740991,
-                    "maximum": 9007199254740991
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "example": null
-              },
               "conflictResolveTurns": {
                 "anyOf": [
                   {
@@ -1415,7 +1476,6 @@
               "model",
               "isolationMode",
               "priority",
-              "integrationRetries",
               "conflictResolveTurns"
             ],
             "example": {
@@ -1423,7 +1483,6 @@
               "model": "opus-4.8",
               "isolationMode": null,
               "priority": null,
-              "integrationRetries": null,
               "conflictResolveTurns": null
             }
           }
@@ -1438,7 +1497,6 @@
           "isolationMode",
           "baseBranch",
           "priority",
-          "integrationRetries",
           "conflictResolveTurns",
           "state",
           "escalationReason",
@@ -1506,12 +1564,6 @@
             "type": "string",
             "example": "normal"
           },
-          "integrationRetries": {
-            "type": "integer",
-            "minimum": -9007199254740991,
-            "maximum": 9007199254740991,
-            "example": 5
-          },
           "conflictResolveTurns": {
             "type": "integer",
             "minimum": -9007199254740991,
@@ -1720,19 +1772,6 @@
                 ],
                 "example": null
               },
-              "integrationRetries": {
-                "anyOf": [
-                  {
-                    "type": "integer",
-                    "minimum": -9007199254740991,
-                    "maximum": 9007199254740991
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "example": null
-              },
               "conflictResolveTurns": {
                 "anyOf": [
                   {
@@ -1752,7 +1791,6 @@
               "model",
               "isolationMode",
               "priority",
-              "integrationRetries",
               "conflictResolveTurns"
             ],
             "example": {
@@ -1760,7 +1798,6 @@
               "model": "opus-4.8",
               "isolationMode": null,
               "priority": null,
-              "integrationRetries": null,
               "conflictResolveTurns": null
             }
           },
@@ -1855,23 +1892,22 @@
             ],
             "example": 41
           },
-          "phase": {
+          "currentStep": {
             "anyOf": [
               {
                 "type": "string",
                 "enum": [
-                  "executing",
-                  "validating",
-                  "verifying",
-                  "merging",
-                  "terminal"
+                  "rebase",
+                  "implementation",
+                  "verification",
+                  "review"
                 ]
               },
               {
                 "type": "null"
               }
             ],
-            "example": "verifying"
+            "example": "verification"
           },
           "contextTokens": {
             "anyOf": [
@@ -1928,7 +1964,6 @@
           "isolationMode",
           "baseBranch",
           "priority",
-          "integrationRetries",
           "conflictResolveTurns",
           "state",
           "escalationReason",
@@ -1957,7 +1992,7 @@
           "runStartedAt",
           "toolCount",
           "runId",
-          "phase",
+          "currentStep",
           "contextTokens",
           "contextWindow",
           "skipReason",
@@ -2005,12 +2040,6 @@
           "priority": {
             "type": "string",
             "example": "normal"
-          },
-          "integrationRetries": {
-            "type": "integer",
-            "minimum": -9007199254740991,
-            "maximum": 9007199254740991,
-            "example": 5
           },
           "conflictResolveTurns": {
             "type": "integer",
@@ -2220,19 +2249,6 @@
                 ],
                 "example": null
               },
-              "integrationRetries": {
-                "anyOf": [
-                  {
-                    "type": "integer",
-                    "minimum": -9007199254740991,
-                    "maximum": 9007199254740991
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "example": null
-              },
               "conflictResolveTurns": {
                 "anyOf": [
                   {
@@ -2252,7 +2268,6 @@
               "model",
               "isolationMode",
               "priority",
-              "integrationRetries",
               "conflictResolveTurns"
             ],
             "example": {
@@ -2260,7 +2275,6 @@
               "model": "opus-4.8",
               "isolationMode": null,
               "priority": null,
-              "integrationRetries": null,
               "conflictResolveTurns": null
             }
           },
@@ -2355,23 +2369,22 @@
             ],
             "example": 41
           },
-          "phase": {
+          "currentStep": {
             "anyOf": [
               {
                 "type": "string",
                 "enum": [
-                  "executing",
-                  "validating",
-                  "verifying",
-                  "merging",
-                  "terminal"
+                  "rebase",
+                  "implementation",
+                  "verification",
+                  "review"
                 ]
               },
               {
                 "type": "null"
               }
             ],
-            "example": "verifying"
+            "example": "verification"
           },
           "contextTokens": {
             "anyOf": [
@@ -2427,7 +2440,6 @@
           "isolationMode",
           "baseBranch",
           "priority",
-          "integrationRetries",
           "conflictResolveTurns",
           "state",
           "escalationReason",
@@ -2456,14 +2468,14 @@
           "runStartedAt",
           "toolCount",
           "runId",
-          "phase",
+          "currentStep",
           "contextTokens",
           "contextWindow",
           "skipReason",
           "candidateRef"
         ]
       },
-      "RunInput": {
+      "AttemptSummaryInput": {
         "type": "object",
         "properties": {
           "id": {
@@ -2474,7 +2486,7 @@
             "type": "number",
             "example": 4821
           },
-          "attempt": {
+          "number": {
             "type": "number",
             "example": 1
           },
@@ -2487,24 +2499,6 @@
               "cancelled"
             ],
             "example": "completed"
-          },
-          "phase": {
-            "anyOf": [
-              {
-                "type": "string",
-                "enum": [
-                  "executing",
-                  "validating",
-                  "verifying",
-                  "merging",
-                  "terminal"
-                ]
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": "verifying"
           },
           "reason": {
             "anyOf": [
@@ -2644,9 +2638,8 @@
         "required": [
           "id",
           "taskId",
-          "attempt",
+          "number",
           "state",
-          "phase",
           "reason",
           "stopReason",
           "sessionId",
@@ -2660,152 +2653,6 @@
           "startedAt",
           "finishedAt",
           "cost"
-        ]
-      },
-      "LeaseDiagnosticInput": {
-        "type": "object",
-        "properties": {
-          "key": {
-            "type": "string",
-            "example": "direct:/home/dev/harmonic"
-          },
-          "state": {
-            "type": "string",
-            "enum": [
-              "held",
-              "suspect"
-            ],
-            "example": "suspect"
-          },
-          "phase": {
-            "type": "string",
-            "example": "executing"
-          },
-          "ownerRunId": {
-            "type": "number",
-            "example": 4821
-          },
-          "ownerTaskId": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": 512
-          },
-          "ownerTaskTitle": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": "Add the Activity rail view"
-          },
-          "ownerTaskState": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": "working"
-          },
-          "acquiredAt": {
-            "type": "number",
-            "example": 1784032260000
-          },
-          "heartbeat": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": 1784032320000
-          },
-          "expiry": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": 1784032440000
-          },
-          "longestWaitMs": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": 45000
-          },
-          "waitingTaskCount": {
-            "type": "number",
-            "example": 1
-          }
-        },
-        "required": [
-          "key",
-          "state",
-          "phase",
-          "ownerRunId",
-          "ownerTaskId",
-          "ownerTaskTitle",
-          "ownerTaskState",
-          "acquiredAt",
-          "heartbeat",
-          "expiry",
-          "longestWaitMs",
-          "waitingTaskCount"
-        ]
-      },
-      "LeaseSupersedeBodyInput": {
-        "type": "object",
-        "properties": {
-          "key": {
-            "type": "string",
-            "minLength": 1,
-            "example": "direct:/home/dev/harmonic"
-          },
-          "runId": {
-            "type": "integer",
-            "exclusiveMinimum": 0,
-            "maximum": 9007199254740991,
-            "example": 4821
-          }
-        },
-        "required": [
-          "key",
-          "runId"
-        ]
-      },
-      "LeaseUnlockBodyInput": {
-        "type": "object",
-        "properties": {
-          "key": {
-            "type": "string",
-            "minLength": 1,
-            "example": "direct:/home/dev/harmonic"
-          }
-        },
-        "required": [
-          "key"
         ]
       },
       "EpicMemberInput": {
@@ -3310,17 +3157,6 @@
             ],
             "example": null
           },
-          "integrationRetries": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": null
-          },
           "conflictResolveTurns": {
             "anyOf": [
               {
@@ -3379,117 +3215,54 @@
           "verificationCommand": {
             "anyOf": [
               {
-                "anyOf": [
-                  {
-                    "type": "array",
-                    "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "command": {
+                      "type": "string",
+                      "minLength": 1,
+                      "example": "npm"
+                    },
+                    "args": {
+                      "default": [],
+                      "example": [
+                        "test"
+                      ],
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "cwd": {
+                      "example": "packages/api",
+                      "type": "string"
+                    },
+                    "env": {
+                      "default": {},
+                      "example": {
+                        "CI": "1"
+                      },
                       "type": "object",
-                      "properties": {
-                        "command": {
-                          "type": "string",
-                          "minLength": 1,
-                          "example": "npm"
-                        },
-                        "args": {
-                          "default": [],
-                          "example": [
-                            "test"
-                          ],
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          }
-                        },
-                        "cwd": {
-                          "example": "packages/api",
-                          "type": "string"
-                        },
-                        "env": {
-                          "default": {},
-                          "example": {
-                            "CI": "1"
-                          },
-                          "type": "object",
-                          "propertyNames": {
-                            "type": "string"
-                          },
-                          "additionalProperties": {
-                            "type": "string"
-                          }
-                        },
-                        "timeoutSeconds": {
-                          "default": 600,
-                          "example": 600,
-                          "type": "integer",
-                          "exclusiveMinimum": 0,
-                          "maximum": 9007199254740991
-                        }
-                      },
-                      "required": [
-                        "command"
-                      ]
-                    }
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "command": {
-                        "type": "string",
-                        "minLength": 1,
-                        "example": "npm"
-                      },
-                      "args": {
-                        "default": [],
-                        "example": [
-                          "test"
-                        ],
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        }
-                      },
-                      "cwd": {
-                        "example": "packages/api",
+                      "propertyNames": {
                         "type": "string"
                       },
-                      "env": {
-                        "default": {},
-                        "example": {
-                          "CI": "1"
-                        },
-                        "type": "object",
-                        "propertyNames": {
-                          "type": "string"
-                        },
-                        "additionalProperties": {
-                          "type": "string"
-                        }
-                      },
-                      "timeoutSeconds": {
-                        "default": 600,
-                        "example": 600,
-                        "type": "integer",
-                        "exclusiveMinimum": 0,
-                        "maximum": 9007199254740991
+                      "additionalProperties": {
+                        "type": "string"
                       }
                     },
-                    "required": [
-                      "command"
-                    ]
+                    "timeoutSeconds": {
+                      "default": 600,
+                      "example": 600,
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    }
                   },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "off": {
-                        "type": "boolean",
-                        "const": true
-                      }
-                    },
-                    "required": [
-                      "off"
-                    ]
-                  }
-                ]
+                  "required": [
+                    "command"
+                  ]
+                }
               },
               {
                 "type": "null"
@@ -3497,77 +3270,43 @@
             ],
             "example": null
           },
-          "verificationCritic": {
+          "reviewEnabled": {
             "anyOf": [
               {
-                "anyOf": [
-                  {
-                    "type": "object",
-                    "properties": {
-                      "off": {
-                        "type": "boolean",
-                        "const": true
-                      }
-                    },
-                    "required": [
-                      "off"
-                    ]
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "prompt": {
-                        "type": "string",
-                        "minLength": 1,
-                        "example": "Review the change against issue {ref}: {title}. Read the code and the issue to decide."
-                      },
-                      "model": {
-                        "type": "string",
-                        "minLength": 1,
-                        "example": "claude-opus-5"
-                      },
-                      "harness": {
-                        "example": "claude",
-                        "type": "string",
-                        "enum": [
-                          "claude",
-                          "codex",
-                          "copilot"
-                        ]
-                      }
-                    },
-                    "required": [
-                      "prompt",
-                      "model"
-                    ],
-                    "additionalProperties": false
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "enabled": {
-                        "default": false,
-                        "type": "boolean"
-                      },
-                      "prompt": {
-                        "type": "string",
-                        "minLength": 1
-                      },
-                      "model": {
-                        "type": "string",
-                        "minLength": 1
-                      },
-                      "harness": {
-                        "type": "string",
-                        "enum": [
-                          "claude",
-                          "codex",
-                          "copilot"
-                        ]
-                      }
-                    }
-                  }
-                ]
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "reviewPrompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "reviewModel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "reviewHarness": {
+            "anyOf": [
+              {
+                "type": "string"
               },
               {
                 "type": "null"
@@ -3632,6 +3371,83 @@
             ],
             "example": null
           },
+          "toolTimeoutMinutes": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "drivePrompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "driveUnattendedReminder": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "driveContinuePrompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "driveMergeFate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "driveContinueAttempts": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "taskPrompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "createdAt": {
             "type": "number",
             "example": 1784030400000
@@ -3654,16 +3470,25 @@
           "chatModel",
           "isolationMode",
           "priority",
-          "integrationRetries",
           "conflictResolveTurns",
           "maxConcurrentRuns",
           "autoRunnerEnabled",
           "maxAttempts",
           "contextReuseTokenLimit",
           "verificationCommand",
-          "verificationCritic",
+          "reviewEnabled",
+          "reviewPrompt",
+          "reviewModel",
+          "reviewHarness",
           "guardrailBudget",
           "guardrailProgress",
+          "toolTimeoutMinutes",
+          "drivePrompt",
+          "driveUnattendedReminder",
+          "driveContinuePrompt",
+          "driveMergeFate",
+          "driveContinueAttempts",
+          "taskPrompt",
           "createdAt",
           "updatedAt"
         ]
@@ -3984,12 +3809,6 @@
                 ],
                 "example": "normal"
               },
-              "integrationRetries": {
-                "type": "integer",
-                "minimum": 1,
-                "maximum": 9007199254740991,
-                "example": 5
-              },
               "conflictResolveTurns": {
                 "type": "integer",
                 "minimum": 0,
@@ -4066,6 +3885,12 @@
                   "artifact"
                 ],
                 "example": "auto-merge"
+              },
+              "continueAttempts": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991,
+                "example": 1
               }
             }
           },
@@ -4419,7 +4244,7 @@
           "ok": true
         }
       },
-      "AttemptTask": {
+      "Step": {
         "type": "object",
         "properties": {
           "id": {
@@ -4546,7 +4371,9 @@
               "failed",
               "inconclusive",
               "skipped",
-              "disabled"
+              "disabled",
+              "unrunnable",
+              "planned"
             ],
             "example": "passed"
           },
@@ -4560,6 +4387,15 @@
               }
             ],
             "example": null
+          },
+          "commands": {
+            "example": [
+              "npm test"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "required": [
@@ -4719,10 +4555,10 @@
               "$ref": "#/components/schemas/VerifierStatus"
             }
           },
-          "tasks": {
+          "steps": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/AttemptTask"
+              "$ref": "#/components/schemas/Step"
             }
           }
         },
@@ -4738,7 +4574,7 @@
           "escalationReason",
           "continuation",
           "verifierStatuses",
-          "tasks"
+          "steps"
         ],
         "additionalProperties": false
       },
@@ -5156,8 +4992,9 @@
             "type": "string",
             "enum": [
               "running",
-              "completed",
+              "passed",
               "failed",
+              "escalated",
               "cancelled",
               "active",
               "ended"
@@ -5373,6 +5210,17 @@
             ],
             "example": null
           },
+          "lastOperationSpanId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "a1b2c3d4e5f60718"
+          },
           "nextRunAt": {
             "anyOf": [
               {
@@ -5395,7 +5243,65 @@
           "lastStatus",
           "lastDurationMs",
           "lastError",
+          "lastOperationSpanId",
           "nextRunAt"
+        ],
+        "additionalProperties": false
+      },
+      "FlaggedWorktree": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "example": "/data/worktrees/task-42"
+          },
+          "repoDir": {
+            "type": "string",
+            "example": "/home/operator/repo"
+          },
+          "workspaceId": {
+            "type": "number",
+            "example": 1
+          },
+          "taskId": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 42
+          },
+          "branch": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "harmonic/task-42"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "dirty",
+              "unreadable",
+              "unrecognized"
+            ],
+            "example": "dirty"
+          }
+        },
+        "required": [
+          "path",
+          "repoDir",
+          "workspaceId",
+          "taskId",
+          "branch",
+          "reason"
         ],
         "additionalProperties": false
       },
@@ -5544,12 +5450,6 @@
             "type": "string",
             "example": "normal"
           },
-          "integrationRetries": {
-            "type": "integer",
-            "minimum": -9007199254740991,
-            "maximum": 9007199254740991,
-            "example": 5
-          },
           "conflictResolveTurns": {
             "type": "integer",
             "minimum": -9007199254740991,
@@ -5758,19 +5658,6 @@
                 ],
                 "example": null
               },
-              "integrationRetries": {
-                "anyOf": [
-                  {
-                    "type": "integer",
-                    "minimum": -9007199254740991,
-                    "maximum": 9007199254740991
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "example": null
-              },
               "conflictResolveTurns": {
                 "anyOf": [
                   {
@@ -5790,7 +5677,6 @@
               "model",
               "isolationMode",
               "priority",
-              "integrationRetries",
               "conflictResolveTurns"
             ],
             "additionalProperties": false,
@@ -5799,7 +5685,6 @@
               "model": "opus-4.8",
               "isolationMode": null,
               "priority": null,
-              "integrationRetries": null,
               "conflictResolveTurns": null
             }
           }
@@ -5814,7 +5699,6 @@
           "isolationMode",
           "baseBranch",
           "priority",
-          "integrationRetries",
           "conflictResolveTurns",
           "state",
           "escalationReason",
@@ -5883,12 +5767,6 @@
             "type": "string",
             "example": "normal"
           },
-          "integrationRetries": {
-            "type": "integer",
-            "minimum": -9007199254740991,
-            "maximum": 9007199254740991,
-            "example": 5
-          },
           "conflictResolveTurns": {
             "type": "integer",
             "minimum": -9007199254740991,
@@ -6097,19 +5975,6 @@
                 ],
                 "example": null
               },
-              "integrationRetries": {
-                "anyOf": [
-                  {
-                    "type": "integer",
-                    "minimum": -9007199254740991,
-                    "maximum": 9007199254740991
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "example": null
-              },
               "conflictResolveTurns": {
                 "anyOf": [
                   {
@@ -6129,7 +5994,6 @@
               "model",
               "isolationMode",
               "priority",
-              "integrationRetries",
               "conflictResolveTurns"
             ],
             "additionalProperties": false,
@@ -6138,7 +6002,6 @@
               "model": "opus-4.8",
               "isolationMode": null,
               "priority": null,
-              "integrationRetries": null,
               "conflictResolveTurns": null
             }
           },
@@ -6233,23 +6096,22 @@
             ],
             "example": 41
           },
-          "phase": {
+          "currentStep": {
             "anyOf": [
               {
                 "type": "string",
                 "enum": [
-                  "executing",
-                  "validating",
-                  "verifying",
-                  "merging",
-                  "terminal"
+                  "rebase",
+                  "implementation",
+                  "verification",
+                  "review"
                 ]
               },
               {
                 "type": "null"
               }
             ],
-            "example": "verifying"
+            "example": "verification"
           },
           "contextTokens": {
             "anyOf": [
@@ -6306,7 +6168,6 @@
           "isolationMode",
           "baseBranch",
           "priority",
-          "integrationRetries",
           "conflictResolveTurns",
           "state",
           "escalationReason",
@@ -6335,7 +6196,7 @@
           "runStartedAt",
           "toolCount",
           "runId",
-          "phase",
+          "currentStep",
           "contextTokens",
           "contextWindow",
           "skipReason",
@@ -6384,12 +6245,6 @@
           "priority": {
             "type": "string",
             "example": "normal"
-          },
-          "integrationRetries": {
-            "type": "integer",
-            "minimum": -9007199254740991,
-            "maximum": 9007199254740991,
-            "example": 5
           },
           "conflictResolveTurns": {
             "type": "integer",
@@ -6599,19 +6454,6 @@
                 ],
                 "example": null
               },
-              "integrationRetries": {
-                "anyOf": [
-                  {
-                    "type": "integer",
-                    "minimum": -9007199254740991,
-                    "maximum": 9007199254740991
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "example": null
-              },
               "conflictResolveTurns": {
                 "anyOf": [
                   {
@@ -6631,7 +6473,6 @@
               "model",
               "isolationMode",
               "priority",
-              "integrationRetries",
               "conflictResolveTurns"
             ],
             "additionalProperties": false,
@@ -6640,7 +6481,6 @@
               "model": "opus-4.8",
               "isolationMode": null,
               "priority": null,
-              "integrationRetries": null,
               "conflictResolveTurns": null
             }
           },
@@ -6735,23 +6575,22 @@
             ],
             "example": 41
           },
-          "phase": {
+          "currentStep": {
             "anyOf": [
               {
                 "type": "string",
                 "enum": [
-                  "executing",
-                  "validating",
-                  "verifying",
-                  "merging",
-                  "terminal"
+                  "rebase",
+                  "implementation",
+                  "verification",
+                  "review"
                 ]
               },
               {
                 "type": "null"
               }
             ],
-            "example": "verifying"
+            "example": "verification"
           },
           "contextTokens": {
             "anyOf": [
@@ -6807,7 +6646,6 @@
           "isolationMode",
           "baseBranch",
           "priority",
-          "integrationRetries",
           "conflictResolveTurns",
           "state",
           "escalationReason",
@@ -6836,7 +6674,7 @@
           "runStartedAt",
           "toolCount",
           "runId",
-          "phase",
+          "currentStep",
           "contextTokens",
           "contextWindow",
           "skipReason",
@@ -6844,7 +6682,7 @@
         ],
         "additionalProperties": false
       },
-      "Run": {
+      "AttemptSummary": {
         "type": "object",
         "properties": {
           "id": {
@@ -6855,7 +6693,7 @@
             "type": "number",
             "example": 4821
           },
-          "attempt": {
+          "number": {
             "type": "number",
             "example": 1
           },
@@ -6868,24 +6706,6 @@
               "cancelled"
             ],
             "example": "completed"
-          },
-          "phase": {
-            "anyOf": [
-              {
-                "type": "string",
-                "enum": [
-                  "executing",
-                  "validating",
-                  "verifying",
-                  "merging",
-                  "terminal"
-                ]
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": "verifying"
           },
           "reason": {
             "anyOf": [
@@ -7025,9 +6845,8 @@
         "required": [
           "id",
           "taskId",
-          "attempt",
+          "number",
           "state",
-          "phase",
           "reason",
           "stopReason",
           "sessionId",
@@ -7041,155 +6860,6 @@
           "startedAt",
           "finishedAt",
           "cost"
-        ],
-        "additionalProperties": false
-      },
-      "LeaseDiagnostic": {
-        "type": "object",
-        "properties": {
-          "key": {
-            "type": "string",
-            "example": "direct:/home/dev/harmonic"
-          },
-          "state": {
-            "type": "string",
-            "enum": [
-              "held",
-              "suspect"
-            ],
-            "example": "suspect"
-          },
-          "phase": {
-            "type": "string",
-            "example": "executing"
-          },
-          "ownerRunId": {
-            "type": "number",
-            "example": 4821
-          },
-          "ownerTaskId": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": 512
-          },
-          "ownerTaskTitle": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": "Add the Activity rail view"
-          },
-          "ownerTaskState": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": "working"
-          },
-          "acquiredAt": {
-            "type": "number",
-            "example": 1784032260000
-          },
-          "heartbeat": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": 1784032320000
-          },
-          "expiry": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": 1784032440000
-          },
-          "longestWaitMs": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": 45000
-          },
-          "waitingTaskCount": {
-            "type": "number",
-            "example": 1
-          }
-        },
-        "required": [
-          "key",
-          "state",
-          "phase",
-          "ownerRunId",
-          "ownerTaskId",
-          "ownerTaskTitle",
-          "ownerTaskState",
-          "acquiredAt",
-          "heartbeat",
-          "expiry",
-          "longestWaitMs",
-          "waitingTaskCount"
-        ],
-        "additionalProperties": false
-      },
-      "LeaseSupersedeBody": {
-        "type": "object",
-        "properties": {
-          "key": {
-            "type": "string",
-            "minLength": 1,
-            "example": "direct:/home/dev/harmonic"
-          },
-          "runId": {
-            "type": "integer",
-            "exclusiveMinimum": 0,
-            "maximum": 9007199254740991,
-            "example": 4821
-          }
-        },
-        "required": [
-          "key",
-          "runId"
-        ],
-        "additionalProperties": false
-      },
-      "LeaseUnlockBody": {
-        "type": "object",
-        "properties": {
-          "key": {
-            "type": "string",
-            "minLength": 1,
-            "example": "direct:/home/dev/harmonic"
-          }
-        },
-        "required": [
-          "key"
         ],
         "additionalProperties": false
       },
@@ -7708,17 +7378,6 @@
             ],
             "example": null
           },
-          "integrationRetries": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": null
-          },
           "conflictResolveTurns": {
             "anyOf": [
               {
@@ -7777,126 +7436,58 @@
           "verificationCommand": {
             "anyOf": [
               {
-                "anyOf": [
-                  {
-                    "type": "array",
-                    "items": {
-                      "type": "object",
-                      "properties": {
-                        "command": {
-                          "type": "string",
-                          "minLength": 1,
-                          "example": "npm"
-                        },
-                        "args": {
-                          "default": [],
-                          "example": [
-                            "test"
-                          ],
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          }
-                        },
-                        "cwd": {
-                          "example": "packages/api",
-                          "type": "string"
-                        },
-                        "env": {
-                          "default": {},
-                          "example": {
-                            "CI": "1"
-                          },
-                          "type": "object",
-                          "propertyNames": {
-                            "type": "string"
-                          },
-                          "additionalProperties": {
-                            "type": "string"
-                          }
-                        },
-                        "timeoutSeconds": {
-                          "default": 600,
-                          "example": 600,
-                          "type": "integer",
-                          "exclusiveMinimum": 0,
-                          "maximum": 9007199254740991
-                        }
-                      },
-                      "required": [
-                        "command",
-                        "args",
-                        "env",
-                        "timeoutSeconds"
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "command": {
+                      "type": "string",
+                      "minLength": 1,
+                      "example": "npm"
+                    },
+                    "args": {
+                      "default": [],
+                      "example": [
+                        "test"
                       ],
-                      "additionalProperties": false
-                    }
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "command": {
-                        "type": "string",
-                        "minLength": 1,
-                        "example": "npm"
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "cwd": {
+                      "example": "packages/api",
+                      "type": "string"
+                    },
+                    "env": {
+                      "default": {},
+                      "example": {
+                        "CI": "1"
                       },
-                      "args": {
-                        "default": [],
-                        "example": [
-                          "test"
-                        ],
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        }
-                      },
-                      "cwd": {
-                        "example": "packages/api",
+                      "type": "object",
+                      "propertyNames": {
                         "type": "string"
                       },
-                      "env": {
-                        "default": {},
-                        "example": {
-                          "CI": "1"
-                        },
-                        "type": "object",
-                        "propertyNames": {
-                          "type": "string"
-                        },
-                        "additionalProperties": {
-                          "type": "string"
-                        }
-                      },
-                      "timeoutSeconds": {
-                        "default": 600,
-                        "example": 600,
-                        "type": "integer",
-                        "exclusiveMinimum": 0,
-                        "maximum": 9007199254740991
+                      "additionalProperties": {
+                        "type": "string"
                       }
                     },
-                    "required": [
-                      "command",
-                      "args",
-                      "env",
-                      "timeoutSeconds"
-                    ],
-                    "additionalProperties": false
+                    "timeoutSeconds": {
+                      "default": 600,
+                      "example": 600,
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    }
                   },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "off": {
-                        "type": "boolean",
-                        "const": true
-                      }
-                    },
-                    "required": [
-                      "off"
-                    ],
-                    "additionalProperties": false
-                  }
-                ]
+                  "required": [
+                    "command",
+                    "args",
+                    "env",
+                    "timeoutSeconds"
+                  ],
+                  "additionalProperties": false
+                }
               },
               {
                 "type": "null"
@@ -7904,82 +7495,43 @@
             ],
             "example": null
           },
-          "verificationCritic": {
+          "reviewEnabled": {
             "anyOf": [
               {
-                "anyOf": [
-                  {
-                    "type": "object",
-                    "properties": {
-                      "off": {
-                        "type": "boolean",
-                        "const": true
-                      }
-                    },
-                    "required": [
-                      "off"
-                    ],
-                    "additionalProperties": false
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "prompt": {
-                        "type": "string",
-                        "minLength": 1,
-                        "example": "Review the change against issue {ref}: {title}. Read the code and the issue to decide."
-                      },
-                      "model": {
-                        "type": "string",
-                        "minLength": 1,
-                        "example": "claude-opus-5"
-                      },
-                      "harness": {
-                        "example": "claude",
-                        "type": "string",
-                        "enum": [
-                          "claude",
-                          "codex",
-                          "copilot"
-                        ]
-                      }
-                    },
-                    "required": [
-                      "prompt",
-                      "model"
-                    ],
-                    "additionalProperties": false
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "enabled": {
-                        "default": false,
-                        "type": "boolean"
-                      },
-                      "prompt": {
-                        "type": "string",
-                        "minLength": 1
-                      },
-                      "model": {
-                        "type": "string",
-                        "minLength": 1
-                      },
-                      "harness": {
-                        "type": "string",
-                        "enum": [
-                          "claude",
-                          "codex",
-                          "copilot"
-                        ]
-                      }
-                    },
-                    "required": [
-                      "enabled"
-                    ],
-                    "additionalProperties": false
-                  }
-                ]
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "reviewPrompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "reviewModel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "reviewHarness": {
+            "anyOf": [
+              {
+                "type": "string"
               },
               {
                 "type": "null"
@@ -8050,6 +7602,83 @@
             ],
             "example": null
           },
+          "toolTimeoutMinutes": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "drivePrompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "driveUnattendedReminder": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "driveContinuePrompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "driveMergeFate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "driveContinueAttempts": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "taskPrompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "createdAt": {
             "type": "number",
             "example": 1784030400000
@@ -8072,16 +7701,25 @@
           "chatModel",
           "isolationMode",
           "priority",
-          "integrationRetries",
           "conflictResolveTurns",
           "maxConcurrentRuns",
           "autoRunnerEnabled",
           "maxAttempts",
           "contextReuseTokenLimit",
           "verificationCommand",
-          "verificationCritic",
+          "reviewEnabled",
+          "reviewPrompt",
+          "reviewModel",
+          "reviewHarness",
           "guardrailBudget",
           "guardrailProgress",
+          "toolTimeoutMinutes",
+          "drivePrompt",
+          "driveUnattendedReminder",
+          "driveContinuePrompt",
+          "driveMergeFate",
+          "driveContinueAttempts",
+          "taskPrompt",
           "createdAt",
           "updatedAt"
         ],
@@ -8407,12 +8045,6 @@
                 ],
                 "example": "normal"
               },
-              "integrationRetries": {
-                "type": "integer",
-                "minimum": 1,
-                "maximum": 9007199254740991,
-                "example": 5
-              },
               "conflictResolveTurns": {
                 "type": "integer",
                 "minimum": 0,
@@ -8492,6 +8124,12 @@
                   "artifact"
                 ],
                 "example": "auto-merge"
+              },
+              "continueAttempts": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991,
+                "example": 1
               }
             },
             "additionalProperties": false
@@ -8885,12 +8523,6 @@
                       "low"
                     ]
                   },
-                  "integrationRetries": {
-                    "example": 5,
-                    "type": "integer",
-                    "minimum": 1,
-                    "maximum": 9007199254740991
-                  },
                   "conflictResolveTurns": {
                     "example": 2,
                     "type": "integer",
@@ -9234,19 +8866,6 @@
                           "normal",
                           "low"
                         ]
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "integrationRetries": {
-                    "anyOf": [
-                      {
-                        "example": 5,
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 9007199254740991
                       },
                       {
                         "type": "null"
@@ -10127,9 +9746,9 @@
     "/api/tasks/{id}/run": {
       "post": {
         "tags": [
-          "Runs"
+          "Attempts"
         ],
-        "description": "Start a run for a ready task. Reachable with a run-scoped Run Key.",
+        "description": "Start an attempt for a ready task. Reachable with a run-scoped Run Key.",
         "parameters": [
           {
             "schema": {
@@ -10145,11 +9764,11 @@
         ],
         "responses": {
           "201": {
-            "description": "The run that just started.",
+            "description": "The attempt that just started.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Run"
+                  "$ref": "#/components/schemas/AttemptSummary"
                 }
               }
             }
@@ -10157,12 +9776,12 @@
         }
       }
     },
-    "/api/tasks/{id}/attempts": {
+    "/api/tasks/{id}/attempts/timeline": {
       "get": {
         "tags": [
           "Attempts"
         ],
-        "description": "A ticket's attempt timeline. Tasks are ordered exactly as they ran.",
+        "description": "A ticket's attempt timeline. Steps are ordered exactly as they ran.",
         "parameters": [
           {
             "schema": {
@@ -10266,7 +9885,7 @@
                       "items": {
                         "type": "object",
                         "properties": {
-                          "runId": {
+                          "attemptId": {
                             "anyOf": [
                               {
                                 "type": "number"
@@ -10284,22 +9903,17 @@
                             "enum": [
                               "attempt-started",
                               "attempt-finished",
-                              "run-started",
-                              "run-finished",
                               "lifecycle",
                               "verification",
                               "guardrail",
-                              "escalation",
-                              "operator-accept",
                               "operator-reject",
-                              "merging",
-                              "fact"
+                              "merging"
                             ]
                           },
                           "data": {}
                         },
                         "required": [
-                          "runId",
+                          "attemptId",
                           "ts",
                           "kind",
                           "data"
@@ -10337,12 +9951,12 @@
         }
       }
     },
-    "/api/tasks/{id}/runs": {
+    "/api/tasks/{id}/attempts": {
       "get": {
         "tags": [
-          "Runs"
+          "Attempts"
         ],
-        "description": "List a task's runs (retries included). Reachable with a run-scoped Run Key.",
+        "description": "List a task's attempts (retries included). Reachable with a run-scoped Run Key.",
         "parameters": [
           {
             "schema": {
@@ -10380,16 +9994,16 @@
         ],
         "responses": {
           "200": {
-            "description": "Every run for the task, including failed retries, oldest first.",
+            "description": "Every attempt for the task, including failed retries, oldest first.",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "runs": {
+                    "attempts": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/Run"
+                        "$ref": "#/components/schemas/AttemptSummary"
                       }
                     },
                     "total": {
@@ -10400,11 +10014,11 @@
                     }
                   },
                   "required": [
-                    "runs",
+                    "attempts",
                     "total"
                   ],
                   "additionalProperties": false,
-                  "description": "Every run for the task, including failed retries, oldest first."
+                  "description": "Every attempt for the task, including failed retries, oldest first."
                 }
               }
             }
@@ -10412,12 +10026,12 @@
         }
       }
     },
-    "/api/runs/{id}": {
+    "/api/tasks/{id}/attempts/current": {
       "get": {
         "tags": [
-          "Runs"
+          "Attempts"
         ],
-        "description": "Get one run with its Usage and Cost. Reachable with a run-scoped Run Key.",
+        "description": "The task's current (latest) attempt — the follow-forward read for pollers: self-heal advances to a new Attempt row each turn, and this always reflects the live one. Reachable with a run-scoped Run Key.",
         "parameters": [
           {
             "schema": {
@@ -10433,17 +10047,17 @@
         ],
         "responses": {
           "200": {
-            "description": "The run, with its Usage and Cost.",
+            "description": "The current attempt, with its Usage and Cost.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Run"
+                  "$ref": "#/components/schemas/AttemptSummary"
                 }
               }
             }
           },
           "404": {
-            "description": "No run has that id, or it belongs to another task.",
+            "description": "No task has that id, or it has no attempts yet.",
             "content": {
               "application/json": {
                 "schema": {
@@ -10455,12 +10069,55 @@
         }
       }
     },
-    "/api/runs/{id}/log": {
+    "/api/attempts/{id}": {
       "get": {
         "tags": [
-          "Runs"
+          "Attempts"
         ],
-        "description": "Read a Run's native harness transcript. Missing or unreadable transcripts are explicitly unavailable.",
+        "description": "Get one attempt with its Usage and Cost. Reachable with a run-scoped Run Key.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991,
+              "example": 4821
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The attempt, with its Usage and Cost.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttemptSummary"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No attempt has that id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/attempts/{id}/log": {
+      "get": {
+        "tags": [
+          "Attempts"
+        ],
+        "description": "Read an Attempt's native harness transcript. Missing or unreadable transcripts are explicitly unavailable.",
         "parameters": [
           {
             "schema": {
@@ -10499,9 +10156,9 @@
                                 "type": "number",
                                 "example": 55210
                               },
-                              "runId": {
+                              "attemptId": {
                                 "type": "number",
-                                "example": 9137
+                                "example": 61
                               },
                               "seq": {
                                 "type": "number",
@@ -10513,20 +10170,18 @@
                               },
                               "type": {
                                 "type": "string",
-                                "example": "session_update"
+                                "example": "lifecycle"
                               },
                               "payload": {
                                 "example": {
-                                  "sessionUpdate": "tool_call",
-                                  "toolCallId": "call_7",
-                                  "kind": "edit",
-                                  "title": "src/server/rate-limit.ts"
+                                  "event": "merged",
+                                  "oid": "0f758cd2200565e7605902a86c2827c65ad25ce0"
                                 }
                               }
                             },
                             "required": [
                               "id",
-                              "runId",
+                              "attemptId",
                               "seq",
                               "ts",
                               "type",
@@ -10574,12 +10229,12 @@
         }
       }
     },
-    "/api/runs/{id}/events": {
+    "/api/attempts/{id}/events": {
       "get": {
         "tags": [
-          "Runs"
+          "Attempts"
         ],
-        "description": "Replay a run's persisted events, in order — the same records streamed live over the WebSocket. Reachable with a run-scoped Run Key.",
+        "description": "Replay an attempt's persisted events, in order — the same records streamed live over the WebSocket. Reachable with a run-scoped Run Key.",
         "parameters": [
           {
             "schema": {
@@ -10617,7 +10272,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The run's persisted events in sequence order.",
+            "description": "The attempt's persisted events in sequence order.",
             "content": {
               "application/json": {
                 "schema": {
@@ -10632,9 +10287,9 @@
                             "type": "number",
                             "example": 55210
                           },
-                          "runId": {
+                          "attemptId": {
                             "type": "number",
-                            "example": 9137
+                            "example": 61
                           },
                           "seq": {
                             "type": "number",
@@ -10646,20 +10301,18 @@
                           },
                           "type": {
                             "type": "string",
-                            "example": "session_update"
+                            "example": "lifecycle"
                           },
                           "payload": {
                             "example": {
-                              "sessionUpdate": "tool_call",
-                              "toolCallId": "call_7",
-                              "kind": "edit",
-                              "title": "src/server/rate-limit.ts"
+                              "event": "merged",
+                              "oid": "0f758cd2200565e7605902a86c2827c65ad25ce0"
                             }
                           }
                         },
                         "required": [
                           "id",
-                          "runId",
+                          "attemptId",
                           "seq",
                           "ts",
                           "type",
@@ -10680,7 +10333,7 @@
                     "total"
                   ],
                   "additionalProperties": false,
-                  "description": "The run's persisted events in sequence order."
+                  "description": "The attempt's persisted events in sequence order."
                 }
               }
             }
@@ -10688,12 +10341,12 @@
         }
       }
     },
-    "/api/runs/{id}/guardrail-events": {
+    "/api/attempts/{id}/guardrail-events": {
       "get": {
         "tags": [
-          "Runs"
+          "Attempts"
         ],
-        "description": "Replay a run's Guardrail-trip event log, in sequence order (issue #171). Reachable with a run-scoped Run Key.",
+        "description": "Replay an attempt's Guardrail-trip event log, in sequence order (issue #171). Reachable with a run-scoped Run Key.",
         "parameters": [
           {
             "schema": {
@@ -10731,7 +10384,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The run's Guardrail-trip events in sequence order.",
+            "description": "The attempt's Guardrail-trip events in sequence order.",
             "content": {
               "application/json": {
                 "schema": {
@@ -10746,9 +10399,9 @@
                             "type": "number",
                             "example": 812
                           },
-                          "runId": {
+                          "attemptId": {
                             "type": "number",
-                            "example": 9137
+                            "example": 61
                           },
                           "seq": {
                             "type": "number",
@@ -10768,17 +10421,6 @@
                               "tool-timeout"
                             ],
                             "example": "wall-clock"
-                          },
-                          "phase": {
-                            "type": "string",
-                            "enum": [
-                              "executing",
-                              "validating",
-                              "verifying",
-                              "merging",
-                              "terminal"
-                            ],
-                            "example": "executing"
                           },
                           "limitValue": {
                             "type": "number",
@@ -10802,11 +10444,10 @@
                         },
                         "required": [
                           "id",
-                          "runId",
+                          "attemptId",
                           "seq",
                           "ts",
                           "dimension",
-                          "phase",
                           "limitValue",
                           "observedValue",
                           "configSource",
@@ -10827,13 +10468,13 @@
                     "total"
                   ],
                   "additionalProperties": false,
-                  "description": "The run's Guardrail-trip events in sequence order."
+                  "description": "The attempt's Guardrail-trip events in sequence order."
                 }
               }
             }
           },
           "404": {
-            "description": "No run has that id.",
+            "description": "No attempt has that id.",
             "content": {
               "application/json": {
                 "schema": {
@@ -10845,12 +10486,12 @@
         }
       }
     },
-    "/api/runs/{id}/verification-attempts": {
+    "/api/attempts/{id}/verification-attempts": {
       "get": {
         "tags": [
-          "Runs"
+          "Attempts"
         ],
-        "description": "Replay a run's verification-attempt log (per-verifier verdicts + summaries), in sequence order (issue #169, part of #109). Reachable with a run-scoped Run Key.",
+        "description": "Replay an attempt's verification-attempt log (per-verifier verdicts + summaries), in sequence order (issue #169, part of #109). Reachable with a run-scoped Run Key.",
         "parameters": [
           {
             "schema": {
@@ -10888,7 +10529,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The run's verification attempts in sequence order.",
+            "description": "The attempt's verification attempts in sequence order.",
             "content": {
               "application/json": {
                 "schema": {
@@ -10903,9 +10544,9 @@
                             "type": "number",
                             "example": 4210
                           },
-                          "runId": {
+                          "attemptId": {
                             "type": "number",
-                            "example": 9137
+                            "example": 61
                           },
                           "seq": {
                             "type": "number",
@@ -10944,17 +10585,6 @@
                             "type": "string",
                             "example": ""
                           },
-                          "phase": {
-                            "type": "string",
-                            "enum": [
-                              "executing",
-                              "validating",
-                              "verifying",
-                              "merging",
-                              "terminal"
-                            ],
-                            "example": "verifying"
-                          },
                           "hasTranscript": {
                             "type": "boolean",
                             "example": false
@@ -10962,7 +10592,7 @@
                         },
                         "required": [
                           "id",
-                          "runId",
+                          "attemptId",
                           "seq",
                           "ts",
                           "mechanism",
@@ -10970,7 +10600,6 @@
                           "verdict",
                           "summary",
                           "output",
-                          "phase",
                           "hasTranscript"
                         ],
                         "additionalProperties": false
@@ -10995,13 +10624,13 @@
                     "verifierStatuses"
                   ],
                   "additionalProperties": false,
-                  "description": "The run's verification attempts in sequence order."
+                  "description": "The attempt's verification attempts in sequence order."
                 }
               }
             }
           },
           "404": {
-            "description": "No run has that id.",
+            "description": "No attempt has that id.",
             "content": {
               "application/json": {
                 "schema": {
@@ -11067,7 +10696,7 @@
     "/api/verification-attempts/{id}/log": {
       "get": {
         "tags": [
-          "Runs"
+          "Attempts"
         ],
         "description": "Read a critic verification attempt's native harness transcript (ADR-0040) — what the critic itself read, ran, and reasoned. Missing or unreadable transcripts are explicitly unavailable.",
         "parameters": [
@@ -11108,9 +10737,9 @@
                                 "type": "number",
                                 "example": 55210
                               },
-                              "runId": {
+                              "attemptId": {
                                 "type": "number",
-                                "example": 9137
+                                "example": 61
                               },
                               "seq": {
                                 "type": "number",
@@ -11122,20 +10751,18 @@
                               },
                               "type": {
                                 "type": "string",
-                                "example": "session_update"
+                                "example": "lifecycle"
                               },
                               "payload": {
                                 "example": {
-                                  "sessionUpdate": "tool_call",
-                                  "toolCallId": "call_7",
-                                  "kind": "edit",
-                                  "title": "src/server/rate-limit.ts"
+                                  "event": "merged",
+                                  "oid": "0f758cd2200565e7605902a86c2827c65ad25ce0"
                                 }
                               }
                             },
                             "required": [
                               "id",
-                              "runId",
+                              "attemptId",
                               "seq",
                               "ts",
                               "type",
@@ -11186,9 +10813,9 @@
     "/api/tasks/{id}/usage": {
       "get": {
         "tags": [
-          "Runs"
+          "Attempts"
         ],
-        "description": "Usage and Cost rolled up across all of a task's runs, retries included. Reachable with a run-scoped Run Key.",
+        "description": "Usage and Cost rolled up across all of a task's attempts, retries included. Reachable with a run-scoped Run Key.",
         "parameters": [
           {
             "schema": {
@@ -11204,7 +10831,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Usage and Cost rolled up across the task's runs.",
+            "description": "Usage and Cost rolled up across the task's attempts.",
             "content": {
               "application/json": {
                 "schema": {
@@ -11389,7 +11016,7 @@
                     "runCount"
                   ],
                   "additionalProperties": false,
-                  "description": "Usage and Cost rolled up across the task's runs."
+                  "description": "Usage and Cost rolled up across the task's attempts."
                 }
               }
             }
@@ -11397,12 +11024,12 @@
         }
       }
     },
-    "/api/runs/{id}/diff": {
+    "/api/attempts/{id}/diff": {
       "get": {
         "tags": [
-          "Runs"
+          "Attempts"
         ],
-        "description": "Branch and diffstat for the review inbox (worktree-mode runs only; other fields are null). Reachable with a run-scoped Run Key.",
+        "description": "Branch and diffstat for the review inbox (worktree-mode attempts only; other fields are null). Reachable with a run-scoped Run Key.",
         "parameters": [
           {
             "schema": {
@@ -11418,7 +11045,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The run's branch and its diffstat against the base; nulls outside worktree mode.",
+            "description": "The attempt's branch and its diffstat against the base; nulls outside worktree mode.",
             "content": {
               "application/json": {
                 "schema": {
@@ -11464,7 +11091,7 @@
                     "stat"
                   ],
                   "additionalProperties": false,
-                  "description": "The run's branch and its diffstat against the base; nulls outside worktree mode."
+                  "description": "The attempt's branch and its diffstat against the base; nulls outside worktree mode."
                 }
               }
             }
@@ -11472,12 +11099,12 @@
         }
       }
     },
-    "/api/runs/{id}/diff/files": {
+    "/api/attempts/{id}/diff/files": {
       "get": {
         "tags": [
-          "Runs"
+          "Attempts"
         ],
-        "description": "Per-file unified-diff hunks for the review pane (worktree-mode runs only). Empty `files` outside worktree mode or when the branch/worktree is gone. Reachable with a run-scoped Run Key.",
+        "description": "Per-file unified-diff hunks for the review pane (worktree-mode attempts only). Empty `files` outside worktree mode or when the branch/worktree is gone. Reachable with a run-scoped Run Key.",
         "parameters": [
           {
             "schema": {
@@ -11515,7 +11142,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The run's changed files with parsed +/- hunks; empty outside worktree mode.",
+            "description": "The attempt's changed files with parsed +/- hunks; empty outside worktree mode.",
             "content": {
               "application/json": {
                 "schema": {
@@ -11616,7 +11243,7 @@
                     "total"
                   ],
                   "additionalProperties": false,
-                  "description": "The run's changed files with parsed +/- hunks; empty outside worktree mode."
+                  "description": "The attempt's changed files with parsed +/- hunks; empty outside worktree mode."
                 }
               }
             }
@@ -12077,19 +11704,6 @@
                       }
                     ]
                   },
-                  "integrationRetries": {
-                    "example": 5,
-                    "anyOf": [
-                      {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 9007199254740991
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
                   "conflictResolveTurns": {
                     "example": 2,
                     "anyOf": [
@@ -12156,197 +11770,104 @@
                   "verificationCommand": {
                     "anyOf": [
                       {
-                        "anyOf": [
-                          {
-                            "type": "array",
-                            "items": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "command": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "npm"
+                            },
+                            "args": {
+                              "default": [],
+                              "example": [
+                                "test"
+                              ],
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "cwd": {
+                              "example": "packages/api",
+                              "type": "string"
+                            },
+                            "env": {
+                              "default": {},
+                              "example": {
+                                "CI": "1"
+                              },
                               "type": "object",
-                              "properties": {
-                                "command": {
-                                  "type": "string",
-                                  "minLength": 1,
-                                  "example": "npm"
-                                },
-                                "args": {
-                                  "default": [],
-                                  "example": [
-                                    "test"
-                                  ],
-                                  "type": "array",
-                                  "items": {
-                                    "type": "string"
-                                  }
-                                },
-                                "cwd": {
-                                  "example": "packages/api",
-                                  "type": "string"
-                                },
-                                "env": {
-                                  "default": {},
-                                  "example": {
-                                    "CI": "1"
-                                  },
-                                  "type": "object",
-                                  "propertyNames": {
-                                    "type": "string"
-                                  },
-                                  "additionalProperties": {
-                                    "type": "string"
-                                  }
-                                },
-                                "timeoutSeconds": {
-                                  "default": 600,
-                                  "example": 600,
-                                  "type": "integer",
-                                  "exclusiveMinimum": 0,
-                                  "maximum": 9007199254740991
-                                }
-                              },
-                              "required": [
-                                "command"
-                              ]
-                            }
-                          },
-                          {
-                            "type": "object",
-                            "properties": {
-                              "command": {
-                                "type": "string",
-                                "minLength": 1,
-                                "example": "npm"
-                              },
-                              "args": {
-                                "default": [],
-                                "example": [
-                                  "test"
-                                ],
-                                "type": "array",
-                                "items": {
-                                  "type": "string"
-                                }
-                              },
-                              "cwd": {
-                                "example": "packages/api",
+                              "propertyNames": {
                                 "type": "string"
                               },
-                              "env": {
-                                "default": {},
-                                "example": {
-                                  "CI": "1"
-                                },
-                                "type": "object",
-                                "propertyNames": {
-                                  "type": "string"
-                                },
-                                "additionalProperties": {
-                                  "type": "string"
-                                }
-                              },
-                              "timeoutSeconds": {
-                                "default": 600,
-                                "example": 600,
-                                "type": "integer",
-                                "exclusiveMinimum": 0,
-                                "maximum": 9007199254740991
+                              "additionalProperties": {
+                                "type": "string"
                               }
                             },
-                            "required": [
-                              "command"
-                            ]
+                            "timeoutSeconds": {
+                              "default": 600,
+                              "example": 600,
+                              "type": "integer",
+                              "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991
+                            }
                           },
-                          {
-                            "type": "object",
-                            "properties": {
-                              "off": {
-                                "type": "boolean",
-                                "enum": [
-                                  true
-                                ]
-                              }
-                            },
-                            "required": [
-                              "off"
-                            ]
-                          }
-                        ]
+                          "required": [
+                            "command"
+                          ]
+                        }
                       },
                       {
                         "type": "null"
                       }
                     ]
                   },
-                  "verificationCritic": {
+                  "reviewEnabled": {
+                    "example": true,
                     "anyOf": [
                       {
-                        "anyOf": [
-                          {
-                            "type": "object",
-                            "properties": {
-                              "off": {
-                                "type": "boolean",
-                                "enum": [
-                                  true
-                                ]
-                              }
-                            },
-                            "required": [
-                              "off"
-                            ]
-                          },
-                          {
-                            "type": "object",
-                            "properties": {
-                              "prompt": {
-                                "type": "string",
-                                "minLength": 1,
-                                "example": "Review the change against issue {ref}: {title}. Read the code and the issue to decide."
-                              },
-                              "model": {
-                                "type": "string",
-                                "minLength": 1,
-                                "example": "claude-opus-5"
-                              },
-                              "harness": {
-                                "example": "claude",
-                                "type": "string",
-                                "enum": [
-                                  "claude",
-                                  "codex",
-                                  "copilot"
-                                ]
-                              }
-                            },
-                            "required": [
-                              "prompt",
-                              "model"
-                            ],
-                            "additionalProperties": false
-                          },
-                          {
-                            "type": "object",
-                            "properties": {
-                              "enabled": {
-                                "default": false,
-                                "type": "boolean"
-                              },
-                              "prompt": {
-                                "type": "string",
-                                "minLength": 1
-                              },
-                              "model": {
-                                "type": "string",
-                                "minLength": 1
-                              },
-                              "harness": {
-                                "type": "string",
-                                "enum": [
-                                  "claude",
-                                  "codex",
-                                  "copilot"
-                                ]
-                              }
-                            }
-                          }
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "reviewPrompt": {
+                    "example": "Review the diff for correctness.",
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "reviewModel": {
+                    "example": "claude-opus-5",
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "reviewHarness": {
+                    "example": "claude",
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": [
+                          "claude",
+                          "codex",
+                          "copilot"
                         ]
                       },
                       {
@@ -12403,6 +11924,91 @@
                     "anyOf": [
                       {
                         "type": "boolean"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "toolTimeoutMinutes": {
+                    "example": 20,
+                    "anyOf": [
+                      {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "drivePrompt": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "driveUnattendedReminder": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "driveContinuePrompt": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "driveMergeFate": {
+                    "example": "auto-merge",
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": [
+                          "auto-merge",
+                          "open-PR",
+                          "artifact"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "driveContinueAttempts": {
+                    "example": 1,
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "taskPrompt": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
                       },
                       {
                         "type": "null"
@@ -13775,12 +13381,6 @@
                           ],
                           "example": "normal"
                         },
-                        "integrationRetries": {
-                          "type": "integer",
-                          "minimum": 1,
-                          "maximum": 9007199254740991,
-                          "example": 5
-                        },
                         "conflictResolveTurns": {
                           "type": "integer",
                           "minimum": 0,
@@ -13793,7 +13393,6 @@
                         "workingDir",
                         "isolationMode",
                         "priority",
-                        "integrationRetries",
                         "conflictResolveTurns"
                       ],
                       "additionalProperties": false
@@ -13884,8 +13483,8 @@
                           ]
                         },
                         "continueAttempts": {
-                          "default": 1,
-                          "example": 1,
+                          "default": 10,
+                          "example": 10,
                           "type": "integer",
                           "minimum": 0,
                           "maximum": 9007199254740991
@@ -14005,6 +13604,19 @@
                       ],
                       "additionalProperties": false
                     },
+                    "merge": {
+                      "type": "object",
+                      "properties": {
+                        "postMergeCheck": {
+                          "default": true,
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "postMergeCheck"
+                      ],
+                      "additionalProperties": false
+                    },
                     "guardrails": {
                       "type": "object",
                       "properties": {
@@ -14084,6 +13696,7 @@
                     "taskPrompt",
                     "conversationIdleTimeoutMinutes",
                     "verify",
+                    "merge",
                     "guardrails"
                   ],
                   "additionalProperties": false,
@@ -14330,12 +13943,6 @@
                           ],
                           "example": "normal"
                         },
-                        "integrationRetries": {
-                          "type": "integer",
-                          "minimum": 1,
-                          "maximum": 9007199254740991,
-                          "example": 5
-                        },
                         "conflictResolveTurns": {
                           "type": "integer",
                           "minimum": 0,
@@ -14348,7 +13955,6 @@
                         "workingDir",
                         "isolationMode",
                         "priority",
-                        "integrationRetries",
                         "conflictResolveTurns"
                       ],
                       "additionalProperties": false
@@ -14439,8 +14045,8 @@
                           ]
                         },
                         "continueAttempts": {
-                          "default": 1,
-                          "example": 1,
+                          "default": 10,
+                          "example": 10,
                           "type": "integer",
                           "minimum": 0,
                           "maximum": 9007199254740991
@@ -14560,6 +14166,19 @@
                       ],
                       "additionalProperties": false
                     },
+                    "merge": {
+                      "type": "object",
+                      "properties": {
+                        "postMergeCheck": {
+                          "default": true,
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "postMergeCheck"
+                      ],
+                      "additionalProperties": false
+                    },
                     "guardrails": {
                       "type": "object",
                       "properties": {
@@ -14639,6 +14258,7 @@
                     "taskPrompt",
                     "conversationIdleTimeoutMinutes",
                     "verify",
+                    "merge",
                     "guardrails"
                   ],
                   "additionalProperties": false,
@@ -14860,12 +14480,6 @@
                         ],
                         "example": "normal"
                       },
-                      "integrationRetries": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 9007199254740991,
-                        "example": 5
-                      },
                       "conflictResolveTurns": {
                         "type": "integer",
                         "minimum": 0,
@@ -14878,7 +14492,6 @@
                       "workingDir",
                       "isolationMode",
                       "priority",
-                      "integrationRetries",
                       "conflictResolveTurns"
                     ]
                   },
@@ -14967,8 +14580,8 @@
                         ]
                       },
                       "continueAttempts": {
-                        "default": 1,
-                        "example": 1,
+                        "default": 10,
+                        "example": 10,
                         "type": "integer",
                         "minimum": 0,
                         "maximum": 9007199254740991
@@ -15066,6 +14679,16 @@
                             ]
                           }
                         }
+                      }
+                    }
+                  },
+                  "merge": {
+                    "default": {},
+                    "type": "object",
+                    "properties": {
+                      "postMergeCheck": {
+                        "default": true,
+                        "type": "boolean"
                       }
                     }
                   },
@@ -15355,12 +14978,6 @@
                           ],
                           "example": "normal"
                         },
-                        "integrationRetries": {
-                          "type": "integer",
-                          "minimum": 1,
-                          "maximum": 9007199254740991,
-                          "example": 5
-                        },
                         "conflictResolveTurns": {
                           "type": "integer",
                           "minimum": 0,
@@ -15373,7 +14990,6 @@
                         "workingDir",
                         "isolationMode",
                         "priority",
-                        "integrationRetries",
                         "conflictResolveTurns"
                       ],
                       "additionalProperties": false
@@ -15464,8 +15080,8 @@
                           ]
                         },
                         "continueAttempts": {
-                          "default": 1,
-                          "example": 1,
+                          "default": 10,
+                          "example": 10,
                           "type": "integer",
                           "minimum": 0,
                           "maximum": 9007199254740991
@@ -15585,6 +15201,19 @@
                       ],
                       "additionalProperties": false
                     },
+                    "merge": {
+                      "type": "object",
+                      "properties": {
+                        "postMergeCheck": {
+                          "default": true,
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "postMergeCheck"
+                      ],
+                      "additionalProperties": false
+                    },
                     "guardrails": {
                       "type": "object",
                       "properties": {
@@ -15664,6 +15293,7 @@
                     "taskPrompt",
                     "conversationIdleTimeoutMinutes",
                     "verify",
+                    "merge",
                     "guardrails"
                   ],
                   "additionalProperties": false,
@@ -15915,7 +15545,7 @@
         "tags": [
           "Keys"
         ],
-        "description": "Create a new operator API key. `scope` defaults to 'full' (drives the whole fleet); 'read' mints a viz-client key that can GET tasks/runs/maps and open the WebSocket but cannot mutate anything. The bearer token is returned once and never stored.",
+        "description": "Create a new operator API key. `scope` defaults to 'full' (drives the whole fleet); 'read' mints a viz-client key that can GET tasks/attempts/maps and open the WebSocket but cannot mutate anything. The bearer token is returned once and never stored.",
         "requestBody": {
           "required": true,
           "content": {
@@ -15976,7 +15606,7 @@
                       "type": "string",
                       "example": "full"
                     },
-                    "runId": {
+                    "attemptId": {
                       "anyOf": [
                         {
                           "type": "number"
@@ -16023,7 +15653,7 @@
                     "name",
                     "prefix",
                     "scope",
-                    "runId",
+                    "attemptId",
                     "createdAt",
                     "lastUsedAt",
                     "revokedAt",
@@ -16103,7 +15733,7 @@
                             "type": "string",
                             "example": "full"
                           },
-                          "runId": {
+                          "attemptId": {
                             "anyOf": [
                               {
                                 "type": "number"
@@ -16146,7 +15776,7 @@
                           "name",
                           "prefix",
                           "scope",
-                          "runId",
+                          "attemptId",
                           "createdAt",
                           "lastUsedAt",
                           "revokedAt"
@@ -16802,6 +16432,78 @@
         }
       }
     },
+    "/api/flagged-worktrees": {
+      "get": {
+        "tags": [
+          "Worktree Reconciliation"
+        ],
+        "description": "Read-only registry of worktrees the reconciler (ADR-0010) will not delete — dirty, unreadable, or unrecognized — awaiting operator disposition.",
+        "parameters": [
+          {
+            "schema": {
+              "example": 50,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 200
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "example": 0,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "in": "query",
+            "name": "offset",
+            "required": false
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The current flagged-worktree registry snapshot.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "worktrees": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/FlaggedWorktree"
+                      }
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "example": 340
+                    }
+                  },
+                  "required": [
+                    "worktrees",
+                    "total"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The current flagged-worktree registry snapshot."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/channels": {
       "post": {
         "tags": [
@@ -17446,174 +17148,6 @@
           },
           "404": {
             "description": "No such path.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/leases": {
-      "get": {
-        "tags": [
-          "Leases"
-        ],
-        "description": "List every Work Context lease with operator diagnostics: owner Run/Task, TTL state, and the ready Tasks queued behind it. Operator only.",
-        "parameters": [
-          {
-            "schema": {
-              "example": 50,
-              "type": "integer",
-              "exclusiveMinimum": 0,
-              "maximum": 200
-            },
-            "in": "query",
-            "name": "limit",
-            "required": false
-          },
-          {
-            "schema": {
-              "example": 0,
-              "type": "integer",
-              "minimum": 0,
-              "maximum": 9007199254740991
-            },
-            "in": "query",
-            "name": "offset",
-            "required": false
-          }
-        ],
-        "security": [
-          {
-            "bearerAuth": []
-          },
-          {
-            "sessionCookie": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Every held or suspect lease, with its queue diagnostics.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "leases": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/LeaseDiagnostic"
-                      }
-                    },
-                    "total": {
-                      "type": "integer",
-                      "minimum": 0,
-                      "maximum": 9007199254740991,
-                      "example": 340
-                    }
-                  },
-                  "required": [
-                    "leases",
-                    "total"
-                  ],
-                  "additionalProperties": false,
-                  "description": "Every held or suspect lease, with its queue diagnostics."
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/leases/supersede": {
-      "post": {
-        "tags": [
-          "Leases"
-        ],
-        "description": "Re-point a stuck lease to a Run the operator names, re-admitting it as held with a fresh TTL — the escape for a suspect lease reconciliation could not resolve on its own. Operator only.",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/LeaseSupersedeBodyInput"
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearerAuth": []
-          },
-          {
-            "sessionCookie": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The lease now belongs to the named Run.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OkResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No lease is held for that key, or no Run has that id.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/leases/unlock": {
-      "post": {
-        "tags": [
-          "Leases"
-        ],
-        "description": "Force-release a lease outright, freeing its key for a fresh acquire — use when no Run should inherit the stuck context. Operator only.",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/LeaseUnlockBodyInput"
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearerAuth": []
-          },
-          {
-            "sessionCookie": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The lease was released; the key is free for a fresh acquire.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OkResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No lease is held for that key.",
             "content": {
               "application/json": {
                 "schema": {

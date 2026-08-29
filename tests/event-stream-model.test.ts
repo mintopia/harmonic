@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { coalesceEvents, coalesceTail, MAX_STREAM_EVENTS, movingBaseView } from '../web/src/event-stream-model.js';
-import type { RunEvent } from '../web/src/types.js';
+import type { AttemptEvent } from '../web/src/types.js';
 
-const evt = (id: number, type: RunEvent['type'], payload: any): RunEvent => ({
+const evt = (id: number, type: AttemptEvent['type'], payload: any): AttemptEvent => ({
   id,
   attemptId: 1,
   seq: id,
@@ -11,7 +11,7 @@ const evt = (id: number, type: RunEvent['type'], payload: any): RunEvent => ({
   payload,
 });
 
-const chunk = (id: number, text: string, sessionUpdate = 'agent_message_chunk'): RunEvent =>
+const chunk = (id: number, text: string, sessionUpdate = 'agent_message_chunk'): AttemptEvent =>
   evt(id, 'session_update', { sessionUpdate, content: { type: 'text', text } });
 
 describe('coalesceEvents', () => {
@@ -76,12 +76,12 @@ describe('coalesceEvents', () => {
   });
 
   it('carries the call title through an update that only advances status', () => {
-    const call = evt(1, 'session_update', { sessionUpdate: 'tool_call', toolCallId: 't1', title: 'Run tests', kind: 'execute' });
+    const call = evt(1, 'session_update', { sessionUpdate: 'tool_call', toolCallId: 't1', title: 'AttemptSummary tests', kind: 'execute' });
     const update = evt(2, 'session_update', { sessionUpdate: 'tool_call_update', toolCallId: 't1', status: 'completed' });
     const [item] = coalesceEvents([call, update]);
     expect(item).toEqual({
       kind: 'tool',
-      tool: { toolCallId: 't1', toolKind: 'execute', title: 'Run tests', status: 'completed', subagent: false },
+      tool: { toolCallId: 't1', toolKind: 'execute', title: 'AttemptSummary tests', status: 'completed', subagent: false },
       key: 1,
     });
   });
@@ -110,7 +110,7 @@ describe('coalesceEvents', () => {
 });
 
 describe('moving-base folding (ADR-0046, #368)', () => {
-  const retry = (id: number, attempt: number, of: number): RunEvent =>
+  const retry = (id: number, attempt: number, of: number): AttemptEvent =>
     evt(id, 'lifecycle', { event: 'moving-base', attempt, of });
 
   it('folds every rebase re-entry into one row, kept at its first-seen position with the latest attempt', () => {
@@ -158,7 +158,7 @@ describe('movingBaseView (ADR-0046, #368)', () => {
 });
 
 describe('coalesceTail', () => {
-  const perm = (id: number): RunEvent => evt(id, 'permission_request', { request: {}, outcome: {} });
+  const perm = (id: number): AttemptEvent => evt(id, 'permission_request', { request: {}, outcome: {} });
 
   it('coalesces the whole array and hides nothing when under the cap', () => {
     const events = [perm(1), perm(2), perm(3)];

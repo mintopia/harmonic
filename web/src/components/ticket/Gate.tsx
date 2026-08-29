@@ -1,11 +1,11 @@
-import type { RunDot } from '../../run-rail-model';
+import type { AttemptDot } from '../../attempt-rail-model';
 import type { GateModel } from '../../ticket-gate-model';
 import type { Task, VerificationAttempt } from '../../types';
 import { btnGhost, dot, runDotFill } from '../../ui';
 import { taskActions } from '../../task-actions-model';
 import { TaskActions } from '../TaskActions';
 
-const DOT_LABEL: Record<RunDot, string> = {
+const DOT_LABEL: Record<AttemptDot, string> = {
   running: 'running',
   fail: 'failed',
   merged: 'merged',
@@ -29,7 +29,7 @@ export function Gate({
   verificationAttempts: VerificationAttempt[];
   onEdit: (task: Task) => void;
   onChanged: () => void;
-  onGoToCurrent: (runId: number) => void;
+  onGoToCurrent: (attemptId: number) => void;
 }) {
   // No run (an uncancelled/ready Task that hasn't run yet): a run-less Task
   // would otherwise have NO state actions on its detail page — no way to cancel,
@@ -45,20 +45,20 @@ export function Gate({
   }
 
   if (model.kind === 'result') {
-    const lead = `Attempt ${model.attempt} `;
+    const lead = `Attempt ${model.number} `;
     const rest = model.summary.startsWith(lead) ? model.summary.slice(lead.length) : model.summary;
     return (
       <div className={WRAP}>
         <div className="flex items-center justify-center gap-2 text-small text-muted">
           <span role="img" aria-label={DOT_LABEL[model.dot]} className={`${dot} ${runDotFill[model.dot]}`} />
           <span>
-            <b className="font-semibold text-ink">Attempt {model.attempt}</b> {rest}
+            <b className="font-semibold text-ink">Attempt {model.number}</b> {rest}
           </span>
         </div>
         <button
           type="button"
           className={`${btnGhost} w-full justify-center`}
-          onClick={() => onGoToCurrent(model.currentRunId)}
+          onClick={() => onGoToCurrent(model.currentAttemptId)}
         >
           Go to current attempt
         </button>

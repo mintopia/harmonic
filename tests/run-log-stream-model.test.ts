@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { appendRunLogEvents, eventsAfterLiveCursor, runLogCursor } from '../web/src/run-log-stream-model.js';
+import { appendAttemptLogEvents, eventsAfterLiveCursor, runLogCursor } from '../web/src/run-log-stream-model.js';
 
 const event = (id: number) => ({
   id,
@@ -9,13 +9,13 @@ const event = (id: number) => ({
   payload: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: String(id) } },
 });
 
-describe('appendRunLogEvents', () => {
+describe('appendAttemptLogEvents', () => {
   it('keeps hydrated terminal logs intact when there are no live events', () => {
-    expect(appendRunLogEvents({ current: [event(1), event(2)], additions: [] })).toEqual([event(1), event(2)]);
+    expect(appendAttemptLogEvents({ current: [event(1), event(2)], additions: [] })).toEqual([event(1), event(2)]);
   });
 
   it('appends each live event after hydration in arrival order', () => {
-    expect(appendRunLogEvents({ current: [event(1)], additions: [event(1_000_000_001), event(1_000_000_002)] })).toEqual([
+    expect(appendAttemptLogEvents({ current: [event(1)], additions: [event(1_000_000_001), event(1_000_000_002)] })).toEqual([
       event(1),
       event(1_000_000_001),
       event(1_000_000_002),
@@ -23,7 +23,7 @@ describe('appendRunLogEvents', () => {
   });
 
   it('drops a replayed firehose event after reconnect without dropping later output', () => {
-    expect(appendRunLogEvents({ current: [event(1), event(1_000_000_001)], additions: [event(1_000_000_001), event(1_000_000_002)] })).toEqual([
+    expect(appendAttemptLogEvents({ current: [event(1), event(1_000_000_001)], additions: [event(1_000_000_001), event(1_000_000_002)] })).toEqual([
       event(1),
       event(1_000_000_001),
       event(1_000_000_002),

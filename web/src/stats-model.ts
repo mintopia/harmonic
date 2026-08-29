@@ -1,14 +1,14 @@
-import type { Run } from './types.js';
+import type { AttemptSummary } from './types.js';
 
 export interface RunStateCount {
   state: string;
   count: number;
 }
 
-/** The canonical Run-state order (mirrors the server's `RUN_STATES`): live, then merged, then the failure slices. */
-const RUN_STATE_ORDER = ['running', 'completed', 'failed', 'cancelled'] as const satisfies readonly Run['state'][];
+/** The canonical AttemptSummary-state order (mirrors the server's `RUN_STATES`): live, then merged, then the failure slices. */
+const RUN_STATE_ORDER = ['running', 'completed', 'failed', 'cancelled'] as const satisfies readonly AttemptSummary['state'][];
 
-/** Run-state distribution in canonical Run-state order, with zero-count states dropped.
+/** AttemptSummary-state distribution in canonical AttemptSummary-state order, with zero-count states dropped.
  *  Any states present in the input but not in the canonical order are appended after
  *  the known ones, in input order, also dropping zeros. */
 export function orderedRunStates(runsByState: Record<string, number>): RunStateCount[] {

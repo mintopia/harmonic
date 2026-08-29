@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { transcriptLanes } from '../web/src/transcript-timeline-model.js';
-import type { RunLogEvent } from '../web/src/types.js';
+import type { AttemptLogEvent } from '../web/src/types.js';
 
-const event = (id: number, payload: Record<string, unknown>): RunLogEvent => ({
+const event = (id: number, payload: Record<string, unknown>): AttemptLogEvent => ({
   id,
   seq: id,
   ts: id,

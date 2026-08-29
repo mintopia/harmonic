@@ -22,8 +22,8 @@ import { z } from 'zod';
 import { forEachYielding } from '../reliability/yield.js';
 
 /**
- * API shapes for runs and tasks, used by both the REST routes and the
- * WebSocket broadcasts so the SPA sees one format (issue 15). Settled Run
+ * API shapes for attempts and tasks, used by both the REST routes and the
+ * WebSocket broadcasts so the SPA sees one format (issue 15). Settled Attempt
  * Costs are stored and frozen; only live Usage is priced on read.
  */
 
@@ -316,15 +316,14 @@ export const operationEventToApi = (event: OperationEvent): ApiOperationEvent =>
 });
 
 /**
- * The public "Run" wire shape (unchanged by the internal Run→Attempt fold,
- * ADR-0001 #388 S-G): `runToApi` translates an `AttemptRow` onto it rather
- * than exposing the row raw, so `attempt`/`finishedAt`/the 4-value `state`
- * stay stable for REST/WS consumers across the store consolidation.
+ * The public Attempt wire shape (ADR-0001, #390): `attemptToApi` translates an
+ * `AttemptRow` onto it rather than exposing the row raw — `finishedAt` and the
+ * 4-value `state` are deliberate projections, not column dumps.
  */
-export type ApiRun = {
+export type ApiAttemptSummary = {
   id: number;
   taskId: number;
-  attempt: number;
+  number: number;
   state: 'running' | 'completed' | 'failed' | 'cancelled';
   reason: string | null;
   stopReason: string | null;
@@ -344,22 +343,21 @@ export type ApiRun = {
   finishedAt: number | null;
 };
 
-/** An Attempt's `state` collapsed onto the Run wire vocabulary: `passed` reads
- * as `completed`, and `escalated` (an Attempt-only state — Runs never held it)
- * reads as the generic `failed` a Run always settled as when its Attempt was
- * hedged to a human, matching pre-fold behaviour exactly. */
-function apiRunState(state: AttemptState): ApiRun['state'] {
+/** An Attempt's `state` collapsed onto the 4-value wire vocabulary: `passed`
+ * reads as `completed`, and `escalated` reads as the generic `failed` — the
+ * escalation itself is Task state, not a fifth execution outcome. */
+function apiAttemptState(state: AttemptState): ApiAttemptSummary['state'] {
   if (state === 'passed') return 'completed';
   if (state === 'escalated') return 'failed';
   return state;
 }
 
-export function runToApi(_ctx: AppContext, run: AttemptRow): ApiRun {
+export function attemptToApi(_ctx: AppContext, run: AttemptRow): ApiAttemptSummary {
   return {
     id: run.id,
     taskId: run.taskId,
-    attempt: run.number,
-    state: apiRunState(run.state),
+    number: run.number,
+    state: apiAttemptState(run.state),
     // The wire `reason` is the free-text detail (`runs.reason` before the
     // fold) — `attempts.detail` now — falling back to the structured
     // disposition kind (`attempts.reason`) when a disposition carries no

@@ -2,11 +2,11 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { startServer, stubHarness, type TestServer } from './helpers.js';
 
 /**
- * `GET /api/runs/:id/guardrail-events` (issue #171): the REST surface over
+ * `GET /api/attempts/:id/guardrail-events` (issue #171): the REST surface over
  * `GuardrailEventStore.list`, mirroring `GET /runs/:id/events`'s shape and
  * 404 behaviour.
  */
-describe('GET /api/runs/:id/guardrail-events (issue #171)', () => {
+describe('GET /api/attempts/:id/guardrail-events (issue #171)', () => {
   let server: TestServer;
   const ctx = () => server.app.ctx;
 
@@ -38,7 +38,7 @@ describe('GET /api/runs/:id/guardrail-events (issue #171)', () => {
       payload: { note: 'second' },
     });
 
-    const res = await server.api('GET', `/api/runs/${run.id}/guardrail-events`);
+    const res = await server.api('GET', `/api/attempts/${run.id}/guardrail-events`);
     expect(res.status).toBe(200);
     expect(res.body.guardrailEvents).toHaveLength(2);
     expect(res.body.guardrailEvents[0]).toMatchObject({
@@ -58,7 +58,7 @@ describe('GET /api/runs/:id/guardrail-events (issue #171)', () => {
   });
 
   it('404s for an unknown run', async () => {
-    const res = await server.api('GET', '/api/runs/999999/guardrail-events');
+    const res = await server.api('GET', '/api/attempts/999999/guardrail-events');
     expect(res.status).toBe(404);
   });
 });

@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import type { AppConfig, DeepPartial } from '../src/config.js';
 import { startServer, waitFor, type TestServer } from './helpers.js';
 
-describe('GET /api/runs/:id/log (issue #242)', () => {
+describe('GET /api/attempts/:id/log (issue #242)', () => {
   let server: TestServer;
   const workDir = mkdtempSync(join(tmpdir(), 'harmonic-run-log-work-'));
   const logDir = mkdtempSync(join(tmpdir(), 'harmonic-run-log-native-'));
@@ -61,7 +61,7 @@ describe('GET /api/runs/:id/log (issue #242)', () => {
       exit: 'hang',
     });
 
-    const { status, body } = await server.api('GET', `/api/runs/${runId}/log`);
+    const { status, body } = await server.api('GET', `/api/attempts/${runId}/log`);
 
     expect(status).toBe(200);
     expect(body.status).toBe('available');
@@ -78,7 +78,7 @@ describe('GET /api/runs/:id/log (issue #242)', () => {
     const { runId, taskId } = await startRun({ updates: [], delayMs: 1 });
     await waitFor(async () => (await server.app.ctx.attempts.get(runId)).state !== 'running' ? true : undefined);
 
-    const { status, body } = await server.api('GET', `/api/runs/${runId}/log`);
+    const { status, body } = await server.api('GET', `/api/attempts/${runId}/log`);
 
     expect(status).toBe(200);
     expect(body.status).toBe('available');
@@ -90,7 +90,7 @@ describe('GET /api/runs/:id/log (issue #242)', () => {
     const { runId } = await startRun({ updates: [], delayMs: 1 });
     unlinkSync(transcriptPath);
 
-    const { status, body } = await server.api('GET', `/api/runs/${runId}/log`);
+    const { status, body } = await server.api('GET', `/api/attempts/${runId}/log`);
 
     expect(status).toBe(200);
     expect(body).toEqual({ status: 'unavailable', liveCursor: 0 });

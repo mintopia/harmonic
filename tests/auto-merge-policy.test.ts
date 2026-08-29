@@ -174,13 +174,13 @@ describe('one merge policy, everywhere (issue #381, ADR-0001)', () => {
     });
 
   const timelineFor = async (taskId: number) =>
-    (await server.api('GET', `/api/tasks/${taskId}/attempts`)).body.attempts as Array<{
+    (await server.api('GET', `/api/tasks/${taskId}/attempts/timeline`)).body.attempts as Array<{
       number: number;
       state: string;
       steps: Array<{ type: string; state: string; verdict: string | null }>;
     }>;
   const lifecycle = async (runId: number): Promise<Array<{ event: string; mechanism?: string; reason?: string; oid?: string; baseBranch?: string }>> =>
-    (await server.api('GET', `/api/runs/${runId}/events`)).body.events
+    (await server.api('GET', `/api/attempts/${runId}/events`)).body.events
       .filter((e: { type: string }) => e.type === 'lifecycle')
       .map((e: { payload: { event: string; mechanism?: string; reason?: string; oid?: string; baseBranch?: string } }) => e.payload);
 

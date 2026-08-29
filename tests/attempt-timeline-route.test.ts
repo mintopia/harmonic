@@ -76,7 +76,7 @@ describe('attempt timeline API', () => {
         && Reflect.get(message, 'type') === 'attempt_timeline_changed'
         && Reflect.get(message, 'taskId') === created.body.id,
     );
-    const rest = await server.api('GET', `/api/tasks/${created.body.id}/attempts`);
+    const rest = await server.api('GET', `/api/tasks/${created.body.id}/attempts/timeline`);
 
     expect(rest.status).toBe(200);
     expect(Reflect.get(event!, 'attempts')).toEqual(rest.body.attempts);

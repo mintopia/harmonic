@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { App } from './app.js';
-import { attemptTimelineToApi, conversationToApi, flaggedWorktreesToApi, operationEventToApi, runToApi, runUsageToApi, scheduledJobsToApi, taskToApi } from './serialize.js';
+import { attemptTimelineToApi, conversationToApi, flaggedWorktreesToApi, operationEventToApi, attemptToApi, runUsageToApi, scheduledJobsToApi, taskToApi } from './serialize.js';
 import { forEachYielding } from '../reliability/yield.js';
 
 /**
@@ -30,7 +30,7 @@ export async function wsRoutes(fastify: FastifyInstance): Promise<void> {
     const unsubscribes = [
       ctx.bus.on('run_event', (event) => send({ type: 'run_event', event })),
       ctx.bus.on('run_changed', (run) => {
-        send({ type: 'run_changed', run: runToApi(ctx, run) });
+        send({ type: 'run_changed', run: attemptToApi(ctx, run) });
         sendAttemptTimeline(run.taskId);
       }),
       // Live Run usage (ADR 0010) is board/viz traffic — sent to read keys too;

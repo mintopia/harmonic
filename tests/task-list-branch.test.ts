@@ -57,8 +57,8 @@ describe('task list payload: latest run branch', () => {
     expect(task.stat).toContain('insertion');
     // The run-scoped endpoint serves that same snapshot, so the card and Task
     // detail can never show two different stats.
-    const runs = await server.api('GET', `/api/tasks/${created.body.id}/runs`);
-    const diff = await server.api('GET', `/api/runs/${runs.body.runs.at(-1).id}/diff`);
+    const runs = await server.api('GET', `/api/tasks/${created.body.id}/attempts`);
+    const diff = await server.api('GET', `/api/attempts/${runs.body.attempts.at(-1).id}/diff`);
     expect(diff.body.stat).toBe(task.stat);
   });
 

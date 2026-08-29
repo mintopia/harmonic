@@ -467,7 +467,7 @@ export class Runner {
     // called from an operator Accept's merge (`mergePolicyDeps`), which runs
     // against an already-`escalated` Attempt — there is no `running` row to
     // find at that point, but the escalated one is still the relevant target
-    // for verification/guardrail facts. Mirrors `AttemptStore.resolveLatest`.
+    // for verification/guardrail facts. Mirrors `AttemptStore.currentForTask`.
     const rows = await this.attempts.listForTask(task.id);
     const attempt = rows.at(-1);
     if (!attempt) throw new DomainError('not_found', `no attempt for task ${task.id} found`);

@@ -53,7 +53,7 @@ export interface Attempt {
 export type GuardrailDimension = 'wall-clock' | 'tokens' | 'cost' | 'progress' | 'tool-timeout';
 
 /** One persisted Guardrail-trip event (issue #171), as `GET
- * /api/runs/:id/guardrail-events` serves it — mirrors the server's
+ * /api/attempts/:id/guardrail-events` serves it — mirrors the server's
  * `GuardrailEventRow` (`domain/guardrail-events.ts`). `limitValue`/
  * `observedValue` are in the dimension's own unit (ms for wall-clock and
  * tool-timeout, tokens for tokens, USD for cost, a sentinel 0/count for
@@ -86,7 +86,7 @@ export interface VerifierStatus {
 }
 
 /** One persisted Verification-attempt event (issue #169, part of #109), as
- * `GET /api/runs/:id/verification-attempts` serves it — mirrors the server's
+ * `GET /api/attempts/:id/verification-attempts` serves it — mirrors the server's
  * `VerificationAttemptRow` (`domain/verification-attempts.ts`). A Run's
  * self-heal retries append further attempts for the same `mechanism`, so the
  * log is append-only and `seq`-ordered; the latest attempt per mechanism is
@@ -374,8 +374,8 @@ export interface Task {
   skipReason: string | null;
 }
 
-/** Aggregate token counters on a `Run`'s usage snapshot, as the ticket UI reads
- * them; all optional/nullable because a source may report only some counters. */
+/** Aggregate token counters on an Attempt's usage snapshot, as the ticket UI
+ * reads them; all optional/nullable because a source may report only some counters. */
 export interface RunUsageTotals {
   inputTokens?: number | null;
   outputTokens?: number | null;
@@ -384,16 +384,19 @@ export interface RunUsageTotals {
   aiUnits?: number | null;
 }
 
-export interface Run {
+/** The lean Attempt summary as `GET /api/tasks/:id/attempts`, `GET
+ * /api/attempts/:id`, and the WS `run_changed` payload serve it (server
+ * `attemptSchema`); distinct from the timeline's step-bearing {@link Attempt}. */
+export interface AttemptSummary {
   id: number;
   taskId: number;
-  attempt: number;
+  number: number;
   state: 'running' | 'completed' | 'failed' | 'cancelled';
   reason: string | null;
   stopReason: string | null;
   sessionId: string | null;
-  /** The exact prompt text sent to the harness for this Run; null for
-   * pre-feature Runs and while a Run is still starting up. */
+  /** The exact prompt text sent to the harness for this Attempt; null for
+   * pre-feature Attempts and while an Attempt is still starting up. */
   prompt: string | null;
   branch: string | null;
   baseBranch: string | null;
@@ -468,7 +471,7 @@ export interface DiffFile {
   lines: DiffLine[];
 }
 
-export interface RunEvent {
+export interface AttemptEvent {
   id: number;
   /** The Attempt this event is keyed to (`attempt_events.attempt_id`,
    * ADR-0001 #388 S-F — was `runId` before). */
@@ -480,7 +483,7 @@ export interface RunEvent {
 }
 
 /** A renderer-compatible event parsed from a native harness transcript. */
-export interface RunLogEvent {
+export interface AttemptLogEvent {
   id: number;
   /** Present for live WebSocket events; REST transcript hydration is already scoped by URL. */
   runId?: number;

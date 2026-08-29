@@ -329,20 +329,20 @@ export class AttemptStore {
   }
 
   /**
-   * Resolve `id` to its Task's LATEST Attempt — the "follow forward" read a
-   * `runId` handle (issued once, at dispatch) needs now that self-heal
-   * advances to a NEW Attempt row each turn (ADR-0001 #388 S-G: one row per
-   * turn, not a stable Run row live-updated in place). Every `/api/runs/:id`
-   * -family route resolves through this, so a `runId` captured at the start
-   * of a Task's execution keeps reflecting that execution's current state —
-   * exactly the polling contract the deleted `runs` table gave for free.
+   * The Task's CURRENT (latest) Attempt — the follow-forward read a poller
+   * needs now that self-heal advances to a NEW Attempt row each turn
+   * (ADR-0001 #388 S-G: one row per turn, not a stable row live-updated in
+   * place). Backs `GET /tasks/:id/attempts/current`, so a client that
+   * dispatched a Task keeps reflecting that execution's current state
+   * without tracking which Attempt is live.
    */
-  async resolveLatest(id: number): Promise<AttemptRow> {
-    const row = await this.get(id);
+  async currentForTask(taskId: number): Promise<AttemptRow> {
     const latest = await this.db.read((db) =>
-      db.select().from(attempts).where(eq(attempts.taskId, row.taskId)).orderBy(asc(attempts.number)).all(),
+      db.select().from(attempts).where(eq(attempts.taskId, taskId)).orderBy(asc(attempts.number)).all(),
     );
-    return latest.at(-1) ?? row;
+    const row = latest.at(-1);
+    if (!row) throw new DomainError('not_found', `task ${taskId} has no attempts`);
+    return row;
   }
 
   /**

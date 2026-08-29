@@ -310,9 +310,9 @@ describe('Run operations (issue #290)', () => {
 
       // The operator Accept merges as its own operation, keyed to the Attempt it
       // acts on. Under the one-execution-ledger fold (ADR-0001 #388) each attempt
-      // is its own row and Accept runs on the escalated (latest) Attempt, so the
-      // dispatch `runId` handle follows forward to it via resolveLatest.
-      const escalatedAttempt = await server.app.ctx.attempts.resolveLatest(runId);
+      // is its own row and Accept runs on the escalated (latest) Attempt — the
+      // Task's current Attempt.
+      const escalatedAttempt = await server.app.ctx.attempts.currentForTask(task.body.id);
       expect((await server.api('POST', `/api/tasks/${task.body.id}/accept`)).status).toBe(200);
       await vi.waitFor(() => {
         const merge = exporter.getFinishedSpans().find((span) => span.name === 'harmonic.merge' && span.attributes['attempt.id'] === escalatedAttempt.id);

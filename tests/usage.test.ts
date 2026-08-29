@@ -494,7 +494,7 @@ describe('usage collection and statistics', () => {
       }),
     });
 
-    const run = (await server.api('GET', `/api/runs/${runId}`)).body;
+    const run = (await server.api('GET', `/api/attempts/${runId}`)).body;
     expect(run.usage.totals).toEqual({
       inputTokens: 55,
       outputTokens: 1403,
@@ -526,7 +526,7 @@ describe('usage collection and statistics', () => {
       }),
     });
 
-    const run = (await server.api('GET', `/api/runs/${runId}`)).body;
+    const run = (await server.api('GET', `/api/attempts/${runId}`)).body;
     expect(run.usage.models).toEqual({
       'gpt-5.6-sol': { inputTokens: 6189, outputTokens: 5, cacheReadTokens: 9984, cacheWriteTokens: 0 },
     });
@@ -562,7 +562,7 @@ describe('usage collection and statistics', () => {
     server = await startServer(overrides);
     const { runId } = await runTask({ prompt: JSON.stringify({}), workingDir: workDir });
 
-    const run = (await server.api('GET', `/api/runs/${runId}`)).body;
+    const run = (await server.api('GET', `/api/attempts/${runId}`)).body;
     expect(run.usage.models).toEqual({
       'claude-sonnet-5': { inputTokens: 10, outputTokens: 100, cacheWriteTokens: 5, cacheReadTokens: 7 },
       'claude-haiku-4-5': { inputTokens: 3, outputTokens: 20, cacheWriteTokens: 0, cacheReadTokens: 1 },
@@ -602,7 +602,7 @@ describe('usage collection and statistics', () => {
       prompt: JSON.stringify({}),
     });
 
-    const run = (await server.api('GET', `/api/runs/${runId}`)).body;
+    const run = (await server.api('GET', `/api/attempts/${runId}`)).body;
     expect(run.usage.models).toEqual({
       'gpt-5-mini': { inputTokens: 35068, outputTokens: 4539, cacheReadTokens: 0, cacheWriteTokens: 0, aiUnits: 1.7845 },
       'claude-haiku-4.5': { inputTokens: 9, outputTokens: 145, cacheReadTokens: 0, cacheWriteTokens: 48494, aiUnits: 6.13515 },
@@ -614,7 +614,7 @@ describe('usage collection and statistics', () => {
     expect(run.cost.totalUsd).toBeGreaterThan(0);
     // 'auto' delegated the choice: observed models are information, not a
     // contradiction…
-    const events = (await server.api('GET', `/api/runs/${runId}/events`)).body.events;
+    const events = (await server.api('GET', `/api/attempts/${runId}/events`)).body.events;
     expect(events.find((e: any) => e.payload?.event === 'model_mismatch')).toBeUndefined();
 
     // …but a real pin the plan silently ignored (auto-only plans accept
@@ -625,7 +625,7 @@ describe('usage collection and statistics', () => {
       workingDir: workDir,
       prompt: JSON.stringify({}),
     });
-    const pinnedEvents = (await server.api('GET', `/api/runs/${pinned.runId}/events`)).body.events;
+    const pinnedEvents = (await server.api('GET', `/api/attempts/${pinned.runId}/events`)).body.events;
     expect(pinnedEvents.find((e: any) => e.payload?.event === 'model_mismatch')?.payload).toMatchObject({
       expected: 'gpt-5.4',
       observed: expect.arrayContaining(['gpt-5-mini', 'claude-haiku-4.5']),
@@ -635,7 +635,7 @@ describe('usage collection and statistics', () => {
   it('reports usage as unavailable — not zero — when neither source exists', async () => {
     server = await sharedServer();
     const { runId } = await runTask({ prompt: JSON.stringify({}) });
-    const run = (await server.api('GET', `/api/runs/${runId}`)).body;
+    const run = (await server.api('GET', `/api/attempts/${runId}`)).body;
     expect(run.usage).toBeNull();
   });
 
@@ -654,7 +654,7 @@ describe('usage collection and statistics', () => {
     await waitFor(async () => {
       const { body } = await server.api('GET', `/api/tasks/${taskId}`);
       if (body.state !== 'done') return undefined;
-      return (await server.api('GET', `/api/tasks/${taskId}/runs`)).body.runs.length === 2 ? true : undefined;
+      return (await server.api('GET', `/api/tasks/${taskId}/attempts`)).body.attempts.length === 2 ? true : undefined;
     });
 
     const agg = await server.api('GET', `/api/tasks/${taskId}/usage`);

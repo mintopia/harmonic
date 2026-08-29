@@ -135,14 +135,13 @@ describe('agent critic end-to-end (issue #164)', () => {
   // (ADR-0001 #388 S-F): a self-heal loop's failed attempts share one Run row
   // but each get their own Attempt row, so "this Run's verification
   // attempts" now folds the log across every Attempt of the Run's Task.
-  const attempts = async (runId: number) => {
+  const attempts = async (taskId: number) => {
     const store = new VerificationAttemptStore(server.app.ctx.asyncDb);
-    const run = await server.app.ctx.attempts.get(runId);
-    const taskAttempts = await server.app.ctx.attempts.listForTask(run.taskId);
+    const taskAttempts = await server.app.ctx.attempts.listForTask(taskId);
     return (await Promise.all(taskAttempts.map((a) => store.list(a.id)))).flat();
   };
   const verdictEvents = async (runId: number) =>
-    (await server.api('GET', `/api/runs/${runId}/events`)).body.events
+    (await server.api('GET', `/api/attempts/${runId}/events`)).body.events
       .filter((e: any) => e.type === 'lifecycle' && e.payload.event === 'verification')
       .map((e: any) => e.payload);
 
@@ -157,12 +156,12 @@ describe('agent critic end-to-end (issue #164)', () => {
     });
     expect(task.state).toBe('done');
 
-    const run = (await server.api('GET', `/api/runs/${runId}`)).body;
+    const run = (await server.api('GET', `/api/tasks/${taskId}/attempts/current`)).body;
     expect(run).toMatchObject({ state: 'completed' });
     expect(run.candidateOid).toMatch(/^[0-9a-f]{40}$/);
 
     // AC2: a critic attempt persisted during a real Run, at the verified branch head.
-    const rows = await attempts(runId);
+    const rows = await attempts(taskId);
     expect(rows).toHaveLength(1);
     expect(rows[0]!).toMatchObject({ mechanism: 'critic', verdict: 'pass', summary: 'looks correct' });
     expect(rows[0]!.inputOid).toMatch(/^[0-9a-f]{40}$/);
@@ -176,10 +175,10 @@ describe('agent critic end-to-end (issue #164)', () => {
     criticResult = { verdict: 'fail', summary: 'the change breaks the contract' };
     await server.app.ctx.workspaces.update(workspaceId, critic());
     const baseOidBefore = git(repoDir, 'rev-parse', 'main');
-    const { taskId, runId } = await createAndRun();
+    const { taskId } = await createAndRun();
 
     const run = await waitFor(async () => {
-      const { body } = await server.api('GET', `/api/runs/${runId}`);
+      const { body } = await server.api('GET', `/api/tasks/${taskId}/attempts/current`);
       return body.state === 'failed' ? body : undefined;
     });
     expect(run.state).toBe('failed');
@@ -188,12 +187,12 @@ describe('agent critic end-to-end (issue #164)', () => {
     const task = (await server.api('GET', `/api/tasks/${taskId}`)).body;
     expect(task.state).toBe('escalated');
 
-    const rows = await attempts(runId);
+    const rows = await attempts(taskId);
     expect(rows).toHaveLength(2);
     expect(rows.every((row) => row.mechanism === 'critic' && row.verdict === 'fail')).toBe(true);
     expect(rows.at(-1)).toMatchObject({ inputOid: run.candidateOid });
     expect(rows.at(-1)!.inputOid).toMatch(/^[0-9a-f]{40}$/);
-    const timeline = await server.api('GET', `/api/tasks/${taskId}/attempts`);
+    const timeline = await server.api('GET', `/api/tasks/${taskId}/attempts/timeline`);
     expect(timeline.body.attempts.map((attempt: { number: number; state: string }) => ({ number: attempt.number, state: attempt.state }))).toEqual([
       { number: 1, state: 'failed' },
       { number: 2, state: 'escalated' },
@@ -207,15 +206,15 @@ describe('agent critic end-to-end (issue #164)', () => {
   it('AC3: an inconclusive critic consumes the same bounded Attempt loop', async () => {
     criticResult = { verdict: 'inconclusive', summary: 'cannot tell from the diff alone' };
     await server.app.ctx.workspaces.update(workspaceId, critic());
-    const { runId } = await createAndRun();
+    const { taskId } = await createAndRun();
 
     const run = await waitFor(async () => {
-      const { body } = await server.api('GET', `/api/runs/${runId}`);
+      const { body } = await server.api('GET', `/api/tasks/${taskId}/attempts/current`);
       return body.state === 'failed' ? body : undefined;
     });
     expect(run.state).toBe('failed');
 
-    const rows = await attempts(runId);
+    const rows = await attempts(taskId);
     expect(rows).toHaveLength(2);
     expect(rows.every((row) => row.mechanism === 'critic' && row.verdict === 'inconclusive')).toBe(true);
   });
@@ -226,10 +225,10 @@ describe('agent critic end-to-end (issue #164)', () => {
       verificationCommand: [exitCommand(0)],
       ...critic(),
     });
-    const { taskId, runId } = await createAndRun();
+    const { taskId } = await createAndRun();
 
     const run = await waitFor(async () => {
-      const { body } = await server.api('GET', `/api/runs/${runId}`);
+      const { body } = await server.api('GET', `/api/tasks/${taskId}/attempts/current`);
       return body.state === 'failed' ? body : undefined;
     });
     expect(run.state).toBe('failed');
@@ -239,7 +238,7 @@ describe('agent critic end-to-end (issue #164)', () => {
 
     // Both verifiers run on each attempt. The critic failure is carried into
     // attempt 2, then the cap escalates without creating another ticket.
-    const rows = await attempts(runId);
+    const rows = await attempts(taskId);
     expect(rows).toHaveLength(4);
     expect(rows.map((r) => `${r.mechanism}:${r.verdict}`).sort()).toEqual([
       'command:pass',
@@ -255,7 +254,7 @@ describe('agent critic end-to-end (issue #164)', () => {
       verificationCommand: [exitCommand(0)],
       ...critic(),
     });
-    const { taskId, runId } = await createAndRun();
+    const { taskId } = await createAndRun();
 
     const task = await waitFor(async () => {
       const { body } = await server.api('GET', `/api/tasks/${taskId}`);
@@ -263,7 +262,7 @@ describe('agent critic end-to-end (issue #164)', () => {
     });
     expect(task.state).toBe('done');
 
-    const run = (await server.api('GET', `/api/runs/${runId}`)).body;
+    const run = (await server.api('GET', `/api/tasks/${taskId}/attempts/current`)).body;
     expect(run).toMatchObject({ state: 'completed' });
 
     // The one merge policy (ADR-0001, #381) runs a deterministic post-merge
@@ -271,7 +270,7 @@ describe('agent critic end-to-end (issue #164)', () => {
     // `command` attempt, never the critic (it already reviewed this diff on
     // the candidate). So a worktree merge with a real command verifier now
     // persists three attempts, not two.
-    const rows = await attempts(runId);
+    const rows = await attempts(taskId);
     expect(rows).toHaveLength(3);
     expect(rows.map((r) => `${r.mechanism}:${r.verdict}`).sort()).toEqual(['command:pass', 'command:pass', 'critic:pass']);
   });
@@ -290,10 +289,10 @@ describe('agent critic end-to-end (issue #164)', () => {
       return body.state === 'done' ? true : undefined;
     });
 
-    const run = (await server.api('GET', `/api/runs/${runId}`)).body;
+    const run = (await server.api('GET', `/api/tasks/${taskId}/attempts/current`)).body;
     expect(run.sessionRowId).not.toBe(runId);
 
-    const response = await server.api('GET', `/api/tasks/${taskId}/attempts`);
+    const response = await server.api('GET', `/api/tasks/${taskId}/attempts/timeline`);
     expect(response.status).toBe(200);
     expect(response.body.attempts).toHaveLength(1);
     expect(response.body.attempts[0].steps).toMatchObject([
@@ -338,16 +337,16 @@ describe('agent critic end-to-end (issue #164)', () => {
     expect(created.status).toBe(201);
     const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
     expect(started.status).toBe(201);
-    const runId = started.body.id;
+    const taskId = created.body.id as number;
 
     const run = await waitFor(async () => {
-      const { body } = await server.api('GET', `/api/runs/${runId}`);
+      const { body } = await server.api('GET', `/api/tasks/${taskId}/attempts/current`);
       return body.state === 'failed' ? body : undefined;
     });
     expect(run.state).toBe('failed');
     expect(run.candidateOid).toBeNull();
 
-    const rows = await attempts(runId);
+    const rows = await attempts(taskId);
     expect(rows).toHaveLength(1);
     expect(rows[0]!).toMatchObject({ mechanism: 'critic', verdict: 'inconclusive', inputOid: '' });
 

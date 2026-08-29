@@ -80,7 +80,7 @@ describe('Codex afk permission model', () => {
     const run = await server.app.ctx.runner.launchClaimed(task.id);
 
     const permission = await waitFor(async () => {
-      const { body } = await server.api('GET', `/api/runs/${run.id}/events`);
+      const { body } = await server.api('GET', `/api/attempts/${run.id}/events`);
       return body.events.find((e: any) => e.type === 'permission_request');
     });
 
@@ -149,7 +149,7 @@ describe('Codex afk full-access mode', () => {
     const run = await server.app.ctx.runner.launchClaimed(task.id);
 
     const modeSet = await waitFor(async () => {
-      const { body } = await server.api('GET', `/api/runs/${run.id}/events`);
+      const { body } = await server.api('GET', `/api/attempts/${run.id}/events`);
       return body.events.find((e: any) => e.type === 'lifecycle' && e.payload?.event === 'mode_set');
     });
     // The forced ACP mode is Codex's full-access mode — session/set_mode

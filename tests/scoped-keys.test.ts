@@ -40,7 +40,7 @@ describe('run-scoped key restrictions', () => {
   it('allows the agent task surface: task CRUD, dependencies, runs, events', async () => {
     expect(await asAgent('GET', '/api/tasks')).toBe(200);
     expect(await asAgent('POST', '/api/tasks', { prompt: 'follow-up', state: 'draft' })).toBe(201);
-    expect(await asAgent('GET', '/api/tasks/1/runs')).toBe(200);
+    expect(await asAgent('GET', '/api/tasks/1/attempts')).toBe(200);
   });
 
   it('denies the operator surface: keys, config, channels', async () => {
@@ -109,7 +109,7 @@ describe('read-scoped key (issue #35)', () => {
     await server.api('POST', '/api/tasks', { prompt: 'a task', state: 'draft' });
     expect(await asRead('GET', '/api/tasks')).toBe(200);
     expect(await asRead('GET', '/api/tasks/1')).toBe(200);
-    expect(await asRead('GET', '/api/tasks/1/runs')).toBe(200);
+    expect(await asRead('GET', '/api/tasks/1/attempts')).toBe(200);
     expect(await asRead('GET', '/api/maps')).toBe(200); // empty (tracker off), but reachable
   });
 

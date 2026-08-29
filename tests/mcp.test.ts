@@ -156,7 +156,7 @@ describe('mcp server & scoped keys', () => {
         async () => (await codexServer.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'done',
       );
 
-      const events = await codexServer.api('GET', `/api/runs/${started.body.id}/events`);
+      const events = await codexServer.api('GET', `/api/attempts/${started.body.id}/events`);
       expect(events.body.events.filter((event: any) => event.type === 'session_update')).toEqual([]);
     } finally {
       await codexServer.close();

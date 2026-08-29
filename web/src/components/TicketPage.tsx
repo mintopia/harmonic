@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { api } from '../api';
 import { formatCost } from '../cost';
-import type { Attempt, Step, Cost, GuardrailEvent, Run, RunLogEvent, RunUsageEvent, Task, TicketTimelineEvent, VerificationAttempt, VerifierStatus } from '../types';
-import { appendRunLogEvents, eventsAfterLiveCursor, runLogCursor } from '../run-log-stream-model';
+import type { Attempt, Step, Cost, GuardrailEvent, AttemptSummary, AttemptLogEvent, RunUsageEvent, Task, TicketTimelineEvent, VerificationAttempt, VerifierStatus } from '../types';
+import { appendAttemptLogEvents, eventsAfterLiveCursor, runLogCursor } from '../run-log-stream-model';
 import { EmptyState } from './EmptyState';
 import { TranscriptTimeline } from './TranscriptTimeline';
 import { DiffViewer } from './DiffViewer';
@@ -10,14 +10,14 @@ import type { DiffFile } from '../types';
 import { describeGuardrailTrip } from '../guardrail-trip-model';
 import { parseSkipReasonTaskRef } from '../skip-reason-model';
 import { overallDecision, verificationRows, criticUnavailableReason } from '../verification-attempts-model';
-import { changedFilesFromStat } from '../run-rail-model';
+import { changedFilesFromStat } from '../attempt-rail-model';
 import { sumCosts } from '../activity-model';
 import { Markdown } from './Markdown';
 import { Icon } from './Icon';
 import { subscribe, subscribeRunLog } from '../ws';
-import { gateForRun } from '../ticket-gate-model';
+import { gateForAttempt } from '../ticket-gate-model';
 import { cardTitle } from '../board-sections-model';
-import { RunRail } from './ticket/RunRail';
+import { AttemptRail } from './ticket/AttemptRail';
 import { Gate } from './ticket/Gate';
 import { CrumbBar } from './CrumbBar';
 import { AttemptTimeline } from './ticket/AttemptTimeline';
@@ -138,17 +138,17 @@ function Metrics({
   now,
 }: {
   task: Task;
-  runs: Run[];
+  runs: AttemptSummary[];
   live: Map<number, RunUsageEvent>;
   now: number;
 }) {
-  // A live Run reads its freshest `run_usage` snapshot; a settled Run its
+  // A live AttemptSummary reads its freshest `run_usage` snapshot; a settled AttemptSummary its
   // persisted totals/cost — so Cost, Tokens, and Elapsed all tick as it runs.
-  const usageFor = (r: Run): TokenUsage => (r.state === 'running' ? live.get(r.id)?.usage ?? r.usage : r.usage);
-  const costFor = (r: Run) => (r.state === 'running' ? live.get(r.id)?.cost ?? r.cost : r.cost);
+  const usageFor = (r: AttemptSummary): TokenUsage => (r.state === 'running' ? live.get(r.id)?.usage ?? r.usage : r.usage);
+  const costFor = (r: AttemptSummary) => (r.state === 'running' ? live.get(r.id)?.cost ?? r.cost : r.cost);
   const tokens = runs.reduce((s, r) => s + usageTokens(usageFor(r)), 0);
   const cost = sumCosts(runs.map(costFor)) ?? task.cost;
-  // A finished Run contributes its settled span; a live Run its wall-clock so
+  // A finished AttemptSummary contributes its settled span; a live AttemptSummary its wall-clock so
   // far (now − startedAt), which the 1s `now` tick advances while it executes.
   const elapsed = runs.reduce(
     (s, r) =>
@@ -278,7 +278,7 @@ const VERDICT_TONE: Record<string, string> = {
   inconclusive: 'text-running',
 };
 
-function mechanismName(mechanism: string, run: Run): string {
+function mechanismName(mechanism: string, run: AttemptSummary): string {
   if (mechanism === 'critic') {
     const critic = Object.keys(run.usage?.models ?? {}).find((k) => /critic/i.test(k));
     const model = critic?.split('·')[1]?.trim();
@@ -293,7 +293,7 @@ function mechanismName(mechanism: string, run: Run): string {
 function CriticSessionLog({ attemptId, label }: { attemptId: number; label: string }) {
   const [open, setOpen] = useState(false);
   const [state, setState] = useState<'idle' | 'loading' | 'ready' | 'unavailable'>('idle');
-  const [events, setEvents] = useState<RunLogEvent[]>([]);
+  const [events, setEvents] = useState<AttemptLogEvent[]>([]);
 
   const toggle = () => {
     const next = !open;
@@ -342,7 +342,7 @@ function CriticSessionLog({ attemptId, label }: { attemptId: number; label: stri
   );
 }
 
-function Verification({ attempts, statuses, run }: { attempts: VerificationAttempt[]; statuses: VerifierStatus[]; run: Run }) {
+function Verification({ attempts, statuses, run }: { attempts: VerificationAttempt[]; statuses: VerifierStatus[]; run: AttemptSummary }) {
   const decision = overallDecision(attempts);
   const rows = verificationRows(statuses, attempts);
   // Every critic attempt with a transcript, oldest first (the store lists in
@@ -474,8 +474,8 @@ function agentCost(cost: Cost | null, key: string, model: string): string | null
   return typeof n === 'number' ? `$${n.toFixed(2)}` : null;
 }
 
-function SessionAgents({ run, snapshot }: { run: Run; snapshot: RunUsageEvent | undefined }) {
-  // While the Run is live its settled usage/cost are still null — read the
+function SessionAgents({ run, snapshot }: { run: AttemptSummary; snapshot: RunUsageEvent | undefined }) {
+  // While the AttemptSummary is live its settled usage/cost are still null — read the
   // `run_usage` snapshot instead so the table fills as the agents work.
   const usage = run.state === 'running' ? snapshot?.usage ?? run.usage : run.usage;
   const runCost = run.state === 'running' ? snapshot?.cost ?? run.cost : run.cost;
@@ -569,7 +569,7 @@ function SessionAgents({ run, snapshot }: { run: Run; snapshot: RunUsageEvent | 
 
 // ─── transcript ──────────────────────────────────────────────────────────────
 
-function Transcript({ events, unavailable }: { events: RunLogEvent[]; unavailable: boolean }) {
+function Transcript({ events, unavailable }: { events: AttemptLogEvent[]; unavailable: boolean }) {
   return (
     <div className="mt-[18px]">
       <div className="mb-2.5 flex items-center gap-2">
@@ -646,24 +646,24 @@ function SteerBox({ taskId }: { taskId: number }) {
 
 // ─── run header + pane ───────────────────────────────────────────────────────
 
-/** `steps` is the owning Attempt's timeline (matched by `run.attempt` ===
+/** `steps` is the owning Attempt's timeline (matched by `run.number` ===
  * `Attempt.number`) — the currently-running Step's type carries the pill
- * word for a live run (ADR-0001 Vocabulary; Run/Phase are deleted concepts). */
-function runPillState(run: Run, steps: readonly Step[]): string {
+ * word for a live run (ADR-0001 Vocabulary; AttemptSummary/Phase are deleted concepts). */
+function attemptPillState(run: AttemptSummary, steps: readonly Step[]): string {
   if (run.state === 'completed') return 'merged';
   if (run.state === 'running') return steps.find((step) => step.state === 'running')?.type ?? 'running';
   return run.state;
 }
 
-function RunHeader({ run, steps }: { run: Run; steps: readonly Step[] }) {
+function AttemptHeader({ run, steps }: { run: AttemptSummary; steps: readonly Step[] }) {
   return (
     <div className="mx-0.5 mb-2.5 mt-4 flex items-center gap-2.5">
-      <span className="text-[16.5px] font-bold leading-none tracking-[-0.01em]">Attempt {run.attempt}</span>
-      <StatePill state={runPillState(run, steps)} />
-      {run.attempt > 1 && (
+      <span className="text-[16.5px] font-bold leading-none tracking-[-0.01em]">Attempt {run.number}</span>
+      <StatePill state={attemptPillState(run, steps)} />
+      {run.number > 1 && (
         <span className="ml-auto flex items-center gap-1.5 text-[12px] text-faint">
           <Icon name="refresh" className="size-3.5" />
-          continued Attempt {run.attempt - 1}
+          continued Attempt {run.number - 1}
         </span>
       )}
     </div>
@@ -692,7 +692,7 @@ function ChangesPane({
     setFiles(null);
     setFailed(false);
     const load = () =>
-      api.runDiffFiles(runId).then(
+      api.attemptDiffFiles(runId).then(
         ({ files }) => live && setFiles(files),
         () => live && setFailed(true),
       );
@@ -787,14 +787,14 @@ export function TicketPage({
   onOpenTask: (taskId: number) => void;
   error?: string | null;
 }) {
-  const [runs, setRuns] = useState<Run[]>([]);
+  const [runs, setRuns] = useState<AttemptSummary[]>([]);
   const [attempts, setAttempts] = useState<Attempt[]>([]);
   const [budgetBase, setBudgetBase] = useState(0);
   const [maxAttempts, setMaxAttempts] = useState<number | null>(null);
-  const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
+  const [selectedSummaryId, setSelectedSummaryId] = useState<number | null>(null);
   const [selectedAttemptId, setSelectedAttemptId] = useState<number | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
-  const [events, setEvents] = useState<RunLogEvent[]>([]);
+  const [events, setEvents] = useState<AttemptLogEvent[]>([]);
   const [logUnavailable, setLogUnavailable] = useState(false);
   const [guardrailEvents, setGuardrailEvents] = useState<GuardrailEvent[]>([]);
   const [verificationAttempts, setVerificationAttempts] = useState<VerificationAttempt[]>([]);
@@ -862,7 +862,7 @@ export function TicketPage({
   useEffect(() => {
     let live = true;
     const load = () =>
-      api.taskAttempts(task.id).then(({ attempts: next, budgetBase: base }) => {
+      api.taskAttemptTimeline(task.id).then(({ attempts: next, budgetBase: base }) => {
         if (!live) return;
         setAttempts(next);
         setBudgetBase(base);
@@ -882,16 +882,16 @@ export function TicketPage({
 
   useEffect(() => {
     let live = true;
-    api.taskRuns(task.id).then(({ runs }) => {
+    api.taskAttempts(task.id).then(({ attempts: list }) => {
       if (!live) return;
-      setRuns(runs);
-      setSelectedRunId((current) => current ?? runs[runs.length - 1]?.id ?? null);
+      setRuns(list);
+      setSelectedSummaryId((current) => current ?? list[list.length - 1]?.id ?? null);
     });
     const unsubscribe = subscribe((msg) => {
       if (msg.type === 'run_changed' && msg.run.taskId === task.id) {
         setRuns((current) => {
           const rest = current.filter((r) => r.id !== msg.run.id);
-          return [...rest, msg.run].sort((a, b) => a.attempt - b.attempt);
+          return [...rest, msg.run].sort((a, b) => a.number - b.number);
         });
       }
     });
@@ -901,9 +901,9 @@ export function TicketPage({
     };
   }, [task.id]);
 
-  // Live token/cost deltas for the in-flight Run (the `run_usage` firehose, ~1s)
+  // Live token/cost deltas for the in-flight AttemptSummary (the `run_usage` firehose, ~1s)
   // — `run_changed` only merges at Step transitions, so without this the metric
-  // row holds the stale settled figures while the Run is executing.
+  // row holds the stale settled figures while the AttemptSummary is executing.
   useEffect(
     () =>
       subscribe((msg) => {
@@ -913,7 +913,7 @@ export function TicketPage({
     [],
   );
 
-  // Tick a 1s clock only while a Run is live, so Elapsed advances in real time
+  // Tick a 1s clock only while a AttemptSummary is live, so Elapsed advances in real time
   // without re-rendering the page once everything has settled.
   const anyRunning = runs.some((r) => r.state === 'running');
   useEffect(() => {
@@ -925,16 +925,16 @@ export function TicketPage({
   // Poll the live worktree diffstat while the latest run is in flight so the
   // rail's changed-file list fills as the agent edits, instead of staying empty
   // until settle. Idle → clear it and fall back to the settled `task.stat`.
-  const latestRunId = runs[runs.length - 1]?.id ?? null;
+  const latestAttemptId = runs[runs.length - 1]?.id ?? null;
   useEffect(() => {
-    if (!anyRunning || latestRunId === null) {
+    if (!anyRunning || latestAttemptId === null) {
       setLiveStat(null);
       return;
     }
     let live = true;
     const load = () =>
       api
-        .runDiff(latestRunId)
+        .attemptDiff(latestAttemptId)
         .then((d) => live && setLiveStat(d.stat))
         .catch(() => {});
     load();
@@ -943,32 +943,32 @@ export function TicketPage({
       live = false;
       window.clearInterval(timer);
     };
-  }, [anyRunning, latestRunId]);
+  }, [anyRunning, latestAttemptId]);
 
   useEffect(() => {
-    if (selectedRunId === null) return;
+    if (selectedSummaryId === null) return;
     let live = true;
     let hydrated = false;
-    const pending: RunLogEvent[] = [];
+    const pending: AttemptLogEvent[] = [];
     let cursor = 0;
     setEvents([]);
     setLogUnavailable(false);
     // Subscribe before hydrating but deliberately skip the existing replay:
     // the REST snapshot already contains it, in a different id space. Events
     // arriving during hydration are buffered and cut over at its live cursor.
-    const unsubscribe = subscribeRunLog({ runId: selectedRunId, after: () => cursor, onEvent: (event) => {
+    const unsubscribe = subscribeRunLog({ runId: selectedSummaryId, after: () => cursor, onEvent: (event) => {
       cursor = Math.max(cursor, event.seq);
       if (!hydrated) {
         pending.push(event);
         return;
       }
-      setEvents((current) => appendRunLogEvents({ current, additions: [event] }));
+      setEvents((current) => appendAttemptLogEvents({ current, additions: [event] }));
     } });
-    api.runLog(selectedRunId).then(
+    api.attemptLog(selectedSummaryId).then(
       (log) => {
         if (!live) return;
         setLogUnavailable(log.status === 'unavailable');
-        const hydratedEvents = appendRunLogEvents({
+        const hydratedEvents = appendAttemptLogEvents({
           current: log.status === 'available' ? log.events : [],
           additions: log.status === 'available' ? eventsAfterLiveCursor({ events: pending, liveCursor: log.liveCursor }) : pending,
         });
@@ -978,7 +978,7 @@ export function TicketPage({
       },
       (error: unknown) => {
         if (!live) return;
-        const hydratedEvents = appendRunLogEvents({ current: [], additions: pending });
+        const hydratedEvents = appendAttemptLogEvents({ current: [], additions: pending });
         cursor = runLogCursor({ events: pending });
         setEvents(hydratedEvents);
         hydrated = true;
@@ -989,28 +989,28 @@ export function TicketPage({
       live = false;
       unsubscribe();
     };
-  }, [selectedRunId]);
+  }, [selectedSummaryId]);
 
   useEffect(() => {
-    if (selectedRunId === null) {
+    if (selectedSummaryId === null) {
       setGuardrailEvents([]);
       return;
     }
     let live = true;
     const load = () =>
-      api.runGuardrailEvents(selectedRunId).then(({ guardrailEvents }) => live && setGuardrailEvents(guardrailEvents));
+      api.attemptGuardrailEvents(selectedSummaryId).then(({ guardrailEvents }) => live && setGuardrailEvents(guardrailEvents));
     load();
     const unsubscribe = subscribe((msg) => {
-      if (msg.type === 'run_changed' && msg.run.id === selectedRunId) load();
+      if (msg.type === 'run_changed' && msg.run.id === selectedSummaryId) load();
     });
     return () => {
       live = false;
       unsubscribe();
     };
-  }, [selectedRunId]);
+  }, [selectedSummaryId]);
 
   useEffect(() => {
-    if (selectedRunId === null) {
+    if (selectedSummaryId === null) {
       setVerificationAttempts([]);
       setVerifierStatuses([]);
       return;
@@ -1018,7 +1018,7 @@ export function TicketPage({
     let live = true;
     const load = () =>
       api
-        .runVerificationAttempts(selectedRunId)
+        .attemptVerificationAttempts(selectedSummaryId)
         .then(({ verificationAttempts, verifierStatuses }) => {
           if (!live) return;
           setVerificationAttempts(verificationAttempts);
@@ -1026,15 +1026,15 @@ export function TicketPage({
         });
     load();
     const unsubscribe = subscribe((msg) => {
-      if (msg.type === 'run_changed' && msg.run.id === selectedRunId) load();
+      if (msg.type === 'run_changed' && msg.run.id === selectedSummaryId) load();
     });
     return () => {
       live = false;
       unsubscribe();
     };
-  }, [selectedRunId]);
+  }, [selectedSummaryId]);
 
-  const selectedRun = runs.find((run) => run.id === selectedRunId);
+  const selectedRun = runs.find((run) => run.id === selectedSummaryId);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(false);
@@ -1059,16 +1059,16 @@ export function TicketPage({
   const failureLabel = task.state === 'escalated' ? null : runFailureBannerLabel(latestRun, latestAttempt);
   const failure = failureLabel ? latestRun?.reason ?? null : null;
   const skipHolderId = parseSkipReasonTaskRef(task.skipReason);
-  const gateModel = gateForRun({ task, runs, selectedRunId });
+  const gateModel = gateForAttempt({ task, runs, selectedAttemptId: selectedSummaryId });
   const selectedTask = attempts.flatMap((attempt) => attempt.steps).find((row) => row.id === selectedTaskId) ?? null;
   const selectRun = (runId: number | null) => {
     setSelectedFile(null);
     setSelectedAttemptId(null);
     setSelectedTaskId(null);
-    setSelectedRunId(runId);
+    setSelectedSummaryId(runId);
   };
   const selectAttempt = (attempt: Attempt) => {
-    selectRun(runForAttempt(runs, attempt)?.id ?? selectedRunId);
+    selectRun(runForAttempt(runs, attempt)?.id ?? selectedSummaryId);
     setSelectedAttemptId(attempt.id);
   };
   const timelineProps = {
@@ -1077,7 +1077,7 @@ export function TicketPage({
     task,
     maxAttempts,
     now,
-    selectedRunId,
+    selectedSummaryId,
     selectedAttemptId,
     selectedTaskId,
     selectedFile,
@@ -1195,13 +1195,13 @@ export function TicketPage({
               <AttemptTimeline {...timelineProps} layout="strip" />
             </div>
 
-            {/* main pane: Run OR Changes, driven by the rail */}
+            {/* main pane: AttemptSummary OR Changes, driven by the rail */}
             <div className="min-w-0 border-t border-hairline">
               {selectedFile !== null ? (
-                <ChangesPane task={task} runId={selectedRunId} selectedFile={selectedFile} running={anyRunning} />
+                <ChangesPane task={task} runId={selectedSummaryId} selectedFile={selectedFile} running={anyRunning} />
               ) : selectedRun ? (
                 <>
-                  <RunHeader run={selectedRun} steps={attempts.find((a) => a.number === selectedRun.attempt)?.steps ?? []} />
+                  <AttemptHeader run={selectedRun} steps={attempts.find((a) => a.number === selectedRun.number)?.steps ?? []} />
                   {selectedTask && <StepLog key={selectedTask.id} step={selectedTask} />}
                   <Verification attempts={verificationAttempts} statuses={verifierStatuses} run={selectedRun} />
                   <GuardrailAlert events={guardrailEvents} />
@@ -1224,7 +1224,7 @@ export function TicketPage({
             <div className="max-rail:hidden">
               <AttemptTimeline {...timelineProps} />
             </div>
-            <RunRail
+            <AttemptRail
               worktree={{
                 branch: task.branch,
                 baseBranch: task.baseBranch,

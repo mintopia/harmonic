@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../api';
-import type { ActivityProcess, ProcessNode, RunLogEvent } from '../types';
+import type { ActivityProcess, ProcessNode, AttemptLogEvent } from '../types';
 import { chip, labelType } from '../ui';
 import {
   findNode,
@@ -26,7 +26,7 @@ export function ProcessDrillIn({ process, now }: { process: RunWithTree; now: nu
   const runId = process.runId;
   const [activity, setActivity] = useState<NodeActivityMap>(NO_NODE_ACTIVITY);
   const [selectedId, setSelectedId] = useState(tree.id);
-  const [events, setEvents] = useState<RunLogEvent[]>([]);
+  const [events, setEvents] = useState<AttemptLogEvent[]>([]);
   const [logUnavailable, setLogUnavailable] = useState(false);
 
   // Age off `now` (the prop), but stamp writes at the moment a snapshot merges —
@@ -47,7 +47,7 @@ export function ProcessDrillIn({ process, now }: { process: RunWithTree; now: nu
     setEvents([]);
     setLogUnavailable(false);
     const load = () =>
-      api.runLog(runId).then((log) => {
+      api.attemptLog(runId).then((log) => {
         if (!live) return;
         setLogUnavailable(log.status === 'unavailable');
         setEvents(log.status === 'available' ? log.events : []);

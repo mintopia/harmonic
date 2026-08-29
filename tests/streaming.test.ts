@@ -51,7 +51,7 @@ describe('live structured run event streaming and replay', () => {
     expect(streamed.map((m) => m.event.payload.sessionUpdate)).toEqual(updates.map((update) => update.sessionUpdate));
     expect(streamed.map((m) => m.event.id)).toEqual([1_000_000_001, 1_000_000_002, 1_000_000_003, 1_000_000_004]);
 
-    const replay = await server.api('GET', `/api/runs/${runId}/events`);
+    const replay = await server.api('GET', `/api/attempts/${runId}/events`);
     const replayUpdates = replay.body.events.filter((e: any) => e.type === 'session_update');
     expect(replayUpdates).toEqual([]);
 
@@ -74,7 +74,7 @@ describe('live structured run event streaming and replay', () => {
     await waitFor(async () => first.messages.some((m) => m.type === 'run_log_event' && m.event.runId === runId && m.event.seq === 1));
     first.close();
 
-    await waitFor(async () => (await server.api('GET', `/api/runs/${runId}`)).body.state !== 'running');
+    await waitFor(async () => (await server.api('GET', `/api/attempts/${runId}`)).body.state !== 'running');
     const reconnected = await connectWs(server);
     reconnected.send({ type: 'run_log_subscribe', runId, after: 1 });
     await waitFor(async () => reconnected.messages.filter((m) => m.type === 'run_log_event' && m.event.runId === runId).length === 2);

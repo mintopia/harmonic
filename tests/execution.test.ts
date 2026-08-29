@@ -65,18 +65,18 @@ describe('run execution over ACP (direct mode)', () => {
     });
     expect(task.state).toBe('done');
 
-    const run = await server.api('GET', `/api/runs/${runId}`);
+    const run = await server.api('GET', `/api/attempts/${runId}`);
     expect(run.status).toBe(200);
-    expect(run.body).toMatchObject({ taskId, attempt: 1, state: 'completed', stopReason: 'end_turn' });
+    expect(run.body).toMatchObject({ taskId, number: 1, state: 'completed', stopReason: 'end_turn' });
     expect(run.body.finishedAt).toBeGreaterThan(0);
     // Agent-finish took the Attempt through its Implementation Step to a
     // passed finish, never leaving a Step stuck mid-flight (ADR-0001 Vocabulary).
-    const attempt1 = (await server.api('GET', `/api/tasks/${taskId}/attempts`)).body.attempts.find((a: any) => a.number === 1);
+    const attempt1 = (await server.api('GET', `/api/tasks/${taskId}/attempts/timeline`)).body.attempts.find((a: any) => a.number === 1);
     expect(attempt1.state).toBe('passed');
     expect(attempt1.steps.map((s: any) => s.type)).toEqual(['implementation']);
     expect(attempt1.steps.every((s: any) => s.state === 'passed')).toBe(true);
 
-    const events = await server.api('GET', `/api/runs/${runId}/events`);
+    const events = await server.api('GET', `/api/attempts/${runId}/events`);
     expect(events.status).toBe(200);
     expect(events.body.events.filter((e: any) => e.type === 'session_update')).toEqual([]);
     const attemptId = await attemptIdFor(server, taskId);
@@ -133,14 +133,14 @@ describe('run execution over ACP (direct mode)', () => {
     });
     await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'done');
 
-    const merged = (await server.api('GET', `/api/runs/${runId}`)).body;
+    const merged = (await server.api('GET', `/api/attempts/${runId}`)).body;
     expect(merged.state).toBe('completed');
     expect(merged.finishedAt).toBeGreaterThan(0);
 
     // The full Step sequence is reconstructable from the Attempt's timeline:
     // the Implementation Step passed and the Attempt itself finished passed —
     // never stuck mid-flight (ADR-0001 Vocabulary; Run/Phase are deleted concepts).
-    const attempt1 = (await server.api('GET', `/api/tasks/${taskId}/attempts`)).body.attempts.find((a: any) => a.number === 1);
+    const attempt1 = (await server.api('GET', `/api/tasks/${taskId}/attempts/timeline`)).body.attempts.find((a: any) => a.number === 1);
     expect(attempt1.state).toBe('passed');
     expect(attempt1.steps.map((s: any) => s.type)).toEqual(['implementation']);
     expect(attempt1.steps.every((s: any) => s.state === 'passed')).toBe(true);
@@ -148,19 +148,19 @@ describe('run execution over ACP (direct mode)', () => {
     expect((await server.api('POST', `/api/tasks/${taskId}/accept`)).status).toBe(409);
     expect((await server.api('POST', `/api/tasks/${taskId}/reject`, { guidance: 'nope' })).status).toBe(409);
     expect((await server.api('POST', `/api/tasks/${taskId}/close`)).status).toBe(409);
-    expect((await server.api('GET', `/api/runs/${runId}`)).body).toMatchObject({ state: 'completed' });
+    expect((await server.api('GET', `/api/attempts/${runId}`)).body).toMatchObject({ state: 'completed' });
   });
 
   it('cancelling a working Task settles its running Run cancelled (issue #114)', async () => {
     const { taskId, runId } = await createAndRun({ exit: 'hang' });
     await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'working');
-    await waitFor(async () => ((await server.api('GET', `/api/runs/${runId}`)).body.sessionId ? true : undefined));
-    expect((await server.api('GET', `/api/runs/${runId}`)).body.state).toBe('running');
+    await waitFor(async () => ((await server.api('GET', `/api/attempts/${runId}`)).body.sessionId ? true : undefined));
+    expect((await server.api('GET', `/api/attempts/${runId}`)).body.state).toBe('running');
 
     const cancelled = await server.api('POST', `/api/tasks/${taskId}/cancel`);
     expect(cancelled.status).toBe(200);
     expect(cancelled.body.state).toBe('cancelled');
-    const run = (await server.api('GET', `/api/runs/${runId}`)).body;
+    const run = (await server.api('GET', `/api/attempts/${runId}`)).body;
     expect(run.state).toBe('cancelled');
   });
 
@@ -173,9 +173,9 @@ describe('run execution over ACP (direct mode)', () => {
     // retry, not just a human-triggered reject — is its own real,
     // API-visible run row. There is no invisible internal retry counter to
     // hide behind, so the first escalation may already span more than one row.
-    const beforeReject = (await server.api('GET', `/api/tasks/${taskId}/runs`)).body.runs;
+    const beforeReject = (await server.api('GET', `/api/tasks/${taskId}/attempts`)).body.attempts;
     expect(beforeReject[0]!.id).toBe(runId);
-    const lastAttemptBeforeReject = beforeReject.at(-1)!.attempt;
+    const lastAttemptBeforeReject = beforeReject.at(-1)!.number;
 
     const rejected = await server.api('POST', `/api/tasks/${taskId}/reject`, { guidance: 'try again', start: true });
     expect(rejected.status).toBe(200);
@@ -183,7 +183,7 @@ describe('run execution over ACP (direct mode)', () => {
     // The reset budget's own attempts crash out too, so the task escalates again.
     await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'escalated');
 
-    const afterReject = (await server.api('GET', `/api/tasks/${taskId}/runs`)).body.runs;
+    const afterReject = (await server.api('GET', `/api/tasks/${taskId}/attempts`)).body.attempts;
     // History survives the Reject: nothing from the first budget cycle is dropped.
     expect(afterReject.slice(0, beforeReject.length)).toEqual(beforeReject);
     // The reset budget picks up brand-new, distinct run rows.
@@ -191,19 +191,19 @@ describe('run execution over ACP (direct mode)', () => {
     // Every resumed loop across the whole history — self-heal and reject alike
     // — gets its own distinct, strictly increasing attempt number; numbering
     // never restarts at 1 across the reset budget (ADR-0041).
-    const attemptNumbers = afterReject.map((r: { attempt: number }) => r.attempt);
+    const attemptNumbers = afterReject.map((r: { number: number }) => r.number);
     expect(attemptNumbers).toEqual([...attemptNumbers].sort((a, b) => a - b));
     expect(new Set(attemptNumbers).size).toBe(attemptNumbers.length);
-    expect(afterReject.at(-1)!.attempt).toBeGreaterThan(lastAttemptBeforeReject);
+    expect(afterReject.at(-1)!.number).toBeGreaterThan(lastAttemptBeforeReject);
   });
 
   it('escalates the task when the harness crashes on every attempt', async () => {
-    const { taskId, runId } = await createAndRun({
+    const { taskId } = await createAndRun({
       updates: [{ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'about to die' } }],
       exit: 'crash-before-response',
     });
     await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'escalated');
-    const run = await server.api('GET', `/api/runs/${runId}`);
+    const run = await server.api('GET', `/api/tasks/${taskId}/attempts/current`);
     expect(run.body.state).toBe('failed');
     expect(run.body.reason).toBeTruthy();
     expect((await server.api('GET', `/api/tasks/${taskId}`)).body.escalationReason).toMatch(/^escalated to human: attempt \d+ of \d+ failed/);
@@ -218,7 +218,7 @@ describe('run execution over ACP (direct mode)', () => {
     expect(cancelled.body.state).toBe('cancelled');
 
     const run = await waitFor(async () => {
-      const { body } = await server.api('GET', `/api/runs/${runId}`);
+      const { body } = await server.api('GET', `/api/attempts/${runId}`);
       return body.state === 'cancelled' ? body : undefined;
     });
     expect(run.state).toBe('cancelled');
@@ -233,7 +233,7 @@ describe('run execution over ACP (direct mode)', () => {
     expect(completed.body.state).toBe('done');
 
     const run = await waitFor(async () => {
-      const { body } = await server.api('GET', `/api/runs/${runId}`);
+      const { body } = await server.api('GET', `/api/attempts/${runId}`);
       return body.state === 'completed' ? body : undefined;
     });
     expect(run.state).toBe('completed');
@@ -248,7 +248,7 @@ describe('run execution over ACP (direct mode)', () => {
     });
     await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'done');
 
-    const events = await server.api('GET', `/api/runs/${runId}/events`);
+    const events = await server.api('GET', `/api/attempts/${runId}/events`);
     const types = events.body.events.map((e: any) => e.type);
     expect(types).toContain('permission_request');
     const permission = events.body.events.find((e: any) => e.type === 'permission_request');
@@ -266,10 +266,10 @@ describe('run execution over ACP (direct mode)', () => {
     const codexServer = await startServer(overrides);
     try {
       const created = await codexServer.api('POST', '/api/tasks', { harness: 'codex', prompt: 'hi' });
-      const started = await codexServer.api('POST', `/api/tasks/${created.body.id}/run`);
+      await codexServer.api('POST', `/api/tasks/${created.body.id}/run`);
       await waitFor(async () => (await codexServer.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'escalated');
 
-      const run = (await codexServer.api('GET', `/api/runs/${started.body.id}`)).body;
+      const run = (await codexServer.api('GET', `/api/tasks/${created.body.id}/attempts/current`)).body;
       expect(run.state).toBe('failed');
       expect(run.reason).toContain('Authentication required');
     } finally {
@@ -288,10 +288,10 @@ describe('run execution over ACP (direct mode)', () => {
     const codexServer = await startServer(overrides);
     try {
       const created = await codexServer.api('POST', '/api/tasks', { harness: 'codex', prompt: 'hi' });
-      const started = await codexServer.api('POST', `/api/tasks/${created.body.id}/run`);
+      await codexServer.api('POST', `/api/tasks/${created.body.id}/run`);
       await waitFor(async () => (await codexServer.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'escalated');
 
-      const run = (await codexServer.api('GET', `/api/runs/${started.body.id}`)).body;
+      const run = (await codexServer.api('GET', `/api/tasks/${created.body.id}/attempts/current`)).body;
       expect(run.state).toBe('failed');
       expect(run.reason).toContain('exited (code 1'); // still says what happened…
       expect(run.reason).toContain(detail); // …and now why
@@ -322,7 +322,7 @@ describe('run execution over ACP (direct mode)', () => {
         await waitFor(
           async () => (await codexServer.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'done',
         );
-        const events = await codexServer.api('GET', `/api/runs/${started.body.id}/events`);
+        const events = await codexServer.api('GET', `/api/attempts/${started.body.id}/events`);
         return events.body.events.find((e: any) => e.payload?.event === 'model_mismatch');
       };
 
@@ -350,7 +350,7 @@ describe('run execution over ACP (direct mode)', () => {
       await waitFor(
         async () => (await srv.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'done',
       );
-      const events = await srv.api('GET', `/api/runs/${started.body.id}/events`);
+      const events = await srv.api('GET', `/api/attempts/${started.body.id}/events`);
       return events.body.events.find((e: any) => e.type === 'session_update') ?? null;
     };
     try {
@@ -374,11 +374,11 @@ describe('run execution over ACP (direct mode)', () => {
     const copilotServer = await startServer(overrides);
     try {
       const created = await copilotServer.api('POST', '/api/tasks', { harness: 'copilot', prompt: 'hi' });
-      const started = await copilotServer.api('POST', `/api/tasks/${created.body.id}/run`);
+      await copilotServer.api('POST', `/api/tasks/${created.body.id}/run`);
       await waitFor(
         async () => (await copilotServer.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'escalated',
       );
-      const run = (await copilotServer.api('GET', `/api/runs/${started.body.id}`)).body;
+      const run = (await copilotServer.api('GET', `/api/tasks/${created.body.id}/attempts/current`)).body;
       expect(run.state).toBe('failed');
       expect(run.reason).toContain('Authentication required');
     } finally {
@@ -436,8 +436,8 @@ describe('direct Work Context occupancy (ADR-0001, ADR-0046)', () => {
     expect(startedB.status).toBe(201);
 
     // B's Run row is created and it proceeds — not rolled back, not left ready.
-    const runsB = await server.api('GET', `/api/tasks/${taskBId}/runs`);
-    expect(runsB.body.runs).toHaveLength(1);
+    const runsB = await server.api('GET', `/api/tasks/${taskBId}/attempts`);
+    expect(runsB.body.attempts).toHaveLength(1);
   });
 
   it('does not block a different Work Context while A is still working (control)', async () => {
@@ -467,7 +467,7 @@ describe('crash recovery', () => {
     // An interruption is not a failed Attempt: the ticket is back in the queue.
     const task = await reopened.api('GET', `/api/tasks/${created.body.id}`);
     expect(task.body.state).toBe('ready');
-    const run = await reopened.api('GET', `/api/runs/${started.body.id}`);
+    const run = await reopened.api('GET', `/api/attempts/${started.body.id}`);
     expect(run.body.state).toBe('failed');
     expect(run.body.reason).toBe('process-death');
 
@@ -503,12 +503,12 @@ describe('wall-clock guardrail (issue #127)', () => {
 
       // The Run settled to a terminal disposition (never a new state) with the
       // budget reason on the card — the reason derives from the trip evidence.
-      const run = (await server.api('GET', `/api/runs/${runId}`)).body;
+      const run = (await server.api('GET', `/api/attempts/${runId}`)).body;
       expect(run.state).toBe('failed');
       expect(run.reason).toMatch(/^budget:/);
 
       // The trip is recorded on the timeline for observability.
-      const events = (await server.api('GET', `/api/runs/${runId}/events`)).body.events;
+      const events = (await server.api('GET', `/api/attempts/${runId}/events`)).body.events;
       const trip = events.find(
         (e: any) => e.type === 'lifecycle' && e.payload.event === 'guardrail-tripped',
       );
@@ -549,7 +549,7 @@ describe('wall-clock guardrail (issue #127)', () => {
       // execution ledger now (ADR-0001 #388 S-G), so forcing it `passed`
       // directly (the old dual-model trick, closing only the Attempt-timeline
       // half while a separate `runs.state` stayed `running`) would settle the
-      // one state this test polls via `/api/runs/:id`. The guardrail's own
+      // one state this test polls via `/api/attempts/:id`. The guardrail's own
       // "is a Step currently running" check reads Steps, not `attempts.state`,
       // so leaving the Attempt `running` still exercises the real gate.
       await attempts.updateStep(implementation.id, { state: 'passed', verdict: 'pass', endedAt: Date.now() });
@@ -557,7 +557,7 @@ describe('wall-clock guardrail (issue #127)', () => {
       // the remaining budget, so a ~200ms margin suffices).
       await new Promise((resolve) => setTimeout(resolve, 800));
 
-      expect((await server.api('GET', `/api/runs/${started.body.id}`)).body.state).toBe('running');
+      expect((await server.api('GET', `/api/attempts/${started.body.id}`)).body.state).toBe('running');
       expect(
         await server.app.ctx.asyncDb.read((db) =>
           db.select().from(guardrailEvents).where(eq(guardrailEvents.attemptId, attempt.id)).all(),
@@ -632,7 +632,7 @@ describe('token/cost budget guardrail (issue #128)', () => {
     });
     expect(task.state).toBe('escalated');
 
-    const run = (await server.api('GET', `/api/runs/${runId}`)).body;
+    const run = (await server.api('GET', `/api/attempts/${runId}`)).body;
     return { taskId, runId, task, run };
   };
 
@@ -648,7 +648,7 @@ describe('token/cost budget guardrail (issue #128)', () => {
       expect(run.state).toBe('failed');
       expect(run.reason).toMatch(/^budget:/);
 
-      const events = (await server.api('GET', `/api/runs/${runId}/events`)).body.events;
+      const events = (await server.api('GET', `/api/attempts/${runId}/events`)).body.events;
       const trip = events.find((e: any) => e.type === 'lifecycle' && e.payload.event === 'guardrail-tripped');
       expect(trip).toBeTruthy();
       expect(trip.payload.dimension).toBe('tokens');
@@ -685,7 +685,7 @@ describe('token/cost budget guardrail (issue #128)', () => {
       expect(run.state).toBe('failed');
       expect(run.reason).toMatch(/^budget:/);
 
-      const events = (await server.api('GET', `/api/runs/${runId}/events`)).body.events;
+      const events = (await server.api('GET', `/api/attempts/${runId}/events`)).body.events;
       const trip = events.find((e: any) => e.type === 'lifecycle' && e.payload.event === 'guardrail-tripped');
       expect(trip).toBeTruthy();
       expect(trip.payload.dimension).toBe('cost');
@@ -716,7 +716,7 @@ describe('token/cost budget guardrail (issue #128)', () => {
       expect(run.state).toBe('failed');
       expect(run.reason).toMatch(/^budget:/);
 
-      const events = (await server.api('GET', `/api/runs/${runId}/events`)).body.events;
+      const events = (await server.api('GET', `/api/attempts/${runId}/events`)).body.events;
       const trip = events.find((e: any) => e.type === 'lifecycle' && e.payload.event === 'guardrail-tripped');
       expect(trip).toBeTruthy();
       expect(trip.payload.dimension).toBe('tokens');
@@ -753,11 +753,11 @@ describe('token/cost budget guardrail (issue #128)', () => {
       });
       expect(task.state).toBe('escalated');
 
-      const run = (await server.api('GET', `/api/runs/${runId}`)).body;
+      const run = (await server.api('GET', `/api/attempts/${runId}`)).body;
       expect(run.state).toBe('failed');
       expect(run.reason).toMatch(/unmeasurable/);
 
-      const events = (await server.api('GET', `/api/runs/${runId}/events`)).body.events;
+      const events = (await server.api('GET', `/api/attempts/${runId}/events`)).body.events;
       const trip = events.find((e: any) => e.type === 'lifecycle' && e.payload.event === 'guardrail-tripped');
       expect(trip).toBeTruthy();
       expect(trip.payload.dimension).toBe('tokens');
@@ -804,11 +804,11 @@ describe('progress guardrail (issue #131)', () => {
       });
       expect(task.state).toBe('escalated');
 
-      const run = (await server.api('GET', `/api/runs/${runId}`)).body;
+      const run = (await server.api('GET', `/api/attempts/${runId}`)).body;
       expect(run.state).toBe('failed');
       expect(run.reason).toMatch(/^stalled:/);
 
-      const events = (await server.api('GET', `/api/runs/${runId}/events`)).body.events;
+      const events = (await server.api('GET', `/api/attempts/${runId}/events`)).body.events;
       // Exactly one nudge was delivered (never spends the continue budget).
       const nudges = events.filter((e: any) => e.type === 'lifecycle' && e.payload.event === 'progress-nudge');
       expect(nudges).toHaveLength(1);
@@ -857,7 +857,7 @@ describe('progress guardrail (issue #131)', () => {
       const task = (await server.api('GET', `/api/tasks/${taskId}`)).body;
       expect(task.state).toBe('done');
 
-      const events = (await server.api('GET', `/api/runs/${runId}/events`)).body.events;
+      const events = (await server.api('GET', `/api/attempts/${runId}/events`)).body.events;
       expect(events.some((e: any) => e.type === 'lifecycle' && e.payload.event === 'progress-nudge')).toBe(false);
       expect(events.some((e: any) => e.type === 'lifecycle' && e.payload.event === 'guardrail-tripped')).toBe(false);
       const attemptId = await attemptIdFor(server, taskId);
@@ -893,11 +893,11 @@ describe('progress guardrail (issue #131)', () => {
       });
       expect(task.state).toBe('escalated');
 
-      const run = (await server.api('GET', `/api/runs/${runId}`)).body;
+      const run = (await server.api('GET', `/api/attempts/${runId}`)).body;
       expect(run.state).toBe('failed');
       expect(run.reason).toMatch(/tool unresponsive/);
 
-      const events = (await server.api('GET', `/api/runs/${runId}/events`)).body.events;
+      const events = (await server.api('GET', `/api/attempts/${runId}/events`)).body.events;
       const trip = events.find((e: any) => e.type === 'lifecycle' && e.payload.event === 'guardrail-tripped');
       expect(trip.payload.dimension).toBe('tool-timeout');
 

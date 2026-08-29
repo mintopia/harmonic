@@ -113,8 +113,8 @@ describe('GET /api/activity snapshot (issue #51)', () => {
     await server.app.ctx.attempts.update(run.id, { state: 'failed', reason: 'escalated to human: attempt 3 of 3 failed' });
     await server.app.ctx.tasks.escalate(task.id, 'escalated to human: attempt 3 of 3 failed');
 
-    const { body } = await server.api('GET', `/api/tasks/${task.id}/runs`);
-    expect(body.runs).toContainEqual(expect.objectContaining({ id: run.id, state: 'failed' }));
+    const { body } = await server.api('GET', `/api/tasks/${task.id}/attempts`);
+    expect(body.attempts).toContainEqual(expect.objectContaining({ id: run.id, state: 'failed' }));
     expect(await server.app.ctx.attempts.countRunning()).toBe(runningBefore);
     expect((await server.api('GET', `/api/tasks/${task.id}`)).body.escalationReason).toBe('escalated to human: attempt 3 of 3 failed');
   });

@@ -122,8 +122,8 @@ describe('openapi spec', () => {
 
     expect(tagsOf('/api/tasks', 'post')).toContain('Tasks');
     expect(tagsOf('/api/tasks/{id}/accept', 'post')).toContain('Tasks');
-    expect(tagsOf('/api/tasks/{id}/run', 'post')).toContain('Runs');
-    expect(tagsOf('/api/runs/{id}', 'get')).toContain('Runs');
+    expect(tagsOf('/api/tasks/{id}/run', 'post')).toContain('Attempts');
+    expect(tagsOf('/api/attempts/{id}', 'get')).toContain('Attempts');
     expect(tagsOf('/api/config', 'get')).toContain('Config');
     expect(tagsOf('/api/channels', 'get')).toContain('Channels');
     expect(tagsOf('/api/tasks/{id}/channels', 'get')).toContain('Channels');
@@ -138,7 +138,7 @@ describe('openapi spec', () => {
     // Reachable with a run-scoped Run Key: the agent task/run surface.
     expect(doc.paths['/api/tasks'].post.description).toContain('Reachable with a run-scoped Run Key');
     expect(doc.paths['/api/tasks/{id}/run'].post.description).toContain('Reachable with a run-scoped Run Key');
-    expect(doc.paths['/api/runs/{id}'].get.description).toContain('Reachable with a run-scoped Run Key');
+    expect(doc.paths['/api/attempts/{id}'].get.description).toContain('Reachable with a run-scoped Run Key');
 
     // Accept/reject: human-only, always (#140, ADR-0021 retired the agentReview flag).
     expect(doc.paths['/api/tasks/{id}/accept'].post.description).toContain('Human-only');
@@ -173,7 +173,7 @@ describe('validation error contract on migrated routes', () => {
   });
 
   it('runs: rejects a malformed :id param with a 400 validation envelope', async () => {
-    const res = await server.api('GET', '/api/runs/not-a-number');
+    const res = await server.api('GET', '/api/attempts/not-a-number');
     expect(res.status).toBe(400);
     expect(res.body).toMatchObject({ error: { code: 'validation' } });
   });

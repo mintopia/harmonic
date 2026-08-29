@@ -1,6 +1,6 @@
-import type { RunLogEvent } from './types';
+import type { AttemptLogEvent } from './types';
 
-export interface TranscriptLane<E extends RunLogEvent = RunLogEvent> {
+export interface TranscriptLane<E extends AttemptLogEvent = AttemptLogEvent> {
   id: string;
   label: string;
   events: E[];
@@ -12,13 +12,13 @@ function record(value: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
-function parentToolUseId(event: RunLogEvent): string | undefined {
+function parentToolUseId(event: AttemptLogEvent): string | undefined {
   const metadata = record(record(event.payload._meta)?.claudeCode);
   const id = metadata?.parentToolUseId;
   return typeof id === 'string' ? id : undefined;
 }
 
-function spawnLabel(event: RunLogEvent): string | undefined {
+function spawnLabel(event: AttemptLogEvent): string | undefined {
   const payload = event.payload;
   if (payload.sessionUpdate !== 'tool_call' || typeof payload.toolCallId !== 'string') return undefined;
 
@@ -34,7 +34,7 @@ function spawnLabel(event: RunLogEvent): string | undefined {
  * it reaches the renderer. Keeping the split ahead of coalescing prevents
  * adjacent chunks from different agents becoming one utterance.
  */
-export function transcriptLanes<E extends RunLogEvent>(events: E[]): TranscriptLane<E>[] {
+export function transcriptLanes<E extends AttemptLogEvent>(events: E[]): TranscriptLane<E>[] {
   const labels = new Map<string, string>();
   for (const event of events) {
     if (typeof event.payload.toolCallId === 'string') {

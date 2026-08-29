@@ -80,14 +80,13 @@ describe('command verifier end-to-end (issue #135)', () => {
   // (ADR-0001 #388 S-F): a self-heal loop's failed attempts share one Run row
   // but each get their own Attempt row, so "this Run's verification
   // attempts" now folds the log across every Attempt of the Run's Task.
-  const attempts = async (runId: number) => {
+  const attempts = async (taskId: number) => {
     const store = new VerificationAttemptStore(server.app.ctx.asyncDb);
-    const run = await server.app.ctx.attempts.get(runId);
-    const taskAttempts = await server.app.ctx.attempts.listForTask(run.taskId);
+    const taskAttempts = await server.app.ctx.attempts.listForTask(taskId);
     return (await Promise.all(taskAttempts.map((a) => store.list(a.id)))).flat();
   };
   const verdictEvents = async (runId: number) =>
-    (await server.api('GET', `/api/runs/${runId}/events`)).body.events
+    (await server.api('GET', `/api/attempts/${runId}/events`)).body.events
       .filter((e: any) => e.type === 'lifecycle' && e.payload.event === 'verification')
       .map((e: any) => e.payload);
 
@@ -101,12 +100,12 @@ describe('command verifier end-to-end (issue #135)', () => {
     });
     expect(task.state).toBe('done');
 
-    const run = (await server.api('GET', `/api/runs/${runId}`)).body;
+    const run = (await server.api('GET', `/api/tasks/${taskId}/attempts/current`)).body;
     expect(run).toMatchObject({ state: 'completed' });
     expect(run.candidateOid).toMatch(/^[0-9a-f]{40}$/);
 
     // AC3/AC5: the attempt is persisted at the branch head the command saw.
-    const rows = await attempts(runId);
+    const rows = await attempts(taskId);
     expect(rows).toHaveLength(1);
     expect(rows[0]!).toMatchObject({ mechanism: 'command', verdict: 'pass' });
     expect(rows[0]!.inputOid).toMatch(/^[0-9a-f]{40}$/);
@@ -122,7 +121,7 @@ describe('command verifier end-to-end (issue #135)', () => {
       verificationCommand: [exitCommand(0)],
     });
     const baseBefore = git(repoDir, 'rev-parse', 'main');
-    const { taskId, runId } = await createAndRun();
+    const { taskId } = await createAndRun();
 
     const task = await waitFor(async () => {
       const { body } = await server.api('GET', `/api/tasks/${taskId}`);
@@ -130,7 +129,7 @@ describe('command verifier end-to-end (issue #135)', () => {
     });
     expect(task.state).toBe('done');
 
-    const run = (await server.api('GET', `/api/runs/${runId}`)).body;
+    const run = (await server.api('GET', `/api/tasks/${taskId}/attempts/current`)).body;
     // The candidate is the agent's own commit, and it already sits on the live
     // base branch — the branch advanced forward in place, nothing was merged.
     expect(run.candidateOid).toMatch(/^[0-9a-f]{40}$/);
@@ -151,13 +150,13 @@ describe('command verifier end-to-end (issue #135)', () => {
     // Uncommitted changes the agent did not make, present before the Run starts.
     writeFileSync(join(repoDir, 'operator-scratch.txt'), 'not the agent\n');
 
-    const { taskId, runId } = await createAndRun();
+    const { taskId } = await createAndRun();
     const task = await waitFor(async () => {
       const { body } = await server.api('GET', `/api/tasks/${taskId}`);
       return body.state === 'done' ? body : undefined;
     });
     expect(task.state).toBe('done'); // tolerated — never escalated for the dirty tree
-    const run = (await server.api('GET', `/api/runs/${runId}`)).body;
+    const run = (await server.api('GET', `/api/tasks/${taskId}/attempts/current`)).body;
     expect(run.candidateOid).toMatch(/^[0-9a-f]{40}$/);
 
     rmSync(join(repoDir, 'operator-scratch.txt'), { force: true });
@@ -165,11 +164,11 @@ describe('command verifier end-to-end (issue #135)', () => {
 
   it('AC2/AC4: a failing command records feedback on attempt 1, then escalates after attempt 2', async () => {
     await server.app.ctx.workspaces.update(workspaceId, { verificationCommand: [exitCommand(1)] });
-    const { taskId, runId } = await createAndRun();
+    const { taskId } = await createAndRun();
 
     // The Run terminates failed rather than parking for review or merging.
     const run = await waitFor(async () => {
-      const { body } = await server.api('GET', `/api/runs/${runId}`);
+      const { body } = await server.api('GET', `/api/tasks/${taskId}/attempts/current`);
       return body.state === 'failed' ? body : undefined;
     });
     expect(run.state).toBe('failed');
@@ -179,7 +178,7 @@ describe('command verifier end-to-end (issue #135)', () => {
     const task = (await server.api('GET', `/api/tasks/${taskId}`)).body;
     expect(task.state).toBe('escalated');
 
-    const rows = await attempts(runId);
+    const rows = await attempts(taskId);
     expect(rows).toHaveLength(2);
     expect(rows).toEqual(
       expect.arrayContaining([
@@ -187,7 +186,7 @@ describe('command verifier end-to-end (issue #135)', () => {
         expect.objectContaining({ mechanism: 'command', verdict: 'fail', inputOid: run.candidateOid }),
       ]),
     );
-    const timeline = await server.api('GET', `/api/tasks/${taskId}/attempts`);
+    const timeline = await server.api('GET', `/api/tasks/${taskId}/attempts/timeline`);
     expect(timeline.body.attempts.map((attempt: { number: number; state: string }) => ({ number: attempt.number, state: attempt.state }))).toEqual([
       { number: 1, state: 'failed' },
       { number: 2, state: 'escalated' },
@@ -205,18 +204,18 @@ describe('command verifier end-to-end (issue #135)', () => {
         }),
       ],
     });
-    const { taskId, runId } = await createAndRun();
+    const { taskId } = await createAndRun();
 
     const run = await waitFor(async () => {
-      const { body } = await server.api('GET', `/api/runs/${runId}`);
+      const { body } = await server.api('GET', `/api/tasks/${taskId}/attempts/current`);
       return body.state === 'failed' ? body : undefined;
     });
     expect(run.state).toBe('failed');
 
-    const rows = await attempts(runId);
+    const rows = await attempts(taskId);
     expect(rows).toHaveLength(2);
     expect(rows.every((row) => row.verdict === 'inconclusive')).toBe(true);
-    const timeline = await server.api('GET', `/api/tasks/${taskId}/attempts`);
+    const timeline = await server.api('GET', `/api/tasks/${taskId}/attempts/timeline`);
     expect(timeline.body.attempts.map((attempt: { number: number; state: string }) => ({ number: attempt.number, state: attempt.state }))).toEqual([
       { number: 1, state: 'failed' },
       { number: 2, state: 'escalated' },
@@ -230,15 +229,15 @@ describe('command verifier end-to-end (issue #135)', () => {
     });
     writeFileSync(join(repoDir, 'uncommitted.txt'), 'dirty\n');
 
-    const { runId } = await createAndRun({ stopReason: 'end_turn' });
+    const { taskId } = await createAndRun({ stopReason: 'end_turn' });
     const run = await waitFor(async () => {
-      const { body } = await server.api('GET', `/api/runs/${runId}`);
+      const { body } = await server.api('GET', `/api/tasks/${taskId}/attempts/current`);
       return body.state === 'failed' ? body : undefined;
     });
     expect(run.state).toBe('failed');
     expect(run.candidateOid).toBeNull();
 
-    const rows = await attempts(runId);
+    const rows = await attempts(taskId);
     expect(rows).toHaveLength(1);
     expect(rows[0]!).toMatchObject({ mechanism: 'command', verdict: 'inconclusive', inputOid: '' });
     // Leave the shared repo clean: a leftover dirty file would mark the next
@@ -262,13 +261,13 @@ describe('command verifier end-to-end (issue #135)', () => {
     const { id: taskId } = created.body as { id: number };
     const { id: runId } = started.body as { id: number };
     await waitFor(async () => {
-      const events = (await server.api('GET', `/api/runs/${runId}/events`)).body.events;
+      const events = (await server.api('GET', `/api/attempts/${runId}/events`)).body.events;
       return events.some((event: { payload: { event?: string } }) => event.payload.event === 'commit-nudge') ? true : undefined;
     });
     // The nudge is corrective guidance inside the Attempt, not a new one: the
     // Run settles on the same single Attempt.
-    await waitFor(async () => ((await server.api('GET', `/api/runs/${runId}`)).body.state !== 'running' ? true : undefined));
-    const timeline = await server.api('GET', `/api/tasks/${taskId}/attempts`);
+    await waitFor(async () => ((await server.api('GET', `/api/tasks/${taskId}/attempts/current`)).body.state !== 'running' ? true : undefined));
+    const timeline = await server.api('GET', `/api/tasks/${taskId}/attempts/timeline`);
     expect(timeline.body.attempts).toHaveLength(1);
     expect(timeline.body.attempts[0]).toMatchObject({ number: 1 });
     // Leave the shared repo clean for the merges that follow (the stub never committed).
@@ -287,13 +286,13 @@ describe('command verifier end-to-end (issue #135)', () => {
       isolationMode: 'worktree',
       verificationCommand: [exitCommand(0)],
     });
-    const { taskId, runId } = await createAndRun();
+    const { taskId } = await createAndRun();
     await waitFor(async () => {
       const { body } = await server.api('GET', `/api/tasks/${taskId}`);
       return body.state === 'done' ? body : undefined;
     });
 
-    const run = (await server.api('GET', `/api/runs/${runId}`)).body;
+    const run = (await server.api('GET', `/api/tasks/${taskId}/attempts/current`)).body;
     expect(run.candidateOid).toBeTruthy();
     // The one merge policy: an ordinary `git merge --no-ff` — main's merge
     // commit has the run's verified branch tip as its second parent, and
@@ -313,7 +312,7 @@ describe('command verifier end-to-end (issue #135)', () => {
       return body.state === 'done' ? body : undefined;
     });
 
-    const timeline = await server.api('GET', `/api/tasks/${taskId}/attempts`);
+    const timeline = await server.api('GET', `/api/tasks/${taskId}/attempts/timeline`);
     expect(timeline.body.attempts[0].steps[0]).toMatchObject({
       type: 'rebase',
       state: 'passed',
@@ -332,15 +331,15 @@ describe('command verifier end-to-end (issue #135)', () => {
       isolationMode: 'worktree',
       verificationCommand: [echoExit('CMD1', 0), echoExit('CMD2', 1), echoExit('CMD3', 0)],
     });
-    const { runId } = await createAndRun();
+    const { taskId } = await createAndRun();
     await waitFor(async () => {
-      const { body } = await server.api('GET', `/api/runs/${runId}`);
+      const { body } = await server.api('GET', `/api/tasks/${taskId}/attempts/current`);
       return body.state === 'failed' ? body : undefined;
     });
 
     // Two attempts (maxAttempts: 2), each running CMD1 then failing fast on
     // CMD2 — one attempt row per executed command, and CMD3 never runs.
-    const rows = await attempts(runId);
+    const rows = await attempts(taskId);
     expect(rows.map((row) => `${row.mechanism}:${row.verdict}`)).toEqual([
       'command:pass',
       'command:fail',
@@ -393,10 +392,9 @@ describe('native merging (issue #138, ADR-0021, ADR-0041)', () => {
   // (ADR-0001 #388 S-F): a self-heal loop's failed attempts share one Run row
   // but each get their own Attempt row, so "this Run's verification
   // attempts" now folds the log across every Attempt of the Run's Task.
-  const attempts = async (runId: number) => {
+  const attempts = async (taskId: number) => {
     const store = new VerificationAttemptStore(server.app.ctx.asyncDb);
-    const run = await server.app.ctx.attempts.get(runId);
-    const taskAttempts = await server.app.ctx.attempts.listForTask(run.taskId);
+    const taskAttempts = await server.app.ctx.attempts.listForTask(taskId);
     return (await Promise.all(taskAttempts.map((a) => store.list(a.id)))).flat();
   };
 
@@ -404,7 +402,7 @@ describe('native merging (issue #138, ADR-0021, ADR-0041)', () => {
     await server.app.ctx.workspaces.update(workspaceId, {
       verificationCommand: [exitCommand(0)],
     });
-    const { taskId, runId } = await createAndRun();
+    const { taskId } = await createAndRun();
 
     const task = await waitFor(async () => {
       const { body } = await server.api('GET', `/api/tasks/${taskId}`);
@@ -412,7 +410,7 @@ describe('native merging (issue #138, ADR-0021, ADR-0041)', () => {
     });
     expect(task.state).toBe('done');
 
-    const run = (await server.api('GET', `/api/runs/${runId}`)).body;
+    const run = (await server.api('GET', `/api/tasks/${taskId}/attempts/current`)).body;
     expect(run.state).toBe('completed');
   });
 
@@ -420,7 +418,7 @@ describe('native merging (issue #138, ADR-0021, ADR-0041)', () => {
     await server.app.ctx.workspaces.update(workspaceId, {
       verificationCommand: [exitCommand(0)],
     });
-    const { taskId, runId } = await createAndRun();
+    const { taskId } = await createAndRun();
 
     const task = await waitFor(async () => {
       const { body } = await server.api('GET', `/api/tasks/${taskId}`);
@@ -428,11 +426,11 @@ describe('native merging (issue #138, ADR-0021, ADR-0041)', () => {
     });
     expect(task.state).toBe('done');
 
-    const run = (await server.api('GET', `/api/runs/${runId}`)).body;
+    const run = (await server.api('GET', `/api/tasks/${taskId}/attempts/current`)).body;
     expect(run.state).toBe('completed');
     expect(run.finishedAt).not.toBeNull();
 
-    const rows = await attempts(runId);
+    const rows = await attempts(taskId);
     expect(rows).toHaveLength(1);
     expect(rows[0]!).toMatchObject({ mechanism: 'command', verdict: 'pass' });
 
@@ -440,7 +438,7 @@ describe('native merging (issue #138, ADR-0021, ADR-0041)', () => {
     // the default `agent-finish/unresolved` disposition, never the
     // operator-only `operator-accept` one, so the audit trail stays honest
     // about who actually accepted the work.
-    const ticketAttempt = await new AttemptStore(server.app.ctx.asyncDb).getForTaskNumber(taskId, run.attempt);
+    const ticketAttempt = await new AttemptStore(server.app.ctx.asyncDb).getForTaskNumber(taskId, run.number);
     expect(ticketAttempt).toMatchObject({ state: 'passed', reason: 'agent-finish/unresolved' });
   });
 
@@ -448,10 +446,10 @@ describe('native merging (issue #138, ADR-0021, ADR-0041)', () => {
     await server.app.ctx.workspaces.update(workspaceId, {
       verificationCommand: [exitCommand(1)],
     });
-    const { taskId, runId } = await createAndRun();
+    const { taskId } = await createAndRun();
 
     const run = await waitFor(async () => {
-      const { body } = await server.api('GET', `/api/runs/${runId}`);
+      const { body } = await server.api('GET', `/api/tasks/${taskId}/attempts/current`);
       return body.state === 'failed' ? body : undefined;
     });
     expect(run.state).toBe('failed');
@@ -467,7 +465,7 @@ describe('native merging (issue #138, ADR-0021, ADR-0041)', () => {
     await server.app.ctx.workspaces.update(workspaceId, {
       verificationCommand: null,
     });
-    const { taskId, runId } = await createAndRun();
+    const { taskId } = await createAndRun();
 
     const task = await waitFor(async () => {
       const { body } = await server.api('GET', `/api/tasks/${taskId}`);
@@ -475,11 +473,11 @@ describe('native merging (issue #138, ADR-0021, ADR-0041)', () => {
     });
     expect(task.state).toBe('done');
 
-    const run = (await server.api('GET', `/api/runs/${runId}`)).body;
+    const run = (await server.api('GET', `/api/tasks/${taskId}/attempts/current`)).body;
     expect(run.state).toBe('completed');
 
     // No verifier ran at all — the attempt log is empty.
-    expect(await attempts(runId)).toHaveLength(0);
+    expect(await attempts(taskId)).toHaveLength(0);
   });
 
   it('a worktree run merges the merge into the base branch (no human gate)', async () => {
@@ -503,7 +501,7 @@ describe('native merging (issue #138, ADR-0021, ADR-0041)', () => {
     });
     expect(task.state).toBe('done');
 
-    const run = (await server.api('GET', `/api/runs/${started.body.id}`)).body;
+    const run = (await server.api('GET', `/api/attempts/${started.body.id}`)).body;
     expect(run.state).toBe('completed');
 
     // The merge actually happened: the base branch moved and now contains the

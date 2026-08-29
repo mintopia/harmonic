@@ -2,11 +2,11 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { startServer, stubHarness, type TestServer } from './helpers.js';
 
 /**
- * `GET /api/runs/:id/verification-attempts` (issue #169, part of #109): the
+ * `GET /api/attempts/:id/verification-attempts` (issue #169, part of #109): the
  * REST surface over `VerificationAttemptStore.list`, mirroring
  * `GET /runs/:id/guardrail-events`'s shape and 404 behaviour.
  */
-describe('GET /api/runs/:id/verification-attempts (issue #169)', () => {
+describe('GET /api/attempts/:id/verification-attempts (issue #169)', () => {
   let server: TestServer;
   const ctx = () => server.app.ctx;
 
@@ -38,7 +38,7 @@ describe('GET /api/runs/:id/verification-attempts (issue #169)', () => {
       output: 'details',
     });
 
-    const res = await server.api('GET', `/api/runs/${run.id}/verification-attempts`);
+    const res = await server.api('GET', `/api/attempts/${run.id}/verification-attempts`);
     expect(res.status).toBe(200);
     expect(res.body.verificationAttempts).toHaveLength(2);
     expect(res.body.verificationAttempts[0]).toMatchObject({
@@ -86,7 +86,7 @@ describe('GET /api/runs/:id/verification-attempts (issue #169)', () => {
         output: '',
         });
 
-      const res = await configured.api('GET', `/api/runs/${run.id}/verification-attempts`);
+      const res = await configured.api('GET', `/api/attempts/${run.id}/verification-attempts`);
 
       expect(res.status).toBe(200);
       expect(res.body.verifierStatuses).toEqual([
@@ -119,7 +119,7 @@ describe('GET /api/runs/:id/verification-attempts (issue #169)', () => {
         output: '',
         });
 
-      const res = await configured.api('GET', `/api/runs/${run.id}/verification-attempts`);
+      const res = await configured.api('GET', `/api/attempts/${run.id}/verification-attempts`);
 
       expect(res.status).toBe(200);
       expect(res.body.verifierStatuses).toEqual([
@@ -132,7 +132,7 @@ describe('GET /api/runs/:id/verification-attempts (issue #169)', () => {
   });
 
   it('404s for an unknown run', async () => {
-    const res = await server.api('GET', '/api/runs/999999/verification-attempts');
+    const res = await server.api('GET', '/api/attempts/999999/verification-attempts');
     expect(res.status).toBe(404);
   });
 });

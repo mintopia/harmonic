@@ -35,7 +35,7 @@ const removePasswordBodySchema = z.object({
 
 const createKeyBodySchema = z.object({
   name: z.string().min(1).meta({ example: 'ci-pipeline' }),
-  /** 'full' (default) drives the whole fleet; 'read' is a viz-client key — GET tasks/runs/maps + WS, no mutations (issue #35). */
+  /** 'full' (default) drives the whole fleet; 'read' is a viz-client key — GET tasks/attempts/maps + WS, no mutations (issue #35). */
   scope: z.enum(['full', 'read']).optional().meta({ example: 'read' }),
 });
 
@@ -201,7 +201,7 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
       schema: {
         tags: ['Keys'],
         description:
-          "Create a new operator API key. `scope` defaults to 'full' (drives the whole fleet); 'read' mints a viz-client key that can GET tasks/runs/maps and open the WebSocket but cannot mutate anything. The bearer token is returned once and never stored.",
+          "Create a new operator API key. `scope` defaults to 'full' (drives the whole fleet); 'read' mints a viz-client key that can GET tasks/attempts/maps and open the WebSocket but cannot mutate anything. The bearer token is returned once and never stored.",
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         body: createKeyBodySchema,
         response: {

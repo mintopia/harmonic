@@ -20,7 +20,7 @@ describe('buildApiReference: grouping', () => {
     const spec = fixture({
       paths: {
         '/api/tasks': { post: { tags: ['Tasks'], responses: { '200': {} } } },
-        '/api/runs/{id}': { get: { tags: ['Runs'], responses: { '200': {} } } },
+        '/api/attempts/{id}': { get: { tags: ['Runs'], responses: { '200': {} } } },
       },
     });
     const groups = buildApiReference(spec);
@@ -32,7 +32,7 @@ describe('buildApiReference: grouping', () => {
   it('follows the spec tags array order, not path discovery order', () => {
     const spec = fixture({
       paths: {
-        '/api/runs/{id}': { get: { tags: ['Runs'], responses: { '200': {} } } },
+        '/api/attempts/{id}': { get: { tags: ['Runs'], responses: { '200': {} } } },
         '/api/tasks': { post: { tags: ['Tasks'], responses: { '200': {} } } },
       },
     });
@@ -57,7 +57,7 @@ describe('buildApiReference: grouping', () => {
     const spec = fixture({
       paths: {
         '/api/tasks': { post: { tags: ['Tasks'], responses: { '200': {} } } },
-        '/api/runs/{id}': { get: { tags: ['Runs'], responses: { '200': {} } } },
+        '/api/attempts/{id}': { get: { tags: ['Runs'], responses: { '200': {} } } },
         '/api/zebras': { get: { tags: ['Zebras'], responses: { '200': {} } } },
         '/api/aardvarks': { get: { tags: ['Aardvarks'], responses: { '200': {} } } },
       },
@@ -98,7 +98,7 @@ describe('buildApiReference: endpoint fields', () => {
   it('extracts parameters with name, in, required and a rendered type', () => {
     const spec = fixture({
       paths: {
-        '/api/runs/{id}': {
+        '/api/attempts/{id}': {
           parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
           get: {
             tags: ['Runs'],
@@ -399,7 +399,7 @@ describe('endpointAnchor', () => {
   });
 
   it('collapses runs of non-alphanumeric characters to a single dash', () => {
-    expect(endpointAnchor('GET', '/api/runs/{id}/events')).toBe('ep-get-api-runs-id-events');
+    expect(endpointAnchor('GET', '/api/attempts/{id}/events')).toBe('ep-get-api-attempts-id-events');
   });
 
   it('strips leading/trailing dashes from the slug portion', () => {
@@ -438,13 +438,13 @@ describe('filterApiReference', () => {
         ],
       },
       {
-        name: 'Runs',
+        name: 'Attempts',
         endpoints: [
           {
             method: 'GET',
-            path: '/api/runs/{id}',
-            tags: ['Runs'],
-            summary: 'Fetch a run',
+            path: '/api/attempts/{id}',
+            tags: ['Attempts'],
+            summary: 'Fetch an attempt',
             parameters: [],
             requestBody: null,
             responses: [],
@@ -471,15 +471,15 @@ describe('filterApiReference', () => {
   });
 
   it('filters by path substring', () => {
-    const result = filterApiReference(groupsFixture(), 'runs');
+    const result = filterApiReference(groupsFixture(), 'attempts');
     expect(result).toHaveLength(1);
-    expect(result[0]!.name).toBe('Runs');
+    expect(result[0]!.name).toBe('Attempts');
   });
 
   it('filters by summary substring', () => {
-    const result = filterApiReference(groupsFixture(), 'fetch a run');
+    const result = filterApiReference(groupsFixture(), 'fetch an attempt');
     expect(result).toHaveLength(1);
-    expect(result[0]!.endpoints[0]!.path).toBe('/api/runs/{id}');
+    expect(result[0]!.endpoints[0]!.path).toBe('/api/attempts/{id}');
   });
 
   it('requires ALL whitespace-separated terms to match (AND)', () => {
@@ -490,8 +490,8 @@ describe('filterApiReference', () => {
   });
 
   it('drops groups with no surviving endpoints', () => {
-    const result = filterApiReference(groupsFixture(), 'runs');
-    expect(result.map((g) => g.name)).toEqual(['Runs']);
+    const result = filterApiReference(groupsFixture(), 'attempts');
+    expect(result.map((g) => g.name)).toEqual(['Attempts']);
   });
 
   it('returns [] when no endpoint matches any group', () => {

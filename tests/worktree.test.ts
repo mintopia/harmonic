@@ -52,9 +52,9 @@ describe('worktree isolation mode', () => {
 
   it('executes on its own branch in a temp worktree, merges, and the worktree is removed at Session retirement (issue #148)', async () => {
     const repo = makeRepo();
-    const { taskId, runId } = await runWorktreeTask(repo, { 'feature.txt': 'made by agent\n' });
+    const { taskId } = await runWorktreeTask(repo, { 'feature.txt': 'made by agent\n' });
 
-    const run = (await server.api('GET', `/api/runs/${runId}`)).body;
+    const run = (await server.api('GET', `/api/tasks/${taskId}/attempts/current`)).body;
     expect(run.branch).toBe(`harmonic/task-${taskId}`);
     expect(run.baseBranch).toBe('main');
 
@@ -90,7 +90,7 @@ describe('worktree isolation mode', () => {
       async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'done',
     );
 
-    const run = (await server.api('GET', `/api/runs/${started.body.id}`)).body;
+    const run = (await server.api('GET', `/api/attempts/${started.body.id}`)).body;
     // A real candidate was captured (non-null) and merged onto main as an
     // ordinary merge commit (ADR-0001, #381 — never a fast-forward).
     expect(run.candidateOid).toBeTruthy();
@@ -153,13 +153,13 @@ describe('worktree isolation mode', () => {
     git(repo, 'commit', '-m', 'feature-base marker');
     git(repo, 'checkout', 'main'); // main stays checked out and current throughout
 
-    const { taskId, runId } = await runWorktreeTask(
+    const { taskId } = await runWorktreeTask(
       repo,
       { 'feature.txt': 'made on feature-base\n' },
       { baseBranch: 'feature-base' },
     );
 
-    const run = (await server.api('GET', `/api/runs/${runId}`)).body;
+    const run = (await server.api('GET', `/api/tasks/${taskId}/attempts/current`)).body;
     expect(run.branch).toBe(`harmonic/task-${taskId}`);
     // The explicit base is persisted on the run, not the resolved-from-current default.
     expect(run.baseBranch).toBe('feature-base');
@@ -236,7 +236,7 @@ describe('worktree isolation mode', () => {
     });
     const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
     await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'escalated');
-    const run = (await server.api('GET', `/api/runs/${started.body.id}`)).body;
+    const run = (await server.api('GET', `/api/attempts/${started.body.id}`)).body;
     expect(git(repo, 'branch', '--list', run.branch)).toContain(run.branch);
 
     const closed = await server.api('POST', `/api/tasks/${created.body.id}/close`);
@@ -252,20 +252,20 @@ describe('worktree isolation mode', () => {
     const repo = makeRepo();
     const { runId } = await runWorktreeTask(repo, { 'feature.txt': 'diff me\n' });
 
-    const diff = await server.api('GET', `/api/runs/${runId}/diff`);
+    const diff = await server.api('GET', `/api/attempts/${runId}/diff`);
     expect(diff.status).toBe(200);
-    expect(diff.body.branch).toBe(`harmonic/task-${(await server.api("GET", `/api/runs/${runId}`)).body.taskId}`);
+    expect(diff.body.branch).toBe(`harmonic/task-${(await server.api("GET", `/api/attempts/${runId}`)).body.taskId}`);
     expect(diff.body.stat).toContain('feature.txt');
   });
 
   it('serves a completed Run\'s file diff after its temporary branch is removed (issue #323)', async () => {
     const repo = makeRepo();
-    const { runId } = await runWorktreeTask(repo, { 'feature.txt': 'diff me\n' });
-    const run = (await server.api('GET', `/api/runs/${runId}`)).body;
+    const { taskId } = await runWorktreeTask(repo, { 'feature.txt': 'diff me\n' });
+    const run = (await server.api('GET', `/api/tasks/${taskId}/attempts/current`)).body;
 
     git(repo, 'branch', '-D', run.branch);
 
-    const diff = await server.api('GET', `/api/runs/${runId}/diff/files`);
+    const diff = await server.api('GET', `/api/attempts/${run.id}/diff/files`);
     expect(diff.status).toBe(200);
     expect(diff.body.files).toHaveLength(1);
     expect(diff.body.files[0]).toMatchObject({ path: 'feature.txt', status: 'A' });
@@ -285,12 +285,12 @@ describe('worktree isolation mode', () => {
 
     // Every Run produced its own branch carrying its own file — no create
     // clobbered another mid-mutation.
-    for (const { taskId, runId } of results) {
-      const run = (await server.api('GET', `/api/runs/${runId}`)).body;
+    for (const { taskId } of results) {
+      const run = (await server.api('GET', `/api/tasks/${taskId}/attempts/current`)).body;
       expect(run.branch).toBe(`harmonic/task-${taskId}`);
       expect(git(repo, 'branch', '--list', run.branch)).toContain(run.branch);
     }
-    expect(git(repo, 'show', `${(await server.api('GET', `/api/runs/${results[0].runId}`)).body.branch}:a.txt`)).toBe('A');
+    expect(git(repo, 'show', `${(await server.api('GET', `/api/attempts/${results[0].runId}`)).body.branch}:a.txt`)).toBe('A');
 
     // The base repo is intact: a clean tree, still on main — the repo-op lock
     // (issue #121) serialised the concurrent create windows without corruption.
@@ -315,8 +315,8 @@ describe('worktree isolation mode', () => {
       runWorktreeTask(repo, { 'b.txt': 'B\n' }),
     ]);
 
-    const runA = (await server.api('GET', `/api/runs/${a.runId}`)).body;
-    const runB = (await server.api('GET', `/api/runs/${b.runId}`)).body;
+    const runA = (await server.api('GET', `/api/attempts/${a.runId}`)).body;
+    const runB = (await server.api('GET', `/api/attempts/${b.runId}`)).body;
     // Both merged: distinct keys admitted both, and the freshness gate
     // serialised their fast-forwards onto main.
     expect(runA.state).toBe('completed');
@@ -349,8 +349,8 @@ describe('worktree isolation mode', () => {
     // The base can't be resolved to a real branch → the Run fails loudly and is
     // handed to a human, rather than recording `base_branch: "HEAD"` and forking
     // off the detached commit (silently defeating worktree isolation).
-    await waitFor(async () => (await server.api('GET', `/api/runs/${started.body.id}`)).body.state === 'failed');
-    const run = (await server.api('GET', `/api/runs/${started.body.id}`)).body;
+    await waitFor(async () => (await server.api('GET', `/api/attempts/${started.body.id}`)).body.state === 'failed');
+    const run = (await server.api('GET', `/api/attempts/${started.body.id}`)).body;
     expect(run.reason ?? '').toMatch(/^escalated to human: /);
     expect((run.reason ?? '').toLowerCase()).toContain('detached');
     // The poison value never reaches the row; no run branch was created.
@@ -385,7 +385,7 @@ describe('worktree isolation mode', () => {
       const t = (await server.api('GET', `/api/tasks/${created.body.id}`)).body;
       return t.state === 'escalated' ? t : undefined;
     });
-    const runs = (await server.api('GET', `/api/tasks/${created.body.id}/runs`)).body.runs;
+    const runs = (await server.api('GET', `/api/tasks/${created.body.id}/attempts`)).body.attempts;
     // The Run itself still fails with a legible reason; only one is ever created.
     expect(runs.length).toBe(1);
     expect(runs[0].state).toBe('failed');
@@ -414,7 +414,7 @@ describe('worktree isolation mode', () => {
     });
     expect(task.state).not.toBe('escalated');
 
-    const runs = (await server.api('GET', `/api/tasks/${created.body.id}/runs`)).body.runs;
+    const runs = (await server.api('GET', `/api/tasks/${created.body.id}/attempts`)).body.attempts;
     expect(runs.length).toBe(1);
     expect(runs[0].state).toBe('failed');
     expect(runs[0].reason).toContain('epic/999');
@@ -451,7 +451,7 @@ describe('worktree isolation mode', () => {
       return t.state === 'ready' ? t : undefined;
     });
     expect(task.state).toBe('ready');
-    const runs = (await server.api('GET', `/api/tasks/${created.body.id}/runs`)).body.runs;
+    const runs = (await server.api('GET', `/api/tasks/${created.body.id}/attempts`)).body.attempts;
     expect(runs.length).toBe(1);
     expect(runs[0].state).toBe('failed');
     expect(runs[0].reason).toContain('epic/424');

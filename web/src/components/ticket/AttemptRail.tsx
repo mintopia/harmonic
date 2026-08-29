@@ -1,4 +1,4 @@
-import { changedFilesFromStat } from '../../run-rail-model';
+import { changedFilesFromStat } from '../../attempt-rail-model';
 import { railSectionCount, railSectionHead } from '../../ui';
 import { Icon } from '../Icon';
 
@@ -8,7 +8,7 @@ const FADED: Record<'M' | 'A' | 'D', string> = {
   D: 'bg-fail-tint text-fail',
 };
 
-export function RunRail({
+export function AttemptRail({
   worktree,
   selectedFile,
   onSelectFile,

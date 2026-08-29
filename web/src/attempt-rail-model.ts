@@ -1,13 +1,13 @@
 // Explicit .js extension: this module is shared with the node-side test
 // project, whose nodenext resolution requires it (Vite maps .js → .ts).
-import type { Run, Step } from './types.js';
+import type { AttemptSummary, Step } from './types.js';
 
 /**
  * Pure view-model helpers behind the Ticket page's run rail (issue #183, part
  * of #179 — the Deck redesign). The rail switches per-run detail, so every
  * chip needs a single derived "how this run reads" — a state word, a
  * state-signal dot, and whether that dot pulses (work in flight). That
- * derivation lives here, once, so `RunRail` and the read-only result bar
+ * derivation lives here, once, so `AttemptRail` and the read-only result bar
  * (`ticket-gate-model.ts`) never re-derive a run's disposition independently
  * (the same pure-formatter house style as `task-actions-model.ts` /
  * `verification-attempts-model.ts`).
@@ -15,25 +15,25 @@ import type { Run, Step } from './types.js';
 
 /** The state-signal family a run's dot/word draws from (DESIGN.md § Signal
  * Rule); `neutral` is the un-coloured register (cancelled). */
-export type RunDot = 'running' | 'fail' | 'merged' | 'neutral';
+export type AttemptDot = 'running' | 'fail' | 'merged' | 'neutral';
 
 /** How a single run reads at a glance: its disposition word, the signal dot
  * that word rides, and whether the dot pulses (only live, unparked work). */
-export interface RunDisplay {
+export interface AttemptDisplay {
   word: string;
-  dot: RunDot;
+  dot: AttemptDot;
   pulse: boolean;
 }
 
 /**
  * A run's disposition, folded from its terminal state first and only then its
  * live Step: a still-`running` run reads by whichever Step is currently
- * running in its owning Attempt (ADR-0001 Vocabulary — Run/Phase are deleted
+ * running in its owning Attempt (ADR-0001 Vocabulary — AttemptSummary/Phase are deleted
  * concepts). `steps` is the matching Attempt's timeline (by `run.attempt` ===
  * `Attempt.number`); pass `[]` when it isn't loaded (e.g. a historical run
  * the gate bar never actually renders `running` for). Pure.
  */
-export function runDisplay(run: Run, steps: readonly Step[] = []): RunDisplay {
+export function attemptDisplay(run: AttemptSummary, steps: readonly Step[] = []): AttemptDisplay {
   switch (run.state) {
     case 'failed':
       return { word: 'failed', dot: 'fail', pulse: false };
@@ -94,10 +94,10 @@ export function changedFilesFromStat(stat: string | null): ChangedFile[] {
 
 /** The current run's id: the highest attempt. `null` for a task with no runs.
  * Runs need not arrive sorted — picked by max `attempt`, not array position. */
-export function currentRunId(runs: Run[]): number | null {
-  let current: Run | null = null;
+export function currentAttemptId(runs: AttemptSummary[]): number | null {
+  let current: AttemptSummary | null = null;
   for (const run of runs) {
-    if (!current || run.attempt > current.attempt) current = run;
+    if (!current || run.number > current.number) current = run;
   }
   return current?.id ?? null;
 }

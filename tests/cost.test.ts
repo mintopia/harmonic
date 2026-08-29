@@ -162,13 +162,13 @@ describe('cost surfaces (API)', () => {
     );
     const { taskId, runId } = await runToDone(workDir);
 
-    const run = (await server.api('GET', `/api/runs/${runId}`)).body;
+    const run = (await server.api('GET', `/api/attempts/${runId}`)).body;
     expect(run.cost).toEqual({ totalUsd: 2, byModel: { modelA: 2 }, incomplete: false });
 
     // A price change only applies to future Runs. This finished Run keeps the
     // price table captured when it settled.
     await server.api('PATCH', '/api/config', { prices: { modelA: flatPrice(4) } });
-    const repriced = (await server.api('GET', `/api/runs/${runId}`)).body;
+    const repriced = (await server.api('GET', `/api/attempts/${runId}`)).body;
     expect(repriced.cost).toEqual({ totalUsd: 2, byModel: { modelA: 2 }, incomplete: false });
     expect((await server.api('GET', `/api/tasks/${taskId}`)).body.cost.totalUsd).toBe(2);
     expect((await server.api('GET', `/api/tasks/${taskId}/usage`)).body.cost.totalUsd).toBe(2);
@@ -188,9 +188,9 @@ describe('cost surfaces (API)', () => {
     await server.app.close();
     server = await startServer({ ...stubHarness(), prices: overrides }, { dataDir });
 
-    expect((await server.api('GET', `/api/runs/${runId}`)).body.cost.totalUsd).toBe(2);
+    expect((await server.api('GET', `/api/attempts/${runId}`)).body.cost.totalUsd).toBe(2);
     await server.api('PATCH', '/api/config', { prices: { modelA: flatPrice(4) } });
-    expect((await server.api('GET', `/api/runs/${runId}`)).body.cost.totalUsd).toBe(2);
+    expect((await server.api('GET', `/api/attempts/${runId}`)).body.cost.totalUsd).toBe(2);
   });
 
   it('task usage endpoint sums cost over ALL runs, failed attempts included', async () => {
@@ -206,7 +206,7 @@ describe('cost surfaces (API)', () => {
     await server.api('POST', `/api/tasks/${taskId}/run`);
     await waitFor(async () => {
       const { body } = await server.api('GET', `/api/tasks/${taskId}`);
-      return body.state === 'done' && (await server.api('GET', `/api/tasks/${taskId}/runs`)).body.runs.length === 2 ? true : undefined;
+      return body.state === 'done' && (await server.api('GET', `/api/tasks/${taskId}/attempts`)).body.attempts.length === 2 ? true : undefined;
     });
 
     const agg = (await server.api('GET', `/api/tasks/${taskId}/usage`)).body;
@@ -255,7 +255,7 @@ describe('cost surfaces (API)', () => {
     });
     const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
     await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'done');
-    const before = (await server.api('GET', `/api/runs/${started.body.id}`)).body;
+    const before = (await server.api('GET', `/api/attempts/${started.body.id}`)).body;
     expect(before.usage.models).toEqual({});
     expect(before.cost).toEqual({ totalUsd: null, byModel: {}, incomplete: true });
 
@@ -274,7 +274,7 @@ describe('cost surfaces (API)', () => {
     await server.app.close();
     server = await startServer(overrides, { dataDir });
 
-    const healed = (await server.api('GET', `/api/runs/${started.body.id}`)).body;
+    const healed = (await server.api('GET', `/api/attempts/${started.body.id}`)).body;
     expect(healed.usage.models.modelA.inputTokens).toBe(1_000_000);
     expect(healed.usage.totals.totalTokens).toBe(3); // ACP totals preserved
     expect(healed.usage.source).toBe('combined');

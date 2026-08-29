@@ -12,9 +12,9 @@ import type {
   GuardrailEvent,
   MapRollup,
   PermissionRule,
-  Run,
-  RunEvent,
-  RunLogEvent,
+  AttemptSummary,
+  AttemptEvent,
+  AttemptLogEvent,
   Task,
   TicketTimelineEvent,
   VerificationAttempt,
@@ -167,43 +167,46 @@ export const api = {
   // (App.tsx). 409 if the Task is running (stop it first); 404 if it's
   // already gone.
   deleteTask: (id: number) => request<{ id: number }>('DELETE', `/api/tasks/${id}`),
-  runTask: (id: number) => request<Run>('POST', `/api/tasks/${id}/run`),
-  taskRuns: (id: number) => request<{ runs: Run[]; total: number }>('GET', `/api/tasks/${id}/runs`),
+  runTask: (id: number) => request<AttemptSummary>('POST', `/api/tasks/${id}/run`),
+  /** Lean Attempt summaries, oldest first (retries included). */
+  taskAttempts: (id: number) => request<{ attempts: AttemptSummary[]; total: number }>('GET', `/api/tasks/${id}/attempts`),
   /** Ordered durable Attempt/Task history for the ticket page. */
-  taskAttempts: (id: number) => request<{ attempts: Attempt[]; budgetBase: number; total: number }>('GET', `/api/tasks/${id}/attempts`),
+  taskAttemptTimeline: (id: number) => request<{ attempts: Attempt[]; budgetBase: number; total: number }>('GET', `/api/tasks/${id}/attempts/timeline`),
   /** Ticket-wide chronological lifecycle audit projection. */
   taskTimeline: (id: number) => request<{ events: TicketTimelineEvent[]; total: number }>('GET', `/api/tasks/${id}/timeline`),
   taskUsage: (id: number) =>
     request<{ cost: Cost | null; runCount: number }>('GET', `/api/tasks/${id}/usage`),
-  run: (id: number) => request<Run>('GET', `/api/runs/${id}`),
-  runEvents: (id: number) => request<{ events: RunEvent[]; total: number }>('GET', `/api/runs/${id}/events`),
-  runLog: (id: number) =>
-    request<{ status: 'available'; events: RunLogEvent[]; liveCursor: number } | { status: 'unavailable'; liveCursor: number }>('GET', `/api/runs/${id}/log`),
-  // Guardrail-trip event log for a Run (issue #171): the REST surface over
-  // `GuardrailEventStore.list`, mirroring `runEvents`'s shape and 404 behaviour.
-  runGuardrailEvents: (id: number) =>
-    request<{ guardrailEvents: GuardrailEvent[]; total: number }>('GET', `/api/runs/${id}/guardrail-events`),
-  // Per-verifier Verification-attempt log for a Run (issue #169, part of
+  attempt: (id: number) => request<AttemptSummary>('GET', `/api/attempts/${id}`),
+  /** The Task's current (latest) Attempt — the follow-forward read for pollers. */
+  currentAttempt: (taskId: number) => request<AttemptSummary>('GET', `/api/tasks/${taskId}/attempts/current`),
+  attemptEvents: (id: number) => request<{ events: AttemptEvent[]; total: number }>('GET', `/api/attempts/${id}/events`),
+  attemptLog: (id: number) =>
+    request<{ status: 'available'; events: AttemptLogEvent[]; liveCursor: number } | { status: 'unavailable'; liveCursor: number }>('GET', `/api/attempts/${id}/log`),
+  // Guardrail-trip event log for an Attempt (issue #171): the REST surface over
+  // `GuardrailEventStore.list`, mirroring `attemptEvents`'s shape and 404 behaviour.
+  attemptGuardrailEvents: (id: number) =>
+    request<{ guardrailEvents: GuardrailEvent[]; total: number }>('GET', `/api/attempts/${id}/guardrail-events`),
+  // Per-verifier Verification-attempt log for an Attempt (issue #169, part of
   // #109): the REST surface over the attempts store, mirroring
-  // `runGuardrailEvents`'s shape and 404 behaviour.
-  runVerificationAttempts: (id: number) =>
-    request<{ verificationAttempts: VerificationAttempt[]; verifierStatuses: VerifierStatus[]; total: number }>('GET', `/api/runs/${id}/verification-attempts`),
+  // `attemptGuardrailEvents`'s shape and 404 behaviour.
+  attemptVerificationAttempts: (id: number) =>
+    request<{ verificationAttempts: VerificationAttempt[]; verifierStatuses: VerifierStatus[]; total: number }>('GET', `/api/attempts/${id}/verification-attempts`),
   verificationAttempt: (id: number) =>
     request<{ output: string; summary: string; hasTranscript: boolean }>('GET', `/api/verification-attempts/${id}`),
   // A critic verification attempt's own native session transcript (ADR-0040) —
-  // same shape as `runLog`, keyed by attempt id, "unavailable" when no
+  // same shape as `attemptLog`, keyed by attempt id, "unavailable" when no
   // transcript was captured.
   criticLog: (attemptId: number) =>
-    request<{ status: 'available'; events: RunLogEvent[]; liveCursor: number } | { status: 'unavailable'; liveCursor: number }>(
+    request<{ status: 'available'; events: AttemptLogEvent[]; liveCursor: number } | { status: 'unavailable'; liveCursor: number }>(
       'GET',
       `/api/verification-attempts/${attemptId}/log`,
     ),
-  runDiff: (id: number) =>
+  attemptDiff: (id: number) =>
     request<{ branch: string | null; baseBranch: string | null; stat: string | null }>(
       'GET',
-      `/api/runs/${id}/diff`,
+      `/api/attempts/${id}/diff`,
     ),
-  runDiffFiles: (id: number) => request<{ files: DiffFile[]; total: number }>('GET', `/api/runs/${id}/diff/files`),
+  attemptDiffFiles: (id: number) => request<{ files: DiffFile[]; total: number }>('GET', `/api/attempts/${id}/diff/files`),
   changePassword: (currentPassword: string, newPassword: string) =>
     request<{ ok: true }>('POST', '/api/auth/change-password', { currentPassword, newPassword }),
 

@@ -1,7 +1,7 @@
 // Explicit .js extension: this module is shared with the node-side test
 // project, whose nodenext resolution requires it (Vite maps .js → .ts).
-import type { Run, Task } from './types.js';
-import { currentRunId, runDisplay, type RunDot } from './run-rail-model.js';
+import type { AttemptSummary, Task } from './types.js';
+import { currentAttemptId, attemptDisplay, type AttemptDot } from './attempt-rail-model.js';
 
 /**
  * Pure decision behind the Ticket page's bottom bar (issue #183, part of #179).
@@ -24,25 +24,25 @@ export type GateModel =
    * reads "Attempt N <disposition> · superseded by Attempt M"; `dot` is its signal
    * colour. The bar offers only "Go to current attempt".
    */
-  | { kind: 'result'; runId: number; attempt: number; dot: RunDot; summary: string; currentRunId: number };
+  | { kind: 'result'; attemptId: number; number: number; dot: AttemptDot; summary: string; currentAttemptId: number };
 
 /** Resolve the bottom bar for the run the operator is currently looking at. Pure. */
-export function gateForRun(input: { task: Task; runs: Run[]; selectedRunId: number | null }): GateModel {
-  const { runs, selectedRunId } = input;
-  const selected = runs.find((r) => r.id === selectedRunId) ?? null;
+export function gateForAttempt(input: { task: Task; runs: AttemptSummary[]; selectedAttemptId: number | null }): GateModel {
+  const { runs, selectedAttemptId } = input;
+  const selected = runs.find((r) => r.id === selectedAttemptId) ?? null;
   if (!selected) return { kind: 'none' };
 
-  const currentId = currentRunId(runs);
+  const currentId = currentAttemptId(runs);
   if (selected.id === currentId) return { kind: 'live' };
 
   const current = runs.find((r) => r.id === currentId)!;
-  const { word, dot } = runDisplay(selected);
+  const { word, dot } = attemptDisplay(selected);
   return {
     kind: 'result',
-    runId: selected.id,
-    attempt: selected.attempt,
+    attemptId: selected.id,
+    number: selected.number,
     dot,
-    summary: `Attempt ${selected.attempt} ${word} · superseded by Attempt ${current.attempt}`,
-    currentRunId: current.id,
+    summary: `Attempt ${selected.number} ${word} · superseded by Attempt ${current.number}`,
+    currentAttemptId: current.id,
   };
 }

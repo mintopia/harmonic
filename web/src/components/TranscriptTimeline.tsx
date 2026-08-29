@@ -1,7 +1,7 @@
 import { useMemo, type JSX } from 'react';
 import { coalesceEvents, movingBaseView, type StreamItem } from '../event-stream-model';
 import { transcriptLanes } from '../transcript-timeline-model';
-import type { RunLogEvent } from '../types';
+import type { AttemptLogEvent } from '../types';
 
 type Glyph = 'think' | 'chat' | 'eye' | 'pencil' | 'file' | 'terminal' | 'check' | 'dot';
 
@@ -77,7 +77,7 @@ interface Row {
   toolCallId?: string;
 }
 
-function toRow(item: StreamItem<RunLogEvent>, ts: number): Row {
+function toRow(item: StreamItem<AttemptLogEvent>, ts: number): Row {
   if (item.kind === 'text') {
     if (item.variant === 'operator') {
       return {
@@ -202,12 +202,12 @@ function SubagentLane({ label, rows }: { label: string; rows: Row[] }) {
   );
 }
 
-export function TranscriptTimeline({ events }: { events: RunLogEvent[] }) {
+export function TranscriptTimeline({ events }: { events: AttemptLogEvent[] }) {
   const lanes = useMemo(() => {
     const tsById = new Map(events.map((e) => [e.id, e.ts]));
     return transcriptLanes(events).map((lane) => ({
       ...lane,
-      rows: coalesceEvents<RunLogEvent>(lane.events).map((item) => toRow(item, tsById.get(item.key) ?? 0)),
+      rows: coalesceEvents<AttemptLogEvent>(lane.events).map((item) => toRow(item, tsById.get(item.key) ?? 0)),
     }));
   }, [events]);
 

@@ -4,9 +4,9 @@ import {
   announceTransitions,
   EMPTY_ANNOUNCE_CURSOR,
 } from '../web/src/stream-announce-model.js';
-import type { RunEvent } from '../web/src/types.js';
+import type { AttemptEvent } from '../web/src/types.js';
 
-const evt = (id: number, type: RunEvent['type'], payload: any): RunEvent => ({
+const evt = (id: number, type: AttemptEvent['type'], payload: any): AttemptEvent => ({
   id,
   attemptId: 1,
   seq: id,
@@ -15,20 +15,20 @@ const evt = (id: number, type: RunEvent['type'], payload: any): RunEvent => ({
   payload,
 });
 
-const chunk = (id: number, text: string, sessionUpdate = 'agent_message_chunk'): RunEvent =>
+const chunk = (id: number, text: string, sessionUpdate = 'agent_message_chunk'): AttemptEvent =>
   evt(id, 'session_update', { sessionUpdate, content: { type: 'text', text } });
 
-const tool = (id: number, toolCallId: string, status: string, title = 'Read src/x.ts'): RunEvent =>
+const tool = (id: number, toolCallId: string, status: string, title = 'Read src/x.ts'): AttemptEvent =>
   evt(id, 'session_update', { sessionUpdate: 'tool_call', toolCallId, kind: 'read', title, status });
 
-const toolUpdate = (id: number, toolCallId: string, status: string): RunEvent =>
+const toolUpdate = (id: number, toolCallId: string, status: string): AttemptEvent =>
   evt(id, 'session_update', { sessionUpdate: 'tool_call_update', toolCallId, status });
 
-const lifecycle = (id: number, payload: any): RunEvent => evt(id, 'lifecycle', payload);
+const lifecycle = (id: number, payload: any): AttemptEvent => evt(id, 'lifecycle', payload);
 
 /** The whole pipeline the component runs: raw events → coalesced items →
  * announcements, given a starting cursor. */
-const announce = (events: RunEvent[], cursor = EMPTY_ANNOUNCE_CURSOR) =>
+const announce = (events: AttemptEvent[], cursor = EMPTY_ANNOUNCE_CURSOR) =>
   announceTransitions(coalesceEvents(events), cursor);
 
 describe('announceTransitions — transcript transitions for a polite live region', () => {
