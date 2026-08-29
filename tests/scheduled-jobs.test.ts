@@ -35,6 +35,7 @@ describe('Scheduled Job registry (ADR-0038)', () => {
       name: 'test exemplar',
       lastStatus: 'ok',
       status: 'active',
+      lastOperationSpanId: expect.any(String),
     });
     const eventCount = messages.length;
     server.app.ctx.bus.emit('scheduled_jobs', snapshot.jobs);
@@ -71,7 +72,7 @@ describe('Scheduled Job registry (ADR-0038)', () => {
       expect.arrayContaining([
         expect.objectContaining({ name: 'Epic reconcile', workspaceId: null }),
         expect.objectContaining({ name: 'Session retirement drain', workspaceId: null, intervalMs: 5 * 60_000 }),
-        expect.objectContaining({ name: 'Orphan worktree reconcile', workspaceId: null, intervalMs: 30 * 60 * 1000 }),
+        expect.objectContaining({ name: 'Worktree reconciliation', workspaceId: null, intervalMs: 30 * 60 * 1000 }),
       ]),
     );
 
@@ -129,6 +130,24 @@ describe('Scheduled Job registry (ADR-0038)', () => {
     expect(jobs.body.jobs).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ name: 'Session retirement drain', lastStatus: 'ok', lastRunAt: expect.any(Number) }),
+      ]),
+    );
+  });
+
+  it('registers the metrics-summary reader as a Scheduler Job when the caller wires it in (issue #386)', async () => {
+    let flushes = 0;
+    server = await startServer(undefined, {
+      metricsSummary: { intervalMs: 60_000, flush: async () => { flushes += 1; } },
+    });
+    await server.app.ctx.scheduler.runNow('Metrics summary');
+    // The scheduler fires a just-registered Job immediately if it is already
+    // due (`runIfDueOnStart`), so boot itself may have run this once already;
+    // this only proves the explicit `runNow` reached the flush at least once.
+    expect(flushes).toBeGreaterThan(0);
+    const jobs = await server.api('GET', '/api/scheduled-jobs');
+    expect(jobs.body.jobs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'Metrics summary', workspaceId: null, intervalMs: 60_000, lastStatus: 'ok', lastOperationSpanId: expect.any(String) }),
       ]),
     );
   });

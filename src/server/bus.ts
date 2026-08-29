@@ -7,6 +7,7 @@ import type { PendingPermissionBroadcast } from '../execution/conversation-drive
 import type { RunUsageSnapshot } from '../execution/usage.js';
 import type { ScheduledJobSnapshot } from '../scheduler/scheduler.js';
 import type { OperationEvent } from '../telemetry/operations.js';
+import type { FlaggedWorktree } from '../domain/flagged-worktrees.js';
 
 export interface BusEvents {
   operations: (event: OperationEvent) => void;
@@ -24,6 +25,8 @@ export interface BusEvents {
   permission_request: (pending: PendingPermissionBroadcast) => void;
   /** Full Scheduled Jobs registry snapshot (ADR-0038). */
   scheduled_jobs: (jobs: ScheduledJobSnapshot[]) => void;
+  /** Full flagged-worktree disposition registry snapshot (ADR-0010, issue #386). */
+  flagged_worktrees: (flags: readonly FlaggedWorktree[]) => void;
 }
 
 /** In-process pub/sub feeding the WebSocket stream (and later, notifications). */

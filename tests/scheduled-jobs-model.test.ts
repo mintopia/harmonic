@@ -19,6 +19,7 @@ const job = (overrides: Partial<ScheduledJob> = {}): ScheduledJob => ({
   lastStatus: 'ok',
   lastDurationMs: 50,
   lastError: null,
+  lastOperationSpanId: null,
   nextRunAt: 61_000,
   ...overrides,
 });

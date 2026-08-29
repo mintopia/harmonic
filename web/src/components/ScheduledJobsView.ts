@@ -11,10 +11,30 @@ import {
 import { subscribe } from '../ws.js';
 import { card, chip, tableHead } from '../ui.js';
 
-const GRID = 'grid grid-cols-[minmax(10rem,1.5fr)_7rem_6rem_7rem_7rem_minmax(10rem,1fr)_7rem_6rem] gap-x-4 px-4';
+const GRID = 'grid grid-cols-[minmax(10rem,1.5fr)_7rem_6rem_7rem_7rem_minmax(10rem,1fr)_7rem_6rem_7rem] gap-x-4 px-4';
 
 function empty() {
   return createElement('span', { className: 'text-muted' }, '—');
+}
+
+/**
+ * A handle onto the firing's own Operation span (ADR-0010): a monospace
+ * anchor into the Live spans rail below, so an operator can jump from "this
+ * job last ran" straight to that run's own span (and, nested under it, the
+ * logs of whatever the job did). The span id also correlates directly with
+ * server-side operation logs when the live row has already scrolled off.
+ */
+function OperationCell({ job }: { job: ScheduledJob }) {
+  if (job.lastOperationSpanId === null) return empty();
+  return createElement(
+    'a',
+    {
+      href: `#operation-${job.lastOperationSpanId}`,
+      className: 'truncate font-mono text-small text-muted hover:text-ink hover:underline',
+      title: `Firing span ${job.lastOperationSpanId}`,
+    },
+    job.lastOperationSpanId.slice(0, 8),
+  );
 }
 
 function ResultCell({ job }: { job: ScheduledJob }) {
@@ -41,6 +61,7 @@ function ScheduledJobRow({ job, now }: { job: ScheduledJob; now: number }) {
     createElement('div', { role: 'cell' }, createElement(ResultCell, { job })),
     createElement('div', { role: 'cell', className: 'tabular-nums text-small text-muted' }, formatScheduledJobNextRun(job.nextRunAt, now) ?? empty()),
     createElement('div', { role: 'cell' }, createElement('span', { className: `${chip} ${disabled ? 'bg-raised text-muted' : 'bg-ready-tint text-ready'}` }, disabled ? 'Disabled' : 'Active')),
+    createElement('div', { role: 'cell', className: 'min-w-0' }, createElement(OperationCell, { job })),
   );
 }
 
@@ -55,7 +76,7 @@ export function ScheduledJobsTable({ jobs, now }: { jobs: ScheduledJob[]; now: n
       createElement(
         'div',
         { role: 'row', className: `${GRID} min-w-[55rem] py-2.5 ${tableHead}` },
-        ...['Name', 'Scope', 'Interval', 'Last run', 'Last duration', 'Result', 'Next run', 'Status'].map((label) =>
+        ...['Name', 'Scope', 'Interval', 'Last run', 'Last duration', 'Result', 'Next run', 'Status', 'Operation'].map((label) =>
           createElement('span', { key: label, role: 'columnheader' }, label),
         ),
       ),

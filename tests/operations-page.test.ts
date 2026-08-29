@@ -28,12 +28,12 @@ describe('OperationsPage', () => {
         jobs: [{
           jobKey: 'tracker:2', name: 'Tracker poll', workspaceId: 2, intervalMs: 60_000,
           status: 'disabled', lastRunAt: 1_000, lastStatus: 'error', lastDurationMs: 500,
-          lastError: 'Tracker will not resolve', nextRunAt: null,
+          lastError: 'Tracker will not resolve', lastOperationSpanId: null, nextRunAt: null,
         }],
       }),
     );
 
-    for (const header of ['Name', 'Scope', 'Interval', 'Last run', 'Last duration', 'Result', 'Next run', 'Status']) {
+    for (const header of ['Name', 'Scope', 'Interval', 'Last run', 'Last duration', 'Result', 'Next run', 'Status', 'Operation']) {
       expect(html).toContain(`>${header}<`);
     }
     expect(html).toContain('Workspace');

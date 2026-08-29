@@ -3,6 +3,7 @@ import type { AsyncDbHandle } from '../db/async.js';
 import { scheduledJobs, type ScheduledJobRow } from '../db/schema.js';
 import { forEachYielding, yieldToEventLoop } from '../reliability/yield.js';
 import { singleFlight } from '../reliability/single-flight.js';
+import { startOperation } from '../telemetry/operations.js';
 
 export type ScheduledJobStatus = 'active' | 'disabled';
 
@@ -16,6 +17,13 @@ export interface ScheduledJobSnapshot {
   lastStatus: 'ok' | 'error' | null;
   lastDurationMs: number | null;
   lastError: string | null;
+  /**
+   * The OTel span id of this Job's most recent firing in *this process*
+   * (ADR-0010). Deliberately not persisted: spans reset on restart, so a
+   * durable id would go dead the moment the process that opened it exits.
+   * Null until the Job has fired at least once since boot.
+   */
+  lastOperationSpanId: string | null;
   nextRunAt: number | null;
 }
 
@@ -39,11 +47,13 @@ function jobKey(name: string, workspaceId: number | undefined): string {
 }
 
 /**
- * Central owner of recurring background work (ADR-0038). Each registered job
+ * Central owner of recurring background work (ADR-0010). Each registered job
  * has one timer and a local running latch, so slow work cannot overlap itself.
  */
 export class Scheduler {
   private readonly jobs = new Map<string, RegisteredJob>();
+  /** Firing span id per Job, this process only (ADR-0010) — see {@link ScheduledJobSnapshot.lastOperationSpanId}. */
+  private readonly lastSpanId = new Map<string, string>();
   private started = false;
 
   constructor(
@@ -130,14 +140,21 @@ export class Scheduler {
     }
     job.running = true;
     const startedAt = this.clock();
+    // The firing span (ADR-0010): every registry row links to the Operation
+    // that produced its last run. A Job that opens its own internal spans
+    // (poll, session retirement, worktree reconcile, …) nests under this one.
+    const firing = startOperation({ type: 'harmonic.job', attributes: { job: job.name, workspace: job.workspaceId ?? undefined } });
+    this.lastSpanId.set(job.jobKey, firing.spanContext.spanId);
     try {
       // Yield on both sides of externally-supplied work. Job implementations
       // that iterate growing collections still own their inner yielding, but
       // Scheduler orchestration itself never chains a synchronous tick burst.
       await yieldToEventLoop();
-      await job.run();
+      await firing.run(() => job.run());
+      firing.end();
       await this.record(job, startedAt, 'ok', null);
     } catch (error) {
+      firing.fail(error);
       await this.record(job, startedAt, 'error', error instanceof Error ? error.message : String(error));
     } finally {
       job.running = false;
@@ -195,6 +212,7 @@ export class Scheduler {
       lastStatus: row?.lastStatus ?? null,
       lastDurationMs: row?.lastDurationMs ?? null,
       lastError: row?.lastError ?? null,
+      lastOperationSpanId: this.lastSpanId.get(job.jobKey) ?? null,
       nextRunAt: enabled ? (lastRunAt === null ? this.clock() : lastRunAt + job.intervalMs) : null,
     };
   }

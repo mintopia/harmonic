@@ -239,6 +239,8 @@ export async function startServer(
     /** Test-only agent-critic drive override (issue #164), forwarded to `buildApp`. */
     criticDrive?: CriticHarnessDrive | undefined;
     scheduledJobRegistrations?: ScheduledJobRegistration[] | undefined;
+    /** Test-only metrics-summary Scheduler Job wiring (issue #386), forwarded to `buildApp`. */
+    metricsSummary?: { intervalMs: number; flush: () => Promise<void> } | undefined;
   } = {},
 ): Promise<TestServer> {
   const dataDir = opts.dataDir ?? mkdtempSync(join(tmpdir(), 'harmonic-test-'));
@@ -256,6 +258,7 @@ export async function startServer(
     runnerTuning: opts.runnerTuning,
     criticDrive: opts.criticDrive,
     scheduledJobRegistrations: opts.scheduledJobRegistrations,
+    metricsSummary: opts.metricsSummary,
     // The event-loop stall monitor (issue #200) is process-health noise in
     // tests: heavy synchronous test setup can trip a stall warning. Keep it off.
     reliabilityTuning: { eventLoop: { enabled: false } },

@@ -276,9 +276,24 @@ export const scheduledJobSchema = z
     lastStatus: z.enum(['ok', 'error']).nullable().meta({ example: 'ok' }),
     lastDurationMs: z.number().int().nonnegative().nullable().meta({ example: 124 }),
     lastError: z.string().nullable().meta({ example: null }),
+    /** The OTel span id of the Job's most recent firing this process (ADR-0010); null before its first run since boot. */
+    lastOperationSpanId: z.string().nullable().meta({ example: 'a1b2c3d4e5f60718' }),
     nextRunAt: z.number().nullable().meta({ example: 1784032560000 }),
   })
   .meta({ id: 'ScheduledJob' });
+
+/** A managed worktree the boot/periodic reconciler will not delete until an
+ * operator disposes of it by hand (ADR-0010, issue #386). */
+export const flaggedWorktreeSchema = z
+  .object({
+    path: z.string().meta({ example: '/data/worktrees/task-42' }),
+    repoDir: z.string().meta({ example: '/home/operator/repo' }),
+    workspaceId: z.number().meta({ example: 1 }),
+    taskId: z.number().nullable().meta({ example: 42 }),
+    branch: z.string().nullable().meta({ example: 'harmonic/task-42' }),
+    reason: z.enum(['dirty', 'unreadable', 'unrecognized']).meta({ example: 'dirty' }),
+  })
+  .meta({ id: 'FlaggedWorktree' });
 
 /** One live or recently-completed Operation, recursive through `children`. */
 export const operationSchema = z

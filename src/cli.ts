@@ -139,18 +139,23 @@ async function main(): Promise<void> {
   // `.catch` — log it instead of letting Node make it fatal (issue #371).
   installProcessSafetyNet();
   const password = values.password ?? process.env.HARMONIC_PASSWORD;
-  const telemetry = initializeTelemetry(
-    resolveTelemetryOptions({
-      endpoint: values['otel-endpoint'],
-      headers: values['otel-headers'],
-      exportEnabled: values['otel-export'],
-      metricExportIntervalMillis: values['otel-metric-export-interval'],
-      stdoutLogLevel: values['otel-stdout-log-level'],
-    }),
-  );
+  const telemetryOptions = resolveTelemetryOptions({
+    endpoint: values['otel-endpoint'],
+    headers: values['otel-headers'],
+    exportEnabled: values['otel-export'],
+    metricExportIntervalMillis: values['otel-metric-export-interval'],
+    stdoutLogLevel: values['otel-stdout-log-level'],
+  });
+  // The scheduler owns the metrics-summary cadence here (ADR-0010, issue
+  // #386), not telemetry's own timer — see `metricsSummary` below.
+  const telemetry = initializeTelemetry(telemetryOptions, { ownsMetricSummaryInterval: false });
   let app: Awaited<ReturnType<typeof buildApp>>;
   try {
-    app = await buildApp({ dataDir, password });
+    app = await buildApp({
+      dataDir,
+      password,
+      metricsSummary: { intervalMs: telemetryOptions.metricExportIntervalMillis, flush: () => telemetry.flushMetricSummary() },
+    });
   } catch (error) {
     await telemetry.shutdown();
     releaseLock(dataDir);

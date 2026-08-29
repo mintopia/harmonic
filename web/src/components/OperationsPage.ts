@@ -3,10 +3,12 @@ import { operationForest, visibleOperationForest, type Operation, type Operation
 import { card, displayTitle, labelType, sectionTitle } from '../ui.js';
 import { subscribe, type OperationEvent } from '../ws.js';
 import { ScheduledJobsView } from './ScheduledJobsView.js';
+import { FlaggedWorktreesView } from './FlaggedWorktreesView.js';
 
 export interface OperationsPageProps {
   scheduledJobs?: ReactNode;
   spanTree?: ReactNode;
+  flaggedWorktrees?: ReactNode;
 }
 
 const EMPTY_FOREST: OperationForest = { operations: [], recent: [] };
@@ -37,7 +39,13 @@ function OperationRow({ operation, now, depth }: { operation: Operation; now: nu
   const operationSubject = subject(operation);
   return createElement(
     'li',
-    { className: 'border-t border-hairline py-2.5 first:border-t-0', style: { paddingLeft: `${depth * 1.25}rem` } },
+    {
+      // Anchor target for links onto this Operation's own span (ADR-0010),
+      // e.g. the Scheduled jobs table's "Operation" column.
+      id: `operation-${operation.spanId}`,
+      className: 'border-t border-hairline py-2.5 first:border-t-0',
+      style: { paddingLeft: `${depth * 1.25}rem` },
+    },
     createElement('div', { className: 'flex flex-wrap items-baseline gap-x-3 gap-y-1' },
       createElement('span', { className: 'font-medium text-ink' }, operation.type),
       operationSubject && createElement('span', { className: 'text-small text-muted' }, operationSubject),
@@ -110,7 +118,7 @@ function OperationsReadout() {
  * Operations hosts independent scheduler and telemetry sections; the telemetry
  * section owns its snapshot-plus-firehose read model.
  */
-export function OperationsPage({ scheduledJobs, spanTree }: OperationsPageProps) {
+export function OperationsPage({ scheduledJobs, spanTree, flaggedWorktrees }: OperationsPageProps) {
   return createElement(
     'div',
     null,
@@ -123,6 +131,12 @@ export function OperationsPage({ scheduledJobs, spanTree }: OperationsPageProps)
         { 'aria-labelledby': 'scheduled-jobs-heading' },
         createElement('h2', { id: 'scheduled-jobs-heading', className: sectionTitle }, 'Scheduled jobs'),
         scheduledJobs ?? createElement(ScheduledJobsView),
+      ),
+      createElement(
+        'section',
+        { 'aria-labelledby': 'flagged-worktrees-heading' },
+        createElement('h2', { id: 'flagged-worktrees-heading', className: sectionTitle }, 'Flagged worktrees'),
+        flaggedWorktrees ?? createElement(FlaggedWorktreesView),
       ),
       createElement(
         'section',

@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { App } from './app.js';
-import { attemptTimelineToApi, conversationToApi, operationEventToApi, runToApi, runUsageToApi, scheduledJobsToApi, taskToApi } from './serialize.js';
+import { attemptTimelineToApi, conversationToApi, flaggedWorktreesToApi, operationEventToApi, runToApi, runUsageToApi, scheduledJobsToApi, taskToApi } from './serialize.js';
 import { forEachYielding } from '../reliability/yield.js';
 
 /**
@@ -46,6 +46,7 @@ export async function wsRoutes(fastify: FastifyInstance): Promise<void> {
       ctx.bus.on('task_removed', ({ id }) => send({ type: 'task_removed', id })),
       ctx.bus.on('scheduled_jobs', (jobs) => send({ type: 'scheduled-jobs', jobs: scheduledJobsToApi(jobs) })),
       ctx.bus.on('operations', (event) => send({ type: 'operations', event: operationEventToApi(event) })),
+      ctx.bus.on('flagged_worktrees', (flags) => send({ type: 'flagged-worktrees', flags: flaggedWorktreesToApi(flags) })),
     ];
     if (!readOnly) {
       unsubscribes.push(

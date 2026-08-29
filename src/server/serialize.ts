@@ -1,5 +1,6 @@
 import type { AppContext } from './app.js';
 import type { ScheduledJobSnapshot } from '../scheduler/scheduler.js';
+import type { FlaggedWorktree } from '../domain/flagged-worktrees.js';
 import type {
   AttemptRow,
   AttemptTaskRow,
@@ -38,6 +39,9 @@ export const atRestWorkspaceId = (workspaceId: number | null): number => workspa
 
 /** Kept as an explicit serializer so REST and the firehose share one DTO seam. */
 export const scheduledJobsToApi = (jobs: ScheduledJobSnapshot[]): ScheduledJobSnapshot[] => jobs;
+
+/** Kept as an explicit serializer so REST and the firehose share one DTO seam. */
+export const flaggedWorktreesToApi = (flags: readonly FlaggedWorktree[]): readonly FlaggedWorktree[] => flags;
 
 export interface ApiAttemptTask {
   id: number;

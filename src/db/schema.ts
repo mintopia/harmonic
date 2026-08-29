@@ -103,7 +103,7 @@ export type WorkspaceRow = WorkspaceIdentityRow & {
 };
 
 /**
- * Durable bookkeeping for recurring Scheduled Jobs (ADR-0038). `jobKey` is a
+ * Durable bookkeeping for recurring Scheduled Jobs (ADR-0010). `jobKey` is a
  * canonical identity assembled from the job name and optional Workspace id;
  * it avoids SQLite's NULL-unique semantics making global job rows duplicate.
  */

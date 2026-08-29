@@ -89,15 +89,9 @@ const PROGRESS_NUDGE_TEXT =
   'You appear to be repeating the same step without making progress. Stop, re-read the task and the most ' +
   'recent error or result, and try a genuinely different approach — or finish if the work is already done.';
 
-/**
- * Default review SLA (issue #114): how long a native Run may sit parked in
- * `phase:'review'` awaiting a human accept/reject before the review-SLA sweep
- * settles it to a terminal disposition. The coordination spine ships no
- * operator-facing config (reliability-design §0, "the spine is infrastructure";
- * a per-Workspace review SLA is Unit A's setting), so the deadline is this
- * internal default until that merges. Seven days: long enough that a real review
- * queue never trips it, short enough that an abandoned review can't wedge an
- * occupied Work Context forever. */
+/** Id floor for transient live session-update log events, kept clear of
+ * parser-assigned transcript ids so the browser can merge the two streams
+ * without collision (see the use site in the ACP driver). */
 const LIVE_RUN_LOG_EVENT_ID_OFFSET = 1_000_000_000;
 
 export interface RunnerEvents {

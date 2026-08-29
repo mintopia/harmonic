@@ -31,7 +31,8 @@ import { RunSettleCoordinator } from '../domain/run-settle.js';
 import { SessionStore } from '../domain/sessions.js';
 import { SessionRetirementCoordinator } from '../domain/session-retirement-coordinator.js';
 import { dropIndexForPath } from '../execution/code-index.js';
-import { OrphanWorktreeReconciler } from '../domain/orphan-worktree-reconciler.js';
+import { WorktreeReconciler } from '../domain/worktree-reconciler.js';
+import { FlaggedWorktreeRegistry } from '../domain/flagged-worktrees.js';
 import { Git } from '../execution/git.js';
 import { RunFactStore } from '../domain/run-facts.js';
 import { GuardrailEventStore } from '../domain/guardrail-events.js';
@@ -75,6 +76,7 @@ import { activityRoutes } from './routes/activity.js';
 import { operationRoutes } from './routes/operations.js';
 import { channelRoutes } from './routes/channels.js';
 import { scheduledJobRoutes } from './routes/scheduled-jobs.js';
+import { flaggedWorktreeRoutes } from './routes/flagged-worktrees.js';
 import { fsRoutes } from './routes/fs.js';
 import { openapiRoutes, readPackageManifest } from './routes/openapi.js';
 import { ChannelService } from '../notifications/channels.js';
@@ -100,6 +102,15 @@ export interface AppOptions {
   criticDrive?: CriticHarnessDrive | undefined;
   /** Test-only Scheduled Job registrations, used to prove the scheduler's end-to-end surface without pre-empting the follow-on Job tickets. */
   scheduledJobRegistrations?: ScheduledJobRegistration[] | undefined;
+  /**
+   * Registers telemetry's periodic metrics-summary reader as a Scheduler Job
+   * (ADR-0010, issue #386) instead of leaving it an invisible `setInterval` —
+   * `intervalMs` mirrors the OTLP metric export cadence the caller configured,
+   * `flush` is the same `TelemetryController.flushMetricSummary` telemetry
+   * itself flushes at shutdown. Undefined when telemetry owns its own timer
+   * (e.g. a caller that never wires a Scheduler into this process).
+   */
+  metricsSummary?: { intervalMs: number; flush: () => Promise<void> } | undefined;
 }
 
 /** Paths reachable without authentication. */
@@ -218,6 +229,7 @@ export interface AppContext {
   channels: ChannelService;
   notifier: Notifier;
   bus: EventBus;
+  flaggedWorktrees: FlaggedWorktreeRegistry;
 }
 
 /** One Fastify route registration, as captured by the `onRoute` hook below. */
@@ -248,6 +260,15 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     run: () => scheduler.prune(),
   });
   for (const registration of opts.scheduledJobRegistrations ?? []) scheduler.register(registration);
+  // ADR-0010's "Metrics summary" reader (issue #386): previously an unmanaged
+  // `setInterval` in telemetry.ts with no registry row or API visibility.
+  if (opts.metricsSummary) {
+    scheduler.register({
+      name: 'Metrics summary',
+      intervalMs: opts.metricsSummary.intervalMs,
+      run: opts.metricsSummary.flush,
+    });
+  }
   operationRegistry.setBus(bus);
   const settingsStore = await SettingsStore.create(opts.dataDir, opts.configOverrides);
   const configStore = new ConfigStore(settingsStore);
@@ -315,12 +336,22 @@ export async function buildApp(opts: AppOptions): Promise<App> {
         // it was never indexed, e.g. the CLI is absent); `code-index.ts`.
         .then(() => dropIndexForPath(worktreePath)),
   );
-  const orphanWorktrees = new OrphanWorktreeReconciler(
-    sessionStore,
-    runs,
+  // Boot/periodic worktree reconciliation (ADR-0010, issue #386): Task-owned,
+  // not Run/Session-owned — it recreates a live Task's missing worktree and
+  // removes only a CLEAN terminal Task's worktree, flagging anything dirty,
+  // unreadable, or unrecognized for operator disposition instead of deleting it.
+  const flaggedWorktrees = new FlaggedWorktreeRegistry(bus);
+  const worktreeReconciler = new WorktreeReconciler(
+    async () => {
+      const openTasks = await tasks.list({ state: 'open' });
+      return openTasks
+        .filter((task): task is TaskRow & { workspaceId: number } => task.workspaceId != null)
+        .map((task) => ({ id: task.id, workspaceId: task.workspaceId }));
+    },
     () => workspaces.list(),
     Git,
     worktreesDir,
+    flaggedWorktrees,
     dropIndexForPath,
   );
   // Single-flight the retirement drain (issue #219): it is fired on every
@@ -566,9 +597,9 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     run: async () => { await drainRetirement(); },
   });
   scheduler.register({
-    name: 'Orphan worktree reconcile',
+    name: 'Worktree reconciliation',
     intervalMs: 30 * 60 * 1000,
-    run: async () => { await orphanWorktrees.reconcile(); },
+    run: async () => { await worktreeReconciler.reconcile(); },
   });
   // Event-loop stall monitor (issue #200 / ADR-0029 §5): synchronous SQLite
   // shares the loop with every request, so a slow query or a non-yielding loop
@@ -655,7 +686,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     })().catch(() => {});
   });
 
-  const ctx: AppContext = { asyncDb, statsReader, settingsStore, configStore, workspaces, tasks, runs, attempts, sessions: sessionStore, runner, conversations, conversationDriver, permissionRules, escalation, autoRunner, guardrailEvents, verificationAttempts, trackerManager, scheduler, auth, channels, notifier, bus };
+  const ctx: AppContext = { asyncDb, statsReader, settingsStore, configStore, workspaces, tasks, runs, attempts, sessions: sessionStore, runner, conversations, conversationDriver, permissionRules, escalation, autoRunner, guardrailEvents, verificationAttempts, trackerManager, scheduler, auth, channels, notifier, bus, flaggedWorktrees };
 
   const app = Fastify({ logger: false }) as unknown as App;
   app.decorate('ctx', ctx);
@@ -883,6 +914,7 @@ not resolved yet.`;
   await app.register(activityRoutes, { prefix: '/api' });
   await app.register(operationRoutes, { prefix: '/api' });
   await app.register(scheduledJobRoutes, { prefix: '/api' });
+  await app.register(flaggedWorktreeRoutes, { prefix: '/api' });
   await app.register(channelRoutes, { prefix: '/api' });
   await app.register(fsRoutes, { prefix: '/api' });
   await app.register(epicRoutes, { prefix: '/api' });

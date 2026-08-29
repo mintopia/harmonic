@@ -10,6 +10,7 @@ import type {
   Task,
 } from './types.js';
 import type { ScheduledJob } from './scheduled-jobs-model.js';
+import type { FlaggedWorktree } from './flagged-worktrees-model.js';
 
 export interface OperationEvent {
   type: 'op-started' | 'op-updated' | 'op-ended';
@@ -41,6 +42,7 @@ export type ServerMessage =
   | ({ type: 'run_usage' } & RunUsageEvent)
   | { type: 'operations'; event: OperationEvent }
   | { type: 'scheduled-jobs'; jobs: ScheduledJob[] }
+  | { type: 'flagged-worktrees'; flags: FlaggedWorktree[] }
   | { type: 'conversation_event'; event: ConversationEvent }
   | { type: 'conversation_changed'; conversation: Conversation }
   // Issue #11: the Harness is blocked on this ACP permission request until

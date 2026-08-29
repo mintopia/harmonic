@@ -9,6 +9,8 @@ export interface ScheduledJob {
   lastStatus: 'ok' | 'error' | null;
   lastDurationMs: number | null;
   lastError: string | null;
+  /** The OTel span id of this Job's most recent firing this process (ADR-0010); null before its first run since boot. */
+  lastOperationSpanId: string | null;
   nextRunAt: number | null;
 }
 
@@ -35,6 +37,7 @@ function isScheduledJob(value: unknown): value is ScheduledJob {
     && (value.lastStatus === null || value.lastStatus === 'ok' || value.lastStatus === 'error')
     && isNullableNumber(value.lastDurationMs)
     && isNullableString(value.lastError)
+    && isNullableString(value.lastOperationSpanId)
     && isNullableNumber(value.nextRunAt);
 }
 
