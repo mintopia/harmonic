@@ -1,28 +1,28 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { sql } from 'drizzle-orm';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { RunStore } from '../src/domain/runs.js';
 import { RunFactStore } from '../src/domain/run-facts.js';
 import { MergeJournalStore } from '../src/domain/merge-journal.js';
-import { RunSettleCoordinator } from '../src/domain/run-settle.js';
-import { MergeCoordinator } from '../src/domain/merge-coordinator.js';
 import { TurnQueueStore } from '../src/domain/turn-queue-store.js';
+import { RunSettleCoordinator } from '../src/domain/run-settle.js';
 import { CrashRecoveryCoordinator } from '../src/domain/crash-recovery.js';
 import { Git } from '../src/execution/git.js';
 import type { TaskRow, RunRow } from '../src/db/schema.js';
+import { mergeJournal as mergeJournalTable, turnQueue as turnQueueTable } from '../src/db/schema.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { allWorkspaces, makeSettingsStore } from './helpers.js';
 import { yieldToEventLoop } from '../src/reliability/yield.js';
 
 const git = (dir: string, ...args: string[]) => execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
 
-/** A throwaway git repo on branch main with one committed README — mirrors
- * task-list-branch.test.ts's `makeRepo`. */
+/** A throwaway git repo on branch main with one committed README. */
 function makeRepo(): string {
   const dir = mkdtempSync(join(tmpdir(), 'harmonic-crash-recovery-repo-'));
   execFileSync('git', ['init', '-b', 'main', dir], { encoding: 'utf8' });
@@ -34,14 +34,21 @@ function makeRepo(): string {
   return dir;
 }
 
+/** Commit `content` to `path` on the currently checked-out branch. */
+function commit(dir: string, path: string, content: string, message: string): void {
+  writeFileSync(join(dir, path), content);
+  git(dir, 'add', '-A');
+  git(dir, 'commit', '-m', message);
+}
+
 /**
- * Direct unit coverage for `CrashRecoveryCoordinator`'s `opts.isMerged` /
- * `opts.now` injection seams (issue #117 review) — exercised hermetically
- * over a real (temp) sqlite DB, following the same store-construction idiom
- * as merge-coordinator.test.ts, rather than through the full HTTP server
- * boot path (boot-recovery.test.ts already covers that end-to-end).
+ * Direct unit coverage for `CrashRecoveryCoordinator` under the ADR-0001
+ * model: no `merge_journal`, no `turn_queue` — crash recovery relies on git's
+ * own idempotence (a task branch either already landed in its base, checked
+ * via `git merge-base --is-ancestor`, or it didn't) and on the generic
+ * `running` orphan sweep for everything else.
  */
-describe('CrashRecoveryCoordinator (issue #117, isMerged/now seams)', () => {
+describe('CrashRecoveryCoordinator (ADR-0001)', () => {
   let dir: string;
   let repo: string;
   let asyncDb: AsyncDbHandle;
@@ -49,10 +56,7 @@ describe('CrashRecoveryCoordinator (issue #117, isMerged/now seams)', () => {
   let tasks: TaskService;
   let runStore: RunStore;
   let runFacts: RunFactStore;
-  let journal: MergeJournalStore;
   let settle: RunSettleCoordinator;
-  let merging: MergeCoordinator;
-  let turnQueue: TurnQueueStore;
 
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-crash-recovery-'));
@@ -62,10 +66,7 @@ describe('CrashRecoveryCoordinator (issue #117, isMerged/now seams)', () => {
     tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
     runStore = new RunStore(asyncDb);
     runFacts = new RunFactStore(asyncDb);
-    journal = new MergeJournalStore(asyncDb);
-    settle = new RunSettleCoordinator(runStore, tasks, runFacts, undefined, journal);
-    merging = new MergeCoordinator(runStore, asyncDb, journal, settle);
-    turnQueue = new TurnQueueStore(asyncDb);
+    settle = new RunSettleCoordinator(runStore, tasks, runFacts);
   });
 
   afterEach(async () => {
@@ -75,134 +76,196 @@ describe('CrashRecoveryCoordinator (issue #117, isMerged/now seams)', () => {
     vi.restoreAllMocks();
   });
 
-  /** A Task+Run pair parked mid-merging exactly as a crashed `merge()` would
-   * leave them: Task `escalated`, Run `running`/`phase:'merging'`, with
-   * a merge fact frozen (PONC) and an intent recorded for the `target-ref`
-   * effect but NO result — died between intent and result. */
-  async function seedMidMerge(branch: string, baseBranch: string): Promise<{ task: TaskRow; run: RunRow; idempotencyKey: string }> {
+  /** A worktree-mode Task + Run parked `running` exactly as a crash mid-merge
+   * would leave them, with `branch` already merged into `baseBranch` in the
+   * real repo (so `Git.isAncestor` says true without any injected seam). */
+  async function seedAlreadyMergedOrphan(): Promise<{ task: TaskRow; run: RunRow; baseBranch: string; branch: string }> {
+    const baseBranch = 'main';
+    const branch = 'run-branch';
+    git(repo, 'checkout', '-b', branch);
+    commit(repo, 'feature.txt', 'work\n', 'feature work');
+    git(repo, 'checkout', baseBranch);
+    git(repo, 'merge', '--no-ff', '-m', 'merge run-branch', branch);
+
     const created = await tasks.create({ prompt: 'merge me', state: 'ready', workingDir: repo, isolationMode: 'worktree' });
     await tasks.setState(created.id, 'working');
-    let run = await runStore.create(created.id);
-    run = await runStore.update(run.id, { phase: 'merging', branch, baseBranch });
-    await tasks.setState(created.id, 'escalated');
-    const task = await tasks.get(created.id);
-
-    const idempotencyKey = `${baseBranch}<-${branch}`;
-    const mergeFact = await runFacts.append(run.id, 'agent-finish/unresolved', { runState: 'completed', taskAction: 'done', reason: null });
-    await journal.writePonc(run.id, mergeFact.seq);
-    await journal.recordIntent(run.id, { effect: 'target-ref', idempotencyKey, expected: { baseBranch, branch } });
-    // No result row: the process died before `apply()` resolved.
-
-    return { task, run, idempotencyKey };
+    const run = await runStore.update((await runStore.create(created.id)).id, { branch, baseBranch });
+    return { task: await tasks.get(created.id), run, baseBranch, branch };
   }
 
-  it('adopts an already-merged effect when the world says merged: records a result without re-applying, and completes the Run (ADOPT path)', async () => {
-    const branch = 'run-branch';
+  /** A worktree-mode Task + Run parked `running` whose branch was never
+   * merged into its base. */
+  async function seedUnmergedOrphan(): Promise<{ task: TaskRow; run: RunRow }> {
     const baseBranch = 'main';
-    const { run, idempotencyKey } = await seedMidMerge(branch, baseBranch);
+    const branch = 'never-merged-branch';
+    git(repo, 'checkout', '-b', branch);
+    commit(repo, 'feature.txt', 'work\n', 'feature work');
+    git(repo, 'checkout', baseBranch);
 
-    const mergeSpy = vi.spyOn(Git, 'casUpdateRef');
-    const isMerged = vi.fn(async () => true);
-    const coord = new CrashRecoveryCoordinator(runStore, tasks, settle, merging, journal, turnQueue, {
-      now: () => 1_000_000,
-      isMerged,
-    });
+    const created = await tasks.create({ prompt: 'never merged', state: 'ready', workingDir: repo, isolationMode: 'worktree' });
+    await tasks.setState(created.id, 'working');
+    const run = await runStore.update((await runStore.create(created.id)).id, { branch, baseBranch });
+    return { task: await tasks.get(created.id), run };
+  }
+
+  it('completes a crashed worktree Run whose branch already landed in its base: re-runs the post-merge check and settles it green, idempotently on a second reconcile', async () => {
+    const { task, run, baseBranch } = await seedAlreadyMergedOrphan();
+    const baseTip = await Git.revParse(repo, baseBranch);
+    const runPostMergeCheck = vi.fn(async () => ({ pass: true, output: '' }));
+    const coord = new CrashRecoveryCoordinator(runStore, tasks, settle, { runPostMergeCheck });
 
     await coord.reconcile();
 
-    // isMerged was actually consulted (the injected seam, not the real Git.isAncestor).
-    expect(isMerged).toHaveBeenCalledWith(repo, baseBranch, branch);
-    // Adopted, never re-applied.
-    expect(mergeSpy).not.toHaveBeenCalled();
+    expect(runPostMergeCheck).toHaveBeenCalledTimes(1);
+    expect(runPostMergeCheck).toHaveBeenCalledWith({ task: expect.objectContaining({ id: task.id }), run: expect.objectContaining({ id: run.id }), mergeOid: baseTip, baseDir: repo });
+    const settled = await runStore.get(run.id);
+    expect(settled.state).toBe('completed');
+    expect((await tasks.get(task.id)).state).toBe('done');
+    // The base tip is untouched (no revert): still the merge commit.
+    expect(await Git.revParse(repo, baseBranch)).toBe(baseTip);
 
-    const rows = await journal.views(run.id);
-    const result = rows.find((r) => r.kind === 'result' && r.idempotencyKey === idempotencyKey);
-    expect(result).toMatchObject({ payload: { ok: true, observed: { adopted: true } } });
-
-    const mergedRun = await runStore.get(run.id);
-    expect(mergedRun.state).toBe('completed');
-    expect(mergedRun.phase).toBe('terminal');
-    expect((await tasks.get(run.taskId)).state).toBe('done');
+    // Idempotent: a second reconcile finds nothing `running` for this Run.
+    await coord.reconcile();
+    expect(runPostMergeCheck).toHaveBeenCalledTimes(1);
+    expect((await runStore.get(run.id)).state).toBe('completed');
   });
 
-  it('escalates the ticket when the world says NOT merged and the real re-apply fails (no such branch to merge)', async () => {
-    const branch = 'nonexistent-branch';
-    const baseBranch = 'main';
-    const { run } = await seedMidMerge(branch, baseBranch);
-
-    const coord = new CrashRecoveryCoordinator(runStore, tasks, settle, merging, journal, turnQueue, {
-      now: () => 1_000_000,
-      isMerged: async () => false,
-    });
+  it('reverts a crashed merge whose post-merge check now fails, and escalates the task — idempotently on a second reconcile', async () => {
+    const { task, run, baseBranch } = await seedAlreadyMergedOrphan();
+    const preRevertTip = await Git.revParse(repo, baseBranch);
+    const runPostMergeCheck = vi.fn(async () => ({ pass: false, output: 'lint failed: feature.txt' }));
+    const coord = new CrashRecoveryCoordinator(runStore, tasks, settle, { runPostMergeCheck });
 
     await coord.reconcile();
 
-    // The re-apply genuinely failed (no such branch in the real repo) —
-    // `foldJournal` shows not-all-ok, so the merging is abandoned (PONC lifted)
-    // and the ticket escalates with the failure as its reason (trigger 3).
-    const failedRun = await runStore.get(run.id);
-    expect(failedRun.state).toBe('failed');
-    expect(failedRun.phase).toBe('terminal');
-    expect((await journal.views(run.id)).map((r) => r.kind)).toContain('abandoned');
-    expect(await tasks.get(run.taskId)).toMatchObject({
+    expect(runPostMergeCheck).toHaveBeenCalledTimes(1);
+    const settled = await runStore.get(run.id);
+    expect(settled.state).toBe('failed');
+    expect((await tasks.get(task.id))).toMatchObject({
       state: 'escalated',
-      escalationReason: expect.stringContaining('merging failed after restart'),
+      escalationReason: expect.stringContaining('post-merge check failed after restart'),
     });
+    expect((await tasks.get(task.id)).escalationReason).toContain('lint failed: feature.txt');
+    // The merge commit was reverted (`git revert -m 1`): the base moved past
+    // the merge tip to a new revert commit, and the file the merge introduced
+    // is gone from the working tree.
+    const revertedTip = await Git.revParse(repo, baseBranch);
+    expect(revertedTip).not.toBe(preRevertTip);
+    expect(existsSync(join(repo, 'feature.txt'))).toBe(false);
+
+    // Idempotent: the Run already left `running`, so a second reconcile never
+    // re-checks or re-reverts.
+    await coord.reconcile();
+    expect(runPostMergeCheck).toHaveBeenCalledTimes(1);
+    expect(await Git.revParse(repo, baseBranch)).toBe(revertedTip);
   });
 
-  it('escalates a known failed merging without re-applying it (issue #270)', async () => {
-    const branch = 'nonexistent-branch';
-    const baseBranch = 'main';
-    const { run, idempotencyKey } = await seedMidMerge(branch, baseBranch);
-    await journal.recordResult(run.id, {
-      effect: 'target-ref',
-      idempotencyKey,
-      ok: false,
-      detail: 'target branch has uncommitted changes; merge via PR/manual',
-    });
-    const isMerged = vi.fn(async () => false);
-    const coord = new CrashRecoveryCoordinator(runStore, tasks, settle, merging, journal, turnQueue, { isMerged });
+  it('leaves a crashed worktree Run whose branch never landed as an ordinary interrupted orphan, never consulting the post-merge check', async () => {
+    const { run } = await seedUnmergedOrphan();
+    const runPostMergeCheck = vi.fn(async () => ({ pass: true, output: '' }));
+    const coord = new CrashRecoveryCoordinator(runStore, tasks, settle, { runPostMergeCheck });
 
     await coord.reconcile();
 
-    expect(isMerged).not.toHaveBeenCalled();
-    expect(await runStore.get(run.id)).toMatchObject({ state: 'failed', phase: 'terminal' });
-    expect(await tasks.get(run.taskId)).toMatchObject({
-      state: 'escalated',
-      escalationReason: expect.stringContaining('target branch has uncommitted changes; merge via PR/manual'),
-    });
-    expect(await runStore.countRunning()).toBe(0);
+    expect(runPostMergeCheck).not.toHaveBeenCalled();
+    const interrupted = await runStore.get(run.id);
+    expect(interrupted.state).toBe('failed');
+    expect(interrupted.reason).toBe('interrupted');
   });
 
-  it('settles a retried merging when its latest result succeeded (issue #270)', async () => {
-    const branch = 'nonexistent-branch';
-    const baseBranch = 'main';
-    const { run, idempotencyKey } = await seedMidMerge(branch, baseBranch);
-    await journal.recordResult(run.id, { effect: 'target-ref', idempotencyKey, ok: false, detail: 'target was dirty' });
-    await journal.recordIntent(run.id, { effect: 'target-ref', idempotencyKey, expected: { baseBranch, branch } });
-    await journal.recordResult(run.id, { effect: 'target-ref', idempotencyKey, ok: true, observed: { baseBranch, branch } });
-    const isMerged = vi.fn(async () => false);
-    const coord = new CrashRecoveryCoordinator(runStore, tasks, settle, merging, journal, turnQueue, { isMerged });
+  it('marks a generic (non-worktree) interrupted Run interrupted, never consulting the post-merge check or git', async () => {
+    const created = await tasks.create({ prompt: 'direct mode', state: 'ready', workingDir: repo, isolationMode: 'direct' });
+    await tasks.setState(created.id, 'working');
+    const run = await runStore.create(created.id);
+    const runPostMergeCheck = vi.fn(async () => ({ pass: true, output: '' }));
+    const coord = new CrashRecoveryCoordinator(runStore, tasks, settle, { runPostMergeCheck });
 
     await coord.reconcile();
 
-    expect(isMerged).not.toHaveBeenCalled();
-    expect(await runStore.get(run.id)).toMatchObject({ state: 'completed', phase: 'terminal' });
+    expect(runPostMergeCheck).not.toHaveBeenCalled();
+    expect(await runStore.get(run.id)).toMatchObject({ state: 'failed', reason: 'interrupted' });
   });
 
-  it('yields while reconciling a large merging backlog', async () => {
+  it('uses the injected isMerged seam instead of spawning git when supplied', async () => {
+    const { run } = await seedUnmergedOrphan(); // really unmerged in git
+    const isMerged = vi.fn(async () => true); // but the seam claims merged
+    const runPostMergeCheck = vi.fn(async () => ({ pass: true, output: '' }));
+    const coord = new CrashRecoveryCoordinator(runStore, tasks, settle, { runPostMergeCheck, isMerged });
+
+    await coord.reconcile();
+
+    expect(isMerged).toHaveBeenCalledWith(repo, 'main', 'never-merged-branch');
+    expect(runPostMergeCheck).toHaveBeenCalledTimes(1); // the seam, not git, decided
+    expect((await runStore.get(run.id)).state).toBe('completed');
+  });
+
+  it('writes ZERO merge_journal and ZERO turn_queue rows while reconciling a merged, a reverted, and a generic orphan', async () => {
+    const journal = new MergeJournalStore(asyncDb);
+    const turnQueue = new TurnQueueStore(asyncDb);
+
+    const { run: mergedRun } = await seedAlreadyMergedOrphan();
+    // A second, independent repo/task so the revert-on-red path runs too
+    // without the two merges colliding on the same branch names.
+    const repo2 = makeRepo();
+    try {
+      const baseBranch = 'main';
+      const branch = 'run-branch-2';
+      git(repo2, 'checkout', '-b', branch);
+      commit(repo2, 'feature.txt', 'work\n', 'feature work');
+      git(repo2, 'checkout', baseBranch);
+      git(repo2, 'merge', '--no-ff', '-m', 'merge run-branch-2', branch);
+      const created2 = await tasks.create({ prompt: 'merge me too', state: 'ready', workingDir: repo2, isolationMode: 'worktree' });
+      await tasks.setState(created2.id, 'working');
+      const run2 = await runStore.update((await runStore.create(created2.id)).id, { branch, baseBranch });
+
+      const created3 = await tasks.create({ prompt: 'plain orphan', state: 'ready', workingDir: repo, isolationMode: 'direct' });
+      await tasks.setState(created3.id, 'working');
+      const run3 = await runStore.create(created3.id);
+
+      let callCount = 0;
+      const runPostMergeCheck = vi.fn(async () => {
+        callCount += 1;
+        return callCount === 1 ? { pass: true, output: '' } : { pass: false, output: 'red' };
+      });
+      const coord = new CrashRecoveryCoordinator(runStore, tasks, settle, { runPostMergeCheck });
+
+      await coord.reconcile();
+
+      expect((await runStore.get(mergedRun.id)).state).toBe('completed');
+      expect((await runStore.get(run2.id)).state).toBe('failed'); // reverted + escalated
+      expect((await runStore.get(run3.id)).state).toBe('failed'); // generic interrupted
+    } finally {
+      rmSync(repo2, { recursive: true, force: true });
+    }
+
+    // Assert directly against the raw tables: recovery wrote NOT ONE
+    // merge_journal or turn_queue row, database-wide, across every Run above.
+    const mergeJournalCount = await asyncDb.read((db) =>
+      db.select({ n: sql<number>`count(*)` }).from(mergeJournalTable).get(),
+    );
+    const turnQueueCount = await asyncDb.read((db) => db.select({ n: sql<number>`count(*)` }).from(turnQueueTable).get());
+    expect(mergeJournalCount?.n ?? 0).toBe(0);
+    expect(turnQueueCount?.n ?? 0).toBe(0);
+    // Sanity: the stores are still perfectly usable (not deleted) — reading
+    // through their own APIs also shows nothing recorded for the merged Run.
+    expect(await journal.views(mergedRun.id)).toHaveLength(0);
+    expect(await turnQueue.listUnsettled()).toHaveLength(0);
+  });
+
+  it('yields while reconciling a large backlog of running orphans', async () => {
+    // Worktree-mode with branch/baseBranch set, so each Run is a candidate
+    // pass A actually iterates (an unmerged branch, so each falls through
+    // fast to pass B without spawning a real merge).
     for (let i = 0; i < 25; i++) {
-      const created = await tasks.create({ prompt: `merging ${i}`, state: 'ready', workingDir: repo });
+      const created = await tasks.create({ prompt: `orphan ${i}`, state: 'ready', workingDir: repo, isolationMode: 'worktree' });
       await tasks.setState(created.id, 'working');
-      const run = await runStore.create(created.id);
-      await runStore.update(run.id, { phase: 'merging' });
+      await runStore.update((await runStore.create(created.id)).id, { branch: 'main', baseBranch: 'main' });
     }
     let tick = 0;
     let yields = 0;
     const order: string[] = [];
-
-    const done = new CrashRecoveryCoordinator(runStore, tasks, settle, merging, journal, turnQueue, {
-      now: () => 1_000_000,
+    const coord = new CrashRecoveryCoordinator(runStore, tasks, settle, {
+      runPostMergeCheck: async () => ({ pass: true, output: '' }),
       yieldOptions: {
         budgetMs: 0,
         now: () => tick++,
@@ -211,9 +274,9 @@ describe('CrashRecoveryCoordinator (issue #117, isMerged/now seams)', () => {
           await yieldToEventLoop();
         },
       },
-    })
-      .reconcile()
-      .then(() => order.push('done'));
+    });
+
+    const done = coord.reconcile().then(() => order.push('done'));
     setImmediate(() => order.push('immediate'));
     await done;
     await yieldToEventLoop();
@@ -221,7 +284,6 @@ describe('CrashRecoveryCoordinator (issue #117, isMerged/now seams)', () => {
     expect(yields).toBeGreaterThan(0);
     expect(order.indexOf('immediate')).toBeGreaterThanOrEqual(0);
     expect(order.indexOf('immediate')).toBeLessThan(order.indexOf('done'));
-    expect((await tasks.list()).every((task) => task.state === 'ready')).toBe(true);
+    expect((await runStore.listAllRunning())).toHaveLength(0);
   });
 });
-

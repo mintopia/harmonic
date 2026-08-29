@@ -305,12 +305,11 @@ export class RunStore {
    * caller can fail its task (and notify) — never silently re-run on a
    * possibly dirty working directory.
    *
-   * A Run mid-merging (`phase:'merging'`) is excluded (issue #117): a crash
-   * there really did orphan it, but it's excluded from this blind fail because a merging may
-   * already have applied an irreversible effect (a merge, say) before it died,
-   * and this sweep has no way to tell — `CrashRecoveryCoordinator`
-   * (domain/crash-recovery.ts) reconciles it against its merging journal
-   * instead, ahead of this sweep running.
+   * Sole caller: `CrashRecoveryCoordinator.reconcile` (domain/crash-recovery.ts),
+   * always as its second pass — a worktree-mode Run whose merge already landed
+   * (per `git merge-base --is-ancestor`) is settled directly by that first pass
+   * and so is no longer `running` by the time this runs (ADR-0001: crash
+   * recovery relies on git's own idempotence, not a journal).
    */
   async markInterrupted(): Promise<RunRow[]> {
     // Boot-only invariant: the sync predecessor was atomic across the whole
@@ -320,22 +319,7 @@ export class RunStore {
     // because the sole caller (`CrashRecoveryCoordinator.reconcile`) runs once at
     // boot, before any dispatch starts. A periodic caller would need a re-read
     // guard (only fail a run still `running`) added here.
-    const running = await this.db.read((db) => db.select().from(runs).where(eq(runs.state, 'running')).all());
-    // A resume re-entry Run (issue #146) is parked awaiting its `crash-recovery`
-    // turn to be dispatched — "running, no live process, by design," marked by a
-    // `resume-entry` fact rather than a phase. Failing it here would
-    // destroy a coherent resume whose queued turn a later dispatch is meant to
-    // pick up, so it is excluded from the blind orphan-fail just as parked phases
-    // are. The boot resume sweep's `resume-entry` marker is the single source of
-    // this fact — see `BootResumeCoordinator`.
-    const resumeEntries = new Set(
-      (
-        await this.db.read((db) =>
-          db.select({ runId: runFacts.runId }).from(runFacts).where(eq(runFacts.type, 'resume-entry')).all(),
-        )
-      ).map((r) => r.runId),
-    );
-    const orphans = running.filter((run) => run.phase !== 'merging' && !resumeEntries.has(run.id));
+    const orphans = await this.db.read((db) => db.select().from(runs).where(eq(runs.state, 'running')).all());
     for (const run of orphans) {
       // process-death is a `run_fact` too (issue #113, §0.3): the orphan's
       // failed/interrupted terminal stays reconstructable from the log alone. The
@@ -374,44 +358,6 @@ export class RunStore {
     return orphans;
   }
 
-  /**
-   * Runs mid-merging when a crash interrupted the process (issue #117):
-   * `state:'running', phase:'merging'` — excluded from {@link markInterrupted}'s
-   * blind orphan-fail because a merging may already have applied an
-   * irreversible effect (see that method's doc comment). The boot-time
-   * `CrashRecoveryCoordinator` (domain/crash-recovery.ts) is the sole caller:
-   * it reconciles each of these against its merging journal instead.
-   */
-  listMergeOrphans(): Promise<RunRow[]> {
-    return this.db.read((db) =>
-      db.select().from(runs).where(and(eq(runs.state, 'running'), eq(runs.phase, 'merging'))).all(),
-    );
-  }
-
-  /**
-   * Runs a restart interrupted mid-execution that were bound to a durable
-   * Session (issue #146, reliability-design Unit C): `state:'failed'` with
-   * `reason:'interrupted'` — exactly what {@link markInterrupted} just wrote for a
-   * generic orphan — AND `sessionRowId IS NOT NULL`, so there is a conversation to
-   * resume rather than start cold. The boot-time `BootResumeCoordinator`
-   * (domain/boot-resume-coordinator.ts) is the sole caller: for each it creates a
-   * **new** Run + a new prompt turn on the (loaded or fail-forward) Session.
-   *
-   * Selection is intentionally broad — it re-selects a Run already resumed on a
-   * prior boot. The coordinator, not this query, enforces the once-only rule by
-   * skipping any Run carrying a `session-resumed`/`resume-entry` marker fact, so
-   * the durable idempotency ledger stays in one place (the fact log) rather than
-   * split between an SQL predicate and a fact check.
-   */
-  listResumableInterrupted(): Promise<RunRow[]> {
-    return this.db.read((db) =>
-      db
-        .select()
-        .from(runs)
-        .where(and(eq(runs.state, 'failed'), eq(runs.reason, 'interrupted'), isNotNull(runs.sessionRowId)))
-        .all(),
-    );
-  }
 }
 
 function frozenCost(usage: string | null, rawPrices: string | null): string | null {

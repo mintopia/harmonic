@@ -36,7 +36,7 @@ const runFactValues = (runId: number, seq: number, now: number) => ({
   runId,
   seq,
   ts: now,
-  type: 'session-resumed' as const,
+  type: 'process-death' as const,
   payload: '{}',
 });
 
@@ -170,8 +170,8 @@ describe('transactions as exclusive write-queue units (ADR-0029 §3)', () => {
 
   it('commits multi-statement work atomically', async () => {
     await h.transaction(async (tx) => {
-      await tx.insert(runFacts).values({ runId, seq: 1, ts: Date.now(), type: 'session-resumed', payload: '{}' }).run();
-      await tx.insert(runFacts).values({ runId, seq: 2, ts: Date.now(), type: 'session-resumed', payload: '{}' }).run();
+      await tx.insert(runFacts).values({ runId, seq: 1, ts: Date.now(), type: 'process-death', payload: '{}' }).run();
+      await tx.insert(runFacts).values({ runId, seq: 2, ts: Date.now(), type: 'process-death', payload: '{}' }).run();
     });
     const facts = await h.db.select().from(runFacts).where(eq(runFacts.runId, runId)).all();
     expect(facts).toHaveLength(2);
@@ -180,7 +180,7 @@ describe('transactions as exclusive write-queue units (ADR-0029 §3)', () => {
   it('rolls back the whole unit when the callback throws', async () => {
     await expect(
       h.transaction(async (tx) => {
-        await tx.insert(runFacts).values({ runId, seq: 1, ts: Date.now(), type: 'session-resumed', payload: '{}' }).run();
+        await tx.insert(runFacts).values({ runId, seq: 1, ts: Date.now(), type: 'process-death', payload: '{}' }).run();
         throw new Error('rollback me');
       }),
     ).rejects.toThrow('rollback me');
@@ -192,7 +192,7 @@ describe('transactions as exclusive write-queue units (ADR-0029 §3)', () => {
     const order: string[] = [];
     const txP = h.transaction(async (tx) => {
       order.push('tx-start');
-      await tx.insert(runFacts).values({ runId, seq: 1, ts: Date.now(), type: 'session-resumed', payload: '{}' }).run();
+      await tx.insert(runFacts).values({ runId, seq: 1, ts: Date.now(), type: 'process-death', payload: '{}' }).run();
       await delay(25);
       order.push('tx-end');
     });
@@ -372,7 +372,7 @@ describe('unique-index CAS behaviour unchanged under libsql (ADR-0029 §3)', () 
               .where(eq(runFacts.runId, runId))
               .get()
           )?.n ?? 0) + 1;
-        return db.insert(runFacts).values({ runId, seq, ts: Date.now(), type: 'session-resumed', payload: '{}' }).returning().get();
+        return db.insert(runFacts).values({ runId, seq, ts: Date.now(), type: 'process-death', payload: '{}' }).returning().get();
       });
 
     const rows = await Promise.all(Array.from({ length: 25 }, append));
@@ -392,7 +392,7 @@ describe('unique-index CAS behaviour unchanged under libsql (ADR-0029 §3)', () 
             .where(eq(runFacts.runId, runId))
             .get()
         )?.n ?? 0) + 1;
-      return h.db.insert(runFacts).values({ runId, seq, ts: Date.now(), type: 'session-resumed', payload: '{}' }).returning().get();
+      return h.db.insert(runFacts).values({ runId, seq, ts: Date.now(), type: 'process-death', payload: '{}' }).returning().get();
     };
     let caught: unknown;
     try {

@@ -10,7 +10,7 @@ import {
   serializerCompiler,
   validatorCompiler,
 } from 'fastify-type-provider-zod';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { join, dirname, sep } from 'node:path';
 import { defaultBranchPostMerge, type PostMergeHook } from '../execution/branch-merge.js';
 import { fileURLToPath } from 'node:url';
@@ -38,12 +38,11 @@ import { RunFactStore } from '../domain/run-facts.js';
 import { GuardrailEventStore } from '../domain/guardrail-events.js';
 import { VerificationAttemptStore } from '../domain/verification-attempts.js';
 import { MergeJournalStore } from '../domain/merge-journal.js';
-import { MergeCoordinator, type MergeEffectExec } from '../domain/merge-coordinator.js';
+import type { MergeEffectExec } from '../domain/merge-coordinator.js';
 import type { TaskRow, RunRow } from '../db/schema.js';
-import { TurnQueueStore } from '../domain/turn-queue-store.js';
 import { CrashRecoveryCoordinator } from '../domain/crash-recovery.js';
-import { BootResumeCoordinator } from '../domain/boot-resume-coordinator.js';
-import { adapterVersion } from '../execution/harness/adapter.js';
+import { resolveVerifiers } from '../domain/setting-override.js';
+import { runCommandVerifier, commandAttemptToInput } from '../verification/command-verifier.js';
 import { Runner } from '../execution/runner.js';
 import { EpicOperations } from '../execution/epic-operations.js';
 import type { CriticHarnessDrive } from '../verification/critic.js';
@@ -308,16 +307,14 @@ export async function buildApp(opts: AppOptions): Promise<App> {
       revoke: (conversationId) => auth.deleteKeysForConversation(conversationId),
     },
   });
-  // Accepting an escalated worktree-mode task merges the run's branch (ADR-0002,
-  // ADR-0041) through the shared settle coordinator, so Accept is race-safe
-  // against a concurrent operator cancel. The `MergeJournalStore` is fed into
-  // both `operatorSettle` (its optional PONC-clamp dependency) and `merging`
-  // (issue #115): once Accept's journaled merging freezes its PONC, a
-  // cancel/guardrail signal racing in through this same `operatorSettle`
-  // instance can no longer win.
-  // Built here, ahead of the crash-recovery sweep below (issue #117):
-  // `CrashRecoveryCoordinator` needs this same `merging`/`mergeJournal` pair
-  // to reconcile a Run that died mid-merging.
+  // Accepting an escalated worktree-mode task merges the run's branch through
+  // the shared settle coordinator, so Accept is race-safe against a concurrent
+  // operator cancel (`mergeEffectsFor` below runs the same one merge policy as
+  // the automated path, ADR-0001 #383). `MergeJournalStore` remains `operatorSettle`'s
+  // optional PONC-clamp dependency; nothing in this process still writes a PONC
+  // (the journaled `MergeCoordinator` merge path is gone, ADR-0001), so the clamp
+  // is a no-op today — kept only because `RunSettleCoordinator`'s signature isn't
+  // this ticket's to change.
   // Session retirement (issue #148, reliability-design Unit C): the sole owner of
   // builder-worktree removal. Its sync settle-hook is injected into every settle
   // coordinator (the operator-side one below and the Runner's own, via options) so
@@ -388,28 +385,54 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     mergeJournal,
     sessionRetirement,
   );
-  const merging = new MergeCoordinator(runs, asyncDb, mergeJournal, operatorSettle, {
-    parentForRun: (runId) => runnerRef?.operationParent(runId),
-    onTerminalRun: (runId) => runnerRef?.finishRunOperation(runId) ?? Promise.resolve(),
+  // The deterministic post-merge check crash recovery re-runs on a worktree
+  // merge that already landed (ADR-0001): the SAME two primitives the live
+  // merge policy's `runPostMergeCheck` dep runs (`resolveVerifiers` +
+  // `runCommandVerifier`), just invoked for a merge git shows already
+  // happened rather than one this process just performed. No critic — the
+  // critic already reviewed this diff on the candidate before it merged.
+  const crashRecoveryPostMergeCheck = async ({
+    task,
+    run,
+    mergeOid,
+    baseDir,
+  }: {
+    task: TaskRow;
+    run: RunRow;
+    mergeOid: string;
+    baseDir: string;
+  }) => {
+    const ws = task.workspaceId == null ? undefined : await workspaces.get(task.workspaceId).catch(() => undefined);
+    const { commands } = resolveVerifiers(
+      ws ?? { verificationCommand: null, reviewEnabled: null, reviewPrompt: null, reviewModel: null, reviewHarness: null },
+      configStore.get(),
+    );
+    if (commands.length === 0) return { pass: true, output: '' };
+    mkdirSync(worktreesDir, { recursive: true });
+    for (const command of commands) {
+      const attempt = await runCommandVerifier({
+        repoDir: baseDir,
+        candidateOid: mergeOid,
+        worktreePath: join(worktreesDir, `crash-recovery-postmerge-${run.id}`),
+        command,
+        attributes: { 'task.id': task.id, 'run.id': run.id },
+      });
+      await verificationAttempts.append(run.id, commandAttemptToInput(attempt));
+      if (attempt.verdict !== 'pass') return { pass: false, output: attempt.output };
+    }
+    return { pass: true, output: '' };
+  };
+  // Crash recovery before anything can execute (ADR-0001 "Scope and design
+  // ceiling": "Crash recovery may rely on git's own idempotence and on
+  // rebuilding in-memory state from the DB at boot"). No journal, no queue: a
+  // worktree-mode Run whose branch already landed in its base (per
+  // `git merge-base --is-ancestor`) just gets its post-merge check re-run
+  // (revert-on-red), and everything still `running` after that is failed
+  // "interrupted" — never silently re-run.
+  const crashRecovery = new CrashRecoveryCoordinator(runs, tasks, operatorSettle, {
+    runPostMergeCheck: crashRecoveryPostMergeCheck,
+    postMerge,
   });
-  // Crash recovery before anything can execute (issue #117): one sweep
-  // reconciles `run_facts`, `merge_journal`, and `turn_queue` together, so a
-  // restart reconstructs one consistent picture instead of several independent
-  // sweeps that could each draw a different conclusion about the same Run. A
-  // Run mid-merging is resolved against its journal (never blindly failed — it
-  // may already have applied an irreversible effect), the turn queue's
-  // pending/in-flight rows are cancelled/resolved, and only then does the
-  // generic orphan sweep fail whatever is still `running` — "interrupted",
-  // never silently re-run.
-  const crashRecovery = new CrashRecoveryCoordinator(
-    runs,
-    tasks,
-    operatorSettle,
-    merging,
-    mergeJournal,
-    new TurnQueueStore(asyncDb),
-    { postMerge, closeTicket: (task) => autoDrive.closeCompleted(task) },
-  );
   await crashRecovery.reconcile();
   // A fresh process is executing nothing, so any Task still `working` was
   // orphaned by the restart — hand it back to ready (an interruption is not a
@@ -418,35 +441,14 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // ready→working flip (the lock) and its Run being created. No orphaned Run
   // row exists for that one, so the run sweep alone left it stuck `working`
   // while its ticket stayed open — and the poll never rescues it
-  // (upsertMirrored refuses to move a Task off `working`).
-  //
-  // Exception: a Task that still has a surviving `running` Run is not orphaned —
-  // that Run is a resume re-entry parked awaiting dispatch (issue #146, exempted
-  // from the run orphan sweep above), so the Task is genuinely occupied and
-  // must stay `working`.
+  // (upsertMirrored refuses to move a Task off `working`). Crash recovery just
+  // failed every Run still `running` (there is no resume-re-entry exemption
+  // under ADR-0001 — a restart-interrupted Session-bound Run resumes through
+  // the ordinary Attempt-continuation decision, ADR-0005, on the Task's next
+  // pick), so no `working` Task can have a surviving `running` Run here.
   for (const orphan of await tasks.list({ state: 'working' })) {
-    if ((await runs.listForTask(orphan.id)).some((run) => run.state === 'running')) continue;
     await tasks.setState(orphan.id, 'ready');
   }
-  // Resume: a restart-interrupted Run that was mid-conversation on a durable
-  // Session comes back as a NEW Run + a new prompt turn on the (reloaded or
-  // fail-forward) Session, rather than starting cold (issue #146, Unit C). Runs
-  // last — after the whole crash-recovery reconciliation and the orphan
-  // sweeps above — so it acts only on a reconciled repository and re-drives the
-  // Task the sweep just re-queued. The environment a reload would target is
-  // resolved from the Session's capability axes: the adapter version recomputed
-  // fresh (so a harness/adapter upgrade across the restart is detected and forces
-  // a fresh Session), the model, and the live permission mode. The cwd axis is
-  // owned by the coordinator (it compares the Session's recorded work-context to
-  // the Task's current working directory). Whether the reload succeeds or the
-  // compatibility matrix forces a fresh summarized Session, the decision is
-  // idempotent across repeat boots.
-  await new BootResumeCoordinator(runs, attempts, tasks, sessionStore, new TurnQueueStore(asyncDb), new RunFactStore(asyncDb), (session) => ({
-    harness: session.harness,
-    adapterVersion: adapterVersion(session.harness),
-    model: session.model,
-    availablePermissionModes: session.permissionMode ? [session.permissionMode] : [],
-  })).resume();
   // Run Keys of every non-running run die here — catches keys orphaned by
   // a crash or restart. Conversation Keys can never survive a restart (their
   // warm process is gone), so every one present at boot is orphaned (issue 16).

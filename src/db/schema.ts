@@ -593,14 +593,13 @@ export type RunEventRow = typeof runEvents.$inferSelect;
  * log (see below); this fact type is the disposition-facing signal that a trip
  * happened.
  *
- * `session-resumed` and `resume-entry` (issue #146, reliability-design Unit C)
- * are the two boot-time crash-resume markers, both **non-ending** (absent from
- * `DISPOSITION_PRECEDENCE`, so they never read as a terminal
- * disposition). `session-resumed` is stamped on the interrupted Run that
- * was resumed (recording the new Run it resumed into); `resume-entry` is stamped
- * on that **new** Run (recording the interrupted Run it continues). Together they
- * make the boot resume sweep idempotent: a Run carrying either marker is never
- * itself resumed again on a later boot (`BootResumeCoordinator`).
+ * `session-resumed` and `resume-entry` (pre-reset boot-time crash-resume
+ * markers) are gone with `BootResumeCoordinator` (ADR-0001): a restart-
+ * interrupted Task simply returns to `ready`, and the scheduler's normal
+ * continuation decision (ADR-0005) picks warm-session reuse back up on the
+ * next Attempt — no boot-time resume Run/marker pair required. The store
+ * never rejects an unknown `type`, so historical rows carrying either kind
+ * still read back.
  */
 export const RUN_FACT_TYPES = [
   'operator-cancel',
@@ -610,8 +609,6 @@ export const RUN_FACT_TYPES = [
   'failed',
   'process-death',
   'guardrail-trip',
-  'session-resumed',
-  'resume-entry',
   'session-continuation',
   /** Immutable proof that verification ran against this branch tip. */
   'verified-head',
