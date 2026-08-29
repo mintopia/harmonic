@@ -74,7 +74,7 @@ export const settingsRegistry = {
     label: 'Priority',
     help: 'Default scheduling priority for new Tasks.',
   },
-  maxConcurrentRuns: {
+  maxConcurrentAttempts: {
     scope: 'overridable',
     control: 'number',
     tab: 'execution',

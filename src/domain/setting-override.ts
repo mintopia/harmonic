@@ -49,7 +49,7 @@ export function resolveScoped<T>(key: SettingKey, workspaceVal: T | null | undef
  * the ceiling (ADR-0012). Inherit (`null`) resolves straight to the ceiling.
  */
 export function resolveCap(workspaceCap: number | null | undefined, machineCeiling: number): number {
-  return Math.min(resolveScoped('maxConcurrentRuns', workspaceCap, machineCeiling), machineCeiling);
+  return Math.min(resolveScoped('maxConcurrentAttempts', workspaceCap, machineCeiling), machineCeiling);
 }
 
 /** A resolved review, carrying the raw toggle (`requested`) alongside runnability

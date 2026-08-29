@@ -760,7 +760,7 @@ export function App() {
             >
               <span
                 className="text-[13px] text-muted"
-                title={`Machine Ceiling: ${config.autoRunner.maxConcurrentRuns}`}
+                title={`Machine Ceiling: ${config.autoRunner.maxConcurrentAttempts}`}
               >
                 Auto-runner <b className="font-semibold text-ink">{config.autoRunner.enabled ? 'on' : 'off'}</b>
               </span>
@@ -780,7 +780,7 @@ export function App() {
               </span>
               <span title="Machine worker slots in use / ceiling">
                 <span className="tabular-nums">
-                  {runningCount}/{config.autoRunner.maxConcurrentRuns}
+                  {runningCount}/{config.autoRunner.maxConcurrentAttempts}
                 </span>{' '}
                 machine
               </span>

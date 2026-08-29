@@ -97,7 +97,7 @@ describe('AutoRunner — mirrored afk pick predicate + flip→claim ordering (is
       countRunning: () => started.length,
       countRunningByWorkspace: () => new Map<number, number>(),
     } as unknown as AttemptStore;
-    const config: AppConfig = { ...defaultConfig(), autoRunner: { enabled: true, maxConcurrentRuns: 10 } };
+    const config: AppConfig = { ...defaultConfig(), autoRunner: { enabled: true, maxConcurrentAttempts: 10 } };
 
     const runner$ = new AutoRunner(tasks, runStore, runner, () => config, allWorkspaces(asyncDb, settingsStore), { mirror });
     runner$.poke();
@@ -150,7 +150,7 @@ describe('AutoRunner — self-scheduling from DB (issue #236)', () => {
       countRunning: async () => started.length,
       countRunningByWorkspace: async () => new Map<number, number>(),
     };
-    const config: AppConfig = { ...defaultConfig(), autoRunner: { enabled: true, maxConcurrentRuns: 1 } };
+    const config: AppConfig = { ...defaultConfig(), autoRunner: { enabled: true, maxConcurrentAttempts: 1 } };
     autoRunner = new AutoRunner(tasks, runStore, runner, () => config, allWorkspaces(asyncDb, settingsStore), { intervalMs: 10 });
 
     autoRunner.start();
@@ -218,7 +218,7 @@ describe('AutoRunner — parallel-Epic base pick gate (issue #159)', () => {
       countRunning: () => started.length,
       countRunningByWorkspace: () => new Map<number, number>(),
     } as unknown as AttemptStore;
-    const config: AppConfig = { ...defaultConfig(), autoRunner: { enabled: true, maxConcurrentRuns: 10 } };
+    const config: AppConfig = { ...defaultConfig(), autoRunner: { enabled: true, maxConcurrentAttempts: 10 } };
     const ar = new AutoRunner(tasks, runStore, runner, () => config, allWorkspaces(asyncDb, settingsStore), {
       epicBaseNotReady: (t) => awaitsEpicBase(t),
     });
@@ -283,7 +283,7 @@ describe('AutoRunner — skip reasons and unresolvable integration bases (issue 
       countRunning: async () => running,
       countRunningByWorkspace: async () => new Map<number, number>(),
     };
-    const config: AppConfig = { ...defaultConfig(), autoRunner: { enabled: true, maxConcurrentRuns: 1 } };
+    const config: AppConfig = { ...defaultConfig(), autoRunner: { enabled: true, maxConcurrentAttempts: 1 } };
     const autoRunner = new AutoRunner(tasks, runStore, runner, () => config, allWorkspaces(asyncDb, settingsStore), { gitBreaker: breaker });
 
     autoRunner.poke();
@@ -310,7 +310,7 @@ describe('AutoRunner — skip reasons and unresolvable integration bases (issue 
       countRunning: async () => started.length,
       countRunningByWorkspace: async () => new Map<number, number>(),
     };
-    const config: AppConfig = { ...defaultConfig(), autoRunner: { enabled: true, maxConcurrentRuns: 1 } };
+    const config: AppConfig = { ...defaultConfig(), autoRunner: { enabled: true, maxConcurrentAttempts: 1 } };
     let now = 0;
     const autoRunner = new AutoRunner(tasks, runStore, runner, () => config, allWorkspaces(asyncDb, settingsStore), {
       epicBaseNotReady: (candidate) => candidate.baseBranch === 'epic/208',
@@ -353,7 +353,7 @@ describe('AutoRunner — skip reasons and unresolvable integration bases (issue 
       countRunning: async () => started.length,
       countRunningByWorkspace: async () => new Map<number, number>(),
     };
-    const config: AppConfig = { ...defaultConfig(), autoRunner: { enabled: true, maxConcurrentRuns: 1 } };
+    const config: AppConfig = { ...defaultConfig(), autoRunner: { enabled: true, maxConcurrentAttempts: 1 } };
     const autoRunner = new AutoRunner(tasks, runStore, runner, () => config, allWorkspaces(asyncDb, settingsStore), {
       epicBaseNotReady: (candidate) => missing && candidate.baseBranch === 'epic/209',
       missingEpicBaseGraceMs: 100,
@@ -414,7 +414,7 @@ describe('AutoRunner — Work Context House Rule pick predicate (ADR-0001)', () 
       countRunning: () => started.length,
       countRunningByWorkspace: () => new Map<number, number>(),
     } as unknown as AttemptStore;
-    const config: AppConfig = { ...defaultConfig(), autoRunner: { enabled: true, maxConcurrentRuns: 10 } };
+    const config: AppConfig = { ...defaultConfig(), autoRunner: { enabled: true, maxConcurrentAttempts: 10 } };
     const ar = new AutoRunner(tasks, runStore, runner, () => config, allWorkspaces(asyncDb, settingsStore), undefined);
     return { ar, started };
   };

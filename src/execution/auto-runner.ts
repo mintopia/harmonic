@@ -101,7 +101,7 @@ const DEFAULT_MISSING_EPIC_BASE_GRACE_MS = 300_000;
  * toggled); it coalesces and never re-enters.
  *
  * Concurrency is two-level (ADR-0012, issue #60): the global **Machine
- * Ceiling** (`config.autoRunner.maxConcurrentRuns`) caps total concurrent Runs
+ * Ceiling** (`config.autoRunner.maxConcurrentAttempts`) caps total concurrent Attempts
  * across all Workspaces, and each Workspace has its own cap clamped to the
  * ceiling — so per-Workspace caps summing higher than the ceiling still can't
  * breach it. Enable is gated too: a Task runs only if `master ∧ workspace
@@ -222,9 +222,9 @@ export class AutoRunner {
     try {
       do {
         this.refill = false;
-        // `enabled` is the fleet-wide master switch; `maxConcurrentRuns` the
+        // `enabled` is the fleet-wide master switch; `maxConcurrentAttempts` the
         // Machine Ceiling. Master off ⇒ nothing runs, whatever a Workspace enable says.
-        const { enabled: master, maxConcurrentRuns: ceiling } = this.getConfig().autoRunner;
+        const { enabled: master, maxConcurrentAttempts: ceiling } = this.getConfig().autoRunner;
         const workspacesById = new Map((await this.getWorkspaces()).map((w) => [w.id, w]));
         // Refresh before the capacity loop: a full machine never reaches
         // `pickNext`, but its queued Tasks still need to say why they wait.
@@ -360,7 +360,7 @@ export class AutoRunner {
         record(task.id, 'at capacity');
         return;
       }
-      const cap = resolveCap(workspace?.maxConcurrentRuns, ceiling);
+      const cap = resolveCap(workspace?.maxConcurrentAttempts, ceiling);
       const workspaceRunning = task.workspaceId == null ? 0 : (runningByWorkspace.get(task.workspaceId) ?? 0);
       if (workspaceRunning >= cap) {
         record(task.id, 'at capacity');
@@ -519,7 +519,7 @@ export class AutoRunner {
     // Master is on (fill returned early otherwise), so an inheriting
     // Workspace (null) is enabled; only an explicit `false` opts out.
     if (!resolveScoped('autoRunnerEnabled', workspace?.autoRunnerEnabled, true)) return false;
-    const cap = resolveCap(workspace?.maxConcurrentRuns, ceiling);
+    const cap = resolveCap(workspace?.maxConcurrentAttempts, ceiling);
     const wsRunning = t.workspaceId != null ? (runningByWorkspace.get(t.workspaceId) ?? 0) : 0;
     if (wsRunning >= cap) return false;
     // Git-backoff skip (issue #199): a base repo whose workspace-prep git just

@@ -99,7 +99,7 @@ export const api = {
       isolationMode?: 'direct' | 'worktree' | null;
       priority?: 'high' | 'normal' | 'low' | null;
       conflictResolveTurns?: number | null;
-      maxConcurrentRuns?: number | null;
+      maxConcurrentAttempts?: number | null;
       autoRunnerEnabled?: boolean | null;
       maxAttempts?: number | null;
       contextReuseTokenLimit?: number | null;

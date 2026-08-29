@@ -152,7 +152,7 @@ describe('Auto-Runner operations (issue #289)', () => {
     const server = await startServer({
       ...stubHarness(),
       defaults: { ...defaultConfig().defaults, isolationMode: 'worktree' },
-      autoRunner: { enabled: true, maxConcurrentRuns: 1 },
+      autoRunner: { enabled: true, maxConcurrentAttempts: 1 },
     });
 
     try {
@@ -191,7 +191,7 @@ describe('Auto-Runner operations (issue #289)', () => {
     const db = await openAsyncDb(directory);
     const settingsStore = await makeSettingsStore(directory);
     const { exporter, registry } = installOperations();
-    const config = { ...defaultConfig(), autoRunner: { enabled: true, maxConcurrentRuns: 1 } };
+    const config = { ...defaultConfig(), autoRunner: { enabled: true, maxConcurrentAttempts: 1 } };
     const tasks = new TaskService(db, () => config, allWorkspaces(db, settingsStore));
     const task = await tasks.create({ prompt: 'fail a scheduled start', isolationMode: 'worktree' });
     let launchAttempts = 0;
@@ -233,7 +233,7 @@ describe('Auto-Runner operations (issue #289)', () => {
     const db = await openAsyncDb(directory);
     const settingsStore = await makeSettingsStore(directory);
     const { exporter, registry } = installOperations();
-    const config = { ...defaultConfig(), autoRunner: { enabled: true, maxConcurrentRuns: 1 } };
+    const config = { ...defaultConfig(), autoRunner: { enabled: true, maxConcurrentAttempts: 1 } };
     const tasks = new TaskService(db, () => config, allWorkspaces(db, settingsStore));
     let launchAttempts = 0;
     const autoRunner = new AutoRunner(

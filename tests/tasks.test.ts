@@ -402,7 +402,7 @@ describe('task skipReason (issue #171)', () => {
 
     // Enabling Auto-Runner pokes it; the fill pass skips `blocked` (context
     // occupied, per the House Rule — the scheduler pick predicate, ADR-0001).
-    await server.api('PATCH', '/api/config', { autoRunner: { enabled: true, maxConcurrentRuns: 1 } });
+    await server.api('PATCH', '/api/config', { autoRunner: { enabled: true, maxConcurrentAttempts: 1 } });
     await waitFor(async () => server.app.ctx.autoRunner.skipReasonFor(blocked.body.id) ?? undefined);
 
     const res = await server.api('GET', `/api/tasks/${blocked.body.id}`);

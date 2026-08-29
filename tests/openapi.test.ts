@@ -179,7 +179,7 @@ describe('validation error contract on migrated routes', () => {
   });
 
   it('config: rejects a malformed patch body with a 400 validation envelope', async () => {
-    const res = await server.api('PATCH', '/api/config', { autoRunner: { maxConcurrentRuns: 'two' } });
+    const res = await server.api('PATCH', '/api/config', { autoRunner: { maxConcurrentAttempts: 'two' } });
     expect(res.status).toBe(400);
     expect(res.body).toMatchObject({ error: { code: 'validation' } });
   });

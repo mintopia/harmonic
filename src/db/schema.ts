@@ -80,7 +80,7 @@ export type WorkspaceIdentityRow = typeof workspaces.$inferSelect;
 export type WorkspaceRow = WorkspaceIdentityRow & {
   harness: string | null; model: string | null; chatHarness: string | null; chatModel: string | null;
   isolationMode: string | null; priority: string | null;
-  conflictResolveTurns: number | null; maxConcurrentRuns: number | null; autoRunnerEnabled: boolean | null;
+  conflictResolveTurns: number | null; maxConcurrentAttempts: number | null; autoRunnerEnabled: boolean | null;
   maxAttempts: number | null; contextReuseTokenLimit: number | null; verificationCommand: string | null;
   reviewEnabled: boolean | null; reviewPrompt: string | null; reviewModel: string | null; reviewHarness: string | null;
   guardrailBudget: string | null; guardrailProgress: boolean | null; toolTimeoutMinutes: number | null;

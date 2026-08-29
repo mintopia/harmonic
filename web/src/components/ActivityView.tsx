@@ -388,7 +388,7 @@ export function ActivityView({ config }: { config: AppConfig | null }) {
     );
   }
 
-  const ceiling = config?.autoRunner.maxConcurrentRuns ?? Math.max(processes.filter((p) => p.type === 'attempt').length, 1);
+  const ceiling = config?.autoRunner.maxConcurrentAttempts ?? Math.max(processes.filter((p) => p.type === 'attempt').length, 1);
   const summary = activitySummary(processes, ceiling, now);
   const workspaces = activityWorkspaces(processes);
   // Heal a Workspace filter whose Workspace has drained out — otherwise the

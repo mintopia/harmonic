@@ -201,7 +201,7 @@ export interface Workspace {
   priority: 'high' | 'normal' | 'low' | null;
   /** Conflict-resolve bound (ADR-0046); `null` inherits `config.defaults.*`. */
   conflictResolveTurns: number | null;
-  maxConcurrentRuns: number | null;
+  maxConcurrentAttempts: number | null;
   autoRunnerEnabled: boolean | null;
   /** Per-workspace attempt cap; null inherits `config.maxAttempts`. */
   maxAttempts: number | null;
@@ -734,7 +734,7 @@ export interface AppConfig {
     harness: string;
     model: string;
   };
-  autoRunner: { enabled: boolean; maxConcurrentRuns: number };
+  autoRunner: { enabled: boolean; maxConcurrentAttempts: number };
   /** Ordered verification commands and the optional review task. */
   verify: {
     commands: VerificationCommand[];

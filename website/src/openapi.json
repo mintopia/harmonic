@@ -3168,7 +3168,7 @@
             ],
             "example": null
           },
-          "maxConcurrentRuns": {
+          "maxConcurrentAttempts": {
             "anyOf": [
               {
                 "type": "number"
@@ -3471,7 +3471,7 @@
           "isolationMode",
           "priority",
           "conflictResolveTurns",
-          "maxConcurrentRuns",
+          "maxConcurrentAttempts",
           "autoRunnerEnabled",
           "maxAttempts",
           "contextReuseTokenLimit",
@@ -3842,7 +3842,7 @@
                 "type": "boolean",
                 "example": true
               },
-              "maxConcurrentRuns": {
+              "maxConcurrentAttempts": {
                 "type": "integer",
                 "minimum": 1,
                 "maximum": 9007199254740991,
@@ -7389,7 +7389,7 @@
             ],
             "example": null
           },
-          "maxConcurrentRuns": {
+          "maxConcurrentAttempts": {
             "anyOf": [
               {
                 "type": "number"
@@ -7702,7 +7702,7 @@
           "isolationMode",
           "priority",
           "conflictResolveTurns",
-          "maxConcurrentRuns",
+          "maxConcurrentAttempts",
           "autoRunnerEnabled",
           "maxAttempts",
           "contextReuseTokenLimit",
@@ -8080,7 +8080,7 @@
                 "type": "boolean",
                 "example": true
               },
-              "maxConcurrentRuns": {
+              "maxConcurrentAttempts": {
                 "type": "integer",
                 "minimum": 1,
                 "maximum": 9007199254740991,
@@ -11717,7 +11717,7 @@
                       }
                     ]
                   },
-                  "maxConcurrentRuns": {
+                  "maxConcurrentAttempts": {
                     "example": 2,
                     "anyOf": [
                       {
@@ -13427,7 +13427,7 @@
                           "type": "boolean",
                           "example": true
                         },
-                        "maxConcurrentRuns": {
+                        "maxConcurrentAttempts": {
                           "type": "integer",
                           "minimum": 1,
                           "maximum": 9007199254740991,
@@ -13436,7 +13436,7 @@
                       },
                       "required": [
                         "enabled",
-                        "maxConcurrentRuns"
+                        "maxConcurrentAttempts"
                       ],
                       "additionalProperties": false
                     },
@@ -13989,7 +13989,7 @@
                           "type": "boolean",
                           "example": true
                         },
-                        "maxConcurrentRuns": {
+                        "maxConcurrentAttempts": {
                           "type": "integer",
                           "minimum": 1,
                           "maximum": 9007199254740991,
@@ -13998,7 +13998,7 @@
                       },
                       "required": [
                         "enabled",
-                        "maxConcurrentRuns"
+                        "maxConcurrentAttempts"
                       ],
                       "additionalProperties": false
                     },
@@ -14524,7 +14524,7 @@
                         "type": "boolean",
                         "example": true
                       },
-                      "maxConcurrentRuns": {
+                      "maxConcurrentAttempts": {
                         "type": "integer",
                         "minimum": 1,
                         "maximum": 9007199254740991,
@@ -14533,7 +14533,7 @@
                     },
                     "required": [
                       "enabled",
-                      "maxConcurrentRuns"
+                      "maxConcurrentAttempts"
                     ]
                   },
                   "maxAttempts": {
@@ -15024,7 +15024,7 @@
                           "type": "boolean",
                           "example": true
                         },
-                        "maxConcurrentRuns": {
+                        "maxConcurrentAttempts": {
                           "type": "integer",
                           "minimum": 1,
                           "maximum": 9007199254740991,
@@ -15033,7 +15033,7 @@
                       },
                       "required": [
                         "enabled",
-                        "maxConcurrentRuns"
+                        "maxConcurrentAttempts"
                       ],
                       "additionalProperties": false
                     },

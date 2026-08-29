@@ -25,7 +25,7 @@ describe('PUT /api/config', () => {
 
   it('rejects an invalid config atomically: 400, and a prior GET is unaffected', async () => {
     const current = (await server.api('GET', '/api/config')).body;
-    const invalid = { ...current, autoRunner: { ...current.autoRunner, maxConcurrentRuns: 0 } };
+    const invalid = { ...current, autoRunner: { ...current.autoRunner, maxConcurrentAttempts: 0 } };
 
     const put = await server.api('PUT', '/api/config', invalid);
     expect(put.status).toBe(400);

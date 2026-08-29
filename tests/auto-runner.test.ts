@@ -25,7 +25,7 @@ describe('auto-runner', () => {
 
   it('exposes the toggle over REST, default off', async () => {
     const config = await server.api('GET', '/api/config');
-    expect(config.body.autoRunner).toEqual({ enabled: false, maxConcurrentRuns: 1 });
+    expect(config.body.autoRunner).toEqual({ enabled: false, maxConcurrentAttempts: 1 });
 
     const updated = await server.api('PATCH', '/api/config', { autoRunner: { enabled: true } });
     expect(updated.status).toBe(200);
@@ -62,8 +62,8 @@ describe('auto-runner', () => {
     expect(order).toEqual([...order].sort((a, b) => a - b));
   });
 
-  it('never exceeds maxConcurrentRuns and pulls the next task when a slot frees', async () => {
-    await server.api('PATCH', '/api/config', { autoRunner: { maxConcurrentRuns: 2 } });
+  it('never exceeds maxConcurrentAttempts and pulls the next task when a slot frees', async () => {
+    await server.api('PATCH', '/api/config', { autoRunner: { maxConcurrentAttempts: 2 } });
     // Distinct workingDirs: direct-mode Tasks sharing one physical checkout
     // contend for the same Work Context (the scheduler pick predicate, ADR-0001)
     // and would serialize below what this test is exercising (the slot ceiling,
@@ -126,7 +126,7 @@ describe('auto-runner', () => {
   it('holds the Work Context House Rule: a second Task waits on a busy direct context while it is working, then starts once it merges (issue #120)', async () => {
     // Ceiling 2 so the slot cap has room — what holds the second Task back is the
     // House Rule, not the Machine Ceiling.
-    await server.api('PATCH', '/api/config', { autoRunner: { maxConcurrentRuns: 2 } });
+    await server.api('PATCH', '/api/config', { autoRunner: { maxConcurrentAttempts: 2 } });
     // Both omit workingDir ⇒ they share the default Workspace checkout, i.e. one
     // direct-mode Work Context (and a real git repo, so accept can merge).
     const first = await server.api('POST', '/api/tasks', { prompt: slowScenario(120) });
@@ -195,7 +195,7 @@ describe('auto-runner — two-level cap + master gate (issue #60)', () => {
   // scheduler pick predicate, ADR-0001) serializes Tasks sharing one physical
   // checkout, and these tests exercise the concurrency *slot* ceiling/cap, not
   // directory contention — sharing a workspace's default dir would silently
-  // cap concurrency at 1 regardless of maxConcurrentRuns.
+  // cap concurrency at 1 regardless of maxConcurrentAttempts.
   const makeTask = (workspaceId: number, ms: number) =>
     server.api('POST', '/api/tasks', {
       prompt: slowScenario(ms),
@@ -233,9 +233,9 @@ describe('auto-runner — two-level cap + master gate (issue #60)', () => {
   it('never breaches the Machine Ceiling even when per-workspace caps sum higher (3+3, ceiling 4 → ≤4)', async () => {
     const ws1 = await defaultWorkspaceId();
     const ws2 = await createWorkspace('Second');
-    await server.api('PATCH', '/api/config', { autoRunner: { maxConcurrentRuns: 4 } });
-    await server.api('PATCH', `/api/workspaces/${ws1}`, { maxConcurrentRuns: 3 });
-    await server.api('PATCH', `/api/workspaces/${ws2}`, { maxConcurrentRuns: 3 });
+    await server.api('PATCH', '/api/config', { autoRunner: { maxConcurrentAttempts: 4 } });
+    await server.api('PATCH', `/api/workspaces/${ws1}`, { maxConcurrentAttempts: 3 });
+    await server.api('PATCH', `/api/workspaces/${ws2}`, { maxConcurrentAttempts: 3 });
 
     const created = [];
     for (let i = 0; i < 4; i++) created.push(await makeTask(ws1, 120), await makeTask(ws2, 120));
@@ -253,8 +253,8 @@ describe('auto-runner — two-level cap + master gate (issue #60)', () => {
 
   it('holds a per-workspace cap below the ceiling (cap 2, ceiling 10 → ≤2 in that workspace)', async () => {
     const ws1 = await defaultWorkspaceId();
-    await server.api('PATCH', '/api/config', { autoRunner: { maxConcurrentRuns: 10 } });
-    await server.api('PATCH', `/api/workspaces/${ws1}`, { maxConcurrentRuns: 2 });
+    await server.api('PATCH', '/api/config', { autoRunner: { maxConcurrentAttempts: 10 } });
+    await server.api('PATCH', `/api/workspaces/${ws1}`, { maxConcurrentAttempts: 2 });
 
     const created = [];
     for (let i = 0; i < 4; i++) created.push(await makeTask(ws1, 120));

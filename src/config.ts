@@ -273,13 +273,13 @@ export const appConfigSchema = z.object({
    * **master switch** — the one-click pause that gates every Workspace
    * (a Task runs only if `master ∧ workspace-enabled`, where the per-Workspace
    * enable lives on the Workspace row and inherits when unset).
-   * `maxConcurrentRuns` is the **Machine Ceiling**: the global cap on total
-   * concurrent Runs across all Workspaces, which a per-Workspace cap override
+   * `maxConcurrentAttempts` is the **Machine Ceiling**: the global cap on total
+   * concurrent Attempts across all Workspaces, which a per-Workspace cap override
    * can never breach (it is clamped to this — see `resolveCap`).
    */
   autoRunner: z.object({
     enabled: z.boolean().meta({ example: true }),
-    maxConcurrentRuns: z.number().int().min(1).meta({ example: 3 }),
+    maxConcurrentAttempts: z.number().int().min(1).meta({ example: 3 }),
   }),
   /** Maximum failed implementation attempts before the ticket is escalated. */
   maxAttempts: z.number().int().min(1).default(2).meta({ example: 2 }),
@@ -503,7 +503,7 @@ export function defaultConfig(): AppConfig {
     },
     autoRunner: {
       enabled: false,
-      maxConcurrentRuns: 1,
+      maxConcurrentAttempts: 1,
     },
     maxAttempts: 2,
     contextReuseTokenLimit: 200_000,

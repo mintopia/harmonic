@@ -52,7 +52,7 @@ export const workspaceOverridesSchema = z.object({
   priority: z.enum(['high', 'normal', 'low']).nullable().optional().meta({ example: 'high' }),
   /** Conflict-resolve-turn bound (ADR-0046) override; null inherits `config.defaults.conflictResolveTurns`. */
   conflictResolveTurns: z.number().int().min(0).nullable().optional().meta({ example: 2 }),
-  maxConcurrentRuns: z.number().int().min(1).nullable().optional().meta({ example: 2 }),
+  maxConcurrentAttempts: z.number().int().min(1).nullable().optional().meta({ example: 2 }),
   autoRunnerEnabled: z.boolean().nullable().optional().meta({ example: true }),
   maxAttempts: z.number().int().min(1).nullable().optional().meta({ example: 2 }),
   contextReuseTokenLimit: z.number().int().min(0).nullable().optional().meta({ example: 200_000 }),
@@ -146,7 +146,7 @@ export class WorkspaceService {
       isolationMode: o.isolationMode,
       priority: o.priority,
       conflictResolveTurns: o.conflictResolveTurns,
-      maxConcurrentRuns: o.maxConcurrentRuns,
+      maxConcurrentAttempts: o.maxConcurrentAttempts,
       autoRunnerEnabled: o.autoRunnerEnabled,
       maxAttempts: o.maxAttempts,
       contextReuseTokenLimit: o.contextReuseTokenLimit,

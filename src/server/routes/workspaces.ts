@@ -52,7 +52,7 @@ const workspaceSchema = z
     priority: z.string().nullable().meta({ example: null }),
     /** Conflict-resolve-turn bound (ADR-0046); null inherits `config.defaults.conflictResolveTurns`. */
     conflictResolveTurns: z.number().nullable().meta({ example: null }),
-    maxConcurrentRuns: z.number().nullable().meta({ example: null }),
+    maxConcurrentAttempts: z.number().nullable().meta({ example: null }),
     autoRunnerEnabled: z.boolean().nullable().meta({ example: null }),
     /** Per-workspace attempt cap; null inherits `config.maxAttempts`. */
     maxAttempts: z.number().nullable().meta({ example: null }),

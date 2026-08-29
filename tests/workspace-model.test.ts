@@ -33,7 +33,7 @@ const ws = (id: number, name = `ws-${id}`): Workspace => ({
   isolationMode: null,
   priority: null,
   conflictResolveTurns: null,
-  maxConcurrentRuns: null,
+  maxConcurrentAttempts: null,
   autoRunnerEnabled: null,
   verificationCommand: null,
   reviewEnabled: null,

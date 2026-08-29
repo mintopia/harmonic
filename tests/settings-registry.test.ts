@@ -43,7 +43,7 @@ describe('Settings registry (issue #336) — single authority for scope', () => 
     'chatModel',
     'isolationMode',
     'priority',
-    'maxConcurrentRuns',
+    'maxConcurrentAttempts',
     'autoRunnerEnabled',
     'maxAttempts',
     'contextReuseTokenLimit',
@@ -229,9 +229,9 @@ describe('scope changes control live resolution (registry is the single authorit
     expect(resolveScoped('harness', 'codex', 'claude')).toBe('codex'); // restored
   });
 
-  it('resolveCap: flipping maxConcurrentRuns to global-only ignores the Workspace cap', () => {
+  it('resolveCap: flipping maxConcurrentAttempts to global-only ignores the Workspace cap', () => {
     expect(resolveCap(2, 3)).toBe(2); // overridable → Workspace cap wins (≤ ceiling)
-    withScope('maxConcurrentRuns', 'global-only', () => {
+    withScope('maxConcurrentAttempts', 'global-only', () => {
       expect(resolveCap(2, 3)).toBe(3); // now the ceiling, Workspace cap ignored
     });
   });

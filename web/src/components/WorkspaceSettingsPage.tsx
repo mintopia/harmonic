@@ -72,7 +72,7 @@ export function WorkspaceSettingsPage({
         isolationMode: local.isolationMode,
         priority: local.priority,
         conflictResolveTurns: local.conflictResolveTurns,
-        maxConcurrentRuns: local.maxConcurrentRuns,
+        maxConcurrentAttempts: local.maxConcurrentAttempts,
         autoRunnerEnabled: local.autoRunnerEnabled,
         maxAttempts: local.maxAttempts,
         contextReuseTokenLimit: local.contextReuseTokenLimit,

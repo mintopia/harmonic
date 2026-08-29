@@ -25,7 +25,7 @@ export const OVERRIDE_KEYS = [
   'isolationMode',
   'priority',
   'conflictResolveTurns',
-  'maxConcurrentRuns',
+  'maxConcurrentAttempts',
   'autoRunnerEnabled',
   'maxAttempts',
   'contextReuseTokenLimit',

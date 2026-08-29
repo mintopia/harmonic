@@ -85,7 +85,7 @@ const configPatchBodySchema = z
     autoRunner: z
       .object({
         enabled: z.boolean().meta({ example: true }),
-        maxConcurrentRuns: z.number().int().min(1).meta({ example: 2 }),
+        maxConcurrentAttempts: z.number().int().min(1).meta({ example: 2 }),
       })
       .partial()
       .optional(),

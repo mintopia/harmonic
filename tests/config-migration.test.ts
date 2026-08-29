@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { migrateLegacyConfig } from '../src/config.js';
+import { appConfigSchema, defaultConfig, mergeConfig, migrateLegacyConfig } from '../src/config.js';
 
 /**
  * The retired `agentReview` flag (ADR-0021, issue #140): folded into
@@ -32,5 +32,14 @@ describe('migrateLegacyConfig (#140, ADR-0021)', () => {
     const result = migrateLegacyConfig(input);
     expect(result).toEqual(input);
     expect(result).not.toHaveProperty('agentReview');
+  });
+
+  it('drops the retired maxConcurrentRuns key at the schema boundary (renamed maxConcurrentAttempts, no fold)', () => {
+    const migrated = migrateLegacyConfig({
+      autoRunner: { enabled: true, maxConcurrentRuns: 7 } as { enabled: boolean },
+    });
+    const parsed = appConfigSchema.parse(mergeConfig(defaultConfig(), migrated));
+    expect(parsed.autoRunner).not.toHaveProperty('maxConcurrentRuns');
+    expect(parsed.autoRunner.maxConcurrentAttempts).toBe(defaultConfig().autoRunner.maxConcurrentAttempts);
   });
 });

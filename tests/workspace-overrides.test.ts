@@ -41,7 +41,7 @@ describe('WorkspaceService override persistence (issue #64)', () => {
     expect(ws.chatModel).toBeNull();
     expect(ws.isolationMode).toBeNull();
     expect(ws.priority).toBeNull();
-    expect(ws.maxConcurrentRuns).toBeNull();
+    expect(ws.maxConcurrentAttempts).toBeNull();
     expect(ws.autoRunnerEnabled).toBeNull();
     expect(ws.verificationCommand).toBeNull();
     expect(ws.reviewEnabled).toBeNull();
@@ -69,7 +69,7 @@ describe('WorkspaceService override persistence (issue #64)', () => {
       chatModel: 'claude-opus-5',
       isolationMode: 'worktree',
       priority: 'high',
-      maxConcurrentRuns: 2,
+      maxConcurrentAttempts: 2,
       autoRunnerEnabled: true,
     });
     expect(updated.harness).toBe('codex');
@@ -78,7 +78,7 @@ describe('WorkspaceService override persistence (issue #64)', () => {
     expect(updated.chatModel).toBe('claude-opus-5');
     expect(updated.isolationMode).toBe('worktree');
     expect(updated.priority).toBe('high');
-    expect(updated.maxConcurrentRuns).toBe(2);
+    expect(updated.maxConcurrentAttempts).toBe(2);
     expect(updated.autoRunnerEnabled).toBe(true);
   });
 
@@ -95,16 +95,16 @@ describe('WorkspaceService override persistence (issue #64)', () => {
 
   it('clears an override back to inherit with null', async () => {
     const ws = (await workspaces.list())[0]!;
-    await workspaces.update(ws.id, { harness: 'codex', chatHarness: 'claude', maxConcurrentRuns: 2, autoRunnerEnabled: false });
+    await workspaces.update(ws.id, { harness: 'codex', chatHarness: 'claude', maxConcurrentAttempts: 2, autoRunnerEnabled: false });
     const cleared = await workspaces.update(ws.id, {
       harness: null,
       chatHarness: null,
-      maxConcurrentRuns: null,
+      maxConcurrentAttempts: null,
       autoRunnerEnabled: null,
     });
     expect(cleared.harness).toBeNull();
     expect(cleared.chatHarness).toBeNull();
-    expect(cleared.maxConcurrentRuns).toBeNull();
+    expect(cleared.maxConcurrentAttempts).toBeNull();
     expect(cleared.autoRunnerEnabled).toBeNull();
   });
 
@@ -287,17 +287,17 @@ describe('WorkspaceService override persistence (issue #64)', () => {
   // store's entry outright (not just leaves it all-null).
   it('persists overrides to the YAML settings store; list()/get() compose them back; delete() removes the entry (issue #391)', async () => {
     const ws = (await workspaces.list())[0]!;
-    await workspaces.update(ws.id, { harness: 'codex', maxConcurrentRuns: 3 });
+    await workspaces.update(ws.id, { harness: 'codex', maxConcurrentAttempts: 3 });
 
     // The write is visible through `SettingsStore.getOverrides` directly, not
     // just via `WorkspaceService` — proves it actually reached the store.
-    expect(settingsStore.getOverrides(ws.id)).toMatchObject({ harness: 'codex', maxConcurrentRuns: 3 });
+    expect(settingsStore.getOverrides(ws.id)).toMatchObject({ harness: 'codex', maxConcurrentAttempts: 3 });
 
     // A second `WorkspaceService` over the SAME store instance composes the
     // same overrides back on both `list()` and `get()`.
     const reopened = new WorkspaceService(asyncDb, settingsStore);
-    expect((await reopened.list())[0]).toMatchObject({ harness: 'codex', maxConcurrentRuns: 3 });
-    expect(await reopened.get(ws.id)).toMatchObject({ harness: 'codex', maxConcurrentRuns: 3 });
+    expect((await reopened.list())[0]).toMatchObject({ harness: 'codex', maxConcurrentAttempts: 3 });
+    expect(await reopened.get(ws.id)).toMatchObject({ harness: 'codex', maxConcurrentAttempts: 3 });
 
     await workspaces.delete(ws.id);
     // `delete` removes the whole per-Workspace entry from the store (sparse),
@@ -310,7 +310,7 @@ describe('WorkspaceService override persistence (issue #64)', () => {
       isolationMode: null,
       priority: null,
       conflictResolveTurns: null,
-      maxConcurrentRuns: null,
+      maxConcurrentAttempts: null,
       autoRunnerEnabled: null,
       maxAttempts: null,
       contextReuseTokenLimit: null,

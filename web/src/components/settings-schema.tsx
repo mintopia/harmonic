@@ -470,35 +470,35 @@ const autoRunnerEnabled = scalar(
   },
 );
 
-// The global instance-wide ceiling (`autoRunner.maxConcurrentRuns`) is
-// global-only — distinct from the per-Workspace `maxConcurrentRuns` cap that
+// The global instance-wide ceiling (`autoRunner.maxConcurrentAttempts`) is
+// global-only — distinct from the per-Workspace `maxConcurrentAttempts` cap that
 // inherits it and only appears on the Workspace surface.
 const machineCeiling = scalar(
   {
-    id: 'settings-max-runs',
+    id: 'settings-max-attempts',
     control: 'number',
     label: 'Machine Ceiling',
-    errorKey: 'autoRunner.maxConcurrentRuns',
+    errorKey: 'autoRunner.maxConcurrentAttempts',
     min: 1,
     widthClass: 'w-28',
-    get: (c) => c.autoRunner.maxConcurrentRuns,
-    set: (c, raw) => ({ ...c, autoRunner: { ...c.autoRunner, maxConcurrentRuns: Number(raw) } }),
+    get: (c) => c.autoRunner.maxConcurrentAttempts,
+    set: (c, raw) => ({ ...c, autoRunner: { ...c.autoRunner, maxConcurrentAttempts: Number(raw) } }),
   },
   null,
 );
 
 const concurrencyCap = scalar(null, {
-  key: 'maxConcurrentRuns',
-  id: 'workspace-max-runs',
-  errorKey: 'maxConcurrentRuns',
+  key: 'maxConcurrentAttempts',
+  id: 'workspace-max-attempts',
+  errorKey: 'maxConcurrentAttempts',
   label: 'Concurrency cap',
-  get: (w) => w.maxConcurrentRuns,
-  set: (w, v) => ({ ...w, maxConcurrentRuns: v as number | null }),
-  inherited: (c) => c.autoRunner.maxConcurrentRuns,
+  get: (w) => w.maxConcurrentAttempts,
+  set: (w, v) => ({ ...w, maxConcurrentAttempts: v as number | null }),
+  inherited: (c) => c.autoRunner.maxConcurrentAttempts,
   min: 1,
   // The Machine Ceiling is the hard limit an override can't breach (ADR-0012);
   // clamping is read-time (#60), so this input `max` just guides.
-  max: (c) => c.autoRunner.maxConcurrentRuns,
+  max: (c) => c.autoRunner.maxConcurrentAttempts,
 });
 
 const maxAttempts = scalar(
