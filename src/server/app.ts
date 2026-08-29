@@ -495,7 +495,8 @@ export async function buildApp(opts: AppOptions): Promise<App> {
             : { ok: false, detail: `ticket #${task.trackerRef} could not be closed` },
       });
     }
-    if (task.isolationMode !== 'worktree' || !run.branch || !run.baseBranch || !run.candidateOid) return effects;
+    if (task.isolationMode !== 'worktree') return effects;
+    if (!run.branch || !run.baseBranch || !run.candidateOid) return effects;
     const baseBranch = run.baseBranch;
     const branch = run.branch;
     return [

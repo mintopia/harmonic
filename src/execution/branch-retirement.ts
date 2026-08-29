@@ -13,7 +13,7 @@ export interface BranchRetirementGit {
 }
 
 type BranchRun = Pick<RunRow, 'id' | 'taskId' | 'state' | 'branch' | 'baseBranch'>;
-type BranchTask = Pick<TaskRow, 'workingDir' | 'state' | 'origin' | 'trackerState'>;
+type BranchTask = Pick<TaskRow, 'workingDir' | 'state' | 'origin' | 'trackerState' | 'isolationMode'>;
 interface BranchRunStore {
   listAll(): Promise<BranchRun[]>;
 }
@@ -35,7 +35,7 @@ export class BranchRetirementCoordinator {
   ) {}
 
   async onRunSettled(task: BranchTask, run: BranchRun): Promise<void> {
-    if (run.state === 'running' || run.branch == null || !isRetirableTask(task)) return;
+    if (run.state === 'running' || task.isolationMode !== 'worktree' || run.branch == null || !isRetirableTask(task)) return;
     const retainedBranch = await this.git.symbolicBranch(task.workingDir);
     if (retainedBranch === null) return;
     await this.retireContained(task.workingDir, run.branch, retainedBranch);

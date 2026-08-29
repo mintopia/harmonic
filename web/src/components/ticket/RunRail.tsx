@@ -25,7 +25,7 @@ export function RunRail({
   onSelectChanges: () => void;
 }) {
   const files = changedFilesFromStat(worktree.stat);
-  const hasWorktree = worktree.isolationMode === 'worktree' && Boolean(worktree.branch);
+  const hasWorktree = worktree.isolationMode === 'worktree';
 
   return (
     <div aria-label="Worktree navigation">

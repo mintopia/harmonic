@@ -18,11 +18,12 @@ const run = (over: Partial<RetirableRun> = {}): RetirableRun => ({
   ...over,
 });
 
-const task: Pick<TaskRow, 'workingDir' | 'state' | 'origin' | 'trackerState'> = {
+const task: Pick<TaskRow, 'workingDir' | 'state' | 'origin' | 'trackerState' | 'isolationMode'> = {
   workingDir: '/repo',
   state: 'done',
   origin: 'native',
   trackerState: null,
+  isolationMode: 'worktree',
 };
 
 const raw = (dir: string, ...args: string[]) =>

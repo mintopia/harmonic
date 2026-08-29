@@ -116,7 +116,7 @@ export class AutoDrive {
    * (the Runner routes it to the failure path before verification).
    */
   async onCompleted(task: TaskRow, run: RunRow): Promise<'completed' | 'escalate'> {
-    const worktree = task.isolationMode === 'worktree' && !!run.branch && !!run.baseBranch;
+    const worktree = task.isolationMode === 'worktree';
     const fate = await this.mergeFate(task);
 
     if (fate === 'open-PR') {

@@ -80,7 +80,7 @@ describe('CrashRecoveryCoordinator (issue #117, isMerged/now seams)', () => {
    * a merge fact frozen (PONC) and an intent recorded for the `target-ref`
    * effect but NO result — died between intent and result. */
   async function seedMidMerge(branch: string, baseBranch: string): Promise<{ task: TaskRow; run: RunRow; idempotencyKey: string }> {
-    const created = await tasks.create({ prompt: 'merge me', state: 'ready', workingDir: repo });
+    const created = await tasks.create({ prompt: 'merge me', state: 'ready', workingDir: repo, isolationMode: 'worktree' });
     await tasks.setState(created.id, 'working');
     let run = await runStore.create(created.id);
     run = await runStore.update(run.id, { phase: 'merging', branch, baseBranch });

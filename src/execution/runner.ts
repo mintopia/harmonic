@@ -3153,7 +3153,7 @@ export class Runner {
           // it. The diffstat is snapshotted before the merge (issue #36).
           const diff = await this.diffSnapshotFor(task, run.id);
           const current = await this.runStore.get(run.id);
-          const worktreeMerge = task.isolationMode === 'worktree' && !!current.branch && !!current.baseBranch;
+          const worktreeMerge = task.isolationMode === 'worktree';
           const deps = this.mergePolicyDeps(task, run, record, active.verifyAbort.signal, patch);
           // Merge the verified worktree branch via the one merge policy (ADR-0001).
           // Returns false when the merge escalated — the primitive already settled

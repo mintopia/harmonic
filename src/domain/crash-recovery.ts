@@ -114,7 +114,7 @@ export class CrashRecoveryCoordinator {
       }
       const needsWorldCheck = priorEntries.some((entry) => entry.effect === 'target-ref' && entry.intended && !entry.appliedOk);
       let merged = false;
-      if (needsWorldCheck && run.branch && run.baseBranch) {
+      if (needsWorldCheck && task.isolationMode === 'worktree' && run.branch && run.baseBranch) {
         const isMergedFn = this.opts.isMerged ?? Git.isAncestor;
         merged = await isMergedFn(task.workingDir, run.baseBranch, run.branch);
       }
