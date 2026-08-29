@@ -566,7 +566,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // Heal runs whose usage collection raced the harness's log flush —
   // their session logs are settled on disk by now.
   await runner.backfillUsage();
-  const escalation = new EscalationService(runs, tasks, merging, mergeEffectsFor, {
+  const escalation = new EscalationService(runs, tasks, operatorSettle, mergeEffectsFor, {
     resume: (task, guidance, startNow) => runner.resumeWithGuidance(task, guidance, startNow),
     cleanup: (task, run) => runner.cleanupClosed(task, run),
   });

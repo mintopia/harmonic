@@ -10,7 +10,6 @@ import { RunFactStore } from '../src/domain/run-facts.js';
 import { MergeJournalStore } from '../src/domain/merge-journal.js';
 import { RunSettleCoordinator } from '../src/domain/run-settle.js';
 import { MergeCoordinator, type MergeEffectExec, type MergeEffectOutcome } from '../src/domain/merge-coordinator.js';
-import { EscalationService } from '../src/domain/escalation.js';
 import type { SettleProjection } from '../src/domain/run-coordinator.js';
 import type { TaskRow, RunRow } from '../src/db/schema.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
@@ -254,28 +253,33 @@ describe('MergeCoordinator (issue #115)', () => {
     expect(types).not.toContain('agent-finish/unresolved');
   });
 
-  it('a failed operator Accept leaves the ticket escalated and its settled Run terminal — no run slot consumed (issue #270)', async () => {
+  it('a failed `operator-accept` merge leaves the ticket escalated and its settled Run terminal — no run slot consumed (issue #270)', async () => {
+    // `EscalationService.accept` no longer drives this through `MergeCoordinator`
+    // (ADR-0001, #388 S-B) — it applies effects directly and only settles on
+    // success. This test now exercises `MergeCoordinator.merge` itself, still a
+    // live surface for callers that journal (crash recovery, slice S-A).
     const { task } = await fixture();
     // The real shape: the escalated ticket's Run already settled `failed`.
     let run = (await runStore.listForTask(task.id))[0]!;
     await settle.settle(task, run, 'escalate', { runState: 'failed', taskAction: 'escalate', reason: 'escalated to human: attempt 2 of 2 failed' });
     run = await runStore.get(run.id);
     expect(run).toMatchObject({ state: 'failed', phase: 'terminal' });
-    const escalation = new EscalationService(
-      runStore,
-      tasks,
-      coordinator,
-      () => [{
+
+    const outcome = await coordinator.merge(
+      task,
+      run,
+      MERGE_PROJECTION,
+      [{
         effect: 'target-ref',
         idempotencyKey: 'main@dirty-target',
         expected: {},
         apply: async () => ({ ok: false, detail: 'target branch has uncommitted changes; merge via PR/manual' }),
       }],
-      { resume: async () => {}, cleanup: async () => {} },
+      {},
+      'operator-accept',
     );
 
-    await expect(escalation.accept(task.id)).rejects.toThrow('target branch has uncommitted changes');
-
+    expect(outcome).toEqual({ ok: false, detail: 'target branch has uncommitted changes; merge via PR/manual' });
     expect(await runStore.get(run.id)).toMatchObject({ state: 'failed', phase: 'terminal' });
     expect((await tasks.get(task.id)).state).toBe('escalated');
     expect((await journal.views(run.id)).map((r) => r.kind)).toEqual(['ponc', 'intent', 'result', 'abandoned']);

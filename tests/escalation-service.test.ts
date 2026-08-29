@@ -9,7 +9,7 @@ import { RunStore } from '../src/domain/runs.js';
 import { RunFactStore } from '../src/domain/run-facts.js';
 import { MergeJournalStore } from '../src/domain/merge-journal.js';
 import { RunSettleCoordinator } from '../src/domain/run-settle.js';
-import { MergeCoordinator, type MergeEffectExec } from '../src/domain/merge-coordinator.js';
+import type { MergeEffectExec } from '../src/domain/merge-coordinator.js';
 import { EscalationService } from '../src/domain/escalation.js';
 import { DomainError } from '../src/domain/errors.js';
 import type { RunRow, TaskRow } from '../src/db/schema.js';
@@ -30,7 +30,6 @@ describe('EscalationService', () => {
   let tasks: TaskService;
   let runStore: RunStore;
   let settle: RunSettleCoordinator;
-  let merging: MergeCoordinator;
   let resumed: Array<{ taskId: number; guidance: string; startNow: boolean }>;
   let cleaned: Array<{ taskId: number; runId: number | undefined }>;
   let effects: MergeEffectExec[];
@@ -44,11 +43,10 @@ describe('EscalationService', () => {
     runStore = new RunStore(asyncDb);
     const journal = new MergeJournalStore(asyncDb);
     settle = new RunSettleCoordinator(runStore, tasks, new RunFactStore(asyncDb), undefined, journal);
-    merging = new MergeCoordinator(runStore, asyncDb, journal, settle);
     resumed = [];
     cleaned = [];
     effects = [];
-    service = new EscalationService(runStore, tasks, merging, () => effects, {
+    service = new EscalationService(runStore, tasks, settle, () => effects, {
       resume: async (task, guidance, startNow) => {
         resumed.push({ taskId: task.id, guidance, startNow });
       },
@@ -117,7 +115,7 @@ describe('EscalationService', () => {
       expect((await tasks.get(task.id)).state).toBe('escalated');
     });
 
-    it('a failed merging effect surfaces its detail and leaves the ticket escalated with the merging abandoned', async () => {
+    it('a failed merging effect surfaces its detail and leaves the ticket escalated with nothing further applied', async () => {
       const { task, run } = await escalated();
       effects = [{ effect: 'target-ref', idempotencyKey: 'main<-branch', expected: {}, apply: async () => ({ ok: false, detail: 'merge conflict in src/a.ts' }) }];
 
@@ -125,7 +123,9 @@ describe('EscalationService', () => {
 
       expect((await tasks.get(task.id)).state).toBe('escalated');
       expect(await runStore.get(run.id)).toMatchObject({ state: 'failed', phase: 'terminal' });
-      expect((await new MergeJournalStore(asyncDb).views(run.id)).map((r) => r.kind)).toEqual(['ponc', 'intent', 'result', 'abandoned']);
+      // Accept no longer routes through the journaled MergeCoordinator
+      // (ADR-0001, #388 S-B): a failed effect writes nothing to merge_journal.
+      expect(await new MergeJournalStore(asyncDb).views(run.id)).toEqual([]);
     });
   });
 

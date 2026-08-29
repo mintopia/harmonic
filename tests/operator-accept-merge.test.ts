@@ -109,9 +109,11 @@ describe('operator Accept merge (ADR-0001, issue #383)', () => {
     expect(git(repo, 'show', 'main:other.txt')).toBe('someone else merged');
     expect(git(repo, 'show', 'main:impl-native.txt')).toBe('implementation');
     expect(git(repo, 'log', '--merges', '--oneline', 'main')).not.toBe(''); // a merge commit, not a fast-forward
+    // Accept no longer routes through the journaled MergeCoordinator (ADR-0001,
+    // #388 S-B): the merge runs entirely through the one merge policy, so
+    // merge_journal gets no rows at all for this run.
     const journal = await server.app.ctx.asyncDb.read((d) => d.select().from(mergeJournal).where(eq(mergeJournal.runId, runId)).all());
-    expect(journal.map((row) => row.kind)).toContain('result');
-    expect(journal.map((row) => row.kind)).not.toContain('abandoned'); // it merged, not abandoned
+    expect(journal).toEqual([]);
 
     await server.close();
   });
