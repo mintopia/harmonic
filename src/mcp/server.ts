@@ -5,7 +5,6 @@ import { HARNESS_IDS, ISOLATION_MODES, PRIORITIES } from '../config.js';
 import { TASK_STATES } from '../db/schema.js';
 import { serializeRun } from '../domain/runs.js';
 import { DomainError } from '../domain/errors.js';
-import { buildLeaseDiagnostics } from '../domain/lease-diagnostics.js';
 
 const taskId = { taskId: z.number().int().positive().describe('Task id') };
 
@@ -17,9 +16,9 @@ const taskId = { taskId: z.number().int().positive().describe('Task id') };
  * autonomy is deliberately enabled (ADR-0002).
  *
  * A new server is built per request (stateless streamable HTTP), so the
- * tool list always reflects the current config. `opts.operator` (issue #125)
- * gates the Work Context lease disposition tools — default `false` (treat an
- * unspecified caller as non-operator) so a caller of this function that
+ * tool list always reflects the current config. `opts.operator` gates the
+ * operator-only tools (e.g. `force_integrate_epic`) — default `false` (treat
+ * an unspecified caller as non-operator) so a caller of this function that
  * hasn't been updated to compute the real value fails closed rather than
  * accidentally exposing operator actions to a Run Key.
  */
@@ -31,12 +30,12 @@ export function buildMcpServer(ctx: AppContext, opts: { operator?: boolean } = {
     content: [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }],
   });
 
-  /** Operator-only tool guard (issue #125): thrown as a `DomainError` so
-   * `wrapAsync` reports it the same way any other domain rejection is reported,
-   * rather than a raw 500. */
+  /** Operator-only tool guard: thrown as a `DomainError` so `wrapAsync`
+   * reports it the same way any other domain rejection is reported, rather
+   * than a raw 500. */
   const requireOperator = () => {
     if (!operator) {
-      throw new DomainError('forbidden', 'operator-only: lease disposition requires an operator credential');
+      throw new DomainError('forbidden', 'operator-only: this action requires an operator credential');
     }
   };
 
@@ -224,55 +223,6 @@ export function buildMcpServer(ctx: AppContext, opts: { operator?: boolean } = {
     wrapAsync(async ({ taskId, reason }) => {
       await ctx.tasks.get(taskId); // 404s a bad id via DomainError
       return { acknowledged: true, running: ctx.runner.markEscalate(taskId, reason) };
-    }),
-  );
-
-  server.registerTool(
-    'list_leases',
-    {
-      description:
-        'Operator only. List every Work Context lease with diagnostics: owner Run/Task, TTL state, and the ready Tasks queued behind it.',
-      inputSchema: {},
-    },
-    wrapAsync(async () => {
-      requireOperator();
-      return buildLeaseDiagnostics({
-        leases: await ctx.leases.listAll(),
-        runs: await ctx.runs.listAll(),
-        tasks: await ctx.tasks.list(),
-        waitingSince: (id) => ctx.autoRunner.waitingSince(id),
-        now: Date.now(),
-      });
-    }),
-  );
-
-  server.registerTool(
-    'supersede_lease',
-    {
-      description:
-        'Operator only. Re-point a stuck Work Context lease to a Run you name, re-admitting it as held with a fresh TTL.',
-      inputSchema: { key: z.string().min(1).describe('The Work Context key'), runId: z.number().int().positive() },
-    },
-    wrapAsync(async ({ key, runId }) => {
-      requireOperator();
-      await ctx.runs.get(runId); // 404s an unknown Run before touching the lease
-      const lease = await ctx.leases.supersede(key, runId);
-      ctx.autoRunner.poke();
-      return { ok: true, lease };
-    }),
-  );
-
-  server.registerTool(
-    'unlock_lease',
-    {
-      description: 'Operator only. Force-release a Work Context lease outright, freeing its key for a fresh acquire.',
-      inputSchema: { key: z.string().min(1).describe('The Work Context key') },
-    },
-    wrapAsync(async ({ key }) => {
-      requireOperator();
-      await ctx.leases.forceRelease(key);
-      ctx.autoRunner.poke();
-      return { ok: true };
     }),
   );
 

@@ -6,7 +6,6 @@ import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { RunStore } from '../src/domain/runs.js';
-import { WorkContextLeaseStore } from '../src/domain/work-context-leases.js';
 import { RunFactStore } from '../src/domain/run-facts.js';
 import { MergeJournalStore } from '../src/domain/merge-journal.js';
 import { RunSettleCoordinator } from '../src/domain/run-settle.js';
@@ -30,13 +29,12 @@ const CANCEL_PROJECTION: SettleProjection = { runState: 'cancelled', taskAction:
  */
 describe('MergeCoordinator (issue #115)', () => {
   let dir: string;
-  // These stores (RunStore, TaskService, leases, RunFactStore, MergeJournalStore)
-  // are all on the async libsql Db (ADR-0029; merging journal migrated in #209).
+  // These stores (RunStore, TaskService, RunFactStore, MergeJournalStore) are
+  // all on the async libsql Db (ADR-0029; merging journal migrated in #209).
   let asyncDb: AsyncDbHandle;
   let settingsStore: SettingsStore;
   let tasks: TaskService;
   let runStore: RunStore;
-  let leases: WorkContextLeaseStore;
   let runFacts: RunFactStore;
   let journal: MergeJournalStore;
   let settle: RunSettleCoordinator;
@@ -48,10 +46,9 @@ describe('MergeCoordinator (issue #115)', () => {
     settingsStore = await makeSettingsStore(dir);
     tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
     runStore = new RunStore(asyncDb);
-    leases = new WorkContextLeaseStore(asyncDb);
     runFacts = new RunFactStore(asyncDb);
     journal = new MergeJournalStore(asyncDb);
-    settle = new RunSettleCoordinator(runStore, tasks, leases, runFacts, undefined, journal);
+    settle = new RunSettleCoordinator(runStore, tasks, runFacts, undefined, journal);
     coordinator = new MergeCoordinator(runStore, asyncDb, journal, settle);
   });
   afterEach(async () => {
@@ -179,7 +176,7 @@ describe('MergeCoordinator (issue #115)', () => {
     // second instance exactly as the Runner does and races the cancel through
     // it — the merge must still win. (Without the Runner-side journal wiring,
     // this cancel would flip the Run to `cancelled` and "un-merge" a merge.)
-    const runnerSettle = new RunSettleCoordinator(runStore, tasks, leases, runFacts, undefined, new MergeJournalStore(asyncDb));
+    const runnerSettle = new RunSettleCoordinator(runStore, tasks, runFacts, undefined, new MergeJournalStore(asyncDb));
 
     const { task, run } = await fixture();
     let resolveApply!: (v: MergeEffectOutcome) => void;

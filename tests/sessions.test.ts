@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { sessions } from '../src/db/schema.js';
 import { DomainError } from '../src/domain/errors.js';
-import { isUniqueViolation } from '../src/domain/work-context-leases.js';
+import { isUniqueViolation } from '../src/db/errors.js';
 import {
   SessionStore,
   stripMcpCredentials,

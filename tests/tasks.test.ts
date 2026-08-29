@@ -376,11 +376,10 @@ describe('task-default inheritance', () => {
 });
 
 /**
- * `skipReason` (issue #171): the transient House-Rule reason (ADR-0022,
- * issue #120) a ready Task's own API shape carries when the Auto-Runner's
- * last pick pass skipped it for a held Work Context — surfaced directly on
- * `taskToApi` (`AutoRunner.skipReasonFor`) rather than only through the
- * separate lease-diagnostics surface (issue #125).
+ * `skipReason` (issue #171): the transient House-Rule reason (ADR-0001) a
+ * ready Task's own API shape carries when the Auto-Runner's last pick pass
+ * skipped it for an occupied Work Context — surfaced directly on `taskToApi`
+ * (`AutoRunner.skipReasonFor`).
  */
 describe('task skipReason (issue #171)', () => {
   let server: TestServer;
@@ -402,8 +401,7 @@ describe('task skipReason (issue #171)', () => {
     });
 
     // Enabling Auto-Runner pokes it; the fill pass skips `blocked` (context
-    // occupied, per the House Rule — #120), the same mechanics lease-routes.test.ts
-    // exercises for the diagnostics surface.
+    // occupied, per the House Rule — the scheduler pick predicate, ADR-0001).
     await server.api('PATCH', '/api/config', { autoRunner: { enabled: true, maxConcurrentRuns: 1 } });
     await waitFor(async () => server.app.ctx.autoRunner.skipReasonFor(blocked.body.id) ?? undefined);
 

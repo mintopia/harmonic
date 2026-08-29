@@ -61,8 +61,7 @@ export class RunFactStore {
    * two statements wrapped as a single write-queue unit (ADR-0029 §3): the
    * async single-writer queue is what now stands in for better-sqlite3's
    * synchrony, so no concurrent append can interleave between the read and the
-   * insert and steal the `seq`. A Run's facts also have a single owner by design
-   * (ADR-0022, the Work Context lease). The `(run_id, seq)` unique index remains
+   * insert and steal the `seq`. The `(run_id, seq)` unique index remains
    * the cross-process integrity backstop: a racing append that computed the same
    * `seq` is rejected loudly (a raw UNIQUE violation) rather than corrupting the
    * log's total order — mirroring `RunStore.appendEvent` but with the added index

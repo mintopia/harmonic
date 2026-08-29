@@ -28,10 +28,9 @@ function taskOperationAttributes(task: Pick<TaskRow, 'id' | 'origin' | 'priority
  * The direct-mode Work Context identity a Task would occupy, or `undefined` in
  * worktree mode. Worktree Runs each get a unique per-Run path+branch (their key
  * is distinct by construction), so the "≤1 afk Run per context" House Rule is
- * vacuous there and those Tasks are exempt from the pick predicate (ADR-0022).
+ * vacuous there and those Tasks are exempt from the pick predicate (ADR-0001).
  * Direct-mode Tasks share one physical checkout, so their key is derivable from
- * the Task alone — no Run needed — and matches the canonical key the hard lease
- * acquires in `Runner.beginRun` (#118/#119), collapsing trailing-slash/symlink
+ * the Task alone — no Run needed — collapsing trailing-slash/symlink
  * variants of the same directory onto one identity.
  */
 function directContextKey(task: TaskRow): string | undefined {
@@ -143,8 +142,7 @@ export class AutoRunner {
 
   /**
    * Epoch ms a Task first started being House-Rule-skipped on a still-current
-   * streak, keyed by Task id (issue #125): the queue-diagnostics half of the
-   * lease operator surface reads this (via {@link waitingSince}) to report how
+   * streak, keyed by Task id. Reports (via {@link waitingSince}) how
    * long a blocked Task has been waiting on an occupied Work Context. Set the
    * first time a pick pass skips a Task and left alone on every subsequent
    * pass it's still skipped, so the clock reflects when the wait *began*, not
@@ -188,10 +186,9 @@ export class AutoRunner {
     return this.schedulerSkipReasons.get(taskId);
   }
 
-  /** When `taskId` started its current House-Rule-blocked streak (issue
-   * #125), or `undefined` if it isn't currently blocked (or hasn't been seen).
-   * The lease queue-diagnostics surface's "how long has this been waiting"
-   * signal. */
+  /** When `taskId` started its current House-Rule-blocked streak,
+   * or `undefined` if it isn't currently blocked (or hasn't been seen).
+   * The "how long has this been waiting" signal for a Work-Context-blocked Task. */
   waitingSince(taskId: number): number | undefined {
     return this.contextWaitingSince.get(taskId);
   }
@@ -296,7 +293,7 @@ export class AutoRunner {
     this.schedulerSkipReasons.set(taskId, reason);
   }
 
-  /** The lease diagnostics clock applies only to waits that contend for a
+  /** The wait clock applies only to waits that contend for a
    * Work Context, plus the existing git-workspace backoff. Other scheduler
    * explanations are intentionally current-state only. */
   private recordWaiting(taskId: number): void {
@@ -423,14 +420,12 @@ export class AutoRunner {
    * Picks skip any Task parked this cycle, a Task whose Workspace is
    * Auto-Runner-disabled (master is already on here, so an inheriting Workspace
    * counts as enabled) or already at its resolved cap — the per-Workspace half of
-   * the two-level limit (ADR-0012, issue #60) — and, the House Rule (ADR-0022,
-   * issue #120), a Task whose direct-mode Work Context is already occupied by a
-   * working Run, so the Auto-Runner doesn't pick straight
-   * into the hard lease rejection from #119 (churn). That predicate is advisory —
-   * the lease CAS in `Runner.beginRun` stays the authoritative gate — and reads
-   * occupancy from **Task state**, not the lease store: the lease is released the
-   * moment a Run settles (seam for #114), so by the time a Task sits in
-   * context. A Task started earlier this pass is folded into `occupied`, so it
+   * the two-level limit (ADR-0012, issue #60) — and, the House Rule (ADR-0001),
+   * a Task whose direct-mode Work Context is already occupied by a
+   * working Run. This predicate is the sole gate preventing the Auto-Runner from
+   * picking a second execution into an occupied direct-mode Work Context; it reads
+   * occupancy from **Task state** (a `working` Task occupies its context until it
+   * settles). A Task started earlier this pass is folded into `occupied`, so it
    * correctly blocks a same-context sibling visited later.
    */
   private async fillSlots(

@@ -95,9 +95,8 @@ export class RunStore {
     );
   }
 
-  /** Every Run row, unfiltered — the lease diagnostics surface (issue #125)
-   * joins this against `leases.listAll()` in memory to resolve each lease's
-   * owning Run/Task. */
+  /** Every Run row, unfiltered. Branch retirement scans it to find
+   * Runs to retire. */
   listAll(): Promise<RunRow[]> {
     return this.db.read((db) => db.select().from(runs).all());
   }
@@ -110,8 +109,8 @@ export class RunStore {
 
   /** Every Run bound to one durable Session (issue #148), oldest first — the
    * Runs that share the Session's builder worktree across a retry / reject
-   * continuation. Session retirement uses this to check no live Run still leases
-   * the worktree before removing it. */
+   * continuation. Session retirement uses this to check no live Run of the Session
+   * is still active (`running`). */
   listForSession(sessionRowId: number): Promise<RunRow[]> {
     return this.db.read((db) =>
       db.select().from(runs).where(eq(runs.sessionRowId, sessionRowId)).orderBy(asc(runs.attempt)).all(),
@@ -155,12 +154,8 @@ export class RunStore {
   }
 
   /**
-   * Remove a Run row. Used only to compensate a failed claim: `Runner.beginRun`
-   * creates the Run before acquiring its Work Context lease, and — now that the
-   * Run row (async Db) and the lease (sync Db) no longer share one transaction
-   * during the expand-contract migration (ADR-0029) — deletes the just-created
-   * Run if the lease CAS rejects it, so a losing claim still leaves no orphan.
-   * Safe because such a Run has no events/facts/lease pointing at it yet.
+   * Remove a Run row (used to simulate/handle a Run row removed out from under
+   * the Runner mid-flight).
    */
   async delete(id: number): Promise<void> {
     await this.db.write((db) => db.delete(runs).where(eq(runs.id, id)).run());

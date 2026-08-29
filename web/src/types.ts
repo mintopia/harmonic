@@ -374,9 +374,9 @@ export interface Task {
    * surfaced so an escalated Task shows whether Accept has work to merge; null
    * when no run has produced a candidate yet. */
   candidateRef: string | null;
-  /** Transient House-Rule reason a `ready` Task is being skipped for a held
-   * Work Context lease (issue #171, e.g. "Work Context held by task 12
-   * (working)"); null normally, including once the Task starts working. */
+  /** Transient scheduler-pick skip reason for a `ready` Task whose Work
+   * Context is already occupied (issue #171, e.g. "Work Context held by task
+   * 12 (working)"); null normally, including once the Task starts working. */
   skipReason: string | null;
 }
 

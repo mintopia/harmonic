@@ -73,7 +73,6 @@ describe('Activity process-tree expansion (issue #322)', () => {
     vi.stubGlobal('fetch', async (input: string | URL | Request) => {
       const path = String(input);
       if (path === '/api/activity') return new Response(JSON.stringify({ processes }));
-      if (path === '/api/leases') return new Response(JSON.stringify({ leases: [] }));
       if (path.endsWith('/log')) return new Response(JSON.stringify({ status: 'unavailable' }));
       throw new Error(`unexpected request: ${path}`);
     });

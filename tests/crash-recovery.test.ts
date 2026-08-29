@@ -7,7 +7,6 @@ import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { RunStore } from '../src/domain/runs.js';
-import { WorkContextLeaseStore } from '../src/domain/work-context-leases.js';
 import { RunFactStore } from '../src/domain/run-facts.js';
 import { MergeJournalStore } from '../src/domain/merge-journal.js';
 import { RunSettleCoordinator } from '../src/domain/run-settle.js';
@@ -15,8 +14,6 @@ import { MergeCoordinator } from '../src/domain/merge-coordinator.js';
 import { TurnQueueStore } from '../src/domain/turn-queue-store.js';
 import { CrashRecoveryCoordinator } from '../src/domain/crash-recovery.js';
 import { Git } from '../src/execution/git.js';
-import { workContextKey } from '../src/domain/work-context-key.js';
-import { DomainError } from '../src/domain/errors.js';
 import type { TaskRow, RunRow } from '../src/db/schema.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { allWorkspaces, makeSettingsStore } from './helpers.js';
@@ -51,7 +48,6 @@ describe('CrashRecoveryCoordinator (issue #117, isMerged/now seams)', () => {
   let settingsStore: SettingsStore;
   let tasks: TaskService;
   let runStore: RunStore;
-  let leases: WorkContextLeaseStore;
   let runFacts: RunFactStore;
   let journal: MergeJournalStore;
   let settle: RunSettleCoordinator;
@@ -65,10 +61,9 @@ describe('CrashRecoveryCoordinator (issue #117, isMerged/now seams)', () => {
     settingsStore = await makeSettingsStore(dir);
     tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
     runStore = new RunStore(asyncDb);
-    leases = new WorkContextLeaseStore(asyncDb);
     runFacts = new RunFactStore(asyncDb);
     journal = new MergeJournalStore(asyncDb);
-    settle = new RunSettleCoordinator(runStore, tasks, leases, runFacts, undefined, journal);
+    settle = new RunSettleCoordinator(runStore, tasks, runFacts, undefined, journal);
     merging = new MergeCoordinator(runStore, asyncDb, journal, settle);
     turnQueue = new TurnQueueStore(asyncDb);
   });
@@ -108,7 +103,7 @@ describe('CrashRecoveryCoordinator (issue #117, isMerged/now seams)', () => {
 
     const mergeSpy = vi.spyOn(Git, 'casUpdateRef');
     const isMerged = vi.fn(async () => true);
-    const coord = new CrashRecoveryCoordinator(runStore, tasks, leases, settle, merging, journal, turnQueue, {
+    const coord = new CrashRecoveryCoordinator(runStore, tasks, settle, merging, journal, turnQueue, {
       now: () => 1_000_000,
       isMerged,
     });
@@ -135,7 +130,7 @@ describe('CrashRecoveryCoordinator (issue #117, isMerged/now seams)', () => {
     const baseBranch = 'main';
     const { run } = await seedMidMerge(branch, baseBranch);
 
-    const coord = new CrashRecoveryCoordinator(runStore, tasks, leases, settle, merging, journal, turnQueue, {
+    const coord = new CrashRecoveryCoordinator(runStore, tasks, settle, merging, journal, turnQueue, {
       now: () => 1_000_000,
       isMerged: async () => false,
     });
@@ -166,7 +161,7 @@ describe('CrashRecoveryCoordinator (issue #117, isMerged/now seams)', () => {
       detail: 'target branch has uncommitted changes; merge via PR/manual',
     });
     const isMerged = vi.fn(async () => false);
-    const coord = new CrashRecoveryCoordinator(runStore, tasks, leases, settle, merging, journal, turnQueue, { isMerged });
+    const coord = new CrashRecoveryCoordinator(runStore, tasks, settle, merging, journal, turnQueue, { isMerged });
 
     await coord.reconcile();
 
@@ -187,7 +182,7 @@ describe('CrashRecoveryCoordinator (issue #117, isMerged/now seams)', () => {
     await journal.recordIntent(run.id, { effect: 'target-ref', idempotencyKey, expected: { baseBranch, branch } });
     await journal.recordResult(run.id, { effect: 'target-ref', idempotencyKey, ok: true, observed: { baseBranch, branch } });
     const isMerged = vi.fn(async () => false);
-    const coord = new CrashRecoveryCoordinator(runStore, tasks, leases, settle, merging, journal, turnQueue, { isMerged });
+    const coord = new CrashRecoveryCoordinator(runStore, tasks, settle, merging, journal, turnQueue, { isMerged });
 
     await coord.reconcile();
 
@@ -206,7 +201,7 @@ describe('CrashRecoveryCoordinator (issue #117, isMerged/now seams)', () => {
     let yields = 0;
     const order: string[] = [];
 
-    const done = new CrashRecoveryCoordinator(runStore, tasks, leases, settle, merging, journal, turnQueue, {
+    const done = new CrashRecoveryCoordinator(runStore, tasks, settle, merging, journal, turnQueue, {
       now: () => 1_000_000,
       yieldOptions: {
         budgetMs: 0,
@@ -230,260 +225,3 @@ describe('CrashRecoveryCoordinator (issue #117, isMerged/now seams)', () => {
   });
 });
 
-/**
- * Boot reconciliation of Work Context leases left behind by a dead owner
- * (issue #123, reliability-design §0.5): a fresh process is executing
- * nothing, so every lease still in `work_context_leases` at boot belongs to a
- * Run whose process is gone. Pass D reconciles each: a provably-clean
- * `direct` context is released (freeing the key); anything not provably safe
- * (dirty tree, detached HEAD, worktree mode, unreadable) flips to `suspect` —
- * still owned, still blocking acquires, awaiting operator disposition.
- */
-describe('CrashRecoveryCoordinator lease reconciliation (issue #123)', () => {
-  let dir: string;
-  let repo: string;
-  let asyncDb: AsyncDbHandle;
-  let settingsStore: SettingsStore;
-  let tasks: TaskService;
-  let runStore: RunStore;
-  let leases: WorkContextLeaseStore;
-  let runFacts: RunFactStore;
-  let journal: MergeJournalStore;
-  let settle: RunSettleCoordinator;
-  let merging: MergeCoordinator;
-  let turnQueue: TurnQueueStore;
-
-  beforeEach(async () => {
-    dir = mkdtempSync(join(tmpdir(), 'harmonic-crash-recovery-leases-'));
-    repo = makeRepo();
-    asyncDb = await openAsyncDb(dir);
-    settingsStore = await makeSettingsStore(dir);
-    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
-    runStore = new RunStore(asyncDb);
-    leases = new WorkContextLeaseStore(asyncDb);
-    runFacts = new RunFactStore(asyncDb);
-    journal = new MergeJournalStore(asyncDb);
-    settle = new RunSettleCoordinator(runStore, tasks, leases, runFacts, undefined, journal);
-    merging = new MergeCoordinator(runStore, asyncDb, journal, settle);
-    turnQueue = new TurnQueueStore(asyncDb);
-  });
-
-  afterEach(async () => {
-    await asyncDb.close();
-    rmSync(dir, { recursive: true, force: true });
-    rmSync(repo, { recursive: true, force: true });
-    vi.restoreAllMocks();
-  });
-
-  /** Seed a held lease owned by a Run whose process is (fictitiously) dead:
-   * a Task + a freshly-created Run (phase `executing` — a live orphan, exactly
-   * what a mid-flight crash leaves), with a lease acquired against it. */
-  async function seedDeadOwnerLease(
-    workingDir: string,
-    isolationMode: 'direct' | 'worktree' = 'direct',
-  ): Promise<{ task: TaskRow; run: RunRow; key: string }> {
-    const created = await tasks.create({ prompt: 'own a work context', state: 'ready', workingDir, isolationMode });
-    const run = await runStore.create(created.id);
-    const task = await tasks.get(created.id);
-    const key =
-      isolationMode === 'direct'
-        ? workContextKey({ isolationMode: 'direct', workingDir })
-        : workContextKey({
-            isolationMode: 'worktree',
-            workingDir,
-            worktreePath: join(workingDir, 'wt'),
-            branch: 'harmonic/task-x-run-1',
-          });
-    await leases.acquire(key, run.id, 'running');
-    return { task, run, key };
-  }
-
-  it('direct + provably clean → released, and the freed key is admissible again (AC#3)', async () => {
-    const { key } = await seedDeadOwnerLease(repo, 'direct');
-
-    const coord = new CrashRecoveryCoordinator(runStore, tasks, leases, settle, merging, journal, turnQueue, {
-      now: () => 1_000_000,
-      isDirectContextClean: async () => true,
-    });
-    await coord.reconcile();
-
-    expect(await leases.getByKey(key)).toBeUndefined();
-
-    // The freed key is admissible again.
-    const otherTask = await tasks.create({ prompt: 'contend for the freed key', state: 'ready' });
-    const otherRun = await runStore.create(otherTask.id);
-    await expect(leases.acquire(key, otherRun.id, 'running')).resolves.not.toThrow();
-  });
-
-  it('direct + not provably clean → suspect, still held, and still blocks acquires', async () => {
-    const { key } = await seedDeadOwnerLease(repo, 'direct');
-
-    const coord = new CrashRecoveryCoordinator(runStore, tasks, leases, settle, merging, journal, turnQueue, {
-      now: () => 1_000_000,
-      isDirectContextClean: async () => false,
-    });
-    await coord.reconcile();
-
-    const lease = await leases.getByKey(key);
-    expect(lease).toBeDefined();
-    expect(lease?.state).toBe('suspect');
-
-    const otherTask = await tasks.create({ prompt: 'contend for a suspect key', state: 'ready' });
-    const otherRun = await runStore.create(otherTask.id);
-    let caught: unknown;
-    try {
-      await leases.acquire(key, otherRun.id, 'running');
-    } catch (err) {
-      caught = err;
-    }
-    expect(caught).toBeInstanceOf(DomainError);
-    expect((caught as DomainError).code).toBe('conflict');
-  });
-
-  it('worktree mode → suspect even when the clean-probe would say clean (mode routing, not cleanliness)', async () => {
-    const { key } = await seedDeadOwnerLease(repo, 'worktree');
-
-    const coord = new CrashRecoveryCoordinator(runStore, tasks, leases, settle, merging, journal, turnQueue, {
-      now: () => 1_000_000,
-      isDirectContextClean: async () => true,
-    });
-    await coord.reconcile();
-
-    const lease = await leases.getByKey(key);
-    expect(lease).toBeDefined();
-    expect(lease?.state).toBe('suspect');
-  });
-
-  it('is idempotent across boots — a suspect lease is left untouched even if it now looks clean', async () => {
-    const { key } = await seedDeadOwnerLease(repo, 'direct');
-
-    const firstBoot = new CrashRecoveryCoordinator(runStore, tasks, leases, settle, merging, journal, turnQueue, {
-      now: () => 1_000_000,
-      isDirectContextClean: async () => false,
-    });
-    await firstBoot.reconcile();
-    expect((await leases.getByKey(key))?.state).toBe('suspect');
-
-    const secondBoot = new CrashRecoveryCoordinator(runStore, tasks, leases, settle, merging, journal, turnQueue, {
-      now: () => 2_000_000,
-      isDirectContextClean: async () => true,
-    });
-    await secondBoot.reconcile();
-
-    const lease = await leases.getByKey(key);
-    expect(lease).toBeDefined();
-    expect(lease?.state).toBe('suspect'); // never auto-released on a later boot
-  });
-
-  it('default clean-probe (no injection): a clean committed direct repo is released; a dirtied one becomes suspect', async () => {
-    const { key: cleanKey } = await seedDeadOwnerLease(repo, 'direct');
-
-    const coord = new CrashRecoveryCoordinator(runStore, tasks, leases, settle, merging, journal, turnQueue, {
-      now: () => 1_000_000,
-      // no isDirectContextClean override — exercises the real Git.isDirty/symbolicBranch
-    });
-    await coord.reconcile();
-    expect(await leases.getByKey(cleanKey)).toBeUndefined();
-
-    // Dirty the repo, then seed a second dead-owner lease on the same repo.
-    writeFileSync(join(repo, 'x.txt'), 'x');
-    const secondTask = await tasks.create({ prompt: 'own a dirty work context', state: 'ready', workingDir: repo, isolationMode: 'direct' });
-    const secondRun = await runStore.create(secondTask.id);
-    const dirtyKey = workContextKey({ isolationMode: 'direct', workingDir: repo });
-    await leases.acquire(dirtyKey, secondRun.id, 'running');
-
-    await coord.reconcile();
-    expect((await leases.getByKey(dirtyKey))?.state).toBe('suspect');
-  });
-
-  it('direct + clean tree but DETACHED HEAD → suspect (a mid-flight crash before #152 restored the live checkout is not safe to free)', async () => {
-    // Clean working tree, but HEAD detached — exactly what a direct Run leaves
-    // when it crashes after #152 detaches onto a private ref and before settle
-    // restores the live branch. `git status` reads clean, yet the context is
-    // not coherently on its merging branch, so it must NOT be released.
-    git(repo, 'checkout', '--detach', 'HEAD');
-    const { key } = await seedDeadOwnerLease(repo, 'direct');
-
-    const coord = new CrashRecoveryCoordinator(runStore, tasks, leases, settle, merging, journal, turnQueue, {
-      now: () => 1_000_000,
-      // no override — exercises the real `directContextProvablyClean` detached-HEAD branch
-    });
-    await coord.reconcile();
-
-    const lease = await leases.getByKey(key);
-    expect(lease).toBeDefined();
-    expect(lease?.state).toBe('suspect');
-  });
-
-  it('direct + unreadable/non-git working dir → suspect (a probe error is not proof of clean)', async () => {
-    const { key } = await seedDeadOwnerLease('/nonexistent/definitely/not/a/repo', 'direct');
-
-    const coord = new CrashRecoveryCoordinator(runStore, tasks, leases, settle, merging, journal, turnQueue, {
-      now: () => 1_000_000,
-      // no override — exercises the real `directContextProvablyClean` catch branch
-    });
-    await coord.reconcile();
-
-    const lease = await leases.getByKey(key);
-    expect(lease).toBeDefined();
-    expect(lease?.state).toBe('suspect');
-  });
-
-  it('yields while reconciling a large lease backlog', async () => {
-    const repos: string[] = [];
-    for (let i = 0; i < 30; i++) {
-      const extraRepo = makeRepo();
-      repos.push(extraRepo);
-      await seedDeadOwnerLease(extraRepo, 'direct');
-    }
-    let tick = 0;
-    let yields = 0;
-
-    await new CrashRecoveryCoordinator(runStore, tasks, leases, settle, merging, journal, turnQueue, {
-      now: () => 1_000_000,
-      isDirectContextClean: async () => false,
-      yieldOptions: {
-        budgetMs: 0,
-        now: () => tick++,
-        yieldNow: async () => {
-          yields++;
-          await yieldToEventLoop();
-        },
-      },
-    }).reconcile();
-
-    expect(yields).toBeGreaterThan(0);
-    expect((await leases.listAll()).every((lease) => lease.state === 'suspect')).toBe(true);
-    for (const extraRepo of repos) rmSync(extraRepo, { recursive: true, force: true });
-  });
-
-  it('yields while reconciling a large turn-queue backlog', async () => {
-    const runIds: number[] = [];
-    for (let i = 0; i < 30; i++) {
-      const created = await tasks.create({ prompt: `turn ${i}`, state: 'ready', workingDir: repo });
-      const run = await runStore.create(created.id);
-      runIds.push(run.id);
-      await turnQueue.enqueue(`run-${run.id}`, run.id, 'continue', {}, Date.now());
-    }
-    let tick = 0;
-    let yields = 0;
-
-    await new CrashRecoveryCoordinator(runStore, tasks, leases, settle, merging, journal, turnQueue, {
-      now: () => 1_000_000,
-      yieldOptions: {
-        budgetMs: 0,
-        now: () => tick++,
-        yieldNow: async () => {
-          yields++;
-          await yieldToEventLoop();
-        },
-      },
-    }).reconcile();
-
-    expect(yields).toBeGreaterThan(0);
-    for (const runId of runIds) {
-      const rows = await turnQueue.listForSession(`run-${runId}`);
-      expect(rows[0]?.status).toBe('cancelled');
-    }
-  });
-});

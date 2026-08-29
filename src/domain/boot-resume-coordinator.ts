@@ -24,7 +24,7 @@ export type ResumeCapabilities = Omit<ResumeEnvironment, 'cwd'>;
  * payoff of the resume unit (parent #110). A Run whose process a restart killed
  * mid-conversation is failed `interrupted` by the generic orphan sweep
  * (`RunStore.markInterrupted`); this coordinator runs *after* that sweep (and
- * after the whole crash-recovery reconciliation — merging/queue/lease — so it
+ * after the whole crash-recovery reconciliation — merging/queue — so it
  * acts only on a reconciled repository) and, for each such Run that was bound to
  * a durable Session, does the one thing the design mandates:
  *

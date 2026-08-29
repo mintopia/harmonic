@@ -61,9 +61,6 @@ tests/inherit-field-model.test.ts
 tests/landing-coordinator.test.ts
 tests/landing-journal.test.ts
 tests/landing.test.ts
-tests/lease-actions-model.test.ts
-tests/lease-diagnostics.test.ts
-tests/lease-ttl.test.ts
 tests/markdown.test.ts
 tests/md-feature-index.test.ts
 tests/merge-train-coordinator.test.ts
@@ -140,7 +137,6 @@ tests/verification-combine-parity.test.ts
 tests/verification-model.test.ts
 tests/verification-override-model.test.ts
 tests/work-context-key.test.ts
-tests/work-context-lease.test.ts
 tests/work-ordering.test.ts
 tests/workspace-delete.test.ts
 tests/workspace-model.test.ts

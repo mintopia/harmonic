@@ -1,7 +1,6 @@
 import type { RunFactType, RunRow, TaskRow } from '../db/schema.js';
 import type { RunStore } from './runs.js';
 import type { TaskService } from './tasks.js';
-import type { WorkContextLeaseStore } from './work-context-leases.js';
 import type { RunSettleCoordinator } from './run-settle.js';
 import type { MergeCoordinator, MergeEffectExecutor } from './merge-coordinator.js';
 import type { MergeJournalStore } from './merge-journal.js';
@@ -25,7 +24,7 @@ import { startOperation } from '../telemetry/operations.js';
  * `in_flight` has no live harness to finish it once this process starts, so it
  * needs its own boot decision too.
  *
- * Four ordered passes, run once at boot before anything can execute:
+ * Three ordered passes, run once at boot before anything can execute:
  *
  *   A. Merging runs first (so nothing later blind-fails them): resolve every
  *      Run parked `state:'running', phase:'merging'` against its journal.
@@ -35,24 +34,18 @@ import { startOperation } from '../telemetry/operations.js';
  *      that turn's effect on the workspace is now unknown.
  *   C. The generic orphan sweep (unchanged semantics, moved here so it runs
  *      after A/B have already resolved anything more specific about a
- *      `running` Run). Note lease disposition is NOT done here — pass D owns it.
- *   D. Work Context lease reconciliation (issue #123): every lease a crash left
- *      behind is a dead owner's claim (a settled Run releases its own lease), so
- *      each is released if its context is provably clean or flipped to `suspect`
- *      otherwise — never left silently `held`.
+ *      `running` Run).
  *
  * Idempotent: after pass A a completed/failed merging Run is terminal
  * (excluded from `RunStore.listMergeOrphans` on the next boot); after pass B
  * every queue row is cancelled/failed (excluded from `TurnQueueStore.listUnsettled`);
- * `markInterrupted` only ever selects `state:'running'`; after pass D a
- * reconciled lease is either gone (released) or `suspect`, and pass D skips
- * `suspect` rows, so it never re-touches one. A second boot changes nothing.
+ * `markInterrupted` only ever selects `state:'running'`. A second boot changes
+ * nothing.
  */
 export class CrashRecoveryCoordinator {
   constructor(
     private readonly runStore: RunStore,
     private readonly taskService: TaskService,
-    private readonly leaseStore: WorkContextLeaseStore,
     private readonly settle: RunSettleCoordinator,
     private readonly merging: MergeCoordinator,
     private readonly mergeJournal: MergeJournalStore,
@@ -60,7 +53,6 @@ export class CrashRecoveryCoordinator {
     private readonly opts: {
       now?: () => number;
       isMerged?: (dir: string, baseBranch: string, branch: string) => Promise<boolean>;
-      isDirectContextClean?: (workingDir: string) => Promise<boolean>;
       postMerge?: PostMergeHook;
       yieldOptions?: YieldOptions;
       /** Closes a mirrored Task's ticket (the `ticket-close` merging effect); absent ⇒ the effect re-applies as a no-op. */
@@ -84,43 +76,8 @@ export class CrashRecoveryCoordinator {
     await this.reconcileMergeOrphans();
     await this.reconcileTurnQueue(ts);
     // Pass C: the generic orphan sweep, moved here so it runs after A/B have
-    // already resolved anything more specific about a `running` Run. Lease
-    // disposition is no longer done here (an unconditional release would wrongly
-    // free a dirty dead-owner context) — Pass D owns it.
+    // already resolved anything more specific about a `running` Run.
     await this.runStore.markInterrupted();
-    // Pass D: reconcile the Work Context leases a crash left behind (#123).
-    await this.reconcileLeases();
-  }
-
-  /**
-   * Pass D: reconcile every Work Context lease a crash left behind (issue #123,
-   * reliability-design §0.5). A fresh process is executing nothing, so every
-   * lease still in the table is owned by a Run whose process is gone — a Run
-   * that settled cleanly already released its lease (`run-settle.ts`), so a
-   * surviving lease is by definition a dead owner's mid-flight claim. Reconciled
-   * here, in the one boot sweep alongside Run state, never a separate racy pass:
-   * a **provably-clean direct** context is released, freeing the key for the
-   * next Auto-Runner pick; anything that cannot be proven safe to free (a dirty
-   * tree, a detached/unrestored HEAD, a worktree-mode retained worktree, or an
-   * unreadable context) is flipped to `suspect` — still owned, still blocking
-   * acquires, diagnosable until operator disposition. Never left silently
-   * `held` by the dead owner.
-   *
-   * A `suspect` lease is skipped: it is already reconciled and awaits operator
-   * disposition, so repeated boots are idempotent — the sweep never re-touches
-   * it, and in particular never auto-releases a suspect context that merely
-   * looks clean on a later boot.
-   */
-  private async reconcileLeases(): Promise<void> {
-    const isClean = this.opts.isDirectContextClean ?? directContextProvablyClean;
-    await forEachYielding(await this.leaseStore.listAll(), async (lease) => {
-      if (lease.state === 'suspect') return; // already reconciled — idempotent
-      const run = await this.runStore.get(lease.ownerRunId);
-      const task = await this.taskService.get(run.taskId);
-      const releasable = task.isolationMode === 'direct' && (await isClean(task.workingDir));
-      if (releasable) await this.leaseStore.release(lease.key);
-      else await this.leaseStore.markSuspect(lease.key);
-    }, this.opts.yieldOptions);
   }
 
   /** Pass A: resolve every Run mid-merging when the process died. */
@@ -260,23 +217,5 @@ export class CrashRecoveryCoordinator {
       }
       await this.turnQueue.settle(row.id, 'failed', now);
     }, this.opts.yieldOptions);
-  }
-}
-
-/**
- * A direct Work Context is provably clean — safe to free — only when its working
- * tree has no uncommitted changes AND its HEAD is on a real branch. A detached
- * HEAD is the fingerprint of a direct Run that crashed mid-flight before its live
- * checkout was restored (issue #152): the tree can read clean, yet the context is
- * not coherently on its merging branch, so it is not safe to hand to a new Run —
- * reconciliation marks it `suspect` instead. Any probe error (a non-git or
- * unreadable context) is likewise treated as "cannot prove clean".
- */
-async function directContextProvablyClean(workingDir: string): Promise<boolean> {
-  try {
-    if (await Git.isDirty(workingDir)) return false;
-    return (await Git.symbolicBranch(workingDir)) !== null;
-  } catch {
-    return false;
   }
 }

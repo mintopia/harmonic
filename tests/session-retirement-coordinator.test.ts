@@ -6,7 +6,6 @@ import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { RunStore } from '../src/domain/runs.js';
-import { WorkContextLeaseStore } from '../src/domain/work-context-leases.js';
 import { SessionStore, type DispatchSessionInput } from '../src/domain/sessions.js';
 import { SessionRetirementCoordinator } from '../src/domain/session-retirement-coordinator.js';
 import type { RetentionConfig } from '../src/domain/session-retirement.js';
@@ -17,7 +16,7 @@ import { allWorkspaces, makeSettingsStore } from './helpers.js';
 /**
  * Session retirement store transitions + coordinator (issue #148,
  * reliability-design Unit C): Session retirement is the sole owner of
- * builder-worktree removal, coordinated with the Work Context lease.
+ * builder-worktree removal, gated on the Session having no active Run.
  */
 describe('Session retirement (issue #148)', () => {
   let dir: string;
@@ -25,7 +24,6 @@ describe('Session retirement (issue #148)', () => {
   let settingsStore: SettingsStore;
   let sessions: SessionStore;
   let runs: RunStore;
-  let leases: WorkContextLeaseStore;
   let tasks: TaskService;
   let workspaceId: number;
   const now = 1_000_000;
@@ -58,7 +56,6 @@ describe('Session retirement (issue #148)', () => {
     settingsStore = await makeSettingsStore(dir);
     sessions = new SessionStore(asyncDb);
     runs = new RunStore(asyncDb);
-    leases = new WorkContextLeaseStore(asyncDb);
     tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
     workspaceId = (await allWorkspaces(asyncDb, settingsStore)())[0]!.id;
   });
@@ -117,7 +114,7 @@ describe('Session retirement (issue #148)', () => {
 
   describe('onRunSettled — the sync settle-hook', () => {
     const makeCoord = (removeWorktree = vi.fn(async () => {})) =>
-      new SessionRetirementCoordinator(sessions, runs, leases, removeWorktree, cfg, () => now);
+      new SessionRetirementCoordinator(sessions, runs, removeWorktree, cfg, () => now);
 
     it('marks the Session retiring on a merged disposition', async () => {
       const s = await dispatch();
@@ -160,7 +157,7 @@ describe('Session retirement (issue #148)', () => {
       await sessions.bindWorktree(s.id, '/repo', '/wt/run-1', now);
       await sessions.beginRetiring(s.id, 'merged', now);
       const removeWorktree = vi.fn(async () => {});
-      const coord = new SessionRetirementCoordinator(sessions, runs, leases, removeWorktree, cfg, () => now);
+      const coord = new SessionRetirementCoordinator(sessions, runs, removeWorktree, cfg, () => now);
 
       const retired = await coord.drain(now);
 
@@ -174,7 +171,7 @@ describe('Session retirement (issue #148)', () => {
       await sessions.bindWorktree(s.id, '/repo', '/wt/run-1', now);
       await sessions.markIdle(s.id, now, 'retention-ttl', now);
       const removeWorktree = vi.fn(async () => {});
-      const coord = new SessionRetirementCoordinator(sessions, runs, leases, removeWorktree, cfg, () => now);
+      const coord = new SessionRetirementCoordinator(sessions, runs, removeWorktree, cfg, () => now);
 
       await coord.drain(now + 1);
 
@@ -182,14 +179,13 @@ describe('Session retirement (issue #148)', () => {
       expect((await sessions.get(s.id)).status).toBe('retired');
     });
 
-    it('does NOT remove a worktree a live Run still leases (coordinated with the lease)', async () => {
+    it('does NOT remove a worktree a live Run is still executing in', async () => {
       const s = await dispatch();
       await sessions.bindWorktree(s.id, '/repo', '/wt/run-1', now);
-      const run = await runForSession(s.id);
-      await leases.acquire('worktree:/wt/run-1::branch', run.id, 'running'); // still held
+      const run = await runForSession(s.id); // still 'running'
       await sessions.beginRetiring(s.id, 'merged', now);
       const removeWorktree = vi.fn(async () => {});
-      const coord = new SessionRetirementCoordinator(sessions, runs, leases, removeWorktree, cfg, () => now);
+      const coord = new SessionRetirementCoordinator(sessions, runs, removeWorktree, cfg, () => now);
 
       const retired = await coord.drain(now);
 
@@ -197,8 +193,8 @@ describe('Session retirement (issue #148)', () => {
       expect(removeWorktree).not.toHaveBeenCalled();
       expect((await sessions.get(s.id)).status).toBe('retiring'); // left for a later drain
 
-      // Once the lease releases, a later drain completes the retirement.
-      await leases.releaseByOwner(run.id);
+      // Once the Run leaves 'running', a later drain completes the retirement.
+      await runs.update(run.id, { state: 'completed' });
       await coord.drain(now + 1);
       expect(removeWorktree).toHaveBeenCalledOnce();
       expect((await sessions.get(s.id)).status).toBe('retired');
@@ -208,7 +204,7 @@ describe('Session retirement (issue #148)', () => {
       const s = await dispatch();
       await sessions.beginRetiring(s.id, 'operator-disposition', now);
       const removeWorktree = vi.fn(async () => {});
-      const coord = new SessionRetirementCoordinator(sessions, runs, leases, removeWorktree, cfg, () => now);
+      const coord = new SessionRetirementCoordinator(sessions, runs, removeWorktree, cfg, () => now);
 
       await coord.drain(now);
 
@@ -221,7 +217,7 @@ describe('Session retirement (issue #148)', () => {
       await sessions.bindWorktree(s.id, '/repo', '/wt/run-1', now);
       await sessions.beginRetiring(s.id, 'merged', now);
       const removeWorktree = vi.fn(async () => {});
-      const coord = new SessionRetirementCoordinator(sessions, runs, leases, removeWorktree, cfg, () => now);
+      const coord = new SessionRetirementCoordinator(sessions, runs, removeWorktree, cfg, () => now);
 
       await coord.drain(now);
       await coord.drain(now);
@@ -237,25 +233,10 @@ describe('Session retirement (issue #148)', () => {
       const removeWorktree = vi.fn(async () => {
         throw new Error('worktree already gone');
       });
-      const coord = new SessionRetirementCoordinator(sessions, runs, leases, removeWorktree, cfg, () => now);
+      const coord = new SessionRetirementCoordinator(sessions, runs, removeWorktree, cfg, () => now);
 
       await expect(coord.drain(now)).resolves.toBe(1);
       expect((await sessions.get(s.id)).status).toBe('retired');
-    });
-  });
-
-  describe('lease transfer (continuation substrate)', () => {
-    it('re-points a lease from one Run to the next sharing the Session', async () => {
-      const s = await dispatch();
-      const first = await runForSession(s.id);
-      const second = await runForSession(s.id);
-      await leases.acquire('worktree:/wt/run-1::branch', first.id, 'running');
-
-      const moved = await leases.transfer(first.id, second.id, now);
-
-      expect(moved).toMatchObject({ ownerRunId: second.id });
-      expect(await leases.getByOwner(first.id)).toBeUndefined();
-      expect(await leases.getByOwner(second.id)).toMatchObject({ key: 'worktree:/wt/run-1::branch' });
     });
   });
 });

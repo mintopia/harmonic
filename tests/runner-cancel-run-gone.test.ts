@@ -6,7 +6,7 @@ import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { RunStore, type RunGuardrailSnapshot } from '../src/domain/runs.js';
-import { WorkContextLeaseStore, isForeignKeyViolation } from '../src/domain/work-context-leases.js';
+import { isForeignKeyViolation } from '../src/db/errors.js';
 import { ExecutionChainStore } from '../src/domain/execution-chain-store.js';
 import { RunFactStore } from '../src/domain/run-facts.js';
 import { Runner } from '../src/execution/runner.js';
@@ -52,7 +52,7 @@ describe('Runner.cancelForTask — run row deleted mid-settle', () => {
     runs = new RunStore(asyncDb);
     chains = new ExecutionChainStore(asyncDb);
     facts = new RunFactStore(asyncDb);
-    runner = new Runner(runs, tasks, new WorkContextLeaseStore(asyncDb), asyncDb, () => defaultConfig());
+    runner = new Runner(runs, tasks, asyncDb, () => defaultConfig());
   });
 
   afterEach(async () => {
@@ -73,9 +73,9 @@ describe('Runner.cancelForTask — run row deleted mid-settle', () => {
 
     // Reproduce the production TOCTOU: settleTaskRun's parked branch lists the
     // still-running row, then reads it via runStore.get — but a racing delete
-    // (beginRun's lease-conflict compensating delete, or a task-delete cascade)
-    // removes the row before the operator-cancel fact insert, which would
-    // otherwise fail the run_facts→runs FK. Delete on read to force that window.
+    // (e.g. a task-delete cascade) removes the row before the operator-cancel
+    // fact insert, which would otherwise fail the run_facts→runs FK. Delete on
+    // read to force that window.
     const realGet = runs.get.bind(runs);
     vi.spyOn(runs, 'get').mockImplementation(async (id: number) => {
       const row = await realGet(id);

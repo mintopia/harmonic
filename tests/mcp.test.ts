@@ -111,8 +111,15 @@ describe('mcp server & scoped keys', () => {
 
     for (const bearer of ['adk_bogus', runKey.token, readKey.token, token]) {
       const cookieClient = await mcpClient(server, bearer, { headers: { cookie: `harmonic_session=${server.sessionToken}` } });
-      const cookieResult = await cookieClient.callTool({ name: 'list_leases', arguments: {} });
-      expect(cookieResult.isError).not.toBe(true);
+      // force_integrate_epic is the one operator-only MCP tool left; a bogus
+      // workspaceId still proves the cookie resolved as operator — it clears
+      // requireOperator() (no "operator-only" error) and fails later, on the
+      // unknown Workspace lookup instead.
+      const cookieResult: any = await cookieClient.callTool({
+        name: 'force_integrate_epic',
+        arguments: { workspaceId: 999_999_999, epicRef: 1 },
+      });
+      expect(cookieResult.content[0].text).not.toContain('operator-only');
       await cookieClient.close();
     }
   });

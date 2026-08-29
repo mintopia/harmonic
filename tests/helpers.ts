@@ -236,8 +236,6 @@ export async function startServer(
     password?: string;
     /** Test-only Runner cadence overrides (issue #128), forwarded to `buildApp`. */
     runnerTuning?: { spendGuardrail?: { pollMs?: number; graceMs?: number } } | undefined;
-    /** Test-only Work Context lease heartbeat/sweep cadence overrides (issue #122), forwarded to `buildApp`. */
-    leaseTuning?: { heartbeatMs?: number; sweepMs?: number } | undefined;
     /** Test-only agent-critic drive override (issue #164), forwarded to `buildApp`. */
     criticDrive?: CriticHarnessDrive | undefined;
     scheduledJobRegistrations?: ScheduledJobRegistration[] | undefined;
@@ -256,7 +254,6 @@ export async function startServer(
     // row below — skips one scryptSync per boot.
     password: fastAuth ? undefined : opts.password,
     runnerTuning: opts.runnerTuning,
-    leaseTuning: opts.leaseTuning,
     criticDrive: opts.criticDrive,
     scheduledJobRegistrations: opts.scheduledJobRegistrations,
     // The event-loop stall monitor (issue #200) is process-health noise in

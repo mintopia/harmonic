@@ -23,7 +23,6 @@ import { SettingsStore } from './settings-store.js';
 import { TaskService } from '../domain/tasks.js';
 import { RunStore } from '../domain/runs.js';
 import { AttemptStore } from '../domain/attempts.js';
-import { WorkContextLeaseStore } from '../domain/work-context-leases.js';
 import { ConversationStore } from '../domain/conversations.js';
 import { WorkspaceService } from '../domain/workspaces.js';
 import { PermissionRuleStore } from '../domain/permission-rules.js';
@@ -60,7 +59,6 @@ import { TrackerPollerManager } from '../tracker/manager.js';
 import type { MirrorClaim } from '../execution/auto-runner.js';
 import { DomainError } from '../domain/errors.js';
 import { taskRoutes } from './routes/tasks.js';
-import { leaseRoutes } from './routes/leases.js';
 import { epicRoutes } from './routes/epics.js';
 import { mapRoutes } from './routes/maps.js';
 import { workspaceRoutes } from './routes/workspaces.js';
@@ -91,9 +89,6 @@ export interface AppOptions {
   password?: string | undefined;
   /** Test-only Runner cadence overrides (issue #128); absent uses production defaults. */
   runnerTuning?: { spendGuardrail?: { pollMs?: number; graceMs?: number } } | undefined;
-  /** Work Context lease heartbeat/sweep cadence overrides (issue #122); absent
-   * uses production defaults (~30s heartbeat, ~60s sweep). */
-  leaseTuning?: { heartbeatMs?: number; sweepMs?: number } | undefined;
   /** Event-loop stall monitor overrides (issue #200). `enabled: false` turns
    * the probe off (tests keep it off to avoid stall-log noise); otherwise
    * production defaults apply (~1s probe, 200ms stall threshold). */
@@ -132,14 +127,8 @@ function scopedKeyAllowed(path: string): boolean {
   // Steering redirects a running agent — a manual operator override; an agent
   // does not steer itself (it drives its own turn).
   if (/^\/api\/tasks\/\d+\/steer$/.test(path)) return false;
-  // Work Context lease supersede/unlock + diagnostics (issue #125) are a manual
-  // operator override, same footing as complete/steer — an agent never disposes
-  // of its own (or anyone else's) lease. `/api/leases*` matches no rule below
-  // and falls through to the default `false`, same as an unrecognized path; this
-  // early return exists only to document the decision alongside its siblings.
-  if (path === '/api/leases' || path.startsWith('/api/leases/')) return false;
   // The whole-Epic force-integrate (issue #161) is a manual operator override, same
-  // footing as lease supersede/unlock — an agent never force-integrates an Epic on
+  // footing as complete/steer — an agent never force-integrates an Epic on
   // its own initiative. This path matches no rule below and falls through to
   // the default `false`; this early return exists only to document the
   // decision alongside its siblings.
@@ -215,7 +204,6 @@ export interface AppContext {
   runs: RunStore;
   attempts: AttemptStore;
   sessions: SessionStore;
-  leases: WorkContextLeaseStore;
   runner: Runner;
   conversations: ConversationStore;
   conversationDriver: ConversationDriver;
@@ -278,7 +266,6 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   const attempts = new AttemptStore(asyncDb);
   const guardrailEvents = new GuardrailEventStore(asyncDb);
   const verificationAttempts = new VerificationAttemptStore(asyncDb);
-  const leases = new WorkContextLeaseStore(asyncDb);
   const conversations = new ConversationStore(asyncDb, (conversation) => bus.emit('conversation_changed', conversation));
   const permissionRules = new PermissionRuleStore(asyncDb);
   const auth = new AuthService(asyncDb);
@@ -314,15 +301,14 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // Session retirement (issue #148, reliability-design Unit C): the sole owner of
   // builder-worktree removal. Its sync settle-hook is injected into every settle
   // coordinator (the operator-side one below and the Runner's own, via options) so
-  // every terminal disposition records its Session's retirement intent right
-  // after the lease releases; its async `drain` performs the actual worktree
-  // removal — at boot, and on every `run_changed` below (a settle emits one, so
-  // an accepted/cancelled Session's worktree is reclaimed promptly).
+  // every terminal disposition records its Session's retirement intent; its
+  // async `drain` performs the actual worktree removal — at boot, and on every
+  // `run_changed` below (a settle emits one, so an accepted/cancelled Session's
+  // worktree is reclaimed promptly).
   const sessionStore = new SessionStore(asyncDb);
   const sessionRetirement = new SessionRetirementCoordinator(
     sessionStore,
     runs,
-    leases,
     (repoDir, worktreePath) =>
       Git.removeWorktree(repoDir, worktreePath)
         // Reap the worktree's jCodeMunch index once its files are gone (no-op if
@@ -364,7 +350,6 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   const operatorSettle = new RunSettleCoordinator(
     runs,
     tasks,
-    leases,
     new RunFactStore(asyncDb),
     (run) => {
       void runnerRef?.finishRunOperation(run.id);
@@ -385,13 +370,10 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // may already have applied an irreversible effect), the turn queue's
   // pending/in-flight rows are cancelled/resolved, and only then does the
   // generic orphan sweep fail whatever is still `running` — "interrupted",
-  // never silently re-run. Finally, every Work Context lease a crash left
-  // behind is reconciled (issue #123): released if its context is provably
-  // clean, else flipped to `suspect` — never left silently held by a dead owner.
+  // never silently re-run.
   const crashRecovery = new CrashRecoveryCoordinator(
     runs,
     tasks,
-    leases,
     operatorSettle,
     merging,
     mergeJournal,
@@ -528,7 +510,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // skips a Task whose base repo is in the resulting backoff window), so a
   // doomed context is escalated/backed off instead of being re-spawned forever.
   const gitBreaker = new GitCircuitBreaker();
-  const runner = new Runner(runs, tasks, leases, asyncDb, () => configStore.get(), {
+  const runner = new Runner(runs, tasks, asyncDb, () => configStore.get(), {
     events: {
       onRunEvent: (event) => bus.emit('run_event', event),
       onRunLogEvent: (event) => bus.emitRunLog(event),
@@ -547,7 +529,6 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     postMerge,
     worktreesDir,
     spendGuardrail: opts.runnerTuning?.spendGuardrail,
-    leaseHeartbeat: opts.leaseTuning?.heartbeatMs != null ? { intervalMs: opts.leaseTuning.heartbeatMs } : undefined,
     criticDrive: opts.criticDrive,
     // The Runner's own settle coordinator drives most terminal dispositions
     // (drive-loop, operator-cancel, auto-accept merge); feed it the same
@@ -579,11 +560,6 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   await drainRetirement();
   // Recurring operational drains are Scheduler Jobs so their timing and result
   // facts share one visible, durable surface (issue #305).
-  scheduler.register({
-    name: 'Work Context lease sweep',
-    intervalMs: opts.leaseTuning?.sweepMs ?? 60_000,
-    run: async () => { await leases.sweepExpired(); },
-  });
   scheduler.register({
     name: 'Session retirement drain',
     intervalMs: 5 * 60_000,
@@ -679,7 +655,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     })().catch(() => {});
   });
 
-  const ctx: AppContext = { asyncDb, statsReader, settingsStore, configStore, workspaces, tasks, runs, attempts, sessions: sessionStore, leases, runner, conversations, conversationDriver, permissionRules, escalation, autoRunner, guardrailEvents, verificationAttempts, trackerManager, scheduler, auth, channels, notifier, bus };
+  const ctx: AppContext = { asyncDb, statsReader, settingsStore, configStore, workspaces, tasks, runs, attempts, sessions: sessionStore, runner, conversations, conversationDriver, permissionRules, escalation, autoRunner, guardrailEvents, verificationAttempts, trackerManager, scheduler, auth, channels, notifier, bus };
 
   const app = Fastify({ logger: false }) as unknown as App;
   app.decorate('ctx', ctx);
@@ -751,12 +727,10 @@ agent task surface as MCP tools (task CRUD, dependencies, queue/cancel,
 runs and events). Accept/Reject are human-only and are never exposed as
 MCP tools — a verifier's pass is the accept (#140, ADR-0021). A run-scoped
 Run Key may call \`/mcp\` regardless of the REST restrictions noted per
-endpoint below. Work Context lease diagnostics/supersede/unlock
-(\`list_leases\`, \`supersede_lease\`, \`unlock_lease\`, issue #125) are
-operator-only tools, the same footing as Accept/Reject: a Run Key can call
-\`/mcp\` but gets a \`forbidden\` error from these three specifically — only
-an operator API key (\`scope: 'full'\`) or an authenticated session may call
-them.
+endpoint below. \`force_integrate_epic\` is an operator-only tool, the same
+footing as Accept/Reject: a Run Key can call \`/mcp\` but gets a \`forbidden\`
+error from it specifically — only an operator API key (\`scope: 'full'\`) or
+an authenticated session may call it.
 
 ## WebSocket
 
@@ -911,7 +885,6 @@ not resolved yet.`;
   await app.register(scheduledJobRoutes, { prefix: '/api' });
   await app.register(channelRoutes, { prefix: '/api' });
   await app.register(fsRoutes, { prefix: '/api' });
-  await app.register(leaseRoutes, { prefix: '/api' });
   await app.register(epicRoutes, { prefix: '/api' });
   await app.register(openapiRoutes, { prefix: '/api' });
 
@@ -921,9 +894,9 @@ not resolved yet.`;
   // here the same way the openapi.json/yaml endpoints hide themselves.
   app.post('/mcp', { schema: { hide: true } }, async (req, reply) => {
     // A Run Key is a valid MCP caller (scopedKeyAllowed always admits /mcp) but
-    // is never an operator, so the operator-only lease tools (issue #125) stay
-    // gated to a full-scope credential or an authenticated session — resolved by
-    // the same helper the notion is defined in.
+    // is never an operator, so operator-only MCP tools stay gated to a
+    // full-scope credential or an authenticated session — resolved by the same
+    // helper the notion is defined in.
     const operator = await requestIsOperator(req, auth);
     const mcp = buildMcpServer(ctx, { operator });
     // `as any`: the SDK's option/transport types don't satisfy

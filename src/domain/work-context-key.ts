@@ -10,22 +10,22 @@ export interface WorkContextKeyInput {
 }
 
 /**
- * The canonical Work Context identity key (issue #118, ADR-0022,
- * reliability-design §0.5): the string a Work Context lease is acquired
+ * The canonical Work Context identity key (ADR-0001,
+ * reliability-design §0.5): the identity a Work Context's occupancy is tracked
  * against. Pure and side-effect free; reuses `repoKey` (execution/repo-lock.ts,
- * issue #121) for path canonicalisation rather than re-deriving it, so a
- * lease key and the base-repo lock key agree on what "the same directory"
+ * issue #121) for path canonicalisation rather than re-deriving it, so the
+ * occupancy key and the base-repo lock key agree on what "the same directory"
  * means (trailing slashes, `.`/`..` segments, symlinks all collapse).
  *
- * The two Isolation Modes are deliberately asymmetric (ADR-0022
+ * The two Isolation Modes are deliberately asymmetric (ADR-0001
  * "Reconciliation"):
  *
  * - `direct` mode keys on the canonical Working Directory identity ALONE —
  *   `branch` is ignored. Direct-mode Runs share one physical checkout and
  *   its one checked-out branch, so two Runs against the same directory on
  *   *different* branches are still contending for the same physical
- *   occupancy; collapsing them onto a single key is what lets the lease
- *   catch that conflict rather than missing it because the branch strings
+ *   occupancy; collapsing them onto a single key is what lets the scheduler
+ *   predicate detect occupancy rather than missing it because the branch strings
  *   happened to differ.
  * - `worktree` mode keys on the canonical *worktree* path AND the branch.
  *   The builder worktree is per-Task (ADR-0046): the Runner derives a
@@ -36,7 +36,7 @@ export interface WorkContextKeyInput {
  *   `branch` component keeps the identity meaningful and pairs with the path.
  *
  * `worktree` mode requires both `worktreePath` and `branch` — a key that
- * silently dropped either would under-scope the lease, so both are validated
+ * silently dropped either would under-scope the key, so both are validated
  * rather than defaulted.
  */
 export function workContextKey(input: WorkContextKeyInput): string {

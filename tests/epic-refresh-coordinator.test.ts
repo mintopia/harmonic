@@ -10,7 +10,6 @@ import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { RunStore } from '../src/domain/runs.js';
-import { WorkContextLeaseStore } from '../src/domain/work-context-leases.js';
 import { Runner } from '../src/execution/runner.js';
 import type { CriticDriveRequest } from '../src/verification/critic.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
@@ -215,7 +214,7 @@ describe('epic refresh corrective turn (issue #315)', () => {
   });
 
   function makeRunner(drive: (req: CriticDriveRequest) => Promise<void>, mergeTrain?: MergeTrainCoordinator): Runner {
-    return new Runner(runs, tasks, new WorkContextLeaseStore(asyncDb), asyncDb, () => defaultConfig(), {
+    return new Runner(runs, tasks, asyncDb, () => defaultConfig(), {
       worktreesDir: join(dir, 'worktrees'),
       criticDrive: {
         run: async (req) => {

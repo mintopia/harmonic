@@ -6,11 +6,7 @@ import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig, UNATTENDED_REMINDER, type AppConfig } from '../src/config.js';
 import { TaskService, type MirrorInput } from '../src/domain/tasks.js';
 import { RunStore } from '../src/domain/runs.js';
-import { WorkContextLeaseStore } from '../src/domain/work-context-leases.js';
-import { ExecutionChainStore } from '../src/domain/execution-chain-store.js';
 import { AttemptStore } from '../src/domain/attempts.js';
-import { workContextKey } from '../src/domain/work-context-key.js';
-import { logger } from '../src/logger.js';
 import { Runner } from '../src/execution/runner.js';
 import { AutoDrive } from '../src/execution/auto-drive.js';
 import { fillTemplate, skillFor, splitTitleBody } from '../src/execution/prompt-template.js';
@@ -365,7 +361,7 @@ describe('Runner auto-drive settle (issue #33)', () => {
     // Default: a resolved (agent-closed) ticket so a clean run completes (ADR 0011).
     // 'open' leaves the ticket unresolved, so the continue loop engages.
     const drive = new AutoDrive(() => cfg, () => 'https://x/7', async () => fakeAdapter(ticketState).adapter);
-    runner = new Runner(runs, tasks, new WorkContextLeaseStore(asyncDb), asyncDb, () => cfg, { autoDrive: drive });
+    runner = new Runner(runs, tasks, asyncDb, () => cfg, { autoDrive: drive });
   }
 
   const continueEvents = async (runId: number) =>
@@ -513,74 +509,5 @@ describe('Runner auto-drive settle (issue #33)', () => {
     build(config());
     expect(runner.markAgentFinished(999)).toBe(false);
     expect(runner.markEscalate(999, 'need input')).toBe(false);
-  });
-
-  describe('acquireOrTransfer at the begin-transaction funnel (issue #124)', () => {
-    // Seed a failed predecessor Run that still holds the direct-mode Work
-    // Context lease for the workspace's `workDir` — the retained-lease handoff
-    // state a successor begins into. Minted directly against the stores (not by
-    // driving the predecessor async) so the test is deterministic. The chain is
-    // fresh per call; whether a later successor SHARES it is decided by
-    // resolveForTask from `taskId`, not here.
-    async function seedPredecessorLease(
-      taskId: number,
-    ): Promise<{ predecessorId: number; key: string; leaseStore: WorkContextLeaseStore }> {
-      const leaseStore = new WorkContextLeaseStore(asyncDb);
-      const chainId = await new ExecutionChainStore(asyncDb).create();
-      const predecessor = await runs.create(taskId, undefined, chainId);
-      await runs.update(predecessor.id, { state: 'failed' });
-      const key = workContextKey({ isolationMode: 'direct', workingDir: workDir });
-      await leaseStore.acquire(key, predecessor.id, 'running');
-      return { predecessorId: predecessor.id, key, leaseStore };
-    }
-
-    it('transfers a direct-mode lease to a successor sharing the Execution Chain, instead of conflicting', async () => {
-      build(config());
-      const task = await tasks.upsertMirrored(mirroredAfk(7));
-      const { predecessorId, key, leaseStore } = await seedPredecessorLease(task.id);
-
-      // The predecessor holds the lease on this Task's own chain, so the
-      // successor's beginRun resolves the SAME Execution Chain (resolveForTask
-      // branch 1: this Task's latest chained Run), so sharesLineOfWork is true
-      // and the funnel transfers the lease instead of throwing conflict. The
-      // claim commits inside beginRun's transaction synchronously, before the
-      // async drive starts, so this asserts right after start returns rather
-      // than waiting on the drive.
-      await expect(startMirrored(task.id)).resolves.toBeUndefined();
-
-      const successor = (await runs.listForTask(task.id)).at(-1)!;
-      expect(successor.id).not.toBe(predecessorId);
-      expect(await leaseStore.getByKey(key)).toMatchObject({ ownerRunId: successor.id });
-      expect(await leaseStore.getByOwner(predecessorId)).toBeUndefined();
-    });
-
-    it('an unrelated (different-chain) direct predecessor no longer conflicts — the second worker attaches, lease untouched, traced at debug (ADR-0046, #369)', async () => {
-      build(config());
-      const otherTask = await tasks.upsertMirrored(mirroredAfk(8));
-      const target = await tasks.upsertMirrored(mirroredAfk(9));
-
-      // A predecessor Run on a DIFFERENT, unrelated Task (no reattempt link),
-      // holding the SAME direct-mode key (same workspace workingDir).
-      const { predecessorId, key, leaseStore } = await seedPredecessorLease(otherTask.id);
-
-      // `target` has no chained Run of its own and no reattempt ancestry, so
-      // resolveForTask mints it a fresh chain (branch 3) — different from the
-      // predecessor's. sharesLineOfWork is false, so the funnel falls through to
-      // acquire, which hits the unique-key CAS. Direct isolation no longer blocks
-      // on that conflict (ADR-0046): the second worker attaching to the already-
-      // claimed direct checkout is the operator's accepted risk — the funnel
-      // proceeds and traces it at debug rather than throwing.
-      await tasks.setState(target.id, 'working');
-      const debugSpy = vi.spyOn(logger, 'debug');
-      await expect(runner.launchClaimed(target.id)).resolves.toBeDefined();
-
-      expect(debugSpy).toHaveBeenCalledWith(
-        expect.stringContaining(`second worker attaching to already-claimed direct Work Context "${key}"`),
-      );
-      // The predecessor still owns the lease — the attach neither transferred nor
-      // released it.
-      expect(await leaseStore.getByKey(key)).toMatchObject({ ownerRunId: predecessorId });
-      debugSpy.mockRestore();
-    });
   });
 });

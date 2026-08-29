@@ -20,7 +20,7 @@ import type { SessionStatus, SessionRetireReason } from '../db/schema.js';
  * worktree is retained under a `retireDeadline` (the reject-continuation / warm
  * window); `retiring` while the worktree removal is in flight (so a crash
  * mid-removal is re-driven from `retiring` at boot); `retired` once the worktree
- * is gone. The removal itself, the lease coordination, and the boot sweep live in
+ * is gone. The removal itself and the boot sweep live in
  * `SessionRetirementCoordinator`; this file never touches I/O.
  */
 

@@ -7,7 +7,6 @@ import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService, type MirrorInput } from '../src/domain/tasks.js';
 import { RunStore } from '../src/domain/runs.js';
-import { WorkContextLeaseStore } from '../src/domain/work-context-leases.js';
 import { Runner } from '../src/execution/runner.js';
 import { DomainError } from '../src/domain/errors.js';
 import type { MergeTrainMember } from '../src/execution/merge-train-coordinator.js';
@@ -79,7 +78,7 @@ describe('Runner merge-train adapters (issue #163)', () => {
     const settingsStore = await makeSettingsStore(dir);
     tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
     runs = new RunStore(asyncDb);
-    runner = new Runner(runs, tasks, new WorkContextLeaseStore(asyncDb), asyncDb, () => defaultConfig());
+    runner = new Runner(runs, tasks, asyncDb, () => defaultConfig());
   });
   afterEach(async () => {
     await asyncDb.close();
@@ -139,7 +138,7 @@ describe('Runner merge-train adapters (issue #163)', () => {
     // (REST/MCP) whose `epic/<ref>` base the poll hasn't confirmed live must be
     // rejected before a run is created — the same gate the Auto-Runner's pick
     // side uses, so neither path forks off a missing integration branch.
-    const gated = new Runner(runs, tasks, new WorkContextLeaseStore(asyncDb), asyncDb, () => defaultConfig(), {
+    const gated = new Runner(runs, tasks, asyncDb, () => defaultConfig(), {
       epicBaseNotReady: (t) => t.baseBranch === 'epic/1',
     });
     const task = await tasks.create({ prompt: 'member work' });

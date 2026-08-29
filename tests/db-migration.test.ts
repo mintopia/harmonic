@@ -336,30 +336,16 @@ describe('pre-Workspace DB migration (ADR-0008, issue #39)', () => {
   });
 });
 
-describe('work_context_leases table (issue #118, ADR-0022)', () => {
-  it('exists at head with a unique index on key that rejects a second row for the same key', async () => {
+describe('work_context_leases teardown (ADR-0001, issue #384)', () => {
+  it('neither work_context_leases nor work_context_lease_dispositions exists at head', async () => {
     const dataDir = mkdtempSync(join(tmpdir(), 'harmonic-wcl-migrate-'));
     const db = await openAsyncDb(dataDir);
 
-    const task = await db.write((d) => d.insert(schema.tasks).values({
-      prompt: 'seed',
-      workingDir: '/tmp/p',
-      state: 'ready',
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    }).returning().get());
-    const run = await db.write((d) => d.insert(schema.runs).values({ taskId: task.id, attempt: 1, state: 'running', startedAt: Date.now() }).returning().get());
-
-    // Raw libsql connection against the same file, exercising the migrated
-    // unique index directly rather than through the store.
     const sqlite = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
-    const insertSql =
-      `insert into work_context_leases (key, phase, owner_run_id, heartbeat, expiry, state, acquired_at)
-       values (?, 'running', ?, ?, null, 'held', ?)`;
-    const now = Date.now();
-    await sqlite.execute({ sql: insertSql, args: ['direct:/tmp/p', run.id, now, now] });
-
-    await expect(sqlite.execute({ sql: insertSql, args: ['direct:/tmp/p', run.id, now, now] })).rejects.toThrow(/UNIQUE constraint failed/);
+    const tables = await sqlite.execute(
+      `select name from sqlite_master where type = 'table' and name like 'work_context%'`,
+    );
+    expect(tables.rows).toHaveLength(0);
 
     sqlite.close();
     await db.close();

@@ -6,7 +6,6 @@ import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { RunStore } from '../src/domain/runs.js';
-import { WorkContextLeaseStore } from '../src/domain/work-context-leases.js';
 import { RunFactStore } from '../src/domain/run-facts.js';
 import { MergeJournalStore } from '../src/domain/merge-journal.js';
 import { RunSettleCoordinator } from '../src/domain/run-settle.js';
@@ -44,7 +43,7 @@ describe('EscalationService', () => {
     tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
     runStore = new RunStore(asyncDb);
     const journal = new MergeJournalStore(asyncDb);
-    settle = new RunSettleCoordinator(runStore, tasks, new WorkContextLeaseStore(asyncDb), new RunFactStore(asyncDb), undefined, journal);
+    settle = new RunSettleCoordinator(runStore, tasks, new RunFactStore(asyncDb), undefined, journal);
     merging = new MergeCoordinator(runStore, asyncDb, journal, settle);
     resumed = [];
     cleaned = [];

@@ -64,8 +64,7 @@ import { runCommandVerifier, commandAttemptToInput } from '../verification/comma
 import { createAcpCriticDrive, runCritic, criticAttemptToInput, type CriticHarnessDrive } from '../verification/critic.js';
 import { combineVerdicts, type VerificationDecision, type VerifierVerdict } from '../verification/combine.js';
 import { resolvePrices, costOfUsages, type PriceTable } from './pricing.js';
-import { workContextKey } from '../domain/work-context-key.js';
-import { isForeignKeyViolation, type WorkContextLeaseStore } from '../domain/work-context-leases.js';
+import { isForeignKeyViolation } from '../db/errors.js';
 import { logger } from '../logger.js';
 import type { PostMergeHook } from './branch-merge.js';
 import { runMergePolicy, type MergePolicyDeps } from './merge-policy.js';
@@ -97,8 +96,8 @@ const PROGRESS_NUDGE_TEXT =
  * operator-facing config (reliability-design §0, "the spine is infrastructure";
  * a per-Workspace review SLA is Unit A's setting), so the deadline is this
  * internal default until that merges. Seven days: long enough that a real review
- * queue never trips it, short enough that an abandoned review can't wedge a Work
- * Context lease forever. */
+ * queue never trips it, short enough that an abandoned review can't wedge an
+ * occupied Work Context forever. */
 const LIVE_RUN_LOG_EVENT_ID_OFFSET = 1_000_000_000;
 
 export interface RunnerEvents {
@@ -141,8 +140,6 @@ export interface RunnerOptions {
   tailerCadence?: TailerCadence;
   /** Spend-Guardrail poll + unmeasurable-grace cadence (issue #128); defaults to ~1s poll / 60s grace. */
   spendGuardrail?: { pollMs?: number; graceMs?: number } | undefined;
-  /** Work Context lease heartbeat cadence (issue #122); defaults to ~30s. */
-  leaseHeartbeat?: { intervalMs?: number } | undefined;
   /** Resolves a Task's Workspace row for the Guardrail snapshot (issue #126);
    * absent → the snapshot resolves against global defaults only. */
   getWorkspace?: (
@@ -430,17 +427,12 @@ export class Runner {
    * spend cap may go unmeasurable before it Escalates rather than silently
    * degrading to wall-clock-only enforcement. */
   private readonly spendGraceMs: number;
-  /** Work Context lease heartbeat (issue #122) cadence in ms: how often the
-   * coordinator-driven timer bumps the lease's liveness heartbeat + phase-scoped
-   * expiry, independent of agent/tool output. */
-  private readonly leaseHeartbeatMs: number;
   /** The MCP endpoint agents should call back to; set once the server listens. */
   mcpUrl: string | null = null;
 
   constructor(
     private readonly runStore: RunStore,
     private readonly taskService: TaskService,
-    private readonly leaseStore: WorkContextLeaseStore,
     private readonly asyncDb: AsyncDbHandle,
     private readonly getConfig: () => AppConfig,
     options: RunnerOptions = {},
@@ -458,7 +450,6 @@ export class Runner {
     this.urlFor = options.urlFor ?? (() => null);
     this.spendPollMs = options.spendGuardrail?.pollMs ?? 1000;
     this.spendGraceMs = options.spendGuardrail?.graceMs ?? 60_000;
-    this.leaseHeartbeatMs = options.leaseHeartbeat?.intervalMs ?? 30_000;
     this.runFacts = new RunFactStore(this.asyncDb);
     this.attempts = new AttemptStore(this.asyncDb);
     this.verificationAttempts = new VerificationAttemptStore(this.asyncDb);
@@ -478,7 +469,6 @@ export class Runner {
     this.settleCoordinator = new RunSettleCoordinator(
       this.runStore,
       this.taskService,
-      this.leaseStore,
       this.runFacts,
       (run) => this.events.onRunFinished?.(run),
       new MergeJournalStore(this.asyncDb),
@@ -658,58 +648,11 @@ export class Runner {
     const chainId = await this.chainStore.resolveForTask(task);
     const created = await this.runStore.create(task.id, snapshot, chainId);
     await this.attempts.ensureForRun(task.id, created.attempt, created.startedAt);
-    const key = this.workContextKeyFor(task);
-    // Resolved ahead of the claim: look up whoever holds the Work Context key and
-    // whether they share this Run's line of work, exactly what `sharesLineOfWork`
-    // computed inside the single run+lease transaction before RunStore (ADR-0029
-    // #203) and the lease store (#206) moved to the async Db.
-    const existingLease = await this.leaseStore.getByKey(key);
-    const existingOwner = existingLease ? await this.runStore.get(existingLease.ownerRunId) : null;
-    const sharesLine = this.sharesLineOfWork(existingOwner, created);
-    // Claim the Work Context lease: the unique-key CAS (#118) rejects a second
-    // afk Run into an already-owned context. Enforced HERE, the shared funnel, so
-    // REST / MCP / Auto-Runner / a second process are blocked identically — not
-    // only pickNext. `acquireOrTransfer` is itself one async write-queue
-    // transaction (its read-then-write is atomic), but the Run row and the lease
-    // are still separate write units — RunStore.create predates a shared-tx API —
-    // so a rejected claim compensates by deleting the just-created Run rather than
-    // rolling both back together. No orphan is left, as the old single-transaction
-    // rollback guaranteed.
-    //
-    // A same-line-of-work predecessor's retained lease is handed off rather than
-    // conflicting (issue #124): if `created` continues the Execution Chain of the
-    // current key holder, acquireOrTransfer re-points the lease instead of
-    // throwing; an unrelated holder still hits the unique-key CAS. The predicate
-    // is pinned to the holder observed above — if it changed under the await, fall
-    // back to "don't transfer" and let the CAS decide.
-    try {
-      await this.leaseStore.acquireOrTransfer(
-        key,
-        created.id,
-        'running',
-        (existingOwnerRunId) => existingOwnerRunId === existingLease?.ownerRunId && sharesLine,
-      );
-    } catch (err) {
-      // Direct isolation's single checkout serialises to one worker per context,
-      // but a second worker attaching to an already-claimed direct Work Context is
-      // the operator's accepted risk (ADR-0046), not a block: the existing lease
-      // stays with its owner and this Run proceeds in the same live checkout. Trace
-      // it at debug so it is reconstructable from logs, never surfaced to the
-      // operator. Worktree mode is unchanged — its per-Run key never collides, so a
-      // conflict there is a real error and still compensates + propagates.
-      if (task.isolationMode !== 'worktree' && err instanceof DomainError && err.code === 'conflict') {
-        logger.debug(
-          `task ${task.id} run ${created.id}: second worker attaching to already-claimed direct Work Context "${key}"` +
-            ` (held by run ${existingLease?.ownerRunId ?? 'unknown'})`,
-        );
-      } else {
-        // Swallow the compensating delete's own error so the original lease-CAS
-        // conflict is always what propagates (a delete failure leaves at most an
-        // orphan `running` row the boot-time markInterrupted sweep reclaims).
-        await this.runStore.delete(created.id).catch(() => {});
-        throw err;
-      }
-    }
+    // "At most one active execution per work context" is enforced by the
+    // scheduler pick predicate (Auto-Runner's `occupiedDirectContexts`), not
+    // by a claim here (ADR-0001): a worktree-mode Task's context is unique by
+    // construction, and a direct-mode Task whose context is already worked is
+    // never picked in the first place.
     const run = created;
     // Retry & reject continuation (issue #147): if this Run continues a prior
     // rejected, Session-bound Run, bind it to that same Session so dispatch
@@ -759,20 +702,6 @@ export class Runner {
     } else {
       operation.end();
     }
-  }
-
-  /** Whether the Run currently holding a Work Context is a predecessor that
-   * `successor` continues — a retry / reject continuation sharing the same
-   * Session, so the builder worktree keeps exactly one owner across the
-   * handover (issue #124, reliability-design §0.5). Today the lineage is read
-   * from the Execution Chain (#129) — the durable line-of-work identity
-   * threaded across retry / reject-continue / resume — because a successor's
-   * `sessionRowId` is not yet known at claim time; #110 will bind this to the
-   * Session row once a successor carries its predecessor's `sessionRowId`
-   * forward. */
-  private sharesLineOfWork(existingOwner: RunRow | null, successor: RunRow): boolean {
-    if (successor.chainId == null) return false;
-    return existingOwner?.chainId != null && existingOwner.chainId === successor.chainId;
   }
 
   /**
@@ -881,26 +810,12 @@ export class Runner {
     }
   }
 
-  /** The Work Context lease key for this Run, matching prepareWorkspace's
-   * worktree path/branch exactly so the claimed key and the actual checkout agree. */
-  private workContextKeyFor(task: TaskRow): string {
-    if (task.isolationMode === 'worktree') {
-      return workContextKey({
-        isolationMode: 'worktree',
-        workingDir: task.workingDir,
-        worktreePath: this.worktreePathForTask(task),
-        branch: this.branchForTask(task),
-      });
-    }
-    return workContextKey({ isolationMode: 'direct', workingDir: task.workingDir });
-  }
-
   /** The builder worktree is per-Task, not per-Run: one checkout created on the
    * first Attempt, reused by every subsequent Attempt, removed only when the Task
    * reaches a terminal disposition (merge / cancel). The path and branch are
-   * therefore keyed on the Task id — `run.attempt` never appears — and both
-   * {@link workContextKeyFor} and {@link prepareWorkspace} derive them from here so
-   * the leased key and the actual checkout can never drift. */
+   * therefore keyed on the Task id — `run.attempt` never appears — and
+   * {@link prepareWorkspace} derives them from here so the actual checkout never
+   * drifts. */
   private worktreePathForTask(task: TaskRow): string {
     return join(this.worktreesDir, `task-${task.id}`);
   }
@@ -963,11 +878,10 @@ export class Runner {
   /**
    * Settle a run, tolerating its row having been deleted concurrently. The
    * get→append settle spans awaits and does not hold the run's existence stable,
-   * so a racing delete — `beginRun`'s lease-conflict compensating delete
-   * (which explicitly leaves a transient `running` row) or a task-delete cascade
-   * — can merge after the row was read (an FK violation on the fact insert) or
-   * before it (a `not_found` read). A run that no longer exists cannot be
-   * cancelled, so both mean the settle is a no-op, not an error.
+   * so a racing delete — a task-delete cascade, or a Run row removed out from
+   * under the settle — can interleave after the row was read (an FK violation on
+   * the fact insert) or before it (a `not_found` read). A run that no longer
+   * exists cannot be cancelled, so both mean the settle is a no-op, not an error.
    */
   private async settleRunIfPresent(
     taskId: number,
@@ -2573,25 +2487,6 @@ export class Runner {
       spendTimer.unref?.();
     };
 
-    // Work Context lease heartbeat (issue #122): coordinator-driven, on a
-    // wall-clock timer independent of agent/tool output — a Run stuck in a
-    // long tool call still bumps its lease's liveness, so the lease never
-    // lapses while the Run is genuinely alive. The TTL budget comes from
-    // `lease-ttl.ts`, keyed by the Run's current phase.
-    let leaseHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
-    const armLeaseHeartbeat = async () => {
-      const key = this.workContextKeyFor(task);
-      const beat = async () => {
-        if (active.externallySettled) return;
-        const now = await this.runStore.get(run.id);
-        if (now.state !== 'running') return;
-        await this.leaseStore.heartbeat(key, Date.now(), now.phase ?? 'executing');
-      };
-      await beat(); // set expiry immediately, before the first interval tick
-      leaseHeartbeatTimer = setInterval(beat, this.leaseHeartbeatMs);
-      leaseHeartbeatTimer.unref?.();
-    };
-
     // Progress Guardrail (issue #131, ADR-0019, reliability-design Unit A). Two
     // paired mechanisms, both OFF unless `guardrails.progress` was enabled in
     // the Run's immutable start snapshot (issue #126):
@@ -2875,8 +2770,6 @@ export class Runner {
       // Arm the token/cost spend Guardrail poll (issue #128; a no-op when
       // neither `tokens` nor `costUsd` is configured on the Run's frozen budget).
       await armSpendGuardrail();
-      // Arm the Work Context lease heartbeat (issue #122).
-      await armLeaseHeartbeat();
 
       // An afk Run executes unattended, so put the harness into an auto
       // permission mode: Claude's 'auto' classifier auto-approves safe tools
@@ -3339,7 +3232,6 @@ export class Runner {
       if (guardrailTimer) clearTimeout(guardrailTimer);
       if (toolTimeoutTimer) clearInterval(toolTimeoutTimer);
       if (spendTimer) clearInterval(spendTimer);
-      if (leaseHeartbeatTimer) clearInterval(leaseHeartbeatTimer);
       driver.fail(new Error('run finished'));
       driver.dispose();
       this.active.delete(run.id);

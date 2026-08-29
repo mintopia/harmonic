@@ -1,7 +1,6 @@
 import type { RunRow, TaskRow, RunFactType } from '../db/schema.js';
 import type { RunStore } from './runs.js';
 import type { TaskService } from './tasks.js';
-import type { WorkContextLeaseStore } from './work-context-leases.js';
 import type { RunFactStore } from './run-facts.js';
 import type { MergeJournalStore } from './merge-journal.js';
 import { computeDisposition, type Disposition } from './run-disposition.js';
@@ -46,7 +45,6 @@ export class RunSettleCoordinator {
   constructor(
     private readonly runStore: RunStore,
     private readonly taskService: TaskService,
-    private readonly leaseStore: WorkContextLeaseStore,
     private readonly runFacts: RunFactStore,
     private readonly onRunFinished?: (run: RunRow) => void,
     private readonly mergeJournal?: MergeJournalStore,
@@ -139,14 +137,11 @@ export class RunSettleCoordinator {
       reason: winner.reason,
       finishedAt: before.finishedAt ?? Date.now(),
     });
-    await this.releaseLease(run.id);
-    // Session retirement (issue #148, reliability-design Unit C): the moment the
-    // lease is released, record the intent for this Run's Session — retire now
-    // (a merge/abandon/cancel) or retain under a deadline (a reject / other
-    // ending). Ordered strictly *after* `releaseLease` so the worktree's owner is
-    // gone before its fate is decided (removal is coordinated with the lease).
-    // Awaited but best-effort: it only marks the Session's status; the async
-    // worktree removal is a separate drain, and a hiccup must never crash settle.
+    // Session retirement (issue #148, reliability-design Unit C): record the
+    // intent for this Run's Session — retire now (a merge/abandon/cancel) or
+    // retain under a deadline (a reject / other ending). Awaited but
+    // best-effort: it only marks the Session's status; the async worktree
+    // removal is a separate drain, and a hiccup must never crash settle.
     const finished = await this.runStore.get(run.id);
     try {
       await this.sessionRetirement?.onRunSettled(finished, this.retirementCause(disposition, winner));
@@ -221,14 +216,4 @@ export class RunSettleCoordinator {
     }
   }
 
-  /** Release the Work Context lease this Run holds, on any terminal disposition.
-   * Idempotent and best-effort — a lease-release hiccup must never crash settle.
-   * Keyed by owner Run id so it needs no key recompute. */
-  private async releaseLease(runId: number): Promise<void> {
-    try {
-      await this.leaseStore.releaseByOwner(runId);
-    } catch {
-      // best-effort; boot reconciliation is the backstop
-    }
-  }
 }

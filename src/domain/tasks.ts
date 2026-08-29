@@ -1003,7 +1003,7 @@ export class TaskService {
       await deleteRunsAndChildrenAsync(tx, runIds);
       if (sessionRowIds.length > 0) {
         // Delete a Session only once *no* Run references it any more. A warm
-        // continuation / lease transfer (#124) can share one Session across
+        // continuation (#124) can share one Session across
         // Runs of different Tasks; deleting a still-referenced Session would
         // FK-violate under foreign_keys=ON (aborting the whole delete), so keep
         // any Session another Task's surviving Run still points at.

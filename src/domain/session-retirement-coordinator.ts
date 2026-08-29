@@ -1,7 +1,6 @@
 import type { RunRow } from '../db/schema.js';
 import type { SessionStore } from './sessions.js';
 import type { RunStore } from './runs.js';
-import type { WorkContextLeaseStore } from './work-context-leases.js';
 import { forEachYielding } from '../reliability/yield.js';
 import { startOperation } from '../telemetry/operations.js';
 import {
@@ -16,11 +15,11 @@ import {
 export type RemoveWorktree = (repoDir: string, worktreePath: string) => Promise<void>;
 
 /**
- * The synchronous settle-hook `RunSettleCoordinator` calls right after it
- * releases a Run's Work Context lease (issue #148) — the seam that lets settle
- * record a Session's retirement intent without depending on the concrete
- * coordinator. {@link SessionRetirementCoordinator} implements it; the dependency
- * is optional, so every settle path that predates #148 keeps working unchanged.
+ * The synchronous settle-hook `RunSettleCoordinator` calls on every terminal
+ * Run disposition (issue #148) — the seam that lets settle record a Session's
+ * retirement intent without depending on the concrete coordinator.
+ * {@link SessionRetirementCoordinator} implements it; the dependency is
+ * optional, so every settle path that predates #148 keeps working unchanged.
  */
 export interface SessionRetirementHook {
   onRunSettled(run: RunRow, cause: RetirementCause, now?: number): Promise<void>;
@@ -37,27 +36,25 @@ export interface SessionRetirementHook {
  *
  *  - {@link onRunSettled} — the settle-hook, awaited but still best-effort. Every
  *    terminal Run disposition funnels through `RunSettleCoordinator.settle`, which
- *    calls this right after it releases the Work Context lease (so the two are
- *    ordered: the lease is gone before we decide the Session's fate). It only
- *    *records the intent* — marks the Session `idle` (retained under a deadline) or `retiring`
- *    (removal owed) — because settle is synchronous and worktree removal is not.
+ *    calls this once the Run has settled. It only *records the intent* — marks
+ *    the Session `idle` (retained under a deadline) or `retiring` (removal owed)
+ *    — because settle is synchronous and worktree removal is not.
  *  - {@link drain} — the **asynchronous** removal pass. Sweeps `idle` Sessions
  *    whose retention deadline has lapsed into `retiring`, then removes every
  *    `retiring` Session's builder worktree and marks it `retired`. Idempotent and
  *    boot-safe: a Session left `retiring` by a crash mid-removal is re-driven on
  *    the next drain. Run at boot, on a periodic tick, and after settles.
  *
- * Removal is **coordinated with the Work Context lease**: `drain` never removes a
- * worktree while any Run of the Session still holds a lease on it (a continuation
- * may have transferred the lease forward — see
- * {@link WorkContextLeaseStore.transfer}); such a Session is left `retiring` for
- * a later drain, so the worktree always has one owner until it is truly free.
+ * Removal is gated on the Session having **no active Run**: `drain` never
+ * removes a worktree while any Run of the Session is still `running` (a
+ * continuation may still be executing in it); such a Session is left
+ * `retiring` for a later drain, so the worktree always has one owner until it
+ * is truly free.
  */
 export class SessionRetirementCoordinator {
   constructor(
     private readonly sessions: SessionStore,
     private readonly runs: RunStore,
-    private readonly leases: WorkContextLeaseStore,
     private readonly removeWorktree: RemoveWorktree,
     private readonly config: RetentionConfig = DEFAULT_RETENTION,
     private readonly clock: () => number = Date.now,
@@ -122,10 +119,10 @@ export class SessionRetirementCoordinator {
     // 2. Remove the worktree of every Session owed removal, then retire it.
     let retired = 0;
     await forEachYielding(await this.sessions.listRetiring(), async (session) => {
-      // Lease coordination: never tear down a worktree a live Run still leases
-      // (a continuation may hold/have-transferred it). Leave it `retiring` for a
-      // later drain — the lease releases when that Run settles.
-      if (await this.leaseHeld(session.id)) return;
+      // Never tear down a worktree a live Run is still executing in (a
+      // continuation may still be running). Leave it `retiring` for a later
+      // drain — this clears once that Run settles.
+      if (await this.hasActiveRun(session.id)) return;
       if (session.worktreePath && session.worktreeRepoDir) {
         // Best-effort: an already-gone worktree (crash between removal and the
         // `retired` write, or a manual cleanup) must not wedge retirement.
@@ -137,11 +134,11 @@ export class SessionRetirementCoordinator {
     return retired;
   }
 
-  /** Whether any Run of the Session still holds a Work Context lease — the gate
-   * that keeps `drain` from removing a worktree with a live owner. */
-  private async leaseHeld(sessionRowId: number): Promise<boolean> {
+  /** Whether any Run of the Session is still `running` — the gate that keeps
+   * `drain` from removing a worktree with a live owner. */
+  private async hasActiveRun(sessionRowId: number): Promise<boolean> {
     for (const run of await this.runs.listForSession(sessionRowId)) {
-      if ((await this.leases.getByOwner(run.id)) !== undefined) return true;
+      if (run.state === 'running') return true;
     }
     return false;
   }

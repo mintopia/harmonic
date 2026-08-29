@@ -10,12 +10,12 @@ import {
   isQueryTimeout,
   type AsyncDbHandle,
 } from '../src/db/async.js';
-import { isUniqueViolation } from '../src/domain/work-context-leases.js';
-import { workContextLeases, runFacts, runs, tasks, workspaces } from '../src/db/schema.js';
+import { isUniqueViolation } from '../src/db/errors.js';
+import { runFacts, runs, tasks, workspaces } from '../src/db/schema.js';
 
 const delay = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
-/** Seed a task + run on the async DB so lease/run_facts inserts satisfy their FKs. */
+/** Seed a task + run on the async DB so run_facts inserts satisfy their FKs. */
 async function seedRunAsync(h: AsyncDbHandle): Promise<number> {
   const now = Date.now();
   const ws = (await h.db.select().from(workspaces).get())!;
@@ -32,14 +32,12 @@ async function seedRunAsync(h: AsyncDbHandle): Promise<number> {
   return run.id;
 }
 
-const leaseValues = (key: string, ownerRunId: number, now: number) => ({
-  key,
-  phase: 'running',
-  ownerRunId,
-  heartbeat: now,
-  expiry: now + 1000,
-  state: 'held' as const,
-  acquiredAt: now,
+const runFactValues = (runId: number, seq: number, now: number) => ({
+  runId,
+  seq,
+  ts: now,
+  type: 'session-resumed' as const,
+  payload: '{}',
 });
 
 describe('openAsyncDb boot (ADR-0029 Expand)', () => {
@@ -74,7 +72,7 @@ describe('openAsyncDb boot (ADR-0029 Expand)', () => {
   it('enforces foreign keys after boot (FK on/off dance leaves them ON)', async () => {
     const now = Date.now();
     await expect(
-      h.db.insert(workContextLeases).values(leaseValues('fk-probe', 999_999, now)).run(),
+      h.db.insert(runFacts).values(runFactValues(999_999, 1, now)).run(),
     ).rejects.toThrow();
   });
 
@@ -347,13 +345,13 @@ describe('unique-index CAS behaviour unchanged under libsql (ADR-0029 §3)', () 
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it('lease acquire: the losing insert surfaces a detectable UNIQUE violation', async () => {
+  it('run_facts (run_id, seq) CAS: the losing insert surfaces a detectable UNIQUE violation', async () => {
     const runId = await seedRunAsync(h);
     const now = Date.now();
-    await h.db.insert(workContextLeases).values(leaseValues('lease-x', runId, now)).run();
+    await h.db.insert(runFacts).values(runFactValues(runId, 1, now)).run();
     let caught: unknown;
     try {
-      await h.db.insert(workContextLeases).values(leaseValues('lease-x', runId, now)).run();
+      await h.db.insert(runFacts).values(runFactValues(runId, 1, now)).run();
     } catch (err) {
       caught = err;
     }

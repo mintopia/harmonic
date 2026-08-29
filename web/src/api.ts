@@ -33,30 +33,6 @@ class ApiError extends Error {
   }
 }
 
-/**
- * A Work Context lease's queue diagnostics (issue #125): the operator-only
- * `/api/leases` readout backing the Activity view's leases panel. `state`
- * `suspect` means the coordinator's heartbeat/TTL sweep flagged the owner as
- * possibly dead; `held` is a live, heartbeating owner. `longestWaitMs`/
- * `waitingTaskCount` describe the queue of ready Tasks blocked behind this
- * context, not the lease's own age.
- */
-export interface LeaseDiagnostic {
-  key: string;
-  state: 'held' | 'suspect';
-  phase: string;
-  ownerRunId: number;
-  ownerTaskId: number | null;
-  ownerTaskTitle: string | null;
-  ownerTaskState: string | null;
-  acquiredAt: number;
-  heartbeat: number | null;
-  expiry: number | null;
-  /** Longest-waiting ready Task blocked on this context, in ms; null when none are waiting. */
-  longestWaitMs: number | null;
-  waitingTaskCount: number;
-}
-
 export async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(path, {
     method,
@@ -279,15 +255,6 @@ export const api = {
   updateChannel: (id: number, patch: { events: string[] }) =>
     request<Channel>('PATCH', `/api/channels/${id}`, patch),
   deleteChannel: (id: number) => request<unknown>('DELETE', `/api/channels/${id}`),
-
-  // Work Context lease diagnostics + operator controls (issue #125):
-  // operator-only, 403 for anyone else.
-  leases: () => request<{ leases: LeaseDiagnostic[]; total: number }>('GET', '/api/leases'),
-  /** Hand a held/suspect lease to a chosen Run, superseding its current owner. */
-  supersedeLease: (key: string, runId: number) =>
-    request<{ ok: true }>('POST', '/api/leases/supersede', { key, runId }),
-  /** Force-release a held/suspect lease with no successor. */
-  unlockLease: (key: string) => request<{ ok: true }>('POST', '/api/leases/unlock', { key }),
 
   // Parallel-Epic read model + force-integrate (issue #167, ADR-0026): operator-scope
   // only, mirroring the force-integrate allowlist. See epic-model.ts for the DTO shape.

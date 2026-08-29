@@ -579,85 +579,6 @@ export type TrackerContainerRow = typeof trackerContainers.$inferSelect;
 export type RunRow = typeof runs.$inferSelect;
 export type RunEventRow = typeof runEvents.$inferSelect;
 
-export const LEASE_STATES = ['held', 'suspect'] as const;
-export type LeaseState = (typeof LEASE_STATES)[number];
-
-/**
- * A Work Context lease (issue #118, ADR-0022, reliability-design §0.5): the
- * persisted claim that a Run owns exclusive occupancy of a Work Context (a
- * canonical working-directory/branch identity, `workContextKey` in
- * domain/work-context-key.ts) for a phase of its lifecycle. `phase` is always
- * `'running'` today — the phase machine (#114) will widen it. `expiry` is set
- * from birth and re-derived on every phase-aware heartbeat by the live TTL
- * sweep (#122, `domain/lease-ttl.ts`); `state` starts `'held'` and flips to
- * `'suspect'` either when that live sweep lapses it or via boot reconciliation
- * (#123).
- *
- * The unique index on `key` alone — not `(key, state)` — is deliberate and is
- * the compare-and-set acquire primitive: a `suspect` row still blocks a new
- * acquire on the same key, because a suspect lease is an unresolved claim, not
- * a free one. Only an explicit `release` (or, later, reconciliation) frees the
- * key. The Runner's use of this substrate is out of scope here (#118 is the
- * schema/store only).
- */
-export const workContextLeases = sqliteTable('work_context_leases', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  /** The canonical Work Context identity (`workContextKey`). */
-  key: text('key').notNull(),
-  /** Occupancy phase; always 'running' until the phase machine (#114). */
-  phase: text('phase').notNull(),
-  ownerRunId: integer('owner_run_id')
-    .notNull()
-    .references(() => runs.id),
-  heartbeat: integer('heartbeat').notNull(),
-  /** TTL deadline (issue #122): set at acquire and re-derived on every
-   * phase-aware heartbeat (`domain/lease-ttl.ts`); nullable only for rows that
-   * predate the TTL machinery. */
-  expiry: integer('expiry'),
-  state: text('state').$type<LeaseState>().notNull(),
-  acquiredAt: integer('acquired_at').notNull(),
-}, (t) => [
-  uniqueIndex('work_context_leases_key_unique').on(t.key),
-]);
-
-export type WorkContextLeaseRow = typeof workContextLeases.$inferSelect;
-
-/** Operator dispositions a Work Context lease can be given (issue #125,
- * ADR-0022): `supersede` re-points a stuck (typically `suspect`) lease's
- * ownership to a Run the operator names; `unlock` force-releases it outright,
- * freeing the key for a fresh acquire. Both are manual escapes from a lease
- * boot reconciliation (#123) or the live sweep (#122) could only flag, never
- * resolve on its own. */
-export const LEASE_DISPOSITION_ACTIONS = ['supersede', 'unlock'] as const;
-export type LeaseDispositionAction = (typeof LEASE_DISPOSITION_ACTIONS)[number];
-
-/**
- * The append-only operator-disposition audit log for Work Context leases
- * (issue #125, ADR-0022): every `supersede`/`unlock` an operator issues is one
- * immutable row, mirroring `run_facts`/`guardrail_events`'s discipline —
- * written, never updated — so a lease's disposition history survives whatever
- * happens to the lease row itself (a `supersede` mutates it in place; an
- * `unlock` deletes it outright). No FK on `key` — a lease disposition
- * legitimately outlives the lease row it acted on (an `unlock` deletes it,
- * and a `key` can be re-acquired by an unrelated later Run), so this log is
- * keyed by the plain string identity, not a foreign row.
- */
-export const workContextLeaseDispositions = sqliteTable('work_context_lease_dispositions', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  /** The Work Context key the disposition acted on (`workContextKey`). */
-  key: text('key').notNull(),
-  action: text('action').$type<LeaseDispositionAction>().notNull(),
-  /** The Run the lease was re-pointed to; null for `unlock` (there is no new owner). */
-  targetRunId: integer('target_run_id'),
-  /** The lease's owner immediately before this disposition, for the audit trail. */
-  previousOwnerRunId: integer('previous_owner_run_id'),
-  /** The lease's `state` immediately before this disposition. */
-  previousState: text('previous_state').$type<LeaseState>(),
-  at: integer('at').notNull(),
-});
-
-export type WorkContextLeaseDispositionRow = typeof workContextLeaseDispositions.$inferSelect;
-
 /**
  * The ending-signal fact types the coordinator understands **today** (issue
  * #112, reliability-design §0.3). Every way a Run can end is recorded as a
@@ -997,8 +918,8 @@ export type GuardrailEventRow = typeof guardrailEvents.$inferSelect;
  * retiring → retired`. **Session retirement is the sole owner of builder-worktree
  * removal** (issue #148): a worktree Session's checkout is retained through the
  * human-rejection window (so a reject-and-continue merges in the same workspace)
- * and its builder worktree is removed **only** at retirement, coordinated with
- * the Work Context lease. `active` — a live Run owns it; `idle`
+ * and its builder worktree is removed **only** at retirement, gated on the
+ * Session having no active Run. `active` — a live Run owns it; `idle`
  * — no live Run, retained under a `retireDeadline` (reject-continuation / warm
  * reuse window); `retiring` — worktree removal in progress (crash-re-driven at
  * boot); `retired` — worktree removed, terminal.

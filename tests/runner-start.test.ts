@@ -6,7 +6,6 @@ import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { RunStore, type RunGuardrailSnapshot } from '../src/domain/runs.js';
-import { WorkContextLeaseStore } from '../src/domain/work-context-leases.js';
 import { ExecutionChainStore } from '../src/domain/execution-chain-store.js';
 import { Runner } from '../src/execution/runner.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
@@ -39,7 +38,7 @@ describe('Runner.start (issue #272)', () => {
     tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
     runs = new RunStore(asyncDb);
     chains = new ExecutionChainStore(asyncDb);
-    runner = new Runner(runs, tasks, new WorkContextLeaseStore(asyncDb), asyncDb, () => defaultConfig());
+    runner = new Runner(runs, tasks, asyncDb, () => defaultConfig());
   });
 
   afterEach(async () => {

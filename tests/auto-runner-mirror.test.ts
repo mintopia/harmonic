@@ -373,14 +373,15 @@ describe('AutoRunner — skip reasons and unresolvable integration bases (issue 
 });
 
 /**
- * The Work Context House Rule pick predicate (ADR-0022, issue #120): the
- * Auto-Runner skips a ready Task whose direct-mode Work Context is already
- * occupied by a working Run, leaving it `ready` with a legible skip-reason. The
- * hard lease (#119) stays the authoritative gate; this predicate exists to
- * avoid pick churn and produce a diagnosable queue. It reads occupancy from
- * Task state (not the lease store) so the two can never disagree.
+ * The Work Context House Rule pick predicate (ADR-0001): the Auto-Runner
+ * skips a ready Task whose direct-mode Work Context is already occupied by a
+ * working Run, leaving it `ready` with a legible skip-reason. This predicate
+ * is the SOLE enforcement of "at most one active execution per work context"
+ * — there is no separate lease/claim underneath it. It reads occupancy
+ * straight from Task state, so a worktree-mode Task (whose context is unique
+ * per Task by construction) never needs it at all.
  */
-describe('AutoRunner — Work Context House Rule pick predicate (issue #120, ADR-0022)', () => {
+describe('AutoRunner — Work Context House Rule pick predicate (ADR-0001)', () => {
   let dir: string;
   let asyncDb: AsyncDbHandle;
   let settingsStore: SettingsStore;
@@ -456,7 +457,7 @@ describe('AutoRunner — Work Context House Rule pick predicate (issue #120, ADR
   it('an escalated occupant no longer holds the context — its Run settled and the branch is evidence, not live work (ADR-0041)', async () => {
     const busy = freshDir();
     const escalated = await directTask(busy, 'escalated');
-    await tasks.escalate(escalated.id, 'escalated to human: attempt 2 of 2 failed'); // its Run settled; lease released
+    await tasks.escalate(escalated.id, 'escalated to human: attempt 2 of 2 failed'); // its Run settled; context freed
     const next = await directTask(busy, 'same context');
 
     const { ar, started } = build();

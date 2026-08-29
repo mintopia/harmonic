@@ -36,8 +36,8 @@ export const DEFAULT_QUERY_TIMEOUT_MS = 30_000;
 
 /**
  * Raised when a facade call (`read`/`write`/`transaction`) outlives its
- * wall-clock deadline. Detectable via {@link isQueryTimeout} the same way lease
- * CAS losers are detected via `isUniqueViolation`, so callers and monitoring can
+ * wall-clock deadline. Detectable via {@link isQueryTimeout}, just as write
+ * conflicts are detected via `isUniqueViolation`, so callers and monitoring can
  * tell a timeout apart from an ordinary query failure.
  */
 export class QueryTimeoutError extends Error {
@@ -106,7 +106,7 @@ function withTimeout<T>(work: Promise<T>, timeoutMs: number, kind: QueryKind): P
  *   without waiting on the writer.
  * - `write(fn)` serialises through a single-writer queue: at most one write is in
  *   flight, the next starts only after the previous settles. This preserves the
- *   single-writer invariant the coordination spine assumes (lease `acquire`,
+ *   single-writer invariant the coordination spine assumes (`RunStore.finish`,
  *   `run_facts` `seq`) which synchronous better-sqlite3 gave for free.
  * - `transaction(fn)` is one exclusive write-queue unit wrapping a real DB
  *   transaction, so multi-statement atomic sequences (the 6 `.transaction()`

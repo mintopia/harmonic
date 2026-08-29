@@ -371,10 +371,10 @@ describe('run execution over ACP (direct mode)', () => {
   });
 });
 
-describe('Work Context lease (issue #119, ADR-0046)', () => {
+describe('direct Work Context occupancy (ADR-0001, ADR-0046)', () => {
   let server: TestServer;
-  const workingDirA = mkdtempSync(join(tmpdir(), 'harmonic-lease-a-'));
-  const workingDirC = mkdtempSync(join(tmpdir(), 'harmonic-lease-c-'));
+  const workingDirA = mkdtempSync(join(tmpdir(), 'harmonic-context-a-'));
+  const workingDirC = mkdtempSync(join(tmpdir(), 'harmonic-context-c-'));
 
   beforeAll(async () => {
     server = await startServer(stubHarness());
@@ -388,7 +388,7 @@ describe('Work Context lease (issue #119, ADR-0046)', () => {
     await server.close();
   });
 
-  it('attaches a second Run to an already-held direct context (201), not blocked — the operator\'s accepted risk (ADR-0046, #369)', async () => {
+  it('attaches a second Run to an already-working direct context (201), not blocked — the operator\'s accepted risk (ADR-0046, #369)', async () => {
     const createdA = await server.api('POST', '/api/tasks', {
       prompt: scenario({ exit: 'hang' }),
       workingDir: workingDirA,
@@ -397,13 +397,14 @@ describe('Work Context lease (issue #119, ADR-0046)', () => {
     const taskAId = createdA.body.id;
     const startedA = await server.api('POST', `/api/tasks/${taskAId}/run`);
     expect(startedA.status).toBe(201);
-    const runAId = startedA.body.id;
     await waitFor(async () => (await server.api('GET', `/api/tasks/${taskAId}`)).body.state === 'working');
 
     // Task B collides on the exact same workingDir (direct-mode keys ignore
-    // branch, so the two are contending for the same physical occupancy). Direct
-    // isolation no longer blocks the second worker (ADR-0046): the attach is the
-    // operator's accepted risk, traced at debug rather than rejected.
+    // branch, so the two are contending for the same physical occupancy). The
+    // scheduler's pick predicate (Auto-Runner's `occupiedDirectContexts`) is the
+    // only enforcement (ADR-0001), and it does not gate a hand-started run
+    // (REST `/run`, bypassing pickNext): direct isolation does not block the
+    // second worker (ADR-0046), the attach is the operator's accepted risk.
     const createdB = await server.api('POST', '/api/tasks', {
       prompt: scenario({ exit: 'hang' }),
       workingDir: workingDirA,
@@ -416,16 +417,9 @@ describe('Work Context lease (issue #119, ADR-0046)', () => {
     // B's Run row is created and it proceeds — not rolled back, not left ready.
     const runsB = await server.api('GET', `/api/tasks/${taskBId}/runs`);
     expect(runsB.body.runs).toHaveLength(1);
-
-    // The existing lease is untouched: worker A still owns the context — the
-    // attaching Run neither stole nor released it.
-    const leases = await server.api('GET', '/api/leases');
-    const held = leases.body.leases.filter((l: { ownerTaskId: number }) => l.ownerTaskId === taskAId);
-    expect(held).toHaveLength(1);
-    expect(held[0].ownerRunId).toBe(runAId);
   });
 
-  it('does not block a different Work Context while A still holds its lease (control)', async () => {
+  it('does not block a different Work Context while A is still working (control)', async () => {
     const createdC = await server.api('POST', '/api/tasks', {
       prompt: scenario({ exit: 'hang' }),
       workingDir: workingDirC,

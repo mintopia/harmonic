@@ -251,9 +251,10 @@ export const Git = {
    * detached, an agent `git commit` / `reset` / `checkout -B` moves only HEAD,
    * so the live target branch ref cannot advance and expose unverified work on
    * the live branch (reliability-design Unit D, issue #152). Unlike
-   * {@link addDetachedWorktree}, this operates on the leased checkout itself
-   * (direct mode), not a disposable worktree, so it takes no base-repo lock —
-   * the Work Context lease already gives the Run exclusive use of the checkout.
+   * {@link addDetachedWorktree}, this operates on the direct-mode checkout itself,
+   * not a disposable worktree, so it takes no base-repo lock —
+   * the scheduler predicate already limits this to one active execution per Work
+   * Context, giving the Run exclusive use of the checkout.
    */
   checkoutDetach: (dir: string, oid: string) => git(dir, 'checkout', '-f', '--detach', oid),
 

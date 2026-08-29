@@ -7,7 +7,7 @@ import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { RunStore } from '../src/domain/runs.js';
 import { TurnQueueStore } from '../src/domain/turn-queue-store.js';
-import { isUniqueViolation } from '../src/domain/work-context-leases.js';
+import { isUniqueViolation } from '../src/db/errors.js';
 import { allWorkspaces, makeSettingsStore } from './helpers.js';
 
 /**
