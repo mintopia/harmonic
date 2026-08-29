@@ -186,8 +186,8 @@ function TaskCard({ task, onOpen, onChanged }: { task: Task; onOpen: () => void;
             {task.openBlockerCount > 0 && <BlockerBadge count={task.openBlockerCount} blockedOnFailed={task.blockedOnFailed} />}
             {task.state === 'escalated' ? (
               <span className={stateChip(task.state)}>escalated</span>
-            ) : task.state === 'working' && task.phase && task.phase !== 'terminal' ? (
-              <span className={stateChip(task.state)}>{task.phase === 'merging' ? 'merging' : task.phase}</span>
+            ) : task.state === 'working' && task.currentStep ? (
+              <span className={stateChip(task.state)}>{task.currentStep}</span>
             ) : null}
           </span>
         </div>

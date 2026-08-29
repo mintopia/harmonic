@@ -120,8 +120,8 @@ describe('moving-base folding (ADR-0046, #368)', () => {
   });
 
   it('keeps the reconciling line in place as other events interleave between retries', () => {
-    const phase = (id: number) => evt(id, 'lifecycle', { event: 'phase', phase: 'verifying' });
-    const items = coalesceEvents([retry(1, 1, 5), phase(2), retry(3, 2, 5), phase(4)]);
+    const other = (id: number) => evt(id, 'lifecycle', { event: 'progress-nudge', pattern: 'monologue' });
+    const items = coalesceEvents([retry(1, 1, 5), other(2), retry(3, 2, 5), other(4)]);
     expect(items.map((i) => i.key)).toEqual([1, 2, 4]);
     // The single moving-base row still holds the newest attempt payload.
     expect(items[0]).toEqual({ kind: 'event', event: retry(3, 2, 5), key: 1 });
@@ -130,7 +130,7 @@ describe('moving-base folding (ADR-0046, #368)', () => {
 
 describe('movingBaseView (ADR-0046, #368)', () => {
   it('is null for any non-moving-base payload', () => {
-    expect(movingBaseView({ event: 'phase', phase: 'verifying' })).toBeNull();
+    expect(movingBaseView({ event: 'progress-nudge', pattern: 'monologue' })).toBeNull();
     expect(movingBaseView(null)).toBeNull();
     expect(movingBaseView(undefined)).toBeNull();
   });

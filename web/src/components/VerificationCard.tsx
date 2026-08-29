@@ -116,7 +116,6 @@ export function VerificationCard({ attempts }: { attempts: VerificationAttempt[]
                   <Icon className="size-3" name={VERDICT_ICON[a.verdict]} />
                   {a.verdict}
                 </span>
-                <span className="text-muted">{a.phase}</span>
                 <span className="min-w-0 text-muted">{a.summary}</span>
               </div>
             ))}

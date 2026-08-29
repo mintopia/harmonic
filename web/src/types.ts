@@ -4,11 +4,6 @@ import type { Verdict } from './verification-model.js';
 export const TASK_STATES = ['draft', 'ready', 'working', 'escalated', 'done', 'cancelled'] as const;
 export type TaskState = (typeof TASK_STATES)[number];
 
-/** The Run phase machine (ADR reliability-design §0.2, issue #114/#171), in
- * traversal order; mirrors the server's `RUN_PHASES` (`domain/run-phases.ts`). */
-export const RUN_PHASES = ['executing', 'validating', 'verifying', 'merging', 'terminal'] as const;
-export type RunPhase = (typeof RUN_PHASES)[number];
-
 export type AttemptState = 'running' | 'passed' | 'failed' | 'escalated' | 'cancelled';
 export type StepType = 'rebase' | 'implementation' | 'verification' | 'review';
 export type StepState = 'pending' | 'running' | 'passed' | 'failed' | 'skipped' | 'cancelled';
@@ -69,7 +64,6 @@ export interface GuardrailEvent {
   seq: number;
   ts: number;
   dimension: GuardrailDimension;
-  phase: RunPhase;
   limitValue: number;
   observedValue: number;
   configSource: 'default' | 'workspace';
@@ -107,7 +101,6 @@ export interface VerificationAttempt {
   verdict: Verdict;
   summary: string;
   output: string;
-  phase: RunPhase;
   /** Whether a critic-session transcript can be read for this attempt
    * (ADR-0040) — fetch it with `api.criticLog(id)`. */
   hasTranscript: boolean;
@@ -363,8 +356,10 @@ export interface Task {
   toolCount: number | null;
   /** The running run's id, so the board can match the `run_usage` firehose to this card; null unless the Task is working (issue #100). */
   runId: number | null;
-  /** The running run's phase, for the Board's Active-card status badge; null unless the Task is working (or a pre-phase-machine run). */
-  phase: RunPhase | null;
+  /** The running run's current Attempt Step (ADR-0001 Vocabulary), for the
+   * Board's Active-card status badge; null unless the Task is working, or
+   * between Steps (e.g. mid-merge). */
+  currentStep: StepType | null;
   /** The running run's context-window occupancy in tokens; null unless running (or unreported). Live via the run_usage firehose (issue #52). */
   contextTokens: number | null;
   /** The model's effective context window; null when unknown. The board card shows `ctx %` = contextTokens/contextWindow (issue #52). */
@@ -394,8 +389,6 @@ export interface Run {
   taskId: number;
   attempt: number;
   state: 'running' | 'completed' | 'failed' | 'cancelled';
-  /** Phase within the Run lifecycle; `null` for pre-feature Runs (issue #114). */
-  phase: RunPhase | null;
   reason: string | null;
   stopReason: string | null;
   sessionId: string | null;

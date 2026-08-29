@@ -1,6 +1,6 @@
 // Explicit .js extension: this module is shared with the node-side test
 // project, whose nodenext resolution requires it (Vite maps .js → .ts).
-import type { Run } from './types.js';
+import type { Run, Step } from './types.js';
 
 /**
  * Pure view-model helpers behind the Ticket page's run rail (issue #183, part
@@ -27,9 +27,13 @@ export interface RunDisplay {
 
 /**
  * A run's disposition, folded from its terminal state first and only then its
- * live phase: a still-`running` run reads by its phase. Pure.
+ * live Step: a still-`running` run reads by whichever Step is currently
+ * running in its owning Attempt (ADR-0001 Vocabulary — Run/Phase are deleted
+ * concepts). `steps` is the matching Attempt's timeline (by `run.attempt` ===
+ * `Attempt.number`); pass `[]` when it isn't loaded (e.g. a historical run
+ * the gate bar never actually renders `running` for). Pure.
  */
-export function runDisplay(run: Run): RunDisplay {
+export function runDisplay(run: Run, steps: readonly Step[] = []): RunDisplay {
   switch (run.state) {
     case 'failed':
       return { word: 'failed', dot: 'fail', pulse: false };
@@ -38,12 +42,14 @@ export function runDisplay(run: Run): RunDisplay {
     case 'completed':
       // Merged (or an operator Complete) — reads as done, not amber.
       return { word: 'merged', dot: 'merged', pulse: false };
-    case 'running':
-      // executing | validating | verifying carry their phase word; `merging`
-      // displays as the operator-facing "merging" label.
-      // a pre-feature run with no phase reads the generic 'running'.
-      const word = run.phase === 'merging' ? 'merging' : run.phase && run.phase !== 'terminal' ? run.phase : 'running';
+    case 'running': {
+      // The running Step carries its type as the word; no Step running (the
+      // gap before/after merging, or before the first Step starts) reads the
+      // generic 'running'.
+      const running = steps.find((step) => step.state === 'running');
+      const word = running?.type ?? 'running';
       return { word, dot: 'running', pulse: true };
+    }
   }
 }
 

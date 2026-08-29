@@ -1,7 +1,6 @@
-import type { VerificationMechanism } from '../db/schema.js';
+import { STEP_TYPES, type StepType, type VerificationMechanism } from '../db/schema.js';
 import type { ResolvedVerifiers } from './setting-override.js';
 import type { Verdict } from '../verification/critic-schema.js';
-import { RUN_PHASES, type RunPhase } from './run-phases.js';
 
 /** The operator-facing state of one verifier category for a Run. */
 export type VerifierStatusState = 'passed' | 'failed' | 'inconclusive' | 'skipped' | 'disabled' | 'unrunnable' | 'planned';
@@ -33,17 +32,19 @@ const verdictStates: Record<Verdict, Extract<VerifierStatusState, 'passed' | 'fa
  * identity, so commands deliberately reconcile as one category even when more
  * than one command is configured. This is read-time best effort: current
  * Workspace settings decide whether a missing category is skipped or disabled.
- * Before the Run reaches `verifying` a configured-but-unattempted verifier
- * reconciles as `planned` rather than `skipped` (ADR-0044, issue #345).
+ * Before the Attempt reaches its Verification Step a configured-but-unattempted
+ * verifier reconciles as `planned` rather than `skipped` (ADR-0044, issue #345).
  */
 export function verifierStatuses({
   verifiers,
   attempts,
-  phase,
+  stepType,
 }: {
   verifiers: Pick<ResolvedVerifiers, 'commands' | 'review'>;
   attempts: readonly RecordedAttempt[];
-  phase?: RunPhase | null;
+  /** The Attempt's currently-running Step, or the most recent one; `null`
+   * when no Step has started yet, or none is running (ADR-0001 Vocabulary). */
+  stepType?: StepType | null;
 }): VerifierStatus[] {
   const latestByMechanism = new Map<VerificationMechanism, RecordedAttempt>();
   for (const attempt of attempts) {
@@ -51,12 +52,14 @@ export function verifierStatuses({
     if (!previous || attempt.seq > previous.seq) latestByMechanism.set(attempt.mechanism, attempt);
   }
 
-  // Before the run reaches the verifying phase, a configured verifier hasn't had
-  // its chance yet: it is planned, not skipped. `phase` null (pre-feature runs) or
-  // any attempt already recorded means we've reached verification — keep the
-  // reconciled skipped/passed/failed meaning unchanged.
+  // Before the Attempt reaches its Verification Step, a configured verifier
+  // hasn't had its chance yet: it is planned, not skipped. `stepType` null (no
+  // Step has started, or one already recorded an attempt) or `verification`/
+  // `review` (already there) means we've reached verification — keep the
+  // reconciled skipped/passed/failed meaning unchanged once any attempt exists.
   const verificationPending =
-    attempts.length === 0 && phase != null && RUN_PHASES.indexOf(phase) < RUN_PHASES.indexOf('verifying');
+    attempts.length === 0 &&
+    (stepType == null || STEP_TYPES.indexOf(stepType) < STEP_TYPES.indexOf('verification'));
   const commandLabels = verifiers.commands.map((c) => [c.command, ...c.args].join(' ').trim());
 
   return mechanisms.map((mechanism) => {

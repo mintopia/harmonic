@@ -13,8 +13,8 @@ import {
   GUARDRAIL_DIMENSIONS,
   GUARDRAIL_CONFIG_SOURCES,
   VERIFICATION_MECHANISMS,
+  STEP_TYPES,
 } from '../../db/schema.js';
-import { RUN_PHASES } from '../../domain/run-phases.js';
 import { Git } from '../../execution/git.js';
 import { DomainError } from '../../domain/errors.js';
 import { mergeUsage, type RunUsage } from '../../execution/usage.js';
@@ -162,10 +162,10 @@ const taskSchema = taskWithDepsSchema
     toolCount: z.number().nullable().meta({ example: 12 }),
     /** The running run's id, so the board can match the run_usage firehose to this card; null unless running (issue #100). */
     runId: z.number().nullable().meta({ example: 41 }),
-    /** The running run's phase (executing → validating → verifying → merging →
-     * terminal), so the Board's Active card can badge it; null unless the Task
-     * is working (or a pre-phase-machine run). */
-    phase: z.enum(RUN_PHASES).nullable().meta({ example: 'verifying' }),
+    /** The running run's current Attempt Step (ADR-0001 Vocabulary), so the
+     * Board's Active card can badge it; null unless the Task is working, or
+     * between Steps (e.g. mid-merge). */
+    currentStep: z.enum(STEP_TYPES).nullable().meta({ example: 'verification' }),
     /** The running run's context-window occupancy in tokens; null unless running
      * (or unreported). Live via the run_usage firehose (issue #52). */
     contextTokens: z.number().nullable().meta({ example: 48210 }),
@@ -198,9 +198,6 @@ const runSchema = z
     taskId: z.number().meta({ example: 4821 }),
     attempt: z.number().meta({ example: 1 }),
     state: z.enum(RUN_STATES).meta({ example: 'completed' }),
-    /** The Run's position in the phase machine (issue #114): executing →
-     * validating → verifying → merging → terminal. Null on pre-feature Runs. */
-    phase: z.enum(RUN_PHASES).nullable().meta({ example: 'verifying' }),
     /** Failure reason: 'interrupted', an error message, or null. */
     reason: z.string().nullable().meta({ example: null }),
     /** ACP stopReason from the session/prompt result. */
@@ -266,8 +263,6 @@ const guardrailEventSchema = z.object({
   ts: z.number().meta({ example: 1784032140000 }),
   /** The budget dimension that tripped. */
   dimension: z.enum(GUARDRAIL_DIMENSIONS).meta({ example: 'wall-clock' }),
-  /** The Run phase the trip was observed in. */
-  phase: z.enum(RUN_PHASES).meta({ example: 'executing' }),
   /** The configured bound that was crossed, in the dimension's unit (ms for wall-clock). */
   limitValue: z.number().meta({ example: 3_600_000 }),
   /** The observed value at trip, same unit as `limitValue`. */
@@ -296,8 +291,6 @@ const verificationAttemptSchema = z.object({
   summary: z.string().meta({ example: 'all checks passed' }),
   /** Raw verifier output, caller-capped. */
   output: z.string().meta({ example: '' }),
-  /** The Run phase the attempt was recorded in. */
-  phase: z.enum(RUN_PHASES).meta({ example: 'verifying' }),
   /** Whether a critic-session transcript is available for this attempt
    * (ADR-0040). The raw path is server-only; fetch the parsed log from
    * `GET /api/verification-attempts/:id/log`. */

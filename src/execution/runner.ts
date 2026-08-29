@@ -32,7 +32,6 @@ import { AttemptStore } from '../domain/attempts.js';
 import type { SettleProjection } from '../domain/run-coordinator.js';
 import { RunSettleCoordinator } from '../domain/run-settle.js';
 import type { SessionRetirementHook } from '../domain/session-retirement-coordinator.js';
-import type { RunPhase } from '../domain/run-phases.js';
 import type { RunFactType } from '../db/schema.js';
 import type { TaskService } from '../domain/tasks.js';
 import { resolveGuardrails, resolveVerifiers, resolveScoped, resolveTaskPrompt, type ResolvedGuardrails } from '../domain/setting-override.js';
@@ -1525,9 +1524,9 @@ export class Runner {
         continuation,
         condensedContext: continuation.path === 'new-session-condensed' ? await this.condensedContext(run) : null,
       };
-      // The next `driveOnce(healCtx)` resets the phase pointer to `executing` and
-      // records the re-entry itself (§0.4), so the phase sequence stays fully
-      // reconstructable from the event log.
+      // The next `driveOnce(healCtx)` starts a fresh rebase/implementation Step
+      // and records the re-entry itself (§0.4), so the Step sequence stays
+      // fully reconstructable from the event log.
       }
     } finally {
       this.toolCallTotals.delete(run.id);
@@ -1980,9 +1979,9 @@ export class Runner {
     // not open it again.
     const opensAttempt = (await this.attempts.listSteps(attemptAtStart.id)).length === 0;
 
-    // Steps, rather than Run phases, own the execution pipeline. Runs
-    // remain readable compatibility records, but a transition never writes or
-    // consults `runs.phase`.
+    // Steps own the execution pipeline (Run/Phase are deleted concepts,
+    // ADR-0001 Vocabulary) — a transition here only ever touches the `steps`
+    // table.
     const advanceTask = async (to: 'verifying' | 'merging') => {
       const attempt = await this.attempts.ensureForRun(task.id, attemptNumber, run.startedAt);
       const rows = await this.attempts.listSteps(attempt.id);
@@ -2004,8 +2003,6 @@ export class Runner {
     // That is a failed Attempt with the reason as feedback, never an escalation.
     let stoppedShort: string | null = null;
     const autoDriven = this.autoDrive?.handles(task) ?? false;
-
-    if (healCtx) record('lifecycle', { event: 'phase', phase: 'executing' });
 
     let child: ChildProcess;
     let workspace: Workspace;
@@ -2243,13 +2240,13 @@ export class Runner {
 
     // Wall-clock Guardrail watchdog (issue #127, ADR-0019). Armed once the
     // session is live (below) for the Run's *remaining* execution budget; a
-    // one-shot timer because the execution phases (`executing/validating/
-    // verifying`) are a contiguous prefix of the Run — it can only fire while
-    // this `driveOnce` is running, and the `finally` clears it the instant the
-    // Run parks in `review`, merges, or settles. That is exactly the phase
-    // scoping: time a Run spends parked awaiting a human (review SLA) or in a
-    // non-interruptible merge never counts, because the watchdog isn't armed
-    // then. On fire it appends a structured `guardrail_events` row and settles
+    // one-shot timer because the counted Step types (rebase/implementation/
+    // verification/review) run as a contiguous prefix of the Attempt — it can
+    // only fire while this `driveOnce` is running, and the `finally` clears it
+    // the instant the Attempt merges or settles. That is exactly the Step
+    // scoping: time spent in a non-interruptible merge (no Step running) never
+    // counts, because the watchdog isn't armed then. On fire it appends a
+    // structured `guardrail_events` row and settles
     // the Run through the coordinator by precedence — `guardrail-trip` →
     // Escalation, never a direct settle, never a new terminal state.
     let guardrailTimer: ReturnType<typeof setTimeout> | null = null;
@@ -2272,27 +2269,21 @@ export class Runner {
         if (active.externallySettled) return; // already ended some other way
         const now = await this.runStore.get(run.id);
         if (now.state !== 'running') return; // settled/terminal — nothing to trip
-        const attempt = await this.attempts.getForTaskNumber(task.id, run.attempt);
-        const attemptSteps = attempt ? await this.attempts.listSteps(attempt.id) : [];
-        const activeTask = [...attemptSteps].reverse().find((row) => row.state === 'running');
-        if (!activeTask) return; // Attempt has reached merging, which never charges execution time.
-        // The critic (`review` Step) is the last verification step, so it charges as `verifying`.
-        const guardrailPhase: RunPhase =
-          activeTask?.type === 'rebase' ? 'validating' : activeTask?.type === 'implementation' ? 'executing' : 'verifying';
-        // Phase-scoped (issue #127, reliability-design Unit A): a trip only
-        // counts when observed inside an execution phase. `now - startedAt` is
-        // the execution clock precisely because the counted phases are a
+        const stepType = await this.attempts.currentStepType(task.id, run.attempt);
+        if (!stepType) return; // Attempt has reached merging, which never charges execution time.
+        // Step-scoped (issue #127, reliability-design Unit A): a trip only
+        // counts while a Step is actively running. `now - startedAt` is the
+        // execution clock precisely because the counted Steps are a
         // contiguous prefix — this watchdog is armed only within `driveOnce`,
-        // which the Run leaves for `review`/`merging` by *returning*, and the
-        // `finally` clears the timer at that point. If the timer nonetheless
-        // fires mid-`review`/`merging`, `wallClockTrip` returns null (that phase
+        // which the Run leaves for merging by *returning*, and the `finally`
+        // clears the timer at that point. If the timer nonetheless fires
+        // mid-merge, `wallClockTrip` returns null (no Step is running, so it
         // does not count) and the Run is left alone.
-        const trip = wallClockTrip({ elapsedMs: Date.now() - now.startedAt, phase: guardrailPhase, budget });
-        if (!trip) return; // fired in a non-counted phase, or not actually over budget
+        const trip = wallClockTrip({ elapsedMs: Date.now() - now.startedAt, stepType, budget });
+        if (!trip) return; // fired with no Step running, or not actually over budget
         // Structured evidence first — the card reason derives from this row.
         await this.guardrailEvents.append(now.id, {
           dimension: trip.dimension,
-          phase: guardrailPhase,
           limitValue: trip.limitMs,
           observedValue: trip.observedMs,
           configSource,
@@ -2326,7 +2317,6 @@ export class Runner {
       now: RunRow,
       event: {
         dimension: 'tokens' | 'cost';
-        phase: RunPhase;
         limitValue: number;
         observedValue: number;
         configSource: 'default' | 'workspace';
@@ -2370,6 +2360,7 @@ export class Runner {
             if (active.externallySettled) return;
             const now = await this.runStore.get(run.id);
             if (now.state !== 'running') return;
+            const stepType = await this.attempts.currentStepType(task.id, now.attempt);
             const snap = await this.sampleSnapshot(run.id);
             const observedTokens = snap ? totalTokensOf(snap.usage) : null;
             const cost = snap ? costOfUsages([snap.usage], priceTable) : null;
@@ -2382,7 +2373,7 @@ export class Runner {
             // The Attempt cap (`maxAttempts`/`budgetBase`, `drive`'s loop above)
             // is what bounds how many Attempts a Run can spend on in the first
             // place.
-            const outcome = spendTrip({ phase: now.phase ?? null, budget, observedTokens, observedUsd, costIncomplete });
+            const outcome = spendTrip({ stepType, budget, observedTokens, observedUsd, costIncomplete });
             if (outcome.kind === 'ok') {
               unmeasurableSince = null;
               return;
@@ -2397,7 +2388,6 @@ export class Runner {
                 now,
                 {
                   dimension: outcome.dimension,
-                  phase: now.phase ?? 'executing',
                   limitValue,
                   observedValue: 0,
                   configSource,
@@ -2414,7 +2404,6 @@ export class Runner {
               trip.dimension === 'tokens'
                 ? {
                     dimension: 'tokens' as const,
-                    phase: now.phase ?? ('executing' as RunPhase),
                     limitValue: trip.limitTokens,
                     observedValue: trip.observedTokens,
                     configSource,
@@ -2422,7 +2411,6 @@ export class Runner {
                   }
                 : {
                     dimension: 'cost' as const,
-                    phase: now.phase ?? ('executing' as RunPhase),
                     limitValue: toMicroUsd(trip.limitUsd),
                     observedValue: toMicroUsd(trip.observedUsd),
                     configSource,
@@ -2487,7 +2475,6 @@ export class Runner {
     ) => {
       await this.guardrailEvents.append(now.id, {
         dimension: evidence.dimension,
-        phase: now.phase ?? 'executing',
         limitValue: evidence.limitValue,
         observedValue: evidence.observedValue,
         configSource: progressConfigSource,
@@ -2532,9 +2519,9 @@ export class Runner {
         if (active.externallySettled) return;
         const now = await this.runStore.get(run.id);
         if (now.state !== 'running') return;
-        // Only an execution phase counts (reliability-design Unit A) — the same
-        // phase scoping as the wall-clock budget.
-        if (!countsTowardExecutionBudget(now.phase ?? null)) return;
+        // Only a counted Step type counts (reliability-design Unit A) — the
+        // same Step scoping as the wall-clock budget.
+        if (!countsTowardExecutionBudget(await this.attempts.currentStepType(task.id, now.attempt))) return;
         let oldest: { id: string; startedAt: number; title: string | null } | null = null;
         for (const [id, t] of outstandingTools) {
           if (!oldest || t.startedAt < oldest.startedAt) oldest = { id, startedAt: t.startedAt, title: t.title };
@@ -2965,13 +2952,13 @@ export class Runner {
       } else {
         // Verification gate (issue #135, ADR-0021, reliability-design Unit B):
         // agent-finish begins validation — it does not settle the Run (#114).
-        // Enter `verifying` and run the configured verifiers against the branch
-        // head. A pass lets the Run proceed to merging. Any non-`proceed` verdict
-        // with a candidate hands the failed Attempt up to the `drive` loop for a
-        // bounded corrective turn (ADR-0041); an inconclusive with NO candidate
-        // Escalates in place with its cause — so broken work never merges.
+        // Enter the Verification Step and run the configured verifiers against
+        // the branch head. A pass lets the Run proceed to merging. Any
+        // non-`proceed` verdict with a candidate hands the failed Attempt up to
+        // the `drive` loop for a bounded corrective turn (ADR-0041); an
+        // inconclusive with NO candidate Escalates in place with its cause —
+        // so broken work never merges.
         await advanceTask('verifying');
-        record('lifecycle', { event: 'phase', phase: 'verifying' });
         const { decision, ran: verifierRan } = await this.runVerification(
           task,
           run,
@@ -3072,14 +3059,13 @@ export class Runner {
             // to merge in the direct case: settle done.
             if (worktreeMerge && !(await mergeWorktreeBranch())) return { kind: 'terminal' };
             await advanceTask('merging');
-            record('lifecycle', { event: 'phase', phase: 'merging' });
             await this.settleAutoCompleted(task, run, { ...patch, ...diff });
             return { kind: 'terminal' };
           }
 
-          // A mirrored Run: executing → validating → verifying → merging →
-          // terminal. Either the merge above lands the branch, or a direct Run's
-          // verified commits already sit on the live base branch (ADR-0046).
+          // A mirrored Run: implement → verify → merge. Either the merge above
+          // lands the branch, or a direct Run's verified commits already sit
+          // on the live base branch (ADR-0046).
           // The Merge Fate then applies the rest — open a PR, or (auto-merge)
           // close the ticket — Harmonic owns the close, only after verify + merge
           // (#139). A fate that can't be applied (PR that can't be created,
@@ -3100,10 +3086,9 @@ export class Runner {
             record('lifecycle', { event: 'escalated', reason: 'merge fate could not be applied' });
             await this.settleEscalated(task, run, 'merge fate could not be applied', patch);
           } else {
-            // The Merge Fate is applied → record `merging`, then settle
-            // terminal (the coordinator marks the Run `phase:'terminal'`).
+            // The Merge Fate is applied → close out the merging Step, then
+            // settle terminal (the coordinator marks the Run settled).
             await advanceTask('merging');
-            record('lifecycle', { event: 'phase', phase: 'merging' });
             await this.settleAutoCompleted(task, run, { ...patch, ...diff });
           }
         }
@@ -3146,9 +3131,9 @@ export class Runner {
       await this.runStore.update(run.id, patch);
       return { kind: 'actionable-fail', reason, output: '' };
     } finally {
-      // Disarm the wall-clock watchdog: `driveOnce` is returning, so the Run is
-      // leaving every execution phase (merging or settled) —
-      // and time past this point must not count against the execution budget.
+      // Disarm the wall-clock watchdog: `driveOnce` is returning, so the
+      // Attempt is leaving every counted Step (merging or settled) — time past
+      // this point must not count against the execution budget.
       if (guardrailTimer) clearTimeout(guardrailTimer);
       if (toolTimeoutTimer) clearInterval(toolTimeoutTimer);
       if (spendTimer) clearInterval(spendTimer);

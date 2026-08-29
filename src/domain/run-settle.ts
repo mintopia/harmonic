@@ -48,10 +48,10 @@ export class RunSettleCoordinator {
   /**
    * Settle `run` to a terminal disposition. Appends `type` (carrying `projection`)
    * to the Run's fact log, recomputes the winning disposition over the whole log,
-   * and — if this signal changes the decision — writes the winning terminal state
-   * to the Run row (phase → `terminal`), releases the Work Context lease, and
-   * applies the winning Task action. `patch` (usage/stat/stopReason) rides with
-   * the winning write.
+   * and — if this signal changes the decision — writes the winning terminal
+   * state to the Run row, releases the Work Context lease, and applies the
+   * winning Task action. `patch` (usage/stat/stopReason) rides with the
+   * winning write.
    *
    * Settles once under the close-together race: a lower-or-equal-precedence
    * straggler arriving after the winning disposition already in place recomputes the
@@ -79,8 +79,7 @@ export class RunSettleCoordinator {
     const facts = await this.coordinatorFacts(run.id);
     // The cutoff is simply the log's latest seq: a Run only appends a
     // disposition fact at a settle decision point, so "the whole log decides"
-    // holds even with the phase machine (phases are recorded separately, not
-    // as disposition facts).
+    // holds regardless of which Step the Attempt was on when it settled.
     const cutoff = facts[facts.length - 1]!.seq;
     const disposition = computeDisposition(facts, cutoff);
     const winner = disposition === null ? null : projectSettle(facts, cutoff);
@@ -100,12 +99,11 @@ export class RunSettleCoordinator {
 
     // `patch` (usage/stat/stopReason) rides with the winning terminal write,
     // matching today's semantics — a losing straggler never decorates the row
-    // another disposition won. `phase: 'terminal'` marks the Run settled: it has
-    // left every in-flight/parked phase (issue #114).
+    // another disposition won. `state` leaving `'running'` marks the Run
+    // settled (issue #114); there is no separate phase column to close out.
     await this.runStore.updateWithFrozenCost(run.id, {
       ...patch,
       state: winner.runState,
-      phase: 'terminal',
       reason: winner.reason,
       finishedAt: before.finishedAt ?? Date.now(),
     });
@@ -132,7 +130,7 @@ export class RunSettleCoordinator {
   /**
    * Map the winning disposition to the retirement cause a Session needs (issue
    * #148): an operator cancel retires immediately; any `completed` Run merged
-   * (the phase machine only completes via merging); every other ending (escalate,
+   * (a Run only completes via merging); every other ending (escalate,
    * guardrail-trip, process-death) retains the Task's worktree until its terminal
    * disposition (ADR-0046) — the next Attempt resumes in it, and an escalated
    * ticket's branch is the candidate its Accept merges.

@@ -29,7 +29,6 @@ const attempt = (
   verdict,
   summary: `${mechanism} attempt ${seq}`,
   output: '',
-  phase: 'verifying',
   hasTranscript: false,
   ...overrides,
 });

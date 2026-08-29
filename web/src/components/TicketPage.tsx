@@ -646,17 +646,20 @@ function SteerBox({ taskId }: { taskId: number }) {
 
 // ─── run header + pane ───────────────────────────────────────────────────────
 
-function runPillState(run: Run): string {
+/** `steps` is the owning Attempt's timeline (matched by `run.attempt` ===
+ * `Attempt.number`) — the currently-running Step's type carries the pill
+ * word for a live run (ADR-0001 Vocabulary; Run/Phase are deleted concepts). */
+function runPillState(run: Run, steps: readonly Step[]): string {
   if (run.state === 'completed') return 'merged';
-  if (run.state === 'running') return run.phase === 'merging' ? 'merging' : (run.phase ?? 'running');
+  if (run.state === 'running') return steps.find((step) => step.state === 'running')?.type ?? 'running';
   return run.state;
 }
 
-function RunHeader({ run }: { run: Run }) {
+function RunHeader({ run, steps }: { run: Run; steps: readonly Step[] }) {
   return (
     <div className="mx-0.5 mb-2.5 mt-4 flex items-center gap-2.5">
       <span className="text-[16.5px] font-bold leading-none tracking-[-0.01em]">Run {run.attempt}</span>
-      <StatePill state={runPillState(run)} />
+      <StatePill state={runPillState(run, steps)} />
       {run.attempt > 1 && (
         <span className="ml-auto flex items-center gap-1.5 text-[12px] text-faint">
           <Icon name="refresh" className="size-3.5" />
@@ -899,8 +902,8 @@ export function TicketPage({
   }, [task.id]);
 
   // Live token/cost deltas for the in-flight Run (the `run_usage` firehose, ~1s)
-  // — `run_changed` only merges at phase edges, so without this the metric row
-  // holds the stale settled figures while the Run is executing.
+  // — `run_changed` only merges at Step transitions, so without this the metric
+  // row holds the stale settled figures while the Run is executing.
   useEffect(
     () =>
       subscribe((msg) => {
@@ -1198,7 +1201,7 @@ export function TicketPage({
                 <ChangesPane task={task} runId={selectedRunId} selectedFile={selectedFile} running={anyRunning} />
               ) : selectedRun ? (
                 <>
-                  <RunHeader run={selectedRun} />
+                  <RunHeader run={selectedRun} steps={attempts.find((a) => a.number === selectedRun.attempt)?.steps ?? []} />
                   {selectedTask && <StepLog key={selectedTask.id} step={selectedTask} />}
                   <Verification attempts={verificationAttempts} statuses={verifierStatuses} run={selectedRun} />
                   <GuardrailAlert events={guardrailEvents} />

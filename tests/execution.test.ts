@@ -57,14 +57,14 @@ describe('run execution over ACP (direct mode)', () => {
 
     const run = await server.api('GET', `/api/runs/${runId}`);
     expect(run.status).toBe(200);
-    expect(run.body).toMatchObject({ taskId, attempt: 1, state: 'completed', phase: 'terminal', stopReason: 'end_turn' });
+    expect(run.body).toMatchObject({ taskId, attempt: 1, state: 'completed', stopReason: 'end_turn' });
     expect(run.body.finishedAt).toBeGreaterThan(0);
-    // Agent-finish took it executing → verifying → merging, never jumping
-    // straight to a terminal phase (`validating` retired by the reshape).
-    const phaseEvents = (await server.api('GET', `/api/runs/${runId}/events`)).body.events
-      .filter((e: any) => e.type === 'lifecycle' && e.payload.event === 'phase')
-      .map((e: any) => e.payload.phase);
-    expect(phaseEvents).toEqual(['verifying', 'merging']);
+    // Agent-finish took the Attempt through its Implementation Step to a
+    // passed finish, never leaving a Step stuck mid-flight (ADR-0001 Vocabulary).
+    const attempt1 = (await server.api('GET', `/api/tasks/${taskId}/attempts`)).body.attempts.find((a: any) => a.number === 1);
+    expect(attempt1.state).toBe('passed');
+    expect(attempt1.steps.map((s: any) => s.type)).toEqual(['implementation']);
+    expect(attempt1.steps.every((s: any) => s.state === 'passed')).toBe(true);
 
     const events = await server.api('GET', `/api/runs/${runId}/events`);
     expect(events.status).toBe(200);
@@ -124,22 +124,20 @@ describe('run execution over ACP (direct mode)', () => {
 
     const merged = (await server.api('GET', `/api/runs/${runId}`)).body;
     expect(merged.state).toBe('completed');
-    expect(merged.phase).toBe('terminal');
     expect(merged.finishedAt).toBeGreaterThan(0);
 
-    // The full phase path is reconstructable from the persisted event log:
-    // executing → verifying → merging (the drive loop merges itself; `validating`
-    // retired by the reshape). `terminal` is the coordinator's row write, not a
-    // drive-loop phase event.
-    const phases = (await server.api('GET', `/api/runs/${runId}/events`)).body.events
-      .filter((e: any) => e.type === 'lifecycle' && e.payload.event === 'phase')
-      .map((e: any) => e.payload.phase);
-    expect(phases).toEqual(['verifying', 'merging']);
+    // The full Step sequence is reconstructable from the Attempt's timeline:
+    // the Implementation Step passed and the Attempt itself finished passed —
+    // never stuck mid-flight (ADR-0001 Vocabulary; Run/Phase are deleted concepts).
+    const attempt1 = (await server.api('GET', `/api/tasks/${taskId}/attempts`)).body.attempts.find((a: any) => a.number === 1);
+    expect(attempt1.state).toBe('passed');
+    expect(attempt1.steps.map((s: any) => s.type)).toEqual(['implementation']);
+    expect(attempt1.steps.every((s: any) => s.state === 'passed')).toBe(true);
     // Done is terminal: the human surface does not apply, and nothing re-merges.
     expect((await server.api('POST', `/api/tasks/${taskId}/accept`)).status).toBe(409);
     expect((await server.api('POST', `/api/tasks/${taskId}/reject`, { guidance: 'nope' })).status).toBe(409);
     expect((await server.api('POST', `/api/tasks/${taskId}/close`)).status).toBe(409);
-    expect((await server.api('GET', `/api/runs/${runId}`)).body).toMatchObject({ state: 'completed', phase: 'terminal' });
+    expect((await server.api('GET', `/api/runs/${runId}`)).body).toMatchObject({ state: 'completed' });
   });
 
   it('cancelling a working Task settles its running Run cancelled (issue #114)', async () => {
@@ -153,7 +151,6 @@ describe('run execution over ACP (direct mode)', () => {
     expect(cancelled.body.state).toBe('cancelled');
     const run = (await server.api('GET', `/api/runs/${runId}`)).body;
     expect(run.state).toBe('cancelled');
-    expect(run.phase).toBe('terminal');
   });
 
   it('records each resumed loop as a distinct run and history survives a Reject with guidance', async () => {
@@ -457,8 +454,8 @@ describe('crash recovery', () => {
 describe('wall-clock guardrail (issue #127)', () => {
   it('trips an over-budget run to Escalation via the coordinator, with a budget reason derived from a guardrail_events row', async () => {
     // A tiny mandatory wall-clock budget plus a harness that never ends its
-    // turn: the phase-scoped execution clock runs out mid-`executing` and the
-    // watchdog trips the Run to Escalation (afk→hitl, ticket flagged) through
+    // turn: the Step-scoped execution clock runs out mid-Implementation Step
+    // and the watchdog trips the Run to Escalation (afk→hitl, ticket flagged) through
     // the terminal-disposition coordinator — never a direct settle, never a new
     // terminal state (reliability-design §0.3 / Unit A, ADR-0019).
     const server = await startServer({
@@ -484,7 +481,6 @@ describe('wall-clock guardrail (issue #127)', () => {
       // budget reason on the card — the reason derives from the trip evidence.
       const run = (await server.api('GET', `/api/runs/${runId}`)).body;
       expect(run.state).toBe('failed');
-      expect(run.phase).toBe('terminal');
       expect(run.reason).toMatch(/^budget:/);
 
       // The trip is recorded on the timeline for observability.
@@ -496,14 +492,13 @@ describe('wall-clock guardrail (issue #127)', () => {
       expect(trip.payload.dimension).toBe('wall-clock');
 
       // The structured guardrail_events row the card reason derives from is
-      // persisted, in the execution phase, with observed ≥ the configured limit.
+      // persisted, with observed ≥ the configured limit.
       const rows = await server.app.ctx.asyncDb.read((d) =>
         d.select().from(guardrailEvents).where(eq(guardrailEvents.runId, runId)).all(),
       );
       expect(rows).toHaveLength(1);
       const event = rows[0]!;
       expect(event).toMatchObject({ dimension: 'wall-clock', configSource: 'default' });
-      expect(['executing', 'validating', 'verifying']).toContain(event.phase);
       expect(event.observedValue).toBeGreaterThanOrEqual(event.limitValue);
     } finally {
       await server.close();
@@ -619,7 +614,6 @@ describe('token/cost budget guardrail (issue #128)', () => {
     try {
       const { runId, run } = await runToEscalation(server, workDir);
       expect(run.state).toBe('failed');
-      expect(run.phase).toBe('terminal');
       expect(run.reason).toMatch(/^budget:/);
 
       const events = (await server.api('GET', `/api/runs/${runId}/events`)).body.events;
@@ -656,7 +650,6 @@ describe('token/cost budget guardrail (issue #128)', () => {
     try {
       const { runId, run } = await runToEscalation(server, workDir);
       expect(run.state).toBe('failed');
-      expect(run.phase).toBe('terminal');
       expect(run.reason).toMatch(/^budget:/);
 
       const events = (await server.api('GET', `/api/runs/${runId}/events`)).body.events;
@@ -687,7 +680,6 @@ describe('token/cost budget guardrail (issue #128)', () => {
     try {
       const { runId, run } = await runToEscalation(server, workDir);
       expect(run.state).toBe('failed');
-      expect(run.phase).toBe('terminal');
       expect(run.reason).toMatch(/^budget:/);
 
       const events = (await server.api('GET', `/api/runs/${runId}/events`)).body.events;
@@ -728,7 +720,6 @@ describe('token/cost budget guardrail (issue #128)', () => {
 
       const run = (await server.api('GET', `/api/runs/${runId}`)).body;
       expect(run.state).toBe('failed');
-      expect(run.phase).toBe('terminal');
       expect(run.reason).toMatch(/unmeasurable/);
 
       const events = (await server.api('GET', `/api/runs/${runId}/events`)).body.events;
@@ -779,7 +770,6 @@ describe('progress guardrail (issue #131)', () => {
 
       const run = (await server.api('GET', `/api/runs/${runId}`)).body;
       expect(run.state).toBe('failed');
-      expect(run.phase).toBe('terminal');
       expect(run.reason).toMatch(/^stalled:/);
 
       const events = (await server.api('GET', `/api/runs/${runId}/events`)).body.events;
@@ -867,7 +857,6 @@ describe('progress guardrail (issue #131)', () => {
 
       const run = (await server.api('GET', `/api/runs/${runId}`)).body;
       expect(run.state).toBe('failed');
-      expect(run.phase).toBe('terminal');
       expect(run.reason).toMatch(/tool unresponsive/);
 
       const events = (await server.api('GET', `/api/runs/${runId}/events`)).body.events;
@@ -877,7 +866,6 @@ describe('progress guardrail (issue #131)', () => {
       const rows = await server.app.ctx.asyncDb.read((d) => d.select().from(guardrailEvents).where(eq(guardrailEvents.runId, runId)).all());
       expect(rows).toHaveLength(1);
       expect(rows[0]!).toMatchObject({ dimension: 'tool-timeout', configSource: 'default' });
-      expect(['executing', 'validating', 'verifying']).toContain(rows[0]!.phase);
     } finally {
       await server.close();
     }

@@ -410,7 +410,6 @@ describe('runCritic (issue #136)', () => {
       verdict: 'fail',
       summary: 'the diff drops a null check',
       inputOid: oid,
-      phase: 'verifying',
     });
 
     // The persisted row — not the in-memory attempt — feeds the combiner.

@@ -41,11 +41,8 @@ describe('live structured run event streaming and replay', () => {
     // events. Start at zero to receive this Run's complete live stream.
     ws.send({ type: 'run_log_subscribe', runId, after: 0 });
 
-    // A native Run parks non-terminal in `phase:'review'` at agent-finish
-    // (issue #114) — it stays `state:'running'`, so "done executing" is the
-    // run_changed that carries the review phase, not a non-running state.
     await waitFor(async () =>
-      ws.messages.some((m) => m.type === 'run_changed' && m.run.id === runId && m.run.phase === 'terminal'),
+      ws.messages.some((m) => m.type === 'run_changed' && m.run.id === runId && m.run.state !== 'running'),
     );
 
     const streamed = ws.messages.filter(
@@ -77,7 +74,7 @@ describe('live structured run event streaming and replay', () => {
     await waitFor(async () => first.messages.some((m) => m.type === 'run_log_event' && m.event.runId === runId && m.event.seq === 1));
     first.close();
 
-    await waitFor(async () => (await server.api('GET', `/api/runs/${runId}`)).body.phase === 'terminal');
+    await waitFor(async () => (await server.api('GET', `/api/runs/${runId}`)).body.state !== 'running');
     const reconnected = await connectWs(server);
     reconnected.send({ type: 'run_log_subscribe', runId, after: 1 });
     await waitFor(async () => reconnected.messages.filter((m) => m.type === 'run_log_event' && m.event.runId === runId).length === 2);

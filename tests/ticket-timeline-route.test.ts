@@ -20,8 +20,8 @@ describe('GET /api/tasks/:id/timeline (issue #328)', () => {
     const skipped = await server.app.ctx.attempts.createStep(attempt.id, { type: 'verification', command: 'npm test' });
     await server.app.ctx.attempts.updateStep(skipped.id, { state: 'skipped', endedAt: 400 });
     await server.app.ctx.attempts.finish(attempt.id, 'passed', 850);
-    await server.app.ctx.runs.update(run.id, { startedAt: 100, finishedAt: 900, state: 'completed', phase: 'terminal' });
-    await server.app.ctx.runs.appendEvent(run.id, { type: 'lifecycle', payload: { event: 'phase', phase: 'verifying' } });
+    await server.app.ctx.runs.update(run.id, { startedAt: 100, finishedAt: 900, state: 'completed' });
+    await server.app.ctx.runs.appendEvent(run.id, { type: 'lifecycle', payload: { event: 'progress-nudge', pattern: 'monologue' } });
     await server.app.ctx.runs.appendEvent(run.id, { type: 'permission_request', payload: { reason: 'outside the timeline' } });
     const facts = new RunFactStore(server.app.ctx.asyncDb);
     await facts.append(run.id, 'escalate', { reason: 'needs an operator' }, 300);
@@ -30,7 +30,7 @@ describe('GET /api/tasks/:id/timeline (issue #328)', () => {
       mechanism: 'command', inputOid: 'abc123', verdict: 'pass', summary: 'checks passed', output: '',
     }, 200);
     await server.app.ctx.guardrailEvents.append(run.id, {
-      dimension: 'wall-clock', phase: 'executing', limitValue: 60_000, observedValue: 60_001, configSource: 'default',
+      dimension: 'wall-clock', limitValue: 60_000, observedValue: 60_001, configSource: 'default',
     }, 250);
     const otherTask = await server.api('POST', '/api/tasks', { prompt: 'another timeline' });
     const otherRun = await server.app.ctx.runs.create(otherTask.body.id);
@@ -50,7 +50,7 @@ describe('GET /api/tasks/:id/timeline (issue #328)', () => {
     expect(response.body.events.find((event: { data: { outcome?: string } }) => event.data.outcome === 'skipped')).toMatchObject({ data: { outcome: 'skipped' } });
     expect(response.body.events.filter((event: { data: { outcome?: string } }) => event.data.outcome === 'disabled')).toHaveLength(1);
     expect(response.body.events.filter((event: { kind: string }) => event.kind === 'lifecycle')).toMatchObject([
-      { data: { type: 'lifecycle', payload: { event: 'phase', phase: 'verifying' } } },
+      { data: { type: 'lifecycle', payload: { event: 'progress-nudge', pattern: 'monologue' } } },
     ]);
   });
 

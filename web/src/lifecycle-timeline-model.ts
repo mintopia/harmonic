@@ -53,8 +53,7 @@ export function lifecycleTimelineRows(events: TicketTimelineEvent[]): LifecycleT
         case 'operator-reject': return { ...base, label: 'Operator rejected with guidance', detail: text(data?.feedback) ?? attempt(data), tone: 'awaiting' };
         case 'lifecycle': {
           const payload = record(data?.payload);
-          const phase = text(payload?.phase);
-          return { ...base, label: phase ? `Phase: ${phase}` : 'Lifecycle updated', detail: text(payload?.event), tone: 'neutral' };
+          return { ...base, label: 'Lifecycle updated', detail: text(payload?.event), tone: 'neutral' };
         }
         case 'fact': return { ...base, label: text(data?.type)?.replace(/-/g, ' ') ?? 'Ticket fact recorded', detail: null, tone: 'neutral' };
         default: {

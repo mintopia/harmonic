@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  EXECUTION_BUDGET_PHASES,
+  EXECUTION_BUDGET_STEPS,
   countsTowardExecutionBudget,
   formatBudgetReason,
   formatUnmeasurableReason,
@@ -8,33 +8,32 @@ import {
   wallClockBudgetMs,
   wallClockTrip,
 } from '../src/domain/guardrail-budget.js';
-import { RUN_PHASES, type RunPhase } from '../src/domain/run-phases.js';
+import { STEP_TYPES, type StepType } from '../src/db/schema.js';
 
-describe('EXECUTION_BUDGET_PHASES (issue #127)', () => {
-  it('is exactly executing/validating/verifying', () => {
-    expect(new Set(EXECUTION_BUDGET_PHASES)).toEqual(new Set(['executing', 'validating', 'verifying']));
+describe('EXECUTION_BUDGET_STEPS (issue #127, ADR-0001 Vocabulary)', () => {
+  it('is exactly rebase/implementation/verification/review — every Step type', () => {
+    expect(new Set(EXECUTION_BUDGET_STEPS)).toEqual(new Set(['rebase', 'implementation', 'verification', 'review']));
   });
 });
 
 describe('countsTowardExecutionBudget (issue #127)', () => {
-  const expected: Record<RunPhase, boolean> = {
-    executing: true,
-    validating: true,
-    verifying: true,
-    merging: false,
-    terminal: false,
+  const expected: Record<StepType, boolean> = {
+    rebase: true,
+    implementation: true,
+    verification: true,
+    review: true,
   };
 
-  // Iterate RUN_PHASES so a new phase added to the machine forces a
+  // Iterate STEP_TYPES so a new Step type added to the schema forces a
   // conscious choice here rather than silently defaulting.
-  for (const phase of RUN_PHASES) {
-    it(`${phase} -> ${expected[phase]}`, () => {
-      expect(countsTowardExecutionBudget(phase)).toBe(expected[phase]);
+  for (const stepType of STEP_TYPES) {
+    it(`${stepType} -> ${expected[stepType]}`, () => {
+      expect(countsTowardExecutionBudget(stepType)).toBe(expected[stepType]);
     });
   }
 
-  it('null (pre-phase) counts as executing', () => {
-    expect(countsTowardExecutionBudget(null)).toBe(true);
+  it('null (no Step running — the gap before merge) does not count', () => {
+    expect(countsTowardExecutionBudget(null)).toBe(false);
   });
 });
 
@@ -45,12 +44,12 @@ describe('wallClockBudgetMs', () => {
   });
 });
 
-describe('wallClockTrip (issue #127, the phase-scoping decision)', () => {
+describe('wallClockTrip (issue #127, the Step-scoping decision)', () => {
   const budget = { wallClockMinutes: 45 }; // 2_700_000ms
 
-  it('trips when elapsed >= budget in an execution phase', () => {
-    for (const phase of ['executing', 'validating', 'verifying'] as const) {
-      expect(wallClockTrip({ elapsedMs: 3_000_000, phase, budget })).toEqual({
+  it('trips when elapsed >= budget while any Step is running', () => {
+    for (const stepType of STEP_TYPES) {
+      expect(wallClockTrip({ elapsedMs: 3_000_000, stepType, budget })).toEqual({
         dimension: 'wall-clock',
         limitMs: 2_700_000,
         observedMs: 3_000_000,
@@ -58,32 +57,24 @@ describe('wallClockTrip (issue #127, the phase-scoping decision)', () => {
     }
   });
 
-  it('does NOT trip when elapsed >= budget but the phase is terminal (core acceptance)', () => {
-    expect(wallClockTrip({ elapsedMs: 100_000_000, phase: 'terminal', budget })).toBeNull();
+  it('does NOT trip when elapsed >= budget but no Step is running (core acceptance — the merge gap)', () => {
+    expect(wallClockTrip({ elapsedMs: 100_000_000, stepType: null, budget })).toBeNull();
   });
 
-  it('does NOT trip when elapsed >= budget but the phase is merging (core acceptance)', () => {
-    expect(wallClockTrip({ elapsedMs: 100_000_000, phase: 'merging', budget })).toBeNull();
-  });
-
-  it('does NOT trip when the phase is terminal, even massively over budget', () => {
-    expect(wallClockTrip({ elapsedMs: 100_000_000, phase: 'terminal', budget })).toBeNull();
-  });
-
-  it('does not trip below budget in an execution phase', () => {
-    expect(wallClockTrip({ elapsedMs: 2_699_999, phase: 'executing', budget })).toBeNull();
+  it('does not trip below budget while a Step is running', () => {
+    expect(wallClockTrip({ elapsedMs: 2_699_999, stepType: 'implementation', budget })).toBeNull();
   });
 
   it('trips exactly at the boundary (elapsedMs === limitMs)', () => {
-    expect(wallClockTrip({ elapsedMs: 2_700_000, phase: 'verifying', budget })).toEqual({
+    expect(wallClockTrip({ elapsedMs: 2_700_000, stepType: 'verification', budget })).toEqual({
       dimension: 'wall-clock',
       limitMs: 2_700_000,
       observedMs: 2_700_000,
     });
   });
 
-  it('null phase (pre-phase) trips like an execution phase', () => {
-    expect(wallClockTrip({ elapsedMs: 2_700_000, phase: null, budget })).toEqual({
+  it('the critic (review Step) counts identically to the command verifier (verification Step) — both are active verification work', () => {
+    expect(wallClockTrip({ elapsedMs: 2_700_000, stepType: 'review', budget })).toEqual({
       dimension: 'wall-clock',
       limitMs: 2_700_000,
       observedMs: 2_700_000,
@@ -92,7 +83,7 @@ describe('wallClockTrip (issue #127, the phase-scoping decision)', () => {
 
   it('trip payload carries the correct limitMs/observedMs for a different budget', () => {
     const smallBudget = { wallClockMinutes: 5 }; // 300_000ms
-    expect(wallClockTrip({ elapsedMs: 450_000, phase: 'executing', budget: smallBudget })).toEqual({
+    expect(wallClockTrip({ elapsedMs: 450_000, stepType: 'implementation', budget: smallBudget })).toEqual({
       dimension: 'wall-clock',
       limitMs: 300_000,
       observedMs: 450_000,
@@ -149,42 +140,39 @@ describe('formatUnmeasurableReason (issue #128)', () => {
 });
 
 describe('spendTrip (issue #128, the token/cost spend decision)', () => {
-  const executionPhases = ['executing', 'validating', 'verifying'] as const;
-  const nonExecutionPhases = ['merging', 'terminal'] as const;
-
   describe('token cap only', () => {
     const budget = { tokens: 1_000, costUsd: null };
 
     it('trips exactly at the boundary (observedTokens === limit)', () => {
-      for (const phase of executionPhases) {
+      for (const stepType of STEP_TYPES) {
         expect(
-          spendTrip({ phase, budget, observedTokens: 1_000, observedUsd: null, costIncomplete: false }),
+          spendTrip({ stepType, budget, observedTokens: 1_000, observedUsd: null, costIncomplete: false }),
         ).toEqual({ kind: 'trip', trip: { dimension: 'tokens', limitTokens: 1_000, observedTokens: 1_000 } });
       }
     });
 
     it('trips over the boundary', () => {
       expect(
-        spendTrip({ phase: 'executing', budget, observedTokens: 1_500, observedUsd: null, costIncomplete: false }),
+        spendTrip({ stepType: 'implementation', budget, observedTokens: 1_500, observedUsd: null, costIncomplete: false }),
       ).toEqual({ kind: 'trip', trip: { dimension: 'tokens', limitTokens: 1_000, observedTokens: 1_500 } });
     });
 
     it('does not trip below the boundary', () => {
       expect(
-        spendTrip({ phase: 'executing', budget, observedTokens: 999, observedUsd: null, costIncomplete: false }),
+        spendTrip({ stepType: 'implementation', budget, observedTokens: 999, observedUsd: null, costIncomplete: false }),
       ).toEqual({ kind: 'ok' });
     });
 
     it('is unmeasurable when observedTokens is null', () => {
       expect(
-        spendTrip({ phase: 'executing', budget, observedTokens: null, observedUsd: null, costIncomplete: false }),
+        spendTrip({ stepType: 'implementation', budget, observedTokens: null, observedUsd: null, costIncomplete: false }),
       ).toEqual({ kind: 'unmeasurable', dimension: 'tokens' });
     });
 
-    it('null phase (pre-phase) is governed like an execution phase', () => {
+    it('null stepType (no Step running) is never governed, however far over the cap', () => {
       expect(
-        spendTrip({ phase: null, budget, observedTokens: 1_000, observedUsd: null, costIncomplete: false }),
-      ).toEqual({ kind: 'trip', trip: { dimension: 'tokens', limitTokens: 1_000, observedTokens: 1_000 } });
+        spendTrip({ stepType: null, budget, observedTokens: 1_000, observedUsd: null, costIncomplete: false }),
+      ).toEqual({ kind: 'ok' });
     });
   });
 
@@ -193,19 +181,19 @@ describe('spendTrip (issue #128, the token/cost spend decision)', () => {
 
     it('trips when the priced spend is over the cap', () => {
       expect(
-        spendTrip({ phase: 'executing', budget, observedTokens: null, observedUsd: 15, costIncomplete: false }),
+        spendTrip({ stepType: 'implementation', budget, observedTokens: null, observedUsd: 15, costIncomplete: false }),
       ).toEqual({ kind: 'trip', trip: { dimension: 'cost', limitUsd: 10, observedUsd: 15 } });
     });
 
     it('trips exactly at the boundary (observedUsd === limit)', () => {
       expect(
-        spendTrip({ phase: 'executing', budget, observedTokens: null, observedUsd: 10, costIncomplete: false }),
+        spendTrip({ stepType: 'implementation', budget, observedTokens: null, observedUsd: 10, costIncomplete: false }),
       ).toEqual({ kind: 'trip', trip: { dimension: 'cost', limitUsd: 10, observedUsd: 10 } });
     });
 
     it('does not trip when the priced spend is under the cap', () => {
       expect(
-        spendTrip({ phase: 'executing', budget, observedTokens: null, observedUsd: 5, costIncomplete: false }),
+        spendTrip({ stepType: 'implementation', budget, observedTokens: null, observedUsd: 5, costIncomplete: false }),
       ).toEqual({ kind: 'ok' });
     });
   });
@@ -215,7 +203,7 @@ describe('spendTrip (issue #128, the token/cost spend decision)', () => {
 
     it('still trips on cost — a floor over the cap is trustworthy regardless of incompleteness', () => {
       expect(
-        spendTrip({ phase: 'executing', budget, observedTokens: 500, observedUsd: 15, costIncomplete: true }),
+        spendTrip({ stepType: 'implementation', budget, observedTokens: 500, observedUsd: 15, costIncomplete: true }),
       ).toEqual({ kind: 'trip', trip: { dimension: 'cost', limitUsd: 10, observedUsd: 15 } });
     });
   });
@@ -226,7 +214,7 @@ describe('spendTrip (issue #128, the token/cost spend decision)', () => {
     it('observedUsd null falls back to the token budget and trips over', () => {
       expect(
         spendTrip({
-          phase: 'executing',
+          stepType: 'implementation',
           budget: budgetWithTokens,
           observedTokens: 1_500,
           observedUsd: null,
@@ -238,7 +226,7 @@ describe('spendTrip (issue #128, the token/cost spend decision)', () => {
     it('observedUsd null falls back to the token budget and stays ok when under', () => {
       expect(
         spendTrip({
-          phase: 'executing',
+          stepType: 'implementation',
           budget: budgetWithTokens,
           observedTokens: 500,
           observedUsd: null,
@@ -250,7 +238,7 @@ describe('spendTrip (issue #128, the token/cost spend decision)', () => {
     it('costIncomplete with a floor under the cap falls back to the token budget and trips over', () => {
       expect(
         spendTrip({
-          phase: 'executing',
+          stepType: 'implementation',
           budget: budgetWithTokens,
           observedTokens: 1_500,
           observedUsd: 5,
@@ -262,7 +250,7 @@ describe('spendTrip (issue #128, the token/cost spend decision)', () => {
     it('costIncomplete with a floor under the cap falls back to the token budget and stays ok when under', () => {
       expect(
         spendTrip({
-          phase: 'executing',
+          stepType: 'implementation',
           budget: budgetWithTokens,
           observedTokens: 500,
           observedUsd: 5,
@@ -274,7 +262,7 @@ describe('spendTrip (issue #128, the token/cost spend decision)', () => {
     it('falls back to the token budget and is unmeasurable when observedTokens is also null', () => {
       expect(
         spendTrip({
-          phase: 'executing',
+          stepType: 'implementation',
           budget: budgetWithTokens,
           observedTokens: null,
           observedUsd: null,
@@ -289,13 +277,13 @@ describe('spendTrip (issue #128, the token/cost spend decision)', () => {
 
     it('is unmeasurable on cost when observedUsd is null', () => {
       expect(
-        spendTrip({ phase: 'executing', budget, observedTokens: null, observedUsd: null, costIncomplete: false }),
+        spendTrip({ stepType: 'implementation', budget, observedTokens: null, observedUsd: null, costIncomplete: false }),
       ).toEqual({ kind: 'unmeasurable', dimension: 'cost' });
     });
 
     it('is unmeasurable on cost when costIncomplete is true, even with a floor under the cap', () => {
       expect(
-        spendTrip({ phase: 'executing', budget, observedTokens: null, observedUsd: 2, costIncomplete: true }),
+        spendTrip({ stepType: 'implementation', budget, observedTokens: null, observedUsd: 2, costIncomplete: true }),
       ).toEqual({ kind: 'unmeasurable', dimension: 'cost' });
     });
   });
@@ -305,7 +293,7 @@ describe('spendTrip (issue #128, the token/cost spend decision)', () => {
       const budget = { tokens: 1_000, costUsd: 10 };
       expect(
         spendTrip({
-          phase: 'executing',
+          stepType: 'implementation',
           budget,
           observedTokens: 1_500,
           observedUsd: 5,
@@ -318,7 +306,7 @@ describe('spendTrip (issue #128, the token/cost spend decision)', () => {
       const budget = { tokens: 1_000, costUsd: 10 };
       expect(
         spendTrip({
-          phase: 'executing',
+          stepType: 'implementation',
           budget,
           observedTokens: 500,
           observedUsd: 5,
@@ -328,29 +316,27 @@ describe('spendTrip (issue #128, the token/cost spend decision)', () => {
     });
   });
 
-  describe('non-execution phases never trip, no matter how far over budget', () => {
+  describe('no Step running never trips, no matter how far over budget', () => {
     const budget = { tokens: 1_000, costUsd: 10 };
 
-    for (const phase of nonExecutionPhases) {
-      it(`${phase} -> ok even with everything massively over cap`, () => {
-        expect(
-          spendTrip({
-            phase,
-            budget,
-            observedTokens: 1_000_000,
-            observedUsd: 1_000,
-            costIncomplete: false,
-          }),
-        ).toEqual({ kind: 'ok' });
-      });
-    }
+    it('null stepType -> ok even with everything massively over cap', () => {
+      expect(
+        spendTrip({
+          stepType: null,
+          budget,
+          observedTokens: 1_000_000,
+          observedUsd: 1_000,
+          costIncomplete: false,
+        }),
+      ).toEqual({ kind: 'ok' });
+    });
   });
 
   describe('no caps configured', () => {
     it('is always ok regardless of observed usage', () => {
       const budget = { tokens: null, costUsd: null };
       expect(
-        spendTrip({ phase: 'executing', budget, observedTokens: 1_000_000, observedUsd: 1_000, costIncomplete: true }),
+        spendTrip({ stepType: 'implementation', budget, observedTokens: 1_000_000, observedUsd: 1_000, costIncomplete: true }),
       ).toEqual({ kind: 'ok' });
     });
   });

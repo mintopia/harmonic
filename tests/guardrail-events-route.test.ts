@@ -24,7 +24,6 @@ describe('GET /api/runs/:id/guardrail-events (issue #171)', () => {
 
     ctx().guardrailEvents.append(run.id, {
       dimension: 'wall-clock',
-      phase: 'executing',
       limitValue: 60_000,
       observedValue: 61_000,
       configSource: 'default',
@@ -32,7 +31,6 @@ describe('GET /api/runs/:id/guardrail-events (issue #171)', () => {
     });
     ctx().guardrailEvents.append(run.id, {
       dimension: 'progress',
-      phase: 'executing',
       limitValue: 3,
       observedValue: 4,
       configSource: 'workspace',
@@ -46,7 +44,6 @@ describe('GET /api/runs/:id/guardrail-events (issue #171)', () => {
       runId: run.id,
       seq: 1,
       dimension: 'wall-clock',
-      phase: 'executing',
       limitValue: 60_000,
       observedValue: 61_000,
       configSource: 'default',

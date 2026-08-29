@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import type { AsyncDbHandle } from '../db/async.js';
 import { attempts, steps, runFacts, type AttemptRow, type AttemptState, type StepRow, type StepType, type RunFactType } from '../db/schema.js';
 import type { DeterministicContinuation } from './session-continuation.js';
@@ -30,6 +30,51 @@ export class AttemptStore {
 
   listSteps(attemptId: number): Promise<StepRow[]> {
     return this.db.read((db) => db.select().from(steps).where(eq(steps.attemptId, attemptId)).orderBy(asc(steps.position)).all());
+  }
+
+  /**
+   * The Step type currently `running` for one Task's Attempt, or `null` when
+   * none is (the gap between Steps, most notably the mechanical merge after
+   * the last Step passes, or before the Attempt's first Step starts). This is
+   * the single derivation every wall-clock/spend/tool-timeout Guardrail check
+   * shares (`guardrail-budget.ts`'s `countsTowardExecutionBudget`), so a Run's
+   * "what is it doing right now" reads the same way everywhere.
+   */
+  async currentStepType(taskId: number, number: number): Promise<StepType | null> {
+    const attempt = await this.getForTaskNumber(taskId, number);
+    if (!attempt) return null;
+    const rows = await this.listSteps(attempt.id);
+    return [...rows].reverse().find((row) => row.state === 'running')?.type ?? null;
+  }
+
+  /**
+   * The batched form of {@link currentStepType}, keyed by `taskId` — one
+   * query for the Attempts, one for their Steps, regardless of how many Tasks
+   * are asked about (the Board's active-card badge, issue #100/#388).
+   */
+  async currentStepTypes(taskAttempts: readonly { taskId: number; number: number }[]): Promise<Map<number, StepType | null>> {
+    const result = new Map<number, StepType | null>();
+    if (taskAttempts.length === 0) return result;
+    const numberByTask = new Map(taskAttempts.map((t) => [t.taskId, t.number]));
+    const attemptRows = await this.db.read((db) =>
+      db.select().from(attempts).where(inArray(attempts.taskId, taskAttempts.map((t) => t.taskId))).all(),
+    );
+    const wanted = attemptRows.filter((a) => numberByTask.get(a.taskId) === a.number);
+    if (wanted.length === 0) return result;
+    const stepRows = await this.db.read((db) =>
+      db.select().from(steps).where(inArray(steps.attemptId, wanted.map((a) => a.id))).orderBy(asc(steps.position)).all(),
+    );
+    const stepsByAttempt = new Map<number, StepRow[]>();
+    for (const row of stepRows) {
+      const list = stepsByAttempt.get(row.attemptId) ?? [];
+      list.push(row);
+      stepsByAttempt.set(row.attemptId, list);
+    }
+    for (const attempt of wanted) {
+      const running = [...(stepsByAttempt.get(attempt.id) ?? [])].reverse().find((row) => row.state === 'running');
+      result.set(attempt.taskId, running?.type ?? null);
+    }
+    return result;
   }
 
   /** The immutable branch tip that the Attempt's verification proved. */

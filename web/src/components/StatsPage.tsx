@@ -10,7 +10,7 @@ import {
   subagentShare,
   usageBars,
 } from '../stats-model';
-import { fmtDuration } from '../phase-timeline-model';
+import { fmtDuration } from '../format-duration';
 import { CostBars } from './CostBars';
 import { CumulativeCurve } from './CumulativeCurve';
 import { BarChart, type Bar } from './BarChart';

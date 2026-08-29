@@ -5,7 +5,6 @@ import {
   type VerificationAttemptRow,
   type VerificationMechanism,
 } from '../db/schema.js';
-import type { RunPhase } from './run-phases.js';
 import type { Verdict } from '../verification/critic-schema.js';
 
 /** What `append` needs to persist one Verification attempt — everything on
@@ -16,9 +15,6 @@ export interface VerificationAttemptInput {
   verdict: Verdict;
   summary: string;
   output: string;
-  /** Defaults to `'verifying'` — the only phase a Verification attempt runs
-   * in today (mirrors the schema column's default). */
-  phase?: RunPhase;
   /** Locator for the critic's native transcript + the harness that wrote it
    * (ADR-0040). Both null for the command verifier and where no transcript was
    * resolved; the pair is what the attempt-log endpoint parses on demand. */
@@ -74,7 +70,6 @@ export class VerificationAttemptStore {
           verdict: attempt.verdict,
           summary: attempt.summary,
           output: attempt.output,
-          phase: attempt.phase ?? 'verifying',
           transcriptPath: attempt.transcriptPath ?? null,
           harness: attempt.harness ?? null,
         })

@@ -25,7 +25,7 @@ function grantOptionId(request: unknown): string | null {
  * The agent critic (ADR-0003): a review agent that judges a Task's candidate the
  * way a human reviewer would and returns a schema-validated {@link Verdict}. This
  * module is a self-contained, fully-tested unit invoked via `runCritic(...)`,
- * wired into the `verifying` phase of the live Runner settle/merging path
+ * wired into the Attempt's Review Step of the live Runner settle/merging path
  * (`runVerification` in `execution/runner.ts`) — where its verdict folds into
  * `combineVerdicts` alongside the command verifier, so a fail/inconclusive critic
  * blocks or escalates the Run.

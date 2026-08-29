@@ -92,7 +92,7 @@ describe('escalation actions on a worktree ticket (ADR-0041)', () => {
       return body.state === 'escalated' ? body : undefined;
     });
     expect(task.escalationReason).toMatch(/attempt 2 of 2 failed/);
-    expect((await server.api('GET', `/api/runs/${runId}`)).body).toMatchObject({ state: 'failed', phase: 'terminal' });
+    expect((await server.api('GET', `/api/runs/${runId}`)).body).toMatchObject({ state: 'failed' });
     return { taskId, runId, file };
   }
 
@@ -121,7 +121,7 @@ describe('escalation actions on a worktree ticket (ADR-0041)', () => {
       expect(accepted.body).toMatchObject({ state: 'done', escalationReason: null });
 
       const run = (await server.api('GET', `/api/runs/${runId}`)).body;
-      expect(run).toMatchObject({ state: 'completed', phase: 'terminal' });
+      expect(run).toMatchObject({ state: 'completed' });
 
       // Both facts are on the log; precedence resolves to the accept.
       const runFacts = await facts(runId);

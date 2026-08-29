@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { changedFilesFromStat, currentRunId, runDisplay } from '../web/src/run-rail-model.js';
-import type { Run } from '../web/src/types.js';
+import type { Run, Step } from '../web/src/types.js';
 
 function run(over: Partial<Run> = {}): Run {
   return {
@@ -8,7 +8,6 @@ function run(over: Partial<Run> = {}): Run {
     taskId: 7,
     attempt: 1,
     state: 'running',
-    phase: 'executing',
     reason: null,
     stopReason: null,
     sessionId: null,
@@ -23,14 +22,30 @@ function run(over: Partial<Run> = {}): Run {
   };
 }
 
+function step(over: Partial<Step> = {}): Step {
+  return {
+    id: 1,
+    attemptId: 1,
+    type: 'implementation',
+    position: 1,
+    state: 'running',
+    command: null,
+    verdict: null,
+    logLocator: null,
+    startedAt: 1_000,
+    endedAt: null,
+    ...over,
+  };
+}
+
 describe('runDisplay', () => {
-  it('reads a settled terminal state before the phase the machine ended in', () => {
-    expect(runDisplay(run({ state: 'completed', phase: 'merging' }))).toEqual({
+  it('reads a settled terminal state before whatever Step was running when it ended', () => {
+    expect(runDisplay(run({ state: 'completed' }), [step({ type: 'review', state: 'passed' })])).toEqual({
       word: 'merged',
       dot: 'merged',
       pulse: false,
     });
-    expect(runDisplay(run({ state: 'failed', phase: 'verifying' }))).toEqual({
+    expect(runDisplay(run({ state: 'failed' }), [step({ type: 'verification', state: 'failed' })])).toEqual({
       word: 'failed',
       dot: 'fail',
       pulse: false,
@@ -38,12 +53,12 @@ describe('runDisplay', () => {
   });
 
   it('colours a failed run fail and a cancelled run neutral, neither pulsing', () => {
-    expect(runDisplay(run({ state: 'failed', phase: 'validating' }))).toEqual({
+    expect(runDisplay(run({ state: 'failed' }))).toEqual({
       word: 'failed',
       dot: 'fail',
       pulse: false,
     });
-    expect(runDisplay(run({ state: 'cancelled', phase: null }))).toEqual({
+    expect(runDisplay(run({ state: 'cancelled' }))).toEqual({
       word: 'cancelled',
       dot: 'neutral',
       pulse: false,
@@ -51,37 +66,38 @@ describe('runDisplay', () => {
   });
 
   it('never reads a running run as anything but live work — there is no parked human gate (ADR-0041)', () => {
-    for (const phase of ['executing', 'validating', 'verifying', 'merging'] as const) {
-      expect(runDisplay(run({ state: 'running', phase })).pulse).toBe(true);
-      expect(runDisplay(run({ state: 'running', phase })).dot).toBe('running');
+    for (const type of ['rebase', 'implementation', 'verification', 'review'] as const) {
+      const steps = [step({ type, state: 'running' })];
+      expect(runDisplay(run({ state: 'running' }), steps).pulse).toBe(true);
+      expect(runDisplay(run({ state: 'running' }), steps).dot).toBe('running');
     }
   });
 
-  it('carries the live phase word on a pulsing amber dot for in-flight work', () => {
-    expect(runDisplay(run({ state: 'running', phase: 'verifying' }))).toEqual({
-      word: 'verifying',
+  it('carries the running Step\'s type as the word on a pulsing amber dot for in-flight work', () => {
+    expect(runDisplay(run({ state: 'running' }), [step({ type: 'verification', state: 'running' })])).toEqual({
+      word: 'verification',
       dot: 'running',
       pulse: true,
     });
-    expect(runDisplay(run({ state: 'running', phase: 'merging' }))).toEqual({
-      word: 'merging',
+    expect(runDisplay(run({ state: 'running' }), [step({ type: 'review', state: 'running' })])).toEqual({
+      word: 'review',
       dot: 'running',
       pulse: true,
     });
   });
 
-  it('falls back to a generic "running" for a pre-feature run with no phase', () => {
-    expect(runDisplay(run({ state: 'running', phase: null }))).toEqual({
+  it('falls back to a generic "running" when no Step is currently running (e.g. mid-merge, or before the first Step starts)', () => {
+    expect(runDisplay(run({ state: 'running' }), [])).toEqual({
       word: 'running',
       dot: 'running',
       pulse: true,
     });
-    // 'terminal' is an internal end-marker, not a word to show.
-    expect(runDisplay(run({ state: 'running', phase: 'terminal' })).word).toBe('running');
+    // Every Step already settled (passed) — the gap before merge completes.
+    expect(runDisplay(run({ state: 'running' }), [step({ type: 'implementation', state: 'passed' })]).word).toBe('running');
   });
 
-  it('reads a completed run as merged whatever phase it ended in', () => {
-    expect(runDisplay(run({ state: 'completed', phase: 'terminal' }))).toEqual({
+  it('reads a completed run as merged whatever Step it ended on', () => {
+    expect(runDisplay(run({ state: 'completed' }), [step({ type: 'review', state: 'passed' })])).toEqual({
       word: 'merged',
       dot: 'merged',
       pulse: false,

@@ -44,7 +44,6 @@ describe('GuardrailEventStore (issue #127)', () => {
   it('appends a wall-clock trip and reads it back, seq 1, fields persisted', async () => {
     const row = await events.append(runId, {
       dimension: 'wall-clock',
-      phase: 'executing',
       limitValue: 3_600_000,
       observedValue: 3_600_001,
       configSource: 'default',
@@ -53,7 +52,6 @@ describe('GuardrailEventStore (issue #127)', () => {
       runId,
       seq: 1,
       dimension: 'wall-clock',
-      phase: 'executing',
       limitValue: 3_600_000,
       observedValue: 3_600_001,
       configSource: 'default',
@@ -67,7 +65,6 @@ describe('GuardrailEventStore (issue #127)', () => {
   it('payload round-trips through JSON.stringify, defaulting to {} when omitted', async () => {
     const row = await events.append(runId, {
       dimension: 'wall-clock',
-      phase: 'validating',
       limitValue: 1000,
       observedValue: 1500,
       configSource: 'workspace',
@@ -77,7 +74,6 @@ describe('GuardrailEventStore (issue #127)', () => {
 
     const withoutPayload = await events.append(runId, {
       dimension: 'wall-clock',
-      phase: 'verifying',
       limitValue: 2000,
       observedValue: 2001,
       configSource: 'default',
@@ -88,14 +84,12 @@ describe('GuardrailEventStore (issue #127)', () => {
   it('assigns a 1-based monotonic seq per Run, sequencing each Run independently', async () => {
     await events.append(runId, {
       dimension: 'wall-clock',
-      phase: 'executing',
       limitValue: 100,
       observedValue: 101,
       configSource: 'default',
     });
     const second = await events.append(runId, {
       dimension: 'wall-clock',
-      phase: 'executing',
       limitValue: 100,
       observedValue: 102,
       configSource: 'default',
@@ -104,7 +98,6 @@ describe('GuardrailEventStore (issue #127)', () => {
 
     const other = await events.append(otherRunId, {
       dimension: 'wall-clock',
-      phase: 'executing',
       limitValue: 100,
       observedValue: 103,
       configSource: 'workspace',
@@ -115,21 +108,18 @@ describe('GuardrailEventStore (issue #127)', () => {
   it("list returns a Run's events in seq order, and only that Run's", async () => {
     await events.append(runId, {
       dimension: 'wall-clock',
-      phase: 'executing',
       limitValue: 100,
       observedValue: 101,
       configSource: 'default',
     });
     await events.append(runId, {
       dimension: 'wall-clock',
-      phase: 'validating',
       limitValue: 100,
       observedValue: 102,
       configSource: 'default',
     });
     await events.append(otherRunId, {
       dimension: 'wall-clock',
-      phase: 'executing',
       limitValue: 100,
       observedValue: 103,
       configSource: 'default',
@@ -137,6 +127,6 @@ describe('GuardrailEventStore (issue #127)', () => {
 
     const log = await events.list(runId);
     expect(log.map((e) => e.seq)).toEqual([1, 2]);
-    expect(log.map((e) => e.phase)).toEqual(['executing', 'validating']);
+    expect(log.map((e) => e.observedValue)).toEqual([101, 102]);
   });
 });

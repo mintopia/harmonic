@@ -115,7 +115,7 @@ describe('state collapse migration (0052, ADR-0041)', () => {
     // The review-parked Run is closed as the completed work it was; the review columns are gone.
     const runs = await db.read((d) => d.select().from(schema.runs).all());
     const parked = runs.find((r) => r.id === parkedRun)!;
-    expect(parked).toMatchObject({ state: 'completed', phase: 'terminal' });
+    expect(parked).toMatchObject({ state: 'completed' });
     expect(parked.finishedAt).not.toBeNull();
     expect(parked).not.toHaveProperty('reviewDeadline');
     expect(parked).not.toHaveProperty('review');

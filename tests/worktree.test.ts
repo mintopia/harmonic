@@ -321,8 +321,6 @@ describe('worktree isolation mode', () => {
     // serialised their fast-forwards onto main.
     expect(runA.state).toBe('completed');
     expect(runB.state).toBe('completed');
-    expect(runA.phase).toBe('terminal');
-    expect(runB.phase).toBe('terminal');
     expect(runA.branch).not.toBe(runB.branch);
 
     const taskA = (await server.api('GET', `/api/tasks/${a.taskId}`)).body;

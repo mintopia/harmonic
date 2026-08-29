@@ -90,7 +90,7 @@ describe('EscalationService', () => {
     it('merges the verified head under the operator-accept disposition and moves the ticket to done', async () => {
       const { task, run } = await escalated();
       expect(task.state).toBe('escalated');
-      expect(run).toMatchObject({ state: 'failed', phase: 'terminal' });
+      expect(run).toMatchObject({ state: 'failed' });
       let applied = 0;
       effects = [{ effect: 'target-ref', idempotencyKey: 'main<-branch', expected: {}, apply: async () => { applied++; return { ok: true, observed: {} }; } }];
 
@@ -99,7 +99,7 @@ describe('EscalationService', () => {
       expect(applied).toBe(1);
       expect(accepted).toMatchObject({ state: 'done', escalationReason: null });
       // The operator's accept outranks the retained escalate fact on the log.
-      expect(await runStore.get(run.id)).toMatchObject({ state: 'completed', phase: 'terminal' });
+      expect(await runStore.get(run.id)).toMatchObject({ state: 'completed' });
       const types = (await new RunFactStore(asyncDb).list(run.id)).map((f) => f.type);
       expect(types).toContain('escalate');
       expect(types).toContain('operator-accept');
@@ -120,7 +120,7 @@ describe('EscalationService', () => {
       await expect(service.accept(task.id)).rejects.toThrow('merge conflict in src/a.ts');
 
       expect((await tasks.get(task.id)).state).toBe('escalated');
-      expect(await runStore.get(run.id)).toMatchObject({ state: 'failed', phase: 'terminal' });
+      expect(await runStore.get(run.id)).toMatchObject({ state: 'failed' });
     });
   });
 

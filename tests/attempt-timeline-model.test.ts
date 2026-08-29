@@ -22,7 +22,7 @@ const attempt = (over: Partial<Attempt> = {}): Attempt => ({
   id: 1, taskId: 7, number: 1, state: 'failed', startedAt: 1_000, endedAt: 3_000, feedback: null, verifiedSha: null, escalationReason: null, verifierStatuses: [], continuation: null, steps: [], ...over,
 });
 const run = (over: Partial<Run> = {}): Run => ({
-  id: 1, taskId: 7, attempt: 1, state: 'running', phase: 'executing', reason: null, stopReason: null, sessionId: null, prompt: null, branch: null, baseBranch: null,
+  id: 1, taskId: 7, attempt: 1, state: 'running', reason: null, stopReason: null, sessionId: null, prompt: null, branch: null, baseBranch: null,
   usage: null, cost: null, startedAt: 1_000_000, finishedAt: null, ...over,
 });
 

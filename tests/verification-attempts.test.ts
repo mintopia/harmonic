@@ -39,7 +39,7 @@ describe('VerificationAttemptStore (issue #136)', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it('appends a critic attempt and reads it back, seq 1, phase defaulted to verifying', async () => {
+  it('appends a critic attempt and reads it back, seq 1', async () => {
     const row = await attempts.append(runId, {
       mechanism: 'critic',
       inputOid: 'a'.repeat(40),
@@ -54,7 +54,6 @@ describe('VerificationAttemptStore (issue #136)', () => {
       inputOid: 'a'.repeat(40),
       verdict: 'pass',
       summary: 'looks good',
-      phase: 'verifying',
     });
 
     const [back] = await attempts.list(runId);
@@ -130,8 +129,8 @@ describe('VerificationAttemptStore (issue #136)', () => {
     const raw = createClient({ url: `file:${join(dir, 'harmonic.db')}` });
     await expect(
       raw.execute({
-        sql: `insert into verification_attempts (run_id, seq, ts, mechanism, input_oid, verdict, summary, output, phase)
-       values (?, 1, ?, 'critic', ?, 'fail', 's', 'o', 'verifying')`,
+        sql: `insert into verification_attempts (run_id, seq, ts, mechanism, input_oid, verdict, summary, output)
+       values (?, 1, ?, 'critic', ?, 'fail', 's', 'o')`,
         args: [runId, Date.now(), 'b'.repeat(40)],
       }),
     ).rejects.toThrow(/UNIQUE constraint failed/);
@@ -139,8 +138,8 @@ describe('VerificationAttemptStore (issue #136)', () => {
     // A different seq for the same Run is fine.
     await expect(
       raw.execute({
-        sql: `insert into verification_attempts (run_id, seq, ts, mechanism, input_oid, verdict, summary, output, phase)
-       values (?, 2, ?, 'critic', ?, 'fail', 's', 'o', 'verifying')`,
+        sql: `insert into verification_attempts (run_id, seq, ts, mechanism, input_oid, verdict, summary, output)
+       values (?, 2, ?, 'critic', ?, 'fail', 's', 'o')`,
         args: [runId, Date.now(), 'b'.repeat(40)],
       }),
     ).resolves.toBeDefined();

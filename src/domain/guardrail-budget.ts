@@ -14,43 +14,42 @@
  * the *decision* right.
  */
 
-import type { RunPhase } from './run-phases.js';
+import type { StepType } from '../db/schema.js';
 import type { BudgetGuardrail } from '../config.js';
 
 /**
- * The only phases the wall-clock execution budget counts against
- * (reliability-design Unit A, locked).
+ * The Step types the wall-clock execution budget counts against (ADR-0001
+ * Vocabulary: Attempt's timeline is Steps — Implementation, Verification,
+ * Review — Run/Phase/Candidate are deleted concepts).
  *
- * A Run's total wall-clock time includes phases the budget deliberately does
- * NOT bound: `review` is a human-paced wait gated by its own review SLA
- * (issue #114's `review-sla-expiry`), and `merging` is a short mechanical
- * step with its own timeout. Counting either against the execution budget
- * would either trip a Run that is legitimately waiting on a human, or double
- * -govern a step that already has its own guard. So only the phases where an
- * agent harness is actually doing (or about to do) work — `executing`,
- * `validating`, `verifying` — count toward this budget. `terminal` never
- * counts (the Run is already done).
+ * An Attempt's total wall-clock time includes one gap the budget
+ * deliberately does NOT bound: the window between Steps — most notably the
+ * short mechanical merge after the last Step passes, which has its own
+ * timeout. Counting it against the execution budget would double-govern a
+ * step that already has its own guard. So every Step type — `rebase`
+ * (the Attempt's prep), `implementation`, `verification`, and `review` (the
+ * critic) — counts: an agent harness (or a deterministic check) is actively
+ * doing work for the duration of every one of them. Only the absence of a
+ * running Step (`null`) is unguarded by this budget.
  *
  * This is the single source of truth for the scoping decision:
  * `countsTowardExecutionBudget` and `wallClockTrip` both derive from it, so
- * a future phase is a conscious addition here rather than an implicit
+ * a future Step type is a conscious addition here rather than an implicit
  * default.
  */
-export const EXECUTION_BUDGET_PHASES: ReadonlySet<RunPhase> = new Set(['executing', 'validating', 'verifying']);
+export const EXECUTION_BUDGET_STEPS: ReadonlySet<StepType> = new Set(['rebase', 'implementation', 'verification', 'review']);
 
 /**
- * Whether `phase` counts toward the wall-clock execution budget.
+ * Whether `stepType` counts toward the wall-clock execution budget.
  *
- * `null` — a Run that has not yet recorded a phase — counts as executing:
- * the harness has been claimed and is presumed to be doing execution work
- * from the moment it starts, before the first phase transition is ever
- * persisted. Treating the pre-phase window as unguarded would open a gap at
- * exactly the point a runaway process is most likely to burn wall clock
- * unnoticed, so `null` maps to `true` rather than `false`.
+ * `null` — no Step is currently running (the gap between the last Step
+ * passing and the merge that follows it, or before the Attempt's first Step
+ * starts) — does not count: nothing is actively executing, and the merge
+ * that follows a passed Attempt has its own timeout.
  */
-export function countsTowardExecutionBudget(phase: RunPhase | null): boolean {
-  if (phase === null) return true;
-  return EXECUTION_BUDGET_PHASES.has(phase);
+export function countsTowardExecutionBudget(stepType: StepType | null): boolean {
+  if (stepType === null) return false;
+  return EXECUTION_BUDGET_STEPS.has(stepType);
 }
 
 /** The wall-clock budget expressed in milliseconds, from the guardrail's minutes. */
@@ -72,30 +71,30 @@ export interface WallClockTrip {
 
 /**
  * Decide whether an elapsed duration trips the wall-clock guardrail, given
- * the phase the Run is currently in.
+ * the Step type currently running.
  *
- * This is THE phase-scoping decision (issue #127 acceptance: the clock
- * advances only during `executing`/`validating`/`verifying`) expressed as a
- * pure, exhaustively unit-testable function. A Run parked in `review` or
- * mid-`merging` can be arbitrarily far past `wallClockBudgetMs(budget)` in
- * raw elapsed time and this must still return `null` — the elapsed clock
- * itself is scoped to the execution phases by `countsTowardExecutionBudget`,
- * not by the caller pre-filtering what it measures, so this function is the
- * one place that rule lives regardless of how `elapsedMs` was accumulated
+ * This is THE Step-scoping decision (issue #127 acceptance: the clock
+ * advances only while a Step is actively running) expressed as a pure,
+ * exhaustively unit-testable function. An Attempt mid-merge (no Step
+ * running) can be arbitrarily far past `wallClockBudgetMs(budget)` in raw
+ * elapsed time and this must still return `null` — the elapsed clock itself
+ * is scoped to the counted Step types by `countsTowardExecutionBudget`, not
+ * by the caller pre-filtering what it measures, so this function is the one
+ * place that rule lives regardless of how `elapsedMs` was accumulated
  * upstream.
  *
- * Trips (returns non-null) iff `phase` counts toward the execution budget
+ * Trips (returns non-null) iff `stepType` counts toward the execution budget
  * AND `elapsedMs >= wallClockBudgetMs(budget)` — the boundary itself trips
  * (>=, not >): a Run that has used exactly its full budget has no budget
  * left, not one instant of grace. Returns `null` in every other case: below
- * budget, or in a phase the budget doesn't scope.
+ * budget, or with no Step the budget scopes.
  */
 export function wallClockTrip(args: {
   elapsedMs: number;
-  phase: RunPhase | null;
+  stepType: StepType | null;
   budget: Pick<BudgetGuardrail, 'wallClockMinutes'>;
 }): WallClockTrip | null {
-  if (!countsTowardExecutionBudget(args.phase)) return null;
+  if (!countsTowardExecutionBudget(args.stepType)) return null;
   const limitMs = wallClockBudgetMs(args.budget);
   if (args.elapsedMs < limitMs) return null;
   return { dimension: 'wall-clock', limitMs, observedMs: args.elapsedMs };
@@ -177,13 +176,13 @@ function tokenOutcome(limitTokens: number, observedTokens: number | null): Spend
 }
 
 /**
- * Decide whether the live token/cost spend guards trip, given the phase the
- * Run is currently in and this poll's observed usage (issue #128, extending
+ * Decide whether the live token/cost spend guards trip, given the Step type
+ * currently running and this poll's observed usage (issue #128, extending
  * #127's wall-clock dimension to the other two `BudgetGuardrail` bounds).
  *
- * Phase-scoped identically to `wallClockTrip`: only the execution phases
- * (`countsTowardExecutionBudget`) are governed, and a `null` phase counts as
- * executing for the same pre-phase-window reason.
+ * Step-scoped identically to `wallClockTrip`: only the counted Step types
+ * (`countsTowardExecutionBudget`) are governed; `null` (no Step running)
+ * never trips.
  *
  * The cost cap and token cap are not fully independent, because cost is
  * frequently *unknowable* in a way tokens are not (a provider that doesn't
@@ -201,13 +200,13 @@ function tokenOutcome(limitTokens: number, observedTokens: number | null): Spend
  * either/or, once cost can be trusted.
  */
 export function spendTrip(args: {
-  phase: RunPhase | null;
+  stepType: StepType | null;
   budget: Pick<BudgetGuardrail, 'tokens' | 'costUsd'>;
   observedTokens: number | null;
   observedUsd: number | null;
   costIncomplete: boolean;
 }): SpendOutcome {
-  if (!countsTowardExecutionBudget(args.phase)) return { kind: 'ok' };
+  if (!countsTowardExecutionBudget(args.stepType)) return { kind: 'ok' };
 
   const { tokens, costUsd } = args.budget;
   const { observedTokens, observedUsd, costIncomplete } = args;

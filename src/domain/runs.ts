@@ -56,9 +56,6 @@ export class RunStore {
           taskId,
           attempt,
           state: 'running',
-          // A Run enters the phase machine at `executing` the moment it is created
-          // (issue #114); the drive loop advances it from here.
-          phase: 'executing',
           startedAt: Date.now(),
           guardrailConfig: snapshot ? JSON.stringify(snapshot.guardrailConfig) : null,
           priceTable: snapshot ? JSON.stringify(snapshot.priceTable) : null,
@@ -347,7 +344,7 @@ export class RunStore {
           .run();
         await tx
           .update(runs)
-          .set({ state: 'failed', phase: 'terminal', reason: 'interrupted', finishedAt: Date.now() })
+          .set({ state: 'failed', reason: 'interrupted', finishedAt: Date.now() })
           .where(eq(runs.id, run.id))
           .run();
       });

@@ -4,6 +4,7 @@ import type { FlaggedWorktree } from '../domain/flagged-worktrees.js';
 import type {
   AttemptRow,
   StepRow,
+  StepType,
   ConversationRow,
   ConversationState,
   RunRow,
@@ -123,6 +124,7 @@ export async function attemptTimelineToApi(ctx: AppContext, taskId: number): Pro
         ctx.attempts.escalationReason(attempt.id),
         run ? ctx.verificationAttempts.list(run.id) : [],
       ]);
+      const stepType = [...stepRows].reverse().find((row) => row.state === 'running')?.type ?? null;
       return {
         id: attempt.id,
         taskId: attempt.taskId,
@@ -134,7 +136,7 @@ export async function attemptTimelineToApi(ctx: AppContext, taskId: number): Pro
         verifiedSha,
         escalationReason,
         continuation: continuationToApi(attempt.continuation),
-        verifierStatuses: verifierStatuses({ verifiers: configuredVerifiers, attempts: verificationAttempts, phase: run?.phase ?? null }),
+        verifierStatuses: verifierStatuses({ verifiers: configuredVerifiers, attempts: verificationAttempts, stepType }),
         steps: stepRows.map(stepToApi),
       };
     })),
@@ -144,13 +146,16 @@ export async function attemptTimelineToApi(ctx: AppContext, taskId: number): Pro
 /** The configured-or-recorded verifier rows for one Run's always-visible read model. */
 export async function verifierStatusesToApi(
   ctx: AppContext,
-  run: Pick<RunRow, 'id' | 'taskId' | 'phase'>,
+  run: Pick<RunRow, 'id' | 'taskId' | 'attempt'>,
   recordedAttempts?: readonly VerificationAttemptRow[],
 ): Promise<VerifierStatus[]> {
   const task = await ctx.tasks.get(run.taskId);
   const workspace = await ctx.workspaces.get(atRestWorkspaceId(task.workspaceId));
-  const attempts = recordedAttempts ?? await ctx.verificationAttempts.list(run.id);
-  return verifierStatuses({ verifiers: resolveVerifiers(workspace, ctx.configStore.get()), attempts, phase: run.phase });
+  const [attempts, stepType] = await Promise.all([
+    recordedAttempts ?? ctx.verificationAttempts.list(run.id),
+    ctx.attempts.currentStepType(run.taskId, run.attempt),
+  ]);
+  return verifierStatuses({ verifiers: resolveVerifiers(workspace, ctx.configStore.get()), attempts, stepType });
 }
 
 type TicketTimelineKind =
@@ -206,7 +211,7 @@ export async function ticketTimelineToApi(ctx: AppContext, taskId: number): Prom
   const add = (event: ApiTicketTimelineEvent, order: number) => pending.push({ ...event, order });
 
   await forEachYielding(taskRuns, async (run) => {
-    add({ runId: run.id, ts: run.startedAt, kind: 'run-started', data: { attempt: run.attempt, state: run.state, phase: run.phase } }, 0);
+    add({ runId: run.id, ts: run.startedAt, kind: 'run-started', data: { attempt: run.attempt, state: run.state } }, 0);
     for (const status of verifierStatuses({ verifiers: configuredVerifiers, attempts: verificationByRun.get(run.id) ?? [] })) {
       if (status.state !== 'disabled') continue;
       add({
@@ -216,7 +221,7 @@ export async function ticketTimelineToApi(ctx: AppContext, taskId: number): Prom
         data: { outcome: 'disabled', mechanism: status.mechanism, reason: status.reason, derived: true },
       }, 2);
     }
-    if (run.finishedAt !== null) add({ runId: run.id, ts: run.finishedAt, kind: 'run-finished', data: { attempt: run.attempt, state: run.state, phase: run.phase, reason: run.reason } }, 7);
+    if (run.finishedAt !== null) add({ runId: run.id, ts: run.finishedAt, kind: 'run-finished', data: { attempt: run.attempt, state: run.state, reason: run.reason } }, 7);
   });
   await forEachYielding(taskAttempts, async (attempt) => {
     attemptsByNumber.set(attempt.number, attempt);
@@ -228,12 +233,12 @@ export async function ticketTimelineToApi(ctx: AppContext, taskId: number): Prom
     if (rejected?.state === 'escalated' && rejected.feedback !== null) add({ runId: null, ts: attempt.startedAt, kind: 'operator-reject', data: { attempt: rejected.number, feedback: rejected.feedback } }, 4);
   });
   await forEachYielding(lifecycle, async ({ event }) => { add({ runId: event.runId, ts: event.ts, kind: 'lifecycle', data: { type: event.type, payload: JSON.parse(event.payload) } }, 3); });
-  await forEachYielding(verification, async ({ attempt }) => { add({ runId: attempt.runId, ts: attempt.ts, kind: 'verification', data: { mechanism: attempt.mechanism, verdict: attempt.verdict, summary: attempt.summary, inputOid: attempt.inputOid, phase: attempt.phase } }, 2); });
+  await forEachYielding(verification, async ({ attempt }) => { add({ runId: attempt.runId, ts: attempt.ts, kind: 'verification', data: { mechanism: attempt.mechanism, verdict: attempt.verdict, summary: attempt.summary, inputOid: attempt.inputOid } }, 2); });
   await forEachYielding(skippedVerification, async ({ step }) => {
     if (step.type !== 'verification' || step.state !== 'skipped' || step.endedAt === null) return;
     add({ runId: null, ts: step.endedAt, kind: 'verification', data: { outcome: 'skipped', command: step.command, verdict: step.verdict } }, 2);
   });
-  await forEachYielding(guardrails, async ({ event }) => { add({ runId: event.runId, ts: event.ts, kind: 'guardrail', data: { dimension: event.dimension, phase: event.phase, limitValue: event.limitValue, observedValue: event.observedValue, configSource: event.configSource, payload: JSON.parse(event.payload) } }, 2); });
+  await forEachYielding(guardrails, async ({ event }) => { add({ runId: event.runId, ts: event.ts, kind: 'guardrail', data: { dimension: event.dimension, limitValue: event.limitValue, observedValue: event.observedValue, configSource: event.configSource, payload: JSON.parse(event.payload) } }, 2); });
   await forEachYielding(facts, async ({ fact }) => {
     const kind: TicketTimelineKind = fact.type === 'escalate' ? 'escalation' : fact.type === 'operator-accept' ? 'operator-accept' : 'fact';
     add({ runId: fact.runId, ts: fact.ts, kind, data: { type: fact.type, payload: JSON.parse(fact.payload) } }, 4);
@@ -356,8 +361,10 @@ export type ApiTask = Omit<TaskWithDeps, 'workspaceId' | TrackerFactColumns> & {
   toolCount: number | null;
   /** The running run's id, so the board can match the `run_usage` firehose to this card; null unless the Task is running (issue #100). */
   runId: number | null;
-  /** The running run's phase, for the Board's Active-card badge; null unless the Task is running (or a pre-phase-machine run). */
-  phase: RunRow['phase'];
+  /** The running run's current Attempt Step (ADR-0001 Vocabulary), for the
+   * Board's Active-card badge; null unless the Task is running, or between
+   * Steps (e.g. mid-merge). */
+  currentStep: StepType | null;
   /** The running run's current context-window occupancy in tokens; null unless running (or unreported). Live via the `run_usage` firehose (issue #52). */
   contextTokens: number | null;
   /** The model's effective context window (config override, else shipped default); null when unknown. The board card shows `ctx %` = contextTokens/contextWindow — never a fabricated percentage (issue #52). */
@@ -394,7 +401,8 @@ export function summarize(prompt: string): string {
 export async function taskToApi(ctx: AppContext, task: TaskWithDeps): Promise<ApiTask> {
   const runs = await ctx.runs.listForTask(task.id);
   const running = task.state === 'working' ? runs.find((r) => r.state === 'running') : undefined;
-  return taskToApiWithRuns(ctx, task, runs, running ? await runningToolCount(ctx, running) : null);
+  const currentStep = running ? await ctx.attempts.currentStepType(task.id, running.attempt) : null;
+  return taskToApiWithRuns(ctx, task, runs, running ? await runningToolCount(ctx, running) : null, currentStep);
 }
 
 /** Serialize a task list from its already-batched Runs (issue #258). The rows
@@ -408,11 +416,20 @@ export async function tasksToApi(ctx: AppContext, tasks: TaskWithDeps[]): Promis
     const run = task.state === 'working' ? runsByTask.get(task.id)?.find((candidate) => candidate.state === 'running') : undefined;
     return run ? [run] : [];
   });
-  const toolCounts = await ctx.runs.toolCallCounts(running.map((run) => run.id));
+  const [toolCounts, currentSteps] = await Promise.all([
+    ctx.runs.toolCallCounts(running.map((run) => run.id)),
+    ctx.attempts.currentStepTypes(running.map((run) => ({ taskId: run.taskId, number: run.attempt }))),
+  ]);
   return tasks.map((task) => {
     const runs = runsByTask.get(task.id) ?? [];
     const activeRun = task.state === 'working' ? runs.find((run) => run.state === 'running') : undefined;
-    return toListRow(taskToApiWithRuns(ctx, task, runs, activeRun ? toolCounts.get(activeRun.id) ?? 0 : null));
+    return toListRow(taskToApiWithRuns(
+      ctx,
+      task,
+      runs,
+      activeRun ? toolCounts.get(activeRun.id) ?? 0 : null,
+      activeRun ? currentSteps.get(task.id) ?? null : null,
+    ));
   });
 }
 
@@ -443,7 +460,7 @@ function latestVerifiedRef(run: RunRow | undefined): string | null {
   return run.candidateRef ?? (run.candidateOid && run.branch ? run.branch : null);
 }
 
-function taskToApiWithRuns(ctx: AppContext, task: TaskWithDeps, runs: RunRow[], toolCount: number | null): ApiTask {
+function taskToApiWithRuns(ctx: AppContext, task: TaskWithDeps, runs: RunRow[], toolCount: number | null, currentStep: StepType | null): ApiTask {
   const running = runs.find((r) => r.state === 'running');
   // A direct Run has no branch (its work is committed straight onto the base
   // branch, ADR-0046); only a worktree Run has an operator-facing branch.
@@ -460,7 +477,7 @@ function taskToApiWithRuns(ctx: AppContext, task: TaskWithDeps, runs: RunRow[], 
     runStartedAt: running?.startedAt ?? null,
     toolCount,
     runId: running?.id ?? null,
-    phase: running?.phase ?? null,
+    currentStep,
     contextTokens: running ? (parseUsage(running.usage)?.contextTokens ?? null) : null,
     contextWindow: contextWindowOf(ctx, task.model),
     skipReason: ctx.autoRunner.skipReasonFor(task.id) ?? null,

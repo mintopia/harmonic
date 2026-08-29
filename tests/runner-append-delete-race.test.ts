@@ -63,7 +63,7 @@ describe('Runner.recordRunEvent — task deleted mid-append (issue #371)', () =>
         runner as unknown as {
           recordRunEvent: (t: TaskRow, r: RunRow, type: 'lifecycle', payload: unknown) => void;
         }
-      ).recordRunEvent(task, run, 'lifecycle', { event: 'phase', phase: 'executing' });
+      ).recordRunEvent(task, run, 'lifecycle', { event: 'progress-nudge', pattern: 'monologue' });
       // Let the append promise reject and its `.catch` run.
       await new Promise((resolve) => setTimeout(resolve, 50));
       expect(rejections).toEqual([]);

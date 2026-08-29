@@ -194,8 +194,8 @@ export function unpricedModelsForCostCap(
     for (const m of harness.models) configured.add(m);
     configured.add(harness.defaultModel);
   }
-  // The agent critic (#132) is another model a Run bills against — the budget is
-  // phase-scoped over verifying too (ADR-0019) — so its model must be priced on
+  // The agent critic (#132) is another model a Run bills against — the budget
+  // scopes to the Review Step too (ADR-0019) — so its model must be priced on
   // the same footing as a harness model.
   if (config.verify.review.enabled && config.verify.review.model) configured.add(config.verify.review.model);
   return [...configured].filter((m) => !isModelPriced(m, prices));
@@ -333,8 +333,8 @@ export const appConfigSchema = z.object({
    * configured — so the resolved verifier set is empty and a Run behaves exactly
    * as it does today. Per-Workspace overrides resolve per-key over these defaults
    * (`resolveVerifiers`, domain/setting-override.ts). Once configured, both the
-   * command verifier and the agent critic execute live in the runner's
-   * `validating`/`verifying` phases (`execution/runner.ts`) and gate merging
+   * command verifier and the agent critic execute live in the Attempt's
+   * Verification/Review Steps (`execution/runner.ts`) and gate merging
    * (#135/#164) — their verdicts feed `combineVerdicts` and drive settle.
    */
   /** Ordered verification contract. Commands fail fast; review runs last. */

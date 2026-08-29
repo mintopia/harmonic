@@ -58,7 +58,7 @@ describe('escalation: the three actions (direct mode)', () => {
 
     // Harmonic merged it itself: the default merge fact, never the operator's.
     const run = (await server.api('GET', `/api/tasks/${taskId}/runs`)).body.runs[0];
-    expect(run).toMatchObject({ state: 'completed', phase: 'terminal' });
+    expect(run).toMatchObject({ state: 'completed' });
     const facts = await new RunFactStore(server.app.ctx.asyncDb).list(run.id);
     expect(facts.some((f) => f.type === 'agent-finish/unresolved')).toBe(true);
     expect(facts.some((f) => f.type === 'operator-accept')).toBe(false);

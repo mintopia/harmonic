@@ -84,7 +84,7 @@ describe('toProgressEvents (issue #131)', () => {
 
   it('skips non-session_update events', () => {
     const events: RunEventLike[] = [
-      { seq: 1, type: 'lifecycle', payload: { phase: 'executing' } },
+      { seq: 1, type: 'lifecycle', payload: { event: 'merged' } },
       { seq: 2, type: 'permission_request', payload: {} },
     ];
     expect(toProgressEvents(events)).toEqual([]);

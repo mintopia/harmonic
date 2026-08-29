@@ -1,11 +1,8 @@
 import { sqliteTable, integer, text, primaryKey, index, uniqueIndex, type AnySQLiteColumn } from 'drizzle-orm/sqlite-core';
-// Type-only import (erased at compile) so the db layer can brand `runs.phase`
-// with the phase-machine enum without a runtime db→domain import cycle
-// (domain/run-facts.ts already imports this schema).
-import type { RunPhase } from '../domain/run-phases.js';
-// Type-only import (erased at compile), same db→domain-cycle-free reasoning as
-// `RunPhase` above: brands `verification_attempts.verdict` with the canonical
-// verdict enum so the column is literal-typed like `mechanism`/`phase`.
+// Type-only import (erased at compile) so the db layer can brand
+// `verification_attempts.verdict` without a runtime db→domain import cycle
+// (domain/run-facts.ts already imports this schema): the canonical verdict
+// enum so the column is literal-typed like `mechanism`.
 import type { Verdict } from '../verification/critic-schema.js';
 // Type-only import (erased at compile): brands the durable tracker-fact columns
 // on `tasks` with the tracker's own normalised shapes, so the persisted facts
@@ -253,15 +250,6 @@ export const runs = sqliteTable('runs', {
     .references(() => tasks.id),
   attempt: integer('attempt').notNull(),
   state: text('state').$type<RunState>().notNull(),
-  /**
-   * The Run's position in the phase machine (issue #114, reliability-design
-   * §0.2): `executing → validating → verifying → merging → terminal`. Persisted
-   * so the phase survives a restart and is reconstructable from the Run row
-   * alone (never inferred from Task columns); surfaced on the Run API + card.
-   * Null on pre-feature Runs. Distinct from `state`: `state` is the
-   * execution/terminal RunState, `phase` is *where in its lifecycle* the Run is.
-   */
-  phase: text('phase').$type<RunPhase>(),
   /** Failure reason: 'interrupted', an error message, or null. */
   reason: text('reason'),
   /** ACP stopReason from the session/prompt result. */
@@ -554,7 +542,7 @@ export type RunEventRow = typeof runEvents.$inferSelect;
  * `DISPOSITION_PRECEDENCE` (domain/run-disposition.ts). So this list is a
  * convenience type, not a closed constraint: the store never rejects an unknown
  * `type`, so historical rows carrying a since-removed kind still read back.
- * `guardrail-trip` now has an emitter (issue #127, the phase-scoped wall-clock
+ * `guardrail-trip` now has an emitter (issue #127, the Step-scoped wall-clock
  * Guardrail) — its structured evidence lives in the separate `guardrail_events`
  * log (see below); this fact type is the disposition-facing signal that a trip
  * happened.
@@ -645,14 +633,11 @@ export type VerificationMechanism = (typeof VERIFICATION_MECHANISMS)[number];
  * log is how a later reader tells which candidate each verdict actually
  * judged. `output` stores the verifier's raw output (the critic's agent
  * text); the caller is expected to cap it before it reaches here so an
- * unbounded or adversarial transcript can't grow the row without limit. `phase` defaults
- * to `'verifying'` — the only phase a Verification attempt runs in today —
- * kept as its own column rather than inferred from the Run row so the record
- * is self-describing even if the Run has since moved on.
+ * unbounded or adversarial transcript can't grow the row without limit.
  *
  * Written for real during a live Run: the command verifier (#135) and the
  * agent critic (#136, wired in #164) both append their per-attempt record here
- * from the `verifying` phase (`execution/runner.ts` `runVerification`), and
+ * from the Attempt's Verification/Review Step (`execution/runner.ts` `runVerification`), and
  * `combineVerdicts` folds the verdicts into the block/escalate/merge decision.
  * `domain/verification-attempts.ts`'s `VerificationAttemptStore` stays
  * append+list only — this is its durable audit log.
@@ -675,8 +660,6 @@ export const verificationAttempts = sqliteTable('verification_attempts', {
   summary: text('summary').notNull(),
   /** Raw verifier output (the critic's agent text), capped by the caller. */
   output: text('output').notNull(),
-  /** The Run phase this attempt ran in; every attempt today runs in `verifying`. */
-  phase: text('phase').$type<RunPhase>().notNull().default('verifying'),
   /** Locator for the critic's native harness transcript (ADR-0040): resolved
    * from its harness `sessionId` before the disposable worktree is disposed, so
    * the operator can read the critic's own session log (reads, greps, builds)
@@ -696,7 +679,7 @@ export type VerificationAttemptRow = typeof verificationAttempts.$inferSelect;
 
 /**
  * The Guardrail budget dimensions this table has a slot for (issue #127,
- * ADR-0019, reliability-design Unit A). `'wall-clock'` is the phase-scoped
+ * ADR-0019, reliability-design Unit A). `'wall-clock'` is the Step-scoped
  * wall-clock Guardrail that trips a Run to Escalation; `'progress'` and
  * `'tool-timeout'` (issue #131) now have emitters too — the stall/loop
  * detector (`domain/guardrail-progress.ts`, `domain/stall-detector.ts`) and
@@ -721,8 +704,8 @@ export type GuardrailConfigSource = (typeof GUARDRAIL_CONFIG_SOURCES)[number];
 /**
  * The structured Guardrail-trip observability log (issue #127, ADR-0019,
  * reliability-design Unit A line 104): every time a Guardrail's configured
- * budget is crossed, one immutable row records what tripped, in which phase,
- * against what bound, and where that bound resolved from — the evidence a
+ * budget is crossed, one immutable row records what tripped, against what
+ * bound, and where that bound resolved from — the evidence a
  * later Escalation card's reason derives from. Mirrors `verificationAttempts`
  * / `runFacts`'s discipline exactly: append-only, `seq` assigned by the store
  * as `max(seq)+1` (1-based, per-Run monotonic), and the `(run_id, seq)`
@@ -735,10 +718,8 @@ export type GuardrailConfigSource = (typeof GUARDRAIL_CONFIG_SOURCES)[number];
  * not itself move a Run to Escalation — the pure trip-detection logic and the
  * Runner wiring that calls `append` and emits the corresponding
  * `guardrail-trip` run_fact are out of scope here (issue #127's logic/wiring
- * halves). `dimension` only ever observes `'wall-clock'` today; `phase` is
- * recorded per-row (not inferred from the Run) so the trip is self-describing
- * proof it was observed inside an execution phase, even after the Run has
- * since moved on. `limitValue`/`observedValue` share the dimension's unit
+ * halves). `dimension` only ever observes `'wall-clock'` today.
+ * `limitValue`/`observedValue` share the dimension's unit
  * (milliseconds for wall-clock). `payload` is free-form JSON for any extra
  * evidence a future dimension's emitter wants to attach, defaulting to `'{}'`
  * when there is none.
@@ -753,8 +734,6 @@ export const guardrailEvents = sqliteTable('guardrail_events', {
   ts: integer('ts').notNull(),
   /** The budget dimension that tripped; only 'wall-clock' has an emitter today (#127). */
   dimension: text('dimension').$type<GuardrailDimension>().notNull(),
-  /** The Run phase the trip was observed in — proof the trip happened inside an execution phase. */
-  phase: text('phase').$type<RunPhase>().notNull(),
   /** The configured bound that was crossed, in the dimension's unit (ms for wall-clock). */
   limitValue: integer('limit_value').notNull(),
   /** The observed value at trip, same unit as `limitValue`. */

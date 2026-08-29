@@ -29,7 +29,7 @@ describe('verifierStatuses', () => {
           review: { enabled: true, requested: true, prompt: 'Review it.', model: 'stub-model' },
         },
         attempts: [],
-        phase: 'verifying',
+        stepType: 'verification',
       }),
     ).toEqual([
       { mechanism: 'command', state: 'skipped', reason: 'No command verification attempt was recorded for this run.', commands: ['npm test'] },
@@ -37,17 +37,53 @@ describe('verifierStatuses', () => {
     ]);
   });
 
-  it('shows configured verifiers as planned before the run reaches verifying', () => {
-    expect(
-      verifierStatuses({
-        verifiers: {
-          commands: [{ command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }],
-          review: { enabled: true, requested: true, prompt: 'Review it.', model: 'stub-model' },
+  it('shows configured verifiers as planned before the Attempt reaches its Verification Step', () => {
+    for (const stepType of ['rebase', 'implementation'] as const) {
+      expect(
+        verifierStatuses({
+          verifiers: {
+            commands: [{ command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }],
+            review: { enabled: true, requested: true, prompt: 'Review it.', model: 'stub-model' },
+          },
+          attempts: [],
+          stepType,
+        }),
+      ).toEqual([
+        {
+          mechanism: 'command',
+          state: 'planned',
+          reason: 'Configured to run — the run has not reached verification yet.',
+          commands: ['npm test'],
         },
-        attempts: [],
-        phase: 'executing',
-      }),
-    ).toEqual([
+        {
+          mechanism: 'critic',
+          state: 'planned',
+          reason: 'Configured to run — the run has not reached verification yet.',
+        },
+      ]);
+    }
+  });
+
+  it('shows configured verifiers as skipped once the Attempt reaches its Verification/Review Step with no attempt', () => {
+    for (const stepType of ['verification', 'review'] as const) {
+      expect(
+        verifierStatuses({
+          verifiers: {
+            commands: [{ command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }],
+            review: { enabled: true, requested: true, prompt: 'Review it.', model: 'stub-model' },
+          },
+          attempts: [],
+          stepType,
+        }),
+      ).toEqual([
+        { mechanism: 'command', state: 'skipped', reason: 'No command verification attempt was recorded for this run.', commands: ['npm test'] },
+        { mechanism: 'critic', state: 'skipped', reason: 'No critic verification attempt was recorded for this run.' },
+      ]);
+    }
+  });
+
+  it('shows configured verifiers as planned when stepType is omitted or null — no Step evidence yet is the safe default', () => {
+    const expected = [
       {
         mechanism: 'command',
         state: 'planned',
@@ -59,41 +95,16 @@ describe('verifierStatuses', () => {
         state: 'planned',
         reason: 'Configured to run — the run has not reached verification yet.',
       },
-    ]);
+    ];
+    const verifiers = {
+      commands: [{ command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }],
+      review: { enabled: true, requested: true, prompt: 'Review it.', model: 'stub-model' },
+    };
+    expect(verifierStatuses({ verifiers, attempts: [] })).toEqual(expected);
+    expect(verifierStatuses({ verifiers, attempts: [], stepType: null })).toEqual(expected);
   });
 
-  it('shows configured verifiers as skipped once the run reaches verifying with no attempt', () => {
-    expect(
-      verifierStatuses({
-        verifiers: {
-          commands: [{ command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }],
-          review: { enabled: true, requested: true, prompt: 'Review it.', model: 'stub-model' },
-        },
-        attempts: [],
-        phase: 'verifying',
-      }),
-    ).toEqual([
-      { mechanism: 'command', state: 'skipped', reason: 'No command verification attempt was recorded for this run.', commands: ['npm test'] },
-      { mechanism: 'critic', state: 'skipped', reason: 'No critic verification attempt was recorded for this run.' },
-    ]);
-  });
-
-  it('shows configured verifiers as skipped when phase is omitted (legacy callers)', () => {
-    expect(
-      verifierStatuses({
-        verifiers: {
-          commands: [{ command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }],
-          review: { enabled: true, requested: true, prompt: 'Review it.', model: 'stub-model' },
-        },
-        attempts: [],
-      }),
-    ).toEqual([
-      { mechanism: 'command', state: 'skipped', reason: 'No command verification attempt was recorded for this run.', commands: ['npm test'] },
-      { mechanism: 'critic', state: 'skipped', reason: 'No critic verification attempt was recorded for this run.' },
-    ]);
-  });
-
-  it('keeps a recorded pass attempt as passed even at phase verifying, not planned', () => {
+  it('keeps a recorded pass attempt as passed even at the Verification Step, not planned', () => {
     expect(
       verifierStatuses({
         verifiers: {
@@ -101,7 +112,7 @@ describe('verifierStatuses', () => {
           review: { enabled: false, requested: false },
         },
         attempts: [{ mechanism: 'command', seq: 1, verdict: 'pass' }],
-        phase: 'verifying',
+        stepType: 'verification',
       }),
     ).toEqual([
       { mechanism: 'command', state: 'passed', reason: null, commands: ['npm test'] },
@@ -109,12 +120,12 @@ describe('verifierStatuses', () => {
     ]);
   });
 
-  it('keeps a disabled verifier disabled regardless of phase — never planned', () => {
+  it('keeps a disabled verifier disabled regardless of Step — never planned', () => {
     expect(
       verifierStatuses({
         verifiers: { commands: [], review: { enabled: false, requested: false } },
         attempts: [],
-        phase: 'executing',
+        stepType: 'implementation',
       }),
     ).toEqual([
       { mechanism: 'command', state: 'disabled', reason: 'No command verifier is configured.' },

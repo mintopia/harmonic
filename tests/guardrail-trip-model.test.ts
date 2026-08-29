@@ -8,7 +8,6 @@ const event = (overrides: Partial<GuardrailEvent>): GuardrailEvent => ({
   seq: 1,
   ts: 1_700_000_000_000,
   dimension: 'wall-clock',
-  phase: 'executing',
   limitValue: 0,
   observedValue: 0,
   configSource: 'default',

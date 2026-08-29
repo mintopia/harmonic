@@ -8,7 +8,6 @@ function run(over: Partial<Run> = {}): Run {
     taskId: 7,
     attempt: 1,
     state: 'running',
-    phase: 'executing',
     reason: null,
     stopReason: null,
     sessionId: null,
@@ -28,9 +27,9 @@ function task(over: Partial<Task> = {}): Task {
 }
 
 const RUNS = [
-  run({ id: 10, attempt: 1, state: 'failed', phase: 'validating' }),
-  run({ id: 20, attempt: 2, state: 'failed', phase: 'terminal' }),
-  run({ id: 30, attempt: 3, state: 'failed', phase: 'terminal' }), // current: the attempt that escalated
+  run({ id: 10, attempt: 1, state: 'failed' }),
+  run({ id: 20, attempt: 2, state: 'failed' }),
+  run({ id: 30, attempt: 3, state: 'failed' }), // current: the attempt that escalated
 ];
 
 describe('gateForRun', () => {
@@ -41,7 +40,7 @@ describe('gateForRun', () => {
 
   it('is live on the current run whatever the task state — the state actions belong to the current run only', () => {
     expect(gateForRun({ task: task({ state: 'escalated' }), runs: RUNS, selectedRunId: 30 })).toEqual({ kind: 'live' });
-    const working = [run({ id: 30, attempt: 3, state: 'running', phase: 'executing' })];
+    const working = [run({ id: 30, attempt: 3, state: 'running' })];
     expect(gateForRun({ task: task({ state: 'working' }), runs: working, selectedRunId: 30 })).toEqual({ kind: 'live' });
   });
 

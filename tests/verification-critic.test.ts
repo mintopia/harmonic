@@ -149,7 +149,7 @@ describe('agent critic end-to-end (issue #164)', () => {
     expect(task.state).toBe('done');
 
     const run = (await server.api('GET', `/api/runs/${runId}`)).body;
-    expect(run).toMatchObject({ state: 'completed', phase: 'terminal' });
+    expect(run).toMatchObject({ state: 'completed' });
     expect(run.candidateOid).toMatch(/^[0-9a-f]{40}$/);
 
     // AC2: a critic attempt persisted during a real Run, at the verified branch head.
@@ -174,7 +174,6 @@ describe('agent critic end-to-end (issue #164)', () => {
       return body.state === 'failed' ? body : undefined;
     });
     expect(run.state).toBe('failed');
-    expect(run.phase).not.toBe('merging');
     expect(run.finishedAt).not.toBeNull();
 
     const task = (await server.api('GET', `/api/tasks/${taskId}`)).body;
@@ -206,7 +205,6 @@ describe('agent critic end-to-end (issue #164)', () => {
       return body.state === 'failed' ? body : undefined;
     });
     expect(run.state).toBe('failed');
-    expect(run.phase).not.toBe('merging');
 
     const rows = await attempts(runId);
     expect(rows).toHaveLength(2);
@@ -226,7 +224,6 @@ describe('agent critic end-to-end (issue #164)', () => {
       return body.state === 'failed' ? body : undefined;
     });
     expect(run.state).toBe('failed');
-    expect(run.phase).not.toBe('merging');
 
     const task = (await server.api('GET', `/api/tasks/${taskId}`)).body;
     expect(task.state).toBe('escalated');
@@ -258,7 +255,7 @@ describe('agent critic end-to-end (issue #164)', () => {
     expect(task.state).toBe('done');
 
     const run = (await server.api('GET', `/api/runs/${runId}`)).body;
-    expect(run).toMatchObject({ state: 'completed', phase: 'terminal' });
+    expect(run).toMatchObject({ state: 'completed' });
 
     // The one merge policy (ADR-0001, #381) runs a deterministic post-merge
     // check on the merged tip after the worktree merge lands — a second

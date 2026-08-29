@@ -73,8 +73,6 @@ tests/operations-page.test.ts
 tests/ordered-eligible-work.test.ts
 tests/paper-a11y.test.ts
 tests/path-tail.test.ts
-tests/phase-timeline-model.test.ts
-tests/phase-timeline.test.ts
 tests/poller.test.ts
 tests/process-tree-de-emphasis.test.ts
 tests/prompt-preview-model.test.ts
@@ -97,7 +95,6 @@ tests/run-failure.test.ts
 tests/run-guardrail-snapshot.test.ts
 tests/run-log-firehose.test.ts
 tests/run-log-stream-model.test.ts
-tests/run-phases.test.ts
 tests/run-prompt.test.ts
 tests/run-rail-model.test.ts
 tests/runner-cancel-run-gone.test.ts

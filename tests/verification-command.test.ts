@@ -93,7 +93,7 @@ describe('command verifier end-to-end (issue #135)', () => {
     expect(task.state).toBe('done');
 
     const run = (await server.api('GET', `/api/runs/${runId}`)).body;
-    expect(run).toMatchObject({ state: 'completed', phase: 'terminal' });
+    expect(run).toMatchObject({ state: 'completed' });
     expect(run.candidateOid).toMatch(/^[0-9a-f]{40}$/);
 
     // AC3/AC5: the attempt is persisted at the branch head the command saw.
@@ -164,7 +164,6 @@ describe('command verifier end-to-end (issue #135)', () => {
       return body.state === 'failed' ? body : undefined;
     });
     expect(run.state).toBe('failed');
-    expect(run.phase).not.toBe('merging');
     expect(run.finishedAt).not.toBeNull();
 
     // The Task never merged; it was handed back to a human.
@@ -397,7 +396,6 @@ describe('native merging (issue #138, ADR-0021, ADR-0041)', () => {
 
     const run = (await server.api('GET', `/api/runs/${runId}`)).body;
     expect(run.state).toBe('completed');
-    expect(run.phase).toBe('terminal');
   });
 
   it('a pass merges under Harmonic\'s own merge fact, never the operator disposition', async () => {
@@ -414,7 +412,6 @@ describe('native merging (issue #138, ADR-0021, ADR-0041)', () => {
 
     const run = (await server.api('GET', `/api/runs/${runId}`)).body;
     expect(run.state).toBe('completed');
-    expect(run.phase).toBe('terminal');
     expect(run.finishedAt).not.toBeNull();
 
     const rows = await attempts(runId);
@@ -441,7 +438,6 @@ describe('native merging (issue #138, ADR-0021, ADR-0041)', () => {
       return body.state === 'failed' ? body : undefined;
     });
     expect(run.state).toBe('failed');
-    expect(run.phase).toBe('terminal');
 
     const task = await waitFor(async () => {
       const { body } = await server.api('GET', `/api/tasks/${taskId}`);
@@ -464,7 +460,6 @@ describe('native merging (issue #138, ADR-0021, ADR-0041)', () => {
 
     const run = (await server.api('GET', `/api/runs/${runId}`)).body;
     expect(run.state).toBe('completed');
-    expect(run.phase).toBe('terminal');
 
     // No verifier ran at all — the attempt log is empty.
     expect(await attempts(runId)).toHaveLength(0);
@@ -493,7 +488,6 @@ describe('native merging (issue #138, ADR-0021, ADR-0041)', () => {
 
     const run = (await server.api('GET', `/api/runs/${started.body.id}`)).body;
     expect(run.state).toBe('completed');
-    expect(run.phase).toBe('terminal');
 
     // The merge actually happened: the base branch moved and now contains the
     // Run's commit, without any human ever calling Accept.

@@ -49,8 +49,8 @@ const inconclusiveCommand = (): VerificationCommand =>
  * Bounded Attempt loop end to end (issue #310), driven
  * through the stub harness at the Runner seam: an actionable verification fail
  * drives a corrective builder turn through the next Attempt in the same Run,
- * re-enters `validating`, and reruns the FULL verifier suite; an inconclusive
- * never heals; exhausting the heal budget Escalates.
+ * opens a fresh Implementation Step, and reruns the FULL verifier suite; an
+ * inconclusive never heals; exhausting the heal budget Escalates.
  */
 describe('verification Attempt loop end-to-end (issue #310)', () => {
   let server: TestServer;
@@ -112,7 +112,6 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
 
     const run = (await server.api('GET', `/api/runs/${runId}`)).body;
     expect(run.state).toBe('completed');
-    expect(run.phase).toBe('terminal');
 
     // The healed work merged: the base branch moved and carries the fixed marker.
     const baseOidAfter = git(repoDir, 'rev-parse', 'main');
@@ -134,14 +133,17 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
     ]);
     expect(attemptsByTicket[0]!.feedback).toContain('verifier command failed');
 
-    // The phase re-entry is recorded, not inferred: the heal turn logs a fresh
-    // `executing` before re-running verification (so the whole phase sequence
-    // is reconstructable from the event log). The verification reshape retired
-    // `validating` — the branch head is captured as a fact, not a phase.
-    const phases = (await server.api('GET', `/api/runs/${runId}/events`)).body.events
-      .filter((e: any) => e.type === 'lifecycle' && e.payload.event === 'phase')
-      .map((e: any) => e.payload.phase);
-    expect(phases).toEqual(['verifying', 'executing', 'verifying', 'merging']);
+    // The Step re-entry is recorded, not inferred: the heal turn (Attempt 2)
+    // opens its own fresh Implementation Step before re-running verification —
+    // never reusing or skipping Attempt 1's, so the whole Step sequence per
+    // Attempt is reconstructable from the timeline (ADR-0001 Vocabulary).
+    const stepTypesByAttempt = await Promise.all(
+      attemptsByTicket.map(async (a) => (await server.app.ctx.attempts.listSteps(a.id)).map((s) => s.type)),
+    );
+    expect(stepTypesByAttempt).toEqual([
+      ['rebase', 'implementation', 'verification'],
+      ['rebase', 'implementation', 'verification'],
+    ]);
   });
 
   /** The durable Session an Attempt's implementation Task points at (`session:<row id>`). */
@@ -218,7 +220,6 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
 
     const run = (await server.api('GET', `/api/runs/${runId}`)).body;
     expect(run.state).toBe('failed');
-    expect(run.phase).not.toBe('merging');
 
     // The verifier runs once per Attempt and the failed Attempt retains feedback.
     const rows = await attempts(runId);
@@ -240,7 +241,6 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
       return body.state === 'failed' ? body : undefined;
     });
     expect(run.state).toBe('failed');
-    expect(run.phase).not.toBe('merging');
 
     const task = (await server.api('GET', `/api/tasks/${taskId}`)).body;
     expect(task.state).toBe('escalated');

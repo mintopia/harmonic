@@ -6,7 +6,6 @@ import {
   type GuardrailDimension,
   type GuardrailConfigSource,
 } from '../db/schema.js';
-import type { RunPhase } from './run-phases.js';
 
 /** What `append` needs to persist one Guardrail-trip event — everything on
  * `GuardrailEventRow` except the store-assigned `id`/`runId`/`seq`/`ts`.
@@ -14,7 +13,6 @@ import type { RunPhase } from './run-phases.js';
  * is JSON.stringify'd by `append`, defaulting to `{}` when omitted. */
 export interface GuardrailEventInput {
   dimension: GuardrailDimension;
-  phase: RunPhase;
   limitValue: number;
   observedValue: number;
   configSource: GuardrailConfigSource;
@@ -24,7 +22,7 @@ export interface GuardrailEventInput {
 /**
  * The Guardrail-trip event log store (issue #127, ADR-0019, reliability-design
  * Unit A line 104): persists every Guardrail trip — today only the
- * phase-scoped wall-clock Guardrail — as an immutable row with a per-Run
+ * Step-scoped wall-clock Guardrail — as an immutable row with a per-Run
  * monotonic `seq`. Mirrors `VerificationAttemptStore`
  * (`domain/verification-attempts.ts`) exactly, down to the `seq`-assignment
  * recipe and its rationale: this is the persisted substrate only. Nothing
@@ -66,7 +64,6 @@ export class GuardrailEventStore {
           seq,
           ts: now,
           dimension: event.dimension,
-          phase: event.phase,
           limitValue: event.limitValue,
           observedValue: event.observedValue,
           configSource: event.configSource,
