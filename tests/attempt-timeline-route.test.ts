@@ -54,7 +54,7 @@ describe('attempt timeline API', () => {
       endedAt: 14,
     });
     const run = await server.app.ctx.runs.create(created.body.id);
-    await server.app.ctx.verificationAttempts.append(run.id, {
+    await server.app.ctx.verificationAttempts.append(attempt.id, {
       mechanism: 'command', inputOid: 'verified-sha', verdict: 'pass', summary: 'checks passed', output: '',
     });
     // `verifiedSha` now derives from the passing verification attempt above

@@ -11,7 +11,7 @@ import type {
   RunState,
   VerificationAttemptRow,
 } from '../db/schema.js';
-import { attempts, steps, guardrailEvents, runEvents, runs, verificationAttempts } from '../db/schema.js';
+import { attempts, steps, guardrailEvents, attemptEvents, runs, verificationAttempts } from '../db/schema.js';
 import { and, desc, eq } from 'drizzle-orm';
 import type { TaskWithDeps } from '../domain/tasks.js';
 import { resolveVerifiers } from '../domain/setting-override.js';
@@ -114,22 +114,22 @@ function verifiedShaOf(verificationAttempts: readonly VerificationAttemptRow[]):
 
 /** One DTO builder for REST hydration and live timeline updates. */
 export async function attemptTimelineToApi(ctx: AppContext, taskId: number): Promise<ApiAttemptTimeline> {
-  const [task, rows, budgetBase, taskRuns] = await Promise.all([
+  const [task, rows, budgetBase] = await Promise.all([
     ctx.tasks.get(taskId),
     ctx.attempts.listForTask(taskId),
     ctx.attempts.budgetBase(taskId),
-    ctx.runs.listForTask(taskId),
   ]);
   const workspace = await ctx.workspaces.get(atRestWorkspaceId(task.workspaceId));
   const configuredVerifiers = resolveVerifiers(workspace, ctx.configStore.get());
-  const runsByAttempt = new Map(taskRuns.map((run) => [run.attempt, run]));
   return {
     budgetBase,
     attempts: await Promise.all(rows.map(async (attempt) => {
-      const run = runsByAttempt.get(attempt.number);
+      // `verification_attempts` is keyed by `attempt_id` (ADR-0001 #388 S-F),
+      // so this Attempt's own id is the read key directly — no more bridging
+      // through a matching Run row.
       const [stepRows, verificationAttempts] = await Promise.all([
         ctx.attempts.listSteps(attempt.id),
-        run ? ctx.verificationAttempts.list(run.id) : [],
+        ctx.verificationAttempts.list(attempt.id),
       ]);
       const stepType = [...stepRows].reverse().find((row) => row.state === 'running')?.type ?? null;
       // The Attempt's disposition-kind `reason` is the cheap audit hedge
@@ -162,8 +162,13 @@ export async function verifierStatusesToApi(
 ): Promise<VerifierStatus[]> {
   const task = await ctx.tasks.get(run.taskId);
   const workspace = await ctx.workspaces.get(atRestWorkspaceId(task.workspaceId));
+  const listAttempts = async (): Promise<readonly VerificationAttemptRow[]> => {
+    if (recordedAttempts) return recordedAttempts;
+    const attempt = await ctx.attempts.getForTaskNumber(run.taskId, run.attempt);
+    return attempt ? ctx.verificationAttempts.list(attempt.id) : [];
+  };
   const [attempts, stepType] = await Promise.all([
-    recordedAttempts ?? ctx.verificationAttempts.list(run.id),
+    listAttempts(),
     ctx.attempts.currentStepType(run.taskId, run.attempt),
   ]);
   return verifierStatuses({ verifiers: resolveVerifiers(workspace, ctx.configStore.get()), attempts, stepType });
@@ -180,7 +185,11 @@ type TicketTimelineKind =
   | 'operator-reject';
 
 export interface ApiTicketTimelineEvent {
-  runId: number | null;
+  /** The Attempt this event pertains to, when there is one (ADR-0001 #388
+   * S-F: `attempt_events`/`verification_attempts`/`guardrail_events` are now
+   * keyed off `attempt_id`, not `run_id`); null for a source with no single
+   * owning Attempt. */
+  attemptId: number | null;
   ts: number;
   kind: TicketTimelineKind;
   data: unknown;
@@ -199,57 +208,67 @@ export async function ticketTimelineToApi(ctx: AppContext, taskId: number): Prom
   const [taskRuns, taskAttempts, lifecycle, verification, skippedVerification, guardrails] = await Promise.all([
     ctx.asyncDb.read((db) => db.select().from(runs).where(eq(runs.taskId, taskId)).orderBy(desc(runs.startedAt), desc(runs.id)).limit(TICKET_TIMELINE_SOURCE_LIMIT).all()),
     ctx.asyncDb.read((db) => db.select().from(attempts).where(eq(attempts.taskId, taskId)).orderBy(desc(attempts.startedAt), desc(attempts.id)).limit(TICKET_TIMELINE_SOURCE_LIMIT).all()),
-    ctx.asyncDb.read((db) => db.select({ event: runEvents }).from(runEvents).innerJoin(runs, eq(runEvents.runId, runs.id)).where(and(eq(runs.taskId, taskId), eq(runEvents.type, 'lifecycle'))).orderBy(desc(runEvents.ts), desc(runEvents.id)).limit(TICKET_TIMELINE_SOURCE_LIMIT).all()),
-    ctx.asyncDb.read((db) => db.select({ attempt: verificationAttempts }).from(verificationAttempts).innerJoin(runs, eq(verificationAttempts.runId, runs.id)).where(eq(runs.taskId, taskId)).orderBy(desc(verificationAttempts.ts), desc(verificationAttempts.id)).limit(TICKET_TIMELINE_SOURCE_LIMIT).all()),
+    ctx.asyncDb.read((db) => db.select({ event: attemptEvents }).from(attemptEvents).innerJoin(attempts, eq(attemptEvents.attemptId, attempts.id)).where(and(eq(attempts.taskId, taskId), eq(attemptEvents.type, 'lifecycle'))).orderBy(desc(attemptEvents.ts), desc(attemptEvents.id)).limit(TICKET_TIMELINE_SOURCE_LIMIT).all()),
+    ctx.asyncDb.read((db) => db.select({ attempt: verificationAttempts }).from(verificationAttempts).innerJoin(attempts, eq(verificationAttempts.attemptId, attempts.id)).where(eq(attempts.taskId, taskId)).orderBy(desc(verificationAttempts.ts), desc(verificationAttempts.id)).limit(TICKET_TIMELINE_SOURCE_LIMIT).all()),
     ctx.asyncDb.read((db) => db.select({ step: steps }).from(steps).innerJoin(attempts, eq(steps.attemptId, attempts.id)).where(eq(attempts.taskId, taskId)).orderBy(desc(steps.endedAt), desc(steps.id)).limit(TICKET_TIMELINE_SOURCE_LIMIT).all()),
-    ctx.asyncDb.read((db) => db.select({ event: guardrailEvents }).from(guardrailEvents).innerJoin(runs, eq(guardrailEvents.runId, runs.id)).where(eq(runs.taskId, taskId)).orderBy(desc(guardrailEvents.ts), desc(guardrailEvents.id)).limit(TICKET_TIMELINE_SOURCE_LIMIT).all()),
+    ctx.asyncDb.read((db) => db.select({ event: guardrailEvents }).from(guardrailEvents).innerJoin(attempts, eq(guardrailEvents.attemptId, attempts.id)).where(eq(attempts.taskId, taskId)).orderBy(desc(guardrailEvents.ts), desc(guardrailEvents.id)).limit(TICKET_TIMELINE_SOURCE_LIMIT).all()),
   ]);
   const task = await ctx.tasks.get(taskId);
   const workspace = await ctx.workspaces.get(atRestWorkspaceId(task.workspaceId));
   const configuredVerifiers = resolveVerifiers(workspace, ctx.configStore.get());
+  const attemptsByNumber = new Map<number, AttemptRow>(taskAttempts.map((a) => [a.number, a]));
+  const attemptsById = new Map<number, AttemptRow>(taskAttempts.map((a) => [a.id, a]));
+  const runByAttemptNumber = new Map(taskRuns.map((run) => [run.attempt, run]));
+  // Grouped by Run (not Attempt id) so the "configured verifier never ran" derived
+  // note below can still ask "did THIS Run's Attempt see this mechanism at all" —
+  // a verification attempt whose Attempt number no longer matches any current Run
+  // row (a superseded self-heal round) is excluded from this derived grouping only;
+  // its own raw 'verification' timeline entry (below) is unaffected.
   const verificationByRun = new Map<number, VerificationAttemptRow[]>();
-  for (const { attempt } of verification) {
-    const rows = verificationByRun.get(attempt.runId) ?? [];
-    rows.push(attempt);
-    verificationByRun.set(attempt.runId, rows);
+  for (const { attempt: v } of verification) {
+    const attemptRow = attemptsById.get(v.attemptId);
+    const run = attemptRow ? runByAttemptNumber.get(attemptRow.number) : undefined;
+    if (!run) continue;
+    const rows = verificationByRun.get(run.id) ?? [];
+    rows.push(v);
+    verificationByRun.set(run.id, rows);
   }
   const pending: PendingTicketTimelineEvent[] = [];
-  const attemptsByNumber = new Map<number, AttemptRow>();
   const add = (event: ApiTicketTimelineEvent, order: number) => pending.push({ ...event, order });
 
   await forEachYielding(taskRuns, async (run) => {
-    add({ runId: run.id, ts: run.startedAt, kind: 'run-started', data: { attempt: run.attempt, state: run.state } }, 0);
+    const attemptId = attemptsByNumber.get(run.attempt)?.id ?? null;
+    add({ attemptId, ts: run.startedAt, kind: 'run-started', data: { attempt: run.attempt, state: run.state } }, 0);
     for (const status of verifierStatuses({ verifiers: configuredVerifiers, attempts: verificationByRun.get(run.id) ?? [] })) {
       if (status.state !== 'disabled') continue;
       add({
-        runId: run.id,
+        attemptId,
         ts: run.finishedAt ?? run.startedAt,
         kind: 'verification',
         data: { outcome: 'disabled', mechanism: status.mechanism, reason: status.reason, derived: true },
       }, 2);
     }
-    if (run.finishedAt !== null) add({ runId: run.id, ts: run.finishedAt, kind: 'run-finished', data: { attempt: run.attempt, state: run.state, reason: run.reason } }, 7);
+    if (run.finishedAt !== null) add({ attemptId, ts: run.finishedAt, kind: 'run-finished', data: { attempt: run.attempt, state: run.state, reason: run.reason } }, 7);
   });
   await forEachYielding(taskAttempts, async (attempt) => {
-    attemptsByNumber.set(attempt.number, attempt);
-    add({ runId: null, ts: attempt.startedAt, kind: 'attempt-started', data: { attempt: attempt.number, state: attempt.state } }, 0);
-    if (attempt.endedAt !== null) add({ runId: null, ts: attempt.endedAt, kind: 'attempt-finished', data: { attempt: attempt.number, state: attempt.state, feedback: attempt.feedback, reason: attempt.reason } }, 7);
+    add({ attemptId: attempt.id, ts: attempt.startedAt, kind: 'attempt-started', data: { attempt: attempt.number, state: attempt.state } }, 0);
+    if (attempt.endedAt !== null) add({ attemptId: attempt.id, ts: attempt.endedAt, kind: 'attempt-finished', data: { attempt: attempt.number, state: attempt.state, feedback: attempt.feedback, reason: attempt.reason } }, 7);
   });
   await forEachYielding(taskAttempts, async (attempt) => {
     const rejected = attemptsByNumber.get(attempt.number - 1);
-    if (rejected?.state === 'escalated' && rejected.feedback !== null) add({ runId: null, ts: attempt.startedAt, kind: 'operator-reject', data: { attempt: rejected.number, feedback: rejected.feedback } }, 4);
+    if (rejected?.state === 'escalated' && rejected.feedback !== null) add({ attemptId: rejected.id, ts: attempt.startedAt, kind: 'operator-reject', data: { attempt: rejected.number, feedback: rejected.feedback } }, 4);
   });
-  await forEachYielding(lifecycle, async ({ event }) => { add({ runId: event.runId, ts: event.ts, kind: 'lifecycle', data: { type: event.type, payload: JSON.parse(event.payload) } }, 3); });
-  await forEachYielding(verification, async ({ attempt }) => { add({ runId: attempt.runId, ts: attempt.ts, kind: 'verification', data: { mechanism: attempt.mechanism, verdict: attempt.verdict, summary: attempt.summary, inputOid: attempt.inputOid } }, 2); });
+  await forEachYielding(lifecycle, async ({ event }) => { add({ attemptId: event.attemptId, ts: event.ts, kind: 'lifecycle', data: { type: event.type, payload: JSON.parse(event.payload) } }, 3); });
+  await forEachYielding(verification, async ({ attempt }) => { add({ attemptId: attempt.attemptId, ts: attempt.ts, kind: 'verification', data: { mechanism: attempt.mechanism, verdict: attempt.verdict, summary: attempt.summary, inputOid: attempt.inputOid } }, 2); });
   await forEachYielding(skippedVerification, async ({ step }) => {
     if (step.type !== 'verification' || step.state !== 'skipped' || step.endedAt === null) return;
-    add({ runId: null, ts: step.endedAt, kind: 'verification', data: { outcome: 'skipped', command: step.command, verdict: step.verdict } }, 2);
+    add({ attemptId: step.attemptId, ts: step.endedAt, kind: 'verification', data: { outcome: 'skipped', command: step.command, verdict: step.verdict } }, 2);
   });
-  await forEachYielding(guardrails, async ({ event }) => { add({ runId: event.runId, ts: event.ts, kind: 'guardrail', data: { dimension: event.dimension, limitValue: event.limitValue, observedValue: event.observedValue, configSource: event.configSource, payload: JSON.parse(event.payload) } }, 2); });
+  await forEachYielding(guardrails, async ({ event }) => { add({ attemptId: event.attemptId, ts: event.ts, kind: 'guardrail', data: { dimension: event.dimension, limitValue: event.limitValue, observedValue: event.observedValue, configSource: event.configSource, payload: JSON.parse(event.payload) } }, 2); });
 
   return {
     events: pending
-      .sort((a, b) => a.ts - b.ts || a.order - b.order || (a.runId ?? 0) - (b.runId ?? 0))
+      .sort((a, b) => a.ts - b.ts || a.order - b.order || (a.attemptId ?? 0) - (b.attemptId ?? 0))
       .map(({ order: _order, ...event }) => event),
   };
 }
@@ -419,18 +438,24 @@ export async function tasksToApi(ctx: AppContext, tasks: TaskWithDeps[]): Promis
     const run = task.state === 'working' ? runsByTask.get(task.id)?.find((candidate) => candidate.state === 'running') : undefined;
     return run ? [run] : [];
   });
-  const [toolCounts, currentSteps] = await Promise.all([
-    ctx.runs.toolCallCounts(running.map((run) => run.id)),
+  // `attempt_tool_calls` is keyed off `attempt_id` (ADR-0001 #388 S-F): resolve
+  // each running Run's current Attempt id first, then batch the tool-call totals
+  // by Attempt — `toolCountByTask` re-keys the result back onto the Task id every
+  // list-row render already has to hand.
+  const attemptIdByTask = await ctx.attempts.idsFor(running.map((run) => ({ taskId: run.taskId, number: run.attempt })));
+  const [toolCountsByAttempt, currentSteps] = await Promise.all([
+    ctx.attempts.toolCallCounts([...attemptIdByTask.values()]),
     ctx.attempts.currentStepTypes(running.map((run) => ({ taskId: run.taskId, number: run.attempt }))),
   ]);
   return tasks.map((task) => {
     const runs = runsByTask.get(task.id) ?? [];
     const activeRun = task.state === 'working' ? runs.find((run) => run.state === 'running') : undefined;
+    const activeAttemptId = activeRun ? attemptIdByTask.get(task.id) : undefined;
     return toListRow(taskToApiWithRuns(
       ctx,
       task,
       runs,
-      activeRun ? toolCounts.get(activeRun.id) ?? 0 : null,
+      activeRun ? (activeAttemptId != null ? toolCountsByAttempt.get(activeAttemptId) ?? 0 : 0) : null,
       activeRun ? currentSteps.get(task.id) ?? null : null,
     ));
   });
@@ -488,9 +513,12 @@ function taskToApiWithRuns(ctx: AppContext, task: TaskWithDeps, runs: RunRow[], 
   };
 }
 
-/** Total tool calls of a running run from its native aggregate (ADR-0031). */
+/** Total tool calls of a running run from its native aggregate (ADR-0031;
+ * `attempt_tool_calls` is keyed off `attempt_id`, ADR-0001 #388 S-F). */
 async function runningToolCount(ctx: AppContext, run: RunRow): Promise<number> {
-  const totals = await ctx.runs.listToolCalls(run.id);
+  const attempt = await ctx.attempts.getForTaskNumber(run.taskId, run.attempt);
+  if (!attempt) return 0;
+  const totals = await ctx.attempts.listToolCalls(attempt.id);
   let count = 0;
   for (const total of totals.values()) count += total;
   return count;

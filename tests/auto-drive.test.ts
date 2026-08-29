@@ -320,6 +320,7 @@ describe('Runner auto-drive settle (issue #33)', () => {
   let settingsStore: SettingsStore;
   let tasks: TaskService;
   let runs: RunStore;
+  let attempts: AttemptStore;
   let runner: Runner;
 
   const config = (over: Partial<AppConfig['drive']> = {}, maxAttempts = defaultConfig().maxAttempts): AppConfig => ({
@@ -358,14 +359,23 @@ describe('Runner auto-drive settle (issue #33)', () => {
   function build(cfg: AppConfig, ticketState: 'open' | 'closed' = 'closed') {
     tasks = new TaskService(asyncDb, () => cfg, allWorkspaces(asyncDb, settingsStore));
     runs = new RunStore(asyncDb);
+    attempts = new AttemptStore(asyncDb);
     // Default: a resolved (agent-closed) ticket so a clean run completes (ADR 0011).
     // 'open' leaves the ticket unresolved, so the continue loop engages.
     const drive = new AutoDrive(() => cfg, () => 'https://x/7', async () => fakeAdapter(ticketState).adapter);
     runner = new Runner(runs, tasks, asyncDb, () => cfg, { autoDrive: drive });
   }
 
-  const continueEvents = async (runId: number) =>
-    (await runs.listEvents(runId)).filter((e) => e.type === 'lifecycle' && (e.payload as any).event === 'continue');
+  /** The Attempt's persisted event log for a Run's CURRENT attempt number
+   * (`attempt_events` is keyed off `attempt_id`, not `run_id`, ADR-0001 #388
+   * S-F) — the test-side bridge mirroring `Runner.attemptFor`. */
+  const eventsForRun = async (run: RunRow) => {
+    const attempt = await attempts.getForTaskNumber(run.taskId, run.attempt);
+    return attempt ? attempts.listEvents(attempt.id) : [];
+  };
+
+  const continueEvents = async (run: RunRow) =>
+    (await eventsForRun(run)).filter((e) => e.type === 'lifecycle' && (e.payload as any).event === 'continue');
 
   it('a Run blocking on a human prompt fails the Attempt (no human drives it); the exhausted cap then Escalates', async () => {
     // The Drive Prompt template IS what reaches the harness — script the stub there.
@@ -402,7 +412,7 @@ describe('Runner auto-drive settle (issue #33)', () => {
     expect(settled.state).toBe('escalated');
     const last = (await runs.listForTask(task.id)).at(-1)!;
     expect(last.attempt).toBe(2);
-    const modeSet = (await runs.listEvents(last.id)).find(
+    const modeSet = (await eventsForRun(last)).find(
       (e) => e.type === 'lifecycle' && (e.payload as any).event === 'mode_set',
     );
     expect((modeSet?.payload as any)?.mode).toBe('auto'); // session/set_mode auto went over the wire
@@ -466,7 +476,7 @@ describe('Runner auto-drive settle (issue #33)', () => {
     }, { timeout: 10_000 });
 
     const lastRun = (await runs.listForTask(task.id)).at(-1)!;
-    expect(await continueEvents(lastRun.id)).toHaveLength(2); // re-prompted exactly continueAttempts times
+    expect(await continueEvents(lastRun)).toHaveLength(2); // re-prompted exactly continueAttempts times
     expect(lastRun.reason).toMatch(/finish_task|escalated to human/);
     expect(settled.state).toBe('escalated');
   });
@@ -481,7 +491,7 @@ describe('Runner auto-drive settle (issue #33)', () => {
     }, { timeout: 10_000 });
 
     const lastRun = (await runs.listForTask(task.id)).at(-1)!;
-    expect(await continueEvents(lastRun.id)).toHaveLength(0); // straight to the unresolved path
+    expect(await continueEvents(lastRun)).toHaveLength(0); // straight to the unresolved path
   });
 
   it('a closed ticket alone no longer completes a Run — finish_task is the signal (#139)', async () => {

@@ -1,37 +1,17 @@
 import { and, asc, eq, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm';
 import type { AsyncDbHandle } from '../db/async.js';
-import { runs, runEvents, runToolCalls, tasks, type RunRow, type RunEventRow, type RunState } from '../db/schema.js';
+import { runs, tasks, type RunRow, type RunState } from '../db/schema.js';
 import { DomainError } from './errors.js';
 import type { ResolvedGuardrails } from './setting-override.js';
 import { costOfUsages, type PriceTable } from '../execution/pricing.js';
 import type { RunUsage } from '../execution/usage.js';
 import { forEachYielding } from '../reliability/yield.js';
 
-export interface RunEventInput {
-  /** ACP transcript updates are deliberately never durable. See ADR-0031. */
-  type: 'permission_request' | 'lifecycle';
-  payload: unknown;
-}
-
 /** The Guardrail state a Run captures at start (issue #126): the effective
  * config and price table, frozen so a later change can't retroactively trip it. */
 export interface RunGuardrailSnapshot {
   guardrailConfig: ResolvedGuardrails;
   priceTable: PriceTable;
-}
-
-export interface PersistedRunEvent {
-  id: number;
-  runId: number;
-  seq: number;
-  ts: number;
-  type: string;
-  payload: unknown;
-  /** True iff this event is load-time `session/load` replay history, flagged by
-   * the driver (issue #144). Every current-turn measurement — usage, stall,
-   * activity — excludes it via `domain/replay-quarantine.ts`'s `isReplay`. Absent
-   * on a current-turn event and on every event a pre-quarantine path recorded. */
-  replay?: boolean | undefined;
 }
 
 export class RunStore {
@@ -172,67 +152,6 @@ export class RunStore {
     });
   }
 
-  async appendEvent(runId: number, event: RunEventInput): Promise<PersistedRunEvent> {
-    // read-then-insert as one write-queue unit — the `seq` CAS mirrors
-    // VerificationAttemptStore.append and would collide under naive concurrent
-    // appends (ADR-0029 §3).
-    const row = await this.db.write(async (db) => {
-      const seq =
-        ((
-          await db
-            .select({ n: sql<number>`coalesce(max(${runEvents.seq}), 0)` })
-            .from(runEvents)
-            .where(eq(runEvents.runId, runId))
-            .get()
-        )?.n ?? 0) + 1;
-      return db
-        .insert(runEvents)
-        .values({ runId, seq, ts: Date.now(), type: event.type, payload: JSON.stringify(event.payload) })
-        .returning()
-        .get();
-    });
-    return deserializeEvent(row);
-  }
-
-  async listEvents(runId: number): Promise<PersistedRunEvent[]> {
-    await this.get(runId); // 404 on unknown run
-    const rows = await this.db.read((db) =>
-      db.select().from(runEvents).where(eq(runEvents.runId, runId)).orderBy(asc(runEvents.seq)).all(),
-    );
-    return rows.map(deserializeEvent);
-  }
-
-  /** Per-Run tool-call snapshot, overwritten by the Runner's in-memory rollup
-   * on the ADR-0010 coarse cadence and when a turn finishes (ADR-0031). */
-  async replaceToolCalls(runId: number, totals: ReadonlyMap<string, number>): Promise<void> {
-    await this.db.write(async (db) => {
-      await db.delete(runToolCalls).where(eq(runToolCalls.runId, runId)).run();
-      const rows = [...totals].map(([toolName, count]) => ({ runId, toolName, count }));
-      if (rows.length > 0) await db.insert(runToolCalls).values(rows).run();
-    });
-  }
-
-  async listToolCalls(runId: number): Promise<Map<string, number>> {
-    const rows = await this.db.read((db) =>
-      db.select({ toolName: runToolCalls.toolName, count: runToolCalls.count }).from(runToolCalls).where(eq(runToolCalls.runId, runId)).all(),
-    );
-    return new Map(rows.map(({ toolName, count }) => [toolName, count]));
-  }
-
-  /** Total persisted tool calls for each supplied Run, for board list serialization. */
-  async toolCallCounts(runIds: number[]): Promise<Map<number, number>> {
-    if (runIds.length === 0) return new Map();
-    const rows = await this.db.read((db) =>
-      db
-        .select({ runId: runToolCalls.runId, count: sql<number>`sum(${runToolCalls.count})` })
-        .from(runToolCalls)
-        .where(inArray(runToolCalls.runId, runIds))
-        .groupBy(runToolCalls.runId)
-        .all(),
-    );
-    return new Map(rows.map(({ runId, count }) => [runId, count]));
-  }
-
   /** Actively-executing Run count, for the Auto-Runner's Machine-Ceiling concurrency cap (ADR-0012). */
   async countRunning(): Promise<number> {
     const row = await this.db.read((db) =>
@@ -331,10 +250,6 @@ export class RunStore {
 function frozenCost(usage: string | null, rawPrices: string | null): string | null {
   if (!usage || !rawPrices) return null;
   return JSON.stringify(costOfUsages([JSON.parse(usage) as RunUsage], JSON.parse(rawPrices) as PriceTable));
-}
-
-export function deserializeEvent(row: RunEventRow): PersistedRunEvent {
-  return { ...row, payload: JSON.parse(row.payload) };
 }
 
 export function serializeRun(run: RunRow): Record<string, unknown> {

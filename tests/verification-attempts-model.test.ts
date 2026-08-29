@@ -21,7 +21,7 @@ const attempt = (
   overrides: Partial<VerificationAttempt> = {},
 ): VerificationAttempt => ({
   id: seq,
-  runId: 1,
+  attemptId: 1,
   seq,
   ts: seq,
   mechanism,

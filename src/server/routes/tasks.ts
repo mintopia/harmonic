@@ -231,20 +231,22 @@ const runsListResponseSchema = listResponse('runs', runSchema);
 
 const runEventSchema = z.object({
   id: z.number().meta({ example: 55210 }),
-  runId: z.number().meta({ example: 9137 }),
+  /** The Attempt this event is keyed to (`attempt_events.attempt_id`,
+   * ADR-0001 #388 S-F — was `runId` before). */
+  attemptId: z.number().meta({ example: 61 }),
   seq: z.number().meta({ example: 42 }),
   ts: z.number().meta({ example: 1784032140000 }),
-  /** 'session_update' | 'permission_request' | 'lifecycle' */
-  type: z.string().meta({ example: 'session_update' }),
-  /** For session_update, the ACP `update` object verbatim — shape varies by update kind. */
+  /** 'permission_request' | 'lifecycle' */
+  type: z.string().meta({ example: 'lifecycle' }),
+  /** JSON payload — shape varies by event type. */
   payload: z.unknown().meta({
-    example: { sessionUpdate: 'tool_call', toolCallId: 'call_7', kind: 'edit', title: 'src/server/rate-limit.ts' },
+    example: { event: 'merged', oid: '0f758cd2200565e7605902a86c2827c65ad25ce0' },
   }),
 });
 
 const eventsListResponseSchema = listResponse('events', runEventSchema);
 const ticketTimelineEventSchema = z.object({
-  runId: z.number().nullable(),
+  attemptId: z.number().nullable(),
   ts: z.number(),
   kind: z.enum(['attempt-started', 'attempt-finished', 'run-started', 'run-finished', 'lifecycle', 'verification', 'guardrail', 'operator-reject', 'merging']),
   data: z.unknown(),
@@ -258,7 +260,9 @@ const runLogResponseSchema = z.discriminatedUnion('status', [
 /** A Guardrail-trip event as the REST API serves it (`domain/guardrail-events.ts` `GuardrailEventRow`, issue #171). */
 const guardrailEventSchema = z.object({
   id: z.number().meta({ example: 812 }),
-  runId: z.number().meta({ example: 9137 }),
+  /** The Attempt this event is keyed to (`guardrail_events.attempt_id`,
+   * ADR-0001 #388 S-F — was `runId` before). */
+  attemptId: z.number().meta({ example: 61 }),
   seq: z.number().meta({ example: 1 }),
   ts: z.number().meta({ example: 1784032140000 }),
   /** The budget dimension that tripped. */
@@ -278,7 +282,9 @@ const guardrailEventsListResponseSchema = listResponse('guardrailEvents', guardr
 /** One persisted verification attempt as the REST API serves it (`domain/verification-attempts.ts` `VerificationAttemptRow`, issue #169, part of #109). */
 const verificationAttemptSchema = z.object({
   id: z.number().meta({ example: 4210 }),
-  runId: z.number().meta({ example: 9137 }),
+  /** The Attempt this row is keyed to (`verification_attempts.attempt_id`,
+   * ADR-0001 #388 S-F — was `runId` before). */
+  attemptId: z.number().meta({ example: 61 }),
   seq: z.number().meta({ example: 1 }),
   ts: z.number().meta({ example: 1784032140000 }),
   /** Which verifier produced this attempt. */
@@ -886,10 +892,15 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       });
       const liveCursor = ctx.bus.latestRunLogSeq({ runId: run.id });
       if (log.status !== 'available') return { ...log, liveCursor };
+      // The Run's current Attempt (`attempt_events` is keyed off `attempt_id`,
+      // ADR-0001 #388 S-F) — the bridge both the operator-steer fold-in below
+      // and the transcript-line decoration use.
+      const attempt = await ctx.attempts.getForTaskNumber(run.taskId, run.attempt);
+      if (!attempt) throw new DomainError('not_found', `no attempt found for run ${run.id}`);
       // The JSONL is only the agent's side; fold in the operator's steer
-      // messages (Harmonic's own run-events) so the transcript shows the
+      // messages (Harmonic's own attempt-events) so the transcript shows the
       // back-and-forth, not just the agent's turns.
-      const operator: OperatorMessage[] = (await ctx.runs.listEvents(run.id)).flatMap((e) => {
+      const operator: OperatorMessage[] = (await ctx.attempts.listEvents(attempt.id)).flatMap((e) => {
         const p = e.payload as { event?: string; text?: unknown } | null;
         return (p?.event === 'steer_injected' || p?.event === 'steer_queued') && typeof p.text === 'string'
           ? [{ ts: e.ts, text: p.text, queued: p.event === 'steer_queued' }]
@@ -898,7 +909,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       return {
         status: 'available' as const,
         liveCursor,
-        events: withOperatorMessages(log.events, operator).map((event) => ({ ...event, runId: run.id })),
+        events: withOperatorMessages(log.events, operator).map((event) => ({ ...event, attemptId: attempt.id })),
       };
     },
   );
@@ -915,8 +926,11 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req) => {
+      const run = await ctx.runs.get(req.params.id);
+      const attempt = await ctx.attempts.getForTaskNumber(run.taskId, run.attempt);
+      if (!attempt) throw new DomainError('not_found', `no attempt found for run ${run.id}`);
       const { limit, offset } = req.query;
-      const { items, total } = paginate(await ctx.runs.listEvents(req.params.id), { limit, offset });
+      const { items, total } = paginate(await ctx.attempts.listEvents(attempt.id), { limit, offset });
       return { events: items, total };
     },
   );
@@ -936,9 +950,11 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req) => {
-      await ctx.runs.assertExists(req.params.id);
+      const run = await ctx.runs.get(req.params.id);
+      const attempt = await ctx.attempts.getForTaskNumber(run.taskId, run.attempt);
+      if (!attempt) throw new DomainError('not_found', `no attempt found for run ${run.id}`);
       const { limit, offset } = req.query;
-      const guardrailEvents = (await ctx.guardrailEvents.list(req.params.id)).map((r) => ({
+      const guardrailEvents = (await ctx.guardrailEvents.list(attempt.id)).map((r) => ({
         ...r,
         payload: JSON.parse(r.payload) as unknown,
       }));
@@ -964,8 +980,10 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
     },
     async (req) => {
       const run = await ctx.runs.get(req.params.id);
+      const runAttempt = await ctx.attempts.getForTaskNumber(run.taskId, run.attempt);
+      if (!runAttempt) throw new DomainError('not_found', `no attempt found for run ${run.id}`);
       const { limit, offset } = req.query;
-      const attempts = await ctx.verificationAttempts.list(run.id);
+      const attempts = await ctx.verificationAttempts.list(runAttempt.id);
       // verifierStatuses is derived from the whole attempt set, so compute it
       // before paginating the attempts page (ADR-0045).
       const verifierStatuses = await verifierStatusesToApi(ctx, run, attempts);
@@ -1026,7 +1044,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
         finishedAt: null,
       });
       return log.status === 'available'
-        ? { ...log, liveCursor: 0, events: log.events.map((event) => ({ ...event, runId: attempt.runId })) }
+        ? { ...log, liveCursor: 0, events: log.events.map((event) => ({ ...event, attemptId: attempt.attemptId })) }
         : { ...log, liveCursor: 0 };
     },
   );

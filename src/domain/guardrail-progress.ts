@@ -16,8 +16,8 @@ import type { ProgressEvent, StallReport } from './stall-detector.js';
 import { isReplay } from './replay-quarantine.js';
 
 /**
- * The minimal shape this module needs from a persisted run event row.
- * `domain/runs.ts`'s `PersistedRunEvent` satisfies this structurally, so
+ * The minimal shape this module needs from a persisted Attempt event row.
+ * `domain/attempts.ts`'s `PersistedAttemptEvent` satisfies this structurally, so
  * callers pass their own rows directly — this module stays free of any
  * concrete row type, the same discipline `stall-detector.ts` follows for
  * `ProgressEvent` itself.

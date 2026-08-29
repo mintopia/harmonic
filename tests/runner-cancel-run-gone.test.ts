@@ -22,7 +22,7 @@ describe('isForeignKeyViolation', () => {
   });
 
   it('does not mistake a UNIQUE violation for an FK one', () => {
-    const cause = Object.assign(new Error('UNIQUE constraint failed: guardrail_events.run_id, guardrail_events.seq'), {
+    const cause = Object.assign(new Error('UNIQUE constraint failed: guardrail_events.attempt_id, guardrail_events.seq'), {
       extendedCode: 'SQLITE_CONSTRAINT_UNIQUE',
     });
     expect(isForeignKeyViolation(Object.assign(new Error('Failed query'), { cause }))).toBe(false);

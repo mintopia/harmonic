@@ -8,7 +8,7 @@ import type { RunEvent } from '../web/src/types.js';
 
 const evt = (id: number, type: RunEvent['type'], payload: any): RunEvent => ({
   id,
-  runId: 1,
+  attemptId: 1,
   seq: id,
   ts: id,
   type,

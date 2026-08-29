@@ -39,9 +39,9 @@ export class VerificationAttemptStore {
   constructor(private readonly db: AsyncDbHandle) {}
 
   /**
-   * Append a Verification attempt to `runId`'s log, assigning the next
+   * Append a Verification attempt to `attemptId`'s log, assigning the next
    * monotonic `seq` as `max(seq)+1` (1-based) — same recipe, and the same
-   * cross-process integrity backstop (the `(run_id, seq)` unique index
+   * cross-process integrity backstop (the `(attempt_id, seq)` unique index
    * rejects a racing duplicate `seq` with a raw UNIQUE violation rather than
    * corrupting the log's total order), as `GuardrailEventStore.append`. The read of
    * `max(seq)` and the insert run as a single `this.db.write()` unit (ADR-0029
@@ -49,20 +49,20 @@ export class VerificationAttemptStore {
    * synchrony, so no concurrent append can interleave between them and steal
    * the `seq`.
    */
-  append(runId: number, attempt: VerificationAttemptInput, now: number = Date.now()): Promise<VerificationAttemptRow> {
+  append(attemptId: number, attempt: VerificationAttemptInput, now: number = Date.now()): Promise<VerificationAttemptRow> {
     return this.db.write(async (db) => {
       const seq =
         ((
           await db
             .select({ n: sql<number>`coalesce(max(${verificationAttempts.seq}), 0)` })
             .from(verificationAttempts)
-            .where(eq(verificationAttempts.runId, runId))
+            .where(eq(verificationAttempts.attemptId, attemptId))
             .get()
         )?.n ?? 0) + 1;
       return db
         .insert(verificationAttempts)
         .values({
-          runId,
+          attemptId,
           seq,
           ts: now,
           mechanism: attempt.mechanism,
@@ -94,13 +94,13 @@ export class VerificationAttemptStore {
     return this.db.read((db) => db.select().from(verificationAttempts).where(eq(verificationAttempts.id, id)).get());
   }
 
-  /** A Run's Verification attempt log in `seq` order. */
-  list(runId: number): Promise<VerificationAttemptRow[]> {
+  /** An Attempt's Verification attempt log in `seq` order. */
+  list(attemptId: number): Promise<VerificationAttemptRow[]> {
     return this.db.read((db) =>
       db
         .select()
         .from(verificationAttempts)
-        .where(eq(verificationAttempts.runId, runId))
+        .where(eq(verificationAttempts.attemptId, attemptId))
         .orderBy(asc(verificationAttempts.seq))
         .all(),
     );

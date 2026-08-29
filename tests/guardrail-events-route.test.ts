@@ -21,15 +21,16 @@ describe('GET /api/runs/:id/guardrail-events (issue #171)', () => {
     const created = await server.api('POST', '/api/tasks', { prompt: 'guardrail target' });
     const task = await ctx().tasks.get(created.body.id);
     const run = await ctx().runs.create(task.id);
+    const attempt = await ctx().attempts.ensureForRun(task.id, run.attempt, run.startedAt);
 
-    ctx().guardrailEvents.append(run.id, {
+    await ctx().guardrailEvents.append(attempt.id, {
       dimension: 'wall-clock',
       limitValue: 60_000,
       observedValue: 61_000,
       configSource: 'default',
       payload: { note: 'first' },
     });
-    ctx().guardrailEvents.append(run.id, {
+    await ctx().guardrailEvents.append(attempt.id, {
       dimension: 'progress',
       limitValue: 3,
       observedValue: 4,
@@ -41,7 +42,7 @@ describe('GET /api/runs/:id/guardrail-events (issue #171)', () => {
     expect(res.status).toBe(200);
     expect(res.body.guardrailEvents).toHaveLength(2);
     expect(res.body.guardrailEvents[0]).toMatchObject({
-      runId: run.id,
+      attemptId: attempt.id,
       seq: 1,
       dimension: 'wall-clock',
       limitValue: 60_000,

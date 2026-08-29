@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { lifecycleTimelineRows } from '../web/src/lifecycle-timeline-model.js';
 import type { TicketTimelineEvent } from '../web/src/types.js';
 
-const event = (kind: TicketTimelineEvent['kind'], ts: number, data: unknown): TicketTimelineEvent => ({ runId: 1, kind, ts, data });
+const event = (kind: TicketTimelineEvent['kind'], ts: number, data: unknown): TicketTimelineEvent => ({ attemptId: 1, kind, ts, data });
 
 describe('lifecycleTimelineRows', () => {
   it('keeps the audit chronology and gives verification, escalation, and disposition events operator-readable labels', () => {

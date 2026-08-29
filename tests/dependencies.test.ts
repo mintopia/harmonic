@@ -166,9 +166,9 @@ describe('dependencies', () => {
     const listForTask = vi.spyOn(server.app.ctx.runs, 'listForTask');
     const dependsOn = vi.spyOn(server.app.ctx.tasks, 'dependsOn');
     const dependents = vi.spyOn(server.app.ctx.tasks, 'dependents');
-    const listToolCalls = vi.spyOn(server.app.ctx.runs, 'listToolCalls');
+    const listToolCalls = vi.spyOn(server.app.ctx.attempts, 'listToolCalls');
     const listForTasks = vi.spyOn(server.app.ctx.runs, 'listForTasks');
-    const toolCallCounts = vi.spyOn(server.app.ctx.runs, 'toolCallCounts');
+    const toolCallCounts = vi.spyOn(server.app.ctx.attempts, 'toolCallCounts');
 
     const list = await server.api('GET', '/api/tasks');
 

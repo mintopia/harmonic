@@ -20,6 +20,7 @@ import type { VerifierVerdict } from '../web/src/verification-model.js';
 import { openAsyncDb } from '../src/db/async.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { RunStore } from '../src/domain/runs.js';
+import { AttemptStore } from '../src/domain/attempts.js';
 import { VerificationAttemptStore } from '../src/domain/verification-attempts.js';
 import { OperationRegistry, startOperation } from '../src/telemetry/operations.js';
 import { allWorkspaces, makeSettingsStore } from './helpers.js';
@@ -398,12 +399,15 @@ describe('runCritic (issue #136)', () => {
     const settingsStore = await makeSettingsStore(dbDir);
     const tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
     const runStore = new RunStore(asyncDb);
+    const attemptStore = new AttemptStore(asyncDb);
     const store = new VerificationAttemptStore(asyncDb);
-    const runId = (await runStore.create((await tasks.create({ prompt: 'verify me', state: 'ready' })).id)).id;
+    const task = await tasks.create({ prompt: 'verify me', state: 'ready' });
+    const run = await runStore.create(task.id);
+    const attemptId = (await attemptStore.ensureForRun(task.id, run.attempt, run.startedAt)).id;
 
-    await store.append(runId, criticAttemptToInput(attempt));
+    await store.append(attemptId, criticAttemptToInput(attempt));
 
-    const [row, ...rest] = await store.list(runId);
+    const [row, ...rest] = await store.list(attemptId);
     expect(rest).toHaveLength(0);
     expect(row).toMatchObject({
       mechanism: 'critic',

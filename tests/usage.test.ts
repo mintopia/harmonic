@@ -6,7 +6,7 @@ import { startServer, stubHarness, waitFor, writeCopilotUsageDb, type TestServer
 import type { DeepPartial, AppConfig } from '../src/config.js';
 import { collectUsage, totalTokensOf } from '../src/execution/usage.js';
 import type { ModelUsage, RunUsage } from '../src/execution/usage.js';
-import type { PersistedRunEvent } from '../src/domain/runs.js';
+import type { PersistedAttemptEvent } from '../src/domain/attempts.js';
 import { currentTurnEvents } from '../src/domain/replay-quarantine.js';
 
 describe('usage collection retry (log-flush race)', () => {
@@ -136,7 +136,7 @@ describe('collectUsage rolls Subagent models + per-agent breakdown into the pers
 });
 
 describe('replay quarantine (issue #144)', () => {
-  const input = (logRoot: string, cwd: string, events: PersistedRunEvent[]): Parameters<typeof collectUsage>[0] => ({
+  const input = (logRoot: string, cwd: string, events: PersistedAttemptEvent[]): Parameters<typeof collectUsage>[0] => ({
     harnessId: 'claude',
     harness: { command: 'x', args: [], env: {}, models: [], defaultModel: 'x', sessionLogDir: logRoot },
     cwd,
@@ -145,9 +145,9 @@ describe('replay quarantine (issue #144)', () => {
     events,
   });
 
-  const toolCall = (over: Partial<PersistedRunEvent> & { toolCallId: string; title: string }): PersistedRunEvent => ({
+  const toolCall = (over: Partial<PersistedAttemptEvent> & { toolCallId: string; title: string }): PersistedAttemptEvent => ({
     id: 1,
-    runId: 1,
+    attemptId: 1,
     seq: 1,
     ts: 1,
     type: 'session_update',
@@ -158,7 +158,7 @@ describe('replay quarantine (issue #144)', () => {
   it('replayed tool_call events contribute zero to collectUsage(...).toolCalls', () => {
     const logRoot = mkdtempSync(join(tmpdir(), 'harmonic-replay-logs-'));
     const cwd = mkdtempSync(join(tmpdir(), 'harmonic-replay-work-'));
-    const events: PersistedRunEvent[] = [
+    const events: PersistedAttemptEvent[] = [
       toolCall({ toolCallId: 't1', title: 'Edit', replay: true }),
       toolCall({ toolCallId: 't2', title: 'Write', replay: true }),
       toolCall({ toolCallId: 't3', title: 'Read', replay: true }),
@@ -171,7 +171,7 @@ describe('replay quarantine (issue #144)', () => {
   it('a mix counts only the current-turn tool_call — a replay of prior history counts as zero current-turn usage (AC5)', () => {
     const logRoot = mkdtempSync(join(tmpdir(), 'harmonic-replay-logs-'));
     const cwd = mkdtempSync(join(tmpdir(), 'harmonic-replay-work-'));
-    const events: PersistedRunEvent[] = [
+    const events: PersistedAttemptEvent[] = [
       toolCall({ toolCallId: 't1', title: 'Edit', replay: true }),
       toolCall({ toolCallId: 't2', title: 'Write', replay: true }),
       toolCall({ toolCallId: 't3', title: 'Bash', replay: false }),
@@ -183,7 +183,7 @@ describe('replay quarantine (issue #144)', () => {
 
   it('groups shell commands under Bash instead of their command text (issue #318)', async () => {
     const { tallyToolCalls } = await import('../src/execution/usage.js');
-    const events: PersistedRunEvent[] = [
+    const events: PersistedAttemptEvent[] = [
       toolCall({
         toolCallId: 't1',
         title: 'while ps -p 92228 >/dev/null; do sleep 5; done',
@@ -201,15 +201,15 @@ describe('replay quarantine (issue #144)', () => {
 
   it('buckets read/search/fetch kinds by tool, not their per-call title', async () => {
     const { tallyToolCalls } = await import('../src/execution/usage.js');
-    const tc = (id: string, kind: string, title: string): PersistedRunEvent => ({
+    const tc = (id: string, kind: string, title: string): PersistedAttemptEvent => ({
       id: 1,
-      runId: 1,
+      attemptId: 1,
       seq: 1,
       ts: 1,
       type: 'session_update',
       payload: { sessionUpdate: 'tool_call', toolCallId: id, title, kind },
     });
-    const events: PersistedRunEvent[] = [
+    const events: PersistedAttemptEvent[] = [
       tc('t1', 'read', "Read file '/a/one.ts'"),
       tc('t2', 'read', "Read file '/b/two.ts'"),
       tc('t3', 'search', "Search for 'foo' in App.tsx"),
@@ -221,7 +221,7 @@ describe('replay quarantine (issue #144)', () => {
   });
 
   it('currentTurnEvents returns only the non-replay events', () => {
-    const events: PersistedRunEvent[] = [
+    const events: PersistedAttemptEvent[] = [
       toolCall({ toolCallId: 't1', title: 'Edit', replay: true }),
       toolCall({ toolCallId: 't2', title: 'Bash', replay: false }),
       toolCall({ toolCallId: 't3', title: 'Read', replay: true }),

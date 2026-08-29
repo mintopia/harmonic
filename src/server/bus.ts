@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events';
 import type { ConversationRow, RunRow, TaskRow } from '../db/schema.js';
-import type { PersistedRunEvent } from '../domain/runs.js';
+import type { PersistedAttemptEvent } from '../domain/attempts.js';
 import type { LiveRunEvent } from '../execution/runner.js';
 import type { PersistedConversationEvent } from '../domain/conversations.js';
 import type { PendingPermissionBroadcast } from '../execution/conversation-driver.js';
@@ -11,7 +11,7 @@ import type { FlaggedWorktree } from '../domain/flagged-worktrees.js';
 
 export interface BusEvents {
   operations: (event: OperationEvent) => void;
-  run_event: (event: PersistedRunEvent) => void;
+  run_event: (event: PersistedAttemptEvent) => void;
   run_log_event: (event: LiveRunEvent) => void;
   run_changed: (run: RunRow) => void;
   /** Live-usage snapshot pushed ~1s while a run tails its native log (ADR 0010). */

@@ -31,7 +31,7 @@
 /**
  * The minimal shape of a recorded event this seam classifies: its `type`, its
  * ACP `session/update` `payload`, and whether it arrived as load-time replay. A
- * persisted run event (`domain/runs.ts`'s `PersistedRunEvent`, and
+ * persisted Attempt event (`domain/attempts.ts`'s `PersistedAttemptEvent`, and
  * `guardrail-progress.ts`'s `RunEventLike`) is structurally assignable once it
  * carries the optional `replay` marker, so callers pass their rows directly — the
  * narrow facet keeps the decision independent of any concrete event row type.

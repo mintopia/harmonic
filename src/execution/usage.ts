@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import type { HarnessConfig } from '../config.js';
-import type { PersistedRunEvent } from '../domain/runs.js';
+import type { PersistedAttemptEvent } from '../domain/attempts.js';
 import { isReplay } from '../domain/replay-quarantine.js';
 import { DEFAULT_PRICES, turnCost, type PriceTable } from './pricing.js';
 import { adapterFor, type ModelUsage } from './harness/adapter.js';
@@ -166,7 +166,7 @@ export interface CollectUsageInput {
   /** The ACP session/prompt result, when the run finished cleanly. */
   promptResult?: { usage?: Record<string, unknown>; _meta?: unknown } | undefined;
   /** Conversation-only ACP events, retained while Conversations still persist their transcript. */
-  events?: PersistedRunEvent[] | undefined;
+  events?: PersistedAttemptEvent[] | undefined;
   /** Effective per-model prices at collection time, used to freeze the
    * API-equivalent output cost alongside token attribution. */
   prices?: PriceTable | undefined;
@@ -331,7 +331,7 @@ function sessionLogFile(input: CollectUsageInput): string | null {
 }
 
 export function tallyToolCalls(
-  events: PersistedRunEvent[],
+  events: PersistedAttemptEvent[],
   preferredName: (payload: unknown) => string | null,
 ): Record<string, number> {
   const tally: Record<string, number> = {};

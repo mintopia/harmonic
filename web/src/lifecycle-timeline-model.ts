@@ -40,7 +40,7 @@ export function lifecycleTimelineRows(events: TicketTimelineEvent[]): LifecycleT
   return events
     .map<LifecycleTimelineRow>((event, index) => {
       const data = record(event.data);
-      const base = { id: `${event.ts}:${event.kind}:${event.runId ?? 'task'}:${index}`, at: event.ts };
+      const base = { id: `${event.ts}:${event.kind}:${event.attemptId ?? 'task'}:${index}`, at: event.ts };
       switch (event.kind) {
         case 'attempt-started': return { ...base, label: 'Attempt started', detail: attempt(data), tone: 'running' };
         case 'attempt-finished': return { ...base, label: 'Attempt finished', detail: attempt(data), tone: text(data?.state) === 'passed' ? 'passed' : text(data?.state) === 'failed' ? 'failed' : 'neutral' };

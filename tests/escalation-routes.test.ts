@@ -95,12 +95,20 @@ describe('escalation actions on a worktree ticket (ADR-0041)', () => {
     return { taskId, runId, file };
   }
 
-  const verificationAttempts = (runId: number) => new VerificationAttemptStore(server.app.ctx.asyncDb).list(runId);
   const ticketAttempts = (taskId: number) => new AttemptStore(server.app.ctx.asyncDb).listForTask(taskId);
+  // `verification_attempts` is keyed off `attempt_id`, not `run_id`
+  // (ADR-0001 #388 S-F): a self-heal loop's failed attempts share one Run row
+  // but each get their own Attempt row, so "this ticket's verification
+  // attempts" now folds the log across every one of its Attempts.
+  const verificationAttempts = async (taskId: number) => {
+    const store = new VerificationAttemptStore(server.app.ctx.asyncDb);
+    const taskAttemptRows = await ticketAttempts(taskId);
+    return (await Promise.all(taskAttemptRows.map((a) => store.list(a.id)))).flat();
+  };
 
   it('escalates with the exhausted Attempt marked escalated, its verified head retained, and the branch kept as evidence', async () => {
     const { taskId, runId } = await escalateViaCriticFail();
-    expect(await verificationAttempts(runId)).toHaveLength(2);
+    expect(await verificationAttempts(taskId)).toHaveLength(2);
     const run = (await server.api('GET', `/api/runs/${runId}`)).body;
     expect(run.candidateOid).toMatch(/^[0-9a-f]{40}$/);
     expect(git(repoDir, 'rev-parse', '--verify', run.branch)).toBe(run.candidateOid);

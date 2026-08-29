@@ -4,11 +4,21 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { startServer, stubHarness, waitFor, cancelRunningTasks, type TestServer } from './helpers.js';
-import { guardrailEvents, runs, runToolCalls } from '../src/db/schema.js';
+import { attemptToolCalls, guardrailEvents, runs } from '../src/db/schema.js';
 import type { DeepPartial, AppConfig } from '../src/config.js';
 import { AttemptStore } from '../src/domain/attempts.js';
 
 const scenario = (s: object) => JSON.stringify(s);
+
+/** Resolve the Attempt id backing `taskId`'s attempt `number` (default: the
+ * first) — the bridge every attempt_tool_calls/guardrail_events read below
+ * uses now that those tables are keyed by `attempt_id`, not `run_id`
+ * (ADR-0001 #388 S-F). */
+async function attemptIdFor(server: TestServer, taskId: number, number = 1): Promise<number> {
+  const attempt = await server.app.ctx.attempts.getForTaskNumber(taskId, number);
+  if (!attempt) throw new Error(`no attempt ${number} found for task ${taskId}`);
+  return attempt.id;
+}
 
 describe('run execution over ACP (direct mode)', () => {
   let server: TestServer;
@@ -69,10 +79,11 @@ describe('run execution over ACP (direct mode)', () => {
     const events = await server.api('GET', `/api/runs/${runId}/events`);
     expect(events.status).toBe(200);
     expect(events.body.events.filter((e: any) => e.type === 'session_update')).toEqual([]);
+    const attemptId = await attemptIdFor(server, taskId);
     const toolCalls = await server.app.ctx.asyncDb.read((db) =>
-      db.select().from(runToolCalls).where(eq(runToolCalls.runId, runId)).all(),
+      db.select().from(attemptToolCalls).where(eq(attemptToolCalls.attemptId, attemptId)).all(),
     );
-    expect(toolCalls).toEqual([{ runId, toolName: 'Write file', count: 1 }]);
+    expect(toolCalls).toEqual([{ attemptId, toolName: 'Write file', count: 1 }]);
     // seq is a stable per-run ordering
     expect(events.body.events.map((e: any) => e.seq)).toEqual(
       [...events.body.events.map((e: any) => e.seq)].sort((a: number, b: number) => a - b),
@@ -493,8 +504,9 @@ describe('wall-clock guardrail (issue #127)', () => {
 
       // The structured guardrail_events row the card reason derives from is
       // persisted, with observed ≥ the configured limit.
+      const attemptId = await attemptIdFor(server, taskId);
       const rows = await server.app.ctx.asyncDb.read((d) =>
-        d.select().from(guardrailEvents).where(eq(guardrailEvents.runId, runId)).all(),
+        d.select().from(guardrailEvents).where(eq(guardrailEvents.attemptId, attemptId)).all(),
       );
       expect(rows).toHaveLength(1);
       const event = rows[0]!;
@@ -528,7 +540,7 @@ describe('wall-clock guardrail (issue #127)', () => {
       expect((await server.api('GET', `/api/runs/${started.body.id}`)).body.state).toBe('running');
       expect(
         await server.app.ctx.asyncDb.read((db) =>
-          db.select().from(guardrailEvents).where(eq(guardrailEvents.runId, started.body.id)).all(),
+          db.select().from(guardrailEvents).where(eq(guardrailEvents.attemptId, attempt.id)).all(),
         ),
       ).toEqual([]);
     } finally {
@@ -612,7 +624,7 @@ describe('token/cost budget guardrail (issue #128)', () => {
       guardrails: { budget: { tokens: 1_000 } },
     });
     try {
-      const { runId, run } = await runToEscalation(server, workDir);
+      const { taskId, runId, run } = await runToEscalation(server, workDir);
       expect(run.state).toBe('failed');
       expect(run.reason).toMatch(/^budget:/);
 
@@ -621,7 +633,8 @@ describe('token/cost budget guardrail (issue #128)', () => {
       expect(trip).toBeTruthy();
       expect(trip.payload.dimension).toBe('tokens');
 
-      const rows = await server.app.ctx.asyncDb.read((d) => d.select().from(guardrailEvents).where(eq(guardrailEvents.runId, runId)).all());
+      const attemptId = await attemptIdFor(server, taskId);
+      const rows = await server.app.ctx.asyncDb.read((d) => d.select().from(guardrailEvents).where(eq(guardrailEvents.attemptId, attemptId)).all());
       expect(rows).toHaveLength(1);
       expect(rows[0]).toMatchObject({ dimension: 'tokens', configSource: 'default' });
       expect(rows[0]!.observedValue).toBeGreaterThanOrEqual(rows[0]!.limitValue);
@@ -648,7 +661,7 @@ describe('token/cost budget guardrail (issue #128)', () => {
       },
     });
     try {
-      const { runId, run } = await runToEscalation(server, workDir);
+      const { taskId, runId, run } = await runToEscalation(server, workDir);
       expect(run.state).toBe('failed');
       expect(run.reason).toMatch(/^budget:/);
 
@@ -657,7 +670,8 @@ describe('token/cost budget guardrail (issue #128)', () => {
       expect(trip).toBeTruthy();
       expect(trip.payload.dimension).toBe('cost');
 
-      const rows = await server.app.ctx.asyncDb.read((d) => d.select().from(guardrailEvents).where(eq(guardrailEvents.runId, runId)).all());
+      const attemptId = await attemptIdFor(server, taskId);
+      const rows = await server.app.ctx.asyncDb.read((d) => d.select().from(guardrailEvents).where(eq(guardrailEvents.attemptId, attemptId)).all());
       expect(rows).toHaveLength(1);
       expect(rows[0]).toMatchObject({ dimension: 'cost', configSource: 'default' });
       // Stored in micro-dollars (integer columns): $2 observed >= $1 limit.
@@ -678,7 +692,7 @@ describe('token/cost budget guardrail (issue #128)', () => {
       guardrails: { budget: { costUsd: 5, tokens: 1_000 } },
     });
     try {
-      const { runId, run } = await runToEscalation(server, workDir);
+      const { taskId, runId, run } = await runToEscalation(server, workDir);
       expect(run.state).toBe('failed');
       expect(run.reason).toMatch(/^budget:/);
 
@@ -687,7 +701,8 @@ describe('token/cost budget guardrail (issue #128)', () => {
       expect(trip).toBeTruthy();
       expect(trip.payload.dimension).toBe('tokens');
 
-      const rows = await server.app.ctx.asyncDb.read((d) => d.select().from(guardrailEvents).where(eq(guardrailEvents.runId, runId)).all());
+      const attemptId = await attemptIdFor(server, taskId);
+      const rows = await server.app.ctx.asyncDb.read((d) => d.select().from(guardrailEvents).where(eq(guardrailEvents.attemptId, attemptId)).all());
       expect(rows).toHaveLength(1);
       expect(rows[0]).toMatchObject({ dimension: 'tokens', configSource: 'default' });
     } finally {
@@ -727,7 +742,8 @@ describe('token/cost budget guardrail (issue #128)', () => {
       expect(trip).toBeTruthy();
       expect(trip.payload.dimension).toBe('tokens');
 
-      const rows = await server.app.ctx.asyncDb.read((d) => d.select().from(guardrailEvents).where(eq(guardrailEvents.runId, runId)).all());
+      const attemptId = await attemptIdFor(server, taskId);
+      const rows = await server.app.ctx.asyncDb.read((d) => d.select().from(guardrailEvents).where(eq(guardrailEvents.attemptId, attemptId)).all());
       expect(rows).toHaveLength(1);
       expect(rows[0]!.dimension).toBe('tokens');
       expect(JSON.parse(rows[0]!.payload)).toMatchObject({ unmeasurable: true });
@@ -782,7 +798,8 @@ describe('progress guardrail (issue #131)', () => {
       const trip = events.find((e: any) => e.type === 'lifecycle' && e.payload.event === 'guardrail-tripped');
       expect(trip.payload.dimension).toBe('progress');
 
-      const rows = await server.app.ctx.asyncDb.read((d) => d.select().from(guardrailEvents).where(eq(guardrailEvents.runId, runId)).all());
+      const attemptId = await attemptIdFor(server, taskId);
+      const rows = await server.app.ctx.asyncDb.read((d) => d.select().from(guardrailEvents).where(eq(guardrailEvents.attemptId, attemptId)).all());
       expect(rows).toHaveLength(1);
       expect(rows[0]!).toMatchObject({ dimension: 'progress', configSource: 'default' });
     } finally {
@@ -823,7 +840,8 @@ describe('progress guardrail (issue #131)', () => {
       const events = (await server.api('GET', `/api/runs/${runId}/events`)).body.events;
       expect(events.some((e: any) => e.type === 'lifecycle' && e.payload.event === 'progress-nudge')).toBe(false);
       expect(events.some((e: any) => e.type === 'lifecycle' && e.payload.event === 'guardrail-tripped')).toBe(false);
-      const rows = await server.app.ctx.asyncDb.read((d) => d.select().from(guardrailEvents).where(eq(guardrailEvents.runId, runId)).all());
+      const attemptId = await attemptIdFor(server, taskId);
+      const rows = await server.app.ctx.asyncDb.read((d) => d.select().from(guardrailEvents).where(eq(guardrailEvents.attemptId, attemptId)).all());
       expect(rows).toHaveLength(0);
     } finally {
       await server.close();
@@ -863,7 +881,8 @@ describe('progress guardrail (issue #131)', () => {
       const trip = events.find((e: any) => e.type === 'lifecycle' && e.payload.event === 'guardrail-tripped');
       expect(trip.payload.dimension).toBe('tool-timeout');
 
-      const rows = await server.app.ctx.asyncDb.read((d) => d.select().from(guardrailEvents).where(eq(guardrailEvents.runId, runId)).all());
+      const attemptId = await attemptIdFor(server, taskId);
+      const rows = await server.app.ctx.asyncDb.read((d) => d.select().from(guardrailEvents).where(eq(guardrailEvents.attemptId, attemptId)).all());
       expect(rows).toHaveLength(1);
       expect(rows[0]!).toMatchObject({ dimension: 'tool-timeout', configSource: 'default' });
     } finally {

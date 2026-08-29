@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
-import { trackerDismissals, runs, guardrailEvents } from '../src/db/schema.js';
+import { trackerDismissals, runs, attempts, guardrailEvents } from '../src/db/schema.js';
 import { eq } from 'drizzle-orm';
 import { defaultConfig } from '../src/config.js';
 import { WorkspaceService } from '../src/domain/workspaces.js';
@@ -61,25 +61,28 @@ describe('WorkspaceService.delete guards (issue #61)', () => {
     expect(await asyncDb.read((d) => d.select().from(trackerDismissals).all())).toHaveLength(0);
   });
 
-  it('purges the whole Run tree (guardrail_events), not just run_events, with no FK error (issue #162)', async () => {
+  it('purges the whole Run/Attempt tree (guardrail_events), not just attempt_events, with no FK error (issue #162)', async () => {
     const ws = (await workspaces.list())[0]!;
     const task = await tasks.create({ prompt: 'has a run with guardrail events' });
-    const runId = (await asyncDb.write((d) =>
+    await asyncDb.write((d) =>
       d
         .insert(runs)
         .values({ taskId: task.id, attempt: 1, state: 'completed', startedAt: Date.now() })
         .returning({ id: runs.id })
         .get(),
+    );
+    const attemptId = (await asyncDb.write((d) =>
+      d.insert(attempts).values({ taskId: task.id, number: 1, startedAt: Date.now() }).returning({ id: attempts.id }).get(),
     ))!.id;
-    // Before #162 the Workspace cascade only deleted run_events, so a sibling
-    // child row would FK-reject the runs delete under foreign_keys=ON.
+    // Before #162 the Workspace cascade only deleted attempt_events, so a
+    // sibling child row would FK-reject the attempts delete under foreign_keys=ON.
     await asyncDb.write((d) =>
       d.insert(guardrailEvents).values({
-        runId, seq: 1, ts: Date.now(), dimension: 'wall-clock', limitValue: 1, observedValue: 1, configSource: 'default',
+        attemptId, seq: 1, ts: Date.now(), dimension: 'wall-clock', limitValue: 1, observedValue: 1, configSource: 'default',
       }).run(),
     );
 
     await expect(workspaces.delete(ws.id)).resolves.toBeUndefined();
-    expect(await asyncDb.read((d) => d.select().from(guardrailEvents).where(eq(guardrailEvents.runId, runId)).all())).toHaveLength(0);
+    expect(await asyncDb.read((d) => d.select().from(guardrailEvents).where(eq(guardrailEvents.attemptId, attemptId)).all())).toHaveLength(0);
   });
 });

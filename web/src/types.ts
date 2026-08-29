@@ -60,7 +60,8 @@ export type GuardrailDimension = 'wall-clock' | 'tokens' | 'cost' | 'progress' |
  * progress); `payload` carries dimension-specific evidence. */
 export interface GuardrailEvent {
   id: number;
-  runId: number;
+  /** The Attempt this event is keyed to (ADR-0001 #388 S-F — was `runId` before). */
+  attemptId: number;
   seq: number;
   ts: number;
   dimension: GuardrailDimension;
@@ -93,7 +94,8 @@ export interface VerifierStatus {
  * `verification-attempts-model.ts`). */
 export interface VerificationAttempt {
   id: number;
-  runId: number;
+  /** The Attempt this row is keyed to (ADR-0001 #388 S-F — was `runId` before). */
+  attemptId: number;
   seq: number;
   ts: number;
   mechanism: VerificationMechanism;
@@ -122,7 +124,7 @@ export type TicketTimelineKind =
 
 /** One chronological audit record from the ticket-wide lifecycle projection. */
 export type TicketTimelineEvent = {
-  [K in TicketTimelineKind]: { runId: number | null; ts: number; kind: K; data: unknown };
+  [K in TicketTimelineKind]: { attemptId: number | null; ts: number; kind: K; data: unknown };
 }[TicketTimelineKind];
 
 /** Tracker mirroring (issue #30): a Task is authored here or a 1:1 projection of a tracker issue. */
@@ -470,7 +472,9 @@ export interface DiffFile {
 
 export interface RunEvent {
   id: number;
-  runId: number;
+  /** The Attempt this event is keyed to (`attempt_events.attempt_id`,
+   * ADR-0001 #388 S-F — was `runId` before). */
+  attemptId: number;
   seq: number;
   ts: number;
   type: 'session_update' | 'permission_request' | 'lifecycle';

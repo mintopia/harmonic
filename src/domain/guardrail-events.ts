@@ -36,9 +36,9 @@ export class GuardrailEventStore {
   constructor(private readonly db: AsyncDbHandle) {}
 
   /**
-   * Append a Guardrail-trip event to `runId`'s log, assigning the next
+   * Append a Guardrail-trip event to `attemptId`'s log, assigning the next
    * monotonic `seq` as `max(seq)+1` (1-based) — same recipe, and the same
-   * cross-process integrity backstop (the `(run_id, seq)` unique index
+   * cross-process integrity backstop (the `(attempt_id, seq)` unique index
    * rejects a racing duplicate `seq` with a raw UNIQUE violation rather than
    * corrupting the log's total order), as `VerificationAttemptStore.append`.
    *
@@ -47,20 +47,20 @@ export class GuardrailEventStore {
    * so no concurrent append can interleave between the read and the insert and
    * steal the `seq` — mirroring `VerificationAttemptStore.append`.
    */
-  append(runId: number, event: GuardrailEventInput, now: number = Date.now()): Promise<GuardrailEventRow> {
+  append(attemptId: number, event: GuardrailEventInput, now: number = Date.now()): Promise<GuardrailEventRow> {
     return this.db.write(async (db) => {
       const seq =
         ((
           await db
             .select({ n: sql<number>`coalesce(max(${guardrailEvents.seq}), 0)` })
             .from(guardrailEvents)
-            .where(eq(guardrailEvents.runId, runId))
+            .where(eq(guardrailEvents.attemptId, attemptId))
             .get()
         )?.n ?? 0) + 1;
       return db
         .insert(guardrailEvents)
         .values({
-          runId,
+          attemptId,
           seq,
           ts: now,
           dimension: event.dimension,
@@ -74,13 +74,13 @@ export class GuardrailEventStore {
     });
   }
 
-  /** A Run's Guardrail-trip event log in `seq` order. */
-  list(runId: number): Promise<GuardrailEventRow[]> {
+  /** An Attempt's Guardrail-trip event log in `seq` order. */
+  list(attemptId: number): Promise<GuardrailEventRow[]> {
     return this.db.read((db) =>
       db
         .select()
         .from(guardrailEvents)
-        .where(eq(guardrailEvents.runId, runId))
+        .where(eq(guardrailEvents.attemptId, attemptId))
         .orderBy(asc(guardrailEvents.seq))
         .all(),
     );

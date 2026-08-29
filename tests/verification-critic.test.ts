@@ -131,7 +131,16 @@ describe('agent critic end-to-end (issue #164)', () => {
     return { taskId: created.body.id, runId: started.body.id };
   }
 
-  const attempts = (runId: number) => new VerificationAttemptStore(server.app.ctx.asyncDb).list(runId);
+  // `verification_attempts` is keyed off `attempt_id`, not `run_id`
+  // (ADR-0001 #388 S-F): a self-heal loop's failed attempts share one Run row
+  // but each get their own Attempt row, so "this Run's verification
+  // attempts" now folds the log across every Attempt of the Run's Task.
+  const attempts = async (runId: number) => {
+    const store = new VerificationAttemptStore(server.app.ctx.asyncDb);
+    const run = await server.app.ctx.runs.get(runId);
+    const taskAttempts = await server.app.ctx.attempts.listForTask(run.taskId);
+    return (await Promise.all(taskAttempts.map((a) => store.list(a.id)))).flat();
+  };
   const verdictEvents = async (runId: number) =>
     (await server.api('GET', `/api/runs/${runId}/events`)).body.events
       .filter((e: any) => e.type === 'lifecycle' && e.payload.event === 'verification')

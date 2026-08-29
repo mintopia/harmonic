@@ -78,23 +78,46 @@ describe('run event firehose pruning (issue #245)', () => {
     });
     const pagesBefore = Number((await client.execute('PRAGMA page_count')).rows[0]?.page_count);
 
-    client.close();
-    const upgraded = await openAsyncDb(dataDir);
-
-    const events = await upgraded.read((database) =>
-      database.select({ type: schema.runEvents.type }).from(schema.runEvents).orderBy(schema.runEvents.seq).all(),
-    );
-    expect(events.map((event) => event.type)).toEqual(['lifecycle', 'permission_request']);
-
-    await upgraded.close();
-    const compacted = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
-    const pagesAfter = Number((await compacted.execute('PRAGMA page_count')).rows[0]?.page_count);
-    const markers = await compacted.execute(
+    // Verify migration 0042's pruning specifically, at the boundary just
+    // before 0067's destructive `attempt_id` rekey (ADR-0001 #388 S-F): 0067
+    // drops and recreates `run_events` (renamed `attempt_events`) outright
+    // under the clean-break policy (ADR-0007), so asserting past that
+    // boundary — including the page-count/marker checks below, which must
+    // read 0042's own compaction, not 0067's later table rebuild — would
+    // exercise 0067's wipe, not 0042's prune. Reuses the same connection (no
+    // extra open/close cycle) so the page count reflects only the migrations
+    // run, not incidental WAL-checkpoint overhead from reopening the file.
+    const prePruneRekeyFolder = migrationsFolderBefore('0067');
+    await migrate(db, { migrationsFolder: prePruneRekeyFolder });
+    const events = await client.execute('select type from run_events order by seq');
+    expect(events.rows.map((row) => row.type)).toEqual(['lifecycle', 'permission_request']);
+    // Mirror `openAsyncDb`'s own post-migrate compaction step (the marker
+    // table makes it retryable if the process dies mid-VACUUM): a raw
+    // `migrate()` call, unlike the real boot path, does not VACUUM on its own.
+    const markersBeforeVacuum = await client.execute(
       "select 1 from sqlite_master where type = 'table' and name = 'run_event_firehose_pruning'",
     );
-    compacted.close();
+    expect(markersBeforeVacuum.rows.length).toBeGreaterThan(0);
+    await client.execute('VACUUM');
+    await client.execute('DROP TABLE run_event_firehose_pruning');
+    const pagesAfter = Number((await client.execute('PRAGMA page_count')).rows[0]?.page_count);
+    const markers = await client.execute(
+      "select 1 from sqlite_master where type = 'table' and name = 'run_event_firehose_pruning'",
+    );
+    client.close();
+    rmSync(prePruneRekeyFolder, { recursive: true, force: true });
     expect(pagesAfter).toBeLessThan(pagesBefore);
     expect(markers.rows).toHaveLength(0);
+
+    // A fresh boot all the way to head still succeeds through 0067's
+    // rename + rekey: the destructive clean-break wipes the pre-0067 rows
+    // outright rather than backfilling them (ADR-0007), so `attempt_events`
+    // exists and is queryable, but empty.
+    const upgraded = await openAsyncDb(dataDir);
+    const headEvents = await upgraded.read((database) => database.select().from(schema.attemptEvents).all());
+    expect(headEvents).toEqual([]);
+    await upgraded.close();
+
     rmSync(dataDir, { recursive: true, force: true });
     rmSync(migrationsFolder, { recursive: true, force: true });
   });

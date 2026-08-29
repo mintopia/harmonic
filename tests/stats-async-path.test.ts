@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { startServer, stubHarness, type TestServer } from './helpers.js';
 import { StatsWorkerClient } from '../src/db/stats-reader.js';
-import { runToolCalls, runs, tasks, workspaces } from '../src/db/schema.js';
+import { attemptToolCalls, attempts, runs, tasks, workspaces } from '../src/db/schema.js';
 import { EventLoopMonitor, type StallInfo } from '../src/reliability/event-loop-monitor.js';
 
 /**
@@ -48,7 +48,10 @@ describe('Stats heavy aggregate runs in a worker (#257)', () => {
         .returning()
         .get(),
     );
-    await ctx.asyncDb.write((d) => d.insert(runToolCalls).values({ runId: run.id, toolName: 'Read', count: 3 }).run());
+    const attempt = await ctx.asyncDb.write((d) =>
+      d.insert(attempts).values({ taskId: task.id, number: run.attempt, startedAt: now }).returning().get(),
+    );
+    await ctx.asyncDb.write((d) => d.insert(attemptToolCalls).values({ attemptId: attempt.id, toolName: 'Read', count: 3 }).run());
 
     // …and the aggregate is served off the async read connection, seeing it.
     const readSpy = vi.spyOn(ctx.statsReader, 'read');

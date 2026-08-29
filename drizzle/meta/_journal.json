@@ -470,6 +470,13 @@
       "when": 1787993400000,
       "tag": "0066_collapse_run_facts",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "6",
+      "when": 1787993500000,
+      "tag": "0067_rekey_satellites_to_attempt",
+      "breakpoints": true
     }
   ]
 }

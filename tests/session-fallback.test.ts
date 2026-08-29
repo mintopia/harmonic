@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import type { RunEventRow } from '../src/db/schema.js';
-import type { PersistedRunEvent } from '../src/domain/runs.js';
+import type { AttemptEventRow } from '../src/db/schema.js';
+import type { PersistedAttemptEvent } from '../src/domain/attempts.js';
 import {
   FALLBACK_TRIGGER_REASONS,
   isFallbackTriggerReason,
@@ -167,8 +167,8 @@ describe('buildResumeFallbackSummary — deterministic Harmonic-built summary (i
   });
 
   it('accepts the store row types directly (structural assignability)', () => {
-    const eventRow: RunEventRow = { id: 8, runId: 1, seq: 1, ts: 100, type: 'lifecycle', payload: '{"event":"candidate"}' };
-    const persisted: PersistedRunEvent = { id: 7, runId: 1, seq: 2, ts: 101, type: 'session_update', payload: { c: 1 } };
+    const eventRow: AttemptEventRow = { id: 8, attemptId: 1, seq: 1, ts: 100, type: 'lifecycle', payload: '{"event":"candidate"}' };
+    const persisted: PersistedAttemptEvent = { id: 7, attemptId: 1, seq: 2, ts: 101, type: 'session_update', payload: { c: 1 } };
     const out = buildResumeFallbackSummary(
       baseInput({ outcome: { state: 'failed', reason: 'escalate' }, events: [eventRow, persisted] }),
     );

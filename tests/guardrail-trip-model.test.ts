@@ -4,7 +4,7 @@ import type { GuardrailEvent } from '../web/src/types.js';
 
 const event = (overrides: Partial<GuardrailEvent>): GuardrailEvent => ({
   id: 1,
-  runId: 1,
+  attemptId: 1,
   seq: 1,
   ts: 1_700_000_000_000,
   dimension: 'wall-clock',

@@ -132,10 +132,10 @@ export interface FallbackSummaryOutcome {
 }
 
 /**
- * The facet of a `run_event` the summary reads. A `PersistedRunEvent`
- * (`runs.ts`, payload already parsed to `unknown`) and a raw `RunEventRow`
+ * The facet of an `attempt_event` the summary reads. A `PersistedAttemptEvent`
+ * (`attempts.ts`, payload already parsed to `unknown`) and a raw `AttemptEventRow`
  * (payload still a JSON string) are both structurally assignable, so callers can
- * pass `RunStore.listEvents(runId)` directly.
+ * pass `AttemptStore.listEvents(attemptId)` directly.
  */
 export interface FallbackSummaryEvent {
   seq: number;

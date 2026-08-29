@@ -77,7 +77,16 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
     await server.app.ctx.configStore.update({ maxAttempts: 2 });
   });
 
-  const attempts = (runId: number) => new VerificationAttemptStore(server.app.ctx.asyncDb).list(runId);
+  // `verification_attempts` is keyed off `attempt_id`, not `run_id`
+  // (ADR-0001 #388 S-F): a self-heal loop's failed attempts share one Run row
+  // but each get their own Attempt row, so "this Run's verification
+  // attempts" now folds the log across every Attempt of the Run's Task.
+  const attempts = async (runId: number) => {
+    const store = new VerificationAttemptStore(server.app.ctx.asyncDb);
+    const run = await server.app.ctx.runs.get(runId);
+    const taskAttempts = await server.app.ctx.attempts.listForTask(run.taskId);
+    return (await Promise.all(taskAttempts.map((a) => store.list(a.id)))).flat();
+  };
   const ticketAttempts = (taskId: number) => new AttemptStore(server.app.ctx.asyncDb).listForTask(taskId);
 
   async function runWorktreeTask(prompt: unknown): Promise<{ taskId: number; runId: number }> {

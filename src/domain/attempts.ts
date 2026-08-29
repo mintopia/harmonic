@@ -1,12 +1,49 @@
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import type { AsyncDbHandle } from '../db/async.js';
-import { attempts, steps, type AttemptRow, type AttemptState, type StepRow, type StepType } from '../db/schema.js';
+import {
+  attempts,
+  steps,
+  attemptEvents,
+  attemptToolCalls,
+  type AttemptRow,
+  type AttemptState,
+  type StepRow,
+  type StepType,
+  type AttemptEventRow,
+} from '../db/schema.js';
 import type { DeterministicContinuation } from './session-continuation.js';
+import { DomainError } from './errors.js';
 
 export interface StepInput {
   type: StepType;
   command?: string | null;
   logLocator?: string | null;
+}
+
+/** What `appendEvent` needs to persist one Attempt event — everything on
+ * `AttemptEventRow` except the store-assigned `id`/`attemptId`/`seq`/`ts`. */
+export interface AttemptEventInput {
+  /** ACP transcript updates are deliberately never durable. See ADR-0031. */
+  type: 'permission_request' | 'lifecycle';
+  payload: unknown;
+}
+
+export interface PersistedAttemptEvent {
+  id: number;
+  attemptId: number;
+  seq: number;
+  ts: number;
+  type: string;
+  payload: unknown;
+  /** True iff this event is load-time `session/load` replay history, flagged by
+   * the driver (issue #144). Every current-turn measurement — usage, stall,
+   * activity — excludes it via `domain/replay-quarantine.ts`'s `isReplay`. Absent
+   * on a current-turn event and on every event a pre-quarantine path recorded. */
+  replay?: boolean | undefined;
+}
+
+function deserializeAttemptEvent(row: AttemptEventRow): PersistedAttemptEvent {
+  return { ...row, payload: JSON.parse(row.payload) };
 }
 
 /** Durable ticket timeline. It is intentionally independent from legacy Runs. */
@@ -26,6 +63,30 @@ export class AttemptStore {
 
   getForTaskNumber(taskId: number, number: number): Promise<AttemptRow | undefined> {
     return this.db.read((db) => db.select().from(attempts).where(and(eq(attempts.taskId, taskId), eq(attempts.number, number))).get());
+  }
+
+  async get(id: number): Promise<AttemptRow> {
+    const row = await this.db.read((db) => db.select().from(attempts).where(eq(attempts.id, id)).get());
+    if (!row) throw new DomainError('not_found', `attempt ${id} not found`);
+    return row;
+  }
+
+  /**
+   * The batched form of {@link getForTaskNumber}'s `.id` projection, keyed by
+   * `taskId` — the bridge every attempt-keyed satellite table's batched
+   * reader uses to resolve a Run's CURRENT attempt id (`runs.attempt`)
+   * without one query per Run (ADR-0001 #388 S-F). Mirrors
+   * {@link currentStepTypes}'s query shape.
+   */
+  async idsFor(taskAttempts: readonly { taskId: number; number: number }[]): Promise<Map<number, number>> {
+    const result = new Map<number, number>();
+    if (taskAttempts.length === 0) return result;
+    const numberByTask = new Map(taskAttempts.map((t) => [t.taskId, t.number]));
+    const attemptRows = await this.db.read((db) =>
+      db.select().from(attempts).where(inArray(attempts.taskId, taskAttempts.map((t) => t.taskId))).all(),
+    );
+    for (const row of attemptRows) if (numberByTask.get(row.taskId) === row.number) result.set(row.taskId, row.id);
+    return result;
   }
 
   listSteps(attemptId: number): Promise<StepRow[]> {
@@ -131,5 +192,77 @@ export class AttemptStore {
 
   setContinuation(attemptId: number, continuation: DeterministicContinuation): Promise<AttemptRow> {
     return this.db.write((db) => db.update(attempts).set({ continuation: JSON.stringify(continuation) }).where(eq(attempts.id, attemptId)).returning().get()) as Promise<AttemptRow>;
+  }
+
+  /**
+   * Append an Attempt event (lifecycle / permission_request — ADR-0007's "small
+   * structured facts"; the `session_update` firehose was pruned outright at
+   * migration 0042 and is never persisted), assigning the next monotonic `seq`
+   * as `max(seq)+1` (1-based). Moved here from `RunStore.appendEvent` at
+   * ADR-0001 #388 S-F (`attempt_events`, re-keyed off `attempt_id`).
+   */
+  async appendEvent(attemptId: number, event: AttemptEventInput): Promise<PersistedAttemptEvent> {
+    const row = await this.db.write(async (db) => {
+      const seq =
+        ((
+          await db
+            .select({ n: sql<number>`coalesce(max(${attemptEvents.seq}), 0)` })
+            .from(attemptEvents)
+            .where(eq(attemptEvents.attemptId, attemptId))
+            .get()
+        )?.n ?? 0) + 1;
+      return db
+        .insert(attemptEvents)
+        .values({ attemptId, seq, ts: Date.now(), type: event.type, payload: JSON.stringify(event.payload) })
+        .returning()
+        .get();
+    });
+    return deserializeAttemptEvent(row);
+  }
+
+  /** An Attempt's persisted event log, in `seq` order. Moved here from
+   * `RunStore.listEvents` at ADR-0001 #388 S-F. */
+  async listEvents(attemptId: number): Promise<PersistedAttemptEvent[]> {
+    await this.get(attemptId); // 404 on unknown attempt
+    const rows = await this.db.read((db) =>
+      db.select().from(attemptEvents).where(eq(attemptEvents.attemptId, attemptId)).orderBy(asc(attemptEvents.seq)).all(),
+    );
+    return rows.map(deserializeAttemptEvent);
+  }
+
+  /** Per-Attempt tool-call snapshot, overwritten by the Runner's in-memory
+   * rollup on the ADR-0010 coarse cadence and when a turn finishes (ADR-0031).
+   * Moved here from `RunStore.replaceToolCalls` at ADR-0001 #388 S-F
+   * (`attempt_tool_calls`, re-keyed off `attempt_id`). */
+  async replaceToolCalls(attemptId: number, totals: ReadonlyMap<string, number>): Promise<void> {
+    await this.db.write(async (db) => {
+      await db.delete(attemptToolCalls).where(eq(attemptToolCalls.attemptId, attemptId)).run();
+      const rows = [...totals].map(([toolName, count]) => ({ attemptId, toolName, count }));
+      if (rows.length > 0) await db.insert(attemptToolCalls).values(rows).run();
+    });
+  }
+
+  /** Moved here from `RunStore.listToolCalls` at ADR-0001 #388 S-F. */
+  async listToolCalls(attemptId: number): Promise<Map<string, number>> {
+    const rows = await this.db.read((db) =>
+      db.select({ toolName: attemptToolCalls.toolName, count: attemptToolCalls.count }).from(attemptToolCalls).where(eq(attemptToolCalls.attemptId, attemptId)).all(),
+    );
+    return new Map(rows.map(({ toolName, count }) => [toolName, count]));
+  }
+
+  /** Total persisted tool calls for each supplied Attempt, for board list
+   * serialization. Moved here from `RunStore.toolCallCounts` at ADR-0001
+   * #388 S-F. */
+  async toolCallCounts(attemptIds: number[]): Promise<Map<number, number>> {
+    if (attemptIds.length === 0) return new Map();
+    const rows = await this.db.read((db) =>
+      db
+        .select({ attemptId: attemptToolCalls.attemptId, count: sql<number>`sum(${attemptToolCalls.count})` })
+        .from(attemptToolCalls)
+        .where(inArray(attemptToolCalls.attemptId, attemptIds))
+        .groupBy(attemptToolCalls.attemptId)
+        .all(),
+    );
+    return new Map(rows.map(({ attemptId, count }) => [attemptId, count]));
   }
 }

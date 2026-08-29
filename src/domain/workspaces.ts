@@ -270,7 +270,7 @@ export class WorkspaceService {
         );
         // Purge the whole Run tree (every FK-to-runs child), not just run_events —
         // shared with TaskService.delete so the run-child set is enumerated once (issue #162).
-        await deleteRunsAndChildrenAsync(tx, runIds);
+        await deleteRunsAndChildrenAsync(tx, taskIds, runIds);
         await tx.delete(taskChannels).where(inArray(taskChannels.taskId, taskIds)).run();
         await tx
           .delete(taskDependencies)

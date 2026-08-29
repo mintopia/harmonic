@@ -6,7 +6,7 @@ import { eq } from 'drizzle-orm';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
-import { runs, runEvents, sessions, taskDependencies, trackerDismissals, tasks } from '../src/db/schema.js';
+import { attempts, attemptEvents, runs, sessions, taskDependencies, trackerDismissals, tasks } from '../src/db/schema.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { allWorkspaces, makeSettingsStore } from './helpers.js';
 
@@ -48,21 +48,24 @@ describe('TaskService.delete (issue #162)', () => {
     await expect(tasksSvc.get(task.id)).rejects.toThrow(/not found/);
   });
 
-  it('cascades Runs and their children (run_events) with no FK error', async () => {
+  it('cascades Runs and their Attempt-keyed satellites (attempt_events) with no FK error', async () => {
     const task = await tasksSvc.create({ prompt: 'has runs' });
-    const runId = (await asyncDb.write((d) =>
+    await asyncDb.write((d) =>
       d
         .insert(runs)
         .values({ taskId: task.id, attempt: 1, state: 'completed', startedAt: Date.now(), finishedAt: Date.now() })
         .returning({ id: runs.id })
         .get(),
+    );
+    const attemptId = (await asyncDb.write((d) =>
+      d.insert(attempts).values({ taskId: task.id, number: 1, startedAt: Date.now() }).returning({ id: attempts.id }).get(),
     ))!.id;
-    await asyncDb.write((d) => d.insert(runEvents).values({ runId, seq: 1, ts: Date.now(), type: 'lifecycle', payload: '{}' }).run());
+    await asyncDb.write((d) => d.insert(attemptEvents).values({ attemptId, seq: 1, ts: Date.now(), type: 'lifecycle', payload: '{}' }).run());
 
     await tasksSvc.delete(task.id);
 
     expect(await asyncDb.read((d) => d.select().from(runs).where(eq(runs.taskId, task.id)).all())).toHaveLength(0);
-    expect(await asyncDb.read((d) => d.select().from(runEvents).where(eq(runEvents.runId, runId)).all())).toHaveLength(0);
+    expect(await asyncDb.read((d) => d.select().from(attemptEvents).where(eq(attemptEvents.attemptId, attemptId)).all())).toHaveLength(0);
   });
 
   it('removes dependency edges in both directions and makes a former dependent agent-workable', async () => {

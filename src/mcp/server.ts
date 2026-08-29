@@ -188,10 +188,15 @@ export function buildMcpServer(ctx: AppContext, opts: { operator?: boolean } = {
   server.registerTool(
     'get_run_events',
     {
-      description: "Read a Run's full event stream (every ACP session/update, permission grants, lifecycle).",
+      description: "Read a Run's persisted event stream (permission grants, lifecycle facts).",
       inputSchema: { runId: z.number().int().positive() },
     },
-    wrapAsync(({ runId }) => ctx.runs.listEvents(runId)),
+    wrapAsync(async ({ runId }) => {
+      const run = await ctx.runs.get(runId);
+      const attempt = await ctx.attempts.getForTaskNumber(run.taskId, run.attempt);
+      if (!attempt) throw new DomainError('not_found', `no attempt found for run ${runId}`);
+      return ctx.attempts.listEvents(attempt.id);
+    }),
   );
 
   server.registerTool(

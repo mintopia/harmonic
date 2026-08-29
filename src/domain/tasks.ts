@@ -1000,7 +1000,7 @@ export class TaskService {
             .filter((sid): sid is number => sid != null),
         ),
       ];
-      await deleteRunsAndChildrenAsync(tx, runIds);
+      await deleteRunsAndChildrenAsync(tx, [id], runIds);
       if (sessionRowIds.length > 0) {
         // Delete a Session only once *no* Run references it any more. A warm
         // continuation (#124) can share one Session across

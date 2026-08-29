@@ -401,16 +401,20 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     );
     if (commands.length === 0) return { pass: true, output: '' };
     mkdirSync(worktreesDir, { recursive: true });
+    // `verification_attempts` is keyed off `attempt_id`, not `run_id`
+    // (ADR-0001 #388 S-F) — resolve the Run's current Attempt once, up front.
+    const timelineAttempt = await attempts.getForTaskNumber(task.id, run.attempt);
+    if (!timelineAttempt) throw new DomainError('not_found', `attempt ${run.attempt} for task ${task.id} not found`);
     for (const command of commands) {
-      const attempt = await runCommandVerifier({
+      const cmdAttempt = await runCommandVerifier({
         repoDir: baseDir,
         candidateOid: mergeOid,
         worktreePath: join(worktreesDir, `crash-recovery-postmerge-${run.id}`),
         command,
         attributes: { 'task.id': task.id, 'run.id': run.id },
       });
-      await verificationAttempts.append(run.id, commandAttemptToInput(attempt));
-      if (attempt.verdict !== 'pass') return { pass: false, output: attempt.output };
+      await verificationAttempts.append(timelineAttempt.id, commandAttemptToInput(cmdAttempt));
+      if (cmdAttempt.verdict !== 'pass') return { pass: false, output: cmdAttempt.output };
     }
     return { pass: true, output: '' };
   };

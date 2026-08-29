@@ -311,24 +311,6 @@ export const runs = sqliteTable('runs', {
   finishedAt: integer('finished_at'),
 });
 
-/**
- * Per-Run tool-call counts (ADR-0031). The runner will overwrite these rows
- * from its in-memory rollup; Task and Epic totals are derived on read through
- * `runs.taskId` and `tasks.mapRef`, so they cannot drift from task ownership.
- */
-export const runToolCalls = sqliteTable(
-  'run_tool_calls',
-  {
-    runId: integer('run_id')
-      .notNull()
-      .references(() => runs.id),
-    toolName: text('tool_name').notNull(),
-    count: integer('count').notNull(),
-  },
-  (t) => [primaryKey({ columns: [t.runId, t.toolName] })],
-);
-export type RunToolCallRow = typeof runToolCalls.$inferSelect;
-
 /** One pass through a Ticket's implement → verify loop (ADR-0041). */
 export const ATTEMPT_STATES = ['running', 'passed', 'failed', 'escalated', 'cancelled'] as const;
 export type AttemptState = (typeof ATTEMPT_STATES)[number];
@@ -376,16 +358,43 @@ export const steps = sqliteTable('steps', {
 }, (t) => [uniqueIndex('steps_attempt_position_unique').on(t.attemptId, t.position)]);
 export type StepRow = typeof steps.$inferSelect;
 
-export const runEvents = sqliteTable('run_events', {
+/**
+ * Per-Attempt tool-call counts (ADR-0031; re-keyed off `attempt_id` at
+ * ADR-0001 #388 S-F — Attempt is the single execution ledger, ADR-0007). The
+ * runner will overwrite these rows from its in-memory rollup; Task and Epic
+ * totals are derived on read through `attempts.taskId` and `tasks.mapRef`, so
+ * they cannot drift from task ownership.
+ */
+export const attemptToolCalls = sqliteTable(
+  'attempt_tool_calls',
+  {
+    attemptId: integer('attempt_id')
+      .notNull()
+      .references(() => attempts.id),
+    toolName: text('tool_name').notNull(),
+    count: integer('count').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.attemptId, t.toolName] })],
+);
+export type AttemptToolCallRow = typeof attemptToolCalls.$inferSelect;
+
+/**
+ * `attempt_events` (renamed from `run_events`, re-keyed off `attempt_id` at
+ * ADR-0001 #388 S-F): the small structured facts ADR-0007's "The DB stores
+ * aggregates, not event streams" keeps — lifecycle events and permission
+ * requests. The `session_update` firehose was pruned outright (migration
+ * 0042) before this table ever carried Attempt identity.
+ */
+export const attemptEvents = sqliteTable('attempt_events', {
   id: integer('id').primaryKey({ autoIncrement: true }),
-  runId: integer('run_id')
+  attemptId: integer('attempt_id')
     .notNull()
-    .references(() => runs.id),
+    .references(() => attempts.id),
   seq: integer('seq').notNull(),
   ts: integer('ts').notNull(),
-  /** 'session_update' | 'permission_request' | 'lifecycle' */
+  /** 'permission_request' | 'lifecycle' */
   type: text('type').notNull(),
-  /** JSON payload — for session_update, the ACP `update` object verbatim. */
+  /** JSON payload. */
   payload: text('payload').notNull(),
 });
 
@@ -541,7 +550,7 @@ export const trackerContainers = sqliteTable('tracker_containers', {
 export type TrackerContainerRow = typeof trackerContainers.$inferSelect;
 
 export type RunRow = typeof runs.$inferSelect;
-export type RunEventRow = typeof runEvents.$inferSelect;
+export type AttemptEventRow = typeof attemptEvents.$inferSelect;
 
 /**
  * The Verification mechanisms that write to `verification_attempts` (issue
@@ -558,10 +567,12 @@ export type VerificationMechanism = (typeof VERIFICATION_MECHANISMS)[number];
  * The persisted record of one Verification attempt against a Run's frozen
  * candidate OID (issue #136, ADR-0021, reliability-design Unit B). Mirrors
  * `guardrail_events`'s discipline exactly: append-only, `seq` assigned by the
- * store as `max(seq)+1`, and the `(run_id, seq)` unique index is the same
- * monotonicity guarantee — two attempts can never share a seq within a Run,
- * so the log has a single total order and a cross-process race that computed
- * the same seq is rejected loudly rather than corrupting it.
+ * store as `max(seq)+1`, and the `(attempt_id, seq)` unique index is the same
+ * monotonicity guarantee — two attempts can never share a seq within an
+ * Attempt, so the log has a single total order and a cross-process race that
+ * computed the same seq is rejected loudly rather than corrupting it.
+ * Re-keyed off `attempt_id` at ADR-0001 #388 S-F (Attempt is the single
+ * execution ledger, ADR-0007); was `run_id` before.
  *
  * `inputOid` is recorded per-row (not just implied by the Run's
  * `candidateOid` column) because a Run can be re-verified against more than
@@ -581,10 +592,10 @@ export type VerificationMechanism = (typeof VERIFICATION_MECHANISMS)[number];
  */
 export const verificationAttempts = sqliteTable('verification_attempts', {
   id: integer('id').primaryKey({ autoIncrement: true }),
-  runId: integer('run_id')
+  attemptId: integer('attempt_id')
     .notNull()
-    .references(() => runs.id),
-  /** Monotonic per-Run sequence (1-based); same discipline as `guardrail_events.seq`. */
+    .references(() => attempts.id),
+  /** Monotonic per-Attempt sequence (1-based); same discipline as `guardrail_events.seq`. */
   seq: integer('seq').notNull(),
   ts: integer('ts').notNull(),
   /** 'critic' today; 'command' reserved for the sibling verifier ticket. */
@@ -609,7 +620,7 @@ export const verificationAttempts = sqliteTable('verification_attempts', {
    * the critic harness can differ from the builder's (`critic.harness ?? task.harness`). */
   harness: text('harness'),
 }, (t) => [
-  uniqueIndex('verification_attempts_run_seq_unique').on(t.runId, t.seq),
+  uniqueIndex('verification_attempts_attempt_seq_unique').on(t.attemptId, t.seq),
 ]);
 
 export type VerificationAttemptRow = typeof verificationAttempts.$inferSelect;
@@ -659,14 +670,15 @@ export type GuardrailConfigSource = (typeof GUARDRAIL_CONFIG_SOURCES)[number];
  * `limitValue`/`observedValue` share the dimension's unit
  * (milliseconds for wall-clock). `payload` is free-form JSON for any extra
  * evidence a future dimension's emitter wants to attach, defaulting to `'{}'`
- * when there is none.
+ * when there is none. Re-keyed off `attempt_id` at ADR-0001 #388 S-F
+ * (Attempt is the single execution ledger, ADR-0007); was `run_id` before.
  */
 export const guardrailEvents = sqliteTable('guardrail_events', {
   id: integer('id').primaryKey({ autoIncrement: true }),
-  runId: integer('run_id')
+  attemptId: integer('attempt_id')
     .notNull()
-    .references(() => runs.id),
-  /** Monotonic per-Run sequence (1-based); same discipline as `verification_attempts.seq`. */
+    .references(() => attempts.id),
+  /** Monotonic per-Attempt sequence (1-based); same discipline as `verification_attempts.seq`. */
   seq: integer('seq').notNull(),
   ts: integer('ts').notNull(),
   /** The budget dimension that tripped; only 'wall-clock' has an emitter today (#127). */
@@ -680,7 +692,7 @@ export const guardrailEvents = sqliteTable('guardrail_events', {
   /** JSON payload — any extra evidence; `'{}'` when none. */
   payload: text('payload').notNull().default('{}'),
 }, (t) => [
-  uniqueIndex('guardrail_events_run_seq_unique').on(t.runId, t.seq),
+  uniqueIndex('guardrail_events_attempt_seq_unique').on(t.attemptId, t.seq),
 ]);
 
 export type GuardrailEventRow = typeof guardrailEvents.$inferSelect;
