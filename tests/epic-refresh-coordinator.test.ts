@@ -36,7 +36,7 @@ describe('EpicRefreshCoordinator', () => {
       git: fakeGit,
       merge: async ({ baseBranch, branch }) => {
         calls.push(`${baseBranch}<-${branch}`);
-        return { ok: true, mode: 'cas', oid: 'merge-oid', baseBranch, branch, rebased: false };
+        return { ok: true, mode: 'cas', oid: 'merge-oid', baseBranch, branch };
       },
       dispatchResolve: async () => ({ status: 'dispatched' }),
       escalate: () => {},
@@ -83,7 +83,7 @@ describe('EpicRefreshCoordinator', () => {
       merge: async () => {
         starts.push(starts.length + 1);
         if (starts.length === 1) await first;
-        return { ok: true, mode: 'cas', oid: `oid-${starts.length}`, baseBranch: 'epic/9', branch: 'develop', rebased: false };
+        return { ok: true, mode: 'cas', oid: `oid-${starts.length}`, baseBranch: 'epic/9', branch: 'develop' };
       },
       dispatchResolve: async () => ({ status: 'dispatched' }),
       escalate: () => {},

@@ -67,7 +67,7 @@ import { resolvePrices, costOfUsages, type PriceTable } from './pricing.js';
 import { isForeignKeyViolation } from '../db/errors.js';
 import { logger } from '../logger.js';
 import type { PostMergeHook } from './branch-merge.js';
-import { runMergePolicy, type MergePolicyDeps } from './merge-policy.js';
+import { runMergePolicy, type MergePolicyDeps, type MergePolicyOutcome } from './merge-policy.js';
 import { integrationBranchName, parseIntegrationBranch } from './epic-integration.js';
 import type {
   EpicRefreshResolveDispatchOutcome,
@@ -1920,6 +1920,49 @@ export class Runner {
         await this.settleEscalated(task, run, reason, patch);
       },
     };
+  }
+
+  /**
+   * Operator Accept runs the identical one merge policy the automated path does
+   * (ADR-0001, #383): `git merge --no-ff` under the base repo mutex, bounded
+   * agentic resolve turns, the deterministic post-merge check, and a
+   * `git revert -m 1` on red. A base that moved since verification is
+   * reconciled by the merge commit — there is no rebase mode. The escalated
+   * Run is already terminal, so escalation is returned to the caller rather
+   * than settled here: the journaled `MergeCoordinator` envelope that drives
+   * Accept maps an escalated merge to a failed effect (the ticket stays
+   * escalated for the operator) and settles the success under `operator-accept`.
+   */
+  async mergeAcceptedBranch(task: TaskRow, run: RunRow): Promise<MergePolicyOutcome> {
+    const record = (type: 'lifecycle', payload: unknown) => this.recordRunEvent(task, run, type, payload);
+    const deps: MergePolicyDeps = {
+      // A fresh, never-aborted signal: an operator Accept is a request the
+      // caller holds, with no live Run abort to thread in — the post-merge
+      // check is bounded by the verifier command's own timeout, not this signal.
+      ...this.mergePolicyDeps(task, run, record, new AbortController().signal, {}),
+      // The MergeCoordinator effect surfaces an escalated merge as a failed
+      // effect; this path never re-settles the already-escalated Run.
+      escalate: async () => {},
+    };
+    const outcome = await runMergePolicy(
+      {
+        baseDir: task.workingDir,
+        baseBranch: run.baseBranch!,
+        taskBranch: run.branch!,
+        conflictResolveTurns: task.conflictResolveTurns,
+        postMergeCheck: this.getConfig().merge.postMergeCheck,
+      },
+      deps,
+    );
+    // Record the same merged/escalated lifecycle event the automated path does,
+    // so an operator Accept's merge is legible on the Run timeline (ADR-0010).
+    if (outcome.kind === 'merged') {
+      record('lifecycle', { event: 'merged', oid: outcome.mergeOid, baseBranch: run.baseBranch });
+      await this.postMerge?.({ repoDir: task.workingDir, baseBranch: run.baseBranch! });
+    } else {
+      record('lifecycle', { event: 'escalated', reason: outcome.message });
+    }
+    return outcome;
   }
 
   /**

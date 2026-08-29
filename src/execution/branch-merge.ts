@@ -72,17 +72,6 @@ export interface MergeIntoBaseArgs {
    */
   leaseHeld?: boolean;
   /**
-   * Fast-forward mode only. When the base advanced after verification, replay
-   * the verified candidate onto the new base tip in a throwaway worktree and
-   * merge the result **without re-verifying**, instead of refusing as
-   * `stale-base` (ADR-0043). Operator Accept sets this: a manual Accept has a
-   * human delay, so an (usually unrelated) base advance is expected and should
-   * not force a re-verify cycle. A rebase *conflict* still falls back
-   * (`ok:false, reason:'conflict'`). The auto-driven path leaves this off — it
-   * freshens and re-verifies through the Runner's own loop.
-   */
-  rebaseOnAdvance?: boolean;
-  /**
    * Parent directory for the dedicated admin worktree. A fresh unique child of
    * it is created (and removed) per merge, so concurrent merges never collide.
    * Defaults to the OS temp dir.
@@ -126,7 +115,7 @@ export function defaultBranchPostMerge(
 }
 
 export type MergeIntoBaseOutcome =
-  | { ok: true; mode: 'cas' | 'in-place'; oid: string; baseBranch: string; branch: string; rebased: boolean }
+  | { ok: true; mode: 'cas' | 'in-place'; oid: string; baseBranch: string; branch: string }
   | { ok: false; reason: 'conflict' | 'target-advanced' | 'stale-head' | 'stale-base' | 'fallback-pr-manual'; detail: string };
 
 /** Run the one shared success-only post-merge hook around a branch merge.
@@ -181,7 +170,6 @@ async function mergeIntoBaseUnchecked(args: MergeIntoBaseArgs): Promise<MergeInt
   // current tip — the live target checkout is never entered, so a conflict
   // aborts against a throwaway tree and the base repo stays pristine.
   let newOid: string;
-  let rebased = false;
   if (args.mode === 'merge') {
     const parent = mkdtempSync(join(args.adminWorktreeParent ?? tmpdir(), 'harmonic-merge-'));
     const adminPath = join(parent, 'admin');
@@ -200,18 +188,6 @@ async function mergeIntoBaseUnchecked(args: MergeIntoBaseArgs): Promise<MergeInt
     // The base is still contained in the verified candidate: merge its tip as-is,
     // the exact tree verification inspected.
     newOid = expectedOid;
-  } else if (args.rebaseOnAdvance) {
-    // The base advanced past the verified candidate. Replay the candidate onto
-    // the new base tip off to the side and merge the result without re-verifying
-    // (ADR-0043); only a rebase conflict falls back to manual.
-    const replay = await rebaseVerifiedOntoBase(repoDir, expectedOid, expectedOld, args.adminWorktreeParent);
-    if (!replay.ok) {
-      return replay.conflict
-        ? { ok: false, reason: 'conflict', detail: replay.detail }
-        : { ok: false, reason: 'stale-base', detail: replay.detail };
-    }
-    newOid = replay.tip;
-    rebased = true;
   } else {
     return { ok: false, reason: 'stale-base', detail: `base '${baseBranch}' advanced after verification; rebase and re-verify before merging` };
   }
@@ -225,7 +201,7 @@ async function mergeIntoBaseUnchecked(args: MergeIntoBaseArgs): Promise<MergeInt
     // desync any working tree. Fails cleanly if the target moved meanwhile.
     const cas = await Git.casUpdateRef(repoDir, baseBranch, newOid, expectedOld);
     if (!cas.ok) return { ok: false, reason: 'target-advanced', detail: cas.detail ?? 'target ref advanced since merging began' };
-    return { ok: true, mode: 'cas', oid: newOid, baseBranch, branch, rebased };
+    return { ok: true, mode: 'cas', oid: newOid, baseBranch, branch };
   }
 
   // The target is checked out. A plumbing ref-update would desync it, so merge
@@ -242,32 +218,5 @@ async function mergeIntoBaseUnchecked(args: MergeIntoBaseArgs): Promise<MergeInt
   // ancestor and the ff is refused rather than force-resetting the checkout).
   const ff = await Git.ffOnly(checkoutDir, newOid);
   if (!ff.ok) return { ok: false, reason: 'target-advanced', detail: ff.detail ?? 'target ref advanced since merging began' };
-  return { ok: true, mode: 'in-place', oid: newOid, baseBranch, branch, rebased };
-}
-
-/**
- * Replay the verified candidate onto the advanced base tip in a throwaway
- * detached worktree, returning the rebased tip to merge (ADR-0043). The live
- * candidate branch and base checkout are never touched — a conflict aborts
- * against a disposable tree, exactly as the `'merge'` mode does. No
- * re-verification runs: the caller (operator Accept) has opted to trust the
- * rebased result.
- */
-async function rebaseVerifiedOntoBase(
-  repoDir: string,
-  candidateOid: string,
-  baseOid: string,
-  adminWorktreeParent?: string,
-): Promise<{ ok: true; tip: string } | { ok: false; conflict: boolean; detail: string }> {
-  const parent = mkdtempSync(join(adminWorktreeParent ?? tmpdir(), 'harmonic-rebase-'));
-  const adminPath = join(parent, 'admin');
-  try {
-    await Git.addDetachedWorktree(repoDir, adminPath, candidateOid);
-    const rebased = await Git.rebaseOnto(adminPath, baseOid);
-    if (!rebased.ok) return { ok: false, conflict: rebased.conflict, detail: rebased.detail };
-    return { ok: true, tip: rebased.rebasedTip };
-  } finally {
-    await Git.removeWorktree(repoDir, adminPath).catch(() => {});
-    rmSync(parent, { recursive: true, force: true });
-  }
+  return { ok: true, mode: 'in-place', oid: newOid, baseBranch, branch };
 }

@@ -12,7 +12,7 @@ import {
 } from 'fastify-type-provider-zod';
 import { existsSync } from 'node:fs';
 import { join, dirname, sep } from 'node:path';
-import { defaultBranchPostMerge, mergeIntoBaseAndRunPostMerge, type PostMergeHook } from '../execution/branch-merge.js';
+import { defaultBranchPostMerge, type PostMergeHook } from '../execution/branch-merge.js';
 import { fileURLToPath } from 'node:url';
 import { ZodError } from 'zod';
 import { openAsyncDb, type AsyncDbHandle } from '../db/async.js';
@@ -499,26 +499,22 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     if (task.isolationMode !== 'worktree' || !run.branch || !run.baseBranch || !run.candidateOid) return effects;
     const baseBranch = run.baseBranch;
     const branch = run.branch;
-    const expectedOid = run.candidateOid;
     return [
       {
         effect: 'target-ref',
         idempotencyKey: `${baseBranch}<-${branch}`,
         expected: { baseBranch, branch },
-        // Merge through the admin-worktree + CAS operation (issue #153), never a
-        // base-repo in-place `git merge` that desyncs a live checkout. Harmonic
-        // owns the base repo and `Git.ffOnly` serialises via the in-process
-        // repo lock (#121), so an exclusive clean lease over the target is held
-        // for the checked-out (worktree-mode base) path — `mergeIntoBase` still
-        // falls back to PR/manual if that checkout has uncommitted operator work.
+        // Operator Accept runs the same one merge policy as the automated path
+        // (ADR-0001, #383): `git merge --no-ff` under the base repo mutex,
+        // bounded resolve turns, post-merge check, revert-on-red. A base that
+        // moved since verification is reconciled by the merge commit — no
+        // rebase mode. Only a genuine conflict or a red post-merge check
+        // escalates, mapped here to a failed effect so the ticket comes back to
+        // the operator; the coordinator settles the success as `operator-accept`.
         apply: async () => {
-          // Operator Accept auto-rebases onto an advanced base rather than
-          // dead-ending as `stale-base` (ADR-0043): the human delay before a
-          // manual Accept means the base has very likely moved on, and an
-          // unrelated advance should just merge, not force a re-verify.
-          const outcome = await mergeIntoBaseAndRunPostMerge({ repoDir: task.workingDir, baseBranch, branch, expectedOid, leaseHeld: true, rebaseOnAdvance: true }, postMerge);
-          if (!outcome.ok) return { ok: false, detail: outcome.detail };
-          return { ok: true, observed: { baseBranch, branch, oid: outcome.oid, mode: outcome.mode, rebased: outcome.rebased } };
+          const outcome = await runnerRef!.mergeAcceptedBranch(task, run);
+          if (outcome.kind === 'escalated') return { ok: false, detail: outcome.message };
+          return { ok: true, observed: { baseBranch, branch, oid: outcome.mergeOid } };
         },
       },
       ...effects,

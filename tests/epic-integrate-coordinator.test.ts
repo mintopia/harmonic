@@ -55,7 +55,6 @@ const okMerge = (over?: Partial<Extract<MergeIntoBaseOutcome, { ok: true }>>): M
   oid: 'integrated-oid',
   baseBranch: 'develop',
   branch: 'epic/42',
-  rebased: false,
   ...over,
 });
 

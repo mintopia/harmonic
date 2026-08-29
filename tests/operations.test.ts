@@ -302,6 +302,12 @@ describe('Run operations (issue #290)', () => {
       });
       expect(registry.list().find((operation) => operation.name === 'harmonic.attempt' && operation.attributes['run.id'] === runId)).toBeUndefined();
 
+      // The operator addressed the failure, so the post-merge check the one
+      // merge policy runs on Accept (ADR-0001, #383) is green and the merge lands.
+      await server.app.ctx.workspaces.update(wsId, {
+        verificationCommand: [verificationCommandSchema.parse({ command: process.execPath, args: ['-e', 'process.exit(0)'], timeoutSeconds: 30 })],
+      });
+
       // The operator Accept merges as its own operation, keyed to the same Run.
       expect((await server.api('POST', `/api/tasks/${task.body.id}/accept`)).status).toBe(200);
       await vi.waitFor(() => {
