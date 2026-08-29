@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, unlinkSync, writeFileSync, writeSync } from 'node:fs';
 import { join } from 'node:path';
 
 /** What `harmonic start` records so status/stop can find the server later. */
@@ -48,15 +48,31 @@ export function daemonStatus(dataDir: string): { running: boolean; info: DaemonI
  * us), is reclaimed; on success returns null and the pidfile names us.
  */
 export function acquireLock(dataDir: string, self: { port: number; host: string }): DaemonInfo | null {
-  // ponytail: non-atomic read-then-write; two `serve`s launched on the same
-  // fresh dir at once could both win. Fine for a local single-user tool (and
-  // `start` is already shielded by its own status check); switch to an O_EXCL
-  // create with stale reclaim if simultaneous boots ever matter.
-  const existing = readDaemon(dataDir);
-  if (existing && existing.pid !== process.pid && isAlive(existing.pid)) return existing;
   mkdirSync(dataDir, { recursive: true });
-  writeDaemon(dataDir, { pid: process.pid, port: self.port, host: self.host, startedAt: Date.now() });
-  return null;
+  const path = pidFilePath(dataDir);
+  const info: DaemonInfo = { pid: process.pid, port: self.port, host: self.host, startedAt: Date.now() };
+  // O_EXCL makes the create itself the exclusivity check: with a fresh dir, only
+  // one of two racing `serve`s can win it. A losing create means someone got
+  // there first — read what they left and only clear it (stale pid, or ours
+  // from the `start` parent) before retrying, never blind-overwrite.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const fd = openSync(path, 'wx');
+      writeSync(fd, JSON.stringify(info));
+      closeSync(fd);
+      return null;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
+    }
+    const existing = readDaemon(dataDir);
+    if (existing && existing.pid !== process.pid && isAlive(existing.pid)) return existing;
+    try {
+      unlinkSync(path);
+    } catch {
+      // Another reclaimer beat us to the unlink; loop and re-check.
+    }
+  }
+  return readDaemon(dataDir);
 }
 
 /** Drop the lock if it's ours (SIGKILL leaves it stale, reclaimed next boot). */

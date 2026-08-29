@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { mkdtempSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { spawn } from 'node:child_process';
 import {
   acquireLock,
@@ -12,6 +13,29 @@ import {
   pidFilePath,
   type DaemonInfo,
 } from '../src/daemon.js';
+
+const daemonUrl = pathToFileURL(new URL('../src/daemon.ts', import.meta.url).pathname).href;
+
+/** Runs `acquireLock(dir, ...)` in its own process and prints the result as JSON. */
+const raceClaim = (dir: string, port: number) => {
+  const script = [
+    `import { acquireLock } from '${daemonUrl}';`,
+    `console.log(JSON.stringify(acquireLock(${JSON.stringify(dir)}, { port: ${port}, host: '0.0.0.0' })));`,
+  ].join('\n');
+  return new Promise<{ pid: number | undefined; holder: DaemonInfo | null }>((resolve, reject) => {
+    const child = spawn(process.execPath, ['--import', 'tsx', '--input-type=module', '--eval', script], {
+      stdio: 'pipe',
+    });
+    let stdout = '';
+    child.stdout.on('data', (chunk: Buffer) => {
+      stdout += chunk.toString();
+    });
+    child.on('exit', (code) => {
+      if (code !== 0) return reject(new Error(`race claimant exited ${code}`));
+      resolve({ pid: child.pid, holder: JSON.parse(stdout.trim()) as DaemonInfo | null });
+    });
+  });
+};
 
 const freshDir = () => mkdtempSync(join(tmpdir(), 'harmonic-daemon-'));
 
@@ -100,6 +124,17 @@ describe('data-dir lock', () => {
     writeDaemon(dir, info(await deadPid()));
     expect(acquireLock(dir, { port: 4700, host: '0.0.0.0' })).toBeNull();
     expect(daemonStatus(dir).info?.pid).toBe(process.pid);
+  });
+
+  it('lets only one of two genuinely racing processes claim a fresh dir', async () => {
+    const dir = freshDir();
+    const [a, b] = await Promise.all([raceClaim(dir, 4700), raceClaim(dir, 4800)]);
+    const winners = [a, b].filter((result) => result.holder === null);
+    const losers = [a, b].filter((result) => result.holder !== null);
+    expect(winners).toHaveLength(1);
+    expect(losers).toHaveLength(1);
+    expect(losers[0]!.holder!.pid).toBe(winners[0]!.pid);
+    expect(daemonStatus(dir).info?.pid).toBe(winners[0]!.pid);
   });
 
   it('release drops the lock only when we own it', () => {
