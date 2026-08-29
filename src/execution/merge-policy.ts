@@ -11,6 +11,12 @@
  */
 import { Git } from './git.js';
 import { withRepoLock } from './repo-lock.js';
+import { startActiveChildOperation, type Operation } from '../telemetry/operations.js';
+import { logger } from '../logger.js';
+
+function within<T>(operation: Operation | undefined, work: () => Promise<T>): Promise<T> {
+  return operation ? operation.run(work) : work();
+}
 
 export interface ConflictResolveContext {
   baseDir: string;
@@ -85,68 +91,145 @@ async function resolveConflict(
     const unmerged = await Git.unmergedPaths(input.baseDir);
     if (unmerged.length === 0) break; // already resolved between turns
 
-    await deps.resolveConflictTurn({
-      baseDir: input.baseDir,
-      baseBranch: input.baseBranch,
-      taskBranch: input.taskBranch,
-      unmergedPaths: unmerged,
-      turn,
+    const turnOp = startActiveChildOperation('merge.resolve', {
+      'merge.turn': turn,
+      'merge.unmerged_count': unmerged.length,
     });
+    logger.info('merge: resolving conflicts', { 'merge.turn': turn, 'merge.unmerged_count': unmerged.length });
+    try {
+      await within(turnOp, () =>
+        deps.resolveConflictTurn({
+          baseDir: input.baseDir,
+          baseBranch: input.baseBranch,
+          taskBranch: input.taskBranch,
+          unmergedPaths: unmerged,
+          turn,
+        }),
+      );
+    } finally {
+      turnOp?.end();
+    }
 
     const stillUnmerged = await Git.unmergedPaths(input.baseDir);
     if (stillUnmerged.length === 0) {
       const done = await Git.completeMerge(input.baseDir);
-      if (done.ok) return { mergeOid: done.mergeOid };
+      if (done.ok) {
+        logger.info('merge: completed after resolution', { 'merge.turn': turn, 'merge.oid': done.mergeOid });
+        return { mergeOid: done.mergeOid };
+      }
       break; // completeMerge failed unexpectedly; fall through to escalation
     }
+    logger.warn('merge: conflicts remain after resolve turn', {
+      'merge.turn': turn,
+      'merge.unmerged_count': stillUnmerged.length,
+    });
   }
   return { escalated: true };
 }
 
-export async function runMergePolicy(input: MergePolicyInput, deps: MergePolicyDeps): Promise<MergePolicyOutcome> {
-  const outcome = await withRepoLock(input.baseDir, async (): Promise<MergePolicyOutcome> => {
-    // The base repo is a shared per-Workspace checkout that worktree tasks never
-    // sit on their base branch, and sibling tasks may target different bases —
-    // so point it at this task's base branch before merging in place. Non-force:
-    // an unexpectedly dirty base checkout fails loudly here rather than having
-    // its uncommitted work discarded. Runs under the mutex, so no sibling merge
-    // races the checkout.
-    if ((await Git.currentBranch(input.baseDir).catch(() => null)) !== input.baseBranch) {
-      await Git.checkout(input.baseDir, input.baseBranch);
-    }
-
-    const merge = await Git.mergeNoFf(input.baseDir, input.taskBranch);
-
-    let mergeOid: string;
-    if (merge.ok) {
-      mergeOid = merge.mergeOid;
-    } else if (merge.conflict) {
-      const resolved = await resolveConflict(input, deps);
-      if ('escalated' in resolved) return escalateConflict(input);
-      mergeOid = resolved.mergeOid;
-    } else {
-      // A hard git fault, not a resolvable conflict — the primitive does not
-      // escalate infra faults; the caller decides how to handle them.
-      throw new Error(merge.detail);
-    }
-
-    if (input.postMergeCheck) {
-      const check = await deps.runPostMergeCheck(mergeOid, input.baseDir);
-      if (!check.pass) {
-        const revertOid = await Git.revertMergeCommit(input.baseDir, mergeOid);
-        const message = postMergeRedMessage(input.taskBranch, input.baseBranch, check.output);
-        return { kind: 'escalated', reason: 'post-merge-red', message, revertOid };
-      }
-    }
-
-    return { kind: 'merged', mergeOid };
-  });
-
-  // Escalation is delivered after the repo mutex is released (ADR-0001: "...
-  // release the mutex, escalate ..."), so a slow/network-bound escalation
-  // never holds up other merges waiting on this base repo.
-  if (outcome.kind === 'escalated') {
-    await deps.escalate(outcome.message);
+/** The merge/resolve/post-check work done while the base repo mutex is held
+ * (the `withRepoLock` critical section) — split out so the lock-hold span
+ * (`merge.lock-hold`) can wrap exactly this and nothing else. */
+async function criticalSection(input: MergePolicyInput, deps: MergePolicyDeps): Promise<MergePolicyOutcome> {
+  // The base repo is a shared per-Workspace checkout that worktree tasks never
+  // sit on their base branch, and sibling tasks may target different bases —
+  // so point it at this task's base branch before merging in place. Non-force:
+  // an unexpectedly dirty base checkout fails loudly here rather than having
+  // its uncommitted work discarded. Runs under the mutex, so no sibling merge
+  // races the checkout.
+  if ((await Git.currentBranch(input.baseDir).catch(() => null)) !== input.baseBranch) {
+    logger.info('merge: checking out base branch', { 'merge.base_branch': input.baseBranch });
+    await Git.checkout(input.baseDir, input.baseBranch);
   }
-  return outcome;
+
+  const merge = await Git.mergeNoFf(input.baseDir, input.taskBranch);
+
+  let mergeOid: string;
+  if (merge.ok) {
+    mergeOid = merge.mergeOid;
+  } else if (merge.conflict) {
+    logger.warn('merge: conflicts detected', { 'merge.task_branch': input.taskBranch });
+    const resolved = await resolveConflict(input, deps);
+    if ('escalated' in resolved) return escalateConflict(input);
+    mergeOid = resolved.mergeOid;
+  } else {
+    // A hard git fault, not a resolvable conflict — the primitive does not
+    // escalate infra faults; the caller decides how to handle them.
+    throw new Error(merge.detail);
+  }
+
+  if (input.postMergeCheck) {
+    const checkOp = startActiveChildOperation('merge.post-check', { 'merge.oid': mergeOid });
+    logger.info('merge: running post-merge check', { 'merge.oid': mergeOid });
+    const check = await within(checkOp, () => deps.runPostMergeCheck(mergeOid, input.baseDir));
+    checkOp?.update({ 'merge.post_check_pass': check.pass });
+    checkOp?.end();
+    if (!check.pass) {
+      logger.warn('merge: post-merge check failed; reverting', { 'merge.oid': mergeOid });
+      const revertOid = await Git.revertMergeCommit(input.baseDir, mergeOid);
+      const message = postMergeRedMessage(input.taskBranch, input.baseBranch, check.output);
+      logger.warn('merge: reverted to keep base green', { 'merge.revert_oid': revertOid });
+      return { kind: 'escalated', reason: 'post-merge-red', message, revertOid };
+    }
+  }
+
+  return { kind: 'merged', mergeOid };
+}
+
+/** Acquires the base repo mutex, separating the WAIT (until acquisition) from
+ * the HOLD (critical-section duration) as two distinct child spans so a merge
+ * queued behind a sibling shows up as time waiting, not time working. */
+async function mergeUnderLock(input: MergePolicyInput, deps: MergePolicyDeps): Promise<MergePolicyOutcome> {
+  const waitOp = startActiveChildOperation('merge.lock-wait', { 'merge.repo': input.baseDir });
+  logger.debug('merge: awaiting base repo lock', { 'merge.repo': input.baseDir });
+  return withRepoLock(input.baseDir, async (): Promise<MergePolicyOutcome> => {
+    waitOp?.end();
+    logger.debug('merge: base repo lock acquired', { 'merge.repo': input.baseDir });
+    const holdOp = startActiveChildOperation('merge.lock-hold', { 'merge.repo': input.baseDir });
+    try {
+      return await within(holdOp, () => criticalSection(input, deps));
+    } finally {
+      holdOp?.end();
+      logger.debug('merge: base repo lock released', { 'merge.repo': input.baseDir });
+    }
+  });
+}
+
+export async function runMergePolicy(input: MergePolicyInput, deps: MergePolicyDeps): Promise<MergePolicyOutcome> {
+  const mergeOp = startActiveChildOperation('merge', {
+    'merge.mechanism': 'policy',
+    'merge.base_branch': input.baseBranch,
+    'merge.task_branch': input.taskBranch,
+  });
+  return within(mergeOp, async () => {
+    try {
+      logger.info('merge: starting', {
+        'merge.base_branch': input.baseBranch,
+        'merge.task_branch': input.taskBranch,
+        'merge.conflict_resolve_turns': input.conflictResolveTurns,
+        'merge.post_merge_check': input.postMergeCheck,
+      });
+
+      const outcome = await mergeUnderLock(input, deps);
+
+      // Escalation is delivered after the repo mutex is released (ADR-0001: "...
+      // release the mutex, escalate ..."), so a slow/network-bound escalation
+      // never holds up other merges waiting on this base repo.
+      if (outcome.kind === 'escalated') {
+        logger.warn('merge: escalating', { 'merge.reason': outcome.reason });
+        await deps.escalate(outcome.message);
+        mergeOp?.update({ 'merge.outcome': 'escalated', 'merge.reason': outcome.reason });
+      } else {
+        logger.info('merge: merged', { 'merge.oid': outcome.mergeOid });
+        mergeOp?.update({ 'merge.outcome': 'merged', 'merge.oid': outcome.mergeOid });
+      }
+
+      mergeOp?.end();
+      return outcome;
+    } catch (error) {
+      logger.error('merge: failed', { 'merge.error': error instanceof Error ? error.message : String(error) });
+      mergeOp?.fail(error);
+      throw error;
+    }
+  });
 }

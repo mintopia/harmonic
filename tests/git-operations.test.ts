@@ -50,7 +50,7 @@ describe('Git operation instrumentation (issue #287)', () => {
     const worktreeRoot = mkdtempSync(join(tmpdir(), 'harmonic-git-operations-wt-'));
     tmpDirs.push(worktreeRoot);
     const featurePath = join(worktreeRoot, 'feature');
-    const parent = startOperation({ type: 'run', attributes: {} });
+    const parent = startOperation({ type: 'attempt', attributes: {} });
 
     await parent.run(async () => {
       await Git.createBranch(repo, 'preview', 'main');
@@ -67,7 +67,7 @@ describe('Git operation instrumentation (issue #287)', () => {
     parent.end();
 
     const spans = exporter.getFinishedSpans();
-    const parentSpan = spans.find((span) => span.name === 'harmonic.run');
+    const parentSpan = spans.find((span) => span.name === 'harmonic.attempt');
     if (!parentSpan) throw new Error('Expected parent operation span');
     for (const name of ['harmonic.git.branch-cut', 'harmonic.git.rebase', 'harmonic.git.ff-only']) {
       expect(spans.find((span) => span.name === name)?.parentSpanContext?.spanId).toBe(parentSpan.spanContext().spanId);

@@ -7,6 +7,7 @@ import type { Attributes } from '@opentelemetry/api';
 import { withRepoLock } from './repo-lock.js';
 import { startActiveChildOperation } from '../telemetry/operations.js';
 import { forEachYielding } from '../reliability/yield.js';
+import { logger } from '../logger.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -272,7 +273,8 @@ export const Git = {
    * repo at a task's base branch before an in-place merge (ADR-0001) — a dirty
    * or otherwise unmovable checkout fails loudly instead of destroying work.
    */
-  checkout: (dir: string, branch: string) => git(dir, 'checkout', branch),
+  checkout: (dir: string, branch: string) =>
+    withGitOperation('git.checkout', { 'git.branch': branch }, async () => git(dir, 'checkout', branch)),
 
   /**
    * Re-point HEAD at `branch` with a metadata-only `symbolic-ref` — no checkout,
@@ -786,11 +788,14 @@ export const Git = {
    * (ADR-0001's escalation path aborts before composing its plain-language
    * message, whether or not one was actually left open). */
   async abortMerge(worktreeDir: string): Promise<void> {
-    try {
-      await git(worktreeDir, 'merge', '--abort');
-    } catch {
-      // No merge in progress.
-    }
+    return withGitOperation('git.merge-abort', { 'git.ref': 'HEAD' }, async () => {
+      logger.debug('git: aborting in-progress merge', { 'git.dir': worktreeDir });
+      try {
+        await git(worktreeDir, 'merge', '--abort');
+      } catch {
+        // No merge in progress.
+      }
+    });
   },
 
   /**

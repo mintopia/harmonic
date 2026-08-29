@@ -148,7 +148,7 @@ describe('command verifier (issue #135)', () => {
     const provider = new NodeTracerProvider({ spanProcessors: [registry, new SimpleSpanProcessor(exporter)] });
     provider.register();
     providers.push(provider);
-    const parent = startOperation({ type: 'run', attributes: { 'run.id': 7 } });
+    const parent = startOperation({ type: 'attempt', attributes: { 'run.id': 7 } });
 
     const attempt = await parent.run(() =>
       runCommandVerifier({
@@ -165,7 +165,7 @@ describe('command verifier (issue #135)', () => {
 
     expect(attempt.verdict).toBe('fail');
     const spans = exporter.getFinishedSpans();
-    const run = spans.find((span) => span.name === 'harmonic.run');
+    const run = spans.find((span) => span.name === 'harmonic.attempt');
     const verify = spans.find((span) => span.name === 'harmonic.verify.command');
     if (!run || !verify) throw new Error('Expected exported run and command verification spans');
     expect(verify.parentSpanContext?.spanId).toBe(run.spanContext().spanId);

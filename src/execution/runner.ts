@@ -718,7 +718,7 @@ export class Runner {
     // can't bind still dispatches fresh — never blocked.
     const bound = await this.bindContinuationIfEligible(task, run);
     const operation = startOperation({
-      type: 'run',
+      type: 'attempt',
       parent,
       attributes: {
         'task.id': task.id,
@@ -1952,7 +1952,6 @@ export class Runner {
     task: TaskRow,
     run: RunRow,
     record: (type: 'lifecycle', payload: unknown) => void,
-    parent: SpanContext,
     signal: AbortSignal,
     patch: Partial<RunRow>,
   ): MergePolicyDeps {
@@ -2001,7 +2000,6 @@ export class Runner {
             worktreePath: join(this.worktreesDir, `postmerge-${run.id}`),
             command,
             signal,
-            parent,
             attributes: { 'task.id': task.id, 'run.id': run.id },
           });
           await this.verificationAttempts.append(run.id, commandAttemptToInput(attempt));
@@ -3199,7 +3197,7 @@ export class Runner {
           const current = await this.runStore.get(run.id);
           const verifiedTip = current.candidateOid;
           const worktreeMerge = task.isolationMode === 'worktree' && !!current.branch && !!current.baseBranch;
-          const deps = this.mergePolicyDeps(task, run, record, parent, active.verifyAbort.signal, patch);
+          const deps = this.mergePolicyDeps(task, run, record, active.verifyAbort.signal, patch);
           // Merge the verified worktree branch via the one merge policy (ADR-0001).
           // Returns false when the merge escalated — the primitive already settled
           // the Run (its own `escalate`), so the caller only records and stops.

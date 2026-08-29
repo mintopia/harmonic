@@ -190,7 +190,7 @@ describe('runCritic (issue #136)', () => {
     const provider = new NodeTracerProvider({ spanProcessors: [registry, new SimpleSpanProcessor(exporter)] });
     provider.register();
     providers.push(provider);
-    const parent = startOperation({ type: 'run', attributes: { 'run.id': 11 } });
+    const parent = startOperation({ type: 'attempt', attributes: { 'run.id': 11 } });
 
     const attempt = await parent.run(() =>
       runCritic({
@@ -209,7 +209,7 @@ describe('runCritic (issue #136)', () => {
 
     expect(attempt.verdict).toBe('fail');
     const spans = exporter.getFinishedSpans();
-    const run = spans.find((span) => span.name === 'harmonic.run');
+    const run = spans.find((span) => span.name === 'harmonic.attempt');
     const verify = spans.find((span) => span.name === 'harmonic.verify.critic');
     if (!run || !verify) throw new Error('Expected exported run and critic verification spans');
     expect(verify.parentSpanContext?.spanId).toBe(run.spanContext().spanId);

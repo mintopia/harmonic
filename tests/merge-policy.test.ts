@@ -3,8 +3,12 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { context, propagation, trace } from '@opentelemetry/api';
+import { InMemorySpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base';
+import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
 import { Git } from '../src/execution/git.js';
 import { runMergePolicy, type MergePolicyDeps } from '../src/execution/merge-policy.js';
+import { OperationRegistry, startOperation } from '../src/telemetry/operations.js';
 
 const tmpDirs: string[] = [];
 
@@ -365,5 +369,62 @@ describe('runMergePolicy (ADR-0001, "One merge policy, everywhere")', () => {
     expect(outcome2.kind).toBe('merged');
     expect(maxActive).toBe(1);
     expect(runPostMergeCheck).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('runMergePolicy telemetry (ADR-0010, #387)', () => {
+  const providers: NodeTracerProvider[] = [];
+  afterEach(async () => {
+    trace.disable();
+    context.disable();
+    propagation.disable();
+    await Promise.all(providers.splice(0).map((provider) => provider.shutdown()));
+  });
+
+  it('emits a nested merge span tree under the active operation on a clean merge', async () => {
+    const exporter = new InMemorySpanExporter();
+    const registry = new OperationRegistry();
+    const provider = new NodeTracerProvider({ spanProcessors: [registry, new SimpleSpanProcessor(exporter)] });
+    provider.register();
+    providers.push(provider);
+
+    const repo = makeRepo();
+    await makeTaskBranch(repo, 'task-traced', (wt) => {
+      writeFileSync(join(wt, 'feature.txt'), 'feature\n');
+    });
+
+    const deps: MergePolicyDeps = {
+      resolveConflictTurn: neverCalled('resolveConflictTurn'),
+      runPostMergeCheck: vi.fn(async () => ({ pass: true, output: '' })),
+      escalate: vi.fn(async () => {}),
+    };
+
+    const parent = startOperation({ type: 'attempt', attributes: {} });
+    const outcome = await parent.run(() =>
+      runMergePolicy(
+        { baseDir: repo, baseBranch: 'main', taskBranch: 'task-traced', conflictResolveTurns: 2, postMergeCheck: true },
+        deps,
+      ),
+    );
+    parent.end();
+
+    expect(outcome.kind).toBe('merged');
+
+    const spans = exporter.getFinishedSpans();
+    const byName = (name: string) => spans.find((span) => span.name === name);
+    const attempt = byName('harmonic.attempt');
+    const merge = byName('harmonic.merge');
+    const wait = byName('harmonic.merge.lock-wait');
+    const hold = byName('harmonic.merge.lock-hold');
+    const postCheck = byName('harmonic.merge.post-check');
+    if (!attempt || !merge || !wait || !hold || !postCheck) {
+      throw new Error(`missing span(s): ${JSON.stringify(spans.map((s) => s.name))}`);
+    }
+    expect(merge.attributes['merge.mechanism']).toBe('policy');
+    expect(merge.attributes['merge.outcome']).toBe('merged');
+    expect(merge.parentSpanContext?.spanId).toBe(attempt.spanContext().spanId);
+    expect(wait.parentSpanContext?.spanId).toBe(merge.spanContext().spanId);
+    expect(hold.parentSpanContext?.spanId).toBe(merge.spanContext().spanId);
+    expect(postCheck.parentSpanContext?.spanId).toBe(hold.spanContext().spanId);
   });
 });

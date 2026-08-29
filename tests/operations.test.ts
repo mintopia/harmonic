@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { context, propagation, trace } from '@opentelemetry/api';
@@ -13,7 +13,7 @@ import { AutoRunner } from '../src/execution/auto-runner.js';
 import { EventBus } from '../src/server/bus.js';
 import { initializeTelemetry, resolveTelemetryOptions } from '../src/telemetry.js';
 import { OperationRegistry, startOperation } from '../src/telemetry/operations.js';
-import { allWorkspaces, makeSettingsStore, startServer, stubHarness } from './helpers.js';
+import { allWorkspaces, makeSettingsStore, seedLocalMarkdownTicket, startServer, stubHarness } from './helpers.js';
 
 const providers: NodeTracerProvider[] = [];
 
@@ -63,7 +63,7 @@ describe('operations (issue #284)', () => {
 
   it('uses active ALS context across awaits and stored parent context across ticks', async () => {
     const { exporter } = installOperations();
-    const parent = startOperation({ type: 'run', attributes: {} });
+    const parent = startOperation({ type: 'attempt', attributes: {} });
     const syncChild = await parent.run(async () => {
       await Promise.resolve();
       return startOperation({ type: 'verify', attributes: {} });
@@ -74,7 +74,7 @@ describe('operations (issue #284)', () => {
     parent.fail('verification failed');
 
     const spans = exporter.getFinishedSpans();
-    const parentSpan = spans.find((span) => span.name === 'harmonic.run');
+    const parentSpan = spans.find((span) => span.name === 'harmonic.attempt');
     if (!parentSpan) throw new Error('Expected exported parent span');
     for (const name of ['harmonic.verify', 'harmonic.merge']) {
       expect(spans.find((span) => span.name === name)?.parentSpanContext?.spanId).toBe(parentSpan.spanContext().spanId);
@@ -104,7 +104,7 @@ describe('operations (issue #284)', () => {
     first.end();
     const second = startOperation({ type: 'poll', attributes: {} });
     second.fail('poll failed');
-    const third = startOperation({ type: 'run', attributes: {} });
+    const third = startOperation({ type: 'attempt', attributes: {} });
     third.end();
 
     const summaries: { type: string; count: number; errorCount: number }[] = [];
@@ -114,7 +114,7 @@ describe('operations (issue #284)', () => {
 
     expect(summaries).toEqual([
       { type: 'poll', count: 2, errorCount: 1 },
-      { type: 'run', count: 1, errorCount: 0 },
+      { type: 'attempt', count: 1, errorCount: 0 },
     ]);
 
     const nextPass: { type: string; count: number; errorCount: number }[] = [];
@@ -129,7 +129,7 @@ describe('operations (issue #284)', () => {
     const telemetry = initializeTelemetry(resolveTelemetryOptions({ exportEnabled: 'false' }), {
       extraSpanProcessors: [new SimpleSpanProcessor(exporter)],
     });
-    const parent = startOperation({ type: 'run', attributes: {} });
+    const parent = startOperation({ type: 'attempt', attributes: {} });
     const child = await parent.run(async () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
       return startOperation({ type: 'verify', attributes: {} });
@@ -138,7 +138,7 @@ describe('operations (issue #284)', () => {
     parent.end();
 
     const spans = exporter.getFinishedSpans();
-    const parentSpan = spans.find((span) => span.name === 'harmonic.run');
+    const parentSpan = spans.find((span) => span.name === 'harmonic.attempt');
     const childSpan = spans.find((span) => span.name === 'harmonic.verify');
     if (!parentSpan || !childSpan) throw new Error('Expected exported parent and child spans');
     expect(childSpan.parentSpanContext?.spanId).toBe(parentSpan.spanContext().spanId);
@@ -163,7 +163,7 @@ describe('Auto-Runner operations (issue #289)', () => {
         const pick = spans.find(
           (span) => span.name === 'harmonic.auto-runner.pick-start' && span.attributes['task.id'] === task.id,
         );
-        const run = spans.find((span) => span.name === 'harmonic.run' && span.attributes['task.id'] === task.id);
+        const run = spans.find((span) => span.name === 'harmonic.attempt' && span.attributes['task.id'] === task.id);
         expect(pick).toBeDefined();
         expect(run).toBeDefined();
       });
@@ -172,7 +172,7 @@ describe('Auto-Runner operations (issue #289)', () => {
       const pick = spans.find(
         (span) => span.name === 'harmonic.auto-runner.pick-start' && span.attributes['task.id'] === task.id,
       );
-      const run = spans.find((span) => span.name === 'harmonic.run' && span.attributes['task.id'] === task.id);
+      const run = spans.find((span) => span.name === 'harmonic.attempt' && span.attributes['task.id'] === task.id);
       if (!pick || !run) throw new Error('Expected pick/start and Run Operations for the scheduled task');
       const tick = spans.find((span) => span.spanContext().spanId === pick.parentSpanContext?.spanId);
       if (!tick) throw new Error('Expected scheduler tick Operation');
@@ -298,9 +298,9 @@ describe('Run operations (issue #290)', () => {
       // Escalation settles the Run: its operation closes there (the human
       // decision is not part of the Run's execution), and nothing is left live.
       await vi.waitFor(() => {
-        expect(exporter.getFinishedSpans().find((span) => span.name === 'harmonic.run' && span.attributes['run.id'] === runId)).toBeDefined();
+        expect(exporter.getFinishedSpans().find((span) => span.name === 'harmonic.attempt' && span.attributes['run.id'] === runId)).toBeDefined();
       });
-      expect(registry.list().find((operation) => operation.name === 'harmonic.run' && operation.attributes['run.id'] === runId)).toBeUndefined();
+      expect(registry.list().find((operation) => operation.name === 'harmonic.attempt' && operation.attributes['run.id'] === runId)).toBeUndefined();
 
       // The operator Accept merges as its own operation, keyed to the same Run.
       expect((await server.api('POST', `/api/tasks/${task.body.id}/accept`)).status).toBe(200);
@@ -313,4 +313,88 @@ describe('Run operations (issue #290)', () => {
       await server.close();
     }
   });
+});
+
+describe('Automated merge policy operations (issue #387)', () => {
+  it('nests the harmonic.merge span tree under the real Attempt operation when a worktree task auto-merges', async () => {
+    // Proves the code-review concern for #387 empirically: `runMergePolicy`
+    // (src/execution/merge-policy.ts) only emits its `harmonic.merge` span
+    // when a Harmonic Operation is the ACTIVE span at call time, and that
+    // active span is ambient OTel context carried across awaits through the
+    // real Runner's async completion path (runner.ts drive() -> the
+    // automated worktree `mergeWorktreeBranch` call), not a synthetic
+    // `parent.run(() => runMergePolicy(...))` wrapper like the direct unit
+    // test in tests/merge-policy.test.ts. This drives a real afk worktree
+    // Task (modelled on tests/auto-merge-policy.test.ts case (a)) all the
+    // way to a real automated merge and inspects the exported span tree.
+    const { exporter } = installOperations();
+    const repo = mkdtempSync(join(tmpdir(), 'harmonic-ops-merge-policy-'));
+    execFileSync('git', ['init', '-b', 'main', repo]);
+    execFileSync('git', ['-C', repo, 'config', 'user.name', 'Test']);
+    execFileSync('git', ['-C', repo, 'config', 'user.email', 'test@example.com']);
+    writeFileSync(join(repo, 'README.md'), '# repo\n');
+    mkdirSync(join(repo, 'docs', 'agents'), { recursive: true });
+    writeFileSync(join(repo, 'docs', 'agents', 'issue-tracker.md'), '# Issue tracker: local-markdown\n\nPath: tickets\n');
+    execFileSync('git', ['-C', repo, 'add', '-A']);
+    execFileSync('git', ['-C', repo, 'commit', '-m', 'init']);
+
+    const server = await startServer({
+      ...stubHarness(),
+      defaults: { isolationMode: 'worktree' },
+      maxAttempts: 2,
+      drive: { continueAttempts: 0, mergeFate: 'auto-merge' },
+    });
+    try {
+      const wsId = (await server.app.ctx.workspaces.list())[0]!.id;
+      await server.app.ctx.workspaces.update(wsId, {
+        workingDir: repo,
+        verificationCommand: [verificationCommandSchema.parse({ command: process.execPath, args: ['-e', 'process.exit(0)'], timeoutSeconds: 30 })],
+      });
+      await server.app.ctx.configStore.update({
+        merge: { postMergeCheck: false },
+        drive: { prompt: JSON.stringify({ writeFiles: { 'impl.txt': 'implementation\n' }, mcpFinish: true }) },
+      });
+
+      const trackerRef = 999_001;
+      const task = await server.app.ctx.tasks.upsertMirrored({
+        trackerRef,
+        prompt: `ticket ${trackerRef}\n\nbody`,
+        workflow: 'implement',
+        wayfinderType: null,
+        mapRef: null,
+        closed: false,
+      });
+      seedLocalMarkdownTicket(task.workingDir, trackerRef, 'closed');
+      execFileSync('git', ['-C', task.workingDir, 'add', '-A']);
+      execFileSync('git', ['-C', task.workingDir, 'commit', '-q', '-m', `ticket ${trackerRef}`]);
+
+      await server.app.ctx.tasks.setState(task.id, 'working');
+      const run = await server.app.ctx.runner.launchClaimed(task.id);
+
+      await vi.waitFor(
+        async () => {
+          const t = await server.app.ctx.tasks.get(task.id);
+          if (t.state === 'escalated') throw new Error(`escalated instead of merging: ${(await server.app.ctx.runs.get(run.id)).reason}`);
+          expect(t.state).toBe('done');
+        },
+        { timeout: 20_000 },
+      );
+
+      const spans = exporter.getFinishedSpans();
+      const attempt = spans.find((span) => span.name === 'harmonic.attempt' && span.attributes['run.id'] === run.id);
+      // The merge span itself carries no `run.id` attribute (only
+      // `merge.mechanism`/`merge.base_branch`/`merge.task_branch`); this test
+      // only ever drives one Task through to merge, so identifying it by
+      // name + mechanism is unambiguous.
+      const merge = spans.find((span) => span.name === 'harmonic.merge' && span.attributes['merge.mechanism'] === 'policy');
+      if (!attempt || !merge) {
+        throw new Error(`missing span(s); exported spans: ${JSON.stringify(spans.map((s) => s.name))}`);
+      }
+      expect(merge.attributes['merge.mechanism']).toBe('policy');
+      expect(merge.parentSpanContext?.spanId).toBe(attempt.spanContext().spanId);
+    } finally {
+      await server.close();
+      rmSync(repo, { recursive: true, force: true });
+    }
+  }, 30_000);
 });
