@@ -112,8 +112,6 @@ export interface VerificationAttempt {
 export type TicketTimelineKind =
   | 'attempt-started'
   | 'attempt-finished'
-  | 'run-started'
-  | 'run-finished'
   | 'lifecycle'
   | 'verification'
   | 'guardrail'

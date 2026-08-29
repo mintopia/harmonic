@@ -298,9 +298,9 @@ describe('Run operations (issue #290)', () => {
       // Escalation settles the Run: its operation closes there (the human
       // decision is not part of the Run's execution), and nothing is left live.
       await vi.waitFor(() => {
-        expect(exporter.getFinishedSpans().find((span) => span.name === 'harmonic.attempt' && span.attributes['run.id'] === runId)).toBeDefined();
+        expect(exporter.getFinishedSpans().find((span) => span.name === 'harmonic.attempt' && span.attributes['attempt.id'] === runId)).toBeDefined();
       });
-      expect(registry.list().find((operation) => operation.name === 'harmonic.attempt' && operation.attributes['run.id'] === runId)).toBeUndefined();
+      expect(registry.list().find((operation) => operation.name === 'harmonic.attempt' && operation.attributes['attempt.id'] === runId)).toBeUndefined();
 
       // The operator addressed the failure, so the post-merge check the one
       // merge policy runs on Accept (ADR-0001, #383) is green and the merge lands.
@@ -315,7 +315,7 @@ describe('Run operations (issue #290)', () => {
       const escalatedAttempt = await server.app.ctx.attempts.resolveLatest(runId);
       expect((await server.api('POST', `/api/tasks/${task.body.id}/accept`)).status).toBe(200);
       await vi.waitFor(() => {
-        const merge = exporter.getFinishedSpans().find((span) => span.name === 'harmonic.merge' && span.attributes['run.id'] === escalatedAttempt.id);
+        const merge = exporter.getFinishedSpans().find((span) => span.name === 'harmonic.merge' && span.attributes['attempt.id'] === escalatedAttempt.id);
         expect(merge).toBeDefined();
         // The one merge policy (ADR-0001 #388): operator Accept runs runMergePolicy
         // directly now (the journaled MergeCoordinator is deleted), so the merge
@@ -394,7 +394,7 @@ describe('Automated merge policy operations (issue #387)', () => {
       );
 
       const spans = exporter.getFinishedSpans();
-      const attempt = spans.find((span) => span.name === 'harmonic.attempt' && span.attributes['run.id'] === run.id);
+      const attempt = spans.find((span) => span.name === 'harmonic.attempt' && span.attributes['attempt.id'] === run.id);
       // The merge span itself carries no `run.id` attribute (only
       // `merge.mechanism`/`merge.base_branch`/`merge.task_branch`); this test
       // only ever drives one Task through to merge, so identifying it by

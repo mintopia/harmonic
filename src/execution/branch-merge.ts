@@ -25,10 +25,10 @@ import { startOperation } from '../telemetry/operations.js';
  *     overwritten.
  *  3. If a worktree **does** have the target checked out (a worktree-mode base
  *     repo sitting on the base branch, or a direct-mode live checkout), a
- *     plumbing ref-update would desync it. So merging happens **only under an
- *     exclusive clean lease** (`leaseHeld` + the checkout being clean) via a
+ *     plumbing ref-update would desync it. So merging happens **only under the
+ *     merge mutex** (`mutexHeld` + the checkout being clean) via a
  *     **coherent `merge --ff-only`** that advances the ref and the working tree
- *     together. Absent that lease, or over a dirty checkout, it **falls back to
+ *     together. Absent that mutex, or over a dirty checkout, it **falls back to
  *     PR/manual** (`ok:false`, `reason:'fallback-pr-manual'`) rather than risk
  *     the desync — the operator merges it by hand.
  *
@@ -42,8 +42,8 @@ import { startOperation } from '../telemetry/operations.js';
  * Pure of the database and the Runner, like `candidate.ts`: it takes explicit
  * paths/revisions and calls only `Git.*`, so every branch of the decision is
  * exhaustively testable against a
- * throwaway git repo. The `leaseHeld` gate is the one thing the caller must
- * supply, because whether an exclusive lease is held is a fact about the
+ * throwaway git repo. The `mutexHeld` gate is the one thing the caller must
+ * supply, because whether the merge mutex is held is a fact about the
  * Runner's world this module deliberately does not reach into.
  */
 
@@ -64,13 +64,13 @@ export interface MergeIntoBaseArgs {
    * the "branch" is the default branch being merged into `epic/<ref>`. */
   mode?: 'fast-forward' | 'merge';
   /**
-   * An exclusive clean lease is held over the target checkout, permitting a
-   * coherent in-place merge of a **checked-out** target. When the target is not
-   * checked out this is irrelevant (the CAS ref-update needs no lease). Default
-   * `false` — a checked-out target with no asserted lease falls back to
+   * The merge mutex is held over the target checkout, permitting a coherent
+   * in-place merge of a **checked-out** target. When the target is not
+   * checked out this is irrelevant (the CAS ref-update needs no mutex). Default
+   * `false` — a checked-out target with no asserted mutex falls back to
    * PR/manual rather than risk desyncing a checkout this module can't vouch for.
    */
-  leaseHeld?: boolean;
+  mutexHeld?: boolean;
   /**
    * Parent directory for the dedicated admin worktree. A fresh unique child of
    * it is created (and removed) per merge, so concurrent merges never collide.
@@ -135,7 +135,7 @@ export async function mergeIntoBaseAndRunPostMerge(
 
 /**
  * Merge `branch` into `baseBranch` per the module contract. Never throws for an
- * expected merging failure (conflict, a moved target, a missing lease) — those
+ * expected merging failure (conflict, a moved target, the mutex not held) — those
  * are `{ ok:false }` outcomes the caller journals and surfaces exactly as the
  * pre-#153 merge conflict was; only a genuine git/plumbing fault propagates.
  */
@@ -205,9 +205,9 @@ async function mergeIntoBaseUnchecked(args: MergeIntoBaseArgs): Promise<MergeInt
   }
 
   // The target is checked out. A plumbing ref-update would desync it, so merge
-  // only under an exclusive clean lease with a coherent checkout/reset.
-  if (!args.leaseHeld) {
-    return { ok: false, reason: 'fallback-pr-manual', detail: `target branch '${baseBranch}' is checked out and no exclusive lease is held; merge via PR/manual` };
+  // only under the merge mutex with a coherent checkout/reset.
+  if (!args.mutexHeld) {
+    return { ok: false, reason: 'fallback-pr-manual', detail: `target branch '${baseBranch}' is checked out and the merge mutex is not held; merge via PR/manual` };
   }
   if (await Git.isDirty(checkoutDir)) {
     return { ok: false, reason: 'fallback-pr-manual', detail: `target branch '${baseBranch}' checkout has uncommitted changes; merge via PR/manual` };

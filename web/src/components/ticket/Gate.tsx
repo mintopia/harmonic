@@ -45,14 +45,14 @@ export function Gate({
   }
 
   if (model.kind === 'result') {
-    const lead = `Run ${model.attempt} `;
+    const lead = `Attempt ${model.attempt} `;
     const rest = model.summary.startsWith(lead) ? model.summary.slice(lead.length) : model.summary;
     return (
       <div className={WRAP}>
         <div className="flex items-center justify-center gap-2 text-small text-muted">
           <span role="img" aria-label={DOT_LABEL[model.dot]} className={`${dot} ${runDotFill[model.dot]}`} />
           <span>
-            <b className="font-semibold text-ink">Run {model.attempt}</b> {rest}
+            <b className="font-semibold text-ink">Attempt {model.attempt}</b> {rest}
           </span>
         </div>
         <button
@@ -60,7 +60,7 @@ export function Gate({
           className={`${btnGhost} w-full justify-center`}
           onClick={() => onGoToCurrent(model.currentRunId)}
         >
-          Go to current run
+          Go to current attempt
         </button>
       </div>
     );

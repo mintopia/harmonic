@@ -58,7 +58,7 @@ describe('branch merging (issue #153)', () => {
     const refreshAfterDefaultBranchAdvance = vi.fn<(repoDir: string, defaultBranch: string) => Promise<void>>(async () => {});
 
     await expect(mergeIntoBaseAndRunPostMerge(
-      { repoDir: repo, baseBranch: 'main', branch: 'feat', expectedOid: oid(repo, 'feat'), leaseHeld: true },
+      { repoDir: repo, baseBranch: 'main', branch: 'feat', expectedOid: oid(repo, 'feat'), mutexHeld: true },
       async ({ repoDir, baseBranch }) => refreshAfterDefaultBranchAdvance(repoDir, baseBranch),
     )).resolves.toMatchObject({ ok: true });
 
@@ -93,7 +93,7 @@ describe('branch merging (issue #153)', () => {
     const postMerge = defaultBranchPostMerge(refreshAfterDefaultBranchAdvance);
 
     await expect(mergeIntoBaseAndRunPostMerge(
-      { repoDir: taskCheckout, baseRepoDir: repo, baseBranch: 'develop', branch: 'feat', expectedOid: oid(repo, 'feat'), leaseHeld: true },
+      { repoDir: taskCheckout, baseRepoDir: repo, baseBranch: 'develop', branch: 'feat', expectedOid: oid(repo, 'feat'), mutexHeld: true },
       postMerge,
     )).resolves.toMatchObject({ ok: true });
 
@@ -131,12 +131,12 @@ describe('branch merging (issue #153)', () => {
     expect(worktreeCount(repo)).toBe(1);
   });
 
-  it('AC1 (checked out, clean, leased): merges coherently in place — HEAD stays on the branch, tree advances, status clean', async () => {
+  it('AC1 (checked out, clean, mutex held): merges coherently in place — HEAD stays on the branch, tree advances, status clean', async () => {
     const repo = makeRepo(); // main is checked out here
     makeBranchAhead(repo, 'feat', 'feat.txt', 'work\n');
     const featTip = oid(repo, 'feat');
 
-    const out = await mergeIntoBase({ repoDir: repo, baseBranch: 'main', branch: 'feat', expectedOid: oid(repo, 'feat'), leaseHeld: true });
+    const out = await mergeIntoBase({ repoDir: repo, baseBranch: 'main', branch: 'feat', expectedOid: oid(repo, 'feat'), mutexHeld: true });
 
     expect(out).toMatchObject({ ok: true, mode: 'in-place' });
     expect(git(repo, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('main'); // still on main, not desynced
@@ -146,25 +146,25 @@ describe('branch merging (issue #153)', () => {
     expect(worktreeCount(repo)).toBe(1);
   });
 
-  it('AC5 (checked out, no lease): falls back to PR/manual rather than a desyncing ref-update', async () => {
+  it('AC5 (checked out, no mutex): falls back to PR/manual rather than a desyncing ref-update', async () => {
     const repo = makeRepo();
     makeBranchAhead(repo, 'feat', 'feat.txt', 'work\n');
     const base = oid(repo, 'main');
 
-    const out = await mergeIntoBase({ repoDir: repo, baseBranch: 'main', branch: 'feat', expectedOid: oid(repo, 'feat') }); // leaseHeld defaults false
+    const out = await mergeIntoBase({ repoDir: repo, baseBranch: 'main', branch: 'feat', expectedOid: oid(repo, 'feat') }); // mutexHeld defaults false
 
     expect(out).toMatchObject({ ok: false, reason: 'fallback-pr-manual' });
     expect(oid(repo, 'main')).toBe(base); // target untouched
     expect(worktreeCount(repo)).toBe(1);
   });
 
-  it('AC5 (checked out, dirty): a lease is held but the checkout has uncommitted work — falls back rather than clobber it', async () => {
+  it('AC5 (checked out, dirty): the mutex is held but the checkout has uncommitted work — falls back rather than clobber it', async () => {
     const repo = makeRepo();
     makeBranchAhead(repo, 'feat', 'feat.txt', 'work\n');
     const base = oid(repo, 'main');
     writeFileSync(join(repo, 'operator-wip.txt'), 'uncommitted operator work\n');
 
-    const out = await mergeIntoBase({ repoDir: repo, baseBranch: 'main', branch: 'feat', expectedOid: oid(repo, 'feat'), leaseHeld: true });
+    const out = await mergeIntoBase({ repoDir: repo, baseBranch: 'main', branch: 'feat', expectedOid: oid(repo, 'feat'), mutexHeld: true });
 
     expect(out).toMatchObject({ ok: false, reason: 'fallback-pr-manual' });
     expect(oid(repo, 'main')).toBe(base);
@@ -181,7 +181,7 @@ describe('branch merging (issue #153)', () => {
     git(repo, 'commit', '-am', 'main advances');
     const mainTip = oid(repo, 'main');
 
-    const out = await mergeIntoBase({ repoDir: repo, baseBranch: 'main', branch: 'feat', expectedOid: oid(repo, 'feat'), leaseHeld: true });
+    const out = await mergeIntoBase({ repoDir: repo, baseBranch: 'main', branch: 'feat', expectedOid: oid(repo, 'feat'), mutexHeld: true });
 
     expect(out).toMatchObject({ ok: false, reason: 'stale-base' });
     expect(oid(repo, 'main')).toBe(mainTip); // untouched
@@ -196,7 +196,7 @@ describe('branch merging (issue #153)', () => {
     git(repo, 'commit', '-am', 'main advances');
     const featTip = oid(repo, 'feat');
 
-    const out = await mergeIntoBase({ repoDir: repo, baseBranch: 'main', branch: 'feat', expectedOid: featTip, mode: 'merge', leaseHeld: true });
+    const out = await mergeIntoBase({ repoDir: repo, baseBranch: 'main', branch: 'feat', expectedOid: featTip, mode: 'merge', mutexHeld: true });
 
     expect(out).toMatchObject({ ok: true, mode: 'in-place' });
     expect(git(repo, 'rev-parse', 'main^2')).toBe(featTip); // a real merge commit whose second parent is the verified tip
@@ -213,7 +213,7 @@ describe('branch merging (issue #153)', () => {
     git(repo, 'commit', '-am', 'main diverges');
     const mainTip = oid(repo, 'main');
 
-    const out = await mergeIntoBase({ repoDir: repo, baseBranch: 'main', branch: 'feat', expectedOid: oid(repo, 'feat'), mode: 'merge', leaseHeld: true });
+    const out = await mergeIntoBase({ repoDir: repo, baseBranch: 'main', branch: 'feat', expectedOid: oid(repo, 'feat'), mode: 'merge', mutexHeld: true });
 
     expect(out).toMatchObject({ ok: false, reason: 'conflict' });
     expect(oid(repo, 'main')).toBe(mainTip); // untouched
@@ -234,7 +234,7 @@ describe('branch merging (issue #153)', () => {
       baseBranch: 'main',
       branch: 'feat',
       expectedOid: verifiedOid,
-      leaseHeld: true,
+      mutexHeld: true,
     })).resolves.toMatchObject({ ok: false, reason: 'stale-head' });
     expect(oid(repo, 'main')).toBe(mainBefore);
   });

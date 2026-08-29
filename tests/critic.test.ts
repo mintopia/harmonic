@@ -190,7 +190,7 @@ describe('runCritic (issue #136)', () => {
     const provider = new NodeTracerProvider({ spanProcessors: [registry, new SimpleSpanProcessor(exporter)] });
     provider.register();
     providers.push(provider);
-    const parent = startOperation({ type: 'attempt', attributes: { 'run.id': 11 } });
+    const parent = startOperation({ type: 'attempt', attributes: { 'attempt.id': 11 } });
 
     const attempt = await parent.run(() =>
       runCritic({
@@ -202,7 +202,7 @@ describe('runCritic (issue #136)', () => {
         harnessId: 'claude',
         drive: { run: async () => ({ output: '{"verdict":"fail","summary":"wrong behavior"}', permissionRequests: [] }) },
         parent: parent.spanContext,
-        attributes: { 'task.id': 5, 'run.id': 11 },
+        attributes: { 'task.id': 5, 'attempt.id': 11 },
       }),
     );
     parent.end();
@@ -217,7 +217,7 @@ describe('runCritic (issue #136)', () => {
       'verification.mechanism': 'critic',
       'verification.verdict': 'fail',
       'task.id': 5,
-      'run.id': 11,
+      'attempt.id': 11,
     });
     expect(verify.status.message).toContain('wrong behavior');
   });

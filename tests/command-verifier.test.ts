@@ -148,7 +148,7 @@ describe('command verifier (issue #135)', () => {
     const provider = new NodeTracerProvider({ spanProcessors: [registry, new SimpleSpanProcessor(exporter)] });
     provider.register();
     providers.push(provider);
-    const parent = startOperation({ type: 'attempt', attributes: { 'run.id': 7 } });
+    const parent = startOperation({ type: 'attempt', attributes: { 'attempt.id': 7 } });
 
     const attempt = await parent.run(() =>
       runCommandVerifier({
@@ -158,7 +158,7 @@ describe('command verifier (issue #135)', () => {
         command: nodeCommand('process.exit(1)'),
         spawn: fakeSpawn({ code: 1, signal: null, output: 'nope' }),
         parent: parent.spanContext,
-        attributes: { 'task.id': 3, 'run.id': 7 },
+        attributes: { 'task.id': 3, 'attempt.id': 7 },
       }),
     );
     parent.end();
@@ -173,7 +173,7 @@ describe('command verifier (issue #135)', () => {
       'verification.mechanism': 'command',
       'verification.verdict': 'fail',
       'task.id': 3,
-      'run.id': 7,
+      'attempt.id': 7,
     });
     expect(verify.status.message).toContain('command exited 1');
   });

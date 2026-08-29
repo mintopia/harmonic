@@ -65,12 +65,12 @@ describe('mcp server & scoped keys', () => {
     const cancelled = parse(await client.callTool({ name: 'cancel_task', arguments: { taskId: created.id } }));
     expect(cancelled.state).toBe('cancelled');
 
-    // Run the dep for real and read runs + events over MCP.
+    // Run the dep for real and read attempts + events over MCP.
     await server.api('POST', `/api/tasks/${dep.id}/run`);
     await waitFor(async () => (await server.api('GET', `/api/tasks/${dep.id}`)).body.state === 'done');
-    const runs = parse(await client.callTool({ name: 'get_runs', arguments: { taskId: dep.id } }));
+    const runs = parse(await client.callTool({ name: 'get_attempts', arguments: { taskId: dep.id } }));
     expect(runs).toHaveLength(1);
-    const events = parse(await client.callTool({ name: 'get_run_events', arguments: { runId: runs[0].id } }));
+    const events = parse(await client.callTool({ name: 'get_attempt_events', arguments: { attemptId: runs[0].id } }));
     expect(events.length).toBeGreaterThan(0);
 
     await client.close();

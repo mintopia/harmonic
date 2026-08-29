@@ -652,7 +652,7 @@ export class Runner {
       parent,
       attributes: {
         'task.id': task.id,
-        'run.id': bound.id,
+        'attempt.id': bound.id,
         'task.origin': task.origin,
         ...(task.workspaceId == null ? {} : { 'workspace.id': task.workspaceId }),
       },
@@ -1271,7 +1271,7 @@ export class Runner {
           command,
           signal,
           parent,
-          attributes: { 'task.id': task.id, 'run.id': run.id },
+          attributes: { 'task.id': task.id, 'attempt.id': run.id },
         });
         const timelineAttempt = await this.attemptFor(task);
         const persisted = await this.verificationAttempts.append(timelineAttempt.id, commandAttemptToInput(attempt));
@@ -1340,7 +1340,7 @@ export class Runner {
           harness: criticHarness,
           harnessId: criticHarnessId,
           parent,
-          attributes: { 'task.id': task.id, 'run.id': run.id },
+          attributes: { 'task.id': task.id, 'attempt.id': run.id },
           // Only pass the seam when injected — `exactOptionalPropertyTypes`
           // forbids an explicit `undefined`, and `runCritic` defaults it to the
           // real `createAcpCriticDrive`.
@@ -1906,7 +1906,7 @@ export class Runner {
             worktreePath: join(this.worktreesDir, `postmerge-${run.id}`),
             command,
             signal,
-            attributes: { 'task.id': task.id, 'run.id': run.id },
+            attributes: { 'task.id': task.id, 'attempt.id': run.id },
           });
           await this.verificationAttempts.append(timelineAttempt.id, commandAttemptToInput(attempt));
           record('lifecycle', { event: 'verification', mechanism: 'command', verdict: attempt.verdict, summary: attempt.summary });
@@ -1947,7 +1947,7 @@ export class Runner {
     // so establish one — otherwise runMergePolicy's `harmonic.merge` child span
     // (startActiveChildOperation) is dropped and the Accept merge isn't
     // observable keyed to the Attempt (ADR-0010, #290).
-    const operation = startOperation({ type: 'attempt', attributes: { 'task.id': task.id, 'run.id': run.id } });
+    const operation = startOperation({ type: 'attempt', attributes: { 'task.id': task.id, 'attempt.id': run.id } });
     const outcome = await operation
       .run(async () =>
         runMergePolicy(
@@ -1957,7 +1957,7 @@ export class Runner {
             taskBranch: run.branch!,
             conflictResolveTurns: task.conflictResolveTurns,
             postMergeCheck: this.getConfig().merge.postMergeCheck,
-            spanAttributes: { 'task.id': task.id, 'run.id': run.id },
+            spanAttributes: { 'task.id': task.id, 'attempt.id': run.id },
           },
           deps,
         ),

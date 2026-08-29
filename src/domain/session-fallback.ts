@@ -165,9 +165,9 @@ export interface FallbackSummaryInput {
   session: { harness: string; model: string; cwd: string; harnessSessionId: string };
   /** The frozen candidate the prior work produced and its recorded status. */
   candidate: { oid: string | null; status: string | null };
-  /** The prior Run's terminal disposition; null when it never settled. */
+  /** The prior Attempt's terminal disposition; null when it never settled. */
   outcome: FallbackSummaryOutcome | null;
-  /** The prior Run's `run_events`, in any order (the builder sorts by `seq`). */
+  /** The prior Attempt's persisted events, in any order (the builder sorts by `seq`). */
   events: readonly FallbackSummaryEvent[];
   /** The Task's tracker links (empty for a native Task). */
   trackerLinks: readonly FallbackTrackerLink[];

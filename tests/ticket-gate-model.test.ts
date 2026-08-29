@@ -51,7 +51,7 @@ describe('gateForRun', () => {
       runId: 20,
       attempt: 2,
       dot: 'fail',
-      summary: 'Run 2 failed · superseded by Run 3',
+      summary: 'Attempt 2 failed · superseded by Attempt 3',
       currentRunId: 30,
     });
   });
@@ -62,7 +62,7 @@ describe('gateForRun', () => {
       kind: 'result',
       attempt: 1,
       dot: 'fail',
-      summary: 'Run 1 failed · superseded by Run 3',
+      summary: 'Attempt 1 failed · superseded by Attempt 3',
       currentRunId: 30,
     });
   });

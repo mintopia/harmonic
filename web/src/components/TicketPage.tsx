@@ -658,12 +658,12 @@ function runPillState(run: Run, steps: readonly Step[]): string {
 function RunHeader({ run, steps }: { run: Run; steps: readonly Step[] }) {
   return (
     <div className="mx-0.5 mb-2.5 mt-4 flex items-center gap-2.5">
-      <span className="text-[16.5px] font-bold leading-none tracking-[-0.01em]">Run {run.attempt}</span>
+      <span className="text-[16.5px] font-bold leading-none tracking-[-0.01em]">Attempt {run.attempt}</span>
       <StatePill state={runPillState(run, steps)} />
       {run.attempt > 1 && (
         <span className="ml-auto flex items-center gap-1.5 text-[12px] text-faint">
           <Icon name="refresh" className="size-3.5" />
-          continued Run {run.attempt - 1}
+          continued Attempt {run.attempt - 1}
         </span>
       )}
     </div>

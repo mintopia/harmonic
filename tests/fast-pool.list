@@ -18,7 +18,6 @@ tests/async-db.test.ts
 tests/attempts.test.ts
 tests/auto-drive.test.ts
 tests/board-sections-model.test.ts
-tests/boot-resume.test.ts
 tests/branch-retirement.test.ts
 tests/config-migration.test.ts
 tests/config-store.test.ts
@@ -36,15 +35,10 @@ tests/db-migration.test.ts
 tests/directory-picker-model.test.ts
 tests/drive-prompt.test.ts
 tests/epic-derivation.test.ts
-tests/epic-land-coordinator.test.ts
-tests/epic-land-held-surfacing.test.ts
-tests/epic-land.test.ts
 tests/epic-model.test.ts
 tests/epic-operations.test.ts
 tests/epic-view.test.ts
 tests/event-stream-model.test.ts
-tests/execution-chain-store.test.ts
-tests/execution-chain.test.ts
 tests/git-failure.test.ts
 tests/github-deps.test.ts
 tests/graph-layout.test.ts
@@ -58,9 +52,6 @@ tests/guardrail-tool-timeout.test.ts
 tests/guardrail-trip-model.test.ts
 tests/id-format.test.ts
 tests/inherit-field-model.test.ts
-tests/landing-coordinator.test.ts
-tests/landing-journal.test.ts
-tests/landing.test.ts
 tests/markdown.test.ts
 tests/md-feature-index.test.ts
 tests/mirror-coordinator.test.ts
@@ -85,12 +76,8 @@ tests/repo-lock.test.ts
 tests/requeue-feedback.test.ts
 tests/review-announce-model.test.ts
 tests/review-live-regions.test.ts
-tests/review-service.test.ts
 tests/router-model.test.ts
-tests/run-coordinator.test.ts
-tests/run-disposition.test.ts
 tests/run-duration.test.ts
-tests/run-facts.test.ts
 tests/run-failure.test.ts
 tests/run-guardrail-snapshot.test.ts
 tests/run-log-firehose.test.ts
@@ -123,8 +110,6 @@ tests/ticket-gate-model.test.ts
 tests/tool-call-aggregates.test.ts
 tests/tracker-manager.test.ts
 tests/transcript-log.test.ts
-tests/turn-queue-store.test.ts
-tests/turn-queue.test.ts
 tests/ui-primitives.test.ts
 tests/verification-attempts-model.test.ts
 tests/verification-attempts.test.ts

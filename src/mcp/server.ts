@@ -177,8 +177,8 @@ export function buildMcpServer(ctx: AppContext, opts: { operator?: boolean } = {
   );
 
   server.registerTool(
-    'get_runs',
-    { description: "List a Task's Runs with their results and usage; a retry is a new Run.", inputSchema: taskId },
+    'get_attempts',
+    { description: "List a Task's Attempts with their results and usage; a retry is a new Attempt.", inputSchema: taskId },
     wrapAsync(async ({ taskId }) => {
       await ctx.tasks.get(taskId);
       return (await ctx.attempts.listForTask(taskId)).map(serializeAttempt);
@@ -186,12 +186,12 @@ export function buildMcpServer(ctx: AppContext, opts: { operator?: boolean } = {
   );
 
   server.registerTool(
-    'get_run_events',
+    'get_attempt_events',
     {
-      description: "Read a Run's persisted event stream (permission grants, lifecycle facts).",
-      inputSchema: { runId: z.number().int().positive() },
+      description: "Read an Attempt's persisted event stream (permission grants, lifecycle facts).",
+      inputSchema: { attemptId: z.number().int().positive() },
     },
-    wrapAsync(async ({ runId }) => ctx.attempts.listEvents((await ctx.attempts.resolveLatest(runId)).id)),
+    wrapAsync(async ({ attemptId }) => ctx.attempts.listEvents((await ctx.attempts.get(attemptId)).id)),
   );
 
   server.registerTool(

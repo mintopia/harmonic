@@ -52,7 +52,7 @@ export class EpicRefreshCoordinator {
         branch: target.defaultBranch,
         expectedOid: await (this.deps.git ?? Git).revParse(target.repoDir, target.defaultBranch),
         mode: 'merge',
-        leaseHeld: true,
+        mutexHeld: true,
       });
       if (outcome.ok) {
         this.resolving.delete(target.ref);

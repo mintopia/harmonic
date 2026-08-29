@@ -44,8 +44,6 @@ export function lifecycleTimelineRows(events: TicketTimelineEvent[]): LifecycleT
       switch (event.kind) {
         case 'attempt-started': return { ...base, label: 'Attempt started', detail: attempt(data), tone: 'running' };
         case 'attempt-finished': return { ...base, label: 'Attempt finished', detail: attempt(data), tone: text(data?.state) === 'passed' ? 'passed' : text(data?.state) === 'failed' ? 'failed' : 'neutral' };
-        case 'run-started': return { ...base, label: 'Run started', detail: attempt(data), tone: 'running' };
-        case 'run-finished': return { ...base, label: 'Run finished', detail: text(data?.reason) ?? attempt(data), tone: text(data?.state) === 'completed' ? 'passed' : text(data?.state) === 'failed' ? 'failed' : 'neutral' };
         case 'verification': return { ...base, ...verificationRow(data) };
         case 'guardrail': return { ...base, label: 'Guardrail tripped', detail: text(data?.dimension), tone: 'failed' };
         case 'escalation': return { ...base, label: 'Escalated for operator review', detail: null, tone: 'awaiting' };

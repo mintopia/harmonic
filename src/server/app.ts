@@ -404,7 +404,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
         candidateOid: mergeOid,
         worktreePath: join(worktreesDir, `crash-recovery-postmerge-${run.id}`),
         command,
-        attributes: { 'task.id': task.id, 'run.id': run.id },
+        attributes: { 'task.id': task.id, 'attempt.id': run.id },
       });
       await verificationAttempts.append(run.id, commandAttemptToInput(cmdAttempt));
       if (cmdAttempt.verdict !== 'pass') return { pass: false, output: cmdAttempt.output };

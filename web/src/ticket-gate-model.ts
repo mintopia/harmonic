@@ -8,7 +8,7 @@ import { currentRunId, runDisplay, type RunDot } from './run-rail-model.js';
  * The Ticket page lets the operator scrub back through a task's runs, but the
  * state actions must never act on the wrong one: they are live only on the
  * *current* run (the latest attempt). Selecting any earlier run turns the bar
- * read-only — a result summary with a "Go to current run" escape, never an
+ * read-only — a result summary with a "Go to current attempt" escape, never an
  * action. This module is that routing rule, isolated from the component so the
  * acceptance ("arms only on the current run; historical runs are read-only")
  * is unit testable (cf. `task-actions-model.ts`). The escalation actions are
@@ -21,8 +21,8 @@ export type GateModel =
   | { kind: 'live' }
   /**
    * The selected run is a historical (superseded) run: read-only. `summary`
-   * reads "Run N <disposition> · superseded by Run M"; `dot` is its signal
-   * colour. The bar offers only "Go to current run".
+   * reads "Attempt N <disposition> · superseded by Attempt M"; `dot` is its signal
+   * colour. The bar offers only "Go to current attempt".
    */
   | { kind: 'result'; runId: number; attempt: number; dot: RunDot; summary: string; currentRunId: number };
 
@@ -42,7 +42,7 @@ export function gateForRun(input: { task: Task; runs: Run[]; selectedRunId: numb
     runId: selected.id,
     attempt: selected.attempt,
     dot,
-    summary: `Run ${selected.attempt} ${word} · superseded by Run ${current.attempt}`,
+    summary: `Attempt ${selected.attempt} ${word} · superseded by Attempt ${current.attempt}`,
     currentRunId: current.id,
   };
 }

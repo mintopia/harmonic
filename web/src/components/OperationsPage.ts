@@ -24,8 +24,8 @@ function subject(operation: Operation): string | null {
   if (typeof taskId === 'number') return `Task ${taskId}`;
   const epicRef = operation.attributes['epic.ref'];
   if (typeof epicRef === 'number') return `Epic #${epicRef}`;
-  const runId = operation.attributes['run.id'];
-  if (typeof runId === 'number') return `Run ${runId}`;
+  const attemptId = operation.attributes['attempt.id'];
+  if (typeof attemptId === 'number') return `Attempt ${attemptId}`;
   return null;
 }
 
