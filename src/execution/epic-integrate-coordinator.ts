@@ -1,6 +1,6 @@
 import { Git } from './git.js';
 import { integrationBranchName } from './epic-integration.js';
-import { mergeIntoBase, mergeIntoBaseAndRunPostMerge, type MergeIntoBaseArgs, type MergeIntoBaseOutcome, type PostMergeHook } from './branch-merge.js';
+import type { MergePolicyOutcome } from './merge-policy.js';
 import { decideEpicIntegrate, type MemberMergeState } from '../domain/epic-integrate.js';
 import type { VerificationDecision } from '../verification/combine.js';
 import { logger } from '../logger.js';
@@ -9,18 +9,17 @@ import { EpicOperations } from './epic-operations.js';
 /**
  * The whole-Epic integrate coordinator (issue #161, parallel-epic tranche). The
  * injected-effects shell around the pure {@link decideEpicIntegrate} (`src/domain/
- * epic-integrate.ts`), mirroring `MergeTrainCoordinator`'s shape: gather the observed
- * facts, call the decision, execute the action against an injected `Git` slice
- * and effect callbacks.
+ * epic-integrate.ts`): gather the observed facts, call the decision, execute the
+ * action against an injected `Git` slice and effect callbacks.
  *
  * The last step of an Epic's life (ADR-0024): once every member has merged onto
- * the Epic's integration branch (`epic/<ref>`, cut by #159, fed by the merge
- * train #160), Verify the integrated whole as a unit, and only on a pass merge
- * the integration branch into the default branch in one go and retire it. A
- * member that cannot integrate holds the whole Epic back; the operator has an
- * explicit force-integrate-the-ready-subset override (`submit(..., { force })`),
- * which integrates whatever subset is folded in — but never bypasses Verification,
- * so a partial integrate is never automatic and never a silent pass.
+ * the Epic's integration branch (`epic/<ref>`, cut by #159) under the one merge
+ * policy (ADR-0001), Verify the integrated whole as a unit, and only on a pass
+ * merge the integration branch into the default branch and retire it. A member
+ * that cannot integrate holds the whole Epic back; the operator has an explicit
+ * force-integrate-the-ready-subset override (`submit(..., { force })`), which
+ * integrates whatever subset is folded in — but never bypasses Verification, so a
+ * partial integrate is never automatic and never a silent pass.
  *
  * Poll-driven and idempotent: {@link submit} is called once per derived Epic
  * each poll. An Epic already being integrated (a slow whole-Epic Verification is in
@@ -29,16 +28,13 @@ import { EpicOperations } from './epic-operations.js';
  * re-submits. After a successful integrate the integration branch is retired, so the
  * following poll observes no branch and decides `noop`.
  *
- * Integrating into the default branch obeys `branch-merge.ts`'s contract (#153).
- * When the default branch is checked out in the base repo — the common case, it
- * is the working dir's symbolic HEAD — a coherent in-place integrate needs an
- * exclusive clean lease. The coordinator asserts that lease (issue #218,
- * ADR-0023 amendment): `repoDir` *is* the base repo Harmonic owns, and it integrates
- * only after confirming the default branch is that repo's live symbolic HEAD (a
- * detached HEAD defers), so it legitimately holds a clean lease over its own
- * working directory. `mergeIntoBase` still re-checks the checkout is clean and
- * integrates `--ff-only`, so a dirty tree or a moved tip falls back rather than
- * desyncing; a checked-out target is merged into, never refused outright.
+ * Integrating into the default branch runs the one merge policy (ADR-0001) via the
+ * injected {@link EpicIntegrate} callback: `git merge --no-ff` under the base repo
+ * mutex, bounded agentic resolve turns, a deterministic post-merge check, and a
+ * `git revert -m 1` on red. A moved default branch is reconciled by the merge
+ * commit and never detected — there is no lease, freshness gate, or `--ff-only`
+ * frozen-tree assertion. A detached HEAD still defers (the coordinator resolves
+ * the default branch up front so it can name the integrate target).
  *
  * Idempotent and storm-proof (issue #218): before verify+integrate it (a) retires the
  * integration branch outright when its work is already contained in the default
@@ -74,6 +70,20 @@ export interface EpicIntegrateGit {
  * supplies the Workspace's resolved verifiers. */
 export type EpicVerify = (args: { repoDir: string; candidateOid: string }) => Promise<VerificationDecision>;
 
+/** Merge the Epic's integration branch into the default branch under the one
+ * merge policy (ADR-0001): `git merge --no-ff` under the base repo mutex, bounded
+ * agentic resolve turns, the deterministic post-merge check, and `git revert -m 1`
+ * on red. Injected so the coordinator stays decoupled from the runner's harness
+ * plumbing; the wire builds an adapter around `Runner.mergeEpicIntegration`. A
+ * moved base is reconciled by the merge commit and never detected, so the outcome
+ * is only `merged` or `escalated` (conflict / red post-merge check). */
+export type EpicIntegrate = (args: {
+  repoDir: string;
+  epicRef: number;
+  defaultBranch: string;
+  integrationBranch: string;
+}) => Promise<MergePolicyOutcome>;
+
 /** The retained whole-Epic Verification status for the operator read model
  * (issue #178): `pending` while a verify is in flight, `pass`/`fail` for the
  * last completed attempt's verdict, `null` when none has run for the current
@@ -102,11 +112,9 @@ export class EpicIntegrateCoordinator {
   private readonly repoDir: string;
   private readonly git: EpicIntegrateGit;
   private readonly verify: EpicVerify;
-  private readonly merge: (args: MergeIntoBaseArgs) => Promise<MergeIntoBaseOutcome>;
-  private readonly postMerge: PostMergeHook | undefined;
+  private readonly integrate: EpicIntegrate;
   private readonly retire: (epicRef: number) => Promise<void>;
   private readonly escalateFn: (epicRef: number, reason: string) => void;
-  private readonly mergeLeaseHeld: boolean;
   private readonly onError: (msg: string) => void;
   private readonly operations: EpicOperations;
 
@@ -150,23 +158,14 @@ export class EpicIntegrateCoordinator {
     git?: EpicIntegrateGit;
     /** Whole-Epic Verification against the integration tip (default {@link verifyEpicIntegration} at the wire). */
     verify: EpicVerify;
-    /** Default = real {@link mergeIntoBase}. */
-    merge?: (args: MergeIntoBaseArgs) => Promise<MergeIntoBaseOutcome>;
-    postMerge?: PostMergeHook;
+    /** Merge the integration branch into the default branch under the one merge
+     * policy (ADR-0001) — wired to `Runner.mergeEpicIntegration`. */
+    integrate: EpicIntegrate;
     /** Retire the integration branch after a successful integrate — wired to
      * `EpicIntegrationCoordinator.retireIntegrationBranch`. */
     retire: (epicRef: number) => Promise<void>;
     /** Epic-level escalation surface (verify fail/inconclusive or integrate failure). */
     escalate: (epicRef: number, reason: string) => void;
-    /** Whether an exclusive clean lease is asserted over a checked-out default
-     * branch, permitting a coherent in-place integrate (#153). Default `true` (issue
-     * #218): the coordinator's `repoDir` **is** the base repo Harmonic owns, and
-     * it only reaches the integrate after confirming the default branch is that repo's
-     * live symbolic HEAD (detached defers), so it legitimately holds a clean
-     * lease over its own working directory (ADR-0023 amendment). `mergeIntoBase`
-     * still re-checks the checkout is clean and integrates `--ff-only`, so a dirty
-     * tree or a moved tip still falls back rather than desyncing. */
-    mergeLeaseHeld?: boolean;
     /** Injected clock for the hard backoff (issue #218); default `Date.now`. */
     now?: () => number;
     /** Minimum gap between whole-Epic verify+integrate attempts per Epic (issue #218);
@@ -178,11 +177,9 @@ export class EpicIntegrateCoordinator {
     this.repoDir = deps.repoDir;
     this.git = deps.git ?? Git;
     this.verify = deps.verify;
-    this.merge = deps.merge ?? mergeIntoBase;
-    this.postMerge = deps.postMerge;
+    this.integrate = deps.integrate;
     this.retire = deps.retire;
     this.escalateFn = deps.escalate;
-    this.mergeLeaseHeld = deps.mergeLeaseHeld ?? true;
     this.now = deps.now ?? (() => Date.now());
     this.verifyBackoffMs = deps.verifyBackoffMs ?? 60_000;
     this.onError = deps.onError ?? logger.error;
@@ -334,30 +331,19 @@ export class EpicIntegrateCoordinator {
     this.lastVerification.set(target.ref, 'pass');
 
     // Verification passed: integrate the whole integration branch into the default
-    // branch, atomically (#153). `leaseHeld` is asserted (issue #218): `repoDir`
-    // is the base repo Harmonic owns and `defaultBranch` is its live symbolic HEAD
-    // (a detached HEAD deferred above), so a checked-out target is merged into
-    // coherently (`mergeIntoBase` still re-checks clean + integrates `--ff-only`) rather
-    // than refused — a checked-out target is the common case, not a failure.
+    // branch under the one merge policy (ADR-0001). A moved base is reconciled by
+    // the merge commit and never detected — the post-merge check catches semantic
+    // collisions on the merged tip and reverts on red, so the outcome is only
+    // `merged` or `escalated` (an unresolved conflict or a red post-merge check).
     const integrated = await this.operations.run({
       repoDir: this.repoDir,
       epicRef: target.ref,
       type: 'merge',
       attributes: { 'git.base_branch': defaultBranch, 'git.branch': branch },
-      work: () => mergeIntoBaseAndRunPostMerge(
-        { repoDir: this.repoDir, baseBranch: defaultBranch, branch, expectedOid: candidateOid, leaseHeld: this.mergeLeaseHeld },
-        this.postMerge,
-        this.merge,
-      ),
+      work: () => this.integrate({ repoDir: this.repoDir, epicRef: target.ref, defaultBranch, integrationBranch: branch }),
     });
-    if (!integrated.ok) {
-      // The integration branch or the default branch moved between verify and
-      // integrate (a refresh, a concurrent integrate): nothing failed, the verdict is just
-      // stale — the next poll re-verifies at the new tips (ADR-0041).
-      if (integrated.reason === 'stale-head' || integrated.reason === 'stale-base' || integrated.reason === 'target-advanced') {
-        return { status: 'waiting', reason: `whole-Epic integrate deferred (${integrated.reason}): ${integrated.detail}` };
-      }
-      return this.escalate(target, force, `whole-Epic integrate into '${defaultBranch}' failed (${integrated.reason}): ${integrated.detail}`);
+    if (integrated.kind === 'escalated') {
+      return this.escalate(target, force, `whole-Epic integrate into '${defaultBranch}' failed (${integrated.reason}): ${integrated.message}`);
     }
 
     // Integrated: clear the sticky escalation and the backoff (but keep the retained
@@ -368,7 +354,7 @@ export class EpicIntegrateCoordinator {
     this.clearMergeGuards(target.ref);
     await this.retireQuietly(target.ref, 'after integrate');
     this.operations.complete({ repoDir: this.repoDir, epicRef: target.ref });
-    return { status: 'integrated', oid: integrated.oid };
+    return { status: 'integrated', oid: integrated.mergeOid };
   }
 
   /**

@@ -1,11 +1,11 @@
 /**
  * Whole-Epic integrate decision (issue #161, parallel-epic tranche). The last step
  * of an Epic's life: once every member has merged onto the Epic's integration
- * branch (`epic/<ref>`, cut by #159, fed by the merge train #160), the whole
- * integrated tree is Verified as a unit and, only on a pass, merged into the
+ * branch (`epic/<ref>`, cut by #159) under the one merge policy (ADR-0001), the
+ * whole integrated tree is Verified as a unit and, only on a pass, merged into the
  * default branch in one go and the integration branch retired (ADR-0024). This
- * module is the **pure** half of that step — the same seam as `merge-train.ts`
- * (`decideMergeTrainMerge`): no git I/O, no database, no clock. The coordinator
+ * module is the **pure** half of that step: no git I/O, no database, no clock.
+ * The coordinator
  * gathers the observed facts (does the integration branch exist, what state is
  * each member in, what did a whole-Epic Verification produce) and passes them
  * in; this function only classifies those facts into the action to execute.
@@ -53,8 +53,8 @@ export interface EpicIntegrateFacts {
   members: MemberMergeState[];
   /** The whole-Epic Verification outcome, or `null` when it has not been run yet
    * this attempt — the coordinator runs it when the decision says `verify`, then
-   * re-decides with the result folded in (same two-pass shape the merge train
-   * uses for a rebase result). */
+   * re-decides with the result folded in (a two-pass gate: decide `verify`, run
+   * it, decide again). */
   verification: VerificationDecision | null;
   /** The operator's explicit force-integrate-the-ready-subset override. Never set by
    * the automatic poll trigger — only by the operator action (issue #161). */

@@ -45,7 +45,6 @@ import { CrashRecoveryCoordinator } from '../domain/crash-recovery.js';
 import { BootResumeCoordinator } from '../domain/boot-resume-coordinator.js';
 import { adapterVersion } from '../execution/harness/adapter.js';
 import { Runner } from '../execution/runner.js';
-import { MergeTrainCoordinator } from '../execution/merge-train-coordinator.js';
 import { EpicOperations } from '../execution/epic-operations.js';
 import type { CriticHarnessDrive } from '../verification/critic.js';
 import { ConversationDriver } from '../execution/conversation-driver.js';
@@ -520,18 +519,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
       ...effects,
     ];
   };
-  // The single-writer merge train (issue #163): the ONE process-global
-  // coordinator every Epic member's Run merges through, so its in-memory per-Epic
-  // integration-branch FIFO chains are shared across all members and all
-  // Workspaces. Its escalate effect is a Runner method, so it is bound to the
-  // Runner via the same late-holder idiom `trackerManagerRef` uses below — the
-  // Runner and the coordinator are mutually referential, so one must be
-  // constructed with a forward reference to the other.
   const epicOperations = new EpicOperations();
-  const mergeTrain = new MergeTrainCoordinator({
-    escalate: (member, reason) => runnerRef!.settleEscalatedForMember(member, reason),
-    operations: epicOperations,
-  });
   // Per-context git circuit breaker (issue #199): shared by the Runner (which
   // records a workspace-prep git fast-fail into it) and the Auto-Runner (which
   // skips a Task whose base repo is in the resulting backoff window), so a
@@ -544,7 +532,6 @@ export async function buildApp(opts: AppOptions): Promise<App> {
       onRunFinished: (run) => bus.emit('run_changed', run),
       onRunUsage: (payload) => bus.emit('run_usage', payload),
     },
-    mergeTrain,
     gitBreaker,
     // Start-funnel gate (issue #159, git ground-truth #231): refuse to spawn a
     // worktree Run for an Epic member whose integration base isn't ready — set to
@@ -571,8 +558,9 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     urlFor: (task) => trackerManagerRef?.urlFor(task.workspaceId, task.trackerRef) ?? null,
     getWorkspace: getWorkspaceRow,
   });
-  // Close the forward reference the merge train's heal/escalate callbacks hold
-  // (issue #163) — exactly as `trackerManagerRef = trackerManager` does below.
+  // Close the forward reference the tracker manager's epic callbacks hold
+  // (`mergeEpicIntegration`, `enqueueEpicRefreshResolution`) — exactly as
+  // `trackerManagerRef = trackerManager` does below.
   runnerRef = runner;
   // Heal runs whose usage collection raced the harness's log flush —
   // their session logs are settled on disk by now.
@@ -646,9 +634,8 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     epicOperations,
     scheduler,
     undefined,
-    mergeTrain,
+    (input) => runnerRef!.mergeEpicIntegration(input),
     (target, detail, escalate, retry) => runnerRef!.enqueueEpicRefreshResolution(target, detail, escalate, retry),
-    postMerge,
   );
   trackerManagerRef = trackerManager; // late-bind for AutoDrive's {url} resolver + the pick router above
   for (const merged of pendingPostMerge.splice(0)) await postMerge(merged);

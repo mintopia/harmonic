@@ -11,7 +11,7 @@ import { codeIndexRepoGuidance, driveFields, promptForTask } from './prompt-temp
 import { indexWorktree, dropIndexForPath } from './code-index.js';
 import { AFK_PERMISSION_MODES, afkRequestGated, afkSessionMode } from './afk-permissions.js';
 import type { AutoDrive } from './auto-drive.js';
-import type { AppConfig, HarnessConfig, MergeFate } from '../config.js';
+import type { AppConfig, HarnessConfig } from '../config.js';
 import type { TaskRow, RunRow, WorkspaceRow, SessionRow } from '../db/schema.js';
 import { AcpDriver, type AcpInitializeResult } from '../acp/driver.js';
 import { SessionStore } from '../domain/sessions.js';
@@ -67,13 +67,12 @@ import { resolvePrices, costOfUsages, type PriceTable } from './pricing.js';
 import { isForeignKeyViolation } from '../db/errors.js';
 import { logger } from '../logger.js';
 import type { PostMergeHook } from './branch-merge.js';
-import { runMergePolicy, type MergePolicyDeps, type MergePolicyOutcome } from './merge-policy.js';
+import { runMergePolicy, type MergePolicyDeps, type MergePolicyOutcome, type PostMergeCheckResult } from './merge-policy.js';
 import { integrationBranchName, parseIntegrationBranch } from './epic-integration.js';
 import type {
   EpicRefreshResolveDispatchOutcome,
   EpicRefreshTarget,
 } from './epic-refresh-coordinator.js';
-import type { MergeTrainCoordinator, MergeTrainMember } from './merge-train-coordinator.js';
 import type { AsyncDbHandle } from '../db/async.js';
 import type { SpanContext } from '@opentelemetry/api';
 import { startOperation, type Operation } from '../telemetry/operations.js';
@@ -167,13 +166,6 @@ export interface RunnerOptions {
    * (pre-#148 behaviour); the worktree teardown then falls back to
    * `finalizeWorkspace` for a Run with no Session. */
   sessionRetirement?: SessionRetirementHook;
-  /** The single-writer merge train (issue #163): the ONE process-global
-   * {@link MergeTrainCoordinator} an Epic member's Run merges through, in place of
-   * the direct auto-merge path. Absent → members fall back to the plain
-   * `AutoDrive.onCompleted` merge (pre-#163 behaviour). Its `escalate` is wired
-   * (in app.ts) to {@link Runner.settleEscalatedForMember}, so the coordinator
-   * must be shared with the Runner that owns that callback. */
-  mergeTrain?: MergeTrainCoordinator;
   /** Per-context git circuit breaker (issue #199): shared with the Auto-Runner
    * so a context whose git workspace-prep keeps fast-failing is backed off (and
    * ultimately escalated) instead of being re-spawned at fork-rate. Absent →
@@ -358,9 +350,6 @@ export class Runner {
   private readonly autoDrive: AutoDrive | undefined;
   private readonly getWorkspace: RunnerOptions['getWorkspace'];
   private readonly postMerge: RunnerOptions['postMerge'];
-  /** The single-writer merge train an Epic member's Run merges through (issue
-   * #163); undefined on a server with no parallel-Epic execution. */
-  private readonly mergeTrain: MergeTrainCoordinator | undefined;
   /** Injectable agent-critic drive (issue #164); undefined → `runCritic` falls
    * back to the real `createAcpCriticDrive`. */
   private readonly criticDrive: RunnerOptions['criticDrive'];
@@ -437,7 +426,6 @@ export class Runner {
     this.autoDrive = options.autoDrive;
     this.getWorkspace = options.getWorkspace;
     this.postMerge = options.postMerge;
-    this.mergeTrain = options.mergeTrain;
     this.gitBreaker = options.gitBreaker;
     this.epicBaseNotReady = options.epicBaseNotReady;
     this.criticDrive = options.criticDrive;
@@ -1678,19 +1666,24 @@ export class Runner {
    * when one is running; when the Epic is finished (no `working` member) the
    * Workspace default harness is used, so a completed Epic still refreshes.
    *
-   * Called inside the coordinator's merge-train slot for `epic/<ref>`, so the
-   * worktree + reproduction here are race-free against member merges, and
-   * every pre-turn failure returns `escalated` synchronously — the
-   * coordinator's `resolving` flag is only set once this returns
-   * `dispatched`. The turn itself must NOT run under that slot (it would
-   * stall other members' merges for the whole agent turn), so it is chained as
-   * the branch's NEXT train slot before dispatch returns: member merges
-   * queue behind it rather than observing the checked-out integration branch
-   * mid-resolution and falsely escalating. Once the turn's worktree is
-   * removed, {@link runEpicRefreshResolveTurn} re-runs the refresh (`retry`):
-   * a resolved merge completes it, an unresolved one re-conflicts into the
-   * coordinator's still-conflicts-after-corrective-turn escalation — either
-   * way the `resolving` flag settles.
+   * The worktree checkout + conflict reproduction run synchronously (under the
+   * caller's refresh repo lock, ADR-0001), and every pre-turn failure returns
+   * `escalated` synchronously — the coordinator's `resolving` flag is only set
+   * once this returns `dispatched`. The agent turn itself is fire-and-forget
+   * (it must NOT hold the repo lock for its whole duration). Once the turn's
+   * worktree is removed, {@link runEpicRefreshResolveTurn} re-runs the refresh
+   * (`retry`): a resolved merge completes it, an unresolved one re-conflicts
+   * into the coordinator's still-conflicts-after-corrective-turn escalation —
+   * either way the `resolving` flag settles.
+   *
+   * Known limitation (#382, degraded epic path): the corrective turn holds
+   * `epic/<ref>` checked out in a side worktree while it runs. A member of the
+   * same Epic finishing concurrently merges via `runMergePolicy`, which checks
+   * `epic/<ref>` out in the base repo — git refuses the second checkout, so that
+   * member's merge fails and its Run is re-attempted later once the turn's
+   * worktree is gone. Per ADR-0001's teardown note the parallel Epic path is not
+   * dogfooded while it is being dismantled, so this rare race degrades a Run
+   * rather than being fully serialised here.
    */
   async enqueueEpicRefreshResolution(
     target: EpicRefreshTarget,
@@ -1748,7 +1741,7 @@ export class Runner {
         harnessId,
         model,
       });
-    void (this.mergeTrain ? this.mergeTrain.runOnIntegrationBranch(branch, turn) : turn())
+    void turn()
       .then(() => retry())
       .catch(async (err) => {
         await escalate(target.ref, `refresh re-attempt after the corrective turn failed for ${branch}: ${err instanceof Error ? err.message : String(err)}`);
@@ -1806,42 +1799,77 @@ export class Runner {
   }
 
   /**
-   * The merge train's `escalate` (issue #163), wired in app.ts: a member could
-   * not merge (branch missing, unexpected checkout, or a concurrent advance beat
-   * its CAS). Hand the Task back to a human exactly as
-   * any other afk escalation does — Run failed, Task ready + escalated. This is
-   * the SOLE settle authority on a merge-train escalate: `driveOnce` only records
-   * the `escalated` outcome and stops, so the Run is never settled twice.
+   * Integrate an Epic's `epic/<ref>` branch into the default branch under the one
+   * merge policy (ADR-0001, #382): `git merge --no-ff` under the base repo mutex,
+   * bounded agentic resolve turns, the deterministic post-merge check, and a
+   * `git revert -m 1` on red — the identical policy the automated task path and
+   * operator Accept run. The Epic has no single member Run to host the conflict
+   * turn, so the harness/model is resolved from a live member (else the Workspace
+   * default), mirroring {@link enqueueEpicRefreshResolution}. The post-merge check
+   * re-runs the caller's whole-Epic verifiers on the merged tip; escalation is
+   * returned to the {@link EpicIntegrateCoordinator}, which owns the Epic-level
+   * escalation surface, rather than settled here.
    */
-  async settleEscalatedForMember(member: MergeTrainMember, reason: string): Promise<void> {
-    const run = await this.runStore.get(member.runId);
-    const task = await this.taskService.get(member.taskId);
-    await this.settleEscalated(task, run, reason, {});
-  }
-
-  /**
-   * The {@link MergeTrainMember} for a finishing Run when it is a parallel-Epic
-   * member that should merge through the merge train (issue #163), or `null` when
-   * it is an ordinary Run that merges the direct way. A member is: a worktree Run
-   * whose base is an Epic integration branch (`epic/<ref>`), on a server with
-   * the train wired, and whose Merge Fate is `auto-merge` — `open-PR`/`artifact`
-   * deliberately never touch the integration branch, so they keep
-   * `onCompleted`'s behaviour. `verifiedTip` is the only object the train merges.
-   */
-  private epicMemberFor(task: TaskRow, run: RunRow, verifiedTip: string, mergeFate: MergeFate | undefined): MergeTrainMember | null {
-    if (!this.mergeTrain) return null;
-    if (task.isolationMode !== 'worktree') return null;
-    if (!run.branch || !run.baseBranch) return null;
-    if (parseIntegrationBranch(run.baseBranch) === null) return null;
-    if (mergeFate !== 'auto-merge') return null;
-    return {
-      runId: run.id,
-      taskId: task.id,
-      repoDir: task.workingDir,
-      integrationBranch: run.baseBranch,
-      memberBranch: run.branch,
-      verifiedTip,
+  async mergeEpicIntegration(input: {
+    repoDir: string;
+    epicRef: number;
+    defaultBranch: string;
+    integrationBranch: string;
+    runPostMergeCheck: (mergeOid: string, baseDir: string) => Promise<PostMergeCheckResult>;
+  }): Promise<MergePolicyOutcome> {
+    const config = this.getConfig();
+    const host = (await this.taskService.list({ state: 'working' })).find((task) => task.baseBranch === input.integrationBranch);
+    const harnessId = host?.harness ?? config.defaults.harness;
+    const harness = config.harnesses[harnessId as keyof AppConfig['harnesses']];
+    const model = host?.model ?? harness?.defaultModel ?? '';
+    const deps: MergePolicyDeps = {
+      resolveConflictTurn: async (ctx) => {
+        try {
+          if (!harness) return;
+          const drive = this.criticDrive ?? createAcpCriticDrive();
+          const prompt =
+            `## Epic integration merge conflict resolution (turn ${ctx.turn})\n` +
+            `Merging the Epic integration branch \`${ctx.taskBranch}\` into \`${ctx.baseBranch}\` conflicted in:\n` +
+            ctx.unmergedPaths.map((path) => `- ${path}`).join('\n') +
+            `\n\nThis checkout (\`${ctx.baseDir}\`) has \`${ctx.baseBranch}\` checked out with that merge in progress — conflict ` +
+            `markers are present in the listed paths. Resolve the conflicts so the result keeps both \`${ctx.baseBranch}\`'s and ` +
+            `\`${ctx.taskBranch}\`'s work, then \`git add\` the resolved paths. Do not run \`git commit\`, do not create or switch ` +
+            `branches, do not push, and do not change anything beyond what resolving this merge requires.`;
+          await drive.run({
+            harness,
+            harnessId,
+            model,
+            cwd: ctx.baseDir,
+            prompt,
+            timeoutMs: EPIC_REFRESH_RESOLVE_TIMEOUT_MS,
+          });
+        } catch {
+          // Never throw: the policy re-checks unmergedPaths after the turn and
+          // escalates plainly if conflicts remain (merge-policy.ts).
+        }
+      },
+      runPostMergeCheck: input.runPostMergeCheck,
+      // The EpicIntegrateCoordinator maps an escalated integrate to its own
+      // Epic-level escalation via the returned outcome; nothing to settle here.
+      escalate: async () => {},
     };
+    const outcome = await runMergePolicy(
+      {
+        baseDir: input.repoDir,
+        baseBranch: input.defaultBranch,
+        taskBranch: input.integrationBranch,
+        conflictResolveTurns: host?.conflictResolveTurns ?? config.defaults.conflictResolveTurns,
+        postMergeCheck: config.merge.postMergeCheck,
+      },
+      deps,
+    );
+    // The Epic just advanced the default branch, so fire the success-only
+    // post-merge hook that refreshes every *other* live Epic (develop→epic),
+    // exactly as the automated task path does after its own merge.
+    if (outcome.kind === 'merged') {
+      await this.postMerge?.({ repoDir: input.repoDir, baseBranch: input.defaultBranch });
+    }
+    return outcome;
   }
 
   /**
@@ -1854,7 +1882,7 @@ export class Runner {
    * `runPostMergeCheck` runs only the DETERMINISTIC command verifiers once
    * against the merged tip — no critic, since the critic already reviewed
    * this diff on the candidate. `escalate` is the sole settle authority for a
-   * merge-policy escalation, mirroring {@link settleEscalatedForMember}.
+   * merge-policy escalation: `driveOnce` only records the outcome and stops.
    */
   private mergePolicyDeps(
     task: TaskRow,
@@ -3125,7 +3153,6 @@ export class Runner {
           // it. The diffstat is snapshotted before the merge (issue #36).
           const diff = await this.diffSnapshotFor(task, run.id);
           const current = await this.runStore.get(run.id);
-          const verifiedTip = current.candidateOid;
           const worktreeMerge = task.isolationMode === 'worktree' && !!current.branch && !!current.baseBranch;
           const deps = this.mergePolicyDeps(task, run, record, active.verifyAbort.signal, patch);
           // Merge the verified worktree branch via the one merge policy (ADR-0001).
@@ -3172,42 +3199,12 @@ export class Runner {
           // (#139). A fate that can't be applied (PR that can't be created,
           // ticket close that fails) Escalates; the ticket is not closed.
           //
-          // Parallel-Epic member merge (issue #163): a worktree auto-merge Run
-          // whose base is an Epic integration branch (`epic/<ref>`) merges through
-          // the single-writer merge train instead of the plain merge policy.
+          // A parallel-Epic member is just a worktree auto-merge Run whose base is
+          // an Epic integration branch (`epic/<ref>`); it merges through the same
+          // one merge policy (ADR-0001, #382) as any other task — the repo mutex
+          // serialises members merging onto the shared integration branch — then
+          // `onCompleted` closes the ticket. No separate merge-train path.
           const mergeFate = await this.autoDrive!.mergeFateFor(task);
-          const member = verifiedTip ? this.epicMemberFor(task, current, verifiedTip, mergeFate) : null;
-          if (member) {
-            const train = await this.mergeTrain!.submit(member);
-            if (train.status === 'escalated') {
-              // The coordinator's `escalate` callback (→ settleEscalatedForMember)
-              // already settled the Run; only record + stop here (no double-settle).
-              record('lifecycle', { event: 'escalated', reason: train.reason });
-              return { kind: 'terminal' };
-            }
-            if (train.status === 'stale') {
-              // DEGRADED until #382 (no rebase re-entry post-ADR-0001): a base
-              // that advanced before this member could merge escalates plainly
-              // rather than retrying.
-              const reason = `epic integration branch advanced before ${current.branch} could merge (${train.reason})`;
-              record('lifecycle', { event: 'escalated', reason });
-              await this.settleEscalated(task, run, reason, patch);
-              return { kind: 'terminal' };
-            }
-            // merged | already-merged: the work is on the integration branch.
-            // Harmonic still owns the ticket close (#139) — the train replaced the
-            // merge, not the close.
-            if (!(await this.autoDrive!.closeCompleted(task))) {
-              record('lifecycle', { event: 'escalated', reason: 'ticket close failed after merge-train merge' });
-              await this.settleEscalated(task, run, 'ticket close failed after merge-train merge', patch);
-            } else {
-              await advanceTask('merging');
-              record('lifecycle', { event: 'phase', phase: 'merging' });
-              await this.settleAutoCompleted(task, run, { ...patch, ...diff });
-            }
-            return { kind: 'terminal' };
-          }
-
           if (worktreeMerge && mergeFate === 'auto-merge' && !(await mergeWorktreeBranch())) {
             return { kind: 'terminal' };
           }

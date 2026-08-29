@@ -63,8 +63,6 @@ tests/landing-journal.test.ts
 tests/landing.test.ts
 tests/markdown.test.ts
 tests/md-feature-index.test.ts
-tests/merge-train-coordinator.test.ts
-tests/merge-train.test.ts
 tests/mirror-coordinator.test.ts
 tests/mirror.test.ts
 tests/model-filter.test.ts

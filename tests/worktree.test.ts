@@ -168,14 +168,17 @@ describe('worktree isolation mode', () => {
     expect(git(repo, 'show', `${run.branch}:base-marker.txt`)).toBe('from feature-base');
 
     // The merging put the run onto feature-base — the recorded base — not main.
-    // The one merge policy (ADR-0001, #381) merges IN PLACE in the shared base
-    // repo: `runMergePolicy` checks the repo out onto the task's own
-    // `baseBranch` under the mutex before merging, so by the time the Task
-    // settles the repo's checkout sits on feature-base, not main.
+    // The one merge policy (ADR-0001) merges IN PLACE in the shared base repo:
+    // `runMergePolicy` checks the repo out onto the task's own `baseBranch` under
+    // the mutex to merge, then RESTORES the branch the repo was parked on (main,
+    // #382) — a background merge onto a non-default base never leaves the shared
+    // checkout switched off it (which would mislead the whole-Epic integrate's
+    // default-branch read for an `epic/<ref>` base).
     expect((await server.api('GET', `/api/tasks/${taskId}`)).body.state).toBe('done');
-    expect(git(repo, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('feature-base');
+    expect(git(repo, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('main');
     expect(git(repo, 'show', 'feature-base:feature.txt')).toBe('made on feature-base');
-    expect(existsSync(join(repo, 'feature.txt'))).toBe(true);
+    // The work landed on feature-base, not the restored `main` checkout.
+    expect(existsSync(join(repo, 'feature.txt'))).toBe(false);
     // An ordinary merge commit, never a fast-forward — and main itself never
     // took the run's work; the merge landed only on feature-base.
     expect(git(repo, 'rev-parse', 'feature-base^2')).toBe(run.candidateOid);

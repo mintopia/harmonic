@@ -137,43 +137,57 @@ async function criticalSection(input: MergePolicyInput, deps: MergePolicyDeps): 
   // an unexpectedly dirty base checkout fails loudly here rather than having
   // its uncommitted work discarded. Runs under the mutex, so no sibling merge
   // races the checkout.
-  if ((await Git.currentBranch(input.baseDir).catch(() => null)) !== input.baseBranch) {
-    logger.info('merge: checking out base branch', { 'merge.base_branch': input.baseBranch });
-    await Git.checkout(input.baseDir, input.baseBranch);
-  }
+  const parkedBranch = await Git.currentBranch(input.baseDir).catch(() => null);
+  try {
+    if (parkedBranch !== input.baseBranch) {
+      logger.info('merge: checking out base branch', { 'merge.base_branch': input.baseBranch });
+      await Git.checkout(input.baseDir, input.baseBranch);
+    }
 
-  const merge = await Git.mergeNoFf(input.baseDir, input.taskBranch);
+    const merge = await Git.mergeNoFf(input.baseDir, input.taskBranch);
 
-  let mergeOid: string;
-  if (merge.ok) {
-    mergeOid = merge.mergeOid;
-  } else if (merge.conflict) {
-    logger.warn('merge: conflicts detected', { 'merge.task_branch': input.taskBranch });
-    const resolved = await resolveConflict(input, deps);
-    if ('escalated' in resolved) return escalateConflict(input);
-    mergeOid = resolved.mergeOid;
-  } else {
-    // A hard git fault, not a resolvable conflict — the primitive does not
-    // escalate infra faults; the caller decides how to handle them.
-    throw new Error(merge.detail);
-  }
+    let mergeOid: string;
+    if (merge.ok) {
+      mergeOid = merge.mergeOid;
+    } else if (merge.conflict) {
+      logger.warn('merge: conflicts detected', { 'merge.task_branch': input.taskBranch });
+      const resolved = await resolveConflict(input, deps);
+      if ('escalated' in resolved) return escalateConflict(input);
+      mergeOid = resolved.mergeOid;
+    } else {
+      // A hard git fault, not a resolvable conflict — the primitive does not
+      // escalate infra faults; the caller decides how to handle them.
+      throw new Error(merge.detail);
+    }
 
-  if (input.postMergeCheck) {
-    const checkOp = startActiveChildOperation('merge.post-check', { 'merge.oid': mergeOid });
-    logger.info('merge: running post-merge check', { 'merge.oid': mergeOid });
-    const check = await within(checkOp, () => deps.runPostMergeCheck(mergeOid, input.baseDir));
-    checkOp?.update({ 'merge.post_check_pass': check.pass });
-    checkOp?.end();
-    if (!check.pass) {
-      logger.warn('merge: post-merge check failed; reverting', { 'merge.oid': mergeOid });
-      const revertOid = await Git.revertMergeCommit(input.baseDir, mergeOid);
-      const message = postMergeRedMessage(input.taskBranch, input.baseBranch, check.output);
-      logger.warn('merge: reverted to keep base green', { 'merge.revert_oid': revertOid });
-      return { kind: 'escalated', reason: 'post-merge-red', message, revertOid };
+    if (input.postMergeCheck) {
+      const checkOp = startActiveChildOperation('merge.post-check', { 'merge.oid': mergeOid });
+      logger.info('merge: running post-merge check', { 'merge.oid': mergeOid });
+      const check = await within(checkOp, () => deps.runPostMergeCheck(mergeOid, input.baseDir));
+      checkOp?.update({ 'merge.post_check_pass': check.pass });
+      checkOp?.end();
+      if (!check.pass) {
+        logger.warn('merge: post-merge check failed; reverting', { 'merge.oid': mergeOid });
+        const revertOid = await Git.revertMergeCommit(input.baseDir, mergeOid);
+        const message = postMergeRedMessage(input.taskBranch, input.baseBranch, check.output);
+        logger.warn('merge: reverted to keep base green', { 'merge.revert_oid': revertOid });
+        return { kind: 'escalated', reason: 'post-merge-red', message, revertOid };
+      }
+    }
+
+    return { kind: 'merged', mergeOid };
+  } finally {
+    // Restore the base repo to the branch it was parked on (normally the default
+    // branch), so merging a NON-default base — an epic/<ref> member merging onto
+    // its integration branch (ADR-0001) — never leaves the shared base checkout
+    // switched off the default branch. A parked-off base would mislead the
+    // whole-Epic integrate's `symbolic-ref HEAD` default-branch read and the
+    // develop→epic refresh. Under the mutex, so no sibling merge sees the switch.
+    // A no-op in the ordinary case where the base branch IS the parked branch.
+    if (parkedBranch && parkedBranch !== input.baseBranch) {
+      await Git.checkout(input.baseDir, parkedBranch).catch(() => {});
     }
   }
-
-  return { kind: 'merged', mergeOid };
 }
 
 /** Acquires the base repo mutex, separating the WAIT (until acquisition) from

@@ -4,7 +4,6 @@ import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { EpicRefreshCoordinator, type EpicRefreshOutcome } from '../src/execution/epic-refresh-coordinator.js';
-import { MergeTrainCoordinator } from '../src/execution/merge-train-coordinator.js';
 import type { MergeIntoBaseOutcome } from '../src/execution/branch-merge.js';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
@@ -14,10 +13,6 @@ import { Runner } from '../src/execution/runner.js';
 import type { CriticDriveRequest } from '../src/verification/critic.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { allWorkspaces, makeSettingsStore, waitFor } from './helpers.js';
-
-const train = () => new MergeTrainCoordinator({
-  escalate: async () => {},
-});
 
 /** The unit cases fake the merge, so the default-branch tip the refresh pins is faked too. */
 const fakeGit = { revParse: async () => 'develop-tip' };
@@ -29,10 +24,9 @@ const conflict = (detail = 'both changed package.json'): MergeIntoBaseOutcome =>
 });
 
 describe('EpicRefreshCoordinator', () => {
-  it('merges develop into an integration branch through the merge train', async () => {
+  it('merges develop into an integration branch under the repo lock', async () => {
     const calls: string[] = [];
     const coordinator = new EpicRefreshCoordinator({
-      train: train(),
       git: fakeGit,
       merge: async ({ baseBranch, branch }) => {
         calls.push(`${baseBranch}<-${branch}`);
@@ -53,7 +47,6 @@ describe('EpicRefreshCoordinator', () => {
     const resolutions: string[] = [];
     const escalations: Array<{ ref: number; reason: string }> = [];
     const coordinator = new EpicRefreshCoordinator({
-      train: train(),
       git: fakeGit,
       merge: async () => outcomes.shift()!,
       dispatchResolve: async (_target, detail) => {
@@ -73,12 +66,11 @@ describe('EpicRefreshCoordinator', () => {
     expect(escalations).toEqual([{ ref: 7, reason: expect.stringContaining('second conflict') }]);
   });
 
-  it('serializes refreshes for the same integration branch', async () => {
+  it('serializes refreshes on the same base repo', async () => {
     let release!: () => void;
     const first = new Promise<void>((resolve) => { release = resolve; });
     const starts: number[] = [];
     const coordinator = new EpicRefreshCoordinator({
-      train: train(),
       git: fakeGit,
       merge: async () => {
         starts.push(starts.length + 1);
@@ -101,7 +93,6 @@ describe('EpicRefreshCoordinator', () => {
   it('defers a checked-out integration branch instead of falsely escalating it', async () => {
     const escalations: string[] = [];
     const coordinator = new EpicRefreshCoordinator({
-      train: train(),
       git: fakeGit,
       merge: async () => ({ ok: false, reason: 'fallback-pr-manual', detail: 'branch is checked out' }),
       dispatchResolve: async () => ({ status: 'dispatched' }),
@@ -118,7 +109,6 @@ describe('EpicRefreshCoordinator', () => {
     const dispatches: string[] = [];
     const escalations: string[] = [];
     const coordinator = new EpicRefreshCoordinator({
-      train: train(),
       git: fakeGit,
       merge: async () => conflict('refresh conflict'),
       dispatchResolve: async (_target, detail) => {
@@ -140,7 +130,6 @@ describe('EpicRefreshCoordinator', () => {
 
   it('returns an escalation when no running member can host a refresh resolution, without stranding the resolving flag', async () => {
     const coordinator = new EpicRefreshCoordinator({
-      train: train(),
       git: fakeGit,
       merge: async () => conflict('refresh conflict'),
       dispatchResolve: async () => ({
@@ -213,7 +202,7 @@ describe('epic refresh corrective turn (issue #315)', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  function makeRunner(drive: (req: CriticDriveRequest) => Promise<void>, mergeTrain?: MergeTrainCoordinator): Runner {
+  function makeRunner(drive: (req: CriticDriveRequest) => Promise<void>): Runner {
     return new Runner(runs, tasks, asyncDb, () => defaultConfig(), {
       worktreesDir: join(dir, 'worktrees'),
       criticDrive: {
@@ -222,7 +211,6 @@ describe('epic refresh corrective turn (issue #315)', () => {
           return { output: 'done', permissionRequests: [] };
         },
       },
-      ...(mergeTrain ? { mergeTrain } : {}),
     });
   }
 
@@ -236,7 +224,6 @@ describe('epic refresh corrective turn (issue #315)', () => {
     const driveCalls: CriticDriveRequest[] = [];
     const escalations: string[] = [];
     const retryOutcomes: EpicRefreshOutcome[] = [];
-    const sharedTrain = train();
     const runner = makeRunner(async (req) => {
       driveCalls.push(req);
       // The reproduced merge is in progress in the epic/5 worktree — resolve
@@ -246,14 +233,13 @@ describe('epic refresh corrective turn (issue #315)', () => {
       writeFileSync(join(req.cwd, 'shared.txt'), 'resolved\n');
       git(req.cwd, 'add', '-A');
       git(req.cwd, 'commit', '--no-edit');
-    }, sharedTrain);
+    });
     await runningMember('epic/5');
     // Nobody has develop checked out, so the refresh merge takes the CAS path.
     git(repo, 'checkout', '--detach');
 
     const target = { ref: 5, repoDir: repo, defaultBranch: 'develop' };
     const coordinator: EpicRefreshCoordinator = new EpicRefreshCoordinator({
-      train: sharedTrain,
       dispatchResolve: (t, detail) =>
         runner.enqueueEpicRefreshResolution(t, detail, (_ref, reason) => { escalations.push(reason); }, async () => {
           const outcome = await coordinator.refresh(t);
@@ -288,7 +274,6 @@ describe('epic refresh corrective turn (issue #315)', () => {
 
     const target = { ref: 5, repoDir: repo, defaultBranch: 'develop' };
     const coordinator: EpicRefreshCoordinator = new EpicRefreshCoordinator({
-      train: train(),
       dispatchResolve: (t, detail) =>
         runner.enqueueEpicRefreshResolution(t, detail, (_ref, reason) => { escalations.push(reason); }, async () => {
           const outcome = await coordinator.refresh(t);
@@ -330,7 +315,6 @@ describe('epic refresh corrective turn (issue #315)', () => {
     const driveCalls: CriticDriveRequest[] = [];
     const escalations: string[] = [];
     const retryOutcomes: EpicRefreshOutcome[] = [];
-    const sharedTrain = train();
     const runner = makeRunner(async (req) => {
       driveCalls.push(req);
       expect(git(req.cwd, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('epic/5');
@@ -338,14 +322,13 @@ describe('epic refresh corrective turn (issue #315)', () => {
       writeFileSync(join(req.cwd, 'shared.txt'), 'resolved\n');
       git(req.cwd, 'add', '-A');
       git(req.cwd, 'commit', '--no-edit');
-    }, sharedTrain);
+    });
     // No member is `working` — the Epic is done. The refresh must still run the
     // corrective turn, borrowing the Workspace default harness/model.
     git(repo, 'checkout', '--detach');
 
     const target = { ref: 5, repoDir: repo, defaultBranch: 'develop' };
     const coordinator: EpicRefreshCoordinator = new EpicRefreshCoordinator({
-      train: sharedTrain,
       dispatchResolve: (t, detail) =>
         runner.enqueueEpicRefreshResolution(t, detail, (_ref, reason) => { escalations.push(reason); }, async () => {
           const outcome = await coordinator.refresh(t);

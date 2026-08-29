@@ -100,10 +100,10 @@ export class AutoDrive {
    * model Harmonic itself owns the close, and only after verify + merge. So this
    * never gates on the ticket state — it closes where the fate says:
    *
-   * - **auto-merge** — the Runner has already merged the verified tip (its
-   *   merging freshness gate, ADR-0041; the merge train for Epic members), so
-   *   Harmonic closes the ticket. A close that fails Escalates (a human finishes
-   *   the close, the work is safe).
+   * - **auto-merge** — the Runner has already merged the verified branch via the
+   *   one merge policy (ADR-0001; an Epic member merges onto its `epic/<ref>`
+   *   integration branch the same way), so Harmonic closes the ticket. A close
+   *   that fails Escalates (a human finishes the close, the work is safe).
    * - **open-PR** — open a PR and leave the ticket **open**: creating a PR is not
    *   merging, so the PR's own merge closes the issue later. A PR that can't be
    *   created Escalates. A tracker with no PR support degrades to artifact.
@@ -153,11 +153,10 @@ export class AutoDrive {
   }
 
   /**
-   * The auto-merge close step, split out so the merge-train merging path (issue
-   * #163) can reuse it: an Epic member's Run merges its branch onto the Epic
-   * integration branch through the {@link MergeTrainCoordinator} (fast-forward of the verified tip)
-   * rather than {@link onCompleted}'s plain `git.merge`, but the close-after-merge
-   * half is identical — Harmonic owns the close (#139), only after a successful
+   * The auto-merge close step, split out from {@link onCompleted} so a path that
+   * already merged the branch elsewhere — operator Accept's journaled merge
+   * effect and crash-recovery replay — reuses the close-after-merge half without
+   * re-running the merge. Harmonic owns the close (#139), only after a successful
    * merge. Returns whether the close was issued (false ⇒ the caller Escalates).
    */
   async closeCompleted(task: TaskRow): Promise<boolean> {

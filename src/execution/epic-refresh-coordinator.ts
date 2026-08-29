@@ -1,7 +1,7 @@
 import { mergeIntoBase, type MergeIntoBaseArgs, type MergeIntoBaseOutcome } from './branch-merge.js';
 import { Git } from './git.js';
 import { integrationBranchName } from './epic-integration.js';
-import type { MergeTrainCoordinator, MergeTrainGit } from './merge-train-coordinator.js';
+import { withRepoLock } from './repo-lock.js';
 
 /** A live integration branch that must follow one observed develop advance. */
 export interface EpicRefreshTarget {
@@ -23,17 +23,18 @@ export type EpicRefreshResolveDispatchOutcome =
 /**
  * Merges a newly advanced default branch into live Epic integration branches.
  *
- * The queue belongs to MergeTrainCoordinator, so refreshes and member merges
- * share one FIFO per `epic/<ref>`. A merge conflict is allowed one agent turn;
- * a second conflict escalates the Epic, never one of its members.
+ * The merge runs under the base repo's {@link withRepoLock} mutex (ADR-0001), so
+ * a refresh and a member's `runMergePolicy` merge onto the same repo serialize
+ * on one lock. A merge conflict is allowed one agent turn; a second conflict
+ * escalates the Epic, never one of its members. Per ADR-0046 a base that moved
+ * under the refresh is normal: it is recorded and retried, never an operator hold.
  */
 export class EpicRefreshCoordinator {
   private readonly resolving = new Set<number>();
 
   constructor(private readonly deps: {
-    train: MergeTrainCoordinator;
     /** Default = real {@link Git}. */
-    git?: Pick<MergeTrainGit, 'revParse'>;
+    git?: { revParse(dir: string, rev: string): Promise<string> };
     merge?: (args: MergeIntoBaseArgs) => Promise<MergeIntoBaseOutcome>;
     dispatchResolve: (
       target: EpicRefreshTarget,
@@ -44,7 +45,7 @@ export class EpicRefreshCoordinator {
 
   refresh(target: EpicRefreshTarget): Promise<EpicRefreshOutcome> {
     const branch = integrationBranchName(target.ref);
-    return this.deps.train.runOnIntegrationBranch(branch, async () => {
+    return withRepoLock(target.repoDir, async () => {
       const outcome = await (this.deps.merge ?? mergeIntoBase)({
         repoDir: target.repoDir,
         baseBranch: branch,

@@ -75,10 +75,11 @@ describe('runMergePolicy (ADR-0001, "One merge policy, everywhere")', () => {
     expect(Number(git(repo, 'rev-list', '--count', '--merges', 'HEAD'))).toBeGreaterThanOrEqual(1);
   });
 
-  it('checks the base branch out before merging when the base repo is on a different branch', async () => {
-    // The shared base repo is parked on an unrelated branch (as it is in the
-    // runner: worktree tasks never sit it on their base branch). The policy must
-    // still land the merge on `main`, not on whatever HEAD happened to be.
+  it('checks the base branch out to merge a different base, then restores the parked branch', async () => {
+    // The shared base repo is parked on an unrelated branch. The policy must land
+    // the merge on `main` regardless, then restore the base repo to the branch it
+    // was parked on — merging a non-default base (an epic/<ref> member, #382) must
+    // never leave the shared checkout switched off the default branch.
     const repo = makeRepo();
     const mainTip = git(repo, 'rev-parse', 'main');
     git(repo, 'checkout', '-b', 'parked');
@@ -101,11 +102,14 @@ describe('runMergePolicy (ADR-0001, "One merge policy, everywhere")', () => {
     );
 
     expect(outcome.kind).toBe('merged');
-    expect(git(repo, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('main');
-    // `main` advanced past its old tip with a merge commit; `parked` is untouched.
+    // The base repo is restored to the parked branch, not left on `main`.
+    expect(git(repo, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('parked');
+    // `main` still advanced past its old tip with a merge commit; the parked
+    // checkout's own work is untouched.
     expect(git(repo, 'rev-parse', 'main')).not.toBe(mainTip);
-    expect(git(repo, 'rev-parse', 'HEAD^2')).toBeTruthy();
+    expect(git(repo, 'rev-parse', 'main^2')).toBeTruthy();
     expect(() => git(repo, 'show', 'main:feature.txt')).not.toThrow();
+    expect(() => git(repo, 'show', 'parked:parked.txt')).not.toThrow();
   });
 
   it('runs a post-merge check that adds a worktree on the same repo without deadlocking', async () => {

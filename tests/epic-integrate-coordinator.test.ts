@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import { EpicIntegrateCoordinator, type EpicIntegrateGit } from '../src/execution/epic-integrate-coordinator.js';
-import type { MergeIntoBaseArgs, MergeIntoBaseOutcome } from '../src/execution/branch-merge.js';
+import { EpicIntegrateCoordinator, type EpicIntegrate, type EpicIntegrateGit } from '../src/execution/epic-integrate-coordinator.js';
+import type { MergePolicyOutcome } from '../src/execution/merge-policy.js';
 import type { VerificationDecision } from '../src/verification/combine.js';
 import type { MemberMergeState } from '../src/domain/epic-integrate.js';
 
@@ -49,28 +49,20 @@ class FakeGit implements EpicIntegrateGit {
   }
 }
 
-const okMerge = (over?: Partial<Extract<MergeIntoBaseOutcome, { ok: true }>>): MergeIntoBaseOutcome => ({
-  ok: true,
-  mode: 'cas',
-  oid: 'integrated-oid',
-  baseBranch: 'develop',
-  branch: 'epic/42',
-  ...over,
-});
+const merged = (mergeOid = 'integrated-oid'): MergePolicyOutcome => ({ kind: 'merged', mergeOid });
 
 type VerifyFn = (args: { repoDir: string; candidateOid: string }) => Promise<VerificationDecision>;
 
 const build = (opts: {
   git?: FakeGit;
   verify?: VerifyFn;
-  merge?: (args: MergeIntoBaseArgs) => Promise<MergeIntoBaseOutcome>;
-  mergeLeaseHeld?: boolean;
+  integrate?: EpicIntegrate;
   now?: () => number;
   verifyBackoffMs?: number;
 } = {}) => {
   const git = opts.git ?? new FakeGit();
   const verify = vi.fn<VerifyFn>(opts.verify ?? (async () => proceed));
-  const merge = vi.fn(opts.merge ?? (async () => okMerge()));
+  const integrate = vi.fn<EpicIntegrate>(opts.integrate ?? (async () => merged()));
   const retire = vi.fn(async (_ref: number) => {});
   const escalate = vi.fn<(epicRef: number, reason: string) => void>();
   const onError = vi.fn<(msg: string) => void>();
@@ -82,113 +74,109 @@ const build = (opts: {
     repoDir: '/repo',
     git,
     verify,
-    merge,
+    integrate,
     retire,
     escalate,
-    ...(opts.mergeLeaseHeld !== undefined ? { mergeLeaseHeld: opts.mergeLeaseHeld } : {}),
     now: opts.now ?? (() => (t += 600_000)),
     ...(opts.verifyBackoffMs !== undefined ? { verifyBackoffMs: opts.verifyBackoffMs } : {}),
     onError,
   });
-  return { coord, git, verify, merge, retire, escalate, onError };
+  return { coord, git, verify, integrate, retire, escalate, onError };
 };
 
 const members = (...m: MemberMergeState[]): MemberMergeState[] => m;
 
 describe('EpicIntegrateCoordinator', () => {
   it('is a noop when the integration branch is gone (already integrated/retired)', async () => {
-    const { coord, verify, merge } = build({ git: new FakeGit(new Set()) });
+    const { coord, verify, integrate } = build({ git: new FakeGit(new Set()) });
     const out = await coord.submit({ ref: 42, members: members('completed') });
     expect(out).toEqual({ status: 'noop', reason: expect.any(String) });
     expect(verify).not.toHaveBeenCalled();
-    expect(merge).not.toHaveBeenCalled();
+    expect(integrate).not.toHaveBeenCalled();
   });
 
   it('waits (no verify, no integrate) while a member is still pending', async () => {
-    const { coord, verify, merge } = build();
+    const { coord, verify, integrate } = build();
     const out = await coord.submit({ ref: 42, members: members('completed', 'pending') });
     expect(out.status).toBe('waiting');
     expect(verify).not.toHaveBeenCalled();
-    expect(merge).not.toHaveBeenCalled();
+    expect(integrate).not.toHaveBeenCalled();
   });
 
   it('blocks (no verify, no integrate, no escalate) when a member cannot merge', async () => {
-    const { coord, verify, merge, escalate } = build();
+    const { coord, verify, integrate, escalate } = build();
     const out = await coord.submit({ ref: 42, members: members('completed', 'blocked') });
     expect(out.status).toBe('blocked');
     expect(verify).not.toHaveBeenCalled();
-    expect(merge).not.toHaveBeenCalled();
+    expect(integrate).not.toHaveBeenCalled();
     expect(escalate).not.toHaveBeenCalled();
   });
 
   it('integrates + retires only when all members completed AND verification proceeds', async () => {
-    const { coord, verify, merge, retire, escalate } = build();
+    const { coord, verify, integrate, retire, escalate } = build();
     const out = await coord.submit({ ref: 42, members: members('completed', 'completed') });
     expect(out).toEqual({ status: 'integrated', oid: 'integrated-oid' });
     expect(verify).toHaveBeenCalledWith(expect.objectContaining({ candidateOid: 'oid-epic-42' }));
-    expect(merge).toHaveBeenCalledWith(expect.objectContaining({ repoDir: '/repo', baseBranch: 'develop', branch: 'epic/42' }));
+    expect(integrate).toHaveBeenCalledWith(expect.objectContaining({ repoDir: '/repo', epicRef: 42, defaultBranch: 'develop', integrationBranch: 'epic/42' }));
     expect(retire).toHaveBeenCalledWith(42);
     expect(escalate).not.toHaveBeenCalled();
   });
 
   it('escalates and never merges when the integrated whole fails verification', async () => {
-    const { coord, merge, retire, escalate } = build({ verify: async () => block });
+    const { coord, integrate, retire, escalate } = build({ verify: async () => block });
     const out = await coord.submit({ ref: 42, members: members('completed') });
     expect(out.status).toBe('escalated');
-    expect(merge).not.toHaveBeenCalled();
+    expect(integrate).not.toHaveBeenCalled();
     expect(retire).not.toHaveBeenCalled();
     expect(escalate).toHaveBeenCalledWith(42, expect.stringContaining('verification'));
   });
 
   it('escalates on an inconclusive/escalate whole-Epic verdict (fail-safe)', async () => {
-    const { coord, merge, escalate } = build({ verify: async () => inconclusive });
+    const { coord, integrate, escalate } = build({ verify: async () => inconclusive });
     const out = await coord.submit({ ref: 42, members: members('completed') });
     expect(out.status).toBe('escalated');
-    expect(merge).not.toHaveBeenCalled();
+    expect(integrate).not.toHaveBeenCalled();
     expect(escalate).toHaveBeenCalled();
   });
 
   it('escalates (never merges) when the verification harness itself throws', async () => {
-    const { coord, merge, escalate } = build({
+    const { coord, integrate, escalate } = build({
       verify: async () => {
         throw new Error('worktree add failed');
       },
     });
     const out = await coord.submit({ ref: 42, members: members('completed') });
     expect(out.status).toBe('escalated');
-    expect(merge).not.toHaveBeenCalled();
+    expect(integrate).not.toHaveBeenCalled();
     expect(escalate).toHaveBeenCalledWith(42, expect.stringContaining('could not run'));
   });
 
-  it('defers (waiting, not escalated) when the merge finds the verified tip stale — the next poll re-verifies at the new tips', async () => {
-    for (const reason of ['stale-head', 'stale-base', 'target-advanced'] as const) {
-      const { coord, retire, escalate } = build({
-        merge: async () => ({ ok: false, reason, detail: 'moved between verify and merge' }),
-      });
-      const out = await coord.submit({ ref: 42, members: members('completed') });
-      expect(out).toMatchObject({ status: 'waiting', reason: expect.stringContaining(reason) });
-      expect(retire).not.toHaveBeenCalled();
-      expect(escalate).not.toHaveBeenCalled();
-    }
-  });
-
-  it('escalates when the atomic merge fails (e.g. fallback-pr-manual with no lease)', async () => {
+  it('escalates when the integrate escalates (unresolved conflict / red post-merge check)', async () => {
     const { coord, retire, escalate } = build({
-      merge: async () => ({ ok: false, reason: 'fallback-pr-manual', detail: 'target checked out, no lease' }),
+      integrate: async () => ({ kind: 'escalated', reason: 'conflict', message: 'a human needs to resolve them' }),
     });
     const out = await coord.submit({ ref: 42, members: members('completed') });
     expect(out.status).toBe('escalated');
     expect(retire).not.toHaveBeenCalled();
-    expect(escalate).toHaveBeenCalledWith(42, expect.stringContaining('fallback-pr-manual'));
+    expect(escalate).toHaveBeenCalledWith(42, expect.stringContaining('conflict'));
   });
 
-  it('defers (waiting, no merge) when the default branch is detached', async () => {
+  it('escalates (with the revert recorded) when the post-merge check is red', async () => {
+    const { coord, escalate } = build({
+      integrate: async () => ({ kind: 'escalated', reason: 'post-merge-red', message: 'the merge was reverted so the base stays green', revertOid: 'revert-oid' }),
+    });
+    const out = await coord.submit({ ref: 42, members: members('completed') });
+    expect(out.status).toBe('escalated');
+    expect(escalate).toHaveBeenCalledWith(42, expect.stringContaining('post-merge-red'));
+  });
+
+  it('defers (waiting, no integrate) when the default branch is detached', async () => {
     const git = new FakeGit();
     git.setDefaultBranch(null);
-    const { coord, merge } = build({ git });
+    const { coord, integrate } = build({ git });
     const out = await coord.submit({ ref: 42, members: members('completed') });
     expect(out.status).toBe('waiting');
-    expect(merge).not.toHaveBeenCalled();
+    expect(integrate).not.toHaveBeenCalled();
   });
 
   it('stays integrated when retire fails after a successful integrate (non-fatal, logged)', async () => {
@@ -197,7 +185,7 @@ describe('EpicIntegrateCoordinator', () => {
       repoDir: '/repo',
       git: new FakeGit(),
       verify: async () => proceed,
-      merge: async () => okMerge(),
+      integrate: async () => merged(),
       retire: async () => {
         throw new Error('branch -d failed');
       },
@@ -209,27 +197,15 @@ describe('EpicIntegrateCoordinator', () => {
     expect(onError).toHaveBeenCalledWith(expect.stringContaining('retire'));
   });
 
-  it('asserts the exclusive clean lease by default — Harmonic owns its working dir (#218)', async () => {
-    const { coord, merge } = build();
-    await coord.submit({ ref: 42, members: members('completed') });
-    expect(merge).toHaveBeenCalledWith(expect.objectContaining({ leaseHeld: true }));
-  });
-
-  it('passes an explicit mergeLeaseHeld=false through to mergeIntoBase', async () => {
-    const { coord, merge } = build({ mergeLeaseHeld: false });
-    await coord.submit({ ref: 42, members: members('completed') });
-    expect(merge).toHaveBeenCalledWith(expect.objectContaining({ leaseHeld: false }));
-  });
-
   describe('containment fast-path (#218)', () => {
     it('retires (no verify, no integrate) when the integration branch is already contained in the default branch', async () => {
       const git = new FakeGit();
       git.setContained('epic/42');
-      const { coord, verify, merge, retire } = build({ git });
+      const { coord, verify, integrate, retire } = build({ git });
       const out = await coord.submit({ ref: 42, members: members('completed', 'completed') });
       expect(out).toEqual({ status: 'integrated', oid: 'oid-epic-42' });
       expect(verify).not.toHaveBeenCalled();
-      expect(merge).not.toHaveBeenCalled();
+      expect(integrate).not.toHaveBeenCalled();
       expect(retire).toHaveBeenCalledWith(42);
     });
 
@@ -241,7 +217,7 @@ describe('EpicIntegrateCoordinator', () => {
         repoDir: '/repo',
         git,
         verify: async () => proceed,
-        merge: async () => okMerge(),
+        integrate: async () => merged(),
         retire: async () => {
           throw new Error('branch -d failed');
         },
@@ -256,11 +232,11 @@ describe('EpicIntegrateCoordinator', () => {
     it('retires a squash/rebase-merged branch whose content is contained but tip is not an ancestor (tier 2, #218)', async () => {
       const git = new FakeGit();
       git.setContentContained('epic/42'); // content in default, but NOT an ancestor
-      const { coord, verify, merge, retire } = build({ git });
+      const { coord, verify, integrate, retire } = build({ git });
       const out = await coord.submit({ ref: 42, members: members('completed', 'completed') });
       expect(out).toEqual({ status: 'integrated', oid: 'oid-epic-42' });
       expect(verify).not.toHaveBeenCalled();
-      expect(merge).not.toHaveBeenCalled();
+      expect(integrate).not.toHaveBeenCalled();
       expect(retire).toHaveBeenCalledWith(42);
     });
 
@@ -292,7 +268,7 @@ describe('EpicIntegrateCoordinator', () => {
         repoDir: '/repo',
         git,
         verify: async () => proceed,
-        merge: async () => okMerge(),
+        integrate: async () => merged(),
         retire,
         escalate: vi.fn(),
         now: () => clock,
@@ -386,18 +362,18 @@ describe('EpicIntegrateCoordinator', () => {
 
   describe('operator force-integrate-ready-subset', () => {
     it('integrates the subset past a blocked member when verification proceeds', async () => {
-      const { coord, merge, retire } = build();
+      const { coord, integrate, retire } = build();
       const out = await coord.submit({ ref: 42, members: members('completed', 'blocked') }, { force: true });
       expect(out.status).toBe('integrated');
-      expect(merge).toHaveBeenCalled();
+      expect(integrate).toHaveBeenCalled();
       expect(retire).toHaveBeenCalledWith(42);
     });
 
     it('still escalates on a failing verification — force does not bypass Verification', async () => {
-      const { coord, merge, escalate } = build({ verify: async () => block });
+      const { coord, integrate, escalate } = build({ verify: async () => block });
       const out = await coord.submit({ ref: 42, members: members('completed', 'blocked') }, { force: true });
       expect(out.status).toBe('escalated');
-      expect(merge).not.toHaveBeenCalled();
+      expect(integrate).not.toHaveBeenCalled();
       expect(escalate).toHaveBeenCalled();
     });
 
@@ -448,7 +424,7 @@ describe('EpicIntegrateCoordinator', () => {
     });
 
     it('an operator force-integrate always retries past a sticky escalation', async () => {
-      const { coord, verify, merge } = build({
+      const { coord, verify, integrate } = build({
         verify: vi
           .fn<VerifyFn>()
           .mockResolvedValueOnce(block) // auto attempt escalates and sticks
@@ -458,7 +434,7 @@ describe('EpicIntegrateCoordinator', () => {
       const forced = await coord.submit({ ref: 42, members: members('completed') }, { force: true });
       expect(forced.status).toBe('integrated');
       expect(verify).toHaveBeenCalledTimes(2);
-      expect(merge).toHaveBeenCalledTimes(1);
+      expect(integrate).toHaveBeenCalledTimes(1);
     });
   });
 

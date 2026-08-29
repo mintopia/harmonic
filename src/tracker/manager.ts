@@ -17,8 +17,19 @@ import {
   type EpicRefreshResolveDispatchOutcome,
   type EpicRefreshTarget,
 } from '../execution/epic-refresh-coordinator.js';
-import type { MergeTrainCoordinator } from '../execution/merge-train-coordinator.js';
-import type { PostMergeHook } from '../execution/branch-merge.js';
+import type { MergePolicyOutcome, PostMergeCheckResult } from '../execution/merge-policy.js';
+
+/** Integrate an Epic's `epic/<ref>` branch into the default branch under the one
+ * merge policy (ADR-0001) — wired to `Runner.mergeEpicIntegration`. The caller
+ * supplies `runPostMergeCheck`, which re-runs the Workspace's whole-Epic verifiers
+ * on the merged tip. */
+export type MergeEpicIntegration = (input: {
+  repoDir: string;
+  epicRef: number;
+  defaultBranch: string;
+  integrationBranch: string;
+  runPostMergeCheck: (mergeOid: string, baseDir: string) => Promise<PostMergeCheckResult>;
+}) => Promise<MergePolicyOutcome>;
 import { deriveEpics, type DerivedEpic } from '../domain/epic-derivation.js';
 import { composeEpicView, type Epic, type EpicFacts } from '../domain/epic-view.js';
 import { persistedTickets } from './persisted.js';
@@ -82,7 +93,10 @@ export class TrackerPollerManager {
     /** Cooperative-yield injection for the sync sweep over a large Workspace
      * set (issue #200); default yields on the standard wall-clock budget. */
     private readonly opts: { yieldOptions?: YieldOptions } = {},
-    private readonly mergeTrain?: MergeTrainCoordinator,
+    /** Integrate a whole Epic into the default branch under the one merge policy
+     * (ADR-0001) — wired to `Runner.mergeEpicIntegration`. Absent ⇒ no automatic
+     * whole-Epic integrate is wired (used by tests that don't exercise it). */
+    private readonly mergeEpicIntegration?: MergeEpicIntegration,
     private readonly dispatchEpicRefreshResolution: (
       target: EpicRefreshTarget,
       detail: string,
@@ -91,7 +105,6 @@ export class TrackerPollerManager {
        * resolved merge completes it, an unresolved one escalates (issue #315). */
       retry: () => Promise<unknown>,
     ) => Promise<EpicRefreshResolveDispatchOutcome> = async () => ({ status: 'dispatched' }),
-    private readonly postMerge?: PostMergeHook,
   ) {}
 
   /**
@@ -146,30 +159,48 @@ export class TrackerPollerManager {
     // method, then attached back into the reconcile as the integrate trigger.
     let epicIntegrate: EpicIntegrateCoordinator | undefined;
     const getConfig = this.getConfig;
-    if (getConfig) {
+    const mergeEpicIntegration = this.mergeEpicIntegration;
+    if (getConfig && mergeEpicIntegration) {
+      // Resolve verifiers against the *live* Workspace row (its verifier override
+      // columns can change without rebuilding the loop — sig tracks only
+      // dir/interval) and the current global config.
+      const resolveWorkspaceVerifiers = async () => {
+        const live = (await this.getWorkspaces()).find((w) => w.id === ws.id) ?? ws;
+        return resolveVerifiers(live, getConfig());
+      };
       epicIntegrate = new EpicIntegrateCoordinator({
         repoDir: ws.workingDir,
-        verify: async ({ repoDir, candidateOid }) => {
-          // Resolve verifiers against the *live* Workspace row (its verifier
-          // override columns can change without rebuilding the loop — sig tracks
-          // only dir/interval) and the current global config.
-          const live = (await this.getWorkspaces()).find((w) => w.id === ws.id) ?? ws;
-          return verifyEpicIntegration({ repoDir, candidateOid, verifiers: resolveVerifiers(live, getConfig()) });
-        },
+        verify: async ({ repoDir, candidateOid }) =>
+          verifyEpicIntegration({ repoDir, candidateOid, verifiers: await resolveWorkspaceVerifiers() }),
+        integrate: ({ repoDir, epicRef, defaultBranch, integrationBranch }) =>
+          mergeEpicIntegration({
+            repoDir,
+            epicRef,
+            defaultBranch,
+            integrationBranch,
+            // The ADR-0001 post-merge check on the merged default-branch tip: the
+            // same whole-Epic verifiers, re-run once on what the base became.
+            runPostMergeCheck: async (mergeOid) => {
+              const decision = await verifyEpicIntegration({
+                repoDir,
+                candidateOid: mergeOid,
+                verifiers: await resolveWorkspaceVerifiers(),
+              });
+              return { pass: decision.outcome === 'proceed', output: decision.outcome === 'proceed' ? '' : decision.reason };
+            },
+          }),
         retire: (epicRef) => epics.retireIntegrationBranch(epicRef),
         escalate: (epicRef, reason) => this.onError(`epic ${epicRef} whole-Epic integrate escalated: ${reason}`),
         operations: this.epicOperations,
-        ...(this.postMerge ? { postMerge: this.postMerge } : {}),
       });
       epics.attachIntegrateTrigger(epicIntegrate);
     }
-    if (this.mergeTrain) {
+    {
       const noteRefreshBehind = (ref: number, reason: string): void => {
         if (epicIntegrate) epicIntegrate.recordRefreshBehind(ref, reason);
         else logger.debug(`epic ${ref} integration refresh behind develop (retrying): ${reason}`);
       };
       const refresh: EpicRefreshCoordinator = new EpicRefreshCoordinator({
-        train: this.mergeTrain,
         dispatchResolve: (target, detail) =>
           this.dispatchEpicRefreshResolution(target, detail, noteRefreshBehind, () => refresh.refresh(target)),
         escalate: noteRefreshBehind,

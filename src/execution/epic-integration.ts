@@ -106,9 +106,9 @@ export function reduceMemberState(task: TaskRow | undefined): MemberMergeState {
  * today's per-Run behaviour.
  *
  * The branch is solely Harmonic's: no agent creates or switches it (ADR-0023).
- * The merge train that merges members onto the integration branch (#160) and the
- * whole-Epic integrate + retire trigger (#161) arrive later in the tranche; this unit
- * owns the create/reuse/retire operations, and wires create/reuse + the gate.
+ * Members merge onto the integration branch via the one merge policy (ADR-0001,
+ * #382) and the whole-Epic integrate + retire trigger (#161) fires from the poll;
+ * this unit owns the create/reuse/retire operations, and wires create/reuse + the gate.
  */
 export class EpicIntegrationCoordinator {
   /**
@@ -362,7 +362,7 @@ export class EpicIntegrationCoordinator {
     // (base still null, `readyMemberRefs` not yet published), which is how a
     // member slipped the frontier arm above and forked off develop. Fall back to
     // the base branch's own encoded ref for a base-set member whose `mapRef` is
-    // unset (a merge-train-launched member, #160).
+    // unset (a member merging onto its `epic/<ref>` integration branch).
     const epicRef = task.mapRef ?? parseIntegrationBranch(task.baseBranch);
     if (epicRef === null) return false;
     const branch = integrationBranchName(epicRef);
@@ -411,8 +411,8 @@ export class EpicIntegrationCoordinator {
   /**
    * Create the integration branch from `defaultBranch` when absent; reuse it
    * as-is when it already exists — idempotent, and deliberately never reset:
-   * members have already forked from it and the merge train merges their work
-   * onto it, so moving it would strand that work.
+   * members have already forked from it and merge their work onto it, so moving
+   * it would strand that work.
    */
   private async ensureIntegrationBranch(branch: string, defaultBranch: string): Promise<void> {
     if (await this.git.branchExists(this.workingDir, branch)) return;
@@ -423,8 +423,7 @@ export class EpicIntegrationCoordinator {
    * Retire an Epic's integration branch (the retire half of the Harmonic-owned
    * lifecycle, ADR-0023) once its Epic has fully integrated. Idempotent: a no-op
    * when the branch is already gone. The whole-Epic integrate that triggers this
-   * arrives with the merge train (#160/#161) — #159 owns the operation, not yet
-   * its trigger.
+   * is owned by the EpicIntegrateCoordinator (#161); #159 owns the operation.
    */
   async retireIntegrationBranch(epicRef: number): Promise<void> {
     const branch = integrationBranchName(epicRef);
