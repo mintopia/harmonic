@@ -203,6 +203,21 @@ export function epicPendingColumns(epic: Epic, tasks: Task[]): BlockerColumn[] {
   return blockerColumns(items);
 }
 
+/**
+ * An Epic's open member Tasks promoted to the board's attention-ordered sections
+ * (ADR-0011's focused Epic surface): escalated members to Attention, working
+ * members to Running, each in the same processing order the whole-board sections
+ * use — so a focused Epic never sorts its members differently from the main board.
+ */
+export function epicMemberSections(epic: Epic, tasks: Task[]): { attention: Task[]; running: Task[] } {
+  const memberIds = new Set(epic.members.map((m) => m.taskId).filter((id): id is number => id != null));
+  const memberTasks = tasks.filter((t) => memberIds.has(t.id));
+  return {
+    attention: memberTasks.filter((t) => t.state === 'escalated').sort(byProcessingOrder),
+    running: memberTasks.filter((t) => t.state === 'working').sort(byProcessingOrder),
+  };
+}
+
 export function boardSections(tasks: Task[], epics: Epic[]): BoardSections {
   const tasksById = new Map(tasks.map((task) => [task.id, task]));
   const activeEpics = epics.filter(isActiveEpic).sort((a, b) => a.ref - b.ref);

@@ -4,6 +4,7 @@ import {
   blockerColumns,
   boardSections,
   cardTitle,
+  epicMemberSections,
   epicPendingColumns,
   fmtElapsed,
   isActiveEpic,
@@ -264,6 +265,35 @@ describe('epicPendingColumns', () => {
   it('hides a done-but-unfolded member — it is no longer pending work', () => {
     const columns = epicPendingColumns(epic(90, [member(1, 1), member(2, 2)]), [task(1, 'done'), task(2, 'ready')]);
     expect(layout(columns)).toEqual([['Frontier', ['T-2']]]);
+  });
+});
+
+describe('epicMemberSections', () => {
+  it('promotes escalated members to Attention and working members to Running', () => {
+    const e = epic(90, [member(1, 1), member(2, 2), member(3, 3), member(4, null)]);
+    const sections = epicMemberSections(e, [
+      task(1, 'escalated'),
+      task(2, 'working'),
+      task(3, 'ready'),
+    ]);
+    expect(sections.attention.map((t) => t.id)).toEqual([1]);
+    expect(sections.running.map((t) => t.id)).toEqual([2]);
+  });
+
+  it('ignores tasks that are not members of the Epic', () => {
+    const e = epic(90, [member(1, 1)]);
+    const sections = epicMemberSections(e, [task(1, 'working'), task(2, 'working')]);
+    expect(sections.running.map((t) => t.id)).toEqual([1]);
+  });
+
+  it('orders each section by processing order (priority, then id)', () => {
+    const e = epic(90, [member(1, 1), member(2, 2), member(3, 3)]);
+    const sections = epicMemberSections(e, [
+      task(2, 'working'),
+      task(3, 'working', { priority: 'high' }),
+      task(1, 'working'),
+    ]);
+    expect(sections.running.map((t) => t.id)).toEqual([3, 1, 2]);
   });
 });
 

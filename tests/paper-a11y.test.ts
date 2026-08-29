@@ -8,12 +8,11 @@ describe('Paper accessibility contract (issue #266)', () => {
   it('announces task state, the needs-you count, and merge outcomes', () => {
     const app = source('web/src/App.tsx');
     const board = source('web/src/components/Board.tsx');
-    const epicPeek = source('web/src/components/EpicPeek.tsx');
     const toasts = source('web/src/toast.tsx');
 
     expect(app).toContain('advanceReviewAnnouncements');
     expect(board).toContain("aria-live={attn ? 'polite' : undefined}");
-    expect(epicPeek).toContain('aria-live="assertive"');
+    expect(board).toContain('aria-live="assertive"');
     expect(toasts).toContain('aria-live="assertive"');
   });
 

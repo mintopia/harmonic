@@ -7,7 +7,6 @@ import { Board } from './components/Board';
 import { boardSections } from './board-sections-model';
 import { TaskForm } from './components/TaskForm';
 import { TicketPage } from './components/TicketPage';
-import { EpicPeek } from './components/EpicPeek';
 import { subscribe } from './ws';
 import { debounce } from './debounce';
 import { Login } from './components/Login';
@@ -228,16 +227,14 @@ export function App() {
   const [editing, setEditing] = useState<Task | 'new' | null>(null);
   // The focused Ticket is the URL (route.task), not local state (issue #181):
   // a row opens /task/:id and Back returns to the Deck. `fetchedTask` only
-  // caches a Task that isn't in the current Workspace's list (an EpicPeek
+  // caches a Task that isn't in the current Workspace's list (the focused-Epic
   // deep-link, a cross-Workspace id) so the derived `openTask` below can still
   // resolve it; a Task that IS in the list stays live off the poll/socket.
   const [fetchedTask, setFetchedTask] = useState<Task | null>(null);
   // Parallel-Epic read model (issue #167, ADR-0026): epics is the active
-  // Workspace's derived Epic list; openEpic/focusEpic mirror openTask's
-  // "which one is the operator looking at" pattern for the peek and the
-  // Board's focus-mode respectively.
+  // Workspace's derived Epic list; focusEpic mirrors openTask's "which one is
+  // the operator looking at" pattern for the Board's focused Epic surface.
   const [epics, setEpics] = useState<Epic[]>([]);
-  const [openEpic, setOpenEpic] = useState<Epic | null>(null);
   const [focusEpic, setFocusEpic] = useState<Epic | null>(null);
   const [route, navigate] = useRoute();
   const view = route.view;
@@ -324,7 +321,6 @@ export function App() {
     try {
       const epics = await fetchAllEpics(activeWorkspaceId);
       setEpics(epics);
-      setOpenEpic((current) => (current ? (epics.find((e) => e.ref === current.ref) ?? null) : current));
       setFocusEpic((current) => (current ? (epics.find((e) => e.ref === current.ref) ?? null) : current));
     } catch {
       // Soft-fail: see comment above.
@@ -332,8 +328,8 @@ export function App() {
   }, [activeWorkspaceId]);
 
   // Force-integrate an Epic (issue #167, ADR-0026), used by the Board's focus-mode
-  // header and the Table's group-by-Epic band headers; EpicPeek calls the API
-  // directly since it already carries `workspaceId`. Refetches epics on any
+  // header and the Table's group-by-Epic band headers; the focused Epic board calls
+  // the API directly since it already carries `workspaceId`. Refetches epics on any
   // outcome so the caller's toast/banner and the next render agree.
   const forceIntegrateEpic = useCallback(
     async (epicRef: number): Promise<EpicIntegrateOutcome> => {
@@ -430,8 +426,8 @@ export function App() {
     );
   }, [route.task, tasks, fetchedTask]);
 
-  // Fetch the focused Ticket's Task only when it isn't in the loaded list (an
-  // EpicPeek deep-link into another Epic, a cross-Workspace or dropped-off id).
+  // Fetch the focused Ticket's Task only when it isn't in the loaded list (the
+  // focused-Epic deep-link into another Epic, a cross-Workspace or dropped-off id).
   // An in-list id needs no fetch — the poll/socket already keep it fresh.
   useEffect(() => {
     if (route.task === null) {
@@ -480,7 +476,7 @@ export function App() {
     setAssertiveMergeAnnouncement(next.assertive);
   }, [tasks, needsYouCount]);
 
-  // EpicPeek's deep-link into the Ticket, and TaskDetail's skip-holder link:
+  // The focused-Epic deep-link into the Ticket, and TaskDetail's skip-holder link:
   // both navigate to /task/:id so the focus is a real, bookmarkable route.
   const openTaskById = (taskId: number) => navigate({ ...route, task: taskId });
   // A Board/Table/Graph row's click target — the one seam every surface's
@@ -574,7 +570,6 @@ export function App() {
     // meaningless once scoped elsewhere — drop them rather than flash stale
     // Epic state over the new board until refreshEpics resolves.
     setEpics([]);
-    setOpenEpic(null);
     setFocusEpic(null);
   };
 
@@ -609,7 +604,6 @@ export function App() {
         setActiveWorkspaceId(null);
         setTasks(null);
         setEpics([]);
-        setOpenEpic(null);
         setFocusEpic(null);
       }
     }
@@ -967,7 +961,10 @@ export function App() {
                         onOpenTask={openTaskById}
                         onChanged={refresh}
                         onNewTask={() => setEditing('new')}
-                        onOpenEpic={setOpenEpic}
+                        onOpenEpic={(epic) => {
+                          setFocusEpic(epic);
+                          navigate({ ...route, view: 'board', task: null });
+                        }}
                         onForceIntegrateEpic={forceIntegrateEpic}
                         focusEpic={focusEpic}
                         onClearFocus={() => setFocusEpic(null)}
@@ -1020,24 +1017,6 @@ export function App() {
           )}
         </div>
       </div>
-
-      {openEpic && activeWorkspaceId !== null && (
-        <EpicPeek
-          epic={openEpic}
-          workspaceId={activeWorkspaceId}
-          onOpenTask={openTaskById}
-          onFocus={(epicRef) => {
-            const target = epics.find((e) => e.ref === epicRef) ?? null;
-            setFocusEpic(target);
-            setOpenEpic(null);
-            // "Focus on board" is a real navigation to the Deck view (the
-            // only surface focus-mode applies to), mirroring pickView.
-            navigate({ ...route, view: 'board', task: null });
-          }}
-          onClose={() => setOpenEpic(null)}
-          onChanged={refreshEpics}
-        />
-      )}
 
       {creatingWorkspace && (
         <NewWorkspaceForm

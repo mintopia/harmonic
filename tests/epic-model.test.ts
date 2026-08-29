@@ -1,13 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
+  closedMembers,
   epicByTaskId,
   hasLiveHeal,
   integrateOutcomeBanner,
+  integrationSteps,
+  isEpicIntegrating,
+  memberPipStatus,
   memberRailStatus,
   railSegments,
-  rosterLanes,
   statusLineParts,
-  ROSTER_LANES,
 } from '../web/src/epic-model.js';
 import type { Epic, EpicIntegrateOutcome, EpicMember } from '../web/src/epic-model.js';
 
@@ -103,40 +105,6 @@ describe('hasLiveHeal', () => {
 
   it('is false on an empty roster', () => {
     expect(hasLiveHeal(epic({ members: [], integrate: { inFlight: true, held: null } }))).toBe(false);
-  });
-});
-
-describe('rosterLanes', () => {
-  it('groups members into stuck/inflight/waiting/merged, preserving member order within each lane', () => {
-    const blocked = member({ ref: 1, mergeStatus: 'blocked' });
-    const running = member({ ref: 2, mergeStatus: 'pending', state: 'running' });
-    const waiting = member({ ref: 3, mergeStatus: 'pending', state: null });
-    const merged = member({ ref: 4, mergeStatus: 'completed' });
-    const healing = member({ ref: 5, mergeStatus: 'pending', state: 'running' });
-    const e = epic({
-      members: [blocked, running, waiting, merged, healing],
-      integrate: { inFlight: true, held: null },
-    });
-    const lanes = rosterLanes(e);
-    expect(lanes.stuck).toEqual([blocked]);
-    // running is upgraded to healing while the integrate is in flight, so both
-    // running-state members sit in the 'inflight' lane together.
-    expect(lanes.inflight).toEqual([running, healing]);
-    expect(lanes.waiting).toEqual([waiting]);
-    expect(lanes.merged).toEqual([merged]);
-  });
-
-  it('always returns all four lane keys, even when empty', () => {
-    const lanes = rosterLanes(epic({ members: [] }));
-    expect(Object.keys(lanes).sort()).toEqual(['inflight', 'merged', 'stuck', 'waiting']);
-    expect(lanes.stuck).toEqual([]);
-    expect(lanes.inflight).toEqual([]);
-    expect(lanes.waiting).toEqual([]);
-    expect(lanes.merged).toEqual([]);
-  });
-
-  it('orders lanes stuck-first for display (ROSTER_LANES)', () => {
-    expect(ROSTER_LANES).toEqual(['stuck', 'inflight', 'waiting', 'merged']);
   });
 });
 
@@ -278,5 +246,136 @@ describe('integrateOutcomeBanner', () => {
       tone: 'warn',
       text: 'An integration for this Epic is already in flight — retry in a moment.',
     });
+  });
+});
+
+describe('memberPipStatus', () => {
+  it('maps escalated to escalated', () => {
+    const m = member({ ref: 1, escalated: true });
+    expect(memberPipStatus(m)).toBe('escalated');
+  });
+
+  it('maps mergeStatus blocked to blocked', () => {
+    const m = member({ ref: 1, mergeStatus: 'blocked' });
+    expect(memberPipStatus(m)).toBe('blocked');
+  });
+
+  it('maps mergeStatus completed to merged', () => {
+    const m = member({ ref: 1, mergeStatus: 'completed' });
+    expect(memberPipStatus(m)).toBe('merged');
+  });
+
+  it('maps state cancelled to cancelled', () => {
+    const m = member({ ref: 1, state: 'cancelled' });
+    expect(memberPipStatus(m)).toBe('cancelled');
+  });
+
+  it('maps state working to running', () => {
+    const m = member({ ref: 1, state: 'working' });
+    expect(memberPipStatus(m)).toBe('running');
+  });
+
+  it('maps state running to running', () => {
+    const m = member({ ref: 1, state: 'running' });
+    expect(memberPipStatus(m)).toBe('running');
+  });
+
+  it('maps state null, mergeStatus pending to waiting', () => {
+    const m = member({ ref: 1, state: null, mergeStatus: 'pending' });
+    expect(memberPipStatus(m)).toBe('waiting');
+  });
+
+  it('escalation outranks blocked', () => {
+    const m = member({ ref: 1, escalated: true, mergeStatus: 'blocked' });
+    expect(memberPipStatus(m)).toBe('escalated');
+  });
+});
+
+describe('closedMembers', () => {
+  it('filters to completed/cancelled/done members, excludes pending/running, preserves order', () => {
+    const completed = member({ ref: 1, mergeStatus: 'completed' });
+    const cancelled = member({ ref: 2, mergeStatus: 'pending', state: 'cancelled' });
+    const done = member({ ref: 3, mergeStatus: 'pending', state: 'done' });
+    const running = member({ ref: 4, mergeStatus: 'pending', state: 'running' });
+    const e = epic({ members: [completed, cancelled, done, running] });
+    expect(closedMembers(e)).toEqual([completed, cancelled, done]);
+  });
+});
+
+describe('isEpicIntegrating', () => {
+  it('is true when every member is folded', () => {
+    const m1 = member({ ref: 1, mergeStatus: 'completed' });
+    const m2 = member({ ref: 2, mergeStatus: 'completed' });
+    const e = epic({ members: [m1, m2] });
+    expect(isEpicIntegrating(e)).toBe(true);
+  });
+
+  it('is true when an integrate is in flight', () => {
+    const m1 = member({ ref: 1, mergeStatus: 'pending' });
+    const e = epic({ members: [m1], integrate: { inFlight: true, held: null } });
+    expect(isEpicIntegrating(e)).toBe(true);
+  });
+
+  it('is true when an integrate is held', () => {
+    const m1 = member({ ref: 1, mergeStatus: 'pending' });
+    const e = epic({ members: [m1], integrate: { inFlight: false, held: 'verification failed' } });
+    expect(isEpicIntegrating(e)).toBe(true);
+  });
+
+  it('is false for an epic with pending members, not in flight, not held', () => {
+    const m1 = member({ ref: 1, mergeStatus: 'completed' });
+    const m2 = member({ ref: 2, mergeStatus: 'pending' });
+    const e = epic({ members: [m1, m2], integrate: { inFlight: false, held: null } });
+    expect(isEpicIntegrating(e)).toBe(false);
+  });
+
+  it('is false for an empty roster with nothing in flight/held', () => {
+    const e = epic({ members: [], integrate: { inFlight: false, held: null } });
+    expect(isEpicIntegrating(e)).toBe(false);
+  });
+});
+
+describe('integrationSteps', () => {
+  it('when not verified, verify is current and merge/check/retire are pending', () => {
+    const e = epic({ members: [], verification: { status: 'pending' } });
+    const steps = integrationSteps(e);
+    expect(steps.map((s) => s.key)).toEqual(['verify', 'merge', 'check', 'retire']);
+    expect(steps).toEqual([
+      { key: 'verify', label: 'Verify', state: 'current' },
+      { key: 'merge', label: 'Merge', state: 'pending' },
+      { key: 'check', label: 'Post-merge check', state: 'pending' },
+      { key: 'retire', label: 'Retire', state: 'pending' },
+    ]);
+  });
+
+  it('when verified and not held, verify is done and merge is current', () => {
+    const e = epic({ members: [], verification: { status: 'pass' }, integrate: { inFlight: false, held: null } });
+    const steps = integrationSteps(e);
+    expect(steps).toEqual([
+      { key: 'verify', label: 'Verify', state: 'done' },
+      { key: 'merge', label: 'Merge', state: 'current' },
+      { key: 'check', label: 'Post-merge check', state: 'pending' },
+      { key: 'retire', label: 'Retire', state: 'pending' },
+    ]);
+  });
+
+  it('when verified and held, merge state is held', () => {
+    const e = epic({
+      members: [],
+      verification: { status: 'pass' },
+      integrate: { inFlight: false, held: 'escalated' },
+    });
+    const steps = integrationSteps(e);
+    expect(steps.find((s) => s.key === 'merge')?.state).toBe('held');
+  });
+
+  it('when not verified and held, verify state is held', () => {
+    const e = epic({
+      members: [],
+      verification: { status: 'pending' },
+      integrate: { inFlight: false, held: 'escalated' },
+    });
+    const steps = integrationSteps(e);
+    expect(steps.find((s) => s.key === 'verify')?.state).toBe('held');
   });
 });

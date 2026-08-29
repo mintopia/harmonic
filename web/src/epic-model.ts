@@ -116,43 +116,6 @@ export function hasLiveHeal(epic: Epic): boolean {
   return epic.members.some((m) => memberRailStatus(m, epic) === 'healing');
 }
 
-/** Member roster lanes (ADR-0026: "lane-grouped stuck-first (Stuck → In
- * flight → Waiting → Merged) so what-needs-you sits next to the force-integrate
- * control"). */
-export type RosterLane = 'stuck' | 'inflight' | 'waiting' | 'merged';
-
-/** Display order: stuck-first, as ADR-0026 specifies. */
-export const ROSTER_LANES: readonly RosterLane[] = ['stuck', 'inflight', 'waiting', 'merged'];
-
-export const ROSTER_LANE_LABELS: Record<RosterLane, string> = {
-  stuck: 'Stuck',
-  inflight: 'In flight',
-  waiting: 'Waiting',
-  merged: 'Merged',
-};
-
-const RAIL_TO_LANE: Record<RailSegmentStatus, RosterLane> = {
-  blocking: 'stuck',
-  running: 'inflight',
-  healing: 'inflight',
-  waiting: 'waiting',
-  merged: 'merged',
-};
-
-/**
- * Groups an Epic's members into roster lanes (stuck/inflight/waiting/merged),
- * each preserving the members' original (ascending-by-ref) order. Every lane
- * key is always present, even when empty, so callers can render all four
- * sections without an existence check.
- */
-export function rosterLanes(epic: Epic): Record<RosterLane, EpicMember[]> {
-  const lanes: Record<RosterLane, EpicMember[]> = { stuck: [], inflight: [], waiting: [], merged: [] };
-  for (const m of epic.members) {
-    lanes[RAIL_TO_LANE[memberRailStatus(m, epic)]].push(m);
-  }
-  return lanes;
-}
-
 const VERIFICATION_GLYPH: Record<'pass' | 'fail' | 'pending', string> = {
   pass: '✓',
   fail: '✗',
@@ -250,4 +213,76 @@ export function integrateOutcomeBanner(o: EpicIntegrateOutcome): IntegrateOutcom
     case 'busy':
       return { tone: 'warn', text: 'An integration for this Epic is already in flight — retry in a moment.' };
   }
+}
+
+// ── Epic board surface (ADR-0011) ─────────────────────────────────────
+
+/** One pip per member in the Epic surface's top-right status summary
+ * (ADR-0011). Trouble sorts to the front so an escalated or blocked member is
+ * never masked by a merged/running sibling. */
+export type MemberPipStatus = 'escalated' | 'blocked' | 'merged' | 'cancelled' | 'running' | 'waiting';
+
+export function memberPipStatus(m: EpicMember): MemberPipStatus {
+  if (m.escalated) return 'escalated';
+  if (m.mergeStatus === 'blocked') return 'blocked';
+  if (m.mergeStatus === 'completed') return 'merged';
+  if (m.state === 'cancelled') return 'cancelled';
+  if (m.state === 'working' || m.state === 'running') return 'running';
+  return 'waiting';
+}
+
+/** The Epic's finished members — merged into its integration branch, or closed
+ * (cancelled/done) — for the rail below the columns (ADR-0011). Member order
+ * (ascending by ref) is preserved. */
+export function closedMembers(epic: Epic): EpicMember[] {
+  return epic.members.filter(
+    (m) => m.mergeStatus === 'completed' || m.state === 'cancelled' || m.state === 'done',
+  );
+}
+
+/** The Epic has reached the whole-Epic integration gate (ADR-0001): every member
+ * folded into the integration branch, or an integrate attempt already in flight
+ * or held for the operator. Only then does the surface show the progress bar. */
+export function isEpicIntegrating(epic: Epic): boolean {
+  return (
+    (epic.memberCount > 0 && epic.foldedCount === epic.memberCount) ||
+    epic.integrate.inFlight ||
+    epic.integrate.held != null
+  );
+}
+
+export type IntegrationStepKey = 'verify' | 'merge' | 'check' | 'retire';
+export type IntegrationStepState = 'done' | 'current' | 'pending' | 'held';
+export interface IntegrationStep {
+  key: IntegrationStepKey;
+  label: string;
+  state: IntegrationStepState;
+}
+
+const INTEGRATION_STEP_LABELS: Record<IntegrationStepKey, string> = {
+  verify: 'Verify',
+  merge: 'Merge',
+  check: 'Post-merge check',
+  retire: 'Retire',
+};
+
+const INTEGRATION_STEP_ORDER: readonly IntegrationStepKey[] = ['verify', 'merge', 'check', 'retire'];
+
+/**
+ * The whole-Epic integration pipeline (ADR-0001's gate: verify → merge into
+ * develop → post-merge check → retire) projected onto the read DTO. The DTO
+ * carries a positive signal only for the first two steps — `verification.status`
+ * and `integrate.inFlight` — so `check`/`retire` stay `pending` until the Epic
+ * integrates and drops off the list. A held integrate marks the current step
+ * `held`, so escalation is legible on the bar itself. Deliberate approximation,
+ * like `memberRailStatus`'s `healing`. */
+export function integrationSteps(epic: Epic): IntegrationStep[] {
+  const verified = epic.verification.status === 'pass';
+  const currentIndex = verified ? 1 : 0; // Verify until it passes, then Merge.
+  return INTEGRATION_STEP_ORDER.map((key, i): IntegrationStep => {
+    const label = INTEGRATION_STEP_LABELS[key];
+    if (i < currentIndex) return { key, label, state: 'done' };
+    if (i > currentIndex) return { key, label, state: 'pending' };
+    return { key, label, state: epic.integrate.held != null ? 'held' : 'current' };
+  });
 }
