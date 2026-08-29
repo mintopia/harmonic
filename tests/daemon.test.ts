@@ -20,19 +20,28 @@ const daemonUrl = pathToFileURL(new URL('../src/daemon.ts', import.meta.url).pat
 const raceClaim = (dir: string, port: number) => {
   const script = [
     `import { acquireLock } from '${daemonUrl}';`,
-    `console.log(JSON.stringify(acquireLock(${JSON.stringify(dir)}, { port: ${port}, host: '0.0.0.0' })));`,
+    `const holder = acquireLock(${JSON.stringify(dir)}, { port: ${port}, host: '0.0.0.0' });`,
+    `console.log(JSON.stringify(holder));`,
+    // A winner that exits immediately would look dead to a slower-starting
+    // racer, letting it wrongly reclaim — stay alive to prove exclusivity holds.
+    `if (holder === null) await new Promise((resolve) => setTimeout(resolve, 500));`,
   ].join('\n');
   return new Promise<{ pid: number | undefined; holder: DaemonInfo | null }>((resolve, reject) => {
     const child = spawn(process.execPath, ['--import', 'tsx', '--input-type=module', '--eval', script], {
       stdio: 'pipe',
     });
     let stdout = '';
+    let resolved = false;
+    child.on('exit', (code) => {
+      if (!resolved && code !== 0) reject(new Error(`race claimant exited ${code}`));
+    });
     child.stdout.on('data', (chunk: Buffer) => {
       stdout += chunk.toString();
-    });
-    child.on('exit', (code) => {
-      if (code !== 0) return reject(new Error(`race claimant exited ${code}`));
-      resolve({ pid: child.pid, holder: JSON.parse(stdout.trim()) as DaemonInfo | null });
+      const line = stdout.split('\n').find((l) => l.trim() !== '');
+      if (line !== undefined && !resolved) {
+        resolved = true;
+        resolve({ pid: child.pid, holder: JSON.parse(line) as DaemonInfo | null });
+      }
     });
   });
 };
