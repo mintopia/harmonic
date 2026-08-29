@@ -10,15 +10,15 @@ export const RUN_PHASES = ['executing', 'validating', 'verifying', 'merging', 't
 export type RunPhase = (typeof RUN_PHASES)[number];
 
 export type AttemptState = 'running' | 'passed' | 'failed' | 'escalated' | 'cancelled';
-export type AttemptTaskType = 'rebase' | 'implementation' | 'verification' | 'review';
-export type AttemptTaskState = 'pending' | 'running' | 'passed' | 'failed' | 'skipped' | 'cancelled';
+export type StepType = 'rebase' | 'implementation' | 'verification' | 'review';
+export type StepState = 'pending' | 'running' | 'passed' | 'failed' | 'skipped' | 'cancelled';
 
-export interface AttemptTask {
+export interface Step {
   id: number;
   attemptId: number;
-  type: AttemptTaskType;
+  type: StepType;
   position: number;
-  state: AttemptTaskState;
+  state: StepState;
   command: string | null;
   verdict: string | null;
   logLocator: string | null;
@@ -50,7 +50,7 @@ export interface Attempt {
     lastActiveAgeMs: number;
     warmWindowMs: number | null;
   } | null;
-  tasks: AttemptTask[];
+  steps: Step[];
 }
 
 /** A budget dimension a Guardrail can trip on (ADR-0019, issue #171); mirrors

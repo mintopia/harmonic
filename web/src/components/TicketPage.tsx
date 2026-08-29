@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { api } from '../api';
 import { formatCost } from '../cost';
-import type { Attempt, AttemptTask, Cost, GuardrailEvent, Run, RunLogEvent, RunUsageEvent, Task, TicketTimelineEvent, VerificationAttempt, VerifierStatus } from '../types';
+import type { Attempt, Step, Cost, GuardrailEvent, Run, RunLogEvent, RunUsageEvent, Task, TicketTimelineEvent, VerificationAttempt, VerifierStatus } from '../types';
 import { appendRunLogEvents, eventsAfterLiveCursor, runLogCursor } from '../run-log-stream-model';
 import { EmptyState } from './EmptyState';
 import { TranscriptTimeline } from './TranscriptTimeline';
@@ -22,7 +22,7 @@ import { Gate } from './ticket/Gate';
 import { CrumbBar } from './CrumbBar';
 import { AttemptTimeline } from './ticket/AttemptTimeline';
 import { LifecycleTimeline } from './ticket/LifecycleTimeline';
-import { TaskLog } from './ticket/TaskLog';
+import { StepLog } from './ticket/StepLog';
 import { runFailureBannerLabel, runForAttempt, verifiedSha } from '../attempt-timeline-model';
 import { labelType } from '../ui';
 import { toastError } from '../toast';
@@ -1057,7 +1057,7 @@ export function TicketPage({
   const failure = failureLabel ? latestRun?.reason ?? null : null;
   const skipHolderId = parseSkipReasonTaskRef(task.skipReason);
   const gateModel = gateForRun({ task, runs, selectedRunId });
-  const selectedTask = attempts.flatMap((attempt) => attempt.tasks).find((row) => row.id === selectedTaskId) ?? null;
+  const selectedTask = attempts.flatMap((attempt) => attempt.steps).find((row) => row.id === selectedTaskId) ?? null;
   const selectRun = (runId: number | null) => {
     setSelectedFile(null);
     setSelectedAttemptId(null);
@@ -1080,7 +1080,7 @@ export function TicketPage({
     selectedFile,
     onChanged,
     onSelectAttempt: selectAttempt,
-    onSelectTask: (attempt: Attempt, row: AttemptTask) => {
+    onSelectStep: (attempt: Attempt, row: Step) => {
       selectAttempt(attempt);
       setSelectedTaskId(row.id);
     },
@@ -1199,7 +1199,7 @@ export function TicketPage({
               ) : selectedRun ? (
                 <>
                   <RunHeader run={selectedRun} />
-                  {selectedTask && <TaskLog key={selectedTask.id} task={selectedTask} />}
+                  {selectedTask && <StepLog key={selectedTask.id} step={selectedTask} />}
                   <Verification attempts={verificationAttempts} statuses={verifierStatuses} run={selectedRun} />
                   <GuardrailAlert events={guardrailEvents} />
                   <SessionAgents run={selectedRun} snapshot={liveUsage.get(selectedRun.id)} />

@@ -1,10 +1,10 @@
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import type { AsyncDbHandle } from '../db/async.js';
-import { attempts, attemptTasks, runFacts, type AttemptRow, type AttemptState, type AttemptTaskRow, type AttemptTaskType, type RunFactType } from '../db/schema.js';
+import { attempts, steps, runFacts, type AttemptRow, type AttemptState, type StepRow, type StepType, type RunFactType } from '../db/schema.js';
 import type { DeterministicContinuation } from './session-continuation.js';
 
-export interface AttemptTaskInput {
-  type: AttemptTaskType;
+export interface StepInput {
+  type: StepType;
   command?: string | null;
   logLocator?: string | null;
 }
@@ -28,8 +28,8 @@ export class AttemptStore {
     return this.db.read((db) => db.select().from(attempts).where(and(eq(attempts.taskId, taskId), eq(attempts.number, number))).get());
   }
 
-  listTasks(attemptId: number): Promise<AttemptTaskRow[]> {
-    return this.db.read((db) => db.select().from(attemptTasks).where(eq(attemptTasks.attemptId, attemptId)).orderBy(asc(attemptTasks.position)).all());
+  listSteps(attemptId: number): Promise<StepRow[]> {
+    return this.db.read((db) => db.select().from(steps).where(eq(steps.attemptId, attemptId)).orderBy(asc(steps.position)).all());
   }
 
   /** The immutable branch tip that the Attempt's verification proved. */
@@ -83,15 +83,15 @@ export class AttemptStore {
     }
   }
 
-  createTask(attemptId: number, input: AttemptTaskInput): Promise<AttemptTaskRow> {
+  createStep(attemptId: number, input: StepInput): Promise<StepRow> {
     return this.db.write(async (db) => {
-      const position = ((await db.select({ n: sql<number>`coalesce(max(${attemptTasks.position}), 0)` }).from(attemptTasks).where(eq(attemptTasks.attemptId, attemptId)).get())?.n ?? 0) + 1;
-      return db.insert(attemptTasks).values({ attemptId, position, type: input.type, command: input.command ?? null, logLocator: input.logLocator ?? null }).returning().get();
+      const position = ((await db.select({ n: sql<number>`coalesce(max(${steps.position}), 0)` }).from(steps).where(eq(steps.attemptId, attemptId)).get())?.n ?? 0) + 1;
+      return db.insert(steps).values({ attemptId, position, type: input.type, command: input.command ?? null, logLocator: input.logLocator ?? null }).returning().get();
     });
   }
 
-  updateTask(id: number, patch: Partial<Pick<AttemptTaskRow, 'state' | 'verdict' | 'logLocator' | 'startedAt' | 'endedAt'>>): Promise<AttemptTaskRow> {
-    return this.db.write((db) => db.update(attemptTasks).set(patch).where(eq(attemptTasks.id, id)).returning().get()) as Promise<AttemptTaskRow>;
+  updateStep(id: number, patch: Partial<Pick<StepRow, 'state' | 'verdict' | 'logLocator' | 'startedAt' | 'endedAt'>>): Promise<StepRow> {
+    return this.db.write((db) => db.update(steps).set(patch).where(eq(steps.id, id)).returning().get()) as Promise<StepRow>;
   }
 
   finish(attemptId: number, state: Exclude<AttemptState, 'running'>, now = Date.now(), feedback?: string): Promise<AttemptRow> {

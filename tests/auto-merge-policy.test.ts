@@ -177,7 +177,7 @@ describe('one merge policy, everywhere (issue #381, ADR-0001)', () => {
     (await server.api('GET', `/api/tasks/${taskId}/attempts`)).body.attempts as Array<{
       number: number;
       state: string;
-      tasks: Array<{ type: string; state: string; verdict: string | null }>;
+      steps: Array<{ type: string; state: string; verdict: string | null }>;
     }>;
   const lifecycle = async (runId: number): Promise<Array<{ event: string; mechanism?: string; reason?: string; oid?: string; baseBranch?: string }>> =>
     (await server.api('GET', `/api/runs/${runId}/events`)).body.events
@@ -256,7 +256,7 @@ describe('one merge policy, everywhere (issue #381, ADR-0001)', () => {
     // row: that machinery no longer exists.
     const timeline = await timelineFor(taskId);
     expect(timeline).toHaveLength(1);
-    expect(timeline[0]!.tasks.filter((t) => t.type === 'rebase')).toHaveLength(1);
+    expect(timeline[0]!.steps.filter((t) => t.type === 'rebase')).toHaveLength(1);
   });
 
   it('(d) conflictResolveTurns is wired from the task setting through to the merge policy: 0 turns escalates immediately on a real conflict', async () => {

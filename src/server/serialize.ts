@@ -3,14 +3,14 @@ import type { ScheduledJobSnapshot } from '../scheduler/scheduler.js';
 import type { FlaggedWorktree } from '../domain/flagged-worktrees.js';
 import type {
   AttemptRow,
-  AttemptTaskRow,
+  StepRow,
   ConversationRow,
   ConversationState,
   RunRow,
   RunState,
   VerificationAttemptRow,
 } from '../db/schema.js';
-import { attempts, attemptTasks, guardrailEvents, mergeJournal, runEvents, runFacts, runs, verificationAttempts } from '../db/schema.js';
+import { attempts, steps, guardrailEvents, mergeJournal, runEvents, runFacts, runs, verificationAttempts } from '../db/schema.js';
 import { and, desc, eq } from 'drizzle-orm';
 import type { TaskWithDeps } from '../domain/tasks.js';
 import { resolveVerifiers } from '../domain/setting-override.js';
@@ -43,12 +43,12 @@ export const scheduledJobsToApi = (jobs: ScheduledJobSnapshot[]): ScheduledJobSn
 /** Kept as an explicit serializer so REST and the firehose share one DTO seam. */
 export const flaggedWorktreesToApi = (flags: readonly FlaggedWorktree[]): readonly FlaggedWorktree[] => flags;
 
-export interface ApiAttemptTask {
+export interface ApiStep {
   id: number;
   attemptId: number;
-  type: AttemptTaskRow['type'];
+  type: StepRow['type'];
   position: number;
-  state: AttemptTaskRow['state'];
+  state: StepRow['state'];
   command: string | null;
   verdict: string | null;
   logLocator: string | null;
@@ -68,7 +68,7 @@ export interface ApiAttempt {
   escalationReason: string | null;
   continuation: z.infer<typeof attemptContinuationSchema> | null;
   verifierStatuses: VerifierStatus[];
-  tasks: ApiAttemptTask[];
+  steps: ApiStep[];
 }
 
 const attemptContinuationSchema = z.object({
@@ -89,17 +89,17 @@ export interface ApiAttemptTimeline {
   budgetBase: number;
 }
 
-const attemptTaskToApi = (task: AttemptTaskRow): ApiAttemptTask => ({
-  id: task.id,
-  attemptId: task.attemptId,
-  type: task.type,
-  position: task.position,
-  state: task.state,
-  command: task.command,
-  verdict: task.verdict,
-  logLocator: task.logLocator,
-  startedAt: task.startedAt,
-  endedAt: task.endedAt,
+const stepToApi = (step: StepRow): ApiStep => ({
+  id: step.id,
+  attemptId: step.attemptId,
+  type: step.type,
+  position: step.position,
+  state: step.state,
+  command: step.command,
+  verdict: step.verdict,
+  logLocator: step.logLocator,
+  startedAt: step.startedAt,
+  endedAt: step.endedAt,
 });
 
 /** One DTO builder for REST hydration and live timeline updates. */
@@ -117,8 +117,8 @@ export async function attemptTimelineToApi(ctx: AppContext, taskId: number): Pro
     budgetBase,
     attempts: await Promise.all(rows.map(async (attempt) => {
       const run = runsByAttempt.get(attempt.number);
-      const [tasks, verifiedSha, escalationReason, verificationAttempts] = await Promise.all([
-        ctx.attempts.listTasks(attempt.id),
+      const [stepRows, verifiedSha, escalationReason, verificationAttempts] = await Promise.all([
+        ctx.attempts.listSteps(attempt.id),
         ctx.attempts.verifiedSha(attempt.id),
         ctx.attempts.escalationReason(attempt.id),
         run ? ctx.verificationAttempts.list(run.id) : [],
@@ -135,7 +135,7 @@ export async function attemptTimelineToApi(ctx: AppContext, taskId: number): Pro
         escalationReason,
         continuation: continuationToApi(attempt.continuation),
         verifierStatuses: verifierStatuses({ verifiers: configuredVerifiers, attempts: verificationAttempts, phase: run?.phase ?? null }),
-        tasks: tasks.map(attemptTaskToApi),
+        steps: stepRows.map(stepToApi),
       };
     })),
   };
@@ -189,7 +189,7 @@ export async function ticketTimelineToApi(ctx: AppContext, taskId: number): Prom
     ctx.asyncDb.read((db) => db.select().from(attempts).where(eq(attempts.taskId, taskId)).orderBy(desc(attempts.startedAt), desc(attempts.id)).limit(TICKET_TIMELINE_SOURCE_LIMIT).all()),
     ctx.asyncDb.read((db) => db.select({ event: runEvents }).from(runEvents).innerJoin(runs, eq(runEvents.runId, runs.id)).where(and(eq(runs.taskId, taskId), eq(runEvents.type, 'lifecycle'))).orderBy(desc(runEvents.ts), desc(runEvents.id)).limit(TICKET_TIMELINE_SOURCE_LIMIT).all()),
     ctx.asyncDb.read((db) => db.select({ attempt: verificationAttempts }).from(verificationAttempts).innerJoin(runs, eq(verificationAttempts.runId, runs.id)).where(eq(runs.taskId, taskId)).orderBy(desc(verificationAttempts.ts), desc(verificationAttempts.id)).limit(TICKET_TIMELINE_SOURCE_LIMIT).all()),
-    ctx.asyncDb.read((db) => db.select({ task: attemptTasks }).from(attemptTasks).innerJoin(attempts, eq(attemptTasks.attemptId, attempts.id)).where(eq(attempts.taskId, taskId)).orderBy(desc(attemptTasks.endedAt), desc(attemptTasks.id)).limit(TICKET_TIMELINE_SOURCE_LIMIT).all()),
+    ctx.asyncDb.read((db) => db.select({ step: steps }).from(steps).innerJoin(attempts, eq(steps.attemptId, attempts.id)).where(eq(attempts.taskId, taskId)).orderBy(desc(steps.endedAt), desc(steps.id)).limit(TICKET_TIMELINE_SOURCE_LIMIT).all()),
     ctx.asyncDb.read((db) => db.select({ event: guardrailEvents }).from(guardrailEvents).innerJoin(runs, eq(guardrailEvents.runId, runs.id)).where(eq(runs.taskId, taskId)).orderBy(desc(guardrailEvents.ts), desc(guardrailEvents.id)).limit(TICKET_TIMELINE_SOURCE_LIMIT).all()),
     ctx.asyncDb.read((db) => db.select({ fact: runFacts }).from(runFacts).innerJoin(runs, eq(runFacts.runId, runs.id)).where(eq(runs.taskId, taskId)).orderBy(desc(runFacts.ts), desc(runFacts.id)).limit(TICKET_TIMELINE_SOURCE_LIMIT).all()),
     ctx.asyncDb.read((db) => db.select({ entry: mergeJournal }).from(mergeJournal).innerJoin(runs, eq(mergeJournal.runId, runs.id)).where(eq(runs.taskId, taskId)).orderBy(desc(mergeJournal.ts), desc(mergeJournal.id)).limit(TICKET_TIMELINE_SOURCE_LIMIT).all()),
@@ -231,9 +231,9 @@ export async function ticketTimelineToApi(ctx: AppContext, taskId: number): Prom
   });
   await forEachYielding(lifecycle, async ({ event }) => { add({ runId: event.runId, ts: event.ts, kind: 'lifecycle', data: { type: event.type, payload: JSON.parse(event.payload) } }, 3); });
   await forEachYielding(verification, async ({ attempt }) => { add({ runId: attempt.runId, ts: attempt.ts, kind: 'verification', data: { mechanism: attempt.mechanism, verdict: attempt.verdict, summary: attempt.summary, inputOid: attempt.inputOid, phase: attempt.phase } }, 2); });
-  await forEachYielding(skippedVerification, async ({ task }) => {
-    if (task.type !== 'verification' || task.state !== 'skipped' || task.endedAt === null) return;
-    add({ runId: null, ts: task.endedAt, kind: 'verification', data: { outcome: 'skipped', command: task.command, verdict: task.verdict } }, 2);
+  await forEachYielding(skippedVerification, async ({ step }) => {
+    if (step.type !== 'verification' || step.state !== 'skipped' || step.endedAt === null) return;
+    add({ runId: null, ts: step.endedAt, kind: 'verification', data: { outcome: 'skipped', command: step.command, verdict: step.verdict } }, 2);
   });
   await forEachYielding(guardrails, async ({ event }) => { add({ runId: event.runId, ts: event.ts, kind: 'guardrail', data: { dimension: event.dimension, phase: event.phase, limitValue: event.limitValue, observedValue: event.observedValue, configSource: event.configSource, payload: JSON.parse(event.payload) } }, 2); });
   await forEachYielding(facts, async ({ fact }) => {

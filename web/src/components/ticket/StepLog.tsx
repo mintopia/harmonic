@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../api.js';
-import { taskLabel, taskLogSource } from '../../attempt-timeline-model.js';
-import type { AttemptTask, RunLogEvent } from '../../types.js';
+import { stepLabel, stepLogSource } from '../../attempt-timeline-model.js';
+import type { Step, RunLogEvent } from '../../types.js';
 import { sectionLabel } from '../../ui.js';
 import { TranscriptTimeline } from '../TranscriptTimeline.js';
 
@@ -15,8 +15,8 @@ type Loaded =
  * captured output, or the critic's native session transcript (ADR-0040).
  * Implementation rows have no pane of their own — the Run transcript below
  * already is their ACP event stream. */
-export function TaskLog({ task }: { task: AttemptTask }) {
-  const source = taskLogSource(task);
+export function StepLog({ step }: { step: Step }) {
+  const source = stepLogSource(step);
   const [loaded, setLoaded] = useState<Loaded>({ status: 'loading' });
 
   useEffect(() => {
@@ -39,8 +39,8 @@ export function TaskLog({ task }: { task: AttemptTask }) {
   return (
     <div className="mt-6">
       <div className="flex items-center gap-2">
-        <span className={sectionLabel}>Task log</span>
-        <span className="text-small text-muted">{taskLabel(task)}</span>
+        <span className={sectionLabel}>Step log</span>
+        <span className="text-small text-muted">{stepLabel(step)}</span>
       </div>
       <div className="mt-3">
         {loaded.status === 'loading' && <p className="text-small text-muted">Loading log…</p>}

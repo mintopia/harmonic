@@ -1,8 +1,8 @@
 import { z } from 'zod';
 import {
   ATTEMPT_STATES,
-  ATTEMPT_TASK_STATES,
-  ATTEMPT_TASK_TYPES,
+  STEP_STATES,
+  STEP_TYPES,
   RUN_STATES,
   CONVERSATION_STATES,
 } from '../db/schema.js';
@@ -50,20 +50,20 @@ export const okResponseSchema = z
 export const idParamsSchema = z.object({ id: z.coerce.number().int().meta({ example: 4821 }) });
 
 /** One persisted step in an Attempt's ordered ticket timeline (ADR-0041). */
-export const attemptTaskSchema = z
+export const stepSchema = z
   .object({
     id: z.number().meta({ example: 73 }),
     attemptId: z.number().meta({ example: 19 }),
-    type: z.enum(ATTEMPT_TASK_TYPES).meta({ example: 'verification' }),
+    type: z.enum(STEP_TYPES).meta({ example: 'verification' }),
     position: z.number().int().positive().meta({ example: 2 }),
-    state: z.enum(ATTEMPT_TASK_STATES).meta({ example: 'passed' }),
+    state: z.enum(STEP_STATES).meta({ example: 'passed' }),
     command: z.string().nullable().meta({ example: 'npm test' }),
     verdict: z.string().nullable().meta({ example: 'pass' }),
     logLocator: z.string().nullable().meta({ example: 'verification_attempt:31' }),
     startedAt: z.number().nullable().meta({ example: 1784032140000 }),
     endedAt: z.number().nullable().meta({ example: 1784032200000 }),
   })
-  .meta({ id: 'AttemptTask' });
+  .meta({ id: 'Step' });
 
 /** One configured verifier category's reconciled read-time state (issue #327). */
 export const verifierStatusSchema = z
@@ -101,7 +101,7 @@ export const attemptSchema = z
     }).nullable(),
     /** One row per verifier category, including skipped and disabled states. */
     verifierStatuses: z.array(verifierStatusSchema),
-    tasks: z.array(attemptTaskSchema),
+    steps: z.array(stepSchema),
   })
   .meta({ id: 'Attempt' });
 

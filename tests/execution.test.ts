@@ -522,9 +522,9 @@ describe('wall-clock guardrail (issue #127)', () => {
       const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
       const attempts = new AttemptStore(server.app.ctx.asyncDb);
       const attempt = await waitFor(async () => (await attempts.listForTask(created.body.id))[0]);
-      const implementation = await waitFor(async () => (await attempts.listTasks(attempt.id))[0]);
+      const implementation = await waitFor(async () => (await attempts.listSteps(attempt.id))[0]);
 
-      await attempts.updateTask(implementation.id, { state: 'passed', verdict: 'pass', endedAt: Date.now() });
+      await attempts.updateStep(implementation.id, { state: 'passed', verdict: 'pass', endedAt: Date.now() });
       await attempts.finish(attempt.id, 'passed');
       // Past the 600ms wall-clock budget (the guardrail arms an exact timer for
       // the remaining budget, so a ~200ms margin suffices).

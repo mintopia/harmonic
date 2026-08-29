@@ -488,7 +488,7 @@ describe('attempt timeline migration (issue #309, ADR-0041)', () => {
     const db = await openAsyncDb(dataDir);
     const attempt = await db.read((database) => database.select().from(schema.attempts).get());
     expect(attempt).toMatchObject({ taskId, number: 1, state: 'failed', startedAt: 10, endedAt: 20 });
-    expect(await db.read((database) => database.select().from(schema.attemptTasks).get())).toMatchObject({
+    expect(await db.read((database) => database.select().from(schema.steps).get())).toMatchObject({
       attemptId: attempt!.id, type: 'implementation', position: 1, state: 'failed', verdict: 'fail',
       logLocator: `session:${sessionId}`, startedAt: 10, endedAt: 20,
     });

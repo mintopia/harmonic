@@ -24,7 +24,7 @@ describe('Paper accessibility contract (issue #266)', () => {
 
     expect(board).toContain('role="img" aria-label={task.state.replaceAll');
     expect(timeline).toContain('role="img" aria-label={attempt.state}');
-    expect(timeline).toContain('role="img" aria-label={task.state}');
+    expect(timeline).toContain('role="img" aria-label={step.state}');
     expect(gate).toContain('role="img" aria-label={DOT_LABEL[model.dot]}');
     expect(timeline).not.toMatch(/min-h-(?:[0-9]|10)\b/);
     expect(timeline).toContain('min-h-11 items-center');

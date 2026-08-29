@@ -24,11 +24,11 @@ describe('attempt timeline API', () => {
 
     const created = await server.api('POST', '/api/tasks', { prompt: 'timeline parity' });
     const attempt = await server.app.ctx.attempts.ensureForRun(created.body.id, 1, 10);
-    const implementation = await server.app.ctx.attempts.createTask(attempt.id, {
+    const implementation = await server.app.ctx.attempts.createStep(attempt.id, {
       type: 'implementation',
       logLocator: 'transcript:/tmp/session.jsonl',
     });
-    await server.app.ctx.attempts.updateTask(implementation.id, {
+    await server.app.ctx.attempts.updateStep(implementation.id, {
       state: 'passed',
       verdict: 'pass',
       startedAt: 11,
@@ -43,12 +43,12 @@ describe('attempt timeline API', () => {
       lastActiveAgeMs: 1,
       warmWindowMs: 60 * 60 * 1000,
     });
-    const verification = await server.app.ctx.attempts.createTask(attempt.id, {
+    const verification = await server.app.ctx.attempts.createStep(attempt.id, {
       type: 'verification',
       command: 'npm test',
       logLocator: 'verification_attempt:31',
     });
-    await server.app.ctx.attempts.updateTask(verification.id, {
+    await server.app.ctx.attempts.updateStep(verification.id, {
       state: 'passed',
       verdict: 'pass',
       startedAt: 13,
@@ -78,7 +78,7 @@ describe('attempt timeline API', () => {
 
     expect(rest.status).toBe(200);
     expect(Reflect.get(event!, 'attempts')).toEqual(rest.body.attempts);
-    expect(rest.body.attempts[0].tasks.map((task: { position: number }) => task.position)).toEqual([1, 2]);
+    expect(rest.body.attempts[0].steps.map((step: { position: number }) => step.position)).toEqual([1, 2]);
     expect(rest.body.attempts[0].verifiedSha).toBe('verified-sha');
     expect(rest.body.attempts[0].escalationReason).toBe('escalated to human: attempts exhausted');
     expect(rest.body.attempts[0].continuation).toMatchObject({ path: 'new-session-condensed', contextTokens: 250_000 });
@@ -86,7 +86,7 @@ describe('attempt timeline API', () => {
       { mechanism: 'command', state: 'disabled', reason: 'No command verifier is configured.' },
       { mechanism: 'critic', state: 'disabled', reason: 'Critic verification is disabled.' },
     ]);
-    expect(rest.body.attempts[0].tasks[1]).not.toHaveProperty('verifiedSha');
+    expect(rest.body.attempts[0].steps[1]).not.toHaveProperty('verifiedSha');
     socket.close();
   });
 });

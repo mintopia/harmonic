@@ -7,11 +7,11 @@ import {
   elapsed,
   runForAttempt,
   stateTone,
-  taskLabel,
+  stepLabel,
   verifierStatusTone,
   type TimelineTone,
 } from '../../attempt-timeline-model.js';
-import type { Attempt, AttemptTask, Run, Task, VerifierStatus } from '../../types.js';
+import type { Attempt, Step, Run, Task, VerifierStatus } from '../../types.js';
 import { escalationActions } from '../../task-actions-model.js';
 import { btnAccept, btnGhost, btnQuietDestructive, railSectionCount, railSectionHead } from '../../ui.js';
 import { toastError, toastSuccess } from '../../toast.js';
@@ -116,8 +116,8 @@ function Escalation({ attempt, task, onChanged, compact = false }: { attempt: At
   );
 }
 
-function TaskRow({ task, now, selected, onSelect }: { task: AttemptTask; now: number; selected: boolean; onSelect: () => void }) {
-  const tone = stateTone(task.state);
+function StepRow({ step, now, selected, onSelect }: { step: Step; now: number; selected: boolean; onSelect: () => void }) {
+  const tone = stateTone(step.state);
   return (
     <li>
       <button
@@ -126,10 +126,10 @@ function TaskRow({ task, now, selected, onSelect }: { task: AttemptTask; now: nu
         onClick={onSelect}
         className={`flex min-h-11 w-full items-center gap-2 rounded-sm border px-2 py-1.5 text-left text-small transition-colors ${selected ? SELECTED : IDLE}`}
       >
-        <span role="img" aria-label={task.state} className={`size-1.5 shrink-0 rounded-full ${DOT[tone]}`} />
-        <span className="min-w-0 flex-1 truncate text-ink">{taskLabel(task)}</span>
-        <span className={`shrink-0 text-label font-bold uppercase tracking-[0.03em] ${WORD[tone]}`}>{task.verdict ?? task.state}</span>
-        <span className="w-12 shrink-0 text-right text-[11.5px] tabular-nums text-faint">{elapsed(task.startedAt, task.endedAt, now)}</span>
+        <span role="img" aria-label={step.state} className={`size-1.5 shrink-0 rounded-full ${DOT[tone]}`} />
+        <span className="min-w-0 flex-1 truncate text-ink">{stepLabel(step)}</span>
+        <span className={`shrink-0 text-label font-bold uppercase tracking-[0.03em] ${WORD[tone]}`}>{step.verdict ?? step.state}</span>
+        <span className="w-12 shrink-0 text-right text-[11.5px] tabular-nums text-faint">{elapsed(step.startedAt, step.endedAt, now)}</span>
       </button>
     </li>
   );
@@ -149,7 +149,7 @@ export function AttemptTimeline({
   selectedTaskId,
   selectedFile,
   onSelectAttempt,
-  onSelectTask,
+  onSelectStep,
   onChanged,
   layout = 'rail',
 }: {
@@ -164,7 +164,7 @@ export function AttemptTimeline({
   selectedTaskId: number | null;
   selectedFile: string | null;
   onSelectAttempt: (attempt: Attempt) => void;
-  onSelectTask: (attempt: Attempt, task: AttemptTask) => void;
+  onSelectStep: (attempt: Attempt, step: Step) => void;
   onChanged: () => void;
   layout?: 'rail' | 'strip';
 }) {
@@ -172,7 +172,7 @@ export function AttemptTimeline({
   const currentAttemptId =
     selectedAttemptId ?? [...attempts].reverse().find((attempt) => runForAttempt(runs, attempt)?.id === selectedRunId)?.id ?? null;
   const isAttemptSelected = (attempt: Attempt) =>
-    selectedFile === null && attempt.id === currentAttemptId && !attempt.tasks.some((row) => row.id === selectedTaskId);
+    selectedFile === null && attempt.id === currentAttemptId && !attempt.steps.some((row) => row.id === selectedTaskId);
   // The escalation surface rides the attempt that escalated; an escalation with
   // no attempt of its own (e.g. a missing integration branch) rides the latest,
   // or stands alone when the ticket was never attempted.
@@ -221,8 +221,8 @@ export function AttemptTimeline({
                   </div>
                 )}
                 <ol className="ml-[13px] mt-1 flex flex-col gap-0.5 border-l border-hairline pl-2">
-                  {attempt.tasks.map((row) => (
-                    <TaskRow key={row.id} task={row} now={now} selected={selectedFile === null && row.id === selectedTaskId} onSelect={() => onSelectTask(attempt, row)} />
+                  {attempt.steps.map((row) => (
+                    <StepRow key={row.id} step={row} now={now} selected={selectedFile === null && row.id === selectedTaskId} onSelect={() => onSelectStep(attempt, row)} />
                   ))}
                 </ol>
                 {attempt.feedback && (

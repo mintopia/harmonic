@@ -1,18 +1,18 @@
 import { formatScheduledJobDuration } from './scheduled-jobs-model.js';
-import type { Attempt, AttemptState, AttemptTask, AttemptTaskState, Run, VerifierStatus } from './types.js';
+import type { Attempt, AttemptState, Step, StepState, Run, VerifierStatus } from './types.js';
 
 export type TimelineTone = 'running' | 'passed' | 'failed' | 'neutral';
 
-export function taskLabel(task: AttemptTask): string {
-  switch (task.type) {
+export function stepLabel(step: Step): string {
+  switch (step.type) {
     case 'rebase': return 'Rebase';
     case 'implementation': return 'Implementation';
-    case 'verification': return task.command ? `Verify · ${task.command}` : 'Verification';
+    case 'verification': return step.command ? `Verify · ${step.command}` : 'Verification';
     case 'review': return 'Review';
   }
 }
 
-export function stateTone(state: AttemptTaskState): TimelineTone {
+export function stateTone(state: StepState): TimelineTone {
   if (state === 'running') return 'running';
   if (state === 'passed') return 'passed';
   if (state === 'failed') return 'failed';
@@ -92,17 +92,17 @@ export function runFailureBannerLabel(run: Run | null | undefined, attempt: Pick
   return attempt?.continuation ? 'Resume failed' : 'Run failed';
 }
 
-export type TaskLogSource =
+export type StepLogSource =
   | { kind: 'output'; verificationAttemptId: number }
   | { kind: 'critic'; verificationAttemptId: number }
   | { kind: 'run' };
 
-/** Where a task row's log lives: command output and critic transcripts are
+/** Where a step row's log lives: command output and critic transcripts are
  * keyed by their verification attempt; implementation work is the Run's own
  * harness transcript (the ACP events the main pane already streams). */
-export function taskLogSource(task: AttemptTask): TaskLogSource | null {
-  const id = verificationAttemptId(task.logLocator);
-  if (task.type === 'verification') return id === null ? null : { kind: 'output', verificationAttemptId: id };
-  if (task.type === 'review') return id === null ? null : { kind: 'critic', verificationAttemptId: id };
+export function stepLogSource(step: Step): StepLogSource | null {
+  const id = verificationAttemptId(step.logLocator);
+  if (step.type === 'verification') return id === null ? null : { kind: 'output', verificationAttemptId: id };
+  if (step.type === 'review') return id === null ? null : { kind: 'critic', verificationAttemptId: id };
   return { kind: 'run' };
 }

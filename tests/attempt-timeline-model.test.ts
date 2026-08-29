@@ -7,19 +7,19 @@ import {
   runFailureBannerLabel,
   runForAttempt,
   stateTone,
-  taskLabel,
-  taskLogSource,
+  stepLabel,
+  stepLogSource,
   verifierStatusTone,
   verifiedSha,
   verificationAttemptId,
 } from '../web/src/attempt-timeline-model.js';
-import type { Attempt, AttemptTask, Run } from '../web/src/types.js';
+import type { Attempt, Step, Run } from '../web/src/types.js';
 
-const task = (over: Partial<AttemptTask> = {}): AttemptTask => ({
+const task = (over: Partial<Step> = {}): Step => ({
   id: 1, attemptId: 1, type: 'verification', position: 3, state: 'passed', command: 'npm test', verdict: 'pass', logLocator: null, startedAt: 1_000, endedAt: 3_000, ...over,
 });
 const attempt = (over: Partial<Attempt> = {}): Attempt => ({
-  id: 1, taskId: 7, number: 1, state: 'failed', startedAt: 1_000, endedAt: 3_000, feedback: null, verifiedSha: null, escalationReason: null, verifierStatuses: [], continuation: null, tasks: [], ...over,
+  id: 1, taskId: 7, number: 1, state: 'failed', startedAt: 1_000, endedAt: 3_000, feedback: null, verifiedSha: null, escalationReason: null, verifierStatuses: [], continuation: null, steps: [], ...over,
 });
 const run = (over: Partial<Run> = {}): Run => ({
   id: 1, taskId: 7, attempt: 1, state: 'running', phase: 'executing', reason: null, stopReason: null, sessionId: null, prompt: null, branch: null, baseBranch: null,
@@ -28,8 +28,8 @@ const run = (over: Partial<Run> = {}): Run => ({
 
 describe('attempt timeline model', () => {
   it('labels ordered task types and their semantic states', () => {
-    expect(taskLabel(task())).toBe('Verify · npm test');
-    expect(taskLabel(task({ type: 'review', command: null }))).toBe('Review');
+    expect(stepLabel(task())).toBe('Verify · npm test');
+    expect(stepLabel(task({ type: 'review', command: null }))).toBe('Review');
     expect(stateTone('running')).toBe('running');
     expect(stateTone('failed')).toBe('failed');
     expect(attemptTone('escalated')).toBe('failed');
@@ -61,10 +61,10 @@ describe('attempt timeline model', () => {
   });
 
   it('routes each task row to the log source the viewer can fetch', () => {
-    expect(taskLogSource(task({ logLocator: 'verification_attempt:31' }))).toEqual({ kind: 'output', verificationAttemptId: 31 });
-    expect(taskLogSource(task({ type: 'review', logLocator: 'verification_attempt:32' }))).toEqual({ kind: 'critic', verificationAttemptId: 32 });
-    expect(taskLogSource(task({ type: 'implementation', logLocator: 'session:9' }))).toEqual({ kind: 'run' });
-    expect(taskLogSource(task({ logLocator: null }))).toBeNull();
+    expect(stepLogSource(task({ logLocator: 'verification_attempt:31' }))).toEqual({ kind: 'output', verificationAttemptId: 31 });
+    expect(stepLogSource(task({ type: 'review', logLocator: 'verification_attempt:32' }))).toEqual({ kind: 'critic', verificationAttemptId: 32 });
+    expect(stepLogSource(task({ type: 'implementation', logLocator: 'session:9' }))).toEqual({ kind: 'run' });
+    expect(stepLogSource(task({ logLocator: null }))).toBeNull();
   });
 
   it('formats elapsed time from the attempt clock', () => {

@@ -18,8 +18,8 @@ describe('GET /api/tasks/:id/timeline (issue #328)', () => {
     const task = await server.api('POST', '/api/tasks', { prompt: 'timeline target' });
     const run = await server.app.ctx.runs.create(task.body.id);
     const attempt = await server.app.ctx.attempts.ensureForRun(task.body.id, 1, 50);
-    const skipped = await server.app.ctx.attempts.createTask(attempt.id, { type: 'verification', command: 'npm test' });
-    await server.app.ctx.attempts.updateTask(skipped.id, { state: 'skipped', endedAt: 400 });
+    const skipped = await server.app.ctx.attempts.createStep(attempt.id, { type: 'verification', command: 'npm test' });
+    await server.app.ctx.attempts.updateStep(skipped.id, { state: 'skipped', endedAt: 400 });
     await server.app.ctx.attempts.finish(attempt.id, 'passed', 850);
     await server.app.ctx.runs.update(run.id, { startedAt: 100, finishedAt: 900, state: 'completed', phase: 'terminal' });
     await server.app.ctx.runs.appendEvent(run.id, { type: 'lifecycle', payload: { event: 'phase', phase: 'verifying' } });

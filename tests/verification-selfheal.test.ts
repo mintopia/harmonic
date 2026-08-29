@@ -155,8 +155,8 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
 
   /** The durable Session an Attempt's implementation Task points at (`session:<row id>`). */
   async function implementationSession(attemptId: number) {
-    const tasks = await new AttemptStore(server.app.ctx.asyncDb).listTasks(attemptId);
-    const locator = tasks.find((task) => task.type === 'implementation')?.logLocator ?? '';
+    const steps = await new AttemptStore(server.app.ctx.asyncDb).listSteps(attemptId);
+    const locator = steps.find((step) => step.type === 'implementation')?.logLocator ?? '';
     const match = /^session:(\d+)$/.exec(locator);
     expect(match, `implementation locator ${locator}`).not.toBeNull();
     return server.app.ctx.sessions.get(Number(match![1]));

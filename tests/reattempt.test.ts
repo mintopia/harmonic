@@ -36,7 +36,7 @@ describe('unified corrective attempts', () => {
   const timeline = async (taskId: number) => {
     const response = await server.api('GET', `/api/tasks/${taskId}/attempts`);
     expect(response.status).toBe(200);
-    return response.body.attempts as { number: number; state: string; feedback: string | null; tasks: { type: string }[] }[];
+    return response.body.attempts as { number: number; state: string; feedback: string | null; steps: { type: string }[] }[];
   };
 
   it('Reject with guidance starts attempt 2 on the same native ticket with the recorded guidance', async () => {
@@ -55,7 +55,7 @@ describe('unified corrective attempts', () => {
     expect(attempts[0]).toMatchObject({ number: 1, state: 'escalated' });
     expect(attempts[0]!.feedback).toContain('Add the CSV header');
     expect(attempts[1]!.number).toBe(2);
-    expect(attempts[1]!.tasks.map((task) => task.type)).toContain('implementation');
+    expect(attempts[1]!.steps.map((step) => step.type)).toContain('implementation');
 
     const after = await server.api('GET', `/api/tasks/${ticket.id}`);
     expect(after.body.id).toBe(ticket.id);

@@ -36,13 +36,13 @@ describe('AttemptStore', () => {
     expect(await attempts.ensureForRun(taskId, 1, 99)).toEqual(first);
     expect((await attempts.listForTask(taskId)).map((attempt) => attempt.number)).toEqual([1, 2]);
 
-    const implementation = await attempts.createTask(first.id, { type: 'implementation', logLocator: 'session:1' });
-    const verification = await attempts.createTask(first.id, { type: 'verification', command: 'npm test', logLocator: 'output:1' });
-    await attempts.updateTask(implementation.id, { state: 'passed', verdict: 'pass', startedAt: 11, endedAt: 12 });
-    await attempts.updateTask(verification.id, { state: 'passed', verdict: 'pass', startedAt: 13, endedAt: 14 });
+    const implementation = await attempts.createStep(first.id, { type: 'implementation', logLocator: 'session:1' });
+    const verification = await attempts.createStep(first.id, { type: 'verification', command: 'npm test', logLocator: 'output:1' });
+    await attempts.updateStep(implementation.id, { state: 'passed', verdict: 'pass', startedAt: 11, endedAt: 12 });
+    await attempts.updateStep(verification.id, { state: 'passed', verdict: 'pass', startedAt: 13, endedAt: 14 });
     await attempts.finish(first.id, 'passed', 15);
 
-    expect(await attempts.listTasks(first.id)).toMatchObject([
+    expect(await attempts.listSteps(first.id)).toMatchObject([
       { type: 'implementation', position: 1, state: 'passed', logLocator: 'session:1' },
       { type: 'verification', position: 2, state: 'passed', command: 'npm test', logLocator: 'output:1' },
     ]);

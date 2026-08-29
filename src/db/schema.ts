@@ -364,10 +364,10 @@ export type RunToolCallRow = typeof runToolCalls.$inferSelect;
 /** One pass through a Ticket's implement → verify loop (ADR-0041). */
 export const ATTEMPT_STATES = ['running', 'passed', 'failed', 'escalated', 'cancelled'] as const;
 export type AttemptState = (typeof ATTEMPT_STATES)[number];
-export const ATTEMPT_TASK_TYPES = ['rebase', 'implementation', 'verification', 'review'] as const;
-export type AttemptTaskType = (typeof ATTEMPT_TASK_TYPES)[number];
-export const ATTEMPT_TASK_STATES = ['pending', 'running', 'passed', 'failed', 'skipped', 'cancelled'] as const;
-export type AttemptTaskState = (typeof ATTEMPT_TASK_STATES)[number];
+export const STEP_TYPES = ['rebase', 'implementation', 'verification', 'review'] as const;
+export type StepType = (typeof STEP_TYPES)[number];
+export const STEP_STATES = ['pending', 'running', 'passed', 'failed', 'skipped', 'cancelled'] as const;
+export type StepState = (typeof STEP_STATES)[number];
 
 export const attempts = sqliteTable('attempts', {
   id: integer('id').primaryKey({ autoIncrement: true }),
@@ -384,19 +384,19 @@ export const attempts = sqliteTable('attempts', {
 export type AttemptRow = typeof attempts.$inferSelect;
 
 /** Individually visible work within an Attempt. `logLocator` points to its transcript/output. */
-export const attemptTasks = sqliteTable('attempt_tasks', {
+export const steps = sqliteTable('steps', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   attemptId: integer('attempt_id').notNull().references(() => attempts.id),
-  type: text('type').$type<AttemptTaskType>().notNull(),
+  type: text('type').$type<StepType>().notNull(),
   position: integer('position').notNull(),
-  state: text('state').$type<AttemptTaskState>().notNull().default('pending'),
+  state: text('state').$type<StepState>().notNull().default('pending'),
   command: text('command'),
   verdict: text('verdict'),
   logLocator: text('log_locator'),
   startedAt: integer('started_at'),
   endedAt: integer('ended_at'),
-}, (t) => [uniqueIndex('attempt_tasks_attempt_position_unique').on(t.attemptId, t.position)]);
-export type AttemptTaskRow = typeof attemptTasks.$inferSelect;
+}, (t) => [uniqueIndex('steps_attempt_position_unique').on(t.attemptId, t.position)]);
+export type StepRow = typeof steps.$inferSelect;
 
 /**
  * The Execution Chain (issue #129, reliability-design Unit A): a persisted

@@ -306,7 +306,7 @@ describe('command verifier end-to-end (issue #135)', () => {
     });
 
     const timeline = await server.api('GET', `/api/tasks/${taskId}/attempts`);
-    expect(timeline.body.attempts[0].tasks[0]).toMatchObject({
+    expect(timeline.body.attempts[0].steps[0]).toMatchObject({
       type: 'rebase',
       state: 'passed',
       verdict: 'pass',

@@ -290,7 +290,7 @@ describe('agent critic end-to-end (issue #164)', () => {
     const response = await server.api('GET', `/api/tasks/${taskId}/attempts`);
     expect(response.status).toBe(200);
     expect(response.body.attempts).toHaveLength(1);
-    expect(response.body.attempts[0].tasks).toMatchObject([
+    expect(response.body.attempts[0].steps).toMatchObject([
       {
         type: 'rebase',
         state: 'passed',

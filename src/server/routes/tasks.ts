@@ -791,7 +791,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
     {
       schema: {
         tags: ['Attempts'],
-        description: "A ticket's attempt timeline. Tasks are ordered exactly as they ran.",
+        description: "A ticket's attempt timeline. Steps are ordered exactly as they ran.",
         params: idParamsSchema,
         querystring: paginationQuerySchema,
         response: { 200: attemptTimelineResponseSchema },
