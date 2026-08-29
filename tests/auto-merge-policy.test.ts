@@ -164,7 +164,7 @@ describe('one merge policy, everywhere (issue #381, ADR-0001)', () => {
   const waitDone = (taskId: number, runId: number, opts?: { timeoutMs?: number }) =>
     waitFor(async () => {
       const t = await server.app.ctx.tasks.get(taskId);
-      if (t.state === 'escalated') throw new Error(`escalated instead of merging: ${(await server.app.ctx.runs.get(runId)).reason}`);
+      if (t.state === 'escalated') throw new Error(`escalated instead of merging: ${(await server.app.ctx.attempts.get(runId)).reason}`);
       return t.state === 'done' ? t : undefined;
     }, opts);
   const waitEscalated = (taskId: number) =>

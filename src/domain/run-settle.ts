@@ -1,15 +1,18 @@
-import type { RunRow, TaskRow, AttemptState } from '../db/schema.js';
-import type { RunStore } from './runs.js';
+import type { TaskRow, AttemptRow, AttemptState } from '../db/schema.js';
 import type { TaskService } from './tasks.js';
 import type { AttemptStore } from './attempts.js';
 import type { SessionRetirementHook } from './session-retirement-coordinator.js';
 import type { RetirementCause } from './session-retirement.js';
 
 export interface RunBranchRetirementHook {
-  onRunSettled(task: TaskRow, run: RunRow): Promise<void>;
+  onRunSettled(task: TaskRow, attempt: AttemptRow): Promise<void>;
 }
 
-/** The Run's terminal `runs.state` (never `running`). */
+/** The Attempt's terminal surface disposition (never `running`), before the
+ * one operator-escalate exception can still promote it to `escalated`
+ * (see {@link attemptTerminalState}). Folded from `runs.state` (ADR-0001
+ * #388 S-G): 'completed'/'failed'/'cancelled' map onto AttemptState's
+ * 'passed'/'failed'/'cancelled'. */
 export type RunTerminalState = 'completed' | 'failed' | 'cancelled';
 
 /**
@@ -75,55 +78,49 @@ export type DispositionKind = (typeof DISPOSITION_KINDS)[number];
  */
 export class RunSettleCoordinator {
   constructor(
-    private readonly runStore: RunStore,
     private readonly taskService: TaskService,
     private readonly attempts: AttemptStore,
-    private readonly onRunFinished?: (run: RunRow) => void,
+    private readonly onRunFinished?: (attempt: AttemptRow) => void,
     private readonly sessionRetirement?: SessionRetirementHook,
     private readonly branchRetirement?: RunBranchRetirementHook,
   ) {}
 
   /**
-   * Settle `run` to `projection`'s terminal disposition under `type`'s guard.
-   * No-ops when the Run is already at `projection.runState` and `type` is not
-   * an operator override — the idempotent "settle exactly once" contract a
-   * racing straggler (a post-SIGKILL harness-exit fact after an operator
-   * cancel, a second guardrail trip) relies on. `patch` (usage/stat/stopReason)
-   * rides with the write, matching prior semantics.
+   * Settle `attempt` to `projection`'s terminal disposition under `type`'s
+   * guard. No-ops when the Attempt is already at (or past) that disposition
+   * and `type` is not an operator override — the idempotent "settle exactly
+   * once" contract a racing straggler (a post-SIGKILL harness-exit fact after
+   * an operator cancel, a second guardrail trip) relies on. `patch`
+   * (usage/stat/stopReason/…) rides with the write, matching prior semantics
+   * — the Attempt is now the single execution ledger (ADR-0001 #388 S-G), so
+   * one write closes it out instead of a paired Run+Attempt write.
    */
   async settle(
     task: TaskRow,
-    run: RunRow,
+    attempt: AttemptRow,
     type: DispositionKind,
     projection: SettleProjection,
-    patch: Partial<RunRow> = {},
+    patch: Partial<AttemptRow> = {},
   ): Promise<void> {
     const isOperatorOverride = type === 'operator-cancel' || type === 'operator-accept';
-    const before = await this.runStore.get(run.id);
-    const runMovable = before.state === 'running' || (before.state !== projection.runState && isOperatorOverride);
-    if (!runMovable) return; // already settled at (or past) this disposition; a straggler no-ops
+    const before = await this.attempts.get(attempt.id);
+    const movable = before.state === 'running' || (before.state === 'escalated' && isOperatorOverride);
+    if (!movable) return; // already settled at (or past) this disposition; a straggler no-ops
 
-    await this.runStore.updateWithFrozenCost(run.id, {
+    const finished = await this.attempts.updateWithFrozenCost(attempt.id, {
       ...patch,
-      state: projection.runState,
-      reason: projection.reason,
-      finishedAt: before.finishedAt ?? Date.now(),
+      state: attemptTerminalState(type, projection),
+      reason: type,
+      // The free-text detail behind `reason` (a git/harness error, a
+      // guardrail's `budget: …` summary, "escalated to human: …") — folded
+      // from `runs.reason` onto its own column (ADR-0001 #388 S-G) so it
+      // survives alongside the structured `reason` on the same row.
+      detail: projection.reason,
+      endedAt: before.endedAt ?? Date.now(),
     });
 
-    // The Attempt mirrors the Run's guard, plus the one operator-override
-    // exception: `escalated` is the only non-`running` state an Attempt may
-    // still be moved out of, and only by an operator disposition. No Attempt
-    // row exists for some pre-Attempt-timeline callers (tests, legacy Runs) —
-    // that's a legitimate no-op on this half, the Run write above already
-    // happened.
-    const attempt = await this.attempts.getForTaskNumber(task.id, run.attempt);
-    if (attempt && (attempt.state === 'running' || (attempt.state === 'escalated' && isOperatorOverride))) {
-      await this.attempts.finish(attempt.id, attemptTerminalState(type, projection), Date.now(), undefined, type);
-    }
-
-    const finished = await this.runStore.get(run.id);
     // Session retirement (issue #148, reliability-design Unit C): record the
-    // intent for this Run's Session — retire now (a merge/abandon/cancel) or
+    // intent for this Attempt's Session — retire now (a merge/abandon/cancel) or
     // retain under a deadline (a reject / other ending). Awaited but
     // best-effort: it only marks the Session's status; the async worktree
     // removal is a separate drain, and a hiccup must never crash settle.

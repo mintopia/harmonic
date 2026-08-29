@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
-import { runs } from '../src/db/schema.js';
+import { attempts } from '../src/db/schema.js';
 import type { DeepPartial, AppConfig } from '../src/config.js';
 import { costOfUsages, DEFAULT_PRICES, resolvePrices } from '../src/execution/pricing.js';
 import type { ModelUsage, RunUsage } from '../src/execution/usage.js';
@@ -182,7 +182,7 @@ describe('cost surfaces (API)', () => {
     const { runId } = await runToDone(workDir);
 
     await server.app.ctx.asyncDb.write((db) =>
-      db.update(runs).set({ cost: null, priceTable: JSON.stringify({ modelA: flatPrice(3) }) }).where(eq(runs.id, runId)).run(),
+      db.update(attempts).set({ cost: null, priceTable: JSON.stringify({ modelA: flatPrice(3) }) }).where(eq(attempts.id, runId)).run(),
     );
     const dataDir = server.dataDir;
     await server.app.close();

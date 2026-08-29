@@ -6,7 +6,6 @@ import { join } from 'node:path';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
-import { RunStore } from '../src/domain/runs.js';
 import { Runner } from '../src/execution/runner.js';
 import { runMergePolicy, type MergePolicyDeps, type PostMergeCheckResult } from '../src/execution/merge-policy.js';
 import type { PostMergeHook } from '../src/execution/branch-merge.js';
@@ -29,14 +28,12 @@ describe('Runner.mergeEpicIntegration (epic → develop, ADR-0001 #382)', () => 
   let asyncDb: AsyncDbHandle;
   let settingsStore: SettingsStore;
   let tasks: TaskService;
-  let runs: RunStore;
 
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-epic-integrate-'));
     asyncDb = await openAsyncDb(dir);
     settingsStore = await makeSettingsStore(dir);
     tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
-    runs = new RunStore(asyncDb);
     // develop with epic/5 cut off it, each side touching a DIFFERENT file so the
     // epic → develop merge is clean (a real merge commit, base moved meanwhile).
     repo = join(dir, 'repo');
@@ -64,7 +61,7 @@ describe('Runner.mergeEpicIntegration (epic → develop, ADR-0001 #382)', () => 
   });
 
   const makeRunner = (postMerge?: PostMergeHook): Runner =>
-    new Runner(runs, tasks, asyncDb, () => defaultConfig(), {
+    new Runner(tasks, asyncDb, () => defaultConfig(), {
       worktreesDir: join(dir, 'worktrees'),
       // A no-op resolve drive: the conflict test's turns achieve nothing, so the
       // policy exhausts its bounded turns and escalates plainly (no real harness).

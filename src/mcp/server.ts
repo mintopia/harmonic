@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { AppContext } from '../server/app.js';
 import { HARNESS_IDS, ISOLATION_MODES, PRIORITIES } from '../config.js';
 import { TASK_STATES } from '../db/schema.js';
-import { serializeRun } from '../domain/runs.js';
+import { serializeAttempt } from '../domain/attempts.js';
 import { DomainError } from '../domain/errors.js';
 
 const taskId = { taskId: z.number().int().positive().describe('Task id') };
@@ -181,7 +181,7 @@ export function buildMcpServer(ctx: AppContext, opts: { operator?: boolean } = {
     { description: "List a Task's Runs with their results and usage; a retry is a new Run.", inputSchema: taskId },
     wrapAsync(async ({ taskId }) => {
       await ctx.tasks.get(taskId);
-      return (await ctx.runs.listForTask(taskId)).map(serializeRun);
+      return (await ctx.attempts.listForTask(taskId)).map(serializeAttempt);
     }),
   );
 
@@ -191,12 +191,7 @@ export function buildMcpServer(ctx: AppContext, opts: { operator?: boolean } = {
       description: "Read a Run's persisted event stream (permission grants, lifecycle facts).",
       inputSchema: { runId: z.number().int().positive() },
     },
-    wrapAsync(async ({ runId }) => {
-      const run = await ctx.runs.get(runId);
-      const attempt = await ctx.attempts.getForTaskNumber(run.taskId, run.attempt);
-      if (!attempt) throw new DomainError('not_found', `no attempt found for run ${runId}`);
-      return ctx.attempts.listEvents(attempt.id);
-    }),
+    wrapAsync(async ({ runId }) => ctx.attempts.listEvents((await ctx.attempts.resolveLatest(runId)).id)),
   );
 
   server.registerTool(

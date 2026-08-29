@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { Worker } from 'node:worker_threads';
 import type { ToolCallTotals } from '../domain/tool-call-aggregates.js';
-import type { RunRow } from './schema.js';
+import type { AttemptRow } from './schema.js';
 import { DEFAULT_QUERY_TIMEOUT_MS, QueryTimeoutError, type QueryTimeoutOptions } from './async.js';
 
 export interface StatsRange {
@@ -12,9 +12,9 @@ export interface StatsRange {
 }
 
 export interface StatsReadResult {
-  rows: RunRow[];
-  /** Failed-only Runs' Attempt disposition (ADR-0001 #388 S-E): `attempts.reason`
-   * keyed by `runId`, null when the Run has no Attempt row (pre-Attempt-timeline). */
+  rows: AttemptRow[];
+  /** Failed-only Attempts' disposition (ADR-0001 #388 S-E/S-G): `attempts.reason`
+   * keyed by `runId` (the Attempt's own id — one execution ledger). */
   attemptReasons: Array<{ runId: number; reason: string | null }>;
   toolTotals: ToolCallTotals;
 }

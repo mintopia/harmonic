@@ -8,7 +8,7 @@ import { TaskService } from '../src/domain/tasks.js';
 import { AutoRunner, type MirrorClaim } from '../src/execution/auto-runner.js';
 import { GitCircuitBreaker } from '../src/execution/git-failure.js';
 import { repoKey } from '../src/execution/repo-lock.js';
-import type { RunStore } from '../src/domain/runs.js';
+import type { AttemptStore } from '../src/domain/attempts.js';
 import type { Runner } from '../src/execution/runner.js';
 import type { MirrorInput } from '../src/domain/tasks.js';
 import type { TrackerFacts } from '../src/db/schema.js';
@@ -96,7 +96,7 @@ describe('AutoRunner — mirrored afk pick predicate + flip→claim ordering (is
     const runStore = {
       countRunning: () => started.length,
       countRunningByWorkspace: () => new Map<number, number>(),
-    } as unknown as RunStore;
+    } as unknown as AttemptStore;
     const config: AppConfig = { ...defaultConfig(), autoRunner: { enabled: true, maxConcurrentRuns: 10 } };
 
     const runner$ = new AutoRunner(tasks, runStore, runner, () => config, allWorkspaces(asyncDb, settingsStore), { mirror });
@@ -217,7 +217,7 @@ describe('AutoRunner — parallel-Epic base pick gate (issue #159)', () => {
     const runStore = {
       countRunning: () => started.length,
       countRunningByWorkspace: () => new Map<number, number>(),
-    } as unknown as RunStore;
+    } as unknown as AttemptStore;
     const config: AppConfig = { ...defaultConfig(), autoRunner: { enabled: true, maxConcurrentRuns: 10 } };
     const ar = new AutoRunner(tasks, runStore, runner, () => config, allWorkspaces(asyncDb, settingsStore), {
       epicBaseNotReady: (t) => awaitsEpicBase(t),
@@ -413,7 +413,7 @@ describe('AutoRunner — Work Context House Rule pick predicate (ADR-0001)', () 
     const runStore = {
       countRunning: () => started.length,
       countRunningByWorkspace: () => new Map<number, number>(),
-    } as unknown as RunStore;
+    } as unknown as AttemptStore;
     const config: AppConfig = { ...defaultConfig(), autoRunner: { enabled: true, maxConcurrentRuns: 10 } };
     const ar = new AutoRunner(tasks, runStore, runner, () => config, allWorkspaces(asyncDb, settingsStore), undefined);
     return { ar, started };

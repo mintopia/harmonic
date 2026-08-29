@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
-import { RunStore, type RunGuardrailSnapshot } from '../src/domain/runs.js';
+import { AttemptStore, type AttemptGuardrailSnapshot } from '../src/domain/attempts.js';
 import { isForeignKeyViolation } from '../src/db/errors.js';
 import { Runner } from '../src/execution/runner.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
@@ -35,7 +35,7 @@ describe('Runner.cancelForTask — run row deleted mid-settle', () => {
   let asyncDb: AsyncDbHandle;
   let settingsStore: SettingsStore;
   let tasks: TaskService;
-  let runs: RunStore;
+  let runs: AttemptStore;
   let runner: Runner;
 
   beforeEach(async () => {
@@ -45,8 +45,8 @@ describe('Runner.cancelForTask — run row deleted mid-settle', () => {
     asyncDb = await openAsyncDb(dir);
     settingsStore = await makeSettingsStore(dir);
     tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
-    runs = new RunStore(asyncDb);
-    runner = new Runner(runs, tasks, asyncDb, () => defaultConfig());
+    runs = new AttemptStore(asyncDb);
+    runner = new Runner(tasks, asyncDb, () => defaultConfig());
   });
 
   afterEach(async () => {
@@ -58,7 +58,7 @@ describe('Runner.cancelForTask — run row deleted mid-settle', () => {
 
   it('resolves as a no-op (no crash, nothing logged) when the run vanishes between read and settle', async () => {
     const task = await tasks.create({ prompt: 'cancel me', isolationMode: 'direct', workingDir: repoDir });
-    const snapshot: RunGuardrailSnapshot = {
+    const snapshot: AttemptGuardrailSnapshot = {
       guardrailConfig: defaultConfig().guardrails,
       priceTable: defaultConfig().prices,
     };

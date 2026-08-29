@@ -5,12 +5,11 @@ import { join } from 'node:path';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig, UNATTENDED_REMINDER, type AppConfig } from '../src/config.js';
 import { TaskService, type MirrorInput } from '../src/domain/tasks.js';
-import { RunStore } from '../src/domain/runs.js';
 import { AttemptStore } from '../src/domain/attempts.js';
 import { Runner } from '../src/execution/runner.js';
 import { AutoDrive } from '../src/execution/auto-drive.js';
 import { fillTemplate, skillFor, splitTitleBody } from '../src/execution/prompt-template.js';
-import type { TaskRow, RunRow } from '../src/db/schema.js';
+import type { TaskRow, AttemptRow } from '../src/db/schema.js';
 import { workspaces } from '../src/db/schema.js';
 import type { Ticket, TrackerAdapter, OpenPRInput } from '../src/tracker/adapter.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
@@ -41,8 +40,8 @@ const worktreeTask = (over: Partial<TaskRow> = {}): TaskRow =>
     ...over,
   }) as TaskRow;
 
-const run = (over: Partial<RunRow> = {}): RunRow =>
-  ({ id: 1, attempt: 1, branch: 'harmonic/task-1-run-1', baseBranch: 'main', ...over }) as RunRow;
+const run = (over: Partial<AttemptRow> = {}): AttemptRow =>
+  ({ id: 1, number: 1, branch: 'harmonic/task-1-run-1', baseBranch: 'main', ...over }) as AttemptRow;
 
 function fakeAdapter(ticketState: 'open' | 'closed' = 'open') {
   const calls = { close: [] as number[], reopen: [] as number[], openPR: [] as OpenPRInput[], read: [] as number[] };
@@ -319,7 +318,6 @@ describe('Runner auto-drive settle (issue #33)', () => {
   let asyncDb: AsyncDbHandle;
   let settingsStore: SettingsStore;
   let tasks: TaskService;
-  let runs: RunStore;
   let attempts: AttemptStore;
   let runner: Runner;
 
@@ -358,23 +356,29 @@ describe('Runner auto-drive settle (issue #33)', () => {
 
   function build(cfg: AppConfig, ticketState: 'open' | 'closed' = 'closed') {
     tasks = new TaskService(asyncDb, () => cfg, allWorkspaces(asyncDb, settingsStore));
-    runs = new RunStore(asyncDb);
     attempts = new AttemptStore(asyncDb);
     // Default: a resolved (agent-closed) ticket so a clean run completes (ADR 0011).
     // 'open' leaves the ticket unresolved, so the continue loop engages.
     const drive = new AutoDrive(() => cfg, () => 'https://x/7', async () => fakeAdapter(ticketState).adapter);
-    runner = new Runner(runs, tasks, asyncDb, () => cfg, { autoDrive: drive });
+    runner = new Runner(tasks, asyncDb, () => cfg, { autoDrive: drive });
   }
 
-  /** The Attempt's persisted event log for a Run's CURRENT attempt number
-   * (`attempt_events` is keyed off `attempt_id`, not `run_id`, ADR-0001 #388
-   * S-F) — the test-side bridge mirroring `Runner.attemptFor`. */
-  const eventsForRun = async (run: RunRow) => {
-    const attempt = await attempts.getForTaskNumber(run.taskId, run.attempt);
-    return attempt ? attempts.listEvents(attempt.id) : [];
+  /** The Attempt's persisted event log — `run` already IS the Attempt
+   * (ADR-0001 #388 S-G: one execution ledger, no separate Run row to bridge
+   * through). */
+  const eventsForRun = async (run: AttemptRow) => attempts.listEvents(run.id);
+
+  /** Every persisted event across a Task's whole Attempt history — self-heal
+   * turns are now separate Attempt rows (ADR-0001 #388 S-G), so a fact that
+   * landed on an earlier turn (e.g. the one-time session mode handshake)
+   * isn't necessarily on the latest one. */
+  const eventsForTask = async (taskId: number) => {
+    const rows = await attempts.listForTask(taskId);
+    const perAttempt = await Promise.all(rows.map((row) => attempts.listEvents(row.id)));
+    return perAttempt.flat();
   };
 
-  const continueEvents = async (run: RunRow) =>
+  const continueEvents = async (run: AttemptRow) =>
     (await eventsForRun(run)).filter((e) => e.type === 'lifecycle' && (e.payload as any).event === 'continue');
 
   it('a Run blocking on a human prompt fails the Attempt (no human drives it); the exhausted cap then Escalates', async () => {
@@ -393,9 +397,9 @@ describe('Runner auto-drive settle (issue #33)', () => {
     const attemptRows = await new AttemptStore(asyncDb).listForTask(task.id);
     expect(attemptRows.map((attempt) => attempt.state)).toEqual(['failed', 'escalated']);
     expect(attemptRows[0]!.feedback).toContain('Write file');
-    const last = (await runs.listForTask(task.id)).at(-1)!;
-    expect(last.state).toBe('failed');
-    expect(last.reason).toContain('escalated to human');
+    const last = (await attempts.listForTask(task.id)).at(-1)!;
+    expect(last.state).toBe('escalated');
+    expect(last.detail).toContain('escalated to human');
   });
 
   it('an afk Run enters auto permission mode before prompting; an unfinished turn then uses the Attempt cap', async () => {
@@ -410,9 +414,9 @@ describe('Runner auto-drive settle (issue #33)', () => {
     }, { timeout: 10_000 });
 
     expect(settled.state).toBe('escalated');
-    const last = (await runs.listForTask(task.id)).at(-1)!;
-    expect(last.attempt).toBe(2);
-    const modeSet = (await eventsForRun(last)).find(
+    const last = (await attempts.listForTask(task.id)).at(-1)!;
+    expect(last.number).toBe(2);
+    const modeSet = (await eventsForTask(task.id)).find(
       (e) => e.type === 'lifecycle' && (e.payload as any).event === 'mode_set',
     );
     expect((modeSet?.payload as any)?.mode).toBe('auto'); // session/set_mode auto went over the wire
@@ -431,10 +435,10 @@ describe('Runner auto-drive settle (issue #33)', () => {
       return t;
     }, { timeout: 10_000 });
 
-    const last = (await runs.listForTask(task.id)).at(-1)!;
-    expect(last.state).toBe('failed');
-    expect(last.reason).toMatch(/unattended permission mode/);
-    expect(settled.state).toBe('escalated'); // one permitted Attempt → escalates on the first failure
+    const last = (await attempts.listForTask(task.id)).at(-1)!;
+    expect(last.state).toBe('escalated'); // one permitted Attempt → escalates on the first failure
+    expect(last.detail).toMatch(/unattended permission mode/);
+    expect(settled.state).toBe('escalated');
   });
 
   it('retries a failed afk Run within the cap, then Escalates when it is exhausted', async () => {
@@ -451,14 +455,15 @@ describe('Runner auto-drive settle (issue #33)', () => {
       return t;
     }, { timeout: 10_000 });
     expect(settled.escalationReason).toMatch(/attempt 2 of 2 failed/);
-    const taskAttempts = await new AttemptStore(asyncDb).listForTask(task.id);
+    const taskAttempts = await attempts.listForTask(task.id);
     expect(taskAttempts.map((attempt) => ({ number: attempt.number, state: attempt.state }))).toEqual([
       { number: 1, state: 'failed' },
       { number: 2, state: 'escalated' },
     ]);
-    const taskRuns = await runs.listForTask(task.id);
-    expect(taskRuns).toHaveLength(1);
-    expect(taskRuns[0]!.attempt).toBe(2);
+    // A self-heal retry drives the SAME worktree/branch, not a fresh one
+    // (ADR-0046) — the physical identity `drive()` carries forward onto each
+    // new Attempt (ADR-0001 #388 S-G), even though each turn is its own row.
+    expect(taskAttempts[1]!.branch).toBe(taskAttempts[0]!.branch);
   });
 
   it('re-prompts an unfinished (ticket-open) Run continueAttempts times, then treats it as unresolved', async () => {
@@ -475,9 +480,9 @@ describe('Runner auto-drive settle (issue #33)', () => {
       return t;
     }, { timeout: 10_000 });
 
-    const lastRun = (await runs.listForTask(task.id)).at(-1)!;
+    const lastRun = (await attempts.listForTask(task.id)).at(-1)!;
     expect(await continueEvents(lastRun)).toHaveLength(2); // re-prompted exactly continueAttempts times
-    expect(lastRun.reason).toMatch(/finish_task|escalated to human/);
+    expect(lastRun.detail).toMatch(/finish_task|escalated to human/);
     expect(settled.state).toBe('escalated');
   });
 
@@ -490,7 +495,7 @@ describe('Runner auto-drive settle (issue #33)', () => {
       if ((await tasks.get(task.id)).state !== 'escalated') throw new Error('not escalated yet');
     }, { timeout: 10_000 });
 
-    const lastRun = (await runs.listForTask(task.id)).at(-1)!;
+    const lastRun = (await attempts.listForTask(task.id)).at(-1)!;
     expect(await continueEvents(lastRun)).toHaveLength(0); // straight to the unresolved path
   });
 
@@ -511,8 +516,8 @@ describe('Runner auto-drive settle (issue #33)', () => {
     }, { timeout: 10_000 });
 
     expect(settled.state).toBe('escalated'); // a closed ticket did not complete it
-    const lastRun = (await runs.listForTask(task.id)).at(-1)!;
-    expect(lastRun.reason).toMatch(/finish_task|escalated to human/);
+    const lastRun = (await attempts.listForTask(task.id)).at(-1)!;
+    expect(lastRun.detail).toMatch(/finish_task|escalated to human/);
   });
 
   it('markAgentFinished / markEscalate no-op (return false) when the Task is not working here', () => {

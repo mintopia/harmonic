@@ -190,7 +190,7 @@ describe('steering a settled task continues its warm session', () => {
       const task = (await server.api('GET', `/api/tasks/${mirrored.id}`)).body;
       return task.state === 'escalated' ? task : undefined;
     });
-    const runsBefore = (await server.app.ctx.runs.listForTask(mirrored.id)).length;
+    const runsBefore = (await server.app.ctx.attempts.listForTask(mirrored.id)).length;
 
     const steered = await server.api('POST', `/api/tasks/${mirrored.id}/steer`, { text: 'actually, focus on the parser' });
     expect(steered.status).toBe(200);
@@ -199,7 +199,7 @@ describe('steering a settled task continues its warm session', () => {
     // A fresh Run spawned, and its persisted first-turn prompt IS the operator
     // message (a continuation of the warm Session, not the task prompt re-sent).
     const latest = await waitFor(async () => {
-      const all = await server.app.ctx.runs.listForTask(mirrored.id);
+      const all = await server.app.ctx.attempts.listForTask(mirrored.id);
       const last = all.at(-1);
       return all.length > runsBefore && last?.prompt?.includes('actually, focus on the parser') ? last : undefined;
     });

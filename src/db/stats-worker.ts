@@ -4,7 +4,7 @@ import { drizzle } from 'drizzle-orm/libsql';
 import { join } from 'node:path';
 import { parentPort, workerData } from 'node:worker_threads';
 import { totalsForRange } from '../domain/tool-call-aggregates.js';
-import { attempts, runs, tasks } from './schema.js';
+import { attempts, tasks } from './schema.js';
 import * as schema from './schema.js';
 import {
   isStatsWorkerRequest,
@@ -25,37 +25,35 @@ const db = drizzle(client, { schema });
 async function readStats({ from, to, workspaceId }: StatsRange): Promise<StatsReadResult> {
   const rows =
     workspaceId === undefined
-      ? await db.select().from(runs).where(and(gte(runs.startedAt, from), lte(runs.startedAt, to))).all()
+      ? await db.select().from(attempts).where(and(gte(attempts.startedAt, from), lte(attempts.startedAt, to))).all()
       : (
           await db
-            .select({ runs })
-            .from(runs)
-            .innerJoin(tasks, eq(runs.taskId, tasks.id))
-            .where(and(gte(runs.startedAt, from), lte(runs.startedAt, to), eq(tasks.workspaceId, workspaceId)))
+            .select({ attempts })
+            .from(attempts)
+            .innerJoin(tasks, eq(attempts.taskId, tasks.id))
+            .where(and(gte(attempts.startedAt, from), lte(attempts.startedAt, to), eq(tasks.workspaceId, workspaceId)))
             .all()
-        ).map((row) => row.runs);
+        ).map((row) => row.attempts);
 
-  // Failed-only Runs' Attempt disposition (ADR-0001 #388 S-E): joined by the
-  // (taskId, attempt=number) pair every Run/Attempt pair shares — replaces the
-  // deleted `run_facts` disposition-fact join.
+  // Failed-only Attempts' disposition (ADR-0001 #388 S-E/S-G): the Attempt IS
+  // the single execution ledger now, so its own `reason` column is the read
+  // directly — no more Run/Attempt bridge join.
   const attemptReasons =
     workspaceId === undefined
       ? await db
-          .select({ runId: runs.id, reason: attempts.reason })
-          .from(runs)
-          .leftJoin(attempts, and(eq(attempts.taskId, runs.taskId), eq(attempts.number, runs.attempt)))
-          .where(and(eq(runs.state, 'failed'), gte(runs.startedAt, from), lte(runs.startedAt, to)))
+          .select({ runId: attempts.id, reason: attempts.reason })
+          .from(attempts)
+          .where(and(eq(attempts.state, 'failed'), gte(attempts.startedAt, from), lte(attempts.startedAt, to)))
           .all()
       : await db
-          .select({ runId: runs.id, reason: attempts.reason })
-          .from(runs)
-          .leftJoin(attempts, and(eq(attempts.taskId, runs.taskId), eq(attempts.number, runs.attempt)))
-          .innerJoin(tasks, eq(runs.taskId, tasks.id))
+          .select({ runId: attempts.id, reason: attempts.reason })
+          .from(attempts)
+          .innerJoin(tasks, eq(attempts.taskId, tasks.id))
           .where(
             and(
-              eq(runs.state, 'failed'),
-              gte(runs.startedAt, from),
-              lte(runs.startedAt, to),
+              eq(attempts.state, 'failed'),
+              gte(attempts.startedAt, from),
+              lte(attempts.startedAt, to),
               eq(tasks.workspaceId, workspaceId),
             ),
           )

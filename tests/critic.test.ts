@@ -19,7 +19,6 @@ import { combineVerdicts } from '../web/src/verification-model.js';
 import type { VerifierVerdict } from '../web/src/verification-model.js';
 import { openAsyncDb } from '../src/db/async.js';
 import { TaskService } from '../src/domain/tasks.js';
-import { RunStore } from '../src/domain/runs.js';
 import { AttemptStore } from '../src/domain/attempts.js';
 import { VerificationAttemptStore } from '../src/domain/verification-attempts.js';
 import { OperationRegistry, startOperation } from '../src/telemetry/operations.js';
@@ -398,12 +397,10 @@ describe('runCritic (issue #136)', () => {
     const asyncDb = await openAsyncDb(dbDir);
     const settingsStore = await makeSettingsStore(dbDir);
     const tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
-    const runStore = new RunStore(asyncDb);
-    const attemptStore = new AttemptStore(asyncDb);
+    const attempts = new AttemptStore(asyncDb);
     const store = new VerificationAttemptStore(asyncDb);
     const task = await tasks.create({ prompt: 'verify me', state: 'ready' });
-    const run = await runStore.create(task.id);
-    const attemptId = (await attemptStore.ensureForRun(task.id, run.attempt, run.startedAt)).id;
+    const attemptId = (await attempts.create(task.id)).id;
 
     await store.append(attemptId, criticAttemptToInput(attempt));
 

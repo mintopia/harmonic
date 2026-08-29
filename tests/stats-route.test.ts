@@ -1,16 +1,16 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startServer, type TestServer } from './helpers.js';
-import { attempts, runs } from '../src/db/schema.js';
-import type { RunState } from '../src/db/schema.js';
+import { attempts } from '../src/db/schema.js';
+import type { AttemptState } from '../src/db/schema.js';
 import type { RunUsage } from '../src/execution/usage.js';
 
 /**
  * The KPI-band ingredients the stats route now derives (issue #196, ADR-0028):
  * the failed-only failure numerator and the active-execution duration
- * percentiles. Seeds runs + attempts directly (ADR-0001 #388 S-E: the
- * disposition-kind reason now lives on `attempts.reason`, joined by the
- * (taskId, attempt=number) pair) so the wiring — not just the pure helpers —
- * is exercised end to end.
+ * percentiles. Seeds attempts directly (ADR-0001 #388 S-G: Attempt is the
+ * single execution ledger — its own `reason` is the disposition-kind fact
+ * the stats route reads, no separate Run row to join through) so the wiring
+ * — not just the pure helpers — is exercised end to end.
  */
 describe('GET /api/stats — failedRuns + durationMs', () => {
   let server: TestServer;
@@ -18,36 +18,27 @@ describe('GET /api/stats — failedRuns + durationMs', () => {
   let nextAttemptNumber = 1;
 
   const seedRun = async (r: {
-    state: RunState;
+    state: AttemptState;
     startedAt: number;
     finishedAt: number | null;
+    /** The disposition-kind reason (`attempts.reason`); the by-reason breakdown key. */
     reason?: string | null;
-    /** The Attempt's disposition-kind reason; matched to this Run by `attempt` number. */
-    attemptReason?: string;
   }) => {
     const attemptNumber = nextAttemptNumber++;
-    const row = await server.app.ctx.asyncDb.write((d) =>
+    return server.app.ctx.asyncDb.write((d) =>
       d
-        .insert(runs)
+        .insert(attempts)
         .values({
           taskId,
-          attempt: attemptNumber,
+          number: attemptNumber,
           state: r.state,
           startedAt: r.startedAt,
-          finishedAt: r.finishedAt,
+          endedAt: r.finishedAt,
           reason: r.reason ?? null,
         })
         .returning()
         .get(),
     );
-    if (r.attemptReason !== undefined) {
-      await server.app.ctx.asyncDb.write((d) =>
-        d.insert(attempts).values({
-          taskId, number: attemptNumber, state: 'failed', startedAt: r.startedAt, endedAt: r.finishedAt, reason: r.attemptReason,
-        }).run(),
-      );
-    }
-    return row;
   };
 
   beforeAll(async () => {
@@ -56,14 +47,14 @@ describe('GET /api/stats — failedRuns + durationMs', () => {
     taskId = task.body.id;
 
     // Two completed runs with measurable wall-clock durations.
-    await seedRun({ state: 'completed', startedAt: 1000, finishedAt: 100000 });
-    await seedRun({ state: 'completed', startedAt: 1000, finishedAt: 6000 });
+    await seedRun({ state: 'passed', startedAt: 1000, finishedAt: 100000 });
+    await seedRun({ state: 'passed', startedAt: 1000, finishedAt: 6000 });
     // A genuine execution failure — counts toward the failure numerator and the
-    // by-reason breakdown (its Attempt disposition is 'failed').
-    await seedRun({ state: 'failed', startedAt: 1000, finishedAt: null, reason: 'boom', attemptReason: 'failed' });
+    // by-reason breakdown (its disposition is 'failed').
+    await seedRun({ state: 'failed', startedAt: 1000, finishedAt: null, reason: 'failed' });
     // A cancelled Run is its own slice (ADR-0028): never in the failure
     // numerator, never in the by-reason breakdown.
-    await seedRun({ state: 'cancelled', startedAt: 1000, finishedAt: null, attemptReason: 'operator-cancel' });
+    await seedRun({ state: 'cancelled', startedAt: 1000, finishedAt: null, reason: 'operator-cancel' });
   });
   afterAll(async () => {
     await server.close();
@@ -141,14 +132,14 @@ describe('GET /api/stats — per-tool output attribution', () => {
 
     await server.app.ctx.asyncDb.write((d) =>
       d
-        .insert(runs)
+        .insert(attempts)
         .values([
           {
             taskId,
-            attempt: 1,
-            state: 'completed',
+            number: 1,
+            state: 'passed',
             startedAt: 1_000,
-            finishedAt: 2_000,
+            endedAt: 2_000,
             usage: usageJson({
               toolTokens: { Read: { outputTokens: 2, cost: 0.02 }, Bash: { outputTokens: 3, cost: 0.03 } },
               reasoning: { outputTokens: 4, cost: 0.04 },
@@ -156,20 +147,20 @@ describe('GET /api/stats — per-tool output attribution', () => {
           },
           {
             taskId,
-            attempt: 2,
-            state: 'completed',
+            number: 2,
+            state: 'passed',
             startedAt: 3_000,
-            finishedAt: 4_000,
+            endedAt: 4_000,
             usage: usageJson({
               toolTokens: { Read: { outputTokens: 5, cost: 0.05 }, Edit: { outputTokens: 1, cost: 0.01 } },
             }),
           },
           {
             taskId,
-            attempt: 3,
-            state: 'completed',
+            number: 3,
+            state: 'passed',
             startedAt: 5_000,
-            finishedAt: 6_000,
+            endedAt: 6_000,
             usage: usageJson({}),
           },
         ])

@@ -1,4 +1,4 @@
-import type { RunRow, TaskRow } from '../db/schema.js';
+import type { AttemptRow, TaskRow } from '../db/schema.js';
 import { forEachYielding, type YieldOptions } from '../reliability/yield.js';
 import { Git } from './git.js';
 import { logger } from '../logger.js';
@@ -12,7 +12,7 @@ export interface BranchRetirementGit {
   deleteBranch(dir: string, branch: string): Promise<unknown>;
 }
 
-type BranchRun = Pick<RunRow, 'id' | 'taskId' | 'state' | 'branch' | 'baseBranch'>;
+type BranchRun = Pick<AttemptRow, 'id' | 'taskId' | 'state' | 'branch' | 'baseBranch'>;
 type BranchTask = Pick<TaskRow, 'workingDir' | 'state' | 'origin' | 'trackerState' | 'isolationMode'>;
 interface BranchRunStore {
   listAll(): Promise<BranchRun[]>;

@@ -24,7 +24,7 @@ describe('direct-context multi-worker attach (ADR-0046)', () => {
   it('a second worker hand-started onto an already-working direct checkout is not blocked', async () => {
     const first = await server.api('POST', '/api/tasks', { prompt: 'worker one' });
     const firstTask = await ctx().tasks.get(first.body.id);
-    await ctx().runs.create(firstTask.id);
+    await ctx().attempts.create(firstTask.id);
     await ctx().tasks.setState(firstTask.id, 'working');
 
     // Worker 2: a second direct Task on the SAME checkout, hand-started.

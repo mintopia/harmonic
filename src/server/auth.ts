@@ -1,7 +1,7 @@
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { and, desc, eq, inArray, isNull, notInArray, or } from 'drizzle-orm';
 import type { AsyncDbHandle } from '../db/async.js';
-import { apiKeys, runs, settings, type ApiKeyRow } from '../db/schema.js';
+import { apiKeys, attempts, settings, type ApiKeyRow } from '../db/schema.js';
 import { DomainError } from '../domain/errors.js';
 
 const AUTH_KEY = 'auth';
@@ -84,7 +84,7 @@ export class AuthService {
 
   async createKey(
     name: string,
-    opts: { scope?: 'full' | 'run' | 'conversation' | 'read'; runId?: number; conversationId?: number } = {},
+    opts: { scope?: 'full' | 'attempt' | 'conversation' | 'read'; attemptId?: number; conversationId?: number } = {},
   ): Promise<{ key: ApiKeyRow; token: string }> {
     const token = KEY_PREFIX + randomBytes(24).toString('hex');
     const key = await this.db.write((db) =>
@@ -95,7 +95,7 @@ export class AuthService {
           tokenHash: hashToken(token),
           prefix: token.slice(0, KEY_PREFIX.length + 8),
           scope: opts.scope ?? 'full',
-          runId: opts.runId ?? null,
+          attemptId: opts.attemptId ?? null,
           conversationId: opts.conversationId ?? null,
           createdAt: Date.now(),
         })
@@ -144,11 +144,11 @@ export class AuthService {
     });
   }
 
-  async deleteKeysForRun(runId: number): Promise<void> {
+  async deleteKeysForAttempt(attemptId: number): Promise<void> {
     await this.db.write((db) =>
       db
         .delete(apiKeys)
-        .where(and(eq(apiKeys.scope, 'run'), eq(apiKeys.runId, runId)))
+        .where(and(eq(apiKeys.scope, 'attempt'), eq(apiKeys.attemptId, attemptId)))
         .run(),
     );
   }
@@ -162,15 +162,15 @@ export class AuthService {
     );
   }
 
-  async sweepOrphanedRunKeys(): Promise<void> {
+  async sweepOrphanedAttemptKeys(): Promise<void> {
     await this.db.write((db) => {
-      const runningRuns = db.select({ id: runs.id }).from(runs).where(eq(runs.state, 'running'));
+      const runningAttempts = db.select({ id: attempts.id }).from(attempts).where(eq(attempts.state, 'running'));
       return db
         .delete(apiKeys)
         .where(
           and(
-            eq(apiKeys.scope, 'run'),
-            or(isNull(apiKeys.runId), notInArray(apiKeys.runId, runningRuns)),
+            eq(apiKeys.scope, 'attempt'),
+            or(isNull(apiKeys.attemptId), notInArray(apiKeys.attemptId, runningAttempts)),
           ),
         )
         .run();

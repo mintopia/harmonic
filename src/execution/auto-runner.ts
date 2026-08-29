@@ -1,7 +1,7 @@
 import type { SpanContext } from '@opentelemetry/api';
 import type { AppConfig } from '../config.js';
 import type { OrderedEligibleTask, TaskService } from '../domain/tasks.js';
-import type { RunStore } from '../domain/runs.js';
+import type { AttemptStore } from '../domain/attempts.js';
 import type { TaskRow, WorkspaceRow } from '../db/schema.js';
 import { resolveScoped, resolveCap } from '../domain/setting-override.js';
 import { workContextKey } from '../domain/work-context-key.js';
@@ -154,7 +154,7 @@ export class AutoRunner {
 
   constructor(
     private readonly taskService: TaskService,
-    private readonly runStore: Pick<RunStore, 'countRunning' | 'countRunningByWorkspace'>,
+    private readonly runStore: Pick<AttemptStore, 'countRunning' | 'countRunningByWorkspace'>,
     private readonly runner: { launchClaimed: RunLauncher; escalateUnspawned: Runner['escalateUnspawned'] },
     private readonly getConfig: () => AppConfig,
     private readonly getWorkspaces: () => Promise<WorkspaceRow[]>,

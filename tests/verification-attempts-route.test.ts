@@ -20,8 +20,8 @@ describe('GET /api/runs/:id/verification-attempts (issue #169)', () => {
   it("lists a run's verification attempts in seq order", async () => {
     const created = await server.api('POST', '/api/tasks', { prompt: 'verification target' });
     const task = await ctx().tasks.get(created.body.id);
-    const run = await ctx().runs.create(task.id);
-    const attempt = await ctx().attempts.ensureForRun(task.id, run.attempt, run.startedAt);
+    const run = await ctx().attempts.create(task.id);
+    const attempt = run;
 
     await ctx().verificationAttempts.append(attempt.id, {
       mechanism: 'command',
@@ -76,8 +76,8 @@ describe('GET /api/runs/:id/verification-attempts (issue #169)', () => {
     try {
       const created = await configured.api('POST', '/api/tasks', { prompt: 'verification status target' });
       const task = await configured.app.ctx.tasks.get(created.body.id);
-      const run = await configured.app.ctx.runs.create(task.id);
-      const attempt = await configured.app.ctx.attempts.ensureForRun(task.id, run.attempt, run.startedAt);
+      const run = await configured.app.ctx.attempts.create(task.id);
+      const attempt = run;
       await configured.app.ctx.verificationAttempts.append(attempt.id, {
         mechanism: 'critic',
         inputOid: 'oid1',
@@ -109,8 +109,8 @@ describe('GET /api/runs/:id/verification-attempts (issue #169)', () => {
     try {
       const created = await configured.api('POST', '/api/tasks', { prompt: 'verification status target' });
       const task = await configured.app.ctx.tasks.get(created.body.id);
-      const run = await configured.app.ctx.runs.create(task.id);
-      const attempt = await configured.app.ctx.attempts.ensureForRun(task.id, run.attempt, run.startedAt);
+      const run = await configured.app.ctx.attempts.create(task.id);
+      const attempt = run;
       await configured.app.ctx.verificationAttempts.append(attempt.id, {
         mechanism: 'critic',
         inputOid: 'oid1',

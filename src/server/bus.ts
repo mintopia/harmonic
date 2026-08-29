@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import type { ConversationRow, RunRow, TaskRow } from '../db/schema.js';
+import type { ConversationRow, AttemptRow, TaskRow } from '../db/schema.js';
 import type { PersistedAttemptEvent } from '../domain/attempts.js';
 import type { LiveRunEvent } from '../execution/runner.js';
 import type { PersistedConversationEvent } from '../domain/conversations.js';
@@ -13,7 +13,7 @@ export interface BusEvents {
   operations: (event: OperationEvent) => void;
   run_event: (event: PersistedAttemptEvent) => void;
   run_log_event: (event: LiveRunEvent) => void;
-  run_changed: (run: RunRow) => void;
+  run_changed: (run: AttemptRow) => void;
   /** Live-usage snapshot pushed ~1s while a run tails its native log (ADR 0010). */
   run_usage: (payload: { runId: number; snapshot: RunUsageSnapshot }) => void;
   task_changed: (task: TaskRow) => void;

@@ -3,7 +3,6 @@ import {
   ATTEMPT_STATES,
   STEP_STATES,
   STEP_TYPES,
-  RUN_STATES,
   CONVERSATION_STATES,
 } from '../db/schema.js';
 import { listResponse } from './pagination.js';
@@ -237,8 +236,8 @@ export const activityProcessSchema = z
     /** One of config.ts's HARNESS_IDS ('claude' | 'codex' | 'copilot'); stored as plain text. */
     harness: z.string().meta({ example: 'claude' }),
     model: z.string().meta({ example: 'sonnet-5' }),
-    /** A running Run's RunState, or a warm Conversation's ConversationState. */
-    state: z.enum([...RUN_STATES, ...CONVERSATION_STATES]).meta({ example: 'running' }),
+    /** A running Run's AttemptState, or a warm Conversation's ConversationState. */
+    state: z.enum([...ATTEMPT_STATES, ...CONVERSATION_STATES]).meta({ example: 'running' }),
     /** Isolation Mode ('direct' | 'worktree', config.ts ISOLATION_MODES); always 'direct' for a Conversation (ADR-0006). Stored as plain text. */
     isolation: z.string().meta({ example: 'worktree' }),
     /** Epoch ms the process started; the client derives elapsed from it. */

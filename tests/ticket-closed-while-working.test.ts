@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService, type MirrorInput } from '../src/domain/tasks.js';
-import { RunStore } from '../src/domain/runs.js';
+import { AttemptStore } from '../src/domain/attempts.js';
 import { mirrorScan } from '../src/tracker/mirror.js';
 import { TrackerPoller } from '../src/tracker/poller.js';
 import type { Ticket, TrackerAdapter } from '../src/tracker/adapter.js';
@@ -74,7 +74,7 @@ describe('a mirrored ticket closed while its Task is working', () => {
   let asyncDb: AsyncDbHandle;
   let settingsStore: SettingsStore;
   let tasks: TaskService;
-  let runs: RunStore;
+  let runs: AttemptStore;
   let wsId: number;
 
   beforeEach(async () => {
@@ -82,7 +82,7 @@ describe('a mirrored ticket closed while its Task is working', () => {
     asyncDb = await openAsyncDb(dir);
     settingsStore = await makeSettingsStore(dir);
     tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
-    runs = new RunStore(asyncDb);
+    runs = new AttemptStore(asyncDb);
     wsId = (await allWorkspaces(asyncDb, settingsStore)())[0]!.id;
   });
   afterEach(async () => {

@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { startServer, stubHarness, type TestServer } from './helpers.js';
 import { StatsWorkerClient } from '../src/db/stats-reader.js';
-import { attemptToolCalls, attempts, runs, tasks, workspaces } from '../src/db/schema.js';
+import { attemptToolCalls, attempts, tasks, workspaces } from '../src/db/schema.js';
 import { EventLoopMonitor, type StallInfo } from '../src/reliability/event-loop-monitor.js';
 
 /**
@@ -35,21 +35,18 @@ describe('Stats heavy aggregate runs in a worker (#257)', () => {
         .returning()
         .get(),
     );
-    const run = await ctx.asyncDb.write((d) =>
+    const attempt = await ctx.asyncDb.write((d) =>
       d
-        .insert(runs)
+        .insert(attempts)
         .values({
           taskId: task.id,
-          attempt: 1,
-          state: 'completed',
+          number: 1,
+          state: 'passed',
           startedAt: now,
           usage: JSON.stringify({ models: {}, totals: null, toolCalls: { Bash: 2 }, source: 'session-log' }),
         })
         .returning()
         .get(),
-    );
-    const attempt = await ctx.asyncDb.write((d) =>
-      d.insert(attempts).values({ taskId: task.id, number: run.attempt, startedAt: now }).returning().get(),
     );
     await ctx.asyncDb.write((d) => d.insert(attemptToolCalls).values({ attemptId: attempt.id, toolName: 'Read', count: 3 }).run());
 
@@ -86,7 +83,7 @@ describe('Stats heavy aggregate runs in a worker (#257)', () => {
           .get(),
       );
       await ctx.asyncDb.write((d) =>
-        d.insert(runs).values({ taskId: task.id, attempt: 1, state: 'completed', startedAt: now }).run(),
+        d.insert(attempts).values({ taskId: task.id, number: 1, state: 'passed', startedAt: now }).run(),
       );
     };
     await seed(ws.id);

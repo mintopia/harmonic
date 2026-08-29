@@ -11,12 +11,13 @@ import {
   type AsyncDbHandle,
 } from '../src/db/async.js';
 import { isUniqueViolation } from '../src/db/errors.js';
-import { attempts, guardrailEvents, runs, tasks, workspaces } from '../src/db/schema.js';
+import { attempts, guardrailEvents, tasks, workspaces } from '../src/db/schema.js';
 
 const delay = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
-/** Seed a task + run + attempt on the async DB so guardrail_events inserts
- * satisfy their FK (`attempt_id`, ADR-0001 #388 S-F — was `run_id` before). */
+/** Seed a task + attempt on the async DB so guardrail_events inserts satisfy
+ * their FK (`attempt_id`, ADR-0001 #388 S-F/S-G — attempts is the single
+ * execution ledger, was `run_id` against a separate `runs` row before). */
 async function seedRunAsync(h: AsyncDbHandle): Promise<number> {
   const now = Date.now();
   const ws = (await h.db.select().from(workspaces).get())!;
@@ -25,14 +26,9 @@ async function seedRunAsync(h: AsyncDbHandle): Promise<number> {
     .values({ prompt: 'p', state: 'ready', workingDir: '/tmp', createdAt: now, updatedAt: now, workspaceId: ws.id })
     .returning()
     .get();
-  await h.db
-    .insert(runs)
-    .values({ taskId: task.id, attempt: 1, state: 'running', startedAt: now })
-    .returning()
-    .get();
   const attempt = await h.db
     .insert(attempts)
-    .values({ taskId: task.id, number: 1, startedAt: now })
+    .values({ taskId: task.id, number: 1, state: 'running', startedAt: now })
     .returning()
     .get();
   return attempt.id;

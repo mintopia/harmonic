@@ -205,16 +205,19 @@ describe('escalation actions on a worktree ticket (ADR-0041)', () => {
       ]);
       expect(attempts[1]!.feedback).toBe('The timeout is intentional; see the linked ticket.');
 
-      // The same ticket, a fresh Run for the resumed loop — not a detached
-      // re-attempt task. The new Run reuses the Task's existing worktree and
-      // branch (ADR-0046): the next Attempt resumes the prior candidate in the
-      // same working copy rather than cutting a fresh branch from the base.
+      // The same ticket, a fresh Attempt for the resumed loop — not a detached
+      // re-attempt task. Attempt is the single execution ledger now (ADR-0001
+      // #388 S-G): one row per turn, so all three Attempts list here (not just
+      // the pre-fold "one Run row per resume cycle"). The next Attempt reuses
+      // the Task's existing worktree and branch (ADR-0046): it resumes the
+      // prior candidate in the same working copy rather than cutting a fresh
+      // branch from the base.
       const runs = (await server.api('GET', `/api/tasks/${taskId}/runs`)).body.runs;
-      expect(runs).toHaveLength(2);
-      expect(runs[1].attempt).toBe(3);
-      expect(runs[1].prompt).toContain('The timeout is intentional');
+      expect(runs).toHaveLength(3);
+      expect(runs[2].attempt).toBe(3);
+      expect(runs[2].prompt).toContain('The timeout is intentional');
       expect(branch).toBe(`harmonic/task-${taskId}`); // per-Task, no -run-<attempt> suffix
-      expect(runs[1].branch).toBe(branch); // same working copy across Attempts
+      expect(runs[2].branch).toBe(branch); // same working copy across Attempts
       expect(runs[0].branch).toBe(branch);
     });
 

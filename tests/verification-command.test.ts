@@ -82,7 +82,7 @@ describe('command verifier end-to-end (issue #135)', () => {
   // attempts" now folds the log across every Attempt of the Run's Task.
   const attempts = async (runId: number) => {
     const store = new VerificationAttemptStore(server.app.ctx.asyncDb);
-    const run = await server.app.ctx.runs.get(runId);
+    const run = await server.app.ctx.attempts.get(runId);
     const taskAttempts = await server.app.ctx.attempts.listForTask(run.taskId);
     return (await Promise.all(taskAttempts.map((a) => store.list(a.id)))).flat();
   };
@@ -395,7 +395,7 @@ describe('native merging (issue #138, ADR-0021, ADR-0041)', () => {
   // attempts" now folds the log across every Attempt of the Run's Task.
   const attempts = async (runId: number) => {
     const store = new VerificationAttemptStore(server.app.ctx.asyncDb);
-    const run = await server.app.ctx.runs.get(runId);
+    const run = await server.app.ctx.attempts.get(runId);
     const taskAttempts = await server.app.ctx.attempts.listForTask(run.taskId);
     return (await Promise.all(taskAttempts.map((a) => store.list(a.id)))).flat();
   };

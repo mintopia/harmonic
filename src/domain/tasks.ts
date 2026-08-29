@@ -5,7 +5,7 @@ import {
   tasks,
   taskDependencies,
   taskChannels,
-  runs,
+  attempts,
   sessions,
   settings,
   trackerDismissals,
@@ -25,7 +25,7 @@ import { resolveScoped } from './setting-override.js';
 import { HARNESS_IDS, ISOLATION_MODES, PRIORITIES, type AppConfig } from '../config.js';
 import { DomainError } from './errors.js';
 import { decideTaskDeletion } from './task-deletion.js';
-import { deleteRunsAndChildrenAsync } from './run-cascade.js';
+import { deleteAttemptsAndChildrenAsync } from './run-cascade.js';
 import { forEachYielding } from '../reliability/yield.js';
 import { orderEligibleWorkYielding } from './work-ordering.js';
 import { mirroredAgentEligible } from './agent-workable.js';
@@ -986,33 +986,32 @@ export class TaskService {
     // return nothing to re-derive.
     const formerDependents = await this.dependents(id);
     await this.db.transaction(async (tx) => {
-      const runIds = (await tx.select({ id: runs.id }).from(runs).where(eq(runs.taskId, id)).all()).map((r) => r.id);
       const sessionRowIds = [
         ...new Set(
           (
             await tx
-              .select({ sid: runs.sessionRowId })
-              .from(runs)
-              .where(eq(runs.taskId, id))
+              .select({ sid: attempts.sessionRowId })
+              .from(attempts)
+              .where(eq(attempts.taskId, id))
               .all()
           )
             .map((r) => r.sid)
             .filter((sid): sid is number => sid != null),
         ),
       ];
-      await deleteRunsAndChildrenAsync(tx, [id], runIds);
+      await deleteAttemptsAndChildrenAsync(tx, [id]);
       if (sessionRowIds.length > 0) {
-        // Delete a Session only once *no* Run references it any more. A warm
+        // Delete a Session only once *no* Attempt references it any more. A warm
         // continuation (#124) can share one Session across
-        // Runs of different Tasks; deleting a still-referenced Session would
+        // Attempts of different Tasks; deleting a still-referenced Session would
         // FK-violate under foreign_keys=ON (aborting the whole delete), so keep
-        // any Session another Task's surviving Run still points at.
+        // any Session another Task's surviving Attempt still points at.
         const stillReferenced = new Set(
           (
             await tx
-              .select({ sid: runs.sessionRowId })
-              .from(runs)
-              .where(inArray(runs.sessionRowId, sessionRowIds))
+              .select({ sid: attempts.sessionRowId })
+              .from(attempts)
+              .where(inArray(attempts.sessionRowId, sessionRowIds))
               .all()
           )
             .map((r) => r.sid)

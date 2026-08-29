@@ -10,6 +10,17 @@ import { yieldToEventLoop } from '../../reliability/yield.js';
 import { activeExecutionDurationMs, durationPercentiles } from '../../domain/run-duration.js';
 import { failuresByReason, isExecutionFailure } from '../../domain/run-failure.js';
 import { logger } from '../../logger.js';
+import type { AttemptState } from '../../db/schema.js';
+
+/** The stats view's `runsByState` keys, unchanged by the internal Run→Attempt
+ * fold (ADR-0001 #388 S-G): `passed` reads as `completed`, and `escalated` (an
+ * Attempt-only state) folds into the generic `failed` bucket, matching the
+ * `apiRunState` translation `runToApi` applies to the Run resource itself. */
+function statsRunState(state: AttemptState): 'running' | 'completed' | 'failed' | 'cancelled' {
+  if (state === 'passed') return 'completed';
+  if (state === 'escalated') return 'failed';
+  return state;
+}
 
 /**
  * Aggregating this range is synchronous JS on the shared event loop (issue
@@ -167,7 +178,10 @@ export async function statsRoutes(fastify: FastifyInstance): Promise<void> {
       }
 
       const runsByState: Record<string, number> = {};
-      for (const run of rows) runsByState[run.state] = (runsByState[run.state] ?? 0) + 1;
+      for (const run of rows) {
+        const state = statsRunState(run.state);
+        runsByState[state] = (runsByState[state] ?? 0) + 1;
+      }
 
       // Failure rate numerator (ADR-0028): failed-only; cancelled Runs stay out.
       const failures = rows.filter(isExecutionFailure);
@@ -180,7 +194,7 @@ export async function statsRoutes(fastify: FastifyInstance): Promise<void> {
         .map((r) =>
           activeExecutionDurationMs({
             startedAt: r.startedAt,
-            finishedAt: r.finishedAt,
+            finishedAt: r.endedAt,
             // No dedicated agent-finish signal since the disposition-fact log
             // collapsed onto `attempts.reason` (ADR-0001 #388 S-E): wall-clock
             // `finished − started` for every Run now.

@@ -90,7 +90,7 @@ describe('GET /api/activity snapshot (issue #51)', () => {
 
   it('lists a persisted running Run whose completed Task no longer has a live Runner', async () => {
     const task = (await server.api('POST', '/api/tasks', { prompt: 'wedged merging', workingDir: workDir })).body;
-    const run = await server.app.ctx.runs.create(task.id);
+    const run = await server.app.ctx.attempts.create(task.id);
     await server.app.ctx.tasks.setState(task.id, 'done');
 
     const { body } = await server.api('GET', '/api/activity');
@@ -103,19 +103,19 @@ describe('GET /api/activity snapshot (issue #51)', () => {
       activity: null,
       tree: null,
     }));
-    expect(await server.app.ctx.runs.countRunning()).toBe(1);
+    expect(await server.app.ctx.attempts.countRunning()).toBe(1);
   });
 
   it("keeps an escalated ticket's settled Run visible on its run rail without counting it as running", async () => {
-    const runningBefore = await server.app.ctx.runs.countRunning();
+    const runningBefore = await server.app.ctx.attempts.countRunning();
     const task = (await server.api('POST', '/api/tasks', { prompt: 'escalated', workingDir: workDir })).body;
-    const run = await server.app.ctx.runs.create(task.id);
-    await server.app.ctx.runs.update(run.id, { state: 'failed', reason: 'escalated to human: attempt 3 of 3 failed' });
+    const run = await server.app.ctx.attempts.create(task.id);
+    await server.app.ctx.attempts.update(run.id, { state: 'failed', reason: 'escalated to human: attempt 3 of 3 failed' });
     await server.app.ctx.tasks.escalate(task.id, 'escalated to human: attempt 3 of 3 failed');
 
     const { body } = await server.api('GET', `/api/tasks/${task.id}/runs`);
     expect(body.runs).toContainEqual(expect.objectContaining({ id: run.id, state: 'failed' }));
-    expect(await server.app.ctx.runs.countRunning()).toBe(runningBefore);
+    expect(await server.app.ctx.attempts.countRunning()).toBe(runningBefore);
     expect((await server.api('GET', `/api/tasks/${task.id}`)).body.escalationReason).toBe('escalated to human: attempt 3 of 3 failed');
   });
 

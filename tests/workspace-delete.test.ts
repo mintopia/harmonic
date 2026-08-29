@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
-import { trackerDismissals, runs, attempts, guardrailEvents } from '../src/db/schema.js';
+import { trackerDismissals, attempts, guardrailEvents } from '../src/db/schema.js';
 import { eq } from 'drizzle-orm';
 import { defaultConfig } from '../src/config.js';
 import { WorkspaceService } from '../src/domain/workspaces.js';
@@ -61,18 +61,11 @@ describe('WorkspaceService.delete guards (issue #61)', () => {
     expect(await asyncDb.read((d) => d.select().from(trackerDismissals).all())).toHaveLength(0);
   });
 
-  it('purges the whole Run/Attempt tree (guardrail_events), not just attempt_events, with no FK error (issue #162)', async () => {
+  it('purges the whole Attempt tree (guardrail_events), not just attempt_events, with no FK error (issue #162)', async () => {
     const ws = (await workspaces.list())[0]!;
     const task = await tasks.create({ prompt: 'has a run with guardrail events' });
-    await asyncDb.write((d) =>
-      d
-        .insert(runs)
-        .values({ taskId: task.id, attempt: 1, state: 'completed', startedAt: Date.now() })
-        .returning({ id: runs.id })
-        .get(),
-    );
     const attemptId = (await asyncDb.write((d) =>
-      d.insert(attempts).values({ taskId: task.id, number: 1, startedAt: Date.now() }).returning({ id: attempts.id }).get(),
+      d.insert(attempts).values({ taskId: task.id, number: 1, state: 'passed', startedAt: Date.now() }).returning({ id: attempts.id }).get(),
     ))!.id;
     // Before #162 the Workspace cascade only deleted attempt_events, so a
     // sibling child row would FK-reject the attempts delete under foreign_keys=ON.

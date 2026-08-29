@@ -1,5 +1,5 @@
 import { type AppConfig, type MergeFate } from '../config.js';
-import type { TaskRow, RunRow, WorkspaceRow } from '../db/schema.js';
+import type { TaskRow, AttemptRow, WorkspaceRow } from '../db/schema.js';
 import { resolveTrackerAdapter, type TrackerAdapter } from '../tracker/adapter.js';
 import { resolveDrive, type ResolvedDrive } from '../domain/setting-override.js';
 import { driveFields, fillTemplate, splitTitleBody } from './prompt-template.js';
@@ -115,7 +115,7 @@ export class AutoDrive {
    * outcome here — a Run with no `finish_task` signal never reaches this method
    * (the Runner routes it to the failure path before verification).
    */
-  async onCompleted(task: TaskRow, run: RunRow): Promise<'completed' | 'escalate'> {
+  async onCompleted(task: TaskRow, run: AttemptRow): Promise<'completed' | 'escalate'> {
     const worktree = task.isolationMode === 'worktree';
     const fate = await this.mergeFate(task);
 

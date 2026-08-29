@@ -5,7 +5,6 @@ import { join } from 'node:path';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
-import { RunStore } from '../src/domain/runs.js';
 import { AttemptStore } from '../src/domain/attempts.js';
 import { GuardrailEventStore } from '../src/domain/guardrail-events.js';
 import { allWorkspaces, makeSettingsStore } from './helpers.js';
@@ -18,7 +17,7 @@ import { allWorkspaces, makeSettingsStore } from './helpers.js';
  */
 describe('GuardrailEventStore (issue #127)', () => {
   let dir: string;
-  // RunStore migrated to the async libsql Db (ADR-0029 #203); this fixture
+  // AttemptStore migrated to the async libsql Db (ADR-0029 #203); this fixture
   // runs both connections on the one file.
   let asyncDb: AsyncDbHandle;
   let events: GuardrailEventStore;
@@ -30,16 +29,13 @@ describe('GuardrailEventStore (issue #127)', () => {
     asyncDb = await openAsyncDb(dir);
     const settingsStore = await makeSettingsStore(dir);
     const tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
-    const runStore = new RunStore(asyncDb);
-    const attemptStore = new AttemptStore(asyncDb);
+    const attempts = new AttemptStore(asyncDb);
     events = new GuardrailEventStore(asyncDb);
 
     const task = await tasks.create({ prompt: 'trip me', state: 'ready' });
-    const run = await runStore.create(task.id);
-    attemptId = (await attemptStore.ensureForRun(task.id, run.attempt, run.startedAt)).id;
+    attemptId = (await attempts.create(task.id)).id;
     const otherTask = await tasks.create({ prompt: 'separate log', state: 'ready' });
-    const otherRun = await runStore.create(otherTask.id);
-    otherAttemptId = (await attemptStore.ensureForRun(otherTask.id, otherRun.attempt, otherRun.startedAt)).id;
+    otherAttemptId = (await attempts.create(otherTask.id)).id;
   });
   afterEach(async () => {
     await asyncDb.close();

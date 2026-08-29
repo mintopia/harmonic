@@ -1,6 +1,6 @@
-import type { RunRow } from '../db/schema.js';
+import type { AttemptRow } from '../db/schema.js';
 import type { SessionStore } from './sessions.js';
-import type { RunStore } from './runs.js';
+import type { AttemptStore } from './attempts.js';
 import { forEachYielding } from '../reliability/yield.js';
 import { startOperation } from '../telemetry/operations.js';
 import {
@@ -22,7 +22,7 @@ export type RemoveWorktree = (repoDir: string, worktreePath: string) => Promise<
  * optional, so every settle path that predates #148 keeps working unchanged.
  */
 export interface SessionRetirementHook {
-  onRunSettled(run: RunRow, cause: RetirementCause, now?: number): Promise<void>;
+  onRunSettled(run: AttemptRow, cause: RetirementCause, now?: number): Promise<void>;
 }
 
 /**
@@ -54,7 +54,7 @@ export interface SessionRetirementHook {
 export class SessionRetirementCoordinator {
   constructor(
     private readonly sessions: SessionStore,
-    private readonly runs: RunStore,
+    private readonly runs: AttemptStore,
     private readonly removeWorktree: RemoveWorktree,
     private readonly config: RetentionConfig = DEFAULT_RETENTION,
     private readonly clock: () => number = Date.now,
@@ -69,7 +69,7 @@ export class SessionRetirementCoordinator {
    * Session, its Session is already retiring/retired, or the Session row has
    * gone — so it never crashes settle.
    */
-  async onRunSettled(run: RunRow, cause: RetirementCause, now: number = this.clock()): Promise<void> {
+  async onRunSettled(run: AttemptRow, cause: RetirementCause, now: number = this.clock()): Promise<void> {
     if (run.sessionRowId == null) return;
     let session;
     try {

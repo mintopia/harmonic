@@ -5,11 +5,11 @@ import { join } from 'node:path';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
-import { RunStore } from '../src/domain/runs.js';
+import { AttemptStore } from '../src/domain/attempts.js';
 import { SessionStore, type DispatchSessionInput } from '../src/domain/sessions.js';
 import { SessionRetirementCoordinator } from '../src/domain/session-retirement-coordinator.js';
 import type { RetentionConfig } from '../src/domain/session-retirement.js';
-import type { RunRow } from '../src/db/schema.js';
+import type { AttemptRow } from '../src/db/schema.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { allWorkspaces, makeSettingsStore } from './helpers.js';
 
@@ -23,7 +23,7 @@ describe('Session retirement (issue #148)', () => {
   let asyncDb: AsyncDbHandle;
   let settingsStore: SettingsStore;
   let sessions: SessionStore;
-  let runs: RunStore;
+  let runs: AttemptStore;
   let tasks: TaskService;
   let workspaceId: number;
   const now = 1_000_000;
@@ -44,7 +44,7 @@ describe('Session retirement (issue #148)', () => {
     });
 
   /** A running Run bound to `sessionRowId`. */
-  const runForSession = async (sessionRowId: number): Promise<RunRow> => {
+  const runForSession = async (sessionRowId: number): Promise<AttemptRow> => {
     const task = await tasks.create({ prompt: 'p', state: 'ready' });
     const run = await runs.create(task.id);
     return runs.update(run.id, { sessionRowId });
@@ -55,7 +55,7 @@ describe('Session retirement (issue #148)', () => {
     asyncDb = await openAsyncDb(dir);
     settingsStore = await makeSettingsStore(dir);
     sessions = new SessionStore(asyncDb);
-    runs = new RunStore(asyncDb);
+    runs = new AttemptStore(asyncDb);
     tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
     workspaceId = (await allWorkspaces(asyncDb, settingsStore)())[0]!.id;
   });
@@ -194,7 +194,7 @@ describe('Session retirement (issue #148)', () => {
       expect((await sessions.get(s.id)).status).toBe('retiring'); // left for a later drain
 
       // Once the Run leaves 'running', a later drain completes the retirement.
-      await runs.update(run.id, { state: 'completed' });
+      await runs.update(run.id, { state: 'passed' });
       await coord.drain(now + 1);
       expect(removeWorktree).toHaveBeenCalledOnce();
       expect((await sessions.get(s.id)).status).toBe('retired');

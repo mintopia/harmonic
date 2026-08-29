@@ -8,7 +8,6 @@ import type { MergeIntoBaseOutcome } from '../src/execution/branch-merge.js';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
-import { RunStore } from '../src/domain/runs.js';
 import { Runner } from '../src/execution/runner.js';
 import type { CriticDriveRequest } from '../src/verification/critic.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
@@ -171,14 +170,12 @@ describe('epic refresh corrective turn (issue #315)', () => {
   let asyncDb: AsyncDbHandle;
   let settingsStore: SettingsStore;
   let tasks: TaskService;
-  let runs: RunStore;
 
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-epic-refresh-'));
     asyncDb = await openAsyncDb(dir);
     settingsStore = await makeSettingsStore(dir);
     tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
-    runs = new RunStore(asyncDb);
     // A repo whose default branch is develop, with epic/5 cut off it and BOTH
     // sides editing shared.txt — the develop→epic/5 refresh merge conflicts.
     repo = join(dir, 'repo');
@@ -203,7 +200,7 @@ describe('epic refresh corrective turn (issue #315)', () => {
   });
 
   function makeRunner(drive: (req: CriticDriveRequest) => Promise<void>): Runner {
-    return new Runner(runs, tasks, asyncDb, () => defaultConfig(), {
+    return new Runner(tasks, asyncDb, () => defaultConfig(), {
       worktreesDir: join(dir, 'worktrees'),
       criticDrive: {
         run: async (req) => {

@@ -11,7 +11,7 @@ import {
   decideAttemptContinuation,
   type SessionWarmthFacts,
 } from '../src/domain/session-continuation.js';
-import type { RunRow, SessionRow } from '../src/db/schema.js';
+import type { AttemptRow, SessionRow } from '../src/db/schema.js';
 
 describe('decideAttemptContinuation (issue #311)', () => {
   const now = 10 * 60 * 60 * 1000;
@@ -276,7 +276,7 @@ describe('previewHumanRejectContinuation (issue #170)', () => {
     }) satisfies SessionRow;
   // The preview reads only `sessionRowId` off each Run; a localized cast keeps
   // the fixture to the one field under test.
-  const run = (sessionRowId: number | null): RunRow => ({ sessionRowId }) as RunRow;
+  const run = (sessionRowId: number | null): AttemptRow => ({ sessionRowId }) as AttemptRow;
 
   it('returns the offer-choice plan projected against the newest Session-bound Run', () => {
     const store = new Map([[5, session(5, now + HOUR)]]);

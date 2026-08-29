@@ -20,8 +20,8 @@ describe('GET /api/runs/:id/guardrail-events (issue #171)', () => {
   it('lists a run\'s guardrail events in seq order, with payload parsed back to an object', async () => {
     const created = await server.api('POST', '/api/tasks', { prompt: 'guardrail target' });
     const task = await ctx().tasks.get(created.body.id);
-    const run = await ctx().runs.create(task.id);
-    const attempt = await ctx().attempts.ensureForRun(task.id, run.attempt, run.startedAt);
+    const run = await ctx().attempts.create(task.id);
+    const attempt = run;
 
     await ctx().guardrailEvents.append(attempt.id, {
       dimension: 'wall-clock',

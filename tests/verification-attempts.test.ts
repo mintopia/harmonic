@@ -6,7 +6,6 @@ import { createClient } from '@libsql/client';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
-import { RunStore } from '../src/domain/runs.js';
 import { AttemptStore } from '../src/domain/attempts.js';
 import { VerificationAttemptStore } from '../src/domain/verification-attempts.js';
 import { allWorkspaces, makeSettingsStore } from './helpers.js';
@@ -28,16 +27,13 @@ describe('VerificationAttemptStore (issue #136)', () => {
     asyncDb = await openAsyncDb(dir);
     const settingsStore = await makeSettingsStore(dir);
     const tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
-    const runStore = new RunStore(asyncDb);
     const attemptStore = new AttemptStore(asyncDb);
     attempts = new VerificationAttemptStore(asyncDb);
 
     const task = await tasks.create({ prompt: 'verify me', state: 'ready' });
-    const run = await runStore.create(task.id);
-    attemptId = (await attemptStore.ensureForRun(task.id, run.attempt, run.startedAt)).id;
+    attemptId = (await attemptStore.create(task.id)).id;
     const otherTask = await tasks.create({ prompt: 'separate log', state: 'ready' });
-    const otherRun = await runStore.create(otherTask.id);
-    otherAttemptId = (await attemptStore.ensureForRun(otherTask.id, otherRun.attempt, otherRun.startedAt)).id;
+    otherAttemptId = (await attemptStore.create(otherTask.id)).id;
   });
   afterEach(async () => {
     await asyncDb.close();

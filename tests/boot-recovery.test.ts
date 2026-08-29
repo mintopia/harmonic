@@ -139,7 +139,7 @@ describe('boot crash-recovery', () => {
       // `RunSettleCoordinator.settle` would leave them.
       await server.app.close();
       const sqlite = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
-      await sqlite.execute({ sql: "UPDATE runs SET state = 'running', finished_at = NULL WHERE id = ?", args: [runId] });
+      await sqlite.execute({ sql: "UPDATE attempts SET state = 'running', ended_at = NULL WHERE id = ?", args: [runId] });
       await sqlite.execute({ sql: "UPDATE tasks SET state = 'working' WHERE id = ?", args: [taskId] });
       sqlite.close();
 

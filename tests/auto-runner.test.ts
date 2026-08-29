@@ -110,7 +110,7 @@ describe('auto-runner', () => {
 
     // `run_changed` is the capacity-free wake-up path. It schedules a fill even
     // with no timer running, so this cannot pass through interval polling.
-    server.app.ctx.bus.emit('run_changed', (await server.app.ctx.runs.listForTask(finishedTask.body.id))[0]!);
+    server.app.ctx.bus.emit('run_changed', (await server.app.ctx.attempts.listForTask(finishedTask.body.id))[0]!);
     await waitFor(async () => (await state(task.body.id)) === 'done');
   });
 

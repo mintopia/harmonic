@@ -8,7 +8,6 @@ import {
   tasks,
   taskDependencies,
   taskChannels,
-  runs,
   conversations,
   conversationEvents,
   trackerDismissals,
@@ -17,7 +16,7 @@ import {
 } from '../db/schema.js';
 import type { SettingsStore } from '../server/settings-store.js';
 import { DomainError } from './errors.js';
-import { deleteRunsAndChildrenAsync } from './run-cascade.js';
+import { deleteAttemptsAndChildrenAsync } from './run-cascade.js';
 import {
   verificationCommandOverrideSchema,
   budgetGuardrailSchema,
@@ -265,12 +264,10 @@ export class WorkspaceService {
     ).map((r) => r.id);
     await this.db.transaction(async (tx) => {
       if (taskIds.length > 0) {
-        const runIds = (await tx.select({ id: runs.id }).from(runs).where(inArray(runs.taskId, taskIds)).all()).map(
-          (r) => r.id,
-        );
-        // Purge the whole Run tree (every FK-to-runs child), not just run_events —
-        // shared with TaskService.delete so the run-child set is enumerated once (issue #162).
-        await deleteRunsAndChildrenAsync(tx, taskIds, runIds);
+        // Purge the whole Attempt tree (every FK-to-attempts child), not just
+        // attempt_events — shared with TaskService.delete so the
+        // Attempt-child set is enumerated once (issue #162).
+        await deleteAttemptsAndChildrenAsync(tx, taskIds);
         await tx.delete(taskChannels).where(inArray(taskChannels.taskId, taskIds)).run();
         await tx
           .delete(taskDependencies)

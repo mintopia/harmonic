@@ -6,7 +6,7 @@ import { eq } from 'drizzle-orm';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
-import { attempts, attemptEvents, runs, sessions, taskDependencies, trackerDismissals, tasks } from '../src/db/schema.js';
+import { attempts, attemptEvents, sessions, taskDependencies, trackerDismissals, tasks } from '../src/db/schema.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { allWorkspaces, makeSettingsStore } from './helpers.js';
 
@@ -48,23 +48,20 @@ describe('TaskService.delete (issue #162)', () => {
     await expect(tasksSvc.get(task.id)).rejects.toThrow(/not found/);
   });
 
-  it('cascades Runs and their Attempt-keyed satellites (attempt_events) with no FK error', async () => {
+  it('cascades Attempts and their Attempt-keyed satellites (attempt_events) with no FK error', async () => {
     const task = await tasksSvc.create({ prompt: 'has runs' });
-    await asyncDb.write((d) =>
-      d
-        .insert(runs)
-        .values({ taskId: task.id, attempt: 1, state: 'completed', startedAt: Date.now(), finishedAt: Date.now() })
-        .returning({ id: runs.id })
-        .get(),
-    );
     const attemptId = (await asyncDb.write((d) =>
-      d.insert(attempts).values({ taskId: task.id, number: 1, startedAt: Date.now() }).returning({ id: attempts.id }).get(),
+      d
+        .insert(attempts)
+        .values({ taskId: task.id, number: 1, state: 'passed', startedAt: Date.now(), endedAt: Date.now() })
+        .returning({ id: attempts.id })
+        .get(),
     ))!.id;
     await asyncDb.write((d) => d.insert(attemptEvents).values({ attemptId, seq: 1, ts: Date.now(), type: 'lifecycle', payload: '{}' }).run());
 
     await tasksSvc.delete(task.id);
 
-    expect(await asyncDb.read((d) => d.select().from(runs).where(eq(runs.taskId, task.id)).all())).toHaveLength(0);
+    expect(await asyncDb.read((d) => d.select().from(attempts).where(eq(attempts.taskId, task.id)).all())).toHaveLength(0);
     expect(await asyncDb.read((d) => d.select().from(attemptEvents).where(eq(attemptEvents.attemptId, attemptId)).all())).toHaveLength(0);
   });
 
@@ -151,8 +148,8 @@ describe('TaskService.delete (issue #162)', () => {
     const mk = (taskId: number) =>
       asyncDb.write((d) =>
         d
-          .insert(runs)
-          .values({ taskId, attempt: 1, state: 'completed', sessionRowId: sessionId, startedAt: Date.now() })
+          .insert(attempts)
+          .values({ taskId, number: 1, state: 'passed', sessionRowId: sessionId, startedAt: Date.now() })
           .run(),
       );
     await mk(taskA.id);
@@ -161,7 +158,7 @@ describe('TaskService.delete (issue #162)', () => {
     // Deleting A must not FK-violate on the shared Session, and must leave it.
     await tasksSvc.delete(taskA.id);
     expect(await asyncDb.read((d) => d.select().from(sessions).where(eq(sessions.id, sessionId)).all())).toHaveLength(1);
-    expect(await asyncDb.read((d) => d.select().from(runs).where(eq(runs.taskId, taskB.id)).all())).toHaveLength(1);
+    expect(await asyncDb.read((d) => d.select().from(attempts).where(eq(attempts.taskId, taskB.id)).all())).toHaveLength(1);
 
     // Once B (the last referrer) goes, the now-orphaned Session is removed.
     await tasksSvc.delete(taskB.id);

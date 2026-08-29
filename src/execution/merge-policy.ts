@@ -49,6 +49,7 @@ export interface MergePolicyInput {
   taskBranch: string;
   conflictResolveTurns: number; // bounded agentic resolve turns; 0 => escalate on first conflict
   postMergeCheck: boolean; // run the post-merge deterministic check under the mutex
+  spanAttributes?: Record<string, string | number | boolean>; // extra attributes for the merge span (e.g. run.id), so a caller's merge is observable keyed to its execution (ADR-0010)
 }
 
 export type MergePolicyOutcome =
@@ -214,6 +215,7 @@ export async function runMergePolicy(input: MergePolicyInput, deps: MergePolicyD
     'merge.mechanism': 'policy',
     'merge.base_branch': input.baseBranch,
     'merge.task_branch': input.taskBranch,
+    ...(input.spanAttributes ?? {}),
   });
   return within(mergeOp, async () => {
     try {

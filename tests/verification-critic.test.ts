@@ -137,7 +137,7 @@ describe('agent critic end-to-end (issue #164)', () => {
   // attempts" now folds the log across every Attempt of the Run's Task.
   const attempts = async (runId: number) => {
     const store = new VerificationAttemptStore(server.app.ctx.asyncDb);
-    const run = await server.app.ctx.runs.get(runId);
+    const run = await server.app.ctx.attempts.get(runId);
     const taskAttempts = await server.app.ctx.attempts.listForTask(run.taskId);
     return (await Promise.all(taskAttempts.map((a) => store.list(a.id)))).flat();
   };

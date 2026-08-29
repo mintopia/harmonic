@@ -106,7 +106,7 @@ describe('mcp server & scoped keys', () => {
     // The cookie is the surviving fallback: #273 restricted query-token auth to
     // websockets (a `?token=` in a URL leaks via logs/referrer), so a query
     // token no longer authenticates `/mcp` — only the session cookie does.
-    const runKey = await server.app.ctx.auth.createKey('run-1', { scope: 'run', runId: 1 });
+    const runKey = await server.app.ctx.auth.createKey('run-1', { scope: 'attempt', attemptId: 1 });
     const readKey = await server.app.ctx.auth.createKey('read-1', { scope: 'read' });
 
     for (const bearer of ['adk_bogus', runKey.token, readKey.token, token]) {

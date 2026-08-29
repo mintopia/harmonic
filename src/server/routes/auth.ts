@@ -47,10 +47,10 @@ const keySchema = z.object({
   name: z.string().meta({ example: 'ci-pipeline' }),
   /** First characters of the token, for display — too short to authenticate with. */
   prefix: z.string().meta({ example: 'adk_1f3c9e02' }),
-  /** 'full' or 'read' (issue #35); 'run'/'conversation' keys are internal and never listed. */
+  /** 'full' or 'read' (issue #35); 'attempt'/'conversation' keys are internal and never listed. */
   scope: z.string().meta({ example: 'full' }),
-  /** Set only on run-scoped keys, so null on every key this API returns. */
-  runId: z.number().nullable().meta({ example: null }),
+  /** Set only on attempt-scoped keys, so null on every key this API returns. */
+  attemptId: z.number().nullable().meta({ example: null }),
   createdAt: z.number().meta({ example: 1784030400000 }),
   /** Touched on each successful bearer auth; null until first use, as on a key this moment created. */
   lastUsedAt: z.number().nullable().meta({ example: null }),

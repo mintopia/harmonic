@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { startServer, stubHarness, waitFor, cancelRunningTasks, type TestServer } from './helpers.js';
-import { attemptToolCalls, guardrailEvents, runs } from '../src/db/schema.js';
+import { attemptToolCalls, attempts, guardrailEvents } from '../src/db/schema.js';
 import type { DeepPartial, AppConfig } from '../src/config.js';
 import { AttemptStore } from '../src/domain/attempts.js';
 
@@ -93,7 +93,7 @@ describe('run execution over ACP (direct mode)', () => {
   it('a native Run resolves and uses the Workspace Task Prompt override, else inherits the global default (ADR-0044/#339)', async () => {
     const wsId = (await server.api('GET', '/api/workspaces')).body.workspaces[0].id;
     const promptOf = async (runId: number) =>
-      (await server.app.ctx.asyncDb.read((d) => d.select().from(runs).where(eq(runs.id, runId)).get()))!.prompt;
+      (await server.app.ctx.asyncDb.read((d) => d.select().from(attempts).where(eq(attempts.id, runId)).get()))!.prompt;
     const settle = async (taskId: number) =>
       waitFor(async () => ((await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'done' ? true : undefined), {
         timeoutMs: 20_000,
@@ -167,21 +167,34 @@ describe('run execution over ACP (direct mode)', () => {
   it('records each resumed loop as a distinct run and history survives a Reject with guidance', async () => {
     const { taskId, runId } = await createAndRun({ exit: 'crash-before-response' });
     await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'escalated');
-    const firstAttempts = (await server.api('GET', `/api/runs/${runId}`)).body.attempt;
+
+    // Attempt is the single execution ledger now (ADR-0001 #388 S-G): every
+    // loop this first budget cycle burned through — including any self-heal
+    // retry, not just a human-triggered reject — is its own real,
+    // API-visible run row. There is no invisible internal retry counter to
+    // hide behind, so the first escalation may already span more than one row.
+    const beforeReject = (await server.api('GET', `/api/tasks/${taskId}/runs`)).body.runs;
+    expect(beforeReject[0]!.id).toBe(runId);
+    const lastAttemptBeforeReject = beforeReject.at(-1)!.attempt;
 
     const rejected = await server.api('POST', `/api/tasks/${taskId}/reject`, { guidance: 'try again', start: true });
     expect(rejected.status).toBe(200);
 
-    const second = await waitFor(async () => {
-      const runs = (await server.api('GET', `/api/tasks/${taskId}/runs`)).body.runs;
-      return runs.length === 2 ? runs[1] : undefined;
-    });
-    expect(second.id).not.toBe(runId);
-    expect(second.attempt).toBe(firstAttempts + 1); // history numbering continues across the reset budget
-
+    // The reset budget's own attempts crash out too, so the task escalates again.
     await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'escalated');
-    const runs = await server.api('GET', `/api/tasks/${taskId}/runs`);
-    expect(runs.body.runs).toHaveLength(2);
+
+    const afterReject = (await server.api('GET', `/api/tasks/${taskId}/runs`)).body.runs;
+    // History survives the Reject: nothing from the first budget cycle is dropped.
+    expect(afterReject.slice(0, beforeReject.length)).toEqual(beforeReject);
+    // The reset budget picks up brand-new, distinct run rows.
+    expect(afterReject.length).toBeGreaterThan(beforeReject.length);
+    // Every resumed loop across the whole history — self-heal and reject alike
+    // — gets its own distinct, strictly increasing attempt number; numbering
+    // never restarts at 1 across the reset budget (ADR-0041).
+    const attemptNumbers = afterReject.map((r: { attempt: number }) => r.attempt);
+    expect(attemptNumbers).toEqual([...attemptNumbers].sort((a, b) => a - b));
+    expect(new Set(attemptNumbers).size).toBe(attemptNumbers.length);
+    expect(afterReject.at(-1)!.attempt).toBeGreaterThan(lastAttemptBeforeReject);
   });
 
   it('escalates the task when the harness crashes on every attempt', async () => {
@@ -456,7 +469,7 @@ describe('crash recovery', () => {
     expect(task.body.state).toBe('ready');
     const run = await reopened.api('GET', `/api/runs/${started.body.id}`);
     expect(run.body.state).toBe('failed');
-    expect(run.body.reason).toBe('interrupted');
+    expect(run.body.reason).toBe('process-death');
 
     await reopened.close();
   });
@@ -531,8 +544,15 @@ describe('wall-clock guardrail (issue #127)', () => {
       const attempt = await waitFor(async () => (await attempts.listForTask(created.body.id))[0]);
       const implementation = await waitFor(async () => (await attempts.listSteps(attempt.id))[0]);
 
+      // Only the Step moves to `passed` here — simulating "past the last Step,
+      // now merging" — never the Attempt itself: Attempt is the single
+      // execution ledger now (ADR-0001 #388 S-G), so forcing it `passed`
+      // directly (the old dual-model trick, closing only the Attempt-timeline
+      // half while a separate `runs.state` stayed `running`) would settle the
+      // one state this test polls via `/api/runs/:id`. The guardrail's own
+      // "is a Step currently running" check reads Steps, not `attempts.state`,
+      // so leaving the Attempt `running` still exercises the real gate.
       await attempts.updateStep(implementation.id, { state: 'passed', verdict: 'pass', endedAt: Date.now() });
-      await attempts.finish(attempt.id, 'passed');
       // Past the 600ms wall-clock budget (the guardrail arms an exact timer for
       // the remaining budget, so a ~200ms margin suffices).
       await new Promise((resolve) => setTimeout(resolve, 800));

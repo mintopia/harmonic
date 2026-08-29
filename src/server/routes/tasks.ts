@@ -6,7 +6,6 @@ import { createTaskInputSchema, updateTaskInputSchema, taskListQuerySchema } fro
 import { previewHumanRejectContinuation } from '../../domain/session-continuation.js';
 import {
   TASK_STATES,
-  RUN_STATES,
   TASK_ORIGINS,
   WORKFLOWS,
   WAYFINDER_TYPES,
@@ -191,13 +190,20 @@ const taskListRowSchema = taskSchema.omit({ prompt: true }).meta({ id: 'TaskList
 
 const tasksListResponseSchema = listResponse('tasks', taskListRowSchema);
 
-/** A run as the REST API and WebSocket both serve it (serialize.ts `ApiRun`). */
+/**
+ * A run as the REST API and WebSocket both serve it (serialize.ts `ApiRun`).
+ * Attempt is the single execution ledger now (ADR-0001 #388 S-G) — this is a
+ * translated projection of `AttemptRow` (`runToApi`), not a raw dump: the wire
+ * contract (`attempt`/`finishedAt`/the 4-value `state`) is unchanged from
+ * before the fold, so REST/WS consumers see no shape change from this
+ * internal store consolidation.
+ */
 const runSchema = z
   .object({
     id: z.number().meta({ example: 9137 }),
     taskId: z.number().meta({ example: 4821 }),
     attempt: z.number().meta({ example: 1 }),
-    state: z.enum(RUN_STATES).meta({ example: 'completed' }),
+    state: z.enum(['running', 'completed', 'failed', 'cancelled']).meta({ example: 'completed' }),
     /** Failure reason: 'interrupted', an error message, or null. */
     reason: z.string().nullable().meta({ example: null }),
     /** ACP stopReason from the session/prompt result. */
@@ -746,7 +752,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
     },
     async (req) => {
       await ctx.tasks.assertExists(req.params.id);
-      const runsForTask = await ctx.runs.listForTask(req.params.id);
+      const runsForTask = await ctx.attempts.listForTask(req.params.id);
       // `previewHumanRejectContinuation` stays a pure, synchronous domain
       // function; resolve every candidate Session row up front so its
       // `getSession` lookup can remain sync.
@@ -839,7 +845,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
     async (req) => {
       await ctx.tasks.assertExists(req.params.id);
       const { limit, offset } = req.query;
-      const runs = (await ctx.runs.listForTask(req.params.id)).map((run) => runToApi(ctx, run));
+      const runs = (await ctx.attempts.listForTask(req.params.id)).map((run) => runToApi(ctx, run));
       const { items, total } = paginate(runs, { limit, offset });
       return { runs: items, total };
     },
@@ -858,7 +864,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
         },
       },
     },
-    async (req) => runToApi(ctx, await ctx.runs.get(req.params.id)),
+    async (req) => runToApi(ctx, await ctx.attempts.resolveLatest(req.params.id)),
   );
 
   app.get(
@@ -872,7 +878,9 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req) => {
-      const run = await ctx.runs.get(req.params.id);
+      // `run` already IS the Attempt (ADR-0001 #388 S-G); `resolveLatest`
+      // follows a `runId` handle forward to its Task's current self-heal turn.
+      const run = await ctx.attempts.resolveLatest(req.params.id);
       if (run.sessionRowId === null) return { status: 'unavailable' as const, liveCursor: ctx.bus.latestRunLogSeq({ runId: run.id }) };
       let session;
       try {
@@ -888,19 +896,14 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
         harness: session.harness,
         path,
         startedAt: run.startedAt,
-        finishedAt: run.finishedAt,
+        finishedAt: run.endedAt,
       });
       const liveCursor = ctx.bus.latestRunLogSeq({ runId: run.id });
       if (log.status !== 'available') return { ...log, liveCursor };
-      // The Run's current Attempt (`attempt_events` is keyed off `attempt_id`,
-      // ADR-0001 #388 S-F) — the bridge both the operator-steer fold-in below
-      // and the transcript-line decoration use.
-      const attempt = await ctx.attempts.getForTaskNumber(run.taskId, run.attempt);
-      if (!attempt) throw new DomainError('not_found', `no attempt found for run ${run.id}`);
       // The JSONL is only the agent's side; fold in the operator's steer
       // messages (Harmonic's own attempt-events) so the transcript shows the
       // back-and-forth, not just the agent's turns.
-      const operator: OperatorMessage[] = (await ctx.attempts.listEvents(attempt.id)).flatMap((e) => {
+      const operator: OperatorMessage[] = (await ctx.attempts.listEvents(run.id)).flatMap((e) => {
         const p = e.payload as { event?: string; text?: unknown } | null;
         return (p?.event === 'steer_injected' || p?.event === 'steer_queued') && typeof p.text === 'string'
           ? [{ ts: e.ts, text: p.text, queued: p.event === 'steer_queued' }]
@@ -909,7 +912,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       return {
         status: 'available' as const,
         liveCursor,
-        events: withOperatorMessages(log.events, operator).map((event) => ({ ...event, attemptId: attempt.id })),
+        events: withOperatorMessages(log.events, operator).map((event) => ({ ...event, attemptId: run.id })),
       };
     },
   );
@@ -926,11 +929,9 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req) => {
-      const run = await ctx.runs.get(req.params.id);
-      const attempt = await ctx.attempts.getForTaskNumber(run.taskId, run.attempt);
-      if (!attempt) throw new DomainError('not_found', `no attempt found for run ${run.id}`);
+      const run = await ctx.attempts.resolveLatest(req.params.id);
       const { limit, offset } = req.query;
-      const { items, total } = paginate(await ctx.attempts.listEvents(attempt.id), { limit, offset });
+      const { items, total } = paginate(await ctx.attempts.listEvents(run.id), { limit, offset });
       return { events: items, total };
     },
   );
@@ -950,11 +951,9 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req) => {
-      const run = await ctx.runs.get(req.params.id);
-      const attempt = await ctx.attempts.getForTaskNumber(run.taskId, run.attempt);
-      if (!attempt) throw new DomainError('not_found', `no attempt found for run ${run.id}`);
+      const run = await ctx.attempts.resolveLatest(req.params.id);
       const { limit, offset } = req.query;
-      const guardrailEvents = (await ctx.guardrailEvents.list(attempt.id)).map((r) => ({
+      const guardrailEvents = (await ctx.guardrailEvents.list(run.id)).map((r) => ({
         ...r,
         payload: JSON.parse(r.payload) as unknown,
       }));
@@ -979,11 +978,9 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req) => {
-      const run = await ctx.runs.get(req.params.id);
-      const runAttempt = await ctx.attempts.getForTaskNumber(run.taskId, run.attempt);
-      if (!runAttempt) throw new DomainError('not_found', `no attempt found for run ${run.id}`);
+      const run = await ctx.attempts.resolveLatest(req.params.id);
       const { limit, offset } = req.query;
-      const attempts = await ctx.verificationAttempts.list(runAttempt.id);
+      const attempts = await ctx.verificationAttempts.list(run.id);
       // verifierStatuses is derived from the whole attempt set, so compute it
       // before paginating the attempts page (ADR-0045).
       const verifierStatuses = await verifierStatusesToApi(ctx, run, attempts);
@@ -1062,7 +1059,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
     },
     async (req) => {
       await ctx.tasks.assertExists(req.params.id);
-      const runs = await ctx.runs.listForTask(req.params.id);
+      const runs = await ctx.attempts.listForTask(req.params.id);
       const usages = runs
         .map((run) => (run.usage ? (JSON.parse(run.usage) as RunUsage) : null))
         .filter((u): u is RunUsage => u !== null);
@@ -1086,7 +1083,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req) => {
-      const run = await ctx.runs.get(req.params.id);
+      const run = await ctx.attempts.resolveLatest(req.params.id);
       if (!run.branch || !run.baseBranch) return { branch: null, baseBranch: null, stat: null };
       // Prefer the settle-time snapshot so this endpoint and the board card can
       // never show two different stats (issue #36). Before settle, show the live
@@ -1122,7 +1119,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req) => {
-      const run = await ctx.runs.get(req.params.id);
+      const run = await ctx.attempts.resolveLatest(req.params.id);
       const task = await ctx.tasks.get(run.taskId);
       const { limit, offset } = req.query;
       let files: DiffFile[];

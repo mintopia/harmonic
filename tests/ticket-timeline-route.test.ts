@@ -14,12 +14,11 @@ describe('GET /api/tasks/:id/timeline (issue #328)', () => {
 
   it('folds all persisted ticket events into chronological order', async () => {
     const task = await server.api('POST', '/api/tasks', { prompt: 'timeline target' });
-    const run = await server.app.ctx.runs.create(task.body.id);
-    const attempt = await server.app.ctx.attempts.ensureForRun(task.body.id, 1, 50);
+    const attempt = await server.app.ctx.attempts.create(task.body.id);
     const skipped = await server.app.ctx.attempts.createStep(attempt.id, { type: 'verification', command: 'npm test' });
     await server.app.ctx.attempts.updateStep(skipped.id, { state: 'skipped', endedAt: 400 });
     await server.app.ctx.attempts.finish(attempt.id, 'passed', 850);
-    await server.app.ctx.runs.update(run.id, { startedAt: 100, finishedAt: 900, state: 'completed' });
+    await server.app.ctx.attempts.update(attempt.id, { startedAt: 100, endedAt: 900 });
     await server.app.ctx.attempts.appendEvent(attempt.id, { type: 'lifecycle', payload: { event: 'progress-nudge', pattern: 'monologue' } });
     await server.app.ctx.attempts.appendEvent(attempt.id, { type: 'permission_request', payload: { reason: 'outside the timeline' } });
     await server.app.ctx.verificationAttempts.append(attempt.id, {
@@ -31,17 +30,19 @@ describe('GET /api/tasks/:id/timeline (issue #328)', () => {
     // Cross-task isolation: an unrelated task's Attempt gets its own lifecycle
     // event, which must never leak into this task's timeline.
     const otherTask = await server.api('POST', '/api/tasks', { prompt: 'another timeline' });
-    const otherRun = await server.app.ctx.runs.create(otherTask.body.id);
-    const otherAttempt = await server.app.ctx.attempts.ensureForRun(otherTask.body.id, otherRun.attempt, otherRun.startedAt);
+    const otherAttempt = await server.app.ctx.attempts.create(otherTask.body.id);
     await server.app.ctx.attempts.appendEvent(otherAttempt.id, { type: 'lifecycle', payload: { event: 'unrelated' } });
 
     const response = await server.api('GET', `/api/tasks/${task.body.id}/timeline`);
 
     expect(response.status).toBe(200);
+    // Run/Attempt are one execution ledger now (ADR-0001 #388 S-G): no more
+    // duplicate 'run-started'/'run-finished' entries alongside 'attempt-started'/
+    // 'attempt-finished' for the same fact.
     expect(response.body.events.map((event: { kind: string }) => event.kind)).toEqual([
-      'attempt-started', 'run-started', 'verification', 'guardrail', 'verification', 'attempt-finished', 'verification', 'run-finished', 'lifecycle',
+      'attempt-started', 'verification', 'guardrail', 'verification', 'verification', 'attempt-finished', 'lifecycle',
     ]);
-    expect(response.body.events.map((event: { ts: number }) => event.ts)).toEqual([50, 100, 200, 250, 400, 850, 900, 900, expect.any(Number)]);
+    expect(response.body.events.map((event: { ts: number }) => event.ts)).toEqual([100, 200, 250, 400, 900, 900, expect.any(Number)]);
     expect(response.body.events.every((event: { attemptId: number | null }) => event.attemptId === null || event.attemptId === attempt.id)).toBe(true);
     expect(response.body.events.find((event: { kind: string }) => event.kind === 'verification')).toMatchObject({ data: {
       verdict: 'pass', summary: 'checks passed', mechanism: 'command',

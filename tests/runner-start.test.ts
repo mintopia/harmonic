@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
-import { RunStore, type RunGuardrailSnapshot } from '../src/domain/runs.js';
+import { AttemptStore, type AttemptGuardrailSnapshot } from '../src/domain/attempts.js';
 import { Runner } from '../src/execution/runner.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { allWorkspaces, makeSettingsStore } from './helpers.js';
@@ -24,7 +24,7 @@ describe('Runner.start (issue #272)', () => {
   let asyncDb: AsyncDbHandle;
   let settingsStore: SettingsStore;
   let tasks: TaskService;
-  let runs: RunStore;
+  let runs: AttemptStore;
   let runner: Runner;
 
   beforeEach(async () => {
@@ -34,8 +34,8 @@ describe('Runner.start (issue #272)', () => {
     asyncDb = await openAsyncDb(dir);
     settingsStore = await makeSettingsStore(dir);
     tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
-    runs = new RunStore(asyncDb);
-    runner = new Runner(runs, tasks, asyncDb, () => defaultConfig());
+    runs = new AttemptStore(asyncDb);
+    runner = new Runner(tasks, asyncDb, () => defaultConfig());
   });
 
   afterEach(async () => {
@@ -57,7 +57,7 @@ describe('Runner.start (issue #272)', () => {
       .spyOn(runner as unknown as { beginRun: (taskArg: { id: number }) => Promise<unknown> }, 'beginRun')
       .mockImplementation(async (taskArg) => {
         await release.promise;
-        const snapshot: RunGuardrailSnapshot = {
+        const snapshot: AttemptGuardrailSnapshot = {
           guardrailConfig: defaultConfig().guardrails,
           priceTable: defaultConfig().prices,
         };

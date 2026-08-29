@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { startServer, waitFor, type TestServer } from './helpers.js';
-import { runs } from '../src/db/schema.js';
+import { attempts } from '../src/db/schema.js';
 import type { DeepPartial, AppConfig } from '../src/config.js';
 
 /**
@@ -89,7 +89,7 @@ describe('live run_usage firehose (ADR 0010)', () => {
     // restart. Guards the finalize→stop flush ordering the reviewer flagged.
     const persisted = await waitFor(async () => {
       const row = await server.app.ctx.asyncDb.read((d) =>
-        d.select({ live: runs.liveUsage }).from(runs).where(eq(runs.id, runId)).get(),
+        d.select({ live: attempts.liveUsage }).from(attempts).where(eq(attempts.id, runId)).get(),
       );
       return row?.live ?? false;
     });

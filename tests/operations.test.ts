@@ -308,12 +308,19 @@ describe('Run operations (issue #290)', () => {
         verificationCommand: [verificationCommandSchema.parse({ command: process.execPath, args: ['-e', 'process.exit(0)'], timeoutSeconds: 30 })],
       });
 
-      // The operator Accept merges as its own operation, keyed to the same Run.
+      // The operator Accept merges as its own operation, keyed to the Attempt it
+      // acts on. Under the one-execution-ledger fold (ADR-0001 #388) each attempt
+      // is its own row and Accept runs on the escalated (latest) Attempt, so the
+      // dispatch `runId` handle follows forward to it via resolveLatest.
+      const escalatedAttempt = await server.app.ctx.attempts.resolveLatest(runId);
       expect((await server.api('POST', `/api/tasks/${task.body.id}/accept`)).status).toBe(200);
       await vi.waitFor(() => {
-        const merge = exporter.getFinishedSpans().find((span) => span.name === 'harmonic.merge' && span.attributes['run.id'] === runId);
+        const merge = exporter.getFinishedSpans().find((span) => span.name === 'harmonic.merge' && span.attributes['run.id'] === escalatedAttempt.id);
         expect(merge).toBeDefined();
-        expect(merge?.attributes['merge.mechanism']).toBe('coordinator');
+        // The one merge policy (ADR-0001 #388): operator Accept runs runMergePolicy
+        // directly now (the journaled MergeCoordinator is deleted), so the merge
+        // span's mechanism is 'policy', keyed to the Attempt via spanAttributes.
+        expect(merge?.attributes['merge.mechanism']).toBe('policy');
       });
     } finally {
       await server.close();
@@ -380,7 +387,7 @@ describe('Automated merge policy operations (issue #387)', () => {
       await vi.waitFor(
         async () => {
           const t = await server.app.ctx.tasks.get(task.id);
-          if (t.state === 'escalated') throw new Error(`escalated instead of merging: ${(await server.app.ctx.runs.get(run.id)).reason}`);
+          if (t.state === 'escalated') throw new Error(`escalated instead of merging: ${(await server.app.ctx.attempts.get(run.id)).reason}`);
           expect(t.state).toBe('done');
         },
         { timeout: 20_000 },

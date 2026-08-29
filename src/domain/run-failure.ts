@@ -8,9 +8,12 @@ export interface RunOutcome {
   state: string;
 }
 
-/** The failure-rate numerator's membership test (ADR-0028). */
+/** The failure-rate numerator's membership test (ADR-0028). `escalated` counts
+ * too (ADR-0001 #388 S-G): the Run wire state it used to settle as, `failed`,
+ * is exactly this bucket — Attempt just distinguishes the human hedge with its
+ * own state where a Run never could. */
 export function isExecutionFailure({ state }: RunOutcome): boolean {
-  return state === 'failed';
+  return state === 'failed' || state === 'escalated';
 }
 
 /** A failed Run's classification input (ADR-0001 #388 S-E): its Attempt's

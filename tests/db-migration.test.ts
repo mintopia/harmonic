@@ -124,7 +124,7 @@ describe('run event firehose pruning (issue #245)', () => {
 });
 
 describe('run diff revision migration (issue #323)', () => {
-  it('adds nullable stored diff revision columns to existing runs', async () => {
+  it('the diff revision columns now live on attempts (ADR-0001 #388 S-G); a pre-0053 legacy runs-only row (no Attempt counterpart) is discarded, not migrated forward', async () => {
     const dataDir = mkdtempSync(join(tmpdir(), 'harmonic-run-diff-migrate-'));
     const migrationsFolder = migrationsFolderBefore('0053');
     const client = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
@@ -136,9 +136,22 @@ describe('run diff revision migration (issue #323)', () => {
     await client.execute(`insert into runs (task_id, attempt, state, started_at) values (1, 1, 'completed', 1)`);
     client.close();
 
+    // Attempt is the single execution ledger at head (ADR-0001 #388 S-G): the
+    // `runs` table is gone (clean-break — discarding its rows is fine, ADR-0007),
+    // and this legacy row never had an Attempt counterpart (pre-0049), so
+    // nothing is migrated forward for it. The columns 0053 added survive on
+    // `attempts`, nullable, for any row that IS created there.
     const db = await openAsyncDb(dataDir);
-    const [run] = await db.read((d) => d.select().from(schema.runs).all());
-    expect(run).toMatchObject({ diffBaseOid: null, diffHeadOid: null });
+    const sqlite = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
+    const runsTable = await sqlite.execute(`select name from sqlite_master where type = 'table' and name = 'runs'`);
+    expect(runsTable.rows).toHaveLength(0);
+    sqlite.close();
+
+    const task = await db.read((d) => d.select().from(schema.tasks).get());
+    const attempt = await db.write((d) =>
+      d.insert(schema.attempts).values({ taskId: task!.id, number: 1, startedAt: Date.now() }).returning().get(),
+    );
+    expect(attempt).toMatchObject({ diffBaseOid: null, diffHeadOid: null });
 
     await db.close();
     rmSync(dataDir, { recursive: true, force: true });
@@ -229,16 +242,23 @@ describe('per-task-defaults table rebuild (ADR-0016, issue #81)', () => {
     expect(await db.read((d) => d.select().from(schema.taskDependencies).all())).toEqual([
       { taskId: dependentId, dependsOnId: blockerId },
     ]);
-    expect(await db.read((d) => d.select().from(schema.runs).all())).toHaveLength(1);
+    // The seeded Run predates the Attempt table (pre-0049) and is discarded by
+    // 0068's clean-break fold into `attempts` (ADR-0001 #388 S-G) — `runs` no
+    // longer exists at head.
+    const sqlite = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
+    expect((await sqlite.execute(`select name from sqlite_master where type = 'table' and name = 'runs'`)).rows).toHaveLength(0);
+    sqlite.close();
     expect(await db.read((d) => d.select().from(schema.taskChannels).all())).toEqual([{ taskId: blockerId, channelId: 1 }]);
 
-    // Foreign keys are enforced for runtime writes after boot: a Run pointing at
-    // a non-existent Task is rejected with a foreign-key constraint error. The
-    // libsql drizzle wrapper carries the SQLite message on the error's `cause`
-    // (its own top-level message is a generic "Failed query: …").
+    // Foreign keys are enforced for runtime writes after boot: an Attempt
+    // pointing at a non-existent Task is rejected with a foreign-key
+    // constraint error — the same FK discipline `runs.taskId` had, now on
+    // `attempts.taskId`, the single execution ledger. The libsql drizzle
+    // wrapper carries the SQLite message on the error's `cause` (its own
+    // top-level message is a generic "Failed query: …").
     let fkError: unknown;
     try {
-      await db.write((d) => d.insert(schema.runs).values({ taskId: 999999, attempt: 1, state: 'completed', startedAt: now }).run());
+      await db.write((d) => d.insert(schema.attempts).values({ taskId: 999999, number: 1, startedAt: now }).run());
     } catch (err) {
       fkError = err;
     }

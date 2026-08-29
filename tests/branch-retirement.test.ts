@@ -4,15 +4,15 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { BranchRetirementCoordinator, type BranchRetirementGit } from '../src/execution/branch-retirement.js';
-import type { RunRow, TaskRow } from '../src/db/schema.js';
+import type { AttemptRow, TaskRow } from '../src/db/schema.js';
 import { Git } from '../src/execution/git.js';
 
-type RetirableRun = Pick<RunRow, 'id' | 'taskId' | 'state' | 'branch' | 'baseBranch'>;
+type RetirableRun = Pick<AttemptRow, 'id' | 'taskId' | 'state' | 'branch' | 'baseBranch'>;
 
 const run = (over: Partial<RetirableRun> = {}): RetirableRun => ({
   id: 1,
   taskId: 2,
-  state: 'completed',
+  state: 'passed',
   branch: 'harmonic/task-2-run-1',
   baseBranch: 'develop',
   ...over,

@@ -240,77 +240,6 @@ export const taskDependencies = sqliteTable(
   ],
 );
 
-export const RUN_STATES = ['running', 'completed', 'failed', 'cancelled'] as const;
-export type RunState = (typeof RUN_STATES)[number];
-
-export const runs = sqliteTable('runs', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  taskId: integer('task_id')
-    .notNull()
-    .references(() => tasks.id),
-  attempt: integer('attempt').notNull(),
-  state: text('state').$type<RunState>().notNull(),
-  /** Failure reason: 'interrupted', an error message, or null. */
-  reason: text('reason'),
-  /** ACP stopReason from the session/prompt result. */
-  stopReason: text('stop_reason'),
-  sessionId: text('session_id'),
-  /**
-   * The durable Session (issue #141, reliability-design Unit C) this Run is
-   * bound to — the Harmonic-generated `sessions.id`, set on dispatch alongside
-   * the ACP `sessionId` above once `session/new` returns. Null on pre-feature
-   * Runs and until the harness session is created. The Session is written
-   * *alongside* the Run, never in place of it, so this binding is purely
-   * additive and changes no in-flight Run behaviour.
-   */
-  sessionRowId: integer('session_row_id').references((): AnySQLiteColumn => sessions.id),
-  /** The exact prompt text sent to the harness for this Run (native = filled
-   * Task Prompt template + any feedback; mirrored = the filled Drive Prompt).
-   * Persisted so Task detail's Prompt tab shows what actually went to the
-   * agent; null for pre-feature Runs and until the prompt turn is sent. */
-  prompt: text('prompt'),
-  /** Worktree mode: the run's branch and the branch it was cut from. */
-  branch: text('branch'),
-  baseBranch: text('base_branch'),
-  /** Immutable revisions for the settled worktree diff. They outlive the run
-   * branch, which merging or cleanup can advance or delete. */
-  diffBaseOid: text('diff_base_oid'),
-  diffHeadOid: text('diff_head_oid'),
-  /** `git diff --stat` snapshot taken when the run settles; null in direct
-   * mode or before settle. The card and Task detail both read this so they
-   * can never disagree (issue #36). */
-  stat: text('stat'),
-  /**
-   * The committed implementation head a Run is verified against (issue #134,
-   * reshaped by the unified lifecycle): the branch-head OID captured at
-   * implementation end, before finalize restores the checkout. Null when there
-   * is nothing verifiable — a pre-feature Run, an escalated Run, or a Run that
-   * left no new commit (the fail-closed no-candidate path). */
-  candidateOid: text('candidate_oid'),
-  /** The private Harmonic ref (`refs/harmonic/direct/run-<id>`) a **direct**
-   * Run's head is pinned to, from which it is rematerialized for verification
-   * or a later corrective turn. Null for worktree Runs — their own branch owns
-   * the head — so it can be null while `candidateOid` is set. */
-  candidateRef: text('candidate_ref'),
-  /** JSON: aggregate usage from the ACP prompt result. */
-  usage: text('usage'),
-  /** JSON: Cost frozen when the Run's final Usage is recorded (ADR-0035). */
-  cost: text('cost'),
-  /** JSON: latest live-usage snapshot (rolled-up Usage + context fill +
-   * current-activity line + Process Tree), overwritten on a coarse ~10s
-   * cadence and on finish (ADR 0010). */
-  liveUsage: text('live_usage'),
-  /** JSON: the effective Guardrail config (`ResolvedGuardrails`) snapshotted at
-   * Run start (issue #126, ADR-0019); null for pre-feature Runs. A later config
-   * change never alters this — the Run trips against what it captured. */
-  guardrailConfig: text('guardrail_config'),
-  /** JSON: the effective price table (`PriceTable`) snapshotted at Run start, so
-   * a mid-Run price edit can't retroactively change a cost trip (issue #126). */
-  priceTable: text('price_table'),
-  startedAt: integer('started_at').notNull(),
-  finishedAt: integer('finished_at'),
-});
-
 /** One pass through a Ticket's implement → verify loop (ADR-0041). */
 export const ATTEMPT_STATES = ['running', 'passed', 'failed', 'escalated', 'cancelled'] as const;
 export type AttemptState = (typeof ATTEMPT_STATES)[number];
@@ -338,8 +267,84 @@ export const attempts = sqliteTable('attempts', {
    * `state` + `reason`, nothing replayed from an append-only log. Cheap,
    * low-cardinality audit hedge, not free text (the operator-facing detail
    * lives on `tasks.escalationReason` while a ticket is actually escalated).
+   * A boot-time crash-recovery orphan settles `state: 'failed'`, `reason:
+   * 'process-death'` — the vocabulary this column already carried, so a
+   * crashed Attempt needs no dedicated `AttemptState` (ADR-0001 #388 S-G).
    */
   reason: text('reason'),
+  /** ACP stopReason from the session/prompt result (folded from `runs.stop_reason`, ADR-0001 #388 S-G). */
+  stopReason: text('stop_reason'),
+  sessionId: text('session_id'),
+  /**
+   * The durable Session (issue #141, reliability-design Unit C) this Attempt is
+   * bound to — the Harmonic-generated `sessions.id`, set on dispatch alongside
+   * the ACP `sessionId` above once `session/new` returns. Null on pre-feature
+   * Attempts and until the harness session is created. The Session is written
+   * *alongside* the Attempt, never in place of it, so this binding is purely
+   * additive and changes no in-flight Attempt behaviour. Folded from
+   * `runs.session_row_id` (ADR-0001 #388 S-G).
+   */
+  sessionRowId: integer('session_row_id').references((): AnySQLiteColumn => sessions.id),
+  /** The exact prompt text sent to the harness for this Attempt (native = filled
+   * Task Prompt template + any feedback; mirrored = the filled Drive Prompt).
+   * Persisted so Task detail's Prompt tab shows what actually went to the
+   * agent; null for pre-feature Attempts and until the prompt turn is sent.
+   * Folded from `runs.prompt` (ADR-0001 #388 S-G). */
+  prompt: text('prompt'),
+  /** Worktree mode: the attempt's branch and the branch it was cut from.
+   * Folded from `runs.branch`/`runs.base_branch` (ADR-0001 #388 S-G). */
+  branch: text('branch'),
+  baseBranch: text('base_branch'),
+  /** Immutable revisions for the settled worktree diff. They outlive the
+   * attempt branch, which merging or cleanup can advance or delete. Folded
+   * from `runs.diff_base_oid`/`runs.diff_head_oid` (ADR-0001 #388 S-G). */
+  diffBaseOid: text('diff_base_oid'),
+  diffHeadOid: text('diff_head_oid'),
+  /** `git diff --stat` snapshot taken when the attempt settles; null in direct
+   * mode or before settle. The card and Task detail both read this so they
+   * can never disagree (issue #36). Folded from `runs.stat` (ADR-0001 #388 S-G). */
+  stat: text('stat'),
+  /**
+   * The committed implementation head an Attempt is verified against (issue
+   * #134, reshaped by the unified lifecycle): the branch-head OID captured at
+   * implementation end, before finalize restores the checkout. Null when there
+   * is nothing verifiable — a pre-feature Attempt, an escalated Attempt, or an
+   * Attempt that left no new commit (the fail-closed no-candidate path).
+   * Folded from `runs.candidate_oid` (ADR-0001 #388 S-G). */
+  candidateOid: text('candidate_oid'),
+  /** The private Harmonic ref (`refs/harmonic/direct/attempt-<id>`) a **direct**
+   * Attempt's head is pinned to, from which it is rematerialized for verification
+   * or a later corrective turn. Null for worktree Attempts — their own branch owns
+   * the head — so it can be null while `candidateOid` is set. Folded from
+   * `runs.candidate_ref` (ADR-0001 #388 S-G). */
+  candidateRef: text('candidate_ref'),
+  /** JSON: aggregate usage from the ACP prompt result. Folded from `runs.usage` (ADR-0001 #388 S-G). */
+  usage: text('usage'),
+  /** JSON: Cost frozen when the Attempt's final Usage is recorded (ADR-0035).
+   * Folded from `runs.cost` (ADR-0001 #388 S-G). */
+  cost: text('cost'),
+  /** JSON: latest live-usage snapshot (rolled-up Usage + context fill +
+   * current-activity line + Process Tree), overwritten on a coarse ~10s
+   * cadence and on finish (ADR 0010). Folded from `runs.live_usage` (ADR-0001 #388 S-G). */
+  liveUsage: text('live_usage'),
+  /** JSON: the effective Guardrail config (`ResolvedGuardrails`) snapshotted at
+   * Attempt start (issue #126, ADR-0019); null for pre-feature Attempts. A later
+   * config change never alters this — the Attempt trips against what it
+   * captured. Folded from `runs.guardrail_config` (ADR-0001 #388 S-G). */
+  guardrailConfig: text('guardrail_config'),
+  /** JSON: the effective price table (`PriceTable`) snapshotted at Attempt
+   * start, so a mid-Attempt price edit can't retroactively change a cost trip
+   * (issue #126). Folded from `runs.price_table` (ADR-0001 #388 S-G). */
+  priceTable: text('price_table'),
+  /** The free-text detail behind {@link reason} — a git/harness error message,
+   * a guardrail's `budget: …` summary, or the same "escalated to human: …"
+   * text as `tasks.escalationReason` — folded from `runs.reason` (ADR-0001
+   * #388 S-G). Distinct from `reason` (the low-cardinality disposition kind,
+   * ADR-0001 #388 S-E): the two used to live on separate rows (`runs.reason`
+   * free text vs `attempts.reason` structured) and both still need to survive
+   * the fold onto one row. Null while running, and for a disposition with no
+   * extra human-readable detail beyond its kind (e.g. a plain operator-cancel). */
+  detail: text('detail'),
 }, (t) => [uniqueIndex('attempts_task_number_unique').on(t.taskId, t.number)]);
 export type AttemptRow = typeof attempts.$inferSelect;
 
@@ -505,9 +510,9 @@ export const apiKeys = sqliteTable('api_keys', {
   tokenHash: text('token_hash').notNull(),
   /** First characters of the token, for display. */
   prefix: text('prefix').notNull(),
-  /** 'full' / 'read' for operator keys; 'run' / 'conversation' for ephemeral scoped keys. */
+  /** 'full' / 'read' for operator keys; 'attempt' / 'conversation' for ephemeral scoped keys. */
   scope: text('scope').notNull().default('full'),
-  runId: integer('run_id'),
+  attemptId: integer('attempt_id'),
   /** The Conversation a 'conversation'-scoped key belongs to; its lifetime follows the Conversation's (issue 16). */
   conversationId: integer('conversation_id'),
   createdAt: integer('created_at').notNull(),
@@ -549,7 +554,6 @@ export const trackerContainers = sqliteTable('tracker_containers', {
 }, (t) => [primaryKey({ columns: [t.workspaceId, t.trackerRef] })]);
 export type TrackerContainerRow = typeof trackerContainers.$inferSelect;
 
-export type RunRow = typeof runs.$inferSelect;
 export type AttemptEventRow = typeof attemptEvents.$inferSelect;
 
 /**

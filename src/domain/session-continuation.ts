@@ -33,7 +33,7 @@
  * caller's; this file only decides.
  */
 
-import type { RunRow, SessionRow } from '../db/schema.js';
+import type { AttemptRow, SessionRow } from '../db/schema.js';
 
 /** Fixed provider cache windows. They are execution facts, not settings. */
 export const HARNESS_SESSION_WARM_WINDOWS_MS: Readonly<Record<string, number>> = {
@@ -333,7 +333,7 @@ export function sessionWarmthFacts(row: SessionRow): SessionWarmthFacts {
  * no Run ever bound a Session, or the Session has since been retired and swept.
  */
 export function previewHumanRejectContinuation(
-  runsForTask: readonly RunRow[],
+  runsForTask: readonly AttemptRow[],
   getSession: (sessionRowId: number) => SessionRow | null,
   now: number,
 ): Extract<SessionContinuationPlan, { mode: 'offer-choice' }> | null {

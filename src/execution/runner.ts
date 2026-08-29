@@ -12,7 +12,7 @@ import { indexWorktree, dropIndexForPath } from './code-index.js';
 import { AFK_PERMISSION_MODES, afkRequestGated, afkSessionMode } from './afk-permissions.js';
 import type { AutoDrive } from './auto-drive.js';
 import type { AppConfig, HarnessConfig } from '../config.js';
-import type { TaskRow, RunRow, WorkspaceRow, SessionRow, AttemptRow } from '../db/schema.js';
+import type { TaskRow, AttemptRow, WorkspaceRow, SessionRow } from '../db/schema.js';
 import { AcpDriver, type AcpInitializeResult } from '../acp/driver.js';
 import { SessionStore } from '../domain/sessions.js';
 import { assessResumeEligibility, sessionFacts, type ResumeEnvironment } from '../domain/session-resume.js';
@@ -26,8 +26,7 @@ import {
 } from '../domain/session-continuation.js';
 import { repoKey } from './repo-lock.js';
 import { DomainError } from '../domain/errors.js';
-import type { RunStore, RunGuardrailSnapshot } from '../domain/runs.js';
-import { AttemptStore, type PersistedAttemptEvent } from '../domain/attempts.js';
+import { AttemptStore, type AttemptGuardrailSnapshot, type PersistedAttemptEvent } from '../domain/attempts.js';
 import { RunSettleCoordinator, type SettleProjection, type DispositionKind } from '../domain/run-settle.js';
 import type { SessionRetirementHook } from '../domain/session-retirement-coordinator.js';
 import type { TaskService } from '../domain/tasks.js';
@@ -91,7 +90,7 @@ export interface RunnerEvents {
   /** ACP session updates are transient: streamed to clients, never persisted. */
   onRunLogEvent?: (event: LiveRunEvent) => void;
   /** Fired whenever a run reaches a terminal state. */
-  onRunFinished?: (run: RunRow) => void;
+  onRunFinished?: (run: AttemptRow) => void;
   /** Fired ~1s while a run tails its native log (ADR 0010: `run_usage`). */
   onRunUsage?: (payload: { runId: number; snapshot: RunUsageSnapshot }) => void;
 }
@@ -110,10 +109,10 @@ export interface RunnerOptions {
   events?: RunnerEvents;
   /** Where temporary worktrees live; per-run subdirectories. */
   worktreesDir?: string;
-  /** Mints/revokes the per-run scoped API key injected into the harness. */
+  /** Mints/revokes the per-Attempt scoped API key injected into the harness. */
   keys?: {
-    mint: (runId: number) => Promise<string>;
-    revoke: (runId: number) => void | Promise<void>;
+    mint: (attemptId: number) => Promise<string>;
+    revoke: (attemptId: number) => void | Promise<void>;
   };
   /** Auto-drive collaborator for mirrored Tasks (issue #33); absent on a native-only server. */
   autoDrive?: AutoDrive;
@@ -189,14 +188,11 @@ interface Workspace {
 }
 
 interface ActiveRun {
+  /** The Attempt this driveOnce call is driving — `attempts.id`, the single
+   * execution ledger identity (ADR-0001 #388 S-G: `runId` IS the Attempt id,
+   * so there is no separate `attemptId` to track alongside it). */
   runId: number;
   taskId: number;
-  /** The Attempt this driveOnce call is driving (`runs.attempt` at construction
-   * time) — the bridge `steer()`'s live event append uses now that
-   * `attempt_events` is keyed by `attempt_id`, not `run_id` (ADR-0001 #388
-   * S-F). Refreshed on every self-heal `driveOnce` re-entry, same cadence as
-   * the rest of this map entry. */
-  attemptId: number;
   child: ChildProcess;
   driver: AcpDriver;
   /** Sampler context for the live-usage tailer (ADR 0010). */
@@ -384,6 +380,11 @@ export class Runner {
    * next Run spawned for the task (the settled-Session steer continuation). Set by
    * {@link steerSettled}, consumed once by the run's first {@link driveOnce}. */
   private readonly pendingOperatorSeed = new Map<number, string>();
+  /** Keyed by taskId: a Reject-with-guidance's pre-computed DeterministicContinuation
+   * for the "start now" override, whose next Attempt row `beginRun` creates
+   * fresh (ADR-0001 #388 S-G — no pre-created placeholder to hang it off).
+   * Set by {@link resumeWithGuidance}, consumed once by `beginRun`. */
+  private readonly pendingContinuation = new Map<number, DeterministicContinuation>();
   /** Reduced, bounded progress traces. Raw ACP payloads are discarded at
    * ingest, so neither memory nor detector work grows with a Run. */
   private readonly progressEvents = new Map<number, ProgressEvent[]>();
@@ -402,7 +403,6 @@ export class Runner {
   mcpUrl: string | null = null;
 
   constructor(
-    private readonly runStore: RunStore,
     private readonly taskService: TaskService,
     private readonly asyncDb: AsyncDbHandle,
     private readonly getConfig: () => AppConfig,
@@ -425,7 +425,6 @@ export class Runner {
     this.guardrailEvents = new GuardrailEventStore(this.asyncDb);
     this.sessionStore = new SessionStore(this.asyncDb);
     this.settleCoordinator = new RunSettleCoordinator(
-      this.runStore,
       this.taskService,
       this.attempts,
       (run) => this.events.onRunFinished?.(run),
@@ -440,7 +439,7 @@ export class Runner {
         persist: (runId, snapshot) => {
           // Fire-and-forget now that update is async: a swallowed rejection keeps
           // a DB hiccup off the run, and the next tick or finish flush retries.
-          void this.runStore.update(runId, { liveUsage: JSON.stringify(snapshot) }).catch(() => {});
+          void this.attempts.update(runId, { liveUsage: JSON.stringify(snapshot) }).catch(() => {});
         },
       },
       options.tailerCadence,
@@ -452,19 +451,26 @@ export class Runner {
   }
 
   /**
-   * The Attempt row backing `run` at its CURRENT attempt number
-   * (`run.attempt`) — the bridge every attempt_events/attempt_tool_calls/
-   * verification_attempts/guardrail_events writer/reader uses now that those
-   * tables are keyed by `attempt_id`, not `run_id` (ADR-0001 #388 S-F, ADR-0007
-   * "Attempt is the single execution ledger"). Always present in steady state:
-   * `this.attempts.ensureForRun` is created alongside every Run/attempt-number
-   * pair this Runner ever drives; a miss here means the Attempt row raced a
-   * task-delete cascade, which callers treat the same way a missing Run row
-   * used to be treated under the old `runId` keying.
+   * The single `running` Attempt for `task` — the bridge every
+   * attempt_events/attempt_tool_calls/verification_attempts/guardrail_events
+   * writer/reader uses (ADR-0001 #388 S-F/S-G, ADR-0007 "Attempt is the single
+   * execution ledger"). Reads DB truth (`AttemptStore.getRunningForTask`)
+   * rather than a threaded "current attempt number" cursor, so it stays
+   * correct across self-heal turns without any Runner-side bookkeeping.
+   * Always present in steady state: `beginRun`/the self-heal loop always leave
+   * exactly one Attempt `running` while this Runner drives a Task; a miss here
+   * means the Attempt row raced a task-delete cascade, which callers treat the
+   * same way a missing Run row used to be treated under the old `runId` keying.
    */
-  private async attemptFor(run: Pick<RunRow, 'taskId' | 'attempt'>): Promise<AttemptRow> {
-    const attempt = await this.attempts.getForTaskNumber(run.taskId, run.attempt);
-    if (!attempt) throw new DomainError('not_found', `attempt ${run.attempt} for task ${run.taskId} not found`);
+  private async attemptFor(task: Pick<TaskRow, 'id'>): Promise<AttemptRow> {
+    // The Task's LATEST Attempt, not just its `running` one: this is also
+    // called from an operator Accept's merge (`mergePolicyDeps`), which runs
+    // against an already-`escalated` Attempt — there is no `running` row to
+    // find at that point, but the escalated one is still the relevant target
+    // for verification/guardrail facts. Mirrors `AttemptStore.resolveLatest`.
+    const rows = await this.attempts.listForTask(task.id);
+    const attempt = rows.at(-1);
+    if (!attempt) throw new DomainError('not_found', `no attempt for task ${task.id} found`);
     return attempt;
   }
 
@@ -485,7 +491,7 @@ export class Runner {
   }
 
   /** Start a run for a ready task. Returns the created run immediately. */
-  async start(taskId: number): Promise<RunRow> {
+  async start(taskId: number): Promise<AttemptRow> {
     const claimed = await this.taskService.claimReady(taskId);
     if (!claimed) {
       const task = await this.taskService.get(taskId);
@@ -510,15 +516,13 @@ export class Runner {
    * the default; the worktree lives until the Task reaches a terminal disposition.
    */
   async resumeWithGuidance(task: TaskRow, guidance: string, startNow = false): Promise<void> {
-    const run = (await this.runStore.listForTask(task.id)).at(-1);
+    const run = (await this.attempts.listForTask(task.id)).at(-1);
     const escalated = (await this.attempts.listForTask(task.id)).findLast((attempt) => attempt.state === 'escalated');
     if (escalated) await this.attempts.setFeedback(escalated.id, guidance);
-    const nextNumber = Math.max(escalated?.number ?? 0, run?.attempt ?? 0) + 1;
-    const nextAttempt = await this.attempts.ensureForRun(task.id, nextNumber, Date.now());
     let choice: 'full' | 'condensed' | undefined;
+    let continuation: DeterministicContinuation | undefined;
     if (run) {
-      const continuation = await this.decideContinuation(task, run, await this.getWorkspace?.(task.workspaceId));
-      await this.attempts.setContinuation(nextAttempt.id, continuation);
+      continuation = await this.decideContinuation(task, run, await this.getWorkspace?.(task.workspaceId));
       choice = continuation.path === 'continued-session' ? 'full' : 'condensed';
     }
     // The condensed section is composed at dispatch (from the prior Session), not
@@ -527,7 +531,17 @@ export class Runner {
     // Reject requeues to `ready`; the Auto-Runner picks it up when capacity frees
     // (ADR-0048). Force-start now only for the warm-Session "start now" override,
     // which deliberately bypasses the ceiling the way a manual Run does.
-    if (startNow) await this.start(task.id);
+    //
+    // The next Attempt's row is NOT pre-created here: Attempt is the single
+    // execution ledger now (ADR-0001 #388 S-G), so any row in `attempts` is a
+    // real, API-visible Run — creating one before the Task is actually picked
+    // back up would show a phantom Run that never started. `beginRun` creates
+    // it at real dispatch time; if that happens right now (`startNow`), stash
+    // the pre-computed continuation for it to pick up in the same tick.
+    if (startNow) {
+      if (continuation) this.pendingContinuation.set(task.id, continuation);
+      await this.start(task.id);
+    }
   }
 
   /**
@@ -540,8 +554,7 @@ export class Runner {
   async escalateUnspawned(taskId: number, reason: string): Promise<void> {
     const task = await this.taskService.claimReady(taskId);
     if (!task) return;
-    const run = await this.runStore.create(task.id);
-    await this.attempts.ensureForRun(task.id, run.attempt, run.startedAt);
+    const run = await this.attempts.create(task.id);
     await this.settleEscalated(task, run, reason, {});
   }
 
@@ -550,7 +563,7 @@ export class Runner {
    * (the Session retirement drain owns the worktree) and close the tracker
    * issue. Every step is a best-effort output side-effect.
    */
-  async cleanupClosed(task: TaskRow, run: RunRow | undefined): Promise<void> {
+  async cleanupClosed(task: TaskRow, run: AttemptRow | undefined): Promise<void> {
     if (run) {
       try {
         await this.sessionRetirement?.onRunSettled(run, 'operator-cancel');
@@ -572,7 +585,7 @@ export class Runner {
         );
       }
       // A settled-Run event drives the retirement drain (which retires the Session row) and a scheduler refill.
-      this.events.onRunFinished?.(await this.runStore.get(run.id));
+      this.events.onRunFinished?.(await this.attempts.get(run.id));
     }
     if (this.autoDrive && !(await this.autoDrive.closeTicket(task, `Closed by a Harmonic operator without merging (task ${task.id}).`))) {
       logger.error(`task ${task.id} close: tracker issue could not be closed`);
@@ -584,7 +597,7 @@ export class Runner {
    * mirrored pick, whose sequence is flip (the lock) → recheck → claim →
    * spawn, so the flip merges before the tracker write, not with it (issue #32).
    */
-  async launchClaimed(taskId: number, parent?: SpanContext): Promise<RunRow> {
+  async launchClaimed(taskId: number, parent?: SpanContext): Promise<AttemptRow> {
     const task = await this.taskService.get(taskId);
     if (task.state !== 'working') {
       throw new DomainError('invalid_state', `task ${taskId} is ${task.state}; launchClaimed expects a task already flipped to working`);
@@ -593,7 +606,7 @@ export class Runner {
   }
 
   /** Validate the harness, snapshot Guardrails, create the run row, and drive it. Shared by start / launchClaimed. */
-  private async beginRun(task: TaskRow, parent?: SpanContext): Promise<RunRow> {
+  private async beginRun(task: TaskRow, parent?: SpanContext): Promise<AttemptRow> {
     // Parallel-Epic start-funnel gate (issue #159): an Epic member whose
     // integration base isn't ready to fork from must not spawn — its `epic/<ref>`
     // branch is unresolved or not confirmed live this poll, so `git worktree add`
@@ -612,12 +625,16 @@ export class Runner {
     const harness = config.harnesses[task.harness as keyof typeof config.harnesses];
     if (!harness) throw new DomainError('validation', `harness '${task.harness}' is not configured`);
     const ws = (await this.getWorkspace?.(task.workspaceId)) ?? { guardrailBudget: null, guardrailProgress: null, toolTimeoutMinutes: null };
-    const snapshot: RunGuardrailSnapshot = {
+    const snapshot: AttemptGuardrailSnapshot = {
       guardrailConfig: resolveGuardrails(ws, config),
       priceTable: resolvePrices(config.prices),
     };
-    const created = await this.runStore.create(task.id, snapshot);
-    await this.attempts.ensureForRun(task.id, created.attempt, created.startedAt);
+    const created = await this.attempts.create(task.id, snapshot);
+    const pendingContinuation = this.pendingContinuation.get(task.id);
+    if (pendingContinuation !== undefined) {
+      this.pendingContinuation.delete(task.id);
+      await this.attempts.setContinuation(created.id, pendingContinuation);
+    }
     // "At most one active execution per work context" is enforced by the
     // scheduler pick predicate (Auto-Runner's `occupiedDirectContexts`), not
     // by a claim here (ADR-0001): a worktree-mode Task's context is unique by
@@ -660,7 +677,7 @@ export class Runner {
   async finishRunOperation(runId: number): Promise<void> {
     const operation = this.runOperations.get(runId);
     if (!operation) return;
-    const run = await this.runStore.get(runId);
+    const run = await this.attempts.get(runId);
     if (run.state === 'running') return;
     this.runOperations.delete(runId);
     operation.update({
@@ -685,8 +702,8 @@ export class Runner {
    */
   private async resolveContinuationSource(
     task: TaskRow,
-  ): Promise<{ prior: RunRow; session: SessionRow; trigger: ContinuationTrigger } | null> {
-    const priors = await this.runStore.listForTask(task.id); // ordered by attempt asc
+  ): Promise<{ prior: AttemptRow; session: SessionRow; trigger: ContinuationTrigger } | null> {
+    const priors = await this.attempts.listForTask(task.id); // ordered by attempt asc
     for (let i = priors.length - 1; i >= 0; i--) {
       const prior = priors[i]!;
       if (prior.sessionRowId === null) continue;
@@ -717,7 +734,7 @@ export class Runner {
    * way for the audit trail. Best-effort and total: any failure falls through to
    * a cold dispatch, never blocking the Run.
    */
-  private async bindContinuationIfEligible(task: TaskRow, run: RunRow): Promise<RunRow> {
+  private async bindContinuationIfEligible(task: TaskRow, run: AttemptRow): Promise<AttemptRow> {
     try {
       const src = await this.resolveContinuationSource(task);
       if (!src) return run;
@@ -744,7 +761,7 @@ export class Runner {
         return run;
       }
 
-      const bound = await this.runStore.update(run.id, {
+      const bound = await this.attempts.update(run.id, {
         sessionRowId: src.session.id,
         sessionId: src.session.harnessSessionId,
       });
@@ -820,7 +837,7 @@ export class Runner {
       this.kill(active);
     }
     if (handled) return;
-    const parked = (await this.runStore.listForTask(taskId)).find((r) => r.state === 'running');
+    const parked = (await this.attempts.listForTask(taskId)).find((r) => r.state === 'running');
     if (parked) await this.settleRunIfPresent(taskId, parked.id, type, projection);
   }
 
@@ -840,7 +857,7 @@ export class Runner {
     projection: SettleProjection,
   ): Promise<void> {
     try {
-      await this.coordinateSettle(await this.taskService.get(taskId), await this.runStore.get(runId), type, projection);
+      await this.coordinateSettle(await this.taskService.get(taskId), await this.attempts.get(runId), type, projection);
     } catch (err) {
       if (isForeignKeyViolation(err) || (err instanceof DomainError && err.code === 'not_found')) return;
       throw err;
@@ -899,7 +916,7 @@ export class Runner {
         const res = await active.driver.steer([{ type: 'text', text }], { steering: { idleBehavior: 'promptRequired' } });
         if (res.outcome === 'injected') {
           active.steerSupported = true;
-          const event = await this.attempts.appendEvent(active.attemptId, { type: 'lifecycle', payload: { event: 'steer_injected', text } });
+          const event = await this.attempts.appendEvent(active.runId, { type: 'lifecycle', payload: { event: 'steer_injected', text } });
           this.events.onRunEvent?.(event);
           return true;
         }
@@ -916,7 +933,7 @@ export class Runner {
     // harness). Re-check the gate: a settle may have begun during the RPC await.
     if (!active.steerable) return false;
     active.steerQueue.push(text);
-    const event = await this.attempts.appendEvent(active.attemptId, { type: 'lifecycle', payload: { event: 'steer_queued', text } });
+    const event = await this.attempts.appendEvent(active.runId, { type: 'lifecycle', payload: { event: 'steer_queued', text } });
     this.events.onRunEvent?.(event);
     return true;
   }
@@ -1061,7 +1078,7 @@ export class Runner {
    * {@link resolveBaseBranch resolved base branch} on the first Attempt, then
    * reused in place by every subsequent Attempt so the work carries forward.
    */
-  private async prepareWorkspace(task: TaskRow, run: RunRow, resume = false): Promise<Workspace> {
+  private async prepareWorkspace(task: TaskRow, run: AttemptRow, resume = false): Promise<Workspace> {
     if (task.isolationMode !== 'worktree') {
       // Direct isolation works in place (ADR-0046): the agent commits directly
       // on the live base branch, so its commits only ever move the branch
@@ -1108,7 +1125,7 @@ export class Runner {
       // `addWorktreeCheckout` fails on an already-present path / already-checked-
       // out branch. The candidate is re-parented on the SAME validated base the
       // first turn recorded, so the re-verify judges the full diff.
-      const persisted = await this.runStore.get(run.id);
+      const persisted = await this.attempts.get(run.id);
       const branch = persisted.branch ?? this.branchForTask(task);
       // The base the first turn already validated against wins; otherwise a
       // resumed Run resolves the same base a fresh one would (issue #157).
@@ -1126,14 +1143,14 @@ export class Runner {
       // reuse it in place so every Attempt iterates in the same working copy. The
       // base is re-resolved each Attempt; the completion CAS rebases the accumulated
       // candidate onto whatever the base tip is now.
-      await this.runStore.update(run.id, { branch, baseBranch });
+      await this.attempts.update(run.id, { branch, baseBranch });
       return { cwd: path, env: {}, worktree: { repoDir: task.workingDir, path }, baseRev: baseBranch, startDirty: false };
     }
     if (await Git.branchExists(task.workingDir, branch)) {
       // The Task branch survived but its worktree was reclaimed — check it back out
       // so the Attempt resumes the prior candidate rather than cutting anew.
       await Git.addWorktreeCheckout(task.workingDir, path, branch);
-      await this.runStore.update(run.id, { branch, baseBranch });
+      await this.attempts.update(run.id, { branch, baseBranch });
       return { cwd: path, env: {}, worktree: { repoDir: task.workingDir, path }, baseRev: baseBranch, startDirty: false };
     }
     // First Attempt of the Task: cut the worktree + branch from the resolved base.
@@ -1148,7 +1165,7 @@ export class Runner {
       );
     }
     await Git.addWorktree(task.workingDir, path, branch, baseBranch);
-    await this.runStore.update(run.id, { branch, baseBranch });
+    await this.attempts.update(run.id, { branch, baseBranch });
     return { cwd: path, env: {}, worktree: { repoDir: task.workingDir, path }, baseRev: baseBranch, startDirty: false };
   }
 
@@ -1161,11 +1178,11 @@ export class Runner {
    * {@link runVerification} so a new verifier can't diverge on this fail-safe.
    */
   private async noVerifiedHeadVerdict(
-    run: RunRow,
+    task: TaskRow,
     mechanism: 'command' | 'critic',
     record: (type: 'lifecycle', payload: unknown) => void,
   ): Promise<VerifierVerdict> {
-    const attempt = await this.attemptFor(run);
+    const attempt = await this.attemptFor(task);
     const persisted = await this.verificationAttempts.append(attempt.id, {
       mechanism,
       inputOid: '',
@@ -1212,7 +1229,7 @@ export class Runner {
    */
   private async runVerification(
     task: TaskRow,
-    run: RunRow,
+    run: AttemptRow,
     head: string | null,
     signal: AbortSignal,
     record: (type: 'lifecycle', payload: unknown) => void,
@@ -1241,7 +1258,7 @@ export class Runner {
 
     for (const command of commands) {
       if (!oid) {
-        verdicts.push(await this.noVerifiedHeadVerdict(run, 'command', record));
+        verdicts.push(await this.noVerifiedHeadVerdict(task, 'command', record));
       } else {
         mkdirSync(this.worktreesDir, { recursive: true });
         const attempt = await runCommandVerifier({
@@ -1256,7 +1273,7 @@ export class Runner {
           parent,
           attributes: { 'task.id': task.id, 'run.id': run.id },
         });
-        const timelineAttempt = await this.attemptFor(run);
+        const timelineAttempt = await this.attemptFor(task);
         const persisted = await this.verificationAttempts.append(timelineAttempt.id, commandAttemptToInput(attempt));
         const timelineStep = await this.attempts.createStep(timelineAttempt.id, { type: 'verification', command: command.command, logLocator: `verification_attempt:${persisted.id}` });
         await this.attempts.updateStep(timelineStep.id, {
@@ -1285,7 +1302,7 @@ export class Runner {
       // change itself with read/fetch tools, no disposable checkout, with the
       // operator's interpolated review prompt.
       if (!oid) {
-        verdicts.push(await this.noVerifiedHeadVerdict(run, 'critic', record));
+        verdicts.push(await this.noVerifiedHeadVerdict(task, 'critic', record));
       } else {
         // The critic's own harness (issue #174 FIX 2): reuses the builder's
         // harness only when `critic.harness` is unset ("Same as task"); a
@@ -1329,7 +1346,7 @@ export class Runner {
           // real `createAcpCriticDrive`.
           ...(this.criticDrive ? { drive: this.criticDrive } : {}),
         });
-        const timelineAttempt = await this.attemptFor(run);
+        const timelineAttempt = await this.attemptFor(task);
         const persisted = await this.verificationAttempts.append(timelineAttempt.id, criticAttemptToInput(attempt));
         // The harness may not have flushed its log by the session-end boundary,
         // so `attempt.transcriptPath` is often null here; resolve it off the hot
@@ -1403,11 +1420,11 @@ export class Runner {
   /** A non-`proceed` verdict with a candidate: hand the failed Attempt up to
    * the unified Attempt loop with the last verifier's output as feedback. */
   private async verificationFailTurn(
-    run: RunRow,
+    task: TaskRow,
     decision: VerificationDecision,
     record: (type: 'lifecycle', payload: unknown) => void,
   ): Promise<TurnOutcome> {
-    const attemptRow = await this.attemptFor(run);
+    const attemptRow = await this.attemptFor(task);
     const attempts = await this.verificationAttempts.list(attemptRow.id);
     const output = attempts[attempts.length - 1]?.output ?? '';
     record('lifecycle', { event: 'verification-actionable-fail', reason: decision.reason });
@@ -1424,12 +1441,12 @@ export class Runner {
    * window and Session retirement is the sole owner of its removal. Runs before
    * the task settles so an escalated task always has its branch as evidence.
    */
-  private async finalizeWorkspace(task: TaskRow, run: RunRow, workspace: Workspace): Promise<void> {
+  private async finalizeWorkspace(task: TaskRow, run: AttemptRow, attemptNumber: number, workspace: Workspace): Promise<void> {
     if (!workspace.worktree) return;
     const { repoDir, path } = workspace.worktree;
     // Commit the agent's work onto the run branch (the durable artifact merging
     // merges) — best-effort, so a commit hiccup never blocks teardown.
-    await Git.commitAll(path, `harmonic: task ${task.id} run ${run.attempt}`).catch(() => {});
+    await Git.commitAll(path, `harmonic: task ${task.id} run ${attemptNumber}`).catch(() => {});
     // Issue #148 (reliability-design Unit C): **retain** the builder worktree so
     // its removal is owned solely by Session retirement — the checkout then
     // survives the human-rejection window and a reject-and-continue merges in the
@@ -1440,7 +1457,7 @@ export class Runner {
     // now rather than leak it. This is the only builder-worktree removal outside
     // retirement, and it fires solely for a worktree retirement structurally
     // cannot own; the invariant "retained ⇔ bound ⇔ retirement owns removal" holds.
-    const sessionRowId = (await this.runStore.get(run.id)).sessionRowId;
+    const sessionRowId = (await this.attempts.get(run.id)).sessionRowId;
     let retained = false;
     if (sessionRowId != null) {
       try {
@@ -1471,15 +1488,13 @@ export class Runner {
    * nothing a corrective turn could fix. Every other ending settles inside
    * the single turn.
    */
-  private async drive(task: TaskRow, run: RunRow, harness: HarnessConfig, parent: SpanContext): Promise<void> {
+  private async drive(task: TaskRow, run: AttemptRow, harness: HarnessConfig, parent: SpanContext): Promise<void> {
     const workspace = await this.getWorkspace?.(task.workspaceId);
     const maxAttempts = resolveScoped('maxAttempts', workspace?.maxAttempts, this.getConfig().maxAttempts);
-    // The attempt counter is seeded from the run row, so the maxAttempts bound
-    // survives a crash-resume of the drive loop rather than being a purely
-    // in-memory count. A corrective turn's token/cost spend is already inside
-    // this Run's live snapshot (it runs in the same Run), so the per-Run spend
-    // guard covers every Attempt without any separate accounting.
-    let attemptNumber = run.attempt;
+    // The attempt counter is seeded from the Attempt row, so the maxAttempts
+    // bound survives a crash-resume of the drive loop rather than being a
+    // purely in-memory count.
+    let attemptNumber = run.number;
     // The budget counts from the last operator "Reject with guidance" (ADR-0041):
     // that escalated Attempt's number is the base, so history numbering keeps
     // growing while the cap restarts.
@@ -1489,25 +1504,67 @@ export class Runner {
       for (;;) {
       const outcome = await this.driveOnce(task, run, harness, parent, healCtx, attemptNumber);
       if (outcome.kind === 'terminal') return;
-      const attempt = await this.attempts.ensureForRun(task.id, attemptNumber, run.startedAt);
+      // `run` already IS the just-driven Attempt (ADR-0001 #388 S-G — one
+      // object, not a run+attempt pair): `driveOnce` was called with it for
+      // exactly this `attemptNumber`, so no separate lookup is needed to close
+      // it out. Refresh it first: `driveOnce` wrote branch/session/usage/
+      // candidate/diff facts onto this row itself (`prepareWorkspace`/dispatch/
+      // finalize), and none of those internal writes flowed back into this
+      // loop's own `run` reference — every read below (the diff-snapshot gate
+      // inside settle, the self-heal carry-forward) needs the fresh row, not
+      // the pre-driveOnce snapshot this loop was holding.
+      run = await this.attempts.get(run.id);
       const feedback = [outcome.reason, outcome.output].filter(Boolean).join('\n\n');
       if (attemptNumber - budgetBase >= maxAttempts) {
         // The exhausted Attempt is recorded `escalated` (not `failed`): it is the
         // timeline row the escalation surface hangs off, and the number the
-        // budget restarts from after a Reject with guidance.
-        await this.attempts.finish(attempt.id, 'escalated', Date.now(), feedback);
-        await this.settleEscalated(task, await this.runStore.get(run.id), `attempt ${attemptNumber - budgetBase} of ${maxAttempts} failed: ${outcome.reason}`, {});
+        // budget restarts from after a Reject with guidance. Left `running`
+        // here — `settleEscalated` (via `RunSettleCoordinator.settle`) owns
+        // the terminal write; pre-finishing it here would trip its own guard
+        // (`before.state === 'running'`) into a silent no-op, since Attempt
+        // is now the single execution ledger being guarded (ADR-0001 #388 S-G).
+        await this.settleEscalated(task, run, `attempt ${attemptNumber - budgetBase} of ${maxAttempts} failed: ${outcome.reason}`, { feedback });
         return;
       }
-      await this.attempts.finish(attempt.id, 'failed', Date.now(), feedback);
-      attemptNumber += 1;
-      // The Run is the durable owner of the current unified Attempt. Persist
-      // this before driving the corrective turn: timeline rows, settling, and
-      // a post-crash resume all resolve the current Attempt through runs.attempt.
-      run = await this.runStore.update(run.id, { attempt: attemptNumber });
-      const nextAttempt = await this.attempts.ensureForRun(task.id, attemptNumber, Date.now());
+      await this.attempts.finish(run.id, 'failed', Date.now(), feedback);
+      // The deterministic continuation reads the JUST-FINISHED turn's live
+      // context-token footprint — `latestSnapshot`/`lastTurnContextTokens`
+      // are keyed by the OUTGOING Attempt's id, so this must run before that
+      // id's rollups are dropped and before `run` moves on to the new row
+      // (looking either up under the NEW attempt's id would find nothing —
+      // its own turn hasn't happened yet).
       const continuation = await this.decideContinuation(task, run, workspace);
-      await this.attempts.setContinuation(nextAttempt.id, continuation);
+      attemptNumber += 1;
+      // The outgoing Attempt's driveOnce `finalize()` already stopped its
+      // tailer/reader/tool-call flush; drop its in-memory rollups too so they
+      // don't outlive the row they were keyed by.
+      const closedRunId = run.id;
+      this.toolCallTotals.delete(closedRunId);
+      this.lastTurnContextTokens.delete(closedRunId);
+      this.progressEvents.delete(closedRunId);
+      this.progressSequences.delete(closedRunId);
+      this.outstandingProgressActions.delete(closedRunId);
+      // A self-heal retry drives the SAME worktree/Session (ADR-0046) but is
+      // its OWN Attempt (ADR-0001 Vocabulary — Self-heal is a deleted
+      // concept, this is simply "the next Attempt"): carry the physical
+      // worktree/Session identity forward onto the new row, then track it —
+      // `run` stays the single object every settle/guardrail/verification
+      // call below resolves through.
+      const nextAttempt = await this.attempts.ensureForRun(task.id, attemptNumber, Date.now());
+      run = await this.attempts.update(nextAttempt.id, {
+        branch: run.branch,
+        baseBranch: run.baseBranch,
+        sessionRowId: run.sessionRowId,
+        sessionId: run.sessionId,
+        // Direct mode's `prepareWorkspace` re-resolves its `baseRev` from live
+        // HEAD each Attempt (issue #157), so a corrective turn that adds no
+        // further commits sees `head === base` and would otherwise report "no
+        // candidate". Carrying the outgoing Attempt's candidate forward lets
+        // the capture site (driveOnce) fall back to it and re-verify the
+        // standing candidate instead.
+        candidateOid: run.candidateOid,
+      });
+      await this.attempts.setContinuation(run.id, continuation);
       healCtx = {
         reason: outcome.reason,
         output: outcome.output,
@@ -1530,7 +1587,7 @@ export class Runner {
 
   private async decideContinuation(
     task: TaskRow,
-    run: RunRow,
+    run: AttemptRow,
     workspace: Awaited<ReturnType<NonNullable<RunnerOptions['getWorkspace']>>>,
   ): Promise<DeterministicContinuation> {
     const now = Date.now();
@@ -1550,13 +1607,14 @@ export class Runner {
     });
   }
 
-  private async condensedContext(run: RunRow): Promise<string | null> {
+  private async condensedContext(run: AttemptRow): Promise<string | null> {
     if (run.sessionRowId === null) return null;
     const session = await this.sessionStore.get(run.sessionRowId).catch(() => null);
     if (!session) return null;
-    const current = await this.runStore.get(run.id);
-    const attempt = await this.attemptFor(run);
-    const events = await this.attempts.listEvents(attempt.id);
+    // `run` already identifies the specific Attempt (the live one, or a prior
+    // one from an earlier resume cycle) — no separate "current attempt" lookup.
+    const current = await this.attempts.get(run.id);
+    const events = await this.attempts.listEvents(run.id);
     return [
       '## Prior session (condensed)',
       'This attempt starts a fresh Session under the deterministic continuation rule.',
@@ -1797,10 +1855,10 @@ export class Runner {
    */
   private mergePolicyDeps(
     task: TaskRow,
-    run: RunRow,
+    run: AttemptRow,
     record: (type: 'lifecycle', payload: unknown) => void,
     signal: AbortSignal,
-    patch: Partial<RunRow>,
+    patch: Partial<AttemptRow>,
   ): MergePolicyDeps {
     return {
       resolveConflictTurn: async (ctx) => {
@@ -1840,7 +1898,7 @@ export class Runner {
         );
         if (commands.length === 0) return { pass: true, output: '' };
         mkdirSync(this.worktreesDir, { recursive: true });
-        const timelineAttempt = await this.attemptFor(run);
+        const timelineAttempt = await this.attemptFor(task);
         for (const command of commands) {
           const attempt = await runCommandVerifier({
             repoDir: baseDir,
@@ -1873,7 +1931,7 @@ export class Runner {
    * an escalated merge to a failed effect (the ticket stays escalated for the
    * operator) and settles the success under `operator-accept`.
    */
-  async mergeAcceptedBranch(task: TaskRow, run: RunRow): Promise<MergePolicyOutcome> {
+  async mergeAcceptedBranch(task: TaskRow, run: AttemptRow): Promise<MergePolicyOutcome> {
     const record = (type: 'lifecycle', payload: unknown) => this.recordRunEvent(task, run, type, payload);
     const deps: MergePolicyDeps = {
       // A fresh, never-aborted signal: an operator Accept is a request the
@@ -1885,16 +1943,26 @@ export class Runner {
       // escalated Run.
       escalate: async () => {},
     };
-    const outcome = await runMergePolicy(
-      {
-        baseDir: task.workingDir,
-        baseBranch: run.baseBranch!,
-        taskBranch: run.branch!,
-        conflictResolveTurns: task.conflictResolveTurns,
-        postMergeCheck: this.getConfig().merge.postMergeCheck,
-      },
-      deps,
-    );
+    // Operator Accept runs from an HTTP handler with no ambient drive operation,
+    // so establish one — otherwise runMergePolicy's `harmonic.merge` child span
+    // (startActiveChildOperation) is dropped and the Accept merge isn't
+    // observable keyed to the Attempt (ADR-0010, #290).
+    const operation = startOperation({ type: 'attempt', attributes: { 'task.id': task.id, 'run.id': run.id } });
+    const outcome = await operation
+      .run(async () =>
+        runMergePolicy(
+          {
+            baseDir: task.workingDir,
+            baseBranch: run.baseBranch!,
+            taskBranch: run.branch!,
+            conflictResolveTurns: task.conflictResolveTurns,
+            postMergeCheck: this.getConfig().merge.postMergeCheck,
+            spanAttributes: { 'task.id': task.id, 'run.id': run.id },
+          },
+          deps,
+        ),
+      )
+      .finally(() => operation.end());
     // Record the same merged/escalated lifecycle event the automated path does,
     // so an operator Accept's merge is legible on the Run timeline (ADR-0010).
     if (outcome.kind === 'merged') {
@@ -1919,17 +1987,12 @@ export class Runner {
    */
   private recordRunEvent(
     task: TaskRow,
-    run: RunRow,
+    run: AttemptRow,
     type: 'permission_request' | 'lifecycle',
     payload: unknown,
   ): void {
     (async () => {
-      const attempt = await this.attempts.getForTaskNumber(task.id, run.attempt);
-      if (!attempt) {
-        logger.debug(`task ${task.id} run ${run.id}: dropped ${type} event — attempt row gone (racing delete)`);
-        return;
-      }
-      const event = await this.attempts.appendEvent(attempt.id, { type, payload });
+      const event = await this.attempts.appendEvent(run.id, { type, payload });
       this.events.onRunEvent?.(event);
     })().catch((err: unknown) => {
       if (isForeignKeyViolation(err)) {
@@ -1953,11 +2016,11 @@ export class Runner {
    */
   private async driveOnce(
     task: TaskRow,
-    run: RunRow,
+    run: AttemptRow,
     harness: HarnessConfig,
     parent: SpanContext,
     healCtx?: HealContext,
-    attemptNumber = run.attempt,
+    attemptNumber = run.number,
   ): Promise<TurnOutcome> {
     const record = (type: 'permission_request' | 'lifecycle', payload: unknown) => {
       this.recordRunEvent(task, run, type, payload);
@@ -2029,7 +2092,7 @@ export class Runner {
     try {
       workspace = await this.prepareWorkspace(task, run, healCtx !== undefined);
       if (opensAttempt && workspace.worktree) {
-        const baseBranch = (await this.runStore.get(run.id)).baseBranch ?? await this.resolveBaseBranch(task);
+        const baseBranch = (await this.attempts.get(run.id)).baseBranch ?? await this.resolveBaseBranch(task);
         const rebase = await this.runRebaseTask(task, attemptNumber, run.startedAt, workspace.worktree.path, baseBranch);
         if (!rebase.ok) {
           if (!rebase.conflict) throw new Error(`rebase onto ${baseBranch} failed: ${rebase.detail}`);
@@ -2144,7 +2207,7 @@ export class Runner {
       } catch {
         // Revocation is best-effort; keys also die with the database row.
       }
-      await this.finalizeWorkspace(task, run, workspace).catch(() => {});
+      await this.finalizeWorkspace(task, run, attemptNumber, workspace).catch(() => {});
     };
 
     const driver = new AcpDriver(child, {
@@ -2221,7 +2284,6 @@ export class Runner {
     const active: ActiveRun = {
       runId: run.id,
       taskId: task.id,
-      attemptId: attemptAtStart.id,
       child,
       driver,
       harnessId: task.harness,
@@ -2255,7 +2317,7 @@ export class Runner {
     // Escalation, never a direct settle, never a new terminal state.
     let guardrailTimer: ReturnType<typeof setTimeout> | null = null;
     const armGuardrail = async () => {
-      const started = await this.runStore.get(run.id);
+      const started = await this.attempts.get(run.id);
       const budget = started.guardrailConfig
         ? (JSON.parse(started.guardrailConfig) as ResolvedGuardrails).budget
         : null;
@@ -2271,9 +2333,9 @@ export class Runner {
       guardrailTimer = setTimeout(async () => {
         guardrailTimer = null;
         if (active.externallySettled) return; // already ended some other way
-        const now = await this.runStore.get(run.id);
+        const now = await this.attempts.get(run.id);
         if (now.state !== 'running') return; // settled/terminal — nothing to trip
-        const stepType = await this.attempts.currentStepType(task.id, run.attempt);
+        const stepType = await this.attempts.currentStepType(task.id, attemptNumber);
         if (!stepType) return; // Attempt has reached merging, which never charges execution time.
         // Step-scoped (issue #127, reliability-design Unit A): a trip only
         // counts while a Step is actively running. `now - startedAt` is the
@@ -2286,7 +2348,7 @@ export class Runner {
         const trip = wallClockTrip({ elapsedMs: Date.now() - now.startedAt, stepType, budget });
         if (!trip) return; // fired with no Step running, or not actually over budget
         // Structured evidence first — the card reason derives from this row.
-        const tripAttempt = await this.attemptFor(now);
+        const tripAttempt = await this.attemptFor(task);
         await this.guardrailEvents.append(tripAttempt.id, {
           dimension: trip.dimension,
           limitValue: trip.limitMs,
@@ -2319,7 +2381,7 @@ export class Runner {
     // path as every other Guardrail dimension.
     let spendTimer: ReturnType<typeof setInterval> | null = null;
     const tripSpend = async (
-      now: RunRow,
+      now: AttemptRow,
       event: {
         dimension: 'tokens' | 'cost';
         limitValue: number;
@@ -2329,7 +2391,7 @@ export class Runner {
       },
       reason: string,
     ) => {
-      const tripAttempt = await this.attemptFor(now);
+      const tripAttempt = await this.attemptFor(task);
       await this.guardrailEvents.append(tripAttempt.id, event);
       record('lifecycle', { event: 'guardrail-tripped', dimension: event.dimension, reason });
       active.externallySettled = true;
@@ -2342,7 +2404,7 @@ export class Runner {
       }
     };
     const armSpendGuardrail = async () => {
-      const started = await this.runStore.get(run.id);
+      const started = await this.attempts.get(run.id);
       const budget = started.guardrailConfig
         ? (JSON.parse(started.guardrailConfig) as ResolvedGuardrails).budget
         : null;
@@ -2364,9 +2426,9 @@ export class Runner {
         void (async () => {
           try {
             if (active.externallySettled) return;
-            const now = await this.runStore.get(run.id);
+            const now = await this.attempts.get(run.id);
             if (now.state !== 'running') return;
-            const stepType = await this.attempts.currentStepType(task.id, now.attempt);
+            const stepType = await this.attempts.currentStepType(task.id, attemptNumber);
             const snap = await this.sampleSnapshot(run.id);
             const observedTokens = snap ? totalTokensOf(snap.usage) : null;
             const cost = snap ? costOfUsages([snap.usage], priceTable) : null;
@@ -2453,7 +2515,7 @@ export class Runner {
     //     is first-writer-wins: whichever settles first decides the primary
     //     reason, and the second's settle no-ops — no dimension-priority table
     //     needed.
-    const progressStart = await this.runStore.get(run.id);
+    const progressStart = await this.attempts.get(run.id);
     const progressSnapshot = progressStart.guardrailConfig
       ? (JSON.parse(progressStart.guardrailConfig) as ResolvedGuardrails)
       : null;
@@ -2476,11 +2538,11 @@ export class Runner {
     // can race an in-flight turn); the boundary stall path passes it too and it
     // is a harmless no-op when nothing is in flight.
     const tripProgressGuardrail = async (
-      now: RunRow,
+      now: AttemptRow,
       evidence: { dimension: 'progress' | 'tool-timeout'; limitValue: number; observedValue: number; payload: unknown },
       reason: string,
     ) => {
-      const tripAttempt = await this.attemptFor(now);
+      const tripAttempt = await this.attemptFor(task);
       await this.guardrailEvents.append(tripAttempt.id, {
         dimension: evidence.dimension,
         limitValue: evidence.limitValue,
@@ -2525,11 +2587,11 @@ export class Runner {
       const period = Math.max(1_000, Math.min(toolTimeoutMs, 30_000));
       toolTimeoutTimer = setInterval(async () => {
         if (active.externallySettled) return;
-        const now = await this.runStore.get(run.id);
+        const now = await this.attempts.get(run.id);
         if (now.state !== 'running') return;
         // Only a counted Step type counts (reliability-design Unit A) — the
         // same Step scoping as the wall-clock budget.
-        if (!countsTowardExecutionBudget(await this.attempts.currentStepType(task.id, now.attempt))) return;
+        if (!countsTowardExecutionBudget(await this.attempts.currentStepType(task.id, attemptNumber))) return;
         let oldest: { id: string; startedAt: number; title: string | null } | null = null;
         for (const [id, t] of outstandingTools) {
           if (!oldest || t.startedAt < oldest.startedAt) oldest = { id, startedAt: t.startedAt, title: t.title };
@@ -2589,7 +2651,7 @@ export class Runner {
       // (drained from the queue) and a turn has run — otherwise the same
       // pre-nudge tail would trip before the agent ever saw the nudge.
       if (active.steerQueue.length > 0) return false;
-      const now = await this.runStore.get(run.id);
+      const now = await this.attempts.get(run.id);
       if (now.state !== 'running') return false;
       await tripProgressGuardrail(
         now,
@@ -2624,7 +2686,7 @@ export class Runner {
       // written *alongside* the Run, so a Session persistence hiccup never fails
       // a dispatch that would otherwise proceed (AC: in-flight Run unchanged).
       const persistSession = async (harnessSessionId: string) => {
-        void this.runStore.update(run.id, { sessionId: harnessSessionId }).catch(() => {});
+        void this.attempts.update(run.id, { sessionId: harnessSessionId }).catch(() => {});
         try {
           const transcriptResolver = adapterFor(task.harness).usage?.resolveTranscriptPath;
           const transcriptPath = await transcriptResolver?.({
@@ -2644,12 +2706,11 @@ export class Runner {
             now: Date.now(),
           });
           sessionRowId = session.id;
-          void this.runStore.update(run.id, { sessionRowId: session.id }).catch(() => {});
+          void this.attempts.update(run.id, { sessionRowId: session.id }).catch(() => {});
           // The timeline decoration must not delay the ACP handshake. A steer
           // can arrive as soon as the session becomes live.
-          void this.attempts.getForTaskNumber(task.id, run.attempt).then(async (attempt) => {
-            if (!attempt) return;
-            const implementation = (await this.attempts.listSteps(attempt.id)).find((row) => row.type === 'implementation' && row.state === 'running');
+          void this.attempts.listSteps(attemptAtStart.id).then(async (steps) => {
+            const implementation = steps.find((row) => row.type === 'implementation' && row.state === 'running');
             if (implementation) await this.attempts.updateStep(implementation.id, { logLocator: `session:${session.id}` });
           }).catch(() => {});
           if (transcriptPath === null && transcriptResolver) {
@@ -2823,7 +2884,7 @@ export class Runner {
       // native or mirrored — without re-deriving a template that may since have
       // changed (the "Prompt" tab reads this column). Steer/continue turns are
       // recorded as lifecycle events, not folded into this initial prompt.
-      await this.runStore.update(run.id, { prompt: promptText });
+      await this.attempts.update(run.id, { prompt: promptText });
       // Session setup can contain awaited persistence work. Keep steering
       // closed until the prompt request is ready to start, otherwise an
       // operator can receive 200 while ACP is idle and miss the running turn.
@@ -2926,7 +2987,7 @@ export class Runner {
         // candidate. Best-effort, mirroring finalizeWorkspace — a commit hiccup
         // must not throw the drive.
         if (workspace.worktree && !workspace.startDirty && (await Git.isDirty(workspace.cwd).catch(() => false))) {
-          await Git.commitAll(workspace.cwd, `harmonic: task ${task.id} run ${run.attempt}`).catch(() => {});
+          await Git.commitAll(workspace.cwd, `harmonic: task ${task.id} run ${attemptNumber}`).catch(() => {});
         }
         // The candidate is the commits the agent added on top of the start
         // commit. In direct mode those already sit on the live base branch
@@ -2938,7 +2999,17 @@ export class Runner {
         ]);
         if (head && head !== base) {
           implementationHead = head;
-          await this.runStore.update(run.id, { candidateOid: head });
+          await this.attempts.update(run.id, { candidateOid: head });
+        } else if (run.candidateOid) {
+          // A corrective turn (direct mode) re-resolves `baseRev` from the
+          // worktree's live HEAD (issue #157) — which, on a resume, is already
+          // the standing candidate a prior Attempt committed. Adding no further
+          // commits this turn then makes `head === base`, but that is not "no
+          // verifiable work": the corrective turn's own gate for reaching here
+          // required a candidate on the outgoing Attempt (ADR-0041), and this
+          // row carried it forward (`drive`'s advance step). Re-verify that
+          // standing candidate rather than reporting a fresh "no candidate".
+          implementationHead = run.candidateOid;
         }
       }
       await finalize();
@@ -2996,7 +3067,7 @@ export class Runner {
           // corrective feedback. `finalize()` already committed this turn's work
           // onto the Run's branch and the candidate ref holds it, so the
           // corrective turn resumes and fixes it.
-          return await this.verificationFailTurn(run, decision, record);
+          return await this.verificationFailTurn(task, decision, record);
         } else if (decision.outcome !== 'proceed') {
           // `escalate` = inconclusive (infra doubt: missing command, crashed or
           // malformed verifier, absent candidate). With no candidate there is
@@ -3004,13 +3075,13 @@ export class Runner {
           // so the Task surfaces with a null candidate (Accept 409s on it). With
           // a candidate, infra doubt consumes the same bounded Attempt loop as
           // an actionable fail.
-          if ((await this.runStore.get(run.id)).candidateOid == null) {
+          if ((await this.attempts.get(run.id)).candidateOid == null) {
             const reason = `verification ${decision.outcome}: ${decision.reason}`;
             record('lifecycle', { event: 'escalated', reason });
             await this.settleEscalated(task, run, reason, patch);
             return { kind: 'terminal' };
           }
-          return await this.verificationFailTurn(run, decision, record);
+          return await this.verificationFailTurn(task, decision, record);
         } else {
           // An afk Run that ended WITHOUT finish_task merges only on an AFFIRMATIVE
           // verifier pass — a real verifier ran and passed against a real candidate.
@@ -3022,7 +3093,7 @@ export class Runner {
           // unless a verifier vouched for it. A finished Run (finish_task) merges on
           // `proceed` as before; and an early-finished Run WHOSE verifiers pass now
           // merges too — the point of verifying an early-finished Run's work.
-          if (afkUnresolved && (!verifierRan || (await this.runStore.get(run.id)).candidateOid == null)) {
+          if (afkUnresolved && (!verifierRan || (await this.attempts.get(run.id)).candidateOid == null)) {
             record('lifecycle', { event: 'unresolved', reason: 'no finish_task signal and no verifier vouched for the work' });
             return { kind: 'actionable-fail', reason: 'run ended without an execution-complete (finish_task) signal', output: '' };
           }
@@ -3033,7 +3104,7 @@ export class Runner {
           // NORMAL and is never detected/classified — the merge commit reconciles
           // it. The diffstat is snapshotted before the merge (issue #36).
           const diff = await this.diffSnapshotFor(task, run.id);
-          const current = await this.runStore.get(run.id);
+          const current = await this.attempts.get(run.id);
           const worktreeMerge = task.isolationMode === 'worktree';
           const deps = this.mergePolicyDeps(task, run, record, active.verifyAbort.signal, patch);
           // Merge the verified worktree branch via the one merge policy (ADR-0001).
@@ -3089,7 +3160,7 @@ export class Runner {
             return { kind: 'terminal' };
           }
 
-          const outcome = await this.autoDrive!.onCompleted(task, await this.runStore.get(run.id));
+          const outcome = await this.autoDrive!.onCompleted(task, await this.attempts.get(run.id));
           if (outcome === 'escalate') {
             record('lifecycle', { event: 'escalated', reason: 'merge fate could not be applied' });
             await this.settleEscalated(task, run, 'merge fate could not be applied', patch);
@@ -3130,13 +3201,13 @@ export class Runner {
       // An operator cancel/force-complete already settled this Run terminal and
       // SIGKILLed the harness: the exit we caught is that kill, not a failure —
       // never a corrective attempt on a Run that is over.
-      if ((await this.runStore.get(run.id)).state !== 'running') {
-        await this.runStore.update(run.id, patch);
+      if ((await this.attempts.get(run.id)).state !== 'running') {
+        await this.attempts.update(run.id, patch);
         return { kind: 'terminal' };
       }
       // An implementation or harness failure is a failed Attempt too. Keep it
       // inside `drive` so mirrored and native tickets share the cap.
-      await this.runStore.update(run.id, patch);
+      await this.attempts.update(run.id, patch);
       return { kind: 'actionable-fail', reason, output: '' };
     } finally {
       // Disarm the wall-clock watchdog: `driveOnce` is returning, so the
@@ -3164,7 +3235,7 @@ export class Runner {
     if (existing) return existing;
     const active = this.active.get(runId);
     if (!active) return null;
-    const sessionId = (await this.runStore.get(runId)).sessionId;
+    const sessionId = (await this.attempts.get(runId)).sessionId;
     if (!sessionId) return null;
     const collector = adapterFor(active.harnessId).usage;
     if (!collector) return null;
@@ -3281,7 +3352,7 @@ export class Runner {
   /** Usage is decoration on a finished run — never let it fail the run. */
   private async collectUsageSafe(
     task: TaskRow,
-    run: RunRow,
+    run: AttemptRow,
     harness: HarnessConfig,
     workspace: Workspace,
     promptResult: { stopReason?: string; usage?: Record<string, unknown>; _meta?: unknown } | undefined,
@@ -3291,7 +3362,7 @@ export class Runner {
         harnessId: task.harness,
         harness,
         cwd: workspace.cwd,
-        sessionId: (await this.runStore.get(run.id)).sessionId,
+        sessionId: (await this.attempts.get(run.id)).sessionId,
         promptResult,
       });
       if (!usage) return null;
@@ -3314,9 +3385,9 @@ export class Runner {
   private async toolCallsFor(runId: number): Promise<Map<string, number>> {
     const cached = this.toolCallTotals.get(runId);
     if (cached) return cached;
-    const run = await this.runStore.get(runId);
-    const attempt = await this.attemptFor(run);
-    return this.attempts.listToolCalls(attempt.id);
+    // `runId` already IS the Attempt id (ADR-0001 #388 S-G: one execution
+    // ledger, no separate Run identity to resolve through).
+    return this.attempts.listToolCalls(runId);
   }
 
   /**
@@ -3340,7 +3411,7 @@ export class Runner {
    */
   async backfillUsage(): Promise<void> {
     const config = this.getConfig();
-    for (const run of await this.runStore.listUsageBackfillCandidates()) {
+    for (const run of await this.attempts.listUsageBackfillCandidates()) {
       try {
         const task = await this.taskService.get(run.taskId);
         const harness = config.harnesses[task.harness as keyof typeof config.harnesses];
@@ -3361,12 +3432,12 @@ export class Runner {
         const healed: RunUsage = stored?.totals
           ? { ...fresh, totals: stored.totals, source: 'combined' }
           : fresh;
-        await this.runStore.update(run.id, { usage: JSON.stringify(healed) });
+        await this.attempts.update(run.id, { usage: JSON.stringify(healed) });
       } catch {
         // Healing is best-effort; the run keeps its stored usage.
       }
     }
-    await this.runStore.backfillCosts(resolvePrices(config.prices));
+    await this.attempts.backfillCosts(resolvePrices(config.prices));
   }
 
   /** The settled worktree diff's exact revisions and stat. A git failure is
@@ -3375,8 +3446,8 @@ export class Runner {
   private async diffSnapshotFor(
     task: TaskRow,
     runId: number,
-  ): Promise<Pick<RunRow, 'stat' | 'diffBaseOid' | 'diffHeadOid'>> {
-    const run = await this.runStore.get(runId);
+  ): Promise<Pick<AttemptRow, 'stat' | 'diffBaseOid' | 'diffHeadOid'>> {
+    const run = await this.attempts.get(runId);
     if (!run.branch || !run.baseBranch) {
       return { stat: null, diffBaseOid: null, diffHeadOid: null };
     }
@@ -3407,10 +3478,10 @@ export class Runner {
    */
   private async coordinateSettle(
     task: TaskRow,
-    run: RunRow,
+    run: AttemptRow,
     type: DispositionKind,
     projection: SettleProjection,
-    patch: Partial<RunRow> = {},
+    patch: Partial<AttemptRow> = {},
   ): Promise<void> {
     // Snapshot the worktree diff for any terminal settle that didn't already
     // capture it. The merge path snapshots pre-merge (before the base
@@ -3425,23 +3496,21 @@ export class Runner {
     // The coordinator owns the Attempt's terminal state/reason (guarded, and a
     // no-op when a failed verification already closed it with feedback); this
     // just closes out whatever Step was left `running` when the Run settled.
-    const attempt = await this.attempts.getForTaskNumber(task.id, run.attempt);
-    if (attempt) {
-      const timelineSteps = await this.attempts.listSteps(attempt.id);
-      const now = Date.now();
-      await Promise.all(timelineSteps.filter((timelineStep) => timelineStep.state === 'running').map((timelineStep) =>
-        this.attempts.updateStep(timelineStep.id, {
-          state: projection.runState === 'completed' ? 'passed' : 'failed',
-          endedAt: now,
-          verdict: projection.runState === 'completed' ? 'pass' : 'fail',
-        }),
-      ));
-    }
+    // `run` already IS the Attempt being settled — no separate lookup needed.
+    const timelineSteps = await this.attempts.listSteps(run.id);
+    const now = Date.now();
+    await Promise.all(timelineSteps.filter((timelineStep) => timelineStep.state === 'running').map((timelineStep) =>
+      this.attempts.updateStep(timelineStep.id, {
+        state: projection.runState === 'completed' ? 'passed' : 'failed',
+        endedAt: now,
+        verdict: projection.runState === 'completed' ? 'pass' : 'fail',
+      }),
+    ));
     await this.finishRunOperation(run.id);
   }
 
   /** A verified and merged Run: the ticket is done. Only settles a still-working Task — a racing cancel wins. */
-  private async settleAutoCompleted(task: TaskRow, run: RunRow, patch: Partial<RunRow>): Promise<void> {
+  private async settleAutoCompleted(task: TaskRow, run: AttemptRow, patch: Partial<AttemptRow>): Promise<void> {
     await this.coordinateSettle(
       task,
       run,
@@ -3452,7 +3521,7 @@ export class Runner {
   }
 
   /** ADR-0041's one escalation surface: Run failed, Task escalated with the trigger's reason. */
-  private async settleEscalated(task: TaskRow, run: RunRow, reason: string, patch: Partial<RunRow>): Promise<void> {
+  private async settleEscalated(task: TaskRow, run: AttemptRow, reason: string, patch: Partial<AttemptRow>): Promise<void> {
     await this.coordinateSettle(task, run, 'escalate', {
       runState: 'failed',
       taskAction: 'escalate',

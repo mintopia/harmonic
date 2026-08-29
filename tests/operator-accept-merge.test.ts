@@ -83,7 +83,7 @@ describe('operator Accept merge (ADR-0001, issue #383)', () => {
       return t.state === 'escalated' ? t : undefined;
     });
     expect(escalated.escalationReason).toMatch(/attempt 2 of 2 failed/);
-    const verified = (await server.app.ctx.runs.get(runId)).candidateOid;
+    const verified = (await server.app.ctx.attempts.get(runId)).candidateOid;
     expect(verified).toMatch(/^[0-9a-f]{40}$/);
 
     // The base moves non-conflictingly while the ticket sits escalated — the
@@ -236,8 +236,8 @@ describe('escalated worktree Run diff snapshot', () => {
 
       await waitFor(async () => ((await server.app.ctx.tasks.get(task.id)).state === 'escalated' ? true : undefined));
 
-      const settledRun = await server.app.ctx.runs.get(run.id);
-      expect(settledRun.state).toBe('failed');
+      const settledRun = await server.app.ctx.attempts.get(run.id);
+      expect(settledRun.state).toBe('escalated');
       expect(settledRun.branch).not.toBeNull();
       expect(settledRun.stat).toContain(`impl-${trackerRef}.txt`);
       expect(settledRun.diffBaseOid).not.toBeNull();

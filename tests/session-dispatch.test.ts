@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
-import { runs, sessions, workspaces } from '../src/db/schema.js';
+import { attempts, sessions, workspaces } from '../src/db/schema.js';
 
 /**
  * Integration test for issue #141: dispatching a Run persists a durable
@@ -55,7 +55,7 @@ describe('dispatching a Run persists a durable Session (issue #141)', () => {
     // internals aren't on the public Run API — same pattern execution.test.ts
     // uses to read guardrail_events straight off `server.app.ctx.db`). ---
     const asyncDb = server.app.ctx.asyncDb;
-    const runRow = (await asyncDb.read((d) => d.select().from(runs).where(eq(runs.id, runId)).get()))!;
+    const runRow = (await asyncDb.read((d) => d.select().from(attempts).where(eq(attempts.id, runId)).get()))!;
     const workspace = (await asyncDb.read((d) => d.select().from(workspaces).get()))!;
 
     // AC 2: the Run is bound to its Session.

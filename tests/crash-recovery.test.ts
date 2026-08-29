@@ -6,12 +6,11 @@ import { join } from 'node:path';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
-import { RunStore } from '../src/domain/runs.js';
 import { AttemptStore } from '../src/domain/attempts.js';
 import { RunSettleCoordinator } from '../src/domain/run-settle.js';
 import { CrashRecoveryCoordinator } from '../src/domain/crash-recovery.js';
 import { Git } from '../src/execution/git.js';
-import type { TaskRow, RunRow } from '../src/db/schema.js';
+import type { TaskRow, AttemptRow } from '../src/db/schema.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { allWorkspaces, makeSettingsStore } from './helpers.js';
 import { yieldToEventLoop } from '../src/reliability/yield.js';
@@ -50,7 +49,6 @@ describe('CrashRecoveryCoordinator (ADR-0001)', () => {
   let asyncDb: AsyncDbHandle;
   let settingsStore: SettingsStore;
   let tasks: TaskService;
-  let runStore: RunStore;
   let attempts: AttemptStore;
   let settle: RunSettleCoordinator;
 
@@ -60,9 +58,8 @@ describe('CrashRecoveryCoordinator (ADR-0001)', () => {
     asyncDb = await openAsyncDb(dir);
     settingsStore = await makeSettingsStore(dir);
     tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
-    runStore = new RunStore(asyncDb);
     attempts = new AttemptStore(asyncDb);
-    settle = new RunSettleCoordinator(runStore, tasks, attempts);
+    settle = new RunSettleCoordinator(tasks, attempts);
   });
 
   afterEach(async () => {
@@ -75,7 +72,7 @@ describe('CrashRecoveryCoordinator (ADR-0001)', () => {
   /** A worktree-mode Task + Run parked `running` exactly as a crash mid-merge
    * would leave them, with `branch` already merged into `baseBranch` in the
    * real repo (so `Git.isAncestor` says true without any injected seam). */
-  async function seedAlreadyMergedOrphan(): Promise<{ task: TaskRow; run: RunRow; baseBranch: string; branch: string }> {
+  async function seedAlreadyMergedOrphan(): Promise<{ task: TaskRow; run: AttemptRow; baseBranch: string; branch: string }> {
     const baseBranch = 'main';
     const branch = 'run-branch';
     git(repo, 'checkout', '-b', branch);
@@ -85,13 +82,13 @@ describe('CrashRecoveryCoordinator (ADR-0001)', () => {
 
     const created = await tasks.create({ prompt: 'merge me', state: 'ready', workingDir: repo, isolationMode: 'worktree' });
     await tasks.setState(created.id, 'working');
-    const run = await runStore.update((await runStore.create(created.id)).id, { branch, baseBranch });
+    const run = await attempts.update((await attempts.create(created.id)).id, { branch, baseBranch });
     return { task: await tasks.get(created.id), run, baseBranch, branch };
   }
 
   /** A worktree-mode Task + Run parked `running` whose branch was never
    * merged into its base. */
-  async function seedUnmergedOrphan(): Promise<{ task: TaskRow; run: RunRow }> {
+  async function seedUnmergedOrphan(): Promise<{ task: TaskRow; run: AttemptRow }> {
     const baseBranch = 'main';
     const branch = 'never-merged-branch';
     git(repo, 'checkout', '-b', branch);
@@ -100,7 +97,7 @@ describe('CrashRecoveryCoordinator (ADR-0001)', () => {
 
     const created = await tasks.create({ prompt: 'never merged', state: 'ready', workingDir: repo, isolationMode: 'worktree' });
     await tasks.setState(created.id, 'working');
-    const run = await runStore.update((await runStore.create(created.id)).id, { branch, baseBranch });
+    const run = await attempts.update((await attempts.create(created.id)).id, { branch, baseBranch });
     return { task: await tasks.get(created.id), run };
   }
 
@@ -108,14 +105,14 @@ describe('CrashRecoveryCoordinator (ADR-0001)', () => {
     const { task, run, baseBranch } = await seedAlreadyMergedOrphan();
     const baseTip = await Git.revParse(repo, baseBranch);
     const runPostMergeCheck = vi.fn(async () => ({ pass: true, output: '' }));
-    const coord = new CrashRecoveryCoordinator(runStore, tasks, settle, { runPostMergeCheck });
+    const coord = new CrashRecoveryCoordinator(attempts, tasks, settle, { runPostMergeCheck });
 
     await coord.reconcile();
 
     expect(runPostMergeCheck).toHaveBeenCalledTimes(1);
     expect(runPostMergeCheck).toHaveBeenCalledWith({ task: expect.objectContaining({ id: task.id }), run: expect.objectContaining({ id: run.id }), mergeOid: baseTip, baseDir: repo });
-    const settled = await runStore.get(run.id);
-    expect(settled.state).toBe('completed');
+    const settled = await attempts.get(run.id);
+    expect(settled.state).toBe('passed');
     expect((await tasks.get(task.id)).state).toBe('done');
     // The base tip is untouched (no revert): still the merge commit.
     expect(await Git.revParse(repo, baseBranch)).toBe(baseTip);
@@ -123,20 +120,20 @@ describe('CrashRecoveryCoordinator (ADR-0001)', () => {
     // Idempotent: a second reconcile finds nothing `running` for this Run.
     await coord.reconcile();
     expect(runPostMergeCheck).toHaveBeenCalledTimes(1);
-    expect((await runStore.get(run.id)).state).toBe('completed');
+    expect((await attempts.get(run.id)).state).toBe('passed');
   });
 
   it('reverts a crashed merge whose post-merge check now fails, and escalates the task — idempotently on a second reconcile', async () => {
     const { task, run, baseBranch } = await seedAlreadyMergedOrphan();
     const preRevertTip = await Git.revParse(repo, baseBranch);
     const runPostMergeCheck = vi.fn(async () => ({ pass: false, output: 'lint failed: feature.txt' }));
-    const coord = new CrashRecoveryCoordinator(runStore, tasks, settle, { runPostMergeCheck });
+    const coord = new CrashRecoveryCoordinator(attempts, tasks, settle, { runPostMergeCheck });
 
     await coord.reconcile();
 
     expect(runPostMergeCheck).toHaveBeenCalledTimes(1);
-    const settled = await runStore.get(run.id);
-    expect(settled.state).toBe('failed');
+    const settled = await attempts.get(run.id);
+    expect(settled.state).toBe('escalated');
     expect((await tasks.get(task.id))).toMatchObject({
       state: 'escalated',
       escalationReason: expect.stringContaining('post-merge check failed after restart'),
@@ -159,40 +156,40 @@ describe('CrashRecoveryCoordinator (ADR-0001)', () => {
   it('leaves a crashed worktree Run whose branch never landed as an ordinary interrupted orphan, never consulting the post-merge check', async () => {
     const { run } = await seedUnmergedOrphan();
     const runPostMergeCheck = vi.fn(async () => ({ pass: true, output: '' }));
-    const coord = new CrashRecoveryCoordinator(runStore, tasks, settle, { runPostMergeCheck });
+    const coord = new CrashRecoveryCoordinator(attempts, tasks, settle, { runPostMergeCheck });
 
     await coord.reconcile();
 
     expect(runPostMergeCheck).not.toHaveBeenCalled();
-    const interrupted = await runStore.get(run.id);
+    const interrupted = await attempts.get(run.id);
     expect(interrupted.state).toBe('failed');
-    expect(interrupted.reason).toBe('interrupted');
+    expect(interrupted.reason).toBe('process-death');
   });
 
   it('marks a generic (non-worktree) interrupted Run interrupted, never consulting the post-merge check or git', async () => {
     const created = await tasks.create({ prompt: 'direct mode', state: 'ready', workingDir: repo, isolationMode: 'direct' });
     await tasks.setState(created.id, 'working');
-    const run = await runStore.create(created.id);
+    const run = await attempts.create(created.id);
     const runPostMergeCheck = vi.fn(async () => ({ pass: true, output: '' }));
-    const coord = new CrashRecoveryCoordinator(runStore, tasks, settle, { runPostMergeCheck });
+    const coord = new CrashRecoveryCoordinator(attempts, tasks, settle, { runPostMergeCheck });
 
     await coord.reconcile();
 
     expect(runPostMergeCheck).not.toHaveBeenCalled();
-    expect(await runStore.get(run.id)).toMatchObject({ state: 'failed', reason: 'interrupted' });
+    expect(await attempts.get(run.id)).toMatchObject({ state: 'failed', reason: 'process-death' });
   });
 
   it('uses the injected isMerged seam instead of spawning git when supplied', async () => {
     const { run } = await seedUnmergedOrphan(); // really unmerged in git
     const isMerged = vi.fn(async () => true); // but the seam claims merged
     const runPostMergeCheck = vi.fn(async () => ({ pass: true, output: '' }));
-    const coord = new CrashRecoveryCoordinator(runStore, tasks, settle, { runPostMergeCheck, isMerged });
+    const coord = new CrashRecoveryCoordinator(attempts, tasks, settle, { runPostMergeCheck, isMerged });
 
     await coord.reconcile();
 
     expect(isMerged).toHaveBeenCalledWith(repo, 'main', 'never-merged-branch');
     expect(runPostMergeCheck).toHaveBeenCalledTimes(1); // the seam, not git, decided
-    expect((await runStore.get(run.id)).state).toBe('completed');
+    expect((await attempts.get(run.id)).state).toBe('passed');
   });
 
   it('yields while reconciling a large backlog of running orphans', async () => {
@@ -202,12 +199,12 @@ describe('CrashRecoveryCoordinator (ADR-0001)', () => {
     for (let i = 0; i < 25; i++) {
       const created = await tasks.create({ prompt: `orphan ${i}`, state: 'ready', workingDir: repo, isolationMode: 'worktree' });
       await tasks.setState(created.id, 'working');
-      await runStore.update((await runStore.create(created.id)).id, { branch: 'main', baseBranch: 'main' });
+      await attempts.update((await attempts.create(created.id)).id, { branch: 'main', baseBranch: 'main' });
     }
     let tick = 0;
     let yields = 0;
     const order: string[] = [];
-    const coord = new CrashRecoveryCoordinator(runStore, tasks, settle, {
+    const coord = new CrashRecoveryCoordinator(attempts, tasks, settle, {
       runPostMergeCheck: async () => ({ pass: true, output: '' }),
       yieldOptions: {
         budgetMs: 0,
@@ -227,6 +224,6 @@ describe('CrashRecoveryCoordinator (ADR-0001)', () => {
     expect(yields).toBeGreaterThan(0);
     expect(order.indexOf('immediate')).toBeGreaterThanOrEqual(0);
     expect(order.indexOf('immediate')).toBeLessThan(order.indexOf('done'));
-    expect((await runStore.listAllRunning())).toHaveLength(0);
+    expect((await attempts.listAllRunning())).toHaveLength(0);
   });
 });

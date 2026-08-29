@@ -21,7 +21,6 @@ import type { AppConfig, DeepPartial } from '../config.js';
 import { ConfigStore } from './config-store.js';
 import { SettingsStore } from './settings-store.js';
 import { TaskService } from '../domain/tasks.js';
-import { RunStore } from '../domain/runs.js';
 import { AttemptStore } from '../domain/attempts.js';
 import { ConversationStore } from '../domain/conversations.js';
 import { WorkspaceService } from '../domain/workspaces.js';
@@ -37,7 +36,7 @@ import { Git } from '../execution/git.js';
 import { GuardrailEventStore } from '../domain/guardrail-events.js';
 import { VerificationAttemptStore } from '../domain/verification-attempts.js';
 import type { MergeEffectExec } from '../domain/merge.js';
-import type { TaskRow, RunRow } from '../db/schema.js';
+import type { TaskRow, AttemptRow } from '../db/schema.js';
 import { CrashRecoveryCoordinator } from '../domain/crash-recovery.js';
 import { resolveVerifiers } from '../domain/setting-override.js';
 import { runCommandVerifier, commandAttemptToInput } from '../verification/command-verifier.js';
@@ -208,7 +207,6 @@ export interface AppContext {
   configStore: ConfigStore;
   workspaces: WorkspaceService;
   tasks: TaskService;
-  runs: RunStore;
   attempts: AttemptStore;
   sessions: SessionStore;
   runner: Runner;
@@ -279,7 +277,6 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     (event, task) => void notifier.notify(event, task).catch(() => {}),
     (id) => bus.emit('task_removed', { id }),
   );
-  const runs = new RunStore(asyncDb);
   const attempts = new AttemptStore(asyncDb);
   const guardrailEvents = new GuardrailEventStore(asyncDb);
   const verificationAttempts = new VerificationAttemptStore(asyncDb);
@@ -319,7 +316,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   const sessionStore = new SessionStore(asyncDb);
   const sessionRetirement = new SessionRetirementCoordinator(
     sessionStore,
-    runs,
+    attempts,
     (repoDir, worktreePath) =>
       Git.removeWorktree(repoDir, worktreePath)
         // Reap the worktree's jCodeMunch index once its files are gone (no-op if
@@ -368,7 +365,6 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     },
   );
   const operatorSettle = new RunSettleCoordinator(
-    runs,
     tasks,
     attempts,
     (run) => {
@@ -390,7 +386,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     baseDir,
   }: {
     task: TaskRow;
-    run: RunRow;
+    run: AttemptRow;
     mergeOid: string;
     baseDir: string;
   }) => {
@@ -401,10 +397,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     );
     if (commands.length === 0) return { pass: true, output: '' };
     mkdirSync(worktreesDir, { recursive: true });
-    // `verification_attempts` is keyed off `attempt_id`, not `run_id`
-    // (ADR-0001 #388 S-F) — resolve the Run's current Attempt once, up front.
-    const timelineAttempt = await attempts.getForTaskNumber(task.id, run.attempt);
-    if (!timelineAttempt) throw new DomainError('not_found', `attempt ${run.attempt} for task ${task.id} not found`);
+    // `run` IS the Attempt now (ADR-0001 #388 S-G) — no separate lookup needed.
     for (const command of commands) {
       const cmdAttempt = await runCommandVerifier({
         repoDir: baseDir,
@@ -413,7 +406,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
         command,
         attributes: { 'task.id': task.id, 'run.id': run.id },
       });
-      await verificationAttempts.append(timelineAttempt.id, commandAttemptToInput(cmdAttempt));
+      await verificationAttempts.append(run.id, commandAttemptToInput(cmdAttempt));
       if (cmdAttempt.verdict !== 'pass') return { pass: false, output: cmdAttempt.output };
     }
     return { pass: true, output: '' };
@@ -425,7 +418,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // `git merge-base --is-ancestor`) just gets its post-merge check re-run
   // (revert-on-red), and everything still `running` after that is failed
   // "interrupted" — never silently re-run.
-  const crashRecovery = new CrashRecoveryCoordinator(runs, tasks, operatorSettle, {
+  const crashRecovery = new CrashRecoveryCoordinator(attempts, tasks, operatorSettle, {
     runPostMergeCheck: crashRecoveryPostMergeCheck,
     postMerge,
   });
@@ -448,7 +441,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // Run Keys of every non-running run die here — catches keys orphaned by
   // a crash or restart. Conversation Keys can never survive a restart (their
   // warm process is gone), so every one present at boot is orphaned (issue 16).
-  await auth.sweepOrphanedRunKeys();
+  await auth.sweepOrphanedAttemptKeys();
   await auth.sweepOrphanedConversationKeys();
   // A Conversation cannot survive a restart — its warm harness is gone — so
   // any still marked active is ended; its transcript survives read-only (issue 15).
@@ -480,7 +473,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // call), then a mirrored Task's ticket close (`ticket-close`, idempotent via
   // the closed-state read). Empty for a direct-mode native Task — "no effects
   // -> straight merge". Crash recovery re-applies the same effects.
-  const mergeEffectsFor = (task: TaskRow, run: RunRow): MergeEffectExec[] => {
+  const mergeEffectsFor = (task: TaskRow, run: AttemptRow): MergeEffectExec[] => {
     const effects: MergeEffectExec[] = [];
     if (task.trackerRef != null) {
       effects.push({
@@ -524,7 +517,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // skips a Task whose base repo is in the resulting backoff window), so a
   // doomed context is escalated/backed off instead of being re-spawned forever.
   const gitBreaker = new GitCircuitBreaker();
-  const runner = new Runner(runs, tasks, asyncDb, () => configStore.get(), {
+  const runner = new Runner(tasks, asyncDb, () => configStore.get(), {
     events: {
       onRunEvent: (event) => bus.emit('run_event', event),
       onRunLogEvent: (event) => bus.emitRunLog(event),
@@ -548,8 +541,8 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     // retirement hook so those Sessions retire too (issue #148).
     sessionRetirement,
     keys: {
-      mint: async (runId) => (await auth.createKey(`run-${runId}`, { scope: 'run', runId })).token,
-      revoke: (runId) => auth.deleteKeysForRun(runId),
+      mint: async (attemptId) => (await auth.createKey(`attempt-${attemptId}`, { scope: 'attempt', attemptId })).token,
+      revoke: (attemptId) => auth.deleteKeysForAttempt(attemptId),
     },
     autoDrive,
     // The critic's `{url}` interpolation token (same resolver AutoDrive uses);
@@ -564,7 +557,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // Heal runs whose usage collection raced the harness's log flush —
   // their session logs are settled on disk by now.
   await runner.backfillUsage();
-  const escalation = new EscalationService(runs, tasks, operatorSettle, mergeEffectsFor, {
+  const escalation = new EscalationService(attempts, tasks, operatorSettle, mergeEffectsFor, {
     resume: (task, guidance, startNow) => runner.resumeWithGuidance(task, guidance, startNow),
     cleanup: (task, run) => runner.cleanupClosed(task, run),
   });
@@ -607,7 +600,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   };
   const autoRunner = new AutoRunner(
     tasks,
-    runs,
+    attempts,
     runner,
     () => configStore.get(),
     () => workspaces.list(),
@@ -664,11 +657,11 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     // run them in a fire-and-forget chain so the EventBus listener stays sync.
     void (async () => {
       if ((await tasks.list({ state: 'ready' })).length !== 0) return;
-      if ((await runs.countRunning()) === 0) await notifier.notify('queue.idle');
+      if ((await attempts.countRunning()) === 0) await notifier.notify('queue.idle');
     })().catch(() => {});
   });
 
-  const ctx: AppContext = { asyncDb, statsReader, settingsStore, configStore, workspaces, tasks, runs, attempts, sessions: sessionStore, runner, conversations, conversationDriver, permissionRules, escalation, autoRunner, guardrailEvents, verificationAttempts, trackerManager, scheduler, auth, channels, notifier, bus, flaggedWorktrees };
+  const ctx: AppContext = { asyncDb, statsReader, settingsStore, configStore, workspaces, tasks, attempts, sessions: sessionStore, runner, conversations, conversationDriver, permissionRules, escalation, autoRunner, guardrailEvents, verificationAttempts, trackerManager, scheduler, auth, channels, notifier, bus, flaggedWorktrees };
 
   const app = Fastify({ logger: false }) as unknown as App;
   app.decorate('ctx', ctx);

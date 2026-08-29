@@ -3,15 +3,14 @@ import type { ScheduledJobSnapshot } from '../scheduler/scheduler.js';
 import type { FlaggedWorktree } from '../domain/flagged-worktrees.js';
 import type {
   AttemptRow,
+  AttemptState,
   StepRow,
   StepType,
   ConversationRow,
   ConversationState,
-  RunRow,
-  RunState,
   VerificationAttemptRow,
 } from '../db/schema.js';
-import { attempts, steps, guardrailEvents, attemptEvents, runs, verificationAttempts } from '../db/schema.js';
+import { attempts, steps, guardrailEvents, attemptEvents, verificationAttempts } from '../db/schema.js';
 import { and, desc, eq } from 'drizzle-orm';
 import type { TaskWithDeps } from '../domain/tasks.js';
 import { resolveVerifiers } from '../domain/setting-override.js';
@@ -157,19 +156,19 @@ export async function attemptTimelineToApi(ctx: AppContext, taskId: number): Pro
 /** The configured-or-recorded verifier rows for one Run's always-visible read model. */
 export async function verifierStatusesToApi(
   ctx: AppContext,
-  run: Pick<RunRow, 'id' | 'taskId' | 'attempt'>,
+  run: Pick<AttemptRow, 'id' | 'taskId' | 'number'>,
   recordedAttempts?: readonly VerificationAttemptRow[],
 ): Promise<VerifierStatus[]> {
   const task = await ctx.tasks.get(run.taskId);
   const workspace = await ctx.workspaces.get(atRestWorkspaceId(task.workspaceId));
   const listAttempts = async (): Promise<readonly VerificationAttemptRow[]> => {
     if (recordedAttempts) return recordedAttempts;
-    const attempt = await ctx.attempts.getForTaskNumber(run.taskId, run.attempt);
+    const attempt = await ctx.attempts.getForTaskNumber(run.taskId, run.number);
     return attempt ? ctx.verificationAttempts.list(attempt.id) : [];
   };
   const [attempts, stepType] = await Promise.all([
     listAttempts(),
-    ctx.attempts.currentStepType(run.taskId, run.attempt),
+    ctx.attempts.currentStepType(run.taskId, run.number),
   ]);
   return verifierStatuses({ verifiers: resolveVerifiers(workspace, ctx.configStore.get()), attempts, stepType });
 }
@@ -177,8 +176,6 @@ export async function verifierStatusesToApi(
 type TicketTimelineKind =
   | 'attempt-started'
   | 'attempt-finished'
-  | 'run-started'
-  | 'run-finished'
   | 'lifecycle'
   | 'verification'
   | 'guardrail'
@@ -205,8 +202,7 @@ type PendingTicketTimelineEvent = ApiTicketTimelineEvent & { order: number };
 const TICKET_TIMELINE_SOURCE_LIMIT = 1_000;
 
 export async function ticketTimelineToApi(ctx: AppContext, taskId: number): Promise<{ events: ApiTicketTimelineEvent[] }> {
-  const [taskRuns, taskAttempts, lifecycle, verification, skippedVerification, guardrails] = await Promise.all([
-    ctx.asyncDb.read((db) => db.select().from(runs).where(eq(runs.taskId, taskId)).orderBy(desc(runs.startedAt), desc(runs.id)).limit(TICKET_TIMELINE_SOURCE_LIMIT).all()),
+  const [taskAttempts, lifecycle, verification, skippedVerification, guardrails] = await Promise.all([
     ctx.asyncDb.read((db) => db.select().from(attempts).where(eq(attempts.taskId, taskId)).orderBy(desc(attempts.startedAt), desc(attempts.id)).limit(TICKET_TIMELINE_SOURCE_LIMIT).all()),
     ctx.asyncDb.read((db) => db.select({ event: attemptEvents }).from(attemptEvents).innerJoin(attempts, eq(attemptEvents.attemptId, attempts.id)).where(and(eq(attempts.taskId, taskId), eq(attemptEvents.type, 'lifecycle'))).orderBy(desc(attemptEvents.ts), desc(attemptEvents.id)).limit(TICKET_TIMELINE_SOURCE_LIMIT).all()),
     ctx.asyncDb.read((db) => db.select({ attempt: verificationAttempts }).from(verificationAttempts).innerJoin(attempts, eq(verificationAttempts.attemptId, attempts.id)).where(eq(attempts.taskId, taskId)).orderBy(desc(verificationAttempts.ts), desc(verificationAttempts.id)).limit(TICKET_TIMELINE_SOURCE_LIMIT).all()),
@@ -217,38 +213,28 @@ export async function ticketTimelineToApi(ctx: AppContext, taskId: number): Prom
   const workspace = await ctx.workspaces.get(atRestWorkspaceId(task.workspaceId));
   const configuredVerifiers = resolveVerifiers(workspace, ctx.configStore.get());
   const attemptsByNumber = new Map<number, AttemptRow>(taskAttempts.map((a) => [a.number, a]));
-  const attemptsById = new Map<number, AttemptRow>(taskAttempts.map((a) => [a.id, a]));
-  const runByAttemptNumber = new Map(taskRuns.map((run) => [run.attempt, run]));
-  // Grouped by Run (not Attempt id) so the "configured verifier never ran" derived
-  // note below can still ask "did THIS Run's Attempt see this mechanism at all" —
-  // a verification attempt whose Attempt number no longer matches any current Run
-  // row (a superseded self-heal round) is excluded from this derived grouping only;
-  // its own raw 'verification' timeline entry (below) is unaffected.
-  const verificationByRun = new Map<number, VerificationAttemptRow[]>();
+  // Grouped by Attempt id (ADR-0001 #388 S-G: Attempt is the single execution
+  // ledger, so the "configured verifier never ran" derived note below asks
+  // "did THIS Attempt see this mechanism at all" directly — no Run bridge).
+  const verificationByAttempt = new Map<number, VerificationAttemptRow[]>();
   for (const { attempt: v } of verification) {
-    const attemptRow = attemptsById.get(v.attemptId);
-    const run = attemptRow ? runByAttemptNumber.get(attemptRow.number) : undefined;
-    if (!run) continue;
-    const rows = verificationByRun.get(run.id) ?? [];
+    const rows = verificationByAttempt.get(v.attemptId) ?? [];
     rows.push(v);
-    verificationByRun.set(run.id, rows);
+    verificationByAttempt.set(v.attemptId, rows);
   }
   const pending: PendingTicketTimelineEvent[] = [];
   const add = (event: ApiTicketTimelineEvent, order: number) => pending.push({ ...event, order });
 
-  await forEachYielding(taskRuns, async (run) => {
-    const attemptId = attemptsByNumber.get(run.attempt)?.id ?? null;
-    add({ attemptId, ts: run.startedAt, kind: 'run-started', data: { attempt: run.attempt, state: run.state } }, 0);
-    for (const status of verifierStatuses({ verifiers: configuredVerifiers, attempts: verificationByRun.get(run.id) ?? [] })) {
+  await forEachYielding(taskAttempts, async (attempt) => {
+    for (const status of verifierStatuses({ verifiers: configuredVerifiers, attempts: verificationByAttempt.get(attempt.id) ?? [] })) {
       if (status.state !== 'disabled') continue;
       add({
-        attemptId,
-        ts: run.finishedAt ?? run.startedAt,
+        attemptId: attempt.id,
+        ts: attempt.endedAt ?? attempt.startedAt,
         kind: 'verification',
         data: { outcome: 'disabled', mechanism: status.mechanism, reason: status.reason, derived: true },
       }, 2);
     }
-    if (run.finishedAt !== null) add({ attemptId, ts: run.finishedAt, kind: 'run-finished', data: { attempt: run.attempt, state: run.state, reason: run.reason } }, 7);
   });
   await forEachYielding(taskAttempts, async (attempt) => {
     add({ attemptId: attempt.id, ts: attempt.startedAt, kind: 'attempt-started', data: { attempt: attempt.number, state: attempt.state } }, 0);
@@ -329,14 +315,72 @@ export const operationEventToApi = (event: OperationEvent): ApiOperationEvent =>
   operation: operationToApi(event.operation),
 });
 
-export type ApiRun = Omit<RunRow, 'usage' | 'liveUsage' | 'cost'> & { usage: RunUsage | null; cost: Cost | null };
+/**
+ * The public "Run" wire shape (unchanged by the internal Run→Attempt fold,
+ * ADR-0001 #388 S-G): `runToApi` translates an `AttemptRow` onto it rather
+ * than exposing the row raw, so `attempt`/`finishedAt`/the 4-value `state`
+ * stay stable for REST/WS consumers across the store consolidation.
+ */
+export type ApiRun = {
+  id: number;
+  taskId: number;
+  attempt: number;
+  state: 'running' | 'completed' | 'failed' | 'cancelled';
+  reason: string | null;
+  stopReason: string | null;
+  sessionId: string | null;
+  sessionRowId: number | null;
+  prompt: string | null;
+  branch: string | null;
+  baseBranch: string | null;
+  diffBaseOid: string | null;
+  diffHeadOid: string | null;
+  stat: string | null;
+  candidateOid: string | null;
+  candidateRef: string | null;
+  usage: RunUsage | null;
+  cost: Cost | null;
+  startedAt: number;
+  finishedAt: number | null;
+};
 
-export function runToApi(_ctx: AppContext, run: RunRow): ApiRun {
-  const usage = parseUsage(run.usage);
-  // liveUsage is the Activity view's live/persisted snapshot, streamed as a
-  // `run_usage` firehose event — not part of the run's REST shape.
-  const { liveUsage, ...rest } = run;
-  return { ...rest, usage, cost: parseCost(run.cost) };
+/** An Attempt's `state` collapsed onto the Run wire vocabulary: `passed` reads
+ * as `completed`, and `escalated` (an Attempt-only state — Runs never held it)
+ * reads as the generic `failed` a Run always settled as when its Attempt was
+ * hedged to a human, matching pre-fold behaviour exactly. */
+function apiRunState(state: AttemptState): ApiRun['state'] {
+  if (state === 'passed') return 'completed';
+  if (state === 'escalated') return 'failed';
+  return state;
+}
+
+export function runToApi(_ctx: AppContext, run: AttemptRow): ApiRun {
+  return {
+    id: run.id,
+    taskId: run.taskId,
+    attempt: run.number,
+    state: apiRunState(run.state),
+    // The wire `reason` is the free-text detail (`runs.reason` before the
+    // fold) — `attempts.detail` now — falling back to the structured
+    // disposition kind (`attempts.reason`) when a disposition carries no
+    // extra detail beyond its kind (e.g. plain `process-death`).
+    reason: run.detail ?? run.reason,
+    stopReason: run.stopReason,
+    sessionId: run.sessionId,
+    sessionRowId: run.sessionRowId,
+    prompt: run.prompt,
+    branch: run.branch,
+    baseBranch: run.baseBranch,
+    diffBaseOid: run.diffBaseOid,
+    diffHeadOid: run.diffHeadOid,
+    stat: run.stat,
+    candidateOid: run.candidateOid,
+    candidateRef: run.candidateRef,
+    usage: parseUsage(run.usage),
+    cost: parseCost(run.cost),
+    startedAt: run.startedAt,
+    finishedAt: run.endedAt,
+  };
 }
 
 /** The firehose shape of a live-usage snapshot (ADR 0010): the persisted
@@ -421,9 +465,9 @@ export function summarize(prompt: string): string {
 
 /** A task's Cost sums ALL its runs — retries and failed attempts included. */
 export async function taskToApi(ctx: AppContext, task: TaskWithDeps): Promise<ApiTask> {
-  const runs = await ctx.runs.listForTask(task.id);
+  const runs = await ctx.attempts.listForTask(task.id);
   const running = task.state === 'working' ? runs.find((r) => r.state === 'running') : undefined;
-  const currentStep = running ? await ctx.attempts.currentStepType(task.id, running.attempt) : null;
+  const currentStep = running ? await ctx.attempts.currentStepType(task.id, running.number) : null;
   return taskToApiWithRuns(ctx, task, runs, running ? await runningToolCount(ctx, running) : null, currentStep);
 }
 
@@ -432,8 +476,8 @@ export async function taskToApi(ctx: AppContext, task: TaskWithDeps): Promise<Ap
  * `summary`, so no list surface carries the whole prompt. */
 export async function tasksToApi(ctx: AppContext, tasks: TaskWithDeps[]): Promise<ApiTaskListRow[]> {
   if (tasks.length === 0) return [];
-  const runsByTask = new Map(tasks.map((task) => [task.id, [] as RunRow[]]));
-  for (const run of await ctx.runs.listForTasks(tasks.map((task) => task.id))) runsByTask.get(run.taskId)?.push(run);
+  const runsByTask = new Map(tasks.map((task) => [task.id, [] as AttemptRow[]]));
+  for (const run of await ctx.attempts.listForTasks(tasks.map((task) => task.id))) runsByTask.get(run.taskId)?.push(run);
   const running = tasks.flatMap((task) => {
     const run = task.state === 'working' ? runsByTask.get(task.id)?.find((candidate) => candidate.state === 'running') : undefined;
     return run ? [run] : [];
@@ -442,10 +486,10 @@ export async function tasksToApi(ctx: AppContext, tasks: TaskWithDeps[]): Promis
   // each running Run's current Attempt id first, then batch the tool-call totals
   // by Attempt — `toolCountByTask` re-keys the result back onto the Task id every
   // list-row render already has to hand.
-  const attemptIdByTask = await ctx.attempts.idsFor(running.map((run) => ({ taskId: run.taskId, number: run.attempt })));
+  const attemptIdByTask = await ctx.attempts.idsFor(running.map((run) => ({ taskId: run.taskId, number: run.number })));
   const [toolCountsByAttempt, currentSteps] = await Promise.all([
     ctx.attempts.toolCallCounts([...attemptIdByTask.values()]),
-    ctx.attempts.currentStepTypes(running.map((run) => ({ taskId: run.taskId, number: run.attempt }))),
+    ctx.attempts.currentStepTypes(running.map((run) => ({ taskId: run.taskId, number: run.number }))),
   ]);
   return tasks.map((task) => {
     const runs = runsByTask.get(task.id) ?? [];
@@ -483,12 +527,12 @@ function stripTrackerFactCols(task: TaskWithDeps): Omit<TaskWithDeps, TrackerFac
 /** The ref an operator Accept would merge: a worktree Run's branch once it has a
  * verified head. A direct Run has no branch — its work is already on the base
  * branch (ADR-0046) — so this is null for it. */
-function latestVerifiedRef(run: RunRow | undefined): string | null {
+function latestVerifiedRef(run: AttemptRow | undefined): string | null {
   if (!run) return null;
   return run.candidateRef ?? (run.candidateOid && run.branch ? run.branch : null);
 }
 
-function taskToApiWithRuns(ctx: AppContext, task: TaskWithDeps, runs: RunRow[], toolCount: number | null, currentStep: StepType | null): ApiTask {
+function taskToApiWithRuns(ctx: AppContext, task: TaskWithDeps, runs: AttemptRow[], toolCount: number | null, currentStep: StepType | null): ApiTask {
   const running = runs.find((r) => r.state === 'running');
   // A direct Run has no branch (its work is committed straight onto the base
   // branch, ADR-0046); only a worktree Run has an operator-facing branch.
@@ -515,8 +559,8 @@ function taskToApiWithRuns(ctx: AppContext, task: TaskWithDeps, runs: RunRow[], 
 
 /** Total tool calls of a running run from its native aggregate (ADR-0031;
  * `attempt_tool_calls` is keyed off `attempt_id`, ADR-0001 #388 S-F). */
-async function runningToolCount(ctx: AppContext, run: RunRow): Promise<number> {
-  const attempt = await ctx.attempts.getForTaskNumber(run.taskId, run.attempt);
+async function runningToolCount(ctx: AppContext, run: AttemptRow): Promise<number> {
+  const attempt = await ctx.attempts.getForTaskNumber(run.taskId, run.number);
   if (!attempt) return 0;
   const totals = await ctx.attempts.listToolCalls(attempt.id);
   let count = 0;
@@ -525,7 +569,7 @@ async function runningToolCount(ctx: AppContext, run: RunRow): Promise<number> {
 }
 
 /** Cost of an arbitrary set of Runs, summed from their frozen values. */
-export function costOfRuns(runs: RunRow[]): Cost | null {
+export function costOfRuns(runs: AttemptRow[]): Cost | null {
   return sumCosts(runs.map((run) => parseCost(run.cost)));
 }
 
@@ -545,8 +589,8 @@ export interface ApiActivityProcess {
   workspaceName: string;
   harness: string;
   model: string;
-  /** A running Run's RunState, or a warm Conversation's ConversationState. */
-  state: RunState | ConversationState;
+  /** A running Run's AttemptState, or a warm Conversation's ConversationState. */
+  state: AttemptState | ConversationState;
   /** Isolation Mode: `worktree`/`direct` for a Run; always `direct` for a Conversation (ADR-0006). */
   isolation: string;
   /** Epoch ms the process started; the client derives elapsed from it. */
@@ -583,7 +627,7 @@ export interface ApiActivityProcess {
 export async function activitySnapshot(ctx: AppContext, includeChats: boolean): Promise<ApiActivityProcess[]> {
   const prices = pricesOf(ctx);
   const snapshots = new Map((await ctx.runner.activeSnapshots()).map((snapshot) => [snapshot.runId, snapshot.snapshot]));
-  const runs: ApiActivityProcess[] = await Promise.all((await ctx.runs.listRunning()).map(async (run) => {
+  const runs: ApiActivityProcess[] = await Promise.all((await ctx.attempts.listRunning()).map(async (run) => {
     const task = await ctx.tasks.get(run.taskId);
     const snapshot = snapshots.get(run.id) ?? null;
     return {

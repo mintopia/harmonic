@@ -5,7 +5,7 @@ import { apiKeys } from '../src/db/schema.js';
 
 /** All scope='run' key rows currently in the server's database. */
 const runKeyRows = (server: TestServer) =>
-  server.app.ctx.asyncDb.read((d) => d.select().from(apiKeys).where(eq(apiKeys.scope, 'run')).all());
+  server.app.ctx.asyncDb.read((d) => d.select().from(apiKeys).where(eq(apiKeys.scope, 'attempt')).all());
 
 /** Start a run that echoes its injected Run Key, return the key + run info. */
 async function startEchoRun(server: TestServer, exit: 'clean' | 'hang') {
@@ -71,7 +71,7 @@ describe('run key lifecycle (issue 16)', () => {
   it('startup sweep deletes orphaned run keys, not operator keys', async () => {
     server = await startServer(stubHarness());
     // An orphan: a Run Key whose run does not exist / is not running.
-    const orphan = await server.app.ctx.auth.createKey('run-999', { scope: 'run', runId: 999 });
+    const orphan = await server.app.ctx.auth.createKey('run-999', { scope: 'attempt', attemptId: 999 });
     const operator = await server.api('POST', '/api/keys', { name: 'ops' });
 
     const dataDir = server.dataDir;

@@ -53,7 +53,7 @@ describe('attempt timeline API', () => {
       startedAt: 13,
       endedAt: 14,
     });
-    const run = await server.app.ctx.runs.create(created.body.id);
+    const run = await server.app.ctx.attempts.create(created.body.id);
     await server.app.ctx.verificationAttempts.append(attempt.id, {
       mechanism: 'command', inputOid: 'verified-sha', verdict: 'pass', summary: 'checks passed', output: '',
     });

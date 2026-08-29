@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
-import { runs, sessions } from '../src/db/schema.js';
+import { attempts, sessions } from '../src/db/schema.js';
 import type { AppConfig, DeepPartial } from '../src/config.js';
 
 /**
@@ -43,7 +43,7 @@ describe('on-demand transcript resolution (Runner.ensureSessionTranscript)', () 
     });
 
     const asyncDb = server.app.ctx.asyncDb;
-    const runRow = (await asyncDb.read((d) => d.select().from(runs).where(eq(runs.id, runId)).get()))!;
+    const runRow = (await asyncDb.read((d) => d.select().from(attempts).where(eq(attempts.id, runId)).get()))!;
     const sessionId = runRow.sessionRowId!;
     // The stub writes no native JSONL, so the eager capture recorded nothing.
     const before = (await asyncDb.read((d) => d.select().from(sessions).where(eq(sessions.id, sessionId)).get()))!;
@@ -77,7 +77,7 @@ describe('on-demand transcript resolution (Runner.ensureSessionTranscript)', () 
       return body.state === 'done' ? body : undefined;
     });
     const asyncDb = server.app.ctx.asyncDb;
-    const runRow = (await asyncDb.read((d) => d.select().from(runs).where(eq(runs.id, runId)).get()))!;
+    const runRow = (await asyncDb.read((d) => d.select().from(attempts).where(eq(attempts.id, runId)).get()))!;
     expect(await server.app.ctx.runner.ensureSessionTranscript(runRow.sessionRowId!)).toBeNull();
   });
 });

@@ -1,5 +1,5 @@
-import type { RunRow, TaskRow } from '../db/schema.js';
-import type { RunStore } from './runs.js';
+import type { AttemptRow, TaskRow } from '../db/schema.js';
+import type { AttemptStore } from './attempts.js';
 import type { TaskService } from './tasks.js';
 import type { RunSettleCoordinator } from './run-settle.js';
 import { Git } from '../execution/git.js';
@@ -43,7 +43,7 @@ import { startOperation } from '../telemetry/operations.js';
  */
 export class CrashRecoveryCoordinator {
   constructor(
-    private readonly runStore: RunStore,
+    private readonly attempts: AttemptStore,
     private readonly taskService: TaskService,
     private readonly settle: RunSettleCoordinator,
     private readonly deps: {
@@ -52,7 +52,7 @@ export class CrashRecoveryCoordinator {
        * (`merge-policy.ts`'s `MergePolicyDeps.runPostMergeCheck`) — the same
        * primitive, just invoked for a merge git shows already happened rather
        * than one this process just performed. */
-      runPostMergeCheck: (args: { task: TaskRow; run: RunRow; mergeOid: string; baseDir: string }) => Promise<PostMergeCheckResult>;
+      runPostMergeCheck: (args: { task: TaskRow; run: AttemptRow; mergeOid: string; baseDir: string }) => Promise<PostMergeCheckResult>;
       /** Whether `branch` is already merged into `baseBranch`. Defaults to
        * `Git.isAncestor`; injectable for tests. */
       isMerged?: (dir: string, baseBranch: string, branch: string) => Promise<boolean>;
@@ -79,14 +79,14 @@ export class CrashRecoveryCoordinator {
     // landed. Pass B (the generic orphan sweep) re-reads `running` after —
     // whatever pass A settled is no longer in that set.
     await this.reconcileMergeOrphans();
-    await this.runStore.markInterrupted();
+    await this.attempts.markInterrupted();
   }
 
   /** Pass A: a worktree-mode Run whose branch already merged into its base
    * gets its post-merge check re-run (and reverted on red) instead of being
    * blindly failed. Everything else is left `running` for pass B. */
   private async reconcileMergeOrphans(): Promise<void> {
-    const running = await this.runStore.listAllRunning();
+    const running = await this.attempts.listAllRunning();
     const candidates = running.filter((run) => run.branch !== null && run.baseBranch !== null);
     await forEachYielding(
       candidates,

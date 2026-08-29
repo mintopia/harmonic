@@ -83,7 +83,7 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
   // attempts" now folds the log across every Attempt of the Run's Task.
   const attempts = async (runId: number) => {
     const store = new VerificationAttemptStore(server.app.ctx.asyncDb);
-    const run = await server.app.ctx.runs.get(runId);
+    const run = await server.app.ctx.attempts.get(runId);
     const taskAttempts = await server.app.ctx.attempts.listForTask(run.taskId);
     return (await Promise.all(taskAttempts.map((a) => store.list(a.id)))).flat();
   };
@@ -181,7 +181,11 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
     const attemptsByTicket = await ticketAttempts(taskId);
     expect(attemptsByTicket.map((a) => a.state)).toEqual(['failed', 'passed']);
     const [first, second] = await Promise.all([implementationSession(attemptsByTicket[0]!.id), implementationSession(attemptsByTicket[1]!.id)]);
-    const run = await server.app.ctx.runs.get(runId);
+    // `runId` is the FIRST Attempt's id; each self-heal turn is its own new
+    // Attempt row now (ADR-0001 #388 S-G), so the "current state of this
+    // Run" read has to follow forward to the latest Attempt, exactly like
+    // the `/api/runs/:id` routes do.
+    const run = await server.app.ctx.attempts.resolveLatest(runId);
     const reloaded = (await server.api('GET', `/api/runs/${runId}/events`)).body.events
       .filter((event: { payload: { event?: string } }) => event.payload.event === 'session-reloaded')
       .map((event: { payload: { sessionId: string } }) => event.payload.sessionId);

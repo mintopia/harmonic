@@ -163,11 +163,11 @@ describe('dependencies', () => {
     // the same steady state instead of racing the pass's map swap.
     await waitFor(async () => (await getTask(last.id)).skipReason !== null);
 
-    const listForTask = vi.spyOn(server.app.ctx.runs, 'listForTask');
+    const listForTask = vi.spyOn(server.app.ctx.attempts, 'listForTask');
     const dependsOn = vi.spyOn(server.app.ctx.tasks, 'dependsOn');
     const dependents = vi.spyOn(server.app.ctx.tasks, 'dependents');
     const listToolCalls = vi.spyOn(server.app.ctx.attempts, 'listToolCalls');
-    const listForTasks = vi.spyOn(server.app.ctx.runs, 'listForTasks');
+    const listForTasks = vi.spyOn(server.app.ctx.attempts, 'listForTasks');
     const toolCallCounts = vi.spyOn(server.app.ctx.attempts, 'toolCallCounts');
 
     const list = await server.api('GET', '/api/tasks');

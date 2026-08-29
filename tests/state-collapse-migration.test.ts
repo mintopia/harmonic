@@ -77,8 +77,8 @@ describe('state collapse migration (0052, ADR-0041)', () => {
     const running = await insertTask('running', 'running', 0, 'afk');
     await insertRun(running, 'running', 'executing', null);
     const awaiting = await insertTask('awaiting-review', 'awaiting-review', 0, null);
-    const parkedRun = await insertRun(awaiting, 'running', 'review', null, { reviewDeadline: now + 1000 });
-    await insertFact(parkedRun, 'agent-finish/unresolved', { runState: 'completed', taskAction: 'awaiting-review', reason: null });
+    const parkedRunId = await insertRun(awaiting, 'running', 'review', null, { reviewDeadline: now + 1000 });
+    await insertFact(parkedRunId, 'agent-finish/unresolved', { runState: 'completed', taskAction: 'awaiting-review', reason: null });
     const completed = await insertTask('completed', 'completed', 0, 'afk');
     const failedWithHistory = await insertTask('failed with attempts', 'failed', 0, 'afk');
     await insertAttempt(failedWithHistory, 'failed');
@@ -112,13 +112,14 @@ describe('state collapse migration (0052, ADR-0041)', () => {
       expect(schema.TASK_STATES).toContain(task.state);
     }
 
-    // The review-parked Run is closed as the completed work it was; the review columns are gone.
-    const runs = await db.read((d) => d.select().from(schema.runs).all());
-    const parked = runs.find((r) => r.id === parkedRun)!;
-    expect(parked).toMatchObject({ state: 'completed' });
-    expect(parked.finishedAt).not.toBeNull();
-    expect(parked).not.toHaveProperty('reviewDeadline');
-    expect(parked).not.toHaveProperty('review');
+    // The review-parked Run (including the id `parkedRunId` seeded above) is a
+    // legacy `runs`-only row with no Attempt counterpart at this pre-0049
+    // boundary — 0068's clean-break fold into `attempts` (ADR-0001 #388 S-G)
+    // discards it outright along with the rest of the now-gone `runs` table
+    // (and its retired review columns), rather than migrating it forward.
+    const sqlite = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
+    expect((await sqlite.execute(`select name from sqlite_master where type = 'table' and name = 'runs'`)).rows).toHaveLength(0);
+    sqlite.close();
 
     // The retired workspace knob and session reasons are gone.
     const [workspace] = await db.read((d) => d.select().from(schema.workspaces).all());
