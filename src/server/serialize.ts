@@ -11,7 +11,7 @@ import type {
   RunState,
   VerificationAttemptRow,
 } from '../db/schema.js';
-import { attempts, steps, guardrailEvents, runEvents, runFacts, runs, verificationAttempts } from '../db/schema.js';
+import { attempts, steps, guardrailEvents, runEvents, runs, verificationAttempts } from '../db/schema.js';
 import { and, desc, eq } from 'drizzle-orm';
 import type { TaskWithDeps } from '../domain/tasks.js';
 import { resolveVerifiers } from '../domain/setting-override.js';
@@ -103,6 +103,15 @@ const stepToApi = (step: StepRow): ApiStep => ({
   endedAt: step.endedAt,
 });
 
+/** The immutable branch tip an Attempt's verification proved: the latest
+ * passing verification attempt's `inputOid` (ADR-0001 #388 S-E — verification
+ * already has a durable home in `verification_attempts`; the `verified-head`
+ * fact was a redundant second copy). Null when nothing passed. */
+function verifiedShaOf(verificationAttempts: readonly VerificationAttemptRow[]): string | null {
+  const passing = verificationAttempts.filter((v) => v.verdict === 'pass');
+  return passing.length ? passing[passing.length - 1]!.inputOid : null;
+}
+
 /** One DTO builder for REST hydration and live timeline updates. */
 export async function attemptTimelineToApi(ctx: AppContext, taskId: number): Promise<ApiAttemptTimeline> {
   const [task, rows, budgetBase, taskRuns] = await Promise.all([
@@ -118,13 +127,15 @@ export async function attemptTimelineToApi(ctx: AppContext, taskId: number): Pro
     budgetBase,
     attempts: await Promise.all(rows.map(async (attempt) => {
       const run = runsByAttempt.get(attempt.number);
-      const [stepRows, verifiedSha, escalationReason, verificationAttempts] = await Promise.all([
+      const [stepRows, verificationAttempts] = await Promise.all([
         ctx.attempts.listSteps(attempt.id),
-        ctx.attempts.verifiedSha(attempt.id),
-        ctx.attempts.escalationReason(attempt.id),
         run ? ctx.verificationAttempts.list(run.id) : [],
       ]);
       const stepType = [...stepRows].reverse().find((row) => row.state === 'running')?.type ?? null;
+      // The Attempt's disposition-kind `reason` is the cheap audit hedge
+      // (ADR-0001 #388 S-E), not the free-text detail — that only survives
+      // while the ticket is actually escalated, on `tasks.escalationReason`.
+      const escalationReason = attempt.state === 'escalated' ? attempt.reason : null;
       return {
         id: attempt.id,
         taskId: attempt.taskId,
@@ -133,7 +144,7 @@ export async function attemptTimelineToApi(ctx: AppContext, taskId: number): Pro
         startedAt: attempt.startedAt,
         endedAt: attempt.endedAt,
         feedback: attempt.feedback,
-        verifiedSha,
+        verifiedSha: verifiedShaOf(verificationAttempts),
         escalationReason,
         continuation: continuationToApi(attempt.continuation),
         verifierStatuses: verifierStatuses({ verifiers: configuredVerifiers, attempts: verificationAttempts, stepType }),
@@ -166,10 +177,7 @@ type TicketTimelineKind =
   | 'lifecycle'
   | 'verification'
   | 'guardrail'
-  | 'escalation'
-  | 'operator-accept'
-  | 'operator-reject'
-  | 'fact';
+  | 'operator-reject';
 
 export interface ApiTicketTimelineEvent {
   runId: number | null;
@@ -188,14 +196,13 @@ type PendingTicketTimelineEvent = ApiTicketTimelineEvent & { order: number };
 const TICKET_TIMELINE_SOURCE_LIMIT = 1_000;
 
 export async function ticketTimelineToApi(ctx: AppContext, taskId: number): Promise<{ events: ApiTicketTimelineEvent[] }> {
-  const [taskRuns, taskAttempts, lifecycle, verification, skippedVerification, guardrails, facts] = await Promise.all([
+  const [taskRuns, taskAttempts, lifecycle, verification, skippedVerification, guardrails] = await Promise.all([
     ctx.asyncDb.read((db) => db.select().from(runs).where(eq(runs.taskId, taskId)).orderBy(desc(runs.startedAt), desc(runs.id)).limit(TICKET_TIMELINE_SOURCE_LIMIT).all()),
     ctx.asyncDb.read((db) => db.select().from(attempts).where(eq(attempts.taskId, taskId)).orderBy(desc(attempts.startedAt), desc(attempts.id)).limit(TICKET_TIMELINE_SOURCE_LIMIT).all()),
     ctx.asyncDb.read((db) => db.select({ event: runEvents }).from(runEvents).innerJoin(runs, eq(runEvents.runId, runs.id)).where(and(eq(runs.taskId, taskId), eq(runEvents.type, 'lifecycle'))).orderBy(desc(runEvents.ts), desc(runEvents.id)).limit(TICKET_TIMELINE_SOURCE_LIMIT).all()),
     ctx.asyncDb.read((db) => db.select({ attempt: verificationAttempts }).from(verificationAttempts).innerJoin(runs, eq(verificationAttempts.runId, runs.id)).where(eq(runs.taskId, taskId)).orderBy(desc(verificationAttempts.ts), desc(verificationAttempts.id)).limit(TICKET_TIMELINE_SOURCE_LIMIT).all()),
     ctx.asyncDb.read((db) => db.select({ step: steps }).from(steps).innerJoin(attempts, eq(steps.attemptId, attempts.id)).where(eq(attempts.taskId, taskId)).orderBy(desc(steps.endedAt), desc(steps.id)).limit(TICKET_TIMELINE_SOURCE_LIMIT).all()),
     ctx.asyncDb.read((db) => db.select({ event: guardrailEvents }).from(guardrailEvents).innerJoin(runs, eq(guardrailEvents.runId, runs.id)).where(eq(runs.taskId, taskId)).orderBy(desc(guardrailEvents.ts), desc(guardrailEvents.id)).limit(TICKET_TIMELINE_SOURCE_LIMIT).all()),
-    ctx.asyncDb.read((db) => db.select({ fact: runFacts }).from(runFacts).innerJoin(runs, eq(runFacts.runId, runs.id)).where(eq(runs.taskId, taskId)).orderBy(desc(runFacts.ts), desc(runFacts.id)).limit(TICKET_TIMELINE_SOURCE_LIMIT).all()),
   ]);
   const task = await ctx.tasks.get(taskId);
   const workspace = await ctx.workspaces.get(atRestWorkspaceId(task.workspaceId));
@@ -226,7 +233,7 @@ export async function ticketTimelineToApi(ctx: AppContext, taskId: number): Prom
   await forEachYielding(taskAttempts, async (attempt) => {
     attemptsByNumber.set(attempt.number, attempt);
     add({ runId: null, ts: attempt.startedAt, kind: 'attempt-started', data: { attempt: attempt.number, state: attempt.state } }, 0);
-    if (attempt.endedAt !== null) add({ runId: null, ts: attempt.endedAt, kind: 'attempt-finished', data: { attempt: attempt.number, state: attempt.state, feedback: attempt.feedback } }, 7);
+    if (attempt.endedAt !== null) add({ runId: null, ts: attempt.endedAt, kind: 'attempt-finished', data: { attempt: attempt.number, state: attempt.state, feedback: attempt.feedback, reason: attempt.reason } }, 7);
   });
   await forEachYielding(taskAttempts, async (attempt) => {
     const rejected = attemptsByNumber.get(attempt.number - 1);
@@ -239,10 +246,6 @@ export async function ticketTimelineToApi(ctx: AppContext, taskId: number): Prom
     add({ runId: null, ts: step.endedAt, kind: 'verification', data: { outcome: 'skipped', command: step.command, verdict: step.verdict } }, 2);
   });
   await forEachYielding(guardrails, async ({ event }) => { add({ runId: event.runId, ts: event.ts, kind: 'guardrail', data: { dimension: event.dimension, limitValue: event.limitValue, observedValue: event.observedValue, configSource: event.configSource, payload: JSON.parse(event.payload) } }, 2); });
-  await forEachYielding(facts, async ({ fact }) => {
-    const kind: TicketTimelineKind = fact.type === 'escalate' ? 'escalation' : fact.type === 'operator-accept' ? 'operator-accept' : 'fact';
-    add({ runId: fact.runId, ts: fact.ts, kind, data: { type: fact.type, payload: JSON.parse(fact.payload) } }, 4);
-  });
 
   return {
     events: pending

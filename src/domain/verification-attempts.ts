@@ -27,7 +27,7 @@ export interface VerificationAttemptInput {
  * Unit B): persists every verifier invocation — today only the agent critic
  * (`verification/critic.ts`'s `runCritic`) — against a Run's frozen candidate
  * OID, as an immutable row with a per-Run monotonic `seq`. Mirrors
- * `RunFactStore` (`domain/run-facts.ts`) exactly, down to the `seq`-assignment
+ * `GuardrailEventStore` (`domain/guardrail-events.ts`) exactly, down to the `seq`-assignment
  * recipe and its rationale: the store class itself is pure persistence
  * substrate — it decides nothing and combines no verdicts. But its appended
  * attempts now drive the live verify path: the runner reads them back, folds
@@ -43,7 +43,7 @@ export class VerificationAttemptStore {
    * monotonic `seq` as `max(seq)+1` (1-based) — same recipe, and the same
    * cross-process integrity backstop (the `(run_id, seq)` unique index
    * rejects a racing duplicate `seq` with a raw UNIQUE violation rather than
-   * corrupting the log's total order), as `RunFactStore.append`. The read of
+   * corrupting the log's total order), as `GuardrailEventStore.append`. The read of
    * `max(seq)` and the insert run as a single `this.db.write()` unit (ADR-0029
    * §3): the async single-writer queue now stands in for better-sqlite3's
    * synchrony, so no concurrent append can interleave between them and steal

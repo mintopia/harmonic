@@ -27,12 +27,9 @@ import {
 import { repoKey } from './repo-lock.js';
 import { DomainError } from '../domain/errors.js';
 import type { RunStore, PersistedRunEvent, RunGuardrailSnapshot } from '../domain/runs.js';
-import { RunFactStore } from '../domain/run-facts.js';
 import { AttemptStore } from '../domain/attempts.js';
-import type { SettleProjection } from '../domain/run-coordinator.js';
-import { RunSettleCoordinator } from '../domain/run-settle.js';
+import { RunSettleCoordinator, type SettleProjection, type DispositionKind } from '../domain/run-settle.js';
 import type { SessionRetirementHook } from '../domain/session-retirement-coordinator.js';
-import type { RunFactType } from '../db/schema.js';
 import type { TaskService } from '../domain/tasks.js';
 import { resolveGuardrails, resolveVerifiers, resolveScoped, resolveTaskPrompt, type ResolvedGuardrails } from '../domain/setting-override.js';
 import { hasWorkspaceOverride } from '../domain/settings-registry.js';
@@ -349,7 +346,6 @@ export class Runner {
    * back to the real `createAcpCriticDrive`. */
   private readonly criticDrive: RunnerOptions['criticDrive'];
   private readonly urlFor: (task: TaskRow) => string | null;
-  private readonly runFacts: RunFactStore;
   /** The Verification attempt log (issue #135/#136): every command/critic
    * verifier invocation against a Run's frozen candidate is appended here. */
   private readonly verificationAttempts: VerificationAttemptStore;
@@ -418,7 +414,6 @@ export class Runner {
     this.urlFor = options.urlFor ?? (() => null);
     this.spendPollMs = options.spendGuardrail?.pollMs ?? 1000;
     this.spendGraceMs = options.spendGuardrail?.graceMs ?? 60_000;
-    this.runFacts = new RunFactStore(this.asyncDb);
     this.attempts = new AttemptStore(this.asyncDb);
     this.verificationAttempts = new VerificationAttemptStore(this.asyncDb);
     this.guardrailEvents = new GuardrailEventStore(this.asyncDb);
@@ -426,7 +421,7 @@ export class Runner {
     this.settleCoordinator = new RunSettleCoordinator(
       this.runStore,
       this.taskService,
-      this.runFacts,
+      this.attempts,
       (run) => this.events.onRunFinished?.(run),
       options.sessionRetirement,
     );
@@ -717,32 +712,12 @@ export class Runner {
       if (!assessResumeEligibility(stored, env).eligible) return run;
 
       const plan = planSessionContinuation(src.trigger, sessionWarmthFacts(src.session), Date.now());
-      const estimate = plan.mode === 'offer-choice' ? plan.continueFull.estimate : null;
-      // Same `session-continuation` audit fact whether the bind happens or not —
-      // `choice`/`bound` are the only things that vary, so build it in one place.
-      const appendFact = (choice: 'condensed' | 'full' | 'silent', bound: boolean) =>
-        this.runFacts.append(
-          run.id,
-          'session-continuation',
-          {
-            fromRunId: src.prior.id,
-            sessionRowId: src.session.id,
-            harnessSessionId: src.session.harnessSessionId,
-            trigger: src.trigger,
-            choice,
-            bound,
-            estimate,
-          },
-          Date.now(),
-        );
 
       // #170: an operator who picked "start condensed" in the reject dialog opts
       // out of the same-Session bind — the re-attempt dispatches fresh (only the
-      // feedback rides its prompt). Record the declined continuation for the
-      // audit trail, then fall through to a cold dispatch. Only a human-reject
-      // `offer-choice` is condensable; automated `silent-continue` always binds.
+      // feedback rides its prompt). Only a human-reject `offer-choice` is
+      // condensable; automated `silent-continue` always binds.
       if (plan.mode === 'offer-choice' && task.continuationChoice === 'condensed') {
-        await appendFact('condensed', false);
         return run;
       }
 
@@ -755,7 +730,6 @@ export class Runner {
       } catch {
         /* best-effort; reactivate is a no-op unless the Session is idle */
       }
-      await appendFact(plan.mode === 'offer-choice' ? 'full' : 'silent', true);
       return bound;
     } catch {
       return run; // never let a continuation attempt block a dispatch
@@ -814,7 +788,7 @@ export class Runner {
    * no live process (a resume re-entry awaiting dispatch). Shared by operator
    * cancel and force-complete, which differ only in the disposition they record.
    */
-  private async settleTaskRun(taskId: number, type: RunFactType, projection: SettleProjection): Promise<void> {
+  private async settleTaskRun(taskId: number, type: DispositionKind, projection: SettleProjection): Promise<void> {
     let handled = false;
     for (const active of this.active.values()) {
       if (active.taskId !== taskId) continue;
@@ -829,16 +803,17 @@ export class Runner {
 
   /**
    * Settle a run, tolerating its row having been deleted concurrently. The
-   * get→append settle spans awaits and does not hold the run's existence stable,
-   * so a racing delete — a task-delete cascade, or a Run row removed out from
-   * under the settle — can interleave after the row was read (an FK violation on
-   * the fact insert) or before it (a `not_found` read). A run that no longer
-   * exists cannot be cancelled, so both mean the settle is a no-op, not an error.
+   * read→settle spans awaits and does not hold the run's existence stable, so a
+   * racing delete — a task-delete cascade, or a Run row removed out from under
+   * the settle — can interleave before this read (a `not_found` read) or inside
+   * the coordinator's own re-read (also `not_found`; `isForeignKeyViolation` is
+   * kept as a defensive second check). A run that no longer exists cannot be
+   * cancelled, so both mean the settle is a no-op, not an error.
    */
   private async settleRunIfPresent(
     taskId: number,
     runId: number,
-    type: RunFactType,
+    type: DispositionKind,
     projection: SettleProjection,
   ): Promise<void> {
     try {
@@ -1564,14 +1539,13 @@ export class Runner {
     const session = await this.sessionStore.get(run.sessionRowId).catch(() => null);
     if (!session) return null;
     const current = await this.runStore.get(run.id);
-    const facts = await this.runFacts.list(run.id);
     const events = await this.runStore.listEvents(run.id);
     return [
       '## Prior session (condensed)',
       'This attempt starts a fresh Session under the deterministic continuation rule.',
       `Prior Session: ${session.harness} / ${session.model} / ${session.harnessSessionId}`,
       `Candidate: ${current.candidateOid ?? '(none produced)'}`,
-      `Recorded facts: ${facts.length}; run events: ${events.length}.`,
+      `Run events: ${events.length}.`,
     ].join('\n');
   }
 
@@ -1981,17 +1955,16 @@ export class Runner {
 
     // Steps own the execution pipeline (Run/Phase are deleted concepts,
     // ADR-0001 Vocabulary) — a transition here only ever touches the `steps`
-    // table.
+    // table. The Attempt itself stays `running` through merging: its terminal
+    // state/reason is the settling disposition (`RunSettleCoordinator.settle`,
+    // ADR-0001 #388 S-E) — closing it `passed` here, before the merge outcome
+    // is known, would leave a post-merge-check revert unable to correct it.
     const advanceTask = async (to: 'verifying' | 'merging') => {
       const attempt = await this.attempts.ensureForRun(task.id, attemptNumber, run.startedAt);
       const rows = await this.attempts.listSteps(attempt.id);
       const implementation = rows.find((row) => row.type === 'implementation' && row.state === 'running');
       if (to === 'verifying' && implementation) {
         await this.attempts.updateStep(implementation.id, { state: 'passed', verdict: 'pass', endedAt: Date.now() });
-        return;
-      }
-      if (to === 'merging') {
-        await this.attempts.finish(attempt.id, 'passed');
       }
     };
 
@@ -2310,7 +2283,7 @@ export class Runner {
     // than a one-shot timer. Armed only when a spend cap is actually configured
     // (a Run with neither `tokens` nor `costUsd` set never even starts the
     // interval — wall-clock alone still guards it). Records the same
-    // `guardrail_events` row + `guardrail-trip` run_fact + coordinator-settle
+    // `guardrail_events` row + `guardrail-trip` disposition + coordinator-settle
     // path as every other Guardrail dimension.
     let spendTimer: ReturnType<typeof setInterval> | null = null;
     const tripSpend = async (
@@ -2435,17 +2408,18 @@ export class Runner {
     //     delivers exactly ONE nudge through the steer channel (does not spend
     //     the continue budget — ADR-0018); if the Run is still stalled after
     //     that nudge turn it trips → Escalates through the same
-    //     `run_fact` + coordinator + `guardrail_events` machinery as the
-    //     wall-clock Guardrail.
+    //     `guardrail_events` + coordinator-settle machinery as the wall-clock
+    //     Guardrail.
     //  2. A hard tool-timeout watchdog. The detector deliberately SUSPENDS while
     //     a tool call is outstanding (a slow build is indistinguishable from a
     //     stuck agent), so a genuinely hung tool would otherwise never trip. The
     //     watchdog backstops that rule: a tool call outstanding past the
     //     generous configured bound emits a `tool-timeout` `guardrail_events`
-    //     row + a `guardrail-trip` run_fact and Escalates. When it and the
-    //     wall-clock both fire, both append `guardrail-trip` facts and the
-    //     coordinator's earliest-fact precedence (`projectSettle`) picks the
-    //     primary reason — no dimension-priority table needed.
+    //     row and Escalates under `guardrail-trip`. When it and the wall-clock
+    //     both fire, the coordinator's guarded transition (ADR-0001 #388 S-E)
+    //     is first-writer-wins: whichever settles first decides the primary
+    //     reason, and the second's settle no-ops — no dimension-priority table
+    //     needed.
     const progressStart = await this.runStore.get(run.id);
     const progressSnapshot = progressStart.guardrailConfig
       ? (JSON.parse(progressStart.guardrailConfig) as ResolvedGuardrails)
@@ -3380,15 +3354,15 @@ export class Runner {
 
   /**
    * The Runner's settle entry point (issue #113/#114): delegate to the shared
-   * {@link RunSettleCoordinator}, which appends the ending-signal `run_fact` and
-   * replays the winning disposition by fixed precedence. Extracted so the
+   * {@link RunSettleCoordinator}, which applies the guarded state transition
+   * (ADR-0001 #388 S-E) to the Run row and its Attempt. Extracted so the
    * operator Accept merges through the *same* coordinator, with identical
    * race-safety, rather than racing the Runner around the Run row.
    */
   private async coordinateSettle(
     task: TaskRow,
     run: RunRow,
-    type: RunFactType,
+    type: DispositionKind,
     projection: SettleProjection,
     patch: Partial<RunRow> = {},
   ): Promise<void> {
@@ -3402,6 +3376,9 @@ export class Runner {
       patch = { ...patch, ...(await this.diffSnapshotFor(task, run.id)) };
     }
     await this.settleCoordinator.settle(task, run, type, projection, patch);
+    // The coordinator owns the Attempt's terminal state/reason (guarded, and a
+    // no-op when a failed verification already closed it with feedback); this
+    // just closes out whatever Step was left `running` when the Run settled.
     const attempt = await this.attempts.getForTaskNumber(task.id, run.attempt);
     if (attempt) {
       const timelineSteps = await this.attempts.listSteps(attempt.id);
@@ -3413,13 +3390,6 @@ export class Runner {
           verdict: projection.runState === 'completed' ? 'pass' : 'fail',
         }),
       ));
-      // A failed verification has already closed its Attempt with verifier
-      // feedback before requesting escalation. Preserve that terminal record;
-      // only terminal paths that did not already close an Attempt decide its
-      // final state here.
-      if (attempt.state === 'running') {
-        await this.attempts.finish(attempt.id, projection.taskAction === 'escalate' ? 'escalated' : projection.runState === 'completed' ? 'passed' : 'failed', now);
-      }
     }
     await this.finishRunOperation(run.id);
   }

@@ -120,11 +120,6 @@ describe('state collapse migration (0052, ADR-0041)', () => {
     expect(parked).not.toHaveProperty('reviewDeadline');
     expect(parked).not.toHaveProperty('review');
 
-    // Legacy fact projections speak the new task actions.
-    const facts = await db.read((d) => d.select().from(schema.runFacts).all());
-    const actions = facts.map((f) => (JSON.parse(f.payload) as { taskAction: string }).taskAction).sort();
-    expect(actions).toEqual(['done', 'escalate', 'ready']);
-
     // The retired workspace knob and session reasons are gone.
     const [workspace] = await db.read((d) => d.select().from(schema.workspaces).all());
     expect(workspace).not.toHaveProperty('verificationAutoAccept');

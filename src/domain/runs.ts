@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm';
 import type { AsyncDbHandle } from '../db/async.js';
-import { runs, runEvents, runFacts, runToolCalls, tasks, type RunRow, type RunEventRow, type RunState } from '../db/schema.js';
+import { runs, runEvents, runToolCalls, tasks, type RunRow, type RunEventRow, type RunState } from '../db/schema.js';
 import { DomainError } from './errors.js';
 import type { ResolvedGuardrails } from './setting-override.js';
 import { costOfUsages, type PriceTable } from '../execution/pricing.js';
@@ -174,8 +174,8 @@ export class RunStore {
 
   async appendEvent(runId: number, event: RunEventInput): Promise<PersistedRunEvent> {
     // read-then-insert as one write-queue unit — the `seq` CAS mirrors
-    // RunFactStore.append and would collide under naive concurrent appends
-    // (ADR-0029 §3).
+    // VerificationAttemptStore.append and would collide under naive concurrent
+    // appends (ADR-0029 §3).
     const row = await this.db.write(async (db) => {
       const seq =
         ((
@@ -315,39 +315,13 @@ export class RunStore {
     // guard (only fail a run still `running`) added here.
     const orphans = await this.db.read((db) => db.select().from(runs).where(eq(runs.state, 'running')).all());
     for (const run of orphans) {
-      // process-death is a `run_fact` too (issue #113, §0.3): the orphan's
-      // failed/interrupted terminal stays reconstructable from the log alone. The
-      // fact-append and the run update run as one exclusive transaction so a crash
-      // can never leave the row failed without its explanatory fact (or vice
-      // versa). The `seq` CAS is inlined here rather than via RunFactStore because
-      // run-facts is a separate migration batch still on the sync Db — this write
-      // must go through the same async connection as the run update. `run_facts`
-      // ownership consolidates when that batch migrates.
-      await this.db.transaction(async (tx) => {
-        const seq =
-          ((
-            await tx
-              .select({ n: sql<number>`coalesce(max(${runFacts.seq}), 0)` })
-              .from(runFacts)
-              .where(eq(runFacts.runId, run.id))
-              .get()
-          )?.n ?? 0) + 1;
-        await tx
-          .insert(runFacts)
-          .values({
-            runId: run.id,
-            seq,
-            ts: Date.now(),
-            type: 'process-death',
-            payload: JSON.stringify({ runState: 'failed', taskAction: 'ready', reason: 'interrupted' }),
-          })
-          .run();
-        await tx
+      await this.db.write((db) =>
+        db
           .update(runs)
           .set({ state: 'failed', reason: 'interrupted', finishedAt: Date.now() })
           .where(eq(runs.id, run.id))
-          .run();
-      });
+          .run(),
+      );
     }
     return orphans;
   }

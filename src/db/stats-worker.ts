@@ -4,7 +4,7 @@ import { drizzle } from 'drizzle-orm/libsql';
 import { join } from 'node:path';
 import { parentPort, workerData } from 'node:worker_threads';
 import { totalsForRange } from '../domain/tool-call-aggregates.js';
-import { runFacts, runs, tasks } from './schema.js';
+import { attempts, runs, tasks } from './schema.js';
 import * as schema from './schema.js';
 import {
   isStatsWorkerRequest,
@@ -35,41 +35,21 @@ async function readStats({ from, to, workspaceId }: StatsRange): Promise<StatsRe
             .all()
         ).map((row) => row.runs);
 
-  const factRows =
+  // Failed-only Runs' Attempt disposition (ADR-0001 #388 S-E): joined by the
+  // (taskId, attempt=number) pair every Run/Attempt pair shares — replaces the
+  // deleted `run_facts` disposition-fact join.
+  const attemptReasons =
     workspaceId === undefined
       ? await db
-          .select({ runId: runFacts.runId, ts: runFacts.ts })
-          .from(runFacts)
-          .innerJoin(runs, eq(runFacts.runId, runs.id))
-          .where(and(eq(runFacts.type, 'agent-finish/unresolved'), gte(runs.startedAt, from), lte(runs.startedAt, to)))
-          .all()
-      : await db
-          .select({ runId: runFacts.runId, ts: runFacts.ts })
-          .from(runFacts)
-          .innerJoin(runs, eq(runFacts.runId, runs.id))
-          .innerJoin(tasks, eq(runs.taskId, tasks.id))
-          .where(
-            and(
-              eq(runFacts.type, 'agent-finish/unresolved'),
-              gte(runs.startedAt, from),
-              lte(runs.startedAt, to),
-              eq(tasks.workspaceId, workspaceId),
-            ),
-          )
-          .all();
-
-  const failFactRows =
-    workspaceId === undefined
-      ? await db
-          .select({ runId: runFacts.runId, seq: runFacts.seq, type: runFacts.type })
-          .from(runFacts)
-          .innerJoin(runs, eq(runFacts.runId, runs.id))
+          .select({ runId: runs.id, reason: attempts.reason })
+          .from(runs)
+          .leftJoin(attempts, and(eq(attempts.taskId, runs.taskId), eq(attempts.number, runs.attempt)))
           .where(and(eq(runs.state, 'failed'), gte(runs.startedAt, from), lte(runs.startedAt, to)))
           .all()
       : await db
-          .select({ runId: runFacts.runId, seq: runFacts.seq, type: runFacts.type })
-          .from(runFacts)
-          .innerJoin(runs, eq(runFacts.runId, runs.id))
+          .select({ runId: runs.id, reason: attempts.reason })
+          .from(runs)
+          .leftJoin(attempts, and(eq(attempts.taskId, runs.taskId), eq(attempts.number, runs.attempt)))
           .innerJoin(tasks, eq(runs.taskId, tasks.id))
           .where(
             and(
@@ -83,7 +63,7 @@ async function readStats({ from, to, workspaceId }: StatsRange): Promise<StatsRe
 
   const range = { from, to, ...(workspaceId === undefined ? {} : { workspaceId }) };
   const toolTotals = await totalsForRange(db, range);
-  return { rows, factRows, failFactRows, toolTotals };
+  return { rows, attemptReasons, toolTotals };
 }
 
 async function probeHeavyRead(iterations: number): Promise<number> {

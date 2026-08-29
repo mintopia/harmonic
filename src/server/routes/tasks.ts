@@ -246,7 +246,7 @@ const eventsListResponseSchema = listResponse('events', runEventSchema);
 const ticketTimelineEventSchema = z.object({
   runId: z.number().nullable(),
   ts: z.number(),
-  kind: z.enum(['attempt-started', 'attempt-finished', 'run-started', 'run-finished', 'lifecycle', 'verification', 'guardrail', 'escalation', 'operator-accept', 'operator-reject', 'merging', 'fact']),
+  kind: z.enum(['attempt-started', 'attempt-finished', 'run-started', 'run-finished', 'lifecycle', 'verification', 'guardrail', 'operator-reject', 'merging']),
   data: z.unknown(),
 });
 const ticketTimelineResponseSchema = listResponse('events', ticketTimelineEventSchema);

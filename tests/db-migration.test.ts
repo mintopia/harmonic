@@ -353,10 +353,16 @@ describe('work_context_leases teardown (ADR-0001, issue #384)', () => {
   });
 });
 
-describe('run_facts table (issue #112)', () => {
-  it('exists at head with a (run_id, seq) unique index that rejects a duplicate seq for the same Run', async () => {
+describe('run_facts table removed (ADR-0001 #388 S-E)', () => {
+  it('does not exist at head; attempts.reason exists instead', async () => {
     const dataDir = mkdtempSync(join(tmpdir(), 'harmonic-run-facts-migrate-'));
     const db = await openAsyncDb(dataDir);
+
+    const sqlite = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
+    const tables = await sqlite.execute(
+      `select name from sqlite_master where type = 'table' and name = 'run_facts'`,
+    );
+    expect(tables.rows).toHaveLength(0);
 
     const task = await db.write((d) => d.insert(schema.tasks).values({
       prompt: 'seed',
@@ -365,17 +371,10 @@ describe('run_facts table (issue #112)', () => {
       createdAt: Date.now(),
       updatedAt: Date.now(),
     }).returning().get());
-    const run = await db.write((d) => d.insert(schema.runs).values({ taskId: task.id, attempt: 1, state: 'running', startedAt: Date.now() }).returning().get());
-
-    // Raw libsql connection against the same file, exercising the migrated unique
-    // index directly rather than through the store.
-    const sqlite = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
-    const insertSql = `insert into run_facts (run_id, seq, ts, type, payload) values (?, ?, ?, 'failed', '{}')`;
-    const now = Date.now();
-    await sqlite.execute({ sql: insertSql, args: [run.id, 1, now] });
-    // A second fact at seq 1 for the same Run is rejected; a different seq is fine.
-    await expect(sqlite.execute({ sql: insertSql, args: [run.id, 1, now] })).rejects.toThrow(/UNIQUE constraint failed/);
-    await expect(sqlite.execute({ sql: insertSql, args: [run.id, 2, now] })).resolves.toBeDefined();
+    const attempt = await db.write((d) => d.insert(schema.attempts).values({
+      taskId: task.id, number: 1, state: 'failed', startedAt: Date.now(), endedAt: Date.now(), reason: 'guardrail-trip',
+    }).returning().get());
+    expect(attempt.reason).toBe('guardrail-trip');
 
     sqlite.close();
     await db.close();
@@ -462,7 +461,6 @@ describe('attempt timeline migration (issue #309, ADR-0041)', () => {
       attemptId: attempt!.id, type: 'implementation', position: 1, state: 'failed', verdict: 'fail',
       logLocator: `session:${sessionId}`, startedAt: 10, endedAt: 20,
     });
-    expect(await db.read((database) => database.select().from(schema.runFacts).get())).toMatchObject({ runId, attemptId: attempt!.id });
     await db.close();
     rmSync(dataDir, { recursive: true, force: true });
     rmSync(migrationsFolder, { recursive: true, force: true });

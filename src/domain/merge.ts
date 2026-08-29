@@ -18,7 +18,7 @@
  * The merging side effects a caller may apply. Only `target-ref` (a worktree
  * merge) has a live executor today; `open-pr` and `ticket-close` are modelled
  * here so later units slot in without touching this module's contract — same
- * "open for extension" shape as `RUN_FACT_TYPES` (db/schema.ts).
+ * "open for extension" shape as `GUARDRAIL_DIMENSIONS` (db/schema.ts).
  */
 export const MERGE_EFFECTS = ['target-ref', 'open-pr', 'ticket-close'] as const;
 export type MergeEffect = (typeof MERGE_EFFECTS)[number];

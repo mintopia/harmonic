@@ -6,7 +6,7 @@ import { eq } from 'drizzle-orm';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
-import { runs, runEvents, runFacts, sessions, taskDependencies, trackerDismissals, tasks } from '../src/db/schema.js';
+import { runs, runEvents, sessions, taskDependencies, trackerDismissals, tasks } from '../src/db/schema.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { allWorkspaces, makeSettingsStore } from './helpers.js';
 
@@ -48,7 +48,7 @@ describe('TaskService.delete (issue #162)', () => {
     await expect(tasksSvc.get(task.id)).rejects.toThrow(/not found/);
   });
 
-  it('cascades Runs and their children (run_events, run_facts) with no FK error', async () => {
+  it('cascades Runs and their children (run_events) with no FK error', async () => {
     const task = await tasksSvc.create({ prompt: 'has runs' });
     const runId = (await asyncDb.write((d) =>
       d
@@ -58,13 +58,11 @@ describe('TaskService.delete (issue #162)', () => {
         .get(),
     ))!.id;
     await asyncDb.write((d) => d.insert(runEvents).values({ runId, seq: 1, ts: Date.now(), type: 'lifecycle', payload: '{}' }).run());
-    await asyncDb.write((d) => d.insert(runFacts).values({ runId, seq: 1, ts: Date.now(), type: 'failed', payload: '{}' }).run());
 
     await tasksSvc.delete(task.id);
 
     expect(await asyncDb.read((d) => d.select().from(runs).where(eq(runs.taskId, task.id)).all())).toHaveLength(0);
     expect(await asyncDb.read((d) => d.select().from(runEvents).where(eq(runEvents.runId, runId)).all())).toHaveLength(0);
-    expect(await asyncDb.read((d) => d.select().from(runFacts).where(eq(runFacts.runId, runId)).all())).toHaveLength(0);
   });
 
   it('removes dependency edges in both directions and makes a former dependent agent-workable', async () => {

@@ -1,6 +1,6 @@
-import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import type { AsyncDbHandle } from '../db/async.js';
-import { attempts, steps, runFacts, type AttemptRow, type AttemptState, type StepRow, type StepType, type RunFactType } from '../db/schema.js';
+import { attempts, steps, type AttemptRow, type AttemptState, type StepRow, type StepType } from '../db/schema.js';
 import type { DeterministicContinuation } from './session-continuation.js';
 
 export interface StepInput {
@@ -77,16 +77,6 @@ export class AttemptStore {
     return result;
   }
 
-  /** The immutable branch tip that the Attempt's verification proved. */
-  verifiedSha(attemptId: number): Promise<string | null> {
-    return this.latestFactField(attemptId, 'verified-head', 'sha');
-  }
-
-  /** Why the Attempt handed the ticket to a human, from its settle fact. */
-  escalationReason(attemptId: number): Promise<string | null> {
-    return this.latestFactField(attemptId, 'escalate', 'reason');
-  }
-
   /**
    * The attempt number the `maxAttempts` budget counts from (ADR-0041 "Reject
    * with guidance: counter resets"): the latest escalated Attempt, or 0 when the
@@ -110,24 +100,6 @@ export class AttemptStore {
     return this.db.write((db) => db.update(attempts).set({ feedback }).where(eq(attempts.id, attemptId)).returning().get()) as Promise<AttemptRow>;
   }
 
-  private async latestFactField(attemptId: number, type: RunFactType, field: string): Promise<string | null> {
-    const fact = await this.db.read((db) =>
-      db.select().from(runFacts)
-        .where(and(eq(runFacts.attemptId, attemptId), eq(runFacts.type, type)))
-        .orderBy(desc(runFacts.id))
-        .get(),
-    );
-    if (!fact) return null;
-    try {
-      const payload: unknown = JSON.parse(fact.payload);
-      const value: unknown = typeof payload === 'object' && payload !== null ? Reflect.get(payload, field) : undefined;
-      return typeof value === 'string' ? value : null;
-    } catch {
-      // A malformed historical fact is absent proof, never a fabricated value.
-      return null;
-    }
-  }
-
   createStep(attemptId: number, input: StepInput): Promise<StepRow> {
     return this.db.write(async (db) => {
       const position = ((await db.select({ n: sql<number>`coalesce(max(${steps.position}), 0)` }).from(steps).where(eq(steps.attemptId, attemptId)).get())?.n ?? 0) + 1;
@@ -139,8 +111,22 @@ export class AttemptStore {
     return this.db.write((db) => db.update(steps).set(patch).where(eq(steps.id, id)).returning().get()) as Promise<StepRow>;
   }
 
-  finish(attemptId: number, state: Exclude<AttemptState, 'running'>, now = Date.now(), feedback?: string): Promise<AttemptRow> {
-    return this.db.write((db) => db.update(attempts).set({ state, endedAt: now, ...(feedback === undefined ? {} : { feedback }) }).where(eq(attempts.id, attemptId)).returning().get()) as Promise<AttemptRow>;
+  /**
+   * Close an Attempt out: terminal `state` + `endedAt`, plus the disposition-
+   * kind audit hedge on `reason` (ADR-0001 #388 S-E — the whole coordination
+   * spine collapsed onto this column; see `RunSettleCoordinator.settle`).
+   * `feedback`/`reason` are omitted (not merely undefined) when the caller
+   * doesn't pass them, so a caller that already set one earlier (e.g. a failed
+   * verification's feedback) never gets clobbered by a later close that only
+   * knows the other.
+   */
+  finish(attemptId: number, state: Exclude<AttemptState, 'running'>, now = Date.now(), feedback?: string, reason?: string | null): Promise<AttemptRow> {
+    return this.db.write((db) => db.update(attempts).set({
+      state,
+      endedAt: now,
+      ...(feedback === undefined ? {} : { feedback }),
+      ...(reason === undefined ? {} : { reason }),
+    }).where(eq(attempts.id, attemptId)).returning().get()) as Promise<AttemptRow>;
   }
 
   setContinuation(attemptId: number, continuation: DeterministicContinuation): Promise<AttemptRow> {

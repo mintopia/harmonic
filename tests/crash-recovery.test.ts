@@ -7,7 +7,7 @@ import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { RunStore } from '../src/domain/runs.js';
-import { RunFactStore } from '../src/domain/run-facts.js';
+import { AttemptStore } from '../src/domain/attempts.js';
 import { RunSettleCoordinator } from '../src/domain/run-settle.js';
 import { CrashRecoveryCoordinator } from '../src/domain/crash-recovery.js';
 import { Git } from '../src/execution/git.js';
@@ -51,7 +51,7 @@ describe('CrashRecoveryCoordinator (ADR-0001)', () => {
   let settingsStore: SettingsStore;
   let tasks: TaskService;
   let runStore: RunStore;
-  let runFacts: RunFactStore;
+  let attempts: AttemptStore;
   let settle: RunSettleCoordinator;
 
   beforeEach(async () => {
@@ -61,8 +61,8 @@ describe('CrashRecoveryCoordinator (ADR-0001)', () => {
     settingsStore = await makeSettingsStore(dir);
     tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
     runStore = new RunStore(asyncDb);
-    runFacts = new RunFactStore(asyncDb);
-    settle = new RunSettleCoordinator(runStore, tasks, runFacts);
+    attempts = new AttemptStore(asyncDb);
+    settle = new RunSettleCoordinator(runStore, tasks, attempts);
   });
 
   afterEach(async () => {

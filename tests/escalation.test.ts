@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
-import { RunFactStore } from '../src/domain/run-facts.js';
 import { AttemptStore } from '../src/domain/attempts.js';
 
 /**
@@ -56,12 +55,11 @@ describe('escalation: the three actions (direct mode)', () => {
     expect((await server.api('POST', `/api/tasks/${taskId}/reject`, { guidance: 'x' })).status).toBe(409);
     expect((await server.api('POST', `/api/tasks/${taskId}/close`)).status).toBe(409);
 
-    // Harmonic merged it itself: the default merge fact, never the operator's.
+    // Harmonic merged it itself: the default merge disposition, never the operator's.
     const run = (await server.api('GET', `/api/tasks/${taskId}/runs`)).body.runs[0];
     expect(run).toMatchObject({ state: 'completed' });
-    const facts = await new RunFactStore(server.app.ctx.asyncDb).list(run.id);
-    expect(facts.some((f) => f.type === 'agent-finish/unresolved')).toBe(true);
-    expect(facts.some((f) => f.type === 'operator-accept')).toBe(false);
+    const attempt = await new AttemptStore(server.app.ctx.asyncDb).getForTaskNumber(taskId, run.attempt);
+    expect(attempt).toMatchObject({ state: 'passed', reason: 'agent-finish/unresolved' });
   });
 
   it('an exhausted attempt budget escalates with the reason recorded on the ticket and the attempt', async () => {

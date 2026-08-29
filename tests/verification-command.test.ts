@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
 import { verificationCommandSchema, type VerificationCommand } from '../src/config.js';
 import { VerificationAttemptStore } from '../src/domain/verification-attempts.js';
-import { RunFactStore } from '../src/domain/run-facts.js';
+import { AttemptStore } from '../src/domain/attempts.js';
 
 const git = (dir: string, ...args: string[]) =>
   execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
@@ -418,13 +418,12 @@ describe('native merging (issue #138, ADR-0021, ADR-0041)', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]!).toMatchObject({ mechanism: 'command', verdict: 'pass' });
 
-    // Harmonic merging the Run is not an operator — it appends the default
-    // `agent-finish/unresolved` merge fact, never the operator-only
-    // `operator-accept` disposition, so the audit log stays honest about who
-    // actually accepted the work.
-    const factTypes = (await new RunFactStore(server.app.ctx.asyncDb).list(runId)).map((f) => f.type);
-    expect(factTypes).toContain('agent-finish/unresolved');
-    expect(factTypes).not.toContain('operator-accept');
+    // Harmonic merging the Run is not an operator — the Attempt settles under
+    // the default `agent-finish/unresolved` disposition, never the
+    // operator-only `operator-accept` one, so the audit trail stays honest
+    // about who actually accepted the work.
+    const ticketAttempt = await new AttemptStore(server.app.ctx.asyncDb).getForTaskNumber(taskId, run.attempt);
+    expect(ticketAttempt).toMatchObject({ state: 'passed', reason: 'agent-finish/unresolved' });
   });
 
   it('safety: a fail on every attempt Escalates — merging never rescues a red verdict', async () => {

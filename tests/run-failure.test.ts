@@ -5,9 +5,6 @@ import {
   isExecutionFailure,
   type FailedRun,
 } from '../src/domain/run-failure.js';
-import type { DispositionFact } from '../src/domain/run-disposition.js';
-
-const fact = (seq: number, type: string): DispositionFact => ({ seq, type });
 
 describe('isExecutionFailure', () => {
   it('counts a failed Run as an execution failure', () => {
@@ -22,43 +19,34 @@ describe('isExecutionFailure', () => {
 });
 
 describe('failureReasonKey', () => {
-  it('uses the winning terminal disposition when facts are present', () => {
-    // escalate outranks failed in DISPOSITION_PRECEDENCE — the higher-precedence
-    // signal is the reason, regardless of input order.
-    expect(failureReasonKey({ facts: [fact(2, 'failed'), fact(1, 'escalate')], reason: 'boom' })).toBe('escalate');
-    expect(failureReasonKey({ facts: [fact(1, 'guardrail-trip')], reason: null })).toBe('guardrail-trip');
+  it("uses the Attempt's disposition-kind reason when present (ADR-0001 #388 S-E)", () => {
+    expect(failureReasonKey({ attemptReason: 'escalate', runReason: 'boom' })).toBe('escalate');
+    expect(failureReasonKey({ attemptReason: 'guardrail-trip', runReason: null })).toBe('guardrail-trip');
   });
 
-  it('ignores non-disposition facts, falling back when none rank', () => {
-    // run-start-state / session-resumed are not terminal dispositions.
-    expect(failureReasonKey({ facts: [fact(1, 'run-start-state'), fact(2, 'session-resumed')], reason: 'boom' })).toBe(
-      'failed',
-    );
-  });
-
-  it("folds an 'interrupted' reason into process-death when no fact exists", () => {
-    expect(failureReasonKey({ facts: [], reason: 'interrupted' })).toBe('process-death');
+  it("folds an 'interrupted' reason into process-death when no Attempt disposition exists", () => {
+    expect(failureReasonKey({ attemptReason: null, runReason: 'interrupted' })).toBe('process-death');
   });
 
   it('buckets any other free-text reason as a generic error, and a bare failure as unknown', () => {
-    expect(failureReasonKey({ facts: [], reason: 'some unique error message' })).toBe('failed');
-    expect(failureReasonKey({ facts: [], reason: null })).toBe('unknown');
+    expect(failureReasonKey({ attemptReason: null, runReason: 'some unique error message' })).toBe('failed');
+    expect(failureReasonKey({ attemptReason: null, runReason: null })).toBe('unknown');
   });
 });
 
 describe('failuresByReason', () => {
-  it('counts execution failures by reason bucket, collapsing free text via disposition', () => {
+  it('counts execution failures by reason bucket, collapsing free text via the Attempt disposition', () => {
     const failures: FailedRun[] = [
-      { facts: [fact(1, 'failed')], reason: 'epic branch missing' },
-      { facts: [fact(1, 'failed')], reason: 'a totally different message' },
-      { facts: [fact(1, 'process-death')], reason: 'interrupted' },
-      { facts: [], reason: 'interrupted' },
-      { facts: [fact(1, 'guardrail-trip')], reason: 'budget: 60m' },
-      { facts: [], reason: null },
+      { attemptReason: 'failed', runReason: 'epic branch missing' },
+      { attemptReason: 'failed', runReason: 'a totally different message' },
+      { attemptReason: 'process-death', runReason: 'interrupted' },
+      { attemptReason: null, runReason: 'interrupted' },
+      { attemptReason: 'guardrail-trip', runReason: 'budget: 60m' },
+      { attemptReason: null, runReason: null },
     ];
     expect(failuresByReason(failures)).toEqual({
       failed: 2, // two distinct error messages collapse into one disposition bucket
-      'process-death': 2, // the fact and the 'interrupted' fallback merge together
+      'process-death': 2, // the Attempt disposition and the 'interrupted' fallback merge together
       'guardrail-trip': 1,
       unknown: 1,
     });

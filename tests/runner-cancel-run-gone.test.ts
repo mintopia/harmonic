@@ -7,7 +7,6 @@ import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { RunStore, type RunGuardrailSnapshot } from '../src/domain/runs.js';
 import { isForeignKeyViolation } from '../src/db/errors.js';
-import { RunFactStore } from '../src/domain/run-facts.js';
 import { Runner } from '../src/execution/runner.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { allWorkspaces, makeSettingsStore } from './helpers.js';
@@ -18,12 +17,12 @@ describe('isForeignKeyViolation', () => {
       code: 'SQLITE_CONSTRAINT',
       extendedCode: 'SQLITE_CONSTRAINT_FOREIGNKEY',
     });
-    const wrapped = Object.assign(new Error('Failed query: insert into "run_facts" ...'), { cause });
+    const wrapped = Object.assign(new Error('Failed query: insert into "guardrail_events" ...'), { cause });
     expect(isForeignKeyViolation(wrapped)).toBe(true);
   });
 
   it('does not mistake a UNIQUE violation for an FK one', () => {
-    const cause = Object.assign(new Error('UNIQUE constraint failed: run_facts.run_id, run_facts.seq'), {
+    const cause = Object.assign(new Error('UNIQUE constraint failed: guardrail_events.run_id, guardrail_events.seq'), {
       extendedCode: 'SQLITE_CONSTRAINT_UNIQUE',
     });
     expect(isForeignKeyViolation(Object.assign(new Error('Failed query'), { cause }))).toBe(false);
@@ -37,7 +36,6 @@ describe('Runner.cancelForTask — run row deleted mid-settle', () => {
   let settingsStore: SettingsStore;
   let tasks: TaskService;
   let runs: RunStore;
-  let facts: RunFactStore;
   let runner: Runner;
 
   beforeEach(async () => {
@@ -48,7 +46,6 @@ describe('Runner.cancelForTask — run row deleted mid-settle', () => {
     settingsStore = await makeSettingsStore(dir);
     tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
     runs = new RunStore(asyncDb);
-    facts = new RunFactStore(asyncDb);
     runner = new Runner(runs, tasks, asyncDb, () => defaultConfig());
   });
 
@@ -59,19 +56,20 @@ describe('Runner.cancelForTask — run row deleted mid-settle', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it('resolves as a no-op (no FK crash, no orphan fact) when the run vanishes between read and fact-append', async () => {
+  it('resolves as a no-op (no crash, nothing logged) when the run vanishes between read and settle', async () => {
     const task = await tasks.create({ prompt: 'cancel me', isolationMode: 'direct', workingDir: repoDir });
     const snapshot: RunGuardrailSnapshot = {
       guardrailConfig: defaultConfig().guardrails,
       priceTable: defaultConfig().prices,
     };
-    const run = await runs.create(task.id, snapshot);
+    await runs.create(task.id, snapshot);
 
     // Reproduce the production TOCTOU: settleTaskRun's parked branch lists the
     // still-running row, then reads it via runStore.get — but a racing delete
-    // (e.g. a task-delete cascade) removes the row before the operator-cancel
-    // fact insert, which would otherwise fail the run_facts→runs FK. Delete on
-    // read to force that window.
+    // (e.g. a task-delete cascade) removes the row before the coordinator's own
+    // re-read inside settle(). Delete on read to force that window; the second
+    // read then throws `not_found` (ADR-0001 #388 S-E's settle is a guarded
+    // UPDATE, not an INSERT with an FK to fail).
     const realGet = runs.get.bind(runs);
     vi.spyOn(runs, 'get').mockImplementation(async (id: number) => {
       const row = await realGet(id);
@@ -79,14 +77,13 @@ describe('Runner.cancelForTask — run row deleted mid-settle', () => {
       return row;
     });
 
-    // The guard swallows the run-gone FK as an expected no-op, so cancelForTask's
-    // own containment catch (which logs) is never reached: no error is logged and
-    // no orphan fact is left. Without the guard the FK would propagate to that
-    // catch (a logged error) — asserting console.error stays quiet is what proves
-    // the root-cause guard, not just the containment layer.
+    // The guard swallows the run-gone `not_found` as an expected no-op, so
+    // cancelForTask's own containment catch (which logs) is never reached: no
+    // error is logged. Without the guard the error would propagate to that
+    // catch (a logged error) — asserting console.error stays quiet is what
+    // proves the root-cause guard, not just the containment layer.
     const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
     await expect(runner.cancelForTask(task.id)).resolves.toBeUndefined();
     expect(logged).not.toHaveBeenCalled();
-    expect(await facts.list(run.id)).toEqual([]);
   });
 });

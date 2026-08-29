@@ -6,7 +6,7 @@ import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { RunStore } from '../src/domain/runs.js';
-import { RunFactStore } from '../src/domain/run-facts.js';
+import { AttemptStore } from '../src/domain/attempts.js';
 import { RunSettleCoordinator } from '../src/domain/run-settle.js';
 import type { MergeEffectExec } from '../src/domain/merge.js';
 import { EscalationService } from '../src/domain/escalation.js';
@@ -28,6 +28,7 @@ describe('EscalationService', () => {
   let settingsStore: SettingsStore;
   let tasks: TaskService;
   let runStore: RunStore;
+  let attempts: AttemptStore;
   let settle: RunSettleCoordinator;
   let resumed: Array<{ taskId: number; guidance: string; startNow: boolean }>;
   let cleaned: Array<{ taskId: number; runId: number | undefined }>;
@@ -40,7 +41,8 @@ describe('EscalationService', () => {
     settingsStore = await makeSettingsStore(dir);
     tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
     runStore = new RunStore(asyncDb);
-    settle = new RunSettleCoordinator(runStore, tasks, new RunFactStore(asyncDb));
+    attempts = new AttemptStore(asyncDb);
+    settle = new RunSettleCoordinator(runStore, tasks, attempts);
     resumed = [];
     cleaned = [];
     effects = [];
@@ -64,6 +66,7 @@ describe('EscalationService', () => {
     await tasks.setState(created.id, 'working');
     let run = await runStore.create(created.id);
     if (candidate) run = await runStore.update(run.id, { candidateOid: 'b'.repeat(40) });
+    await attempts.ensureForRun(created.id, run.attempt, run.startedAt);
     await settle.settle(await tasks.get(created.id), run, 'escalate', {
       runState: 'failed',
       taskAction: 'escalate',
@@ -98,11 +101,11 @@ describe('EscalationService', () => {
 
       expect(applied).toBe(1);
       expect(accepted).toMatchObject({ state: 'done', escalationReason: null });
-      // The operator's accept outranks the retained escalate fact on the log.
+      // The operator's accept is the one disposition allowed to override an
+      // already-`escalated` Attempt/Run (ADR-0001 #388 S-E's guarded transition).
       expect(await runStore.get(run.id)).toMatchObject({ state: 'completed' });
-      const types = (await new RunFactStore(asyncDb).list(run.id)).map((f) => f.type);
-      expect(types).toContain('escalate');
-      expect(types).toContain('operator-accept');
+      const attempt = await attempts.getForTaskNumber(task.id, run.attempt);
+      expect(attempt).toMatchObject({ state: 'passed', reason: 'operator-accept' });
     });
 
     it('409s conflict when there is no verified head to merge, leaving the ticket escalated', async () => {

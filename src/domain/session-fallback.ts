@@ -1,6 +1,5 @@
 import type { AcpLoadIncompatibility } from '../acp/driver.js';
 import type { ResumeIncompatibilityReason } from './session-resume.js';
-import { computeDisposition } from './run-disposition.js';
 
 /**
  * The deterministic summarized-Session fallback (issue #145, reliability-design
@@ -11,19 +10,21 @@ import { computeDisposition } from './run-disposition.js';
  * or a capability the live harness no longer advertises — Harmonic falls back
  * **exactly once** to a brand-new Session seeded with a summary it builds
  * *itself*, deterministically, from what it already recorded: the Run's
- * `run_events` + `run_facts`, the candidate OID/status, and the Task's tracker
- * links. It **never asks the dead Session to summarize itself**, so the fallback
- * is available even when the original harness process is long gone — the whole
- * point of resume being a fresh spawn, not a reattach (see `AcpDriver.load`).
+ * `run_events`, its terminal outcome, the candidate OID/status, and the
+ * Task's tracker links. It **never asks the dead Session to summarize
+ * itself**, so the fallback is available even when the original harness
+ * process is long gone — the whole point of resume being a fresh spawn, not a
+ * reattach (see `AcpDriver.load`).
  *
- * Like its sibling seams (`session-resume.ts`, `run-disposition.ts`,
+ * Like its sibling seams (`session-resume.ts`, `session-retirement.ts`,
  * `task-deletion.ts`) this is a **pure decision + a pure builder**: no database,
- * no clock, no I/O. The caller reads the persisted facts/events/candidate/tracker
- * rows and passes them in; recomputing over the same inputs always yields the
- * same summary and the same plan, so both halves are exhaustively unit-testable
- * in isolation. The live wiring (drive the reload, mint the fresh Session, seed
- * it with this summary, persist the reason via `SessionStore`) merges with the
- * rest of the resume orchestration; this file is the engine it consumes.
+ * no clock, no I/O. The caller reads the persisted events/outcome/candidate/
+ * tracker rows and passes them in; recomputing over the same inputs always
+ * yields the same summary and the same plan, so both halves are exhaustively
+ * unit-testable in isolation. The live wiring (drive the reload, mint the
+ * fresh Session, seed it with this summary, persist the reason via
+ * `SessionStore`) merges with the rest of the resume orchestration; this file
+ * is the engine it consumes.
  */
 
 /**
@@ -121,16 +122,13 @@ export function planResumeFallback(
 }
 
 /**
- * The facet of a `run_fact` the summary reads — its position in the Run's
- * monotonic log (`seq`), its kind (`type`), and its JSON-encoded `payload`. A
- * persisted `RunFactRow` (`run-facts.ts`) is structurally assignable, so callers
- * pass `RunFactStore.list(runId)` rows directly.
+ * The prior Run's terminal disposition (ADR-0001 #388 S-E): its Attempt's
+ * ending-kind `reason` (`RunSettleCoordinator.settle`'s audit hedge), or
+ * `null` when the Run never reached a terminal disposition.
  */
-export interface FallbackSummaryFact {
-  seq: number;
-  type: string;
-  /** JSON-encoded signal detail, exactly as stored (`'{}'` when none). */
-  payload: string;
+export interface FallbackSummaryOutcome {
+  state: string;
+  reason: string | null;
 }
 
 /**
@@ -154,10 +152,10 @@ export interface FallbackTrackerLink {
 }
 
 /**
- * Everything {@link buildResumeFallbackSummary} needs — the four persisted
- * inputs the design mandates (`run_events` + `run_facts` + candidate OID/status
- * + tracker links) plus the dead Session's identity and the classified trigger,
- * so the summary can open by stating *why* it exists.
+ * Everything {@link buildResumeFallbackSummary} needs — the persisted inputs
+ * the design mandates (`run_events` + the terminal outcome + candidate
+ * OID/status + tracker links) plus the dead Session's identity and the
+ * classified trigger, so the summary can open by stating *why* it exists.
  */
 export interface FallbackSummaryInput {
   /** The classified failure that forced the fallback. */
@@ -167,32 +165,12 @@ export interface FallbackSummaryInput {
   session: { harness: string; model: string; cwd: string; harnessSessionId: string };
   /** The frozen candidate the prior work produced and its recorded status. */
   candidate: { oid: string | null; status: string | null };
-  /** The prior Run's `run_facts`, in any order (the builder sorts by `seq`). */
-  facts: readonly FallbackSummaryFact[];
+  /** The prior Run's terminal disposition; null when it never settled. */
+  outcome: FallbackSummaryOutcome | null;
   /** The prior Run's `run_events`, in any order (the builder sorts by `seq`). */
   events: readonly FallbackSummaryEvent[];
   /** The Task's tracker links (empty for a native Task). */
   trackerLinks: readonly FallbackTrackerLink[];
-}
-
-/** Deterministic, bounded one-line digest of a fact's JSON payload: sorted keys
- * `k=v`, each value truncated, so a huge or unparseable payload can neither
- * reorder nor bloat the summary. Empty string when there's nothing to show. */
-function digestPayload(payload: string): string {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(payload);
-  } catch {
-    const raw = payload.trim();
-    return raw && raw !== '{}' ? ` — ${truncate(raw)}` : '';
-  }
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    return parsed === null || parsed === undefined ? '' : ` — ${truncate(String(parsed))}`;
-  }
-  const entries = Object.keys(parsed as Record<string, unknown>)
-    .sort()
-    .map((key) => `${key}=${truncate(scalar((parsed as Record<string, unknown>)[key]))}`);
-  return entries.length ? ` — ${entries.join(', ')}` : '';
 }
 
 function scalar(value: unknown): string {
@@ -214,18 +192,10 @@ function truncate(value: string, max = 80): string {
  * output**. The result is Markdown seeded as the fresh Session's opening
  * context — a Harmonic-authored account of the prior work, never the dead
  * Session's own words.
- *
- * The prior Run's terminal disposition is derived by reusing
- * {@link computeDisposition} over all facts (cutoff = every fact), so "how it
- * ended" is decided by the one spine seam that ranks dispositions, not
- * re-implemented here.
  */
 export function buildResumeFallbackSummary(input: FallbackSummaryInput): string {
-  const facts = [...input.facts].sort((a, b) => a.seq - b.seq);
   const events = [...input.events].sort((a, b) => a.seq - b.seq);
   const links = [...input.trackerLinks].sort((a, b) => a.number - b.number);
-
-  const disposition = computeDisposition(facts, Number.POSITIVE_INFINITY);
 
   const lines: string[] = [];
   lines.push('# Resumed Session (Harmonic summary)');
@@ -263,18 +233,10 @@ export function buildResumeFallbackSummary(input: FallbackSummaryInput): string 
   lines.push('');
   lines.push('## Prior outcome');
   lines.push(
-    `- Terminal disposition: ${disposition ?? '(did not reach a terminal disposition)'}`,
+    input.outcome
+      ? `- Terminal state: ${input.outcome.state}${input.outcome.reason ? ` (${input.outcome.reason})` : ''}`
+      : '- Terminal state: (did not reach a terminal disposition)',
   );
-
-  lines.push('');
-  lines.push('## Ending signals (run facts)');
-  if (facts.length === 0) {
-    lines.push('- (no ending signals recorded)');
-  } else {
-    for (const fact of facts) {
-      lines.push(`- #${fact.seq} ${fact.type}${digestPayload(fact.payload)}`);
-    }
-  }
 
   lines.push('');
   lines.push('## Activity digest (run events)');

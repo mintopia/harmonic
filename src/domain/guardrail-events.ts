@@ -45,7 +45,7 @@ export class GuardrailEventStore {
    * The `max(seq)` read and the insert run as one write-queue unit (ADR-0029 §3):
    * the async single-writer queue now stands in for better-sqlite3's synchrony,
    * so no concurrent append can interleave between the read and the insert and
-   * steal the `seq` — mirroring `RunFactStore.append`.
+   * steal the `seq` — mirroring `VerificationAttemptStore.append`.
    */
   append(runId: number, event: GuardrailEventInput, now: number = Date.now()): Promise<GuardrailEventRow> {
     return this.db.write(async (db) => {

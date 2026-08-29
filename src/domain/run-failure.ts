@@ -1,5 +1,3 @@
-import { computeDisposition, type DispositionFact } from './run-disposition.js';
-
 /**
  * The reliability slices of a Run, kept honest per ADR-0028: a Run that ended
  * in RunState `failed` is an *execution failure*; cancelled Runs are counted and
@@ -15,32 +13,31 @@ export function isExecutionFailure({ state }: RunOutcome): boolean {
   return state === 'failed';
 }
 
-/** A failed Run's classification input: its `run_facts` (the terminal
- *  disposition is derived from them) and the free-text `runs.reason` fallback. */
+/** A failed Run's classification input (ADR-0001 #388 S-E): its Attempt's
+ *  disposition-kind `reason` (the structured, low-cardinality category) and
+ *  the free-text `runs.reason` fallback for a Run with no Attempt row. */
 export interface FailedRun {
-  /** This Run's disposition facts (`type` + `seq`); empty for pre-spine Runs. */
-  facts: DispositionFact[];
-  /** `runs.reason` — free text, used only when no disposition fact exists. */
-  reason: string | null;
+  /** `attempts.reason` for this Run's Attempt; null for pre-Attempt-timeline Runs. */
+  attemptReason: string | null;
+  /** `runs.reason` — free text, used only when no Attempt disposition exists. */
+  runReason: string | null;
 }
 
 /**
- * The reason bucket a single failed Run falls into. Prefers the Run's **winning
- * terminal disposition** (`failed`, `escalate`, `guardrail-trip`, `process-death`,
- * …) — the structured, low-cardinality category, chosen by the same precedence
- * the settle coordinator uses. `runs.reason` is deliberately *not* the primary
- * key: it carries unique free-text detail (each escalation message differs), so
+ * The reason bucket a single failed Run falls into. Prefers the Attempt's
+ * **disposition kind** (`failed`, `escalate`, `guardrail-trip`, `process-death`,
+ * …) — the structured, low-cardinality category the settle coordinator wrote to
+ * `attempts.reason`. `runs.reason` is deliberately *not* the primary key: it
+ * carries unique free-text detail (each escalation message differs), so
  * bucketing by it would explode into singletons. It is the fallback only when a
- * Run recorded no disposition fact: `'interrupted'` folds into `process-death`
- * (its emitter), any other message into `failed`, and a bare failure into
- * `unknown` — never a fabricated category.
+ * Run recorded no Attempt disposition: `'interrupted'` folds into `process-death`
+ * (its emitter, `RunStore.markInterrupted`), any other message into `failed`,
+ * and a bare failure into `unknown` — never a fabricated category.
  */
-export function failureReasonKey({ facts, reason }: FailedRun): string {
-  const maxSeq = facts.reduce((m, f) => (f.seq > m ? f.seq : m), 0);
-  const disposition = facts.length > 0 ? computeDisposition(facts, maxSeq) : null;
-  if (disposition !== null) return disposition;
-  if (reason === 'interrupted') return 'process-death';
-  return reason ? 'failed' : 'unknown';
+export function failureReasonKey({ attemptReason, runReason }: FailedRun): string {
+  if (attemptReason) return attemptReason;
+  if (runReason === 'interrupted') return 'process-death';
+  return runReason ? 'failed' : 'unknown';
 }
 
 /**

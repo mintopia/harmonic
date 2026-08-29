@@ -11,11 +11,11 @@ import {
   type AsyncDbHandle,
 } from '../src/db/async.js';
 import { isUniqueViolation } from '../src/db/errors.js';
-import { runFacts, runs, tasks, workspaces } from '../src/db/schema.js';
+import { guardrailEvents, runs, tasks, workspaces } from '../src/db/schema.js';
 
 const delay = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
-/** Seed a task + run on the async DB so run_facts inserts satisfy their FKs. */
+/** Seed a task + run on the async DB so guardrail_events inserts satisfy their FKs. */
 async function seedRunAsync(h: AsyncDbHandle): Promise<number> {
   const now = Date.now();
   const ws = (await h.db.select().from(workspaces).get())!;
@@ -32,11 +32,14 @@ async function seedRunAsync(h: AsyncDbHandle): Promise<number> {
   return run.id;
 }
 
-const runFactValues = (runId: number, seq: number, now: number) => ({
+const guardrailEventValues = (runId: number, seq: number, now: number) => ({
   runId,
   seq,
   ts: now,
-  type: 'process-death' as const,
+  dimension: 'wall-clock' as const,
+  limitValue: 1,
+  observedValue: 1,
+  configSource: 'default' as const,
   payload: '{}',
 });
 
@@ -72,7 +75,7 @@ describe('openAsyncDb boot (ADR-0029 Expand)', () => {
   it('enforces foreign keys after boot (FK on/off dance leaves them ON)', async () => {
     const now = Date.now();
     await expect(
-      h.db.insert(runFacts).values(runFactValues(999_999, 1, now)).run(),
+      h.db.insert(guardrailEvents).values(guardrailEventValues(999_999, 1, now)).run(),
     ).rejects.toThrow();
   });
 
@@ -170,29 +173,29 @@ describe('transactions as exclusive write-queue units (ADR-0029 §3)', () => {
 
   it('commits multi-statement work atomically', async () => {
     await h.transaction(async (tx) => {
-      await tx.insert(runFacts).values({ runId, seq: 1, ts: Date.now(), type: 'process-death', payload: '{}' }).run();
-      await tx.insert(runFacts).values({ runId, seq: 2, ts: Date.now(), type: 'process-death', payload: '{}' }).run();
+      await tx.insert(guardrailEvents).values(guardrailEventValues(runId, 1, Date.now())).run();
+      await tx.insert(guardrailEvents).values(guardrailEventValues(runId, 2, Date.now())).run();
     });
-    const facts = await h.db.select().from(runFacts).where(eq(runFacts.runId, runId)).all();
-    expect(facts).toHaveLength(2);
+    const events = await h.db.select().from(guardrailEvents).where(eq(guardrailEvents.runId, runId)).all();
+    expect(events).toHaveLength(2);
   });
 
   it('rolls back the whole unit when the callback throws', async () => {
     await expect(
       h.transaction(async (tx) => {
-        await tx.insert(runFacts).values({ runId, seq: 1, ts: Date.now(), type: 'process-death', payload: '{}' }).run();
+        await tx.insert(guardrailEvents).values(guardrailEventValues(runId, 1, Date.now())).run();
         throw new Error('rollback me');
       }),
     ).rejects.toThrow('rollback me');
-    const facts = await h.db.select().from(runFacts).where(eq(runFacts.runId, runId)).all();
-    expect(facts).toHaveLength(0);
+    const events = await h.db.select().from(guardrailEvents).where(eq(guardrailEvents.runId, runId)).all();
+    expect(events).toHaveLength(0);
   });
 
   it('excludes other writes for the full duration of the transaction', async () => {
     const order: string[] = [];
     const txP = h.transaction(async (tx) => {
       order.push('tx-start');
-      await tx.insert(runFacts).values({ runId, seq: 1, ts: Date.now(), type: 'process-death', payload: '{}' }).run();
+      await tx.insert(guardrailEvents).values(guardrailEventValues(runId, 1, Date.now())).run();
       await delay(25);
       order.push('tx-end');
     });
@@ -345,13 +348,13 @@ describe('unique-index CAS behaviour unchanged under libsql (ADR-0029 §3)', () 
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it('run_facts (run_id, seq) CAS: the losing insert surfaces a detectable UNIQUE violation', async () => {
+  it('guardrail_events (run_id, seq) CAS: the losing insert surfaces a detectable UNIQUE violation', async () => {
     const runId = await seedRunAsync(h);
     const now = Date.now();
-    await h.db.insert(runFacts).values(runFactValues(runId, 1, now)).run();
+    await h.db.insert(guardrailEvents).values(guardrailEventValues(runId, 1, now)).run();
     let caught: unknown;
     try {
-      await h.db.insert(runFacts).values(runFactValues(runId, 1, now)).run();
+      await h.db.insert(guardrailEvents).values(guardrailEventValues(runId, 1, now)).run();
     } catch (err) {
       caught = err;
     }
@@ -359,40 +362,40 @@ describe('unique-index CAS behaviour unchanged under libsql (ADR-0029 §3)', () 
     expect(isUniqueViolation(caught)).toBe(true);
   });
 
-  it('run_facts seq stays monotonic when appends route through the single-writer queue', async () => {
+  it('guardrail_events seq stays monotonic when appends route through the single-writer queue', async () => {
     const runId = await seedRunAsync(h);
-    // Mirrors RunFactStore.append: read max(seq)+1 then insert, as one write unit.
+    // Mirrors GuardrailEventStore.append: read max(seq)+1 then insert, as one write unit.
     const append = () =>
       h.write(async (db) => {
         const seq =
           ((
             await db
-              .select({ n: sql<number>`coalesce(max(${runFacts.seq}), 0)` })
-              .from(runFacts)
-              .where(eq(runFacts.runId, runId))
+              .select({ n: sql<number>`coalesce(max(${guardrailEvents.seq}), 0)` })
+              .from(guardrailEvents)
+              .where(eq(guardrailEvents.runId, runId))
               .get()
           )?.n ?? 0) + 1;
-        return db.insert(runFacts).values({ runId, seq, ts: Date.now(), type: 'process-death', payload: '{}' }).returning().get();
+        return db.insert(guardrailEvents).values(guardrailEventValues(runId, seq, Date.now())).returning().get();
       });
 
     const rows = await Promise.all(Array.from({ length: 25 }, append));
-    const seqs = rows.map((r) => r.seq).sort((a, b) => a - b);
+    const seqs: number[] = rows.map((r) => r.seq).sort((a, b) => a - b);
     expect(new Set(seqs).size).toBe(25);
     expect(seqs).toEqual(Array.from({ length: 25 }, (_, i) => i + 1));
   });
 
-  it('run_facts seq: naive concurrent appends collide — proving the write queue is load-bearing', async () => {
+  it('guardrail_events seq: naive concurrent appends collide — proving the write queue is load-bearing', async () => {
     const runId = await seedRunAsync(h);
     const naiveAppend = async () => {
       const seq =
         ((
           await h.db
-            .select({ n: sql<number>`coalesce(max(${runFacts.seq}), 0)` })
-            .from(runFacts)
-            .where(eq(runFacts.runId, runId))
+            .select({ n: sql<number>`coalesce(max(${guardrailEvents.seq}), 0)` })
+            .from(guardrailEvents)
+            .where(eq(guardrailEvents.runId, runId))
             .get()
         )?.n ?? 0) + 1;
-      return h.db.insert(runFacts).values({ runId, seq, ts: Date.now(), type: 'process-death', payload: '{}' }).returning().get();
+      return h.db.insert(guardrailEvents).values(guardrailEventValues(runId, seq, Date.now())).returning().get();
     };
     let caught: unknown;
     try {

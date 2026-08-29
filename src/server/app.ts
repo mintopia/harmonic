@@ -34,7 +34,6 @@ import { dropIndexForPath } from '../execution/code-index.js';
 import { WorktreeReconciler } from '../domain/worktree-reconciler.js';
 import { FlaggedWorktreeRegistry } from '../domain/flagged-worktrees.js';
 import { Git } from '../execution/git.js';
-import { RunFactStore } from '../domain/run-facts.js';
 import { GuardrailEventStore } from '../domain/guardrail-events.js';
 import { VerificationAttemptStore } from '../domain/verification-attempts.js';
 import type { MergeEffectExec } from '../domain/merge.js';
@@ -371,7 +370,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   const operatorSettle = new RunSettleCoordinator(
     runs,
     tasks,
-    new RunFactStore(asyncDb),
+    attempts,
     (run) => {
       void runnerRef?.finishRunOperation(run.id);
       bus.emit('run_changed', run);

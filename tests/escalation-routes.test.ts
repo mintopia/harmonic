@@ -5,7 +5,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
 import { VerificationAttemptStore } from '../src/domain/verification-attempts.js';
-import { RunFactStore } from '../src/domain/run-facts.js';
 import { AttemptStore } from '../src/domain/attempts.js';
 import type { CriticHarnessDrive, CriticDriveRequest } from '../src/verification/critic.js';
 import type { Verdict } from '../src/verification/critic-schema.js';
@@ -97,7 +96,6 @@ describe('escalation actions on a worktree ticket (ADR-0041)', () => {
   }
 
   const verificationAttempts = (runId: number) => new VerificationAttemptStore(server.app.ctx.asyncDb).list(runId);
-  const facts = (runId: number) => new RunFactStore(server.app.ctx.asyncDb).list(runId);
   const ticketAttempts = (taskId: number) => new AttemptStore(server.app.ctx.asyncDb).listForTask(taskId);
 
   it('escalates with the exhausted Attempt marked escalated, its verified head retained, and the branch kept as evidence', async () => {
@@ -112,7 +110,7 @@ describe('escalation actions on a worktree ticket (ADR-0041)', () => {
   });
 
   describe('POST /tasks/:id/accept', () => {
-    it('merges the verified head into the base branch and moves the ticket to done — an operator accept outranks the retained escalate fact', async () => {
+    it('merges the verified head into the base branch and moves the ticket to done — an operator accept overrides the escalated Attempt', async () => {
       const baseOidBefore = git(repoDir, 'rev-parse', 'main');
       const { taskId, runId, file } = await escalateViaCriticFail();
 
@@ -123,10 +121,10 @@ describe('escalation actions on a worktree ticket (ADR-0041)', () => {
       const run = (await server.api('GET', `/api/runs/${runId}`)).body;
       expect(run).toMatchObject({ state: 'completed' });
 
-      // Both facts are on the log; precedence resolves to the accept.
-      const runFacts = await facts(runId);
-      expect(runFacts.some((f) => f.type === 'escalate')).toBe(true);
-      expect(runFacts.some((f) => f.type === 'operator-accept')).toBe(true);
+      // The operator's accept is the one disposition allowed to move an
+      // already-`escalated` Attempt (ADR-0001 #388 S-E's guarded transition).
+      const attempts = await ticketAttempts(taskId);
+      expect(attempts.at(-1)).toMatchObject({ state: 'passed', reason: 'operator-accept' });
 
       // The merge actually happened: the base branch moved and carries the work.
       expect(git(repoDir, 'rev-parse', 'main')).not.toBe(baseOidBefore);

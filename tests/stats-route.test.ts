@@ -1,34 +1,37 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startServer, type TestServer } from './helpers.js';
-import { runFacts, runs } from '../src/db/schema.js';
+import { attempts, runs } from '../src/db/schema.js';
 import type { RunState } from '../src/db/schema.js';
 import type { RunUsage } from '../src/execution/usage.js';
 
 /**
  * The KPI-band ingredients the stats route now derives (issue #196, ADR-0028):
  * the failed-only failure numerator and the active-execution duration
- * percentiles. Seeds runs + run_facts directly so the wiring — not just the pure
- * helpers — is exercised end to end.
+ * percentiles. Seeds runs + attempts directly (ADR-0001 #388 S-E: the
+ * disposition-kind reason now lives on `attempts.reason`, joined by the
+ * (taskId, attempt=number) pair) so the wiring — not just the pure helpers —
+ * is exercised end to end.
  */
 describe('GET /api/stats — failedRuns + durationMs', () => {
   let server: TestServer;
   let taskId: number;
+  let nextAttemptNumber = 1;
 
   const seedRun = async (r: {
     state: RunState;
     startedAt: number;
     finishedAt: number | null;
     reason?: string | null;
-    agentFinishTs?: number;
-    /** Terminal disposition facts to append (type only; seq auto-assigned). */
-    dispositions?: string[];
+    /** The Attempt's disposition-kind reason; matched to this Run by `attempt` number. */
+    attemptReason?: string;
   }) => {
+    const attemptNumber = nextAttemptNumber++;
     const row = await server.app.ctx.asyncDb.write((d) =>
       d
         .insert(runs)
         .values({
           taskId,
-          attempt: 1,
+          attempt: attemptNumber,
           state: r.state,
           startedAt: r.startedAt,
           finishedAt: r.finishedAt,
@@ -37,22 +40,11 @@ describe('GET /api/stats — failedRuns + durationMs', () => {
         .returning()
         .get(),
     );
-    let seq = 1;
-    if (r.agentFinishTs !== undefined) {
-      const ts = r.agentFinishTs;
+    if (r.attemptReason !== undefined) {
       await server.app.ctx.asyncDb.write((d) =>
-        d
-          .insert(runFacts)
-          .values({ runId: row.id, seq: seq++, ts, type: 'agent-finish/unresolved', payload: '{}' })
-          .run(),
-      );
-    }
-    for (const type of r.dispositions ?? []) {
-      await server.app.ctx.asyncDb.write((d) =>
-        d
-          .insert(runFacts)
-          .values({ runId: row.id, seq: seq++, ts: r.startedAt + seq, type: type as (typeof runFacts.$inferInsert)['type'], payload: '{}' })
-          .run(),
+        d.insert(attempts).values({
+          taskId, number: attemptNumber, state: 'failed', startedAt: r.startedAt, endedAt: r.finishedAt, reason: r.attemptReason,
+        }).run(),
       );
     }
     return row;
@@ -63,18 +55,15 @@ describe('GET /api/stats — failedRuns + durationMs', () => {
     const task = await server.api('POST', '/api/tasks', { prompt: 'stats seed' });
     taskId = task.body.id;
 
-    // Two completed runs with measurable durations:
-    //  A — agent-finish fact at 4000, finished far later (a long merging):
-    //      active duration is the fact span 3000, not the wall-clock 99000.
-    await seedRun({ state: 'completed', startedAt: 1000, finishedAt: 100000, agentFinishTs: 4000 });
-    //  B — no fact: falls back to wall-clock finished − started = 5000.
+    // Two completed runs with measurable wall-clock durations.
+    await seedRun({ state: 'completed', startedAt: 1000, finishedAt: 100000 });
     await seedRun({ state: 'completed', startedAt: 1000, finishedAt: 6000 });
     // A genuine execution failure — counts toward the failure numerator and the
-    // by-reason breakdown (its winning disposition is 'failed').
-    await seedRun({ state: 'failed', startedAt: 1000, finishedAt: null, reason: 'boom', dispositions: ['failed'] });
+    // by-reason breakdown (its Attempt disposition is 'failed').
+    await seedRun({ state: 'failed', startedAt: 1000, finishedAt: null, reason: 'boom', attemptReason: 'failed' });
     // A cancelled Run is its own slice (ADR-0028): never in the failure
     // numerator, never in the by-reason breakdown.
-    await seedRun({ state: 'cancelled', startedAt: 1000, finishedAt: null, dispositions: ['operator-cancel'] });
+    await seedRun({ state: 'cancelled', startedAt: 1000, finishedAt: null, attemptReason: 'operator-cancel' });
   });
   afterAll(async () => {
     await server.close();
@@ -89,10 +78,10 @@ describe('GET /api/stats — failedRuns + durationMs', () => {
     expect(body.failedRuns).toBe(1);
   });
 
-  it('durationMs is p50/p95 of active-execution durations (agent-finish, wall-clock fallback)', async () => {
+  it('durationMs is p50/p95 of wall-clock active-execution durations', async () => {
     const { body } = await server.api('GET', '/api/stats?from=0');
-    // durations = [3000 (fact span), 5000 (fallback)] → p50 4000, p95 4900.
-    expect(body.durationMs).toEqual({ p50: 4000, p95: 4900 });
+    // durations = [99000, 5000] → p50 52000, p95 94300.
+    expect(body.durationMs).toEqual({ p50: 52000, p95: 94300 });
   });
 
   it('no longer reports a review-rejected slice (the review gate is gone, ADR-0041)', async () => {

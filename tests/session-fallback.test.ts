@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { RunFactRow, RunEventRow } from '../src/db/schema.js';
+import type { RunEventRow } from '../src/db/schema.js';
 import type { PersistedRunEvent } from '../src/domain/runs.js';
 import {
   FALLBACK_TRIGGER_REASONS,
@@ -13,7 +13,7 @@ import {
 /**
  * The issue #145 seam test: the deterministic summarized-Session fallback —
  * both halves, driven in isolation as pure functions (no db, no clock). Proves
- * the at-most-once gate (AC1/AC4), the deterministic summary built from the four
+ * the at-most-once gate (AC1/AC4), the deterministic summary built from the
  * persisted inputs (AC2/AC3), and that the summary is Harmonic-authored — built
  * from inputs alone, never by asking the dead Session (AC2). AC5 (persisting the
  * reason on the Session row) lives in `tests/sessions.test.ts`.
@@ -25,10 +25,7 @@ function baseInput(overrides: Partial<FallbackSummaryInput> = {}): FallbackSumma
     detail: 'stored adapter claude@1 != current claude@2',
     session: { harness: 'claude', model: 'opus', cwd: '/repo', harnessSessionId: 'sess-abc' },
     candidate: { oid: 'deadbeef', status: 'created' },
-    facts: [
-      { seq: 1, type: 'run-start-state', payload: '{"branch":"feat"}' },
-      { seq: 2, type: 'agent-finish/unresolved', payload: '{}' },
-    ],
+    outcome: { state: 'completed', reason: null },
     events: [
       { seq: 1, type: 'session_update', payload: { chunk: 'a' } },
       { seq: 2, type: 'lifecycle', payload: { event: 'candidate', status: 'created' } },
@@ -105,10 +102,9 @@ describe('buildResumeFallbackSummary — deterministic Harmonic-built summary (i
     expect(buildResumeFallbackSummary(baseInput())).toBe(buildResumeFallbackSummary(baseInput()));
   });
 
-  it('input ordering does not change the output: facts/events/links are sorted by their stable key', () => {
+  it('input ordering does not change the output: events/links are sorted by their stable key', () => {
     const ordered = baseInput();
     const shuffled = baseInput({
-      facts: [...baseInput().facts].reverse(),
       events: [...baseInput().events].reverse(),
       trackerLinks: [
         { number: 200, title: 'later', state: 'open' },
@@ -121,9 +117,9 @@ describe('buildResumeFallbackSummary — deterministic Harmonic-built summary (i
         { number: 200, title: 'later', state: 'open' },
       ],
     });
-    // Reversed facts/events produce the same rendering (sorted by seq).
+    // Reversed events produce the same rendering (sorted by seq).
     expect(buildResumeFallbackSummary(shuffled)).toBe(buildResumeFallbackSummary(orderedWithTwoLinks));
-    // sanity: the reversed-fact input is genuinely different from the base (which has one link).
+    // sanity: the two-link input is genuinely different from the base (which has one link).
     expect(buildResumeFallbackSummary(shuffled)).not.toBe(buildResumeFallbackSummary(ordered));
   });
 
@@ -134,37 +130,31 @@ describe('buildResumeFallbackSummary — deterministic Harmonic-built summary (i
     expect(out).toContain('the prior Session was not asked to summarize itself');
   });
 
-  it('renders all four persisted inputs: session, candidate, tracker links, facts, events', () => {
+  it('renders the persisted inputs: session, candidate, tracker links, outcome, events', () => {
     const out = buildResumeFallbackSummary(baseInput());
     expect(out).toContain('- Harness: claude');
     expect(out).toContain('- Harness session id: sess-abc');
     expect(out).toContain('- Commit OID: deadbeef');
     expect(out).toContain('- Status: created');
     expect(out).toContain('- #145 summarized fallback [open]');
-    expect(out).toContain('- #1 run-start-state — branch=feat');
-    expect(out).toContain('- #2 agent-finish/unresolved');
+    expect(out).toContain('- Terminal state: completed');
     expect(out).toContain('- session_update: 1');
     expect(out).toContain('- lifecycle: 1');
     expect(out).toContain('Last lifecycle:');
   });
 
-  it('derives the terminal disposition via computeDisposition precedence (escalate outranks failed)', () => {
+  it('renders the terminal state plus its disposition-kind reason when the Run escalated', () => {
     const out = buildResumeFallbackSummary(
-      baseInput({
-        facts: [
-          { seq: 1, type: 'failed', payload: '{}' },
-          { seq: 2, type: 'escalate', payload: '{"why":"blocked"}' },
-        ],
-      }),
+      baseInput({ outcome: { state: 'failed', reason: 'escalate' } }),
     );
-    expect(out).toContain('- Terminal disposition: escalate');
+    expect(out).toContain('- Terminal state: failed (escalate)');
   });
 
-  it('handles the empty case: no candidate, no tracker links, no facts, no events', () => {
+  it('handles the empty case: no candidate, no tracker links, no outcome, no events', () => {
     const out = buildResumeFallbackSummary(
       baseInput({
         candidate: { oid: null, status: null },
-        facts: [],
+        outcome: null,
         events: [],
         trackerLinks: [],
       }),
@@ -172,38 +162,17 @@ describe('buildResumeFallbackSummary — deterministic Harmonic-built summary (i
     expect(out).toContain('- Commit OID: (none produced)');
     expect(out).toContain('- Status: (unknown)');
     expect(out).toContain('- (no linked tracker issues)');
-    expect(out).toContain('- (no ending signals recorded)');
+    expect(out).toContain('- Terminal state: (did not reach a terminal disposition)');
     expect(out).toContain('- (no events recorded)');
-    expect(out).toContain('- Terminal disposition: (did not reach a terminal disposition)');
-  });
-
-  it('fact payload digest sorts keys and is bounded, so a huge/odd payload cannot reorder or bloat', () => {
-    const long = 'x'.repeat(500);
-    const out = buildResumeFallbackSummary(
-      baseInput({
-        facts: [{ seq: 1, type: 'failed', payload: JSON.stringify({ zeta: 1, alpha: long }) }],
-      }),
-    );
-    // keys alphabetical: alpha before zeta
-    expect(out).toMatch(/- #1 failed — alpha=x+…, zeta=1/);
-    expect(out).not.toContain(long); // truncated
-  });
-
-  it('an unparseable fact payload degrades to a bounded raw digest rather than throwing', () => {
-    const out = buildResumeFallbackSummary(
-      baseInput({ facts: [{ seq: 1, type: 'failed', payload: 'not json' }] }),
-    );
-    expect(out).toContain('- #1 failed — not json');
   });
 
   it('accepts the store row types directly (structural assignability)', () => {
-    const factRow: RunFactRow = { id: 9, runId: 1, attemptId: null, seq: 1, ts: 100, type: 'escalate', payload: '{"why":"x"}' };
     const eventRow: RunEventRow = { id: 8, runId: 1, seq: 1, ts: 100, type: 'lifecycle', payload: '{"event":"candidate"}' };
     const persisted: PersistedRunEvent = { id: 7, runId: 1, seq: 2, ts: 101, type: 'session_update', payload: { c: 1 } };
     const out = buildResumeFallbackSummary(
-      baseInput({ facts: [factRow], events: [eventRow, persisted] }),
+      baseInput({ outcome: { state: 'failed', reason: 'escalate' }, events: [eventRow, persisted] }),
     );
-    expect(out).toContain('- Terminal disposition: escalate');
+    expect(out).toContain('- Terminal state: failed (escalate)');
     expect(out).toContain('- session_update: 1');
   });
 });

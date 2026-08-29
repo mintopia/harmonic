@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
-import { RunFactStore } from '../src/domain/run-facts.js';
 
 describe('attempt timeline API', () => {
   let server: TestServer;
@@ -54,12 +53,15 @@ describe('attempt timeline API', () => {
       startedAt: 13,
       endedAt: 14,
     });
-    await server.app.ctx.attempts.finish(attempt.id, 'passed', 15);
-
     const run = await server.app.ctx.runs.create(created.body.id);
-    const facts = new RunFactStore(server.app.ctx.asyncDb);
-    await facts.append(run.id, 'verified-head', { sha: 'verified-sha' });
-    await facts.append(run.id, 'escalate', { runState: 'failed', taskAction: 'escalate', reason: 'escalated to human: attempts exhausted' });
+    await server.app.ctx.verificationAttempts.append(run.id, {
+      mechanism: 'command', inputOid: 'verified-sha', verdict: 'pass', summary: 'checks passed', output: '',
+    });
+    // `verifiedSha` now derives from the passing verification attempt above
+    // (ADR-0001 #388 S-E: the `verified-head` fact was a redundant second
+    // copy); `escalate` closes the Attempt with its disposition-kind reason,
+    // the same write `RunSettleCoordinator.settle` makes.
+    await server.app.ctx.attempts.finish(attempt.id, 'escalated', 15, undefined, 'escalate');
     server.app.ctx.bus.emit('run_changed', run);
     await waitFor(async () => messages.find(
       (message) => typeof message === 'object'
@@ -80,10 +82,13 @@ describe('attempt timeline API', () => {
     expect(Reflect.get(event!, 'attempts')).toEqual(rest.body.attempts);
     expect(rest.body.attempts[0].steps.map((step: { position: number }) => step.position)).toEqual([1, 2]);
     expect(rest.body.attempts[0].verifiedSha).toBe('verified-sha');
-    expect(rest.body.attempts[0].escalationReason).toBe('escalated to human: attempts exhausted');
+    expect(rest.body.attempts[0].escalationReason).toBe('escalate');
     expect(rest.body.attempts[0].continuation).toMatchObject({ path: 'new-session-condensed', contextTokens: 250_000 });
+    // The recorded 'command' verification attempt (seeded above for
+    // `verifiedSha`) is itself ground truth that a command verifier ran —
+    // it reconciles to 'passed', not the config-derived 'disabled'.
     expect(rest.body.attempts[0].verifierStatuses).toEqual([
-      { mechanism: 'command', state: 'disabled', reason: 'No command verifier is configured.' },
+      { mechanism: 'command', state: 'passed', reason: null },
       { mechanism: 'critic', state: 'disabled', reason: 'Critic verification is disabled.' },
     ]);
     expect(rest.body.attempts[0].steps[1]).not.toHaveProperty('verifiedSha');

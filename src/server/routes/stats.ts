@@ -10,7 +10,6 @@ import { yieldToEventLoop } from '../../reliability/yield.js';
 import { activeExecutionDurationMs, durationPercentiles } from '../../domain/run-duration.js';
 import { failuresByReason, isExecutionFailure } from '../../domain/run-failure.js';
 import { logger } from '../../logger.js';
-import type { DispositionFact } from '../../domain/run-disposition.js';
 
 /**
  * Aggregating this range is synchronous JS on the shared event loop (issue
@@ -74,10 +73,9 @@ const statsResponseSchema = z.object({
    */
   failuresByReason: z.record(z.string(), z.number()).meta({ example: { failed: 4, escalate: 1, 'process-death': 1 } }),
   /**
-   * p50 / p95 active-execution duration (ms) over the range's Runs — `agent-finish`
-   * run_fact ts minus Run start, excluding review-park + merging wait, with a
-   * wall-clock `finished − started` fallback (ADR-0028). Null when no Run in the
-   * range has a measurable duration (honest numbers: never a fabricated 0).
+   * p50 / p95 active-execution duration (ms) over the range's Runs — wall-clock
+   * `finished − started` (ADR-0028). Null when no Run in the range has settled
+   * (honest numbers: never a fabricated 0).
    */
   durationMs: z
     .object({ p50: z.number(), p95: z.number() })
@@ -146,23 +144,13 @@ export async function statsRoutes(fastify: FastifyInstance): Promise<void> {
       // Local libsql executes file-backed queries inline despite returning a
       // Promise. The typed worker RPC keeps all four growing range scans off the
       // server event loop while preserving the separate WAL reader from #213.
-      const { rows, factRows, failFactRows, toolTotals } = await ctx.statsReader.read({
+      const { rows, attemptReasons, toolTotals } = await ctx.statsReader.read({
         from,
         to,
         ...(workspaceId === undefined ? {} : { workspaceId }),
       });
 
-      const agentFinishTs = new Map<number, number>();
-      for (const f of factRows) {
-        const prev = agentFinishTs.get(f.runId);
-        if (prev === undefined || f.ts < prev) agentFinishTs.set(f.runId, f.ts);
-      }
-      const factsByRun = new Map<number, DispositionFact[]>();
-      for (const f of failFactRows) {
-        const list = factsByRun.get(f.runId);
-        if (list) list.push({ seq: f.seq, type: f.type });
-        else factsByRun.set(f.runId, [{ seq: f.seq, type: f.type }]);
-      }
+      const attemptReasonByRun = new Map(attemptReasons.map((r) => [r.runId, r.reason]));
 
       // Hand the loop back between the blocking reads and the heavy JS
       // aggregation below (issue #200), so a large Stats request interleaves
@@ -185,7 +173,7 @@ export async function statsRoutes(fastify: FastifyInstance): Promise<void> {
       const failures = rows.filter(isExecutionFailure);
       const failedRuns = failures.length;
       const failReasons = failuresByReason(
-        failures.map((r) => ({ facts: factsByRun.get(r.id) ?? [], reason: r.reason })),
+        failures.map((r) => ({ attemptReason: attemptReasonByRun.get(r.id) ?? null, runReason: r.reason })),
       );
 
       const durations = rows
@@ -193,7 +181,10 @@ export async function statsRoutes(fastify: FastifyInstance): Promise<void> {
           activeExecutionDurationMs({
             startedAt: r.startedAt,
             finishedAt: r.finishedAt,
-            agentFinishTs: agentFinishTs.get(r.id) ?? null,
+            // No dedicated agent-finish signal since the disposition-fact log
+            // collapsed onto `attempts.reason` (ADR-0001 #388 S-E): wall-clock
+            // `finished − started` for every Run now.
+            agentFinishTs: null,
           }),
         )
         .filter((d): d is number => d !== null);

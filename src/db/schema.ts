@@ -1,7 +1,7 @@
 import { sqliteTable, integer, text, primaryKey, index, uniqueIndex, type AnySQLiteColumn } from 'drizzle-orm/sqlite-core';
 // Type-only import (erased at compile) so the db layer can brand
 // `verification_attempts.verdict` without a runtime db→domain import cycle
-// (domain/run-facts.ts already imports this schema): the canonical verdict
+// (domain/verification-attempts.ts already imports this schema): the canonical verdict
 // enum so the column is literal-typed like `mechanism`.
 import type { Verdict } from '../verification/critic-schema.js';
 // Type-only import (erased at compile): brands the durable tracker-fact columns
@@ -348,6 +348,16 @@ export const attempts = sqliteTable('attempts', {
   feedback: text('feedback'),
   /** Recorded deterministic session choice for this attempt. */
   continuation: text('continuation'),
+  /**
+   * The ending-signal kind this Attempt settled under (ADR-0001 #388 S-E):
+   * 'escalate' | 'failed' | 'process-death' | 'operator-cancel' |
+   * 'operator-accept' | 'guardrail-trip' | 'agent-finish/unresolved'. This is
+   * the whole coordination spine now — an Attempt's disposition is
+   * `state` + `reason`, nothing replayed from an append-only log. Cheap,
+   * low-cardinality audit hedge, not free text (the operator-facing detail
+   * lives on `tasks.escalationReason` while a ticket is actually escalated).
+   */
+  reason: text('reason'),
 }, (t) => [uniqueIndex('attempts_task_number_unique').on(t.taskId, t.number)]);
 export type AttemptRow = typeof attempts.$inferSelect;
 
@@ -534,79 +544,6 @@ export type RunRow = typeof runs.$inferSelect;
 export type RunEventRow = typeof runEvents.$inferSelect;
 
 /**
- * The ending-signal fact types the coordinator understands **today** (issue
- * #112, reliability-design §0.3). Every way a Run can end is recorded as a
- * `run_fact`; this is the set that has an emitter now. Later spine units append
- * their own kinds (e.g. verify-fail) without touching the coordinator contract —
- * the column is free `text`, and the single place a new kind is *ranked* is
- * `DISPOSITION_PRECEDENCE` (domain/run-disposition.ts). So this list is a
- * convenience type, not a closed constraint: the store never rejects an unknown
- * `type`, so historical rows carrying a since-removed kind still read back.
- * `guardrail-trip` now has an emitter (issue #127, the Step-scoped wall-clock
- * Guardrail) — its structured evidence lives in the separate `guardrail_events`
- * log (see below); this fact type is the disposition-facing signal that a trip
- * happened.
- *
- * `session-resumed` and `resume-entry` (pre-reset boot-time crash-resume
- * markers) are gone with `BootResumeCoordinator` (ADR-0001): a restart-
- * interrupted Task simply returns to `ready`, and the scheduler's normal
- * continuation decision (ADR-0005) picks warm-session reuse back up on the
- * next Attempt — no boot-time resume Run/marker pair required. The store
- * never rejects an unknown `type`, so historical rows carrying either kind
- * still read back.
- */
-export const RUN_FACT_TYPES = [
-  'operator-cancel',
-  'operator-accept',
-  'escalate',
-  'agent-finish/unresolved',
-  'failed',
-  'process-death',
-  'guardrail-trip',
-  'session-continuation',
-  /** Immutable proof that verification ran against this branch tip. */
-  'verified-head',
-  /** Terminal count of moving-base rebase/CAS retries a completion loop absorbed
-   * (ADR-0046, #368). Non-ending — a moving base is normal, never a disposition;
-   * it sinks below every ranked kind in `DISPOSITION_PRECEDENCE`. */
-  'moving-base',
-] as const;
-export type RunFactType = (typeof RUN_FACT_TYPES)[number];
-
-/**
- * The append-only fact log at the heart of the coordination spine (issue #112,
- * reliability-design §0.1/§0.3). Every ending signal a Run emits is one
- * immutable row with a per-Run monotonic `seq`; the ordered log is the sole
- * input (with a cutoff) to `computeDisposition`. Task lifecycle states are a
- * projection of these facts, never the source of coordination truth.
- *
- * The unique index on `(run_id, seq)` is the monotonicity guarantee: two facts
- * can never share a seq within a Run, so the log has a single total order. The
- * store assigns `seq` as `max(seq)+1`; the index is what makes that safe under a
- * cross-process race — a second append computing the same seq is rejected rather
- * than silently corrupting the order.
- */
-export const runFacts = sqliteTable('run_facts', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  runId: integer('run_id')
-    .notNull()
-    .references(() => runs.id),
-  /** Attempt-owned coordination key. `runId` remains during the Run compatibility window. */
-  attemptId: integer('attempt_id').references(() => attempts.id),
-  /** Monotonic per-Run sequence (1-based); the fact log's total order. */
-  seq: integer('seq').notNull(),
-  ts: integer('ts').notNull(),
-  /** The ending-signal kind; open for extension (see `RUN_FACT_TYPES`). */
-  type: text('type').$type<RunFactType>().notNull(),
-  /** JSON payload — signal-specific detail (reason, exit code, …); `'{}'` when none. */
-  payload: text('payload').notNull().default('{}'),
-}, (t) => [
-  uniqueIndex('run_facts_run_seq_unique').on(t.runId, t.seq),
-]);
-
-export type RunFactRow = typeof runFacts.$inferSelect;
-
-/**
  * The Verification mechanisms that write to `verification_attempts` (issue
  * #136, ADR-0021, reliability-design Unit B). Only `'critic'` has an emitter
  * today (`verification/critic.ts`); `'command'` is reserved for the sibling
@@ -620,8 +557,8 @@ export type VerificationMechanism = (typeof VERIFICATION_MECHANISMS)[number];
 /**
  * The persisted record of one Verification attempt against a Run's frozen
  * candidate OID (issue #136, ADR-0021, reliability-design Unit B). Mirrors
- * `run_facts`'s discipline exactly: append-only, `seq` assigned by the store
- * as `max(seq)+1`, and the `(run_id, seq)` unique index is the same
+ * `guardrail_events`'s discipline exactly: append-only, `seq` assigned by the
+ * store as `max(seq)+1`, and the `(run_id, seq)` unique index is the same
  * monotonicity guarantee — two attempts can never share a seq within a Run,
  * so the log has a single total order and a cross-process race that computed
  * the same seq is rejected loudly rather than corrupting it.
@@ -647,7 +584,7 @@ export const verificationAttempts = sqliteTable('verification_attempts', {
   runId: integer('run_id')
     .notNull()
     .references(() => runs.id),
-  /** Monotonic per-Run sequence (1-based); same discipline as `run_facts.seq`. */
+  /** Monotonic per-Run sequence (1-based); same discipline as `guardrail_events.seq`. */
   seq: integer('seq').notNull(),
   ts: integer('ts').notNull(),
   /** 'critic' today; 'command' reserved for the sibling verifier ticket. */
@@ -706,19 +643,19 @@ export type GuardrailConfigSource = (typeof GUARDRAIL_CONFIG_SOURCES)[number];
  * reliability-design Unit A line 104): every time a Guardrail's configured
  * budget is crossed, one immutable row records what tripped, against what
  * bound, and where that bound resolved from — the evidence a
- * later Escalation card's reason derives from. Mirrors `verificationAttempts`
- * / `runFacts`'s discipline exactly: append-only, `seq` assigned by the store
+ * later Escalation card's reason derives from. Mirrors `verificationAttempts`'s
+ * discipline exactly: append-only, `seq` assigned by the store
  * as `max(seq)+1` (1-based, per-Run monotonic), and the `(run_id, seq)`
  * unique index is the same cross-process integrity backstop — two trips can
  * never share a seq within a Run, so the log has a single total order and a
  * racing duplicate `seq` is rejected loudly rather than corrupting it.
  *
- * This table is substrate only, same as `run_facts` was at #112 and
- * `verification_attempts` was at #136: nothing here decides anything. It does
- * not itself move a Run to Escalation — the pure trip-detection logic and the
- * Runner wiring that calls `append` and emits the corresponding
- * `guardrail-trip` run_fact are out of scope here (issue #127's logic/wiring
- * halves). `dimension` only ever observes `'wall-clock'` today.
+ * This table is substrate only, same as `verification_attempts` was at #136:
+ * nothing here decides anything. It does not itself move a Run to Escalation
+ * — the pure trip-detection logic and the Runner wiring that calls `append`
+ * and sets the `guardrail-trip` disposition (`attempts.reason`) are out of
+ * scope here (issue #127's logic/wiring halves). `dimension` only ever
+ * observes `'wall-clock'` today.
  * `limitValue`/`observedValue` share the dimension's unit
  * (milliseconds for wall-clock). `payload` is free-form JSON for any extra
  * evidence a future dimension's emitter wants to attach, defaulting to `'{}'`
@@ -729,7 +666,7 @@ export const guardrailEvents = sqliteTable('guardrail_events', {
   runId: integer('run_id')
     .notNull()
     .references(() => runs.id),
-  /** Monotonic per-Run sequence (1-based); same discipline as `run_facts.seq`. */
+  /** Monotonic per-Run sequence (1-based); same discipline as `verification_attempts.seq`. */
   seq: integer('seq').notNull(),
   ts: integer('ts').notNull(),
   /** The budget dimension that tripped; only 'wall-clock' has an emitter today (#127). */

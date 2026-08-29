@@ -13,8 +13,9 @@ export interface StatsRange {
 
 export interface StatsReadResult {
   rows: RunRow[];
-  factRows: Array<{ runId: number; ts: number }>;
-  failFactRows: Array<{ runId: number; seq: number; type: string }>;
+  /** Failed-only Runs' Attempt disposition (ADR-0001 #388 S-E): `attempts.reason`
+   * keyed by `runId`, null when the Run has no Attempt row (pre-Attempt-timeline). */
+  attemptReasons: Array<{ runId: number; reason: string | null }>;
   toolTotals: ToolCallTotals;
 }
 
@@ -84,11 +85,9 @@ function isStatsReadResult(value: unknown): value is StatsReadResult {
   return isRecord(value)
     && Array.isArray(value.rows)
     && value.rows.every(isRecord)
-    && Array.isArray(value.factRows)
-    && value.factRows.every((row) => isRecord(row) && typeof row.runId === 'number' && typeof row.ts === 'number')
-    && Array.isArray(value.failFactRows)
-    && value.failFactRows.every(
-      (row) => isRecord(row) && typeof row.runId === 'number' && typeof row.seq === 'number' && typeof row.type === 'string',
+    && Array.isArray(value.attemptReasons)
+    && value.attemptReasons.every(
+      (row) => isRecord(row) && typeof row.runId === 'number' && (row.reason === null || typeof row.reason === 'string'),
     )
     && isRecord(value.toolTotals)
     && isTotalsDimension(value.toolTotals.byTask)

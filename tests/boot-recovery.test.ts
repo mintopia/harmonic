@@ -90,16 +90,20 @@ describe('boot crash-recovery', () => {
     await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'escalated');
     const dataDir = server.dataDir;
     const runId = started.body.id as number;
+    const taskId = created.body.id as number;
     const before = await server.api('GET', `/api/tasks/${created.body.id}`);
 
     await server.app.close();
-    const count = async () => {
+    // The escalated Attempt's disposition (ADR-0001 #388 S-E: `state` + the
+    // ending-kind `reason`, no more append-only fact log) is the thing a boot
+    // sweep must never move.
+    const attemptSnapshot = async () => {
       const check = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
-      const n = ((await check.execute({ sql: 'SELECT COUNT(*) as n FROM run_facts WHERE run_id = ?', args: [runId] })).rows[0] as unknown as { n: number }).n;
+      const rows = await check.execute({ sql: 'SELECT id, state, reason FROM attempts WHERE task_id = ?', args: [taskId] });
       check.close();
-      return n;
+      return rows.rows;
     };
-    const factsBefore = await count();
+    const attemptsBefore = await attemptSnapshot();
     server = await startServer({ ...stubHarness(), maxAttempts: 1 }, { dataDir });
 
     const task = await server.api('GET', `/api/tasks/${created.body.id}`);
@@ -107,7 +111,7 @@ describe('boot crash-recovery', () => {
     const run = await server.api('GET', `/api/runs/${runId}`);
     expect(run.body.state).toBe('failed');
     await server.app.close();
-    expect(await count()).toBe(factsBefore);
+    expect(await attemptSnapshot()).toEqual(attemptsBefore);
     server = await startServer({ ...stubHarness(), maxAttempts: 1 }, { dataDir });
   });
 

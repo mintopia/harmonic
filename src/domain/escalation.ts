@@ -29,9 +29,9 @@ export interface EscalationHooks {
  * actions. Accept merges the verified branch head as-is through the one merge
  * policy (ADR-0001, #383/#388) — the same primitive the automated path drives,
  * under the base repo mutex — and settles the Run under `operator-accept`
- * (`RunSettleCoordinator.settle`), which outranks the retained `escalate` fact
- * (`DISPOSITION_PRECEDENCE`) so the success path continues: merge, close the
- * ticket, clean up. Reject with guidance records the guidance as feedback,
+ * (`RunSettleCoordinator.settle`), the one disposition the coordinator lets
+ * override an already-`escalated` Attempt/Run, so the success path continues:
+ * merge, close the ticket, clean up. Reject with guidance records the guidance as feedback,
  * resets the attempt budget, and requeues the ticket to `ready` (ADR-0048):
  * the loop resumes by Auto-Runner capacity, or at once when the caller passes
  * `startNow` (the warm-Session "start now" override). Close cancels the ticket
