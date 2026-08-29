@@ -904,6 +904,95 @@ const guardrailScalarFields: OverridableDescriptor[] = [
   },
 ];
 
+/** The global Run-guardrails defaults (ADR-0019): the budget bounds, progress
+ * detector, and tool timeout every Workspace inherits until it overrides them.
+ * The global twin of {@link WorkspaceGuardrails} — no inherit layer, writing
+ * `config.guardrails.*` directly. */
+function GlobalGuardrails({ ctx }: { ctx: GlobalRenderCtx }) {
+  const { config, errors } = ctx;
+  const g = config.guardrails;
+  const setGuardrails = (guardrails: AppConfig['guardrails']) => ctx.setConfig({ ...config, guardrails });
+  const setBudget = (budget: AppConfig['guardrails']['budget']) => setGuardrails({ ...g, budget });
+  return (
+    <div className="flex flex-col gap-4 sm:max-w-md">
+      <div>
+        <span className={fieldLabel}>Budget</span>
+        <div className="mt-2 flex flex-col gap-3">
+          <div>
+            <label className={fieldLabel} htmlFor="settings-budget-wallclock">
+              Wall-clock (minutes)
+            </label>
+            <input
+              id="settings-budget-wallclock"
+              type="number"
+              min={1}
+              className={`${field} w-40 tabular-nums`}
+              value={g.budget.wallClockMinutes}
+              onChange={(e) => setBudget(setBudgetField(g.budget, 'wallClockMinutes', e.target.value))}
+            />
+            <FieldError message={errors['guardrails.budget.wallClockMinutes']} />
+          </div>
+          <div>
+            <label className={fieldLabel} htmlFor="settings-budget-tokens">
+              Token cap <span className="normal-case text-muted">(blank = no cap)</span>
+            </label>
+            <input
+              id="settings-budget-tokens"
+              type="number"
+              min={1}
+              placeholder="No cap"
+              className={`${field} w-40 tabular-nums`}
+              value={g.budget.tokens ?? ''}
+              onChange={(e) => setBudget(setBudgetField(g.budget, 'tokens', e.target.value))}
+            />
+            <FieldError message={errors['guardrails.budget.tokens']} />
+          </div>
+          <div>
+            <label className={fieldLabel} htmlFor="settings-budget-cost">
+              Cost cap (USD) <span className="normal-case text-muted">(blank = no cap)</span>
+            </label>
+            <input
+              id="settings-budget-cost"
+              type="number"
+              min={0}
+              step="0.01"
+              placeholder="No cap"
+              className={`${field} w-40 tabular-nums`}
+              value={g.budget.costUsd ?? ''}
+              onChange={(e) => setBudget(setBudgetField(g.budget, 'costUsd', e.target.value))}
+            />
+            {/* A cost cap with no token fallback is rejected server-side when a
+                configured model is unpriced (ADR-0019, #166). */}
+            <FieldError message={errors['guardrails.budget.costUsd']} />
+          </div>
+        </div>
+      </div>
+      <div>
+        <div className="flex items-center justify-between">
+          <span className={fieldLabel}>Progress detector</span>
+          <Switch checked={g.progress} onChange={(progress) => setGuardrails({ ...g, progress })}>
+            Trip a stalled Attempt to Escalation
+          </Switch>
+        </div>
+      </div>
+      <div>
+        <label className={fieldLabel} htmlFor="settings-tool-timeout">
+          Tool timeout (minutes)
+        </label>
+        <input
+          id="settings-tool-timeout"
+          type="number"
+          min={1}
+          className={`${field} w-40 tabular-nums`}
+          value={g.toolTimeoutMinutes}
+          onChange={(e) => setGuardrails({ ...g, toolTimeoutMinutes: Number(e.target.value) })}
+        />
+        <FieldError message={errors['guardrails.toolTimeoutMinutes']} />
+      </div>
+    </div>
+  );
+}
+
 /** The workspace Run-guardrails section: the whole-object budget override plus
  * the progress + tool-timeout scalars. */
 function WorkspaceGuardrails({ ctx }: { ctx: WorkspaceRenderCtx }) {
@@ -1200,11 +1289,15 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
   },
   {
     tab: 'execution',
-    surfaces: ['workspace'],
+    surfaces: BOTH,
     title: 'Attempt guardrails',
-    description:
-      'The budget caps, stall detector, and tool timeout that trip an Attempt here to Escalation (ADR-0019). Each inherits the global default until overridden; wall-clock always guards, the token and cost caps are opt-in.',
-    body: (ctx) => (ctx.surface === 'workspace' ? <WorkspaceGuardrails ctx={ctx} /> : null),
+    description: {
+      global:
+        'The budget caps, stall detector, and tool timeout that trip an Attempt to Escalation (ADR-0019). Wall-clock always guards; the token and cost caps are opt-in. Each Workspace can override these defaults.',
+      workspace:
+        'The budget caps, stall detector, and tool timeout that trip an Attempt here to Escalation (ADR-0019). Each inherits the global default until overridden; wall-clock always guards, the token and cost caps are opt-in.',
+    },
+    body: (ctx) => (ctx.surface === 'global' ? <GlobalGuardrails ctx={ctx} /> : <WorkspaceGuardrails ctx={ctx} />),
   },
 
   // ── Verification ──
