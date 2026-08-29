@@ -6,7 +6,6 @@ import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { RunStore, type RunGuardrailSnapshot } from '../src/domain/runs.js';
-import { ExecutionChainStore } from '../src/domain/execution-chain-store.js';
 import { Runner } from '../src/execution/runner.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { allWorkspaces, makeSettingsStore } from './helpers.js';
@@ -26,7 +25,6 @@ describe('Runner.start (issue #272)', () => {
   let settingsStore: SettingsStore;
   let tasks: TaskService;
   let runs: RunStore;
-  let chains: ExecutionChainStore;
   let runner: Runner;
 
   beforeEach(async () => {
@@ -37,7 +35,6 @@ describe('Runner.start (issue #272)', () => {
     settingsStore = await makeSettingsStore(dir);
     tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
     runs = new RunStore(asyncDb);
-    chains = new ExecutionChainStore(asyncDb);
     runner = new Runner(runs, tasks, asyncDb, () => defaultConfig());
   });
 
@@ -64,8 +61,7 @@ describe('Runner.start (issue #272)', () => {
           guardrailConfig: defaultConfig().guardrails,
           priceTable: defaultConfig().prices,
         };
-        const chainId = await chains.resolveForTask(await tasks.get(taskArg.id));
-        return await runs.create(taskArg.id, snapshot, chainId);
+        return await runs.create(taskArg.id, snapshot);
       });
 
     const started = Promise.allSettled([runner.start(task.id), runner.start(task.id)]);

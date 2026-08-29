@@ -26,11 +26,10 @@
  * the accept's irreversible merge runs, but the disposition still collapses
  * back to the earlier escalate — a split-brain between the merge that
  * happened and the bookkeeping that says it didn't). An operator cancel still
- * wins over an accept, though: cancel-vs-accept is resolved the same way every
- * other cancel race is (`merge-coordinator.ts`'s PONC) — safety wins, but
- * only up to the point of no return; a cancel fact appended *after* the merge's
- * PONC cutoff is late and cannot un-merge a Run the accept has already
- * committed.
+ * wins over an accept, though: the one merge policy (ADR-0001) runs the
+ * merge and settles under `operator-accept` in one pass under the base repo
+ * mutex, so there is no separate journaled window for a racing cancel to land
+ * in ahead of it.
  */
 export const DISPOSITION_PRECEDENCE = [
   'operator-cancel',

@@ -3,19 +3,15 @@ import { mkdtempSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { sql } from 'drizzle-orm';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { RunStore } from '../src/domain/runs.js';
 import { RunFactStore } from '../src/domain/run-facts.js';
-import { MergeJournalStore } from '../src/domain/merge-journal.js';
-import { TurnQueueStore } from '../src/domain/turn-queue-store.js';
 import { RunSettleCoordinator } from '../src/domain/run-settle.js';
 import { CrashRecoveryCoordinator } from '../src/domain/crash-recovery.js';
 import { Git } from '../src/execution/git.js';
 import type { TaskRow, RunRow } from '../src/db/schema.js';
-import { mergeJournal as mergeJournalTable, turnQueue as turnQueueTable } from '../src/db/schema.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { allWorkspaces, makeSettingsStore } from './helpers.js';
 import { yieldToEventLoop } from '../src/reliability/yield.js';
@@ -197,59 +193,6 @@ describe('CrashRecoveryCoordinator (ADR-0001)', () => {
     expect(isMerged).toHaveBeenCalledWith(repo, 'main', 'never-merged-branch');
     expect(runPostMergeCheck).toHaveBeenCalledTimes(1); // the seam, not git, decided
     expect((await runStore.get(run.id)).state).toBe('completed');
-  });
-
-  it('writes ZERO merge_journal and ZERO turn_queue rows while reconciling a merged, a reverted, and a generic orphan', async () => {
-    const journal = new MergeJournalStore(asyncDb);
-    const turnQueue = new TurnQueueStore(asyncDb);
-
-    const { run: mergedRun } = await seedAlreadyMergedOrphan();
-    // A second, independent repo/task so the revert-on-red path runs too
-    // without the two merges colliding on the same branch names.
-    const repo2 = makeRepo();
-    try {
-      const baseBranch = 'main';
-      const branch = 'run-branch-2';
-      git(repo2, 'checkout', '-b', branch);
-      commit(repo2, 'feature.txt', 'work\n', 'feature work');
-      git(repo2, 'checkout', baseBranch);
-      git(repo2, 'merge', '--no-ff', '-m', 'merge run-branch-2', branch);
-      const created2 = await tasks.create({ prompt: 'merge me too', state: 'ready', workingDir: repo2, isolationMode: 'worktree' });
-      await tasks.setState(created2.id, 'working');
-      const run2 = await runStore.update((await runStore.create(created2.id)).id, { branch, baseBranch });
-
-      const created3 = await tasks.create({ prompt: 'plain orphan', state: 'ready', workingDir: repo, isolationMode: 'direct' });
-      await tasks.setState(created3.id, 'working');
-      const run3 = await runStore.create(created3.id);
-
-      let callCount = 0;
-      const runPostMergeCheck = vi.fn(async () => {
-        callCount += 1;
-        return callCount === 1 ? { pass: true, output: '' } : { pass: false, output: 'red' };
-      });
-      const coord = new CrashRecoveryCoordinator(runStore, tasks, settle, { runPostMergeCheck });
-
-      await coord.reconcile();
-
-      expect((await runStore.get(mergedRun.id)).state).toBe('completed');
-      expect((await runStore.get(run2.id)).state).toBe('failed'); // reverted + escalated
-      expect((await runStore.get(run3.id)).state).toBe('failed'); // generic interrupted
-    } finally {
-      rmSync(repo2, { recursive: true, force: true });
-    }
-
-    // Assert directly against the raw tables: recovery wrote NOT ONE
-    // merge_journal or turn_queue row, database-wide, across every Run above.
-    const mergeJournalCount = await asyncDb.read((db) =>
-      db.select({ n: sql<number>`count(*)` }).from(mergeJournalTable).get(),
-    );
-    const turnQueueCount = await asyncDb.read((db) => db.select({ n: sql<number>`count(*)` }).from(turnQueueTable).get());
-    expect(mergeJournalCount?.n ?? 0).toBe(0);
-    expect(turnQueueCount?.n ?? 0).toBe(0);
-    // Sanity: the stores are still perfectly usable (not deleted) — reading
-    // through their own APIs also shows nothing recorded for the merged Run.
-    expect(await journal.views(mergedRun.id)).toHaveLength(0);
-    expect(await turnQueue.listUnsettled()).toHaveLength(0);
   });
 
   it('yields while reconciling a large backlog of running orphans', async () => {

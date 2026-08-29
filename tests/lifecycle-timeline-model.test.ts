@@ -5,13 +5,12 @@ import type { TicketTimelineEvent } from '../web/src/types.js';
 const event = (kind: TicketTimelineEvent['kind'], ts: number, data: unknown): TicketTimelineEvent => ({ runId: 1, kind, ts, data });
 
 describe('lifecycleTimelineRows', () => {
-  it('keeps the audit chronology and gives verification, escalation, disposition, and merge operator-readable labels', () => {
+  it('keeps the audit chronology and gives verification, escalation, and disposition events operator-readable labels', () => {
     const rows = lifecycleTimelineRows([
       event('verification', 10, { verdict: 'pass', summary: 'checks passed' }),
       event('verification', 20, { outcome: 'skipped', command: 'npm test' }),
       event('escalation', 30, {}),
       event('operator-reject', 40, { feedback: 'Use the documented timeout.' }),
-      event('merging', 50, { effect: 'target-ref', payload: { ok: true } }),
     ]);
 
     expect(rows.map((row) => [row.at, row.label, row.detail, row.tone])).toEqual([
@@ -19,7 +18,6 @@ describe('lifecycleTimelineRows', () => {
       [20, 'Verification skipped', 'npm test', 'neutral'],
       [30, 'Escalated for operator review', null, 'awaiting'],
       [40, 'Operator rejected with guidance', 'Use the documented timeout.', 'awaiting'],
-      [50, 'Merged', 'target-ref', 'passed'],
     ]);
   });
 
@@ -31,17 +29,5 @@ describe('lifecycleTimelineRows', () => {
 
     expect(rows[0]).toMatchObject({ label: 'Verification disabled', tone: 'neutral' });
     expect(rows[1]).toMatchObject({ label: 'Ticket fact recorded', detail: null });
-  });
-
-  it('uses merging and failed copy for journal entries that are not successful merge results', () => {
-    const rows = lifecycleTimelineRows([
-      event('merging', 1, { effect: 'target-ref', payload: {} }),
-      event('merging', 2, { effect: 'target-ref', payload: { ok: false } }),
-    ]);
-
-    expect(rows.map((row) => [row.label, row.tone])).toEqual([
-      ['Merging', 'running'],
-      ['Merge failed', 'failed'],
-    ]);
   });
 });

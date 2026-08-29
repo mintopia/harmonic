@@ -2,7 +2,7 @@ import type { TaskRow, RunRow } from '../db/schema.js';
 import { DomainError } from './errors.js';
 import type { RunStore } from './runs.js';
 import type { TaskService } from './tasks.js';
-import type { MergeEffectExec } from './merge-coordinator.js';
+import type { MergeEffectExec } from './merge.js';
 import type { RunSettleCoordinator } from './run-settle.js';
 
 /**

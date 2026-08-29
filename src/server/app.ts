@@ -37,8 +37,7 @@ import { Git } from '../execution/git.js';
 import { RunFactStore } from '../domain/run-facts.js';
 import { GuardrailEventStore } from '../domain/guardrail-events.js';
 import { VerificationAttemptStore } from '../domain/verification-attempts.js';
-import { MergeJournalStore } from '../domain/merge-journal.js';
-import type { MergeEffectExec } from '../domain/merge-coordinator.js';
+import type { MergeEffectExec } from '../domain/merge.js';
 import type { TaskRow, RunRow } from '../db/schema.js';
 import { CrashRecoveryCoordinator } from '../domain/crash-recovery.js';
 import { resolveVerifiers } from '../domain/setting-override.js';
@@ -310,11 +309,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // Accepting an escalated worktree-mode task merges the run's branch through
   // the shared settle coordinator, so Accept is race-safe against a concurrent
   // operator cancel (`mergeEffectsFor` below runs the same one merge policy as
-  // the automated path, ADR-0001 #383). `MergeJournalStore` remains `operatorSettle`'s
-  // optional PONC-clamp dependency; nothing in this process still writes a PONC
-  // (the journaled `MergeCoordinator` merge path is gone, ADR-0001), so the clamp
-  // is a no-op today — kept only because `RunSettleCoordinator`'s signature isn't
-  // this ticket's to change.
+  // the automated path, ADR-0001 #383).
   // Session retirement (issue #148, reliability-design Unit C): the sole owner of
   // builder-worktree removal. Its sync settle-hook is injected into every settle
   // coordinator (the operator-side one below and the Runner's own, via options) so
@@ -357,7 +352,6 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // event loop. Coalescing collapses the burst into one pass plus a trailing
   // rerun that sweeps anything that settled mid-pass.
   const drainRetirement = singleFlight(() => sessionRetirement.drain());
-  const mergeJournal = new MergeJournalStore(asyncDb);
   let runnerRef: Runner | undefined;
   let trackerManagerRef: TrackerPollerManager | undefined;
   const pendingPostMerge: Parameters<PostMergeHook>[0][] = [];
@@ -382,7 +376,6 @@ export async function buildApp(opts: AppOptions): Promise<App> {
       void runnerRef?.finishRunOperation(run.id);
       bus.emit('run_changed', run);
     },
-    mergeJournal,
     sessionRetirement,
   );
   // The deterministic post-merge check crash recovery re-runs on a worktree

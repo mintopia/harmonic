@@ -6,7 +6,6 @@ import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { RunStore, type RunGuardrailSnapshot } from '../src/domain/runs.js';
-import { ExecutionChainStore } from '../src/domain/execution-chain-store.js';
 import { Runner } from '../src/execution/runner.js';
 import type { TaskRow, RunRow } from '../src/db/schema.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
@@ -19,7 +18,6 @@ describe('Runner.recordRunEvent — task deleted mid-append (issue #371)', () =>
   let settingsStore: SettingsStore;
   let tasks: TaskService;
   let runs: RunStore;
-  let chains: ExecutionChainStore;
   let runner: Runner;
 
   beforeEach(async () => {
@@ -30,7 +28,6 @@ describe('Runner.recordRunEvent — task deleted mid-append (issue #371)', () =>
     settingsStore = await makeSettingsStore(dir);
     tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
     runs = new RunStore(asyncDb);
-    chains = new ExecutionChainStore(asyncDb);
     runner = new Runner(runs, tasks, asyncDb, () => defaultConfig());
   });
 
@@ -43,13 +40,11 @@ describe('Runner.recordRunEvent — task deleted mid-append (issue #371)', () =>
 
   it('swallows the FK rejection when the run row is gone, so the append never crashes the process', async () => {
     const task = await tasks.create({ prompt: 'delete me mid-append', isolationMode: 'direct', workingDir: repoDir });
-    const taskRow = await tasks.get(task.id);
     const snapshot: RunGuardrailSnapshot = {
       guardrailConfig: defaultConfig().guardrails,
       priceTable: defaultConfig().prices,
     };
-    const chainId = await chains.resolveForTask(taskRow);
-    const run = await runs.create(task.id, snapshot, chainId);
+    const run = await runs.create(task.id, snapshot);
 
     // The production race: the task (still 'ready', so deletable) is deleted,
     // cascading its Run + run_events away, before an in-flight turn's event
@@ -68,7 +63,7 @@ describe('Runner.recordRunEvent — task deleted mid-append (issue #371)', () =>
         runner as unknown as {
           recordRunEvent: (t: TaskRow, r: RunRow, type: 'lifecycle', payload: unknown) => void;
         }
-      ).recordRunEvent(taskRow, run, 'lifecycle', { event: 'phase', phase: 'executing' });
+      ).recordRunEvent(task, run, 'lifecycle', { event: 'phase', phase: 'executing' });
       // Let the append promise reject and its `.catch` run.
       await new Promise((resolve) => setTimeout(resolve, 50));
       expect(rejections).toEqual([]);

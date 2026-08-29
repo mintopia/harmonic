@@ -7,7 +7,6 @@ import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { RunStore, type RunGuardrailSnapshot } from '../src/domain/runs.js';
 import { isForeignKeyViolation } from '../src/db/errors.js';
-import { ExecutionChainStore } from '../src/domain/execution-chain-store.js';
 import { RunFactStore } from '../src/domain/run-facts.js';
 import { Runner } from '../src/execution/runner.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
@@ -38,7 +37,6 @@ describe('Runner.cancelForTask — run row deleted mid-settle', () => {
   let settingsStore: SettingsStore;
   let tasks: TaskService;
   let runs: RunStore;
-  let chains: ExecutionChainStore;
   let facts: RunFactStore;
   let runner: Runner;
 
@@ -50,7 +48,6 @@ describe('Runner.cancelForTask — run row deleted mid-settle', () => {
     settingsStore = await makeSettingsStore(dir);
     tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
     runs = new RunStore(asyncDb);
-    chains = new ExecutionChainStore(asyncDb);
     facts = new RunFactStore(asyncDb);
     runner = new Runner(runs, tasks, asyncDb, () => defaultConfig());
   });
@@ -68,8 +65,7 @@ describe('Runner.cancelForTask — run row deleted mid-settle', () => {
       guardrailConfig: defaultConfig().guardrails,
       priceTable: defaultConfig().prices,
     };
-    const chainId = await chains.resolveForTask(await tasks.get(task.id));
-    const run = await runs.create(task.id, snapshot, chainId);
+    const run = await runs.create(task.id, snapshot);
 
     // Reproduce the production TOCTOU: settleTaskRun's parked branch lists the
     // still-running row, then reads it via runStore.get — but a racing delete

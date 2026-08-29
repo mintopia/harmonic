@@ -6,8 +6,6 @@ import { join } from 'node:path';
 import { startServer, stubHarness, waitFor, seedLocalMarkdownTicket, type TestServer } from './helpers.js';
 import { verificationCommandSchema } from '../src/config.js';
 import type { MirrorInput } from '../src/domain/tasks.js';
-import { mergeJournal } from '../src/db/schema.js';
-import { eq } from 'drizzle-orm';
 
 /**
  * Operator Accept runs the one merge policy (ADR-0001, #383): a `git merge
@@ -109,11 +107,6 @@ describe('operator Accept merge (ADR-0001, issue #383)', () => {
     expect(git(repo, 'show', 'main:other.txt')).toBe('someone else merged');
     expect(git(repo, 'show', 'main:impl-native.txt')).toBe('implementation');
     expect(git(repo, 'log', '--merges', '--oneline', 'main')).not.toBe(''); // a merge commit, not a fast-forward
-    // Accept no longer routes through the journaled MergeCoordinator (ADR-0001,
-    // #388 S-B): the merge runs entirely through the one merge policy, so
-    // merge_journal gets no rows at all for this run.
-    const journal = await server.app.ctx.asyncDb.read((d) => d.select().from(mergeJournal).where(eq(mergeJournal.runId, runId)).all());
-    expect(journal).toEqual([]);
 
     await server.close();
   });

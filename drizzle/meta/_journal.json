@@ -449,6 +449,13 @@
       "when": 1787993100000,
       "tag": "0063_rename_attempt_tasks_to_steps",
       "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "6",
+      "when": 1787993200000,
+      "tag": "0064_drop_journal_queue_chains",
+      "breakpoints": true
     }
   ]
 }

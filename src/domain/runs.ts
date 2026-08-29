@@ -37,7 +37,7 @@ export interface PersistedRunEvent {
 export class RunStore {
   constructor(private readonly db: AsyncDbHandle) {}
 
-  async create(taskId: number, snapshot?: RunGuardrailSnapshot, chainId?: number): Promise<RunRow> {
+  async create(taskId: number, snapshot?: RunGuardrailSnapshot): Promise<RunRow> {
     // read-then-insert as one write-queue unit: under the async single-writer
     // queue the attempt# CAS would otherwise race a concurrent create for the
     // same Task (ADR-0029 §3; the sync driver gave this for free).
@@ -62,9 +62,6 @@ export class RunStore {
           startedAt: Date.now(),
           guardrailConfig: snapshot ? JSON.stringify(snapshot.guardrailConfig) : null,
           priceTable: snapshot ? JSON.stringify(snapshot.priceTable) : null,
-          // The Execution Chain (issue #129) this Run joins; null on a caller
-          // that hasn't resolved one yet (pre-feature / not-yet-wired paths).
-          chainId: chainId ?? null,
         })
         .returning()
         .get();

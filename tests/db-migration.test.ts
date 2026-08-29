@@ -383,36 +383,6 @@ describe('run_facts table (issue #112)', () => {
   });
 });
 
-describe('merge_journal table (issue #115)', () => {
-  it('exists at head with a (run_id, seq) unique index that rejects a duplicate seq for the same Run', async () => {
-    const dataDir = mkdtempSync(join(tmpdir(), 'harmonic-merge-journal-migrate-'));
-    const db = await openAsyncDb(dataDir);
-
-    const task = await db.write((d) => d.insert(schema.tasks).values({
-      prompt: 'seed',
-      workingDir: '/tmp/p',
-      state: 'ready',
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    }).returning().get());
-    const run = await db.write((d) => d.insert(schema.runs).values({ taskId: task.id, attempt: 1, state: 'running', startedAt: Date.now() }).returning().get());
-
-    // Raw libsql connection against the same file, exercising the migrated unique
-    // index directly rather than through the store.
-    const sqlite = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
-    const insertSql = `insert into merge_journal (run_id, seq, ts, kind, effect, idempotency_key, payload) values (?, ?, ?, 'intent', 'target-ref', 'k1', '{}')`;
-    const now = Date.now();
-    await sqlite.execute({ sql: insertSql, args: [run.id, 1, now] });
-    // A second row at seq 1 for the same Run is rejected; a different seq is fine.
-    await expect(sqlite.execute({ sql: insertSql, args: [run.id, 1, now] })).rejects.toThrow(/UNIQUE constraint failed/);
-    await expect(sqlite.execute({ sql: insertSql, args: [run.id, 2, now] })).resolves.toBeDefined();
-
-    sqlite.close();
-    await db.close();
-    rmSync(dataDir, { recursive: true, force: true });
-  });
-});
-
 describe('durable tracker facts migration (issue #233, ADR-0030 expand)', () => {
   it('adds nullable fact columns; a pre-0043 mirrored row survives and reads them null', async () => {
     const dataDir = mkdtempSync(join(tmpdir(), 'harmonic-tracker-facts-migrate-'));

@@ -2,7 +2,6 @@ import type { RunRow, TaskRow, RunFactType } from '../db/schema.js';
 import type { RunStore } from './runs.js';
 import type { TaskService } from './tasks.js';
 import type { RunFactStore } from './run-facts.js';
-import type { MergeJournalStore } from './merge-journal.js';
 import { computeDisposition, type Disposition } from './run-disposition.js';
 import { projectSettle, type CoordinatorFact, type SettleProjection } from './run-coordinator.js';
 import type { SessionRetirementHook } from './session-retirement-coordinator.js';
@@ -25,21 +24,16 @@ export interface RunBranchRetirementHook {
  *
  * #113 kept this logic private to the Runner because the Runner was the only
  * settle authority. A **second** authority — the operator Accept on an
- * escalated ticket (`EscalationService.accept`, via `MergeCoordinator`) —
- * settles a Run long after its harness is gone. Extracting the coordinator to a
- * shared, dependency-injected class lets both drive it with identical
- * race-safety, instead of the operator path racing the Runner around the Run row.
+ * escalated ticket (`EscalationService.accept`) — settles a Run long after
+ * its harness is gone. Extracting the coordinator to a shared,
+ * dependency-injected class lets both drive it with identical race-safety,
+ * instead of the operator path racing the Runner around the Run row.
  *
- * `mergeJournal` is a **third** settle-adjacent concern layered on top by
- * issue #115: the journaled non-interruptible merge's Point Of No Cancel
- * (PONC, see domain/merge.ts's module doc comment). Once a merge has
- * written its PONC, a cancel/guardrail-trip fact that races in afterward must
- * never be allowed to flip the winning disposition away from the merge that's
- * already underway (or, worse, retroactively "unmerge" an effect that already
- * fired). The dependency is **optional** — every existing call site and test
- * that constructs this coordinator without it keeps behaving exactly as
- * before #115 shipped: `poncCutoffFor` degrades to "no clamp" when
- * `mergeJournal` is undefined.
+ * There is no PONC/merge-journal clamp on the disposition cutoff (ADR-0001,
+ * ADR-0007): the one merge policy (`execution/merge-policy.ts`) runs entirely
+ * under the base repo mutex and settles through this same coordinator once —
+ * there is no separate journaled merge process for a racing cancel to need
+ * fencing against.
  */
 export class RunSettleCoordinator {
   constructor(
@@ -47,7 +41,6 @@ export class RunSettleCoordinator {
     private readonly taskService: TaskService,
     private readonly runFacts: RunFactStore,
     private readonly onRunFinished?: (run: RunRow) => void,
-    private readonly mergeJournal?: MergeJournalStore,
     private readonly sessionRetirement?: SessionRetirementHook,
     private readonly branchRetirement?: RunBranchRetirementHook,
   ) {}
@@ -79,37 +72,16 @@ export class RunSettleCoordinator {
 
     await this.runFacts.append(run.id, type, { ...projection });
 
-    // The PONC freeze (issue #115, reliability-design §0.3): if a merge has
-    // already frozen this Run's disposition cutoff, no fact appended after it
-    // — including the very signal this call just appended — can move the
-    // decision past that point.
-    //
-    // Read *after* our own append (ADR-0029): under the async single-writer
-    // queue, a merge that reserved a lower `seq` than ours enqueued its
-    // merge-fact-plus-PONC transaction (`MergeCoordinator.merge`) ahead of this
-    // append, so by strict write-queue FIFO that whole transaction — merge fact
-    // AND PONC row — has committed by the time our own append resolves here.
-    // (Merge writes both in ONE transaction precisely so no append can interleave
-    // between them.) Reading the PONC before the append would instead observe
-    // `null` in that race window and let this signal wrongly win. Read once so
-    // both cutoffs below clamp against the same value.
-    const poncCutoffSeq = (await this.mergeJournal?.ponc(run.id)) ?? null;
-
     const priorDisposition = priorFacts.length
-      ? computeDisposition(priorFacts, this.clampCutoff(priorFacts[priorFacts.length - 1]!.seq, poncCutoffSeq))
+      ? computeDisposition(priorFacts, priorFacts[priorFacts.length - 1]!.seq)
       : null;
 
     const facts = await this.coordinatorFacts(run.id);
-    // The cutoff is the log's latest seq — clamped to the PONC when one is
-    // frozen (issue #115): a Run only appends a disposition fact at a settle
-    // decision point, so "the whole log decides, up to the freeze" holds even
-    // with the phase machine (phases are recorded separately, not as
-    // disposition facts). A fact appended after the PONC (`seq > poncCutoffSeq`)
-    // — e.g. a cancel racing in mid-merge — stays in the log for the record
-    // but this clamp is exactly what keeps it from ever being decisive: the
-    // merge that already started stands, and the operator sees "merged," not
-    // "cancelled."
-    const cutoff = this.clampCutoff(facts[facts.length - 1]!.seq, poncCutoffSeq);
+    // The cutoff is simply the log's latest seq: a Run only appends a
+    // disposition fact at a settle decision point, so "the whole log decides"
+    // holds even with the phase machine (phases are recorded separately, not
+    // as disposition facts).
+    const cutoff = facts[facts.length - 1]!.seq;
     const disposition = computeDisposition(facts, cutoff);
     const winner = disposition === null ? null : projectSettle(facts, cutoff);
     if (!winner) return; // unreachable — we just appended a fact
@@ -169,13 +141,6 @@ export class RunSettleCoordinator {
     if (disposition === 'operator-cancel') return 'operator-cancel';
     if (winner.runState === 'completed') return 'merged';
     return 'other';
-  }
-
-  /** `min(latestSeq, poncCutoffSeq)`, or `latestSeq` unclamped when
-   * `poncCutoffSeq` is `null` (no PONC frozen yet, or `mergeJournal` was
-   * never injected — the #115 back-compat path). */
-  private clampCutoff(latestSeq: number, poncCutoffSeq: number | null): number {
-    return poncCutoffSeq === null ? latestSeq : Math.min(latestSeq, poncCutoffSeq);
   }
 
   /** A Run's fact log decoded into the coordinator's projection-carrying shape. */

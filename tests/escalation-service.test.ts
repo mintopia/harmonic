@@ -7,9 +7,8 @@ import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { RunStore } from '../src/domain/runs.js';
 import { RunFactStore } from '../src/domain/run-facts.js';
-import { MergeJournalStore } from '../src/domain/merge-journal.js';
 import { RunSettleCoordinator } from '../src/domain/run-settle.js';
-import type { MergeEffectExec } from '../src/domain/merge-coordinator.js';
+import type { MergeEffectExec } from '../src/domain/merge.js';
 import { EscalationService } from '../src/domain/escalation.js';
 import { DomainError } from '../src/domain/errors.js';
 import type { RunRow, TaskRow } from '../src/db/schema.js';
@@ -41,8 +40,7 @@ describe('EscalationService', () => {
     settingsStore = await makeSettingsStore(dir);
     tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
     runStore = new RunStore(asyncDb);
-    const journal = new MergeJournalStore(asyncDb);
-    settle = new RunSettleCoordinator(runStore, tasks, new RunFactStore(asyncDb), undefined, journal);
+    settle = new RunSettleCoordinator(runStore, tasks, new RunFactStore(asyncDb));
     resumed = [];
     cleaned = [];
     effects = [];
@@ -123,9 +121,6 @@ describe('EscalationService', () => {
 
       expect((await tasks.get(task.id)).state).toBe('escalated');
       expect(await runStore.get(run.id)).toMatchObject({ state: 'failed', phase: 'terminal' });
-      // Accept no longer routes through the journaled MergeCoordinator
-      // (ADR-0001, #388 S-B): a failed effect writes nothing to merge_journal.
-      expect(await new MergeJournalStore(asyncDb).views(run.id)).toEqual([]);
     });
   });
 

@@ -1,4 +1,3 @@
-import { sql } from 'drizzle-orm';
 import { sqliteTable, integer, text, primaryKey, index, uniqueIndex, type AnySQLiteColumn } from 'drizzle-orm/sqlite-core';
 // Type-only import (erased at compile) so the db layer can brand `runs.phase`
 // with the phase-machine enum without a runtime db→domain import cycle
@@ -8,16 +7,6 @@ import type { RunPhase } from '../domain/run-phases.js';
 // `RunPhase` above: brands `verification_attempts.verdict` with the canonical
 // verdict enum so the column is literal-typed like `mechanism`/`phase`.
 import type { Verdict } from '../verification/critic-schema.js';
-// Type-only import, same reasoning: brands `turn_queue`'s status/purpose/
-// cancel-reason columns without a runtime db→domain import cycle
-// (domain/turn-queue-store.ts already imports this schema).
-import type { TurnStatus, TurnPurpose, TurnCancelReason } from '../domain/turn-queue.js';
-// Type-only import, same reasoning: brands `merge_journal`'s kind/effect
-// columns without a runtime db→domain import cycle (domain/merge.ts already
-// imports nothing from this schema — it is deliberately DB-free — but the
-// canonical `MergeEffect`/`MergeJournalKind` enums still live there so
-// the pure module stays the single source of truth for them).
-import type { MergeEffect, MergeJournalKind } from '../domain/merge.js';
 // Type-only import (erased at compile): brands the durable tracker-fact columns
 // on `tasks` with the tracker's own normalised shapes, so the persisted facts
 // stay literally the `Ticket` fields — no redefinition to drift against. The
@@ -287,15 +276,6 @@ export const runs = sqliteTable('runs', {
    * additive and changes no in-flight Run behaviour.
    */
   sessionRowId: integer('session_row_id').references((): AnySQLiteColumn => sessions.id),
-  /**
-   * The Execution Chain (issue #129) this Run belongs to — shared with the
-   * sibling Runs that continue the same line of work, so a cumulative spend
-   * budget is charged across the chain and a retry can't reset it. Null on
-   * pre-feature Runs. Established when a Run starts a new line of work and
-   * carried forward when a related Run reattaches (see beginRun / the chain
-   * resolver).
-   */
-  chainId: integer('chain_id').references((): AnySQLiteColumn => executionChains.id),
   /** The exact prompt text sent to the harness for this Run (native = filled
    * Task Prompt template + any feedback; mirrored = the filled Drive Prompt).
    * Persisted so Task detail's Prompt tab shows what actually went to the
@@ -397,20 +377,6 @@ export const steps = sqliteTable('steps', {
   endedAt: integer('ended_at'),
 }, (t) => [uniqueIndex('steps_attempt_position_unique').on(t.attemptId, t.position)]);
 export type StepRow = typeof steps.$inferSelect;
-
-/**
- * The Execution Chain (issue #129, reliability-design Unit A): a persisted
- * identity threaded across every Run that continues one line of work —
- * retry / human-review rejection / crash-resume / every corrective turn — so
- * a cumulative token/cost budget is charged against the
- * whole chain, not reset by each fresh Run. A retry therefore cannot reset the
- * spend counter to bypass the ceiling. Per-Run budgets still apply alongside it.
- */
-export const executionChains = sqliteTable('execution_chains', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  createdAt: integer('created_at').notNull(),
-});
-export type ExecutionChainRow = typeof executionChains.$inferSelect;
 
 export const runEvents = sqliteTable('run_events', {
   id: integer('id').primaryKey({ autoIncrement: true }),
@@ -651,113 +617,6 @@ export const runFacts = sqliteTable('run_facts', {
 ]);
 
 export type RunFactRow = typeof runFacts.$inferSelect;
-
-/**
- * The journaled non-interruptible merge log (issue #115, reliability-design
- * §0.3, Unit D). Merging is the set of irreversible side effects a Run's
- * completion triggers once accepted — merging a worktree branch, opening a
- * PR, closing a tracker ticket (`MergeEffect`, domain/merge.ts) — and
- * this table is the append-only record of that process, mirroring
- * `run_facts`'s discipline exactly (same `(run_id, seq)` unique index, same
- * "only ever appended, never updated" rule) so a merge can be replayed and
- * reconciled from the log alone after a crash.
- *
- * Three row kinds (`kind`), written in this order per merge:
- *   - `ponc` — written once, before the first irreversible effect: freezes
- *     `run_facts`'s cutoff at the seq the merge disposition fact just took
- *     (`payload.cutoffSeq`), so `RunSettleCoordinator.settle` (run-settle.ts)
- *     can exclude any cancel/guardrail fact that races in after this point
- *     from ever winning. `effect`/`idempotency_key` are null for this kind —
- *     a PONC is about the Run's disposition, not any one effect.
- *   - `intent` — "about to attempt `effect` identified by
- *     `idempotency_key`", `payload.expected` carries whatever a later
- *     `observed` check needs.
- *   - `result` — the outcome of that attempt, `payload.ok`
- *     (+ `payload.observed`/`payload.detail`). An effect counts as **applied**
- *     iff a `result` row with `ok:true` exists for its key
- *     (`foldJournal`/`reconcile`, domain/merge.ts).
- *
- * `idempotency_key` is what makes reconciliation crash-safe: a process that
- * dies between `intent` and `result` leaves the effect ambiguous, and
- * `reconcile` resolves it by checking whether the world already shows that
- * key applied (`'adopt'`, no re-apply) rather than blindly retrying
- * (`'apply'`) and risking a duplicate merge/PR/ticket-close.
- */
-export const mergeJournal = sqliteTable('merge_journal', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  runId: integer('run_id')
-    .notNull()
-    .references(() => runs.id),
-  /** Monotonic per-Run sequence (1-based); same discipline as `run_facts.seq`. */
-  seq: integer('seq').notNull(),
-  ts: integer('ts').notNull(),
-  /** 'ponc' | 'intent' | 'result'. */
-  kind: text('kind').$type<MergeJournalKind>().notNull(),
-  /** 'target-ref' | 'open-pr' | 'ticket-close'; null for 'ponc'. */
-  effect: text('effect').$type<MergeEffect>(),
-  /** The effect's identity for idempotency/reconciliation; null for 'ponc'. */
-  idempotencyKey: text('idempotency_key'),
-  /** JSON payload — kind-specific detail (cutoffSeq / expected / ok+observed+detail). */
-  payload: text('payload').notNull().default('{}'),
-}, (t) => [
-  uniqueIndex('merge_journal_run_seq_unique').on(t.runId, t.seq),
-]);
-
-export type MergeJournalRow = typeof mergeJournal.$inferSelect;
-
-/**
- * The Session turn queue's persisted substrate (issue #116, reliability-design
- * §0.4): every turn a producer (`initial`, `continue`, `steer`, `self-heal`,
- * `re-merge`, `crash-recovery`) enqueues onto a Session's queue, in per-Session
- * FIFO order. The pure `planTurnQueue` (domain/turn-queue.ts) is the sole
- * decision of which pending row to dispatch and which to cancel; this table
- * only stores what it decides over and the outcome.
- *
- * Two indexes carry the queue's integrity guarantees:
- *
- *   - `turn_queue_session_seq_unique` on `(session_id, seq)` — the same
- *     monotonicity guarantee as `run_facts_run_seq_unique`: two turns can
- *     never share a seq within a Session, so the queue has a single total
- *     FIFO order.
- *   - `turn_queue_single_flight` — a **partial** unique index on `session_id`
- *     scoped to `status = 'in_flight'` — is the DB-level backstop for the
- *     planner's single-flight rule (`planTurnQueue`'s AC1): a second
- *     concurrent `markInFlight` for the same Session is rejected loudly by a
- *     raw UNIQUE violation rather than silently letting two turns race onto
- *     the same live harness process. Because the index only covers rows
- *     currently `in_flight`, a Session can freely accumulate any number of
- *     `queued`/`claimed`/settled rows — only ever one `in_flight` at a time.
- */
-export const turnQueue = sqliteTable('turn_queue', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  sessionId: text('session_id').notNull(),
-  runId: integer('run_id')
-    .notNull()
-    .references(() => runs.id),
-  /** Monotonic per-Session sequence (1-based); the queue's FIFO order. */
-  seq: integer('seq').notNull(),
-  status: text('status').$type<TurnStatus>().notNull(),
-  purpose: text('purpose').$type<TurnPurpose>().notNull(),
-  // Precondition bindings this turn was enqueued against — validated by
-  // `planTurnQueue` only if present. Null on a turn that carries no such
-  // binding (e.g. a read-only turn omits the workspace fields entirely).
-  expectedPhase: text('expected_phase').$type<RunPhase>(),
-  expectedGeneration: integer('expected_generation'),
-  expectedWorkspaceOid: text('expected_workspace_oid'),
-  expectedFingerprint: text('expected_fingerprint'),
-  idempotencyKey: text('idempotency_key'),
-  /** Set only when `status = 'cancelled'`; the precedence-first reason from `TURN_CANCEL_PRECEDENCE`. */
-  cancelReason: text('cancel_reason').$type<TurnCancelReason>(),
-  enqueuedAt: integer('enqueued_at').notNull(),
-  claimedAt: integer('claimed_at'),
-  sentAt: integer('sent_at'),
-  settledAt: integer('settled_at'),
-}, (t) => [
-  uniqueIndex('turn_queue_session_seq_unique').on(t.sessionId, t.seq),
-  uniqueIndex('turn_queue_single_flight').on(t.sessionId).where(sql`${t.status} = 'in_flight'`),
-]);
-
-export type TurnQueueRow = typeof turnQueue.$inferSelect;
 
 /**
  * The Verification mechanisms that write to `verification_attempts` (issue

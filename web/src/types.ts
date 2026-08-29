@@ -125,7 +125,6 @@ export type TicketTimelineKind =
   | 'escalation'
   | 'operator-accept'
   | 'operator-reject'
-  | 'merging'
   | 'fact';
 
 /** One chronological audit record from the ticket-wide lifecycle projection. */

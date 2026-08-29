@@ -29,7 +29,6 @@ import { DomainError } from '../domain/errors.js';
 import type { RunStore, PersistedRunEvent, RunGuardrailSnapshot } from '../domain/runs.js';
 import { RunFactStore } from '../domain/run-facts.js';
 import { AttemptStore } from '../domain/attempts.js';
-import { MergeJournalStore } from '../domain/merge-journal.js';
 import type { SettleProjection } from '../domain/run-coordinator.js';
 import { RunSettleCoordinator } from '../domain/run-settle.js';
 import type { SessionRetirementHook } from '../domain/session-retirement-coordinator.js';
@@ -49,8 +48,6 @@ import {
   spendTrip,
   toMicroUsd,
 } from '../domain/guardrail-budget.js';
-import { ExecutionChainStore } from '../domain/execution-chain-store.js';
-import { sumPriorSpend, chainObserved, combineSpendOutcomes, type ChainSpend } from '../domain/execution-chain.js';
 import { detectStall } from '../domain/stall-detector.js';
 import { toProgressEvents, formatProgressReason } from '../domain/guardrail-progress.js';
 import type { ProgressEvent } from '../domain/stall-detector.js';
@@ -59,7 +56,6 @@ import {
   toolTimeoutTrip,
   formatToolTimeoutReason,
 } from '../domain/guardrail-tool-timeout.js';
-import { TurnQueueStore } from '../domain/turn-queue-store.js';
 import { runCommandVerifier, commandAttemptToInput } from '../verification/command-verifier.js';
 import { createAcpCriticDrive, runCritic, criticAttemptToInput, type CriticHarnessDrive } from '../verification/critic.js';
 import { combineVerdicts, type VerificationDecision, type VerifierVerdict } from '../verification/combine.js';
@@ -362,15 +358,6 @@ export class Runner {
    * every wall-clock (later token/cost) trip is appended here, and the amber
    * Escalation card reason derives from it. */
   private readonly guardrailEvents: GuardrailEventStore;
-  /** The per-Session turn queue (issue #116): a corrective Attempt turn is
-   * recorded here, single-flight per Session, before the builder re-drives it. */
-  private readonly turnQueue: TurnQueueStore;
-  /** The Execution Chain store (issue #129, reliability-design Unit A): mints /
-   * resolves the persisted `execution_chains` identity a Run belongs to, so a
-   * cumulative token/cost budget is charged across every Run that continues one
-   * line of work (retry / crash-resume / corrective turn) and a
-   * retry cannot reset the counter to bypass the ceiling. */
-  private readonly chainStore: ExecutionChainStore;
   /** The durable Session store (issue #141, reliability-design Unit C): every
    * dispatch records a Session capturing the harness's `initialize`
    * capabilities alongside the Run, without changing Run behaviour. */
@@ -436,24 +423,12 @@ export class Runner {
     this.attempts = new AttemptStore(this.asyncDb);
     this.verificationAttempts = new VerificationAttemptStore(this.asyncDb);
     this.guardrailEvents = new GuardrailEventStore(this.asyncDb);
-    this.turnQueue = new TurnQueueStore(this.asyncDb);
-    this.chainStore = new ExecutionChainStore(this.asyncDb);
     this.sessionStore = new SessionStore(this.asyncDb);
-    // PONC-aware (issue #115): the Runner's settle path is what operator-cancel
-    // (`cancelForTask` → `settleTaskRun`) and force-complete travel through, and
-    // that path can reach a Run parked in `review`/`merging` while a
-    // `MergeCoordinator.merge()` is mid-flight. Feeding the same append-only
-    // `merge_journal` (keyed on `this.asyncDb`, so it reads the very PONC the
-    // review-side coordinator wrote) makes this coordinator honour the Point Of
-    // No Cancel too: a cancel racing in after the PONC is clamped out and the
-    // merge stands — without this, that cancel would win here and "un-merge" an
-    // already-merged Run (the bug reliability-design §0.3 exists to prevent).
     this.settleCoordinator = new RunSettleCoordinator(
       this.runStore,
       this.taskService,
       this.runFacts,
       (run) => this.events.onRunFinished?.(run),
-      new MergeJournalStore(this.asyncDb),
       options.sessionRetirement,
     );
     this.sessionRetirement = options.sessionRetirement;
@@ -624,11 +599,7 @@ export class Runner {
       guardrailConfig: resolveGuardrails(ws, config),
       priceTable: resolvePrices(config.prices),
     };
-    // The Execution Chain this Run charges its cumulative budget against
-    // (issue #129): inherited from the line of work this Run continues (a
-    // same-Task new attempt), or a fresh chain when it starts a new line.
-    const chainId = await this.chainStore.resolveForTask(task);
-    const created = await this.runStore.create(task.id, snapshot, chainId);
+    const created = await this.runStore.create(task.id, snapshot);
     await this.attempts.ensureForRun(task.id, created.attempt, created.startedAt);
     // "At most one active execution per work context" is enforced by the
     // scheduler pick predicate (Auto-Runner's `occupiedDirectContexts`), not
@@ -1501,10 +1472,10 @@ export class Runner {
    * The first turn runs through {@link driveOnce}. Any failed Attempt — a
    * verification fail, an unresolved afk turn, an inconclusive verdict with a
    * candidate — does not settle; it records the failure on the closed Attempt
-   * and routes a corrective builder turn back through the per-Session turn
-   * queue (single-flight), which re-enters `validating`, rebuilds the
-   * candidate, and reruns the FULL verifier suite, so a fix for one check
-   * can't silently break another. Attempts are bounded by `maxAttempts`
+   * and drives the next Attempt in the same Run (counter+1), which re-enters
+   * `validating`, rebuilds the candidate, and reruns the FULL verifier suite,
+   * so a fix for one check can't silently break another. Attempts are bounded
+   * by `maxAttempts`
    * (workspace override, then config); exhausting the cap Escalates the Run.
    * An inconclusive verdict with NO candidate Escalates in place — there is
    * nothing a corrective turn could fix. Every other ending settles inside
@@ -1513,39 +1484,20 @@ export class Runner {
   private async drive(task: TaskRow, run: RunRow, harness: HarnessConfig, parent: SpanContext): Promise<void> {
     const workspace = await this.getWorkspace?.(task.workspaceId);
     const maxAttempts = resolveScoped('maxAttempts', workspace?.maxAttempts, this.getConfig().maxAttempts);
-    // The Session key for this Run's turn queue. There is no first-class Session
-    // entity yet (reliability-design §0), so the globally-unique Run id anchors
-    // it — stable across heal turns even as each turn's ACP session id changes.
-    const sessionKey = `run-${run.id}`;
     // The attempt counter is seeded from the run row, so the maxAttempts bound
     // survives a crash-resume of the drive loop rather than being a purely
-    // in-memory count. The token/cost SPEND corrective turns consume IS charged
-    // cumulatively across the whole Execution Chain (issue #129) — they run
-    // inside this Run, so their usage is already in this Run's live snapshot,
-    // which the chain-cumulative spend poll folds onto the chain's prior floor.
+    // in-memory count. A corrective turn's token/cost spend is already inside
+    // this Run's live snapshot (it runs in the same Run), so the per-Run spend
+    // guard covers every Attempt without any separate accounting.
     let attemptNumber = run.attempt;
     // The budget counts from the last operator "Reject with guidance" (ADR-0041):
     // that escalated Attempt's number is the base, so history numbering keeps
     // growing while the cap restarts.
     const budgetBase = await this.attempts.budgetBase(task.id);
     let healCtx: HealContext | undefined;
-    // The turn_queue row id of the corrective turn currently being driven, so it
-    // is settled once its turn completes (kept single-flight: at most one).
-    let inFlightTurn: number | null = null;
     try {
       for (;;) {
       const outcome = await this.driveOnce(task, run, harness, parent, healCtx, attemptNumber);
-      if (inFlightTurn !== null) {
-        // The corrective turn we dispatched has run its course — settle its queue
-        // row regardless of the verdict; a further fail enqueues the next one.
-        try {
-          await this.turnQueue.settle(inFlightTurn, 'done');
-        } catch {
-          // Best-effort audit: the row is a record, not this loop's dispatch
-          // mechanism, so a settle race never blocks the Run from finishing.
-        }
-        inFlightTurn = null;
-      }
       if (outcome.kind === 'terminal') return;
       const attempt = await this.attempts.ensureForRun(task.id, attemptNumber, run.startedAt);
       const feedback = [outcome.reason, outcome.output].filter(Boolean).join('\n\n');
@@ -1573,7 +1525,6 @@ export class Runner {
         continuation,
         condensedContext: continuation.path === 'new-session-condensed' ? await this.condensedContext(run) : null,
       };
-      inFlightTurn = await this.enqueueCorrectiveAttempt(run, sessionKey);
       // The next `driveOnce(healCtx)` resets the phase pointer to `executing` and
       // records the re-entry itself (§0.4), so the phase sequence stays fully
       // reconstructable from the event log.
@@ -1623,36 +1574,6 @@ export class Runner {
       `Candidate: ${current.candidateOid ?? '(none produced)'}`,
       `Recorded facts: ${facts.length}; run events: ${events.length}.`,
     ].join('\n');
-  }
-
-  /**
-   * Put an Attempt N+1 corrective turn through the durable session queue before
-   * dispatching it. The row fences the mutation to the failed candidate and
-   * lets crash recovery escalate an interrupted corrective turn instead of
-   * replaying past the persisted attempt cap.
-   */
-  private async enqueueCorrectiveAttempt(run: RunRow, sessionKey: string): Promise<number | null> {
-    try {
-      const oid = (await this.runStore.get(run.id)).candidateOid ?? '';
-      const now = Date.now();
-      const row = await this.turnQueue.enqueue(
-        sessionKey,
-        run.id,
-        'self-heal',
-        {
-          expectedPhase: 'verifying',
-          expectedGeneration: run.attempt,
-          expectedWorkspaceOID: oid,
-          expectedFingerprint: oid,
-        },
-        now,
-      );
-      await this.turnQueue.claim(row.id, now);
-      await this.turnQueue.markInFlight(row.id, `attempt-${run.attempt}-run-${run.id}`, now);
-      return row.id;
-    } catch {
-      return null;
-    }
   }
 
   /**
@@ -1957,9 +1878,9 @@ export class Runner {
    * `git revert -m 1` on red. A base that moved since verification is
    * reconciled by the merge commit — there is no rebase mode. The escalated
    * Run is already terminal, so escalation is returned to the caller rather
-   * than settled here: the journaled `MergeCoordinator` envelope that drives
-   * Accept maps an escalated merge to a failed effect (the ticket stays
-   * escalated for the operator) and settles the success under `operator-accept`.
+   * than settled here: `EscalationService.accept`'s `target-ref` effect maps
+   * an escalated merge to a failed effect (the ticket stays escalated for the
+   * operator) and settles the success under `operator-accept`.
    */
   async mergeAcceptedBranch(task: TaskRow, run: RunRow): Promise<MergePolicyOutcome> {
     const record = (type: 'lifecycle', payload: unknown) => this.recordRunEvent(task, run, type, payload);
@@ -1968,8 +1889,9 @@ export class Runner {
       // caller holds, with no live Run abort to thread in — the post-merge
       // check is bounded by the verifier command's own timeout, not this signal.
       ...this.mergePolicyDeps(task, run, record, new AbortController().signal, {}),
-      // The MergeCoordinator effect surfaces an escalated merge as a failed
-      // effect; this path never re-settles the already-escalated Run.
+      // The `target-ref` effect (mergeEffectsFor, app.ts) surfaces an escalated
+      // merge as a failed effect; this path never re-settles the already-
+      // escalated Run.
       escalate: async () => {},
     };
     const outcome = await runMergePolicy(
@@ -2434,32 +2356,6 @@ export class Runner {
       // Resolved at arm time, not fire time — same provenance rule as `armGuardrail`.
       const ws = await this.getWorkspace?.(task.workspaceId);
       const configSource: 'default' | 'workspace' = hasWorkspaceOverride('guardrailBudget', ws?.guardrailBudget) ? 'workspace' : 'default';
-      // Prior cumulative spend of this Run's Execution Chain (issue #129): the
-      // token/cost already charged by the sibling Runs that continued the same
-      // line of work before this one (retry / crash-resume).
-      // Summed once at arm time — those Runs are settled, so their frozen usage
-      // is immutable for the life of this poll — and each member is priced with
-      // ITS OWN frozen price table (issue #126), so a later price edit can't
-      // retroactively change what a past Run cost. A member with no recorded
-      // usage contributes a 0 floor (see `sumPriorSpend`); self-heal turns need
-      // no accounting here because they run inside this same Run.
-      const chainMembers = started.chainId == null ? [] : await this.chainStore.listForChain(started.chainId);
-      const priorSpend = sumPriorSpend(
-        chainMembers
-          .filter((member) => member.id !== run.id)
-          .map((member): ChainSpend => {
-            const usage = member.usage ? (JSON.parse(member.usage) as RunUsage) : null;
-            const memberPrices: PriceTable = member.priceTable
-              ? (JSON.parse(member.priceTable) as PriceTable)
-              : {};
-            const memberCost = usage ? costOfUsages([usage], memberPrices) : null;
-            return {
-              tokens: usage ? totalTokensOf(usage) : null,
-              usd: memberCost?.totalUsd ?? null,
-              costIncomplete: memberCost?.incomplete ?? true,
-            };
-          }),
-      );
       let unmeasurableSince: number | null = null;
       let spendSampling = false;
       spendTimer = setInterval(() => {
@@ -2479,24 +2375,14 @@ export class Runner {
             const cost = snap ? costOfUsages([snap.usage], priceTable) : null;
             const observedUsd = cost?.totalUsd ?? null;
             const costIncomplete = cost?.incomplete ?? true;
-            // Two spend checks against the SAME frozen caps (issue #129 acceptance:
-            // a trip fires when EITHER the per-Run or the chain budget is exceeded).
-            // The per-Run check is #128's unchanged behaviour; the chain check folds
-            // this Run's live usage onto the chain's prior floor, so a retry whose
-            // own usage is under the cap still trips once the cumulative crosses it —
-            // the reset-and-bypass this guard exists to prevent. `combineSpendOutcomes`
-            // prefers a per-Run trip (keeping #128's card evidence) and only reports
-            // the chain scope when the cumulative is what pushed it over.
-            const runOutcome = spendTrip({ phase: now.phase ?? null, budget, observedTokens, observedUsd, costIncomplete });
-            const chainSpend = chainObserved(priorSpend, { tokens: observedTokens, usd: observedUsd, costIncomplete });
-            const chainOutcome = spendTrip({
-              phase: now.phase ?? null,
-              budget,
-              observedTokens: chainSpend.tokens,
-              observedUsd: chainSpend.usd,
-              costIncomplete: chainSpend.costIncomplete,
-            });
-            const { outcome, scope } = combineSpendOutcomes(runOutcome, chainOutcome);
+            // #128's per-Run spend check (issue #128; ADR-0001 dropped the
+            // cross-Run Execution Chain cumulative — a retry is the next
+            // Attempt inside this SAME Run, so its spend is already folded into
+            // this poll's observed usage; there is no sibling Run to fold in).
+            // The Attempt cap (`maxAttempts`/`budgetBase`, `drive`'s loop above)
+            // is what bounds how many Attempts a Run can spend on in the first
+            // place.
+            const outcome = spendTrip({ phase: now.phase ?? null, budget, observedTokens, observedUsd, costIncomplete });
             if (outcome.kind === 'ok') {
               unmeasurableSince = null;
               return;
@@ -2515,7 +2401,7 @@ export class Runner {
                   limitValue,
                   observedValue: 0,
                   configSource,
-                  payload: { unmeasurable: true, graceMs: this.spendGraceMs, scope },
+                  payload: { unmeasurable: true, graceMs: this.spendGraceMs },
                 },
                 reason,
               );
@@ -2532,7 +2418,7 @@ export class Runner {
                     limitValue: trip.limitTokens,
                     observedValue: trip.observedTokens,
                     configSource,
-                    payload: { scope },
+                    payload: {},
                   }
                 : {
                     dimension: 'cost' as const,
@@ -2540,7 +2426,7 @@ export class Runner {
                     limitValue: toMicroUsd(trip.limitUsd),
                     observedValue: toMicroUsd(trip.observedUsd),
                     configSource,
-                    payload: { limitUsd: trip.limitUsd, observedUsd: trip.observedUsd, scope },
+                    payload: { limitUsd: trip.limitUsd, observedUsd: trip.observedUsd },
                   };
             const reason = formatBudgetReason(trip);
             await tripSpend(now, event, reason);

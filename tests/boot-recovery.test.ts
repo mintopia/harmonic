@@ -112,7 +112,7 @@ describe('boot crash-recovery', () => {
   });
 
   it(
-    'reconciles a worktree Run crashed after its merge landed but before settle ran: re-runs the post-merge check and completes it — idempotent across repeat boots, with zero merge_journal/turn_queue rows written',
+    'reconciles a worktree Run crashed after its merge landed but before settle ran: re-runs the post-merge check and completes it — idempotent across repeat boots',
     async () => {
       server = await startServer({ ...stubHarness(), defaults: { isolationMode: 'worktree' }, maxAttempts: 1 });
       const wsId = (await server.app.ctx.workspaces.list())[0]!.id;
@@ -148,13 +148,6 @@ describe('boot crash-recovery', () => {
       const task = await server.api('GET', `/api/tasks/${taskId}`);
       expect(task.body.state).toBe('done');
       expect(git(repo, 'rev-parse', 'main')).toBe(mainTipAfterMerge);
-
-      const check = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
-      const journalCount = ((await check.execute('SELECT COUNT(*) as n FROM merge_journal')).rows[0] as unknown as { n: number }).n;
-      const turnQueueCount = ((await check.execute('SELECT COUNT(*) as n FROM turn_queue')).rows[0] as unknown as { n: number }).n;
-      check.close();
-      expect(journalCount).toBe(0);
-      expect(turnQueueCount).toBe(0);
 
       // A second boot: the Run already left `running`, so nothing re-checks it.
       await server.app.close();
