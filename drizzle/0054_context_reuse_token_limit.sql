@@ -1,1 +1,0 @@
-ALTER TABLE `workspaces` RENAME COLUMN `context_reuse_threshold` TO `context_reuse_token_limit`;

@@ -1,1 +1,0 @@
-ALTER TABLE `api_keys` ADD `conversation_id` integer;

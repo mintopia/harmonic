@@ -1,1 +1,0 @@
-ALTER TABLE `tasks` ADD `continuation_choice` text;
