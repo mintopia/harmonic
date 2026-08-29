@@ -56,7 +56,7 @@ describe('BranchRetirementCoordinator', () => {
     const branchGit = git();
     const coordinator = new BranchRetirementCoordinator({ listAll: async () => [] }, { get: async () => task }, branchGit);
 
-    await coordinator.onRunSettled(task, run());
+    await coordinator.onAttemptSettled(task, run());
 
     expect(branchGit.isContentContained).toHaveBeenCalledWith('/repo', 'develop', 'harmonic/task-2-run-1');
     expect(branchGit.deleteBranch).toHaveBeenCalledWith('/repo', 'harmonic/task-2-run-1');
@@ -68,8 +68,8 @@ describe('BranchRetirementCoordinator', () => {
     const noopRuns = { listAll: async () => [] };
     const tasks = { get: async () => task };
 
-    await new BranchRetirementCoordinator(noopRuns, tasks, unmerged).onRunSettled(task, run());
-    await new BranchRetirementCoordinator(noopRuns, tasks, active).onRunSettled(task, run());
+    await new BranchRetirementCoordinator(noopRuns, tasks, unmerged).onAttemptSettled(task, run());
+    await new BranchRetirementCoordinator(noopRuns, tasks, active).onAttemptSettled(task, run());
 
     expect(unmerged.deleteBranch).not.toHaveBeenCalled();
     expect(active.deleteBranch).not.toHaveBeenCalled();
@@ -79,7 +79,7 @@ describe('BranchRetirementCoordinator', () => {
     const branchGit = git();
     const coordinator = new BranchRetirementCoordinator({ listAll: async () => [] }, { get: async () => task }, branchGit);
 
-    await coordinator.onRunSettled(task, run({ baseBranch: 'epic/333' }));
+    await coordinator.onAttemptSettled(task, run({ baseBranch: 'epic/333' }));
 
     expect(branchGit.isContentContained).toHaveBeenCalledWith('/repo', 'develop', 'harmonic/task-2-run-1');
     expect(branchGit.deleteBranch).toHaveBeenCalledWith('/repo', 'harmonic/task-2-run-1');
@@ -98,7 +98,7 @@ describe('BranchRetirementCoordinator', () => {
       raw(repo, 'commit', '-m', 'merged work');
       expect(await Git.isAncestor(repo, 'main', 'harmonic/task-2-run-1')).toBe(false);
 
-      await new BranchRetirementCoordinator({ listAll: async () => [] }, { get: async () => task }).onRunSettled(
+      await new BranchRetirementCoordinator({ listAll: async () => [] }, { get: async () => task }).onAttemptSettled(
         { ...task, workingDir: repo },
         run(),
       );
@@ -124,7 +124,7 @@ describe('BranchRetirementCoordinator', () => {
       raw(repo, 'branch', '-D', 'epic/333');
       expect(await Git.branchExists(repo, 'epic/333')).toBe(false);
 
-      await new BranchRetirementCoordinator({ listAll: async () => [] }, { get: async () => task }).onRunSettled(
+      await new BranchRetirementCoordinator({ listAll: async () => [] }, { get: async () => task }).onAttemptSettled(
         { ...task, workingDir: repo },
         run({ baseBranch: 'epic/333' }),
       );
@@ -141,8 +141,8 @@ describe('BranchRetirementCoordinator', () => {
     const noopRuns = { listAll: async () => [] };
     const tasks = { get: async () => task };
 
-    await new BranchRetirementCoordinator(noopRuns, tasks, inReview).onRunSettled({ ...task, state: 'escalated' }, run());
-    await new BranchRetirementCoordinator(noopRuns, tasks, trackerOpen).onRunSettled(
+    await new BranchRetirementCoordinator(noopRuns, tasks, inReview).onAttemptSettled({ ...task, state: 'escalated' }, run());
+    await new BranchRetirementCoordinator(noopRuns, tasks, trackerOpen).onAttemptSettled(
       { ...task, origin: 'mirrored', trackerState: 'open' },
       run(),
     );

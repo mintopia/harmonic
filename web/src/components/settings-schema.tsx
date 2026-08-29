@@ -887,7 +887,7 @@ const guardrailScalarFields: OverridableDescriptor[] = [
     id: 'workspace-guardrail-progress',
     errorKey: 'guardrailProgress',
     label: 'Progress detector',
-    switchLabel: 'Trip a stalled Run to Escalation',
+    switchLabel: 'Trip a stalled Attempt to Escalation',
     get: (w) => w.guardrailProgress,
     set: (w, v) => ({ ...w, guardrailProgress: v as boolean | null }),
     inherited: (c) => c.guardrails.progress,
@@ -1143,7 +1143,7 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
     surfaces: ['workspace'],
     title: 'Delete workspace',
     description:
-      'Removes this Workspace and everything on its board — Tasks, Runs, and Conversations. This cannot be undone.',
+      'Removes this Workspace and everything on its board — Tasks, Attempts, and Conversations. This cannot be undone.',
     body: (ctx) => (ctx.surface === 'workspace' ? <WorkspaceDelete ctx={ctx} /> : null),
   },
 
@@ -1201,9 +1201,9 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
   {
     tab: 'execution',
     surfaces: ['workspace'],
-    title: 'Run guardrails',
+    title: 'Attempt guardrails',
     description:
-      'The budget caps, stall detector, and tool timeout that trip a Run here to Escalation (ADR-0019). Each inherits the global default until overridden; wall-clock always guards, the token and cost caps are opt-in.',
+      'The budget caps, stall detector, and tool timeout that trip an Attempt here to Escalation (ADR-0019). Each inherits the global default until overridden; wall-clock always guards, the token and cost caps are opt-in.',
     body: (ctx) => (ctx.surface === 'workspace' ? <WorkspaceGuardrails ctx={ctx} /> : null),
   },
 

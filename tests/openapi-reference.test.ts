@@ -82,7 +82,7 @@ describe('buildApiReference: endpoint fields', () => {
           post: {
             tags: ['Tasks'],
             summary: 'Create a task',
-            description: 'Reachable with a run-scoped Run Key.',
+            description: 'Reachable with an attempt-scoped Attempt Key.',
             responses: { '201': {} },
           },
         },
@@ -92,7 +92,7 @@ describe('buildApiReference: endpoint fields', () => {
     expect(endpoint!.method).toBe('POST');
     expect(endpoint!.path).toBe('/api/tasks');
     expect(endpoint!.summary).toBe('Create a task');
-    expect(endpoint!.description).toContain('Reachable with a run-scoped Run Key');
+    expect(endpoint!.description).toContain('Reachable with an attempt-scoped Attempt Key');
   });
 
   it('extracts parameters with name, in, required and a rendered type', () => {

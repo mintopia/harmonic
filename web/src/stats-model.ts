@@ -1,25 +1,25 @@
 import type { AttemptSummary } from './types.js';
 
-export interface RunStateCount {
+export interface AttemptStateCount {
   state: string;
   count: number;
 }
 
 /** The canonical AttemptSummary-state order (mirrors the server's `RUN_STATES`): live, then merged, then the failure slices. */
-const RUN_STATE_ORDER = ['running', 'completed', 'failed', 'cancelled'] as const satisfies readonly AttemptSummary['state'][];
+const ATTEMPT_STATE_ORDER = ['running', 'completed', 'failed', 'cancelled'] as const satisfies readonly AttemptSummary['state'][];
 
 /** AttemptSummary-state distribution in canonical AttemptSummary-state order, with zero-count states dropped.
  *  Any states present in the input but not in the canonical order are appended after
  *  the known ones, in input order, also dropping zeros. */
-export function orderedRunStates(runsByState: Record<string, number>): RunStateCount[] {
-  const known: RunStateCount[] = [];
-  for (const state of RUN_STATE_ORDER) {
-    const count = runsByState[state] ?? 0;
+export function orderedAttemptStates(attemptsByState: Record<string, number>): AttemptStateCount[] {
+  const known: AttemptStateCount[] = [];
+  for (const state of ATTEMPT_STATE_ORDER) {
+    const count = attemptsByState[state] ?? 0;
     if (count > 0) known.push({ state, count });
   }
-  const unknown: RunStateCount[] = [];
-  for (const [state, count] of Object.entries(runsByState)) {
-    if ((RUN_STATE_ORDER as readonly string[]).includes(state)) continue;
+  const unknown: AttemptStateCount[] = [];
+  for (const [state, count] of Object.entries(attemptsByState)) {
+    if ((ATTEMPT_STATE_ORDER as readonly string[]).includes(state)) continue;
     if (count > 0) unknown.push({ state, count });
   }
   return [...known, ...unknown];
@@ -31,8 +31,8 @@ export function orderedRunStates(runsByState: Record<string, number>): RunStateC
  * is shown so the failure rate can be reconciled against the whole picture,
  * never a hidden number. Zero-count slices are dropped, canonical order kept.
  */
-export function reliabilityStates(runsByState: Record<string, number>, failedRuns: number): RunStateCount[] {
-  return orderedRunStates({ ...runsByState, failed: failedRuns });
+export function reliabilityStates(attemptsByState: Record<string, number>, failedAttempts: number): AttemptStateCount[] {
+  return orderedAttemptStates({ ...attemptsByState, failed: failedAttempts });
 }
 
 /** One reason bucket of the failures-by-reason breakdown. */
@@ -95,13 +95,13 @@ export function cacheHitRate(totals: TokenCounts | null | undefined): number | n
 }
 
 /**
- * Failure rate (0..1, ADR-0028): `failedRuns / total`, failed-only — the
+ * Failure rate (0..1, ADR-0028): `failedAttempts / total`, failed-only — the
  * backend's honest numerator (cancelled Runs excluded).
  * null when there are no Runs — the caller shows "—", never a fabricated 0%.
  */
-export function failureRate(failedRuns: number, total: number): number | null {
+export function failureRate(failedAttempts: number, total: number): number | null {
   if (total <= 0) return null;
-  return failedRuns / total;
+  return failedAttempts / total;
 }
 
 /**

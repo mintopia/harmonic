@@ -50,7 +50,7 @@ describe('steering a running task', () => {
       const taskId = created.body.id;
       const started = await noSteerServer.api('POST', `/api/tasks/${taskId}/run`);
       expect(started.status).toBe(201);
-      const runId = started.body.id;
+      const attemptId = started.body.id;
 
       // Queue the steer once the run is active (the task flips running before the
       // ActiveRun registers, so a steer can 409 briefly — retry until it merges).
@@ -66,7 +66,7 @@ describe('steering a running task', () => {
         return body.state === 'done' ? body : undefined;
       });
 
-      const { body } = await noSteerServer.api('GET', `/api/attempts/${runId}/events`);
+      const { body } = await noSteerServer.api('GET', `/api/attempts/${attemptId}/events`);
       const lifecycle = body.events.filter((e: any) => e.type === 'lifecycle');
       expect(lifecycle.find((e: any) => e.payload.event === 'steer_queued')?.payload.text).toBe('reread the tests first');
       expect(lifecycle.find((e: any) => e.payload.event === 'steer_delivered')?.payload.text).toBe('reread the tests first');
@@ -96,7 +96,7 @@ describe('steering a running task', () => {
     const taskId = created.body.id;
     const started = await server.api('POST', `/api/tasks/${taskId}/run`);
     expect(started.status).toBe(201);
-    const runId = started.body.id;
+    const attemptId = started.body.id;
 
     // ACP output is intentionally no longer persisted, so the marker file (not
     // a lifecycle event) is the "turn is running" probe.
@@ -114,7 +114,7 @@ describe('steering a running task', () => {
       return body.state === 'done' ? body : undefined;
     });
 
-    const { body } = await server.api('GET', `/api/attempts/${runId}/events`);
+    const { body } = await server.api('GET', `/api/attempts/${attemptId}/events`);
     const lifecycle = body.events.filter((e: any) => e.type === 'lifecycle');
     expect(lifecycle.find((e: any) => e.payload.event === 'steer_injected')?.payload.text).toBe(
       'switch to the other approach',

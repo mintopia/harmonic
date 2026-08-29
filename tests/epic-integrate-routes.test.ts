@@ -73,7 +73,7 @@ describe('Whole-Epic force-integrate operator surface (issue #161)', () => {
   });
 
   describe('operator-only gating', () => {
-    it('denies a run-scoped Run Key on POST /api/workspaces/:id/epics/:ref/force-integrate', async () => {
+    it('denies an attempt-scoped Attempt Key on POST /api/workspaces/:id/epics/:ref/force-integrate', async () => {
       const { env } = await captureRunEnv(server, ['HARMONIC_API_KEY']);
       const token = env.HARMONIC_API_KEY as string;
 
@@ -156,7 +156,7 @@ describe('force_integrate_epic MCP tool (issue #161)', () => {
     await client.close();
   });
 
-  it('rejects a run-scoped Run Key with a forbidden domain error, even though /mcp itself admits it', async () => {
+  it('rejects an attempt-scoped Attempt Key with a forbidden domain error, even though /mcp itself admits it', async () => {
     const { env } = await captureRunEnv(server, ['HARMONIC_API_KEY']);
     const runToken = env.HARMONIC_API_KEY as string;
 

@@ -156,15 +156,15 @@ describe('one merge policy, everywhere (issue #381, ADR-0001)', () => {
     return (await server.app.ctx.runner.launchClaimed(taskId)).id;
   }
 
-  async function launchAfk(): Promise<{ taskId: number; runId: number; trackerRef: number }> {
+  async function launchAfk(): Promise<{ taskId: number; attemptId: number; trackerRef: number }> {
     const seeded = await seedAfk();
-    return { ...seeded, runId: await launch(seeded.taskId) };
+    return { ...seeded, attemptId: await launch(seeded.taskId) };
   }
 
-  const waitDone = (taskId: number, runId: number, opts?: { timeoutMs?: number }) =>
+  const waitDone = (taskId: number, attemptId: number, opts?: { timeoutMs?: number }) =>
     waitFor(async () => {
       const t = await server.app.ctx.tasks.get(taskId);
-      if (t.state === 'escalated') throw new Error(`escalated instead of merging: ${(await server.app.ctx.attempts.get(runId)).reason}`);
+      if (t.state === 'escalated') throw new Error(`escalated instead of merging: ${(await server.app.ctx.attempts.get(attemptId)).reason}`);
       return t.state === 'done' ? t : undefined;
     }, opts);
   const waitEscalated = (taskId: number) =>
@@ -179,8 +179,8 @@ describe('one merge policy, everywhere (issue #381, ADR-0001)', () => {
       state: string;
       steps: Array<{ type: string; state: string; verdict: string | null }>;
     }>;
-  const lifecycle = async (runId: number): Promise<Array<{ event: string; mechanism?: string; reason?: string; oid?: string; baseBranch?: string }>> =>
-    (await server.api('GET', `/api/attempts/${runId}/events`)).body.events
+  const lifecycle = async (attemptId: number): Promise<Array<{ event: string; mechanism?: string; reason?: string; oid?: string; baseBranch?: string }>> =>
+    (await server.api('GET', `/api/attempts/${attemptId}/events`)).body.events
       .filter((e: { type: string }) => e.type === 'lifecycle')
       .map((e: { payload: { event: string; mechanism?: string; reason?: string; oid?: string; baseBranch?: string } }) => e.payload);
 
@@ -198,11 +198,11 @@ describe('one merge policy, everywhere (issue #381, ADR-0001)', () => {
         drive: { prompt: JSON.stringify({ writeFiles: { 'impl-{ref}.txt': 'implementation {ref}\n' }, mcpFinish: true }) },
       });
 
-      const { taskId, runId, trackerRef } = await launchAfk();
+      const { taskId, attemptId, trackerRef } = await launchAfk();
       // A generous but bounded wait: a regression back to the deadlock must
       // surface as a `waitFor` timeout (then the `it` timeout below as a
       // backstop), never as the test suite hanging forever.
-      const task = await waitDone(taskId, runId, { timeoutMs: 20_000 });
+      const task = await waitDone(taskId, attemptId, { timeoutMs: 20_000 });
       expect(task.state).toBe('done');
 
       // A REAL merge commit: main's tip has two parents and appears in the
@@ -213,7 +213,7 @@ describe('one merge policy, everywhere (issue #381, ADR-0001)', () => {
 
       // Both the pre-merge candidate verification AND the post-merge check on
       // the merged tip actually ran — the check is no longer skipped/hung.
-      const events = await lifecycle(runId);
+      const events = await lifecycle(attemptId);
       const commandVerifications = events.filter((e) => e.event === 'verification' && e.mechanism === 'command');
       expect(commandVerifications).toHaveLength(2);
       expect(events).toContainEqual(expect.objectContaining({ event: 'merged', baseBranch: 'main' }));
@@ -233,12 +233,12 @@ describe('one merge policy, everywhere (issue #381, ADR-0001)', () => {
       drive: { prompt: JSON.stringify({ writeFiles: { 'impl-{ref}.txt': 'implementation {ref}\n' }, mcpFinish: true }) },
     });
 
-    const { taskId, runId, trackerRef } = await launchAfk();
-    const task = await waitDone(taskId, runId);
+    const { taskId, attemptId, trackerRef } = await launchAfk();
+    const task = await waitDone(taskId, attemptId);
     expect(task.state).toBe('done');
 
     // main really did advance independently during verification...
-    const events = await lifecycle(runId);
+    const events = await lifecycle(attemptId);
     const commandVerifications = events.filter((e) => e.event === 'verification' && e.mechanism === 'command');
     // ...yet the candidate's verification ran exactly ONCE — no re-verification
     // of a rebased/replayed tree, no `rebase-required`/`moving-base` events.
@@ -277,7 +277,7 @@ describe('one merge policy, everywhere (issue #381, ADR-0001)', () => {
       },
     });
 
-    const { taskId, runId } = await launchAfk();
+    const { taskId, attemptId } = await launchAfk();
     const task = await waitEscalated(taskId);
     expect(task.state).toBe('escalated');
 
@@ -292,7 +292,7 @@ describe('one merge policy, everywhere (issue #381, ADR-0001)', () => {
     expect(git(repo, 'log', '--merges', 'main')).toBe('');
     expect(git(repo, 'show', 'main:conflict.txt')).toBe('sibling version');
 
-    const events = await lifecycle(runId);
+    const events = await lifecycle(attemptId);
     const escalation = events.find((e) => e.event === 'escalated');
     expect(escalation?.reason).toMatch(/hit conflicts and automated resolution is disabled \(0 resolve turns\)/);
     expect(escalation?.reason).not.toMatch(/<<<<<<<|CONFLICT/);

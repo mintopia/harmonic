@@ -16,10 +16,10 @@ import {
 } from '../../db/schema.js';
 import { Git } from '../../execution/git.js';
 import { DomainError } from '../../domain/errors.js';
-import { mergeUsage, type RunUsage } from '../../execution/usage.js';
+import { mergeUsage, type AttemptUsage } from '../../execution/usage.js';
 import { readTranscriptLog, withOperatorMessages, type OperatorMessage } from '../../execution/transcript-log.js';
 import { attemptTimelineToApi, atRestWorkspaceId, costOfRuns, attemptToApi, taskToApi, tasksToApi, ticketTimelineToApi, verifierStatusesToApi } from '../serialize.js';
-import { attemptTimelineResponseSchema, errorResponse, idParamsSchema, costSchema, runUsageSchema, okResponseSchema, verifierStatusSchema } from '../schemas.js';
+import { attemptTimelineResponseSchema, errorResponse, idParamsSchema, costSchema, attemptUsageSchema, okResponseSchema, verifierStatusSchema } from '../schemas.js';
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
 
 /** The operator's guidance on an escalated ticket (ADR-0041 "Reject with guidance"): becomes the next Attempt's feedback. */
@@ -159,14 +159,14 @@ const taskSchema = taskWithDepsSchema
     runStartedAt: z.number().nullable().meta({ example: 1784032020000 }),
     /** Total tool-call count of the running run; null unless the Task is running (issue #100). */
     toolCount: z.number().nullable().meta({ example: 12 }),
-    /** The running run's id, so the board can match the run_usage firehose to this card; null unless running (issue #100). */
-    runId: z.number().nullable().meta({ example: 41 }),
+    /** The running run's id, so the board can match the attempt_usage firehose to this card; null unless running (issue #100). */
+    attemptId: z.number().nullable().meta({ example: 41 }),
     /** The running run's current Attempt Step (ADR-0001 Vocabulary), so the
      * Board's Active card can badge it; null unless the Task is working, or
      * between Steps (e.g. mid-merge). */
     currentStep: z.enum(STEP_TYPES).nullable().meta({ example: 'verification' }),
     /** The running run's context-window occupancy in tokens; null unless running
-     * (or unreported). Live via the run_usage firehose (issue #52). */
+     * (or unreported). Live via the attempt_usage firehose (issue #52). */
     contextTokens: z.number().nullable().meta({ example: 48210 }),
     /** The model's effective context window (config override, else shipped
      * default); null when unknown. The Board card shows `ctx %` =
@@ -224,7 +224,7 @@ const attemptSchema = z
      * direct-mode context). */
     verifiedHeadOid: z.string().nullable().meta({ example: '0f758cd2200565e7605902a86c2827c65ad25ce0' }),
     verifiedRef: z.string().nullable().meta({ example: 'refs/harmonic/direct/attempt-9137' }),
-    usage: runUsageSchema.nullable(),
+    usage: attemptUsageSchema.nullable(),
     startedAt: z.number().meta({ example: 1784032020000 }),
     finishedAt: z.number().nullable().meta({ example: 1784032260000 }),
     cost: costSchema.nullable(),
@@ -236,7 +236,7 @@ const attemptsListResponseSchema = listResponse('attempts', attemptSchema);
 const attemptEventSchema = z.object({
   id: z.number().meta({ example: 55210 }),
   /** The Attempt this event is keyed to (`attempt_events.attempt_id`,
-   * ADR-0001 #388 S-F — was `runId` before). */
+   * ADR-0001 #388 S-F — was `attemptId` before). */
   attemptId: z.number().meta({ example: 61 }),
   seq: z.number().meta({ example: 42 }),
   ts: z.number().meta({ example: 1784032140000 }),
@@ -265,7 +265,7 @@ const attemptLogResponseSchema = z.discriminatedUnion('status', [
 const guardrailEventSchema = z.object({
   id: z.number().meta({ example: 812 }),
   /** The Attempt this event is keyed to (`guardrail_events.attempt_id`,
-   * ADR-0001 #388 S-F — was `runId` before). */
+   * ADR-0001 #388 S-F — was `attemptId` before). */
   attemptId: z.number().meta({ example: 61 }),
   seq: z.number().meta({ example: 1 }),
   ts: z.number().meta({ example: 1784032140000 }),
@@ -287,7 +287,7 @@ const guardrailEventsListResponseSchema = listResponse('guardrailEvents', guardr
 const verificationAttemptSchema = z.object({
   id: z.number().meta({ example: 4210 }),
   /** The Attempt this row is keyed to (`verification_attempts.attempt_id`,
-   * ADR-0001 #388 S-F — was `runId` before). */
+   * ADR-0001 #388 S-F — was `attemptId` before). */
   attemptId: z.number().meta({ example: 61 }),
   seq: z.number().meta({ example: 1 }),
   ts: z.number().meta({ example: 1784032140000 }),
@@ -311,10 +311,10 @@ const verificationAttemptsListResponseSchema = listResponse('verificationAttempt
   verifierStatuses: z.array(verifierStatusSchema),
 });
 
-const usageResponseSchema = runUsageSchema.extend({
+const usageResponseSchema = attemptUsageSchema.extend({
   cost: costSchema.nullable(),
   /** How many of the task's runs (including failed retries) reported usage. */
-  runCount: z.number().meta({ example: 2 }),
+  attemptCount: z.number().meta({ example: 2 }),
 });
 
 const diffResponseSchema = z.object({
@@ -438,7 +438,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
     {
       schema: {
         tags: ['Tasks'],
-        description: 'Create a task. Reachable with a run-scoped Run Key.',
+        description: 'Create a task. Reachable with an attempt-scoped Attempt Key.',
         body: createTaskInputSchema,
         response: {
           201: taskSchema.describe('The created task, in draft.'),
@@ -458,7 +458,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       schema: {
         tags: ['Tasks'],
         description:
-          'List tasks: filtered (`state`, `harness`, `priority`), searched (`q`, server-side substring over prompt + title), sorted, and paginated (`limit`/`offset`, with a `total` count). An omitted `limit` returns every match. Reachable with a run-scoped Run Key.',
+          'List tasks: filtered (`state`, `harness`, `priority`), searched (`q`, server-side substring over prompt + title), sorted, and paginated (`limit`/`offset`, with a `total` count). An omitted `limit` returns every match. Reachable with an attempt-scoped Attempt Key.',
         querystring: taskListQuerySchema.extend(paginationQuerySchema.shape),
         response: { 200: tasksListResponseSchema.describe('One page of tasks matching the filters, in the requested order, plus the full match `total`.') },
       },
@@ -487,7 +487,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
     {
       schema: {
         tags: ['Tasks'],
-        description: 'Get one task with its dependency context and Cost. Reachable with a run-scoped Run Key.',
+        description: 'Get one task with its dependency context and Cost. Reachable with an attempt-scoped Attempt Key.',
         params: idParamsSchema,
         response: {
           200: taskSchema.describe('The task, with its dependency context and Cost.'),
@@ -504,7 +504,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       schema: {
         tags: ['Tasks'],
         description:
-          'Edit a draft or ready task. Each Task-default field (harness, model, isolationMode, priority) accepts null to clear it back to inherit. Reachable with a run-scoped Run Key.',
+          'Edit a draft or ready task. Each Task-default field (harness, model, isolationMode, priority) accepts null to clear it back to inherit. Reachable with an attempt-scoped Attempt Key.',
         params: idParamsSchema,
         body: updateTaskInputSchema,
         response: {
@@ -522,7 +522,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
     {
       schema: {
         tags: ['Tasks'],
-        description: 'Promote a draft to ready. Blocked-ness is derived from its open blockers. Reachable with a run-scoped Run Key.',
+        description: 'Promote a draft to ready. Blocked-ness is derived from its open blockers. Reachable with an attempt-scoped Attempt Key.',
         params: idParamsSchema,
         response: {
           200: taskSchema.describe('The task in its new state.'),
@@ -538,7 +538,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
     {
       schema: {
         tags: ['Tasks'],
-        description: 'Cancel a non-terminal task, optionally cascading to its dependents. Reachable with a run-scoped Run Key.',
+        description: 'Cancel a non-terminal task, optionally cascading to its dependents. Reachable with an attempt-scoped Attempt Key.',
         params: idParamsSchema,
         body: cancelInputSchema,
         response: {
@@ -634,7 +634,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       schema: {
         tags: ['Tasks'],
         description:
-          'Return a cancelled task to the queue in place (ready; blocked-ness is derived from its open blockers). Reachable with a run-scoped Run Key.',
+          'Return a cancelled task to the queue in place (ready; blocked-ness is derived from its open blockers). Reachable with an attempt-scoped Attempt Key.',
         params: idParamsSchema,
         response: {
           200: taskSchema.describe('The task in its new state.'),
@@ -650,7 +650,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
     {
       schema: {
         tags: ['Tasks'],
-        description: 'Add a dependency edge, re-deriving the open-blocker count. Reachable with a run-scoped Run Key.',
+        description: 'Add a dependency edge, re-deriving the open-blocker count. Reachable with an attempt-scoped Attempt Key.',
         params: idParamsSchema,
         body: dependsOnBodySchema,
         response: {
@@ -670,7 +670,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
     {
       schema: {
         tags: ['Tasks'],
-        description: 'Remove a dependency edge, re-deriving the open-blocker count. Reachable with a run-scoped Run Key.',
+        description: 'Remove a dependency edge, re-deriving the open-blocker count. Reachable with an attempt-scoped Attempt Key.',
         params: depParamsSchema,
         response: { 200: taskWithDepsSchema.describe('The task with the edge removed, and its open-blocker count re-derived.') },
       },
@@ -778,7 +778,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
     {
       schema: {
         tags: ['Attempts'],
-        description: 'Start an attempt for a ready task. Reachable with a run-scoped Run Key.',
+        description: 'Start an attempt for a ready task. Reachable with an attempt-scoped Attempt Key.',
         params: idParamsSchema,
         response: { 201: attemptSchema.describe('The attempt that just started.') },
       },
@@ -834,7 +834,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
     {
       schema: {
         tags: ['Attempts'],
-        description: "List a task's attempts (retries included). Reachable with a run-scoped Run Key.",
+        description: "List a task's attempts (retries included). Reachable with an attempt-scoped Attempt Key.",
         params: idParamsSchema,
         querystring: paginationQuerySchema,
         response: { 200: attemptsListResponseSchema.describe("Every attempt for the task, including failed retries, oldest first.") },
@@ -855,7 +855,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       schema: {
         tags: ['Attempts'],
         description:
-          "The task's current (latest) attempt — the follow-forward read for pollers: self-heal advances to a new Attempt row each turn, and this always reflects the live one. Reachable with a run-scoped Run Key.",
+          "The task's current (latest) attempt — the follow-forward read for pollers: self-heal advances to a new Attempt row each turn, and this always reflects the live one. Reachable with an attempt-scoped Attempt Key.",
         params: idParamsSchema,
         response: {
           200: attemptSchema.describe('The current attempt, with its Usage and Cost.'),
@@ -874,7 +874,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
     {
       schema: {
         tags: ['Attempts'],
-        description: 'Get one attempt with its Usage and Cost. Reachable with a run-scoped Run Key.',
+        description: 'Get one attempt with its Usage and Cost. Reachable with an attempt-scoped Attempt Key.',
         params: idParamsSchema,
         response: {
           200: attemptSchema.describe('The attempt, with its Usage and Cost.'),
@@ -897,12 +897,12 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
     },
     async (req) => {
       const run = await ctx.attempts.get(req.params.id);
-      if (run.sessionRowId === null) return { status: 'unavailable' as const, liveCursor: ctx.bus.latestRunLogSeq({ runId: run.id }) };
+      if (run.sessionRowId === null) return { status: 'unavailable' as const, liveCursor: ctx.bus.latestAttemptLogSeq({ attemptId: run.id }) };
       let session;
       try {
         session = await ctx.sessions.get(run.sessionRowId);
       } catch {
-        return { status: 'unavailable' as const, liveCursor: ctx.bus.latestRunLogSeq({ runId: run.id }) };
+        return { status: 'unavailable' as const, liveCursor: ctx.bus.latestAttemptLogSeq({ attemptId: run.id }) };
       }
       // Resolve the transcript locator on demand when the eager capture at
       // dispatch missed it (the harness had not flushed its log inside that
@@ -914,7 +914,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
         startedAt: run.startedAt,
         finishedAt: run.endedAt,
       });
-      const liveCursor = ctx.bus.latestRunLogSeq({ runId: run.id });
+      const liveCursor = ctx.bus.latestAttemptLogSeq({ attemptId: run.id });
       if (log.status !== 'available') return { ...log, liveCursor };
       // The JSONL is only the agent's side; fold in the operator's steer
       // messages (Harmonic's own attempt-events) so the transcript shows the
@@ -938,7 +938,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
     {
       schema: {
         tags: ['Attempts'],
-        description: 'Replay an attempt\'s persisted events, in order — the same records streamed live over the WebSocket. Reachable with a run-scoped Run Key.',
+        description: 'Replay an attempt\'s persisted events, in order — the same records streamed live over the WebSocket. Reachable with an attempt-scoped Attempt Key.',
         params: idParamsSchema,
         querystring: paginationQuerySchema,
         response: { 200: eventsListResponseSchema.describe('The attempt\'s persisted events in sequence order.') },
@@ -957,7 +957,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
     {
       schema: {
         tags: ['Attempts'],
-        description: "Replay an attempt's Guardrail-trip event log, in sequence order (issue #171). Reachable with a run-scoped Run Key.",
+        description: "Replay an attempt's Guardrail-trip event log, in sequence order (issue #171). Reachable with an attempt-scoped Attempt Key.",
         params: idParamsSchema,
         querystring: paginationQuerySchema,
         response: {
@@ -984,7 +984,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       schema: {
         tags: ['Attempts'],
         description:
-          "Replay an attempt's verification-attempt log (per-verifier verdicts + summaries), in sequence order (issue #169, part of #109). Reachable with a run-scoped Run Key.",
+          "Replay an attempt's verification-attempt log (per-verifier verdicts + summaries), in sequence order (issue #169, part of #109). Reachable with an attempt-scoped Attempt Key.",
         params: idParamsSchema,
         querystring: paginationQuerySchema,
         response: {
@@ -1068,7 +1068,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       schema: {
         tags: ['Attempts'],
         description:
-          "Usage and Cost rolled up across all of a task's attempts, retries included. Reachable with a run-scoped Run Key.",
+          "Usage and Cost rolled up across all of a task's attempts, retries included. Reachable with an attempt-scoped Attempt Key.",
         params: idParamsSchema,
         response: { 200: usageResponseSchema.describe('Usage and Cost rolled up across the task\'s attempts.') },
       },
@@ -1077,12 +1077,12 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       await ctx.tasks.assertExists(req.params.id);
       const runs = await ctx.attempts.listForTask(req.params.id);
       const usages = runs
-        .map((run) => (run.usage ? (JSON.parse(run.usage) as RunUsage) : null))
-        .filter((u): u is RunUsage => u !== null);
+        .map((run) => (run.usage ? (JSON.parse(run.usage) as AttemptUsage) : null))
+        .filter((u): u is AttemptUsage => u !== null);
       return {
         ...(mergeUsage(usages) ?? { models: {}, totals: null, toolCalls: {}, source: null }),
         cost: costOfRuns(runs),
-        runCount: usages.length,
+        attemptCount: usages.length,
       };
     },
   );
@@ -1093,7 +1093,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       schema: {
         tags: ['Attempts'],
         description:
-          'Branch and diffstat for the review inbox (worktree-mode attempts only; other fields are null). Reachable with a run-scoped Run Key.',
+          'Branch and diffstat for the review inbox (worktree-mode attempts only; other fields are null). Reachable with an attempt-scoped Attempt Key.',
         params: idParamsSchema,
         response: { 200: diffResponseSchema.describe('The attempt\'s branch and its diffstat against the base; nulls outside worktree mode.') },
       },
@@ -1128,7 +1128,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       schema: {
         tags: ['Attempts'],
         description:
-          'Per-file unified-diff hunks for the review pane (worktree-mode attempts only). Empty `files` outside worktree mode or when the branch/worktree is gone. Reachable with a run-scoped Run Key.',
+          'Per-file unified-diff hunks for the review pane (worktree-mode attempts only). Empty `files` outside worktree mode or when the branch/worktree is gone. Reachable with an attempt-scoped Attempt Key.',
         params: idParamsSchema,
         querystring: paginationQuerySchema,
         response: { 200: diffFilesResponseSchema.describe("The attempt's changed files with parsed +/- hunks; empty outside worktree mode.") },

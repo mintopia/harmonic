@@ -72,22 +72,22 @@ function Dot({ task }: { task: Task }) {
 const HIT44 = "after:absolute after:left-1/2 after:top-1/2 after:size-11 after:-translate-x-1/2 after:-translate-y-1/2 after:content-['']";
 
 function RunningReadoutLine({ task }: { task: Task }) {
-  const runId = task.runId;
+  const attemptId = task.attemptId;
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1_000);
     return () => clearInterval(timer);
   }, []);
-  // Live context-window fill from the run_usage firehose (falls back to the
+  // Live context-window fill from the attempt_usage firehose (falls back to the
   // REST snapshot until the first tick); `ctx %` = contextTokens/contextWindow.
   const [liveContext, setLiveContext] = useState<number | null>(null);
   useEffect(() => {
-    if (runId == null) return;
+    if (attemptId == null) return;
     setLiveContext(null);
     return subscribe((msg) => {
-      if (msg.type === 'run_usage' && msg.runId === runId) setLiveContext(msg.contextTokens ?? null);
+      if (msg.type === 'attempt_usage' && msg.attemptId === attemptId) setLiveContext(msg.contextTokens ?? null);
     });
-  }, [runId]);
+  }, [attemptId]);
   if (task.runStartedAt === null) return null;
   const elapsed = fmtElapsed(Math.max(0, now - task.runStartedAt));
   const contextTokens = liveContext ?? task.contextTokens;

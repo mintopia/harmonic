@@ -130,7 +130,7 @@ export const copilotAdapter: HarnessAdapter = {
   sessionModelId: (model) => model,
 
   // Verified end-to-end in the spike (capture 5): every MCP request
-  // arrived with the bearer header, so the Run Key needs zero setup.
+  // arrived with the bearer header, so the Attempt Key needs zero setup.
   mcpServers: ({ url, token }) => [
     {
       name: 'harmonic',

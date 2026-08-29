@@ -58,7 +58,7 @@ const compact = new Intl.NumberFormat(undefined, { notation: 'compact', maximumF
 const GRID =
   'grid grid-cols-[minmax(0,1fr)_10rem_5.5rem_7rem_5rem_auto] items-center gap-x-4 px-4';
 
-const TYPE_FILTER_LABELS: Record<ActivityTypeFilter, string> = { all: 'All', runs: 'Runs', chats: 'Conversations' };
+const TYPE_FILTER_LABELS: Record<ActivityTypeFilter, string> = { all: 'All', attempts: 'Attempts', chats: 'Conversations' };
 
 function TypeSegments({ value, onChange }: { value: ActivityTypeFilter; onChange: (v: ActivityTypeFilter) => void }) {
   return (
@@ -89,7 +89,7 @@ function Empty() {
 }
 
 function StateDot({ process }: { process: ActivityProcess }) {
-  const running = process.type === 'run';
+  const running = process.type === 'attempt';
   return (
     <span
       aria-hidden="true"
@@ -162,7 +162,7 @@ function RowActions({
 
   const stopConfirm = () => {
     if (!stop) return;
-    if (stop.kind === 'run') {
+    if (stop.kind === 'attempt') {
       api.cancelTask(stop.taskId).then(() => toastSuccess(`${taskLabel(stop.taskId)} cancelled`), toastError);
     } else {
       fail(api.endConversation(stop.conversationId));
@@ -262,7 +262,7 @@ const ProcessRow = memo(function ProcessRow({
         <div className="flex items-center gap-2">
           <ExpandToggle expandable={expandable} expanded={expanded} onToggle={() => onToggleExpand(rowKey)} />
           <StateDot process={process} />
-          <span className={`${chip} bg-raised text-muted`}>{process.type === 'run' ? 'Run' : 'Chat'}</span>
+          <span className={`${chip} bg-raised text-muted`}>{process.type === 'attempt' ? 'Attempt' : 'Chat'}</span>
           {process.escalated && <span className={stateChip('escalated')}>escalated</span>}
           <span className="truncate font-medium text-ink" title={process.title}>
             {process.title}
@@ -349,10 +349,10 @@ export function ActivityView({ config }: { config: AppConfig | null }) {
     const poll = setInterval(load, 5_000);
 
     const unsubscribe = subscribe((msg) => {
-      if (msg.type === 'run_usage') {
+      if (msg.type === 'attempt_usage') {
         setProcesses((prev) => (prev ? mergeRunUsage(prev, msg) : prev));
-      } else if (msg.type === 'run_changed' && msg.run.state !== 'running') {
-        setProcesses((prev) => prev?.filter((p) => !(p.type === 'run' && p.runId === msg.run.id)) ?? prev);
+      } else if (msg.type === 'attempt_changed' && msg.run.state !== 'running') {
+        setProcesses((prev) => prev?.filter((p) => !(p.type === 'attempt' && p.attemptId === msg.run.id)) ?? prev);
       } else if (msg.type === 'conversation_changed' && msg.conversation.state === 'ended') {
         const endedId = msg.conversation.id;
         setProcesses((prev) => prev?.filter((p) => !(p.type === 'chat' && p.conversationId === endedId)) ?? prev);
@@ -388,7 +388,7 @@ export function ActivityView({ config }: { config: AppConfig | null }) {
     );
   }
 
-  const ceiling = config?.autoRunner.maxConcurrentRuns ?? Math.max(processes.filter((p) => p.type === 'run').length, 1);
+  const ceiling = config?.autoRunner.maxConcurrentRuns ?? Math.max(processes.filter((p) => p.type === 'attempt').length, 1);
   const summary = activitySummary(processes, ceiling, now);
   const workspaces = activityWorkspaces(processes);
   // Heal a Workspace filter whose Workspace has drained out — otherwise the
@@ -422,7 +422,7 @@ export function ActivityView({ config }: { config: AppConfig | null }) {
 
       {processes.length === 0 ? (
         <EmptyState title="Nothing running">
-          No Runs or Conversations are in flight right now. Start a task with New task or open a Conversation, and it
+          No Attempts or Conversations are in flight right now. Start a task with New task or open a Conversation, and it
           appears here live.
         </EmptyState>
       ) : (
@@ -462,7 +462,7 @@ export function ActivityView({ config }: { config: AppConfig | null }) {
 
           {filtered.length === 0 ? (
             <EmptyState title="Nothing matches">
-              No {filter.type === 'runs' ? 'Runs' : filter.type === 'chats' ? 'Conversations' : 'processes'} match these
+              No {filter.type === 'attempts' ? 'Attempts' : filter.type === 'chats' ? 'Conversations' : 'processes'} match these
               filters. Widen the type or Workspace to see the rest of the fleet.
             </EmptyState>
           ) : (
@@ -488,8 +488,8 @@ export function ActivityView({ config }: { config: AppConfig | null }) {
                     <span className="text-label tabular-nums text-muted">{section.rows.length}</span>
                   </div>
                   {section.rows.map((p) => {
-                    const key = p.type === 'run' ? `r${p.runId}` : `c${p.conversationId}`;
-                    const expandable = p.type === 'run' && p.tree !== null;
+                    const key = p.type === 'attempt' ? `r${p.attemptId}` : `c${p.conversationId}`;
+                    const expandable = p.type === 'attempt' && p.tree !== null;
                     const expanded = expandable && expandedKeys.has(key);
                     return (
                       <Fragment key={key}>

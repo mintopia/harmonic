@@ -123,7 +123,7 @@ export function planResumeFallback(
 
 /**
  * The prior Run's terminal disposition (ADR-0001 #388 S-E): its Attempt's
- * ending-kind `reason` (`RunSettleCoordinator.settle`'s audit hedge), or
+ * ending-kind `reason` (`AttemptSettleCoordinator.settle`'s audit hedge), or
  * `null` when the Run never reached a terminal disposition.
  */
 export interface FallbackSummaryOutcome {

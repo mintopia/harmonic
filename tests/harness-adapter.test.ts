@@ -62,7 +62,7 @@ describe('harness adapters', () => {
   });
 
   it.each(['claude', 'codex', 'copilot'])(
-    '%s registers the MCP server over ACP with the Run Key bearer header',
+    '%s registers the MCP server over ACP with the Attempt Key bearer header',
     (harness) => {
       // The env vars alone never registered the server; every harness must
       // return the ACP session/new entry so agents get the `harmonic` tools.

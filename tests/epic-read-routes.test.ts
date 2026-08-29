@@ -105,7 +105,7 @@ describe('Epic read model operator surface (issue #167)', () => {
   });
 
   describe('operator-only gating', () => {
-    it('denies a run-scoped Run Key on GET /api/workspaces/:id/epics', async () => {
+    it('denies an attempt-scoped Attempt Key on GET /api/workspaces/:id/epics', async () => {
       const { env } = await captureRunEnv(server, ['HARMONIC_API_KEY']);
       const token = env.HARMONIC_API_KEY as string;
 
@@ -115,7 +115,7 @@ describe('Epic read model operator surface (issue #167)', () => {
       expect(res.status).toBe(403);
     });
 
-    it('denies a run-scoped Run Key on GET /api/workspaces/:id/epics/:ref', async () => {
+    it('denies an attempt-scoped Attempt Key on GET /api/workspaces/:id/epics/:ref', async () => {
       const { env } = await captureRunEnv(server, ['HARMONIC_API_KEY']);
       const token = env.HARMONIC_API_KEY as string;
 

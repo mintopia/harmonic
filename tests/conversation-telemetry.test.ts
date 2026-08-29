@@ -1,11 +1,11 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
-import { accumulateUsage, contextInputTokens, type RunUsage } from '../src/execution/usage.js';
+import { accumulateUsage, contextInputTokens, type AttemptUsage } from '../src/execution/usage.js';
 
 const acpTurn = (usage: Record<string, number>) => JSON.stringify({ updates: [], usage });
 
 describe('conversation usage accumulation (unit)', () => {
-  const aggregate = (t: Partial<RunUsage['totals'] & object>): RunUsage => ({
+  const aggregate = (t: Partial<AttemptUsage['totals'] & object>): AttemptUsage => ({
     models: {},
     totals: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, totalTokens: null, ...t },
     toolCalls: {},
@@ -21,7 +21,7 @@ describe('conversation usage accumulation (unit)', () => {
 
   it('replaces with a cumulative per-model source (session log)', () => {
     const stored = aggregate({ inputTokens: 100, outputTokens: 50 });
-    const cumulative: RunUsage = {
+    const cumulative: AttemptUsage = {
       models: { 'claude-sonnet-5': { inputTokens: 999, outputTokens: 999, cacheReadTokens: 0, cacheWriteTokens: 0 } },
       totals: null,
       toolCalls: {},

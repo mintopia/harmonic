@@ -183,7 +183,7 @@ function DeleteWorkspaceDialog({
         <h2 className={`${displayTitle} mb-2 pr-6`}>Delete workspace</h2>
         <p className="text-muted">
           Delete <span className="font-semibold text-ink">{workspace.name}</span> and everything on its board —
-          its Tasks, Runs, and Conversations. This cannot be undone.
+          its Tasks, Attempts, and Conversations. This cannot be undone.
         </p>
         <label htmlFor="delete-workspace-name" className="mt-4 block text-small text-muted">
           Type <span className="font-semibold text-ink">{workspace.name}</span> to confirm.

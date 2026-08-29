@@ -7,7 +7,7 @@ import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js
 import { attempts } from '../src/db/schema.js';
 import type { DeepPartial, AppConfig } from '../src/config.js';
 import { costOfUsages, DEFAULT_PRICES, resolvePrices } from '../src/execution/pricing.js';
-import type { ModelUsage, RunUsage } from '../src/execution/usage.js';
+import type { ModelUsage, AttemptUsage } from '../src/execution/usage.js';
 
 const mu = (tokens: number): ModelUsage => ({
   inputTokens: tokens,
@@ -16,7 +16,7 @@ const mu = (tokens: number): ModelUsage => ({
   cacheWriteTokens: tokens,
 });
 
-const usageOf = (models: Record<string, ModelUsage>): RunUsage => ({
+const usageOf = (models: Record<string, ModelUsage>): AttemptUsage => ({
   models,
   totals: null,
   toolCalls: {},
@@ -79,7 +79,7 @@ describe('pricing math', () => {
   });
 
   it('flags aggregate-only usage (tokens without a per-model split) incomplete', () => {
-    const acpOnly: RunUsage = {
+    const acpOnly: AttemptUsage = {
       models: {},
       totals: { inputTokens: 5, outputTokens: 7, cacheReadTokens: 0, cacheWriteTokens: 0, totalTokens: 12 },
       toolCalls: {},
@@ -149,7 +149,7 @@ describe('cost surfaces (API)', () => {
     const created = await server.api('POST', '/api/tasks', { prompt: JSON.stringify({}), workingDir });
     const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
     await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === expectState);
-    return { taskId: created.body.id as number, runId: started.body.id as number };
+    return { taskId: created.body.id as number, attemptId: started.body.id as number };
   };
 
   const flatPrice = (input: number) => ({ input, output: 0, cacheRead: 0, cacheWrite: 0 });
@@ -160,15 +160,15 @@ describe('cost surfaces (API)', () => {
       { [workDir]: { modelA: 1_000_000 } },
       { modelA: flatPrice(2) },
     );
-    const { taskId, runId } = await runToDone(workDir);
+    const { taskId, attemptId } = await runToDone(workDir);
 
-    const run = (await server.api('GET', `/api/attempts/${runId}`)).body;
+    const run = (await server.api('GET', `/api/attempts/${attemptId}`)).body;
     expect(run.cost).toEqual({ totalUsd: 2, byModel: { modelA: 2 }, incomplete: false });
 
     // A price change only applies to future Runs. This finished Run keeps the
     // price table captured when it settled.
     await server.api('PATCH', '/api/config', { prices: { modelA: flatPrice(4) } });
-    const repriced = (await server.api('GET', `/api/attempts/${runId}`)).body;
+    const repriced = (await server.api('GET', `/api/attempts/${attemptId}`)).body;
     expect(repriced.cost).toEqual({ totalUsd: 2, byModel: { modelA: 2 }, incomplete: false });
     expect((await server.api('GET', `/api/tasks/${taskId}`)).body.cost.totalUsd).toBe(2);
     expect((await server.api('GET', `/api/tasks/${taskId}/usage`)).body.cost.totalUsd).toBe(2);
@@ -179,18 +179,18 @@ describe('cost surfaces (API)', () => {
     const workDir = mkdtempSync(join(tmpdir(), 'harmonic-cost-work-'));
     const overrides = { modelA: flatPrice(2) };
     server = await serverWithLoggedUsage({ [workDir]: { modelA: 1_000_000 } }, overrides);
-    const { runId } = await runToDone(workDir);
+    const { attemptId } = await runToDone(workDir);
 
     await server.app.ctx.asyncDb.write((db) =>
-      db.update(attempts).set({ cost: null, priceTable: JSON.stringify({ modelA: flatPrice(3) }) }).where(eq(attempts.id, runId)).run(),
+      db.update(attempts).set({ cost: null, priceTable: JSON.stringify({ modelA: flatPrice(3) }) }).where(eq(attempts.id, attemptId)).run(),
     );
     const dataDir = server.dataDir;
     await server.app.close();
     server = await startServer({ ...stubHarness(), prices: overrides }, { dataDir });
 
-    expect((await server.api('GET', `/api/attempts/${runId}`)).body.cost.totalUsd).toBe(2);
+    expect((await server.api('GET', `/api/attempts/${attemptId}`)).body.cost.totalUsd).toBe(2);
     await server.api('PATCH', '/api/config', { prices: { modelA: flatPrice(4) } });
-    expect((await server.api('GET', `/api/attempts/${runId}`)).body.cost.totalUsd).toBe(2);
+    expect((await server.api('GET', `/api/attempts/${attemptId}`)).body.cost.totalUsd).toBe(2);
   });
 
   it('task usage endpoint sums cost over ALL runs, failed attempts included', async () => {
@@ -210,7 +210,7 @@ describe('cost surfaces (API)', () => {
     });
 
     const agg = (await server.api('GET', `/api/tasks/${taskId}/usage`)).body;
-    expect(agg.runCount).toBe(2);
+    expect(agg.attemptCount).toBe(2);
     expect(agg.cost).toEqual({ totalUsd: 4, byModel: { modelA: 4 }, incomplete: false });
   });
 

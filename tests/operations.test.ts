@@ -294,13 +294,13 @@ describe('Run operations (issue #290)', () => {
       await vi.waitFor(async () => {
         expect((await server.api('GET', `/api/tasks/${task.body.id}`)).body.state).toBe('escalated');
       }, { timeout: 10_000 });
-      const runId = started.body.id;
+      const attemptId = started.body.id;
       // Escalation settles the Run: its operation closes there (the human
       // decision is not part of the Run's execution), and nothing is left live.
       await vi.waitFor(() => {
-        expect(exporter.getFinishedSpans().find((span) => span.name === 'harmonic.attempt' && span.attributes['attempt.id'] === runId)).toBeDefined();
+        expect(exporter.getFinishedSpans().find((span) => span.name === 'harmonic.attempt' && span.attributes['attempt.id'] === attemptId)).toBeDefined();
       });
-      expect(registry.list().find((operation) => operation.name === 'harmonic.attempt' && operation.attributes['attempt.id'] === runId)).toBeUndefined();
+      expect(registry.list().find((operation) => operation.name === 'harmonic.attempt' && operation.attributes['attempt.id'] === attemptId)).toBeUndefined();
 
       // The operator addressed the failure, so the post-merge check the one
       // merge policy runs on Accept (ADR-0001, #383) is green and the merge lands.

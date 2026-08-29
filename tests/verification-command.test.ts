@@ -66,14 +66,14 @@ describe('command verifier end-to-end (issue #135)', () => {
   let implSeq = 0;
   async function createAndRun(
     scenario: Record<string, unknown> = { writeFiles: { [`impl-${++implSeq}.txt`]: 'implementation\n' } },
-  ): Promise<{ taskId: number; runId: number }> {
+  ): Promise<{ taskId: number; attemptId: number }> {
     const created = await server.api('POST', '/api/tasks', {
       prompt: JSON.stringify(scenario),
     });
     expect(created.status).toBe(201);
     const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
     expect(started.status).toBe(201);
-    return { taskId: created.body.id, runId: started.body.id };
+    return { taskId: created.body.id, attemptId: started.body.id };
   }
 
   // \`verification_attempts\` is keyed off \`attempt_id\`, not \`run_id\`
@@ -85,14 +85,14 @@ describe('command verifier end-to-end (issue #135)', () => {
     const taskAttempts = await server.app.ctx.attempts.listForTask(taskId);
     return (await Promise.all(taskAttempts.map((a) => store.list(a.id)))).flat();
   };
-  const verdictEvents = async (runId: number) =>
-    (await server.api('GET', `/api/attempts/${runId}/events`)).body.events
+  const verdictEvents = async (attemptId: number) =>
+    (await server.api('GET', `/api/attempts/${attemptId}/events`)).body.events
       .filter((e: any) => e.type === 'lifecycle' && e.payload.event === 'verification')
       .map((e: any) => e.payload);
 
   it('AC1/AC3/AC4/AC5: a passing command merges a native Run to done; the attempt records the verified head OID', async () => {
     await server.app.ctx.workspaces.update(workspaceId, { verificationCommand: [exitCommand(0)] });
-    const { taskId, runId } = await createAndRun();
+    const { taskId, attemptId } = await createAndRun();
 
     const task = await waitFor(async () => {
       const { body } = await server.api('GET', `/api/tasks/${taskId}`);
@@ -110,7 +110,7 @@ describe('command verifier end-to-end (issue #135)', () => {
     expect(rows[0]!).toMatchObject({ mechanism: 'command', verdict: 'pass' });
     expect(rows[0]!.inputOid).toMatch(/^[0-9a-f]{40}$/);
 
-    expect(await verdictEvents(runId)).toEqual([
+    expect(await verdictEvents(attemptId)).toEqual([
       { event: 'verification', mechanism: 'command', verdict: 'pass', summary: 'command exited 0' },
     ]);
   });
@@ -259,9 +259,9 @@ describe('command verifier end-to-end (issue #135)', () => {
     const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
     expect(started.status).toBe(201);
     const { id: taskId } = created.body as { id: number };
-    const { id: runId } = started.body as { id: number };
+    const { id: attemptId } = started.body as { id: number };
     await waitFor(async () => {
-      const events = (await server.api('GET', `/api/attempts/${runId}/events`)).body.events;
+      const events = (await server.api('GET', `/api/attempts/${attemptId}/events`)).body.events;
       return events.some((event: { payload: { event?: string } }) => event.payload.event === 'commit-nudge') ? true : undefined;
     });
     // The nudge is corrective guidance inside the Attempt, not a new one: the
@@ -378,14 +378,14 @@ describe('native merging (issue #138, ADR-0021, ADR-0041)', () => {
   });
 
   let implSeq = 0;
-  async function createAndRun(): Promise<{ taskId: number; runId: number }> {
+  async function createAndRun(): Promise<{ taskId: number; attemptId: number }> {
     const created = await server.api('POST', '/api/tasks', {
       prompt: JSON.stringify({ writeFiles: { [`auto-accept-impl-${++implSeq}.txt`]: 'implementation\n' } }),
     });
     expect(created.status).toBe(201);
     const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
     expect(started.status).toBe(201);
-    return { taskId: created.body.id, runId: started.body.id };
+    return { taskId: created.body.id, attemptId: started.body.id };
   }
 
   // \`verification_attempts\` is keyed off \`attempt_id\`, not \`run_id\`

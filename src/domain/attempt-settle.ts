@@ -4,8 +4,8 @@ import type { AttemptStore } from './attempts.js';
 import type { SessionRetirementHook } from './session-retirement-coordinator.js';
 import type { RetirementCause } from './session-retirement.js';
 
-export interface RunBranchRetirementHook {
-  onRunSettled(task: TaskRow, attempt: AttemptRow): Promise<void>;
+export interface AttemptBranchRetirementHook {
+  onAttemptSettled(task: TaskRow, attempt: AttemptRow): Promise<void>;
 }
 
 /** The Attempt's terminal surface disposition (never `running`), before the
@@ -13,7 +13,7 @@ export interface RunBranchRetirementHook {
  * (see {@link attemptTerminalState}). Folded from `runs.state` (ADR-0001
  * #388 S-G): 'completed'/'failed'/'cancelled' map onto AttemptState's
  * 'passed'/'failed'/'cancelled'. */
-export type RunTerminalState = 'completed' | 'failed' | 'cancelled';
+export type AttemptTerminalState = 'completed' | 'failed' | 'cancelled';
 
 /**
  * What the coordinator does to the owning Task when the Run settles. `none`
@@ -29,7 +29,7 @@ export type SettleTaskAction = 'done' | 'escalate' | 'ready' | 'none';
 
 /** The terminal projection a disposition intends for the Run/Task. */
 export interface SettleProjection {
-  runState: RunTerminalState;
+  runState: AttemptTerminalState;
   taskAction: SettleTaskAction;
   reason: string | null;
 }
@@ -56,7 +56,7 @@ export type DispositionKind = (typeof DISPOSITION_KINDS)[number];
  * The single terminal-disposition coordinator (ADR-0001 "The loop" / "One
  * merge policy": "failure is an Attempt-level fact; a Task loops or
  * escalates"). Every way a Run reaches a terminal disposition funnels through
- * {@link RunSettleCoordinator.settle}: a **guarded state transition**, not a
+ * {@link AttemptSettleCoordinator.settle}: a **guarded state transition**, not a
  * fact-log replay — the single-process/single-writer model (ADR-0007) has no
  * concurrent-writer coordination to reconcile, so the caller-supplied
  * disposition is applied directly under the same "only leave `running`"
@@ -76,13 +76,13 @@ export type DispositionKind = (typeof DISPOSITION_KINDS)[number];
  * so both drive it with identical race-safety, instead of the operator path
  * racing the Runner around the Run row.
  */
-export class RunSettleCoordinator {
+export class AttemptSettleCoordinator {
   constructor(
     private readonly taskService: TaskService,
     private readonly attempts: AttemptStore,
-    private readonly onRunFinished?: (attempt: AttemptRow) => void,
+    private readonly onAttemptFinished?: (attempt: AttemptRow) => void,
     private readonly sessionRetirement?: SessionRetirementHook,
-    private readonly branchRetirement?: RunBranchRetirementHook,
+    private readonly branchRetirement?: AttemptBranchRetirementHook,
   ) {}
 
   /**
@@ -125,17 +125,17 @@ export class RunSettleCoordinator {
     // best-effort: it only marks the Session's status; the async worktree
     // removal is a separate drain, and a hiccup must never crash settle.
     try {
-      await this.sessionRetirement?.onRunSettled(finished, this.retirementCause(type, projection));
+      await this.sessionRetirement?.onAttemptSettled(finished, this.retirementCause(type, projection));
     } catch {
       // best-effort; the boot/periodic drain reconciles from the Session row
     }
     try {
-      await this.branchRetirement?.onRunSettled(task, finished);
+      await this.branchRetirement?.onAttemptSettled(task, finished);
     } catch {
       // Best-effort. A later boot reconciliation retries branch retirement.
     }
     await this.applySettleTaskAction(task.id, projection);
-    this.onRunFinished?.(finished);
+    this.onAttemptFinished?.(finished);
   }
 
   /**

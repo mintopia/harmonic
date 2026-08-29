@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { activeExecutionDurationMs, durationPercentiles, percentile } from '../src/domain/run-duration.js';
+import { activeExecutionDurationMs, durationPercentiles, percentile } from '../src/domain/attempt-duration.js';
 
 describe('activeExecutionDurationMs', () => {
   it('measures agent-finish ts minus run start, excluding review-park + merging wait', () => {

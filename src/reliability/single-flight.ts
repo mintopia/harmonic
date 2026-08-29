@@ -3,7 +3,7 @@
  *
  * Harmonic's reconcile/retry loops run on the single Node event loop and spawn
  * git subprocesses. When such a loop is re-triggered faster than one pass
- * completes — a burst of `run_changed` events firing the session-retirement
+ * completes — a burst of `attempt_changed` events firing the session-retirement
  * drain, or a poll timer ticking while a slow scan is still in flight — the
  * naive `void loop()` fan-out stacks overlapping passes. Each overlapping pass
  * re-observes the same not-yet-finished work and re-spawns git for it, turning a

@@ -112,41 +112,41 @@ describe('Session retirement (issue #148)', () => {
     });
   });
 
-  describe('onRunSettled — the sync settle-hook', () => {
+  describe('onAttemptSettled — the sync settle-hook', () => {
     const makeCoord = (removeWorktree = vi.fn(async () => {})) =>
       new SessionRetirementCoordinator(sessions, runs, removeWorktree, cfg, () => now);
 
     it('marks the Session retiring on a merged disposition', async () => {
       const s = await dispatch();
       const run = await runForSession(s.id);
-      await makeCoord().onRunSettled(run, 'merged', now);
+      await makeCoord().onAttemptSettled(run, 'merged', now);
       expect(await sessions.get(s.id)).toMatchObject({ status: 'retiring', retireReason: 'merged' });
     });
 
     it('retires immediately on an operator cancel (the Close action)', async () => {
       const b = await dispatch({ harnessSessionId: 'b' });
-      await makeCoord().onRunSettled(await runForSession(b.id), 'operator-cancel', now);
+      await makeCoord().onAttemptSettled(await runForSession(b.id), 'operator-cancel', now);
       expect(await sessions.get(b.id)).toMatchObject({ status: 'retiring', retireReason: 'operator-disposition' });
     });
 
     it('retains under the retention-TTL backstop on any other ending', async () => {
       const s = await dispatch();
-      await makeCoord().onRunSettled(await runForSession(s.id), 'other', now);
+      await makeCoord().onAttemptSettled(await runForSession(s.id), 'other', now);
       expect(await sessions.get(s.id)).toMatchObject({ status: 'idle', retireReason: 'retention-ttl', retireDeadline: now + (cfg.retentionTtlMs ?? 0) });
     });
 
     it('is a no-op for a Run with no Session', async () => {
       const task = await tasks.create({ prompt: 'p', state: 'ready' });
       const run = await runs.create(task.id); // sessionRowId null
-      await expect(makeCoord().onRunSettled(run, 'merged', now)).resolves.toBeUndefined();
+      await expect(makeCoord().onAttemptSettled(run, 'merged', now)).resolves.toBeUndefined();
     });
 
     it('does not re-decide a Session already retiring', async () => {
       const s = await dispatch();
       const run = await runForSession(s.id);
       const coord = makeCoord();
-      await coord.onRunSettled(run, 'merged', now);
-      await coord.onRunSettled(run, 'other', now + 1); // a later ending must not un-retire it
+      await coord.onAttemptSettled(run, 'merged', now);
+      await coord.onAttemptSettled(run, 'other', now + 1); // a later ending must not un-retire it
       expect((await sessions.get(s.id)).status).toBe('retiring');
     });
   });

@@ -137,8 +137,8 @@ export const toolTokenUsageSchema = z.object({
   cost: z.number().optional().meta({ example: 0.05415 }),
 });
 
-/** Usage aggregate for a run or a rolled-up set of runs (execution/usage.ts `RunUsage`). */
-export const runUsageSchema = z
+/** Usage aggregate for a run or a rolled-up set of runs (execution/usage.ts `AttemptUsage`). */
+export const attemptUsageSchema = z
   .object({
     /** Per-model breakdown (session-log fallback; ACP only reports aggregates). */
     models: z.record(z.string(), modelUsageSchema).meta({
@@ -166,7 +166,7 @@ export const runUsageSchema = z
     toolCalls: z.record(z.string(), z.number()).meta({ example: { read: 14, edit: 6, bash: 3 } }),
     source: z.enum(['acp', 'session-log', 'combined']).nullable().meta({ example: 'acp' }),
   })
-  .meta({ id: 'RunUsage' });
+  .meta({ id: 'AttemptUsage' });
 
 /** The dollar value of Usage, derived on read from the live price table (execution/pricing.ts `Cost`). */
 export const costSchema = z
@@ -221,9 +221,9 @@ export const processNodeSchema = z
  */
 export const activityProcessSchema = z
   .object({
-    type: z.enum(['run', 'chat']).meta({ example: 'run' }),
+    type: z.enum(['attempt', 'chat']).meta({ example: 'attempt' }),
     /** The Run's id (type `run`), else null. */
-    runId: z.number().nullable().meta({ example: 4821 }),
+    attemptId: z.number().nullable().meta({ example: 4821 }),
     /** The Conversation's id (type `chat`), else null. */
     conversationId: z.number().nullable().meta({ example: null }),
     /** The owning Task's id (type `run`), else null. */
@@ -249,7 +249,7 @@ export const activityProcessSchema = z
     /** True when the Task is escalated (ADR-0041) — the "Needs you" signal; always false for a Conversation. */
     escalated: z.boolean().meta({ example: false }),
     /** Rolled-up Usage; null before any tokens are reported. */
-    usage: runUsageSchema.nullable(),
+    usage: attemptUsageSchema.nullable(),
     /** Root session's latest context-window fill; null when unknown. */
     contextTokens: z.number().nullable().meta({ example: 48210 }),
     /** The model's configured context window; null when unconfigured (percentage suppressed). */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { appendAttemptLogEvents, eventsAfterLiveCursor, runLogCursor } from '../web/src/run-log-stream-model.js';
+import { appendAttemptLogEvents, eventsAfterLiveCursor, attemptLogCursor } from '../web/src/attempt-log-stream-model.js';
 
 const event = (id: number) => ({
   id,
@@ -31,13 +31,13 @@ describe('appendAttemptLogEvents', () => {
   });
 
   it('sets the reconnect cursor from the latest hydrated or buffered event', () => {
-    expect(runLogCursor({ events: [{ ...event(1_000_000_003), runId: 1 }, event(1), event(2)] })).toBe(1_000_000_003);
-    expect(runLogCursor({ events: [] })).toBe(0);
+    expect(attemptLogCursor({ events: [{ ...event(1_000_000_003), attemptId: 1 }, event(1), event(2)] })).toBe(1_000_000_003);
+    expect(attemptLogCursor({ events: [] })).toBe(0);
   });
 
   it('only appends live updates emitted after the REST snapshot cutover', () => {
-    expect(eventsAfterLiveCursor({ events: [{ ...event(1), runId: 1 }, { ...event(2), runId: 1 }, { ...event(3), runId: 1 }], liveCursor: 2 })).toEqual([
-      { ...event(3), runId: 1 },
+    expect(eventsAfterLiveCursor({ events: [{ ...event(1), attemptId: 1 }, { ...event(2), attemptId: 1 }, { ...event(3), attemptId: 1 }], liveCursor: 2 })).toEqual([
+      { ...event(3), attemptId: 1 },
     ]);
   });
 

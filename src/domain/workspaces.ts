@@ -16,7 +16,7 @@ import {
 } from '../db/schema.js';
 import type { SettingsStore } from '../server/settings-store.js';
 import { DomainError } from './errors.js';
-import { deleteAttemptsAndChildrenAsync } from './run-cascade.js';
+import { deleteAttemptsAndChildrenAsync } from './attempt-cascade.js';
 import {
   verificationCommandOverrideSchema,
   budgetGuardrailSchema,

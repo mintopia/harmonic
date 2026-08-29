@@ -80,11 +80,11 @@ describe('attentionTarget', () => {
     expect(attentionTarget(msg)).toBeNull();
   });
 
-  it('ignores conversation_changed, run_event, run_log_event, run_changed, and task_changed', () => {
+  it('ignores conversation_changed, attempt_event, attempt_log_event, attempt_changed, and task_changed', () => {
     expect(attentionTarget({ type: 'conversation_changed' })).toBeNull();
-    expect(attentionTarget({ type: 'run_event' })).toBeNull();
-    expect(attentionTarget({ type: 'run_log_event' })).toBeNull();
-    expect(attentionTarget({ type: 'run_changed' })).toBeNull();
+    expect(attentionTarget({ type: 'attempt_event' })).toBeNull();
+    expect(attentionTarget({ type: 'attempt_log_event' })).toBeNull();
+    expect(attentionTarget({ type: 'attempt_changed' })).toBeNull();
     expect(attentionTarget({ type: 'task_changed' })).toBeNull();
   });
 });
@@ -110,7 +110,7 @@ describe('applyAttentionMessage', () => {
 
   it('returns the same reference for a message attention does not care about', () => {
     const state = markAttention(NO_ATTENTION, 5);
-    const next = applyAttentionMessage(state, { type: 'run_changed' }, null);
+    const next = applyAttentionMessage(state, { type: 'attempt_changed' }, null);
     expect(next).toBe(state);
   });
 });

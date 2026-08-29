@@ -16,7 +16,7 @@ import type { DeterministicContinuation } from './session-continuation.js';
 import { DomainError } from './errors.js';
 import type { ResolvedGuardrails } from './setting-override.js';
 import { costOfUsages, type PriceTable } from '../execution/pricing.js';
-import type { RunUsage } from '../execution/usage.js';
+import type { AttemptUsage } from '../execution/usage.js';
 import { forEachYielding } from '../reliability/yield.js';
 
 /** The Guardrail state an Attempt captures at start (issue #126): the effective
@@ -449,7 +449,7 @@ export class AttemptStore {
   /**
    * Close an Attempt out: terminal `state` + `endedAt`, plus the disposition-
    * kind audit hedge on `reason` (ADR-0001 #388 S-E — the whole coordination
-   * spine collapsed onto this column; see `RunSettleCoordinator.settle`).
+   * spine collapsed onto this column; see `AttemptSettleCoordinator.settle`).
    * `feedback`/`reason` are omitted (not merely undefined) when the caller
    * doesn't pass them, so a caller that already set one earlier (e.g. a failed
    * verification's feedback) never gets clobbered by a later close that only
@@ -543,12 +543,12 @@ export class AttemptStore {
 
 function frozenCost(usage: string | null, rawPrices: string | null): string | null {
   if (!usage || !rawPrices) return null;
-  return JSON.stringify(costOfUsages([JSON.parse(usage) as RunUsage], JSON.parse(rawPrices) as PriceTable));
+  return JSON.stringify(costOfUsages([JSON.parse(usage) as AttemptUsage], JSON.parse(rawPrices) as PriceTable));
 }
 
 /** The attempt/card API projection of one Attempt row. Moved from `domain/runs.ts`'s `serializeRun`. */
 export function serializeAttempt(attempt: AttemptRow): Record<string, unknown> {
-  // liveUsage is the Activity view's snapshot (streamed as `run_usage`), not
+  // liveUsage is the Activity view's snapshot (streamed as `attempt_usage`), not
   // part of the agent-facing attempt shape.
   const { liveUsage: _liveUsage, ...rest } = attempt;
   return {

@@ -40,7 +40,7 @@ const task = (id: number, origin: Task['origin']): Task => ({
   stat: null,
   runStartedAt: null,
   toolCount: null,
-  runId: null,
+  attemptId: null,
   currentStep: null,
   contextTokens: null,
   contextWindow: null,

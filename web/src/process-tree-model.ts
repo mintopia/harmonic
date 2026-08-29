@@ -8,7 +8,7 @@ import type { StreamEvent } from './event-stream-model.js';
  *  1. The **idle lifecycle** — a node is `active` while it writes, fades to
  *     `inactive` after `INACTIVE_AFTER_MS` of quiet, then `hidden` after
  *     `HIDDEN_AFTER_MS`, reactivating the instant a new write merges. The client
- *     ages nodes between the snapshot poll / `run_usage` deltas off a
+ *     ages nodes between the snapshot poll / `attempt_usage` deltas off a
  *     `NodeActivityMap` it keeps across ticks; the server's own status is a
  *     floor, so the client can only make a node *more* idle, never less (a
  *     completed Subagent the server calls `inactive` never flashes back to

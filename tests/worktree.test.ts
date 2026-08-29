@@ -36,7 +36,7 @@ describe('worktree isolation mode', () => {
     repo: string,
     files: Record<string, string>,
     opts: { baseBranch?: string } = {},
-  ): Promise<{ taskId: number; runId: number }> {
+  ): Promise<{ taskId: number; attemptId: number }> {
     const created = await server.api('POST', '/api/tasks', {
       prompt: JSON.stringify({ writeFiles: files }),
       workingDir: repo,
@@ -47,7 +47,7 @@ describe('worktree isolation mode', () => {
     await waitFor(
       async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'done',
     );
-    return { taskId: created.body.id, runId: started.body.id };
+    return { taskId: created.body.id, attemptId: started.body.id };
   }
 
   it('executes on its own branch in a temp worktree, merges, and the worktree is removed at Session retirement (issue #148)', async () => {
@@ -250,11 +250,11 @@ describe('worktree isolation mode', () => {
 
   it('serves diffstat and branch info for the review inbox', async () => {
     const repo = makeRepo();
-    const { runId } = await runWorktreeTask(repo, { 'feature.txt': 'diff me\n' });
+    const { attemptId } = await runWorktreeTask(repo, { 'feature.txt': 'diff me\n' });
 
-    const diff = await server.api('GET', `/api/attempts/${runId}/diff`);
+    const diff = await server.api('GET', `/api/attempts/${attemptId}/diff`);
     expect(diff.status).toBe(200);
-    expect(diff.body.branch).toBe(`harmonic/task-${(await server.api("GET", `/api/attempts/${runId}`)).body.taskId}`);
+    expect(diff.body.branch).toBe(`harmonic/task-${(await server.api("GET", `/api/attempts/${attemptId}`)).body.taskId}`);
     expect(diff.body.stat).toContain('feature.txt');
   });
 
@@ -290,7 +290,7 @@ describe('worktree isolation mode', () => {
       expect(run.branch).toBe(`harmonic/task-${taskId}`);
       expect(git(repo, 'branch', '--list', run.branch)).toContain(run.branch);
     }
-    expect(git(repo, 'show', `${(await server.api('GET', `/api/attempts/${results[0].runId}`)).body.branch}:a.txt`)).toBe('A');
+    expect(git(repo, 'show', `${(await server.api('GET', `/api/attempts/${results[0].attemptId}`)).body.branch}:a.txt`)).toBe('A');
 
     // The base repo is intact: a clean tree, still on main — the repo-op lock
     // (issue #121) serialised the concurrent create windows without corruption.
@@ -315,8 +315,8 @@ describe('worktree isolation mode', () => {
       runWorktreeTask(repo, { 'b.txt': 'B\n' }),
     ]);
 
-    const runA = (await server.api('GET', `/api/attempts/${a.runId}`)).body;
-    const runB = (await server.api('GET', `/api/attempts/${b.runId}`)).body;
+    const runA = (await server.api('GET', `/api/attempts/${a.attemptId}`)).body;
+    const runB = (await server.api('GET', `/api/attempts/${b.attemptId}`)).body;
     // Both merged: distinct keys admitted both, and the freshness gate
     // serialised their fast-forwards onto main.
     expect(runA.state).toBe('completed');

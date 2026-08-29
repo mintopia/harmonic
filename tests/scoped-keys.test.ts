@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startServer, stubHarness, waitFor, captureRunEnv, cancelRunningTasks, type TestServer } from './helpers.js';
 
-describe('run-scoped key restrictions', () => {
+describe('attempt-scoped key restrictions', () => {
   let server: TestServer;
   let scopedToken: string;
 
@@ -142,11 +142,11 @@ describe('read-scoped key (issue #35)', () => {
     const readWs = await connect(readToken);
     const opWs = await connect(server.sessionToken);
 
-    // Synthetic bus events: run_event and run_usage are in the read set (Run
+    // Synthetic bus events: attempt_event and attempt_usage are in the read set (Run
     // traffic), conversation_event is not.
-    server.app.ctx.bus.emit('run_event', { id: 1, runId: 1, seq: 1, ts: 0, type: 'lifecycle', payload: {} } as any);
-    server.app.ctx.bus.emit('run_usage', {
-      runId: 1,
+    server.app.ctx.bus.emit('attempt_event', { id: 1, attemptId: 1, seq: 1, ts: 0, type: 'lifecycle', payload: {} } as any);
+    server.app.ctx.bus.emit('attempt_usage', {
+      attemptId: 1,
       snapshot: {
         usage: { models: {}, totals: null, toolCalls: {}, source: 'session-log' },
         contextTokens: 1234,
@@ -158,10 +158,10 @@ describe('read-scoped key (issue #35)', () => {
 
     // Operator sees all; use conversation_event's arrival as the barrier.
     await waitFor(async () => opWs.messages.some((m) => m.type === 'conversation_event'));
-    await waitFor(async () => readWs.messages.some((m) => m.type === 'run_event'));
+    await waitFor(async () => readWs.messages.some((m) => m.type === 'attempt_event'));
     // The read key sees live Run usage (ADR 0010), with Cost derived on read.
-    const usageMsg = readWs.messages.find((m) => m.type === 'run_usage');
-    expect(usageMsg).toMatchObject({ runId: 1, contextTokens: 1234, activity: 'Editing src/foo.ts' });
+    const usageMsg = readWs.messages.find((m) => m.type === 'attempt_usage');
+    expect(usageMsg).toMatchObject({ attemptId: 1, contextTokens: 1234, activity: 'Editing src/foo.ts' });
     expect(usageMsg.cost).not.toBeUndefined();
     expect(readWs.messages.some((m) => m.type === 'conversation_event')).toBe(false);
 

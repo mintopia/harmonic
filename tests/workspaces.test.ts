@@ -352,7 +352,7 @@ describe('Task/Conversation binding + scoping (issue #41)', () => {
     expect(scoped.status).toBe(200);
     // Nothing has run yet in either Workspace — the point is the endpoint
     // accepts and echoes the filter without erroring, not the count.
-    expect(scoped.body.runCount).toBe(0);
+    expect(scoped.body.attemptCount).toBe(0);
   });
 
   it('round-trips a context reuse token-limit override through PATCH and GET', async () => {

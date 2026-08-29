@@ -6,12 +6,12 @@ import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { AttemptStore } from '../src/domain/attempts.js';
-import { RunSettleCoordinator } from '../src/domain/run-settle.js';
+import { AttemptSettleCoordinator } from '../src/domain/attempt-settle.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { allWorkspaces, makeSettingsStore } from './helpers.js';
 
 /**
- * `RunSettleCoordinator.settle` as a guarded state transition (ADR-0001 #388
+ * `AttemptSettleCoordinator.settle` as a guarded state transition (ADR-0001 #388
  * S-E/S-G): the append-only `run_facts` log + precedence replay is gone, and
  * Attempt is the single execution ledger (no separate Run row) — a
  * disposition is applied directly to the Attempt, guarded to only move it out
@@ -20,13 +20,13 @@ import { allWorkspaces, makeSettingsStore } from './helpers.js';
  * operator disposition (`operator-cancel` / `operator-accept`) may also act on
  * an already-`escalated` Attempt. Everything else is first-writer-wins.
  */
-describe('RunSettleCoordinator.settle — guarded state transition', () => {
+describe('AttemptSettleCoordinator.settle — guarded state transition', () => {
   let dir: string;
   let asyncDb: AsyncDbHandle;
   let settingsStore: SettingsStore;
   let tasks: TaskService;
   let attempts: AttemptStore;
-  let settle: RunSettleCoordinator;
+  let settle: AttemptSettleCoordinator;
 
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-run-settle-'));
@@ -34,7 +34,7 @@ describe('RunSettleCoordinator.settle — guarded state transition', () => {
     settingsStore = await makeSettingsStore(dir);
     tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
     attempts = new AttemptStore(asyncDb);
-    settle = new RunSettleCoordinator(tasks, attempts);
+    settle = new AttemptSettleCoordinator(tasks, attempts);
   });
   afterEach(async () => {
     await asyncDb.close();

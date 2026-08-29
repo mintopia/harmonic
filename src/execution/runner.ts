@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { Git, GitError } from './git.js';
 import { classifyGitFailure, type GitCircuitBreaker } from './git-failure.js';
 import { adapterFor, adapterVersion, wholeFileReader, type SessionTailReader } from './harness/adapter.js';
-import { collectUsage, collectUsageWithRetry, observedModelMismatch, activityLine, agentsFromTree, toolCallName, totalTokensOf, type RunUsage, type RunUsageSnapshot, type ParsedSession } from './usage.js';
+import { collectUsage, collectUsageWithRetry, observedModelMismatch, activityLine, agentsFromTree, toolCallName, totalTokensOf, type AttemptUsage, type AttemptUsageSnapshot, type ParsedSession } from './usage.js';
 import { LiveUsageTailer, type TailerCadence } from './live-usage-tailer.js';
 import { codeIndexRepoGuidance, driveFields, promptForTask } from './prompt-template.js';
 import { indexWorktree, dropIndexForPath } from './code-index.js';
@@ -27,7 +27,7 @@ import {
 import { repoKey } from './repo-lock.js';
 import { DomainError } from '../domain/errors.js';
 import { AttemptStore, type AttemptGuardrailSnapshot, type PersistedAttemptEvent } from '../domain/attempts.js';
-import { RunSettleCoordinator, type SettleProjection, type DispositionKind } from '../domain/run-settle.js';
+import { AttemptSettleCoordinator, type SettleProjection, type DispositionKind } from '../domain/attempt-settle.js';
 import type { SessionRetirementHook } from '../domain/session-retirement-coordinator.js';
 import type { TaskService } from '../domain/tasks.js';
 import { resolveGuardrails, resolveVerifiers, resolveScoped, resolveTaskPrompt, type ResolvedGuardrails } from '../domain/setting-override.js';
@@ -86,19 +86,19 @@ const LIVE_RUN_LOG_EVENT_ID_OFFSET = 1_000_000_000;
 
 export interface RunnerEvents {
   /** Fired after every run event is persisted (live streaming hook). */
-  onRunEvent?: (event: PersistedAttemptEvent) => void;
+  onAttemptEvent?: (event: PersistedAttemptEvent) => void;
   /** ACP session updates are transient: streamed to clients, never persisted. */
-  onRunLogEvent?: (event: LiveRunEvent) => void;
+  onAttemptLogEvent?: (event: LiveAttemptEvent) => void;
   /** Fired whenever a run reaches a terminal state. */
-  onRunFinished?: (run: AttemptRow) => void;
-  /** Fired ~1s while a run tails its native log (ADR 0010: `run_usage`). */
-  onRunUsage?: (payload: { runId: number; snapshot: RunUsageSnapshot }) => void;
+  onAttemptFinished?: (run: AttemptRow) => void;
+  /** Fired ~1s while a run tails its native log (ADR 0010: `attempt_usage`). */
+  onAttemptUsage?: (payload: { attemptId: number; snapshot: AttemptUsageSnapshot }) => void;
 }
 
 /** A live ACP update, with a Run-local monotonic id for reconnect de-duplication. */
-export interface LiveRunEvent {
+export interface LiveAttemptEvent {
   id: number;
-  runId: number;
+  attemptId: number;
   seq: number;
   ts: number;
   type: 'session_update';
@@ -189,9 +189,9 @@ interface Workspace {
 
 interface ActiveRun {
   /** The Attempt this driveOnce call is driving — `attempts.id`, the single
-   * execution ledger identity (ADR-0001 #388 S-G: `runId` IS the Attempt id,
+   * execution ledger identity (ADR-0001 #388 S-G: `attemptId` IS the Attempt id,
    * so there is no separate `attemptId` to track alongside it). */
-  runId: number;
+  attemptId: number;
   taskId: number;
   child: ChildProcess;
   driver: AcpDriver;
@@ -363,7 +363,7 @@ export class Runner {
   /** The shared terminal-disposition coordinator (issue #113/#114): every Run
    * settle — drive-loop, operator cancel/complete — funnels here
    * so the winning disposition is decided by precedence, once. */
-  private readonly settleCoordinator: RunSettleCoordinator;
+  private readonly settleCoordinator: AttemptSettleCoordinator;
   private readonly sessionRetirement: SessionRetirementHook | undefined;
   private readonly tailer: LiveUsageTailer;
   /** One incremental session-log reader per active Run (#217): the tailer tick
@@ -424,22 +424,22 @@ export class Runner {
     this.verificationAttempts = new VerificationAttemptStore(this.asyncDb);
     this.guardrailEvents = new GuardrailEventStore(this.asyncDb);
     this.sessionStore = new SessionStore(this.asyncDb);
-    this.settleCoordinator = new RunSettleCoordinator(
+    this.settleCoordinator = new AttemptSettleCoordinator(
       this.taskService,
       this.attempts,
-      (run) => this.events.onRunFinished?.(run),
+      (run) => this.events.onAttemptFinished?.(run),
       options.sessionRetirement,
     );
     this.sessionRetirement = options.sessionRetirement;
     this.tailer = new LiveUsageTailer(
       {
-        sample: (runId) => this.sampleSnapshot(runId),
-        emit: (runId, snapshot) => this.events.onRunUsage?.({ runId, snapshot }),
+        sample: (attemptId) => this.sampleSnapshot(attemptId),
+        emit: (attemptId, snapshot) => this.events.onAttemptUsage?.({ attemptId, snapshot }),
         // A live snapshot is decoration; a DB hiccup must never fail a run.
-        persist: (runId, snapshot) => {
+        persist: (attemptId, snapshot) => {
           // Fire-and-forget now that update is async: a swallowed rejection keeps
           // a DB hiccup off the run, and the next tick or finish flush retries.
-          void this.attempts.update(runId, { liveUsage: JSON.stringify(snapshot) }).catch(() => {});
+          void this.attempts.update(attemptId, { liveUsage: JSON.stringify(snapshot) }).catch(() => {});
         },
       },
       options.tailerCadence,
@@ -460,7 +460,7 @@ export class Runner {
    * Always present in steady state: `beginRun`/the self-heal loop always leave
    * exactly one Attempt `running` while this Runner drives a Task; a miss here
    * means the Attempt row raced a task-delete cascade, which callers treat the
-   * same way a missing Run row used to be treated under the old `runId` keying.
+   * same way a missing Run row used to be treated under the old `attemptId` keying.
    */
   private async attemptFor(task: Pick<TaskRow, 'id'>): Promise<AttemptRow> {
     // The Task's LATEST Attempt, not just its `running` one: this is also
@@ -480,12 +480,12 @@ export class Runner {
    * tailer's cached `latestSnapshot` (#217) — the ~1s tick keeps it current
    * without this endpoint re-parsing the whole log on every poll.
    */
-  async activeSnapshots(): Promise<{ runId: number; taskId: number; snapshot: RunUsageSnapshot | null }[]> {
+  async activeSnapshots(): Promise<{ attemptId: number; taskId: number; snapshot: AttemptUsageSnapshot | null }[]> {
     return Promise.all(
       [...this.active.values()].map(async (a) => ({
-        runId: a.runId,
+        attemptId: a.attemptId,
         taskId: a.taskId,
-        snapshot: await this.latestSnapshot(a.runId),
+        snapshot: await this.latestSnapshot(a.attemptId),
       })),
     );
   }
@@ -566,7 +566,7 @@ export class Runner {
   async cleanupClosed(task: TaskRow, run: AttemptRow | undefined): Promise<void> {
     if (run) {
       try {
-        await this.sessionRetirement?.onRunSettled(run, 'operator-cancel');
+        await this.sessionRetirement?.onAttemptSettled(run, 'operator-cancel');
       } catch (err) {
         logger.error(`task ${task.id} close: session retirement failed: ${String(err)}`);
       }
@@ -585,7 +585,7 @@ export class Runner {
         );
       }
       // A settled-Run event drives the retirement drain (which retires the Session row) and a scheduler refill.
-      this.events.onRunFinished?.(await this.attempts.get(run.id));
+      this.events.onAttemptFinished?.(await this.attempts.get(run.id));
     }
     if (this.autoDrive && !(await this.autoDrive.closeTicket(task, `Closed by a Harmonic operator without merging (task ${task.id}).`))) {
       logger.error(`task ${task.id} close: tracker issue could not be closed`);
@@ -670,16 +670,16 @@ export class Runner {
     return bound;
   }
 
-  operationParent(runId: number): SpanContext | undefined {
-    return this.runOperations.get(runId)?.spanContext;
+  operationParent(attemptId: number): SpanContext | undefined {
+    return this.runOperations.get(attemptId)?.spanContext;
   }
 
-  async finishRunOperation(runId: number): Promise<void> {
-    const operation = this.runOperations.get(runId);
+  async finishRunOperation(attemptId: number): Promise<void> {
+    const operation = this.runOperations.get(attemptId);
     if (!operation) return;
-    const run = await this.attempts.get(runId);
+    const run = await this.attempts.get(attemptId);
     if (run.state === 'running') return;
-    this.runOperations.delete(runId);
+    this.runOperations.delete(attemptId);
     operation.update({
       'run.state': run.state,
       ...(run.reason ? { 'run.reason': run.reason } : {}),
@@ -833,7 +833,7 @@ export class Runner {
     for (const active of this.active.values()) {
       if (active.taskId !== taskId) continue;
       handled = true;
-      await this.settleRunIfPresent(taskId, active.runId, type, projection);
+      await this.settleRunIfPresent(taskId, active.attemptId, type, projection);
       this.kill(active);
     }
     if (handled) return;
@@ -852,12 +852,12 @@ export class Runner {
    */
   private async settleRunIfPresent(
     taskId: number,
-    runId: number,
+    attemptId: number,
     type: DispositionKind,
     projection: SettleProjection,
   ): Promise<void> {
     try {
-      await this.coordinateSettle(await this.taskService.get(taskId), await this.attempts.get(runId), type, projection);
+      await this.coordinateSettle(await this.taskService.get(taskId), await this.attempts.get(attemptId), type, projection);
     } catch (err) {
       if (isForeignKeyViolation(err) || (err instanceof DomainError && err.code === 'not_found')) return;
       throw err;
@@ -916,8 +916,8 @@ export class Runner {
         const res = await active.driver.steer([{ type: 'text', text }], { steering: { idleBehavior: 'promptRequired' } });
         if (res.outcome === 'injected') {
           active.steerSupported = true;
-          const event = await this.attempts.appendEvent(active.runId, { type: 'lifecycle', payload: { event: 'steer_injected', text } });
-          this.events.onRunEvent?.(event);
+          const event = await this.attempts.appendEvent(active.attemptId, { type: 'lifecycle', payload: { event: 'steer_injected', text } });
+          this.events.onAttemptEvent?.(event);
           return true;
         }
         // 'promptRequired' (the turn ended between the idle check and the RPC →
@@ -933,8 +933,8 @@ export class Runner {
     // harness). Re-check the gate: a settle may have begun during the RPC await.
     if (!active.steerable) return false;
     active.steerQueue.push(text);
-    const event = await this.attempts.appendEvent(active.runId, { type: 'lifecycle', payload: { event: 'steer_queued', text } });
-    this.events.onRunEvent?.(event);
+    const event = await this.attempts.appendEvent(active.attemptId, { type: 'lifecycle', payload: { event: 'steer_queued', text } });
+    this.events.onAttemptEvent?.(event);
     return true;
   }
 
@@ -999,7 +999,7 @@ export class Runner {
     for (const active of this.active.values()) {
       // Best-effort final flush; the process is going down, so fire-and-forget
       // the now-async stop rather than block shutdown on it (#217).
-      void this.tailer.stop(active.runId);
+      void this.tailer.stop(active.attemptId);
       active.verifyAbort.abort();
       this.kill(active);
     }
@@ -1519,7 +1519,7 @@ export class Runner {
         // The exhausted Attempt is recorded `escalated` (not `failed`): it is the
         // timeline row the escalation surface hangs off, and the number the
         // budget restarts from after a Reject with guidance. Left `running`
-        // here — `settleEscalated` (via `RunSettleCoordinator.settle`) owns
+        // here — `settleEscalated` (via `AttemptSettleCoordinator.settle`) owns
         // the terminal write; pre-finishing it here would trip its own guard
         // (`before.state === 'running'`) into a silent no-op, since Attempt
         // is now the single execution ledger being guarded (ADR-0001 #388 S-G).
@@ -1596,7 +1596,7 @@ export class Runner {
     // Run persists usage) → the settled Run's persisted usage (review reject). All
     // three are the last turn's raw context footprint; the reuse gate compares it
     // against a raw token limit, so no context-window fraction is involved.
-    const persisted = run.usage ? (JSON.parse(run.usage) as RunUsage).contextTokens ?? null : null;
+    const persisted = run.usage ? (JSON.parse(run.usage) as AttemptUsage).contextTokens ?? null : null;
     const contextTokens = (await this.latestSnapshot(run.id))?.contextTokens ?? this.lastTurnContextTokens.get(run.id) ?? persisted;
     return decideAttemptContinuation({
       harness: task.harness,
@@ -1978,7 +1978,7 @@ export class Runner {
    * Persist a turn's Attempt event, fire-and-forget, on the hottest drive path
    * (ADR-0001 #388 S-F: `attempt_events`, re-keyed off `attempt_id`). A racing
    * task-delete cascade can remove the Attempt row mid-turn — the same race the
-   * old `runId`-keyed append tolerated against the Run row — so a resolution
+   * old `attemptId`-keyed append tolerated against the Run row — so a resolution
    * miss or an append FK-violation is dropped as "attempt row gone", not a
    * crash. The rejection is contained here (it used to reach the process as an
    * unhandled rejection and take the server down); the gone-row race logs at
@@ -1993,7 +1993,7 @@ export class Runner {
   ): void {
     (async () => {
       const event = await this.attempts.appendEvent(run.id, { type, payload });
-      this.events.onRunEvent?.(event);
+      this.events.onAttemptEvent?.(event);
     })().catch((err: unknown) => {
       if (isForeignKeyViolation(err)) {
         logger.debug(`task ${task.id} run ${run.id}: dropped ${type} event — attempt row gone (racing delete)`);
@@ -2049,7 +2049,7 @@ export class Runner {
     // Steps own the execution pipeline (Run/Phase are deleted concepts,
     // ADR-0001 Vocabulary) — a transition here only ever touches the `steps`
     // table. The Attempt itself stays `running` through merging: its terminal
-    // state/reason is the settling disposition (`RunSettleCoordinator.settle`,
+    // state/reason is the settling disposition (`AttemptSettleCoordinator.settle`,
     // ADR-0001 #388 S-E) — closing it `passed` here, before the merge outcome
     // is known, would leave a post-merge-check revert unable to correct it.
     const advanceTask = async (to: 'verifying' | 'merging') => {
@@ -2108,7 +2108,7 @@ export class Runner {
       // Workspace prep (its git ops) succeeded — clear any accumulated git
       // backoff for this context, so a later unrelated blip starts fresh (#199).
       this.gitBreaker?.recordSuccess(repoKey(task.workingDir));
-      // Agents reach the MCP server with zero setup: a Run Key (its
+      // Agents reach the MCP server with zero setup: a Attempt Key (its
       // lifetime follows the run's) plus the endpoint, in the environment
       // — and, where the harness supports it (codex), registered directly
       // via ACP `session/new` mcpServers.
@@ -2138,7 +2138,7 @@ export class Runner {
         });
       }
     } catch (err) {
-      // The Run Key may already be minted; it must not outlive the run.
+      // The Attempt Key may already be minted; it must not outlive the run.
       try {
         void Promise.resolve(this.keys?.revoke(run.id)).catch(() => {});
       } catch {
@@ -2219,9 +2219,9 @@ export class Runner {
         // operator transcript needs them live. Reserve a separate id range so
         // the browser can merge them with its one-time native-log hydration
         // without colliding with parser-assigned transcript ids.
-        this.events.onRunLogEvent?.({
+        this.events.onAttemptLogEvent?.({
           id: LIVE_RUN_LOG_EVENT_ID_OFFSET + seq,
-          runId: run.id,
+          attemptId: run.id,
           seq,
           ts: Date.now(),
           type: 'session_update',
@@ -2282,7 +2282,7 @@ export class Runner {
     });
 
     const active: ActiveRun = {
-      runId: run.id,
+      attemptId: run.id,
       taskId: task.id,
       child,
       driver,
@@ -3230,18 +3230,18 @@ export class Runner {
    * (`wholeFileReader`). null before a session id, or for a harness with no
    * Usage Collector. Reused across ticks so the byte cursor persists.
    */
-  private async readerFor(runId: number): Promise<SessionTailReader | null> {
-    const existing = this.readers.get(runId);
+  private async readerFor(attemptId: number): Promise<SessionTailReader | null> {
+    const existing = this.readers.get(attemptId);
     if (existing) return existing;
-    const active = this.active.get(runId);
+    const active = this.active.get(attemptId);
     if (!active) return null;
-    const sessionId = (await this.attempts.get(runId)).sessionId;
+    const sessionId = (await this.attempts.get(attemptId)).sessionId;
     if (!sessionId) return null;
     const collector = adapterFor(active.harnessId).usage;
     if (!collector) return null;
     const input = { sessionLogDir: active.harness.sessionLogDir, cwd: active.cwd, sessionId };
     const reader = collector.createTailReader?.(input) ?? wholeFileReader(collector, input);
-    this.readers.set(runId, reader);
+    this.readers.set(attemptId, reader);
     return reader;
   }
 
@@ -3317,10 +3317,10 @@ export class Runner {
    * its parse with the event-derived tool tally + activity line. Called only by
    * the tailer tick; the on-demand callers read `latestSnapshot`.
    */
-  private async sampleSnapshot(runId: number): Promise<RunUsageSnapshot | null> {
-    const reader = await this.readerFor(runId);
+  private async sampleSnapshot(attemptId: number): Promise<AttemptUsageSnapshot | null> {
+    const reader = await this.readerFor(attemptId);
     if (!reader) return null;
-    return await this.decorateSnapshot(runId, await reader.sample());
+    return await this.decorateSnapshot(attemptId, await reader.sample());
   }
 
   /**
@@ -3329,23 +3329,23 @@ export class Runner {
    * tailer's ~1s cadence instead of re-parsing the whole log themselves (#217).
    * null before the tailer's first sample.
    */
-  private async latestSnapshot(runId: number): Promise<RunUsageSnapshot | null> {
-    return await this.decorateSnapshot(runId, this.readers.get(runId)?.latest() ?? null);
+  private async latestSnapshot(attemptId: number): Promise<AttemptUsageSnapshot | null> {
+    return await this.decorateSnapshot(attemptId, this.readers.get(attemptId)?.latest() ?? null);
   }
 
   /**
    * `parse`/the reader yield the per-model roll-up and tree but no tool tally
    * (computed from the in-memory ACP rollup) — so the live "· N tools" figure the Board
-   * ticks off `run_usage` (issue #100) would be stuck at zero. Tally the run's
+   * ticks off `attempt_usage` (issue #100) would be stuck at zero. Tally the run's
    * rollup here, and fold the per-agent breakdown in for parity with the
    * settle-time Usage. The current-activity line comes off the active Run.
    */
-  private async decorateSnapshot(runId: number, parsed: ParsedSession | null): Promise<RunUsageSnapshot | null> {
+  private async decorateSnapshot(attemptId: number, parsed: ParsedSession | null): Promise<AttemptUsageSnapshot | null> {
     if (!parsed) return null;
-    const active = this.active.get(runId);
-    const toolCalls = Object.fromEntries(await this.toolCallsFor(runId));
+    const active = this.active.get(attemptId);
+    const toolCalls = Object.fromEntries(await this.toolCallsFor(attemptId));
     const agents = agentsFromTree(parsed.tree);
-    const usage: RunUsage = { ...parsed.usage, toolCalls, ...(Object.keys(agents).length > 0 ? { agents } : {}) };
+    const usage: AttemptUsage = { ...parsed.usage, toolCalls, ...(Object.keys(agents).length > 0 ? { agents } : {}) };
     return { usage, contextTokens: parsed.tree.contextTokens, activity: active?.activity ?? null, tree: parsed.tree };
   }
 
@@ -3356,7 +3356,7 @@ export class Runner {
     harness: HarnessConfig,
     workspace: Workspace,
     promptResult: { stopReason?: string; usage?: Record<string, unknown>; _meta?: unknown } | undefined,
-  ): Promise<RunUsage | null> {
+  ): Promise<AttemptUsage | null> {
     try {
       const usage = await collectUsageWithRetry({
         harnessId: task.harness,
@@ -3378,16 +3378,16 @@ export class Runner {
     }
   }
 
-  /** The live tool-call rollup for `runId`: the in-memory cache while a
+  /** The live tool-call rollup for `attemptId`: the in-memory cache while a
    * `driveOnce` owns it, else the persisted Attempt-keyed snapshot (ADR-0001
    * #388 S-F: `attempt_tool_calls` is keyed by `attempt_id`, not `run_id`, so
    * a cache-miss caller must resolve the Run's current Attempt first). */
-  private async toolCallsFor(runId: number): Promise<Map<string, number>> {
-    const cached = this.toolCallTotals.get(runId);
+  private async toolCallsFor(attemptId: number): Promise<Map<string, number>> {
+    const cached = this.toolCallTotals.get(attemptId);
     if (cached) return cached;
-    // `runId` already IS the Attempt id (ADR-0001 #388 S-G: one execution
+    // `attemptId` already IS the Attempt id (ADR-0001 #388 S-G: one execution
     // ledger, no separate Run identity to resolve through).
-    return this.attempts.listToolCalls(runId);
+    return this.attempts.listToolCalls(attemptId);
   }
 
   /**
@@ -3397,7 +3397,7 @@ export class Runner {
    */
   private noteModelMismatch(
     task: TaskRow,
-    usage: RunUsage | null,
+    usage: AttemptUsage | null,
     record: (type: 'permission_request' | 'lifecycle', payload: unknown) => void,
   ): void {
     const observed = usage ? observedModelMismatch(task.model, usage.models) : null;
@@ -3428,8 +3428,8 @@ export class Runner {
         });
         if (!fresh || Object.keys(fresh.models).length === 0) continue;
         fresh.toolCalls = Object.fromEntries(await this.toolCallsFor(run.id));
-        const stored = run.usage ? (JSON.parse(run.usage) as RunUsage) : null;
-        const healed: RunUsage = stored?.totals
+        const stored = run.usage ? (JSON.parse(run.usage) as AttemptUsage) : null;
+        const healed: AttemptUsage = stored?.totals
           ? { ...fresh, totals: stored.totals, source: 'combined' }
           : fresh;
         await this.attempts.update(run.id, { usage: JSON.stringify(healed) });
@@ -3445,9 +3445,9 @@ export class Runner {
    * a live computation on read). */
   private async diffSnapshotFor(
     task: TaskRow,
-    runId: number,
+    attemptId: number,
   ): Promise<Pick<AttemptRow, 'stat' | 'diffBaseOid' | 'diffHeadOid'>> {
-    const run = await this.attempts.get(runId);
+    const run = await this.attempts.get(attemptId);
     if (!run.branch || !run.baseBranch) {
       return { stat: null, diffBaseOid: null, diffHeadOid: null };
     }
@@ -3460,7 +3460,7 @@ export class Runner {
       return { stat, diffBaseOid, diffHeadOid };
     } catch (err) {
       logger.warn('diff snapshot failed; review diff will be blank for this run', {
-        runId,
+        attemptId,
         branch: run.branch,
         baseBranch: run.baseBranch,
         err: err instanceof Error ? err.message : String(err),
@@ -3471,7 +3471,7 @@ export class Runner {
 
   /**
    * The Runner's settle entry point (issue #113/#114): delegate to the shared
-   * {@link RunSettleCoordinator}, which applies the guarded state transition
+   * {@link AttemptSettleCoordinator}, which applies the guarded state transition
    * (ADR-0001 #388 S-E) to the Run row and its Attempt. Extracted so the
    * operator Accept merges through the *same* coordinator, with identical
    * race-safety, rather than racing the Runner around the Run row.

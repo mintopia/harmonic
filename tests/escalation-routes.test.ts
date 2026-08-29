@@ -70,7 +70,7 @@ describe('escalation actions on a worktree ticket (ADR-0041)', () => {
   // would leave the next stub agent nothing to commit (and thus no verifiable
   // head). A unique file per run keeps every run's commit real.
   let implSeq = 0;
-  async function createAndRun(): Promise<{ taskId: number; runId: number; file: string }> {
+  async function createAndRun(): Promise<{ taskId: number; attemptId: number; file: string }> {
     const file = `escalation-feature-${++implSeq}.txt`;
     const created = await server.api('POST', '/api/tasks', {
       prompt: JSON.stringify({ writeFiles: { [file]: 'work\n' } }),
@@ -80,19 +80,19 @@ describe('escalation actions on a worktree ticket (ADR-0041)', () => {
     expect(created.status).toBe(201);
     const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
     expect(started.status).toBe(201);
-    return { taskId: created.body.id, runId: started.body.id, file };
+    return { taskId: created.body.id, attemptId: started.body.id, file };
   }
 
   /** Drive a fresh task+run to escalation via a failing critic on both attempts. */
-  async function escalateViaCriticFail(): Promise<{ taskId: number; runId: number; file: string }> {
-    const { taskId, runId, file } = await createAndRun();
+  async function escalateViaCriticFail(): Promise<{ taskId: number; attemptId: number; file: string }> {
+    const { taskId, attemptId, file } = await createAndRun();
     const task = await waitFor(async () => {
       const { body } = await server.api('GET', `/api/tasks/${taskId}`);
       return body.state === 'escalated' ? body : undefined;
     });
     expect(task.escalationReason).toMatch(/attempt 2 of 2 failed/);
     expect((await server.api('GET', `/api/tasks/${taskId}/attempts/current`)).body).toMatchObject({ state: 'failed' });
-    return { taskId, runId, file };
+    return { taskId, attemptId, file };
   }
 
   const ticketAttempts = (taskId: number) => new AttemptStore(server.app.ctx.asyncDb).listForTask(taskId);

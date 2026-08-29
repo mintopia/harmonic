@@ -20,9 +20,9 @@ export function formatCost(cost: Cost | null | undefined): string | null {
  * or no Runs), never a fabricated $0. An incomplete aggregate is a floor, shown
  * as "≥", mirroring `formatCost`.
  */
-export function formatAvgCostPerRun(cost: Cost | null | undefined, runCount: number): string | null {
-  if (!cost || cost.totalUsd === null || runCount <= 0) return null;
-  const avg = cost.totalUsd / runCount;
+export function formatAvgCostPerRun(cost: Cost | null | undefined, attemptCount: number): string | null {
+  if (!cost || cost.totalUsd === null || attemptCount <= 0) return null;
+  const avg = cost.totalUsd / attemptCount;
   return cost.incomplete ? `≥ ${usd(avg)}` : usd(avg);
 }
 

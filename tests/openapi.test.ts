@@ -132,13 +132,13 @@ describe('openapi spec', () => {
     expect(tagsOf('/api/keys', 'get')).toContain('Keys');
   });
 
-  it('states Run Key reachability in each migrated endpoint description', async () => {
+  it('states Attempt Key reachability in each migrated endpoint description', async () => {
     const doc = (await server.anonApi('GET', '/api/openapi.json')).body;
 
-    // Reachable with a run-scoped Run Key: the agent task/run surface.
-    expect(doc.paths['/api/tasks'].post.description).toContain('Reachable with a run-scoped Run Key');
-    expect(doc.paths['/api/tasks/{id}/run'].post.description).toContain('Reachable with a run-scoped Run Key');
-    expect(doc.paths['/api/attempts/{id}'].get.description).toContain('Reachable with a run-scoped Run Key');
+    // Reachable with an attempt-scoped Attempt Key: the agent task/run surface.
+    expect(doc.paths['/api/tasks'].post.description).toContain('Reachable with an attempt-scoped Attempt Key');
+    expect(doc.paths['/api/tasks/{id}/run'].post.description).toContain('Reachable with an attempt-scoped Attempt Key');
+    expect(doc.paths['/api/attempts/{id}'].get.description).toContain('Reachable with an attempt-scoped Attempt Key');
 
     // Accept/reject: human-only, always (#140, ADR-0021 retired the agentReview flag).
     expect(doc.paths['/api/tasks/{id}/accept'].post.description).toContain('Human-only');

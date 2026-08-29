@@ -7,7 +7,7 @@ import { CONVERSATION_STATES } from '../../db/schema.js';
 import { resolveScoped } from '../../domain/setting-override.js';
 import { DomainError } from '../../domain/errors.js';
 import { conversationToApi } from '../serialize.js';
-import { costSchema, errorResponse, idParamsSchema, okResponseSchema, runUsageSchema } from '../schemas.js';
+import { costSchema, errorResponse, idParamsSchema, okResponseSchema, attemptUsageSchema } from '../schemas.js';
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
 
 const createConversationInputSchema = z.object({
@@ -62,7 +62,7 @@ const conversationSchema = z
     /** The warm ACP session id, set once the harness spawns; null before the first Turn. */
     sessionId: z.string().nullable().meta({ example: 'b7e4d2a1-6c93-4f18-8a52-1d0f3b9e7c46' }),
     /** Running Usage accumulated across Turns (issue 12); null before any usage. */
-    usage: runUsageSchema.nullable(),
+    usage: attemptUsageSchema.nullable(),
     /** Cost of the running Usage; honest-incomplete for unpriced models. */
     cost: costSchema.nullable(),
     /** The latest Turn's input-side token footprint (context fill); null when unknown. */
@@ -109,7 +109,7 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
       schema: {
         tags: ['Conversations'],
         description:
-          'Create a Conversation (an interactive, multi-turn exchange the operator drives with a Harness over ACP). Execution settings default from global config. Operator only; not reachable with a run-scoped key. The harness spawns on the first Turn, not here.',
+          'Create a Conversation (an interactive, multi-turn exchange the operator drives with a Harness over ACP). Execution settings default from global config. Operator only; not reachable with an attempt-scoped key. The harness spawns on the first Turn, not here.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         body: createConversationInputSchema,
         response: {
@@ -142,7 +142,7 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
       schema: {
         tags: ['Conversations'],
         description:
-          'List Conversations, newest first, optionally scoped to one Workspace. Operator only; not reachable with a run-scoped key.',
+          'List Conversations, newest first, optionally scoped to one Workspace. Operator only; not reachable with an attempt-scoped key.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         querystring: conversationsListQuerySchema.extend(paginationQuerySchema.shape),
         response: {
@@ -165,7 +165,7 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
     {
       schema: {
         tags: ['Conversations'],
-        description: 'Get one Conversation. Operator only; not reachable with a run-scoped key.',
+        description: 'Get one Conversation. Operator only; not reachable with an attempt-scoped key.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         params: idParamsSchema,
         response: {
@@ -183,7 +183,7 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
       schema: {
         tags: ['Conversations'],
         description:
-          'Rename a Conversation; pass title null to clear it and fall back to the title derived from the first Turn. Operator only; not reachable with a run-scoped key.',
+          'Rename a Conversation; pass title null to clear it and fall back to the title derived from the first Turn. Operator only; not reachable with an attempt-scoped key.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         params: idParamsSchema,
         body: updateConversationInputSchema,
@@ -206,7 +206,7 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
       schema: {
         tags: ['Conversations'],
         description:
-          'Delete a Conversation: stops the harness if warm, revokes its key, and cascades its events. Operator only; not reachable with a run-scoped key.',
+          'Delete a Conversation: stops the harness if warm, revokes its key, and cascades its events. Operator only; not reachable with an attempt-scoped key.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         params: idParamsSchema,
         response: {
@@ -230,7 +230,7 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
       schema: {
         tags: ['Conversations'],
         description:
-          "Replay a Conversation's persisted events, in order — the same records streamed live over the WebSocket. Operator only; not reachable with a run-scoped key.",
+          "Replay a Conversation's persisted events, in order — the same records streamed live over the WebSocket. Operator only; not reachable with an attempt-scoped key.",
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         params: idParamsSchema,
         querystring: paginationQuerySchema,
@@ -253,7 +253,7 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
       schema: {
         tags: ['Conversations'],
         description:
-          'Send an operator Turn. Spawns the harness on the first Turn and keeps it warm across Turns; the reply streams over the WebSocket. If a Turn is already running, the message is queued and sent as the next Turn (issue 14). Operator only; not reachable with a run-scoped key.',
+          'Send an operator Turn. Spawns the harness on the first Turn and keeps it warm across Turns; the reply streams over the WebSocket. If a Turn is already running, the message is queued and sent as the next Turn (issue 14). Operator only; not reachable with an attempt-scoped key.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         params: idParamsSchema,
         body: turnInputSchema,
@@ -279,7 +279,7 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
       schema: {
         tags: ['Conversations'],
         description:
-          'Steer a running Turn (issue 14): cancel the in-flight Turn via ACP session/cancel and re-prompt with `text` as the next Turn, or just stop it when `text` is empty. The cancelled Turn records a cancelled stop reason. Operator only; not reachable with a run-scoped key.',
+          'Steer a running Turn (issue 14): cancel the in-flight Turn via ACP session/cancel and re-prompt with `text` as the next Turn, or just stop it when `text` is empty. The cancelled Turn records a cancelled stop reason. Operator only; not reachable with an attempt-scoped key.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         params: idParamsSchema,
         body: interruptInputSchema,
@@ -305,7 +305,7 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
       schema: {
         tags: ['Conversations'],
         description:
-          "Answer a Harness's held permission request in a Conversation (ADR-0007). `optionId` is the ACP option the operator chose — allow_once, the native allow_always ('Allow for this conversation'), or a reject option. Set `remember` to also persist a Permission Rule ('Always allow in {dir}') keyed on the tool kind + Working Directory. Operator only; not reachable with a run-scoped key.",
+          "Answer a Harness's held permission request in a Conversation (ADR-0007). `optionId` is the ACP option the operator chose — allow_once, the native allow_always ('Allow for this conversation'), or a reject option. Set `remember` to also persist a Permission Rule ('Always allow in {dir}') keyed on the tool kind + Working Directory. Operator only; not reachable with an attempt-scoped key.",
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         params: permissionParamsSchema,
         body: answerPermissionInputSchema,
@@ -327,7 +327,7 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
       schema: {
         tags: ['Conversations'],
         description:
-          'End a Conversation: stop the harness and mark it ended (its transcript survives read-only; it cannot resume). Operator only; not reachable with a run-scoped key.',
+          'End a Conversation: stop the harness and mark it ended (its transcript survives read-only; it cannot resume). Operator only; not reachable with an attempt-scoped key.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         params: idParamsSchema,
         response: {

@@ -6,7 +6,7 @@ import type {
   AttemptSummary,
   AttemptEvent,
   AttemptLogEvent,
-  RunUsageEvent,
+  AttemptUsageEvent,
   Task,
 } from './types.js';
 import type { ScheduledJob } from './scheduled-jobs-model.js';
@@ -29,9 +29,9 @@ export interface OperationEvent {
 }
 
 export type ServerMessage =
-  | { type: 'run_event'; event: AttemptEvent }
-  | { type: 'run_log_event'; event: AttemptLogEvent }
-  | { type: 'run_changed'; run: AttemptSummary }
+  | { type: 'attempt_event'; event: AttemptEvent }
+  | { type: 'attempt_log_event'; event: AttemptLogEvent }
+  | { type: 'attempt_changed'; run: AttemptSummary }
   | { type: 'task_changed'; task: Task }
   | { type: 'attempt_timeline_changed'; taskId: number; attempts: Attempt[]; budgetBase: number }
   // Hard-delete (issue #162): the Task is gone server-side (Runs/history
@@ -39,7 +39,7 @@ export type ServerMessage =
   | { type: 'task_removed'; id: number }
   // Live AttemptSummary usage (ADR 0010): the Activity view merges these deltas into its
   // rows so tokens/context/cost tick live. Sent to read keys too.
-  | ({ type: 'run_usage' } & RunUsageEvent)
+  | ({ type: 'attempt_usage' } & AttemptUsageEvent)
   | { type: 'operations'; event: OperationEvent }
   | { type: 'scheduled-jobs'; jobs: ScheduledJob[] }
   | { type: 'flagged-worktrees'; flags: FlaggedWorktree[] }
@@ -113,22 +113,22 @@ export function subscribe(onMessage: (msg: ServerMessage) => void): () => void {
 }
 
 /** A cursor-resumable subscription to one AttemptSummary's transient ACP transcript. */
-export function subscribeRunLog({
-  runId,
+export function subscribeAttemptLog({
+  attemptId,
   after,
   onEvent,
 }: {
-  runId: number;
+  attemptId: number;
   after: () => number;
   onEvent: (event: AttemptLogEvent) => void;
 }): () => void {
   let firstSubscription = true;
   return subscribeWithOpen((message) => {
-    if (message.type === 'run_log_event' && message.event.runId === runId && message.event.seq > after()) {
+    if (message.type === 'attempt_log_event' && message.event.attemptId === attemptId && message.event.seq > after()) {
       onEvent(message.event);
     }
   }, (socket) => {
-    socket.send(JSON.stringify({ type: 'run_log_subscribe', runId, after: after(), replay: !firstSubscription }));
+    socket.send(JSON.stringify({ type: 'attempt_log_subscribe', attemptId, after: after(), replay: !firstSubscription }));
     firstSubscription = false;
   });
 }

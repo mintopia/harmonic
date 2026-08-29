@@ -6,7 +6,7 @@ import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { AttemptStore } from '../src/domain/attempts.js';
-import { RunSettleCoordinator } from '../src/domain/run-settle.js';
+import { AttemptSettleCoordinator } from '../src/domain/attempt-settle.js';
 import type { MergeEffectExec } from '../src/domain/merge.js';
 import { EscalationService } from '../src/domain/escalation.js';
 import { DomainError } from '../src/domain/errors.js';
@@ -27,9 +27,9 @@ describe('EscalationService', () => {
   let settingsStore: SettingsStore;
   let tasks: TaskService;
   let attempts: AttemptStore;
-  let settle: RunSettleCoordinator;
+  let settle: AttemptSettleCoordinator;
   let resumed: Array<{ taskId: number; guidance: string; startNow: boolean }>;
-  let cleaned: Array<{ taskId: number; runId: number | undefined }>;
+  let cleaned: Array<{ taskId: number; attemptId: number | undefined }>;
   let effects: MergeEffectExec[];
   let service: EscalationService;
 
@@ -39,7 +39,7 @@ describe('EscalationService', () => {
     settingsStore = await makeSettingsStore(dir);
     tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
     attempts = new AttemptStore(asyncDb);
-    settle = new RunSettleCoordinator(tasks, attempts);
+    settle = new AttemptSettleCoordinator(tasks, attempts);
     resumed = [];
     cleaned = [];
     effects = [];
@@ -48,7 +48,7 @@ describe('EscalationService', () => {
         resumed.push({ taskId: task.id, guidance, startNow });
       },
       cleanup: async (task, run) => {
-        cleaned.push({ taskId: task.id, runId: run?.id });
+        cleaned.push({ taskId: task.id, attemptId: run?.id });
       },
     });
   });
@@ -152,7 +152,7 @@ describe('EscalationService', () => {
       const { task, run } = await escalated();
       const closed = await service.close(task.id);
       expect(closed).toMatchObject({ state: 'cancelled', escalationReason: null });
-      expect(cleaned).toEqual([{ taskId: task.id, runId: run.id }]);
+      expect(cleaned).toEqual([{ taskId: task.id, attemptId: run.id }]);
       expect(resumed).toEqual([]);
     });
 
@@ -161,7 +161,7 @@ describe('EscalationService', () => {
       await tasks.escalate(created.id, 'escalated to human: integration branch epic/9 missing for 60s');
       const closed = await service.close(created.id);
       expect(closed.state).toBe('cancelled');
-      expect(cleaned).toEqual([{ taskId: created.id, runId: undefined }]);
+      expect(cleaned).toEqual([{ taskId: created.id, attemptId: undefined }]);
     });
   });
 });

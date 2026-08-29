@@ -9,7 +9,7 @@
  * so `db/schema.ts` can brand a column with {@link MergeEffect} without a
  * runtime db→domain import cycle. The one merge policy itself
  * (`execution/merge-policy.ts`) runs under the base repo mutex and settles
- * through `RunSettleCoordinator` directly — there is no journal, PONC, or
+ * through `AttemptSettleCoordinator` directly — there is no journal, PONC, or
  * reconciliation layer here (that machinery, and the `merge_journal` table it
  * read/wrote, is gone: ADR-0001 "no merge journal", ADR-0007's target schema).
  */

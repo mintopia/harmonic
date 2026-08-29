@@ -77,13 +77,13 @@ describe('operator Accept merge (ADR-0001, issue #383)', () => {
     const taskId: number = created.body.id;
     const started = await server.api('POST', `/api/tasks/${taskId}/run`);
     expect(started.status).toBe(201);
-    const runId: number = started.body.id;
+    const attemptId: number = started.body.id;
     const escalated = await waitFor(async () => {
       const t = (await server.api('GET', `/api/tasks/${taskId}`)).body;
       return t.state === 'escalated' ? t : undefined;
     });
     expect(escalated.escalationReason).toMatch(/attempt 2 of 2 failed/);
-    const verified = (await server.app.ctx.attempts.get(runId)).verifiedHeadOid;
+    const verified = (await server.app.ctx.attempts.get(attemptId)).verifiedHeadOid;
     expect(verified).toMatch(/^[0-9a-f]{40}$/);
 
     // The base moves non-conflictingly while the ticket sits escalated — the

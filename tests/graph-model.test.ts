@@ -57,7 +57,7 @@ const task = (
   stat: null,
   runStartedAt: null,
   toolCount: null,
-  runId: null,
+  attemptId: null,
   currentStep: null,
   contextTokens: null,
   contextWindow: null,

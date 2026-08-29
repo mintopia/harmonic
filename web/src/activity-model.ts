@@ -1,6 +1,6 @@
 // Explicit .js extensions: this module is shared with the node-side test
 // project, whose nodenext resolution requires them (Vite maps .js → .ts).
-import type { ActivityProcess, Cost, RunUsage, RunUsageEvent } from './types.js';
+import type { ActivityProcess, Cost, AttemptUsage, AttemptUsageEvent } from './types.js';
 
 /**
  * The Activity view's attention model (issue #52). Every in-flight process is
@@ -77,7 +77,7 @@ export function rankActivity(processes: ActivityProcess[]): ActivityProcess[] {
 }
 
 /** The Activity toolbar's type segments (issue #54): the fleet, just Runs, or just Chats. */
-export const ACTIVITY_TYPE_FILTERS = ['all', 'runs', 'chats'] as const;
+export const ACTIVITY_TYPE_FILTERS = ['all', 'attempts', 'chats'] as const;
 export type ActivityTypeFilter = (typeof ACTIVITY_TYPE_FILTERS)[number];
 
 /** The toolbar's filter state: a type segment plus an optional single-Workspace narrowing. */
@@ -97,7 +97,7 @@ export const NO_ACTIVITY_FILTER: ActivityFilter = { type: 'all', workspaceId: nu
  */
 export function filterActivity(processes: ActivityProcess[], filter: ActivityFilter): ActivityProcess[] {
   return processes.filter((p) => {
-    if (filter.type === 'runs' && p.type !== 'run') return false;
+    if (filter.type === 'attempts' && p.type !== 'attempt') return false;
     if (filter.type === 'chats' && p.type !== 'chat') return false;
     if (filter.workspaceId !== null && p.workspaceId !== filter.workspaceId) return false;
     return true;
@@ -241,7 +241,7 @@ export function activitySections(processes: ActivityProcess[], sort: ActivitySor
  * reports one, else the sum of the four counters it always reports. Null usage
  * (no tokens yet) stays null — never a fake zero (the honest-incomplete rule).
  */
-export function usageTotalTokens(usage: RunUsage | null): number | null {
+export function usageTotalTokens(usage: AttemptUsage | null): number | null {
   const totals = usage?.totals;
   if (!totals) return null;
   if (totals.totalTokens !== null) return totals.totalTokens;
@@ -299,15 +299,15 @@ export function sumCosts(costs: (Cost | null | undefined)[]): Cost | null {
 }
 
 /**
- * Merge a live `run_usage` delta into the matching Run row (by `runId`),
+ * Merge a live `attempt_usage` delta into the matching Run row (by `attemptId`),
  * refreshing its Usage, context fill, activity line, Process Tree, and Cost.
  * Returns the same array reference when nothing matches — a Conversation is
- * never touched (it has no `runId`), and a no-op skips a needless re-render.
+ * never touched (it has no `attemptId`), and a no-op skips a needless re-render.
  */
-export function mergeRunUsage(processes: ActivityProcess[], event: RunUsageEvent): ActivityProcess[] {
-  if (!processes.some((p) => p.type === 'run' && p.runId === event.runId)) return processes;
+export function mergeRunUsage(processes: ActivityProcess[], event: AttemptUsageEvent): ActivityProcess[] {
+  if (!processes.some((p) => p.type === 'attempt' && p.attemptId === event.attemptId)) return processes;
   return processes.map((p) =>
-    p.type === 'run' && p.runId === event.runId
+    p.type === 'attempt' && p.attemptId === event.attemptId
       ? {
           ...p,
           usage: event.usage,
@@ -339,7 +339,7 @@ export function activitySummary(
   machineCeiling: number,
   now: number,
 ): ActivitySummary {
-  const runningCount = processes.filter((p) => p.type === 'run').length;
+  const runningCount = processes.filter((p) => p.type === 'attempt').length;
   return {
     runningCount,
     needsYouCount: processes.filter((p) => attentionTier(p) === 'needs-you').length,

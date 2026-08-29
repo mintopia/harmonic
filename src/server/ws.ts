@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { App } from './app.js';
-import { attemptTimelineToApi, conversationToApi, flaggedWorktreesToApi, operationEventToApi, attemptToApi, runUsageToApi, scheduledJobsToApi, taskToApi } from './serialize.js';
+import { attemptTimelineToApi, conversationToApi, flaggedWorktreesToApi, operationEventToApi, attemptToApi, attemptUsageToApi, scheduledJobsToApi, taskToApi } from './serialize.js';
 import { forEachYielding } from '../reliability/yield.js';
 
 /**
@@ -26,17 +26,17 @@ export async function wsRoutes(fastify: FastifyInstance): Promise<void> {
     // re-reads the key's scope from the same `?token=`.
     const token = (req.query as Record<string, string | undefined>)?.token;
     const readOnly = (token ? await ctx.auth.verifyKey(token) : null)?.scope === 'read';
-    let unsubscribeRunLog: (() => void) | undefined;
+    let unsubscribeAttemptLog: (() => void) | undefined;
     const unsubscribes = [
-      ctx.bus.on('run_event', (event) => send({ type: 'run_event', event })),
-      ctx.bus.on('run_changed', (run) => {
-        send({ type: 'run_changed', run: attemptToApi(ctx, run) });
+      ctx.bus.on('attempt_event', (event) => send({ type: 'attempt_event', event })),
+      ctx.bus.on('attempt_changed', (run) => {
+        send({ type: 'attempt_changed', run: attemptToApi(ctx, run) });
         sendAttemptTimeline(run.taskId);
       }),
       // Live Run usage (ADR 0010) is board/viz traffic — sent to read keys too;
       // the Conversation's usage rides conversation_changed, already dropped below.
-      ctx.bus.on('run_usage', ({ runId, snapshot }) =>
-        send({ type: 'run_usage', runId, ...runUsageToApi(ctx, snapshot) })),
+      ctx.bus.on('attempt_usage', ({ attemptId, snapshot }) =>
+        send({ type: 'attempt_usage', attemptId, ...attemptUsageToApi(ctx, snapshot) })),
       // Enrich to the API task shape, same as the REST routes — the SPA
       // merges these payloads straight into its task list (issue 15).
       ctx.bus.on('task_changed', async (task) =>
@@ -70,37 +70,37 @@ export async function wsRoutes(fastify: FastifyInstance): Promise<void> {
       } catch {
         return;
       }
-      if (!isRunLogSubscription(message)) return;
-      unsubscribeRunLog?.();
-      const queued: Array<ReturnType<typeof ctx.bus.replayRunLog> extends IterableIterator<infer Event> ? Event : never> = [];
+      if (!isAttemptLogSubscription(message)) return;
+      unsubscribeAttemptLog?.();
+      const queued: Array<ReturnType<typeof ctx.bus.replayAttemptLog> extends IterableIterator<infer Event> ? Event : never> = [];
       let replaying = true;
-      unsubscribeRunLog = ctx.bus.on('run_log_event', (event) => {
-        if (event.runId !== message.runId || event.seq <= message.after) return;
+      unsubscribeAttemptLog = ctx.bus.on('attempt_log_event', (event) => {
+        if (event.attemptId !== message.attemptId || event.seq <= message.after) return;
         if (replaying) queued.push(event);
-        else send({ type: 'run_log_event', event });
+        else send({ type: 'attempt_log_event', event });
       });
       if (message.replay !== false) {
-        await forEachYielding(ctx.bus.replayRunLog({ runId: message.runId, after: message.after }), (event) => {
-          send({ type: 'run_log_event', event });
+        await forEachYielding(ctx.bus.replayAttemptLog({ attemptId: message.attemptId, after: message.after }), (event) => {
+          send({ type: 'attempt_log_event', event });
         });
       }
       while (queued.length > 0) {
-        await forEachYielding(queued.splice(0), (event) => send({ type: 'run_log_event', event }));
+        await forEachYielding(queued.splice(0), (event) => send({ type: 'attempt_log_event', event }));
       }
       replaying = false;
     });
     socket.on('close', () => {
-      unsubscribeRunLog?.();
+      unsubscribeAttemptLog?.();
       unsubscribes.forEach((u) => u());
     });
   });
 }
 
-function isRunLogSubscription(message: unknown): message is { type: 'run_log_subscribe'; runId: number; after: number; replay?: boolean } {
+function isAttemptLogSubscription(message: unknown): message is { type: 'attempt_log_subscribe'; attemptId: number; after: number; replay?: boolean } {
   if (typeof message !== 'object' || message === null) return false;
   const type = Reflect.get(message, 'type');
-  const runId = Reflect.get(message, 'runId');
+  const attemptId = Reflect.get(message, 'attemptId');
   const after = Reflect.get(message, 'after');
   const replay = Reflect.get(message, 'replay');
-  return type === 'run_log_subscribe' && typeof runId === 'number' && Number.isInteger(runId) && typeof after === 'number' && Number.isInteger(after) && after >= 0 && (replay === undefined || typeof replay === 'boolean');
+  return type === 'attempt_log_subscribe' && typeof attemptId === 'number' && Number.isInteger(attemptId) && typeof after === 'number' && Number.isInteger(after) && after >= 0 && (replay === undefined || typeof replay === 'boolean');
 }

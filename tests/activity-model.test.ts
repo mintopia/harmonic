@@ -20,10 +20,10 @@ import {
   tokensPerSecond,
   usageTotalTokens,
 } from '../web/src/activity-model.js';
-import type { ActivityProcess, Cost, RunUsage, RunUsageEvent } from '../web/src/types.js';
+import type { ActivityProcess, Cost, AttemptUsage, AttemptUsageEvent } from '../web/src/types.js';
 
-/** A RunUsage with a single-model total; `null` totals model the pre-first-token state. */
-function usage(total: number | null, extra: Partial<RunUsage> = {}): RunUsage {
+/** A AttemptUsage with a single-model total; `null` totals model the pre-first-token state. */
+function usage(total: number | null, extra: Partial<AttemptUsage> = {}): AttemptUsage {
   return {
     models: {},
     totals:
@@ -38,8 +38,8 @@ function usage(total: number | null, extra: Partial<RunUsage> = {}): RunUsage {
 
 function proc(over: Partial<ActivityProcess> = {}): ActivityProcess {
   return {
-    type: 'run',
-    runId: 1,
+    type: 'attempt',
+    attemptId: 1,
     conversationId: null,
     taskId: 10,
     title: 'A task',
@@ -103,23 +103,23 @@ describe('attentionTier', () => {
 
 describe('rankActivity', () => {
   it('orders needs-you before high-load before steady, then by fill desc, then oldest first', () => {
-    const steady = proc({ runId: 1, contextTokens: 10_000, contextWindow: 200_000 });
-    const highA = proc({ runId: 2, contextTokens: 160_000, contextWindow: 200_000, startedAt: 500 });
-    const highB = proc({ runId: 3, contextTokens: 190_000, contextWindow: 200_000, startedAt: 400 });
-    const needs = proc({ runId: 4, escalated: true });
+    const steady = proc({ attemptId: 1, contextTokens: 10_000, contextWindow: 200_000 });
+    const highA = proc({ attemptId: 2, contextTokens: 160_000, contextWindow: 200_000, startedAt: 500 });
+    const highB = proc({ attemptId: 3, contextTokens: 190_000, contextWindow: 200_000, startedAt: 400 });
+    const needs = proc({ attemptId: 4, escalated: true });
     const ranked = rankActivity([steady, highA, highB, needs]);
-    expect(ranked.map((p) => p.runId)).toEqual([4, 3, 2, 1]);
+    expect(ranked.map((p) => p.attemptId)).toEqual([4, 3, 2, 1]);
   });
 
   it('within a tier, the longer-running process (older startedAt) leads on a fill tie', () => {
-    const older = proc({ runId: 1, startedAt: 100, contextTokens: null, contextWindow: null });
-    const newer = proc({ runId: 2, startedAt: 900, contextTokens: null, contextWindow: null });
+    const older = proc({ attemptId: 1, startedAt: 100, contextTokens: null, contextWindow: null });
+    const newer = proc({ attemptId: 2, startedAt: 900, contextTokens: null, contextWindow: null });
     const ranked = rankActivity([newer, older]);
-    expect(ranked.map((p) => p.runId)).toEqual([1, 2]);
+    expect(ranked.map((p) => p.attemptId)).toEqual([1, 2]);
   });
 
   it('does not mutate its input', () => {
-    const input = [proc({ runId: 1 }), proc({ runId: 2, escalated: true })];
+    const input = [proc({ attemptId: 1 }), proc({ attemptId: 2, escalated: true })];
     const copy = [...input];
     rankActivity(input);
     expect(input).toEqual(copy);
@@ -127,14 +127,14 @@ describe('rankActivity', () => {
 });
 
 describe('filterActivity', () => {
-  const run = proc({ type: 'run', runId: 1, workspaceId: 1, workspaceName: 'harmonic' });
-  const chat = proc({ type: 'chat', runId: null, conversationId: 7, workspaceId: 2, workspaceName: 'sidecar' });
+  const run = proc({ type: 'attempt', attemptId: 1, workspaceId: 1, workspaceName: 'harmonic' });
+  const chat = proc({ type: 'chat', attemptId: null, conversationId: 7, workspaceId: 2, workspaceName: 'sidecar' });
 
   it('keeps everything under the "all" type + no workspace', () => {
     expect(filterActivity([run, chat], { type: 'all', workspaceId: null })).toEqual([run, chat]);
   });
   it('narrows to Runs', () => {
-    expect(filterActivity([run, chat], { type: 'runs', workspaceId: null })).toEqual([run]);
+    expect(filterActivity([run, chat], { type: 'attempts', workspaceId: null })).toEqual([run]);
   });
   it('narrows to Chats', () => {
     expect(filterActivity([run, chat], { type: 'chats', workspaceId: null })).toEqual([chat]);
@@ -143,16 +143,16 @@ describe('filterActivity', () => {
     expect(filterActivity([run, chat], { type: 'all', workspaceId: 2 })).toEqual([chat]);
   });
   it('combines type and workspace (an empty intersection is honest)', () => {
-    expect(filterActivity([run, chat], { type: 'runs', workspaceId: 2 })).toEqual([]);
+    expect(filterActivity([run, chat], { type: 'attempts', workspaceId: 2 })).toEqual([]);
   });
 });
 
 describe('activityWorkspaces', () => {
   it('lists the distinct Workspaces present, sorted by name', () => {
     const procs = [
-      proc({ runId: 1, workspaceId: 2, workspaceName: 'sidecar' }),
-      proc({ runId: 2, workspaceId: 1, workspaceName: 'harmonic' }),
-      proc({ runId: 3, workspaceId: 2, workspaceName: 'sidecar' }),
+      proc({ attemptId: 1, workspaceId: 2, workspaceName: 'sidecar' }),
+      proc({ attemptId: 2, workspaceId: 1, workspaceName: 'harmonic' }),
+      proc({ attemptId: 3, workspaceId: 2, workspaceName: 'sidecar' }),
     ];
     expect(activityWorkspaces(procs)).toEqual([
       { id: 1, name: 'harmonic' },
@@ -170,7 +170,7 @@ describe('resolveActivityFilter', () => {
     { id: 2, name: 'sidecar' },
   ];
   it('leaves a filter with no Workspace untouched', () => {
-    const filter = { type: 'runs' as const, workspaceId: null };
+    const filter = { type: 'attempts' as const, workspaceId: null };
     expect(resolveActivityFilter(filter, workspaces)).toBe(filter);
   });
   it('keeps a Workspace filter that still matches a live Workspace', () => {
@@ -190,42 +190,42 @@ describe('resolveActivityFilter', () => {
 
 describe('sortActivity', () => {
   it('"attention" defers to rankActivity', () => {
-    const steady = proc({ runId: 1, contextTokens: 10_000, contextWindow: 200_000 });
-    const needs = proc({ runId: 2, escalated: true });
+    const steady = proc({ attemptId: 1, contextTokens: 10_000, contextWindow: 200_000 });
+    const needs = proc({ attemptId: 2, escalated: true });
     expect(sortActivity([steady, needs], 'attention', 0)).toEqual(rankActivity([steady, needs]));
   });
 
   it('"cost" orders by priced total desc, with the Needs-you tier pinned above', () => {
-    const cheap = proc({ runId: 1, cost: { totalUsd: 0.1, byModel: {}, incomplete: false } });
-    const dear = proc({ runId: 2, cost: { totalUsd: 9.0, byModel: {}, incomplete: false } });
-    const needsCheap = proc({ runId: 3, escalated: true, cost: { totalUsd: 0.01, byModel: {}, incomplete: false } });
+    const cheap = proc({ attemptId: 1, cost: { totalUsd: 0.1, byModel: {}, incomplete: false } });
+    const dear = proc({ attemptId: 2, cost: { totalUsd: 9.0, byModel: {}, incomplete: false } });
+    const needsCheap = proc({ attemptId: 3, escalated: true, cost: { totalUsd: 0.01, byModel: {}, incomplete: false } });
     // Escalated row stays on top even though it is the cheapest.
-    expect(sortActivity([cheap, dear, needsCheap], 'cost', 0).map((p) => p.runId)).toEqual([3, 2, 1]);
+    expect(sortActivity([cheap, dear, needsCheap], 'cost', 0).map((p) => p.attemptId)).toEqual([3, 2, 1]);
   });
 
   it('"tokens" orders by total tokens desc, unknown last', () => {
-    const many = proc({ runId: 1, usage: usage(9000) });
-    const few = proc({ runId: 2, usage: usage(100) });
-    const none = proc({ runId: 3, usage: usage(null) });
-    expect(sortActivity([few, none, many], 'tokens', 0).map((p) => p.runId)).toEqual([1, 2, 3]);
+    const many = proc({ attemptId: 1, usage: usage(9000) });
+    const few = proc({ attemptId: 2, usage: usage(100) });
+    const none = proc({ attemptId: 3, usage: usage(null) });
+    expect(sortActivity([few, none, many], 'tokens', 0).map((p) => p.attemptId)).toEqual([1, 2, 3]);
   });
 
   it('"context" orders by fill desc, unconfigured window last', () => {
-    const full = proc({ runId: 1, contextTokens: 180_000, contextWindow: 200_000 });
-    const light = proc({ runId: 2, contextTokens: 20_000, contextWindow: 200_000 });
-    const unknown = proc({ runId: 3, contextTokens: null, contextWindow: null });
-    expect(sortActivity([light, unknown, full], 'context', 0).map((p) => p.runId)).toEqual([1, 2, 3]);
+    const full = proc({ attemptId: 1, contextTokens: 180_000, contextWindow: 200_000 });
+    const light = proc({ attemptId: 2, contextTokens: 20_000, contextWindow: 200_000 });
+    const unknown = proc({ attemptId: 3, contextTokens: null, contextWindow: null });
+    expect(sortActivity([light, unknown, full], 'context', 0).map((p) => p.attemptId)).toEqual([1, 2, 3]);
   });
 
   it('"elapsed" orders by longest-running first', () => {
-    const old = proc({ runId: 1, startedAt: 100 });
-    const mid = proc({ runId: 2, startedAt: 500 });
-    const fresh = proc({ runId: 3, startedAt: 900 });
-    expect(sortActivity([fresh, old, mid], 'elapsed', 1_000).map((p) => p.runId)).toEqual([1, 2, 3]);
+    const old = proc({ attemptId: 1, startedAt: 100 });
+    const mid = proc({ attemptId: 2, startedAt: 500 });
+    const fresh = proc({ attemptId: 3, startedAt: 900 });
+    expect(sortActivity([fresh, old, mid], 'elapsed', 1_000).map((p) => p.attemptId)).toEqual([1, 2, 3]);
   });
 
   it('does not mutate its input', () => {
-    const input = [proc({ runId: 1, escalated: true }), proc({ runId: 2 })];
+    const input = [proc({ attemptId: 1, escalated: true }), proc({ attemptId: 2 })];
     const copy = [...input];
     sortActivity(input, 'cost', 0);
     expect(input).toEqual(copy);
@@ -238,31 +238,31 @@ describe('sortActivity', () => {
 
 describe('activitySections', () => {
   it('under "attention", groups into non-empty tier bands with Needs-you pinned', () => {
-    const steady = proc({ runId: 1, contextTokens: 10_000, contextWindow: 200_000 });
-    const needs = proc({ runId: 2, escalated: true });
+    const steady = proc({ attemptId: 1, contextTokens: 10_000, contextWindow: 200_000 });
+    const needs = proc({ attemptId: 2, escalated: true });
     const sections = activitySections([steady, needs], 'attention', 0);
     expect(sections.map((s) => s.key)).toEqual(['needs-you', 'steady']); // high-load empty → dropped
     expect(sections[0]!.pinned).toBe(true);
-    expect(sections[0]!.rows.map((p) => p.runId)).toEqual([2]);
+    expect(sections[0]!.rows.map((p) => p.attemptId)).toEqual([2]);
   });
 
   it('under a metric sort, pins Needs-you above one sorted section', () => {
-    const dear = proc({ runId: 1, cost: { totalUsd: 9, byModel: {}, incomplete: false } });
-    const cheap = proc({ runId: 2, cost: { totalUsd: 1, byModel: {}, incomplete: false } });
-    const needs = proc({ runId: 3, escalated: true, cost: { totalUsd: 0.01, byModel: {}, incomplete: false } });
+    const dear = proc({ attemptId: 1, cost: { totalUsd: 9, byModel: {}, incomplete: false } });
+    const cheap = proc({ attemptId: 2, cost: { totalUsd: 1, byModel: {}, incomplete: false } });
+    const needs = proc({ attemptId: 3, escalated: true, cost: { totalUsd: 0.01, byModel: {}, incomplete: false } });
     const sections = activitySections([cheap, dear, needs], 'cost', 0);
     expect(sections.map((s) => s.key)).toEqual(['needs-you', 'sorted']);
     expect(sections[0]!.pinned).toBe(true);
-    expect(sections[0]!.rows.map((p) => p.runId)).toEqual([3]);
-    expect(sections[1]!.rows.map((p) => p.runId)).toEqual([1, 2]); // dear before cheap
+    expect(sections[0]!.rows.map((p) => p.attemptId)).toEqual([3]);
+    expect(sections[1]!.rows.map((p) => p.attemptId)).toEqual([1, 2]); // dear before cheap
   });
 
   it('under a metric sort with no escalations, is a single sorted section', () => {
-    const dear = proc({ runId: 1, cost: { totalUsd: 9, byModel: {}, incomplete: false } });
-    const cheap = proc({ runId: 2, cost: { totalUsd: 1, byModel: {}, incomplete: false } });
+    const dear = proc({ attemptId: 1, cost: { totalUsd: 9, byModel: {}, incomplete: false } });
+    const cheap = proc({ attemptId: 2, cost: { totalUsd: 1, byModel: {}, incomplete: false } });
     const sections = activitySections([cheap, dear], 'cost', 0);
     expect(sections.map((s) => s.key)).toEqual(['sorted']);
-    expect(sections[0]!.rows.map((p) => p.runId)).toEqual([1, 2]);
+    expect(sections[0]!.rows.map((p) => p.attemptId)).toEqual([1, 2]);
   });
 
   it('an empty fleet has no sections', () => {
@@ -276,7 +276,7 @@ describe('usageTotalTokens', () => {
     expect(usageTotalTokens(usage(4200))).toBe(4200);
   });
   it('sums the four counters when totalTokens is null', () => {
-    const u: RunUsage = {
+    const u: AttemptUsage = {
       models: {},
       totals: { inputTokens: 10, outputTokens: 20, cacheReadTokens: 30, cacheWriteTokens: 40, totalTokens: null },
       toolCalls: {},
@@ -337,8 +337,8 @@ describe('sumCosts', () => {
 });
 
 describe('mergeRunUsage', () => {
-  const event = (over: Partial<RunUsageEvent> = {}): RunUsageEvent => ({
-    runId: 2,
+  const event = (over: Partial<AttemptUsageEvent> = {}): AttemptUsageEvent => ({
+    attemptId: 2,
     usage: usage(9999),
     contextTokens: 123,
     activity: 'Editing foo.ts',
@@ -348,38 +348,38 @@ describe('mergeRunUsage', () => {
   });
 
   it('updates the matching Run row in place (usage, context, activity, tree, cost)', () => {
-    const before = [proc({ runId: 1 }), proc({ runId: 2, activity: null, contextTokens: null })];
+    const before = [proc({ attemptId: 1 }), proc({ attemptId: 2, activity: null, contextTokens: null })];
     const after = mergeRunUsage(before, event());
-    const merged = after.find((p) => p.runId === 2)!;
+    const merged = after.find((p) => p.attemptId === 2)!;
     expect(merged.activity).toBe('Editing foo.ts');
     expect(merged.contextTokens).toBe(123);
     expect(merged.cost?.totalUsd).toBe(2.0);
     expect(usageTotalTokens(merged.usage)).toBe(9999);
     // The untouched row is preserved.
-    expect(after.find((p) => p.runId === 1)!.activity).toBeNull();
+    expect(after.find((p) => p.attemptId === 1)!.activity).toBeNull();
   });
 
   it('returns the same array reference when no row matches (no needless re-render)', () => {
-    const before = [proc({ runId: 1 })];
-    expect(mergeRunUsage(before, event({ runId: 99 }))).toBe(before);
+    const before = [proc({ attemptId: 1 })];
+    expect(mergeRunUsage(before, event({ attemptId: 99 }))).toBe(before);
   });
 
   it('never targets a chat row that happens to share the id space', () => {
-    const chat = proc({ type: 'chat', runId: null, conversationId: 2, activity: null });
+    const chat = proc({ type: 'chat', attemptId: null, conversationId: 2, activity: null });
     const input = [chat];
-    const after = mergeRunUsage(input, event({ runId: 2 }));
-    expect(after).toBe(input); // no Run matched (a chat has no runId) → same reference
+    const after = mergeRunUsage(input, event({ attemptId: 2 }));
+    expect(after).toBe(input); // no Run matched (a chat has no attemptId) → same reference
     expect(after[0]!.activity).toBeNull(); // chat untouched
   });
 
   it('preserves the object reference of every unchanged Run row (lets React.memo skip them)', () => {
-    const r1 = proc({ runId: 1 });
-    const r2 = proc({ runId: 2, activity: null });
+    const r1 = proc({ attemptId: 1 });
+    const r2 = proc({ attemptId: 2, activity: null });
     const before = [r1, r2];
-    const after = mergeRunUsage(before, event({ runId: 2 }));
+    const after = mergeRunUsage(before, event({ attemptId: 2 }));
     expect(after).not.toBe(before); // a match rebuilds the array
-    expect(after.find((p) => p.runId === 1)!).toBe(r1); // untouched row keeps its identity
-    expect(after.find((p) => p.runId === 2)!).not.toBe(r2); // only the matched row is a new object
+    expect(after.find((p) => p.attemptId === 1)!).toBe(r1); // untouched row keeps its identity
+    expect(after.find((p) => p.attemptId === 2)!).not.toBe(r2); // only the matched row is a new object
   });
 });
 
@@ -387,9 +387,9 @@ describe('activitySummary', () => {
   it('counts running Runs, needs-you rows, fleet cost, tok/s, and ceiling usage', () => {
     const now = 4_000;
     const procs = [
-      proc({ runId: 1, type: 'run', startedAt: 1_000, usage: usage(6000), cost: { totalUsd: 1, byModel: {}, incomplete: false } }),
-      proc({ runId: 2, type: 'run', escalated: true, startedAt: 2_000, usage: usage(3000), cost: { totalUsd: null, byModel: {}, incomplete: true } }),
-      proc({ type: 'chat', runId: null, conversationId: 5, startedAt: 2_000, usage: usage(3000), cost: { totalUsd: 0.5, byModel: {}, incomplete: false } }),
+      proc({ attemptId: 1, type: 'attempt', startedAt: 1_000, usage: usage(6000), cost: { totalUsd: 1, byModel: {}, incomplete: false } }),
+      proc({ attemptId: 2, type: 'attempt', escalated: true, startedAt: 2_000, usage: usage(3000), cost: { totalUsd: null, byModel: {}, incomplete: true } }),
+      proc({ type: 'chat', attemptId: null, conversationId: 5, startedAt: 2_000, usage: usage(3000), cost: { totalUsd: 0.5, byModel: {}, incomplete: false } }),
     ];
     const s = activitySummary(procs, 4, now);
     expect(s.runningCount).toBe(2); // two Runs; the chat is not a Run

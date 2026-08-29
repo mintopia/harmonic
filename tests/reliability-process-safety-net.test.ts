@@ -7,10 +7,10 @@ import {
 } from '../src/reliability/process-safety-net.js';
 
 describe('rejectionContext', () => {
-  it('pulls numeric taskId/runId off the rejected value', () => {
-    expect(rejectionContext(Object.assign(new Error('boom'), { taskId: 7, runId: 42 }))).toEqual({
+  it('pulls numeric taskId/attemptId off the rejected value', () => {
+    expect(rejectionContext(Object.assign(new Error('boom'), { taskId: 7, attemptId: 42 }))).toEqual({
       taskId: 7,
-      runId: 42,
+      attemptId: 42,
     });
   });
 
@@ -31,11 +31,11 @@ describe('installProcessSafetyNet', () => {
       onUnhandledRejection: (reason, context) => seen.push({ reason, context }),
     });
     try {
-      const reason = Object.assign(new Error('append failed'), { taskId: 3, runId: 9 });
+      const reason = Object.assign(new Error('append failed'), { taskId: 3, attemptId: 9 });
       target.emit('unhandledRejection', reason);
       expect(seen).toHaveLength(1);
       expect(seen[0]!.reason).toBe(reason);
-      expect(seen[0]!.context).toEqual({ taskId: 3, runId: 9 });
+      expect(seen[0]!.context).toEqual({ taskId: 3, attemptId: 9 });
     } finally {
       uninstall();
     }

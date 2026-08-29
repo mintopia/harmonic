@@ -15,7 +15,7 @@ import { logger } from '../logger.js';
 
 export interface RejectionContext {
   taskId?: number;
-  runId?: number;
+  attemptId?: number;
 }
 
 /** The slice of `process` this needs, so tests can inject a bare emitter. */
@@ -34,10 +34,10 @@ export interface ProcessSafetyNetOptions {
 /** Pull Run/Task ids off a rejected value when it carries them. */
 export function rejectionContext(reason: unknown): RejectionContext {
   if (typeof reason !== 'object' || reason === null) return {};
-  const { taskId, runId } = reason as { taskId?: unknown; runId?: unknown };
+  const { taskId, attemptId } = reason as { taskId?: unknown; attemptId?: unknown };
   return {
     ...(typeof taskId === 'number' ? { taskId } : {}),
-    ...(typeof runId === 'number' ? { runId } : {}),
+    ...(typeof attemptId === 'number' ? { attemptId } : {}),
   };
 }
 

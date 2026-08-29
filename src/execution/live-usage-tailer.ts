@@ -1,4 +1,4 @@
-import type { RunUsageSnapshot } from './usage.js';
+import type { AttemptUsageSnapshot } from './usage.js';
 
 /** Push cadence (~1s) and persist cadence (~10s) are deliberately decoupled
  * (ADR 0010): a smooth UI stream, a lazy DB write. */
@@ -11,11 +11,11 @@ export interface TailerHooks {
   /** Advance the run's incremental reader and return its freshest snapshot;
    *  null when nothing to read yet. Async (#217): the read is off the event
    *  loop, so a growing log never blocks the tick. */
-  sample: (runId: number) => Promise<RunUsageSnapshot | null>;
-  /** Broadcast the snapshot as a `run_usage` firehose event. */
-  emit: (runId: number, snapshot: RunUsageSnapshot) => void;
+  sample: (runId: number) => Promise<AttemptUsageSnapshot | null>;
+  /** Broadcast the snapshot as a `attempt_usage` firehose event. */
+  emit: (runId: number, snapshot: AttemptUsageSnapshot) => void;
   /** Overwrite the run row's persisted snapshot. */
-  persist: (runId: number, snapshot: RunUsageSnapshot) => void;
+  persist: (runId: number, snapshot: AttemptUsageSnapshot) => void;
 }
 
 interface Tail {

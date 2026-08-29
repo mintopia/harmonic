@@ -52,10 +52,10 @@ type ModelUsage = { inputTokens: number; outputTokens: number; cacheReadTokens: 
 interface Stats {
   from: number;
   to: number;
-  runCount: number;
-  runsByState: Record<string, number>;
+  attemptCount: number;
+  attemptsByState: Record<string, number>;
   /** Failed-only Run count (cancelled excluded); the honest failure-rate numerator. */
-  failedRuns: number;
+  failedAttempts: number;
   /** Execution failures bucketed by winning terminal disposition; empty when nothing failed. */
   failuresByReason: Record<string, number>;
   /** p50 / p95 active-execution duration (ms); null when no run has a measurable duration. */
@@ -78,7 +78,7 @@ const RANGES: Record<string, number | null> = {
   'All time': null,
 };
 
-const METRICS: Record<string, StatMetric> = { USD: 'usd', Tokens: 'tokens', Runs: 'runs' };
+const METRICS: Record<string, StatMetric> = { USD: 'usd', Tokens: 'tokens', Attempts: 'attempts' };
 
 const fmt = (n: number) => n.toLocaleString();
 const compact = new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 });
@@ -164,8 +164,8 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
   const share = stats ? subagentShare(stats.agents) : null;
   const pct = (r: number | null) => (r == null ? '—' : `${Math.round(r * 100)}%`);
   const cacheHit = stats ? cacheHitRate(stats.totals) : null;
-  const failRate = stats ? failureRate(stats.failedRuns, stats.runCount) : null;
-  const avgCostText = stats ? formatAvgCostPerRun(stats.cost, stats.runCount) : null;
+  const failRate = stats ? failureRate(stats.failedAttempts, stats.attemptCount) : null;
+  const avgCostText = stats ? formatAvgCostPerRun(stats.cost, stats.attemptCount) : null;
   const medDuration = stats?.durationMs ? fmtDuration(stats.durationMs.p50) : null;
   const modelBars: Bar[] = stats
     ? usageBars(stats.models).map((b) => {
@@ -186,7 +186,7 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
         .sort((a, b) => b.value - a.value)
     : [];
   const reliabilitySegments: DonutSegment[] = stats
-    ? reliabilityStates(stats.runsByState, stats.failedRuns).map(({ state, count }) => ({
+    ? reliabilityStates(stats.attemptsByState, stats.failedAttempts).map(({ state, count }) => ({
         key: state,
         label: state,
         value: count,
@@ -241,8 +241,8 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
     stats && stats.series.length > 0
       ? Math.max(1, Math.round((stats.series[stats.series.length - 1]!.day - stats.series[0]!.day) / DAY_MS) + 1)
       : 0;
-  const failsPerDay = dataDays > 0 ? stats!.failedRuns / dataDays : null;
-  const cancelledRuns = stats?.runsByState.cancelled ?? 0;
+  const failsPerDay = dataDays > 0 ? stats!.failedAttempts / dataDays : null;
+  const cancelledRuns = stats?.attemptsByState.cancelled ?? 0;
   const durP50 = stats?.durationMs ? fmtDuration(stats.durationMs.p50) : null;
   const durP95 = stats?.durationMs ? fmtDuration(stats.durationMs.p95) : null;
   const failsTotal = filled.reduce((sum, s) => sum + (s.fails ?? 0), 0);
@@ -266,14 +266,14 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
 
       {!stats && !error && <div className={`${card} p-5 text-muted`}>Loading…</div>}
 
-      {stats && stats.runCount === 0 && (
+      {stats && stats.attemptCount === 0 && (
         <EmptyState title="No runs to chart yet">
           Cost, tokens, and the per-model breakdown appear here once an agent has run. If you’ve run
           tasks before, try a wider range.
         </EmptyState>
       )}
 
-      {stats && stats.runCount > 0 && (
+      {stats && stats.attemptCount > 0 && (
         <>
           <div className="mb-5">
             <StatLabel>Cost · {range}</StatLabel>
@@ -285,7 +285,7 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
           </div>
 
           <div className={`${card} mb-4 grid grid-cols-2 gap-x-6 gap-y-5 p-5 sm:grid-cols-3 lg:grid-cols-5`}>
-            <SummaryCell label="Runs" value={fmt(stats.runCount)} />
+            <SummaryCell label="Attempts" value={fmt(stats.attemptCount)} />
             <SummaryCell label="Tokens in" value={stats.totals ? compact.format(stats.totals.inputTokens) : '—'} />
             <SummaryCell label="Tokens out" value={stats.totals ? compact.format(stats.totals.outputTokens) : '—'} />
             <SummaryCell label="Cache read" value={stats.totals ? compact.format(stats.totals.cacheReadTokens) : '—'} />
@@ -317,7 +317,7 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
           <section className={`${card} mb-4 p-5`}>
             <h2 className="mb-4 text-title font-semibold">Reliability</h2>
             <div className="grid gap-6 md:grid-cols-2">
-              <Donut segments={reliabilitySegments} total={stats.runCount} ariaLabel="Runs by outcome" />
+              <Donut segments={reliabilitySegments} total={stats.attemptCount} ariaLabel="Attempts by outcome" />
               <div className="grid grid-cols-2 gap-x-6 gap-y-5 self-start sm:grid-cols-3">
                 <SummaryCell label="Failure rate" value={pct(failRate)} />
                 <SummaryCell

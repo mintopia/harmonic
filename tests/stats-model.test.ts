@@ -3,7 +3,7 @@ import {
   cacheHitRate,
   failureRate,
   orderedFailureReasons,
-  orderedRunStates,
+  orderedAttemptStates,
   reliabilityStates,
   subagentShare,
   usageBars,
@@ -104,10 +104,10 @@ describe('formatAvgCostPerRun', () => {
   });
 });
 
-describe('orderedRunStates', () => {
+describe('orderedAttemptStates', () => {
   it('orders known states by the canonical Run-state order, not object-key order', () => {
-    const runsByState = { failed: 1, completed: 3, running: 2 };
-    expect(orderedRunStates(runsByState)).toEqual([
+    const attemptsByState = { failed: 1, completed: 3, running: 2 };
+    expect(orderedAttemptStates(attemptsByState)).toEqual([
       { state: 'running', count: 2 },
       { state: 'completed', count: 3 },
       { state: 'failed', count: 1 },
@@ -115,16 +115,16 @@ describe('orderedRunStates', () => {
   });
 
   it('drops zero-count states', () => {
-    const runsByState = { running: 0, completed: 5, failed: 0, cancelled: 2 };
-    expect(orderedRunStates(runsByState)).toEqual([
+    const attemptsByState = { running: 0, completed: 5, failed: 0, cancelled: 2 };
+    expect(orderedAttemptStates(attemptsByState)).toEqual([
       { state: 'completed', count: 5 },
       { state: 'cancelled', count: 2 },
     ]);
   });
 
   it('appends unknown states after the known ones, in input order, dropping zeros', () => {
-    const runsByState = { zeta: 4, running: 1, alpha: 0, completed: 2 };
-    expect(orderedRunStates(runsByState)).toEqual([
+    const attemptsByState = { zeta: 4, running: 1, alpha: 0, completed: 2 };
+    expect(orderedAttemptStates(attemptsByState)).toEqual([
       { state: 'running', count: 1 },
       { state: 'completed', count: 2 },
       { state: 'zeta', count: 4 },
@@ -132,11 +132,11 @@ describe('orderedRunStates', () => {
   });
 
   it('returns [] for empty input', () => {
-    expect(orderedRunStates({})).toEqual([]);
+    expect(orderedAttemptStates({})).toEqual([]);
   });
 
   it('returns [] when every state has a zero count', () => {
-    expect(orderedRunStates({ failed: 0, running: 0 })).toEqual([]);
+    expect(orderedAttemptStates({ failed: 0, running: 0 })).toEqual([]);
   });
 });
 

@@ -40,7 +40,7 @@ const task = (id: number, state: TaskState = 'ready', extra: Partial<Task> = {})
   stat: null,
   runStartedAt: null,
   toolCount: null,
-  runId: null,
+  attemptId: null,
   currentStep: null,
   contextTokens: null,
   contextWindow: null,

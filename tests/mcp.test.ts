@@ -130,19 +130,19 @@ describe('mcp server & scoped keys', () => {
     await expect(mcpClient(server, 'adk_bogus', { queryToken: token })).rejects.toThrow();
   });
 
-  it('injects a Run Key and the MCP endpoint into the harness env, deleting the key after the run', async () => {
+  it('injects a Attempt Key and the MCP endpoint into the harness env, deleting the key after the run', async () => {
     const created = await server.api('POST', '/api/tasks', {
       prompt: JSON.stringify({ echoEnv: ['HARMONIC_API_KEY', 'HARMONIC_MCP_URL'] }),
     });
     const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
     await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'done');
 
-    // Run Keys are never listed, and the row is deleted once the run finished (issue 16).
+    // Attempt Keys are never listed, and the row is deleted once the run finished (issue 16).
     const keys = await server.api('GET', '/api/keys');
-    expect(keys.body.keys.find((k: any) => k.runId === started.body.id)).toBeUndefined();
+    expect(keys.body.keys.find((k: any) => k.attemptId === started.body.id)).toBeUndefined();
   });
 
-  it('codex: registers the MCP server via session/new mcpServers with the Run Key as bearer (zero setup)', async () => {
+  it('codex: registers the MCP server via session/new mcpServers with the Attempt Key as bearer (zero setup)', async () => {
     // Spike (issue 22): codex-acp honors HTTP mcpServers with headers; env
     // vars alone are not enough since nothing tells Codex to read them.
     const codexServer = await startServer(stubHarness('codex'));

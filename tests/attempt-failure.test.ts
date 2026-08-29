@@ -3,8 +3,8 @@ import {
   failureReasonKey,
   failuresByReason,
   isExecutionFailure,
-  type FailedRun,
-} from '../src/domain/run-failure.js';
+  type FailedAttempt,
+} from '../src/domain/attempt-failure.js';
 
 describe('isExecutionFailure', () => {
   it('counts a failed Run as an execution failure', () => {
@@ -20,29 +20,29 @@ describe('isExecutionFailure', () => {
 
 describe('failureReasonKey', () => {
   it("uses the Attempt's disposition-kind reason when present (ADR-0001 #388 S-E)", () => {
-    expect(failureReasonKey({ attemptReason: 'escalate', runReason: 'boom' })).toBe('escalate');
-    expect(failureReasonKey({ attemptReason: 'guardrail-trip', runReason: null })).toBe('guardrail-trip');
+    expect(failureReasonKey({ attemptReason: 'escalate', detailReason: 'boom' })).toBe('escalate');
+    expect(failureReasonKey({ attemptReason: 'guardrail-trip', detailReason: null })).toBe('guardrail-trip');
   });
 
   it("folds an 'interrupted' reason into process-death when no Attempt disposition exists", () => {
-    expect(failureReasonKey({ attemptReason: null, runReason: 'interrupted' })).toBe('process-death');
+    expect(failureReasonKey({ attemptReason: null, detailReason: 'interrupted' })).toBe('process-death');
   });
 
   it('buckets any other free-text reason as a generic error, and a bare failure as unknown', () => {
-    expect(failureReasonKey({ attemptReason: null, runReason: 'some unique error message' })).toBe('failed');
-    expect(failureReasonKey({ attemptReason: null, runReason: null })).toBe('unknown');
+    expect(failureReasonKey({ attemptReason: null, detailReason: 'some unique error message' })).toBe('failed');
+    expect(failureReasonKey({ attemptReason: null, detailReason: null })).toBe('unknown');
   });
 });
 
 describe('failuresByReason', () => {
   it('counts execution failures by reason bucket, collapsing free text via the Attempt disposition', () => {
-    const failures: FailedRun[] = [
-      { attemptReason: 'failed', runReason: 'epic branch missing' },
-      { attemptReason: 'failed', runReason: 'a totally different message' },
-      { attemptReason: 'process-death', runReason: 'interrupted' },
-      { attemptReason: null, runReason: 'interrupted' },
-      { attemptReason: 'guardrail-trip', runReason: 'budget: 60m' },
-      { attemptReason: null, runReason: null },
+    const failures: FailedAttempt[] = [
+      { attemptReason: 'failed', detailReason: 'epic branch missing' },
+      { attemptReason: 'failed', detailReason: 'a totally different message' },
+      { attemptReason: 'process-death', detailReason: 'interrupted' },
+      { attemptReason: null, detailReason: 'interrupted' },
+      { attemptReason: 'guardrail-trip', detailReason: 'budget: 60m' },
+      { attemptReason: null, detailReason: null },
     ];
     expect(failuresByReason(failures)).toEqual({
       failed: 2, // two distinct error messages collapse into one disposition bucket

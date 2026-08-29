@@ -34,7 +34,7 @@ export class BranchRetirementCoordinator {
     private readonly onError: (message: string) => void = logger.error,
   ) {}
 
-  async onRunSettled(task: BranchTask, run: BranchAttempt): Promise<void> {
+  async onAttemptSettled(task: BranchTask, run: BranchAttempt): Promise<void> {
     if (run.state === 'running' || task.isolationMode !== 'worktree' || run.branch == null || !isRetirableTask(task)) return;
     const retainedBranch = await this.git.symbolicBranch(task.workingDir);
     if (retainedBranch === null) return;
@@ -46,7 +46,7 @@ export class BranchRetirementCoordinator {
     await forEachYielding(await this.attempts.listAll(), async (attempt) => {
       if (attempt.state === 'running') return;
       try {
-        await this.onRunSettled(await this.tasks.get(attempt.taskId), attempt);
+        await this.onAttemptSettled(await this.tasks.get(attempt.taskId), attempt);
       } catch (err) {
         this.onError(`attempt ${attempt.id} branch retirement failed: ${String(err)}`);
       }

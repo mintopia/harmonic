@@ -7,12 +7,12 @@ import type { ActivityProcess } from '../web/src/types.js';
 
 const usage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
 
-function process(runId: number, title: string): ActivityProcess {
+function process(attemptId: number, title: string): ActivityProcess {
   return {
-    type: 'run',
-    runId,
+    type: 'attempt',
+    attemptId,
     conversationId: null,
-    taskId: runId,
+    taskId: attemptId,
     title,
     workspaceId: 1,
     workspaceName: 'Workspace',
@@ -29,7 +29,7 @@ function process(runId: number, title: string): ActivityProcess {
     contextWindow: null,
     activity: null,
     tree: {
-      id: `session-${runId}`,
+      id: `session-${attemptId}`,
       name: title,
       model: 'claude-test',
       usage,

@@ -39,7 +39,7 @@ describe('dispatching a Run persists a durable Session (issue #141)', () => {
     const taskId = created.body.id;
     const started = await server.api('POST', `/api/tasks/${taskId}/run`);
     expect(started.status).toBe(201);
-    const runId = started.body.id;
+    const attemptId = started.body.id;
 
     // --- Behaviour unchanged (AC 5): the Run still reaches the same
     // terminal state the plain execution test expects for this scenario shape. ---
@@ -48,14 +48,14 @@ describe('dispatching a Run persists a durable Session (issue #141)', () => {
       return body.state === 'done' ? body : undefined;
     });
     expect(task.state).toBe('done');
-    const runApi = (await server.api('GET', `/api/attempts/${runId}`)).body;
+    const runApi = (await server.api('GET', `/api/attempts/${attemptId}`)).body;
     expect(runApi).toMatchObject({ taskId, number: 1, state: 'completed', stopReason: 'end_turn' });
 
     // --- The rest reads the durable rows directly (sessionRowId/session
     // internals aren't on the public Run API — same pattern execution.test.ts
     // uses to read guardrail_events straight off `server.app.ctx.db`). ---
     const asyncDb = server.app.ctx.asyncDb;
-    const runRow = (await asyncDb.read((d) => d.select().from(attempts).where(eq(attempts.id, runId)).get()))!;
+    const runRow = (await asyncDb.read((d) => d.select().from(attempts).where(eq(attempts.id, attemptId)).get()))!;
     const workspace = (await asyncDb.read((d) => d.select().from(workspaces).get()))!;
 
     // AC 2: the Run is bound to its Session.
@@ -81,7 +81,7 @@ describe('dispatching a Run persists a durable Session (issue #141)', () => {
     expect(allSessions).toHaveLength(1);
 
     // AC 3: mcpTemplates is credential-free. The test server always mints a
-    // real Run Key and wires it into ACP session/new mcpServers (runner.ts:
+    // real Attempt Key and wires it into ACP session/new mcpServers (runner.ts:
     // `this.keys && this.mcpUrl` — both set once `startServer` has called
     // `listen()`), so this scenario genuinely exercised a credentialed
     // mcpServers list end-to-end; the stored template must not carry it.

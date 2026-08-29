@@ -7,7 +7,7 @@ import { adapterFor, type ModelUsage } from './harness/adapter.js';
 
 export type { ModelUsage };
 
-export interface RunUsage {
+export interface AttemptUsage {
   /** Per-model breakdown (session-log fallback; ACP only reports aggregates). */
   models: Record<string, ModelUsage>;
   /**
@@ -30,7 +30,7 @@ export interface RunUsage {
   toolCalls: Record<string, number>;
   /** The run's context-window occupancy in tokens at the time this usage was
    * recorded; absent on runs/harnesses that don't report it. The live gauge
-   * prefers the run_usage snapshot; this is the persisted fallback (issue #52). */
+   * prefers the attempt_usage snapshot; this is the persisted fallback (issue #52). */
   contextTokens?: number | null;
   source: 'acp' | 'session-log' | 'combined' | null;
 }
@@ -91,8 +91,8 @@ export type ProcessTree = ProcessNode;
  * Process Tree. Cost is derived on read (never stored), so it isn't here —
  * the firehose adds it at serialize time.
  */
-export interface RunUsageSnapshot {
-  usage: RunUsage;
+export interface AttemptUsageSnapshot {
+  usage: AttemptUsage;
   /** The root session's latest context-window fill; null when unknown. */
   contextTokens: number | null;
   /** One-line "what the agent is doing now", from the latest event; null before any. */
@@ -133,7 +133,7 @@ export interface ParsedSession {
    * than `rollUpUsage`'s dominant-model-per-node collapse, so a
    * multi-model node (Copilot's `auto` router) prices exactly.
    */
-  usage: RunUsage;
+  usage: AttemptUsage;
   tree: ProcessTree;
   /** Present only for harnesses whose native transcript exposes turn boundaries
    * and tool calls, the evidence required for honest tool attribution. */
@@ -141,14 +141,14 @@ export interface ParsedSession {
 }
 
 /**
- * Roll a Process Tree's per-node Usage up into one RunUsage, summing each
+ * Roll a Process Tree's per-node Usage up into one AttemptUsage, summing each
  * node's tokens into its model's bucket so a parent's total includes its
  * whole tree (CONTEXT.md → Usage). Keeping the per-model split means
  * `costOfUsages` prices the roll-up and flags `incomplete` for any
  * unpriced model in the tree — never a fake zero.
  */
-export function rollUpUsage(tree: ProcessTree): RunUsage {
-  const flatten = (node: ProcessNode): RunUsage[] => [
+export function rollUpUsage(tree: ProcessTree): AttemptUsage {
+  const flatten = (node: ProcessNode): AttemptUsage[] => [
     { models: { [node.model]: node.usage }, totals: null, toolCalls: {}, source: null },
     ...node.children.flatMap(flatten),
   ];
@@ -179,7 +179,7 @@ export interface CollectUsageInput {
  * Returns null when no source reported any tokens — "unavailable",
  * never a fake zero.
  */
-export function collectUsage(input: CollectUsageInput): RunUsage | null {
+export function collectUsage(input: CollectUsageInput): AttemptUsage | null {
   const collector = adapterFor(input.harnessId).usage;
   const acpTotals = totalsFromAcp(input.promptResult?.usage);
   // The harness parser rolls Subagents into the per-model split (the
@@ -240,7 +240,7 @@ export function collectUsage(input: CollectUsageInput): RunUsage | null {
 export function attributeTurnTokens(
   turns: UsageTurn[],
   prices: PriceTable = DEFAULT_PRICES,
-): Pick<RunUsage, 'toolTokens' | 'reasoning'> {
+): Pick<AttemptUsage, 'toolTokens' | 'reasoning'> {
   const toolTokens: Record<string, ToolTokenUsage> = {};
   let reasoning: ToolTokenUsage | undefined;
   const unpriced = new Set<ToolTokenUsage>();
@@ -309,7 +309,7 @@ export function agentsFromTree(tree: ProcessNode): Record<string, ModelUsage> {
 
 const num = (v: unknown): number => (typeof v === 'number' ? v : 0);
 
-function totalsFromAcp(usage: Record<string, unknown> | undefined): RunUsage['totals'] | null {
+function totalsFromAcp(usage: Record<string, unknown> | undefined): AttemptUsage['totals'] | null {
   if (!usage) return null;
   return {
     inputTokens: num(usage.inputTokens),
@@ -378,8 +378,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
-/** Wrap a per-model breakdown as a session-log-sourced RunUsage (ADR 0009). */
-export function usageFromModels(models: Record<string, ModelUsage>): RunUsage {
+/** Wrap a per-model breakdown as a session-log-sourced AttemptUsage (ADR 0009). */
+export function usageFromModels(models: Record<string, ModelUsage>): AttemptUsage {
   return { models, totals: sumModels(models), toolCalls: {}, source: 'session-log' };
 }
 
@@ -418,7 +418,7 @@ export function dominantModel(models: Record<string, ModelUsage>): string | null
   return best;
 }
 
-function sumModels(models: Record<string, ModelUsage>): RunUsage['totals'] {
+function sumModels(models: Record<string, ModelUsage>): AttemptUsage['totals'] {
   const totals: ModelUsage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
   for (const usage of Object.values(models)) {
     totals.inputTokens += usage.inputTokens;
@@ -438,7 +438,7 @@ function sumModels(models: Record<string, ModelUsage>): RunUsage['totals'] {
  * per-model split, else `null` — no telemetry at all, which the spend
  * Guardrail treats as unmeasurable rather than as zero.
  */
-export function totalTokensOf(usage: RunUsage): number | null {
+export function totalTokensOf(usage: AttemptUsage): number | null {
   if (typeof usage.totals?.totalTokens === 'number') return usage.totals.totalTokens;
   const models = Object.values(usage.models);
   if (models.length === 0) return null;
@@ -459,7 +459,7 @@ export function totalTokensOf(usage: RunUsage): number | null {
 export async function collectUsageWithRetry(
   input: CollectUsageInput,
   retry: { timeoutMs: number; intervalMs: number } = { timeoutMs: 2000, intervalMs: 100 },
-): Promise<RunUsage | null> {
+): Promise<AttemptUsage | null> {
   const deadline = Date.now() + retry.timeoutMs;
   for (;;) {
     const usage = collectUsage(input);
@@ -506,7 +506,7 @@ export function contextInputTokens(usage: Record<string, unknown> | undefined): 
  * *per-Turn*, so its totals accumulate. Tool-call tallies are always taken
  * from the full event stream, so they replace.
  */
-export function accumulateUsage(stored: RunUsage | null, turn: RunUsage | null): RunUsage | null {
+export function accumulateUsage(stored: AttemptUsage | null, turn: AttemptUsage | null): AttemptUsage | null {
   if (!turn) return stored;
   // Cumulative per-model source (session log): everything is session-to-date.
   if (Object.keys(turn.models).length > 0) return turn;
@@ -519,7 +519,7 @@ export function accumulateUsage(stored: RunUsage | null, turn: RunUsage | null):
   };
 }
 
-function addTotals(a: RunUsage['totals'], b: RunUsage['totals']): RunUsage['totals'] {
+function addTotals(a: AttemptUsage['totals'], b: AttemptUsage['totals']): AttemptUsage['totals'] {
   if (!a) return b;
   if (!b) return a;
   const sum = {
@@ -528,7 +528,7 @@ function addTotals(a: RunUsage['totals'], b: RunUsage['totals']): RunUsage['tota
     cacheReadTokens: a.cacheReadTokens + b.cacheReadTokens,
     cacheWriteTokens: a.cacheWriteTokens + b.cacheWriteTokens,
     totalTokens: a.totalTokens !== null && b.totalTokens !== null ? a.totalTokens + b.totalTokens : null,
-  } as RunUsage['totals'] & { totalTokens: number | null };
+  } as AttemptUsage['totals'] & { totalTokens: number | null };
   if (a.aiUnits !== undefined || b.aiUnits !== undefined) {
     sum.aiUnits = (a.aiUnits ?? 0) + (b.aiUnits ?? 0);
   }
@@ -536,10 +536,10 @@ function addTotals(a: RunUsage['totals'], b: RunUsage['totals']): RunUsage['tota
 }
 
 /** Merge run usages into one aggregate (task rollups, stats ranges). */
-export function mergeUsage(usages: RunUsage[]): RunUsage | null {
+export function mergeUsage(usages: AttemptUsage[]): AttemptUsage | null {
   if (usages.length === 0) return null;
-  const merged: RunUsage = { models: {}, totals: null, toolCalls: {}, source: null };
-  let totals: RunUsage['totals'] = null;
+  const merged: AttemptUsage = { models: {}, totals: null, toolCalls: {}, source: null };
+  let totals: AttemptUsage['totals'] = null;
   for (const usage of usages) {
     for (const [model, mu] of Object.entries(usage.models)) {
       const bucket = (merged.models[model] ??= {

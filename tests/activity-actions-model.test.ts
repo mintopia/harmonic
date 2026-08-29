@@ -6,8 +6,8 @@ import type { ActivityProcess, PermissionAcpRequestOption } from '../web/src/typ
 
 function proc(over: Partial<ActivityProcess> = {}): ActivityProcess {
   return {
-    type: 'run',
-    runId: 1,
+    type: 'attempt',
+    attemptId: 1,
     conversationId: null,
     taskId: 10,
     title: 'A task',
@@ -73,12 +73,12 @@ describe('activityRowActions', () => {
     const a = activityRowActions(proc({ taskId: 42, trackerUrl: 'https://x/issues/9' }));
     expect(a.resolve).toBeNull();
     expect(a.stopDemoted).toBe(false);
-    expect(a.stop).toEqual({ kind: 'run', taskId: 42 });
+    expect(a.stop).toEqual({ kind: 'attempt', taskId: 42 });
     expect(a.ticketUrl).toBe('https://x/issues/9');
   });
 
   it('an ordinary chat row: Stop ends the Conversation', () => {
-    const a = activityRowActions(proc({ type: 'chat', runId: null, taskId: null, conversationId: 5 }));
+    const a = activityRowActions(proc({ type: 'chat', attemptId: null, taskId: null, conversationId: 5 }));
     expect(a.stop).toEqual({ kind: 'chat', conversationId: 5 });
     expect(a.resolve).toBeNull();
     expect(a.stopDemoted).toBe(false);
@@ -88,12 +88,12 @@ describe('activityRowActions', () => {
     const a = activityRowActions(proc({ taskId: 42, escalated: true }));
     expect(a.resolve).toEqual({ kind: 'escalated', taskId: 42 });
     expect(a.stopDemoted).toBe(true);
-    expect(a.stop).toEqual({ kind: 'run', taskId: 42 }); // Stop stays available, just demoted
+    expect(a.stop).toEqual({ kind: 'attempt', taskId: 42 }); // Stop stays available, just demoted
   });
 
   it('a chat blocked on a pending permission resolves via Grant/Deny and demotes Stop', () => {
     const p = pending([ALLOW_ONCE, REJECT_ONCE], { conversationId: 5 });
-    const a = activityRowActions(proc({ type: 'chat', runId: null, taskId: null, conversationId: 5 }), p);
+    const a = activityRowActions(proc({ type: 'chat', attemptId: null, taskId: null, conversationId: 5 }), p);
     expect(a.resolve).toEqual({ kind: 'permission', pending: p, grantOptionId: 'a1', denyOptionId: 'r1' });
     expect(a.stopDemoted).toBe(true);
     expect(a.stop).toEqual({ kind: 'chat', conversationId: 5 });
@@ -102,7 +102,7 @@ describe('activityRowActions', () => {
   it('a pending permission outranks an escalated flag on the same row', () => {
     // (Belt-and-braces: escalated is always false for a chat, but the precedence is explicit.)
     const p = pending([ALLOW_ONCE, REJECT_ONCE], { conversationId: 5 });
-    const a = activityRowActions(proc({ type: 'chat', runId: null, taskId: null, conversationId: 5, escalated: true }), p);
+    const a = activityRowActions(proc({ type: 'chat', attemptId: null, taskId: null, conversationId: 5, escalated: true }), p);
     expect(a.resolve?.kind).toBe('permission');
   });
 

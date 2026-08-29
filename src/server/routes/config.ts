@@ -143,7 +143,7 @@ export async function configRoutes(fastify: FastifyInstance): Promise<void> {
     {
       schema: {
         tags: ['Config'],
-        description: 'Get the full effective configuration. Operator only; not reachable with a run-scoped Run Key.',
+        description: 'Get the full effective configuration. Operator only; not reachable with an attempt-scoped Attempt Key.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         response: {
           200: appConfigSchema.describe(
@@ -161,7 +161,7 @@ export async function configRoutes(fastify: FastifyInstance): Promise<void> {
       schema: {
         tags: ['Config'],
         description:
-          'Deep-merge a partial config patch onto the stored configuration. Operator only; not reachable with a run-scoped Run Key.',
+          'Deep-merge a partial config patch onto the stored configuration. Operator only; not reachable with an attempt-scoped Attempt Key.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         body: configPatchBodySchema,
         response: {
@@ -182,7 +182,7 @@ export async function configRoutes(fastify: FastifyInstance): Promise<void> {
       schema: {
         tags: ['Config'],
         description:
-          "Full-replace the stored configuration. Unlike PATCH's deep-merge, a record key omitted here (a harness env var, a price override) is deleted, not left alone — the settings UI loads the whole config, edits locally, and saves the complete object so it can delete as well as add. Validated atomically against the config schema: an invalid body is rejected with no partial write. Operator only; not reachable with a run-scoped Run Key.",
+          "Full-replace the stored configuration. Unlike PATCH's deep-merge, a record key omitted here (a harness env var, a price override) is deleted, not left alone — the settings UI loads the whole config, edits locally, and saves the complete object so it can delete as well as add. Validated atomically against the config schema: an invalid body is rejected with no partial write. Operator only; not reachable with an attempt-scoped Attempt Key.",
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         body: appConfigSchema,
         response: {

@@ -1,6 +1,6 @@
-import type { ModelUsage, RunUsage } from './usage.js';
+import type { ModelUsage, AttemptUsage } from './usage.js';
 
-/** Per-model API rates in $/Mtok — the four counters `RunUsage.models` stores. */
+/** Per-model API rates in $/Mtok — the four counters `AttemptUsage.models` stores. */
 export interface ModelPrice {
   input: number;
   output: number;
@@ -158,8 +158,8 @@ export function turnCost(model: string, usage: ModelUsage, prices: PriceTable): 
  * split) has tokens we cannot attribute, so it flags the result
  * incomplete without contributing dollars.
  */
-export function costOfUsages(usages: (RunUsage | null)[], prices: PriceTable): Cost | null {
-  const present = usages.filter((u): u is RunUsage => u !== null);
+export function costOfUsages(usages: (AttemptUsage | null)[], prices: PriceTable): Cost | null {
+  const present = usages.filter((u): u is AttemptUsage => u !== null);
   if (present.length === 0) return null;
 
   const byModel: Record<string, number | null> = {};

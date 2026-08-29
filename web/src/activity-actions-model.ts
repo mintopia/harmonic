@@ -32,7 +32,7 @@ export type ActivityResolve =
 
 /** How Stop ends a process: cancel the Run's Task (`cancelForTask` server-side) or end the Conversation. */
 export type ActivityStop =
-  | { kind: 'run'; taskId: number }
+  | { kind: 'attempt'; taskId: number }
   | { kind: 'chat'; conversationId: number };
 
 export interface ActivityRowActions {
@@ -75,9 +75,9 @@ export function activityRowActions(
   pending?: PendingPermission,
 ): ActivityRowActions {
   const stop: ActivityStop | null =
-    process.type === 'run'
+    process.type === 'attempt'
       ? process.taskId !== null
-        ? { kind: 'run', taskId: process.taskId }
+        ? { kind: 'attempt', taskId: process.taskId }
         : null
       : process.conversationId !== null
         ? { kind: 'chat', conversationId: process.conversationId }

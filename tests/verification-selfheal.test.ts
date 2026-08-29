@@ -81,15 +81,15 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
   // (ADR-0001 #388 S-F): a self-heal loop's failed attempts share one Run row
   // but each get their own Attempt row, so "this Run's verification
   // attempts" now folds the log across every Attempt of the Run's Task.
-  const attempts = async (runId: number) => {
+  const attempts = async (attemptId: number) => {
     const store = new VerificationAttemptStore(server.app.ctx.asyncDb);
-    const run = await server.app.ctx.attempts.get(runId);
+    const run = await server.app.ctx.attempts.get(attemptId);
     const taskAttempts = await server.app.ctx.attempts.listForTask(run.taskId);
     return (await Promise.all(taskAttempts.map((a) => store.list(a.id)))).flat();
   };
   const ticketAttempts = (taskId: number) => new AttemptStore(server.app.ctx.asyncDb).listForTask(taskId);
 
-  async function runWorktreeTask(prompt: unknown): Promise<{ taskId: number; runId: number }> {
+  async function runWorktreeTask(prompt: unknown): Promise<{ taskId: number; attemptId: number }> {
     const created = await server.api('POST', '/api/tasks', {
       prompt: JSON.stringify(prompt),
       workingDir: repoDir,
@@ -98,7 +98,7 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
     expect(created.status).toBe(201);
     const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
     expect(started.status).toBe(201);
-    return { taskId: created.body.id, runId: started.body.id };
+    return { taskId: created.body.id, attemptId: started.body.id };
   }
 
   it('AC1/AC2: an actionable fail creates Attempt N+1 with feedback and re-verifies', async () => {
@@ -109,7 +109,7 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
 
     // Turn 0 writes a marker the verifier rejects; attempt 2
     // overwrites it with the passing value.
-    const { taskId, runId } = await runWorktreeTask({
+    const { taskId, attemptId } = await runWorktreeTask({
       turns: [{ writeFiles: { 'marker.txt': 'bad\n' } }, { writeFiles: { 'marker.txt': 'ok\n' } }],
     });
 
@@ -131,7 +131,7 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
     // fail, then the heal's pass (not just the failed check re-run). A third
     // `pass` follows: the one merge policy's post-merge check (ADR-0001, #381)
     // re-running the same deterministic verifier against the merged tip.
-    const rows = await attempts(runId);
+    const rows = await attempts(attemptId);
     expect(rows.map((r) => r.verdict)).toEqual(['fail', 'pass', 'pass']);
     expect(rows[0]!.inputOid).not.toBe(rows[1]!.inputOid); // a fresh candidate per turn
 
@@ -222,7 +222,7 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
   it('AC4: an inconclusive verdict consumes an attempt and escalates only at the cap', async () => {
     await server.app.ctx.workspaces.update(workspaceId, { verificationCommand: [inconclusiveCommand()] });
 
-    const { taskId, runId } = await runWorktreeTask({ writeFiles: { 'marker.txt': 'anything\n' } });
+    const { taskId, attemptId } = await runWorktreeTask({ writeFiles: { 'marker.txt': 'anything\n' } });
 
     const task = await waitFor(async () => {
       const { body } = await server.api('GET', `/api/tasks/${taskId}`);
@@ -234,7 +234,7 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
     expect(run.state).toBe('failed');
 
     // The verifier runs once per Attempt and the failed Attempt retains feedback.
-    const rows = await attempts(runId);
+    const rows = await attempts(attemptId);
     expect(rows.map((row) => row.verdict)).toEqual(['inconclusive', 'inconclusive']);
     expect(await ticketAttempts(taskId)).toMatchObject([
       { number: 1, state: 'failed' },
@@ -246,7 +246,7 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
     await server.app.ctx.workspaces.update(workspaceId, { verificationCommand: [alwaysFail()] });
     await server.app.ctx.configStore.update({ maxAttempts: 2 });
 
-    const { taskId, runId } = await runWorktreeTask({ writeFiles: { 'marker.txt': 'bad\n' } });
+    const { taskId, attemptId } = await runWorktreeTask({ writeFiles: { 'marker.txt': 'bad\n' } });
 
     const run = await waitFor(async () => {
       const { body } = await server.api('GET', `/api/tasks/${taskId}/attempts/current`);
@@ -258,7 +258,7 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
     expect(task.state).toBe('escalated');
 
     // Both implementation attempts fail; no third attempt is created.
-    const rows = await attempts(runId);
+    const rows = await attempts(attemptId);
     expect(rows.map((r) => r.verdict)).toEqual(['fail', 'fail']);
     expect(await ticketAttempts(taskId)).toMatchObject([
       { number: 1, state: 'failed' },
@@ -271,7 +271,7 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
     await server.app.ctx.configStore.update({ maxAttempts: 3 });
     await server.app.ctx.workspaces.update(workspaceId, { maxAttempts: 1 });
 
-    const { taskId, runId } = await runWorktreeTask({ writeFiles: { 'marker.txt': 'bad\n' } });
+    const { taskId, attemptId } = await runWorktreeTask({ writeFiles: { 'marker.txt': 'bad\n' } });
 
     const run = await waitFor(async () => {
       const { body } = await server.api('GET', `/api/tasks/${taskId}/attempts/current`);
@@ -282,7 +282,7 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
     const task = (await server.api('GET', `/api/tasks/${taskId}`)).body;
     expect(task.state).toBe('escalated');
 
-    expect((await attempts(runId)).map((r) => r.verdict)).toEqual(['fail']);
+    expect((await attempts(attemptId)).map((r) => r.verdict)).toEqual(['fail']);
     expect(await ticketAttempts(taskId)).toMatchObject([{ number: 1, state: 'escalated' }]);
   });
 });

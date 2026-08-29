@@ -60,7 +60,7 @@ export type GuardrailDimension = 'wall-clock' | 'tokens' | 'cost' | 'progress' |
  * progress); `payload` carries dimension-specific evidence. */
 export interface GuardrailEvent {
   id: number;
-  /** The Attempt this event is keyed to (ADR-0001 #388 S-F — was `runId` before). */
+  /** The Attempt this event is keyed to (ADR-0001 #388 S-F — was `attemptId` before). */
   attemptId: number;
   seq: number;
   ts: number;
@@ -94,7 +94,7 @@ export interface VerifierStatus {
  * `verification-attempts-model.ts`). */
 export interface VerificationAttempt {
   id: number;
-  /** The Attempt this row is keyed to (ADR-0001 #388 S-F — was `runId` before). */
+  /** The Attempt this row is keyed to (ADR-0001 #388 S-F — was `attemptId` before). */
   attemptId: number;
   seq: number;
   ts: number;
@@ -354,13 +354,13 @@ export interface Task {
   runStartedAt: number | null;
   /** Total tool-call count of the running run; null unless the Task is working (issue #100). */
   toolCount: number | null;
-  /** The running run's id, so the board can match the `run_usage` firehose to this card; null unless the Task is working (issue #100). */
-  runId: number | null;
+  /** The running run's id, so the board can match the `attempt_usage` firehose to this card; null unless the Task is working (issue #100). */
+  attemptId: number | null;
   /** The running run's current Attempt Step (ADR-0001 Vocabulary), for the
    * Board's Active-card status badge; null unless the Task is working, or
    * between Steps (e.g. mid-merge). */
   currentStep: StepType | null;
-  /** The running run's context-window occupancy in tokens; null unless running (or unreported). Live via the run_usage firehose (issue #52). */
+  /** The running run's context-window occupancy in tokens; null unless running (or unreported). Live via the attempt_usage firehose (issue #52). */
   contextTokens: number | null;
   /** The model's effective context window; null when unknown. The board card shows `ctx %` = contextTokens/contextWindow (issue #52). */
   contextWindow: number | null;
@@ -376,7 +376,7 @@ export interface Task {
 
 /** Aggregate token counters on an Attempt's usage snapshot, as the ticket UI
  * reads them; all optional/nullable because a source may report only some counters. */
-export interface RunUsageTotals {
+export interface AttemptUsageTotals {
   inputTokens?: number | null;
   outputTokens?: number | null;
   totalTokens?: number | null;
@@ -385,7 +385,7 @@ export interface RunUsageTotals {
 }
 
 /** The lean Attempt summary as `GET /api/tasks/:id/attempts`, `GET
- * /api/attempts/:id`, and the WS `run_changed` payload serve it (server
+ * /api/attempts/:id`, and the WS `attempt_changed` payload serve it (server
  * `attemptSchema`); distinct from the timeline's step-bearing {@link Attempt}. */
 export interface AttemptSummary {
   id: number;
@@ -401,7 +401,7 @@ export interface AttemptSummary {
   branch: string | null;
   baseBranch: string | null;
   usage: {
-    totals: RunUsageTotals | null;
+    totals: AttemptUsageTotals | null;
     models: Record<string, Record<string, number>>;
     toolCalls: Record<string, number>;
     source: string | null;
@@ -474,7 +474,7 @@ export interface DiffFile {
 export interface AttemptEvent {
   id: number;
   /** The Attempt this event is keyed to (`attempt_events.attempt_id`,
-   * ADR-0001 #388 S-F — was `runId` before). */
+   * ADR-0001 #388 S-F — was `attemptId` before). */
   attemptId: number;
   seq: number;
   ts: number;
@@ -486,7 +486,7 @@ export interface AttemptEvent {
 export interface AttemptLogEvent {
   id: number;
   /** Present for live WebSocket events; REST transcript hydration is already scoped by URL. */
-  runId?: number;
+  attemptId?: number;
   seq: number;
   ts: number;
   type: 'session_update';
@@ -625,8 +625,8 @@ export interface ModelUsage {
   aiUnits?: number;
 }
 
-/** Usage aggregate for a Run or Conversation (server `RunUsage`) — rolled up over the whole Process Tree. */
-export interface RunUsage {
+/** Usage aggregate for a Run or Conversation (server `AttemptUsage`) — rolled up over the whole Process Tree. */
+export interface AttemptUsage {
   /** Per-model breakdown (session-log fallback; ACP only reports aggregates). */
   models: Record<string, ModelUsage>;
   /** Per-agent-type breakdown (root session + each Subagent type); absent when the harness parsed no Process Tree. */
@@ -668,8 +668,8 @@ export type ProcessTree = ProcessNode;
  * `tree`/`activity` are null (no live tailer) and its `escalated` is always false.
  */
 export interface ActivityProcess {
-  type: 'run' | 'chat';
-  runId: number | null;
+  type: 'attempt' | 'chat';
+  attemptId: number | null;
   conversationId: number | null;
   taskId: number | null;
   /** Display title: a Run's Task prompt first line, a Conversation's title. */
@@ -689,7 +689,7 @@ export interface ActivityProcess {
   trackerUrl: string | null;
   /** True when the Task is escalated (ADR-0041) — the "Needs you" signal; always false for a Conversation. */
   escalated: boolean;
-  usage: RunUsage | null;
+  usage: AttemptUsage | null;
   contextTokens: number | null;
   /** The model's configured context window; null when unconfigured (percentage suppressed). */
   contextWindow: number | null;
@@ -700,14 +700,14 @@ export interface ActivityProcess {
 }
 
 /**
- * The live `run_usage` firehose delta (ADR 0010): a Run's latest live-usage
+ * The live `attempt_usage` firehose delta (ADR 0010): a Run's latest live-usage
  * snapshot plus Cost derived on read. The Activity view merges it into the
  * matching row so tokens, context fill, cost, and the activity line tick live
  * between snapshot polls.
  */
-export interface RunUsageEvent {
-  runId: number;
-  usage: RunUsage;
+export interface AttemptUsageEvent {
+  attemptId: number;
+  usage: AttemptUsage;
   contextTokens: number | null;
   activity: string | null;
   tree: ProcessTree;

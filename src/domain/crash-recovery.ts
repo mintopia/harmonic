@@ -1,7 +1,7 @@
 import type { AttemptRow, TaskRow } from '../db/schema.js';
 import type { AttemptStore } from './attempts.js';
 import type { TaskService } from './tasks.js';
-import type { RunSettleCoordinator } from './run-settle.js';
+import type { AttemptSettleCoordinator } from './attempt-settle.js';
 import { Git } from '../execution/git.js';
 import { withRepoLock } from '../execution/repo-lock.js';
 import type { PostMergeCheckResult } from '../execution/merge-policy.js';
@@ -37,7 +37,7 @@ import { startOperation } from '../telemetry/operations.js';
  *      `app.ts`'s boot sequence).
  *
  * Idempotent by construction: pass A only selects `running` Runs, and both
- * settling (via {@link RunSettleCoordinator.settle}) and `markInterrupted`
+ * settling (via {@link AttemptSettleCoordinator.settle}) and `markInterrupted`
  * move a Run out of `running`, so a second boot's queries simply don't
  * re-select anything this boot already resolved.
  */
@@ -45,7 +45,7 @@ export class CrashRecoveryCoordinator {
   constructor(
     private readonly attempts: AttemptStore,
     private readonly taskService: TaskService,
-    private readonly settle: RunSettleCoordinator,
+    private readonly settle: AttemptSettleCoordinator,
     private readonly deps: {
       /** Run the deterministic verify commands once against a merge that
        * already landed, mirroring the live merge policy's post-merge check

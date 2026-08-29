@@ -36,22 +36,22 @@ describe('live structured run event streaming and replay', () => {
       prompt: JSON.stringify({ updates, delayMs: 40 }),
     });
     const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
-    const runId = started.body.id;
+    const attemptId = started.body.id;
     // The log firehose is opt-in and cursor-resumable, unlike global board
     // events. Start at zero to receive this Run's complete live stream.
-    ws.send({ type: 'run_log_subscribe', runId, after: 0 });
+    ws.send({ type: 'attempt_log_subscribe', attemptId, after: 0 });
 
     await waitFor(async () =>
-      ws.messages.some((m) => m.type === 'run_changed' && m.run.id === runId && m.run.state !== 'running'),
+      ws.messages.some((m) => m.type === 'attempt_changed' && m.run.id === attemptId && m.run.state !== 'running'),
     );
 
     const streamed = ws.messages.filter(
-      (m) => m.type === 'run_log_event' && m.event.runId === runId && m.event.type === 'session_update',
+      (m) => m.type === 'attempt_log_event' && m.event.attemptId === attemptId && m.event.type === 'session_update',
     );
     expect(streamed.map((m) => m.event.payload.sessionUpdate)).toEqual(updates.map((update) => update.sessionUpdate));
     expect(streamed.map((m) => m.event.id)).toEqual([1_000_000_001, 1_000_000_002, 1_000_000_003, 1_000_000_004]);
 
-    const replay = await server.api('GET', `/api/attempts/${runId}/events`);
+    const replay = await server.api('GET', `/api/attempts/${attemptId}/events`);
     const replayUpdates = replay.body.events.filter((e: any) => e.type === 'session_update');
     expect(replayUpdates).toEqual([]);
 
@@ -69,16 +69,16 @@ describe('live structured run event streaming and replay', () => {
       prompt: JSON.stringify({ updates, delayMs: 80 }),
     });
     const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
-    const runId = started.body.id;
-    first.send({ type: 'run_log_subscribe', runId, after: 0 });
-    await waitFor(async () => first.messages.some((m) => m.type === 'run_log_event' && m.event.runId === runId && m.event.seq === 1));
+    const attemptId = started.body.id;
+    first.send({ type: 'attempt_log_subscribe', attemptId, after: 0 });
+    await waitFor(async () => first.messages.some((m) => m.type === 'attempt_log_event' && m.event.attemptId === attemptId && m.event.seq === 1));
     first.close();
 
-    await waitFor(async () => (await server.api('GET', `/api/attempts/${runId}`)).body.state !== 'running');
+    await waitFor(async () => (await server.api('GET', `/api/attempts/${attemptId}`)).body.state !== 'running');
     const reconnected = await connectWs(server);
-    reconnected.send({ type: 'run_log_subscribe', runId, after: 1 });
-    await waitFor(async () => reconnected.messages.filter((m) => m.type === 'run_log_event' && m.event.runId === runId).length === 2);
-    const replayed = reconnected.messages.filter((m) => m.type === 'run_log_event' && m.event.runId === runId);
+    reconnected.send({ type: 'attempt_log_subscribe', attemptId, after: 1 });
+    await waitFor(async () => reconnected.messages.filter((m) => m.type === 'attempt_log_event' && m.event.attemptId === attemptId).length === 2);
+    const replayed = reconnected.messages.filter((m) => m.type === 'attempt_log_event' && m.event.attemptId === attemptId);
     expect(replayed.map((m) => m.event.seq)).toEqual([2, 3]);
     reconnected.close();
   });

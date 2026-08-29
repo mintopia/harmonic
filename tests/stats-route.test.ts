@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startServer, type TestServer } from './helpers.js';
 import { attempts } from '../src/db/schema.js';
 import type { AttemptState } from '../src/db/schema.js';
-import type { RunUsage } from '../src/execution/usage.js';
+import type { AttemptUsage } from '../src/execution/usage.js';
 
 /**
  * The KPI-band ingredients the stats route now derives (issue #196, ADR-0028):
@@ -12,7 +12,7 @@ import type { RunUsage } from '../src/execution/usage.js';
  * the stats route reads, no separate Run row to join through) so the wiring
  * — not just the pure helpers — is exercised end to end.
  */
-describe('GET /api/stats — failedRuns + durationMs', () => {
+describe('GET /api/stats — failedAttempts + durationMs', () => {
   let server: TestServer;
   let taskId: number;
   let nextAttemptNumber = 1;
@@ -60,13 +60,13 @@ describe('GET /api/stats — failedRuns + durationMs', () => {
     await server.close();
   });
 
-  it('failedRuns is failed-only — the cancelled Run is excluded', async () => {
+  it('failedAttempts is failed-only — the cancelled Run is excluded', async () => {
     const { status, body } = await server.api('GET', '/api/stats?from=0');
     expect(status).toBe(200);
-    expect(body.runCount).toBe(4);
-    expect(body.runsByState.failed).toBe(1);
-    expect(body.runsByState.cancelled).toBe(1);
-    expect(body.failedRuns).toBe(1);
+    expect(body.attemptCount).toBe(4);
+    expect(body.attemptsByState.failed).toBe(1);
+    expect(body.attemptsByState.cancelled).toBe(1);
+    expect(body.failedAttempts).toBe(1);
   });
 
   it('durationMs is p50/p95 of wall-clock active-execution durations', async () => {
@@ -78,7 +78,7 @@ describe('GET /api/stats — failedRuns + durationMs', () => {
   it('no longer reports a review-rejected slice (the review gate is gone, ADR-0041)', async () => {
     const { body } = await server.api('GET', '/api/stats?from=0');
     expect(body).not.toHaveProperty('rejectedRuns');
-    expect(body.failedRuns).toBe(1);
+    expect(body.failedAttempts).toBe(1);
   });
 
   it('buckets execution failures by their winning terminal disposition', async () => {
@@ -106,8 +106,8 @@ describe('GET /api/stats — empty range', () => {
   it('reports no failures and a null duration when nothing ran (honest numbers, never a fake 0)', async () => {
     const { status, body } = await server.api('GET', '/api/stats?from=0');
     expect(status).toBe(200);
-    expect(body.runCount).toBe(0);
-    expect(body.failedRuns).toBe(0);
+    expect(body.attemptCount).toBe(0);
+    expect(body.failedAttempts).toBe(0);
     expect(body.durationMs).toBeNull();
   });
 });
@@ -116,14 +116,14 @@ describe('GET /api/stats — per-tool output attribution', () => {
   let server: TestServer;
   let taskId: number;
 
-  const usageJson = (usage: Partial<RunUsage>): string =>
+  const usageJson = (usage: Partial<AttemptUsage>): string =>
     JSON.stringify({
       models: {},
       totals: null,
       toolCalls: {},
       source: 'session-log',
       ...usage,
-    } satisfies RunUsage);
+    } satisfies AttemptUsage);
 
   beforeAll(async () => {
     server = await startServer();
@@ -186,7 +186,7 @@ describe('GET /api/stats — per-tool output attribution', () => {
   it('omits attribution for a range containing only legacy or unparseable usage', async () => {
     const { status, body } = await server.api('GET', '/api/stats?from=5000&to=6000');
     expect(status).toBe(200);
-    expect(body.runCount).toBe(1);
+    expect(body.attemptCount).toBe(1);
     expect(body).not.toHaveProperty('toolTokens');
     expect(body).not.toHaveProperty('reasoning');
   });

@@ -56,8 +56,8 @@ describe('Stats heavy aggregate runs in a worker (#257)', () => {
 
     expect(res.status).toBe(200);
     expect(readSpy).toHaveBeenCalledTimes(1);
-    expect(res.body.runCount).toBe(1);
-    expect(res.body.runsByState).toEqual({ completed: 1 });
+    expect(res.body.attemptCount).toBe(1);
+    expect(res.body.attemptsByState).toEqual({ completed: 1 });
     expect(res.body.toolCalls).toEqual({ Read: 3 });
   });
 
@@ -94,7 +94,7 @@ describe('Stats heavy aggregate runs in a worker (#257)', () => {
 
     expect(scoped.status).toBe(200);
     expect(readSpy).toHaveBeenCalledTimes(1);
-    expect(scoped.body.runCount).toBe(1);
+    expect(scoped.body.attemptCount).toBe(1);
   });
 
   it('keeps the event-loop monitor quiet during a deliberately heavy worker read', async () => {

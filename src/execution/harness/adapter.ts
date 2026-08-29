@@ -120,7 +120,7 @@ export interface HarnessAdapter {
   sessionModelId?(model: string): string;
   /**
    * ACP `session/new` mcpServers entries granting the agent Harmonic's
-   * MCP server under its Run Key; [] when the harness only gets the
+   * MCP server under its Attempt Key; [] when the harness only gets the
    * env-var mechanism (HARMONIC_MCP_URL / HARMONIC_API_KEY).
    */
   mcpServers(input: { url: string; token: string }): unknown[];

@@ -174,23 +174,23 @@ export interface TestServer {
 
 /**
  * Start a native Run and capture the value of env vars injected into the harness
- * (e.g. the raw run-scoped `HARMONIC_API_KEY`). ACP session updates are no longer
+ * (e.g. the raw attempt-scoped `HARMONIC_API_KEY`). ACP session updates are no longer
  * persisted (ADR-0031), so the stub writes the requested env to a file this reads
  * instead of the defunct `/events` session_update echo. Defaults to `exit:'hang'`
- * so the Run (and its Run Key) stay live while the caller asserts on the token.
+ * so the Run (and its Attempt Key) stay live while the caller asserts on the token.
  */
 export async function captureRunEnv(
   server: TestServer,
   envKeys: string[],
   { exit = 'hang' }: { exit?: 'clean' | 'hang' } = {},
-): Promise<{ taskId: number; runId: number; env: Record<string, string | null> }> {
+): Promise<{ taskId: number; attemptId: number; env: Record<string, string | null> }> {
   const echoEnvFile = join(mkdtempSync(join(tmpdir(), 'harmonic-echo-')), 'env.json');
   const created = await server.api('POST', '/api/tasks', {
     prompt: JSON.stringify({ echoEnv: envKeys, echoEnvFile, exit }),
   });
   const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
   const env = await waitFor(async () => (existsSync(echoEnvFile) ? JSON.parse(readFileSync(echoEnvFile, 'utf8')) : undefined));
-  return { taskId: created.body.id as number, runId: started.body.id as number, env };
+  return { taskId: created.body.id as number, attemptId: started.body.id as number, env };
 }
 
 /**

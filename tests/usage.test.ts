@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { startServer, stubHarness, waitFor, writeCopilotUsageDb, type TestServer } from './helpers.js';
 import type { DeepPartial, AppConfig } from '../src/config.js';
 import { collectUsage, totalTokensOf } from '../src/execution/usage.js';
-import type { ModelUsage, RunUsage } from '../src/execution/usage.js';
+import type { ModelUsage, AttemptUsage } from '../src/execution/usage.js';
 import type { PersistedAttemptEvent } from '../src/domain/attempts.js';
 import { currentTurnEvents } from '../src/domain/replay-quarantine.js';
 
@@ -362,7 +362,7 @@ describe('per-tool output attribution', () => {
 
   it('mergeUsage sums tool attribution across runs without inventing missing buckets', async () => {
     const { mergeUsage } = await import('../src/execution/usage.js');
-    const attributed = (over: Partial<RunUsage>): RunUsage => ({
+    const attributed = (over: Partial<AttemptUsage>): AttemptUsage => ({
       models: {},
       totals: null,
       toolCalls: {},
@@ -471,19 +471,19 @@ describe('usage collection and statistics', () => {
     await shared?.close();
   });
 
-  const runTask = async (input: object): Promise<{ taskId: number; runId: number }> => {
+  const runTask = async (input: object): Promise<{ taskId: number; attemptId: number }> => {
     const created = await server.api('POST', '/api/tasks', input);
     const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
     await waitFor(async () => {
       const { body } = await server.api('GET', `/api/tasks/${created.body.id}`);
       return body.state === 'done' || body.state === 'failed';
     });
-    return { taskId: created.body.id, runId: started.body.id };
+    return { taskId: created.body.id, attemptId: started.body.id };
   };
 
   it('collects aggregate usage from the ACP prompt result and tallies tool calls from events', async () => {
     server = await sharedServer();
-    const { runId } = await runTask({
+    const { attemptId } = await runTask({
       prompt: JSON.stringify({
         updates: [
           { sessionUpdate: 'tool_call', toolCallId: 't1', title: 'Write', kind: 'edit', status: 'pending' },
@@ -494,7 +494,7 @@ describe('usage collection and statistics', () => {
       }),
     });
 
-    const run = (await server.api('GET', `/api/attempts/${runId}`)).body;
+    const run = (await server.api('GET', `/api/attempts/${attemptId}`)).body;
     expect(run.usage.totals).toEqual({
       inputTokens: 55,
       outputTokens: 1403,
@@ -508,7 +508,7 @@ describe('usage collection and statistics', () => {
 
   it('codex: reads the per-model breakdown straight off the ACP prompt result', async () => {
     server = await startServer(stubHarness('codex'));
-    const { runId } = await runTask({
+    const { attemptId } = await runTask({
       harness: 'codex',
       model: 'gpt-5.6-sol',
       prompt: JSON.stringify({
@@ -526,7 +526,7 @@ describe('usage collection and statistics', () => {
       }),
     });
 
-    const run = (await server.api('GET', `/api/attempts/${runId}`)).body;
+    const run = (await server.api('GET', `/api/attempts/${attemptId}`)).body;
     expect(run.usage.models).toEqual({
       'gpt-5.6-sol': { inputTokens: 6189, outputTokens: 5, cacheReadTokens: 9984, cacheWriteTokens: 0 },
     });
@@ -560,9 +560,9 @@ describe('usage collection and statistics', () => {
     );
 
     server = await startServer(overrides);
-    const { runId } = await runTask({ prompt: JSON.stringify({}), workingDir: workDir });
+    const { attemptId } = await runTask({ prompt: JSON.stringify({}), workingDir: workDir });
 
-    const run = (await server.api('GET', `/api/attempts/${runId}`)).body;
+    const run = (await server.api('GET', `/api/attempts/${attemptId}`)).body;
     expect(run.usage.models).toEqual({
       'claude-sonnet-5': { inputTokens: 10, outputTokens: 100, cacheWriteTokens: 5, cacheReadTokens: 7 },
       'claude-haiku-4-5': { inputTokens: 3, outputTokens: 20, cacheWriteTokens: 0, cacheReadTokens: 1 },
@@ -595,14 +595,14 @@ describe('usage collection and statistics', () => {
 
     server = await startServer(overrides);
     // The real copilot prompt result is bare — no usage, no _meta (spike Q3).
-    const { runId } = await runTask({
+    const { attemptId } = await runTask({
       harness: 'copilot',
       model: 'auto',
       workingDir: workDir,
       prompt: JSON.stringify({}),
     });
 
-    const run = (await server.api('GET', `/api/attempts/${runId}`)).body;
+    const run = (await server.api('GET', `/api/attempts/${attemptId}`)).body;
     expect(run.usage.models).toEqual({
       'gpt-5-mini': { inputTokens: 35068, outputTokens: 4539, cacheReadTokens: 0, cacheWriteTokens: 0, aiUnits: 1.7845 },
       'claude-haiku-4.5': { inputTokens: 9, outputTokens: 145, cacheReadTokens: 0, cacheWriteTokens: 48494, aiUnits: 6.13515 },
@@ -614,7 +614,7 @@ describe('usage collection and statistics', () => {
     expect(run.cost.totalUsd).toBeGreaterThan(0);
     // 'auto' delegated the choice: observed models are information, not a
     // contradiction…
-    const events = (await server.api('GET', `/api/attempts/${runId}/events`)).body.events;
+    const events = (await server.api('GET', `/api/attempts/${attemptId}/events`)).body.events;
     expect(events.find((e: any) => e.payload?.event === 'model_mismatch')).toBeUndefined();
 
     // …but a real pin the plan silently ignored (auto-only plans accept
@@ -625,7 +625,7 @@ describe('usage collection and statistics', () => {
       workingDir: workDir,
       prompt: JSON.stringify({}),
     });
-    const pinnedEvents = (await server.api('GET', `/api/attempts/${pinned.runId}/events`)).body.events;
+    const pinnedEvents = (await server.api('GET', `/api/attempts/${pinned.attemptId}/events`)).body.events;
     expect(pinnedEvents.find((e: any) => e.payload?.event === 'model_mismatch')?.payload).toMatchObject({
       expected: 'gpt-5.4',
       observed: expect.arrayContaining(['gpt-5-mini', 'claude-haiku-4.5']),
@@ -634,8 +634,8 @@ describe('usage collection and statistics', () => {
 
   it('reports usage as unavailable — not zero — when neither source exists', async () => {
     server = await sharedServer();
-    const { runId } = await runTask({ prompt: JSON.stringify({}) });
-    const run = (await server.api('GET', `/api/attempts/${runId}`)).body;
+    const { attemptId } = await runTask({ prompt: JSON.stringify({}) });
+    const run = (await server.api('GET', `/api/attempts/${attemptId}`)).body;
     expect(run.usage).toBeNull();
   });
 
@@ -661,7 +661,7 @@ describe('usage collection and statistics', () => {
     expect(agg.status).toBe(200);
     expect(agg.body.totals.inputTokens).toBe(20);
     expect(agg.body.totals.outputTokens).toBe(40);
-    expect(agg.body.runCount).toBe(2);
+    expect(agg.body.attemptCount).toBe(2);
   });
 
   it('serves stats aggregated over a time range', async () => {
@@ -685,7 +685,7 @@ describe('usage collection and statistics', () => {
     expect(all.status).toBe(200);
     expect(all.body.totals.inputTokens).toBe(5);
     expect(all.body.toolCalls).toEqual({ Bash: 1 });
-    expect(all.body.runCount).toBe(1);
+    expect(all.body.attemptCount).toBe(1);
     // Per-day chart series: one bucket at today's local midnight, carrying
     // cost, input+output tokens (cache excluded), and run count (issue #194).
     const midnight = new Date();
@@ -693,12 +693,12 @@ describe('usage collection and statistics', () => {
     expect(all.body.series).toHaveLength(1);
     expect(all.body.series[0].day).toBe(midnight.getTime());
     expect(all.body.series[0].tokens).toBe(12); // 5 input + 7 output
-    expect(all.body.series[0].runs).toBe(1);
+    expect(all.body.series[0].attempts).toBe(1);
     expect(all.body.series[0]).toHaveProperty('totalUsd');
     expect(all.body.series[0]).toHaveProperty('incomplete');
 
     const empty = await server.api('GET', `/api/stats?from=${Date.now() + 60_000}&to=${Date.now() + 120_000}`);
-    expect(empty.body.runCount).toBe(0);
+    expect(empty.body.attemptCount).toBe(0);
     expect(empty.body.totals).toBeNull();
     expect(empty.body.series).toEqual([]);
   });
@@ -713,7 +713,7 @@ describe('totalTokensOf (issue #128 spend-guard token reading)', () => {
     cacheReadTokens: n,
     cacheWriteTokens: n,
   });
-  const usage = (over: Partial<RunUsage>): RunUsage => ({
+  const usage = (over: Partial<AttemptUsage>): AttemptUsage => ({
     models: {},
     totals: null,
     toolCalls: {},

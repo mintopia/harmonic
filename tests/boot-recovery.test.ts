@@ -89,7 +89,7 @@ describe('boot crash-recovery', () => {
     const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
     await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'escalated');
     const dataDir = server.dataDir;
-    const runId = started.body.id as number;
+    const attemptId = started.body.id as number;
     const taskId = created.body.id as number;
     const before = await server.api('GET', `/api/tasks/${created.body.id}`);
 
@@ -108,7 +108,7 @@ describe('boot crash-recovery', () => {
 
     const task = await server.api('GET', `/api/tasks/${created.body.id}`);
     expect(task.body).toMatchObject({ state: 'escalated', escalationReason: before.body.escalationReason });
-    const run = await server.api('GET', `/api/attempts/${runId}`);
+    const run = await server.api('GET', `/api/attempts/${attemptId}`);
     expect(run.body.state).toBe('failed');
     await server.app.close();
     expect(await attemptSnapshot()).toEqual(attemptsBefore);
@@ -126,20 +126,20 @@ describe('boot crash-recovery', () => {
       const created = await server.api('POST', '/api/tasks', { prompt: JSON.stringify({ writeFiles: { 'impl.txt': 'implementation\n' } }) });
       const taskId: number = created.body.id;
       const started = await server.api('POST', `/api/tasks/${taskId}/run`);
-      const runId: number = started.body.id;
+      const attemptId: number = started.body.id;
       await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'done');
       const dataDir = server.dataDir;
-      const runBefore = await server.api('GET', `/api/attempts/${runId}`);
+      const runBefore = await server.api('GET', `/api/attempts/${attemptId}`);
       expect(runBefore.body.state).toBe('completed');
       const mainTipAfterMerge = git(repo, 'rev-parse', 'main');
 
       // Simulate the crash: the merge landed in git (it really did — `main` now
       // contains the task branch), but the process died before the Run/Task
       // settled — exactly as a crash between `mergeIntoBase` and
-      // `RunSettleCoordinator.settle` would leave them.
+      // `AttemptSettleCoordinator.settle` would leave them.
       await server.app.close();
       const sqlite = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
-      await sqlite.execute({ sql: "UPDATE attempts SET state = 'running', ended_at = NULL WHERE id = ?", args: [runId] });
+      await sqlite.execute({ sql: "UPDATE attempts SET state = 'running', ended_at = NULL WHERE id = ?", args: [attemptId] });
       await sqlite.execute({ sql: "UPDATE tasks SET state = 'working' WHERE id = ?", args: [taskId] });
       sqlite.close();
 
@@ -147,7 +147,7 @@ describe('boot crash-recovery', () => {
 
       // Reconciled without touching git again: `main` is exactly where the
       // original merge left it (no re-merge, no duplicate commit).
-      const run = await server.api('GET', `/api/attempts/${runId}`);
+      const run = await server.api('GET', `/api/attempts/${attemptId}`);
       expect(run.body.state).toBe('completed');
       const task = await server.api('GET', `/api/tasks/${taskId}`);
       expect(task.body.state).toBe('done');
@@ -156,7 +156,7 @@ describe('boot crash-recovery', () => {
       // A second boot: the Run already left `running`, so nothing re-checks it.
       await server.app.close();
       server = await startServer({ ...stubHarness(), defaults: { isolationMode: 'worktree' }, maxAttempts: 1 }, { dataDir });
-      const runAgain = await server.api('GET', `/api/attempts/${runId}`);
+      const runAgain = await server.api('GET', `/api/attempts/${attemptId}`);
       expect(runAgain.body.state).toBe('completed');
       expect(git(repo, 'rev-parse', 'main')).toBe(mainTipAfterMerge);
     },

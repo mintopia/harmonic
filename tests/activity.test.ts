@@ -71,7 +71,7 @@ describe('GET /api/activity snapshot (issue #51)', () => {
    * explicitly only when the test needs the pre-written transcript under
    * `workDir`'s slug.
    */
-  async function startHangingRun(dir: string = mkdtempSync(join(tmpdir(), 'harmonic-activity-work-'))): Promise<{ taskId: number; runId: number }> {
+  async function startHangingRun(dir: string = mkdtempSync(join(tmpdir(), 'harmonic-activity-work-'))): Promise<{ taskId: number; attemptId: number }> {
     const scenario = JSON.stringify({
       updates: [{ sessionUpdate: 'tool_call', toolCallId: 't1', title: 'Read', kind: 'read', status: 'pending' }],
       delayMs: 20,
@@ -79,7 +79,7 @@ describe('GET /api/activity snapshot (issue #51)', () => {
     });
     const created = await server.api('POST', '/api/tasks', { prompt: scenario, workingDir: dir, isolationMode: 'direct' });
     const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
-    return { taskId: created.body.id, runId: started.body.id };
+    return { taskId: created.body.id, attemptId: started.body.id };
   }
 
   it('returns an empty processes array when nothing is running', async () => {
@@ -95,8 +95,8 @@ describe('GET /api/activity snapshot (issue #51)', () => {
 
     const { body } = await server.api('GET', '/api/activity');
     expect(body.processes).toContainEqual(expect.objectContaining({
-      type: 'run',
-      runId: run.id,
+      type: 'attempt',
+      attemptId: run.id,
       taskId: task.id,
       state: 'running',
       usage: null,
@@ -120,12 +120,12 @@ describe('GET /api/activity snapshot (issue #51)', () => {
   });
 
   it('lists a live Run with its Usage snapshot, Process Tree, and derived Cost', async () => {
-    const { runId } = await startHangingRun(workDir); // the dir with the pre-written transcript
+    const { attemptId } = await startHangingRun(workDir); // the dir with the pre-written transcript
 
     const proc = await waitFor(async () => {
       const { body } = await server.api('GET', '/api/activity');
       return (body.processes as any[]).find(
-        (p) => p.type === 'run' && p.runId === runId && p.tree && p.activity === 'Read',
+        (p) => p.type === 'attempt' && p.attemptId === attemptId && p.tree && p.activity === 'Read',
       );
     });
 
@@ -151,10 +151,10 @@ describe('GET /api/activity snapshot (issue #51)', () => {
 
   it('includes a warm Conversation as a chat for an operator; a read key sees Runs only', async () => {
     // A live run so the read-key result is non-empty (Runs are in the read set).
-    const { runId } = await startHangingRun();
+    const { attemptId } = await startHangingRun();
     await waitFor(async () => {
       const { body } = await server.api('GET', '/api/activity');
-      return (body.processes as any[]).some((p) => p.type === 'run' && p.runId === runId) || undefined;
+      return (body.processes as any[]).some((p) => p.type === 'attempt' && p.attemptId === attemptId) || undefined;
     });
 
     // A warm Conversation stays in the active registry after its Turn finishes.
@@ -166,7 +166,7 @@ describe('GET /api/activity snapshot (issue #51)', () => {
     const full = (await server.api('GET', '/api/activity')).body.processes as any[];
     const chat = full.find((p) => p.type === 'chat' && p.conversationId === convo.id);
     expect(chat).toBeTruthy();
-    expect(chat.runId).toBeNull();
+    expect(chat.attemptId).toBeNull();
     expect(chat.taskId).toBeNull();
     expect(chat.isolation).toBe('direct'); // Conversations are direct-only (ADR-0006)
     expect(chat.tree).toBeNull(); // no live tailer for Conversations
@@ -176,7 +176,7 @@ describe('GET /api/activity snapshot (issue #51)', () => {
     expect(typeof chat.title).toBe('string');
     expect(typeof chat.workspaceId).toBe('number');
     expect(typeof chat.workspaceName).toBe('string');
-    expect(full.some((p) => p.type === 'run')).toBe(true);
+    expect(full.some((p) => p.type === 'attempt')).toBe(true);
 
     // A read (viz) key reaches the endpoint (not 403) but sees Runs only.
     const readToken = (await server.api('POST', '/api/keys', { name: 'viz', scope: 'read' })).body.token;
@@ -184,7 +184,7 @@ describe('GET /api/activity snapshot (issue #51)', () => {
     expect(res.status).toBe(200);
     const readProcs = ((await res.json()) as any).processes as any[];
     expect(readProcs.length).toBeGreaterThan(0);
-    expect(readProcs.every((p) => p.type === 'run')).toBe(true);
+    expect(readProcs.every((p) => p.type === 'attempt')).toBe(true);
     expect(readProcs.some((p) => p.conversationId !== null)).toBe(false);
   });
 });

@@ -26,7 +26,7 @@ import { ConversationStore } from '../domain/conversations.js';
 import { WorkspaceService } from '../domain/workspaces.js';
 import { PermissionRuleStore } from '../domain/permission-rules.js';
 import { EscalationService } from '../domain/escalation.js';
-import { RunSettleCoordinator } from '../domain/run-settle.js';
+import { AttemptSettleCoordinator } from '../domain/attempt-settle.js';
 import { SessionStore } from '../domain/sessions.js';
 import { SessionRetirementCoordinator } from '../domain/session-retirement-coordinator.js';
 import { dropIndexForPath } from '../execution/code-index.js';
@@ -118,7 +118,7 @@ const PUBLIC_API_PATHS = new Set([
 ]);
 
 /**
- * What an ephemeral scoped key (a Run Key or a Conversation Key) may reach:
+ * What an ephemeral scoped key (a Attempt Key or a Conversation Key) may reach:
  * the agent surface from issue 13 — task CRUD, dependencies, queue/cancel,
  * attempts and events, and MCP (which gates its own tool list). The escalation
  * actions (Accept / Reject with guidance / Close) are always human-only.
@@ -146,7 +146,7 @@ function scopedKeyAllowed(path: string): boolean {
   // and falls through to the default `false`; this early return exists only
   // to document the decision alongside its siblings.
   if (/^\/api\/workspaces\/\d+\/epics(\/\d+)?$/.test(path)) return false;
-  // The escalation actions are human-only, always — never reachable by a run-scoped key.
+  // The escalation actions are human-only, always — never reachable by an attempt-scoped key.
   if (/^\/api\/tasks\/\d+\/(accept|reject|close)$/.test(path)) return false;
   if (/^\/api\/tasks\/\d+\/channels(\/|$)/.test(path)) return false;
   if (path === '/api/tasks' || path.startsWith('/api/tasks/')) return true;
@@ -160,7 +160,7 @@ function scopedKeyAllowed(path: string): boolean {
  * the WS handshake. Every mutation is blocked (GET-only), as is the operator
  * surface (keys, config, channels, Conversations). The per-Task channel
  * overrides are operator config, so they're excluded even though they hang off
- * /api/tasks. /api/activity is in the read set but self-filters to Runs only
+ * /api/tasks. /api/activity is in the read set but self-filters to Attempts only
  * (issue #51) — the same rule the firehose applies to Conversation traffic.
  */
 function readScopeAllowed(path: string, method: string): boolean {
@@ -188,7 +188,7 @@ function readScopeAllowed(path: string, method: string): boolean {
  * (it is websocket-only). Ungated mode (no operator password set)
  * treats every caller as an operator, exactly as the auth hook skips entirely in
  * that mode. The `/mcp` handler uses this to gate operator-only tools (issue
- * #125): a Run Key is a valid MCP caller but is never an operator. Kept as one
+ * #125): a Attempt Key is a valid MCP caller but is never an operator. Kept as one
  * function so the operator determination lives in a single place rather than
  * being re-derived per gate.
  */
@@ -311,7 +311,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // coordinator (the operator-side one below and the Runner's own, via options) so
   // every terminal disposition records its Session's retirement intent; its
   // async `drain` performs the actual worktree removal — at boot, and on every
-  // `run_changed` below (a settle emits one, so an accepted/cancelled Session's
+  // `attempt_changed` below (a settle emits one, so an accepted/cancelled Session's
   // worktree is reclaimed promptly).
   const sessionStore = new SessionStore(asyncDb);
   const sessionRetirement = new SessionRetirementCoordinator(
@@ -342,7 +342,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     dropIndexForPath,
   );
   // Single-flight the retirement drain (issue #219): it is fired on every
-  // `run_changed`, so a burst of settling Runs would otherwise fan out
+  // `attempt_changed`, so a burst of settling Runs would otherwise fan out
   // overlapping drains that each re-observe the same `retiring` Sessions and
   // spawn `git worktree remove` for them in parallel — a subprocess flood on the
   // event loop. Coalescing collapses the burst into one pass plus a trailing
@@ -364,12 +364,12 @@ export async function buildApp(opts: AppOptions): Promise<App> {
       }
     },
   );
-  const operatorSettle = new RunSettleCoordinator(
+  const operatorSettle = new AttemptSettleCoordinator(
     tasks,
     attempts,
     (run) => {
       void runnerRef?.finishRunOperation(run.id);
-      bus.emit('run_changed', run);
+      bus.emit('attempt_changed', run);
     },
     sessionRetirement,
   );
@@ -438,7 +438,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   for (const orphan of await tasks.list({ state: 'working' })) {
     await tasks.setState(orphan.id, 'ready');
   }
-  // Run Keys of every non-running run die here — catches keys orphaned by
+  // Attempt Keys of every non-running attempt die here — catches keys orphaned by
   // a crash or restart. Conversation Keys can never survive a restart (their
   // warm process is gone), so every one present at boot is orphaned (issue 16).
   await auth.sweepOrphanedAttemptKeys();
@@ -519,10 +519,10 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   const gitBreaker = new GitCircuitBreaker();
   const runner = new Runner(tasks, asyncDb, () => configStore.get(), {
     events: {
-      onRunEvent: (event) => bus.emit('run_event', event),
-      onRunLogEvent: (event) => bus.emitRunLog(event),
-      onRunFinished: (run) => bus.emit('run_changed', run),
-      onRunUsage: (payload) => bus.emit('run_usage', payload),
+      onAttemptEvent: (event) => bus.emit('attempt_event', event),
+      onAttemptLogEvent: (event) => bus.emitAttemptLog(event),
+      onAttemptFinished: (run) => bus.emit('attempt_changed', run),
+      onAttemptUsage: (payload) => bus.emit('attempt_usage', payload),
     },
     gitBreaker,
     // Start-funnel gate (issue #159, git ground-truth #231): refuse to spawn a
@@ -638,20 +638,20 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   });
   // A settled Run frees a Machine Ceiling slot, so it must immediately refill
   // without waiting for the scheduler interval.
-  bus.on('run_changed', () => autoRunner.poke());
-  // A settle emits `run_changed` right after it records a Session's retirement
+  bus.on('attempt_changed', () => autoRunner.poke());
+  // A settle emits `attempt_changed` right after it records a Session's retirement
   // intent (issue #148); drain here so an accepted/cancelled/abandoned Session's
   // builder worktree is reclaimed promptly, and any idle Session past its
   // retention deadline is swept on the next run activity. Best-effort — a drain
   // hiccup must never break the event fan-out.
-  bus.on('run_changed', () => {
+  bus.on('attempt_changed', () => {
     void drainRetirement().catch(() => {});
   });
   // The boot-time poke happens in the onListen hook below, after the MCP
   // endpoint is known — so even the first auto-started run gets its
   // scoped key + endpoint injected.
   // queue.idle: the last actively-executing run drained and nothing is waiting.
-  bus.on('run_changed', (run) => {
+  bus.on('attempt_changed', (run) => {
     if (run.state === 'running') return;
     // Both the ready-Task probe and the running-Run count are async reads now;
     // run them in a fire-and-forget chain so the EventBus listener stays sync.
@@ -728,13 +728,13 @@ export async function buildApp(opts: AppOptions): Promise<App> {
 \`POST /mcp\` is a stateless streamable-HTTP MCP server (not a REST
 endpoint, so it has no entry in this spec's paths). It authenticates the
 same way as the REST API — a bearer token, either an operator API key or
-the Run Key Harmonic injects into a spawned harness — and exposes the
+the Attempt Key Harmonic injects into a spawned harness — and exposes the
 agent task surface as MCP tools (task CRUD, dependencies, queue/cancel,
 runs and events). Accept/Reject are human-only and are never exposed as
-MCP tools — a verifier's pass is the accept (#140, ADR-0021). A run-scoped
-Run Key may call \`/mcp\` regardless of the REST restrictions noted per
+MCP tools — a verifier's pass is the accept (#140, ADR-0021). A attempt-scoped
+Attempt Key may call \`/mcp\` regardless of the REST restrictions noted per
 endpoint below. \`force_integrate_epic\` is an operator-only tool, the same
-footing as Accept/Reject: a Run Key can call \`/mcp\` but gets a \`forbidden\`
+footing as Accept/Reject: a Attempt Key can call \`/mcp\` but gets a \`forbidden\`
 error from it specifically — only an operator API key (\`scope: 'full'\`) or
 an authenticated session may call it.
 
@@ -743,10 +743,10 @@ an authenticated session may call it.
 \`GET /api/ws\` is a single firehose WebSocket (also outside this spec's
 paths): every run event, run state change, task state change/removal, and
 Conversation event/change is broadcast to every connected client as JSON
-messages of the form \`{ type: 'run_event' | 'run_changed' | 'run_usage' |
+messages of the form \`{ type: 'attempt_event' | 'attempt_changed' | 'attempt_usage' |
 'task_changed' | 'task_removed' | 'conversation_event' | 'conversation_changed' |
 'permission_request' | 'scheduled-jobs' | 'operations', ... }\`, using the same Task/Run/Conversation/Scheduled Job/Operation shapes
-served over REST. \`run_usage\` is a live-usage snapshot for a running Run
+served over REST. \`attempt_usage\` is a live-usage snapshot for a running Run
 (tokens, context fill, derived Cost, current-activity line, and Process
 Tree), pushed about once a second while the Run tails its native log.
 \`task_removed\` (issue #162) announces a hard-deleted Task's id (\`{ type:
@@ -760,7 +760,7 @@ operator permission decision in a Conversation (ADR-0007), answered via
 \`POST /conversations/:id/permissions/:reqId\`. Authenticate by passing the
 session token or an API key as \`?token=\` (WebSocket clients cannot set an
 Authorization header). A \`read\`-scoped key gets a filtered firehose — only
-\`task_changed\`, \`task_removed\`, \`run_changed\`, \`run_event\`, \`run_usage\`, and
+\`task_changed\`, \`task_removed\`, \`attempt_changed\`, \`attempt_event\`, \`attempt_usage\`, and
 \`operations\` — with the Conversation and permission traffic dropped.
 
 ## Read scope
@@ -900,7 +900,7 @@ not resolved yet.`;
   // in the spec's info.description prose, not as a path (ADR-0005) — hidden
   // here the same way the openapi.json/yaml endpoints hide themselves.
   app.post('/mcp', { schema: { hide: true } }, async (req, reply) => {
-    // A Run Key is a valid MCP caller (scopedKeyAllowed always admits /mcp) but
+    // A Attempt Key is a valid MCP caller (scopedKeyAllowed always admits /mcp) but
     // is never an operator, so operator-only MCP tools stay gated to a
     // full-scope credential or an authenticated session — resolved by the same
     // helper the notion is defined in.

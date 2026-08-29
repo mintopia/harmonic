@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { AcpDriver } from '../acp/driver.js';
 import { adapterFor } from './harness/adapter.js';
-import { accumulateUsage, collectUsageWithRetry, type RunUsage } from './usage.js';
+import { accumulateUsage, collectUsageWithRetry, type AttemptUsage } from './usage.js';
 import { resolvePrices } from './pricing.js';
 import { DomainError } from '../domain/errors.js';
 import type { AppConfig } from '../config.js';
@@ -419,7 +419,7 @@ export class ConversationDriver {
     conversationId: number,
     result: { stopReason?: string; usage?: Record<string, unknown>; _meta?: unknown },
   ): Promise<void> {
-    let turnUsage: RunUsage | null = null;
+    let turnUsage: AttemptUsage | null = null;
     try {
       const convo = await this.store.get(conversationId);
       const harness = this.getConfig().harnesses[convo.harness as keyof AppConfig['harnesses']];
@@ -439,7 +439,7 @@ export class ConversationDriver {
       // Usage is best-effort; fall through to a plain touch.
     }
     const convo = await this.store.get(conversationId);
-    const stored = convo.usage ? (JSON.parse(convo.usage) as RunUsage) : null;
+    const stored = convo.usage ? (JSON.parse(convo.usage) as AttemptUsage) : null;
     const accumulated = accumulateUsage(stored, turnUsage);
     // Window fill is the parsed tree's last-turn footprint (collectUsage), not the
     // ACP prompt-result aggregate — the aggregate sums every round-trip of the

@@ -119,7 +119,7 @@ describe('agent critic end-to-end (issue #164)', () => {
   // leave the next stub agent nothing to commit. A unique file per run keeps
   // every run's commit real.
   let implSeq = 0;
-  async function createAndRun(): Promise<{ taskId: number; runId: number }> {
+  async function createAndRun(): Promise<{ taskId: number; attemptId: number }> {
     const created = await server.api('POST', '/api/tasks', {
       prompt: JSON.stringify({ writeFiles: { [`critic-feature-${++implSeq}.txt`]: 'work\n' } }),
       workingDir: repoDir,
@@ -128,7 +128,7 @@ describe('agent critic end-to-end (issue #164)', () => {
     expect(created.status).toBe(201);
     const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
     expect(started.status).toBe(201);
-    return { taskId: created.body.id, runId: started.body.id };
+    return { taskId: created.body.id, attemptId: started.body.id };
   }
 
   // `verification_attempts` is keyed off `attempt_id`, not `run_id`
@@ -140,15 +140,15 @@ describe('agent critic end-to-end (issue #164)', () => {
     const taskAttempts = await server.app.ctx.attempts.listForTask(taskId);
     return (await Promise.all(taskAttempts.map((a) => store.list(a.id)))).flat();
   };
-  const verdictEvents = async (runId: number) =>
-    (await server.api('GET', `/api/attempts/${runId}/events`)).body.events
+  const verdictEvents = async (attemptId: number) =>
+    (await server.api('GET', `/api/attempts/${attemptId}/events`)).body.events
       .filter((e: any) => e.type === 'lifecycle' && e.payload.event === 'verification')
       .map((e: any) => e.payload);
 
   it('AC1/AC2: a passing critic merges a native Run to done; the attempt persists at the verified head OID', async () => {
     criticResult = { verdict: 'pass', summary: 'looks correct' };
     await server.app.ctx.workspaces.update(workspaceId, critic());
-    const { taskId, runId } = await createAndRun();
+    const { taskId, attemptId } = await createAndRun();
 
     const task = await waitFor(async () => {
       const { body } = await server.api('GET', `/api/tasks/${taskId}`);
@@ -166,7 +166,7 @@ describe('agent critic end-to-end (issue #164)', () => {
     expect(rows[0]!).toMatchObject({ mechanism: 'critic', verdict: 'pass', summary: 'looks correct' });
     expect(rows[0]!.inputOid).toMatch(/^[0-9a-f]{40}$/);
 
-    expect(await verdictEvents(runId)).toEqual([
+    expect(await verdictEvents(attemptId)).toEqual([
       { event: 'verification', mechanism: 'critic', verdict: 'pass', summary: 'looks correct' },
     ]);
   });
@@ -282,7 +282,7 @@ describe('agent critic end-to-end (issue #164)', () => {
       verificationCommand: [command],
       ...critic(),
     });
-    const { taskId, runId } = await createAndRun();
+    const { taskId, attemptId } = await createAndRun();
 
     await waitFor(async () => {
       const { body } = await server.api('GET', `/api/tasks/${taskId}`);
@@ -290,7 +290,7 @@ describe('agent critic end-to-end (issue #164)', () => {
     });
 
     const run = (await server.api('GET', `/api/tasks/${taskId}/attempts/current`)).body;
-    expect(run.sessionRowId).not.toBe(runId);
+    expect(run.sessionRowId).not.toBe(attemptId);
 
     const response = await server.api('GET', `/api/tasks/${taskId}/attempts/timeline`);
     expect(response.status).toBe(200);

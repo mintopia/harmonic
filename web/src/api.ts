@@ -175,7 +175,7 @@ export const api = {
   /** Ticket-wide chronological lifecycle audit projection. */
   taskTimeline: (id: number) => request<{ events: TicketTimelineEvent[]; total: number }>('GET', `/api/tasks/${id}/timeline`),
   taskUsage: (id: number) =>
-    request<{ cost: Cost | null; runCount: number }>('GET', `/api/tasks/${id}/usage`),
+    request<{ cost: Cost | null; attemptCount: number }>('GET', `/api/tasks/${id}/usage`),
   attempt: (id: number) => request<AttemptSummary>('GET', `/api/attempts/${id}`),
   /** The Task's current (latest) Attempt — the follow-forward read for pollers. */
   currentAttempt: (taskId: number) => request<AttemptSummary>('GET', `/api/tasks/${taskId}/attempts/current`),

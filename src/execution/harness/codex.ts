@@ -396,7 +396,7 @@ export const codexAdapter: HarnessAdapter = {
   },
 
   // Verified end-to-end in the spike: every MCP request arrives with the
-  // bearer header, so the Run Key mechanism needs zero operator setup.
+  // bearer header, so the Attempt Key mechanism needs zero operator setup.
   mcpServers: ({ url, token }) => [
     {
       name: 'harmonic',

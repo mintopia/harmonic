@@ -3,7 +3,7 @@ import { DomainError } from './errors.js';
 import type { AttemptStore } from './attempts.js';
 import type { TaskService } from './tasks.js';
 import type { MergeEffectExec } from './merge.js';
-import type { RunSettleCoordinator } from './run-settle.js';
+import type { AttemptSettleCoordinator } from './attempt-settle.js';
 
 /**
  * The merge side effects Accept must apply for this Task/Attempt, built
@@ -29,7 +29,7 @@ export interface EscalationHooks {
  * actions. Accept merges the verified branch head as-is through the one merge
  * policy (ADR-0001, #383/#388) — the same primitive the automated path drives,
  * under the base repo mutex — and settles the Run under `operator-accept`
- * (`RunSettleCoordinator.settle`), the one disposition the coordinator lets
+ * (`AttemptSettleCoordinator.settle`), the one disposition the coordinator lets
  * override an already-`escalated` Attempt/Run, so the success path continues:
  * merge, close the ticket, clean up. Reject with guidance records the guidance as feedback,
  * resets the attempt budget, and requeues the ticket to `ready` (ADR-0048):
@@ -41,7 +41,7 @@ export class EscalationService {
   constructor(
     private readonly attempts: AttemptStore,
     private readonly taskService: TaskService,
-    private readonly settle: RunSettleCoordinator,
+    private readonly settle: AttemptSettleCoordinator,
     private readonly mergeEffects: MergeEffectsHook,
     private readonly hooks: EscalationHooks,
   ) {}

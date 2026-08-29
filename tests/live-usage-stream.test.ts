@@ -9,12 +9,12 @@ import type { DeepPartial, AppConfig } from '../src/config.js';
 
 /**
  * End-to-end: a running Claude harness tails its native session log and the
- * server streams a `run_usage` firehose event carrying the live snapshot
+ * server streams a `attempt_usage` firehose event carrying the live snapshot
  * (ADR 0010). The log is pre-written so `parse()` has something to read; the
  * tailer's final flush on stop guarantees at least one event even for a quick
  * run.
  */
-describe('live run_usage firehose (ADR 0010)', () => {
+describe('live attempt_usage firehose (ADR 0010)', () => {
   let server: TestServer;
   const workDir = mkdtempSync(join(tmpdir(), 'harmonic-live-work-'));
   const logDir = mkdtempSync(join(tmpdir(), 'harmonic-live-logs-'));
@@ -69,9 +69,9 @@ describe('live run_usage firehose (ADR 0010)', () => {
     });
     const created = await server.api('POST', '/api/tasks', { prompt: scenario, workingDir: workDir, isolationMode: 'direct' });
     const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
-    const runId = started.body.id;
+    const attemptId = started.body.id;
 
-    const msg = await waitFor(async () => messages.find((m) => m.type === 'run_usage' && m.runId === runId));
+    const msg = await waitFor(async () => messages.find((m) => m.type === 'attempt_usage' && m.attemptId === attemptId));
     expect(msg.usage.models['claude-opus-4-8']).toMatchObject({ inputTokens: 100, outputTokens: 10, cacheReadTokens: 5 });
     expect(msg.contextTokens).toBe(105); // input + cache read
     expect(msg.tree).toMatchObject({ id: sessionId, depth: 0 });
@@ -89,7 +89,7 @@ describe('live run_usage firehose (ADR 0010)', () => {
     // restart. Guards the finalize→stop flush ordering the reviewer flagged.
     const persisted = await waitFor(async () => {
       const row = await server.app.ctx.asyncDb.read((d) =>
-        d.select({ live: attempts.liveUsage }).from(attempts).where(eq(attempts.id, runId)).get(),
+        d.select({ live: attempts.liveUsage }).from(attempts).where(eq(attempts.id, attemptId)).get(),
       );
       return row?.live ?? false;
     });

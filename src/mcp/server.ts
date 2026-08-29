@@ -20,7 +20,7 @@ const taskId = { taskId: z.number().int().positive().describe('Task id') };
  * operator-only tools (e.g. `force_integrate_epic`) — default `false` (treat
  * an unspecified caller as non-operator) so a caller of this function that
  * hasn't been updated to compute the real value fails closed rather than
- * accidentally exposing operator actions to a Run Key.
+ * accidentally exposing operator actions to a Attempt Key.
  */
 export function buildMcpServer(ctx: AppContext, opts: { operator?: boolean } = {}): McpServer {
   const operator = opts.operator ?? false;

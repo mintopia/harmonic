@@ -44,7 +44,7 @@ describe('GET /api/attempts/:id/log (issue #242)', () => {
     rmSync(logDir, { recursive: true, force: true });
   });
 
-  async function startRun(scenario: object): Promise<{ runId: number; taskId: number }> {
+  async function startRun(scenario: object): Promise<{ attemptId: number; taskId: number }> {
     const task = await server.api('POST', '/api/tasks', {
       prompt: JSON.stringify(scenario),
       workingDir: workDir,
@@ -52,16 +52,16 @@ describe('GET /api/attempts/:id/log (issue #242)', () => {
     });
     const run = await server.api('POST', `/api/tasks/${task.body.id}/run`);
     await waitFor(async () => (await server.app.ctx.attempts.get(run.body.id)).sessionRowId ? true : undefined);
-    return { runId: run.body.id, taskId: task.body.id };
+    return { attemptId: run.body.id, taskId: task.body.id };
   }
 
   it('reads the native transcript for a live Run, not run_events', async () => {
-    const { runId, taskId } = await startRun({
+    const { attemptId, taskId } = await startRun({
       updates: [{ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'database-only output' } }],
       exit: 'hang',
     });
 
-    const { status, body } = await server.api('GET', `/api/attempts/${runId}/log`);
+    const { status, body } = await server.api('GET', `/api/attempts/${attemptId}/log`);
 
     expect(status).toBe(200);
     expect(body.status).toBe('available');
@@ -71,14 +71,14 @@ describe('GET /api/attempts/:id/log (issue #242)', () => {
     ]);
     expect(JSON.stringify(body)).not.toContain('database-only output');
     await server.api('POST', `/api/tasks/${taskId}/cancel`);
-    await waitFor(async () => (await server.app.ctx.attempts.get(runId)).endedAt ? true : undefined);
+    await waitFor(async () => (await server.app.ctx.attempts.get(attemptId)).endedAt ? true : undefined);
   });
 
   it('reads the native transcript after a Run finishes', async () => {
-    const { runId, taskId } = await startRun({ updates: [], delayMs: 1 });
-    await waitFor(async () => (await server.app.ctx.attempts.get(runId)).state !== 'running' ? true : undefined);
+    const { attemptId, taskId } = await startRun({ updates: [], delayMs: 1 });
+    await waitFor(async () => (await server.app.ctx.attempts.get(attemptId)).state !== 'running' ? true : undefined);
 
-    const { status, body } = await server.api('GET', `/api/attempts/${runId}/log`);
+    const { status, body } = await server.api('GET', `/api/attempts/${attemptId}/log`);
 
     expect(status).toBe(200);
     expect(body.status).toBe('available');
@@ -87,10 +87,10 @@ describe('GET /api/attempts/:id/log (issue #242)', () => {
   });
 
   it('reports an unavailable log when the captured transcript disappears', async () => {
-    const { runId } = await startRun({ updates: [], delayMs: 1 });
+    const { attemptId } = await startRun({ updates: [], delayMs: 1 });
     unlinkSync(transcriptPath);
 
-    const { status, body } = await server.api('GET', `/api/attempts/${runId}/log`);
+    const { status, body } = await server.api('GET', `/api/attempts/${attemptId}/log`);
 
     expect(status).toBe(200);
     expect(body).toEqual({ status: 'unavailable', liveCursor: 0 });

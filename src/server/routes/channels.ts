@@ -47,7 +47,7 @@ export async function channelRoutes(fastify: FastifyInstance): Promise<void> {
       schema: {
         tags: ['Channels'],
         description:
-          'Create a notification channel. Operator only; not reachable with a run-scoped Run Key.',
+          'Create a notification channel. Operator only; not reachable with an attempt-scoped Attempt Key.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         body: createChannelSchema,
         response: {
@@ -66,7 +66,7 @@ export async function channelRoutes(fastify: FastifyInstance): Promise<void> {
     {
       schema: {
         tags: ['Channels'],
-        description: 'List notification channels. Operator only; not reachable with a run-scoped Run Key.',
+        description: 'List notification channels. Operator only; not reachable with an attempt-scoped Attempt Key.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         querystring: paginationQuerySchema,
         response: { 200: channelsListResponseSchema.describe('Every configured notification channel.') },
@@ -84,7 +84,7 @@ export async function channelRoutes(fastify: FastifyInstance): Promise<void> {
     {
       schema: {
         tags: ['Channels'],
-        description: 'Get one notification channel. Operator only; not reachable with a run-scoped Run Key.',
+        description: 'Get one notification channel. Operator only; not reachable with an attempt-scoped Attempt Key.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         params: idParamsSchema,
         response: {
@@ -101,7 +101,7 @@ export async function channelRoutes(fastify: FastifyInstance): Promise<void> {
     {
       schema: {
         tags: ['Channels'],
-        description: 'Edit a notification channel. Operator only; not reachable with a run-scoped Run Key.',
+        description: 'Edit a notification channel. Operator only; not reachable with an attempt-scoped Attempt Key.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         params: idParamsSchema,
         body: updateChannelSchema,
@@ -122,7 +122,7 @@ export async function channelRoutes(fastify: FastifyInstance): Promise<void> {
     {
       schema: {
         tags: ['Channels'],
-        description: 'Delete a notification channel. Operator only; not reachable with a run-scoped Run Key.',
+        description: 'Delete a notification channel. Operator only; not reachable with an attempt-scoped Attempt Key.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         params: idParamsSchema,
         response: {
@@ -143,7 +143,7 @@ export async function channelRoutes(fastify: FastifyInstance): Promise<void> {
       schema: {
         tags: ['Channels'],
         description:
-          'Add a per-task channel override: this task announces its events to this channel in addition to the channel\'s own subscriptions. Operator only; not reachable with a run-scoped Run Key.',
+          'Add a per-task channel override: this task announces its events to this channel in addition to the channel\'s own subscriptions. Operator only; not reachable with an attempt-scoped Attempt Key.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         params: idParamsSchema,
         body: channelIdBodySchema,
@@ -166,7 +166,7 @@ export async function channelRoutes(fastify: FastifyInstance): Promise<void> {
     {
       schema: {
         tags: ['Channels'],
-        description: 'Remove a per-task channel override. Operator only; not reachable with a run-scoped Run Key.',
+        description: 'Remove a per-task channel override. Operator only; not reachable with an attempt-scoped Attempt Key.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         params: channelIdParamsSchema,
         response: {
@@ -188,7 +188,7 @@ export async function channelRoutes(fastify: FastifyInstance): Promise<void> {
       schema: {
         tags: ['Channels'],
         description:
-          "List a task's per-task channel overrides. Operator only; not reachable with a run-scoped Run Key.",
+          "List a task's per-task channel overrides. Operator only; not reachable with an attempt-scoped Attempt Key.",
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         params: idParamsSchema,
         querystring: paginationQuerySchema,

@@ -51,7 +51,7 @@ async function loadSubscribe() {
 async function loadSubscribeRunLog() {
   vi.resetModules();
   const mod = await import('../web/src/ws.js');
-  return mod.subscribeRunLog;
+  return mod.subscribeAttemptLog;
 }
 
 afterEach(() => {
@@ -128,19 +128,19 @@ describe('subscribe', () => {
   });
 });
 
-describe('subscribeRunLog', () => {
+describe('subscribeAttemptLog', () => {
   it('starts live-only, then replays from its cursor after reconnecting', async () => {
     vi.useFakeTimers();
     vi.stubGlobal('WebSocket', FakeWebSocket);
-    const subscribeRunLog = await loadSubscribeRunLog();
+    const subscribeAttemptLog = await loadSubscribeRunLog();
 
-    const unsubscribe = subscribeRunLog({ runId: 42, after: () => 7, onEvent: () => {} });
-    expect(FakeWebSocket.instances[0]?.sent).toEqual([{ type: 'run_log_subscribe', runId: 42, after: 7, replay: false }]);
+    const unsubscribe = subscribeAttemptLog({ attemptId: 42, after: () => 7, onEvent: () => {} });
+    expect(FakeWebSocket.instances[0]?.sent).toEqual([{ type: 'attempt_log_subscribe', attemptId: 42, after: 7, replay: false }]);
 
     FakeWebSocket.instances[0]?.serverClose();
     vi.advanceTimersByTime(1_500);
     FakeWebSocket.instances[1]?.onopen?.();
-    expect(FakeWebSocket.instances[1]?.sent).toEqual([{ type: 'run_log_subscribe', runId: 42, after: 7, replay: true }]);
+    expect(FakeWebSocket.instances[1]?.sent).toEqual([{ type: 'attempt_log_subscribe', attemptId: 42, after: 7, replay: true }]);
 
     unsubscribe();
   });

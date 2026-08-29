@@ -36,14 +36,14 @@ describe('on-demand transcript resolution (Runner.ensureSessionTranscript)', () 
     });
     const created = await server.api('POST', '/api/tasks', { prompt });
     const taskId = created.body.id;
-    const runId = (await server.api('POST', `/api/tasks/${taskId}/run`)).body.id;
+    const attemptId = (await server.api('POST', `/api/tasks/${taskId}/run`)).body.id;
     await waitFor(async () => {
       const { body } = await server.api('GET', `/api/tasks/${taskId}`);
       return body.state === 'done' ? body : undefined;
     });
 
     const asyncDb = server.app.ctx.asyncDb;
-    const runRow = (await asyncDb.read((d) => d.select().from(attempts).where(eq(attempts.id, runId)).get()))!;
+    const runRow = (await asyncDb.read((d) => d.select().from(attempts).where(eq(attempts.id, attemptId)).get()))!;
     const sessionId = runRow.sessionRowId!;
     // The stub writes no native JSONL, so the eager capture recorded nothing.
     const before = (await asyncDb.read((d) => d.select().from(sessions).where(eq(sessions.id, sessionId)).get()))!;
@@ -71,13 +71,13 @@ describe('on-demand transcript resolution (Runner.ensureSessionTranscript)', () 
       stopReason: 'end_turn',
     });
     const taskId = (await server.api('POST', '/api/tasks', { prompt })).body.id;
-    const runId = (await server.api('POST', `/api/tasks/${taskId}/run`)).body.id;
+    const attemptId = (await server.api('POST', `/api/tasks/${taskId}/run`)).body.id;
     await waitFor(async () => {
       const { body } = await server.api('GET', `/api/tasks/${taskId}`);
       return body.state === 'done' ? body : undefined;
     });
     const asyncDb = server.app.ctx.asyncDb;
-    const runRow = (await asyncDb.read((d) => d.select().from(attempts).where(eq(attempts.id, runId)).get()))!;
+    const runRow = (await asyncDb.read((d) => d.select().from(attempts).where(eq(attempts.id, attemptId)).get()))!;
     expect(await server.app.ctx.runner.ensureSessionTranscript(runRow.sessionRowId!)).toBeNull();
   });
 });

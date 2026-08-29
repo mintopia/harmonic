@@ -52,7 +52,7 @@ const task = (id: number, state: TaskState, extra: Partial<Task> = {}): Task => 
   stat: null,
   runStartedAt: null,
   toolCount: null,
-  runId: null,
+  attemptId: null,
   currentStep: null,
   contextTokens: null,
   contextWindow: null,

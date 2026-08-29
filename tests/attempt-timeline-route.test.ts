@@ -60,9 +60,9 @@ describe('attempt timeline API', () => {
     // `verifiedSha` now derives from the passing verification attempt above
     // (ADR-0001 #388 S-E: the `verified-head` fact was a redundant second
     // copy); `escalate` closes the Attempt with its disposition-kind reason,
-    // the same write `RunSettleCoordinator.settle` makes.
+    // the same write `AttemptSettleCoordinator.settle` makes.
     await server.app.ctx.attempts.finish(attempt.id, 'escalated', 15, undefined, 'escalate');
-    server.app.ctx.bus.emit('run_changed', run);
+    server.app.ctx.bus.emit('attempt_changed', run);
     await waitFor(async () => messages.find(
       (message) => typeof message === 'object'
         && message !== null

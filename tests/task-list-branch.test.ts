@@ -55,7 +55,7 @@ describe('task list payload: latest run branch', () => {
     expect(task.branch).toBe(`harmonic/task-${created.body.id}`);
     // The diffstat was snapshotted at settle and rides the same payload.
     expect(task.stat).toContain('insertion');
-    // The run-scoped endpoint serves that same snapshot, so the card and Task
+    // The attempt-scoped endpoint serves that same snapshot, so the card and Task
     // detail can never show two different stats.
     const runs = await server.api('GET', `/api/tasks/${created.body.id}/attempts`);
     const diff = await server.api('GET', `/api/attempts/${runs.body.attempts.at(-1).id}/diff`);

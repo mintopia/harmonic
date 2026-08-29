@@ -23,7 +23,7 @@ export function hasProcessTree(p: ActivityProcess): p is RunWithTree {
 
 export function ProcessDrillIn({ process, now }: { process: RunWithTree; now: number }) {
   const tree = process.tree;
-  const runId = process.runId;
+  const attemptId = process.attemptId;
   const [activity, setActivity] = useState<NodeActivityMap>(NO_NODE_ACTIVITY);
   const [selectedId, setSelectedId] = useState(tree.id);
   const [events, setEvents] = useState<AttemptLogEvent[]>([]);
@@ -42,12 +42,12 @@ export function ProcessDrillIn({ process, now }: { process: RunWithTree; now: nu
   // A transcript can appear just after session creation, so unavailable is
   // deliberately rechecked too.
   useEffect(() => {
-    if (runId === null) return;
+    if (attemptId === null) return;
     let live = true;
     setEvents([]);
     setLogUnavailable(false);
     const load = () =>
-      api.attemptLog(runId).then((log) => {
+      api.attemptLog(attemptId).then((log) => {
         if (!live) return;
         setLogUnavailable(log.status === 'unavailable');
         setEvents(log.status === 'available' ? log.events : []);
@@ -58,7 +58,7 @@ export function ProcessDrillIn({ process, now }: { process: RunWithTree; now: nu
       live = false;
       window.clearInterval(interval);
     };
-  }, [runId]);
+  }, [attemptId]);
 
   const rows = flattenTree(tree, activity, now);
   // A selection that aged out of the visible rows falls back to the root, so the

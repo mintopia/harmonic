@@ -15,14 +15,14 @@ import {
 export type RemoveWorktree = (repoDir: string, worktreePath: string) => Promise<void>;
 
 /**
- * The synchronous settle-hook `RunSettleCoordinator` calls on every terminal
+ * The synchronous settle-hook `AttemptSettleCoordinator` calls on every terminal
  * Run disposition (issue #148) — the seam that lets settle record a Session's
  * retirement intent without depending on the concrete coordinator.
  * {@link SessionRetirementCoordinator} implements it; the dependency is
  * optional, so every settle path that predates #148 keeps working unchanged.
  */
 export interface SessionRetirementHook {
-  onRunSettled(run: AttemptRow, cause: RetirementCause, now?: number): Promise<void>;
+  onAttemptSettled(run: AttemptRow, cause: RetirementCause, now?: number): Promise<void>;
 }
 
 /**
@@ -34,8 +34,8 @@ export interface SessionRetirementHook {
  * is removed **only** when the Session retires — never at `finalizeWorkspace` /
  * reaching `terminal`. This coordinator is what closes that loop, in two halves:
  *
- *  - {@link onRunSettled} — the settle-hook, awaited but still best-effort. Every
- *    terminal Run disposition funnels through `RunSettleCoordinator.settle`, which
+ *  - {@link onAttemptSettled} — the settle-hook, awaited but still best-effort. Every
+ *    terminal Run disposition funnels through `AttemptSettleCoordinator.settle`, which
  *    calls this once the Run has settled. It only *records the intent* — marks
  *    the Session `idle` (retained under a deadline) or `retiring` (removal owed)
  *    — because settle is synchronous and worktree removal is not.
@@ -69,7 +69,7 @@ export class SessionRetirementCoordinator {
    * Session, its Session is already retiring/retired, or the Session row has
    * gone — so it never crashes settle.
    */
-  async onRunSettled(run: AttemptRow, cause: RetirementCause, now: number = this.clock()): Promise<void> {
+  async onAttemptSettled(run: AttemptRow, cause: RetirementCause, now: number = this.clock()): Promise<void> {
     if (run.sessionRowId == null) return;
     let session;
     try {

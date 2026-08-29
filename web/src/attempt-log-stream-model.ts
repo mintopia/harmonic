@@ -13,8 +13,8 @@ export function appendAttemptLogEvents({ current, additions }: { current: Attemp
 }
 
 /** The last live-firehose sequence the page has already applied. */
-export function runLogCursor({ events }: { events: readonly AttemptLogEvent[] }): number {
-  return events.reduce((latest, event) => (event.runId === undefined ? latest : Math.max(latest, event.seq)), 0);
+export function attemptLogCursor({ events }: { events: readonly AttemptLogEvent[] }): number {
+  return events.reduce((latest, event) => (event.attemptId === undefined ? latest : Math.max(latest, event.seq)), 0);
 }
 
 /** Live updates at or before the REST snapshot are already represented there. */

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildDaySeries, type DaySeriesRun } from '../src/server/stats-series.js';
-import type { RunUsage } from '../src/execution/usage.js';
+import type { AttemptUsage } from '../src/execution/usage.js';
 import type { Cost } from '../src/execution/pricing.js';
 
 // Local midnight of a day, matching how buildDaySeries floors start times.
@@ -22,7 +22,7 @@ const usageJson = (input: number, output: number, cacheRead = 0, cacheWrite = 0)
     totals: null,
     toolCalls: {},
     source: 'session-log',
-  } satisfies RunUsage);
+  } satisfies AttemptUsage);
 
 const run = (startedAt: number, usage: string | null): DaySeriesRun => ({ startedAt, usage });
 // A run carrying its terminal state, for the per-day fails count.
@@ -51,7 +51,7 @@ describe('buildDaySeries', () => {
       perRunDollar,
     );
     expect(series.map((s) => s.day)).toEqual([midnight(2026, 0, 10), midnight(2026, 0, 12)]);
-    expect(series.map((s) => s.runs)).toEqual([1, 2]);
+    expect(series.map((s) => s.attempts)).toEqual([1, 2]);
   });
 
   it('sums input + output tokens per day and excludes cache read/write', () => {
@@ -65,14 +65,14 @@ describe('buildDaySeries', () => {
     expect(series).toHaveLength(1);
     // (100+10) + (40+4) = 154; the 500/20/999/999 cache tokens never count.
     expect(series[0]?.tokens).toBe(154);
-    expect(series[0]?.runs).toBe(2);
+    expect(series[0]?.attempts).toBe(2);
   });
 
   it('reports 0 tokens for a day whose runs reported no usage', () => {
     const series = buildDaySeries([run(at(2026, 0, 10, 8), null), run(at(2026, 0, 10, 9), null)], perRunDollar);
     expect(series).toHaveLength(1);
     expect(series[0]?.tokens).toBe(0);
-    expect(series[0]?.runs).toBe(2);
+    expect(series[0]?.attempts).toBe(2);
   });
 
   it('carries cost and the incomplete floor straight from the injected pricer', () => {
@@ -110,7 +110,7 @@ describe('buildDaySeries', () => {
     expect(series.map((s) => s.day)).toEqual([midnight(2026, 0, 10), midnight(2026, 0, 11)]);
     expect(series.map((s) => s.fails)).toEqual([1, 2]);
     // Every day still counts every run for the run total, whatever its state.
-    expect(series.map((s) => s.runs)).toEqual([3, 2]);
+    expect(series.map((s) => s.attempts)).toEqual([3, 2]);
   });
 
   it('reports 0 fails for a day whose rows omit state (usage-only callers)', () => {

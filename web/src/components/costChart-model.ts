@@ -7,7 +7,7 @@ export interface DayCost {
   /** Input + output tokens of that day's runs (cache excluded). Always concrete, never null. */
   tokens: number;
   /** Count of runs started that day. Always concrete, never null. */
-  runs: number;
+  attempts: number;
   /** Execution failures started that day (failed-only). The server always sends
    *  it; optional so older cached shapes and count-only test fixtures still fit. */
   fails?: number;
@@ -34,7 +34,7 @@ export function fillSeries(series: DayCost[], from: number, to: number): DayCost
     const d = new Date(start.getTime() + i * DAY + DAY / 2); // DST-safe: mid-day, then floor
     d.setHours(0, 0, 0, 0);
     const key = d.getTime();
-    out.push(byDay.get(key) ?? { day: key, totalUsd: 0, incomplete: false, tokens: 0, runs: 0, fails: 0 });
+    out.push(byDay.get(key) ?? { day: key, totalUsd: 0, incomplete: false, tokens: 0, attempts: 0, fails: 0 });
   }
   return out;
 }
@@ -56,10 +56,10 @@ export function costFloor(series: DayCost[]): { total: number; isFloor: boolean 
 
 /** The daily-chart metric a day series can be plotted by. The `usd`/`tokens`/`runs`
  *  trio drives the toggle; `fails` is plotted on its own in the reliability section. */
-export type StatMetric = 'usd' | 'tokens' | 'runs' | 'fails';
+export type StatMetric = 'usd' | 'tokens' | 'attempts' | 'fails';
 
 /** The metric's heading label ("Cost per day", the toggle button text). */
-export const METRIC_LABEL: Record<StatMetric, string> = { usd: 'Cost', tokens: 'Tokens', runs: 'Runs', fails: 'Fails' };
+export const METRIC_LABEL: Record<StatMetric, string> = { usd: 'Cost', tokens: 'Tokens', attempts: 'Attempts', fails: 'Fails' };
 
 const compact = new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 });
 
@@ -81,8 +81,8 @@ export function metricValue(d: DayCost, metric: StatMetric): number | null {
       return d.totalUsd;
     case 'tokens':
       return d.tokens;
-    case 'runs':
-      return d.runs;
+    case 'attempts':
+      return d.attempts;
     case 'fails':
       return d.fails ?? 0;
   }

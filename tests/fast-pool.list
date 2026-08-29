@@ -15,6 +15,12 @@ tests/activity-actions-model.test.ts
 tests/activity-model.test.ts
 tests/api-request.test.ts
 tests/async-db.test.ts
+tests/attempt-duration.test.ts
+tests/attempt-failure.test.ts
+tests/attempt-guardrail-snapshot.test.ts
+tests/attempt-log-firehose.test.ts
+tests/attempt-log-stream-model.test.ts
+tests/attempt-prompt.test.ts
 tests/attempt-rail-model.test.ts
 tests/attempts.test.ts
 tests/auto-drive.test.ts
@@ -78,13 +84,7 @@ tests/requeue-feedback.test.ts
 tests/review-announce-model.test.ts
 tests/review-live-regions.test.ts
 tests/router-model.test.ts
-tests/run-duration.test.ts
-tests/run-failure.test.ts
-tests/run-guardrail-snapshot.test.ts
-tests/run-log-firehose.test.ts
-tests/run-log-stream-model.test.ts
-tests/run-prompt.test.ts
-tests/runner-cancel-run-gone.test.ts
+tests/runner-cancel-attempt-gone.test.ts
 tests/runner-start.test.ts
 tests/scheduled-jobs-model.test.ts
 tests/server-error-handler.test.ts

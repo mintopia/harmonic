@@ -7,7 +7,7 @@ import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { AttemptStore } from '../src/domain/attempts.js';
-import { RunSettleCoordinator } from '../src/domain/run-settle.js';
+import { AttemptSettleCoordinator } from '../src/domain/attempt-settle.js';
 import { CrashRecoveryCoordinator } from '../src/domain/crash-recovery.js';
 import { Git } from '../src/execution/git.js';
 import type { TaskRow, AttemptRow } from '../src/db/schema.js';
@@ -50,7 +50,7 @@ describe('CrashRecoveryCoordinator (ADR-0001)', () => {
   let settingsStore: SettingsStore;
   let tasks: TaskService;
   let attempts: AttemptStore;
-  let settle: RunSettleCoordinator;
+  let settle: AttemptSettleCoordinator;
 
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-crash-recovery-'));
@@ -59,7 +59,7 @@ describe('CrashRecoveryCoordinator (ADR-0001)', () => {
     settingsStore = await makeSettingsStore(dir);
     tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
     attempts = new AttemptStore(asyncDb);
-    settle = new RunSettleCoordinator(tasks, attempts);
+    settle = new AttemptSettleCoordinator(tasks, attempts);
   });
 
   afterEach(async () => {

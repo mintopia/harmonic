@@ -1,6 +1,6 @@
 /**
  * The shape EventStream/coalesceEvents need — deliberately minimal so both
- * a Task run's `AttemptEvent` (keyed by `runId`) and a Conversation's
+ * a Task run's `AttemptEvent` (keyed by `attemptId`) and a Conversation's
  * `ConversationEvent` (keyed by `conversationId`) satisfy it structurally
  * without either importing the other's type.
  */

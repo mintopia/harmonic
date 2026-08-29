@@ -16,7 +16,7 @@ import type { TaskWithDeps } from '../domain/tasks.js';
 import { resolveVerifiers } from '../domain/setting-override.js';
 import { verifierStatuses, type VerifierStatus } from '../domain/verifier-status.js';
 import { costOfUsages, resolveContextWindow, resolvePrices, sumCosts, type Cost } from '../execution/pricing.js';
-import type { ProcessTree, RunUsage, RunUsageSnapshot } from '../execution/usage.js';
+import type { ProcessTree, AttemptUsage, AttemptUsageSnapshot } from '../execution/usage.js';
 import type { OperationEvent, OperationSnapshot } from '../telemetry/operations.js';
 import { z } from 'zod';
 import { forEachYielding } from '../reliability/yield.js';
@@ -27,7 +27,7 @@ import { forEachYielding } from '../reliability/yield.js';
  * Costs are stored and frozen; only live Usage is priced on read.
  */
 
-const parseUsage = (raw: string | null): RunUsage | null => (raw ? (JSON.parse(raw) as RunUsage) : null);
+const parseUsage = (raw: string | null): AttemptUsage | null => (raw ? (JSON.parse(raw) as AttemptUsage) : null);
 const parseCost = (raw: string | null): Cost | null => (raw ? (JSON.parse(raw) as Cost) : null);
 
 const pricesOf = (ctx: AppContext) => resolvePrices(ctx.configStore.get().prices);
@@ -337,7 +337,7 @@ export type ApiAttemptSummary = {
   stat: string | null;
   verifiedHeadOid: string | null;
   verifiedRef: string | null;
-  usage: RunUsage | null;
+  usage: AttemptUsage | null;
   cost: Cost | null;
   startedAt: number;
   finishedAt: number | null;
@@ -383,9 +383,9 @@ export function attemptToApi(_ctx: AppContext, run: AttemptRow): ApiAttemptSumma
 
 /** The firehose shape of a live-usage snapshot (ADR 0010): the persisted
  * snapshot plus Cost derived from its Usage on read, like every other Cost. */
-export type ApiRunUsage = RunUsageSnapshot & { cost: Cost | null };
+export type ApiAttemptUsage = AttemptUsageSnapshot & { cost: Cost | null };
 
-export function runUsageToApi(ctx: AppContext, snapshot: RunUsageSnapshot): ApiRunUsage {
+export function attemptUsageToApi(ctx: AppContext, snapshot: AttemptUsageSnapshot): ApiAttemptUsage {
   return { ...snapshot, cost: costOfUsages([snapshot.usage], pricesOf(ctx)) };
 }
 
@@ -423,13 +423,13 @@ export type ApiTask = Omit<TaskWithDeps, 'workspaceId' | TrackerFactColumns> & {
   runStartedAt: number | null;
   /** Total tool-call count of the running run; null unless the Task is running — the board card's "· N tools" (issue #100). */
   toolCount: number | null;
-  /** The running run's id, so the board can match the `run_usage` firehose to this card; null unless the Task is running (issue #100). */
-  runId: number | null;
+  /** The running run's id, so the board can match the `attempt_usage` firehose to this card; null unless the Task is running (issue #100). */
+  attemptId: number | null;
   /** The running run's current Attempt Step (ADR-0001 Vocabulary), for the
    * Board's Active-card badge; null unless the Task is running, or between
    * Steps (e.g. mid-merge). */
   currentStep: StepType | null;
-  /** The running run's current context-window occupancy in tokens; null unless running (or unreported). Live via the `run_usage` firehose (issue #52). */
+  /** The running run's current context-window occupancy in tokens; null unless running (or unreported). Live via the `attempt_usage` firehose (issue #52). */
   contextTokens: number | null;
   /** The model's effective context window (config override, else shipped default); null when unknown. The board card shows `ctx %` = contextTokens/contextWindow — never a fabricated percentage (issue #52). */
   contextWindow: number | null;
@@ -546,7 +546,7 @@ function taskToApiWithRuns(ctx: AppContext, task: TaskWithDeps, runs: AttemptRow
     stat: runs.at(-1)?.stat ?? null,
     runStartedAt: running?.startedAt ?? null,
     toolCount,
-    runId: running?.id ?? null,
+    attemptId: running?.id ?? null,
     currentStep,
     contextTokens: running ? (parseUsage(running.usage)?.contextTokens ?? null) : null,
     contextWindow: contextWindowOf(ctx, task.model),
@@ -573,9 +573,9 @@ export function costOfRuns(runs: AttemptRow[]): Cost | null {
 
 /** One live process in the Activity snapshot (issue #51); see `activitySnapshot`. */
 export interface ApiActivityProcess {
-  type: 'run' | 'chat';
+  type: 'attempt' | 'chat';
   /** The Run's id (type `run`), else null. */
-  runId: number | null;
+  attemptId: number | null;
   /** The Conversation's id (type `chat`), else null. */
   conversationId: number | null;
   /** The owning Task's id (type `run`), else null. */
@@ -599,7 +599,7 @@ export interface ApiActivityProcess {
   trackerUrl: string | null;
   /** True when the Task is escalated — the Activity view's "Needs you" signal; always false for a Conversation. */
   escalated: boolean;
-  usage: RunUsage | null;
+  usage: AttemptUsage | null;
   contextTokens: number | null;
   /** The model's configured context window; null when unconfigured — the context gauge shows raw tokens, never a fabricated percentage (issue #52). */
   contextWindow: number | null;
@@ -624,13 +624,13 @@ export interface ApiActivityProcess {
  */
 export async function activitySnapshot(ctx: AppContext, includeChats: boolean): Promise<ApiActivityProcess[]> {
   const prices = pricesOf(ctx);
-  const snapshots = new Map((await ctx.runner.activeSnapshots()).map((snapshot) => [snapshot.runId, snapshot.snapshot]));
+  const snapshots = new Map((await ctx.runner.activeSnapshots()).map((snapshot) => [snapshot.attemptId, snapshot.snapshot]));
   const runs: ApiActivityProcess[] = await Promise.all((await ctx.attempts.listRunning()).map(async (run) => {
     const task = await ctx.tasks.get(run.taskId);
     const snapshot = snapshots.get(run.id) ?? null;
     return {
-      type: 'run',
-      runId: run.id,
+      type: 'attempt',
+      attemptId: run.id,
       conversationId: null,
       taskId: run.taskId,
       title: firstLineTitle(task.prompt) ?? `Task ${run.taskId}`,
@@ -658,7 +658,7 @@ export async function activitySnapshot(ctx: AppContext, includeChats: boolean): 
     const usage = parseUsage(convo.usage);
     return {
       type: 'chat',
-      runId: null,
+      attemptId: null,
       conversationId: id,
       taskId: null,
       title: convo.title ?? firstLineTitle(await ctx.conversations.firstTurnText(id)) ?? `Conversation #${id}`,
@@ -698,7 +698,7 @@ function contextWindowOf(ctx: AppContext, model: string): number | null {
 export type ApiConversation = Omit<ConversationRow, 'usage' | 'workspaceId'> & {
   workspaceId: number;
   /** Running Usage accumulated across Turns (issue 12); null before any usage. */
-  usage: RunUsage | null;
+  usage: AttemptUsage | null;
   /** Cost of the running Usage against the live price table; honest-incomplete. */
   cost: Cost | null;
   /** The latest Turn's input-side token footprint (context fill); null when unknown. */

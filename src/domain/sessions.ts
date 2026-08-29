@@ -70,7 +70,7 @@ function redact(value: unknown): unknown {
  * `harmonic` server every harness registers over session/new — type `'http'`)
  * gets its `Authorization: Bearer <RunKey>` header re-added from the FRESHLY
  * minted `token`. The credential comes ONLY from `token` (a live mint), never
- * from the stored template (which has none), so a revoked run-scoped key can
+ * from the stored template (which has none), so a revoked attempt-scoped key can
  * never be reused on reload (issue #143 acceptance criterion). Non-http / non-
  * object entries pass through unchanged; a non-array input yields `[]`.
  */

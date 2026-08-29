@@ -108,9 +108,9 @@ describe('auto-runner', () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(await state(task.body.id)).toBe('ready');
 
-    // `run_changed` is the capacity-free wake-up path. It schedules a fill even
+    // `attempt_changed` is the capacity-free wake-up path. It schedules a fill even
     // with no timer running, so this cannot pass through interval polling.
-    server.app.ctx.bus.emit('run_changed', (await server.app.ctx.attempts.listForTask(finishedTask.body.id))[0]!);
+    server.app.ctx.bus.emit('attempt_changed', (await server.app.ctx.attempts.listForTask(finishedTask.body.id))[0]!);
     await waitFor(async () => (await state(task.body.id)) === 'done');
   });
 
@@ -147,7 +147,7 @@ describe('auto-runner', () => {
     expect(await state(second.body.id)).toBe('ready');
 
     // The first merges → done, its Work Context frees, and the settle's
-    // run_changed pokes the scheduler: the second is admitted and merges too.
+    // attempt_changed pokes the scheduler: the second is admitted and merges too.
     await waitFor(async () => (await state(first.body.id)) === 'done');
     await waitFor(async () => (await state(second.body.id)) === 'done');
   });

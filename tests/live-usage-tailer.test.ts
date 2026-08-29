@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { LiveUsageTailer } from '../src/execution/live-usage-tailer.js';
-import { activityLine, type RunUsageSnapshot } from '../src/execution/usage.js';
+import { activityLine, type AttemptUsageSnapshot } from '../src/execution/usage.js';
 import { currentTurnEvents } from '../src/domain/replay-quarantine.js';
 import type { QuarantinableEvent } from '../src/domain/replay-quarantine.js';
 
-const snap = (activity: string | null): RunUsageSnapshot => ({
+const snap = (activity: string | null): AttemptUsageSnapshot => ({
   usage: { models: {}, totals: null, toolCalls: {}, source: 'session-log' },
   contextTokens: null,
   activity,
@@ -65,11 +65,11 @@ describe('LiveUsageTailer cadence (ADR 0010)', () => {
 
   it('skips a fire while a slow sample is still in flight — never overlaps reads on one cursor', async () => {
     vi.useFakeTimers();
-    let resolve!: (s: RunUsageSnapshot) => void;
+    let resolve!: (s: AttemptUsageSnapshot) => void;
     let calls = 0;
     const sample = vi.fn(() => {
       calls++;
-      return new Promise<RunUsageSnapshot>((r) => (resolve = r));
+      return new Promise<AttemptUsageSnapshot>((r) => (resolve = r));
     });
     const tailer = new LiveUsageTailer({ sample, emit: vi.fn(), persist: vi.fn() }, { pushMs: 1000, persistMs: 10_000 });
     tailer.start(1);
@@ -148,7 +148,7 @@ describe('replay quarantine at the live-usage boundary (issue #144)', () => {
     vi.useFakeTimers();
     // A sampler mirroring the runner: derive the snapshot from current-turn
     // events only, so replayed history contributes nothing.
-    const sampleFromLog = (log: QuarantinableEvent[]): RunUsageSnapshot => {
+    const sampleFromLog = (log: QuarantinableEvent[]): AttemptUsageSnapshot => {
       const current = currentTurnEvents(log);
       const lastActivity = [...current].reverse().map((e) => activityLine(e.payload)).find((l) => l !== null) ?? null;
       const toolCalls = current.filter(
@@ -171,7 +171,7 @@ describe('replay quarantine at the live-usage boundary (issue #144)', () => {
     await tailer.stop(1);
 
     expect(emit).toHaveBeenCalledTimes(1);
-    const snapshot = emit.mock.calls[0]![1] as RunUsageSnapshot;
+    const snapshot = emit.mock.calls[0]![1] as AttemptUsageSnapshot;
     expect(snapshot.activity).toBeNull();
     expect(snapshot.usage.toolCalls).toEqual({});
   });

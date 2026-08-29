@@ -2,21 +2,21 @@ import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { App } from '../app.js';
-import { mergeUsage, type RunUsage } from '../../execution/usage.js';
+import { mergeUsage, type AttemptUsage } from '../../execution/usage.js';
 import { costOfRuns } from '../serialize.js';
 import { buildDaySeries } from '../stats-series.js';
 import { costSchema, modelUsageSchema, toolTokenUsageSchema } from '../schemas.js';
 import { yieldToEventLoop } from '../../reliability/yield.js';
-import { activeExecutionDurationMs, durationPercentiles } from '../../domain/run-duration.js';
-import { failuresByReason, isExecutionFailure } from '../../domain/run-failure.js';
+import { activeExecutionDurationMs, durationPercentiles } from '../../domain/attempt-duration.js';
+import { failuresByReason, isExecutionFailure } from '../../domain/attempt-failure.js';
 import { logger } from '../../logger.js';
 import type { AttemptState } from '../../db/schema.js';
 
-/** The stats view's `runsByState` keys: `passed` reads as `completed`, and
+/** The stats view's `attemptsByState` keys: `passed` reads as `completed`, and
  * `escalated` (an Attempt-only state) folds into the generic `failed` bucket,
  * matching the `apiAttemptState` translation `attemptToApi` applies to the
  * Attempt resource itself. */
-function statsRunState(state: AttemptState): 'running' | 'completed' | 'failed' | 'cancelled' {
+function statsAttemptState(state: AttemptState): 'running' | 'completed' | 'failed' | 'cancelled' {
   if (state === 'passed') return 'completed';
   if (state === 'escalated') return 'failed';
   return state;
@@ -24,7 +24,7 @@ function statsRunState(state: AttemptState): 'running' | 'completed' | 'failed' 
 
 /**
  * Aggregating this range is synchronous JS on the shared event loop (issue
- * #200): parsing each run's usage, merging, and building the day series all
+ * #200): parsing each attempt's usage, merging, and building the day series all
  * block every other request. Past this wall-clock the aggregation is logged so
  * a growing DB making Stats a latent freeze is a visible signal, not a mystery.
  */
@@ -47,21 +47,21 @@ const querySchema = z.object({
    * committed snapshot churn on every export — issue #74).
    */
   to: z.coerce.number().int().nonnegative().optional().meta({ example: 1784032260000 }),
-  /** Scope to one Workspace's runs (ADR-0008); omitted means every Workspace. */
+  /** Scope to one Workspace's attempts (ADR-0008); omitted means every Workspace. */
   workspaceId: z.coerce.number().int().positive().optional().meta({ example: 1 }),
 });
 
 const daySeriesEntrySchema = z.object({
   /** Epoch ms at local midnight (server timezone) of the bucket's day. */
   day: z.number().meta({ example: 1783987200000 }),
-  /** Cost of runs started that day; null when nothing could be priced. */
+  /** Cost of attempts started that day; null when nothing could be priced. */
   totalUsd: z.number().nullable().meta({ example: 0.52 }),
   /** True when any of the day's tokens could not be priced (honest numbers: the value is a floor). */
   incomplete: z.boolean().meta({ example: false }),
-  /** Input + output tokens of runs started that day (cache excluded); 0 when no usage was reported. */
+  /** Input + output tokens of attempts started that day (cache excluded); 0 when no usage was reported. */
   tokens: z.number().meta({ example: 21850 }),
-  /** Count of runs started that day, whatever their state. */
-  runs: z.number().meta({ example: 3 }),
+  /** Count of attempts started that day, whatever their state. */
+  attempts: z.number().meta({ example: 3 }),
   /** Execution failures started that day (failed-only, ADR-0028); the fails/day trend. */
   fails: z.number().meta({ example: 1 }),
 });
@@ -70,12 +70,12 @@ const statsResponseSchema = z.object({
   /** The range actually applied, echoed back after defaulting. */
   from: z.number().meta({ example: 1783382400000 }),
   to: z.number().meta({ example: 1784032260000 }),
-  /** Runs started in the range, whatever their state. */
-  runCount: z.number().meta({ example: 3 }),
-  /** Run counts keyed by RunState. */
-  runsByState: z.record(z.string(), z.number()).meta({ example: { completed: 2, failed: 1 } }),
-  /** Failed-only Run count (ADR-0028): the failure-rate numerator; cancelled Runs stay out. */
-  failedRuns: z.number().meta({ example: 1 }),
+  /** Attempts started in the range, whatever their state. */
+  attemptCount: z.number().meta({ example: 3 }),
+  /** Attempt counts keyed by wire state. */
+  attemptsByState: z.record(z.string(), z.number()).meta({ example: { completed: 2, failed: 1 } }),
+  /** Failed-only Attempt count (ADR-0028): the failure-rate numerator; cancelled Attempts stay out. */
+  failedAttempts: z.number().meta({ example: 1 }),
   /**
    * Execution failures (failed-only) bucketed by reason: the winning terminal
    * disposition (`failed`, `escalate`, `guardrail-trip`, `process-death`, …),
@@ -84,19 +84,19 @@ const statsResponseSchema = z.object({
    */
   failuresByReason: z.record(z.string(), z.number()).meta({ example: { failed: 4, escalate: 1, 'process-death': 1 } }),
   /**
-   * p50 / p95 active-execution duration (ms) over the range's Runs — wall-clock
-   * `finished − started` (ADR-0028). Null when no Run in the range has settled
+   * p50 / p95 active-execution duration (ms) over the range's Attempts — wall-clock
+   * `finished − started` (ADR-0028). Null when no Attempt in the range has settled
    * (honest numbers: never a fabricated 0).
    */
   durationMs: z
     .object({ p50: z.number(), p95: z.number() })
     .nullable()
     .meta({ example: { p50: 142000, p95: 512000 } }),
-  /** Aggregate token counts; null when no run in the range reported usage. */
+  /** Aggregate token counts; null when no attempt in the range reported usage. */
   totals: modelUsageSchema
     .extend({ totalTokens: z.number().meta({ example: 49450 }).nullable() })
     .nullable(),
-  /** Per-model breakdown; only models whose runs reported usage appear. */
+  /** Per-model breakdown; only models whose attempts reported usage appear. */
   models: z.record(z.string(), modelUsageSchema).meta({
     example: {
       'sonnet-5': { inputTokens: 18240, outputTokens: 3610, cacheReadTokens: 26400, cacheWriteTokens: 1200 },
@@ -104,9 +104,9 @@ const statsResponseSchema = z.object({
   }),
   /**
    * Per-agent-type token breakdown across the range (root session + each
-   * Subagent type), from runs whose harness parsed a Process Tree. `root` is
+   * Subagent type), from attempts whose harness parsed a Process Tree. `root` is
    * the reserved root-session bucket, so the subagent share is
-   * `1 − root/total`. Empty when no run in range carried per-agent data.
+   * `1 − root/total`. Empty when no attempt in range carried per-agent data.
    */
   agents: z.record(z.string(), modelUsageSchema).meta({
     example: {
@@ -115,14 +115,14 @@ const statsResponseSchema = z.object({
     },
   }),
   /** Output-token attribution across turns whose native transcripts exposed
-   * tool calls; absent when no run in the range had that evidence. */
+   * tool calls; absent when no attempt in the range had that evidence. */
   toolTokens: z.record(z.string(), toolTokenUsageSchema).optional(),
   /** Parsed output from no-tool turns; absent with toolTokens when attribution
    * could not be collected. */
   reasoning: toolTokenUsageSchema.optional(),
   toolCalls: z.record(z.string(), z.number()).meta({ example: { read: 14, edit: 6, bash: 3 } }),
   cost: costSchema.nullable(),
-  /** Per-day cost buckets (only days with runs), ordered by day. */
+  /** Per-day cost buckets (only days with attempts), ordered by day. */
   series: z.array(daySeriesEntrySchema),
 });
 
@@ -136,12 +136,12 @@ export async function statsRoutes(fastify: FastifyInstance): Promise<void> {
       schema: {
         tags: ['Stats'],
         description:
-          'Usage, Cost, and run-state counts over a time range (by run start time). Operator only; not reachable with a run-scoped Run Key.',
+          'Usage, Cost, and attempt-state counts over a time range (by attempt start time). Operator only; not reachable with an attempt-scoped Attempt Key.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         querystring: querySchema,
         response: {
           200: statsResponseSchema.describe(
-            'Usage, Cost, and run-state counts over the runs started in the range; totals and Cost count only what the runs actually reported and could be priced, so they are floors wherever `incomplete` is true.',
+            'Usage, Cost, and attempt-state counts over the attempts started in the range; totals and Cost count only what the attempts actually reported and could be priced, so they are floors wherever `incomplete` is true.',
           ),
         },
       },
@@ -169,25 +169,25 @@ export async function statsRoutes(fastify: FastifyInstance): Promise<void> {
       if (rows.length >= YIELD_ROW_THRESHOLD) await yieldToEventLoop();
 
       const usages = rows
-        .map((run) => (run.usage ? (JSON.parse(run.usage) as RunUsage) : null))
-        .filter((u): u is RunUsage => u !== null);
+        .map((run) => (run.usage ? (JSON.parse(run.usage) as AttemptUsage) : null))
+        .filter((u): u is AttemptUsage => u !== null);
       const merged = mergeUsage(usages);
       const toolCalls: Record<string, number> = {};
       for (const totals of Object.values(toolTotals.byTask)) {
         for (const [toolName, count] of Object.entries(totals)) toolCalls[toolName] = (toolCalls[toolName] ?? 0) + count;
       }
 
-      const runsByState: Record<string, number> = {};
+      const attemptsByState: Record<string, number> = {};
       for (const run of rows) {
-        const state = statsRunState(run.state);
-        runsByState[state] = (runsByState[state] ?? 0) + 1;
+        const state = statsAttemptState(run.state);
+        attemptsByState[state] = (attemptsByState[state] ?? 0) + 1;
       }
 
       // Failure rate numerator (ADR-0028): failed-only; cancelled Runs stay out.
       const failures = rows.filter(isExecutionFailure);
-      const failedRuns = failures.length;
+      const failedAttempts = failures.length;
       const failReasons = failuresByReason(
-        failures.map((r) => ({ attemptReason: attemptReasonByRun.get(r.id) ?? null, runReason: r.reason })),
+        failures.map((r) => ({ attemptReason: attemptReasonByRun.get(r.id) ?? null, detailReason: r.reason })),
       );
 
       const durations = rows
@@ -222,9 +222,9 @@ export async function statsRoutes(fastify: FastifyInstance): Promise<void> {
       return {
         from,
         to,
-        runCount: rows.length,
-        runsByState,
-        failedRuns,
+        attemptCount: rows.length,
+        attemptsByState,
+        failedAttempts,
         failuresByReason: failReasons,
         durationMs,
         totals: merged?.totals ?? null,
