@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, statSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parse, stringify } from 'yaml';
@@ -125,7 +125,12 @@ describe('SettingsStore (issue #391)', () => {
   });
 
   it('reloads on an external change to settings.yaml once the throttle window passes', async () => {
-    const store = await SettingsStore.create(dir);
+    // Drive the throttle off an injected clock, not wall time: a real
+    // `setTimeout` wait races the scheduler and flakes under concurrent load
+    // (issue #392). `now` is advanced by hand so the throttle boundary is
+    // deterministic.
+    let now = 1_000_000;
+    const store = await SettingsStore.create(dir, undefined, () => now);
     expect(store.getGlobal().maxAttempts).toBe(defaultConfig().maxAttempts);
 
     // Externally rewrite the file (an operator hand-editing it) — bypassing the
@@ -134,17 +139,18 @@ describe('SettingsStore (issue #391)', () => {
     const parsed = parse(readFileSync(path, 'utf8'));
     parsed.global.maxAttempts = 9;
     writeFileSync(path, stringify(parsed));
+    // Force the file's mtime past the store's loaded mtime so the reload keys
+    // off the edit, not on filesystem timestamp resolution (two writes can land
+    // in the same millisecond now that there is no wall-clock wait between them).
+    const bumped = new Date(statSync(path).mtimeMs + 5_000);
+    utimesSync(path, bumped, bumped);
 
-    // Immediately after, the read is throttled (at most one stat per second) —
-    // the getter must not see the external edit yet.
+    // Within the throttle window (<1s since the last check): still the old value.
+    now += 500;
     expect(store.getGlobal().maxAttempts).toBe(defaultConfig().maxAttempts);
 
-    // Past the throttle window, the next getter reloads and reflects it. A real
-    // wait — the store keys its throttle off `Date.now()` compared against file
-    // mtime (millisecond-resolution but wall-clock-driven), so faking only
-    // `Date.now()` without also moving the file's mtime forward would not
-    // reliably exercise the reload path.
-    await new Promise((resolve) => setTimeout(resolve, 1100));
+    // Past the throttle window: the next getter reloads and reflects the edit.
+    now += 600;
     expect(store.getGlobal().maxAttempts).toBe(9);
   });
 });
