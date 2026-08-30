@@ -9,7 +9,8 @@ testing, CI, or workflow changes get an ADR before being proposed.
 
 :::note[The 2026-08-28 ADR reset]
 On 2026-08-28 the accumulated 49-ADR trail was replaced by **12 definitive
-target-state ADRs**, renumbered 0001–0012. Numbers below refer to the new
+target-state ADRs**, renumbered 0001–0012; decisions taken after the reset
+continue from 0013. Numbers below refer to the new
 set; any older link, document, or commit citing an ADR number from before the
 reset refers to the **pre-reset set**, preserved at git tag
 [`adr-reset-2026-08-28`](https://github.com/mintopia/harmonic/tree/adr-reset-2026-08-28/docs/adr)
@@ -35,3 +36,4 @@ disagrees, the ADRs win.
 | 0010 | [Observability: Operations and Scheduled Jobs](https://github.com/mintopia/harmonic/blob/main/docs/adr/0010-observability-operations-and-scheduled-jobs.md) |
 | 0011 | [Web UI and API conventions](https://github.com/mintopia/harmonic/blob/main/docs/adr/0011-web-ui-and-api-conventions.md) |
 | 0012 | [Distribution, tooling, and the docs site](https://github.com/mintopia/harmonic/blob/main/docs/adr/0012-distribution-tooling-and-docs-site.md) |
+| 0013 | [Release automation with release-please](https://github.com/mintopia/harmonic/blob/main/docs/adr/0013-release-automation-release-please.md) |

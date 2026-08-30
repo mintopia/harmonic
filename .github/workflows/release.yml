@@ -1,27 +1,48 @@
 name: Release
 
-# Publish to npm when a semver tag (vX.Y.Z, optionally -prerelease) is pushed.
-# The tag drives the version — no version bump commit is needed in the repo.
+# release-please owns versioning and the changelog. On every push to main it
+# maintains a release PR that bumps package.json + CHANGELOG.md from the
+# Conventional Commits landed since the last release (feat -> minor, fix ->
+# patch, ! / BREAKING CHANGE -> major). Merging that PR tags vX.Y.Z, cuts a
+# GitHub Release, and the gated `publish` job below pushes the package to npm
+# via Trusted Publishing (OIDC) — no NPM_TOKEN, provenance attached.
 #
-# Auth is npm Trusted Publishing (OIDC): no NPM_TOKEN secret. The package's
-# trusted publisher must be configured on npmjs.com to this repo + workflow
-# (Settings -> Trusted Publisher -> GitHub Actions: mintopia/harmonic,
-# workflow release.yml). Provenance is generated automatically.
+# The publish runs in this same workflow run (a job dependency), so it does NOT
+# rely on the release-please tag re-triggering a separate workflow — a tag
+# pushed with GITHUB_TOKEN would not fire one. npm's trusted publisher is bound
+# to this file's name (release.yml) + repo (mintopia/harmonic): renaming this
+# file, or moving the publish step elsewhere, breaks publishing until the
+# trusted publisher is reconfigured on npmjs.com.
 on:
   push:
-    tags:
-      - 'v[0-9]+.[0-9]+.[0-9]+'
-      - 'v[0-9]+.[0-9]+.[0-9]+-*'
+    branches: [main]
 
-permissions:
-  contents: read
-  id-token: write # OIDC token for Trusted Publishing + provenance
+permissions: {}
 
 jobs:
-  publish:
+  release-please:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      release_created: ${{ steps.rp.outputs.release_created }}
+      tag_name: ${{ steps.rp.outputs.tag_name }}
+    steps:
+      - id: rp
+        uses: googleapis/release-please-action@v5
+
+  publish:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # OIDC token for Trusted Publishing + provenance
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.release-please.outputs.tag_name }}
 
       - uses: actions/setup-node@v7
         with:
@@ -38,19 +59,11 @@ jobs:
       - run: npm run typecheck
       - run: npm test
 
-      # Derive the version from the tag: refs/tags/v1.2.3 -> 1.2.3. A prerelease
-      # (has a hyphen, e.g. 1.2.3-beta.1) publishes under the `next` dist-tag so
-      # it never moves `latest`.
-      - name: Stamp version from tag
-        id: ver
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          npm version "$VERSION" --no-git-tag-version --allow-same-version
-          if [[ "$VERSION" == *-* ]]; then TAG=next; else TAG=latest; fi
-          echo "npm_tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "Publishing $VERSION to dist-tag '$TAG'"
-
-      # No NODE_AUTH_TOKEN: npm exchanges the GitHub OIDC token for a short-lived
-      # publish credential, and attaches provenance automatically.
+      # release-please already stamped package.json. Publish a prerelease
+      # (version has a hyphen) under `next` so it never moves `latest`.
       - name: Publish to npm
-        run: npm publish --tag "${{ steps.ver.outputs.npm_tag }}"
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          if [[ "$VERSION" == *-* ]]; then TAG=next; else TAG=latest; fi
+          echo "Publishing $VERSION to dist-tag '$TAG'"
+          npm publish --tag "$TAG"
