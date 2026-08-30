@@ -39,7 +39,7 @@ export function Gate({
     if (taskActions(task.state).length === 0) return null;
     return (
       <div className={WRAP}>
-        <TaskActions task={task} variant="footer" onEdit={onEdit} onChanged={onChanged} />
+        <TaskActions task={task} variant="footer" verificationAttempts={verificationAttempts} onEdit={onEdit} onChanged={onChanged} />
       </div>
     );
   }
