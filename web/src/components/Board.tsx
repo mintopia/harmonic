@@ -39,6 +39,7 @@ import { ArmedButton } from './ArmedButton';
 import { formatModelLabel, providerLabel } from './TaskIdentity';
 import {
   blockerBadge,
+  boardSectionTitle,
   btnPrimary,
   btnQuietDestructive,
   chip,
@@ -377,7 +378,7 @@ function BoardSection({
   return (
     <section className="mb-[26px]">
       <div className="mb-[13px] flex items-center gap-2.5 px-0.5">
-        <h2 className={`text-[11px] font-bold uppercase tracking-[0.11em] ${attn ? 'text-await' : 'text-ink'}`}>{label}</h2>
+        <h2 className={`${boardSectionTitle} ${attn ? 'text-await' : 'text-ink'}`}>{label}</h2>
         {count != null && (
           <span
             aria-atomic="true"
@@ -978,7 +979,7 @@ export function Board({
                 />
               ) : (
                 <div key="standalone" className={hasEpicGroups ? 'mt-2' : ''}>
-                  {hasEpicGroups && <div className={`${sectionLabel} mb-2.5 px-0.5`}>Standalone</div>}
+                  {hasEpicGroups && <div className={`${boardSectionTitle} text-ink mb-2.5 px-0.5`}>Standalone</div>}
                   <BlockerColumns columns={group.columns} onOpenTask={onOpenTask} onChanged={onChanged} className="pb-2" />
                 </div>
               ),
