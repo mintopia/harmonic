@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { api } from '../api';
-import { formatCost } from '../cost';
+import { formatCost, usd } from '../cost';
 import type { Attempt, Step, Cost, GuardrailEvent, AttemptSummary, AttemptLogEvent, AttemptUsageEvent, Task, TicketTimelineEvent, VerificationAttempt, VerifierStatus } from '../types';
 import { appendAttemptLogEvents, eventsAfterLiveCursor, attemptLogCursor } from '../attempt-log-stream-model';
 import { EmptyState } from './EmptyState';
@@ -21,10 +21,11 @@ import { AttemptRail } from './ticket/AttemptRail';
 import { Gate } from './ticket/Gate';
 import { CrumbBar } from './CrumbBar';
 import { LifecycleTimeline } from './ticket/LifecycleTimeline';
-import { attemptTone, runFailureBannerLabel, runForAttempt, type TimelineTone } from '../attempt-timeline-model';
-import { contentPanel, taskLifecycle, type ContentSelection, type LifecycleStepStatus } from '../task-detail-model';
+import { attemptTone, runFailureBannerLabel, runForAttempt, verifiedSha, type TimelineTone } from '../attempt-timeline-model';
+import { contentPanel, taskLifecycle, modelTotal, taskStats, type ContentSelection, type LifecycleStepStatus, type StatsAttempt, type TaskModelStats, type TaskStats } from '../task-detail-model';
 import { isAtLiveEdge } from '../follow-tail-model';
-import { labelType, railSectionHead, railSectionCount, PHASE_NODE_STYLES } from '../ui';
+import { Donut, type DonutSegment } from './Donut';
+import { card, labelType, railSectionHead, railSectionCount, PHASE_NODE_STYLES } from '../ui';
 import { toastError } from '../toast';
 import { ticketIdentity } from '../id-format.js';
 import { splitPathTail } from '../path';
@@ -120,9 +121,11 @@ function Metrics({
   live: Map<number, AttemptUsageEvent>;
   now: number;
 }) {
-  // A live AttemptSummary reads its freshest `attempt_usage` cost snapshot; a
-  // settled AttemptSummary its persisted cost — so Cost and Elapsed both tick as it runs.
+  // A live AttemptSummary reads its freshest `attempt_usage` snapshot; a settled AttemptSummary its
+  // persisted totals/cost — so Cost, I/O, and Elapsed all tick as it runs.
   const costFor = (r: AttemptSummary) => (r.state === 'running' ? live.get(r.id)?.cost ?? r.cost : r.cost);
+  // Honest-numbers headline (no total-token scalar): billable I/O = input + output.
+  const io = taskStats(statsAttemptsOf(runs, live)).billableIO;
   const cost = sumCosts(runs.map(costFor)) ?? task.cost;
   // A finished AttemptSummary contributes its settled span; a live AttemptSummary its wall-clock so
   // far (now − startedAt), which the 1s `now` tick advances while it executes.
@@ -150,6 +153,7 @@ function Metrics({
     );
   const items: Array<[string, ReactNode]> = [
     ['Cost', formatCost(cost) ?? '—'],
+    ['I/O', fmtK(io)],
     ['Elapsed', runs.length ? fmtDur(elapsed) : '—'],
     ['Attempts', `${runs.length}`],
     ['Diff', diff],
@@ -893,14 +897,150 @@ function TimelineNav({ selected, onSelect }: { selected: boolean; onSelect: () =
   );
 }
 
-/** The default content-panel view (nothing selected). The whole-Task Stats
- * breakdown is filled in by the Stats ticket; the shell shows a placeholder. */
-function StatsPlaceholder() {
+// The Stats panel's token bars ride a neutral monochrome opacity ramp on the
+// ink token — never state hues, so a "cached" segment can't pre-read as
+// running/blocked (Two Voices) — and resolves in both themes. Billable I/O
+// (input, then output) sits darkest; cache fades back.
+const TOKEN_SEGMENTS = [
+  { key: 'input' as const, label: 'input', fill: 'bg-ink' },
+  { key: 'output' as const, label: 'output', fill: 'bg-ink/60' },
+  { key: 'cachedIn' as const, label: 'cached in', fill: 'bg-ink/35' },
+  { key: 'cachedOut' as const, label: 'cached out', fill: 'bg-ink/15' },
+];
+
+/** Donut palette for the per-model cost slices (mirrors StatsPage's ramp): the
+ * teal accent for the largest, then the neutral ink→edge steps. */
+const COST_DONUT_COLORS = [
+  'var(--hm-accent)',
+  'var(--hm-ink)',
+  'var(--hm-muted)',
+  'var(--hm-faint)',
+  'var(--hm-edge-strong)',
+];
+
+const compactTokens = new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 });
+
+/** One model's stacked input/output/cached-in/cached-out bar, scaled so the
+ * widest bar is the model with the most tokens. Values are shown beneath so the
+ * magnitude is honest without a total-token scalar. */
+function ModelTokenBar({ model, maxTotal }: { model: TaskModelStats; maxTotal: number }) {
+  const total = modelTotal(model);
+  const widthPct = maxTotal > 0 ? (total / maxTotal) * 100 : 0;
+  const seg = (v: number) => (total > 0 ? (v / total) * 100 : 0);
   return (
-    <EmptyState title="Stats" className="py-12">
-      The Task's AI-usage breakdown will appear here.
-    </EmptyState>
+    <div className="grid gap-1.5">
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="truncate font-data text-data font-semibold text-ink" title={model.model}>
+          {model.model}
+        </span>
+        <span className="shrink-0 tabular-nums text-data text-muted">
+          {compactTokens.format(model.input + model.output)} I/O
+          {model.cost !== null && <span className="ml-2 font-semibold text-ink">{usd(model.cost)}</span>}
+        </span>
+      </div>
+      <div
+        className="flex h-2.5 overflow-hidden rounded-full bg-raised"
+        style={{ width: `${Math.max(4, widthPct)}%` }}
+        aria-hidden="true"
+      >
+        {TOKEN_SEGMENTS.map((s) => (
+          <span key={s.key} className={`h-full ${s.fill}`} style={{ width: `${seg(model[s.key])}%` }} />
+        ))}
+      </div>
+      <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-label tabular-nums text-faint">
+        {TOKEN_SEGMENTS.map((s) => (
+          <span key={s.key} className="inline-flex items-center gap-1.5">
+            <span className={`size-2 rounded-[2px] ${s.fill}`} aria-hidden="true" />
+            {s.label} {model[s.key].toLocaleString()}
+          </span>
+        ))}
+      </div>
+    </div>
   );
+}
+
+/** The default content-panel view (nothing selected): the whole-Task AI-usage
+ * breakdown. Honest-numbers rule — no total-token scalar; the token magnitude
+ * is surfaced only as the per-model bars and the donut proportions, and the
+ * headline figures are billable I/O and cost. */
+function StatsPanel({ stats }: { stats: TaskStats }) {
+  if (stats.byModel.length === 0) {
+    return (
+      <EmptyState title="Stats" className="py-12">
+        The Task's AI-usage breakdown will appear here once an Attempt has run.
+      </EmptyState>
+    );
+  }
+  const maxTotal = Math.max(...stats.byModel.map(modelTotal), 1);
+  const { agentTokens, subagentTokens } = stats.agentVsSubagent;
+  const agentTotal = agentTokens + subagentTokens;
+  const agentSegments: DonutSegment[] = [
+    { key: 'agent', label: 'Agent', value: agentTokens, valueLabel: compactTokens.format(agentTokens), color: 'var(--hm-ink)' },
+    { key: 'subagent', label: 'Subagent', value: subagentTokens, valueLabel: compactTokens.format(subagentTokens), color: 'var(--hm-muted)' },
+  ];
+  const costSegments: DonutSegment[] = stats.costByModel.map((m, i) => ({
+    key: m.model,
+    label: m.model,
+    value: m.cost,
+    valueLabel: usd(m.cost),
+    color: COST_DONUT_COLORS[i % COST_DONUT_COLORS.length]!,
+  }));
+  const costTotal = stats.costByModel.reduce((sum, m) => sum + m.cost, 0);
+
+  return (
+    <div className="flex flex-col gap-4 py-5">
+      <section className={`${card} p-5`}>
+        <h2 className="mb-4 text-title font-semibold">Tokens per model</h2>
+        <div className="flex flex-col gap-4">
+          {stats.byModel.map((m) => (
+            <ModelTokenBar key={m.model} model={m} maxTotal={maxTotal} />
+          ))}
+        </div>
+      </section>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <section className={`${card} p-5`}>
+          <h2 className="mb-4 text-title font-semibold">Agent vs subagent</h2>
+          {agentTotal > 0 ? (
+            <Donut
+              segments={agentSegments}
+              total={agentTotal}
+              totalDisplay={`${Math.round((subagentTokens / agentTotal) * 100)}%`}
+              totalLabel="SUBAGENT"
+              ariaLabel="Agent versus subagent token share"
+            />
+          ) : (
+            <p className="text-muted">No per-agent breakdown for this Task.</p>
+          )}
+        </section>
+
+        <section className={`${card} p-5`}>
+          <h2 className="mb-4 text-title font-semibold">Cost by model</h2>
+          {costSegments.length > 0 ? (
+            <Donut
+              segments={costSegments}
+              total={costTotal}
+              totalDisplay={usd(costTotal)}
+              totalLabel="COST"
+              ariaLabel="Cost by model"
+            />
+          ) : (
+            <p className="text-muted">No priced usage yet.</p>
+          )}
+        </section>
+      </div>
+    </div>
+  );
+}
+
+/** The live-merged {usage, cost} each Attempt contributes to the Stats
+ * breakdown: a running Attempt reads its `attempt_usage` firehose snapshot (its
+ * settled row is still null), a finished one its persisted figures. */
+function statsAttemptsOf(runs: AttemptSummary[], live: Map<number, AttemptUsageEvent>): StatsAttempt[] {
+  return runs.map((r) => {
+    const snapshot = r.state === 'running' ? live.get(r.id) : undefined;
+    return { usage: snapshot?.usage ?? r.usage, cost: snapshot?.cost ?? r.cost };
+  });
 }
 
 // ─── page ────────────────────────────────────────────────────────────────────
@@ -1295,6 +1435,12 @@ export function TicketPage({
 
             <TaskProgressBar state={task.state} attempts={runs} />
 
+            {verifiedSha(attempts) && (
+              <p className="mb-4 -mt-2 text-small text-muted">
+                verified <span className="font-data text-ink">{verifiedSha(attempts)}</span>
+              </p>
+            )}
+
             {task.skipReason && (
               <div className="mb-4 text-small text-muted">
                 <span className={labelType}>Waiting to run</span> —{' '}
@@ -1360,7 +1506,7 @@ export function TicketPage({
                   <NoRunsYet />
                 )
               ) : (
-                <StatsPlaceholder />
+                <StatsPanel stats={taskStats(statsAttemptsOf(runs, liveUsage))} />
               )}
             </div>
           </div>

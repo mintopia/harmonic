@@ -1,6 +1,7 @@
 // Explicit .js extension: this module is shared with the node-side test
 // project, whose nodenext resolution requires it (Vite maps .js → .ts).
 import { splitPathTail } from './path.js';
+import { ROOT_AGENT, totalTokens } from './stats-model.js';
 import type { AttemptSummary, TaskState } from './types.js';
 
 /**
@@ -161,4 +162,109 @@ export function taskLifecycle(
     return { key, label, status };
   });
   return { steps, current };
+}
+
+// ─── Stats aggregation ─────────────────────────────────────────────────────────
+
+/** The `usage` + `cost` an Attempt contributes to the Stats breakdown — the
+ * only fields the aggregation reads, so the whole-Task view and the single-
+ * Attempt panel can both feed it (a live Run substitutes its firehose snapshot
+ * for the not-yet-settled row). */
+export type StatsAttempt = Pick<AttemptSummary, 'usage' | 'cost'>;
+
+/** One model's token breakdown across the aggregated Attempts, roles combined.
+ * `cost` is the summed API-equivalent dollar figure, or null when the model has
+ * no price — a floor, never a fabricated zero. */
+export interface TaskModelStats {
+  model: string;
+  input: number;
+  output: number;
+  cachedIn: number;
+  cachedOut: number;
+  cost: number | null;
+}
+
+/**
+ * The Stats content-panel's view-model. Honest-numbers is a hard rule: there is
+ * deliberately no total-token scalar. The token magnitude is surfaced only as
+ * the per-model bar segments and the donut proportions; the honest headline
+ * figures are billable I/O (input + output) and cost.
+ */
+export interface TaskStats {
+  /** Per-model token breakdown, keyed by model only, largest token first. */
+  byModel: TaskModelStats[];
+  /** Token split for the agent-vs-subagent donut: the root session's own tokens
+   * vs everything spawned beneath it. Both zero when no Attempt carried a
+   * per-agent breakdown. */
+  agentVsSubagent: { agentTokens: number; subagentTokens: number };
+  /** Priced per-model cost for the cost donut, largest first — priced models
+   * only (an unpriced model can't be a dollar slice). */
+  costByModel: Array<{ model: string; cost: number }>;
+  /** The honest headline token figure: input + output across every model,
+   * excluding cache. */
+  billableIO: number;
+}
+
+const zeroTokens = (): Omit<TaskModelStats, 'model' | 'cost'> => ({
+  input: 0,
+  output: 0,
+  cachedIn: 0,
+  cachedOut: 0,
+});
+
+/** All four token classes of one model row summed — the magnitude the stacked
+ * bar's width plots and the key the rows sort on. */
+export const modelTotal = (m: Pick<TaskModelStats, 'input' | 'output' | 'cachedIn' | 'cachedOut'>): number =>
+  m.input + m.output + m.cachedIn + m.cachedOut;
+
+/**
+ * Aggregate a set of Attempts into the Stats view-model. Pure and parameterised
+ * over the Attempts, so the same function serves the whole Task (every Attempt)
+ * and a single Attempt (the Attempt panel).
+ *
+ * Token math reuses `totalTokens`/`ROOT_AGENT` (the usage-accumulation helpers);
+ * cost is taken from each Attempt's server-priced `cost.byModel` rather than
+ * re-deriving dollars from tokens. Per-model rows key on the model id alone, so
+ * one model used across the agent, subagent, and critic roles folds into a
+ * single row. Cost stays null-sticky like `sumCosts`: once a model is seen
+ * unpriced it contributes no dollars, and the row's cost is a floor.
+ */
+export function taskStats(attempts: readonly StatsAttempt[]): TaskStats {
+  const tokensByModel = new Map<string, Omit<TaskModelStats, 'model' | 'cost'>>();
+  const costByModel = new Map<string, number | null>();
+  let agentTokens = 0;
+  let subagentTokens = 0;
+
+  for (const { usage, cost } of attempts) {
+    for (const [model, u] of Object.entries(usage?.models ?? {})) {
+      const bucket = tokensByModel.get(model) ?? zeroTokens();
+      bucket.input += u.inputTokens;
+      bucket.output += u.outputTokens;
+      bucket.cachedIn += u.cacheReadTokens;
+      bucket.cachedOut += u.cacheWriteTokens;
+      tokensByModel.set(model, bucket);
+    }
+    for (const [model, usd] of Object.entries(cost?.byModel ?? {})) {
+      if (usd === null) costByModel.set(model, null);
+      else if (costByModel.get(model) !== null) costByModel.set(model, (costByModel.get(model) ?? 0) + usd);
+    }
+    for (const [name, u] of Object.entries(usage?.agents ?? {})) {
+      if (name === ROOT_AGENT) agentTokens += totalTokens(u);
+      else subagentTokens += totalTokens(u);
+    }
+  }
+
+  const byModel: TaskModelStats[] = [...tokensByModel.entries()]
+    .map(([model, t]) => ({ model, ...t, cost: costByModel.has(model) ? costByModel.get(model)! : null }))
+    .filter((m) => modelTotal(m) > 0)
+    .sort((a, b) => modelTotal(b) - modelTotal(a) || a.model.localeCompare(b.model));
+
+  const donutCostByModel = byModel
+    .filter((m): m is TaskModelStats & { cost: number } => m.cost !== null && m.cost > 0)
+    .map((m) => ({ model: m.model, cost: m.cost }))
+    .sort((a, b) => b.cost - a.cost || a.model.localeCompare(b.model));
+
+  const billableIO = byModel.reduce((sum, m) => sum + m.input + m.output, 0);
+
+  return { byModel, agentVsSubagent: { agentTokens, subagentTokens }, costByModel: donutCostByModel, billableIO };
 }
