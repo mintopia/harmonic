@@ -20,11 +20,10 @@ import { cardTitle } from '../board-sections-model';
 import { AttemptRail } from './ticket/AttemptRail';
 import { Gate } from './ticket/Gate';
 import { CrumbBar } from './CrumbBar';
-import { AttemptTimeline } from './ticket/AttemptTimeline';
 import { LifecycleTimeline } from './ticket/LifecycleTimeline';
-import { StepLog } from './ticket/StepLog';
-import { runFailureBannerLabel, runForAttempt, verifiedSha } from '../attempt-timeline-model';
-import { labelType } from '../ui';
+import { attemptTone, runFailureBannerLabel, runForAttempt, verifiedSha, type TimelineTone } from '../attempt-timeline-model';
+import { contentPanel, type ContentSelection } from '../task-detail-model';
+import { labelType, railSectionHead, railSectionCount } from '../ui';
 import { toastError } from '../toast';
 import { ticketIdentity } from '../id-format.js';
 
@@ -770,6 +769,98 @@ function GuardrailAlert({ events }: { events: GuardrailEvent[] }) {
   );
 }
 
+// ─── navigation sidebar ──────────────────────────────────────────────────────
+
+const NAV_DOT: Record<TimelineTone, string> = {
+  running: 'bg-running-dot motion-safe:animate-dot-pulse',
+  passed: 'bg-merged-dot',
+  failed: 'bg-fail-dot',
+  neutral: 'bg-edge',
+};
+const NAV_WORD: Record<TimelineTone, string> = {
+  running: 'text-running',
+  passed: 'text-merged',
+  failed: 'text-fail',
+  neutral: 'text-muted',
+};
+
+const NAV_SELECTED = 'border-await bg-await-tint';
+const NAV_IDLE = 'border-transparent hover:bg-raised';
+
+/** The Attempts list: one row per Attempt — `Attempt N` + a state dot + the
+ * state word, no per-attempt Step breakdown. Selecting a row opens that Attempt
+ * in the content panel. */
+function AttemptsNav({
+  attempts,
+  maxAttempts,
+  selectedNumber,
+  onSelect,
+}: {
+  attempts: Attempt[];
+  maxAttempts: number | null;
+  selectedNumber: number | null;
+  onSelect: (attempt: Attempt) => void;
+}) {
+  return (
+    <section className="border-b border-hairline px-3.5 py-3.5" aria-label="Attempt history">
+      <div className={railSectionHead}>
+        Attempts <span className={railSectionCount}>{attempts.length}{maxAttempts !== null && ` / ${maxAttempts}`}</span>
+      </div>
+      {attempts.length === 0 ? (
+        <p className="text-small text-muted">This ticket hasn't been attempted yet.</p>
+      ) : (
+        <ol className="flex flex-col gap-1">
+          {attempts.map((attempt) => {
+            const tone = attemptTone(attempt.state);
+            const selected = attempt.number === selectedNumber;
+            return (
+              <li key={attempt.id}>
+                <button
+                  type="button"
+                  aria-pressed={selected}
+                  onClick={() => onSelect(attempt)}
+                  className={`flex min-h-11 w-full items-center gap-2.5 rounded-sm border px-2.5 py-2 text-left transition-colors ${selected ? NAV_SELECTED : NAV_IDLE}`}
+                >
+                  <span role="img" aria-label={attempt.state} className={`size-2 shrink-0 rounded-full ${NAV_DOT[tone]}`} />
+                  <span className="text-data font-semibold text-ink">Attempt {attempt.number}</span>
+                  <span className={`ml-auto text-label font-bold uppercase tracking-[0.03em] ${NAV_WORD[tone]}`}>{attempt.state}</span>
+                </button>
+              </li>
+            );
+          })}
+        </ol>
+      )}
+    </section>
+  );
+}
+
+/** The lone Timeline entry: opens the Task's lifecycle stream in the content panel. */
+function TimelineNav({ selected, onSelect }: { selected: boolean; onSelect: () => void }) {
+  return (
+    <section className="border-b border-hairline px-3.5 py-3.5">
+      <button
+        type="button"
+        aria-pressed={selected}
+        onClick={onSelect}
+        className={`flex min-h-11 w-full items-center gap-2.5 rounded-sm border px-2.5 py-2 text-left transition-colors ${selected ? NAV_SELECTED : NAV_IDLE}`}
+      >
+        <Icon name="activity" className="size-3.5 shrink-0 text-muted" />
+        <span className="text-data font-semibold text-ink">Timeline</span>
+      </button>
+    </section>
+  );
+}
+
+/** The default content-panel view (nothing selected). The whole-Task Stats
+ * breakdown is filled in by the Stats ticket; the shell shows a placeholder. */
+function StatsPlaceholder() {
+  return (
+    <EmptyState title="Stats" className="py-12">
+      The Task's AI-usage breakdown will appear here.
+    </EmptyState>
+  );
+}
+
 // ─── page ────────────────────────────────────────────────────────────────────
 
 export function TicketPage({
@@ -791,16 +882,17 @@ export function TicketPage({
   const [attempts, setAttempts] = useState<Attempt[]>([]);
   const [budgetBase, setBudgetBase] = useState(0);
   const [maxAttempts, setMaxAttempts] = useState<number | null>(null);
-  const [selectedSummaryId, setSelectedSummaryId] = useState<number | null>(null);
-  const [selectedAttemptId, setSelectedAttemptId] = useState<number | null>(null);
-  const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
+  const [workspaceName, setWorkspaceName] = useState<string | null>(null);
+  // The sidebar selection driving the content panel: nothing (Stats), an
+  // Attempt, a changed file, or the Timeline. `contentPanel` maps it to the
+  // panel that renders.
+  const [selection, setSelection] = useState<ContentSelection>({ kind: 'none' });
   const [events, setEvents] = useState<AttemptLogEvent[]>([]);
   const [logUnavailable, setLogUnavailable] = useState(false);
   const [guardrailEvents, setGuardrailEvents] = useState<GuardrailEvent[]>([]);
   const [verificationAttempts, setVerificationAttempts] = useState<VerificationAttempt[]>([]);
   const [verifierStatuses, setVerifierStatuses] = useState<VerifierStatus[]>([]);
   const [timelineEvents, setTimelineEvents] = useState<TicketTimelineEvent[]>([]);
-  const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [allTasks, setAllTasks] = useState<Task[]>([]);
   // The full prompt/description lives on the item GET, not the lean list row the
   // Board/list pass in (ADR-0045). Fetch it here so the description renders the
@@ -814,6 +906,12 @@ export function TicketPage({
   // the whole run; poll the live diffstat instead so files appear as the agent
   // writes them, falling back to the settled `task.stat` once it merges.
   const [liveStat, setLiveStat] = useState<string | null>(null);
+
+  // The AttemptSummary the selected Attempt owns (its log/verification/guardrail
+  // streams key off this). Only an Attempt selection loads run-scoped data; the
+  // Stats / Timeline / diff panels don't need it.
+  const selectedRun = selection.kind === 'attempt' ? runForAttempt(runs, { number: selection.attemptNumber }) : null;
+  const selectedRunId = selectedRun?.id ?? null;
 
   useEffect(() => {
     let live = true;
@@ -852,7 +950,9 @@ export function TicketPage({
     let live = true;
     Promise.all([api.config(), api.workspaces()]).then(([config, { workspaces }]) => {
       if (!live) return;
-      setMaxAttempts(workspaces.find((workspace) => workspace.id === task.workspaceId)?.maxAttempts ?? config.maxAttempts);
+      const workspace = workspaces.find((workspace) => workspace.id === task.workspaceId);
+      setMaxAttempts(workspace?.maxAttempts ?? config.maxAttempts);
+      setWorkspaceName(workspace?.name ?? null);
     }, toastError);
     return () => {
       live = false;
@@ -885,7 +985,6 @@ export function TicketPage({
     api.taskAttempts(task.id).then(({ attempts: list }) => {
       if (!live) return;
       setRuns(list);
-      setSelectedSummaryId((current) => current ?? list[list.length - 1]?.id ?? null);
     });
     const unsubscribe = subscribe((msg) => {
       if (msg.type === 'attempt_changed' && msg.run.taskId === task.id) {
@@ -946,7 +1045,7 @@ export function TicketPage({
   }, [anyRunning, latestAttemptId]);
 
   useEffect(() => {
-    if (selectedSummaryId === null) return;
+    if (selectedRunId === null) return;
     let live = true;
     let hydrated = false;
     const pending: AttemptLogEvent[] = [];
@@ -956,7 +1055,7 @@ export function TicketPage({
     // Subscribe before hydrating but deliberately skip the existing replay:
     // the REST snapshot already contains it, in a different id space. Events
     // arriving during hydration are buffered and cut over at its live cursor.
-    const unsubscribe = subscribeAttemptLog({ attemptId: selectedSummaryId, after: () => cursor, onEvent: (event) => {
+    const unsubscribe = subscribeAttemptLog({ attemptId: selectedRunId, after: () => cursor, onEvent: (event) => {
       cursor = Math.max(cursor, event.seq);
       if (!hydrated) {
         pending.push(event);
@@ -964,7 +1063,7 @@ export function TicketPage({
       }
       setEvents((current) => appendAttemptLogEvents({ current, additions: [event] }));
     } });
-    api.attemptLog(selectedSummaryId).then(
+    api.attemptLog(selectedRunId).then(
       (log) => {
         if (!live) return;
         setLogUnavailable(log.status === 'unavailable');
@@ -989,28 +1088,28 @@ export function TicketPage({
       live = false;
       unsubscribe();
     };
-  }, [selectedSummaryId]);
+  }, [selectedRunId]);
 
   useEffect(() => {
-    if (selectedSummaryId === null) {
+    if (selectedRunId === null) {
       setGuardrailEvents([]);
       return;
     }
     let live = true;
     const load = () =>
-      api.attemptGuardrailEvents(selectedSummaryId).then(({ guardrailEvents }) => live && setGuardrailEvents(guardrailEvents));
+      api.attemptGuardrailEvents(selectedRunId).then(({ guardrailEvents }) => live && setGuardrailEvents(guardrailEvents));
     load();
     const unsubscribe = subscribe((msg) => {
-      if (msg.type === 'attempt_changed' && msg.run.id === selectedSummaryId) load();
+      if (msg.type === 'attempt_changed' && msg.run.id === selectedRunId) load();
     });
     return () => {
       live = false;
       unsubscribe();
     };
-  }, [selectedSummaryId]);
+  }, [selectedRunId]);
 
   useEffect(() => {
-    if (selectedSummaryId === null) {
+    if (selectedRunId === null) {
       setVerificationAttempts([]);
       setVerifierStatuses([]);
       return;
@@ -1018,7 +1117,7 @@ export function TicketPage({
     let live = true;
     const load = () =>
       api
-        .attemptVerificationAttempts(selectedSummaryId)
+        .attemptVerificationAttempts(selectedRunId)
         .then(({ verificationAttempts, verifierStatuses }) => {
           if (!live) return;
           setVerificationAttempts(verificationAttempts);
@@ -1026,15 +1125,13 @@ export function TicketPage({
         });
     load();
     const unsubscribe = subscribe((msg) => {
-      if (msg.type === 'attempt_changed' && msg.run.id === selectedSummaryId) load();
+      if (msg.type === 'attempt_changed' && msg.run.id === selectedRunId) load();
     });
     return () => {
       live = false;
       unsubscribe();
     };
-  }, [selectedSummaryId]);
-
-  const selectedRun = runs.find((run) => run.id === selectedSummaryId);
+  }, [selectedRunId]);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(false);
@@ -1043,6 +1140,15 @@ export function TicketPage({
     if (!el || !stickToBottom.current) return;
     el.scrollTop = el.scrollHeight;
   }, [events]);
+
+  // Every selection change re-homes the panel to the top, so a new Attempt,
+  // file, or the Timeline always starts from its beginning rather than
+  // inheriting the previous content's scroll depth.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTop = 0;
+    stickToBottom.current = false;
+  }, [selection]);
 
   useEffect(() => {
     const onKeyDown = (e: globalThis.KeyboardEvent) => {
@@ -1053,47 +1159,30 @@ export function TicketPage({
   }, [onClose]);
 
   const latestRun = runs[runs.length - 1];
-  // Escalation is the timeline's own entry (its attempt carries the trigger and
-  // the actions); only a plain failure still needs this banner.
   const latestAttempt = attempts.at(-1) ?? null;
   const failureLabel = task.state === 'escalated' ? null : runFailureBannerLabel(latestRun, latestAttempt);
   const failure = failureLabel ? latestRun?.reason ?? null : null;
+  // The escalation trigger — the reason this Task was handed to a human. Its
+  // Accept / Reject / Close actions live in the pinned sidebar Actions block.
+  const escalationReason =
+    task.state === 'escalated'
+      ? (latestAttempt?.escalationReason ?? task.escalationReason)?.replace(/^escalated to human:\s*/i, '') ?? null
+      : null;
   const skipHolderId = parseSkipReasonTaskRef(task.skipReason);
-  const gateModel = gateForAttempt({ task, runs, selectedAttemptId: selectedSummaryId });
-  const selectedTask = attempts.flatMap((attempt) => attempt.steps).find((row) => row.id === selectedTaskId) ?? null;
-  const selectRun = (attemptId: number | null) => {
-    setSelectedFile(null);
-    setSelectedAttemptId(null);
-    setSelectedTaskId(null);
-    setSelectedSummaryId(attemptId);
+  const gateModel = gateForAttempt({ task, runs, selectedAttemptId: selectedRunId });
+  const panel = contentPanel(selection);
+  const selectAttempt = (attempt: Attempt) => setSelection({ kind: 'attempt', attemptNumber: attempt.number });
+  const selectRunById = (runId: number) => {
+    const run = runs.find((r) => r.id === runId);
+    if (run) setSelection({ kind: 'attempt', attemptNumber: run.number });
   };
-  const selectAttempt = (attempt: Attempt) => {
-    selectRun(runForAttempt(runs, attempt)?.id ?? selectedSummaryId);
-    setSelectedAttemptId(attempt.id);
-  };
-  const timelineProps = {
-    attempts,
-    runs,
-    task,
-    maxAttempts,
-    now,
-    selectedSummaryId,
-    selectedAttemptId,
-    selectedTaskId,
-    selectedFile,
-    onChanged,
-    onSelectAttempt: selectAttempt,
-    onSelectStep: (attempt: Attempt, row: Step) => {
-      selectAttempt(attempt);
-      setSelectedTaskId(row.id);
-    },
-  };
+  const selectedFile = selection.kind === 'file' ? selection.path : null;
 
   return (
     <div className="flex h-full flex-col">
       <CrumbBar
         crumbs={[
-          { node: <span className="font-semibold text-ink">harmonic</span>, onClick: onClose },
+          { node: <span className="font-semibold text-ink">{workspaceName ?? '…'}</span>, onClick: onClose },
           ...(task.mapRef !== null
             ? [
                 {
@@ -1188,42 +1277,55 @@ export function TicketPage({
                 <div className="mt-0.5 whitespace-pre-wrap break-words text-ink">{failure}</div>
               </div>
             )}
+            {task.state === 'escalated' && (
+              <div className="mb-4 rounded-md bg-await-tint px-3 py-2 text-small">
+                <span className="inline-flex items-center gap-1.5 font-semibold text-await">
+                  <Icon name="alert-triangle" className="size-3.5" />
+                  Escalated
+                </span>
+                {escalationReason && (
+                  <div className="mt-0.5 whitespace-pre-wrap break-words text-ink">{escalationReason}</div>
+                )}
+              </div>
+            )}
 
-            {/* Narrow: the rail stacks below the fold, so a sticky strip keeps
-                attempt-switching reachable at the tool's core side-monitor width. */}
-            <div className="sticky top-0 z-20 -mx-[30px] mb-1 border-y border-hairline bg-canvas px-[30px] py-2.5 rail:hidden">
-              <AttemptTimeline {...timelineProps} layout="strip" />
-            </div>
-
-            {/* main pane: AttemptSummary OR Changes, driven by the rail */}
+            {/* content panel: driven by the sidebar selection — Stats (default),
+                an Attempt, a changed-file diff, or the Timeline. */}
             <div className="min-w-0 border-t border-hairline">
-              {selectedFile !== null ? (
-                <ChangesPane task={task} attemptId={selectedSummaryId} selectedFile={selectedFile} running={anyRunning} />
-              ) : selectedRun ? (
-                <>
-                  <AttemptHeader run={selectedRun} steps={attempts.find((a) => a.number === selectedRun.number)?.steps ?? []} />
-                  {selectedTask && <StepLog key={selectedTask.id} step={selectedTask} />}
-                  <Verification attempts={verificationAttempts} statuses={verifierStatuses} run={selectedRun} />
-                  <GuardrailAlert events={guardrailEvents} />
-                  <SessionAgents run={selectedRun} snapshot={liveUsage.get(selectedRun.id)} />
-                  <Transcript events={events} unavailable={logUnavailable} />
-                  {selectedRun.state === 'running' && <SteerBox taskId={selectedRun.taskId} />}
-                </>
+              {panel.kind === 'diff' ? (
+                <ChangesPane task={task} attemptId={latestAttemptId} selectedFile={selectedFile ?? ''} running={anyRunning} />
+              ) : panel.kind === 'timeline' ? (
+                <LifecycleTimeline events={timelineEvents} />
+              ) : panel.kind === 'attempt' ? (
+                selectedRun ? (
+                  <>
+                    <AttemptHeader run={selectedRun} steps={attempts.find((a) => a.number === selectedRun.number)?.steps ?? []} />
+                    <Verification attempts={verificationAttempts} statuses={verifierStatuses} run={selectedRun} />
+                    <GuardrailAlert events={guardrailEvents} />
+                    <SessionAgents run={selectedRun} snapshot={liveUsage.get(selectedRun.id)} />
+                    <Transcript events={events} unavailable={logUnavailable} />
+                    {selectedRun.state === 'running' && <SteerBox taskId={selectedRun.taskId} />}
+                  </>
+                ) : (
+                  <NoRunsYet />
+                )
               ) : (
-                <NoRunsYet />
+                <StatsPlaceholder />
               )}
             </div>
-            <LifecycleTimeline events={timelineEvents} />
           </div>
         </div>
 
-        {/* right rail */}
+        {/* right navigation sidebar */}
         <aside className="flex w-[326px] shrink-0 flex-col border-l border-hairline bg-surface max-rail:w-auto max-rail:border-l-0 max-rail:border-t">
           <div className="min-h-0 flex-1 overflow-y-auto max-rail:overflow-visible">
-            {/* At narrow widths the sticky strip in the main pane owns attempt-switching. */}
-            <div className="max-rail:hidden">
-              <AttemptTimeline {...timelineProps} />
-            </div>
+            <AttemptsNav
+              attempts={attempts}
+              maxAttempts={maxAttempts}
+              selectedNumber={selection.kind === 'attempt' ? selection.attemptNumber : null}
+              onSelect={selectAttempt}
+            />
+            <TimelineNav selected={selection.kind === 'timeline'} onSelect={() => setSelection({ kind: 'timeline' })} />
             <AttemptRail
               worktree={{
                 branch: task.branch,
@@ -1232,25 +1334,24 @@ export function TicketPage({
                 stat: liveStat ?? task.stat,
               }}
               selectedFile={selectedFile}
-              onSelectFile={setSelectedFile}
-              onSelectChanges={() => setSelectedFile('')}
+              onSelectFile={(path) => setSelection({ kind: 'file', path })}
+              onSelectChanges={() => setSelection({ kind: 'file', path: '' })}
             />
           </div>
-          {/* An escalated ticket has exactly the three actions on its timeline
-              entry (ADR-0041); the gate would only duplicate and cover them. */}
-          {task.state !== 'escalated' && (
-            <Gate
-              model={gateModel}
-              task={task}
-              verificationAttempts={verificationAttempts}
-              onEdit={(t) => {
-                onClose();
-                onEdit(t);
-              }}
-              onChanged={onChanged}
-              onGoToCurrent={selectRun}
-            />
-          )}
+          {/* Review Actions, pinned at the bottom with no section title — the
+              buttons speak for themselves. Escalated Accept / Reject / Close ride
+              the same block (TaskActions handles the escalated state). */}
+          <Gate
+            model={gateModel}
+            task={task}
+            verificationAttempts={verificationAttempts}
+            onEdit={(t) => {
+              onClose();
+              onEdit(t);
+            }}
+            onChanged={onChanged}
+            onGoToCurrent={selectRunById}
+          />
         </aside>
       </div>
     </div>

@@ -22,7 +22,7 @@ function timestamp(at: number): string {
   return new Date(at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 }
 
-/** Ticket-scoped audit trail. It deliberately has no selection controls: AttemptTimeline owns switching Runs. */
+/** Ticket-scoped audit trail. It deliberately has no selection controls: the sidebar owns navigation. */
 export function LifecycleTimeline({ events }: { events: TicketTimelineEvent[] }) {
   const rows = lifecycleTimelineRows(events);
   return (
