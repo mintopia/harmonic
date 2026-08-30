@@ -116,6 +116,15 @@ export const attemptLog = [
   { id: 5, seq: 5, ts: T0 + min(89), type: 'session_update', payload: { sessionUpdate: 'agent_message_chunk', content: { text: 'On it — regenerated the OpenAPI schema and added guardrail-defaults.test.ts. All 12 tests pass and the per-task override still wins. Handing to verification.' } } },
 ] as any;
 
+// Critic session transcript for the critic verification attempt 9002
+// (GET /api/verification-attempts/:id/log) — the critic's own native session.
+export const criticLog = [
+  { id: 1, seq: 1, ts: T0 + min(85), type: 'session_update', payload: { sessionUpdate: 'agent_message_chunk', content: { text: "Reviewing the change against issue #185: the guardrail defaults must resolve fleet-wide **and** a task-level override must still win. Reading the resolver and its tests." } } },
+  { id: 2, seq: 2, ts: T0 + min(85), type: 'session_update', payload: { sessionUpdate: 'tool_call', toolCallId: 'c1', kind: 'read', title: 'Read src/config.ts', status: 'completed', content: [{ content: { text: 'export function resolveGuardrails(task, workspace) {\n  return { ...GUARDRAIL_DEFAULTS, ...workspace.guardrails, ...task.overrides };\n}' } }] } },
+  { id: 3, seq: 3, ts: T0 + min(86), type: 'session_update', payload: { sessionUpdate: 'tool_call', toolCallId: 'c2', kind: 'execute', title: 'Bash pnpm test guardrail-defaults', status: 'completed', content: [{ content: { text: 'Test Files  1 passed (1)\n     Tests  12 passed (12)' } }] } },
+  { id: 4, seq: 4, ts: T0 + min(88), type: 'session_update', payload: { sessionUpdate: 'agent_message_chunk', content: { text: "Verdict: **pass**. `resolveGuardrails` layers the workspace defaults under a task override, so a per-task value still wins. The migration test covers both the inherited and overridden paths. Proceeding." } } },
+] as any;
+
 export const timeline = [
   { attemptId: null, ts: T0, kind: 'fact', data: { type: 'task-created', trackerRef: '185', workspace: 'harmonic-core' } },
   { attemptId: 501, ts: T0 + min(0), kind: 'attempt-started', data: { attempt: 1 } },

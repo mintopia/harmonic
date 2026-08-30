@@ -140,8 +140,8 @@ export function ChatTranscript({
 }: {
   events: AttemptLogEvent[];
   unavailable: boolean;
-  following: boolean;
-  onToggleFollow: () => void;
+  following?: boolean;
+  onToggleFollow?: () => void;
   steer?: ReactNode;
   model: string;
   stepLabel?: string;
@@ -161,7 +161,7 @@ export function ChatTranscript({
           <h2 className={CAPS}>Transcript{stepLabel && ` · ${stepLabel}`}</h2>
           <span className={railSectionCount}>{events.length} events</span>
         </div>
-        <FollowTail following={following} onToggle={onToggleFollow} />
+        {onToggleFollow && <FollowTail following={following ?? false} onToggle={onToggleFollow} />}
       </div>
       {unavailable || rows.length === 0 ? (
         <p className="rounded-lg border border-hairline bg-surface px-4 py-6 text-center text-small text-muted shadow-card">

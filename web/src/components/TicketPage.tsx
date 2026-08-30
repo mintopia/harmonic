@@ -4,7 +4,6 @@ import { formatCost, usd } from '../cost';
 import type { Attempt, Step, StepType, GuardrailEvent, AttemptSummary, AttemptLogEvent, AttemptUsageEvent, Task, TicketTimelineEvent, VerificationAttempt, VerifierStatus } from '../types';
 import { appendAttemptLogEvents, eventsAfterLiveCursor, attemptLogCursor } from '../attempt-log-stream-model';
 import { EmptyState } from './EmptyState';
-import { TranscriptTimeline } from './TranscriptTimeline';
 import { DiffViewer } from './DiffViewer';
 import type { DiffFile } from '../types';
 import { describeGuardrailTrip } from '../guardrail-trip-model';
@@ -314,66 +313,72 @@ const VERDICT_TONE: Record<string, string> = {
   inconclusive: 'text-running',
 };
 
+/** The critic model behind an Attempt's critic pass — the `· model` half of the
+ * role-qualified `critic · <model>` usage key, or null when no critic usage was
+ * recorded. */
+function criticModel(run: AttemptSummary): string | null {
+  const key = Object.keys(run.usage?.models ?? {}).find((k) => /critic/i.test(k));
+  return key?.split('·')[1]?.trim() ?? null;
+}
+
 function mechanismName(mechanism: string, run: AttemptSummary): string {
   if (mechanism === 'critic') {
-    const critic = Object.keys(run.usage?.models ?? {}).find((k) => /critic/i.test(k));
-    const model = critic?.split('·')[1]?.trim();
+    const model = criticModel(run);
     return model ? `Critic · ${model}` : 'Critic';
   }
   return mechanism.charAt(0).toUpperCase() + mechanism.slice(1);
 }
 
 /** The critic's own native session transcript (ADR-0040) — what it read, ran,
- * and reasoned to reach its verdict — lazily fetched on first expand. One per
- * critic attempt, so a self-heal back-and-forth surfaces every critic pass. */
-function CriticSessionLog({ attemptId, label }: { attemptId: number; label: string }) {
-  const [open, setOpen] = useState(false);
-  const [state, setState] = useState<'idle' | 'loading' | 'ready' | 'unavailable'>('idle');
+ * and reasoned to reach its verdict — fetched on mount and rendered like the
+ * Attempt's session log (the chat register), shown by default. */
+function CriticSession({ attemptId, label, model }: { attemptId: number; label: string; model: string }) {
+  const [state, setState] = useState<'loading' | 'ready' | 'unavailable'>('loading');
   const [events, setEvents] = useState<AttemptLogEvent[]>([]);
 
-  const toggle = () => {
-    const next = !open;
-    setOpen(next);
-    if (next && state === 'idle') {
-      setState('loading');
-      api.criticLog(attemptId).then(
-        (log) => {
-          if (log.status === 'available' && log.events.length > 0) {
-            setEvents(log.events);
-            setState('ready');
-          } else {
-            setState('unavailable');
-          }
-        },
-        () => setState('unavailable'),
-      );
-    }
-  };
+  useEffect(() => {
+    let live = true;
+    setState('loading');
+    api.criticLog(attemptId).then(
+      (log) => {
+        if (!live) return;
+        if (log.status === 'available' && log.events.length > 0) {
+          setEvents(log.events);
+          setState('ready');
+        } else {
+          setState('unavailable');
+        }
+      },
+      () => live && setState('unavailable'),
+    );
+    return () => {
+      live = false;
+    };
+  }, [attemptId]);
 
+  if (state === 'loading') return <p className="mt-3 text-[12px] text-muted">Loading critic session…</p>;
+  if (state === 'unavailable') return <p className="mt-3 text-[12px] text-muted">Critic session log could not be loaded.</p>;
+  return <ChatTranscript events={events} unavailable={false} model={model} stepLabel={label} />;
+}
+
+/** Every critic pass's session transcript, oldest first — one per critic attempt
+ * that captured a transcript, so a corrective back-and-forth surfaces all of
+ * them (ADR-0040). Rendered like the Attempt's session log and expanded by
+ * default; the Review tab pairs it with the verdict summary above. */
+function CriticSessions({ attempts, run }: { attempts: VerificationAttempt[]; run: AttemptSummary }) {
+  const sessions = attempts.filter((a) => a.mechanism === 'critic' && a.hasTranscript);
+  if (sessions.length === 0) return null;
+  const model = criticModel(run) ?? 'critic';
   return (
-    <div>
-      <button
-        type="button"
-        onClick={toggle}
-        aria-expanded={open}
-        className="inline-flex items-center gap-1 text-[12px] font-medium text-muted transition-colors hover:text-ink"
-      >
-        <Icon name="chevron-down" className={`size-3 transition-transform ${open ? '' : '-rotate-90'}`} />
-        {label}
-      </button>
-      {open && (
-        <div className="mt-2">
-          {state === 'loading' && <p className="text-[12px] text-muted">Loading critic session…</p>}
-          {(state === 'unavailable' || (state === 'ready' && events.length === 0)) && (
-            <p className="text-[12px] text-muted">Critic session log could not be loaded.</p>
-          )}
-          {state === 'ready' && events.length > 0 && (
-            <div className="overflow-hidden rounded-lg border border-hairline bg-surface">
-              <TranscriptTimeline events={events} />
-            </div>
-          )}
-        </div>
-      )}
+    <div className="flex flex-col gap-2">
+      {sessions.map((c, i) => (
+        <CriticSession
+          key={c.id}
+          attemptId={c.id}
+          model={model}
+          label={sessions.length > 1 ? `Critic ${i + 1} of ${sessions.length} · ${c.verdict}` : 'Critic'}
+        />
+      ))}
     </div>
   );
 }
@@ -464,21 +469,6 @@ function Verification({ attempts, statuses, run, only }: { attempts: Verificatio
                     </li>
                   ))}
                 </ol>
-              )}
-              {status.mechanism === 'critic' && criticSessions.length > 0 && (
-                <div className="mt-2 flex flex-col gap-1">
-                  {criticSessions.map((c, i) => (
-                    <CriticSessionLog
-                      key={c.id}
-                      attemptId={c.id}
-                      label={
-                        criticSessions.length > 1
-                          ? `Critic session ${i + 1} of ${criticSessions.length} · ${c.verdict}`
-                          : 'Critic session'
-                      }
-                    />
-                  ))}
-                </div>
               )}
               {criticReason && <p className="mt-2 text-[12px] text-muted">{criticReason}</p>}
             </div>
@@ -1220,6 +1210,7 @@ function AttemptPanel({
       ) : (
         <div className="mt-4">
           <Verification attempts={verificationAttempts} statuses={verifierStatuses} run={run} only="critic" />
+          <CriticSessions attempts={verificationAttempts} run={run} />
         </div>
       )
     ) : (
