@@ -21,10 +21,10 @@ import { AttemptRail } from './ticket/AttemptRail';
 import { Gate } from './ticket/Gate';
 import { CrumbBar } from './CrumbBar';
 import { LifecycleTimeline } from './ticket/LifecycleTimeline';
-import { attemptTone, runFailureBannerLabel, runForAttempt, verifiedSha, type TimelineTone } from '../attempt-timeline-model';
-import { contentPanel, type ContentSelection } from '../task-detail-model';
+import { attemptTone, runFailureBannerLabel, runForAttempt, type TimelineTone } from '../attempt-timeline-model';
+import { contentPanel, taskLifecycle, type ContentSelection, type LifecycleStepStatus } from '../task-detail-model';
 import { isAtLiveEdge } from '../follow-tail-model';
-import { labelType, railSectionHead, railSectionCount } from '../ui';
+import { labelType, railSectionHead, railSectionCount, PHASE_NODE_STYLES } from '../ui';
 import { toastError } from '../toast';
 import { ticketIdentity } from '../id-format.js';
 import { splitPathTail } from '../path';
@@ -32,10 +32,6 @@ import { splitPathTail } from '../path';
 // ─── small shared bits ───────────────────────────────────────────────────────
 
 const sectionCaps = 'text-label font-bold uppercase tracking-[0.1em] text-faint';
-
-function MetaSep() {
-  return <span aria-hidden className="text-edge">·</span>;
-}
 
 function humanState(state: string): string {
   return state.replace(/-/g, ' ');
@@ -113,25 +109,6 @@ function fmtDur(ms: number): string {
   return `${s}s`;
 }
 
-type TokenUsage =
-  | {
-      totals?: { inputTokens?: number | null; outputTokens?: number | null; totalTokens?: number | null } | null;
-      models?: Record<string, { inputTokens?: number | null; outputTokens?: number | null; cacheReadTokens?: number | null }>;
-    }
-  | null
-  | undefined;
-
-function usageTokens(usage: TokenUsage): number {
-  const t = usage?.totals;
-  const fromTotals = t?.totalTokens ?? (t ? (t.inputTokens ?? 0) + (t.outputTokens ?? 0) : 0);
-  if (fromTotals > 0) return fromTotals;
-  // ACP harnesses report only the per-model breakdown — sum it as the fallback.
-  return Object.values(usage?.models ?? {}).reduce(
-    (s, m) => s + (m.inputTokens ?? 0) + (m.outputTokens ?? 0) + (m.cacheReadTokens ?? 0),
-    0,
-  );
-}
-
 function Metrics({
   task,
   runs,
@@ -143,11 +120,9 @@ function Metrics({
   live: Map<number, AttemptUsageEvent>;
   now: number;
 }) {
-  // A live AttemptSummary reads its freshest `attempt_usage` snapshot; a settled AttemptSummary its
-  // persisted totals/cost — so Cost, Tokens, and Elapsed all tick as it runs.
-  const usageFor = (r: AttemptSummary): TokenUsage => (r.state === 'running' ? live.get(r.id)?.usage ?? r.usage : r.usage);
+  // A live AttemptSummary reads its freshest `attempt_usage` cost snapshot; a
+  // settled AttemptSummary its persisted cost — so Cost and Elapsed both tick as it runs.
   const costFor = (r: AttemptSummary) => (r.state === 'running' ? live.get(r.id)?.cost ?? r.cost : r.cost);
-  const tokens = runs.reduce((s, r) => s + usageTokens(usageFor(r)), 0);
   const cost = sumCosts(runs.map(costFor)) ?? task.cost;
   // A finished AttemptSummary contributes its settled span; a live AttemptSummary its wall-clock so
   // far (now − startedAt), which the 1s `now` tick advances while it executes.
@@ -175,18 +150,14 @@ function Metrics({
     );
   const items: Array<[string, ReactNode]> = [
     ['Cost', formatCost(cost) ?? '—'],
-    ['Tokens', fmtK(tokens)],
     ['Elapsed', runs.length ? fmtDur(elapsed) : '—'],
     ['Attempts', `${runs.length}`],
     ['Diff', diff],
   ];
   return (
-    <div className="mb-[18px] mt-0.5 flex flex-wrap gap-y-3 tabular-nums">
-      {items.map(([k, v], i) => (
-        <div
-          key={k}
-          className={`mr-[26px] pr-[26px] ${i < items.length - 1 ? 'border-r border-hairline' : ''}`}
-        >
+    <div className="mb-4 flex flex-wrap gap-x-5 gap-y-3 tabular-nums">
+      {items.map(([k, v]) => (
+        <div key={k} className="min-w-0">
           <div className="mb-[5px] text-[10px] font-bold uppercase tracking-[0.07em] text-faint">{k}</div>
           <div className="text-[17px] font-bold leading-none text-ink">{v}</div>
         </div>
@@ -195,74 +166,106 @@ function Metrics({
   );
 }
 
-// ─── meta facts line ─────────────────────────────────────────────────────────
+// ─── properties fact-list ────────────────────────────────────────────────────
 
-function DependsOnFact({ task, allTasks }: { task: Task; allTasks: Task[] }) {
-  if (task.dependsOn.length === 0) return null;
+function Fact({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <>
-      <MetaSep />
-      <span className="inline-flex items-center gap-1.5">
-        <span className="text-faint">deps</span>
-        <span className="inline-flex flex-wrap items-center gap-1.5 font-data text-faint">
-          {task.dependsOn.map((id) => {
-            const done = allTasks.find((t) => t.id === id)?.state === 'done';
-            return (
-              <span key={id} className={`inline-flex items-center gap-0.5 ${done ? 'text-merged' : ''}`}>
-                {done && <Icon name="check" className="size-3" />}#{id}
-              </span>
-            );
-          })}
-        </span>
-      </span>
-    </>
-  );
-}
-
-function NotifyFact({ taskId }: { taskId: number }) {
-  const [names, setNames] = useState<string[] | null>(null);
-  useEffect(() => {
-    let live = true;
-    Promise.all([
-      api.channels(),
-      fetch(`/api/tasks/${taskId}/channels`).then((r) => r.json()) as Promise<{ channelIds: number[] }>,
-    ]).then(([c, t]) => {
-      if (!live) return;
-      setNames(t.channelIds.map((id) => c.channels.find((ch) => ch.id === id)?.name ?? `#${id}`));
-    }, toastError);
-    return () => {
-      live = false;
-    };
-  }, [taskId]);
-  if (!names || names.length === 0) return null;
-  return (
-    <>
-      <MetaSep />
-      <span className="inline-flex items-center gap-1.5">
-        <span className="text-faint">notify</span>
-        <span className="font-data text-faint">{names.join(' ')}</span>
-      </span>
-    </>
-  );
-}
-
-function MetaLine({ task, allTasks }: { task: Task; allTasks: Task[] }) {
-  return (
-    <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 pb-5 pt-3 text-[12.5px] text-muted">
-      <span>{task.origin}</span>
-      <MetaSep />
-      <span className="inline-flex items-center gap-1.5">
-        <span className="text-faint">priority</span>
-        {task.priority}
-      </span>
-      <MetaSep />
-      <span className="inline-flex items-center gap-1.5">
-        <span className="text-faint">agent</span>
-        {task.harness.charAt(0).toUpperCase() + task.harness.slice(1)} <span className="font-data">{task.model}</span>
-      </span>
-      <DependsOnFact task={task} allTasks={allTasks} />
-      <NotifyFact taskId={task.id} />
+    <div className="flex items-baseline justify-between gap-4 py-[7px]">
+      <dt className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.06em] text-faint">{label}</dt>
+      <dd className="min-w-0 text-right text-[12.5px] text-ink">{children}</dd>
     </div>
+  );
+}
+
+function DependsOn({ task, allTasks }: { task: Task; allTasks: Task[] }) {
+  if (task.dependsOn.length === 0) return <span className="text-faint">—</span>;
+  return (
+    <span className="inline-flex flex-wrap items-center justify-end gap-x-1.5 gap-y-0.5 font-data">
+      {task.dependsOn.map((id) => {
+        const done = allTasks.find((t) => t.id === id)?.state === 'done';
+        return (
+          <span key={id} className={`inline-flex items-center gap-0.5 ${done ? 'text-merged' : 'text-muted'}`}>
+            {done && <Icon name="check" className="size-3" />}#{id}
+          </span>
+        );
+      })}
+    </span>
+  );
+}
+
+function Properties({ task, allTasks, workspaceName }: { task: Task; allTasks: Task[]; workspaceName: string | null }) {
+  const created = new Date(task.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  return (
+    <dl className="divide-y divide-hairline border-t border-hairline">
+      <Fact label="Priority">{task.priority}</Fact>
+      <Fact label="Agent">
+        {task.harness.charAt(0).toUpperCase() + task.harness.slice(1)} <span className="font-data text-muted">{task.model}</span>
+      </Fact>
+      <Fact label="Workspace">{workspaceName ?? '—'}</Fact>
+      <Fact label="Depends on">
+        <DependsOn task={task} allTasks={allTasks} />
+      </Fact>
+      <Fact label="Created">{created}</Fact>
+    </dl>
+  );
+}
+
+// ─── task-progress bar ───────────────────────────────────────────────────────
+
+function stepGlyph(status: LifecycleStepStatus, index: number) {
+  if (status === 'done') return <Icon name="check" className="size-3.5" />;
+  if (status === 'failed') return <Icon name="close" className="size-3.5" />;
+  return <span>{index + 1}</span>;
+}
+
+const STEP_LABEL_TONE: Record<LifecycleStepStatus, string> = {
+  done: 'text-muted',
+  current: 'text-accent',
+  pending: 'text-faint',
+  failed: 'text-fail',
+};
+
+// Status word for screen readers, since sighted status reads from colour + glyph.
+const STEP_STATUS_LABEL: Record<LifecycleStepStatus, string> = {
+  done: 'completed',
+  current: 'in progress',
+  pending: 'pending',
+  failed: 'failed',
+};
+
+/** The full-width Task-progress bar: the six lifecycle nodes as a horizontal
+ * stepper, each with its label stacked below so all six fit. Every Attempt's own
+ * Steps collapse into the single Implementation node (see `taskLifecycle`). */
+function TaskProgressBar({ state, attempts }: { state: Task['state']; attempts: AttemptSummary[] }) {
+  const { steps } = taskLifecycle(state, attempts);
+  return (
+    <ol className="mb-6 mt-1 flex items-start border-y border-hairline py-4" aria-label="Task progress">
+      {steps.map((step, i) => {
+        const leftDone = i > 0 && steps[i - 1]?.status === 'done';
+        const rightDone = step.status === 'done';
+        return (
+          <li
+            key={step.key}
+            aria-current={step.status === 'current' ? 'step' : undefined}
+            className="flex min-w-0 flex-1 flex-col items-center gap-2 text-center"
+          >
+            <div className="flex w-full items-center">
+              <span className={`h-px flex-1 ${i === 0 ? 'invisible' : leftDone ? 'bg-merged' : 'bg-edge'}`} />
+              <span
+                className={`flex size-7 shrink-0 items-center justify-center rounded-full border text-[11px] font-bold tabular-nums ${PHASE_NODE_STYLES[step.status]}`}
+              >
+                {stepGlyph(step.status, i)}
+              </span>
+              <span className={`h-px flex-1 ${i === steps.length - 1 ? 'invisible' : rightDone ? 'bg-merged' : 'bg-edge'}`} />
+            </div>
+            <span className={`text-[11px] leading-tight ${STEP_LABEL_TONE[step.status]}`}>
+              {step.label}
+              <span className="sr-only"> — {STEP_STATUS_LABEL[step.status]}</span>
+            </span>
+          </li>
+        );
+      })}
+    </ol>
   );
 }
 
@@ -919,7 +922,6 @@ export function TicketPage({
 }) {
   const [runs, setRuns] = useState<AttemptSummary[]>([]);
   const [attempts, setAttempts] = useState<Attempt[]>([]);
-  const [budgetBase, setBudgetBase] = useState(0);
   const [maxAttempts, setMaxAttempts] = useState<number | null>(null);
   const [workspaceName, setWorkspaceName] = useState<string | null>(null);
   // The sidebar selection driving the content panel: nothing (Stats), an
@@ -1001,16 +1003,14 @@ export function TicketPage({
   useEffect(() => {
     let live = true;
     const load = () =>
-      api.taskAttemptTimeline(task.id).then(({ attempts: next, budgetBase: base }) => {
+      api.taskAttemptTimeline(task.id).then(({ attempts: next }) => {
         if (!live) return;
         setAttempts(next);
-        setBudgetBase(base);
       }, toastError);
     load();
     const unsubscribe = subscribe((msg) => {
       if (msg.type === 'attempt_timeline_changed' && msg.taskId === task.id) {
         setAttempts(msg.attempts);
-        setBudgetBase(msg.budgetBase);
       }
     });
     return () => {
@@ -1273,24 +1273,27 @@ export function TicketPage({
               </span>
             </div>
 
-            {/* The full prompt lives on the item GET (`detail`) or a WS-full
-                store task, never on a lean list row (issue #350). Until one
-                arrives, render nothing rather than the truncated `summary`,
-                which would flash through the markdown "Show more" body as if it
-                were the whole description. */}
-            {(detail?.prompt ?? task.prompt) != null && (
-              <Description prompt={detail?.prompt ?? task.prompt ?? ''} />
-            )}
-            <Metrics task={task} runs={runs} live={liveUsage} now={now} />
-            <MetaLine task={task} allTasks={allTasks} />
-
-            <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 border-y border-hairline py-3 text-small text-muted">
-              <span><span className="font-semibold text-ink">Ticket flow</span> · {humanState(task.state)}</span>
-              <MetaSep />
-              {/* Position within the current budget: history numbering keeps counting across a Reject, the cap restarts. */}
-              <span>Attempt {Math.max(0, (attempts.at(-1)?.number ?? 0) - budgetBase)} / {maxAttempts ?? '—'}</span>
-              {verifiedSha(attempts) && <><MetaSep /><span>verified <span className="font-data text-ink">{verifiedSha(attempts)}</span></span></>}
+            {/* Condensed two-column header: the description (with its Show more
+                clamp) on the left, the metrics row above the Properties fact-list
+                on the right. Stacks under the rail breakpoint. */}
+            <div className="mt-3 flex gap-8 max-rail:flex-col max-rail:gap-3">
+              <div className="min-w-0 flex-1">
+                {/* The full prompt lives on the item GET (`detail`) or a WS-full
+                    store task, never on a lean list row (issue #350). Until one
+                    arrives, render nothing rather than the truncated `summary`,
+                    which would flash through the markdown "Show more" body as if
+                    it were the whole description. */}
+                {(detail?.prompt ?? task.prompt) != null && (
+                  <Description prompt={detail?.prompt ?? task.prompt ?? ''} />
+                )}
+              </div>
+              <div className="w-[320px] shrink-0 max-rail:w-full">
+                <Metrics task={task} runs={runs} live={liveUsage} now={now} />
+                <Properties task={task} allTasks={allTasks} workspaceName={workspaceName} />
+              </div>
             </div>
+
+            <TaskProgressBar state={task.state} attempts={runs} />
 
             {task.skipReason && (
               <div className="mb-4 text-small text-muted">
