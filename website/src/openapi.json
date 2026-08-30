@@ -2609,6 +2609,10 @@
               }
             ]
           },
+          "toolCalls": {
+            "type": "number",
+            "example": 63
+          },
           "startedAt": {
             "type": "number",
             "example": 1784032020000
@@ -2650,6 +2654,7 @@
           "verifiedHeadOid",
           "verifiedRef",
           "usage",
+          "toolCalls",
           "startedAt",
           "finishedAt",
           "cost"
@@ -6816,6 +6821,10 @@
               }
             ]
           },
+          "toolCalls": {
+            "type": "number",
+            "example": 63
+          },
           "startedAt": {
             "type": "number",
             "example": 1784032020000
@@ -6857,6 +6866,7 @@
           "verifiedHeadOid",
           "verifiedRef",
           "usage",
+          "toolCalls",
           "startedAt",
           "finishedAt",
           "cost"
@@ -9907,7 +9917,8 @@
                               "verification",
                               "guardrail",
                               "operator-reject",
-                              "merging"
+                              "merging",
+                              "fact"
                             ]
                           },
                           "data": {}

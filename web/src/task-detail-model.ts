@@ -70,9 +70,11 @@ export type LifecycleStepKey =
   | 'retire';
 
 /** A lifecycle node's status: settled (`done`), the highlighted active phase
- * (`current`), not yet reached (`pending`), or halted here without completing
- * (`failed` — an escalation or a cancellation). */
-export type LifecycleStepStatus = 'done' | 'current' | 'pending' | 'failed';
+ * (`current`), the phase paused on the operator's review (`awaiting` — the merge
+ * gate of an escalated Task, the one node in the indigo "needs you" voice), not
+ * yet reached (`pending`), or halted here without completing (`failed` — a
+ * cancellation). */
+export type LifecycleStepStatus = 'done' | 'current' | 'awaiting' | 'pending' | 'failed';
 
 export interface LifecycleStep {
   key: LifecycleStepKey;
@@ -103,13 +105,14 @@ interface LifecyclePosition {
   current: LifecycleStepKey;
   halted: boolean;
   allDone: boolean;
+  awaiting: boolean;
 }
 
 function lifecyclePosition(
   state: TaskState,
   attempts: readonly Pick<AttemptSummary, 'state'>[],
 ): LifecyclePosition {
-  const settled = { halted: false, allDone: false };
+  const settled = { halted: false, allDone: false, awaiting: false };
   switch (state) {
     case 'draft':
     case 'ready':
@@ -122,16 +125,18 @@ function lifecyclePosition(
         ? { current: 'merge', ...settled }
         : { current: 'implementation', ...settled };
     case 'escalated':
-      // Handed to a human out of Implementation; the flow stops there.
-      return { current: 'implementation', halted: true, allDone: false };
+      // A passed Attempt is at the merge gate awaiting the operator's review:
+      // Implementation is done and Merge is the highlighted "awaiting review"
+      // node (the indigo needs-you voice), not a failure.
+      return { current: 'merge', halted: false, allDone: false, awaiting: true };
     case 'done':
-      return { current: 'retire', halted: false, allDone: true };
+      return { current: 'retire', halted: false, allDone: true, awaiting: false };
     case 'cancelled':
       // Aborted at whatever node it had reached: Implementation once an Attempt
       // has run, else before the worktree was ever cut.
       return attempts.length > 0
-        ? { current: 'implementation', halted: true, allDone: false }
-        : { current: 'worktree', halted: true, allDone: false };
+        ? { current: 'implementation', halted: true, allDone: false, awaiting: false }
+        : { current: 'worktree', halted: true, allDone: false, awaiting: false };
   }
 }
 
@@ -147,7 +152,7 @@ export function taskLifecycle(
   state: TaskState,
   attempts: readonly Pick<AttemptSummary, 'state'>[],
 ): TaskLifecycle {
-  const { current, halted, allDone } = lifecyclePosition(state, attempts);
+  const { current, halted, allDone, awaiting } = lifecyclePosition(state, attempts);
   const currentIndex = LIFECYCLE_STEPS.findIndex((s) => s.key === current);
   const steps = LIFECYCLE_STEPS.map(({ key, label }, i): LifecycleStep => {
     const status: LifecycleStepStatus = allDone
@@ -158,7 +163,9 @@ export function taskLifecycle(
           ? 'pending'
           : halted
             ? 'failed'
-            : 'current';
+            : awaiting
+              ? 'awaiting'
+              : 'current';
     return { key, label, status };
   });
   return { steps, current };
@@ -170,7 +177,11 @@ export function taskLifecycle(
  * only fields the aggregation reads, so the whole-Task view and the single-
  * Attempt panel can both feed it (a live Run substitutes its firehose snapshot
  * for the not-yet-settled row). */
-export type StatsAttempt = Pick<AttemptSummary, 'usage' | 'cost'>;
+export type StatsAttempt = Pick<AttemptSummary, 'usage' | 'cost'> & {
+  /** How many tool calls this Attempt's session made — summed for the Stats
+   * summary card's Tool-calls figure. Absent on data that predates the count. */
+  toolCalls?: number;
+};
 
 /** One model's token breakdown across the aggregated Attempts, roles combined.
  * `cost` is the summed API-equivalent dollar figure, or null when the model has
@@ -197,12 +208,23 @@ export interface TaskStats {
    * vs everything spawned beneath it. Both zero when no Attempt carried a
    * per-agent breakdown. */
   agentVsSubagent: { agentTokens: number; subagentTokens: number };
-  /** Priced per-model cost for the cost donut, largest first — priced models
-   * only (an unpriced model can't be a dollar slice). */
+  /** Priced cost donut slices, largest first — keyed by the server's own
+   * `cost.byModel` keys (so a role-qualified slice like `sonnet-4.5 · sub` or a
+   * `critic` slice stands on its own), priced entries only. */
   costByModel: Array<{ model: string; cost: number }>;
   /** The honest headline token figure: input + output across every model,
    * excluding cache. */
   billableIO: number;
+  /** Total priced spend across every cost slice — the Stats summary card's Cost. */
+  cost: number;
+  /** Distinct subagent sessions spawned beneath the root (the summary card's
+   * Subagents count and the agent-donut legend). */
+  subagents: number;
+  /** Whether a root/primary agent session ran at all (the summary card shows
+   * `1 primary` when it did). */
+  agents: number;
+  /** Tool calls made across every aggregated Attempt's session. */
+  toolCalls: number;
 }
 
 const zeroTokens = (): Omit<TaskModelStats, 'model' | 'cost'> => ({
@@ -234,8 +256,12 @@ export function taskStats(attempts: readonly StatsAttempt[]): TaskStats {
   const costByModel = new Map<string, number | null>();
   let agentTokens = 0;
   let subagentTokens = 0;
+  const subagentNames = new Set<string>();
+  let hasRootAgent = false;
+  let toolCalls = 0;
 
-  for (const { usage, cost } of attempts) {
+  for (const { usage, cost, toolCalls: calls } of attempts) {
+    toolCalls += calls ?? 0;
     for (const [model, u] of Object.entries(usage?.models ?? {})) {
       const bucket = tokensByModel.get(model) ?? zeroTokens();
       bucket.input += u.inputTokens;
@@ -249,8 +275,13 @@ export function taskStats(attempts: readonly StatsAttempt[]): TaskStats {
       else if (costByModel.get(model) !== null) costByModel.set(model, (costByModel.get(model) ?? 0) + usd);
     }
     for (const [name, u] of Object.entries(usage?.agents ?? {})) {
-      if (name === ROOT_AGENT) agentTokens += totalTokens(u);
-      else subagentTokens += totalTokens(u);
+      if (name === ROOT_AGENT) {
+        agentTokens += totalTokens(u);
+        hasRootAgent = true;
+      } else {
+        subagentTokens += totalTokens(u);
+        subagentNames.add(name);
+      }
     }
   }
 
@@ -259,14 +290,27 @@ export function taskStats(attempts: readonly StatsAttempt[]): TaskStats {
     .filter((m) => modelTotal(m) > 0)
     .sort((a, b) => modelTotal(b) - modelTotal(a) || a.model.localeCompare(b.model));
 
-  const donutCostByModel = byModel
-    .filter((m): m is TaskModelStats & { cost: number } => m.cost !== null && m.cost > 0)
-    .map((m) => ({ model: m.model, cost: m.cost }))
+  // The cost donut is keyed by the server's own `cost.byModel` keys, not the
+  // token models — so a role-qualified slice (`sonnet-4.5 · sub`) or a `critic`
+  // slice, which carries dollars but no token-usage bucket, still shows.
+  const donutCostByModel = [...costByModel.entries()]
+    .filter((entry): entry is [string, number] => entry[1] !== null && entry[1] > 0)
+    .map(([model, cost]) => ({ model, cost }))
     .sort((a, b) => b.cost - a.cost || a.model.localeCompare(b.model));
 
   const billableIO = byModel.reduce((sum, m) => sum + m.input + m.output, 0);
+  const cost = donutCostByModel.reduce((sum, m) => sum + m.cost, 0);
 
-  return { byModel, agentVsSubagent: { agentTokens, subagentTokens }, costByModel: donutCostByModel, billableIO };
+  return {
+    byModel,
+    agentVsSubagent: { agentTokens, subagentTokens },
+    costByModel: donutCostByModel,
+    billableIO,
+    cost,
+    subagents: subagentNames.size,
+    agents: hasRootAgent ? 1 : 0,
+    toolCalls,
+  };
 }
 
 // ─── Attempt step tabs ─────────────────────────────────────────────────────────
@@ -279,6 +323,10 @@ export function taskStats(attempts: readonly StatsAttempt[]): TaskStats {
 export interface StepTab {
   type: StepType;
   label: string;
+  /** A short qualifier shown after the label — the verification command
+   * (`pnpm test`) or the review mechanism (`critic`); absent for rebase and
+   * implementation, which need no qualifier. */
+  detail: string | null;
   state: StepState;
   pending: boolean;
 }
@@ -313,11 +361,18 @@ function rolledUpState(steps: readonly Step[]): StepState {
  * A type whose every Step is still `pending` carries `pending: true`, which the
  * panel renders as an empty placeholder rather than that step's content.
  */
+/** The tab's qualifier: the verification command for a Verify tab, none for the
+ * others. */
+function stepTabDetail(type: StepType, ofType: readonly Step[]): string | null {
+  if (type === 'verification') return ofType.map((step) => step.command).find((command): command is string => !!command) ?? null;
+  return null;
+}
+
 export function attemptStepTabs(steps: readonly Step[]): StepTab[] {
   return STEP_TAB_ORDER.flatMap((type) => {
     const ofType = steps.filter((step) => step.type === type);
     if (ofType.length === 0) return [];
-    return [{ type, label: STEP_TAB_LABEL[type], state: rolledUpState(ofType), pending: ofType.every((step) => step.state === 'pending') }];
+    return [{ type, label: STEP_TAB_LABEL[type], detail: stepTabDetail(type, ofType), state: rolledUpState(ofType), pending: ofType.every((step) => step.state === 'pending') }];
   });
 }
 

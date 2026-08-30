@@ -12,9 +12,9 @@ import type { AttemptLogEvent } from './types.js';
  * the component stays a thin renderer, unit-tested away from the DOM.
  */
 export type ChatRow =
-  | { kind: 'message'; author: 'assistant' | 'operator'; text: string; key: number }
+  | { kind: 'message'; author: 'assistant' | 'operator'; text: string; at: number; key: number }
   | { kind: 'thought'; text: string; key: number }
-  | { kind: 'tool'; verb: string; target: string | null; status: ChatToolStatus; subagent: boolean; key: number }
+  | { kind: 'tool'; verb: string; target: string | null; status: ChatToolStatus; subagent: boolean; output: string | null; at: number; key: number }
   | { kind: 'note'; label: string; text: string | null; key: number };
 
 /** A tool card's outcome badge — settled ok / failed, or still in flight. */
@@ -63,17 +63,17 @@ export function chatRows(items: readonly StreamItem<AttemptLogEvent>[]): ChatRow
     if (item.kind === 'text') {
       if (!item.text.trim()) continue;
       if (item.variant === 'operator') {
-        rows.push({ kind: 'message', author: 'operator', text: item.text, key: item.key });
+        rows.push({ kind: 'message', author: 'operator', text: item.text, at: item.at, key: item.key });
       } else if (item.variant === 'thought') {
         rows.push({ kind: 'thought', text: item.text, key: item.key });
       } else {
-        rows.push({ kind: 'message', author: 'assistant', text: item.text, key: item.key });
+        rows.push({ kind: 'message', author: 'assistant', text: item.text, at: item.at, key: item.key });
       }
       continue;
     }
     if (item.kind === 'tool') {
       const { verb, target } = splitTitle(item.tool.title ?? 'Tool call');
-      rows.push({ kind: 'tool', verb, target, status: toolStatus(item.tool.status), subagent: item.tool.subagent, key: item.key });
+      rows.push({ kind: 'tool', verb, target, status: toolStatus(item.tool.status), subagent: item.tool.subagent, output: item.tool.output, at: item.at, key: item.key });
       continue;
     }
     const note = eventRow(item);

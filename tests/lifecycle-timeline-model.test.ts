@@ -14,9 +14,9 @@ describe('lifecycleTimelineRows', () => {
     ]);
 
     expect(rows.map((row) => [row.at, row.label, row.detail, row.tone])).toEqual([
-      [10, 'Verification pass', 'checks passed', 'passed'],
-      [20, 'Verification skipped', 'npm test', 'neutral'],
-      [30, 'Escalated for operator review', null, 'awaiting'],
+      [10, 'Verify passed', 'checks passed', 'passed'],
+      [20, 'Verify skipped', 'npm test', 'neutral'],
+      [30, 'Escalated → awaiting review', null, 'awaiting'],
       [40, 'Operator rejected with guidance', 'Use the documented timeout.', 'awaiting'],
     ]);
   });
@@ -27,7 +27,26 @@ describe('lifecycleTimelineRows', () => {
       event('fact', 2, null),
     ]);
 
-    expect(rows[0]).toMatchObject({ label: 'Verification disabled', tone: 'neutral' });
+    expect(rows[0]).toMatchObject({ label: 'Verify disabled', tone: 'neutral' });
     expect(rows[1]).toMatchObject({ label: 'Ticket fact recorded', detail: null });
+  });
+
+  it('tags rows by source/mechanism and reads task-creation as a GITHUB row', () => {
+    const rows = lifecycleTimelineRows([
+      event('fact', 1, { type: 'task-created', trackerRef: '185', workspace: 'harmonic-core' }),
+      event('attempt-started', 2, { attempt: 3 }),
+      event('attempt-finished', 3, { attempt: 1, state: 'failed' }),
+      event('verification', 4, { mechanism: 'critic', verdict: 'pass', summary: 'proceed' }),
+      event('verification', 5, { mechanism: 'command', verdict: 'pass', summary: 'pnpm test' }),
+    ]);
+    expect(rows.map((row) => [row.label, row.tag])).toEqual([
+      ['Task created', 'GITHUB'],
+      ['Attempt 3 started', 'RUNNING'],
+      ['Attempt 1 · failed', null],
+      ['Review passed', 'CRITIC'],
+      ['Verify passed', 'VERIFY'],
+    ]);
+    expect(rows[0]!.detail).toBe('Imported from issue #185 · queued to harmonic-core');
+    expect(rows[1]!.detail).toBe('Continued Attempt 2');
   });
 });

@@ -21,8 +21,8 @@ import { AttemptRail } from './ticket/AttemptRail';
 import { Gate } from './ticket/Gate';
 import { CrumbBar } from './CrumbBar';
 import { LifecycleTimeline } from './ticket/LifecycleTimeline';
-import { attemptTone, runFailureBannerLabel, runForAttempt, stateTone, verifiedSha, type TimelineTone } from '../attempt-timeline-model';
-import { attemptStepTabs, contentPanel, defaultStepTab, taskLifecycle, modelTotal, taskStats, type ContentSelection, type LifecycleStepStatus, type StatsAttempt, type StepTab, type TaskModelStats, type TaskStats } from '../task-detail-model';
+import { attemptTone, runFailureBannerLabel, runForAttempt, stateTone, type TimelineTone } from '../attempt-timeline-model';
+import { attemptStepTabs, contentPanel, defaultStepTab, taskLifecycle, modelTotal, taskStats, type ContentSelection, type LifecycleStepKey, type LifecycleStepStatus, type StatsAttempt, type StepTab, type TaskModelStats, type TaskStats } from '../task-detail-model';
 import { isAtLiveEdge } from '../follow-tail-model';
 import { ChatTranscript } from './ticket/ChatTranscript';
 import { Donut, type DonutSegment } from './Donut';
@@ -35,8 +35,14 @@ import { splitPathTail } from '../path';
 
 const sectionCaps = 'text-label font-bold uppercase tracking-[0.1em] text-faint';
 
+// An escalated Task is awaiting the operator's review at the merge gate; the
+// pill says so in the operator's words rather than the internal state name.
+const STATE_LABEL: Record<string, string> = {
+  escalated: 'awaiting review',
+};
+
 function humanState(state: string): string {
-  return state.replace(/-/g, ' ');
+  return STATE_LABEL[state] ?? state.replace(/-/g, ' ');
 }
 
 const STATE_PILL: Record<string, string> = {
@@ -44,6 +50,7 @@ const STATE_PILL: Record<string, string> = {
   working: 'bg-running-tint text-running',
   running: 'bg-running-tint text-running',
   ready: 'bg-ready-tint text-ready',
+  passed: 'bg-merged-tint text-merged',
   failed: 'bg-fail-tint text-fail',
   done: 'bg-merged-tint text-merged',
   merged: 'bg-merged-tint text-merged',
@@ -97,11 +104,6 @@ function Description({ prompt }: { prompt: string }) {
 
 // ─── flat metric row ─────────────────────────────────────────────────────────
 
-function fmtK(n: number): string {
-  if (n <= 0) return '—';
-  return n >= 1000 ? `${Math.round(n / 1000)}k` : `${n}`;
-}
-
 function fmtDur(ms: number): string {
   const s = Math.floor(ms / 1000);
   const h = Math.floor(s / 3600);
@@ -125,8 +127,6 @@ function Metrics({
   // A live AttemptSummary reads its freshest `attempt_usage` snapshot; a settled AttemptSummary its
   // persisted totals/cost — so Cost, I/O, and Elapsed all tick as it runs.
   const costFor = (r: AttemptSummary) => (r.state === 'running' ? live.get(r.id)?.cost ?? r.cost : r.cost);
-  // Honest-numbers headline (no total-token scalar): billable I/O = input + output.
-  const io = taskStats(statsAttemptsOf(runs, live)).billableIO;
   const cost = sumCosts(runs.map(costFor)) ?? task.cost;
   // A finished AttemptSummary contributes its settled span; a live AttemptSummary its wall-clock so
   // far (now − startedAt), which the 1s `now` tick advances while it executes.
@@ -154,17 +154,16 @@ function Metrics({
     );
   const items: Array<[string, ReactNode]> = [
     ['Cost', formatCost(cost) ?? '—'],
-    ['I/O', fmtK(io)],
     ['Elapsed', runs.length ? fmtDur(elapsed) : '—'],
     ['Attempts', `${runs.length}`],
     ['Diff', diff],
   ];
   return (
-    <div className="mb-4 flex flex-wrap gap-x-5 gap-y-3 tabular-nums">
+    <div className="mb-[18px] flex flex-wrap gap-y-3 tabular-nums">
       {items.map(([k, v]) => (
-        <div key={k} className="min-w-0">
+        <div key={k} className="mr-5 min-w-0 border-r border-hairline pr-5 last:mr-0 last:border-r-0 last:pr-0">
           <div className="mb-[5px] text-[10px] font-bold uppercase tracking-[0.07em] text-faint">{k}</div>
-          <div className="text-[17px] font-bold leading-none text-ink">{v}</div>
+          <div className="text-[16px] font-bold leading-none text-ink">{v}</div>
         </div>
       ))}
     </div>
@@ -175,9 +174,9 @@ function Metrics({
 
 function Fact({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="flex items-baseline justify-between gap-4 py-[7px]">
-      <dt className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.06em] text-faint">{label}</dt>
-      <dd className="min-w-0 text-right text-[12.5px] text-ink">{children}</dd>
+    <div className="min-w-0">
+      <dt className="mb-[3px] text-[10px] font-bold uppercase tracking-[0.07em] text-faint">{label}</dt>
+      <dd className="min-w-0 text-[12.5px] text-ink">{children}</dd>
     </div>
   );
 }
@@ -185,7 +184,7 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
 function DependsOn({ task, allTasks }: { task: Task; allTasks: Task[] }) {
   if (task.dependsOn.length === 0) return <span className="text-faint">—</span>;
   return (
-    <span className="inline-flex flex-wrap items-center justify-end gap-x-1.5 gap-y-0.5 font-data">
+    <span className="inline-flex flex-wrap items-center gap-x-1.5 gap-y-0.5 font-data">
       {task.dependsOn.map((id) => {
         const done = allTasks.find((t) => t.id === id)?.state === 'done';
         return (
@@ -199,9 +198,10 @@ function DependsOn({ task, allTasks }: { task: Task; allTasks: Task[] }) {
 }
 
 function Properties({ task, allTasks, workspaceName }: { task: Task; allTasks: Task[]; workspaceName: string | null }) {
-  const created = new Date(task.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  const createdAt = new Date(task.createdAt);
+  const created = `${createdAt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · ${createdAt.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false })}`;
   return (
-    <dl className="divide-y divide-hairline border-t border-hairline">
+    <dl className="grid grid-cols-2 gap-x-6 gap-y-3.5">
       <Fact label="Priority">{task.priority}</Fact>
       <Fact label="Agent">
         {task.harness.charAt(0).toUpperCase() + task.harness.slice(1)} <span className="font-data text-muted">{task.model}</span>
@@ -226,6 +226,7 @@ function stepGlyph(status: LifecycleStepStatus, index: number) {
 const STEP_LABEL_TONE: Record<LifecycleStepStatus, string> = {
   done: 'text-muted',
   current: 'text-accent',
+  awaiting: 'text-await',
   pending: 'text-faint',
   failed: 'text-fail',
 };
@@ -234,43 +235,69 @@ const STEP_LABEL_TONE: Record<LifecycleStepStatus, string> = {
 const STEP_STATUS_LABEL: Record<LifecycleStepStatus, string> = {
   done: 'completed',
   current: 'in progress',
+  awaiting: 'awaiting review',
   pending: 'pending',
   failed: 'failed',
 };
 
+/** The second line beneath a lifecycle node — the concrete thing that node
+ * stands for: the worktree branch, the attempt count, the awaiting-review note,
+ * the post-merge policy, the issue to close, the teardown. */
+function stepCaption(key: LifecycleStepKey, status: LifecycleStepStatus, task: Task, attemptCount: number): string | null {
+  switch (key) {
+    case 'worktree':
+      return task.branch ? splitPathTail(task.branch).tail : null;
+    case 'implementation':
+      return attemptCount > 0 ? `${attemptCount} attempt${attemptCount === 1 ? '' : 's'}` : null;
+    case 'merge':
+      return status === 'awaiting' ? 'awaiting review' : null;
+    case 'postMergeCheck':
+      return 'revert on red';
+    case 'closeIssue':
+      return task.trackerRef != null ? `#${task.trackerRef}` : null;
+    case 'retire':
+      return 'cleanup';
+  }
+}
+
 /** The full-width Task-progress bar: the six lifecycle nodes as a horizontal
  * stepper, each with its label stacked below so all six fit. Every Attempt's own
  * Steps collapse into the single Implementation node (see `taskLifecycle`). */
-function TaskProgressBar({ state, attempts }: { state: Task['state']; attempts: AttemptSummary[] }) {
-  const { steps } = taskLifecycle(state, attempts);
+function TaskProgressBar({ task, attempts }: { task: Task; attempts: AttemptSummary[] }) {
+  const { steps } = taskLifecycle(task.state, attempts);
   return (
-    <ol className="mb-6 mt-1 flex items-start border-y border-hairline py-4" aria-label="Task progress">
-      {steps.map((step, i) => {
-        const leftDone = i > 0 && steps[i - 1]?.status === 'done';
-        const rightDone = step.status === 'done';
-        return (
-          <li
-            key={step.key}
-            aria-current={step.status === 'current' ? 'step' : undefined}
-            className="flex min-w-0 flex-1 flex-col items-center gap-2 text-center"
-          >
-            <div className="flex w-full items-center">
-              <span className={`h-px flex-1 ${i === 0 ? 'invisible' : leftDone ? 'bg-merged' : 'bg-edge'}`} />
-              <span
-                className={`flex size-7 shrink-0 items-center justify-center rounded-full border text-[11px] font-bold tabular-nums ${PHASE_NODE_STYLES[step.status]}`}
-              >
-                {stepGlyph(step.status, i)}
+    <div className="mb-6 mt-1">
+      <div className={`mb-3 ${sectionCaps}`}>Task progress</div>
+      <ol className={`${card} flex items-start px-[22px] py-5`} aria-label="Task progress">
+        {steps.map((step, i) => {
+          const leftDone = i > 0 && steps[i - 1]?.status === 'done';
+          const rightDone = step.status === 'done';
+          const caption = stepCaption(step.key, step.status, task, attempts.length);
+          return (
+            <li
+              key={step.key}
+              aria-current={step.status === 'current' || step.status === 'awaiting' ? 'step' : undefined}
+              className="flex min-w-0 flex-1 flex-col items-center gap-2 text-center"
+            >
+              <div className="flex w-full items-center">
+                <span className={`h-0.5 flex-1 rounded ${i === 0 ? 'invisible' : leftDone ? 'bg-merged' : 'bg-edge'}`} />
+                <span
+                  className={`flex size-6 shrink-0 items-center justify-center rounded-full border text-[11px] font-bold tabular-nums ${PHASE_NODE_STYLES[step.status]}`}
+                >
+                  {stepGlyph(step.status, i)}
+                </span>
+                <span className={`h-0.5 flex-1 rounded ${i === steps.length - 1 ? 'invisible' : rightDone ? 'bg-merged' : 'bg-edge'}`} />
+              </div>
+              <span className={`text-[12px] font-semibold leading-tight ${STEP_LABEL_TONE[step.status]}`}>
+                {step.label}
+                <span className="sr-only"> — {STEP_STATUS_LABEL[step.status]}</span>
               </span>
-              <span className={`h-px flex-1 ${i === steps.length - 1 ? 'invisible' : rightDone ? 'bg-merged' : 'bg-edge'}`} />
-            </div>
-            <span className={`text-[11px] leading-tight ${STEP_LABEL_TONE[step.status]}`}>
-              {step.label}
-              <span className="sr-only"> — {STEP_STATUS_LABEL[step.status]}</span>
-            </span>
-          </li>
-        );
-      })}
-    </ol>
+              {caption && <span className="text-[10.5px] leading-tight text-faint">{caption}</span>}
+            </li>
+          );
+        })}
+      </ol>
+    </div>
   );
 }
 
@@ -470,27 +497,43 @@ function Verification({ attempts, statuses, run, only }: { attempts: Verificatio
 
 // ─── session line ────────────────────────────────────────────────────────────
 
-/** A compact session/cost caption for the selected Attempt: its harness session
- * id (or a cold-start note) and the cost this run. The per-model and
- * agent-vs-subagent token breakdown now lives in the Attempt's Stats block. */
-function AttemptSession({ run, snapshot }: { run: AttemptSummary; snapshot: AttemptUsageEvent | undefined }) {
-  // A live Attempt's settled cost is still null — read the `attempt_usage`
-  // snapshot instead so the figure ticks as it runs.
+/** The selected Attempt's headline facts as a compact card: the model it ran,
+ * the cost and wall-clock of this run, its tool-call count, and the harness
+ * session id (or a cold-start note). A live Attempt's settled cost is still
+ * null, so the `attempt_usage` snapshot feeds the ticking figure. */
+function AttemptSummaryCard({
+  run,
+  snapshot,
+  model,
+  toolCalls,
+}: {
+  run: AttemptSummary;
+  snapshot: AttemptUsageEvent | undefined;
+  model: string;
+  toolCalls: number;
+}) {
   const runCost = run.state === 'running' ? snapshot?.cost ?? run.cost : run.cost;
-  const cost = formatCost(runCost);
+  const durMs = run.finishedAt
+    ? Math.max(0, run.finishedAt - run.startedAt)
+    : run.state === 'running'
+      ? Math.max(0, Date.now() - run.startedAt)
+      : 0;
+  const items: Array<[string, ReactNode]> = [
+    ['Model', <span className="font-data">{model}</span>],
+    ['Cost', formatCost(runCost) ?? '—'],
+    ['Duration', durMs > 0 ? fmtDur(durMs) : '—'],
+    ['Tool calls', toolCalls > 0 ? toolCalls.toLocaleString() : '—'],
+    ['Session', run.sessionId ? <span className="font-data text-[12.5px]">{run.sessionId}</span> : 'cold start'],
+  ];
   return (
-    <div className="mt-3 flex flex-wrap items-baseline justify-between gap-x-8 gap-y-2 border-t border-hairline pt-3">
-      <div className="flex items-baseline gap-2">
-        <span className={sectionCaps}>Session</span>
-        <span className="text-[13px] text-ink">
-          {run.sessionId ? <span className="font-data text-[12.5px]">{run.sessionId}</span> : 'cold start · fresh session'}
-        </span>
-      </div>
-      <div className="flex items-baseline gap-2">
-        <span className={sectionCaps}>Cost · this run</span>
-        <span className="text-[13px] tabular-nums text-ink">{cost ?? '—'}</span>
-      </div>
-    </div>
+    <section className={`${card} mt-4 flex flex-wrap gap-x-9 gap-y-3 p-4`}>
+      {items.map(([k, v]) => (
+        <div key={k} className="min-w-0">
+          <div className="mb-[5px] text-[10px] font-bold uppercase tracking-[0.07em] text-faint">{k}</div>
+          <div className="text-[14px] font-bold leading-none text-ink tabular-nums">{v}</div>
+        </div>
+      ))}
+    </section>
   );
 }
 
@@ -551,7 +594,7 @@ function SteerBox({ taskId }: { taskId: number }) {
  * `Attempt.number`) — the currently-running Step's type carries the pill
  * word for a live run (ADR-0001 Vocabulary; AttemptSummary/Phase are deleted concepts). */
 function attemptPillState(run: AttemptSummary, steps: readonly Step[]): string {
-  if (run.state === 'completed') return 'merged';
+  if (run.state === 'completed') return 'passed';
   if (run.state === 'running') return steps.find((step) => step.state === 'running')?.type ?? 'running';
   return run.state;
 }
@@ -616,7 +659,16 @@ function ChangesPane({
     return (
       <div>
         <div className="mx-0.5 mb-3 mt-4">
-          <h2 className="text-[16.5px] font-bold leading-tight tracking-[-0.01em] text-ink">
+          <h2 className="flex items-center gap-2 text-[16.5px] font-bold leading-tight tracking-[-0.01em] text-ink">
+            {file && (
+              <span
+                className={`grid size-[18px] shrink-0 place-items-center rounded-[4px] font-data text-[10px] font-bold ${
+                  file.deletions === 0 && file.additions > 0 ? 'bg-merged-tint text-merged' : 'bg-running-tint text-running'
+                }`}
+              >
+                {file.deletions === 0 && file.additions > 0 ? 'A' : 'M'}
+              </span>
+            )}
             {splitPathTail(selectedFile).tail}
           </h2>
           <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 font-data text-[12px] text-faint">
@@ -629,6 +681,14 @@ function ChangesPane({
               </>
             )}
             <span className="min-w-0 truncate">{selectedFile}</span>
+            {task.branch && (
+              <>
+                <span aria-hidden className="text-edge">·</span>
+                <span>
+                  worktree diff · {task.baseBranch ?? 'HEAD'}…{task.branch}
+                </span>
+              </>
+            )}
           </div>
         </div>
         {files === null && !failed ? (
@@ -826,10 +886,7 @@ function ModelTokenBar({ model, maxTotal }: { model: TaskModelStats; maxTotal: n
         <span className="truncate font-data text-data font-semibold text-ink" title={model.model}>
           {model.model}
         </span>
-        <span className="shrink-0 tabular-nums text-data text-muted">
-          {compactTokens.format(model.input + model.output)} I/O
-          {model.cost !== null && <span className="ml-2 font-semibold text-ink">{usd(model.cost)}</span>}
-        </span>
+        <span className="shrink-0 tabular-nums text-data text-muted">{compactTokens.format(total)}</span>
       </div>
       <div
         className="flex h-2.5 overflow-hidden rounded-full bg-raised"
@@ -842,9 +899,8 @@ function ModelTokenBar({ model, maxTotal }: { model: TaskModelStats; maxTotal: n
       </div>
       <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-label tabular-nums text-faint">
         {TOKEN_SEGMENTS.map((s) => (
-          <span key={s.key} className="inline-flex items-center gap-1.5">
-            <span className={`size-2 rounded-[2px] ${s.fill}`} aria-hidden="true" />
-            {s.label} {model[s.key].toLocaleString()}
+          <span key={s.key}>
+            {s.label} {compactTokens.format(model[s.key])}
           </span>
         ))}
       </div>
@@ -852,10 +908,129 @@ function ModelTokenBar({ model, maxTotal }: { model: TaskModelStats; maxTotal: n
   );
 }
 
+/** The four-class colour key shown once at a token card's top-right, so the
+ * stacked bars beneath it repeat no swatches. */
+function TokenLegend() {
+  return (
+    <div className="flex flex-wrap gap-x-3 gap-y-1 text-label text-faint">
+      {TOKEN_SEGMENTS.map((s) => (
+        <span key={s.key} className="inline-flex items-center gap-1.5">
+          <span className={`size-2 rounded-[2px] ${s.fill}`} aria-hidden="true" />
+          {s.label}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+/** The per-model token-breakdown card — caps title, the shared legend, and one
+ * stacked bar per model — shared by the whole-Task Stats panel and a single
+ * Attempt's stats. */
+function TokenBreakdownCard({ byModel }: { byModel: TaskModelStats[] }) {
+  const maxTotal = Math.max(...byModel.map(modelTotal), 1);
+  return (
+    <section className={`${card} p-5`}>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <h3 className={sectionCaps}>Token breakdown by model</h3>
+        <TokenLegend />
+      </div>
+      <div className="flex flex-col gap-4">
+        {byModel.map((m) => (
+          <ModelTokenBar key={m.model} model={m} maxTotal={maxTotal} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/** The agent-vs-subagent donut card: the share of tokens the root session held
+ * versus everything spawned beneath it, centred on the `primary + subagents`
+ * count. Models aren't named here — the per-model breakdown owns that. */
+function AgentDonutCard({ stats }: { stats: TaskStats }) {
+  const { agentTokens, subagentTokens } = stats.agentVsSubagent;
+  const total = agentTokens + subagentTokens;
+  const pct = (v: number) => (total > 0 ? `${Math.round((v / total) * 100)}%` : '0%');
+  const subLabel = `${stats.subagents} subagent${stats.subagents === 1 ? '' : 's'}`;
+  const segments: DonutSegment[] = [
+    { key: 'agent', label: 'Primary agent', value: agentTokens, valueLabel: pct(agentTokens), color: 'var(--hm-accent)' },
+    { key: 'subagent', label: subLabel, value: subagentTokens, valueLabel: pct(subagentTokens), color: 'var(--hm-muted)' },
+  ];
+  return (
+    <section className={`${card} p-5`}>
+      <div className="mb-4 flex items-baseline gap-1.5">
+        <h3 className={sectionCaps}>Agent vs subagent</h3>
+        <span className="text-label text-faint">· share of tokens</span>
+      </div>
+      {total > 0 ? (
+        <Donut
+          segments={segments}
+          total={total}
+          hideCenter
+          percent={false}
+          ariaLabel="Agent versus subagent token share"
+        />
+      ) : (
+        <p className="text-muted">No per-agent breakdown for this Task.</p>
+      )}
+    </section>
+  );
+}
+
+/** The cost-by-model donut card — one slice per priced `cost.byModel` key
+ * (role-qualified slices and a critic slice included), centred on the total. */
+function CostDonutCard({ stats }: { stats: TaskStats }) {
+  const segments: DonutSegment[] = stats.costByModel.map((m, i) => ({
+    key: m.model,
+    label: m.model,
+    value: m.cost,
+    valueLabel: usd(m.cost),
+    color: COST_DONUT_COLORS[i % COST_DONUT_COLORS.length]!,
+  }));
+  return (
+    <section className={`${card} p-5`}>
+      <h3 className={`${sectionCaps} mb-4`}>Cost by model</h3>
+      {segments.length > 0 ? (
+        <Donut
+          segments={segments}
+          total={stats.cost}
+          totalDisplay={usd(stats.cost)}
+          totalLabel="TOTAL"
+          percent={false}
+          ariaLabel="Cost by model"
+        />
+      ) : (
+        <p className="text-muted">No priced usage yet.</p>
+      )}
+    </section>
+  );
+}
+
+/** The Stats panel's headline figures as a compact fact card: total cost, how
+ * many primary/subagent sessions ran, and the tool-call count. No total-token
+ * scalar — the honest headline is cost and billable I/O, surfaced elsewhere. */
+function StatsSummaryCard({ stats }: { stats: TaskStats }) {
+  const items: Array<[string, ReactNode]> = [
+    ['Cost', usd(stats.cost)],
+    ['Agents', <>{stats.agents} <span className="ml-0.5 text-[11px] font-normal text-muted">primary</span></>],
+    ['Subagents', `${stats.subagents}`],
+    ['Tool calls', stats.toolCalls.toLocaleString()],
+  ];
+  return (
+    <section className={`${card} flex flex-wrap gap-x-10 gap-y-4 p-5`}>
+      {items.map(([k, v]) => (
+        <div key={k} className="min-w-0">
+          <div className="mb-[5px] text-[10px] font-bold uppercase tracking-[0.07em] text-faint">{k}</div>
+          <div className="text-[17px] font-bold leading-none text-ink tabular-nums">{v}</div>
+        </div>
+      ))}
+    </section>
+  );
+}
+
 /** The default content-panel view (nothing selected): the whole-Task AI-usage
  * breakdown. Honest-numbers rule — no total-token scalar; the token magnitude
  * is surfaced only as the per-model bars and the donut proportions, and the
- * headline figures are billable I/O and cost. */
+ * headline figures are cost and billable I/O. */
 function StatsPanel({ stats }: { stats: TaskStats }) {
   if (stats.byModel.length === 0) {
     return (
@@ -864,64 +1039,28 @@ function StatsPanel({ stats }: { stats: TaskStats }) {
       </EmptyState>
     );
   }
-  const maxTotal = Math.max(...stats.byModel.map(modelTotal), 1);
-  const { agentTokens, subagentTokens } = stats.agentVsSubagent;
-  const agentTotal = agentTokens + subagentTokens;
-  const agentSegments: DonutSegment[] = [
-    { key: 'agent', label: 'Agent', value: agentTokens, valueLabel: compactTokens.format(agentTokens), color: 'var(--hm-ink)' },
-    { key: 'subagent', label: 'Subagent', value: subagentTokens, valueLabel: compactTokens.format(subagentTokens), color: 'var(--hm-muted)' },
-  ];
-  const costSegments: DonutSegment[] = stats.costByModel.map((m, i) => ({
-    key: m.model,
-    label: m.model,
-    value: m.cost,
-    valueLabel: usd(m.cost),
-    color: COST_DONUT_COLORS[i % COST_DONUT_COLORS.length]!,
-  }));
-  const costTotal = stats.costByModel.reduce((sum, m) => sum + m.cost, 0);
-
   return (
     <div className="flex flex-col gap-4 py-5">
-      <section className={`${card} p-5`}>
-        <h2 className="mb-4 text-title font-semibold">Tokens per model</h2>
-        <div className="flex flex-col gap-4">
-          {stats.byModel.map((m) => (
-            <ModelTokenBar key={m.model} model={m} maxTotal={maxTotal} />
-          ))}
-        </div>
-      </section>
-
+      <h2 className="text-title font-semibold text-ink">Stats</h2>
+      <StatsSummaryCard stats={stats} />
+      <TokenBreakdownCard byModel={stats.byModel} />
       <div className="grid gap-4 md:grid-cols-2">
-        <section className={`${card} p-5`}>
-          <h2 className="mb-4 text-title font-semibold">Agent vs subagent</h2>
-          {agentTotal > 0 ? (
-            <Donut
-              segments={agentSegments}
-              total={agentTotal}
-              totalDisplay={`${Math.round((subagentTokens / agentTotal) * 100)}%`}
-              totalLabel="SUBAGENT"
-              ariaLabel="Agent versus subagent token share"
-            />
-          ) : (
-            <p className="text-muted">No per-agent breakdown for this Task.</p>
-          )}
-        </section>
-
-        <section className={`${card} p-5`}>
-          <h2 className="mb-4 text-title font-semibold">Cost by model</h2>
-          {costSegments.length > 0 ? (
-            <Donut
-              segments={costSegments}
-              total={costTotal}
-              totalDisplay={usd(costTotal)}
-              totalLabel="COST"
-              ariaLabel="Cost by model"
-            />
-          ) : (
-            <p className="text-muted">No priced usage yet.</p>
-          )}
-        </section>
+        <AgentDonutCard stats={stats} />
+        <CostDonutCard stats={stats} />
       </div>
+    </div>
+  );
+}
+
+/** A single Attempt's own stats: the token breakdown and the agent-vs-subagent
+ * donut side by side. Scoped to the Attempt (not the whole Task), and without
+ * the whole-Task summary card, heading, or cost donut. */
+function AttemptStats({ stats }: { stats: TaskStats }) {
+  if (stats.byModel.length === 0) return null;
+  return (
+    <div className="grid gap-4 py-5 md:grid-cols-2">
+      <TokenBreakdownCard byModel={stats.byModel} />
+      <AgentDonutCard stats={stats} />
     </div>
   );
 }
@@ -932,7 +1071,7 @@ function StatsPanel({ stats }: { stats: TaskStats }) {
 function statsAttemptsOf(runs: AttemptSummary[], live: Map<number, AttemptUsageEvent>): StatsAttempt[] {
   return runs.map((r) => {
     const snapshot = r.state === 'running' ? live.get(r.id) : undefined;
-    return { usage: snapshot?.usage ?? r.usage, cost: snapshot?.cost ?? r.cost };
+    return { usage: snapshot?.usage ?? r.usage, cost: snapshot?.cost ?? r.cost, toolCalls: r.toolCalls };
   });
 }
 
@@ -958,8 +1097,17 @@ function StepTabsBar({ tabs, active, onSelect }: { tabs: StepTab[]; active: Step
               selected ? 'border-accent text-ink' : 'border-transparent text-muted hover:text-ink'
             }`}
           >
-            <span role="img" aria-label={tab.state} className={`size-2 rounded-full ${NAV_DOT[tone]}`} />
-            {tab.label}
+            {tab.state === 'passed' ? (
+              <Icon name="check" className="size-3.5 text-merged" />
+            ) : tab.state === 'failed' ? (
+              <Icon name="close" className="size-3.5 text-fail" />
+            ) : (
+              <span role="img" aria-label={tab.state} className={`size-2 rounded-full ${NAV_DOT[tone]}`} />
+            )}
+            <span>
+              {tab.label}
+              {tab.detail && <span className="ml-1 font-normal text-faint">· {tab.detail}</span>}
+            </span>
           </button>
         );
       })}
@@ -1013,6 +1161,7 @@ function AttemptPanel({
   verifierStatuses,
   guardrailEvents,
   baseBranch,
+  primaryModel,
 }: {
   run: AttemptSummary;
   attempt: Attempt | undefined;
@@ -1026,6 +1175,7 @@ function AttemptPanel({
   verifierStatuses: VerifierStatus[];
   guardrailEvents: GuardrailEvent[];
   baseBranch: string | null;
+  primaryModel: string;
 }) {
   const steps = attempt?.steps ?? [];
   const tabs = attemptStepTabs(steps);
@@ -1040,6 +1190,7 @@ function AttemptPanel({
   // The Implementation Step's content — the session chat, with the steer input
   // at its foot while the run is live. Also the fallback for a run that has no
   // recorded Steps yet, so its transcript still shows as it starts up.
+  const topModel = stats.byModel[0]?.model ?? primaryModel;
   const chat = (
     <ChatTranscript
       events={events}
@@ -1047,39 +1198,43 @@ function AttemptPanel({
       following={following}
       onToggleFollow={onToggleFollow}
       steer={run.state === 'running' ? <SteerBox taskId={run.taskId} /> : undefined}
+      model={topModel}
+      stepLabel="Implementation"
     />
   );
+  const tabContent =
+    activeTab && active ? (
+      activeTab.pending ? (
+        <PendingStep label={activeTab.label} />
+      ) : active === 'rebase' ? (
+        <RebaseStatus step={steps.find((s) => s.type === 'rebase')!} baseBranch={baseBranch} />
+      ) : active === 'implementation' ? (
+        <>
+          <GuardrailAlert events={guardrailEvents} />
+          {chat}
+        </>
+      ) : active === 'verification' ? (
+        <div className="mt-4">
+          <Verification attempts={verificationAttempts} statuses={verifierStatuses} run={run} only="command" />
+        </div>
+      ) : (
+        <div className="mt-4">
+          <Verification attempts={verificationAttempts} statuses={verifierStatuses} run={run} only="critic" />
+        </div>
+      )
+    ) : (
+      chat
+    );
 
+  // Order (mockup): the Attempt header, its Step tabs, the per-Attempt summary
+  // card and stats (always shown), then the selected Step's content beneath.
   return (
     <>
       <AttemptHeader run={run} steps={steps} />
-      <AttemptSession run={run} snapshot={snapshot} />
-      <StatsPanel stats={stats} />
-      {activeTab && active ? (
-        <>
-          <StepTabsBar tabs={tabs} active={active} onSelect={setPicked} />
-          {activeTab.pending ? (
-            <PendingStep label={activeTab.label} />
-          ) : active === 'rebase' ? (
-            <RebaseStatus step={steps.find((s) => s.type === 'rebase')!} baseBranch={baseBranch} />
-          ) : active === 'implementation' ? (
-            <>
-              <GuardrailAlert events={guardrailEvents} />
-              {chat}
-            </>
-          ) : active === 'verification' ? (
-            <div className="mt-4">
-              <Verification attempts={verificationAttempts} statuses={verifierStatuses} run={run} only="command" />
-            </div>
-          ) : (
-            <div className="mt-4">
-              <Verification attempts={verificationAttempts} statuses={verifierStatuses} run={run} only="critic" />
-            </div>
-          )}
-        </>
-      ) : (
-        chat
-      )}
+      {tabs.length > 0 && active && <StepTabsBar tabs={tabs} active={active} onSelect={setPicked} />}
+      <AttemptSummaryCard run={run} snapshot={snapshot} model={topModel} toolCalls={stats.toolCalls} />
+      <AttemptStats stats={stats} />
+      {tabContent}
     </>
   );
 }
@@ -1457,8 +1612,8 @@ export function TicketPage({
             {/* Condensed two-column header: the description (with its Show more
                 clamp) on the left, the metrics row above the Properties fact-list
                 on the right. Stacks under the rail breakpoint. */}
-            <div className="mt-3 flex gap-8 max-rail:flex-col max-rail:gap-3">
-              <div className="min-w-0 flex-1">
+            <div className="mt-3 grid grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)] gap-11 max-rail:grid-cols-1 max-rail:gap-3">
+              <div className="min-w-0">
                 {/* The full prompt lives on the item GET (`detail`) or a WS-full
                     store task, never on a lean list row (issue #350). Until one
                     arrives, render nothing rather than the truncated `summary`,
@@ -1468,19 +1623,13 @@ export function TicketPage({
                   <Description prompt={detail?.prompt ?? task.prompt ?? ''} />
                 )}
               </div>
-              <div className="w-[320px] shrink-0 max-rail:w-full">
+              <div className="min-w-0">
                 <Metrics task={task} runs={runs} live={liveUsage} now={now} />
                 <Properties task={task} allTasks={allTasks} workspaceName={workspaceName} />
               </div>
             </div>
 
-            <TaskProgressBar state={task.state} attempts={runs} />
-
-            {verifiedSha(attempts) && (
-              <p className="mb-4 -mt-2 text-small text-muted">
-                verified <span className="font-data text-ink">{verifiedSha(attempts)}</span>
-              </p>
-            )}
+            <TaskProgressBar task={task} attempts={runs} />
 
             {task.skipReason && (
               <div className="mb-4 text-small text-muted">
@@ -1549,6 +1698,7 @@ export function TicketPage({
                     verifierStatuses={verifierStatuses}
                     guardrailEvents={guardrailEvents}
                     baseBranch={task.baseBranch}
+                    primaryModel={task.model}
                   />
                 ) : (
                   <NoRunsYet />

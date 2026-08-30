@@ -10,7 +10,6 @@ import {
   stepLabel,
   stepLogSource,
   verifierStatusTone,
-  verifiedSha,
   verificationAttemptId,
 } from '../web/src/attempt-timeline-model.js';
 import type { Attempt, Step, AttemptSummary } from '../web/src/types.js';
@@ -43,14 +42,6 @@ describe('attempt timeline model', () => {
     expect(verifierStatusTone('skipped')).toBe('neutral');
     expect(verifierStatusTone('disabled')).toBe('neutral');
     expect(verifierStatusTone('unrunnable')).toBe('failed');
-  });
-
-  it('uses the latest attempt-level verification proof', () => {
-    const old = attempt({ verifiedSha: 'old' });
-    const current = attempt({ id: 2, number: 2, verifiedSha: 'current' });
-    expect(verifiedSha([old, current])).toBe('current');
-    expect(verifiedSha([old, attempt({ id: 3, number: 3 })])).toBe('old');
-    expect(verifiedSha([attempt()])).toBeNull();
   });
 
   it('parses the verification locators written for command, review, and inconclusive tasks', () => {

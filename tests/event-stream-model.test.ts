@@ -19,7 +19,7 @@ describe('coalesceEvents', () => {
     // These are the exact byte-boundary splits that broke words mid-line.
     const items = coalesceEvents([chunk(1, 'I searched the de'), chunk(2, 'ferred tool list.')]);
     expect(items).toEqual([
-      { kind: 'text', variant: 'message', text: 'I searched the deferred tool list.', key: 1 },
+      { kind: 'text', variant: 'message', text: 'I searched the deferred tool list.', at: 1, key: 1 },
     ]);
   });
 
@@ -41,13 +41,14 @@ describe('coalesceEvents', () => {
     });
     const items = coalesceEvents([chunk(1, 'before '), chunk(2, 'tool.'), tool, chunk(4, 'after '), chunk(5, 'tool.')]);
     expect(items).toEqual([
-      { kind: 'text', variant: 'message', text: 'before tool.', key: 1 },
+      { kind: 'text', variant: 'message', text: 'before tool.', at: 1, key: 1 },
       {
         kind: 'tool',
-        tool: { toolCallId: 'toolu_x', toolKind: 'read', title: 'Read', status: 'completed', subagent: false },
+        tool: { toolCallId: 'toolu_x', toolKind: 'read', title: 'Read', status: 'completed', subagent: false, output: null },
+        at: 3,
         key: 3,
       },
-      { kind: 'text', variant: 'message', text: 'after tool.', key: 4 },
+      { kind: 'text', variant: 'message', text: 'after tool.', at: 4, key: 4 },
     ]);
   });
 
@@ -69,7 +70,8 @@ describe('coalesceEvents', () => {
     expect(items).toEqual([
       {
         kind: 'tool',
-        tool: { toolCallId: 'toolu_01EtAM', toolKind: 'read', title: 'notes.md', status: 'completed', subagent: false },
+        tool: { toolCallId: 'toolu_01EtAM', toolKind: 'read', title: 'notes.md', status: 'completed', subagent: false, output: null },
+        at: 1,
         key: 1,
       },
     ]);
@@ -81,7 +83,8 @@ describe('coalesceEvents', () => {
     const [item] = coalesceEvents([call, update]);
     expect(item).toEqual({
       kind: 'tool',
-      tool: { toolCallId: 't1', toolKind: 'execute', title: 'AttemptSummary tests', status: 'completed', subagent: false },
+      tool: { toolCallId: 't1', toolKind: 'execute', title: 'AttemptSummary tests', status: 'completed', subagent: false, output: null },
+      at: 1,
       key: 1,
     });
   });
@@ -97,6 +100,19 @@ describe('coalesceEvents', () => {
     expect(item && item.kind === 'tool' && item.tool.subagent).toBe(true);
   });
 
+  it("captures a tool call's text output from its content blocks", () => {
+    const call = evt(1, 'session_update', {
+      sessionUpdate: 'tool_call',
+      toolCallId: 't',
+      kind: 'execute',
+      title: 'Bash',
+      status: 'completed',
+      content: [{ content: { text: 'Tests 12 passed' } }],
+    });
+    const [item] = coalesceEvents([call]);
+    expect(item && item.kind === 'tool' && item.tool.output).toBe('Tests 12 passed');
+  });
+
   it('passes non-text events through untouched', () => {
     const perm = evt(1, 'permission_request', { request: {}, outcome: { outcome: 'selected' } });
     const items = coalesceEvents([perm]);
@@ -105,7 +121,7 @@ describe('coalesceEvents', () => {
 
   it('tolerates chunks with missing text', () => {
     const items = coalesceEvents([chunk(1, 'a'), evt(2, 'session_update', { sessionUpdate: 'agent_message_chunk' })]);
-    expect(items).toEqual([{ kind: 'text', variant: 'message', text: 'a', key: 1 }]);
+    expect(items).toEqual([{ kind: 'text', variant: 'message', text: 'a', at: 1, key: 1 }]);
   });
 });
 
@@ -177,7 +193,7 @@ describe('coalesceTail', () => {
     const events = [chunk(1, 'old'), chunk(2, 'ancient'), chunk(3, 'live '), chunk(4, 'tail')];
     const { items } = coalesceTail(events, 2);
     expect(items).toEqual(coalesceEvents(events.slice(2)));
-    expect(items).toEqual([{ kind: 'text', variant: 'message', text: 'live tail', key: 3 }]);
+    expect(items).toEqual([{ kind: 'text', variant: 'message', text: 'live tail', at: 3, key: 3 }]);
   });
 
   it('bounds a multi-thousand-event run to the cap without reordering', () => {
@@ -211,7 +227,8 @@ describe('coalesceTail', () => {
     expect(items).toEqual([
       {
         kind: 'tool',
-        tool: { toolCallId: 't', toolKind: undefined, title: undefined, status: 'completed', subagent: false },
+        tool: { toolCallId: 't', toolKind: undefined, title: undefined, status: 'completed', subagent: false, output: null },
+        at: 2,
         key: 2,
       },
     ]);

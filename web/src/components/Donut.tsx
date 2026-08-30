@@ -29,6 +29,8 @@ export function Donut({
   totalLabel = total === 1 ? 'RUN' : 'RUNS',
   totalDisplay,
   ariaLabel,
+  percent = true,
+  hideCenter = false,
 }: {
   segments: DonutSegment[];
   total: number;
@@ -38,6 +40,14 @@ export function Donut({
    * count without leaking a token-total scalar. */
   totalDisplay?: string;
   ariaLabel?: string;
+  /** Append each slice's share as a trailing `%` in the legend. On by default;
+   * pass `false` where the `valueLabel` already IS the share, or where the
+   * figure (a dollar cost) shouldn't carry a redundant percentage. */
+  percent?: boolean;
+  /** Leave the ring's centre empty — for a donut whose centre figure would be a
+   * meaningless count (the agent/subagent share reads from its slices, not a
+   * `N + M` tally). */
+  hideCenter?: boolean;
 }) {
   const sum = segments.reduce((a, s) => a + s.value, 0) || 1;
   let angle = -Math.PI / 2;
@@ -56,12 +66,16 @@ export function Donut({
         ) : (
           arcs.map(({ seg, a0, a1 }) => <path key={seg.key} d={wedge(a0, a1)} fill={seg.color} />)
         )}
-        <text x={CX} y={CY - 2} textAnchor="middle" className="fill-ink tabular-nums" fontSize="15" fontWeight="700">
-          {totalDisplay ?? total.toLocaleString()}
-        </text>
-        <text x={CX} y={CY + 9} textAnchor="middle" className="fill-muted" fontSize="6.5" letterSpacing="0.5">
-          {totalLabel}
-        </text>
+        {!hideCenter && (
+          <>
+            <text x={CX} y={CY - 2} textAnchor="middle" className="fill-ink tabular-nums" fontSize="15" fontWeight="700">
+              {totalDisplay ?? total.toLocaleString()}
+            </text>
+            <text x={CX} y={CY + 9} textAnchor="middle" className="fill-muted" fontSize="6.5" letterSpacing="0.5">
+              {totalLabel}
+            </text>
+          </>
+        )}
       </svg>
       <ul className="flex min-w-[8rem] flex-col gap-1.5">
         {segments.map((s) => (
@@ -70,7 +84,7 @@ export function Donut({
             <span className="text-ink">{s.label ?? s.key}</span>
             <span className="ml-auto pl-3 tabular-nums text-muted">
               {s.valueLabel ?? s.value.toLocaleString()}
-              <span className="ml-1.5 text-faint">{Math.round((s.value / sum) * 100)}%</span>
+              {percent && <span className="ml-1.5 text-faint">{Math.round((s.value / sum) * 100)}%</span>}
             </span>
           </li>
         ))}

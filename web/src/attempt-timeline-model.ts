@@ -67,14 +67,6 @@ export function verificationAttemptId(locator: string | null): number | null {
   return match ? Number(match[1]) : null;
 }
 
-/** Latest verification proof wins; older Attempt facts are historical only. */
-export function verifiedSha(attempts: readonly Attempt[]): string | null {
-  for (const attempt of [...attempts].reverse()) {
-    if (attempt.verifiedSha !== null) return attempt.verifiedSha;
-  }
-  return null;
-}
-
 /** An Attempt summary carries every corrective turn it drove and `run.number`
  * is the last of them, so the summary that owns Attempt N is the earliest one
  * whose counter reached N. */

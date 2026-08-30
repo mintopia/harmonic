@@ -29,8 +29,8 @@ export async function wsRoutes(fastify: FastifyInstance): Promise<void> {
     let unsubscribeAttemptLog: (() => void) | undefined;
     const unsubscribes = [
       ctx.bus.on('attempt_event', (event) => send({ type: 'attempt_event', event })),
-      ctx.bus.on('attempt_changed', (run) => {
-        send({ type: 'attempt_changed', run: attemptToApi(ctx, run) });
+      ctx.bus.on('attempt_changed', async (run) => {
+        send({ type: 'attempt_changed', run: await attemptToApi(ctx, run) });
         sendAttemptTimeline(run.taskId);
       }),
       // Live Run usage (ADR 0010) is board/viz traffic — sent to read keys too;

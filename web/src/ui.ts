@@ -362,6 +362,7 @@ export const runChipActive =
 export const PHASE_NODE_STYLES = {
   done: 'border-transparent bg-merged-tint text-merged',
   current: 'border-transparent bg-accent text-on-accent',
+  awaiting: 'border-transparent bg-await text-on-await',
   pending: 'border-edge text-faint',
   failed: 'border-transparent bg-fail-tint text-fail',
 } as const;

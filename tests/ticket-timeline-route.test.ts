@@ -39,10 +39,14 @@ describe('GET /api/tasks/:id/timeline (issue #328)', () => {
     // Run/Attempt are one execution ledger now (ADR-0001 #388 S-G): no more
     // duplicate 'run-started'/'run-finished' entries alongside 'attempt-started'/
     // 'attempt-finished' for the same fact.
+    // A `task-created` fact heads the lifecycle (its ts is the Task's real
+    // createdAt, so it sorts among the wall-clock events, before the lifecycle
+    // event appended after it).
     expect(response.body.events.map((event: { kind: string }) => event.kind)).toEqual([
-      'attempt-started', 'verification', 'guardrail', 'verification', 'verification', 'attempt-finished', 'lifecycle',
+      'attempt-started', 'verification', 'guardrail', 'verification', 'verification', 'attempt-finished', 'fact', 'lifecycle',
     ]);
-    expect(response.body.events.map((event: { ts: number }) => event.ts)).toEqual([100, 200, 250, 400, 900, 900, expect.any(Number)]);
+    expect(response.body.events.map((event: { ts: number }) => event.ts)).toEqual([100, 200, 250, 400, 900, 900, expect.any(Number), expect.any(Number)]);
+    expect(response.body.events.find((event: { kind: string }) => event.kind === 'fact')).toMatchObject({ data: { type: 'task-created' } });
     expect(response.body.events.every((event: { attemptId: number | null }) => event.attemptId === null || event.attemptId === attempt.id)).toBe(true);
     expect(response.body.events.find((event: { kind: string }) => event.kind === 'verification')).toMatchObject({ data: {
       verdict: 'pass', summary: 'checks passed', mechanism: 'command',
@@ -81,10 +85,14 @@ describe('GET /api/tasks/:id/timeline (issue #328)', () => {
     expect(response.body.events.filter((event: { kind: string }) => event.kind === 'operator-reject')).toHaveLength(1);
   });
 
-  it('returns an empty timeline for an existing task with no runs and 404 for an unknown task', async () => {
+  it('shows only the task-created row for a task with no runs, and 404 for an unknown task', async () => {
     const task = await server.api('POST', '/api/tasks', { prompt: 'empty timeline' });
 
-    await expect(server.api('GET', `/api/tasks/${task.body.id}/timeline`)).resolves.toMatchObject({ status: 200, body: { events: [] } });
+    // A run-less Task still has its own creation event — the head of the lifecycle.
+    await expect(server.api('GET', `/api/tasks/${task.body.id}/timeline`)).resolves.toMatchObject({
+      status: 200,
+      body: { events: [{ kind: 'fact', data: { type: 'task-created' } }] },
+    });
     await expect(server.api('GET', '/api/tasks/999999/timeline')).resolves.toMatchObject({ status: 404 });
   });
 });

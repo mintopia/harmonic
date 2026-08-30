@@ -88,7 +88,7 @@ describe('taskLifecycle', () => {
   it('has exactly one highlighted node matching `current`, in every state', () => {
     for (const state of ['draft', 'ready', 'working', 'escalated', 'done', 'cancelled'] as TaskState[]) {
       const { steps, current } = taskLifecycle(state, [stateAttempt('running')]);
-      const highlighted = steps.filter((s) => s.status === 'current' || s.status === 'failed');
+      const highlighted = steps.filter((s) => s.status === 'current' || s.status === 'failed' || s.status === 'awaiting');
       // `done` settles every node, so it has no lone highlight — it is the one exception.
       if (state === 'done') {
         expect(steps.every((s) => s.status === 'done')).toBe(true);
@@ -150,12 +150,14 @@ describe('taskLifecycle', () => {
     });
   });
 
-  it('marks Implementation failed when the Task escalates', () => {
-    expect(taskLifecycle('escalated', [stateAttempt('failed')]).current).toBe('implementation');
-    expect(statuses('escalated', [stateAttempt('failed')])).toEqual({
+  it('sits an escalated Task at the Merge gate, awaiting review', () => {
+    // A passed Attempt at the review gate: Implementation is done and Merge is
+    // the highlighted `awaiting` node (the indigo needs-you voice), not a failure.
+    expect(taskLifecycle('escalated', [stateAttempt('completed')]).current).toBe('merge');
+    expect(statuses('escalated', [stateAttempt('completed')])).toEqual({
       worktree: 'done',
-      implementation: 'failed',
-      merge: 'pending',
+      implementation: 'done',
+      merge: 'awaiting',
       postMergeCheck: 'pending',
       closeIssue: 'pending',
       retire: 'pending',
@@ -234,8 +236,18 @@ describe('taskStats', () => {
     expect(stats.byModel).toEqual([
       { model: 'opus-4.8', input: 10, output: 5, cachedIn: 100_000, cachedOut: 5_000, cost: 2 },
     ]);
-    // No total-token scalar anywhere in the shape.
-    expect(Object.keys(stats).sort()).toEqual(['agentVsSubagent', 'billableIO', 'byModel', 'costByModel']);
+    // No total-token scalar anywhere in the shape (cost and billable I/O are the
+    // honest headlines; the summary-card counts carry no token total).
+    expect(Object.keys(stats).sort()).toEqual([
+      'agentVsSubagent',
+      'agents',
+      'billableIO',
+      'byModel',
+      'cost',
+      'costByModel',
+      'subagents',
+      'toolCalls',
+    ]);
     expect(stats).not.toHaveProperty('totalTokens');
     expect(stats.byModel[0]).not.toHaveProperty('totalTokens');
     expect(stats.byModel[0]).not.toHaveProperty('total');
@@ -278,18 +290,47 @@ describe('taskStats', () => {
   });
 
   it('handles an empty set and Attempts with no settled usage', () => {
-    expect(taskStats([])).toEqual({
+    const empty = {
       byModel: [],
       agentVsSubagent: { agentTokens: 0, subagentTokens: 0 },
       costByModel: [],
       billableIO: 0,
-    });
-    expect(taskStats([{ usage: null, cost: null }])).toEqual({
-      byModel: [],
-      agentVsSubagent: { agentTokens: 0, subagentTokens: 0 },
-      costByModel: [],
-      billableIO: 0,
-    });
+      cost: 0,
+      subagents: 0,
+      agents: 0,
+      toolCalls: 0,
+    };
+    expect(taskStats([])).toEqual(empty);
+    expect(taskStats([{ usage: null, cost: null }])).toEqual(empty);
+  });
+
+  it('keys the cost donut by the server cost.byModel keys, so a role-qualified or critic slice stands alone', () => {
+    // Cost carries a role-qualified subagent slice and a critic slice that have
+    // no token-usage bucket of their own; each must still show as its own slice,
+    // and the total cost sums them all.
+    const stats = taskStats([
+      attempt(
+        { 'opus-4.8': tok(100, 20) },
+        { 'opus-4.8': 14.72, 'sonnet-4.5 · sub': 2.14, critic: 0.96 },
+      ),
+    ]);
+    expect(stats.costByModel).toEqual([
+      { model: 'opus-4.8', cost: 14.72 },
+      { model: 'sonnet-4.5 · sub', cost: 2.14 },
+      { model: 'critic', cost: 0.96 },
+    ]);
+    expect(stats.cost).toBeCloseTo(17.82);
+  });
+
+  it('counts primary/subagent sessions and sums tool calls for the summary card', () => {
+    const stats = taskStats([
+      { ...attempt({ 'opus-4.8': tok(10, 2) }, { 'opus-4.8': 0.1 }, { root: tok(8, 1), reviewer: tok(2, 1) }), toolCalls: 40 },
+      { ...attempt({ 'opus-4.8': tok(10, 2) }, { 'opus-4.8': 0.1 }, { root: tok(8, 1), tester: tok(2, 1) }), toolCalls: 23 },
+    ]);
+    expect(stats.agents).toBe(1);
+    // Two distinct subagent names (reviewer, tester) across the Attempts.
+    expect(stats.subagents).toBe(2);
+    expect(stats.toolCalls).toBe(63);
   });
 });
 
@@ -344,6 +385,19 @@ describe('attemptStepTabs', () => {
     expect(attemptStepTabs([step('review', 'pending')])[0]!.pending).toBe(true);
     expect(attemptStepTabs([step('review', 'passed')])[0]!.pending).toBe(false);
     expect(attemptStepTabs([step('verification', 'pending'), step('verification', 'passed')])[0]!.pending).toBe(false);
+  });
+
+  it('carries the verification command as tab detail; the other tabs carry none', () => {
+    const tabs = attemptStepTabs([
+      step('rebase', 'passed'),
+      step('implementation', 'passed'),
+      { ...step('verification', 'passed'), command: 'pnpm test' },
+      step('review', 'passed'),
+    ]);
+    expect(tabs.find((t) => t.type === 'verification')?.detail).toBe('pnpm test');
+    expect(tabs.find((t) => t.type === 'review')?.detail).toBeNull();
+    expect(tabs.find((t) => t.type === 'rebase')?.detail).toBeNull();
+    expect(tabs.find((t) => t.type === 'implementation')?.detail).toBeNull();
   });
 });
 

@@ -410,6 +410,10 @@ export interface AttemptSummary {
     source: string | null;
   } | null;
   cost: Cost | null;
+  /** Total tool calls this Attempt's session made (ADR-0031 native aggregate).
+   * Always present on the wire; optional here so partial test fixtures need not
+   * set it, and every reader floors it with `?? 0`. */
+  toolCalls?: number;
   startedAt: number;
   finishedAt: number | null;
 }

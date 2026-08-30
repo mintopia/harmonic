@@ -24,6 +24,10 @@ export interface ToolCallView {
   title: string | undefined;
   status: string | undefined;
   subagent: boolean;
+  /** The tool's textual output — a command's stdout, a file read — joined from
+   * the ACP content blocks, shown beneath the transcript card. Null when the
+   * call produced no text (an Edit, a pending call). */
+  output: string | null;
 }
 
 /**
@@ -38,8 +42,8 @@ export interface ToolCallView {
  * else stays one item per event.
  */
 export type StreamItem<E extends StreamEvent = StreamEvent> =
-  | { kind: 'text'; variant: 'message' | 'thought' | 'operator'; text: string; key: number }
-  | { kind: 'tool'; tool: ToolCallView; key: number }
+  | { kind: 'text'; variant: 'message' | 'thought' | 'operator'; text: string; at: number; key: number }
+  | { kind: 'tool'; tool: ToolCallView; at: number; key: number }
   | { kind: 'event'; event: E; key: number };
 
 const TEXT_VARIANT: Record<string, 'message' | 'thought' | 'operator'> = {
@@ -61,6 +65,19 @@ export function isInterrupted(payload: unknown): boolean {
   return p?.event === 'finished' && p.stopReason === 'cancelled';
 }
 
+/** Join the text carried by an ACP tool call's content blocks — a command's
+ * stdout or a file read — into one output string; null when it produced none. */
+function toolContentOutput(content: unknown): string | null {
+  if (!Array.isArray(content)) return null;
+  const texts: string[] = [];
+  for (const block of content) {
+    const b = block as { text?: unknown; content?: { text?: unknown } } | null;
+    const text = typeof b?.content?.text === 'string' ? b.content.text : typeof b?.text === 'string' ? b.text : null;
+    if (text && text.trim()) texts.push(text);
+  }
+  return texts.length ? texts.join('\n') : null;
+}
+
 function toolCallView(payload: any): ToolCallView {
   return {
     toolCallId: payload?.toolCallId,
@@ -68,6 +85,7 @@ function toolCallView(payload: any): ToolCallView {
     title: payload?.title,
     status: payload?.status,
     subagent: Boolean(payload?._meta?.claudeCode?.parentToolUseId),
+    output: toolContentOutput(payload?.content),
   };
 }
 
@@ -81,6 +99,7 @@ function mergeToolView(prev: ToolCallView, next: ToolCallView): ToolCallView {
     title: next.title ?? prev.title,
     status: next.status ?? prev.status,
     subagent: prev.subagent || next.subagent,
+    output: next.output ?? prev.output,
   };
 }
 
@@ -155,7 +174,7 @@ export function coalesceEvents<E extends StreamEvent>(events: E[]): StreamItem<E
       if (last?.kind === 'text' && last.variant === variant) {
         last.text += text;
       } else {
-        items.push({ kind: 'text', variant, text, key: event.id });
+        items.push({ kind: 'text', variant, text, at: event.ts, key: event.id });
       }
       continue;
     }
@@ -170,7 +189,7 @@ export function coalesceEvents<E extends StreamEvent>(events: E[]): StreamItem<E
         items[existingIdx as number] = { ...existing, tool: mergeToolView(existing.tool, view) };
       } else {
         if (view.toolCallId !== undefined) toolIndex.set(view.toolCallId, items.length);
-        items.push({ kind: 'tool', tool: view, key: event.id });
+        items.push({ kind: 'tool', tool: view, at: event.ts, key: event.id });
       }
       continue;
     }

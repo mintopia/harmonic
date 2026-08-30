@@ -225,6 +225,8 @@ const attemptSchema = z
     verifiedHeadOid: z.string().nullable().meta({ example: '0f758cd2200565e7605902a86c2827c65ad25ce0' }),
     verifiedRef: z.string().nullable().meta({ example: 'refs/harmonic/direct/attempt-9137' }),
     usage: attemptUsageSchema.nullable(),
+    /** Total tool calls this Attempt's session made (ADR-0031 native aggregate). */
+    toolCalls: z.number().meta({ example: 63 }),
     startedAt: z.number().meta({ example: 1784032020000 }),
     finishedAt: z.number().nullable().meta({ example: 1784032260000 }),
     cost: costSchema.nullable(),
@@ -251,7 +253,7 @@ const eventsListResponseSchema = listResponse('events', attemptEventSchema);
 const ticketTimelineEventSchema = z.object({
   attemptId: z.number().nullable(),
   ts: z.number(),
-  kind: z.enum(['attempt-started', 'attempt-finished', 'lifecycle', 'verification', 'guardrail', 'operator-reject', 'merging']),
+  kind: z.enum(['attempt-started', 'attempt-finished', 'lifecycle', 'verification', 'guardrail', 'operator-reject', 'merging', 'fact']),
   data: z.unknown(),
 });
 const ticketTimelineResponseSchema = listResponse('events', ticketTimelineEventSchema);
@@ -782,7 +784,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
     },
     async (req, reply) => {
       const run = await ctx.runner.start(req.params.id);
-      return reply.status(201).send(attemptToApi(ctx, run));
+      return reply.status(201).send(await attemptToApi(ctx, run));
     },
   );
 
@@ -840,7 +842,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
     async (req) => {
       await ctx.tasks.assertExists(req.params.id);
       const { limit, offset } = req.query;
-      const list = (await ctx.attempts.listForTask(req.params.id)).map((run) => attemptToApi(ctx, run));
+      const list = await Promise.all((await ctx.attempts.listForTask(req.params.id)).map((run) => attemptToApi(ctx, run)));
       const { items, total } = paginate(list, { limit, offset });
       return { attempts: items, total };
     },
@@ -862,7 +864,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
     },
     async (req) => {
       await ctx.tasks.assertExists(req.params.id);
-      return attemptToApi(ctx, await ctx.attempts.currentForTask(req.params.id));
+      return await attemptToApi(ctx, await ctx.attempts.currentForTask(req.params.id));
     },
   );
 
@@ -879,7 +881,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
         },
       },
     },
-    async (req) => attemptToApi(ctx, await ctx.attempts.get(req.params.id)),
+    async (req) => await attemptToApi(ctx, await ctx.attempts.get(req.params.id)),
   );
 
   app.get(

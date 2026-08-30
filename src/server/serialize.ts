@@ -177,7 +177,8 @@ type TicketTimelineKind =
   | 'lifecycle'
   | 'verification'
   | 'guardrail'
-  | 'operator-reject';
+  | 'operator-reject'
+  | 'fact';
 
 export interface ApiTicketTimelineEvent {
   /** The Attempt this event pertains to, when there is one; null for a
@@ -247,6 +248,10 @@ export async function ticketTimelineToApi(ctx: AppContext, taskId: number): Prom
     add({ attemptId: step.attemptId, ts: step.endedAt, kind: 'verification', data: { outcome: 'skipped', command: step.command, verdict: step.verdict } }, 2);
   });
   await forEachYielding(guardrails, async ({ event }) => { add({ attemptId: event.attemptId, ts: event.ts, kind: 'guardrail', data: { dimension: event.dimension, limitValue: event.limitValue, observedValue: event.observedValue, configSource: event.configSource, payload: JSON.parse(event.payload) } }, 2); });
+
+  // The Task's own creation — the head of the lifecycle, before any Attempt.
+  // `order: -1` seats it first even against an Attempt started at the same ms.
+  add({ attemptId: null, ts: task.createdAt, kind: 'fact', data: { type: 'task-created', trackerRef: task.trackerRef != null ? String(task.trackerRef) : null, workspace: workspace?.name ?? null } }, -1);
 
   return {
     events: pending
@@ -335,6 +340,10 @@ export type ApiAttemptSummary = {
   verifiedRef: string | null;
   usage: AttemptUsage | null;
   cost: Cost | null;
+  /** Total tool calls this Attempt's session made (ADR-0031 native aggregate) —
+   * the Stats summary card sums it across Attempts; the Attempt panel shows the
+   * one Attempt's. */
+  toolCalls: number;
   startedAt: number;
   finishedAt: number | null;
 };
@@ -348,7 +357,12 @@ function apiAttemptState(state: AttemptState): ApiAttemptSummary['state'] {
   return state;
 }
 
-export function attemptToApi(_ctx: AppContext, run: AttemptRow): ApiAttemptSummary {
+export async function attemptToApi(ctx: AppContext, run: AttemptRow): Promise<ApiAttemptSummary> {
+  // The per-Attempt tool-call total from its native aggregate (ADR-0031) — one
+  // bounded read per Attempt (attempts-per-Task is small), no event replay.
+  const toolTotals = await ctx.attempts.listToolCalls(run.id);
+  let toolCalls = 0;
+  for (const total of toolTotals.values()) toolCalls += total;
   return {
     id: run.id,
     taskId: run.taskId,
@@ -372,6 +386,7 @@ export function attemptToApi(_ctx: AppContext, run: AttemptRow): ApiAttemptSumma
     verifiedRef: run.verifiedRef,
     usage: parseUsage(run.usage),
     cost: parseCost(run.cost),
+    toolCalls,
     startedAt: run.startedAt,
     finishedAt: run.endedAt,
   };

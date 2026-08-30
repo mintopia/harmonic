@@ -59,7 +59,7 @@ function AcceptButton({ className, label, onConfirm }: { className: string; labe
 }
 
 /** Close an escalated ticket (cancel + branch/worktree/tracker cleanup), armed like Cancel. */
-function CloseButton({ className, onConfirm }: { className: string; onConfirm: () => void }) {
+function CloseButton({ className, label, onConfirm }: { className: string; label: string; onConfirm: () => void }) {
   const { armed, trigger, ref } = useArmedConfirm(onConfirm);
   return (
     <button
@@ -67,7 +67,7 @@ function CloseButton({ className, onConfirm }: { className: string; onConfirm: (
       className={armed ? 'font-semibold text-fail transition-colors duration-150' : className}
       onClick={trigger}
     >
-      {armed ? 'Sure?' : 'Close'}
+      {armed ? 'Sure?' : label}
     </button>
   );
 }
@@ -137,6 +137,7 @@ export function TaskActions({
           <CloseButton
             key={action}
             className={btnQuietDestructive}
+            label={variant === 'footer' ? 'Close task' : 'Close'}
             onConfirm={actDone(() => api.closeTask(task.id), `${taskLabel(task.id)} closed`)}
           />
         );
@@ -184,13 +185,17 @@ export function TaskActions({
   };
 
   // Footer (ticket rail) stacks the verbs vertically and full-width to match
-  // the Paper mockup — Accept on top, the quiet Delete escape hatch last.
-  // `card` keeps the original inline row.
+  // the Paper mockup — Accept on top. `card` keeps the original inline row. The
+  // escalated review gate drops Delete on this surface (the mockup's pinned
+  // Actions are just Accept / Reject / Close); Delete stays on the card and the
+  // other footer states as the rare escape hatch.
   const container =
     variant === 'footer'
       ? 'flex flex-col gap-2 [&>button]:w-full [&>button]:justify-center'
       : 'flex flex-wrap items-center justify-end gap-2.5';
-  const ordered = variant === 'footer' ? [...actions].reverse() : actions;
+  const ordered = (variant === 'footer' ? [...actions].reverse() : actions).filter(
+    (action) => !(variant === 'footer' && task.state === 'escalated' && action === 'delete'),
+  );
   const done = (close: () => void) => () => {
     close();
     onChanged();
