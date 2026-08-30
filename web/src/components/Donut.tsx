@@ -27,11 +27,16 @@ export function Donut({
   segments,
   total,
   totalLabel = total === 1 ? 'RUN' : 'RUNS',
+  totalDisplay,
   ariaLabel,
 }: {
   segments: DonutSegment[];
   total: number;
   totalLabel?: string;
+  /** Preformatted centre figure (e.g. a `$` cost or a `%` share) shown instead
+   * of the numeric `total` — lets a donut headline something other than a raw
+   * count without leaking a token-total scalar. */
+  totalDisplay?: string;
   ariaLabel?: string;
 }) {
   const sum = segments.reduce((a, s) => a + s.value, 0) || 1;
@@ -52,7 +57,7 @@ export function Donut({
           arcs.map(({ seg, a0, a1 }) => <path key={seg.key} d={wedge(a0, a1)} fill={seg.color} />)
         )}
         <text x={CX} y={CY - 2} textAnchor="middle" className="fill-ink tabular-nums" fontSize="15" fontWeight="700">
-          {total.toLocaleString()}
+          {totalDisplay ?? total.toLocaleString()}
         </text>
         <text x={CX} y={CY + 9} textAnchor="middle" className="fill-muted" fontSize="6.5" letterSpacing="0.5">
           {totalLabel}
