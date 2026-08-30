@@ -23,9 +23,11 @@ import { CrumbBar } from './CrumbBar';
 import { LifecycleTimeline } from './ticket/LifecycleTimeline';
 import { attemptTone, runFailureBannerLabel, runForAttempt, verifiedSha, type TimelineTone } from '../attempt-timeline-model';
 import { contentPanel, type ContentSelection } from '../task-detail-model';
+import { isAtLiveEdge } from '../follow-tail-model';
 import { labelType, railSectionHead, railSectionCount } from '../ui';
 import { toastError } from '../toast';
 import { ticketIdentity } from '../id-format.js';
+import { splitPathTail } from '../path';
 
 // ─── small shared bits ───────────────────────────────────────────────────────
 
@@ -705,9 +707,46 @@ function ChangesPane({
     };
   }, [attemptId, running]);
 
+  // A single changed file selected in the sidebar: its filename is the content
+  // title, a ± summary and the full path sit beneath it, then the hunks. The
+  // diff is the run-agnostic cumulative worktree diff (the latest Attempt's
+  // worktree state), not tied to the Attempt the operator has open.
+  if (selectedFile) {
+    const file = (files ?? []).find((f) => f.path === selectedFile);
+    return (
+      <div>
+        <div className="mx-0.5 mb-3 mt-4">
+          <h2 className="text-[16.5px] font-bold leading-tight tracking-[-0.01em] text-ink">
+            {splitPathTail(selectedFile).tail}
+          </h2>
+          <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 font-data text-[12px] text-faint">
+            {file && (
+              <>
+                <span className="tabular-nums">
+                  <span className="text-merged">+{file.additions}</span> <span className="text-fail">−{file.deletions}</span>
+                </span>
+                <span aria-hidden className="text-edge">·</span>
+              </>
+            )}
+            <span className="min-w-0 truncate">{selectedFile}</span>
+          </div>
+        </div>
+        {files === null && !failed ? (
+          <p className="text-muted">Loading diff…</p>
+        ) : !file ? (
+          <p className="text-muted">No changed-file content available for {selectedFile}.</p>
+        ) : (
+          <div className="overflow-hidden rounded-lg border border-hairline shadow-card">
+            <DiffViewer file={file} headerless />
+          </div>
+        )}
+      </div>
+    );
+  }
+
   const add = (files ?? []).reduce((s, f) => s + f.additions, 0);
   const del = (files ?? []).reduce((s, f) => s + f.deletions, 0);
-  const shown = selectedFile ? (files ?? []).filter((f) => f.path === selectedFile) : files ?? [];
+  const shown = files ?? [];
 
   return (
     <div>
@@ -1134,20 +1173,23 @@ export function TicketPage({
   }, [selectedRunId]);
 
   const scrollRef = useRef<HTMLDivElement>(null);
-  const stickToBottom = useRef(false);
+  // The follow/tail state shared by the Timeline and the Attempt transcript:
+  // while engaged, a newly-appended event (either live stream) keeps the panel
+  // pinned to the bottom. Releasing it — by scrolling up — frees the view.
+  const [following, setFollowing] = useState(false);
   useEffect(() => {
     const el = scrollRef.current;
-    if (!el || !stickToBottom.current) return;
+    if (!el || !following) return;
     el.scrollTop = el.scrollHeight;
-  }, [events]);
+  }, [events, timelineEvents, following]);
 
-  // Every selection change re-homes the panel to the top, so a new Attempt,
-  // file, or the Timeline always starts from its beginning rather than
-  // inheriting the previous content's scroll depth.
+  // Every selection change re-homes the panel to the top and releases the tail,
+  // so a new Attempt, file, or the Timeline always starts from its beginning
+  // rather than inheriting the previous content's scroll depth.
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = 0;
-    stickToBottom.current = false;
+    setFollowing(false);
   }, [selection]);
 
   useEffect(() => {
@@ -1216,7 +1258,8 @@ export function TicketPage({
           tabIndex={-1}
           onScroll={(e) => {
             const el = e.currentTarget;
-            stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+            const near = isAtLiveEdge({ scrollTop: el.scrollTop, scrollHeight: el.scrollHeight, clientHeight: el.clientHeight });
+            setFollowing((prev) => (prev === near ? prev : near));
           }}
           className="min-w-0 flex-1 overflow-y-auto pb-10 focus:outline-none max-rail:overflow-visible"
         >
@@ -1295,7 +1338,11 @@ export function TicketPage({
               {panel.kind === 'diff' ? (
                 <ChangesPane task={task} attemptId={latestAttemptId} selectedFile={selectedFile ?? ''} running={anyRunning} />
               ) : panel.kind === 'timeline' ? (
-                <LifecycleTimeline events={timelineEvents} />
+                <LifecycleTimeline
+                  events={timelineEvents}
+                  following={following}
+                  onToggleFollow={() => setFollowing((f) => !f)}
+                />
               ) : panel.kind === 'attempt' ? (
                 selectedRun ? (
                   <>
