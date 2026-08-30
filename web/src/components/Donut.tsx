@@ -49,9 +49,15 @@ export function Donut({
    * `N + M` tally). */
   hideCenter?: boolean;
 }) {
-  const sum = segments.reduce((a, s) => a + s.value, 0) || 1;
+  // Only slices with a value are drawn. A zero-value slice would otherwise push
+  // a two-segment donut down the wedge path with one arc sweeping the full 360°,
+  // whose start and end points coincide — an SVG arc that renders nothing. Once
+  // the zeros are dropped a lone real slice is a single segment, so it takes the
+  // full-ring `<circle>` path below.
+  const drawn = segments.filter((s) => s.value > 0);
+  const sum = drawn.reduce((a, s) => a + s.value, 0) || 1;
   let angle = -Math.PI / 2;
-  const arcs = segments.map((s) => {
+  const arcs = drawn.map((s) => {
     const sweep = (s.value / sum) * TAU;
     const a0 = angle;
     angle += sweep;
@@ -61,8 +67,8 @@ export function Donut({
   return (
     <div className="flex flex-wrap items-center gap-x-6 gap-y-4">
       <svg viewBox="0 0 100 100" className="h-40 w-40 shrink-0" role="img" aria-label={ariaLabel}>
-        {segments.length === 1 ? (
-          <circle cx={CX} cy={CY} r={(R + R_INNER) / 2} fill="none" stroke={segments[0]!.color} strokeWidth={R - R_INNER} />
+        {drawn.length === 1 ? (
+          <circle cx={CX} cy={CY} r={(R + R_INNER) / 2} fill="none" stroke={drawn[0]!.color} strokeWidth={R - R_INNER} />
         ) : (
           arcs.map(({ seg, a0, a1 }) => <path key={seg.key} d={wedge(a0, a1)} fill={seg.color} />)
         )}
