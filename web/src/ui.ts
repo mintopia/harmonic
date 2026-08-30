@@ -304,6 +304,12 @@ export function laneDot(state: TaskState): string {
  * (DESIGN.md § 4 — never bare ruled rows on the canvas). */
 export const panel = 'overflow-hidden rounded-xl bg-surface shadow-card';
 
+/** The Board's top-level section heading — Attention / Running / Pending — and
+ * the Standalone sub-group title, one constant so the two can't drift (issue
+ * #399). The colour is the caller's: `text-await` for the Attention section,
+ * `text-ink` everywhere else. */
+export const boardSectionTitle = 'text-[11px] font-bold uppercase tracking-[0.11em]';
+
 /** The uppercase Label header above a section's panel (weight 700 — the Deck's
  * section register, distinct from `labelType`'s 600 field-label weight). The
  * 'Needs you' section is the one whose label is accent, not faint (§ 6). */

@@ -118,12 +118,17 @@ export class SettingsStore {
   private constructor(
     private readonly path: string,
     file: SettingsFile,
+    private readonly clock: () => number,
   ) {
     this.global = file.global;
     this.workspaces = file.workspaces;
   }
 
-  static async create(dataDir: string, overrides?: DeepPartial<AppConfig>): Promise<SettingsStore> {
+  static async create(
+    dataDir: string,
+    overrides?: DeepPartial<AppConfig>,
+    clock: () => number = Date.now,
+  ): Promise<SettingsStore> {
     mkdirSync(dataDir, { recursive: true });
     const path = join(dataDir, 'settings.yaml');
     let file: SettingsFile;
@@ -137,7 +142,7 @@ export class SettingsStore {
         throw err;
       }
     }
-    const store = new SettingsStore(path, file);
+    const store = new SettingsStore(path, file, clock);
     store.global = mergeConfig(store.global, overrides);
     store.persist();
     return store;
@@ -215,7 +220,7 @@ export class SettingsStore {
    * on every call.
    */
   private reloadIfChanged(): void {
-    const now = Date.now();
+    const now = this.clock();
     if (now - this.lastCheckMs < 1000) return;
     this.lastCheckMs = now;
     let stat: ReturnType<typeof statSync>;
