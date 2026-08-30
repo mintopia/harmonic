@@ -31,7 +31,7 @@ function ToolCard({ row }: { row: Extract<ChatRow, { kind: 'tool' }> }) {
   );
 }
 
-/** The operator's own turn, folded into the stream where it landed — a tinted
+/** The operator's own turn, folded into the stream where it was sent — a tinted
  * right-aligned bubble tagged "You", set apart from the agent's plain messages
  * so a steer reads as a distinct human voice (no avatars — Paper register). */
 function OperatorMessage({ text }: { text: string }) {
@@ -82,7 +82,7 @@ function Row({ row }: { row: ChatRow }) {
 /**
  * The Attempt's session as a chat (the Claude-Desktop register): the agent's
  * turns as plain assistant messages, the operator's steer turns as tinted "You"
- * bubbles folded in where they landed, and every tool call as a compact card.
+ * bubbles folded in where they were sent, and every tool call as a compact card.
  * A sticky header carries the follow/tail control that pins the panel to the
  * auto-updating live bottom; the steer input sits at the foot.
  */

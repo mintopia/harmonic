@@ -6,7 +6,7 @@ import type { AttemptLogEvent } from './types.js';
 /**
  * The Attempt transcript rendered as a chat (the Claude-Desktop register): the
  * agent's turns as assistant messages, the operator's steer turns as "You"
- * messages folded in at the point they landed, its private reasoning as quiet
+ * messages folded in at the point they were sent, its private reasoning as quiet
  * thought blocks, and every tool call as one compact card. This module is the
  * pure seam — {@link chatRows} classifies the already-coalesced stream items so
  * the component stays a thin renderer, unit-tested away from the DOM.

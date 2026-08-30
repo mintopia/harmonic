@@ -1037,6 +1037,19 @@ function AttemptPanel({
   const active = picked && tabs.some((tab) => tab.type === picked) ? picked : defaultStepTab(tabs);
   const activeTab = tabs.find((tab) => tab.type === active);
 
+  // The Implementation Step's content — the session chat, with the steer input
+  // at its foot while the run is live. Also the fallback for a run that has no
+  // recorded Steps yet, so its transcript still shows as it starts up.
+  const chat = (
+    <ChatTranscript
+      events={events}
+      unavailable={logUnavailable}
+      following={following}
+      onToggleFollow={onToggleFollow}
+      steer={run.state === 'running' ? <SteerBox taskId={run.taskId} /> : undefined}
+    />
+  );
+
   return (
     <>
       <AttemptHeader run={run} steps={steps} />
@@ -1052,13 +1065,7 @@ function AttemptPanel({
           ) : active === 'implementation' ? (
             <>
               <GuardrailAlert events={guardrailEvents} />
-              <ChatTranscript
-                events={events}
-                unavailable={logUnavailable}
-                following={following}
-                onToggleFollow={onToggleFollow}
-                steer={run.state === 'running' ? <SteerBox taskId={run.taskId} /> : undefined}
-              />
+              {chat}
             </>
           ) : active === 'verification' ? (
             <div className="mt-4">
@@ -1071,15 +1078,7 @@ function AttemptPanel({
           )}
         </>
       ) : (
-        // A run with no recorded Steps yet — nothing to tab through, but its
-        // transcript is still worth showing as it starts up.
-        <ChatTranscript
-          events={events}
-          unavailable={logUnavailable}
-          following={following}
-          onToggleFollow={onToggleFollow}
-          steer={run.state === 'running' ? <SteerBox taskId={run.taskId} /> : undefined}
-        />
+        chat
       )}
     </>
   );

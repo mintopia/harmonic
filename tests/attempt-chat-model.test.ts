@@ -20,7 +20,7 @@ const tool = (id: number, toolCallId: string, extra: Record<string, unknown>) =>
 const rows = (events: AttemptLogEvent[]) => chatRows(coalesceEvents(events));
 
 describe('chatRows', () => {
-  it('renders the agent as an assistant message and the operator steer as a You message, inline where it landed', () => {
+  it('renders the agent as an assistant message and the operator steer as a You message, inline where it was sent', () => {
     const result = rows([
       say(1, 'Starting the change.'),
       operator(2, 'Also update the tests.'),
