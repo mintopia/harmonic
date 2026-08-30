@@ -1,0 +1,74 @@
+name: Docs
+
+# Builds the Astro Starlight site in website/ and publishes it to GitHub
+# Pages as a project page (https://mintopia.github.io/harmonic/). Runs on
+# pushes to main that touch the site or this workflow, plus manual dispatch.
+# Also triggers on changes to the API route schemas / export script so the
+# regenerated OpenAPI reference (issue #74) can never drift from the code.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'website/**'
+      - '.github/workflows/docs.yml'
+      - 'src/**'
+      - 'scripts/gen-openapi.ts'
+      - 'package.json'
+      - 'package-lock.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Only one Pages deployment at a time; let an in-flight deploy finish.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            website/package-lock.json
+
+      # Regenerate website/src/openapi.json from the live zod route schemas
+      # (ADR-0005) before the docs build, so the published API reference can
+      # never lag the code. --ignore-scripts skips the root package's heavy
+      # `prepare` build (unneeded — the export runs via tsx); better-sqlite3's
+      # native binding is the only thing the in-process app needs, so rebuild
+      # just that one.
+      - run: npm ci --ignore-scripts
+      - run: npm rebuild better-sqlite3
+      - run: npm run docs:openapi
+
+      - run: npm ci
+        working-directory: website
+
+      - run: npm run build
+        working-directory: website
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: website/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
