@@ -2,7 +2,7 @@
 // project, whose nodenext resolution requires it (Vite maps .js → .ts).
 import { splitPathTail } from './path.js';
 import { ROOT_AGENT, totalTokens } from './stats-model.js';
-import type { AttemptSummary, TaskState } from './types.js';
+import type { AttemptSummary, Step, StepState, StepType, TaskState } from './types.js';
 
 /**
  * The reworked Task detail page's view-model seam. The page is a thin renderer
@@ -267,4 +267,72 @@ export function taskStats(attempts: readonly StatsAttempt[]): TaskStats {
   const billableIO = byModel.reduce((sum, m) => sum + m.input + m.output, 0);
 
   return { byModel, agentVsSubagent: { agentTokens, subagentTokens }, costByModel: donutCostByModel, billableIO };
+}
+
+// ─── Attempt step tabs ─────────────────────────────────────────────────────────
+
+/** One tab of the Attempt panel — a Step *type*, not an individual Step: an
+ * Attempt with several `verification` command steps still shows a single Verify
+ * tab whose content lists them all. `state` is the type's rolled-up status for
+ * the tab's dot; `pending` is true only when every Step of the type is still
+ * pending, which is what renders the empty placeholder. */
+export interface StepTab {
+  type: StepType;
+  label: string;
+  state: StepState;
+  pending: boolean;
+}
+
+/** Canonical left-to-right tab order — the Attempt's own lifecycle: rebase onto
+ * base, implement, run the command checks, then the critic review. */
+const STEP_TAB_ORDER: readonly StepType[] = ['rebase', 'implementation', 'verification', 'review'];
+
+const STEP_TAB_LABEL: Record<StepType, string> = {
+  rebase: 'Rebase',
+  implementation: 'Implementation',
+  verification: 'Verify',
+  review: 'Review',
+};
+
+/** A type's rolled-up state across its Steps, by attention precedence: a live
+ * Step wins, then a failure, then a pass, then the terminal skipped/cancelled
+ * outcomes, and pending last — so a Verify tab with one passed and one running
+ * command reads as running, and one with a single failure reads as failed. */
+const STEP_STATE_PRECEDENCE: readonly StepState[] = ['running', 'failed', 'passed', 'cancelled', 'skipped', 'pending'];
+
+function rolledUpState(steps: readonly Step[]): StepState {
+  for (const state of STEP_STATE_PRECEDENCE) {
+    if (steps.some((step) => step.state === state)) return state;
+  }
+  return 'pending';
+}
+
+/**
+ * The Attempt panel's tab strip: one tab per Step *type* present on the Attempt,
+ * in canonical lifecycle order. Pure — the panel is a thin renderer over this.
+ * A type whose every Step is still `pending` carries `pending: true`, which the
+ * panel renders as an empty placeholder rather than that step's content.
+ */
+export function attemptStepTabs(steps: readonly Step[]): StepTab[] {
+  return STEP_TAB_ORDER.flatMap((type) => {
+    const ofType = steps.filter((step) => step.type === type);
+    if (ofType.length === 0) return [];
+    return [{ type, label: STEP_TAB_LABEL[type], state: rolledUpState(ofType), pending: ofType.every((step) => step.state === 'pending') }];
+  });
+}
+
+/**
+ * The tab to open by default when an Attempt is selected: the live Step wins
+ * (that's where the operator's attention is), else the Implementation tab once
+ * it has content, else the furthest-progressed tab, else the first. Null only
+ * when the Attempt has no Steps at all.
+ */
+export function defaultStepTab(tabs: readonly StepTab[]): StepType | null {
+  if (tabs.length === 0) return null;
+  const running = tabs.find((tab) => tab.state === 'running');
+  if (running) return running.type;
+  const implementation = tabs.find((tab) => tab.type === 'implementation' && !tab.pending);
+  if (implementation) return implementation.type;
+  const progressed = [...tabs].reverse().find((tab) => !tab.pending);
+  return (progressed ?? tabs[0]!).type;
 }
