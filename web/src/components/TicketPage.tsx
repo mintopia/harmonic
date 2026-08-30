@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { api } from '../api';
 import { formatCost, usd } from '../cost';
-import type { Attempt, Step, Cost, GuardrailEvent, AttemptSummary, AttemptLogEvent, AttemptUsageEvent, Task, TicketTimelineEvent, VerificationAttempt, VerifierStatus } from '../types';
+import type { Attempt, Step, StepType, GuardrailEvent, AttemptSummary, AttemptLogEvent, AttemptUsageEvent, Task, TicketTimelineEvent, VerificationAttempt, VerifierStatus } from '../types';
 import { appendAttemptLogEvents, eventsAfterLiveCursor, attemptLogCursor } from '../attempt-log-stream-model';
 import { EmptyState } from './EmptyState';
 import { TranscriptTimeline } from './TranscriptTimeline';
@@ -21,9 +21,10 @@ import { AttemptRail } from './ticket/AttemptRail';
 import { Gate } from './ticket/Gate';
 import { CrumbBar } from './CrumbBar';
 import { LifecycleTimeline } from './ticket/LifecycleTimeline';
-import { attemptTone, runFailureBannerLabel, runForAttempt, verifiedSha, type TimelineTone } from '../attempt-timeline-model';
-import { contentPanel, taskLifecycle, modelTotal, taskStats, type ContentSelection, type LifecycleStepStatus, type StatsAttempt, type TaskModelStats, type TaskStats } from '../task-detail-model';
+import { attemptTone, runFailureBannerLabel, runForAttempt, stateTone, verifiedSha, type TimelineTone } from '../attempt-timeline-model';
+import { attemptStepTabs, contentPanel, defaultStepTab, taskLifecycle, modelTotal, taskStats, type ContentSelection, type LifecycleStepStatus, type StatsAttempt, type StepTab, type TaskModelStats, type TaskStats } from '../task-detail-model';
 import { isAtLiveEdge } from '../follow-tail-model';
+import { ChatTranscript } from './ticket/ChatTranscript';
 import { Donut, type DonutSegment } from './Donut';
 import { card, labelType, railSectionHead, railSectionCount, PHASE_NODE_STYLES } from '../ui';
 import { toastError } from '../toast';
@@ -350,9 +351,13 @@ function CriticSessionLog({ attemptId, label }: { attemptId: number; label: stri
   );
 }
 
-function Verification({ attempts, statuses, run }: { attempts: VerificationAttempt[]; statuses: VerifierStatus[]; run: AttemptSummary }) {
+/** `only` narrows the block to a single mechanism — the Attempt panel's Verify
+ * tab passes `'command'` and its Review tab `'critic'`, so each Step tab shows
+ * just its own checks; unset renders the whole verification block (its header
+ * and gate caption included). */
+function Verification({ attempts, statuses, run, only }: { attempts: VerificationAttempt[]; statuses: VerifierStatus[]; run: AttemptSummary; only?: 'command' | 'critic' }) {
   const decision = overallDecision(attempts);
-  const rows = verificationRows(statuses, attempts);
+  const rows = verificationRows(statuses, attempts).filter(({ status }) => !only || status.mechanism === only);
   // Every critic attempt with a transcript, oldest first (the store lists in
   // seq order): a corrective-attempt back-and-forth records one critic
   // session per pass, and the operator needs to see all of them, not just the
@@ -375,14 +380,16 @@ function Verification({ attempts, statuses, run }: { attempts: VerificationAttem
         : null;
   return (
     <div className="mt-2">
-      <div className="flex items-center">
-        <span className={sectionCaps}>Verification</span>
-        <span className={`ml-auto inline-flex items-center gap-1.5 text-[12.5px] font-semibold ${attempts.length > 0 ? OUTCOME_TONE[decision.outcome] ?? 'text-muted' : 'text-muted'}`}>
-          <span className="size-2 rounded-full bg-current" />
-          {attempts.length > 0 ? decision.outcome : hasPlanned ? 'planned' : 'not run'}
-        </span>
-      </div>
-      {gateCaption && <p className="mt-1 text-[12px] text-muted">{gateCaption}</p>}
+      {!only && (
+        <div className="flex items-center">
+          <span className={sectionCaps}>Verification</span>
+          <span className={`ml-auto inline-flex items-center gap-1.5 text-[12.5px] font-semibold ${attempts.length > 0 ? OUTCOME_TONE[decision.outcome] ?? 'text-muted' : 'text-muted'}`}>
+            <span className="size-2 rounded-full bg-current" />
+            {attempts.length > 0 ? decision.outcome : hasPlanned ? 'planned' : 'not run'}
+          </span>
+        </div>
+      )}
+      {!only && gateCaption && <p className="mt-1 text-[12px] text-muted">{gateCaption}</p>}
       <div className="mt-3 flex flex-col gap-3">
         {rows.map(({ status, attempt }) => {
           // With no critic-session log to show, say *why* (driven by the #327
@@ -461,142 +468,28 @@ function Verification({ attempts, statuses, run }: { attempts: VerificationAttem
   );
 }
 
-// ─── session + agents ────────────────────────────────────────────────────────
+// ─── session line ────────────────────────────────────────────────────────────
 
-// Usage categories ride a neutral monochrome ramp, never state hues — an amber
-// "write" or slate "cached" here would pre-read as running/blocked (Two Voices).
-const U = { read: 'bg-ink', write: 'bg-muted', cached: 'bg-edge' } as const;
-
-function Swatch({ tone, children }: { tone: keyof typeof U; children: ReactNode }) {
-  return (
-    <span className="inline-flex items-center gap-1.5">
-      <span className={`size-2 rounded-[2px] ${U[tone]}`} />
-      {children}
-    </span>
-  );
-}
-
-function agentCost(cost: Cost | null, key: string, model: string): string | null {
-  const by = cost?.byModel ?? {};
-  const n = by[key] ?? by[model] ?? null;
-  return typeof n === 'number' ? `$${n.toFixed(2)}` : null;
-}
-
-function SessionAgents({ run, snapshot }: { run: AttemptSummary; snapshot: AttemptUsageEvent | undefined }) {
-  // While the AttemptSummary is live its settled usage/cost are still null — read the
-  // `attempt_usage` snapshot instead so the table fills as the agents work.
-  const usage = run.state === 'running' ? snapshot?.usage ?? run.usage : run.usage;
+/** A compact session/cost caption for the selected Attempt: its harness session
+ * id (or a cold-start note) and the cost this run. The per-model and
+ * agent-vs-subagent token breakdown now lives in the Attempt's Stats block. */
+function AttemptSession({ run, snapshot }: { run: AttemptSummary; snapshot: AttemptUsageEvent | undefined }) {
+  // A live Attempt's settled cost is still null — read the `attempt_usage`
+  // snapshot instead so the figure ticks as it runs.
   const runCost = run.state === 'running' ? snapshot?.cost ?? run.cost : run.cost;
-  const models = usage?.models ?? {};
-  const agents = Object.entries(models);
   const cost = formatCost(runCost);
   return (
-    <div className="mt-[18px] border-t border-hairline pt-[15px]">
-      <div className="mb-4 flex flex-wrap justify-between gap-x-10 gap-y-3">
-        <div className="flex flex-col gap-1.5">
-          <span className={sectionCaps}>Session</span>
-          <span className="text-[13px] text-ink">
-            {run.sessionId ? <span className="font-data text-[12.5px]">{run.sessionId}</span> : 'cold start · fresh session'}
-          </span>
-        </div>
-        <div className="flex flex-col gap-1.5 text-right">
-          <span className={sectionCaps}>Cost · this run</span>
-          <span className="text-[13px] tabular-nums text-ink">{cost ?? '—'}</span>
-        </div>
+    <div className="mt-3 flex flex-wrap items-baseline justify-between gap-x-8 gap-y-2 border-t border-hairline pt-3">
+      <div className="flex items-baseline gap-2">
+        <span className={sectionCaps}>Session</span>
+        <span className="text-[13px] text-ink">
+          {run.sessionId ? <span className="font-data text-[12.5px]">{run.sessionId}</span> : 'cold start · fresh session'}
+        </span>
       </div>
-
-      {agents.length > 0 && (
-        <div>
-          <div className="flex items-center justify-between">
-            <span className={sectionCaps}>
-              Agents <span className="ml-1 rounded-full bg-raised px-[7px] text-[11px] font-bold normal-case tracking-normal text-muted">{agents.length}</span>
-            </span>
-            <span className="flex gap-3.5 text-[11px] text-faint">
-              <Swatch tone="read">read</Swatch>
-              <Swatch tone="write">write</Swatch>
-              <Swatch tone="cached">cached</Swatch>
-            </span>
-          </div>
-          <div className="mt-1">
-            {agents.map(([key, u]) => {
-              const parts = key.split('·').map((s) => s.trim());
-              const role = parts[0] || key;
-              const model = parts[1];
-              const read = u.inputTokens ?? 0;
-              const write = u.outputTokens ?? 0;
-              const cached = u.cacheReadTokens ?? 0;
-              const total = read + write + cached;
-              const sub = Boolean(model) && role.toLowerCase() !== 'claude';
-              const c = agentCost(runCost, key, model ?? key);
-              return (
-                <div
-                  key={key}
-                  className="grid grid-cols-[156px_1fr_64px] items-center gap-5 border-t border-hairline py-[13px] first:border-t-0 max-rail:grid-cols-[1fr_auto]"
-                >
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-1.5 text-[13px] font-semibold text-ink">
-                      {role || key}
-                      {sub && (
-                        <span className="rounded-[4px] bg-raised px-1.5 py-px text-[10px] font-bold uppercase tracking-[0.05em] text-muted">
-                          subagent
-                        </span>
-                      )}
-                    </div>
-                    {model && <div className="mt-[3px] font-data text-[11.5px] text-faint">{model}</div>}
-                    {/* Bar is hidden at narrow; keep the token breakdown as text. */}
-                    <div className="mt-1.5 hidden flex-wrap gap-3 text-[11px] tabular-nums text-faint max-rail:flex">
-                      <Swatch tone="read">{fmtK(read)}</Swatch>
-                      <Swatch tone="write">{fmtK(write)}</Swatch>
-                      <Swatch tone="cached">{fmtK(cached)}</Swatch>
-                      <span>{fmtK(total)} tok</span>
-                    </div>
-                  </div>
-                  <div className="max-rail:hidden">
-                    <div className="flex h-[7px] gap-0.5 overflow-hidden rounded-full">
-                      <span className={U.read} style={{ flex: read || 1 }} />
-                      <span className={U.write} style={{ flex: write || 1 }} />
-                      <span className={U.cached} style={{ flex: cached || 1 }} />
-                    </div>
-                    <div className="mt-2 flex flex-wrap gap-3 text-[11px] tabular-nums text-faint">
-                      <Swatch tone="read">{fmtK(read)}</Swatch>
-                      <Swatch tone="write">{fmtK(write)}</Swatch>
-                      <Swatch tone="cached">{fmtK(cached)}</Swatch>
-                      <span className="ml-auto text-faint">{fmtK(total)} tok</span>
-                    </div>
-                  </div>
-                  <div className="text-right text-[13px] font-semibold tabular-nums text-ink">{c ?? ''}</div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── transcript ──────────────────────────────────────────────────────────────
-
-function Transcript({ events, unavailable }: { events: AttemptLogEvent[]; unavailable: boolean }) {
-  return (
-    <div className="mt-[18px]">
-      <div className="mb-2.5 flex items-center gap-2">
-        <span className={sectionCaps}>Transcript</span>
-        {events.length > 0 && (
-          <span className="rounded-full bg-raised px-[7px] text-[11px] font-bold text-muted">
-            {events.length} event{events.length === 1 ? '' : 's'}
-          </span>
-        )}
+      <div className="flex items-baseline gap-2">
+        <span className={sectionCaps}>Cost · this run</span>
+        <span className="text-[13px] tabular-nums text-ink">{cost ?? '—'}</span>
       </div>
-      {unavailable || events.length === 0 ? (
-        <p className="rounded-lg border border-hairline bg-surface px-4 py-6 text-center text-small text-muted shadow-card">
-          No session transcript recorded for this run.
-        </p>
-      ) : (
-        <div className="overflow-hidden rounded-lg border border-hairline bg-surface shadow-card">
-          <TranscriptTimeline events={events} />
-        </div>
-      )}
     </div>
   );
 }
@@ -1041,6 +934,154 @@ function statsAttemptsOf(runs: AttemptSummary[], live: Map<number, AttemptUsageE
     const snapshot = r.state === 'running' ? live.get(r.id) : undefined;
     return { usage: snapshot?.usage ?? r.usage, cost: snapshot?.cost ?? r.cost };
   });
+}
+
+// ─── attempt panel ─────────────────────────────────────────────────────────────
+
+/** The Attempt's Step tabs (one per Step type present). The active tab underlines
+ * in the teal action voice; each tab carries a state dot rolled up from its
+ * Steps. */
+function StepTabsBar({ tabs, active, onSelect }: { tabs: StepTab[]; active: StepType; onSelect: (type: StepType) => void }) {
+  return (
+    <div role="tablist" aria-label="Attempt steps" className="mt-4 flex flex-wrap gap-1 border-b border-hairline">
+      {tabs.map((tab) => {
+        const selected = tab.type === active;
+        const tone = stateTone(tab.state);
+        return (
+          <button
+            key={tab.type}
+            role="tab"
+            type="button"
+            aria-selected={selected}
+            onClick={() => onSelect(tab.type)}
+            className={`-mb-px inline-flex min-h-11 items-center gap-2 border-b-2 px-3 py-2 text-[13px] font-semibold transition-colors ${
+              selected ? 'border-accent text-ink' : 'border-transparent text-muted hover:text-ink'
+            }`}
+          >
+            <span role="img" aria-label={tab.state} className={`size-2 rounded-full ${NAV_DOT[tone]}`} />
+            {tab.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** The Rebase Step's content: which base it rebased onto, its outcome, and any
+ * verdict note (a conflict the rebase hit). */
+function RebaseStatus({ step, baseBranch }: { step: Step; baseBranch: string | null }) {
+  const tone = stateTone(step.state);
+  return (
+    <div className="mt-5 rounded-lg border border-hairline bg-surface p-4 shadow-card">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-[13px] font-semibold text-ink">
+          Rebase onto <span className="font-data text-[12.5px]">{baseBranch ?? 'base'}</span>
+        </span>
+        <span className={`inline-flex items-center gap-1.5 text-[12px] font-semibold ${NAV_WORD[tone]}`}>
+          <span className={`size-2 rounded-full ${NAV_DOT[tone]}`} />
+          {step.state}
+        </span>
+      </div>
+      {step.verdict && <p className="mt-2 whitespace-pre-wrap break-words text-[13px] text-muted">{step.verdict}</p>}
+    </div>
+  );
+}
+
+function PendingStep({ label }: { label: string }) {
+  return (
+    <EmptyState title={label} className="py-12">
+      This step hasn't run yet.
+    </EmptyState>
+  );
+}
+
+/** The Attempt content panel: the Attempt header and session line, its own
+ * per-model / agent-vs-subagent Stats (the #395 aggregation scoped to this one
+ * Attempt), then the Step tabs whose selected tab shows that Step's content —
+ * the chat transcript for Implementation, the command checks for Verify, the
+ * critic for Review — a pending Step showing an empty placeholder. */
+function AttemptPanel({
+  run,
+  attempt,
+  snapshot,
+  stats,
+  events,
+  logUnavailable,
+  following,
+  onToggleFollow,
+  verificationAttempts,
+  verifierStatuses,
+  guardrailEvents,
+  baseBranch,
+}: {
+  run: AttemptSummary;
+  attempt: Attempt | undefined;
+  snapshot: AttemptUsageEvent | undefined;
+  stats: TaskStats;
+  events: AttemptLogEvent[];
+  logUnavailable: boolean;
+  following: boolean;
+  onToggleFollow: () => void;
+  verificationAttempts: VerificationAttempt[];
+  verifierStatuses: VerifierStatus[];
+  guardrailEvents: GuardrailEvent[];
+  baseBranch: string | null;
+}) {
+  const steps = attempt?.steps ?? [];
+  const tabs = attemptStepTabs(steps);
+  // Repair (rather than reset) the operator's tab pick as the run progresses: a
+  // still-valid choice stands; otherwise fall back to the default tab. The panel
+  // is remounted per Attempt (keyed on run id), so switching Attempts starts
+  // fresh at the default.
+  const [picked, setPicked] = useState<StepType | null>(null);
+  const active = picked && tabs.some((tab) => tab.type === picked) ? picked : defaultStepTab(tabs);
+  const activeTab = tabs.find((tab) => tab.type === active);
+
+  // The Implementation Step's content — the session chat, with the steer input
+  // at its foot while the run is live. Also the fallback for a run that has no
+  // recorded Steps yet, so its transcript still shows as it starts up.
+  const chat = (
+    <ChatTranscript
+      events={events}
+      unavailable={logUnavailable}
+      following={following}
+      onToggleFollow={onToggleFollow}
+      steer={run.state === 'running' ? <SteerBox taskId={run.taskId} /> : undefined}
+    />
+  );
+
+  return (
+    <>
+      <AttemptHeader run={run} steps={steps} />
+      <AttemptSession run={run} snapshot={snapshot} />
+      <StatsPanel stats={stats} />
+      {activeTab && active ? (
+        <>
+          <StepTabsBar tabs={tabs} active={active} onSelect={setPicked} />
+          {activeTab.pending ? (
+            <PendingStep label={activeTab.label} />
+          ) : active === 'rebase' ? (
+            <RebaseStatus step={steps.find((s) => s.type === 'rebase')!} baseBranch={baseBranch} />
+          ) : active === 'implementation' ? (
+            <>
+              <GuardrailAlert events={guardrailEvents} />
+              {chat}
+            </>
+          ) : active === 'verification' ? (
+            <div className="mt-4">
+              <Verification attempts={verificationAttempts} statuses={verifierStatuses} run={run} only="command" />
+            </div>
+          ) : (
+            <div className="mt-4">
+              <Verification attempts={verificationAttempts} statuses={verifierStatuses} run={run} only="critic" />
+            </div>
+          )}
+        </>
+      ) : (
+        chat
+      )}
+    </>
+  );
 }
 
 // ─── page ────────────────────────────────────────────────────────────────────
@@ -1494,14 +1535,21 @@ export function TicketPage({
                 />
               ) : panel.kind === 'attempt' ? (
                 selectedRun ? (
-                  <>
-                    <AttemptHeader run={selectedRun} steps={attempts.find((a) => a.number === selectedRun.number)?.steps ?? []} />
-                    <Verification attempts={verificationAttempts} statuses={verifierStatuses} run={selectedRun} />
-                    <GuardrailAlert events={guardrailEvents} />
-                    <SessionAgents run={selectedRun} snapshot={liveUsage.get(selectedRun.id)} />
-                    <Transcript events={events} unavailable={logUnavailable} />
-                    {selectedRun.state === 'running' && <SteerBox taskId={selectedRun.taskId} />}
-                  </>
+                  <AttemptPanel
+                    key={selectedRun.id}
+                    run={selectedRun}
+                    attempt={attempts.find((a) => a.number === selectedRun.number)}
+                    snapshot={liveUsage.get(selectedRun.id)}
+                    stats={taskStats(statsAttemptsOf([selectedRun], liveUsage))}
+                    events={events}
+                    logUnavailable={logUnavailable}
+                    following={following}
+                    onToggleFollow={() => setFollowing((f) => !f)}
+                    verificationAttempts={verificationAttempts}
+                    verifierStatuses={verifierStatuses}
+                    guardrailEvents={guardrailEvents}
+                    baseBranch={task.baseBranch}
+                  />
                 ) : (
                   <NoRunsYet />
                 )

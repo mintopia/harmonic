@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { contentPanel, taskLifecycle, taskStats, type LifecycleStepKey, type LifecycleStepStatus, type StatsAttempt } from '../web/src/task-detail-model.js';
-import type { AttemptSummary, Cost, ModelUsage, TaskState } from '../web/src/types.js';
+import { attemptStepTabs, contentPanel, defaultStepTab, taskLifecycle, taskStats, type LifecycleStepKey, type LifecycleStepStatus, type StatsAttempt } from '../web/src/task-detail-model.js';
+import type { AttemptSummary, Cost, ModelUsage, Step, StepState, StepType, TaskState } from '../web/src/types.js';
 
 const STEP_ORDER: LifecycleStepKey[] = [
   'worktree',
@@ -290,5 +290,80 @@ describe('taskStats', () => {
       costByModel: [],
       billableIO: 0,
     });
+  });
+});
+
+let stepId = 0;
+const step = (type: StepType, state: StepState): Step => ({
+  id: ++stepId,
+  attemptId: 1,
+  type,
+  position: stepId,
+  state,
+  command: null,
+  verdict: null,
+  logLocator: null,
+  startedAt: null,
+  endedAt: null,
+});
+
+describe('attemptStepTabs', () => {
+  it('keeps one tab per Step type in canonical lifecycle order', () => {
+    const tabs = attemptStepTabs([
+      step('review', 'pending'),
+      step('rebase', 'passed'),
+      step('verification', 'running'),
+      step('implementation', 'passed'),
+    ]);
+    expect(tabs.map((t) => t.type)).toEqual(['rebase', 'implementation', 'verification', 'review']);
+    expect(tabs.map((t) => t.label)).toEqual(['Rebase', 'Implementation', 'Verify', 'Review']);
+  });
+
+  it('only lists tabs for the Step types the Attempt actually has', () => {
+    expect(attemptStepTabs([step('implementation', 'running')]).map((t) => t.type)).toEqual(['implementation']);
+    expect(attemptStepTabs([])).toEqual([]);
+  });
+
+  it('folds several verification command Steps into a single Verify tab', () => {
+    const tabs = attemptStepTabs([
+      step('verification', 'passed'),
+      step('verification', 'running'),
+      step('verification', 'pending'),
+    ]);
+    expect(tabs).toHaveLength(1);
+    // A live command wins the roll-up even beside a passed and a pending sibling.
+    expect(tabs[0]).toMatchObject({ type: 'verification', state: 'running', pending: false });
+  });
+
+  it('rolls a type up to failed when any of its Steps failed', () => {
+    const tabs = attemptStepTabs([step('verification', 'passed'), step('verification', 'failed')]);
+    expect(tabs[0]!.state).toBe('failed');
+  });
+
+  it('marks a tab pending only when every Step of the type is pending', () => {
+    expect(attemptStepTabs([step('review', 'pending')])[0]!.pending).toBe(true);
+    expect(attemptStepTabs([step('review', 'passed')])[0]!.pending).toBe(false);
+    expect(attemptStepTabs([step('verification', 'pending'), step('verification', 'passed')])[0]!.pending).toBe(false);
+  });
+});
+
+describe('defaultStepTab', () => {
+  it('opens the live Step when one is running', () => {
+    const tabs = attemptStepTabs([step('implementation', 'passed'), step('verification', 'running')]);
+    expect(defaultStepTab(tabs)).toBe('verification');
+  });
+
+  it('opens Implementation once it has content and nothing is running', () => {
+    const tabs = attemptStepTabs([step('rebase', 'passed'), step('implementation', 'passed'), step('review', 'pending')]);
+    expect(defaultStepTab(tabs)).toBe('implementation');
+  });
+
+  it('falls back to the furthest-progressed tab when Implementation is still pending', () => {
+    const tabs = attemptStepTabs([step('rebase', 'passed'), step('implementation', 'pending')]);
+    expect(defaultStepTab(tabs)).toBe('rebase');
+  });
+
+  it('returns null for an Attempt with no Steps', () => {
+    expect(defaultStepTab([])).toBeNull();
   });
 });
