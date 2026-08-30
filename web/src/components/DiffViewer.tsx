@@ -13,16 +13,21 @@ function sign(kind: DiffLine['kind']): { char: string; cls: string } {
   return { char: ' ', cls: 'text-faint' };
 }
 
-export function DiffViewer({ file }: { file: DiffFile }) {
+/** `headerless` drops the path/±count strip — the single-file diff panel
+ * already carries the filename as its content title and the ± summary above the
+ * hunks, so the strip would repeat it. */
+export function DiffViewer({ file, headerless = false }: { file: DiffFile; headerless?: boolean }) {
   return (
     <div className="overflow-x-auto bg-surface">
-      <div className="flex items-center gap-2.5 px-4 py-2.5 border-b border-hairline">
-        <span className="font-data text-[12.5px] text-ink truncate">{file.path}</span>
-        <span className="font-data text-[11.5px] ml-auto flex gap-2 tabular-nums">
-          <span className="text-merged">+{file.additions}</span>
-          <span className="text-fail">−{file.deletions}</span>
-        </span>
-      </div>
+      {!headerless && (
+        <div className="flex items-center gap-2.5 px-4 py-2.5 border-b border-hairline">
+          <span className="font-data text-[12.5px] text-ink truncate">{file.path}</span>
+          <span className="font-data text-[11.5px] ml-auto flex gap-2 tabular-nums">
+            <span className="text-merged">+{file.additions}</span>
+            <span className="text-fail">−{file.deletions}</span>
+          </span>
+        </div>
+      )}
       {file.lines.length === 0 ? (
         <div className="px-4 py-3 text-faint text-sm">No diff available for this file.</div>
       ) : (

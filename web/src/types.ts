@@ -402,7 +402,10 @@ export interface AttemptSummary {
   baseBranch: string | null;
   usage: {
     totals: AttemptUsageTotals | null;
-    models: Record<string, Record<string, number>>;
+    models: Record<string, ModelUsage>;
+    /** Per-agent-type breakdown (root session + each Subagent type); absent when
+     * the harness parsed no Process Tree, or on Attempts recorded before it existed. */
+    agents?: Record<string, ModelUsage>;
     toolCalls: Record<string, number>;
     source: string | null;
   } | null;
