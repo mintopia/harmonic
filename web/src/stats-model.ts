@@ -1,5 +1,6 @@
 import type { AttemptSummary, Cost } from './types.js';
 import type { DayCost } from './components/costChart-model.js';
+import type { AttemptsPerTask, CostPerMergedTask, MergedDay } from './components/flow-throughput-model.js';
 
 export interface ModelUsage {
   inputTokens: number;
@@ -46,6 +47,12 @@ export interface Stats {
   series: DayCost[];
   /** Attempt-grain aggregates grouped by owning Workspace, ordered by cost. */
   byWorkspace: WorkspaceStats[];
+  /** Tasks merged per calendar day (server tz), only days that held a merge; ordered by day. */
+  tasksMergedByDay: MergedDay[];
+  /** Distribution of attempts-to-settle over merged Tasks (self-heal depth); 1 is best. */
+  attemptsPerTask: AttemptsPerTask;
+  /** Merged spend ÷ merged Tasks with reverted/abandoned spend beside it; costs null-stick (ADR-0008). */
+  costPerMergedTask: CostPerMergedTask;
 }
 
 export interface AttemptStateCount {

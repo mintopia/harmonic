@@ -19,6 +19,7 @@ import { Donut, type DonutSegment } from './Donut';
 import { fillSeries, METRIC_LABEL, type StatMetric } from './costChart-model';
 import { EmptyState } from './EmptyState';
 import { AttemptHeatmap } from './AttemptHeatmap';
+import { FlowThroughput } from './FlowThroughput';
 
 const STATE_DONUT_COLOR: Record<string, string> = {
   running: 'var(--hm-running-dot)',
@@ -269,6 +270,14 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
             <SummaryCell label="Median duration" value={medDuration ?? '—'} />
             <SummaryCell label="Subagent share" value={pct(share)} />
           </div>
+
+          <FlowThroughput
+            tasksMergedByDay={stats.tasksMergedByDay}
+            attemptsPerTask={stats.attemptsPerTask}
+            costPerMergedTask={stats.costPerMergedTask}
+            from={stats.from}
+            to={stats.to}
+          />
 
           {filled.length >= 2 && (
             <section className={`${card} mb-4 p-5`}>
