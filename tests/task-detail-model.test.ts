@@ -30,11 +30,13 @@ const attempt = (
   models: Record<string, ModelUsage>,
   byModel: Record<string, number | null>,
   agents?: Record<string, ModelUsage>,
+  attribution?: Pick<NonNullable<AttemptSummary['usage']>, 'toolTokens' | 'reasoning'>,
 ): StatsAttempt => ({
   usage: {
     totals: null,
     models,
     ...(agents ? { agents } : {}),
+    ...(attribution ?? {}),
     toolCalls: {},
     source: 'session-log',
   } satisfies AttemptSummary['usage'],
@@ -247,6 +249,7 @@ describe('taskStats', () => {
       'costByModel',
       'subagents',
       'toolCalls',
+      'toolTokens',
     ]);
     expect(stats).not.toHaveProperty('totalTokens');
     expect(stats.byModel[0]).not.toHaveProperty('totalTokens');
@@ -299,6 +302,7 @@ describe('taskStats', () => {
       subagents: 0,
       agents: 0,
       toolCalls: 0,
+      toolTokens: [],
     };
     expect(taskStats([])).toEqual(empty);
     expect(taskStats([{ usage: null, cost: null }])).toEqual(empty);
@@ -331,6 +335,49 @@ describe('taskStats', () => {
     // Two distinct subagent names (reviewer, tester) across the Attempts.
     expect(stats.subagents).toBe(2);
     expect(stats.toolCalls).toBe(63);
+  });
+
+  it('ranks tool output tokens largest first, with the reasoning bucket last', () => {
+    const stats = taskStats([
+      attempt({ 'opus-4.8': tok(100, 20) }, { 'opus-4.8': 0.3 }, undefined, {
+        toolTokens: { Edit: { outputTokens: 50, cost: 0.2 }, Read: { outputTokens: 200, cost: 0.8 } },
+        reasoning: { outputTokens: 90, cost: 0.4 },
+      }),
+    ]);
+    expect(stats.toolTokens).toEqual([
+      { key: 'Read', label: 'Read', outputTokens: 200, cost: 0.8 },
+      { key: 'Edit', label: 'Edit', outputTokens: 50, cost: 0.2 },
+      { key: 'reasoning', label: 'Reasoning', outputTokens: 90, cost: 0.4 },
+    ]);
+  });
+
+  it('sums a tool across Attempts and floors it to tokens-only once seen unpriced', () => {
+    const stats = taskStats([
+      attempt({ 'opus-4.8': tok(10, 2) }, { 'opus-4.8': 0.1 }, undefined, {
+        toolTokens: { Bash: { outputTokens: 30, cost: 0.15 } },
+      }),
+      attempt({ 'opus-4.8': tok(10, 2) }, { 'opus-4.8': 0.1 }, undefined, {
+        toolTokens: { Bash: { outputTokens: 20 } },
+      }),
+    ]);
+    // Tokens sum; cost is dropped for good — an honest floor, not a fabricated total.
+    expect(stats.toolTokens).toEqual([{ key: 'Bash', label: 'Bash', outputTokens: 50 }]);
+    expect(stats.toolTokens[0]).not.toHaveProperty('cost');
+  });
+
+  it('drops the reasoning bucket when it carries no output tokens', () => {
+    const stats = taskStats([
+      attempt({ 'opus-4.8': tok(10, 2) }, { 'opus-4.8': 0.1 }, undefined, {
+        toolTokens: { Read: { outputTokens: 12, cost: 0.05 } },
+        reasoning: { outputTokens: 0 },
+      }),
+    ]);
+    expect(stats.toolTokens).toEqual([{ key: 'Read', label: 'Read', outputTokens: 12, cost: 0.05 }]);
+  });
+
+  it('has no tool tokens when the harness reported no attribution', () => {
+    const stats = taskStats([attempt({ 'opus-4.8': tok(10, 2) }, { 'opus-4.8': 0.1 })]);
+    expect(stats.toolTokens).toEqual([]);
   });
 });
 

@@ -406,6 +406,11 @@ export interface AttemptSummary {
     /** Per-agent-type breakdown (root session + each Subagent type); absent when
      * the harness parsed no Process Tree, or on Attempts recorded before it existed. */
     agents?: Record<string, ModelUsage>;
+    /** Output tokens and API-equivalent cost attributed per tool (ADR-0008); absent
+     * on an ACP-only harness that reports no parseable turns. */
+    toolTokens?: Record<string, { outputTokens: number; cost?: number }>;
+    /** Output tokens (and cost) from turns that called no tool; absent likewise. */
+    reasoning?: { outputTokens: number; cost?: number };
     toolCalls: Record<string, number>;
     source: string | null;
   } | null;
