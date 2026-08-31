@@ -4,6 +4,7 @@ import type { Task } from '../types';
 import { TASK_STATES } from '../types';
 import type { Epic, EpicIntegrateOutcome } from '../epic-model';
 import { FORCE_INTEGRATE_CONSEQUENCE, epicByTaskId } from '../epic-model';
+import { isActiveEpic } from '../board-sections-model';
 import { TABLE_HARNESSES, TABLE_PRIORITIES, type TableFilters, type SortKey } from '../router-model';
 import {
   btnGhost,
@@ -33,7 +34,12 @@ import { ModelLabel, ProviderChip, TaskIdentity } from './TaskIdentity';
  * the DOM cell count always matches the active track count and the ARIA grid
  * stays valid at every width. */
 const GRID =
-  'grid grid-cols-[3rem_minmax(0,1fr)_8rem] md:grid-cols-[3rem_minmax(0,1fr)_8rem_5rem_5.5rem] lg:grid-cols-[3rem_minmax(0,1fr)_8rem_6rem_9rem_5rem_5.5rem_12rem] items-center gap-x-3 px-4';
+  'grid grid-cols-[3.5rem_minmax(0,1fr)_8rem] md:grid-cols-[3.5rem_minmax(0,1fr)_8rem_5rem_5.5rem] lg:grid-cols-[3.5rem_minmax(0,1fr)_8rem_6rem_9rem_5rem_5.5rem_12rem] items-center gap-x-3 px-4';
+
+// Compact, quiet timestamp for the Created column — the full locale string
+// (seconds + year) is noise in a dense operator table.
+const fmtCreated = (ms: number) =>
+  new Date(ms).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
 function EpicBandHeader({
   epic,
@@ -156,11 +162,20 @@ export function TableView({
     if (page > pageCount) setPage(pageCount);
   }, [page, pageCount]);
 
-  const epicLookup = useMemo(() => epicByTaskId(epics), [epics]);
-  const bands = epics
-    .map((epic) => ({ epic, members: pageTasks.filter((t) => epicLookup.get(t.id) === epic) }))
+  // Bands only for Epics still in flight (mirrors the Board's `isActiveEpic`): a
+  // fully-integrated Epic gets no band and no force-merge; its merged members fall
+  // through to plain rows.
+  const activeEpics = useMemo(() => epics.filter(isActiveEpic), [epics]);
+  // An Epic's driver ticket (the parent the members hang off) is represented by its
+  // band, never a row of its own — its mirrored Task carries the Epic ref as
+  // `trackerRef`. Excludes drivers of every Epic, active or not.
+  const epicRefs = useMemo(() => new Set(epics.map((e) => e.ref)), [epics]);
+  const rows = pageTasks.filter((t) => t.trackerRef == null || !epicRefs.has(t.trackerRef));
+  const epicLookup = useMemo(() => epicByTaskId(activeEpics), [activeEpics]);
+  const bands = activeEpics
+    .map((epic) => ({ epic, members: rows.filter((t) => epicLookup.get(t.id) === epic) }))
     .filter((band) => band.members.length > 0);
-  const ungrouped = pageTasks.filter((t) => !epicLookup.has(t.id));
+  const ungrouped = rows.filter((t) => !epicLookup.has(t.id));
 
   const toggleBand = (epicRef: number) => {
     setCollapsedBands((current) => {
@@ -199,7 +214,7 @@ export function TableView({
       className={`${GRID} min-h-11 cursor-pointer py-2 transition-colors duration-150 hover:bg-raised/50 ${indent ? 'pl-7' : ''}`}
       onClick={() => onOpen(task)}
     >
-      <div role="cell" className="flex items-center justify-end gap-1.5 tabular-nums text-muted">
+      <div role="cell" className="flex items-center justify-end gap-1.5 whitespace-nowrap tabular-nums text-muted">
         <span aria-hidden="true" className={stateDot(task.state)} />
         <span className="sr-only">Id: </span>
         {taskKey(task.id)}
@@ -239,9 +254,9 @@ export function TableView({
         <span className="sr-only">Cost: </span>
         {formatCost(task.cost) ?? '—'}
       </div>
-      <div role="cell" className="hidden text-right tabular-nums text-muted lg:block">
+      <div role="cell" className="hidden text-right tabular-nums text-faint lg:block">
         <span className="sr-only">Created: </span>
-        {new Date(task.createdAt).toLocaleString()}
+        {fmtCreated(task.createdAt)}
       </div>
     </div>
   );
@@ -337,7 +352,7 @@ export function TableView({
 
         {bands.length === 0 ? (
           <div role="rowgroup" className="divide-y divide-hairline">
-            {pageTasks.map((t) => renderRow(t))}
+            {rows.map((t) => renderRow(t))}
           </div>
         ) : (
           <div className="divide-y divide-hairline">

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { api } from '../api';
 import { card } from '../ui';
 import type { DayCost } from './costChart-model';
@@ -34,7 +34,7 @@ function monthTicks(hm: Heatmap): { x: number; label: string }[] {
   return ticks;
 }
 
-export function AttemptHeatmap({ workspaceId }: { workspaceId: number | null }) {
+export function AttemptHeatmap({ workspaceId, aside }: { workspaceId: number | null; aside?: ReactNode }) {
   // Capture `now` at fetch time so the grid's "today" stays stable across
   // re-renders (a bare Date.now() in render is impure and drifts the anchor).
   const [loaded, setLoaded] = useState<{ series: DayCost[]; now: number } | null>(null);
@@ -69,24 +69,26 @@ export function AttemptHeatmap({ workspaceId }: { workspaceId: number | null }) 
 
   return (
     <section className={`${card} mb-4 p-5`}>
-      <div className="mb-1 flex flex-wrap items-baseline gap-x-3">
+      <div className="mb-3 flex flex-wrap items-baseline gap-x-3">
         <h2 className="text-title font-semibold">Attempt activity</h2>
         <span className="text-small text-muted">Last {HEATMAP_WEEKS} weeks · fixed window, independent of the range above</span>
       </div>
 
-      {error && <p className="text-muted">Couldn’t load activity: {error}</p>}
-      {!hm && !error && <p className="text-muted">Loading…</p>}
+      <div className="flex flex-col gap-6 lg:flex-row lg:items-stretch">
+        <div className="min-w-0">
+          {error && <p className="text-muted">Couldn’t load activity: {error}</p>}
+          {!hm && !error && <p className="text-muted">Loading…</p>}
 
-      {hm && (
-        <>
-          <div className="overflow-x-auto">
-            <svg
-              width={width}
-              height={height}
-              viewBox={`0 0 ${width} ${height}`}
-              role="img"
-              aria-label={`Attempt activity: ${hm.total.toLocaleString()} attempts over the last ${HEATMAP_WEEKS} weeks, ${rangeLabel(hm.from, hm.to)}.`}
-            >
+          {hm && (
+            <>
+              <div className="overflow-x-auto">
+                <svg
+                  width={width}
+                  height={height}
+                  viewBox={`0 0 ${width} ${height}`}
+                  role="img"
+                  aria-label={`Attempt activity: ${hm.total.toLocaleString()} attempts over the last ${HEATMAP_WEEKS} weeks, ${rangeLabel(hm.from, hm.to)}.`}
+                >
               {monthTicks(hm).map(({ x, label }) => (
                 <text key={`${x}-${label}`} x={x} y={10} className="fill-muted" fontSize="9">
                   {label}
@@ -131,8 +133,14 @@ export function AttemptHeatmap({ workspaceId }: { workspaceId: number | null }) 
             ))}
             <span>More</span>
           </div>
-        </>
-      )}
+            </>
+          )}
+        </div>
+
+        {aside && (
+          <div className="lg:flex-1 lg:self-stretch lg:border-l lg:border-hairline lg:pl-6">{aside}</div>
+        )}
+      </div>
     </section>
   );
 }

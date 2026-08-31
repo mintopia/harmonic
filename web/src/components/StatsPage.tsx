@@ -8,7 +8,8 @@ import {
   orderedFailureReasons,
   reliabilityStates,
   subagentShare,
-  usageBars,
+  totalTokens,
+  type ModelUsage,
   type Stats,
 } from '../stats-model';
 import { VerificationEscalationCard } from './VerificationEscalationCard';
@@ -21,6 +22,7 @@ import { fillSeries, METRIC_LABEL, type StatMetric } from './costChart-model';
 import { EmptyState } from './EmptyState';
 import { AttemptHeatmap } from './AttemptHeatmap';
 import { FlowThroughput } from './FlowThroughput';
+import { TokenTypeBar, TokenTypeLegend } from './TokenTypeBar';
 
 const STATE_DONUT_COLOR: Record<string, string> = {
   running: 'var(--hm-running-dot)',
@@ -29,12 +31,15 @@ const STATE_DONUT_COLOR: Record<string, string> = {
   cancelled: 'var(--hm-faint)',
 };
 
+// Warm categorical donut palette (ADR-0014 token ramp + the teal accent): the
+// same hues the token-class bars use, so every token-composition surface reads
+// from one warm family instead of a drab neutral ramp.
 const TOOL_TOKEN_COLORS = [
+  'var(--hm-token-output)',
+  'var(--hm-token-input)',
+  'var(--hm-token-cache-read)',
+  'var(--hm-token-cache-write)',
   'var(--hm-accent)',
-  'var(--hm-ink)',
-  'var(--hm-muted)',
-  'var(--hm-faint)',
-  'var(--hm-edge-strong)',
 ];
 
 /** Friendly labels for the failures-by-reason buckets (the winning terminal
@@ -96,10 +101,13 @@ function StatLabel({ children }: { children: ReactNode }) {
   return <div className={`${labelType} mb-1.5 text-muted`}>{children}</div>;
 }
 
-function SummaryCell({ label, value }: { label: string; value: string }) {
+function SummaryCell({ label, value, swatch }: { label: string; value: string; swatch?: string }) {
   return (
     <div>
-      <StatLabel>{label}</StatLabel>
+      <StatLabel>
+        {swatch && <span className={`mr-1.5 inline-block size-2 rounded-[2px] align-middle ${swatch}`} aria-hidden="true" />}
+        {label}
+      </StatLabel>
       <div className={`text-title font-semibold tabular-nums ${value === '—' ? 'text-faint' : 'text-ink'}`}>
         {value}
       </div>
@@ -140,19 +148,17 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
   const failRate = stats ? failureRate(stats.failedAttempts, stats.attemptCount) : null;
   const avgCostText = stats ? formatAvgCostPerRun(stats.cost, stats.attemptCount) : null;
   const medDuration = stats?.durationMs ? fmtDuration(stats.durationMs.p50) : null;
-  const modelBars: Bar[] = stats
-    ? usageBars(stats.models).map((b) => {
-        const c = stats.cost?.byModel[b.key];
-        return {
-          key: b.key,
-          value: b.tokens,
-          valueLabel: c == null ? compact.format(b.tokens) : `${compact.format(b.tokens)} · ${usd(c)}`,
-        };
-      })
-    : [];
-  const agentBars: Bar[] = stats?.agents
-    ? usageBars(stats.agents).map((b) => ({ key: b.key, value: b.tokens, valueLabel: compact.format(b.tokens) }))
-    : [];
+  // Per-model / per-agent rows carry the full four-class split so every combined-
+  // token surface renders the warm token-class breakdown, not a flat total.
+  const sortedUsage = (byKey: Record<string, ModelUsage>): { key: string; usage: ModelUsage }[] =>
+    Object.entries(byKey)
+      .map(([key, usage]) => ({ key, usage }))
+      .filter((r) => totalTokens(r.usage) > 0)
+      .sort((a, b) => totalTokens(b.usage) - totalTokens(a.usage) || a.key.localeCompare(b.key));
+  const modelRows = stats ? sortedUsage(stats.models) : [];
+  const agentRows = stats?.agents ? sortedUsage(stats.agents) : [];
+  const modelMax = Math.max(1, ...modelRows.map((r) => totalTokens(r.usage)));
+  const agentMax = Math.max(1, ...agentRows.map((r) => totalTokens(r.usage)));
   const toolBars: Bar[] = stats
     ? Object.entries(stats.toolCalls)
         .map(([key, count]) => ({ key, value: count, valueLabel: fmt(count) }))
@@ -190,7 +196,7 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
                   stats.reasoning.cost === undefined
                     ? compact.format(stats.reasoning.outputTokens)
                     : `${compact.format(stats.reasoning.outputTokens)} · ${usd(stats.reasoning.cost)}`,
-                color: 'var(--hm-muted)',
+                color: 'var(--hm-token-cache-write)',
               },
             ]
           : []),
@@ -233,7 +239,26 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
         />
       </div>
 
-      {workspaceId !== null && <AttemptHeatmap workspaceId={workspaceId} />}
+      {workspaceId !== null && (
+        <AttemptHeatmap
+          workspaceId={workspaceId}
+          aside={
+            stats && stats.attemptCount > 0 ? (
+              <div>
+                <StatLabel>At a glance · {range}</StatLabel>
+                <div className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3 lg:grid-cols-2">
+                  <SummaryCell label="Attempts" value={fmt(stats.attemptCount)} />
+                  <SummaryCell label="Failure rate" value={pct(failRate)} />
+                  <SummaryCell label="Avg cost / run" value={avgCostText ?? '—'} />
+                  <SummaryCell label="Median duration" value={medDuration ?? '—'} />
+                  <SummaryCell label="Cache hit rate" value={pct(cacheHit)} />
+                  <SummaryCell label="Subagent share" value={pct(share)} />
+                </div>
+              </div>
+            ) : undefined
+          }
+        />
+      )}
 
       {error && (
         <p className="rounded-lg bg-fail-tint px-4 py-2 text-fail">Couldn’t load statistics: {error}</p>
@@ -261,15 +286,10 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
 
           <div className={`${card} mb-4 grid grid-cols-2 gap-x-6 gap-y-5 p-5 sm:grid-cols-3 lg:grid-cols-5`}>
             <SummaryCell label="Attempts" value={fmt(stats.attemptCount)} />
-            <SummaryCell label="Tokens in" value={stats.totals ? compact.format(stats.totals.inputTokens) : '—'} />
-            <SummaryCell label="Tokens out" value={stats.totals ? compact.format(stats.totals.outputTokens) : '—'} />
-            <SummaryCell label="Cache read" value={stats.totals ? compact.format(stats.totals.cacheReadTokens) : '—'} />
-            <SummaryCell label="Cache write" value={stats.totals ? compact.format(stats.totals.cacheWriteTokens) : '—'} />
-            <SummaryCell label="Cache hit rate" value={pct(cacheHit)} />
-            <SummaryCell label="Failure rate" value={pct(failRate)} />
-            <SummaryCell label="Avg cost / run" value={avgCostText ?? '—'} />
-            <SummaryCell label="Median duration" value={medDuration ?? '—'} />
-            <SummaryCell label="Subagent share" value={pct(share)} />
+            <SummaryCell label="Tokens in" swatch="bg-token-input" value={stats.totals ? compact.format(stats.totals.inputTokens) : '—'} />
+            <SummaryCell label="Tokens out" swatch="bg-token-output" value={stats.totals ? compact.format(stats.totals.outputTokens) : '—'} />
+            <SummaryCell label="Cache read" swatch="bg-token-cache-read" value={stats.totals ? compact.format(stats.totals.cacheReadTokens) : '—'} />
+            <SummaryCell label="Cache write" swatch="bg-token-cache-write" value={stats.totals ? compact.format(stats.totals.cacheWriteTokens) : '—'} />
           </div>
 
           <FlowThroughput
@@ -372,15 +392,27 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
 
           <div className="mt-4 grid gap-4 md:grid-cols-2">
             <section className={`${card} p-5`}>
-              <h2 className="mb-3 text-title font-semibold">Tokens &amp; cost per model</h2>
-              {modelBars.length === 0 ? (
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+                <h2 className="text-title font-semibold">Tokens &amp; cost per model</h2>
+                {modelRows.length > 0 && <TokenTypeLegend />}
+              </div>
+              {modelRows.length === 0 ? (
                 <p className="text-muted">No per-model data in range.</p>
               ) : (
-                <BarChart
-                  bars={modelBars}
-                  ariaLabel={'Tokens & cost per model'}
-                  columns={{ label: 'Model', value: 'Tokens & cost' }}
-                />
+                <div className="flex flex-col gap-4">
+                  {modelRows.map(({ key, usage }) => {
+                    const c = stats.cost?.byModel[key];
+                    return (
+                      <TokenTypeBar
+                        key={key}
+                        label={key}
+                        usage={usage}
+                        maxTotal={modelMax}
+                        trailing={c == null ? undefined : usd(c)}
+                      />
+                    );
+                  })}
+                </div>
               )}
             </section>
 
@@ -394,10 +426,17 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
             </section>
           </div>
 
-          {agentBars.length > 0 && (
+          {agentRows.length > 0 && (
             <section className={`${card} mt-4 p-5`}>
-              <h2 className="mb-3 text-title font-semibold">Tokens per agent</h2>
-              <BarChart bars={agentBars} ariaLabel="Tokens per agent type" />
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+                <h2 className="text-title font-semibold">Tokens per agent</h2>
+                <TokenTypeLegend />
+              </div>
+              <div className="flex flex-col gap-4">
+                {agentRows.map(({ key, usage }) => (
+                  <TokenTypeBar key={key} label={key} usage={usage} maxTotal={agentMax} />
+                ))}
+              </div>
             </section>
           )}
 

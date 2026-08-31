@@ -86,7 +86,7 @@ export function isWorkspaceScopedView(view: View): boolean {
 export const VIEW_LABELS: Record<View, string> = {
   board: 'Board',
   activity: 'Activity',
-  table: 'Table',
+  table: 'Tasks',
   graph: 'Graph',
   stats: 'Stats',
   operations: 'Operations',
