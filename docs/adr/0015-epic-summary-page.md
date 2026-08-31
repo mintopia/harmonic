@@ -2,6 +2,7 @@
 
 Status: accepted
 Date: 2026-08-31
+Refined by: 0016-epics-are-containers.md (epics surface from the derived-epic model, not `isEpic` task rows)
 
 ## Context
 
