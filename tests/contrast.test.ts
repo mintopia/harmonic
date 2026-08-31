@@ -222,3 +222,37 @@ describe('Paper palette meets WCAG AA in both themes (issue #260)', () => {
     });
   }
 });
+
+/**
+ * Attempt-activity heatmap ramp (issue #405). The five `--hm-heat-*` tokens are
+ * a graphical encoding, not text, so the WCAG text floors don't apply — but the
+ * ramp only reads as an intensity scale if it stays monotonic and its steps stay
+ * distinguishable. This gate locks both from the source of truth so a token nudge
+ * can't flatten the ramp or collapse the empty tile into level 1 in either theme.
+ */
+describe('Attempt-activity heatmap ramp reads as an intensity scale (issue #405)', () => {
+  const STEPS = ['heat-1', 'heat-2', 'heat-3', 'heat-4'] as const;
+
+  for (const [themeName, t] of Object.entries(themes)) {
+    describe(themeName, () => {
+      it('defines the neutral empty tile and the four teal steps', () => {
+        for (const token of ['heat-0', ...STEPS]) expect(t[token]).toBeDefined();
+      });
+
+      it('ramps monotonically — darker with intensity on Paper, brighter on dark', () => {
+        const lums = STEPS.map((s) => luminance(hex(t, s)));
+        const ordered = lums.every((l, i) => i === 0 || (themeName === 'light' ? l < lums[i - 1]! : l > lums[i - 1]!));
+        expect(ordered).toBe(true);
+      });
+
+      it('keeps the empty tile a visible tile, distinct from the card and from level 1', () => {
+        expect(contrast(hex(t, 'heat-0'), hex(t, 'surface'))).toBeGreaterThan(1.1);
+        expect(contrast(hex(t, 'heat-0'), hex(t, 'heat-1'))).toBeGreaterThan(1.1);
+      });
+
+      it('separates the busiest step from empty as a graphical object (≥ 3:1)', () => {
+        expect(contrast(hex(t, 'heat-4'), hex(t, 'heat-0'))).toBeGreaterThanOrEqual(UI_FLOOR);
+      });
+    });
+  }
+});

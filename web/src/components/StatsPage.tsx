@@ -17,6 +17,7 @@ import { BarChart, type Bar } from './BarChart';
 import { Donut, type DonutSegment } from './Donut';
 import { fillSeries, METRIC_LABEL, type DayCost, type StatMetric } from './costChart-model';
 import { EmptyState } from './EmptyState';
+import { AttemptHeatmap } from './AttemptHeatmap';
 
 const STATE_DONUT_COLOR: Record<string, string> = {
   running: 'var(--hm-running-dot)',
@@ -259,6 +260,8 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
           onChange={setRange}
         />
       </div>
+
+      {workspaceId !== null && <AttemptHeatmap workspaceId={workspaceId} />}
 
       {error && (
         <p className="rounded-lg bg-fail-tint px-4 py-2 text-fail">Couldn’t load statistics: {error}</p>
