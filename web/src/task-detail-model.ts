@@ -2,7 +2,7 @@
 // project, whose nodenext resolution requires it (Vite maps .js → .ts).
 import { splitPathTail } from './path.js';
 import { ROOT_AGENT, totalTokens } from './stats-model.js';
-import type { AttemptSummary, Step, StepState, StepType, TaskState, VerificationMechanism, VerifierStatus } from './types.js';
+import type { AttemptSummary, Step, StepState, StepType, TaskState, ToolTokenAttribution, VerificationMechanism, VerifierStatus } from './types.js';
 
 /**
  * The reworked Task detail page's view-model seam. The page is a thin renderer
@@ -225,6 +225,13 @@ export interface TaskStats {
   agents: number;
   /** Tool calls made across every aggregated Attempt's session. */
   toolCalls: number;
+  /** Output tokens (and API-equivalent cost) attributed per tool across the
+   * aggregated Attempts (ADR-0008), largest first, with the no-tool `reasoning`
+   * bucket appended last. `cost` is null-sticky per bucket — once a contribution
+   * is unpriced the bucket is a tokens-only floor. Empty when no Attempt carried
+   * tool attribution (an ACP-only harness), so the card hides rather than
+   * showing zeros. */
+  toolTokens: Array<ToolTokenAttribution & { key: string; label: string }>;
 }
 
 const zeroTokens = (): Omit<TaskModelStats, 'model' | 'cost'> => ({
@@ -259,9 +266,39 @@ export function taskStats(attempts: readonly StatsAttempt[]): TaskStats {
   const subagentNames = new Set<string>();
   let hasRootAgent = false;
   let toolCalls = 0;
+  const toolTokens = new Map<string, ToolTokenAttribution>();
+  const toolUnpriced = new Set<string>();
+  let reasoning: ToolTokenAttribution | undefined;
+  let reasoningUnpriced = false;
+
+  // Fold one attempt's attribution into a running bucket. Null-sticky like the
+  // cost donut: once an unpriced (cost-less) contribution lands, the bucket drops
+  // its dollars for good and stays a tokens-only floor.
+  const fold = (
+    target: ToolTokenAttribution,
+    add: ToolTokenAttribution,
+    unpriced: boolean,
+  ): boolean => {
+    target.outputTokens += add.outputTokens;
+    if (add.cost === undefined) {
+      delete target.cost;
+      return true;
+    }
+    if (!unpriced) target.cost = (target.cost ?? 0) + add.cost;
+    return unpriced;
+  };
 
   for (const { usage, cost, toolCalls: calls } of attempts) {
     toolCalls += calls ?? 0;
+    for (const [tool, attribution] of Object.entries(usage?.toolTokens ?? {})) {
+      const bucket = toolTokens.get(tool) ?? { outputTokens: 0 };
+      if (fold(bucket, attribution, toolUnpriced.has(tool))) toolUnpriced.add(tool);
+      toolTokens.set(tool, bucket);
+    }
+    if (usage?.reasoning) {
+      reasoning ??= { outputTokens: 0 };
+      reasoningUnpriced = fold(reasoning, usage.reasoning, reasoningUnpriced);
+    }
     for (const [model, u] of Object.entries(usage?.models ?? {})) {
       const bucket = tokensByModel.get(model) ?? zeroTokens();
       bucket.input += u.inputTokens;
@@ -301,6 +338,18 @@ export function taskStats(attempts: readonly StatsAttempt[]): TaskStats {
   const billableIO = byModel.reduce((sum, m) => sum + m.input + m.output, 0);
   const cost = donutCostByModel.reduce((sum, m) => sum + m.cost, 0);
 
+  // Tools ranked by output tokens, largest first; the reasoning bucket is a
+  // distinct kind, so it trails the tools rather than ranking among them.
+  const rankedToolTokens = [
+    ...[...toolTokens.entries()]
+      .filter(([, b]) => b.outputTokens > 0)
+      .sort((a, b) => b[1].outputTokens - a[1].outputTokens || a[0].localeCompare(b[0]))
+      .map(([key, b]) => ({ key, label: key, ...b })),
+    ...(reasoning && reasoning.outputTokens > 0
+      ? [{ key: 'reasoning', label: 'Reasoning', ...reasoning }]
+      : []),
+  ];
+
   return {
     byModel,
     agentVsSubagent: { agentTokens, subagentTokens },
@@ -310,6 +359,7 @@ export function taskStats(attempts: readonly StatsAttempt[]): TaskStats {
     subagents: subagentNames.size,
     agents: hasRootAgent ? 1 : 0,
     toolCalls,
+    toolTokens: rankedToolTokens,
   };
 }
 

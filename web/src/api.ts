@@ -23,6 +23,7 @@ import type {
   Workspace,
 } from './types.js';
 import type { Epic, EpicIntegrateOutcome } from './epic-model.js';
+import type { Stats } from './stats-model.js';
 
 class ApiError extends Error {
   constructor(
@@ -74,6 +75,10 @@ export const api = {
     return request<{ tasks: Task[]; total: number }>('GET', query ? `/api/tasks?${query}` : '/api/tasks');
   },
   task: (id: number) => request<Task>('GET', `/api/tasks/${id}`),
+  // Attempt-grain aggregates over a time window; the KPI panel and the
+  // attempt-activity heatmap share this one reader path (ADR-0008/0014).
+  stats: (from: number, to: number, workspaceId: number) =>
+    request<Stats>('GET', `/api/stats?from=${from}&to=${to}&workspaceId=${workspaceId}`),
   createTask: (input: Partial<Task> & { prompt: string; state?: 'draft' | 'ready' }) =>
     request<Task>('POST', '/api/tasks', input),
   // Lazy directory picker (issue #67): one level deep per call; an omitted

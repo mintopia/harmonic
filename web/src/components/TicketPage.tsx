@@ -25,6 +25,7 @@ import { attemptStepTabs, contentPanel, defaultStepTab, taskLifecycle, modelTota
 import { isAtLiveEdge } from '../follow-tail-model';
 import { ChatTranscript } from './ticket/ChatTranscript';
 import { Donut, type DonutSegment } from './Donut';
+import { BarChart, type Bar } from './BarChart';
 import { card, labelType, railSectionHead, railSectionCount, PHASE_NODE_STYLES } from '../ui';
 import { toastError } from '../toast';
 import { ticketIdentity } from '../id-format.js';
@@ -1044,15 +1045,40 @@ function StatsPanel({ stats }: { stats: TaskStats }) {
   );
 }
 
+/** The Attempt's output tokens attributed per tool (ADR-0008): ranked bars of
+ * output tokens · cost, the no-tool reasoning bucket last. Unpriced tools read
+ * as tokens only. Rendered only when the Attempt carried tool attribution. */
+function ToolTokenCard({ tools }: { tools: TaskStats['toolTokens'] }) {
+  const bars: Bar[] = tools.map((t) => ({
+    key: t.key,
+    label: t.label,
+    value: t.outputTokens,
+    valueLabel:
+      t.cost === undefined
+        ? compactTokens.format(t.outputTokens)
+        : `${compactTokens.format(t.outputTokens)} · ${usd(t.cost)}`,
+  }));
+  return (
+    <section className={`${card} p-5`}>
+      <h3 className={`${sectionCaps} mb-4`}>Output tokens by tool</h3>
+      <BarChart bars={bars} ariaLabel="Output tokens and cost by tool" />
+    </section>
+  );
+}
+
 /** A single Attempt's own stats: the token breakdown and the agent-vs-subagent
- * donut side by side. Scoped to the Attempt (not the whole Task), and without
- * the whole-Task summary card, heading, or cost donut. */
+ * donut side by side, then the per-tool output-token card beneath. Scoped to the
+ * Attempt (not the whole Task), and without the whole-Task summary card, heading,
+ * or cost donut. */
 function AttemptStats({ stats }: { stats: TaskStats }) {
   if (stats.byModel.length === 0) return null;
   return (
-    <div className="grid gap-4 py-5 md:grid-cols-2">
-      <TokenBreakdownCard byModel={stats.byModel} />
-      <AgentDonutCard stats={stats} />
+    <div className="flex flex-col gap-4 py-5">
+      <div className="grid gap-4 md:grid-cols-2">
+        <TokenBreakdownCard byModel={stats.byModel} />
+        <AgentDonutCard stats={stats} />
+      </div>
+      {stats.toolTokens.length > 0 && <ToolTokenCard tools={stats.toolTokens} />}
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { formatAvgCostPerRun, formatCost, usd } from '../cost';
-import type { Cost } from '../types';
-import { card, displayTitle, labelType } from '../ui';
+import { api } from '../api';
+import { card, displayTitle, labelType, tableHead } from '../ui';
 import {
   cacheHitRate,
   failureRate,
@@ -9,14 +9,18 @@ import {
   reliabilityStates,
   subagentShare,
   usageBars,
+  type Stats,
 } from '../stats-model';
+import { VerificationEscalationCard } from './VerificationEscalationCard';
 import { fmtDuration } from '../format-duration';
 import { CostBars } from './CostBars';
 import { CumulativeCurve } from './CumulativeCurve';
 import { BarChart, type Bar } from './BarChart';
 import { Donut, type DonutSegment } from './Donut';
-import { fillSeries, METRIC_LABEL, type DayCost, type StatMetric } from './costChart-model';
+import { fillSeries, METRIC_LABEL, type StatMetric } from './costChart-model';
 import { EmptyState } from './EmptyState';
+import { AttemptHeatmap } from './AttemptHeatmap';
+import { FlowThroughput } from './FlowThroughput';
 
 const STATE_DONUT_COLOR: Record<string, string> = {
   running: 'var(--hm-running-dot)',
@@ -46,30 +50,6 @@ const REASON_LABEL: Record<string, string> = {
   'agent-finish/unresolved': 'Unresolved',
   unknown: 'Unknown',
 };
-
-type ModelUsage = { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number };
-
-interface Stats {
-  from: number;
-  to: number;
-  attemptCount: number;
-  attemptsByState: Record<string, number>;
-  /** Failed-only Run count (cancelled excluded); the honest failure-rate numerator. */
-  failedAttempts: number;
-  /** Execution failures bucketed by winning terminal disposition; empty when nothing failed. */
-  failuresByReason: Record<string, number>;
-  /** p50 / p95 active-execution duration (ms); null when no run has a measurable duration. */
-  durationMs: { p50: number; p95: number } | null;
-  totals: (ModelUsage & { totalTokens: number | null }) | null;
-  models: Record<string, ModelUsage>;
-  /** Per-agent-type token breakdown (root + each Subagent type); may be absent on older data. */
-  agents?: Record<string, ModelUsage>;
-  toolTokens?: Record<string, { outputTokens: number; cost?: number }>;
-  reasoning?: { outputTokens: number; cost?: number };
-  toolCalls: Record<string, number>;
-  cost: Cost | null;
-  series: DayCost[];
-}
 
 const RANGES: Record<string, number | null> = {
   '24 hours': 24 * 3600_000,
@@ -139,15 +119,8 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
     const from = span === null ? 0 : Date.now() - span;
     let cancelled = false;
     setError(null);
-    // A non-200 body ({error:{…}}) has none of the fields the render path
-    // reads — storing it would throw and blank the page. Check ok, like api.ts.
-    fetch(`/api/stats?from=${from}&to=${Date.now()}&workspaceId=${workspaceId}`)
-      .then(async (r) => {
-        const text = await r.text();
-        const json = text ? JSON.parse(text) : null;
-        if (!r.ok) throw new Error(json?.error?.message ?? r.statusText);
-        return json as Stats;
-      })
+    api
+      .stats(from, Date.now(), workspaceId)
       .then((s) => !cancelled && setStats(s))
       .catch((e) => {
         if (cancelled) return;
@@ -260,6 +233,8 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
         />
       </div>
 
+      {workspaceId !== null && <AttemptHeatmap workspaceId={workspaceId} />}
+
       {error && (
         <p className="rounded-lg bg-fail-tint px-4 py-2 text-fail">Couldn’t load statistics: {error}</p>
       )}
@@ -297,6 +272,14 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
             <SummaryCell label="Subagent share" value={pct(share)} />
           </div>
 
+          <FlowThroughput
+            tasksMergedByDay={stats.tasksMergedByDay}
+            attemptsPerTask={stats.attemptsPerTask}
+            costPerMergedTask={stats.costPerMergedTask}
+            from={stats.from}
+            to={stats.to}
+          />
+
           {filled.length >= 2 && (
             <section className={`${card} mb-4 p-5`}>
               <div className="mb-3 flex flex-wrap items-center gap-3">
@@ -311,6 +294,40 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
               </div>
               <CostBars series={filled} metric={metric} />
               <CumulativeCurve series={filled} metric={metric} />
+            </section>
+          )}
+
+          {stats.byWorkspace.length > 0 && (
+            <section className={`${card} mb-4 p-5`}>
+              <h2 className="mb-3 text-title font-semibold">Where the spend goes</h2>
+              <div tabIndex={0} role="region" aria-label="Spend by workspace" className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead className={tableHead}>
+                    <tr>
+                      <th className="py-1.5">Workspace</th>
+                      <th className="py-1.5 text-right">Cost</th>
+                      <th className="py-1.5 text-right">Tokens in</th>
+                      <th className="py-1.5 text-right">Tokens out</th>
+                      <th className="py-1.5 text-right">Tasks</th>
+                      <th className="py-1.5 text-right">Fail rate</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {stats.byWorkspace.map((ws) => (
+                      <tr key={ws.workspaceId} className="border-t border-hairline">
+                        <td className="py-2 font-medium text-ink">{ws.name}</td>
+                        <td className="py-2 text-right font-semibold tabular-nums text-ink">
+                          {formatCost(ws.cost) ?? '—'}
+                        </td>
+                        <td className="py-2 text-right tabular-nums text-muted">{compact.format(ws.inputTokens)}</td>
+                        <td className="py-2 text-right tabular-nums text-muted">{compact.format(ws.outputTokens)}</td>
+                        <td className="py-2 text-right tabular-nums text-muted">{fmt(ws.tasks)}</td>
+                        <td className="py-2 text-right tabular-nums text-ink">{pct(ws.failureRate)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </section>
           )}
 
@@ -347,7 +364,13 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
             </div>
           </section>
 
-          <div className="grid gap-4 md:grid-cols-2">
+          <VerificationEscalationCard
+            verdicts={stats.verdicts}
+            gateOutcomes={stats.gateOutcomes}
+            guardrailTrips={stats.guardrailTrips}
+          />
+
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
             <section className={`${card} p-5`}>
               <h2 className="mb-3 text-title font-semibold">Tokens &amp; cost per model</h2>
               {modelBars.length === 0 ? (

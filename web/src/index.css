@@ -24,6 +24,16 @@
   --hm-accent-tint: #e0f0ef;
   --hm-on-accent: #ffffff;
 
+  /* Attempt-activity heatmap ramp (issue #405): a neutral empty tile, then a
+     four-step teal intensity ramp. Empty is neutral so "no activity" never
+     pre-reads as a faint teal count; the ramp darkens with intensity on Paper,
+     brightens on dark. Monotonic + distinguishable, gated in contrast.test.ts. */
+  --hm-heat-0: #e7ebe7;
+  --hm-heat-1: #bfe4e0;
+  --hm-heat-2: #7fcbc4;
+  --hm-heat-3: #2f9d97;
+  --hm-heat-4: #0d7271;
+
   --hm-running: #c0722a;
   --hm-running-dot: #c0722a;
   --hm-running-tint: #f6ebdc;
@@ -88,6 +98,12 @@
   --hm-accent-tint: #123330;
   --hm-on-accent: #0e1413;
 
+  --hm-heat-0: #2a2d33;
+  --hm-heat-1: #1e4a45;
+  --hm-heat-2: #248079;
+  --hm-heat-3: #33aaa1;
+  --hm-heat-4: #4cd0c7;
+
   --hm-running: #de9a45;
   --hm-running-dot: #de9a45;
   --hm-running-tint: #3a2c16;
@@ -147,6 +163,12 @@
     --hm-accent-hot: #4cd0c7;
     --hm-accent-tint: #123330;
     --hm-on-accent: #0e1413;
+
+    --hm-heat-0: #2a2d33;
+    --hm-heat-1: #1e4a45;
+    --hm-heat-2: #248079;
+    --hm-heat-3: #33aaa1;
+    --hm-heat-4: #4cd0c7;
 
     --hm-running: #de9a45;
     --hm-running-dot: #de9a45;
