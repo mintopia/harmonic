@@ -106,6 +106,10 @@ const TEXT_FLOOR = 4.5;
 const UI_FLOOR = 3;
 const PAPER_TOKENS = ['await', 'await-dot', 'await-tint', 'on-await', 'on-done', 'sunken', 'edge-strong'] as const;
 
+// The warm categorical token-class ramp (ADR-0014): input, output, cache-read,
+// cache-write. Colour is load-bearing here, so each fill is gated below.
+const TOKEN_CLASS_TOKENS = ['token-input', 'token-output', 'token-cache-read', 'token-cache-write'] as const;
+
 describe('Paper palette meets WCAG AA in both themes (issue #260)', () => {
   it('defines the same dark tokens via data-theme and prefers-color-scheme', () => {
     // Dark values live twice (explicit toggle + system media query); they must
@@ -115,6 +119,14 @@ describe('Paper palette meets WCAG AA in both themes (issue #260)', () => {
 
   it('defines the Paper tokens in both themes and maps them to Tailwind colors', () => {
     for (const token of PAPER_TOKENS) {
+      expect(light[token]).toBeDefined();
+      expect(darkExplicit[token]).toBeDefined();
+      expect(CSS).toContain(`--color-${token}: var(--hm-${token});`);
+    }
+  });
+
+  it('defines the warm token-class ramp in both themes and maps it to Tailwind colors (ADR-0014)', () => {
+    for (const token of TOKEN_CLASS_TOKENS) {
       expect(light[token]).toBeDefined();
       expect(darkExplicit[token]).toBeDefined();
       expect(CSS).toContain(`--color-${token}: var(--hm-${token});`);
@@ -183,6 +195,15 @@ describe('Paper palette meets WCAG AA in both themes (issue #260)', () => {
       it(`on-fail label on the fail fill ≥ ${TEXT_FLOOR}:1`, () => {
         expect(contrast(hex(t, 'on-fail'), hex(t, 'fail'))).toBeGreaterThanOrEqual(TEXT_FLOOR);
       });
+
+      // The token-breakdown bars (ADR-0014) render each warm class fill on the
+      // raised bar track; every fill must clear the 3:1 graphical-object floor
+      // (WCAG 1.4.11) against that track so the class split reads in both themes.
+      for (const token of TOKEN_CLASS_TOKENS) {
+        it(`token class ${token} vs bar track ≥ ${UI_FLOOR}:1`, () => {
+          expect(contrast(hex(t, token), hex(t, 'raised'))).toBeGreaterThanOrEqual(UI_FLOOR);
+        });
+      }
 
       it(`Switch off-track: knob vs track ≥ ${UI_FLOOR}:1`, () => {
         expect(contrast(WHITE, hex(t, 'switch-off'))).toBeGreaterThanOrEqual(UI_FLOOR);

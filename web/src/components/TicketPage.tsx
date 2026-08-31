@@ -840,15 +840,17 @@ function TimelineNav({ selected, onSelect }: { selected: boolean; onSelect: () =
   );
 }
 
-// The Stats panel's token bars ride a neutral monochrome opacity ramp on the
-// ink token — never state hues, so a "cached" segment can't pre-read as
-// running/blocked (Two Voices) — and resolves in both themes. Billable I/O
-// (input, then output) sits darkest; cache fades back.
+// The token bars use a warm categorical set — input gold, output orange,
+// cache-read coral, cache-write magenta — the ADR-0014 exception to the Two
+// Voices monochrome rule: the class split is load-bearing, so it earns colour,
+// and the four hues sit clear of the status palette so a class can't pre-read
+// as a running/merged/fail/await state. Defined once here so every breakdown
+// that renders it — the whole-Task Stats panel and the per-Attempt block — stays identical.
 const TOKEN_SEGMENTS = [
-  { key: 'input' as const, label: 'input', fill: 'bg-ink' },
-  { key: 'output' as const, label: 'output', fill: 'bg-ink/60' },
-  { key: 'cachedIn' as const, label: 'cached in', fill: 'bg-ink/35' },
-  { key: 'cachedOut' as const, label: 'cached out', fill: 'bg-ink/15' },
+  { key: 'input' as const, label: 'input', fill: 'bg-token-input' },
+  { key: 'output' as const, label: 'output', fill: 'bg-token-output' },
+  { key: 'cachedIn' as const, label: 'cached in', fill: 'bg-token-cache-read' },
+  { key: 'cachedOut' as const, label: 'cached out', fill: 'bg-token-cache-write' },
 ];
 
 /** Donut palette for the per-model cost slices (mirrors StatsPage's ramp): the
