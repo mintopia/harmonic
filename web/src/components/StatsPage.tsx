@@ -9,7 +9,10 @@ import {
   reliabilityStates,
   subagentShare,
   usageBars,
+  type GateOutcomes,
+  type VerdictCounts,
 } from '../stats-model';
+import { VerificationEscalationCard } from './VerificationEscalationCard';
 import { fmtDuration } from '../format-duration';
 import { CostBars } from './CostBars';
 import { CumulativeCurve } from './CumulativeCurve';
@@ -84,6 +87,13 @@ interface Stats {
   series: DayCost[];
   /** Attempt-grain aggregates grouped by owning Workspace, ordered by cost. */
   byWorkspace: WorkspaceStats[];
+  /** Verification verdicts at verification-attempt grain; only the critic split
+   * feeds the card — command verdicts are never folded in (ADR-0014 §4). */
+  verdicts: { critic: VerdictCounts; command: VerdictCounts };
+  /** How settled Tasks left the merge gate (ADR-0014 §5). */
+  gateOutcomes: GateOutcomes;
+  /** Guardrail trip counts keyed by dimension; a dimension that never tripped is absent. */
+  guardrailTrips: Record<string, number>;
 }
 
 const RANGES: Record<string, number | null> = {
@@ -396,7 +406,13 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
             </div>
           </section>
 
-          <div className="grid gap-4 md:grid-cols-2">
+          <VerificationEscalationCard
+            verdicts={stats.verdicts}
+            gateOutcomes={stats.gateOutcomes}
+            guardrailTrips={stats.guardrailTrips}
+          />
+
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
             <section className={`${card} p-5`}>
               <h2 className="mb-3 text-title font-semibold">Tokens &amp; cost per model</h2>
               {modelBars.length === 0 ? (
