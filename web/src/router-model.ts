@@ -21,7 +21,7 @@ import { TASK_STATES, type TaskState } from './types.js';
  */
 
 /** Table sort keys. TableView imports `SortKey` from here as its single source. */
-export const SORT_KEYS = ['createdAt', 'priority', 'cost'] as const;
+export const SORT_KEYS = ['createdAt', 'updatedAt', 'priority', 'cost'] as const;
 export type SortKey = (typeof SORT_KEYS)[number];
 
 /** Harnesses the Table's filter offers — the only values a `harness` param may hold. */
@@ -29,11 +29,13 @@ export const TABLE_HARNESSES = ['claude', 'codex', 'copilot'] as const;
 /** Priorities the Table's filter offers — the only values a `priority` param may hold. */
 export const TABLE_PRIORITIES = ['high', 'normal', 'low'] as const;
 
-/** The Table view's filter + sort selection. Empty string means "all" for a filter. */
+/** The Table view's filter + sort selection. Each filter is multi-select
+ * (issue: multi-select filters): an empty array means "all"; a non-empty array
+ * matches any of its values. */
 export interface TableFilters {
-  state: string;
-  harness: string;
-  priority: string;
+  state: string[];
+  harness: string[];
+  priority: string[];
   /** Free-text search over prompt text (issue #104). Empty means "no search". */
   search: string;
   sortBy: SortKey;
@@ -41,9 +43,9 @@ export interface TableFilters {
 }
 
 export const DEFAULT_TABLE_FILTERS: TableFilters = {
-  state: '',
-  harness: '',
-  priority: '',
+  state: [],
+  harness: [],
+  priority: [],
   search: '',
   sortBy: 'createdAt',
   order: 'desc',
@@ -85,7 +87,16 @@ const PARAM = {
 } as const;
 
 const isView = (v: string | null): v is View => v !== null && (VIEWS as readonly string[]).includes(v);
-const isTaskState = (v: string): v is TaskState => (TASK_STATES as readonly string[]).includes(v);
+/** Parse a comma-separated filter param into a validated, deduped, order-preserving
+ * list, dropping any value outside `allowed` (a stale/hand-edited link merges sane). */
+const csvValues = (raw: string, allowed: readonly string[]): string[] => {
+  const out: string[] = [];
+  for (const part of raw.split(',')) {
+    const v = part.trim();
+    if (v && allowed.includes(v) && !out.includes(v)) out.push(v);
+  }
+  return out;
+};
 // Only terminal columns are peekable (Board.tsx), so a non-terminal `peek`
 // param is meaningless — reject it so a stale value can't ride along in the URL.
 const isPeekable = (v: string): v is TaskState => (TERMINAL_STATES as readonly string[]).includes(v);
@@ -124,15 +135,12 @@ export function parseRoute(pathname: string, search: string): Route {
     if (s && isPeekable(s) && !peeked.includes(s)) peeked.push(s);
   }
 
-  const rawState = params.get(PARAM.state) ?? '';
-  const rawHarness = params.get(PARAM.harness) ?? '';
-  const rawPriority = params.get(PARAM.priority) ?? '';
   const rawOrder = params.get(PARAM.order);
 
   const table: TableFilters = {
-    state: isTaskState(rawState) ? rawState : '',
-    harness: (TABLE_HARNESSES as readonly string[]).includes(rawHarness) ? rawHarness : '',
-    priority: (TABLE_PRIORITIES as readonly string[]).includes(rawPriority) ? rawPriority : '',
+    state: csvValues(params.get(PARAM.state) ?? '', TASK_STATES),
+    harness: csvValues(params.get(PARAM.harness) ?? '', TABLE_HARNESSES),
+    priority: csvValues(params.get(PARAM.priority) ?? '', TABLE_PRIORITIES),
     search: params.get(PARAM.q) ?? '',
     sortBy: isSortKey(params.get(PARAM.sort)) ? (params.get(PARAM.sort) as SortKey) : 'createdAt',
     order: rawOrder === 'asc' ? 'asc' : 'desc',
@@ -158,9 +166,9 @@ export function serializeRoute(route: Route): string {
   if (peek.length > 0) params.set(PARAM.peek, peek.join(','));
 
   const t = route.table;
-  if (t.state) params.set(PARAM.state, t.state);
-  if (t.harness) params.set(PARAM.harness, t.harness);
-  if (t.priority) params.set(PARAM.priority, t.priority);
+  if (t.state.length > 0) params.set(PARAM.state, t.state.join(','));
+  if (t.harness.length > 0) params.set(PARAM.harness, t.harness.join(','));
+  if (t.priority.length > 0) params.set(PARAM.priority, t.priority.join(','));
   if (t.search) params.set(PARAM.q, t.search);
   if (t.sortBy !== 'createdAt') params.set(PARAM.sort, t.sortBy);
   if (t.order !== 'desc') params.set(PARAM.order, t.order);

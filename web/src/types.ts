@@ -330,6 +330,8 @@ export interface Task {
   agentWorkable: boolean;
   /** A mirrored ticket Harmonic never works (no `ready-for-agent`, an Epic container, a human wayfinder kind); independent of blockers. */
   humanOnly: boolean;
+  /** This ticket is an Epic container — some other mirrored ticket names it as its parent. Lets list surfaces mark and link it as an Epic, closed ones included. */
+  isEpic: boolean;
   /** Summed over ALL runs, retries and failed attempts included. */
   cost: Cost | null;
   /** native = authored here; mirrored = a projection of a tracker issue (issue #30). */

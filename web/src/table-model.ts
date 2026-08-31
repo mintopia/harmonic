@@ -12,9 +12,10 @@ export const TABLE_PAGE_SIZE = 50;
  * scoped to a Workspace — everything the server needs to return one page. */
 export type TableQuery = {
   workspaceId: number;
-  state: string;
-  harness: string;
-  priority: string;
+  /** Multi-select filters (empty ⇒ "all"); sent to the server as one CSV param each. */
+  state: string[];
+  harness: string[];
+  priority: string[];
   /** Server-side substring search over prompt + tracker title (ADR-0045); blank ⇒ no search. */
   q: string;
   sortBy: string;
@@ -24,14 +25,14 @@ export type TableQuery = {
 };
 
 /** Build the `/api/tasks` query string for the table's current selections.
- * Empty filter strings (and a blank search) are omitted so they don't
- * over-constrain the request. */
+ * Empty filter lists (and a blank search) are omitted so they don't
+ * over-constrain the request; a multi-select filter goes as one CSV param. */
 export function tasksQuery(q: TableQuery): string {
   const params = new URLSearchParams();
   params.set('workspaceId', String(q.workspaceId));
-  if (q.state) params.set('state', q.state);
-  if (q.harness) params.set('harness', q.harness);
-  if (q.priority) params.set('priority', q.priority);
+  if (q.state.length > 0) params.set('state', q.state.join(','));
+  if (q.harness.length > 0) params.set('harness', q.harness.join(','));
+  if (q.priority.length > 0) params.set('priority', q.priority.join(','));
   if (q.q.trim()) params.set('q', q.q.trim());
   params.set('sortBy', q.sortBy);
   params.set('order', q.order);

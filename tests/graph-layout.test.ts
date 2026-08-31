@@ -33,6 +33,7 @@ const task = (id: number, state: TaskState = 'ready', extra: Partial<Task> = {})
   openBlockerCount: 0,
   agentWorkable: true,
   humanOnly: false,
+  isEpic: false,
   mapRef: null,
   url: null,
   mapTitle: null,

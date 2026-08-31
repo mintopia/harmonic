@@ -1,4 +1,5 @@
 import type { Cost } from '../types.js';
+import { dayKey } from './costChart-model.js';
 
 export interface MergedDay {
   day: number;
@@ -52,18 +53,16 @@ export function mergedPerDayAverage(days: MergedDay[]): number | null {
 export function mergedDaySeries(days: MergedDay[], from: number, to: number): MergedDay[] {
   if (days.length === 0) return [];
   const DAY = 24 * 3600_000;
-  const start = new Date(from);
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(Math.min(to, Date.now()));
-  end.setHours(0, 0, 0, 0);
-  const span = Math.round((end.getTime() - start.getTime()) / DAY) + 1;
+  const start = dayKey(from);
+  const end = dayKey(Math.min(to, Date.now()));
+  const span = Math.round((end - start) / DAY) + 1;
   if (span < 2 || span > 62) return days;
-  const byDay = new Map(days.map((d) => [d.day, d]));
+  // Re-key onto the client's local-midnight grid (see dayKey) so a non-UTC
+  // viewer's sparkline finds each day's merge count instead of flattening to 0.
+  const byDay = new Map(days.map((d) => [dayKey(d.day), d]));
   const out: MergedDay[] = [];
   for (let i = 0; i < span; i++) {
-    const d = new Date(start.getTime() + i * DAY + DAY / 2);
-    d.setHours(0, 0, 0, 0);
-    const key = d.getTime();
+    const key = dayKey(start + i * DAY + DAY / 2); // DST-safe: mid-day, then floor
     out.push(byDay.get(key) ?? { day: key, count: 0 });
   }
   return out;

@@ -14,9 +14,9 @@ const fakeFetch = (body: string, init: ResponseInit) => vi.fn().mockResolvedValu
 
 const baseQuery: TableQuery = {
   workspaceId: 1,
-  state: '',
-  harness: '',
-  priority: '',
+  state: [],
+  harness: [],
+  priority: [],
   q: '',
   sortBy: 'createdAt',
   order: 'desc',
@@ -48,12 +48,20 @@ describe('tasksQuery', () => {
 
   it('includes state, harness, priority, and a trimmed search when set', () => {
     const params = new URLSearchParams(
-      tasksQuery({ ...baseQuery, state: 'running', harness: 'claude', priority: 'high', q: '  rate limiting  ' }),
+      tasksQuery({ ...baseQuery, state: ['running'], harness: ['claude'], priority: ['high'], q: '  rate limiting  ' }),
     );
     expect(params.get('state')).toBe('running');
     expect(params.get('harness')).toBe('claude');
     expect(params.get('priority')).toBe('high');
     expect(params.get('q')).toBe('rate limiting');
+  });
+
+  it('sends a multi-select filter as one comma-separated param', () => {
+    const params = new URLSearchParams(
+      tasksQuery({ ...baseQuery, state: ['ready', 'working'], priority: ['high', 'low'] }),
+    );
+    expect(params.get('state')).toBe('ready,working');
+    expect(params.get('priority')).toBe('high,low');
   });
 });
 

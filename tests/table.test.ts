@@ -38,6 +38,14 @@ describe('task list filtering and sorting (table view backend)', () => {
     expect(summaries(highReady.body)).toEqual(['b']);
   });
 
+  it('matches any value of a comma-separated multi-select filter', async () => {
+    const states = await server.api('GET', '/api/tasks?state=draft,done');
+    expect(summaries(states.body).sort()).toEqual(['a', 'e']);
+
+    const priorities = await server.api('GET', '/api/tasks?priority=high,low');
+    expect(summaries(priorities.body).sort()).toEqual(['a', 'b', 'd']);
+  });
+
   it('filters completed and cancelled tasks through the explicit open shortcut, while an omitted filter stays complete', async () => {
     const open = await server.api('GET', '/api/tasks?state=open');
     expect(summaries(open.body).sort()).toEqual(['a', 'b', 'c']);

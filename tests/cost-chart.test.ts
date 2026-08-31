@@ -25,6 +25,25 @@ describe('fillSeries', () => {
     expect(out[1]).toEqual({ day: d2, totalUsd: 0, incomplete: false, tokens: 0, attempts: 0, fails: 0 });
   });
 
+  it('matches a server day key that sits off the client midnight grid', () => {
+    // A UTC server key seen by a BST/EDT browser is offset from that browser's
+    // midnight; the day must still find its bucket rather than zero-filling to
+    // $0 — the regression behind the live cost-per-day chart reading all zeros.
+    const d1 = day(2026, 0, 10);
+    const d2 = day(2026, 0, 11);
+    const offGrid = d2 + 3 * 3600_000; // same calendar day, off the grid
+    const out = fillSeries(
+      [
+        { day: d1, totalUsd: 1, incomplete: false, tokens: 100, attempts: 1 },
+        { day: offGrid, totalUsd: 2, incomplete: false, tokens: 200, attempts: 2 },
+      ],
+      d1,
+      d2,
+    );
+    expect(out).toHaveLength(2);
+    expect(out[1]).toMatchObject({ totalUsd: 2, tokens: 200, attempts: 2 });
+  });
+
   it('zero-fills leading quiet days so a recent first run still produces a graph', () => {
     const d1 = day(2026, 0, 10);
     const d2 = day(2026, 0, 11);

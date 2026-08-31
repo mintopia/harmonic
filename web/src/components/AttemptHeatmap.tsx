@@ -71,7 +71,7 @@ export function AttemptHeatmap({ workspaceId, aside }: { workspaceId: number | n
     <section className={`${card} mb-4 p-5`}>
       <div className="mb-3 flex flex-wrap items-baseline gap-x-3">
         <h2 className="text-title font-semibold">Attempt activity</h2>
-        <span className="text-small text-muted">Last {HEATMAP_WEEKS} weeks · fixed window, independent of the range above</span>
+        <span className="text-small text-muted">Past year · fixed window, independent of the range above</span>
       </div>
 
       <div className="flex flex-col gap-6 lg:flex-row lg:items-stretch">
@@ -87,7 +87,7 @@ export function AttemptHeatmap({ workspaceId, aside }: { workspaceId: number | n
                   height={height}
                   viewBox={`0 0 ${width} ${height}`}
                   role="img"
-                  aria-label={`Attempt activity: ${hm.total.toLocaleString()} attempts over the last ${HEATMAP_WEEKS} weeks, ${rangeLabel(hm.from, hm.to)}.`}
+                  aria-label={`Attempt activity: ${hm.total.toLocaleString()} attempts over the past year, ${rangeLabel(hm.from, hm.to)}.`}
                 >
               {monthTicks(hm).map(({ x, label }) => (
                 <text key={`${x}-${label}`} x={x} y={10} className="fill-muted" fontSize="9">
