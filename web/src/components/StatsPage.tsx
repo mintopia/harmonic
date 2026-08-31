@@ -11,6 +11,7 @@ import {
   usageBars,
   type Stats,
 } from '../stats-model';
+import { VerificationEscalationCard } from './VerificationEscalationCard';
 import { fmtDuration } from '../format-duration';
 import { CostBars } from './CostBars';
 import { CumulativeCurve } from './CumulativeCurve';
@@ -354,7 +355,13 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
             </div>
           </section>
 
-          <div className="grid gap-4 md:grid-cols-2">
+          <VerificationEscalationCard
+            verdicts={stats.verdicts}
+            gateOutcomes={stats.gateOutcomes}
+            guardrailTrips={stats.guardrailTrips}
+          />
+
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
             <section className={`${card} p-5`}>
               <h2 className="mb-3 text-title font-semibold">Tokens &amp; cost per model</h2>
               {modelBars.length === 0 ? (

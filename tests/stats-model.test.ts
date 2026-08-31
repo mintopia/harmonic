@@ -1,12 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import {
   cacheHitRate,
+  criticVerdictSlices,
+  criticVerdictTotal,
   failureRate,
+  gateOutcomeBars,
+  guardrailTripBars,
   orderedFailureReasons,
   orderedAttemptStates,
   reliabilityStates,
+  settledTaskTotal,
   subagentShare,
   usageBars,
+  verificationCardEmpty,
 } from '../web/src/stats-model.js';
 import { formatAvgCostPerRun } from '../web/src/cost.js';
 import type { Cost } from '../web/src/types.js';
@@ -172,5 +178,65 @@ describe('orderedFailureReasons', () => {
 
   it('returns [] for an empty breakdown', () => {
     expect(orderedFailureReasons({})).toEqual([]);
+  });
+});
+
+describe('criticVerdictSlices', () => {
+  it('keeps a fixed pass / block / inconclusive order, zeros included, for a stable legend', () => {
+    expect(criticVerdictSlices({ pass: 24, block: 5, inconclusive: 0 })).toEqual([
+      { key: 'pass', count: 24 },
+      { key: 'block', count: 5 },
+      { key: 'inconclusive', count: 0 },
+    ]);
+  });
+
+  it('sums to the critic verdict total, command never folded in', () => {
+    expect(criticVerdictTotal({ pass: 24, block: 5, inconclusive: 2 })).toBe(31);
+  });
+});
+
+describe('gateOutcomeBars', () => {
+  const gate = { autoMerged: 26, escalated: 4, revertedOnRed: 1 };
+
+  it('keeps a fixed auto-merged / escalated / reverted-on-red order', () => {
+    expect(gateOutcomeBars(gate)).toEqual([
+      { key: 'autoMerged', count: 26 },
+      { key: 'escalated', count: 4 },
+      { key: 'revertedOnRed', count: 1 },
+    ]);
+  });
+
+  it('sums the outcomes to the settled-Task total the bars reconcile against', () => {
+    expect(settledTaskTotal(gate)).toBe(31);
+    expect(gateOutcomeBars(gate).reduce((sum, b) => sum + b.count, 0)).toBe(settledTaskTotal(gate));
+  });
+});
+
+describe('guardrailTripBars', () => {
+  it('ranks by trip count largest-first, ties by dimension key, dropping zeros', () => {
+    expect(guardrailTripBars({ 'wall-clock': 3, tokens: 3, cost: 1, progress: 0 })).toEqual([
+      { key: 'tokens', count: 3 },
+      { key: 'wall-clock', count: 3 },
+      { key: 'cost', count: 1 },
+    ]);
+  });
+
+  it('returns [] when no dimension tripped', () => {
+    expect(guardrailTripBars({})).toEqual([]);
+  });
+});
+
+describe('verificationCardEmpty', () => {
+  const noVerdicts = { pass: 0, block: 0, inconclusive: 0 };
+  const noGate = { autoMerged: 0, escalated: 0, revertedOnRed: 0 };
+
+  it('is empty only when there is no verdict, gate, or guardrail activity', () => {
+    expect(verificationCardEmpty(noVerdicts, noGate, {})).toBe(true);
+  });
+
+  it('is not empty when any panel has data', () => {
+    expect(verificationCardEmpty({ pass: 1, block: 0, inconclusive: 0 }, noGate, {})).toBe(false);
+    expect(verificationCardEmpty(noVerdicts, { autoMerged: 1, escalated: 0, revertedOnRed: 0 }, {})).toBe(false);
+    expect(verificationCardEmpty(noVerdicts, noGate, { tokens: 1 })).toBe(false);
   });
 });
