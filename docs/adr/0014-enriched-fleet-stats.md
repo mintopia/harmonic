@@ -73,6 +73,26 @@ token class still cannot be mistaken for a state. Colour is load-bearing here �
 it is how the class split reads at a glance — and applies wherever the breakdown
 renders: the fleet Stats page and the per-Attempt block on the Task page.
 
+## Colour encoding: attempt activity goes to a teal intensity ramp
+
+The fleet Stats page carries a GitHub-style attempt-activity heatmap — a weeks ×
+weekdays calendar of attempts/day — coloured on a five-step ramp: a neutral empty
+tile, then four teal steps that darken with intensity on Paper and brighten on
+dark. Like the categorical token colours above, this is a deliberate, named
+exception to the "Two Voices" rule that reserves teal for the action/tooling
+voice. Two things keep the encoding from pre-reading as an action or a *ready*
+state: it is a legended quantitative ramp (a Less→More scale, not a single lit
+accent), and the empty day is a neutral tile, never a faint teal — so "no
+activity" can never read as a dim *ready*. Colour is load-bearing: the ramp *is*
+how activity density reads at a glance. The five `--hm-heat-*` tokens are the
+source of truth, gated in `contrast.test.ts` for a monotonic ramp and a
+distinguishable empty tile in both themes.
+
+The window is a fixed trailing span (26 weeks), deliberately independent of the
+KPI range toggle, so the rhythm of activity reads the same whatever range the
+headline figures are on. It is built from the existing per-day attempt count
+(`series[].attempts`) over the shared `/stats` reader path — no new field.
+
 ## Consequences
 
 - The stats reader and route encode these formulas exactly; this ADR is the

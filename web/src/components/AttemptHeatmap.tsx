@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { api } from '../api';
 import { card } from '../ui';
 import type { DayCost } from './costChart-model';
 import { buildHeatmap, HEATMAP_WEEKS, type Heatmap } from './heatmap-model';
@@ -48,13 +49,8 @@ export function AttemptHeatmap({ workspaceId }: { workspaceId: number | null }) 
     const from = now - (HEATMAP_WEEKS + 1) * 7 * DAY_MS;
     let cancelled = false;
     setError(null);
-    fetch(`/api/stats?from=${from}&to=${now}&workspaceId=${workspaceId}`)
-      .then(async (r) => {
-        const text = await r.text();
-        const json = text ? JSON.parse(text) : null;
-        if (!r.ok) throw new Error(json?.error?.message ?? r.statusText);
-        return json as { series: DayCost[] };
-      })
+    api
+      .stats(from, now, workspaceId)
       .then((s) => !cancelled && setLoaded({ series: s.series, now }))
       .catch((e) => {
         if (cancelled) return;

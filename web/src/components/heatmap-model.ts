@@ -9,7 +9,10 @@ export const HEATMAP_WEEKS = 26;
 export type HeatLevel = 0 | 1 | 2 | 3 | 4;
 
 export interface HeatCell {
-  /** Local-midnight epoch ms (server timezone) of this day. */
+  /** Local-midnight epoch ms of this day, matching DayCost.day. The window is
+   *  anchored in the viewer's local time, which tracks the server's day keys as
+   *  fillSeries already assumes; a viewer in a far-off timezone can shift a
+   *  count by a day at the midnight boundary. */
   day: number;
   attempts: number;
   level: HeatLevel;

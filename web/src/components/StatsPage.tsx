@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { formatAvgCostPerRun, formatCost, usd } from '../cost';
-import type { Cost } from '../types';
+import { api } from '../api';
 import { card, displayTitle, labelType } from '../ui';
 import {
   cacheHitRate,
@@ -9,13 +9,14 @@ import {
   reliabilityStates,
   subagentShare,
   usageBars,
+  type Stats,
 } from '../stats-model';
 import { fmtDuration } from '../format-duration';
 import { CostBars } from './CostBars';
 import { CumulativeCurve } from './CumulativeCurve';
 import { BarChart, type Bar } from './BarChart';
 import { Donut, type DonutSegment } from './Donut';
-import { fillSeries, METRIC_LABEL, type DayCost, type StatMetric } from './costChart-model';
+import { fillSeries, METRIC_LABEL, type StatMetric } from './costChart-model';
 import { EmptyState } from './EmptyState';
 import { AttemptHeatmap } from './AttemptHeatmap';
 
@@ -47,30 +48,6 @@ const REASON_LABEL: Record<string, string> = {
   'agent-finish/unresolved': 'Unresolved',
   unknown: 'Unknown',
 };
-
-type ModelUsage = { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number };
-
-interface Stats {
-  from: number;
-  to: number;
-  attemptCount: number;
-  attemptsByState: Record<string, number>;
-  /** Failed-only Run count (cancelled excluded); the honest failure-rate numerator. */
-  failedAttempts: number;
-  /** Execution failures bucketed by winning terminal disposition; empty when nothing failed. */
-  failuresByReason: Record<string, number>;
-  /** p50 / p95 active-execution duration (ms); null when no run has a measurable duration. */
-  durationMs: { p50: number; p95: number } | null;
-  totals: (ModelUsage & { totalTokens: number | null }) | null;
-  models: Record<string, ModelUsage>;
-  /** Per-agent-type token breakdown (root + each Subagent type); may be absent on older data. */
-  agents?: Record<string, ModelUsage>;
-  toolTokens?: Record<string, { outputTokens: number; cost?: number }>;
-  reasoning?: { outputTokens: number; cost?: number };
-  toolCalls: Record<string, number>;
-  cost: Cost | null;
-  series: DayCost[];
-}
 
 const RANGES: Record<string, number | null> = {
   '24 hours': 24 * 3600_000,
@@ -140,15 +117,8 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
     const from = span === null ? 0 : Date.now() - span;
     let cancelled = false;
     setError(null);
-    // A non-200 body ({error:{…}}) has none of the fields the render path
-    // reads — storing it would throw and blank the page. Check ok, like api.ts.
-    fetch(`/api/stats?from=${from}&to=${Date.now()}&workspaceId=${workspaceId}`)
-      .then(async (r) => {
-        const text = await r.text();
-        const json = text ? JSON.parse(text) : null;
-        if (!r.ok) throw new Error(json?.error?.message ?? r.statusText);
-        return json as Stats;
-      })
+    api
+      .stats(from, Date.now(), workspaceId)
       .then((s) => !cancelled && setStats(s))
       .catch((e) => {
         if (cancelled) return;

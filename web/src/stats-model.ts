@@ -1,4 +1,37 @@
-import type { AttemptSummary } from './types.js';
+import type { AttemptSummary, Cost } from './types.js';
+import type { DayCost } from './components/costChart-model.js';
+
+export interface ModelUsage {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+}
+
+/** The `/api/stats` response (attempt-grain aggregates over from/to/workspaceId,
+ *  ADR-0008/0014). Shared by the KPI panel and the attempt-activity heatmap so
+ *  the one fetch contract lives in one place. */
+export interface Stats {
+  from: number;
+  to: number;
+  attemptCount: number;
+  attemptsByState: Record<string, number>;
+  /** Failed-only Run count (cancelled excluded); the honest failure-rate numerator. */
+  failedAttempts: number;
+  /** Execution failures bucketed by winning terminal disposition; empty when nothing failed. */
+  failuresByReason: Record<string, number>;
+  /** p50 / p95 active-execution duration (ms); null when no run has a measurable duration. */
+  durationMs: { p50: number; p95: number } | null;
+  totals: (ModelUsage & { totalTokens: number | null }) | null;
+  models: Record<string, ModelUsage>;
+  /** Per-agent-type token breakdown (root + each Subagent type); may be absent on older data. */
+  agents?: Record<string, ModelUsage>;
+  toolTokens?: Record<string, { outputTokens: number; cost?: number }>;
+  reasoning?: { outputTokens: number; cost?: number };
+  toolCalls: Record<string, number>;
+  cost: Cost | null;
+  series: DayCost[];
+}
 
 export interface AttemptStateCount {
   state: string;
