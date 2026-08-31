@@ -17,6 +17,12 @@ const usage3 = {
   models: { 'opus-4.8': opusUsage, 'sonnet-4.5': sonnetUsage },
   agents: { root: rootAgent, 'subagent:reviewer': subAgent, 'subagent:tester': subAgent2 },
   toolCalls: { Edit: 40, Bash: 23, Read: 105 },
+  toolTokens: {
+    Read: { outputTokens: 41_200, cost: 6.14 },
+    Edit: { outputTokens: 27_600, cost: 4.38 },
+    Bash: { outputTokens: 12_800 },
+  },
+  reasoning: { outputTokens: 8_400, cost: 1.05 },
   source: 'session-log',
 };
 

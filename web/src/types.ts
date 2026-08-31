@@ -406,6 +406,11 @@ export interface AttemptSummary {
     /** Per-agent-type breakdown (root session + each Subagent type); absent when
      * the harness parsed no Process Tree, or on Attempts recorded before it existed. */
     agents?: Record<string, ModelUsage>;
+    /** Output tokens and API-equivalent cost attributed per tool (ADR-0008); absent
+     * on an ACP-only harness that reports no parseable turns. */
+    toolTokens?: Record<string, ToolTokenAttribution>;
+    /** Output tokens (and cost) from turns that called no tool; absent likewise. */
+    reasoning?: ToolTokenAttribution;
     toolCalls: Record<string, number>;
     source: string | null;
   } | null;
@@ -631,6 +636,13 @@ export interface ModelUsage {
   aiUnits?: number;
 }
 
+/** Output tokens (and API-equivalent cost) attributed to one tool or the
+ * reasoning bucket (ADR-0008); `cost` is absent when the tokens are unpriced. */
+export interface ToolTokenAttribution {
+  outputTokens: number;
+  cost?: number;
+}
+
 /** Usage aggregate for a Run or Conversation (server `AttemptUsage`) — rolled up over the whole Process Tree. */
 export interface AttemptUsage {
   /** Per-model breakdown (session-log fallback; ACP only reports aggregates). */
@@ -638,9 +650,9 @@ export interface AttemptUsage {
   /** Per-agent-type breakdown (root session + each Subagent type); absent when the harness parsed no Process Tree. */
   agents?: Record<string, ModelUsage>;
   /** Output tokens and API-equivalent cost attributed from parseable turns. */
-  toolTokens?: Record<string, { outputTokens: number; cost?: number }>;
+  toolTokens?: Record<string, ToolTokenAttribution>;
   /** Parsed output from turns that did not call a tool. */
-  reasoning?: { outputTokens: number; cost?: number };
+  reasoning?: ToolTokenAttribution;
   /** Aggregate token counts; null when no source reported tokens. */
   totals: (ModelUsage & { totalTokens: number | null }) | null;
   /** Tool-call tallies from the process's events. */
