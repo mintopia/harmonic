@@ -407,9 +407,30 @@ describe('attemptStepTabs', () => {
     expect(tabs.map((t) => t.label)).toEqual(['Rebase', 'Implementation', 'Verify', 'Review']);
   });
 
-  it('only lists tabs for the Step types the Attempt actually has', () => {
-    expect(attemptStepTabs([step('implementation', 'running')]).map((t) => t.type)).toEqual(['implementation']);
-    expect(attemptStepTabs([])).toEqual([]);
+  it('always shows the structural Rebase and Implementation tabs, even before a Step of them exists', () => {
+    expect(attemptStepTabs([]).map((t) => t.type)).toEqual(['rebase', 'implementation']);
+    expect(attemptStepTabs([step('implementation', 'running')]).map((t) => t.type)).toEqual(['rebase', 'implementation']);
+  });
+
+  it('shows a planned Verify/Review tab before its Step exists, and hides a disabled one', () => {
+    const planned = attemptStepTabs(
+      [step('implementation', 'running')],
+      [
+        { mechanism: 'command', state: 'planned', reason: null },
+        { mechanism: 'critic', state: 'planned', reason: null },
+      ],
+    );
+    expect(planned.map((t) => t.type)).toEqual(['rebase', 'implementation', 'verification', 'review']);
+    expect(planned.find((t) => t.type === 'review')).toMatchObject({ state: 'pending', pending: true });
+
+    const disabled = attemptStepTabs(
+      [step('implementation', 'running')],
+      [
+        { mechanism: 'command', state: 'disabled', reason: null },
+        { mechanism: 'critic', state: 'disabled', reason: null },
+      ],
+    );
+    expect(disabled.map((t) => t.type)).toEqual(['rebase', 'implementation']);
   });
 
   it('folds several verification command Steps into a single Verify tab', () => {
@@ -418,20 +439,20 @@ describe('attemptStepTabs', () => {
       step('verification', 'running'),
       step('verification', 'pending'),
     ]);
-    expect(tabs).toHaveLength(1);
+    expect(tabs.filter((t) => t.type === 'verification')).toHaveLength(1);
     // A live command wins the roll-up even beside a passed and a pending sibling.
-    expect(tabs[0]).toMatchObject({ type: 'verification', state: 'running', pending: false });
+    expect(tabs.find((t) => t.type === 'verification')).toMatchObject({ state: 'running', pending: false });
   });
 
   it('rolls a type up to failed when any of its Steps failed', () => {
     const tabs = attemptStepTabs([step('verification', 'passed'), step('verification', 'failed')]);
-    expect(tabs[0]!.state).toBe('failed');
+    expect(tabs.find((t) => t.type === 'verification')!.state).toBe('failed');
   });
 
   it('marks a tab pending only when every Step of the type is pending', () => {
-    expect(attemptStepTabs([step('review', 'pending')])[0]!.pending).toBe(true);
-    expect(attemptStepTabs([step('review', 'passed')])[0]!.pending).toBe(false);
-    expect(attemptStepTabs([step('verification', 'pending'), step('verification', 'passed')])[0]!.pending).toBe(false);
+    expect(attemptStepTabs([step('review', 'pending')]).find((t) => t.type === 'review')!.pending).toBe(true);
+    expect(attemptStepTabs([step('review', 'passed')]).find((t) => t.type === 'review')!.pending).toBe(false);
+    expect(attemptStepTabs([step('verification', 'pending'), step('verification', 'passed')]).find((t) => t.type === 'verification')!.pending).toBe(false);
   });
 
   it('carries the verification command as tab detail; the other tabs carry none', () => {

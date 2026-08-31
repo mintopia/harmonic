@@ -11,12 +11,73 @@ export interface StatsRange {
   workspaceId?: number;
 }
 
+/** The merge-policy escalation reason (merge-policy.ts `MergePolicyOutcome`): a
+ * closed set, so the reverted-on-red compare is a typo-proof literal. */
+export type GateReason = 'conflict' | 'post-merge-red';
+
+/** A settling lifecycle fact (ADR-0014): one `merged`/`escalated` event a Task's
+ * Attempt recorded, carrying the merge day and — for an escalation — the merge
+ * gate that produced it, so `reverted-on-red` is a first-class number, not a
+ * message substring. */
+export interface SettleEventRow {
+  taskId: number;
+  ts: number;
+  kind: 'merged' | 'escalated';
+  /** The merge gate reason on an escalation; null otherwise. */
+  gate: GateReason | null;
+}
+
+/** id→name for one Workspace, so the per-Workspace breakdown can label rows. */
+export interface WorkspaceNameRow {
+  id: number;
+  name: string;
+}
+
+/** The owning Workspace of a Task, the join key the per-Workspace breakdown groups by. */
+export interface TaskWorkspaceRow {
+  taskId: number;
+  workspaceId: number | null;
+}
+
+/** One Attempt of a settled Task and its frozen cost JSON. */
+export interface SettledTaskAttempt {
+  taskId: number;
+  cost: string | null;
+}
+
+/** One verification-attempt-grain verdict: mechanism (`critic`/`command`) and
+ * verdict (`pass`/`fail`/`inconclusive`), counted separately per ADR-0014. */
+export interface VerificationRow {
+  mechanism: string;
+  verdict: string;
+}
+
+/** One distinct (Attempt, dimension) Guardrail trip. */
+export interface GuardrailTripRow {
+  attemptId: number;
+  dimension: string;
+}
+
 export interface StatsReadResult {
   rows: AttemptRow[];
   /** Failed-only Attempts' disposition (ADR-0001): `attempts.reason` keyed
    * by the Attempt's id. */
   attemptReasons: Array<{ attemptId: number; reason: string | null }>;
   toolTotals: ToolCallTotals;
+  workspaces: WorkspaceNameRow[];
+  /** The owning Workspace of every Task referenced by an in-range Attempt row. */
+  taskWorkspaces: TaskWorkspaceRow[];
+  /** Merge/escalation settling events whose ts falls in range (ADR-0014). */
+  settleEvents: SettleEventRow[];
+  /** Every Attempt of a Task that settled in range — covers Attempts started
+   * before the range, so a self-heal Task's full cost-to-settle and
+   * Attempt-count are honest. */
+  settledTaskAttempts: SettledTaskAttempt[];
+  /** Verification-attempt-grain verdicts in range, critic and command apart. */
+  verifications: VerificationRow[];
+  /** Distinct (Attempt, dimension) Guardrail trips in range — one row per Attempt
+   * per dimension, so an Attempt tripping two dimensions counts in both. */
+  guardrailTrips: GuardrailTripRow[];
 }
 
 export interface StatsReader {
@@ -91,7 +152,32 @@ function isStatsReadResult(value: unknown): value is StatsReadResult {
     )
     && isRecord(value.toolTotals)
     && isTotalsDimension(value.toolTotals.byTask)
-    && isTotalsDimension(value.toolTotals.byEpic);
+    && isTotalsDimension(value.toolTotals.byEpic)
+    && Array.isArray(value.workspaces)
+    && value.workspaces.every((row) => isRecord(row) && typeof row.id === 'number' && typeof row.name === 'string')
+    && Array.isArray(value.taskWorkspaces)
+    && value.taskWorkspaces.every(
+      (row) => isRecord(row) && typeof row.taskId === 'number' && (row.workspaceId === null || typeof row.workspaceId === 'number'),
+    )
+    && Array.isArray(value.settleEvents)
+    && value.settleEvents.every(
+      (row) =>
+        isRecord(row)
+        && typeof row.taskId === 'number'
+        && typeof row.ts === 'number'
+        && (row.kind === 'merged' || row.kind === 'escalated')
+        && (row.gate === null || typeof row.gate === 'string'),
+    )
+    && Array.isArray(value.settledTaskAttempts)
+    && value.settledTaskAttempts.every(
+      (row) => isRecord(row) && typeof row.taskId === 'number' && (row.cost === null || typeof row.cost === 'string'),
+    )
+    && Array.isArray(value.verifications)
+    && value.verifications.every(
+      (row) => isRecord(row) && typeof row.mechanism === 'string' && typeof row.verdict === 'string',
+    )
+    && Array.isArray(value.guardrailTrips)
+    && value.guardrailTrips.every((row) => isRecord(row) && typeof row.attemptId === 'number' && typeof row.dimension === 'string');
 }
 
 function isStatsWorkerResponse(value: unknown): value is StatsWorkerResponse {

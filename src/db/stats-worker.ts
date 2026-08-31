@@ -1,13 +1,14 @@
 import { createClient } from '@libsql/client';
-import { and, eq, gte, lte } from 'drizzle-orm';
+import { and, eq, gte, inArray, lte, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/libsql';
 import { join } from 'node:path';
 import { parentPort, workerData } from 'node:worker_threads';
 import { totalsForRange } from '../domain/tool-call-aggregates.js';
-import { attempts, tasks } from './schema.js';
+import { attemptEvents, attempts, guardrailEvents, tasks, verificationAttempts, workspaces } from './schema.js';
 import * as schema from './schema.js';
 import {
   isStatsWorkerRequest,
+  type GateReason,
   type StatsRange,
   type StatsReadResult,
   type StatsWorkerResponse,
@@ -60,7 +61,92 @@ async function readStats({ from, to, workspaceId }: StatsRange): Promise<StatsRe
 
   const range = { from, to, ...(workspaceId === undefined ? {} : { workspaceId }) };
   const toolTotals = await totalsForRange(db, range);
-  return { rows, attemptReasons, toolTotals };
+
+  // Workspace scope predicate, reused across the task-grain/verification/guardrail
+  // scans below. `and()` drops the `undefined`, so an unscoped read carries no
+  // extra filter; every table reaches its owning Workspace via attempt → task.
+  const wsScope = workspaceId === undefined ? undefined : eq(tasks.workspaceId, workspaceId);
+
+  const workspaceRows = await db.select({ id: workspaces.id, name: workspaces.name }).from(workspaces).all();
+
+  // The owning Workspace of every Task an in-range Attempt belongs to — the join
+  // key the per-Workspace breakdown groups by.
+  const taskIds = [...new Set(rows.map((r) => r.taskId))];
+  const taskWorkspaces =
+    taskIds.length === 0
+      ? []
+      : await db
+          .select({ taskId: tasks.id, workspaceId: tasks.workspaceId })
+          .from(tasks)
+          .where(inArray(tasks.id, taskIds))
+          .all();
+
+  // Settling facts (ADR-0014): `merged`/`escalated` lifecycle events whose ts is
+  // in range. `json_extract` filters and projects the payload in SQLite so the
+  // steer/finished/guardrail firehose never crosses into JS. `gate` carries the
+  // merge-policy reason on an escalation, making reverted-on-red a real number.
+  const eventKind = sql<'merged' | 'escalated'>`json_extract(${attemptEvents.payload}, '$.event')`;
+  const eventGate = sql<GateReason | null>`json_extract(${attemptEvents.payload}, '$.gate')`;
+  const settleEvents = await db
+    .select({ taskId: attempts.taskId, ts: attemptEvents.ts, kind: eventKind, gate: eventGate })
+    .from(attemptEvents)
+    .innerJoin(attempts, eq(attemptEvents.attemptId, attempts.id))
+    .innerJoin(tasks, eq(attempts.taskId, tasks.id))
+    .where(
+      and(
+        eq(attemptEvents.type, 'lifecycle'),
+        gte(attemptEvents.ts, from),
+        lte(attemptEvents.ts, to),
+        sql`json_extract(${attemptEvents.payload}, '$.event') in ('merged', 'escalated')`,
+        wsScope,
+      ),
+    )
+    .all();
+
+  // Every Attempt of a Task that settled in range — its frozen cost, whatever
+  // day the Attempt itself started. A self-heal Task's whole cost-to-settle and
+  // Attempt count derive from these, counted once per Task downstream.
+  const settledTaskIds = [...new Set(settleEvents.map((e) => e.taskId))];
+  const settledTaskAttempts =
+    settledTaskIds.length === 0
+      ? []
+      : await db
+          .select({ taskId: attempts.taskId, cost: attempts.cost })
+          .from(attempts)
+          .where(inArray(attempts.taskId, settledTaskIds))
+          .all();
+
+  // Verification-attempt-grain verdicts in range, critic and command kept apart.
+  const verifications = await db
+    .select({ mechanism: verificationAttempts.mechanism, verdict: verificationAttempts.verdict })
+    .from(verificationAttempts)
+    .innerJoin(attempts, eq(verificationAttempts.attemptId, attempts.id))
+    .innerJoin(tasks, eq(attempts.taskId, tasks.id))
+    .where(and(gte(verificationAttempts.ts, from), lte(verificationAttempts.ts, to), wsScope))
+    .all();
+
+  // Distinct (Attempt, dimension) Guardrail trips in range: an Attempt that
+  // tripped a dimension twice counts once, but one tripping two dimensions
+  // counts in both.
+  const guardrailTrips = await db
+    .selectDistinct({ attemptId: guardrailEvents.attemptId, dimension: guardrailEvents.dimension })
+    .from(guardrailEvents)
+    .innerJoin(attempts, eq(guardrailEvents.attemptId, attempts.id))
+    .innerJoin(tasks, eq(attempts.taskId, tasks.id))
+    .where(and(gte(guardrailEvents.ts, from), lte(guardrailEvents.ts, to), wsScope))
+    .all();
+
+  return {
+    rows,
+    attemptReasons,
+    toolTotals,
+    workspaces: workspaceRows,
+    taskWorkspaces,
+    settleEvents,
+    settledTaskAttempts,
+    verifications,
+    guardrailTrips,
+  };
 }
 
 async function probeHeavyRead(iterations: number): Promise<number> {
