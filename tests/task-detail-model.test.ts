@@ -360,7 +360,7 @@ describe('taskStats', () => {
         toolTokens: { Bash: { outputTokens: 20 } },
       }),
     ]);
-    // Tokens sum; cost is dropped for good — an honest floor, not a fabricated total.
+    // Tokens sum; cost is dropped for good once a contribution is unpriced.
     expect(stats.toolTokens).toEqual([{ key: 'Bash', label: 'Bash', outputTokens: 50 }]);
     expect(stats.toolTokens[0]).not.toHaveProperty('cost');
   });

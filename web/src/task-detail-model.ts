@@ -2,7 +2,7 @@
 // project, whose nodenext resolution requires it (Vite maps .js → .ts).
 import { splitPathTail } from './path.js';
 import { ROOT_AGENT, totalTokens } from './stats-model.js';
-import type { AttemptSummary, Step, StepState, StepType, TaskState } from './types.js';
+import type { AttemptSummary, Step, StepState, StepType, TaskState, ToolTokenAttribution } from './types.js';
 
 /**
  * The reworked Task detail page's view-model seam. The page is a thin renderer
@@ -231,7 +231,7 @@ export interface TaskStats {
    * is unpriced the bucket is a tokens-only floor. Empty when no Attempt carried
    * tool attribution (an ACP-only harness), so the card hides rather than
    * showing zeros. */
-  toolTokens: Array<{ key: string; label: string; outputTokens: number; cost?: number }>;
+  toolTokens: Array<ToolTokenAttribution & { key: string; label: string }>;
 }
 
 const zeroTokens = (): Omit<TaskModelStats, 'model' | 'cost'> => ({
@@ -266,17 +266,17 @@ export function taskStats(attempts: readonly StatsAttempt[]): TaskStats {
   const subagentNames = new Set<string>();
   let hasRootAgent = false;
   let toolCalls = 0;
-  const toolTokens = new Map<string, { outputTokens: number; cost?: number }>();
+  const toolTokens = new Map<string, ToolTokenAttribution>();
   const toolUnpriced = new Set<string>();
-  let reasoning: { outputTokens: number; cost?: number } | undefined;
+  let reasoning: ToolTokenAttribution | undefined;
   let reasoningUnpriced = false;
 
   // Fold one attempt's attribution into a running bucket. Null-sticky like the
   // cost donut: once an unpriced (cost-less) contribution lands, the bucket drops
   // its dollars for good and stays a tokens-only floor.
   const fold = (
-    target: { outputTokens: number; cost?: number },
-    add: { outputTokens: number; cost?: number },
+    target: ToolTokenAttribution,
+    add: ToolTokenAttribution,
     unpriced: boolean,
   ): boolean => {
     target.outputTokens += add.outputTokens;
