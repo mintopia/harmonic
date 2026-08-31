@@ -30,6 +30,8 @@ not-yet-torn-down machinery is marked `legacy until ADR-1 epic`.
 | 0010 | [Observability: Operations and Scheduled Jobs](0010-observability-operations-and-scheduled-jobs.md) |
 | 0011 | [Web UI and API conventions](0011-web-ui-and-api-conventions.md) |
 | 0012 | [Distribution, tooling, and docs site](0012-distribution-tooling-and-docs-site.md) |
+| 0013 | [Release automation: release-please](0013-release-automation-release-please.md) |
+| 0014 | [Enriched fleet Stats: task-grain aggregates and colour encoding](0014-enriched-fleet-stats.md) |
 
 ## Where every pre-reset ADR went
 
