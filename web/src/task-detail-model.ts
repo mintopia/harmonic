@@ -2,7 +2,7 @@
 // project, whose nodenext resolution requires it (Vite maps .js → .ts).
 import { splitPathTail } from './path.js';
 import { ROOT_AGENT, totalTokens } from './stats-model.js';
-import type { AttemptSummary, Step, StepState, StepType, TaskState } from './types.js';
+import type { AttemptSummary, Step, StepState, StepType, TaskState, VerificationMechanism, VerifierStatus } from './types.js';
 
 /**
  * The reworked Task detail page's view-model seam. The page is a thin renderer
@@ -368,10 +368,37 @@ function stepTabDetail(type: StepType, ofType: readonly Step[]): string | null {
   return null;
 }
 
-export function attemptStepTabs(steps: readonly Step[]): StepTab[] {
+/** A verifier mechanism is part of the Attempt's plan unless it is explicitly
+ * `disabled` (turned off in config). `unrunnable`/`skipped`/`planned` all still
+ * count — the operator should see the step that was meant to run. */
+function mechanismPlanned(verifierStatuses: readonly VerifierStatus[], mechanism: VerificationMechanism): boolean {
+  const status = verifierStatuses.find((s) => s.mechanism === mechanism);
+  return status !== undefined && status.state !== 'disabled';
+}
+
+/** Whether a type is part of this Attempt's pipeline even before any Step of it
+ * exists: rebase and implementation run on every Attempt; verification and
+ * review only when their verifier is configured. */
+function typePlanned(type: StepType, verifierStatuses: readonly VerifierStatus[]): boolean {
+  if (type === 'rebase' || type === 'implementation') return true;
+  if (type === 'verification') return mechanismPlanned(verifierStatuses, 'command');
+  return mechanismPlanned(verifierStatuses, 'critic');
+}
+
+/** A not-yet-started type's qualifier: the first planned command for Verify, so
+ * the pending tab still names what it will run; none for the others. */
+function plannedTabDetail(type: StepType, verifierStatuses: readonly VerifierStatus[]): string | null {
+  if (type !== 'verification') return null;
+  return verifierStatuses.find((s) => s.mechanism === 'command')?.commands?.[0] ?? null;
+}
+
+export function attemptStepTabs(steps: readonly Step[], verifierStatuses: readonly VerifierStatus[] = []): StepTab[] {
   return STEP_TAB_ORDER.flatMap((type) => {
     const ofType = steps.filter((step) => step.type === type);
-    if (ofType.length === 0) return [];
+    if (ofType.length === 0) {
+      if (!typePlanned(type, verifierStatuses)) return [];
+      return [{ type, label: STEP_TAB_LABEL[type], detail: plannedTabDetail(type, verifierStatuses), state: 'pending' as StepState, pending: true }];
+    }
     return [{ type, label: STEP_TAB_LABEL[type], detail: stepTabDetail(type, ofType), state: rolledUpState(ofType), pending: ofType.every((step) => step.state === 'pending') }];
   });
 }

@@ -1170,7 +1170,7 @@ function AttemptPanel({
   primaryModel: string;
 }) {
   const steps = attempt?.steps ?? [];
-  const tabs = attemptStepTabs(steps);
+  const tabs = attemptStepTabs(steps, attempt?.verifierStatuses ?? verifierStatuses);
   // Repair (rather than reset) the operator's tab pick as the run progresses: a
   // still-valid choice stands; otherwise fall back to the default tab. The panel
   // is remounted per Attempt (keyed on run id), so switching Attempts starts
@@ -1180,8 +1180,7 @@ function AttemptPanel({
   const activeTab = tabs.find((tab) => tab.type === active);
 
   // The Implementation Step's content — the session chat, with the steer input
-  // at its foot while the run is live. Also the fallback for a run that has no
-  // recorded Steps yet, so its transcript still shows as it starts up.
+  // at its foot while the run is live.
   const topModel = stats.byModel[0]?.model ?? primaryModel;
   const chat = (
     <ChatTranscript
