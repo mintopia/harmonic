@@ -9,6 +9,15 @@ import { costSchema, modelUsageSchema, toolTokenUsageSchema } from '../schemas.j
 import { yieldToEventLoop } from '../../reliability/yield.js';
 import { activeExecutionDurationMs, durationPercentiles } from '../../domain/attempt-duration.js';
 import { failuresByReason, isExecutionFailure } from '../../domain/attempt-failure.js';
+import {
+  attemptsPerTask,
+  byWorkspace,
+  costPerMergedTask,
+  gateOutcomes,
+  guardrailTripsByDimension,
+  tasksMergedByDay,
+  verdicts,
+} from '../stats-aggregates.js';
 import { logger } from '../../logger.js';
 import type { AttemptState } from '../../db/schema.js';
 
@@ -64,6 +73,14 @@ const daySeriesEntrySchema = z.object({
   attempts: z.number().meta({ example: 3 }),
   /** Execution failures started that day (failed-only, ADR-0028); the fails/day trend. */
   fails: z.number().meta({ example: 1 }),
+});
+
+/** Critic or command verdict tallies at verification-attempt grain (ADR-0014). */
+const verdictCountsSchema = z.object({
+  pass: z.number().meta({ example: 12 }),
+  /** A `fail` verdict — the outcome that blocks a merge. */
+  block: z.number().meta({ example: 3 }),
+  inconclusive: z.number().meta({ example: 1 }),
 });
 
 const statsResponseSchema = z.object({
@@ -124,6 +141,100 @@ const statsResponseSchema = z.object({
   cost: costSchema.nullable(),
   /** Per-day cost buckets (only days with attempts), ordered by day. */
   series: z.array(daySeriesEntrySchema),
+  // --- Task-grain, verification, guardrail & per-Workspace aggregates (ADR-0014).
+  // Task-grain figures count a Task once by its settling event, never per
+  // Attempt, so a self-healed Task does not inflate throughput or per-task cost.
+  /**
+   * Tasks merged per calendar day (server timezone), keyed by the merge event's
+   * day — not the first Attempt's. A Task counts once, on its merge day. Only
+   * days that held a merge appear (the client fills gaps); ordered by day.
+   */
+  tasksMergedByDay: z
+    .array(
+      z.object({
+        day: z.number().meta({ example: 1783987200000 }),
+        count: z.number().meta({ example: 4 }),
+      }),
+    )
+    .meta({ example: [{ day: 1783987200000, count: 4 }] }),
+  /** Distribution of Attempts-to-settle over merged Tasks (open/cancelled excluded);
+   * one is best (merged first-try, no self-heal). */
+  attemptsPerTask: z
+    .object({
+      '1': z.number(),
+      '2': z.number(),
+      '3': z.number(),
+      '4+': z.number(),
+    })
+    .meta({ example: { '1': 18, '2': 5, '3': 2, '4+': 1 } }),
+  /** Merged spend ÷ merged Tasks, with reverted/abandoned spend reported beside
+   * it so the split reconciles. Costs null-stick per ADR-0008 (a floor, never a
+   * fake zero). */
+  costPerMergedTask: z
+    .object({
+      mergedTasks: z.number().meta({ example: 26 }),
+      mergedCost: costSchema.nullable(),
+      wastedCost: costSchema.nullable(),
+    })
+    .meta({
+      example: {
+        mergedTasks: 26,
+        mergedCost: { totalUsd: 41.2, byModel: { 'sonnet-5': 41.2 }, incomplete: false },
+        wastedCost: { totalUsd: 6.4, byModel: { 'sonnet-5': 6.4 }, incomplete: false },
+      },
+    }),
+  /** Verification verdicts at verification-attempt grain; critic and command
+   * counted separately, never folded together. */
+  verdicts: z
+    .object({ critic: verdictCountsSchema, command: verdictCountsSchema })
+    .meta({
+      example: {
+        critic: { pass: 24, block: 5, inconclusive: 2 },
+        command: { pass: 30, block: 1, inconclusive: 0 },
+      },
+    }),
+  /** How settled Tasks left the merge gate (ADR-0001): auto-merged, escalated to
+   * a human, or merged-then-reverted on a red post-merge check. */
+  gateOutcomes: z
+    .object({
+      autoMerged: z.number().meta({ example: 26 }),
+      escalated: z.number().meta({ example: 4 }),
+      revertedOnRed: z.number().meta({ example: 1 }),
+    })
+    .meta({ example: { autoMerged: 26, escalated: 4, revertedOnRed: 1 } }),
+  /** Guardrail trip counts keyed by dimension (ADR-0002), once per Attempt per
+   * dimension; a dimension that never tripped is absent. */
+  guardrailTrips: z
+    .record(z.string(), z.number())
+    .meta({ example: { 'wall-clock': 3, tokens: 1, 'tool-timeout': 2 } }),
+  /** The attempt-grain aggregates grouped by owning Workspace, ordered by cost.
+   * Billable tokens stay split input/output (no combined scalar). */
+  byWorkspace: z
+    .array(
+      z.object({
+        workspaceId: z.number().meta({ example: 1 }),
+        name: z.string().meta({ example: 'harmonic' }),
+        cost: costSchema.nullable(),
+        inputTokens: z.number().meta({ example: 18240 }),
+        outputTokens: z.number().meta({ example: 3610 }),
+        tasks: z.number().meta({ example: 12 }),
+        /** Failed-only rate (ADR-0028) over non-cancelled Attempts; null when none ran. */
+        failureRate: z.number().nullable().meta({ example: 0.08 }),
+      }),
+    )
+    .meta({
+      example: [
+        {
+          workspaceId: 1,
+          name: 'harmonic',
+          cost: { totalUsd: 41.2, byModel: { 'sonnet-5': 41.2 }, incomplete: false },
+          inputTokens: 18240,
+          outputTokens: 3610,
+          tasks: 12,
+          failureRate: 0.08,
+        },
+      ],
+    }),
 });
 
 export async function statsRoutes(fastify: FastifyInstance): Promise<void> {
@@ -155,11 +266,12 @@ export async function statsRoutes(fastify: FastifyInstance): Promise<void> {
       // Local libsql executes file-backed queries inline despite returning a
       // Promise. The typed worker RPC keeps all four growing range scans off the
       // server event loop while preserving the separate WAL reader from #213.
-      const { rows, attemptReasons, toolTotals } = await ctx.statsReader.read({
-        from,
-        to,
-        ...(workspaceId === undefined ? {} : { workspaceId }),
-      });
+      const { rows, attemptReasons, toolTotals, workspaces, taskWorkspaces, settleEvents, settledTaskAttempts, verifications, guardrailTrips } =
+        await ctx.statsReader.read({
+          from,
+          to,
+          ...(workspaceId === undefined ? {} : { workspaceId }),
+        });
 
       const attemptReasonById = new Map(attemptReasons.map((r) => [r.attemptId, r.reason]));
 
@@ -235,6 +347,13 @@ export async function statsRoutes(fastify: FastifyInstance): Promise<void> {
         toolCalls,
         cost: flooredCost,
         series,
+        tasksMergedByDay: tasksMergedByDay(settleEvents),
+        attemptsPerTask: attemptsPerTask(settleEvents, settledTaskAttempts),
+        costPerMergedTask: costPerMergedTask(settleEvents, settledTaskAttempts),
+        verdicts: verdicts(verifications),
+        gateOutcomes: gateOutcomes(settleEvents),
+        guardrailTrips: guardrailTripsByDimension(guardrailTrips),
+        byWorkspace: byWorkspace(rows, taskWorkspaces, workspaces),
       };
     },
   );

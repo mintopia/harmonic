@@ -16186,6 +16186,301 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "tasksMergedByDay": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "day": {
+                            "type": "number",
+                            "example": 1783987200000
+                          },
+                          "count": {
+                            "type": "number",
+                            "example": 4
+                          }
+                        },
+                        "required": [
+                          "day",
+                          "count"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "example": [
+                        {
+                          "day": 1783987200000,
+                          "count": 4
+                        }
+                      ]
+                    },
+                    "attemptsPerTask": {
+                      "type": "object",
+                      "properties": {
+                        "1": {
+                          "type": "number"
+                        },
+                        "2": {
+                          "type": "number"
+                        },
+                        "3": {
+                          "type": "number"
+                        },
+                        "4+": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "1",
+                        "2",
+                        "3",
+                        "4+"
+                      ],
+                      "additionalProperties": false,
+                      "example": {
+                        "1": 18,
+                        "2": 5,
+                        "3": 2,
+                        "4+": 1
+                      }
+                    },
+                    "costPerMergedTask": {
+                      "type": "object",
+                      "properties": {
+                        "mergedTasks": {
+                          "type": "number",
+                          "example": 26
+                        },
+                        "mergedCost": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/components/schemas/Cost"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "wastedCost": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/components/schemas/Cost"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "mergedTasks",
+                        "mergedCost",
+                        "wastedCost"
+                      ],
+                      "additionalProperties": false,
+                      "example": {
+                        "mergedTasks": 26,
+                        "mergedCost": {
+                          "totalUsd": 41.2,
+                          "byModel": {
+                            "sonnet-5": 41.2
+                          },
+                          "incomplete": false
+                        },
+                        "wastedCost": {
+                          "totalUsd": 6.4,
+                          "byModel": {
+                            "sonnet-5": 6.4
+                          },
+                          "incomplete": false
+                        }
+                      }
+                    },
+                    "verdicts": {
+                      "type": "object",
+                      "properties": {
+                        "critic": {
+                          "type": "object",
+                          "properties": {
+                            "pass": {
+                              "type": "number",
+                              "example": 12
+                            },
+                            "block": {
+                              "type": "number",
+                              "example": 3
+                            },
+                            "inconclusive": {
+                              "type": "number",
+                              "example": 1
+                            }
+                          },
+                          "required": [
+                            "pass",
+                            "block",
+                            "inconclusive"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "command": {
+                          "type": "object",
+                          "properties": {
+                            "pass": {
+                              "type": "number",
+                              "example": 12
+                            },
+                            "block": {
+                              "type": "number",
+                              "example": 3
+                            },
+                            "inconclusive": {
+                              "type": "number",
+                              "example": 1
+                            }
+                          },
+                          "required": [
+                            "pass",
+                            "block",
+                            "inconclusive"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "critic",
+                        "command"
+                      ],
+                      "additionalProperties": false,
+                      "example": {
+                        "critic": {
+                          "pass": 24,
+                          "block": 5,
+                          "inconclusive": 2
+                        },
+                        "command": {
+                          "pass": 30,
+                          "block": 1,
+                          "inconclusive": 0
+                        }
+                      }
+                    },
+                    "gateOutcomes": {
+                      "type": "object",
+                      "properties": {
+                        "autoMerged": {
+                          "type": "number",
+                          "example": 26
+                        },
+                        "escalated": {
+                          "type": "number",
+                          "example": 4
+                        },
+                        "revertedOnRed": {
+                          "type": "number",
+                          "example": 1
+                        }
+                      },
+                      "required": [
+                        "autoMerged",
+                        "escalated",
+                        "revertedOnRed"
+                      ],
+                      "additionalProperties": false,
+                      "example": {
+                        "autoMerged": 26,
+                        "escalated": 4,
+                        "revertedOnRed": 1
+                      }
+                    },
+                    "guardrailTrips": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {
+                        "type": "number"
+                      },
+                      "example": {
+                        "wall-clock": 3,
+                        "tokens": 1,
+                        "tool-timeout": 2
+                      }
+                    },
+                    "byWorkspace": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "workspaceId": {
+                            "type": "number",
+                            "example": 1
+                          },
+                          "name": {
+                            "type": "string",
+                            "example": "harmonic"
+                          },
+                          "cost": {
+                            "anyOf": [
+                              {
+                                "$ref": "#/components/schemas/Cost"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "inputTokens": {
+                            "type": "number",
+                            "example": 18240
+                          },
+                          "outputTokens": {
+                            "type": "number",
+                            "example": 3610
+                          },
+                          "tasks": {
+                            "type": "number",
+                            "example": 12
+                          },
+                          "failureRate": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "example": 0.08
+                          }
+                        },
+                        "required": [
+                          "workspaceId",
+                          "name",
+                          "cost",
+                          "inputTokens",
+                          "outputTokens",
+                          "tasks",
+                          "failureRate"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "example": [
+                        {
+                          "workspaceId": 1,
+                          "name": "harmonic",
+                          "cost": {
+                            "totalUsd": 41.2,
+                            "byModel": {
+                              "sonnet-5": 41.2
+                            },
+                            "incomplete": false
+                          },
+                          "inputTokens": 18240,
+                          "outputTokens": 3610,
+                          "tasks": 12,
+                          "failureRate": 0.08
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -16201,7 +16496,14 @@
                     "agents",
                     "toolCalls",
                     "cost",
-                    "series"
+                    "series",
+                    "tasksMergedByDay",
+                    "attemptsPerTask",
+                    "costPerMergedTask",
+                    "verdicts",
+                    "gateOutcomes",
+                    "guardrailTrips",
+                    "byWorkspace"
                   ],
                   "additionalProperties": false,
                   "description": "Usage, Cost, and attempt-state counts over the attempts started in the range; totals and Cost count only what the attempts actually reported and could be priced, so they are floors wherever `incomplete` is true."

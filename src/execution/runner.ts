@@ -1969,7 +1969,7 @@ export class Runner {
       record('lifecycle', { event: 'merged', oid: outcome.mergeOid, baseBranch: run.baseBranch });
       await this.postMerge?.({ repoDir: task.workingDir, baseBranch: run.baseBranch! });
     } else {
-      record('lifecycle', { event: 'escalated', reason: outcome.message });
+      record('lifecycle', { event: 'escalated', reason: outcome.message, gate: outcome.reason });
     }
     return outcome;
   }
@@ -3124,7 +3124,7 @@ export class Runner {
               deps,
             );
             if (outcome.kind === 'escalated') {
-              record('lifecycle', { event: 'escalated', reason: outcome.message });
+              record('lifecycle', { event: 'escalated', reason: outcome.message, gate: outcome.reason });
               return false;
             }
             record('lifecycle', { event: 'merged', oid: outcome.mergeOid, baseBranch: current.baseBranch });
