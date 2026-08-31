@@ -51,6 +51,13 @@
   --hm-tool-dot: #0d7271;
   --hm-tool-tint: #ddefee;
 
+  /* Token-class ramp (ADR-0014): warm categorical, deliberately off the status
+     hues above so a class can't pre-read as a running/merged/fail/await state. */
+  --hm-token-input: #9e760c;
+  --hm-token-output: #c86418;
+  --hm-token-cache-read: #cf584a;
+  --hm-token-cache-write: #b8478c;
+
   /* Depth: real shadows in light… */
   --hm-shadow-card: 0 1px 2px rgb(27 30 36 / 0.06), 0 6px 18px rgb(27 30 36 / 0.07);
   --hm-shadow-float: 0 8px 20px rgb(23 26 34 / 0.12), 0 24px 60px rgb(23 26 34 / 0.16);
@@ -108,6 +115,11 @@
   --hm-tool-dot: #33bdb4;
   --hm-tool-tint: #123330;
 
+  --hm-token-input: #e4c256;
+  --hm-token-output: #ef9350;
+  --hm-token-cache-read: #f0836e;
+  --hm-token-cache-write: #e087c0;
+
   --hm-shadow-card: 0 0 0 1px var(--hm-hairline);
   --hm-shadow-float: 0 12px 40px rgb(0 0 0 / 0.55);
   --hm-shadow-bar: 0 0 0 1px var(--hm-edge), 0 14px 40px rgb(0 0 0 / 0.5);
@@ -163,6 +175,11 @@
     --hm-tool-dot: #33bdb4;
     --hm-tool-tint: #123330;
 
+    --hm-token-input: #e4c256;
+    --hm-token-output: #ef9350;
+    --hm-token-cache-read: #f0836e;
+    --hm-token-cache-write: #e087c0;
+
     --hm-shadow-card: 0 0 0 1px var(--hm-hairline);
     --hm-shadow-float: 0 12px 40px rgb(0 0 0 / 0.55);
     --hm-shadow-bar: 0 0 0 1px var(--hm-edge), 0 14px 40px rgb(0 0 0 / 0.5);
@@ -214,6 +231,11 @@
   --color-tool: var(--hm-tool);
   --color-tool-dot: var(--hm-tool-dot);
   --color-tool-tint: var(--hm-tool-tint);
+
+  --color-token-input: var(--hm-token-input);
+  --color-token-output: var(--hm-token-output);
+  --color-token-cache-read: var(--hm-token-cache-read);
+  --color-token-cache-write: var(--hm-token-cache-write);
 
   --shadow-card: var(--hm-shadow-card);
   --shadow-float: var(--hm-shadow-float);
