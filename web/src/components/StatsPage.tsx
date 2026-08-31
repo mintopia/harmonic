@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { formatAvgCostPerRun, formatCost, usd } from '../cost';
 import type { Cost } from '../types';
-import { card, displayTitle, labelType } from '../ui';
+import { card, displayTitle, labelType, tableHead } from '../ui';
 import {
   cacheHitRate,
   failureRate,
@@ -49,6 +49,19 @@ const REASON_LABEL: Record<string, string> = {
 
 type ModelUsage = { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number };
 
+/** One row of the per-Workspace spend breakdown (ADR-0014): billable tokens stay
+ * split in/out, and cost is null-sticky (a floor, never a fake $0). */
+interface WorkspaceStats {
+  workspaceId: number;
+  name: string;
+  cost: Cost | null;
+  inputTokens: number;
+  outputTokens: number;
+  tasks: number;
+  /** Failed-only rate over the Workspace's non-cancelled attempts; null when it ran none. */
+  failureRate: number | null;
+}
+
 interface Stats {
   from: number;
   to: number;
@@ -69,6 +82,8 @@ interface Stats {
   toolCalls: Record<string, number>;
   cost: Cost | null;
   series: DayCost[];
+  /** Attempt-grain aggregates grouped by owning Workspace, ordered by cost. */
+  byWorkspace: WorkspaceStats[];
 }
 
 const RANGES: Record<string, number | null> = {
@@ -311,6 +326,40 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
               </div>
               <CostBars series={filled} metric={metric} />
               <CumulativeCurve series={filled} metric={metric} />
+            </section>
+          )}
+
+          {stats.byWorkspace.length > 0 && (
+            <section className={`${card} mb-4 p-5`}>
+              <h2 className="mb-3 text-title font-semibold">Where the spend goes</h2>
+              <div tabIndex={0} role="region" aria-label="Spend by workspace" className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead className={tableHead}>
+                    <tr>
+                      <th className="py-1.5">Workspace</th>
+                      <th className="py-1.5 text-right">Cost</th>
+                      <th className="py-1.5 text-right">Tokens in</th>
+                      <th className="py-1.5 text-right">Tokens out</th>
+                      <th className="py-1.5 text-right">Tasks</th>
+                      <th className="py-1.5 text-right">Fail rate</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {stats.byWorkspace.map((ws) => (
+                      <tr key={ws.workspaceId} className="border-t border-hairline">
+                        <td className="py-2 font-medium text-ink">{ws.name}</td>
+                        <td className="py-2 text-right font-semibold tabular-nums text-ink">
+                          {formatCost(ws.cost) ?? '—'}
+                        </td>
+                        <td className="py-2 text-right tabular-nums text-muted">{compact.format(ws.inputTokens)}</td>
+                        <td className="py-2 text-right tabular-nums text-muted">{compact.format(ws.outputTokens)}</td>
+                        <td className="py-2 text-right tabular-nums text-muted">{fmt(ws.tasks)}</td>
+                        <td className="py-2 text-right tabular-nums text-ink">{pct(ws.failureRate)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </section>
           )}
 
