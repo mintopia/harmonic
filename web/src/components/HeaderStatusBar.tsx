@@ -30,7 +30,6 @@ interface HeaderStatusBarProps {
   onNewTask: () => void;
 }
 
-/** The top header/status-bar region: auto-runner switch, running/cost readouts, and the header-icon actions. */
 export function HeaderStatusBar({
   config,
   runningCount,

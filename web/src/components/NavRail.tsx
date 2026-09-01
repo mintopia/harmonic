@@ -2,9 +2,6 @@ import { Icon } from './Icon';
 import { RAIL_GROUPS, VIEW_LABELS, type View } from '../rail-model';
 import { railBadge, sectionLabel } from '../ui';
 
-// Collapse only applies at the rail breakpoint; the mobile drawer always
-// shows icon + label, so collapsed styles are rail:-prefixed throughout.
-// Active is the sidebar's only accent: a cobalt tint under cobalt text.
 const railItem = (active: boolean, collapsed: boolean) =>
   `flex w-full min-h-11 items-center gap-2.5 overflow-hidden whitespace-nowrap rounded-md px-2.5 py-2 text-left transition-colors duration-150 ${
     collapsed ? 'rail:justify-center rail:px-0' : ''
@@ -19,7 +16,6 @@ interface NavRailProps {
   onToggleRail: () => void;
 }
 
-/** The left navigation rail: the Views nav and its desktop-only collapse footer. */
 export function NavRail({ view, needsYouCount, railCollapsed, railDesktop, onPickView, onToggleRail }: NavRailProps) {
   // Collapsed items keep their accessible name and gain a native tooltip;
   // when the label is visible neither is needed — below the breakpoint the
@@ -41,16 +37,9 @@ export function NavRail({ view, needsYouCount, railCollapsed, railDesktop, onPic
     <>
       <nav aria-label="Views" className="flex flex-col gap-0.5 rail:flex-1">
         {RAIL_GROUPS.map((group) => {
-          // Wire each group's uppercase Label header to its buttons so a screen
-          // reader announces the Workspace grouping the sighted user sees
-          // (role="group" + aria-labelledby), not a flat list.
           const groupId = `rail-group-${group.label.toLowerCase()}`;
           return (
             <div key={group.label} role="group" aria-labelledby={groupId} className="flex flex-col gap-0.5">
-              {/* Uppercase Label group header (DESIGN.md §5), the shared
-                  sectionLabel register. Hidden — not unmounted — when the rail
-                  collapses to icons, so the icon-only nav keeps its order and
-                  grouping gap without a header. */}
               <div
                 id={groupId}
                 className={`${sectionLabel} px-2.5 pb-1 ${group.label === 'Instance' ? 'sr-only' : ''} ${railCollapsed ? 'rail:hidden' : ''}`}
@@ -58,9 +47,6 @@ export function NavRail({ view, needsYouCount, railCollapsed, railDesktop, onPic
                 {group.label}
               </div>
               {group.views.map((v) => {
-                // The Deck carries the cobalt "Needs you" count; other items none
-                // (the absence is the default). Suppressed when the rail is a
-                // strip of icons — there's no room for a numeric pill at 48px.
                 const needsYou = v === 'board' && needsYouCount > 0 ? needsYouCount : null;
                 return (
                   <button
@@ -87,8 +73,6 @@ export function NavRail({ view, needsYouCount, railCollapsed, railDesktop, onPic
           );
         })}
       </nav>
-      {/* Desktop only: the nav's rail:flex-1 above pins this to the sidebar
-          foot. Below the rail breakpoint the top drawer wins. */}
       <div className="mt-2 hidden border-t border-hairline pt-2 rail:flex rail:flex-col">
         <button
           aria-expanded={!railCollapsed}
