@@ -351,7 +351,7 @@ const PHASE_WORD: Record<EpicStage['key'], string> = {
 
 /** The Epic's current lifecycle phase as a lowercase status chip (ADR-0017),
  * read from the server model via {@link epicLifecycleSteps}: the held step wins,
- * else the current step's word, else `merged` once every stage is done. */
+ * else the current step's word, else `finished` once every stage is done. */
 function EpicLifecycleChip({ epic }: { epic: Epic }) {
   const steps = epicLifecycleSteps(epic);
   const held = steps.find((s) => s.state === 'held');
@@ -359,7 +359,7 @@ function EpicLifecycleChip({ epic }: { epic: Epic }) {
   const [label, tint] = held
     ? ['held', 'bg-await-tint text-await']
     : !current
-      ? ['merged', 'bg-merged-tint text-merged']
+      ? ['finished', 'bg-merged-tint text-merged']
       : [PHASE_WORD[current.key], current.key === 'merge' ? 'bg-merged-tint text-merged' : 'bg-running-tint text-running'];
   return <span className={`${chip} ${tint}`}>{label}</span>;
 }

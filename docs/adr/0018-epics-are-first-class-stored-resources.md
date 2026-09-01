@@ -63,7 +63,12 @@ replacement for it.
   would close it.
 - **The stored `epics` record is the single enumeration source for surfaced
   Epics.** `listStoredEpics` drives both `listEpics` and `epicDetail` — there is
-  no second, tree-walking surfacer alongside it. Each Epic's live membership and
+  no second, tree-walking surfacer alongside it. `listEpics` (the Board) is
+  **open Epics only**: an integrated Epic leaves the Board and resolves by ref
+  alone (its summary page, stepper read as finished, and diff). The DTO carries
+  the record's lifecycle `state` (`open` | `integrated`) so surfaces never infer
+  completion from live verify/integrate facts, which are in-memory and reset on
+  restart. Each Epic's live membership and
   ready frontier are still derived at read time (`deriveLeafEpics`) while its
   container is in the scan, open or closed (`includeClosed`), falling back to
   the frozen integration snapshot once the Epic is integrated or has aged out of
@@ -90,6 +95,8 @@ replacement for it.
   list enumerate Epics from the stored record, not a tree walk. User-visible: a
   bare-parent band and a top-level roll-up of a nested-open structure no longer
   surface as an Epic — only stored, label-identified leaf-most Epics do.
+- A finished Epic is not a Board band. It stays addressable (summary page,
+  Tasks-list filter) from its stored record.
 
 ## Supersedes
 

@@ -42,23 +42,26 @@ thread** (an `await` does not yield the loop), so:
   cannot pre-empt, and it is the standing signal that something belongs
   off-thread.
 
-## Migrations
+## Schema convergence, no migrations
 
-Migrations run with foreign-key enforcement **off at the connection level,
-before** `migrate()` (a `PRAGMA` inside drizzle's per-migration transaction is
-a no-op), then `foreign_key_check` surfaces any genuine integrity break, then
-foreign keys are enabled for runtime. Any table-rebuild migration is safe
-under this ordering; runtime writes keep full referential integrity.
+There is no migration chain. `drizzle/0000_baseline.sql` is the declarative
+schema (drizzle-kit regenerates it from `schema.ts`, edited in place, never
+appended to), and every boot **converges the live database onto it**
+(`db/schema-sync.ts`): missing tables, columns and indexes are created; tables,
+columns and indexes the baseline no longer declares are dropped. No migration
+history is recorded, so an existing data dir never needs a hand repair after
+the baseline changes. Convergence runs with foreign-key enforcement **off at
+the connection level**, then `foreign_key_check` surfaces any genuine integrity
+break, then foreign keys are enabled for runtime.
 
-**Clean-break policy (owner decision, 2026-08-28)**: Harmonic has one operator
-and no external consumers, so there are **no data-compatibility guarantees**
-across versions. Migrations may be destructive, may discard stored history
-outright rather than re-keying it, and the migration chain may be squashed to
-a single baseline schema — on a breaking upgrade the DB is recreated from it.
+**Clean-break policy (owner decision, 2026-08-28, amended 2026-09-01)**:
+Harmonic has one operator and no external consumers, so there are **no
+data-compatibility guarantees** across versions. A change SQLite cannot apply
+in place (a column type change, a new NOT NULL column without a default) fails
+the boot loudly and the data dir's `harmonic.db` is recreated from the baseline.
 Anything worth keeping across versions lives in git or the tracker, never only
 in the DB; execution history (attempts, usage snapshots, journals) is
-disposable by definition. The ordering rule above still governs whatever
-migrations do exist.
+disposable by definition.
 
 ## The DB stores aggregates, not event streams
 

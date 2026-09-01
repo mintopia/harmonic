@@ -206,6 +206,7 @@ export const boardEpic = {
   ref: 421,
   title: 'Parallel Epic — board band demo',
   kind: 'spec',
+  state: 'open',
   members: [
     boardMember({ ref: 431, title: 'Wire the ready frontier', taskId: 431, state: 'ready', ready: true }), // ready → teal pip + Frontier card
     boardMember({ ref: 432, title: 'Waiting on a sibling', taskId: 432, state: 'ready' }), // blocked → neutral pip
@@ -264,6 +265,7 @@ export const doneEpic = {
   ref: 422,
   title: 'Parallel Epic — done, awaiting whole-Epic merge',
   kind: 'spec',
+  state: 'open',
   members: [
     boardMember({ ref: 451, title: 'Reader worker', taskId: 451, state: 'done', mergeStatus: 'completed' }),
     boardMember({ ref: 452, title: 'Flow cards', taskId: 452, state: 'done', mergeStatus: 'completed' }),
@@ -281,6 +283,7 @@ export const epic = {
   ref: 166,
   title: 'Consolidate guardrail-ceiling defaults',
   kind: 'map',
+  state: 'open',
   members: [
     { ref: 140, title: 'Add the resolveGuardrails() resolver + migration', taskId: 501, state: 'done', escalated: false, mergeStatus: 'completed', ready: false },
     { ref: 141, title: 'Wire the Settings form to the resolver', taskId: 502, state: 'done', escalated: false, mergeStatus: 'completed', ready: false },

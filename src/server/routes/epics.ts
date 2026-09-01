@@ -68,6 +68,7 @@ const epicSchema = z
     ref: z.number().int().meta({ example: 42 }),
     title: z.string().meta({ example: 'Parallel Epic operator UI' }),
     kind: z.enum(['map', 'spec']),
+    state: z.enum(['open', 'integrated']),
     description: z.string().meta({ example: 'Build the parallel-Epic operator UI …' }),
     createdAt: z.number().int().meta({ example: 1_756_000_000_000 }),
     updatedAt: z.number().int().nullable().meta({ example: 1_756_100_000_000 }),
@@ -113,7 +114,7 @@ export async function epicRoutes(fastify: FastifyInstance): Promise<void> {
       schema: {
         tags: ['Epics'],
         description:
-          "Every derived Epic for a Workspace's last tracker poll scan (issue #167, ADR-0026), each folded with its " +
+          "Every open Epic for a Workspace (issue #167, ADR-0018) — an integrated Epic leaves this list and resolves by ref only — each folded with its " +
           'member merge state, integration-branch tip, and whole-Epic integrate/verification state. Searched (`q`, ' +
           'case-insensitive substring over the Epic title) and paginated (`limit`/`offset`, with a `total`). Operator only.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],

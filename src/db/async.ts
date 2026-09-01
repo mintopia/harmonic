@@ -1,11 +1,11 @@
 import { createClient, type Client } from '@libsql/client';
 import { drizzle, type LibSQLDatabase } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { isNull, eq } from 'drizzle-orm';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as schema from './schema.js';
+import { syncSchema } from './schema-sync.js';
 import { conversations, settings, tasks, workspaces } from './schema.js';
 import { defaultConfig } from '../config.js';
 
@@ -240,11 +240,9 @@ async function backfillDefaultWorkspaceAsync(handle: AsyncDbHandle): Promise<voi
 }
 
 /**
- * Boot the async libsql `Db`, ADR-0029 + ADR-0016. Mirrors the sync `openDb`
- * boot dance: WAL, disable FK enforcement at the connection level *before*
- * `migrate()` (SQLite ignores `PRAGMA foreign_keys` inside the transaction
- * drizzle wraps each migration in), verify integrity with `foreign_key_check`,
- * then enforce FK for runtime.
+ * Boot the async libsql `Db` (ADR-0007): WAL, foreign-key enforcement off at the
+ * connection level while the schema converges onto the baseline, `foreign_key_check`,
+ * then foreign keys on for runtime.
  */
 export async function openAsyncDb(
   dataDir: string,
@@ -259,21 +257,12 @@ export async function openAsyncDb(
   await client.execute('PRAGMA journal_mode = WAL');
   await client.execute('PRAGMA foreign_keys = OFF');
   const db = drizzle(client, { schema });
-  const migrationsFolder = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'drizzle');
-  await migrate(db, { migrationsFolder });
-  // 0042 drops a historical firehose. Its marker makes compaction retryable if
-  // the process dies after migration commits but before VACUUM completes.
-  const firehosePruning = await client.execute(
-    "select 1 from sqlite_master where type = 'table' and name = 'run_event_firehose_pruning'",
-  );
-  if (firehosePruning.rows.length > 0) {
-    await client.execute('VACUUM');
-    await client.execute('DROP TABLE run_event_firehose_pruning');
-  }
+  const baseline = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'drizzle', '0000_baseline.sql');
+  await syncSchema(client, readFileSync(baseline, 'utf8'));
   const violations = await client.execute('PRAGMA foreign_key_check');
   if (violations.rows.length > 0) {
     throw new Error(
-      `Database failed foreign_key_check after migration: ${JSON.stringify(violations.rows)}`,
+      `Database failed foreign_key_check after schema convergence: ${JSON.stringify(violations.rows)}`,
     );
   }
   await client.execute('PRAGMA foreign_keys = ON');

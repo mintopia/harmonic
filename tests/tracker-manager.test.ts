@@ -219,7 +219,7 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     expect((await manager.listEpics(workspace.id)).map((epic) => epic.ref)).not.toContain(10);
   });
 
-  it('resolves an integrated Epic the scan has aged out from its stored snapshot; the Board surfaces it from the record (#439)', async () => {
+  it('resolves an integrated Epic the scan has aged out from its stored snapshot; it leaves the Board but stays a Tasks-list filter (#439)', async () => {
     ticketsByRepo.set(repoA, [
       { ...ticket(19), title: 'Delivery map', labels: ['wayfinder:map'], isMap: true },
       { ...ticket(20), title: 'Map member', parent: 19 },
@@ -247,13 +247,9 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     // the title falls to the ref placeholder.
     expect(detail?.title).toBe('Epic #19');
 
-    // The finished Epic no longer vanishes: the Board and Tasks list surface it
-    // from the stored record with its frozen snapshot members.
-    const listed = await manager.listEpics(workspace.id);
-    expect(listed.map((e) => e.ref)).toContain(19);
-    const band = listed.find((e) => e.ref === 19);
-    expect(band?.members.map((m) => m.ref)).toEqual([20]);
-    expect(band?.kind).toBe('map');
+    // A finished Epic is off the Board; the Tasks list still offers it as a filter.
+    expect(detail?.state).toBe('integrated');
+    expect((await manager.listEpics(workspace.id)).map((e) => e.ref)).not.toContain(19);
     expect((await manager.listEpicTickets(workspace.id)).map((t) => t.number)).toContain(19);
 
     // Persisted-facts-only: after a restart with no adapter, the record still resolves it.
@@ -327,11 +323,8 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     // B integrates while the whole spine is still live in the scan.
     await tasks.markEpicIntegrated(workspace.id, 101, { mergeCommit: 'def456', memberRefs: [102] });
 
-    // The Board surfaces the leaf-most stored Epic B; A (bare spine parent, no
-    // row) never appears.
-    const listed = await manager.listEpics(workspace.id);
-    expect(listed.map((e) => e.ref)).toEqual([101]);
-    expect(listed[0]?.members.map((m) => m.ref)).toEqual([102]);
+    // Integrated B is off the Board; A (bare spine parent, no row) never appears.
+    expect((await manager.listEpics(workspace.id)).map((e) => e.ref)).toEqual([]);
 
     // The first-class leaf-most Epic B also resolves individually by ref.
     const detail = await manager.epicDetail(workspace.id, 101);

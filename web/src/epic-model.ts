@@ -53,6 +53,8 @@ export interface Epic {
   ref: number;
   title: string;
   kind: 'map' | 'spec';
+  /** Lifecycle from the stored record (ADR-0018): `integrated` once the whole-Epic gate finished. */
+  state: 'open' | 'integrated';
   /** The Epic container ticket's body — the summary page's description (ADR-0017). */
   description: string;
   /** Epic container ticket creation time (ms). */
@@ -271,6 +273,13 @@ const INTEGRATION_STEP_LABELS: Record<IntegrationStepKey, string> = {
 
 const INTEGRATION_STEP_ORDER: readonly IntegrationStepKey[] = ['verify', 'merge', 'check', 'retire'];
 
+const FINISHED_SUBLABELS: Record<IntegrationStepKey, string> = {
+  verify: 'passed',
+  merge: 'into develop',
+  check: 'green',
+  retire: 'branch removed',
+};
+
 /**
  * The whole-Epic integration pipeline (ADR-0001's gate: verify → merge into
  * develop → post-merge check → retire) projected onto the read DTO. The DTO
@@ -279,6 +288,9 @@ const INTEGRATION_STEP_ORDER: readonly IntegrationStepKey[] = ['verify', 'merge'
  * integrates and drops off the list. A held integrate marks the current step
  * `held`, so escalation is legible on the bar itself. */
 export function integrationSteps(epic: Epic): IntegrationStep[] {
+  if (epic.state === 'integrated') {
+    return INTEGRATION_STEP_ORDER.map((key) => ({ key, label: INTEGRATION_STEP_LABELS[key], state: 'done' }));
+  }
   const verified = epic.verification.status === 'pass';
   const currentIndex = INTEGRATION_STEP_ORDER.indexOf(verified ? 'merge' : 'verify');
   return INTEGRATION_STEP_ORDER.map((key, i): IntegrationStep => {
@@ -306,7 +318,8 @@ export interface EpicStage {
 }
 
 export function epicLifecycleSteps(epic: Epic): EpicStage[] {
-  const allFolded = epic.memberCount > 0 && epic.foldedCount === epic.memberCount;
+  const finished = epic.state === 'integrated';
+  const allFolded = finished || (epic.memberCount > 0 && epic.foldedCount === epic.memberCount);
   const held = epic.integrate.held;
   const verification = epic.verification.status;
   const verified = verification === 'pass';
@@ -322,6 +335,7 @@ export function epicLifecycleSteps(epic: Epic): EpicStage[] {
   // steps are all still ahead.
   const gate: EpicStage[] = INTEGRATION_STEP_ORDER.map((key): EpicStage => {
     const label = INTEGRATION_STEP_LABELS[key];
+    if (finished) return { key, label, sublabel: FINISHED_SUBLABELS[key], state: 'done' };
     const sublabel =
       key === 'verify'
         ? verified

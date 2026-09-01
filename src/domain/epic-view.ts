@@ -58,6 +58,8 @@ export interface Epic {
   ref: number;
   title: string;
   kind: 'map' | 'spec';
+  /** Lifecycle from the stored record (ADR-0018): `integrated` once the whole-Epic gate finished. */
+  state: 'open' | 'integrated';
   /** The Epic container ticket's body — the summary page's description (ADR-0015/0017). */
   description: string;
   /** Epic container ticket creation time (ms). */
@@ -91,6 +93,7 @@ export interface EpicMeta {
   baseBranch: string | null;
   dependsOn: number[];
   kind: 'map' | 'spec';
+  state: 'open' | 'integrated';
 }
 
 /** The server-only facts the impure accessor gathers (git branch/tip,
@@ -139,6 +142,7 @@ export function composeEpicView(
     ref: derived.ref,
     title: derived.title,
     kind: meta.kind,
+    state: meta.state,
     description: meta.description,
     createdAt: meta.createdAt,
     updatedAt,

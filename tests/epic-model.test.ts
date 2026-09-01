@@ -1,13 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  closedMembers,
-  epicByTaskId,
-  integrateOutcomeBanner,
-  integrationSteps,
-  isEpicIntegrating,
-  memberPipStatus,
-  statusLineParts,
-} from '../web/src/epic-model.js';
+import { closedMembers, epicByTaskId, integrateOutcomeBanner, integrationSteps, isEpicIntegrating, memberPipStatus, statusLineParts, epicLifecycleSteps } from '../web/src/epic-model';
 import type { Epic, EpicIntegrateOutcome, EpicMember } from '../web/src/epic-model.js';
 
 const member = (overrides: Partial<EpicMember> & { ref: number }): EpicMember => ({
@@ -26,6 +18,7 @@ const epic = (overrides: Partial<Epic> = {}): Epic => {
     ref: 1,
     title: 'epic 1',
     kind: 'map',
+    state: 'open',
     description: '',
     createdAt: 0,
     updatedAt: null,
@@ -327,5 +320,19 @@ describe('integrationSteps', () => {
     });
     const steps = integrationSteps(e);
     expect(steps.find((s) => s.key === 'verify')?.state).toBe('held');
+  });
+});
+
+describe('finished (integrated) epics', () => {
+  it('integrationSteps marks every gate step done', () => {
+    expect(integrationSteps(epic({ state: 'integrated' })).map((s) => s.state)).toEqual(['done', 'done', 'done', 'done']);
+  });
+
+  it('epicLifecycleSteps marks build and every gate step done regardless of live facts', () => {
+    const steps = epicLifecycleSteps(
+      epic({ state: 'integrated', memberCount: 3, foldedCount: 1, verification: { status: null }, integrate: { inFlight: false, held: 'stale' } }),
+    );
+    expect(steps.map((s) => s.state)).toEqual(['done', 'done', 'done', 'done', 'done']);
+    expect(steps.find((s) => s.key === 'verify')?.sublabel).toBe('passed');
   });
 });

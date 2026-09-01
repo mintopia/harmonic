@@ -80,6 +80,7 @@ describe('derived-rollup pagination (epics, maps)', () => {
     ref,
     title,
     kind: 'spec',
+    state: 'open',
     description: '',
     createdAt: 0,
     updatedAt: null,

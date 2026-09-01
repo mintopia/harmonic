@@ -337,10 +337,10 @@ export class TrackerPollerManager {
     const mirrored = (await this.tasks.listWithDeps({ workspaceId })).filter((task) => task.origin === 'mirrored');
     const tickets = await persistedTickets(mirrored, await this.tasks.listTrackerContainers(workspaceId));
     const rows = await this.tasks.listStoredEpics(workspaceId);
-    const kindByRef = new Map(rows.map((r) => [r.trackerRef, r.kind === 'map' ? 'map' : 'spec'] as const));
-    const derived = this.surfacedEpics(rows, tickets, mirrored);
+    const rowByRef = new Map(rows.map((r) => [r.trackerRef, r] as const));
+    const derived = this.surfacedEpics(rows, tickets, mirrored, { includeHistorical: false });
     const baseBranch = await this.epicBaseBranch(workspaceId);
-    return Promise.all(derived.map((one) => this.composeOne(entry, one, tickets, mirrored, baseBranch, kindByRef)));
+    return Promise.all(derived.map((one) => this.composeOne(entry, one, tickets, mirrored, baseBranch, rowByRef)));
   }
 
   /** The ticket for each surfaced Epic, so the Tasks list sources epic rows from
@@ -352,7 +352,7 @@ export class TrackerPollerManager {
     const tickets = await persistedTickets(mirrored, await this.tasks.listTrackerContainers(workspaceId));
     const byRef = new Map(tickets.map((ticket) => [ticket.number, ticket]));
     const rows = await this.tasks.listStoredEpics(workspaceId);
-    return this.surfacedEpics(rows, tickets, mirrored).map(
+    return this.surfacedEpics(rows, tickets, mirrored, { includeHistorical: true }).map(
       (epic) => byRef.get(epic.ref) ?? historicalEpicTicket(epic),
     );
   }
@@ -364,14 +364,19 @@ export class TrackerPollerManager {
    * derived live at read time. A row whose container became a spine, or lost
    * its members, or hasn't aged into its stored snapshot yet, is skipped rather
    * than surfaced empty. */
-  private surfacedEpics(rows: EpicRow[], tickets: Ticket[], mirrored: TaskWithDeps[]): DerivedEpic[] {
+  private surfacedEpics(
+    rows: EpicRow[],
+    tickets: Ticket[],
+    mirrored: TaskWithDeps[],
+    opts: { includeHistorical: boolean },
+  ): DerivedEpic[] {
     const liveByRef = this.liveEpicsByRef(tickets, mirrored);
     const ticketByRef = new Map(tickets.map((t) => [t.number, t]));
     const out: DerivedEpic[] = [];
     for (const row of rows) {
       if (this.isHistoricalEpic(row)) {
-        // Integrated: the frozen snapshot is authority regardless of scan state.
-        out.push(this.storedEpicToDerived(row, tickets, mirrored));
+        // Integrated: off the Board; the frozen snapshot resolves it by ref.
+        if (opts.includeHistorical) out.push(this.storedEpicToDerived(row, tickets, mirrored));
         continue;
       }
       if (ticketByRef.get(row.trackerRef)?.state !== 'open') continue; // Board stays open-only
@@ -392,12 +397,12 @@ export class TrackerPollerManager {
     const rows = await this.tasks.listStoredEpics(workspaceId);
     const row = rows.find((r) => r.trackerRef === epicRef);
     if (!row) return null;
-    const kindByRef = new Map(rows.map((r) => [r.trackerRef, r.kind === 'map' ? 'map' : 'spec'] as const));
+    const rowByRef = new Map(rows.map((r) => [r.trackerRef, r] as const));
     const derived = this.isHistoricalEpic(row)
       ? this.storedEpicToDerived(row, tickets, mirrored)
       : this.liveEpicsByRef(tickets, mirrored).get(epicRef);
     if (!derived) return null;
-    return this.composeOne(entry, derived, tickets, mirrored, await this.epicBaseBranch(workspaceId), kindByRef);
+    return this.composeOne(entry, derived, tickets, mirrored, await this.epicBaseBranch(workspaceId), rowByRef);
   }
 
   /** A stored Epic surfaces from its record only once integrated with a member
@@ -443,7 +448,7 @@ export class TrackerPollerManager {
     tickets: Ticket[],
     mirrored: TaskRow[],
     baseBranch: string | null,
-    kindByRef: ReadonlyMap<number, 'map' | 'spec'>,
+    rowByRef: ReadonlyMap<number, EpicRow>,
   ): Promise<Epic> {
     const titleByRef = new Map(tickets.map((t) => [t.number, t.title]));
     const taskByRef = new Map<number, TaskRow>();
@@ -457,7 +462,8 @@ export class TrackerPollerManager {
       createdAt: ticket ? Date.parse(ticket.createdAt) || 0 : 0,
       baseBranch,
       dependsOn: (ticket?.blockedBy ?? []).map((b) => b.number).sort((a, b) => a - b),
-      kind: kindByRef.get(derived.ref) ?? 'spec',
+      kind: rowByRef.get(derived.ref)?.kind === 'map' ? 'map' : 'spec',
+      state: rowByRef.get(derived.ref)?.state === 'integrated' ? 'integrated' : 'open',
     };
     return composeEpicView(derived, taskByRef, titleByRef, facts, meta);
   }

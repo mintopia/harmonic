@@ -38,7 +38,7 @@ const noFacts: EpicFacts = {
   integrate: { inFlight: false, held: null },
 };
 
-const noMeta: EpicMeta = { description: '', createdAt: 0, baseBranch: null, dependsOn: [], kind: 'spec' };
+const noMeta: EpicMeta = { description: '', createdAt: 0, baseBranch: null, dependsOn: [], kind: 'spec', state: 'open' };
 
 describe('composeEpicView', () => {
   it('maps a done member Task to mergeStatus completed, folds it in, and preserves its raw state', () => {
@@ -154,6 +154,7 @@ describe('composeEpicView', () => {
       baseBranch: 'develop',
       dependsOn: [7, 3],
       kind: 'spec',
+      state: 'open',
     });
     expect(epic.description).toBe('The epic body.');
     expect(epic.createdAt).toBe(1_700_000_000_000);

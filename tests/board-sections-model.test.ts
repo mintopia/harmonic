@@ -88,6 +88,7 @@ const epic = (ref: number, members: EpicMember[], extra: Partial<Epic> = {}): Ep
   ref,
   title: `epic ${ref}`,
   kind: 'spec',
+  state: 'open',
   description: '',
   createdAt: 0,
   updatedAt: null,

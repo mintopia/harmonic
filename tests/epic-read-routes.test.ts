@@ -19,6 +19,7 @@ describe('Epic read model operator surface (issue #167)', () => {
     ref: 42,
     title: 'Parallel Epic operator UI',
     kind: 'spec',
+    state: 'open',
     description: '',
     createdAt: 0,
     updatedAt: null,
