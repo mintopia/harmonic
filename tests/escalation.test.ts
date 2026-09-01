@@ -168,23 +168,32 @@ describe('escalation: the three actions (direct mode)', () => {
     expect((await server.api('POST', `/api/tasks/${created.body.id}/note-to-critic`, { note: 'x' })).status).toBe(404);
   });
 
-  it("the agent's escalate_task is a failed Attempt, not an escalation; only the exhausted cap escalates", async () => {
+  it("the agent's escalate_task escalates to a human immediately, superseding the retry budget", async () => {
     // A mirrored ticket (the Drive Prompt carries the taskId the stub's MCP call
-    // needs) whose agent asks for a human on its one permitted attempt.
-    await server.app.ctx.configStore.update({
-      drive: { prompt: JSON.stringify({ mcpEscalate: { reason: 'need a decision on the schema' } }) },
-    });
-    const workspaceId = (await server.app.ctx.workspaces.list())[0]!.id;
-    const mirrored = await server.app.ctx.tasks.upsertMirrored(
-      { trackerRef: 31_401, prompt: 'ticket 31401', workflow: 'implement', wayfinderType: null, mapRef: null, closed: false },
-      workspaceId,
-    );
-    expect((await server.api('POST', `/api/tasks/${mirrored.id}/run`)).status).toBe(201);
-    await waitFor(async () => (await server.api('GET', `/api/tasks/${mirrored.id}`)).body.state === 'escalated');
-    const task = (await server.api('GET', `/api/tasks/${mirrored.id}`)).body;
-    expect(task.escalationReason).toMatch(/attempt 1 of 1 failed: the agent stopped and asked for a human: need a decision on the schema/);
-    const attempts = await new AttemptStore(server.app.ctx.asyncDb).listForTask(mirrored.id);
-    expect(attempts.map((attempt) => attempt.state)).toEqual(['escalated']);
-    expect(attempts[0]!.feedback).toContain('need a decision on the schema');
+    // needs) whose agent asks for a human. The budget is 3, so the retired
+    // fail-and-retry behaviour would burn three attempts before escalating; the
+    // signal is terminal now, so it escalates on the FIRST attempt, untouched
+    // budget. Its own server (a higher cap than the shared one) proves the
+    // supersession rather than coinciding with an exhausted cap of 1.
+    const escServer = await startServer({ ...stubHarness(), maxAttempts: 3 });
+    try {
+      await escServer.app.ctx.configStore.update({
+        drive: { prompt: JSON.stringify({ mcpEscalate: { reason: 'need a decision on the schema' } }) },
+      });
+      const workspaceId = (await escServer.app.ctx.workspaces.list())[0]!.id;
+      const mirrored = await escServer.app.ctx.tasks.upsertMirrored(
+        { trackerRef: 31_401, prompt: 'ticket 31401', workflow: 'implement', wayfinderType: null, mapRef: null, closed: false },
+        workspaceId,
+      );
+      expect((await escServer.api('POST', `/api/tasks/${mirrored.id}/run`)).status).toBe(201);
+      await waitFor(async () => (await escServer.api('GET', `/api/tasks/${mirrored.id}`)).body.state === 'escalated');
+      const task = (await escServer.api('GET', `/api/tasks/${mirrored.id}`)).body;
+      expect(task.escalationReason).toMatch(/the agent asked for a human: need a decision on the schema/);
+      // Terminal on the first attempt — no retry despite a budget of 3.
+      const attempts = await new AttemptStore(escServer.app.ctx.asyncDb).listForTask(mirrored.id);
+      expect(attempts.map((attempt) => attempt.state)).toEqual(['escalated']);
+    } finally {
+      await escServer.close();
+    }
   });
 });

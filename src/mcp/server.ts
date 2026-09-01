@@ -214,10 +214,10 @@ export function buildMcpServer(ctx: AppContext, opts: { operator?: boolean } = {
     'escalate_task',
     {
       description:
-        'Stop this attempt because you are blocked: a decision you cannot take, input you do not have, ' +
-        'or something you should not resolve unattended — instead of guessing or idle-waiting. No human ' +
-        'drives a Task (ADR-0041): the attempt ends as failed with your `reason` as feedback for the next ' +
-        'attempt, and only an exhausted attempt budget escalates the ticket to a human.',
+        'Escalate this Task to a human because you are blocked: a decision you cannot take, input you do ' +
+        'not have, or something you should not resolve unattended — instead of guessing or idle-waiting. ' +
+        'This hands the ticket to a human right away and supersedes any remaining retry budget; your ' +
+        '`reason` is recorded as the escalation cause.',
       inputSchema: { ...taskId, reason: z.string().min(1).describe('Why you are blocked') },
     },
     wrapAsync(async ({ taskId, reason }) => {

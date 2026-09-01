@@ -73,6 +73,15 @@ import { startOperation, type Operation } from '../telemetry/operations.js';
  * the fatal message is last. Bounds an otherwise unbounded buffer. */
 const STDERR_TAIL_CAP = 8000;
 
+/** Silence grace applied to the in-flight turn once the agent signals a
+ * lifecycle outcome (`finish_task`/`escalate_task`). The signal already settles
+ * the run, so the turn only needs to stay open long enough for the agent's
+ * wrap-up (a summary, a ticket comment) to land; after this much quiet the turn
+ * ends and the run settles to verification/escalation — instead of waiting out
+ * the full inactivity bound, or hanging on a lost turn-end or an outstanding
+ * background sub-agent tool, until the wall-clock guardrail. */
+const LIFECYCLE_SETTLE_GRACE_MS = 15_000;
+
 /** The single nudge the progress Guardrail delivers through the steer channel
  * on a first detected stall (issue #131, ADR-0019) before it trips. A plain
  * course-correction prompt — one turn, no back-and-forth. */
@@ -873,18 +882,25 @@ export class Runner {
   markAgentFinished(taskId: number): boolean {
     return this.forActiveTask(taskId, (active) => {
       active.agentFinished = true;
+      // The finish signal settles this run — bound the in-flight turn to a short
+      // grace so verification starts once the agent's wrap-up goes quiet, rather
+      // than waiting out the full inactivity bound or hanging on a lost turn-end
+      // / an outstanding background sub-agent until the wall-clock guardrail.
+      active.driver.expectCompletion(LIFECYCLE_SETTLE_GRACE_MS);
     });
   }
 
   /**
-   * The agent-driven stop signal (`escalate_task` MCP tool): the agent says it
-   * is blocked. No human drives a ticket (ADR-0041), so this ends the Attempt as
-   * failed with the reason as feedback — the loop retries and only the exhausted
-   * cap escalates. Returns whether a Run matched.
+   * The agent-driven escalation signal (`escalate_task` MCP tool): the agent is
+   * blocked on something only a human can resolve. This hands the ticket to a
+   * human — the drive loop routes `escalateReason` to a terminal escalation that
+   * supersedes the retry budget (it does NOT fail-and-retry). Returns whether a
+   * Run matched.
    */
   markEscalate(taskId: number, reason: string): boolean {
     return this.forActiveTask(taskId, (active) => {
       active.escalateReason = reason;
+      active.driver.expectCompletion(LIFECYCLE_SETTLE_GRACE_MS);
     });
   }
 
@@ -2982,7 +2998,11 @@ export class Runner {
       for (let attempt = 1; !escalating && !stoppedShort && !connectionGone; ) {
         if (active.externallySettled) break; // an operator settled the Run while it was parked
         if (active.escalateReason) {
-          stoppedShort = `the agent stopped and asked for a human: ${active.escalateReason}`;
+          // The agent asked for a human (`escalate_task`): a terminal escalation
+          // that supersedes the retry budget. Route to `escalating`
+          // (→ settleEscalated, a terminal outcome), NOT `stoppedShort` (a
+          // retryable actionable-fail that burns the attempt budget).
+          escalating = `the agent asked for a human: ${active.escalateReason}`;
           break;
         }
         // Progress Guardrail (issue #131), evaluated here at the turn boundary —
