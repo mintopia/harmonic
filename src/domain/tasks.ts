@@ -604,6 +604,16 @@ export class TaskService {
     return row != null;
   }
 
+  /** Remove any dismissal tombstone for a ref (ADR-0016): a recognised container must never stay dismissed. */
+  async clearDismissal(workspaceId: number, trackerRef: number): Promise<void> {
+    await this.db.write((db) =>
+      db
+        .delete(trackerDismissals)
+        .where(and(eq(trackerDismissals.workspaceId, workspaceId), eq(trackerDismissals.trackerRef, trackerRef)))
+        .run(),
+    );
+  }
+
   /** Replace the persisted non-Task containers for one successful tracker scan. */
   async syncTrackerContainers(
     workspaceId: number,
@@ -1103,6 +1113,9 @@ export class TaskService {
    * way, so grouping is correct immediately.
    */
   async demoteMirroredToContainer(workspaceId: number, trackerRef: number): Promise<void> {
+    // A container is re-derived every poll, so it must never carry a stale
+    // tombstone (ADR-0016, #420): clear it even when the mirrored row is already gone.
+    await this.clearDismissal(workspaceId, trackerRef);
     const row = await this.db.read((db) =>
       db
         .select({
