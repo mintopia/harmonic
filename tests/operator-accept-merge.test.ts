@@ -262,7 +262,7 @@ describe('escalated worktree Run diff snapshot', () => {
           }),
         ],
       });
-      await server.app.ctx.configStore.update({
+      await server.app.ctx.settingsStore.updateGlobal({
         drive: { prompt: JSON.stringify({ writeFiles: { 'impl-{ref}.txt': 'implementation {ref}\n' }, mcpFinish: true }) },
       });
 

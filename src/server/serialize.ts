@@ -32,7 +32,7 @@ import { forEachYielding } from '../reliability/yield.js';
 const parseUsage = (raw: string | null): AttemptUsage | null => (raw ? (JSON.parse(raw) as AttemptUsage) : null);
 const parseCost = (raw: string | null): Cost | null => (raw ? (JSON.parse(raw) as Cost) : null);
 
-const pricesOf = (ctx: AppContext) => resolvePrices(ctx.configStore.get().prices);
+const pricesOf = (ctx: AppContext) => resolvePrices(ctx.settingsStore.getGlobal().prices);
 
 /** A Task/Conversation row's `workspaceId` is nullable only because SQLite
  * can't add it NOT NULL to an existing table (schema.ts) — every row has one
@@ -120,7 +120,7 @@ export async function attemptTimelineToApi(ctx: AppContext, taskId: number): Pro
     ctx.attempts.budgetBase(taskId),
   ]);
   const workspace = await ctx.workspaces.get(atRestWorkspaceId(task.workspaceId));
-  const configuredVerifiers = resolveVerifiers(workspace, ctx.configStore.get());
+  const configuredVerifiers = resolveVerifiers(workspace, ctx.settingsStore.getGlobal());
   return {
     budgetBase,
     attempts: await Promise.all(rows.map(async (attempt) => {
@@ -168,7 +168,7 @@ export async function verifierStatusesToApi(
     listAttempts(),
     ctx.attempts.currentStepType(run.taskId, run.number),
   ]);
-  return verifierStatuses({ verifiers: resolveVerifiers(workspace, ctx.configStore.get()), attempts, stepType });
+  return verifierStatuses({ verifiers: resolveVerifiers(workspace, ctx.settingsStore.getGlobal()), attempts, stepType });
 }
 
 type TicketTimelineKind =
@@ -208,7 +208,7 @@ export async function ticketTimelineToApi(ctx: AppContext, taskId: number): Prom
   ]);
   const task = await ctx.tasks.get(taskId);
   const workspace = await ctx.workspaces.get(atRestWorkspaceId(task.workspaceId));
-  const configuredVerifiers = resolveVerifiers(workspace, ctx.configStore.get());
+  const configuredVerifiers = resolveVerifiers(workspace, ctx.settingsStore.getGlobal());
   const attemptsByNumber = new Map<number, AttemptRow>(taskAttempts.map((a) => [a.number, a]));
   const verificationByAttempt = new Map<number, VerificationAttemptRow[]>();
   for (const { attempt: v } of verification) {
@@ -788,7 +788,7 @@ async function workspaceNameOf(ctx: AppContext, workspaceId: number | null): Pro
  * default (`DEFAULT_CONTEXT_WINDOWS`); null when neither knows the model — the
  * gauge then shows raw tokens, never a fabricated percentage (issue #52). */
 function contextWindowOf(ctx: AppContext, model: string): number | null {
-  return resolveContextWindow(model, ctx.configStore.get().modelInfo);
+  return resolveContextWindow(model, ctx.settingsStore.getGlobal().modelInfo);
 }
 
 export type ApiConversation = Omit<ConversationRow, 'usage' | 'workspaceId'> & {
@@ -831,7 +831,7 @@ function deriveConversationTitle(firstTurnText: string | null): string | null {
 export async function conversationToApi(ctx: AppContext, conversation: ConversationRow): Promise<ApiConversation> {
   const { usage: rawUsage, ...rest } = conversation;
   const usage = parseUsage(rawUsage);
-  const config = ctx.configStore.get();
+  const config = ctx.settingsStore.getGlobal();
   const modelInfo = config.modelInfo[conversation.model] ?? config.modelInfo[conversation.model.replace(/-\d{8}$/, '')];
   return {
     ...rest,

@@ -138,7 +138,7 @@ describe('agent critic end-to-end (issue #164)', () => {
     });
     // A failed verifier now creates a corrective Attempt on the same ticket.
     // Keep the cap fixed so escalation scenarios cover both attempts.
-    await server.app.ctx.configStore.update({ maxAttempts: 2 });
+    await server.app.ctx.settingsStore.updateGlobal({ maxAttempts: 2 });
   });
   afterAll(async () => {
     await server.close();
@@ -405,7 +405,7 @@ describe('agent critic end-to-end (issue #164)', () => {
     // A second configured harness so the critic can be pointed independently
     // of the builder's — native Runs default to task.harness 'claude'
     // (defaultConfig), so pinning the critic at 'codex' proves the override.
-    await server.app.ctx.configStore.update({
+    await server.app.ctx.settingsStore.updateGlobal({
       harnesses: {
         codex: { command: process.execPath, args: [], models: ['stub-model'], defaultModel: 'stub-model' },
       },

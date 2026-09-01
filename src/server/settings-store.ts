@@ -80,7 +80,7 @@ function loadFromDisk(path: string): SettingsFile {
     // A settings file saved before a global field existed is missing it, and a
     // bare parse would throw on boot; merging onto `defaultConfig()` fills new
     // fields, and `migrateLegacyConfig` folds any still-lingering retired keys
-    // (mirrors `ConfigStore`'s old boot-time overlay).
+    // (mirrors the old boot-time config overlay).
     const global = appConfigSchema.parse(
       mergeConfig(defaultConfig(), migrateLegacyConfig((raw.global ?? {}) as LegacyConfig)),
     );
