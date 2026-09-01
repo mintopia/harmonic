@@ -54,6 +54,7 @@ function isReady(child: Ticket, readinessByRef: ReadonlyMap<number, EpicMemberRe
 export function deriveEpics(
   tickets: Ticket[],
   readinessByRef: ReadonlyMap<number, EpicMemberReadiness> = new Map(),
+  opts: { includeClosed?: boolean } = {},
 ): DerivedEpic[] {
   const byRef = new Map(tickets.map((t) => [t.number, t]));
   const epicRefs = new Set(tickets.map((t) => t.parent).filter((p): p is number => p != null));
@@ -73,8 +74,10 @@ export function deriveEpics(
 
     // A closed Epic is done: deriving it would re-probe/re-attempt a finished
     // Epic every poll (recurring epic-integrate noise). Keep it in `epicRefs` above
-    // so it still counts as containment for `isReady`, but do not surface it.
-    if (epic.state !== 'open') continue;
+    // so it still counts as containment for `isReady`, but do not surface it. The
+    // read-only detail path opts in via `includeClosed` to resolve a closed Epic
+    // for the summary page — it never triggers an attempt.
+    if (!opts.includeClosed && epic.state !== 'open') continue;
 
     const children = childrenOf.get(ref) ?? [];
     if (children.some((c) => epicRefs.has(c.number))) continue; // not leaf-most: a spine parent
