@@ -177,22 +177,43 @@ export function permissionOptionButtonClass(kind: PermissionAcpRequest['options'
   return PERMISSION_OPTION_STYLES[kind] ?? btnQuiet;
 }
 
-/** State chips: tinted fill behind the state's text color (DESIGN.md: state
+/** State tones: tinted fill behind the state's text color (DESIGN.md: state
  * colour on the state layer only). Escalated takes the indigo "needs
  * you" hue DESIGN.md § 2 reserves for the one state that needs the operator —
- * ADR-0041 made escalated that state; working is Running amber, done is
- * Merged emerald. Failed rose is an Attempt/Run register, never a ticket state. */
-export const STATE_CHIP_STYLES: Record<TaskState, string> = {
+ * ADR-0041 made escalated that state; working/running is Running amber, done is
+ * Merged emerald (solid — the Task is complete), passed a Merged tint, failed
+ * an Attempt/Run rose. This is the one superset both `stateChip` (Task states)
+ * and `statePill` (Attempt states too) read from, so a state can't render two
+ * greens by forking a private map — which is exactly how `done` drifted
+ * (issue #454). `stateChip` stays typed to `TaskState`, so the attempt-only
+ * passed/failed/running tones never reach a ticket-state chip. */
+export type StateTone = TaskState | 'passed' | 'failed' | 'running';
+
+export const STATE_CHIP_STYLES: Record<StateTone, string> = {
   draft: 'bg-raised text-muted',
   ready: 'bg-ready-tint text-ready',
   working: 'bg-running-tint text-running',
+  running: 'bg-running-tint text-running',
   escalated: 'bg-await-tint text-await',
+  passed: 'bg-merged-tint text-merged',
+  failed: 'bg-fail-tint text-fail',
   done: 'bg-merged text-on-done',
   cancelled: 'bg-raised text-muted',
 };
 
 export function stateChip(state: TaskState): string {
   return `${chip} ${STATE_CHIP_STYLES[state]}`;
+}
+
+/** The Ticket/Attempt header pill: the same state tone as `stateChip`, in the
+ * pill shape the ticket surface uses (rounded-sm, 11px). Takes a plain string
+ * because a live Attempt's pill word can be a Step type (implementation,
+ * verification…), which carries no state hue and falls back to neutral. */
+export const statePillShape =
+  'inline-flex shrink-0 items-center rounded-sm px-2.5 py-1 text-[11px] font-semibold';
+
+export function statePill(state: string): string {
+  return `${statePillShape} ${STATE_CHIP_STYLES[state as StateTone] ?? 'bg-raised text-muted'}`;
 }
 
 /** The Board card's primary "Blocked" chip (ADR-0041: blocked-ness is a derived
