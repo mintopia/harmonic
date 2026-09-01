@@ -13,7 +13,8 @@ import { AFK_PERMISSION_MODES, afkRequestGated, afkSessionMode } from './afk-per
 import type { AutoDrive } from './auto-drive.js';
 import type { AppConfig, HarnessConfig } from '../config.js';
 import type { TaskRow, AttemptRow, WorkspaceRow, SessionRow } from '../db/schema.js';
-import { AcpDriver, type AcpInitializeResult } from '../acp/driver.js';
+import { AcpDriver, AcpPromptTimeoutError, type AcpInitializeResult, type PromptResult } from '../acp/driver.js';
+import { AcpConnectionClosedError } from '../acp/connection.js';
 import { SessionStore } from '../domain/sessions.js';
 import { assessResumeEligibility, sessionFacts, type ResumeEnvironment } from '../domain/session-resume.js';
 import {
@@ -2279,7 +2280,13 @@ export class Runner {
         // Advertise no fs/terminal capabilities; anything else gets null.
         return null;
       },
-    });
+    },
+      // Per-turn ACP inactivity bound (issue #426): a completed turn whose
+      // `session/prompt` response is never delivered (harness idle / a wrapper
+      // that lingers past the inner process) ends the turn instead of hanging
+      // at `await driver.prompt()` until the 60m wall-clock guardrail.
+      this.getConfig().guardrails.promptInactivityTimeoutMinutes * 60_000,
+    );
 
     const active: ActiveRun = {
       attemptId: run.id,
@@ -2889,11 +2896,36 @@ export class Runner {
       // closed until the prompt request is ready to start, otherwise an
       // operator can receive 200 while ACP is idle and miss the running turn.
       active.steerable = true;
-      let result = await driver.prompt([{ type: 'text', text: promptText }]);
+      // A prompt turn can now end three ways beyond a normal result (issue #426):
+      // the harness idles and the per-turn ACP inactivity bound fires (turn end,
+      // connection alive → re-promptable), the harness's stdout hits EOF (turn
+      // end, connection gone → NOT re-promptable), or the child dies (throws, as
+      // before). Fold the first two into a tagged turn-end so the loop routes by
+      // the existing finish/continue rule instead of hanging. `eof` sets
+      // `connectionGone`, which stops every further prompt and falls straight to
+      // the settle/verify path below.
+      let connectionGone = false;
+      const promptTurn = async (text: string): Promise<PromptResult | null> => {
+        try {
+          return await driver.prompt([{ type: 'text', text }]);
+        } catch (err) {
+          if (err instanceof AcpPromptTimeoutError) {
+            record('lifecycle', { event: 'turn-timeout', reason: err.message });
+            return null; // turn end, connection alive — loop continues/finishes
+          }
+          if (err instanceof AcpConnectionClosedError) {
+            record('lifecycle', { event: 'turn-eof', reason: err.message });
+            connectionGone = true;
+            return null; // turn end, connection gone — fall to settle/verify
+          }
+          throw err; // child death and everything else: unchanged
+        }
+      };
+      let result: PromptResult = (await promptTurn(promptText)) ?? {};
       active.idle = true; // turn ended → parked
       // Steering + auto-drive continue loop. `attempt` counts only auto-drive
       // continue nudges, so operator steers never eat into the continue budget.
-      for (let attempt = 1; !escalating && !stoppedShort; ) {
+      for (let attempt = 1; !escalating && !stoppedShort && !connectionGone; ) {
         if (active.externallySettled) break; // an operator settled the Run while it was parked
         if (active.escalateReason) {
           stoppedShort = `the agent stopped and asked for a human: ${active.escalateReason}`;
@@ -2912,8 +2944,10 @@ export class Runner {
         if (steer !== undefined) {
           record('lifecycle', { event: 'steer_delivered', text: steer });
           active.idle = false; // a new turn is in flight — not parked, don't stop it
-          result = await driver.prompt([{ type: 'text', text: steer }]);
+          const turn = await promptTurn(steer);
+          if (turn) result = turn;
           active.idle = true;
+          if (connectionGone) break; // connection gone → settle/verify below
           continue; // re-check: more steers, then the agent's own finish/continue state
         }
         if (!autoDriven) break; // native Run with nothing queued → settle the single turn
@@ -2922,8 +2956,10 @@ export class Runner {
         record('lifecycle', { event: 'continue', attempt });
         promptText = await this.autoDrive!.continuePrompt(task);
         active.idle = false; // a new turn is in flight — not parked, don't stop it
-        result = await driver.prompt([{ type: 'text', text: promptText }]);
+        const turn = await promptTurn(promptText);
+        if (turn) result = turn;
         active.idle = true;
+        if (connectionGone) break; // connection gone → settle/verify below
         attempt++;
       }
       // Leaving the loop to settle: no longer "parked awaiting work", so the
@@ -2937,10 +2973,14 @@ export class Runner {
       // this drain and it terminates. Skip when the Run was already settled out
       // from under us, or is escalating.
       active.steerable = false;
-      while (!active.externallySettled && !escalating && !stoppedShort && active.steerQueue.length > 0) {
+      // A gone connection (EOF) can no longer take a turn; skip the drain and
+      // let the settle/verify path handle whatever the agent left (issue #426).
+      while (!connectionGone && !active.externallySettled && !escalating && !stoppedShort && active.steerQueue.length > 0) {
         const steer = active.steerQueue.shift()!;
         record('lifecycle', { event: 'steer_delivered', text: steer });
-        result = await driver.prompt([{ type: 'text', text: steer }]);
+        const turn = await promptTurn(steer);
+        if (turn) result = turn;
+        if (connectionGone) break;
       }
       if (active.externallySettled) {
         // An operator already settled the Run and its Task; drop the harness
@@ -2970,11 +3010,14 @@ export class Runner {
         // a new Attempt or a retry budget charge. A direct Run must commit its
         // work onto the live branch for it to become the candidate (ADR-0046);
         // a context that was already dirty at start is left as the operator's.
-        if (!workspace.startDirty && (await Git.isDirty(workspace.cwd).catch(() => false))) {
+        // A gone connection (EOF) can't take the nudge turn; the worktree commit
+        // fallback just below still captures any dirty work as the candidate.
+        if (!connectionGone && !workspace.startDirty && (await Git.isDirty(workspace.cwd).catch(() => false))) {
           const nudge = 'Your implementation left uncommitted changes. Commit the completed work now, then finish.';
           record('lifecycle', { event: 'commit-nudge' });
           active.idle = false;
-          result = await driver.prompt([{ type: 'text', text: nudge }]);
+          const turn = await promptTurn(nudge);
+          if (turn) result = turn;
           active.idle = true;
         }
         // A worktree Run's work lives on its own branch, not the live one, so if
