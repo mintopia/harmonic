@@ -89,6 +89,7 @@ export const task = {
   contextTokens: null,
   contextWindow: null,
   verifiedRef: 'e33b4ae',
+  hasCandidate: true,
   skipReason: null,
   priority_: undefined,
 } as any;
@@ -229,6 +230,7 @@ export const epicTask = {
   contextTokens: null,
   contextWindow: null,
   verifiedRef: null,
+  hasCandidate: false,
   skipReason: null,
 } as any;
 

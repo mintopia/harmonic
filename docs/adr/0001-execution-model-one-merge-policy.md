@@ -118,7 +118,9 @@ When the critic passes, the task branch merges into its base under a single
      never merge onto a red base.
 
 This one policy applies to **every** path: automated task merges, operator
-Accept (which simply runs the same merge now — no special rebase mode),
+Accept (which runs this same merge — no special rebase mode; on an escalated
+candidate that was never blessed by a passing verifier it re-verifies against a
+refreshed index first, ADR-0002, and Force-Accept skips that re-verify),
 develop → epic refreshes, and epic → develop integration. There is no freshness
 gate, no re-verification on base movement, no CAS, no retry bound, no merge
 train, and no carry-forward verdict, because nothing needs carrying.

@@ -63,6 +63,7 @@ const task = (
   contextTokens: null,
   contextWindow: null,
   verifiedRef: null,
+  hasCandidate: false,
   skipReason: null,
   ...extra,
 });

@@ -366,10 +366,12 @@ export interface Task {
   contextTokens: number | null;
   /** The model's effective context window; null when unknown. The board card shows `ctx %` = contextTokens/contextWindow (issue #52). */
   contextWindow: number | null;
-  /** The latest run's verified branch head ref (issue #134's Run `verifiedRef`),
-   * surfaced so an escalated Task shows whether Accept has work to merge; null
-   * when no attempt has produced a verified head yet. */
+  /** The latest run's verified branch head ref (issue #134's Run `verifiedRef`);
+   * null when no attempt has produced a verified head yet. Whether Accept has
+   * work to merge is now `hasCandidate` (issue #429), not this. */
   verifiedRef: string | null;
+  /** Whether the branch holds a candidate (commits ahead of base) an Accept could merge. */
+  hasCandidate: boolean;
   /** Transient scheduler-pick skip reason for a `ready` Task whose Work
    * Context is already occupied (issue #171, e.g. "Work Context held by task
    * 12 (working)"); null normally, including once the Task starts working. */

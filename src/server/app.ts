@@ -560,6 +560,8 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   const escalation = new EscalationService(attempts, tasks, operatorSettle, mergeEffectsFor, {
     resume: (task, guidance, startNow) => runner.resumeWithGuidance(task, guidance, startNow),
     cleanup: (task, run) => runner.cleanupClosed(task, run),
+    candidateHead: (task, run) => runner.candidateHead(task, run),
+    verifyCandidate: (task, run, head) => runner.verifyCandidateForAccept(task, run, head),
   });
   // Session-retirement drain at boot (issue #148): reclaim any builder worktree
   // owed removal by a Session left `retiring` (a crash mid-removal) or an `idle`

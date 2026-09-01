@@ -1994,6 +1994,42 @@ export class Runner {
   }
 
   /**
+   * The candidate commit an operator Accept would merge (issue #429): a
+   * worktree Run's branch tip once it has commits ahead of its base, or a
+   * direct Run's captured `verifiedHeadOid` (its work already sits on the live
+   * base branch, ADR-0046 — there is nothing separate to merge, but a
+   * candidate exists iff a head was captured). Null means there is nothing to
+   * accept — the branch never diverged, or no head was ever captured.
+   */
+  async candidateHead(task: TaskRow, run: AttemptRow): Promise<string | null> {
+    if (task.isolationMode === 'worktree') {
+      if (run.branch && run.baseBranch && (await Git.commitsAhead(task.workingDir, run.baseBranch, run.branch)) > 0) {
+        return await Git.revParse(task.workingDir, run.branch);
+      }
+      return null;
+    }
+    return run.verifiedHeadOid ?? null;
+  }
+
+  /**
+   * Verify a candidate for an operator Accept (issue #429): reuses
+   * {@link runVerification} — the same fresh-index refresh (#428) the drive
+   * loop's own verify pass gets — under a fresh Operation (an HTTP handler has
+   * no ambient drive operation to nest under) and a fresh, never-aborted
+   * signal (mirrors {@link mergeAcceptedBranch}). Recorded onto this Attempt's
+   * event log via {@link recordRunEvent} so the verification is visible on the
+   * Run timeline exactly like an automated verify pass.
+   */
+  async verifyCandidateForAccept(task: TaskRow, run: AttemptRow, head: string): Promise<VerificationDecision> {
+    const record = (type: 'lifecycle', payload: unknown) => this.recordRunEvent(task, run, type, payload);
+    const operation = startOperation({ type: 'attempt', attributes: { 'task.id': task.id, 'attempt.id': run.id } });
+    const { decision } = await operation
+      .run(async () => this.runVerification(task, run, head, new AbortController().signal, record, operation.spanContext))
+      .finally(() => operation.end());
+    return decision;
+  }
+
+  /**
    * Persist a turn's Attempt event, fire-and-forget, on the hottest drive path
    * (ADR-0001: `attempt_events`, re-keyed off `attempt_id`). A racing
    * task-delete cascade can remove the Attempt row mid-turn — the same race the

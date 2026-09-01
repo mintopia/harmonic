@@ -18,6 +18,7 @@ import { resolveVerifiers } from '../domain/setting-override.js';
 import { verifierStatuses, type VerifierStatus } from '../domain/verifier-status.js';
 import { costOfUsages, resolveContextWindow, resolvePrices, sumCosts, type Cost } from '../execution/pricing.js';
 import type { ProcessTree, AttemptUsage, AttemptUsageSnapshot } from '../execution/usage.js';
+import { Git } from '../execution/git.js';
 import type { OperationEvent, OperationSnapshot } from '../telemetry/operations.js';
 import { z } from 'zod';
 import { forEachYielding } from '../reliability/yield.js';
@@ -455,6 +456,12 @@ export type ApiTask = Omit<TaskWithDeps, 'workspaceId' | TrackerFactColumns> & {
    * Task's stranded verified head can be adopted for review, or re-reviewed with
    * an operator note, without a fresh builder run (issue #191). */
   verifiedRef: string | null;
+  /** Whether the branch holds a candidate (commits ahead of base) an Accept
+   * could merge (issue #429): true once `verifiedRef` is set, or — for an
+   * escalated worktree Task that never reached verification (a
+   * guardrail/infra escalation) — once its branch actually has commits ahead
+   * of its base. */
+  hasCandidate: boolean;
 };
 
 /** A lean list row (ADR-0045, issue #350): every {@link ApiTask} field except
@@ -478,7 +485,8 @@ export async function taskToApi(ctx: AppContext, task: TaskWithDeps): Promise<Ap
   const runs = await ctx.attempts.listForTask(task.id);
   const running = task.state === 'working' ? runs.find((r) => r.state === 'running') : undefined;
   const currentStep = running ? await ctx.attempts.currentStepType(task.id, running.number) : null;
-  return taskToApiWithRuns(ctx, task, runs, running ? await runningToolCount(ctx, running) : null, currentStep);
+  const hasCandidate = await hasCandidateFor(task, runs.at(-1));
+  return taskToApiWithRuns(ctx, task, runs, running ? await runningToolCount(ctx, running) : null, currentStep, hasCandidate);
 }
 
 /** Serialize a task list from its already-batched Runs (issue #258). The rows
@@ -497,11 +505,12 @@ export async function tasksToApi(ctx: AppContext, tasks: TaskWithDeps[]): Promis
   // Attempt — `toolCountByTask` re-keys the result back onto the Task id every
   // list-row render already has to hand.
   const attemptIdByTask = await ctx.attempts.idsFor(running.map((run) => ({ taskId: run.taskId, number: run.number })));
-  const [toolCountsByAttempt, currentSteps] = await Promise.all([
+  const [toolCountsByAttempt, currentSteps, hasCandidates] = await Promise.all([
     ctx.attempts.toolCallCounts([...attemptIdByTask.values()]),
     ctx.attempts.currentStepTypes(running.map((run) => ({ taskId: run.taskId, number: run.number }))),
+    Promise.all(tasks.map((task) => hasCandidateFor(task, (runsByTask.get(task.id) ?? []).at(-1)))),
   ]);
-  return tasks.map((task) => {
+  return tasks.map((task, i) => {
     const runs = runsByTask.get(task.id) ?? [];
     const activeRun = task.state === 'working' ? runs.find((run) => run.state === 'running') : undefined;
     const activeAttemptId = activeRun ? attemptIdByTask.get(task.id) : undefined;
@@ -511,6 +520,7 @@ export async function tasksToApi(ctx: AppContext, tasks: TaskWithDeps[]): Promis
       runs,
       activeRun ? (activeAttemptId != null ? toolCountsByAttempt.get(activeAttemptId) ?? 0 : 0) : null,
       activeRun ? currentSteps.get(task.id) ?? null : null,
+      hasCandidates[i]!,
     ));
   });
 }
@@ -575,6 +585,7 @@ export function epicToListRow(ticket: Ticket, workspaceId: number): ApiTaskListR
     contextWindow: null,
     skipReason: null,
     verifiedRef: null,
+    hasCandidate: false,
   };
 }
 
@@ -599,7 +610,28 @@ function latestVerifiedRef(run: AttemptRow | undefined): string | null {
   return run.verifiedRef ?? (run.verifiedHeadOid && run.branch ? run.branch : null);
 }
 
-function taskToApiWithRuns(ctx: AppContext, task: TaskWithDeps, runs: AttemptRow[], toolCount: number | null, currentStep: StepType | null): ApiTask {
+/** Whether an Accept has a candidate to merge (issue #429): true once
+ * `latestVerifiedRef` is set (the common, already-verified case), or — for an
+ * escalated worktree Task that never reached verification (a guardrail/infra
+ * escalation, e.g. tasks 410/411) — once its branch actually has commits
+ * ahead of its base. That git call is scoped to escalated worktree Tasks only
+ * (cheap: escalated Tasks are few) so every other Task resolves with no I/O. */
+async function hasCandidateFor(task: TaskWithDeps, lastRun: AttemptRow | undefined): Promise<boolean> {
+  let hasCandidate = latestVerifiedRef(lastRun) !== null;
+  if (!hasCandidate && task.state === 'escalated' && task.isolationMode === 'worktree' && lastRun?.branch && lastRun?.baseBranch) {
+    hasCandidate = (await Git.commitsAhead(task.workingDir, lastRun.baseBranch, lastRun.branch)) > 0;
+  }
+  return hasCandidate;
+}
+
+function taskToApiWithRuns(
+  ctx: AppContext,
+  task: TaskWithDeps,
+  runs: AttemptRow[],
+  toolCount: number | null,
+  currentStep: StepType | null,
+  hasCandidate: boolean,
+): ApiTask {
   const running = runs.find((r) => r.state === 'running');
   // A direct Run has no branch (its work is committed straight onto the base
   // branch, ADR-0046); only a worktree Run has an operator-facing branch.
@@ -621,6 +653,7 @@ function taskToApiWithRuns(ctx: AppContext, task: TaskWithDeps, runs: AttemptRow
     contextWindow: contextWindowOf(ctx, task.model),
     skipReason: ctx.autoRunner.skipReasonFor(task.id) ?? null,
     verifiedRef: latestVerifiedRef(runs.at(-1)),
+    hasCandidate,
   };
 }
 

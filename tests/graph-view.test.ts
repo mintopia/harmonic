@@ -46,6 +46,7 @@ const task = (id: number, origin: Task['origin']): Task => ({
   contextTokens: null,
   contextWindow: null,
   verifiedRef: null,
+  hasCandidate: false,
   skipReason: null,
 });
 
