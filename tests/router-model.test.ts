@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_ROUTE,
   DEFAULT_TABLE_FILTERS,
+  focusedSurface,
   parseRoute,
   serializeRoute,
   type Route,
@@ -187,5 +188,15 @@ describe('round-trip', () => {
       const u = new URL(url, 'http://x');
       expect(parseRoute(u.pathname, u.search)).toEqual(route);
     }
+  });
+});
+
+describe('focusedSurface (#413)', () => {
+  it("opens the Epic summary page for an Epic's mirrored driver Task", () => {
+    expect(focusedSurface({ isEpic: true })).toBe('epic');
+  });
+
+  it('opens the Ticket page for an ordinary Task', () => {
+    expect(focusedSurface({ isEpic: false })).toBe('ticket');
   });
 });

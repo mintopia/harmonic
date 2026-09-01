@@ -2,7 +2,7 @@
 // project, whose nodenext resolution requires them (Vite maps .js → .ts).
 import { TERMINAL_STATES } from './task-state-model.js';
 import { VIEWS, type View } from './rail-model.js';
-import { TASK_STATES, type TaskState } from './types.js';
+import { TASK_STATES, type Task, type TaskState } from './types.js';
 
 /**
  * Client routing (issue #103, #181): the active view and its per-view filter/sort/peek
@@ -72,6 +72,22 @@ export const DEFAULT_ROUTE: Route = {
   peeked: [],
   table: DEFAULT_TABLE_FILTERS,
 };
+
+/** The full-bleed surface a focused Ticket (`/task/:id`) opens onto. An Epic's
+ * mirrored driver Task opens the Epic summary page (ADR-0015); every other Task
+ * opens the Ticket page. */
+export type FocusedSurface = 'epic' | 'ticket';
+
+/**
+ * Which surface the focused Task opens (issue #413): the Epic summary page for
+ * an Epic's mirrored driver Task, else the Ticket page. Every entry point — the
+ * Tasks-list row, the Graph node, a deep link — navigates to `/task/:id`, so
+ * this one rule decides the destination for all of them, keeping the choice a
+ * pure, testable seam rather than inline JSX in App.tsx.
+ */
+export function focusedSurface(task: Pick<Task, 'isEpic'>): FocusedSurface {
+  return task.isEpic ? 'epic' : 'ticket';
+}
 
 /** Query param keys — one flat namespace; only one view is active at a time so
  * the board's `peek` and the table's filters never contend for a name. */

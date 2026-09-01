@@ -27,7 +27,7 @@ import { EmptyState } from './components/EmptyState';
 import { RAIL_GROUPS, VIEW_LABELS, isWorkspaceScopedView, loadRailCollapsed, storeRailCollapsed } from './rail-model';
 import { CrumbBar } from './components/CrumbBar';
 import type { View } from './rail-model';
-import { parseRoute, serializeRoute, type Route, type TableFilters } from './router-model';
+import { parseRoute, serializeRoute, focusedSurface, type Route, type TableFilters } from './router-model';
 import {
   hasNoWorkspaces,
   loadActiveWorkspaceId,
@@ -849,10 +849,12 @@ export function App() {
             // layering over it, so it isn't fighting the view's own padding
             // (issue #183). It keeps the same skip-link target (`#main-
             // content`) the <main> below carries when no Ticket is open.
-            // An Epic's mirrored Task (isEpic) opens its own summary page
-            // instead — same route, same navigation, a different surface
-            // (issue #412, ADR-0015).
-            openTask.isEpic ? (
+            // An Epic's mirrored Task opens its own summary page instead — same
+            // route, same navigation, a different surface (issue #412/#413,
+            // ADR-0015). `focusedSurface` is the pure seam that decides which,
+            // so every entry point (Tasks-list row, Graph node, deep link) lands
+            // on the same destination.
+            focusedSurface(openTask) === 'epic' ? (
               <EpicPage
                 task={openTask}
                 onClose={() => navigate({ ...route, task: null }, { replace: true })}
