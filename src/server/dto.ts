@@ -14,7 +14,7 @@ import type { ScheduledJobSnapshot } from '../scheduler/scheduler.js';
 import type { FlaggedWorktree } from '../domain/flagged-worktrees.js';
 import { resolveVerifiers } from '../domain/setting-override.js';
 import { verifierStatuses, type VerifierStatus } from '../domain/verifier-status.js';
-import { sumCosts, type Cost } from '../execution/pricing.js';
+import { sumCosts, type Cost } from '../domain/pricing.js';
 import type { AttemptUsage, AttemptUsageSnapshot, ProcessTree } from '../execution/usage.js';
 import type { OperationEvent, OperationSnapshot } from '../telemetry/operations.js';
 import { z } from 'zod';

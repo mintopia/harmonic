@@ -21,7 +21,7 @@ import {
   formatToolTimeoutReason,
 } from '../domain/guardrail-tool-timeout.js';
 import { totalTokensOf, type AttemptUsageSnapshot } from './usage.js';
-import { costOfUsages, type PriceTable } from './pricing.js';
+import { costOfUsages, type PriceTable } from '../domain/pricing.js';
 
 /** The single nudge the progress Guardrail delivers through the steer channel
  * on a first detected stall (issue #131, ADR-0019) before it trips. A plain
@@ -40,7 +40,7 @@ type GuardrailWorkspace = Pick<WorkspaceRow, 'guardrailBudget' | 'guardrailProgr
 export interface GuardrailDeps {
   attempts: Pick<AttemptStore, 'get' | 'currentStepType'>;
   guardrailEvents: Pick<GuardrailEventStore, 'append'>;
-  getWorkspace?: (workspaceId: number | null) => Promise<GuardrailWorkspace | undefined> | undefined;
+  getWorkspace?: ((workspaceId: number | null) => Promise<GuardrailWorkspace | undefined>) | undefined;
   /** The live-usage snapshot for the spend poll (#217): the spend guard advances
    * the reader itself so a budget trip never lags the real spend. */
   sampleSnapshot: (attemptId: number) => Promise<AttemptUsageSnapshot | null>;

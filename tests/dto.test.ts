@@ -21,7 +21,7 @@ import {
 import type { AttemptRow, ConversationRow, TaskRow, VerificationAttemptRow } from '../src/db/schema.js';
 import type { TaskWithDeps, TaskOverrides } from '../src/domain/tasks.js';
 import type { Ticket } from '../src/tracker/adapter.js';
-import type { Cost } from '../src/execution/pricing.js';
+import type { Cost } from '../src/domain/pricing.js';
 import type { AttemptUsage, AttemptUsageSnapshot, ProcessNode } from '../src/execution/usage.js';
 import type { OperationSnapshot } from '../src/telemetry/operations.js';
 
