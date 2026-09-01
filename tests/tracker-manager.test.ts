@@ -216,7 +216,7 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     expect((await manager.listEpics(workspace.id)).map((epic) => epic.ref)).not.toContain(10);
   });
 
-  it('resolves an integrated Epic the scan has aged out from its stored snapshot; the Board stays open-only (#439)', async () => {
+  it('resolves an integrated Epic the scan has aged out from its stored snapshot; the Board surfaces it from the record (#439)', async () => {
     ticketsByRepo.set(repoA, [
       { ...ticket(19), title: 'Delivery map', labels: ['wayfinder:map'], isMap: true },
       { ...ticket(20), title: 'Map member', parent: 19 },
@@ -244,10 +244,14 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     // the title falls to the ref placeholder.
     expect(detail?.title).toBe('Epic #19');
 
-    // The Board is open-only by design: a finished Epic is not a stale active band,
-    // and the Tasks-list projection stays live-work only.
-    expect((await manager.listEpics(workspace.id)).map((e) => e.ref)).not.toContain(19);
-    expect((await manager.listEpicTickets(workspace.id)).map((t) => t.number)).not.toContain(19);
+    // The finished Epic no longer vanishes: the Board and Tasks list surface it
+    // from the stored record with its frozen snapshot members.
+    const listed = await manager.listEpics(workspace.id);
+    expect(listed.map((e) => e.ref)).toContain(19);
+    const band = listed.find((e) => e.ref === 19);
+    expect(band?.members.map((m) => m.ref)).toEqual([20]);
+    expect(band?.kind).toBe('map');
+    expect((await manager.listEpicTickets(workspace.id)).map((t) => t.number)).toContain(19);
 
     // Persisted-facts-only: after a restart with no adapter, the record still resolves it.
     manager.stopAll();
