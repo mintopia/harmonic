@@ -70,7 +70,7 @@ describe('Codex afk permission model', () => {
   it('starts an afk Codex Run despite no auto/bypass mode; a declined permission request fails the Attempt and the exhausted cap escalates', async () => {
     const repo = makeRepo();
     await server.app.ctx.asyncDb.write((d) => d.update(workspaces).set({ workingDir: repo }).run());
-    await server.app.ctx.configStore.update({
+    await server.app.ctx.settingsStore.updateGlobal({
       drive: { prompt: JSON.stringify({ requestPermission: { title: 'Write hello.txt' }, stopReason: 'end_turn' }) },
     });
 
@@ -140,7 +140,7 @@ describe('Codex afk full-access mode', () => {
     await server.app.ctx.asyncDb.write((d) => d.update(workspaces).set({ workingDir: repo }).run());
     // A scenario with no permission request — Codex in agent-full-access never
     // asks — that finishes cleanly over MCP.
-    await server.app.ctx.configStore.update({
+    await server.app.ctx.settingsStore.updateGlobal({
       drive: { prompt: JSON.stringify({ mcpFinish: true, stopReason: 'end_turn' }) },
     });
 

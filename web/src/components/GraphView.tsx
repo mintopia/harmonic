@@ -18,7 +18,8 @@ import {
   visibleTasks,
 } from '../graph-model';
 import { layoutGraph } from '../graph-layout';
-import { taskKey } from '../id-format.js';
+import { ticketRowId } from '../id-format.js';
+import { useLiveEffect } from '../useLiveEffect';
 import { Switch } from './Switch';
 import { EmptyState } from './EmptyState';
 import { displayTitle, labelType, touchTarget, touchTargetInline } from '../ui';
@@ -93,20 +94,16 @@ export function GraphView({
 
   const [layout, setLayout] = useState<Layout | null>(null);
   const [layoutError, setLayoutError] = useState(false);
-  useEffect(() => {
-    let live = true;
+  useLiveEffect((live) => {
     setLayoutError(false);
     if (visible.length === 0) {
       setLayout({ nodes: [], groups: [], edges: [], width: 0, height: 0 });
       return;
     }
     layoutGraph(visible, edges, { direction: 'RIGHT', nodeW: NODE_W, nodeH: NODE_H, groupLabelPad: 34 }).then(
-      (l) => live && setLayout(l),
-      () => live && setLayoutError(true),
+      (l) => live() && setLayout(l),
+      () => live() && setLayoutError(true),
     );
-    return () => {
-      live = false;
-    };
     // Structure key stands in for (visible, edges): same nodes+edges ⇒ same layout.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [structureKey]);
@@ -364,12 +361,9 @@ export function CardNode({
 }) {
   const displayState = graphNodeState(task);
   const sig = SIGNAL[displayState];
-  const taskId = taskKey(task.id);
+  const rowLabel = ticketRowId(task.id, task.trackerRef);
   const originLabel = task.origin === 'mirrored' ? 'Mirrored task' : 'Native task';
   const taskIdEnd = n.x + n.w - 14;
-  // The compact Task id is right-aligned; reserve its character width before
-  // placing the origin marker so larger ids keep the same clear gap.
-  const originMarkerX = taskIdEnd - taskId.length * 6 - 10;
   return (
     <g
       data-task-id={task.id}
@@ -410,18 +404,8 @@ export function CardNode({
       <text x={n.x + 30} y={n.y + 44} fontSize={10.5} fontWeight={600} fill={sig.text} letterSpacing="0.03em">
         {STATE_LABEL[displayState].toUpperCase()}
       </text>
-      <circle
-        cx={originMarkerX}
-        cy={n.y + 40}
-        r={4}
-        fill={task.origin === 'mirrored' ? 'none' : 'var(--hm-muted)'}
-        stroke="var(--hm-muted)"
-        strokeWidth={1.5}
-      >
-        <title>{originLabel}</title>
-      </circle>
       <text x={taskIdEnd} y={n.y + 44} className="fill-faint" fontSize={10} textAnchor="end">
-        {taskId}
+        {rowLabel}
       </text>
       {badge != null && (
         <text x={n.x + n.w - 10} y={n.y + 16} textAnchor="end" className="fill-faint" fontSize={9.5} fontWeight={700}>

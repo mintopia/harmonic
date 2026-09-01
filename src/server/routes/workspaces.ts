@@ -193,7 +193,7 @@ export async function workspaceRoutes(fastify: FastifyInstance): Promise<void> {
       // (issue #166) — the same rule the global config enforces (ADR-0019). The
       // field-pathed message lets the settings form surface it inline.
       if (req.body.guardrailBudget) {
-        const unpriced = unpricedModelsForCostCap(req.body.guardrailBudget, ctx.configStore.get());
+        const unpriced = unpricedModelsForCostCap(req.body.guardrailBudget, ctx.settingsStore.getGlobal());
         if (unpriced.length > 0) {
           throw new DomainError('validation', `guardrailBudget.costUsd: ${costCapMessage(unpriced)}`);
         }
@@ -216,7 +216,7 @@ export async function workspaceRoutes(fastify: FastifyInstance): Promise<void> {
           reviewModel: req.body.reviewModel === undefined ? current.reviewModel : req.body.reviewModel,
           reviewHarness: req.body.reviewHarness === undefined ? current.reviewHarness : req.body.reviewHarness,
         };
-        const { review } = resolveVerifiers(merged, ctx.configStore.get());
+        const { review } = resolveVerifiers(merged, ctx.settingsStore.getGlobal());
         if (review.requested && !review.enabled) {
           const missing = !review.model ? 'reviewModel' : 'reviewPrompt';
           const noun = missing === 'reviewModel' ? 'model' : 'prompt';

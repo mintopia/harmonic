@@ -51,7 +51,7 @@ describe('escalation actions on a worktree ticket (ADR-0041)', () => {
     const ws = (await server.app.ctx.workspaces.list())[0]!;
     workspaceId = ws.id;
     await server.app.ctx.workspaces.update(workspaceId, { workingDir: repoDir });
-    await server.app.ctx.configStore.update({ maxAttempts: 2 });
+    await server.app.ctx.settingsStore.updateGlobal({ maxAttempts: 2 });
   });
   afterAll(async () => {
     await server.close();

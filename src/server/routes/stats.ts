@@ -20,7 +20,7 @@ import {
 } from '../stats-aggregates.js';
 import { logger } from '../../logger.js';
 import type { AttemptState } from '../../db/schema.js';
-import type { StatsRange, StatsReader } from '../../db/stats-reader.js';
+import type { StatsRange, StatsWorkerClient } from '../../db/stats-reader.js';
 
 /** The stats view's `attemptsByState` keys: `passed` reads as `completed`, and
  * `escalated` (an Attempt-only state) folds into the generic `failed` bucket,
@@ -249,7 +249,7 @@ const epicParamsSchema = z.object({
  * range; the Epic route adds `epicRef`. Every honest-numbers rule and locked
  * formula (ADR-0008, ADR-0014) is identical — only the reader's scope differs.
  */
-async function computeStats(statsReader: StatsReader, range: StatsRange) {
+async function computeStats(statsReader: StatsWorkerClient, range: StatsRange) {
   const { from, to } = range;
   const startedAtMs = Date.now();
   // Local libsql executes file-backed queries inline despite returning a

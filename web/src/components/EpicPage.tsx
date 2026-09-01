@@ -1,12 +1,13 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { api } from '../api';
+import { useLiveEffect } from '../useLiveEffect';
 import type { Task, ModelUsage } from '../types';
 import type { Epic, EpicStage, IntegrationStepState } from '../epic-model';
 import { epicLifecycleSteps } from '../epic-model';
 import type { Stats } from '../stats-model';
 import { epicUsageSummary, tokenBarSegments, tokenBarEmpty, rowCost } from '../epic-summary-model';
 import { formatCost } from '../cost';
-import { issueRef, taskKey } from '../id-format.js';
+import { issueRef, ticketRowId } from '../id-format.js';
 import { toastError } from '../toast';
 import { cardTitle } from '../board-sections-model';
 import { card, panel, chip, stateChip, stateDot, PHASE_NODE_STYLES, type PhaseNodeVisual } from '../ui';
@@ -216,7 +217,7 @@ function ChildRow({
       <div role="cell" className="flex items-center justify-end gap-1.5 whitespace-nowrap tabular-nums text-muted">
         <span aria-hidden="true" className={stateDot(child.state)} />
         <span className="sr-only">Id: </span>
-        {taskKey(child.id)}
+        {ticketRowId(child.id, child.trackerRef)}
       </div>
       <div role="cell" className="min-w-0 pr-2">
         <span title={child.summary} className="block truncate text-ink">
@@ -411,26 +412,17 @@ export function EpicPage({
   const [childTasks, setChildTasks] = useState<Task[] | null>(null);
   const [childTotals, setChildTotals] = useState<Map<number, ModelUsage | null>>(() => new Map());
 
-  useEffect(() => {
-    let live = true;
-    api.epic(workspaceId, epicRef).then((e) => live && setEpic(e), toastError);
-    return () => {
-      live = false;
-    };
+  useLiveEffect((live) => {
+    api.epic(workspaceId, epicRef).then((e) => live() && setEpic(e), toastError);
   }, [workspaceId, epicRef]);
 
-  useEffect(() => {
-    let live = true;
-    api.epicStats(epicRef, workspaceId).then((s) => live && setStats(s), toastError);
-    return () => {
-      live = false;
-    };
+  useLiveEffect((live) => {
+    api.epicStats(epicRef, workspaceId).then((s) => live() && setStats(s), toastError);
   }, [epicRef, workspaceId]);
 
-  useEffect(() => {
-    let live = true;
+  useLiveEffect((live) => {
     api.tasks({ workspaceId, parent: epicRef }).then(({ tasks }) => {
-      if (!live) return;
+      if (!live()) return;
       setChildTasks(tasks);
       // Bounded by the Epic's own member count; tolerate individual failures
       // (a row simply shows no token bar) rather than failing the whole page.
@@ -442,12 +434,9 @@ export function EpicPage({
           ),
         ),
       ).then((pairs) => {
-        if (live) setChildTotals(new Map(pairs));
+        if (live()) setChildTotals(new Map(pairs));
       });
     }, toastError);
-    return () => {
-      live = false;
-    };
   }, [epicRef, workspaceId]);
 
   useEffect(() => {

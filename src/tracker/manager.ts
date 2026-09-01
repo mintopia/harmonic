@@ -10,7 +10,7 @@ import { TrackerPoller } from './poller.js';
 import { deriveMaps, type DerivedMap } from './mirror.js';
 import { recordAndCloseIntegratedEpic } from './epic-close.js';
 import { EpicIntegrationCoordinator, integrationBranchName } from '../execution/epic-integration.js';
-import { EpicIntegrateCoordinator, type EpicIntegrateOutcome } from '../execution/epic-integrate-coordinator.js';
+import { EpicIntegrateCoordinator, type EpicIntegrateOutcome } from '../execution/epic-integrate-git.js';
 import { verifyEpicIntegration } from '../execution/epic-verification.js';
 import { EpicOperations } from '../execution/epic-operations.js';
 import { resolveRepositoryDefaultBranch } from '../execution/branch-merge.js';

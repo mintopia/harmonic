@@ -33,11 +33,13 @@ band and Epic clicks open the summary page at `/epic/:ref`).
   three-place theming in `web/src/index.css` (light / `data-theme` / system)
   is retained, and the **contrast test is the hard CI gate** for every
   documented token pairing.
-- **The running amber is a bounded sub-AA exception**, permitted only because
-  state is never carried by colour alone (pulsing dot with `aria-label`, text
-  label, structural position). If amber ever becomes a state's sole carrier,
-  that usage must independently meet AA. Recorded so accessibility audits do
-  not re-flag it.
+- **The running amber now clears AA in both themes** (issue #458). It was
+  formerly a bounded sub-AA exception (permitted because running state is never
+  carried by colour alone — pulsing dot, text label, structural position), but
+  #458 retired that carve-out: the light amber was darkened until the Working
+  chip and the count/figure text meet the 4.5:1 floor, so the contrast gate now
+  holds every state colour to AA with no exceptions. The Blocked slate was
+  nudged the same way in the same pass.
 - Vocabulary in UI copy: **merged / merging** (never the banned pre-reset
   merge synonym), Task/Ticket per ADR-0001, Steps for Attempt timeline rows.
 

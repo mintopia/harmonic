@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Task, TaskState } from '../types';
 import type { Epic, EpicMember, MemberPipStatus } from '../epic-model';
-import { closedMembers, isEpicIntegrating, memberPipStatus } from '../epic-model';
+import { closedMembers, isEpicIntegrating, memberPipLabel, memberPipStatus } from '../epic-model';
 import {
   boardSections,
   cardTitle,
@@ -10,7 +10,7 @@ import {
   type BlockerColumn,
   type PendingItem,
 } from '../board-sections-model';
-import { issueRef, taskKey } from '../id-format.js';
+import { ticketRowId } from '../id-format.js';
 import { api } from '../api';
 import { subscribe } from '../ws';
 import { toastError } from '../toast';
@@ -19,6 +19,7 @@ import { EpicIntegrationBar } from './EpicIntegrationBar';
 import { formatModelLabel, providerLabel } from './TaskIdentity';
 import {
   blockerBadge,
+  blockerCountPip,
   boardSectionTitle,
   btnPrimary,
   chip,
@@ -39,9 +40,7 @@ export function escalationReasonText(reason: string): string {
 }
 
 function rowId(task: Task): string {
-  return task.origin === 'mirrored' && task.trackerRef != null
-    ? issueRef(task.trackerRef)
-    : taskKey(task.id);
+  return ticketRowId(task.id, task.trackerRef);
 }
 
 function Dot({ task }: { task: Task }) {
@@ -126,10 +125,22 @@ function WhoLine({ harness, model }: { harness: string; model: string }) {
   );
 }
 
+/** "Blocked" is the primary label (issue #458: one word for dependency-unmet
+ * across Board/Epic); the count is a secondary pip, not the headline. */
 function BlockerBadge({ count, blockedOnFailed }: { count: number; blockedOnFailed: boolean }) {
   return (
-    <span className={blockerBadge(blockedOnFailed)} title={blockedOnFailed ? 'A blocker is escalated or cancelled' : undefined}>
-      {count === 1 ? '1 blocker' : `${count} blockers`}
+    <span
+      role="img"
+      aria-label={count === 1 ? '1 blocker' : `${count} blockers`}
+      className="inline-flex items-center gap-1"
+      title={blockedOnFailed ? 'A blocker is escalated or cancelled' : undefined}
+    >
+      <span aria-hidden="true" className={blockerBadge(blockedOnFailed)}>
+        Blocked
+      </span>
+      <span aria-hidden="true" className={blockerCountPip(blockedOnFailed)}>
+        {count}
+      </span>
     </span>
   );
 }
@@ -375,8 +386,15 @@ function PendingCard({
 }) {
   const muted = item.humanOnly;
   const wash: TaskState | '' = muted || isBlocked(item) || item.state === null ? '' : item.state;
+  // An unmirrored member (no backing Task) has no in-app target — its title button
+  // is disabled and Run now never renders — so the card must not present as clickable:
+  // a cursor-pointer card with no keyboard-focusable control is a WCAG 2.1.1 trap.
+  const interactive = item.taskId != null;
+  const affordance = interactive
+    ? 'cursor-pointer transition duration-150 motion-reduce:transition-none hover:-translate-y-0.5 hover:border-edge hover:shadow-float'
+    : '';
   return (
-    <div className={`bold-wash ${wash} relative w-[300px] shrink-0 cursor-pointer rounded-lg border bg-surface p-2.5 transition duration-150 motion-reduce:transition-none hover:-translate-y-0.5 hover:border-edge hover:shadow-float ${item.runnable ? 'border-ready-dot/40' : 'border-hairline'}`}>
+    <div className={`bold-wash ${wash} relative w-[300px] shrink-0 rounded-lg border bg-surface p-2.5 ${affordance} ${item.runnable ? 'border-ready-dot/40' : 'border-hairline'}`}>
       <div className="flex items-center gap-2">
         <span aria-hidden="true" className={`size-2 shrink-0 rounded-full ${itemDot(item)}`} />
         <span className="font-data text-small text-faint">{item.label}</span>
@@ -626,7 +644,7 @@ function StatusPips({ epic }: { epic: Epic }) {
     >
       {epic.members.map((m) => {
         const status = memberPipStatus(m);
-        return <span key={m.ref} title={`#${m.ref} · ${status}`} className={`h-2 w-3 rounded-[3px] ${PIP_FILL[status]}`} />;
+        return <span key={m.ref} title={`#${m.ref} · ${memberPipLabel(status)}`} className={`h-2 w-3 rounded-[3px] ${PIP_FILL[status]}`} />;
       })}
     </span>
   );

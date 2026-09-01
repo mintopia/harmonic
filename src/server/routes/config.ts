@@ -18,7 +18,7 @@ import {
 /**
  * A deep-partial patch of `AppConfig` (config.ts). Every field is optional
  * at every level so an operator can send just the branch they're changing;
- * `ConfigStore.update` deep-merges it onto the stored config and re-parses
+ * `settingsStore.updateGlobal` deep-merges it onto the stored config and re-parses
  * the result through `appConfigSchema`, which is the actual source of
  * truth for validity — this schema exists for documentation and to reject
  * non-object junk, not to duplicate that validation.
@@ -152,7 +152,7 @@ export async function configRoutes(fastify: FastifyInstance): Promise<void> {
         },
       },
     },
-    async () => ctx.configStore.get(),
+    async () => ctx.settingsStore.getGlobal(),
   );
 
   app.patch(
@@ -170,7 +170,7 @@ export async function configRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req) => {
-      const updated = await ctx.configStore.update(req.body as LegacyConfig);
+      const updated = await ctx.settingsStore.updateGlobal(req.body as LegacyConfig);
       ctx.autoRunner.poke();
       return updated;
     },
@@ -193,7 +193,7 @@ export async function configRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req) => {
-      const updated = await ctx.configStore.replace(req.body as AppConfig);
+      const updated = await ctx.settingsStore.replaceGlobal(req.body as AppConfig);
       ctx.autoRunner.poke();
       return updated;
     },

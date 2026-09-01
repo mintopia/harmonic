@@ -121,7 +121,7 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
       },
     },
     async (req, reply) => {
-      const config = ctx.configStore.get();
+      const config = ctx.settingsStore.getGlobal();
       const workspace = await ctx.workspaces.resolve(req.body.workspaceId);
       const harness = req.body.harness ?? resolveScoped('chatHarness', workspace.chatHarness, config.chat.harness);
       const harnessConfig = config.harnesses[harness as keyof typeof config.harnesses];

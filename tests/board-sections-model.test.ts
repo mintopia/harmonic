@@ -190,9 +190,9 @@ describe('boardSections — Attention / Running / Pending (ADR-0041)', () => {
     expect(sections.pending[0]!.epic).toBeNull();
     expect(layout(sections.pending[0]!.columns)).toEqual([
       ['Frontier', ['T-3', 'T-1']],
-      ['1 blocker', ['#6']],
-      ['2 blockers', ['#7']],
-      ['3 blockers', ['#8']],
+      ['1 blocker', ['#6 · T-6']],
+      ['2 blockers', ['#7 · T-7']],
+      ['3 blockers', ['#8 · T-8']],
     ]);
     const three = sections.pending[0]!.columns[3]!.items[0]!;
     expect(three.blockedOnFailed).toBe(true);
@@ -268,8 +268,8 @@ describe('boardSections — Attention / Running / Pending (ADR-0041)', () => {
     const items = sections.pending[0]!.columns.flatMap((column) => column.items);
     expect(items.map((item) => [item.label, item.humanOnly, item.runnable])).toEqual([
       ['T-1', false, true],
-      ['#2', true, false],
-      ['#3', false, false],
+      ['#2 · T-2', true, false],
+      ['#3 · T-3', false, false],
     ]);
   });
 });
@@ -279,9 +279,9 @@ describe('epicPendingColumns', () => {
     const merged = task(1, 'done', { origin: 'mirrored', trackerRef: 1 });
     const dependant = blocked(2, [1, 99], { openBlockerCount: 1 });
     const columns = epicPendingColumns(epic(90, [member(1, 1, { mergeStatus: 'completed' }), member(2, 2)]), [merged, dependant]);
-    expect(layout(columns)).toEqual([['1 blocker', ['#2']]]);
+    expect(layout(columns)).toEqual([['1 blocker', ['#2 · T-2']]]);
     expect(columns[0]!.items[0]!.blockers).toEqual([
-      { taskId: 1, label: '#1', satisfied: true },
+      { taskId: 1, label: '#1 · T-1', satisfied: true },
       { taskId: 99, label: 'Task 99', satisfied: false },
     ]);
   });
@@ -291,9 +291,9 @@ describe('epicPendingColumns', () => {
     const humanOnly = task(2, 'ready', { origin: 'mirrored', trackerRef: 2, agentWorkable: false, humanOnly: true });
     const columns = epicPendingColumns(epic(90, [member(1, 1), member(2, 2)]), [working, humanOnly]);
     // Working member first (band order), then the human-only ready ticket.
-    expect(layout(columns)).toEqual([['Frontier', ['T-1', '#2']]]);
+    expect(layout(columns)).toEqual([['Frontier', ['T-1', '#2 · T-2']]]);
     expect(columns[0]!.items[0]).toMatchObject({ label: 'T-1', state: 'working', runnable: false });
-    expect(columns[0]!.items[1]).toMatchObject({ label: '#2', runnable: false, humanOnly: true });
+    expect(columns[0]!.items[1]).toMatchObject({ label: '#2 · T-2', runnable: false, humanOnly: true });
   });
 
   it('places an unmirrored member by its tracker-ready flag: Frontier when ready, an Unmirrored column otherwise', () => {
@@ -303,7 +303,7 @@ describe('epicPendingColumns', () => {
     );
     expect(layout(columns)).toEqual([
       ['Frontier', ['#1']],
-      ['1 blocker', ['#3']],
+      ['1 blocker', ['#3 · T-3']],
       ['Unmirrored', ['#2']],
     ]);
     expect(columns[0]!.items[0]).toMatchObject({ state: 'ready', taskId: null, runnable: false });

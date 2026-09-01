@@ -177,7 +177,7 @@ describe('escalation: the three actions (direct mode)', () => {
     // supersession rather than coinciding with an exhausted cap of 1.
     const escServer = await startServer({ ...stubHarness(), maxAttempts: 3 });
     try {
-      await escServer.app.ctx.configStore.update({
+      await escServer.app.ctx.settingsStore.updateGlobal({
         drive: { prompt: JSON.stringify({ mcpEscalate: { reason: 'need a decision on the schema' } }) },
       });
       const workspaceId = (await escServer.app.ctx.workspaces.list())[0]!.id;

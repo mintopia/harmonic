@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { api } from '../api';
 import { subscribe } from '../ws';
 import type { AppConfig, Conversation, ConversationEvent, Workspace } from '../types';
@@ -11,13 +11,9 @@ import {
 } from '../stream-announce-model';
 import { isTurnRunning } from '../conversation-steering-model';
 import {
-  addPendingPermission,
   chooseAlwaysAllowOptionId,
   permissionOptionLabel,
-  removePendingPermission,
-  resolvePendingPermissionFromEvent,
   type PendingPermission,
-  type PendingPermissions,
 } from '../conversation-permissions-model';
 import { clearConversationId, loadConversationId, storeConversationId } from '../conversation-storage';
 import {
@@ -43,6 +39,7 @@ import { EventStream } from './EventStream';
 import { ModelCombobox } from './ModelCombobox';
 import { PathTail } from './PathTail';
 import { Icon } from './Icon';
+import { useConversationDetail } from './useConversationDetail';
 import { toastError } from '../toast';
 import {
   btnPrimary,
@@ -593,13 +590,19 @@ export function ConversationLauncher({
   const focusedId = view.kind === 'detail' ? view.conversationId : null;
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [conversation, setConversation] = useState<Conversation | null>(null);
-  const [events, setEvents] = useState<ConversationEvent[]>([]);
-  const [pending, setPending] = useState<PendingPermissions>({});
 
   // `focusedRef` mirrors `open`/`view` into a ref so the always-on subscription
   // below never needs to reconnect just because the operator switched panes.
   const [attention, setAttention] = useState<AttentionState>(NO_ATTENTION);
+
+  const upsertConversationInList = useCallback((c: Conversation) => {
+    setConversations((current) => upsertConversation(current, c));
+  }, []);
+  const removeConversationFromList = useCallback((id: number) => {
+    setConversations((current) => removeConversationById(current, id));
+    setAttention((current) => clearAttention(current, id));
+  }, []);
+
   const focusedRef = useRef<number | null>(null);
   useEffect(() => {
     focusedRef.current = open && view.kind === 'detail' ? view.conversationId : null;
@@ -635,52 +638,6 @@ export function ConversationLauncher({
     return unsubscribe;
   }, [workspaceId]);
 
-  useEffect(() => {
-    if (focusedId === null) {
-      setConversation(null);
-      setEvents([]);
-      setPending({});
-      return;
-    }
-    const id = focusedId;
-    let live = true;
-    setConversation(null);
-    setEvents([]);
-    setPending({});
-    api.conversation(id).then((c) => {
-      if (!live) return;
-      setConversation(c);
-      setConversations((current) => upsertConversation(current, c));
-    }, toastError);
-    api.conversationEvents(id).then(({ events }) => live && setEvents(events), toastError);
-    const unsubscribe = subscribe((msg) => {
-      if (msg.type === 'conversation_event' && msg.event.conversationId === id) {
-        setEvents((current) =>
-          current.some((e) => e.id === msg.event.id) ? current : [...current, msg.event],
-        );
-        // The resolution signal (LOCKED contract): a permission_request
-        // conversation_event whose payload.reqId matches a pending prompt
-        // clears it, whether it was answered here or elsewhere/crashed.
-        setPending((current) => resolvePendingPermissionFromEvent(current, msg.event));
-      }
-      if (msg.type === 'permission_request' && msg.conversationId === id) {
-        setPending((current) => addPendingPermission(current, msg));
-      }
-      if (msg.type === 'conversation_changed' && msg.conversation.id === id) {
-        setConversation(msg.conversation);
-        setConversations((current) => upsertConversation(current, msg.conversation));
-        // Belt-and-braces: the server auto-clears pending permissions on
-        // end/crash via the resolution signal above, but a prompt should
-        // never outlive the conversation's own 'ended' state in the UI.
-        if (msg.conversation.state === 'ended') setPending({});
-      }
-    });
-    return () => {
-      live = false;
-      unsubscribe();
-    };
-  }, [focusedId]);
-
   const openList = () => {
     setView({ kind: 'list' });
     clearConversationId(localStorage);
@@ -694,69 +651,13 @@ export function ConversationLauncher({
     clearConversationId(localStorage);
   };
 
-  const send = async (fields: { harness: string; model: string }, text: string) => {
-    let id = view.kind === 'detail' ? view.conversationId : null;
-    if (id === null) {
-      const created = await api.createConversation({
-        ...fields,
-        ...(workspaceId !== null ? { workspaceId } : {}),
-      });
-      id = created.id;
-      setConversations((current) => upsertConversation(current, created));
-      setConversation(created);
-      setView({ kind: 'detail', conversationId: id });
-      storeConversationId(localStorage, id);
-    }
-    const { queued } = await api.sendTurn(id, text);
-    return { queued };
-  };
-
-  const end = () => {
-    const id = view.kind === 'detail' ? view.conversationId : null;
-    if (id === null) return;
-    api.endConversation(id).then((c) => {
-      setConversation(c);
-      setConversations((current) => upsertConversation(current, c));
-      setPending({});
-    }, toastError);
-  };
-
-  const rename = async (title: string | null) => {
-    const id = view.kind === 'detail' ? view.conversationId : null;
-    if (id === null) return;
-    try {
-      const updated = await api.renameConversation(id, title);
-      setConversation(updated);
-      setConversations((current) => upsertConversation(current, updated));
-    } catch (e) {
-      toastError(e);
-    }
-  };
-
-  const deleteConversation = async (id: number) => {
-    try {
-      await api.deleteConversation(id);
-      setConversations((current) => removeConversationById(current, id));
-      setAttention((current) => clearAttention(current, id));
-      if (view.kind === 'detail' && view.conversationId === id) openList();
-    } catch (e) {
-      toastError(e);
-    }
-  };
-
-  // Optimistic relative to the *resolving event*, not the HTTP response:
-  // the server confirms via a conversation_event carrying this reqId, but
-  // there is no reason to wait for it once the answer POST itself
-  // succeeded — remove the prompt immediately, and re-add it (implicitly,
-  // by leaving state untouched) on failure so the operator can retry.
-  const answerPermission = async (p: PendingPermission, optionId: string, remember?: boolean) => {
-    try {
-      await api.answerPermission(p.conversationId, p.reqId, optionId, remember);
-      setPending((current) => removePendingPermission(current, p.reqId));
-    } catch (e) {
-      toastError(e);
-    }
-  };
+  const { conversation, events, pending, actions } = useConversationDetail(focusedId, {
+    workspaceId,
+    upsertConversationInList,
+    removeConversationFromList,
+    openConversation,
+    openList,
+  });
 
   if (!open) {
     const needsAttention = hasAttention(attention);
@@ -813,7 +714,7 @@ export function ConversationLauncher({
           expanded={expanded}
           onSelect={openConversation}
           onNew={openCompose}
-          onDelete={deleteConversation}
+          onDelete={actions.deleteConversation}
           onToggleExpand={toggleExpanded}
           onClose={() => setOpen(false)}
         />
@@ -825,9 +726,9 @@ export function ConversationLauncher({
             expanded={expanded}
             onBack={openList}
             onToggleExpand={toggleExpanded}
-            onRename={rename}
-            onEnd={end}
-            onDelete={() => conversation && deleteConversation(conversation.id)}
+            onRename={actions.rename}
+            onEnd={actions.end}
+            onDelete={() => conversation && actions.deleteConversation(conversation.id)}
             onClose={() => setOpen(false)}
           />
 
@@ -844,7 +745,7 @@ export function ConversationLauncher({
                 key={p.reqId}
                 pending={p}
                 workingDir={conversation?.workingDir ?? ''}
-                onAnswer={answerPermission}
+                onAnswer={actions.answerPermission}
               />
             ))}
 
@@ -861,7 +762,7 @@ export function ConversationLauncher({
                 conversation={conversation}
                 events={events}
                 expanded={expanded}
-                onSend={send}
+                onSend={actions.send}
               />
             )
           )}

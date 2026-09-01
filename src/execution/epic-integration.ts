@@ -1,7 +1,7 @@
 import type { TaskRow } from '../db/schema.js';
 import type { TaskService } from '../domain/tasks.js';
 import { deriveLeafEpics } from '../domain/epic-derivation.js';
-import type { MemberMergeState } from '../domain/epic-integrate.js';
+import type { MemberMergeState } from '../domain/epic-integrate-decision.js';
 import type { Ticket } from '../tracker/adapter.js';
 import { persistedTickets } from '../tracker/persisted.js';
 import { Git } from './git.js';

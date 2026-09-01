@@ -4,12 +4,15 @@ import { formatCost } from './cost';
 import type { AppConfig, Cost, Task, Workspace } from './types';
 import type { Epic } from './epic-model';
 import { Board } from './components/Board';
+import { HeaderStatusBar } from './components/HeaderStatusBar';
+import { NavRail } from './components/NavRail';
 import { boardSections } from './board-sections-model';
 import { TaskForm } from './components/TaskForm';
 import { TicketPage } from './components/TicketPage';
 import { EpicPage } from './components/EpicPage';
 import { subscribe } from './ws';
 import { debounce } from './debounce';
+import { useLiveEffect } from './useLiveEffect';
 import { Login } from './components/Login';
 import { ApiPage } from './components/ApiPage';
 import { StatsPage } from './components/StatsPage';
@@ -18,13 +21,12 @@ import { SettingsPage } from './components/SettingsPage';
 import { TableView } from './components/TableView';
 import { ActivityView } from './components/ActivityView';
 import { BrandMark } from './components/BrandMark';
-import { Icon, type IconName } from './components/Icon';
-import { Switch } from './components/Switch';
+import { Icon } from './components/Icon';
 import { ConversationLauncher } from './components/ConversationLauncher';
 import { NewWorkspaceForm, WorkspaceSwitcher } from './components/WorkspaceSwitcher';
 import { WorkspaceSettingsPage } from './components/WorkspaceSettingsPage';
 import { EmptyState } from './components/EmptyState';
-import { RAIL_GROUPS, VIEW_LABELS, isWorkspaceScopedView, loadRailCollapsed, storeRailCollapsed } from './rail-model';
+import { VIEW_LABELS, isWorkspaceScopedView, loadRailCollapsed, storeRailCollapsed } from './rail-model';
 import { CrumbBar } from './components/CrumbBar';
 import type { View } from './rail-model';
 import { parseRoute, serializeRoute, type Route, type TableFilters } from './router-model';
@@ -43,7 +45,7 @@ import {
   RUN_HINT_DISMISSED_KEY,
   ESCALATION_HINT_DISMISSED_KEY,
 } from './onboarding-model';
-import { btnPrimary, btnQuiet, railBadge, sectionLabel, touchTarget } from './ui';
+import { btnPrimary, btnQuiet } from './ui';
 import { Toaster, toastError } from './toast';
 import { ReviewLiveRegions } from './components/ReviewLiveRegions';
 import {
@@ -70,14 +72,6 @@ function useRailBreakpoint() {
     () => matchMedia(RAIL_QUERY).matches,
   );
 }
-
-// Collapse only applies at the rail breakpoint; the mobile drawer always
-// shows icon + label, so collapsed styles are rail:-prefixed throughout.
-// Active is the sidebar's only accent: a cobalt tint under cobalt text.
-const railItem = (active: boolean, collapsed: boolean) =>
-  `flex w-full min-h-11 items-center gap-2.5 overflow-hidden whitespace-nowrap rounded-md px-2.5 py-2 text-left transition-colors duration-150 ${
-    collapsed ? 'rail:justify-center rail:px-0' : ''
-  } ${active ? 'bg-accent-tint font-semibold text-accent' : 'font-medium text-muted hover:bg-raised hover:text-ink'}`;
 
 // Client routing (issue #103): the active view and its per-view filter/sort/
 // peek state live in the URL, so a refresh restores where the operator was
@@ -146,17 +140,6 @@ async function fetchAllEpics(workspaceId: number): Promise<Epic[]> {
   }
 }
 
-const THEME_ICONS: Record<ThemePref, IconName> = {
-  system: 'circle-half',
-  light: 'sun',
-  dark: 'moon',
-};
-const THEME_LABELS: Record<ThemePref, string> = {
-  system: 'Theme: System',
-  light: 'Theme: Light',
-  dark: 'Theme: Dark',
-};
-
 /** Cost over the trailing 24h, scoped to the active Workspace — the status strip's period cost. */
 function usePeriodCost(authed: boolean, tasks: Task[] | null, workspaceId: number | null) {
   const [cost, setCost] = useState<Cost | null>(null);
@@ -170,17 +153,16 @@ function usePeriodCost(authed: boolean, tasks: Task[] | null, workspaceId: numbe
   // debounce instance survives shape changes and can actually coalesce them.
   const refresh = useRef<(() => void) | null>(null);
   const shapeSettled = useRef(false);
-  useEffect(() => {
+  useLiveEffect((live) => {
     if (!authed || workspaceId === null) {
       refresh.current = null;
       return;
     }
-    let live = true;
     const load = () => {
       const to = Date.now();
       fetch(`/api/stats?from=${to - 24 * 3600_000}&to=${to}&workspaceId=${workspaceId}`)
         .then((r) => (r.ok ? r.json() : null))
-        .then((s: { cost: Cost | null } | null) => live && s && setCost(s.cost))
+        .then((s: { cost: Cost | null } | null) => live() && s && setCost(s.cost))
         .catch(() => {}); // status readout only — never worth an alert
     };
     const debounced = debounce(load, 1000);
@@ -189,7 +171,6 @@ function usePeriodCost(authed: boolean, tasks: Task[] | null, workspaceId: numbe
     load(); // eager on mount / Workspace switch; the debounce only guards bursts
     const timer = setInterval(load, 60_000);
     return () => {
-      live = false;
       clearInterval(timer);
       debounced.cancel();
       refresh.current = null;
@@ -413,7 +394,7 @@ export function App() {
   // Fetch the focused Ticket's Task only when it isn't in the loaded list (the
   // focused-Epic deep-link into another Epic, a cross-Workspace or dropped-off id).
   // An in-list id needs no fetch — the poll/socket already keep it fresh.
-  useEffect(() => {
+  useLiveEffect((live) => {
     if (route.task === null) {
       setFetchedTask(null);
       fetchedTaskIdRef.current = null;
@@ -426,11 +407,7 @@ export function App() {
     // a failed fetch leaves fetchedTask null but must still not retry-spam.
     if (fetchedTaskIdRef.current === route.task) return;
     fetchedTaskIdRef.current = route.task;
-    let live = true;
-    api.task(route.task).then((t) => live && setFetchedTask(t), toastError);
-    return () => {
-      live = false;
-    };
+    api.task(route.task).then((t) => live() && setFetchedTask(t), toastError);
   }, [route.task, tasks]);
 
   // The rail's indigo "Needs you" badge (DESIGN.md §5): escalated Tasks and
@@ -599,89 +576,6 @@ export function App() {
     navigate({ ...route, view: 'board', task: null }, { replace: true });
   };
 
-  // Collapsed items keep their accessible name and gain a native tooltip;
-  // when the label is visible neither is needed — below the breakpoint the
-  // drawer shows labels, so the attributes must not apply there.
-  // Collapsed, the icon-only button has no visible text, so it needs an
-  // aria-label/title. Fold the Deck's "Needs you" count into the label there:
-  // the visual pill is suppressed at 48px, but a screen-reader operator — for
-  // whom the collapsed rail is the whole nav — still hears the attention count.
-  const railItemName = (label: string, needsYou: number | null = null) =>
-    railCollapsed && railDesktop
-      ? { 'aria-label': needsYou !== null ? `${label}, ${needsYou} needs you` : label, title: label }
-      : {};
-
-  // Hidden, not unmounted, when collapsed: keyboard order and focus
-  // behavior stay identical in both widths.
-  const railLabel = railCollapsed ? 'rail:hidden' : '';
-
-  const navItems = (
-    <>
-      <nav aria-label="Views" className="flex flex-col gap-0.5 rail:flex-1">
-        {RAIL_GROUPS.map((group) => {
-          // Wire each group's uppercase Label header to its buttons so a screen
-          // reader announces the Workspace grouping the sighted user sees
-          // (role="group" + aria-labelledby), not a flat list.
-          const groupId = `rail-group-${group.label.toLowerCase()}`;
-          return (
-            <div key={group.label} role="group" aria-labelledby={groupId} className="flex flex-col gap-0.5">
-              {/* Uppercase Label group header (DESIGN.md §5), the shared
-                  sectionLabel register. Hidden — not unmounted — when the rail
-                  collapses to icons, so the icon-only nav keeps its order and
-                  grouping gap without a header. */}
-              <div
-                id={groupId}
-                className={`${sectionLabel} px-2.5 pb-1 ${group.label === 'Instance' ? 'sr-only' : ''} ${railCollapsed ? 'rail:hidden' : ''}`}
-              >
-                {group.label}
-              </div>
-              {group.views.map((v) => {
-                // The Deck carries the cobalt "Needs you" count; other items none
-                // (the absence is the default). Suppressed when the rail is a
-                // strip of icons — there's no room for a numeric pill at 48px.
-                const needsYou = v === 'board' && needsYouCount > 0 ? needsYouCount : null;
-                return (
-                  <button
-                    key={v}
-                    aria-current={view === v ? 'page' : undefined}
-                    {...railItemName(VIEW_LABELS[v], needsYou)}
-                    className={railItem(view === v, railCollapsed)}
-                    onClick={() => pickView(v)}
-                  >
-                    <Icon name={v} />
-                    <span className={railLabel}>{VIEW_LABELS[v]}</span>
-                    {needsYou !== null && (
-                      <span
-                        aria-label={`${needsYou} needs you`}
-                        className={`${railBadge} ${railCollapsed ? 'rail:hidden' : ''}`}
-                      >
-                        {needsYou}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          );
-        })}
-      </nav>
-      {/* Desktop only: the nav's rail:flex-1 above pins this to the sidebar
-          foot. Below the rail breakpoint the top drawer wins. */}
-      <div className="mt-2 hidden border-t border-hairline pt-2 rail:flex rail:flex-col">
-        <button
-          aria-expanded={!railCollapsed}
-          aria-label={railCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          title={railCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          className={railItem(false, railCollapsed)}
-          onClick={toggleRail}
-        >
-          <Icon className={railCollapsed ? '-scale-x-100' : ''} name="chevrons-left" />
-          <span className={railLabel}>Collapse</span>
-        </button>
-      </div>
-    </>
-  );
-
   return (
     <div className="flex h-screen flex-col overflow-hidden rail:flex-row">
       <ReviewLiveRegions polite={politeReviewAnnouncement} assertive={assertiveMergeAnnouncement} />
@@ -728,92 +622,33 @@ export function App() {
             railCollapsed ? 'rail:px-1.5' : ''
           }`}
         >
-          {navItems}
+          <NavRail
+            view={view}
+            needsYouCount={needsYouCount}
+            railCollapsed={railCollapsed}
+            railDesktop={railDesktop}
+            onPickView={pickView}
+            onToggleRail={toggleRail}
+          />
         </div>
       </aside>
 
       <div className="group/shell flex min-h-0 min-w-0 flex-1 flex-col">
-        <header
-          aria-label="Status"
-          className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-hairline bg-shell px-6 py-2.5"
-        >
-          {config && (
-            <Switch
-              checked={config.autoRunner.enabled}
-              label="Auto-runner"
-              onChange={(enabled) =>
-                api.updateConfig({ autoRunner: { enabled } }).then(setConfig, toastError)
-              }
-            >
-              <span
-                className="text-[13px] text-muted"
-                title={`Machine Ceiling: ${config.autoRunner.maxConcurrentAttempts}`}
-              >
-                Auto-runner <b className="font-semibold text-ink">{config.autoRunner.enabled ? 'on' : 'off'}</b>
-              </span>
-            </Switch>
-          )}
-          {config && (
-            <span className="flex items-center gap-2 text-[13px] text-muted">
-              <span
-                aria-hidden="true"
-                className={`size-[7px] rounded-full ${runningCount > 0 ? 'bg-running-dot motion-safe:animate-pulse' : 'bg-faint'}`}
-              />
-              <span>
-                <b className={`font-semibold ${runningCount > 0 ? 'text-ink' : 'text-muted'}`}>{runningCount}</b> running
-              </span>
-              <span aria-hidden="true" className="text-faint">
-                ·
-              </span>
-              <span title="Machine worker slots in use / ceiling">
-                <span className="tabular-nums">
-                  {runningCount}/{config.autoRunner.maxConcurrentAttempts}
-                </span>{' '}
-                machine
-              </span>
-            </span>
-          )}
-          {cost24h && (
-            <span className="text-[13px] text-muted" title="Cost over the last 24 hours">
-              <span className="text-faint">today</span>{' '}
-              <b className="font-semibold tabular-nums text-ink">{cost24h}</b>
-            </span>
-          )}
-          <div className="flex-1" />
-          <button
-            aria-label={THEME_LABELS[theme]}
-            title={THEME_LABELS[theme]}
-            className={`${touchTarget} rounded-md text-muted transition-colors duration-150 hover:bg-raised hover:text-ink`}
-            onClick={cycleTheme}
-          >
-            <Icon name={THEME_ICONS[theme]} />
-          </button>
-          <button
-            aria-label="Settings"
-            aria-current={view === 'settings' ? 'page' : undefined}
-            title="Settings"
-            className={`${touchTarget} rounded-md transition-colors duration-150 ${
-              view === 'settings' ? 'bg-accent-tint text-accent' : 'text-muted hover:bg-raised hover:text-ink'
-            }`}
-            onClick={() => pickView('settings')}
-          >
-            <Icon name="settings" />
-          </button>
-          {passwordSet && (
-            <button
-              aria-label="Log out"
-              title="Log out"
-              className={`${touchTarget} rounded-md text-muted transition-colors duration-150 hover:bg-raised hover:text-ink`}
-              onClick={() => fetch('/api/auth/logout', { method: 'POST' }).then(() => setAuthed(false))}
-            >
-              <Icon name="logout" />
-            </button>
-          )}
-          <button onClick={() => setEditing('new')} className={`${btnPrimary} gap-1.5`}>
-            <Icon name="plus" className="size-3.5" />
-            New task
-          </button>
-        </header>
+        <HeaderStatusBar
+          config={config}
+          runningCount={runningCount}
+          cost24h={cost24h}
+          theme={theme}
+          view={view}
+          passwordSet={passwordSet}
+          onAutoRunnerChange={(enabled) =>
+            api.updateConfig({ autoRunner: { enabled } }).then(setConfig, toastError)
+          }
+          onThemeCycle={cycleTheme}
+          onSettingsClick={() => pickView('settings')}
+          onLogout={() => fetch('/api/auth/logout', { method: 'POST' }).then(() => setAuthed(false))}
+          onNewTask={() => setEditing('new')}
+        />
 
         {/* Mounted here, not at the end of the return: the toast stack anchors
             itself to the header's bottom edge (see toast.tsx). */}

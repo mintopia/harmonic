@@ -83,7 +83,7 @@ const epicSchema = z
 
 const epicsListResponseSchema = listResponse('epics', epicSchema);
 
-/** `EpicIntegrateOutcome` (`execution/epic-integrate-coordinator.ts`) as the API serves it — a discriminated union on `status`. */
+/** `EpicIntegrateOutcome` (`execution/epic-integrate-git.ts`) as the API serves it — a discriminated union on `status`. */
 const epicIntegrateOutcomeSchema = z
   .discriminatedUnion('status', [
     z.object({ status: z.literal('integrated'), oid: z.string().meta({ example: 'a1b2c3d' }) }),

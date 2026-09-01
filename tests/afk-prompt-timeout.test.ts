@@ -75,7 +75,7 @@ describe('afk drive loop — finish_task + lost prompt response → verify, not 
     const trackerRef = ref++;
     // The agent commits its work, signals finish_task, then its prompt response
     // is never delivered (`exit: hang`) — the exact 410/411 shape.
-    await server.app.ctx.configStore.update({
+    await server.app.ctx.settingsStore.updateGlobal({
       drive: {
         prompt: JSON.stringify({
           writeFiles: { 'impl.txt': 'implementation\n' },
@@ -120,7 +120,7 @@ describe('afk drive loop — finish_task + lost prompt response → verify, not 
     // The agent commits, signals finish_task, then its inner process closes
     // stdout (EOF) while an outer wrapper lingers — the connection is gone, so
     // the turn cannot be re-prompted; the finished candidate is verified anyway.
-    await server.app.ctx.configStore.update({
+    await server.app.ctx.settingsStore.updateGlobal({
       drive: {
         prompt: JSON.stringify({
           writeFiles: { 'impl.txt': 'implementation\n' },

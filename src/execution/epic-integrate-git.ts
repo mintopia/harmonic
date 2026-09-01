@@ -1,7 +1,7 @@
 import { Git } from './git.js';
 import { integrationBranchName } from './epic-integration.js';
 import type { MergePolicyOutcome } from './merge-policy.js';
-import { decideEpicIntegrate, type MemberMergeState } from '../domain/epic-integrate.js';
+import { decideEpicIntegrate, type MemberMergeState } from '../domain/epic-integrate-decision.js';
 import type { VerificationDecision } from '../verification/combine.js';
 import { logger } from '../logger.js';
 import { EpicOperations } from './epic-operations.js';
@@ -9,7 +9,7 @@ import { EpicOperations } from './epic-operations.js';
 /**
  * The whole-Epic integrate coordinator (issue #161, parallel-epic tranche). The
  * injected-effects shell around the pure {@link decideEpicIntegrate} (`src/domain/
- * epic-integrate.ts`): gather the observed facts, call the decision, execute the
+ * epic-integrate-decision.ts`): gather the observed facts, call the decision, execute the
  * action against an injected `Git` slice and effect callbacks.
  *
  * The last step of an Epic's life (ADR-0024): once every member has merged onto

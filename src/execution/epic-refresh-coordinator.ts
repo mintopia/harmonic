@@ -1,7 +1,7 @@
 import { mergeIntoBase, type MergeIntoBaseArgs, type MergeIntoBaseOutcome } from './branch-merge.js';
 import { Git } from './git.js';
 import { integrationBranchName } from './epic-integration.js';
-import { withRepoLock } from './repo-lock.js';
+import { withBaseCheckoutLock, withRepoLock } from './repo-lock.js';
 
 /** A live integration branch that must follow one observed develop advance. */
 export interface EpicRefreshTarget {
@@ -23,9 +23,10 @@ export type EpicRefreshResolveDispatchOutcome =
 /**
  * Merges a newly advanced default branch into live Epic integration branches.
  *
- * The merge runs under the base repo's {@link withRepoLock} mutex (ADR-0001), so
- * a refresh and a member's `runMergePolicy` merge onto the same repo serialize
- * on one lock. A merge conflict is allowed one agent turn; a second conflict
+ * The merge runs under the base repo's {@link withBaseCheckoutLock} (ADR-0001,
+ * issue #455), so a refresh and a member's `runMergePolicy` merge onto the same
+ * repo serialize on one lock — a refresh must never race a member merge's
+ * in-progress conflicted working tree. A merge conflict is allowed one agent turn; a second conflict
  * escalates the Epic, never one of its members. Per ADR-0046 a base that moved
  * under the refresh is normal: it is recorded and retried, never an operator hold.
  */
@@ -45,15 +46,22 @@ export class EpicRefreshCoordinator {
 
   refresh(target: EpicRefreshTarget): Promise<EpicRefreshOutcome> {
     const branch = integrationBranchName(target.ref);
-    return withRepoLock(target.repoDir, async () => {
-      const outcome = await (this.deps.merge ?? mergeIntoBase)({
-        repoDir: target.repoDir,
-        baseBranch: branch,
-        branch: target.defaultBranch,
-        expectedOid: await (this.deps.git ?? Git).revParse(target.repoDir, target.defaultBranch),
-        mode: 'merge',
-        mutexHeld: true,
-      });
+    // The base-checkout lock (issue #455) serialises this refresh against an
+    // in-progress member merge, whose conflicted working tree it must not race;
+    // the inner metadata lock over `mergeIntoBase` keeps its `mutexHeld: true`
+    // ff-only reentrancy intact.
+    return withBaseCheckoutLock(target.repoDir, async () => {
+      const expectedOid = await (this.deps.git ?? Git).revParse(target.repoDir, target.defaultBranch);
+      const outcome = await withRepoLock(target.repoDir, () =>
+        (this.deps.merge ?? mergeIntoBase)({
+          repoDir: target.repoDir,
+          baseBranch: branch,
+          branch: target.defaultBranch,
+          expectedOid,
+          mode: 'merge',
+          mutexHeld: true,
+        }),
+      );
       if (outcome.ok) {
         this.resolving.delete(target.ref);
         return { status: 'refreshed', oid: outcome.oid };

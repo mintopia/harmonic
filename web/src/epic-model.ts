@@ -214,6 +214,26 @@ export function memberPipStatus(m: EpicMember): MemberPipStatus {
   return 'waiting';
 }
 
+/** The pip's displayed word (issue #458): `waiting` (member not yet in the Epic's
+ * ready frontier) is the same dependency-unmet concept as the Board's
+ * `openBlockerCount`, so it reads "blocked". `mergeStatus === 'blocked'` (own task
+ * cancelled/escalated) shares only the word — it keeps its distinct fail-tint
+ * `PIP_FILL`. The integrate gate's own 'blocked'/'waiting' outcomes are a separate
+ * concept, untouched. */
+const MEMBER_PIP_LABEL: Record<MemberPipStatus, string> = {
+  escalated: 'escalated',
+  blocked: 'blocked',
+  merged: 'merged',
+  cancelled: 'cancelled',
+  running: 'running',
+  ready: 'ready',
+  waiting: 'blocked',
+};
+
+export function memberPipLabel(status: MemberPipStatus): string {
+  return MEMBER_PIP_LABEL[status];
+}
+
 /** The Epic's finished members — merged into its integration branch, or closed
  * (cancelled/done) — for the rail below the columns (ADR-0011). Member order
  * (ascending by ref) is preserved. */

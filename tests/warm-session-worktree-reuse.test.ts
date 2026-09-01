@@ -71,7 +71,7 @@ describe('warm-Session reuse across reject "start now" (worktree isolation)', ()
     // The agent escalates to a human after a turn that reports usage: terminal on
     // the first Attempt (superseding the budget) and settled through the branch
     // that persists usage, so the escalated prior carries a real contextTokens.
-    await server.app.ctx.configStore.update({
+    await server.app.ctx.settingsStore.updateGlobal({
       drive: { prompt: JSON.stringify({ mcpEscalate: { reason: 'need a human' }, usage: { inputTokens: 5000, outputTokens: 100 } }) },
     });
     const mirrored = await server.app.ctx.tasks.upsertMirrored(
