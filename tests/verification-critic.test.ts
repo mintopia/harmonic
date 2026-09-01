@@ -1,13 +1,27 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
 import { verificationCommandSchema, type VerificationCommand, type HarnessId } from '../src/config.js';
 import { VerificationAttemptStore } from '../src/domain/verification-attempts.js';
+import { resetCodeIndexAvailabilityForTest } from '../src/execution/code-index.js';
 import type { CriticHarnessDrive } from '../src/verification/critic.js';
 import type { Verdict } from '../src/verification/critic-schema.js';
+
+/** A fake jCodeMunch CLI (as `tests/code-index.test.ts` uses) that appends every
+ * invocation to FAKE_CLI_LOG, so a test can assert WHICH worktree paths the
+ * Runner (re-)indexed and how many times. `list-repos` returns none, so
+ * `indexWorktree` still runs its `index` call (what we assert on) but resolves no
+ * repo id — the builder prompt is therefore unchanged for the other tests. */
+const FAKE_CODE_INDEX_CLI = `#!/usr/bin/env node
+const fs = require('node:fs');
+const args = process.argv.slice(2);
+if (process.env.FAKE_CLI_LOG) fs.appendFileSync(process.env.FAKE_CLI_LOG, args.join(' ') + '\\n');
+if (args[0] === 'list-repos') process.stdout.write(JSON.stringify({ repos: [] }));
+process.exit(0);
+`;
 
 const git = (dir: string, ...args: string[]) =>
   execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
@@ -63,16 +77,44 @@ describe('agent critic end-to-end (issue #164)', () => {
    * #174) — lets a test assert `runCritic` was resolved against the critic's
    * own configured harness rather than always the builder task's. */
   let lastCriticHarnessId: string | undefined;
+  /** The in-place directory the most recent critic drive was pointed at — the
+   * Task's worktree for a branch Run — used to assert that path's index was
+   * refreshed to the candidate head before the review (issue #428). */
+  let lastCriticCwd: string | undefined;
+  /** Fake-code-index scratch: the CLI script + the log of its invocations. */
+  let codeIndexDir: string;
+  let codeIndexLog: string;
+  const prevCodeIndexCli = process.env.HARMONIC_CODE_INDEX_CLI;
 
   const criticDrive: CriticHarnessDrive = {
     run: async (req) => {
       lastCriticHarnessId = req.harnessId;
+      lastCriticCwd = req.cwd;
       return { output: JSON.stringify(criticResult), permissionRequests: [] };
     },
   };
 
+  /** How many times the Runner ran `index <path>` on `absPath` in the log. */
+  const indexCountFor = (absPath: string): number =>
+    readFileSync(codeIndexLog, 'utf8')
+      .split('\n')
+      .filter((line) => line.startsWith('index ') && line.endsWith(resolve(absPath)))
+      .length;
+
   beforeAll(async () => {
     repoDir = makeRepo();
+    // Swap the no-op test CLI (tests/setup-env.ts) for a logging fake so the
+    // Runner's worktree (re-)indexing is observable; reset the process-wide
+    // availability probe so it re-detects the fake as usable.
+    codeIndexDir = mkdtempSync(join(tmpdir(), 'harmonic-critic-idx-'));
+    const cliPath = join(codeIndexDir, 'fake-code-index.cjs');
+    writeFileSync(cliPath, FAKE_CODE_INDEX_CLI);
+    chmodSync(cliPath, 0o755);
+    codeIndexLog = join(codeIndexDir, 'calls.log');
+    writeFileSync(codeIndexLog, '');
+    process.env.HARMONIC_CODE_INDEX_CLI = cliPath;
+    process.env.FAKE_CLI_LOG = codeIndexLog;
+    resetCodeIndexAvailabilityForTest();
     server = await startServer(stubHarness(), { criticDrive });
     // Point the default Workspace at a real git repo so `validating` freezes a
     // candidate for the critic to review (the helper's default workdir is a
@@ -101,6 +143,11 @@ describe('agent critic end-to-end (issue #164)', () => {
   afterAll(async () => {
     await server.close();
     rmSync(repoDir, { recursive: true, force: true });
+    rmSync(codeIndexDir, { recursive: true, force: true });
+    if (prevCodeIndexCli === undefined) delete process.env.HARMONIC_CODE_INDEX_CLI;
+    else process.env.HARMONIC_CODE_INDEX_CLI = prevCodeIndexCli;
+    delete process.env.FAKE_CLI_LOG;
+    resetCodeIndexAvailabilityForTest();
   });
   beforeEach(async () => {
     criticResult = { verdict: 'pass', summary: 'the change matches the ticket' };
@@ -372,5 +419,45 @@ describe('agent critic end-to-end (issue #164)', () => {
     });
     expect(task.state).toBe('done');
     expect(lastCriticHarnessId).toBe('codex');
+  });
+
+  it('issue #428: refreshes the worktree code index to the candidate head before the critic reviews', async () => {
+    criticResult = { verdict: 'pass', summary: 'looks correct' };
+    await server.app.ctx.workspaces.update(workspaceId, critic());
+    const { taskId } = await createAndRun();
+
+    await waitFor(async () => {
+      const { body } = await server.api('GET', `/api/tasks/${taskId}`);
+      return body.state === 'done' ? true : undefined;
+    });
+
+    // The worktree the critic reviewed in place was indexed twice: once at
+    // Attempt start (pre-implementation) and again here, refreshed to the
+    // candidate head before the review. Without the refresh it is indexed once
+    // and the critic reads the pre-implementation tree.
+    expect(lastCriticCwd).toBeTruthy();
+    // The worktree — not the canonical checkout — was what the critic reviewed.
+    expect(lastCriticCwd).not.toBe(repoDir);
+    expect(indexCountFor(lastCriticCwd!)).toBe(2);
+  });
+
+  it('issue #428: a corrective Attempt re-indexes its own worktree before its critic review', async () => {
+    criticResult = { verdict: 'fail', summary: 'not done yet' };
+    await server.app.ctx.workspaces.update(workspaceId, critic());
+    const { taskId } = await createAndRun();
+
+    await waitFor(async () => {
+      const { body } = await server.api('GET', `/api/tasks/${taskId}/attempts/current`);
+      return body.state === 'failed' ? body : undefined;
+    });
+    const task = (await server.api('GET', `/api/tasks/${taskId}`)).body;
+    expect(task.state).toBe('escalated');
+
+    // maxAttempts=2, so the reused per-Task worktree (ADR-0046) is indexed by
+    // both Attempts: each does the Attempt-start index plus the pre-critic
+    // refresh — four in total — so the corrective Attempt's critic reviews the
+    // re-implemented candidate, not the base it rebased onto.
+    expect(lastCriticCwd).toBeTruthy();
+    expect(indexCountFor(lastCriticCwd!)).toBe(4);
   });
 });

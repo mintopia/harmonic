@@ -1242,6 +1242,15 @@ export class Runner {
     // does exercise is exactly what the deterministic verifiers catch.
     criticEnabled = true,
   ): Promise<{ decision: VerificationDecision; ran: boolean }> {
+    // `driveOnce` wrote this Attempt's branch/baseBranch to the DB (in
+    // `prepareWorkspace`) but never back onto the in-memory `run` the drive loop
+    // still holds — it refreshes only AFTER driveOnce returns. Left stale, the
+    // FIRST Attempt's `run.branch` is null, so the critic below would review
+    // `task.workingDir` (the canonical checkout, at the base) with no base OID
+    // instead of the worktree candidate — "review the base, not the candidate"
+    // (issue #428). Read the row fresh so `criticCwd` and `baseOid` resolve to
+    // the actual candidate on every Attempt, not just corrective ones.
+    run = await this.attempts.get(run.id);
     const config = this.getConfig();
     const ws = await this.getWorkspace?.(task.workspaceId);
     const { commands, review } = resolveVerifiers(
@@ -1329,6 +1338,15 @@ export class Runner {
         // present at the candidate head at verify time (removed only at the
         // Task's terminal disposition). Matches `prepareWorkspace`'s cwd.
         const criticCwd = run.branch ? this.worktreePathForTask(task) : task.workingDir;
+        // The worktree index was built at Attempt start, before the builder's
+        // edits, so by verify time it describes the pre-implementation tree
+        // (worst on a corrective Attempt: rebased onto a new base, re-implemented).
+        // The critic reviews in place against that path-keyed index, so refresh it
+        // to the candidate head first or it judges stale code (issue #428). Branch
+        // Runs only — a direct Run reviews the canonical checkout, whose shared
+        // index must not be dropped/re-parsed here. `indexWorktree` drops the
+        // stale index before re-parsing; best-effort, a failure just skips.
+        if (run.branch) await indexWorktree(criticCwd);
         const attempt = await runCritic({
           cwd: criticCwd,
           verifiedHeadOid: oid,
