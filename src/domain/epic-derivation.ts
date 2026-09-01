@@ -97,6 +97,7 @@ function toDerivedEpic(
 export function deriveEpics(
   tickets: Ticket[],
   readinessByRef: ReadonlyMap<number, EpicMemberReadiness> = new Map(),
+  opts: { includeClosed?: boolean } = {},
 ): DerivedEpic[] {
   const { byRef, containerRefs, childrenOf } = indexTickets(tickets);
 
@@ -123,8 +124,11 @@ export function deriveEpics(
     if (!epic) continue; // dangling parent ref: not resolvable in this scan
 
     // A closed Epic is done: deriving it would re-probe/re-attempt a finished
-    // Epic every poll (recurring epic-integrate noise). Do not surface it.
-    if (epic.state !== 'open') continue;
+    // Epic every poll (recurring epic-integrate noise). Keep it in `containerRefs`
+    // above so it still counts as containment for `isReady`, but do not surface it.
+    // The read-only detail path opts in via `includeClosed` to resolve a closed
+    // Epic for the summary page — it never triggers an attempt.
+    if (!opts.includeClosed && epic.state !== 'open') continue;
 
     // Only the top-level container is an Epic; a container with a parent of its
     // own is a nested sub-container whose leaves roll up to the top-level Epic.

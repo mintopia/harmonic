@@ -125,6 +125,10 @@ export const taskListQuerySchema = z.object({
     .optional(),
   harness: csvEnum(HARNESS_IDS, 'claude'),
   priority: csvEnum(PRIORITIES, 'high'),
+  /** An Epic's children (ADR-0011's Epic presentation): the tasks whose
+   * `trackerParent` is this Epic ref. Server-filtered in SQL like `state`; pair
+   * with `workspaceId` to scope a ref that overlaps across repos. */
+  parent: z.coerce.number().int().positive().optional().meta({ example: 42 }),
   /** Server-side search (ADR-0045): case-insensitive substring over the prompt
    * and (for mirrored Tasks) the tracker title. Blank/whitespace matches every
    * Task. Replaces the client-side `filterBySearch` (issue #104). */
@@ -143,6 +147,8 @@ export interface TaskListQuery {
   state?: 'open' | TaskState | TaskState[] | undefined;
   harness?: string | string[] | undefined;
   priority?: string | string[] | undefined;
+  /** An Epic's children: Tasks whose `trackerParent` is this Epic ref. */
+  parent?: number | undefined;
   q?: string | undefined;
   sortBy?: 'createdAt' | 'updatedAt' | 'priority' | 'cost' | undefined;
   order?: 'asc' | 'desc' | undefined;
@@ -616,8 +622,8 @@ export class TaskService {
   }
 
   async list(query: TaskListQuery = {}): Promise<TaskRow[]> {
-    // Only the non-inheritable columns (workspace, state) filter in SQL; harness
-    // and priority can be inherited, so they filter on the resolved value below.
+    // Only the non-inheritable columns (workspace, state, parent) filter in SQL;
+    // harness and priority can be inherited, so they filter on the resolved value below.
     const filters = [
       query.workspaceId ? eq(tasks.workspaceId, query.workspaceId) : undefined,
       query.state === 'open'
@@ -625,6 +631,7 @@ export class TaskService {
         : filterList(query.state).length > 0
           ? inArray(tasks.state, filterList(query.state))
           : undefined,
+      query.parent !== undefined ? eq(tasks.trackerParent, query.parent) : undefined,
     ].filter((f) => f !== undefined);
     const [rawRows, workspaceRows] = await Promise.all([
       this.db.read((db) =>
@@ -1164,6 +1171,7 @@ export class TaskService {
         : filterList(query.state).length > 0
           ? inArray(tasks.state, filterList(query.state))
           : undefined,
+      query.parent !== undefined ? eq(tasks.trackerParent, query.parent) : undefined,
     ].filter((f) => f !== undefined);
     const [rawRows, workspaceRows] = await Promise.all([
       this.db.read((db) =>

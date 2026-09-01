@@ -26,11 +26,12 @@ const ticket = (over: Partial<Ticket>): Ticket => ({
 });
 
 /** The Task-layer readiness facts are intentionally separate from tracker tickets. */
-const derive = (tickets: Ticket[], unworkable: number[] = []) => {
+const derive = (tickets: Ticket[], unworkable: number[] = [], opts: { includeClosed?: boolean } = {}) => {
   const unworkableRefs = new Set(unworkable);
   return deriveEpics(
     tickets,
     new Map(tickets.map((ticket) => [ticket.number, { agentWorkable: !unworkableRefs.has(ticket.number) }])),
+    opts,
   );
 };
 
@@ -209,6 +210,20 @@ describe('deriveEpics', () => {
     const result = derive(tickets);
     expect(result.map((e) => e.ref)).toEqual([1]);
     expect(result[0]?.members).toEqual([4]);
+  });
+
+  it('16. includeClosed opt-in surfaces a closed Epic for the detail read path', () => {
+    const tickets = [
+      // #10 is a closed, finished Epic with a child.
+      ticket({ number: 10, title: 'Closed Spec', state: 'closed', closedAt: '2026-08-10T00:00:00Z' }),
+      ticket({ number: 11, parent: 10 }),
+      // #20 is an open sibling Epic of the same shape.
+      ticket({ number: 20, title: 'Open Spec' }),
+      ticket({ number: 21, parent: 20 }),
+    ];
+    const result = derive(tickets, [], { includeClosed: true });
+    expect(result.map((e) => e.ref)).toEqual([10, 20]);
+    expect(result.find((e) => e.ref === 10)?.members).toEqual([11]);
   });
 });
 
