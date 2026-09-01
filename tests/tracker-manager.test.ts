@@ -182,6 +182,36 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     expect(await manager.maps(workspace.id)).toEqual(legacyMaps);
   });
 
+  it('epicDetail resolves a closed Epic from persisted facts; listEpics stays open-only (#409)', async () => {
+    const fixture: Ticket[] = [
+      { ...ticket(10), title: 'Closed epic', state: 'closed', closedAt: '2026-08-10T00:00:00Z', labels: [] },
+      { ...ticket(11), title: 'Closed epic member', parent: 10 },
+    ];
+    ticketsByRepo.set(repoA, fixture);
+    const workspace = await workspaces.create({ name: 'A', workingDir: repoA, trackerEnabled: true });
+    await manager.sync();
+    await manager.pollNow(workspace.id);
+
+    const beforeRestart = await manager.epicDetail(workspace.id, 10);
+    expect(beforeRestart?.ref).toBe(10);
+    expect(beforeRestart?.members.map((member) => member.ref)).toEqual([11]);
+    expect((await manager.listEpics(workspace.id)).map((epic) => epic.ref)).not.toContain(10);
+
+    manager.stopAll();
+    await asyncDb.close();
+    asyncDb = await openAsyncDb(dataDir);
+    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
+    workspaces = new WorkspaceService(asyncDb, settingsStore);
+    manager = new TrackerPollerManager(tasks, () => workspaces.list(), async () => {
+      throw new Error('restart query must not resolve or poll the tracker');
+    });
+
+    // Persisted-facts-only: no adapter is wired above, so this proves the
+    // closed Epic resolves from persisted facts, not a re-poll.
+    expect(await manager.epicDetail(workspace.id, 10)).toEqual(beforeRestart);
+    expect((await manager.listEpics(workspace.id)).map((epic) => epic.ref)).not.toContain(10);
+  });
+
   it('toggling one Workspace starts/stops just its loop; others are unaffected', async () => {
     const a = await workspaces.create({ name: 'A', workingDir: repoA, trackerEnabled: true });
     const b = await workspaces.create({ name: 'B', workingDir: repoB, trackerEnabled: false });

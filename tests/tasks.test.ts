@@ -3,6 +3,8 @@ import { eq } from 'drizzle-orm';
 import { trackerDismissals } from '../src/db/schema.js';
 import { startServer, waitFor, type TestServer } from './helpers.js';
 import { summarize } from '../src/server/serialize.js';
+import { toMirrorInput } from '../src/tracker/mirror.js';
+import type { Ticket } from '../src/tracker/adapter.js';
 
 describe('task authoring', () => {
   let server: TestServer;
@@ -408,6 +410,65 @@ describe('task skipReason (issue #171)', () => {
     const res = await server.api('GET', `/api/tasks/${blocked.body.id}`);
     expect(res.status).toBe(200);
     expect(res.body.skipReason).toBe(`Work Context held by task ${occupant.body.id} (working)`);
+  });
+});
+
+describe('task list parent filter — Epic children (ADR-0011, #411)', () => {
+  let server: TestServer;
+
+  const childOf = (number: number, parent: number, title: string): Ticket => ({
+    number,
+    title,
+    state: 'open',
+    body: '',
+    createdAt: '2026-08-07T00:00:00Z',
+    closedAt: null,
+    labels: [],
+    assignees: [],
+    parent,
+    blockedBy: [],
+    blocking: [],
+    comments: [],
+    isMap: false,
+    url: `https://github.com/mintopia/harmonic/issues/${number}`,
+  });
+
+  beforeAll(async () => {
+    server = await startServer();
+    const { tasks } = server.app.ctx;
+    await tasks.upsertMirrored(toMirrorInput(childOf(501, 42, 'Epic 42 child A')));
+    await tasks.upsertMirrored(toMirrorInput(childOf(502, 42, 'Epic 42 child B')));
+    await tasks.upsertMirrored(toMirrorInput(childOf(601, 99, 'Epic 99 child')));
+    await server.api('POST', '/api/tasks', { prompt: 'A native task with no parent' });
+  });
+  afterAll(async () => {
+    await server.close();
+  });
+
+  it('returns only the tasks whose tracker parent is the given Epic ref', async () => {
+    const res = await server.api('GET', '/api/tasks?parent=42');
+    expect(res.status).toBe(200);
+    expect(res.body.total).toBe(2);
+    expect(res.body.tasks.map((t: any) => t.trackerRef).sort()).toEqual([501, 502]);
+  });
+
+  it('paginates and totals over the filtered child set', async () => {
+    const res = await server.api('GET', '/api/tasks?parent=42&limit=1');
+    expect(res.status).toBe(200);
+    expect(res.body.tasks).toHaveLength(1);
+    expect(res.body.total).toBe(2);
+  });
+
+  it('an Epic with no children returns an empty page', async () => {
+    const res = await server.api('GET', '/api/tasks?parent=123456');
+    expect(res.status).toBe(200);
+    expect(res.body.total).toBe(0);
+    expect(res.body.tasks).toHaveLength(0);
+  });
+
+  it('rejects a non-positive parent ref', async () => {
+    const res = await server.api('GET', '/api/tasks?parent=0');
+    expect(res.status).toBe(400);
   });
 });
 

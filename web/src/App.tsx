@@ -7,6 +7,7 @@ import { Board } from './components/Board';
 import { boardSections } from './board-sections-model';
 import { TaskForm } from './components/TaskForm';
 import { TicketPage } from './components/TicketPage';
+import { EpicPage } from './components/EpicPage';
 import { subscribe } from './ws';
 import { debounce } from './debounce';
 import { Login } from './components/Login';
@@ -26,7 +27,7 @@ import { EmptyState } from './components/EmptyState';
 import { RAIL_GROUPS, VIEW_LABELS, isWorkspaceScopedView, loadRailCollapsed, storeRailCollapsed } from './rail-model';
 import { CrumbBar } from './components/CrumbBar';
 import type { View } from './rail-model';
-import { parseRoute, serializeRoute, type Route, type TableFilters } from './router-model';
+import { parseRoute, serializeRoute, focusedSurface, type Route, type TableFilters } from './router-model';
 import {
   hasNoWorkspaces,
   loadActiveWorkspaceId,
@@ -848,14 +849,27 @@ export function App() {
             // layering over it, so it isn't fighting the view's own padding
             // (issue #183). It keeps the same skip-link target (`#main-
             // content`) the <main> below carries when no Ticket is open.
-            <TicketPage
-              task={openTask}
-              onEdit={setEditing}
-              onChanged={refresh}
-              onClose={() => navigate({ ...route, task: null }, { replace: true })}
-              onOpenTask={openTaskById}
-              error={error}
-            />
+            // An Epic's mirrored Task opens its own summary page instead — same
+            // route, same navigation, a different surface (issue #412/#413,
+            // ADR-0015). `focusedSurface` is the pure seam that decides which,
+            // so every entry point (Tasks-list row, Graph node, deep link) lands
+            // on the same destination.
+            focusedSurface(openTask) === 'epic' ? (
+              <EpicPage
+                task={openTask}
+                onClose={() => navigate({ ...route, task: null }, { replace: true })}
+                onOpenTask={openTaskById}
+              />
+            ) : (
+              <TicketPage
+                task={openTask}
+                onEdit={setEditing}
+                onChanged={refresh}
+                onClose={() => navigate({ ...route, task: null }, { replace: true })}
+                onOpenTask={openTaskById}
+                error={error}
+              />
+            )
           ) : (
             // Full-view surface (issue: shared crumb bar): the breadcrumb is
             // pinned above the scrolling <main> — the same shrink-0 crumb /

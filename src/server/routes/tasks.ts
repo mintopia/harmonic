@@ -459,7 +459,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       schema: {
         tags: ['Tasks'],
         description:
-          'List tasks: filtered (`state`, `harness`, `priority`), searched (`q`, server-side substring over prompt + title), sorted, and paginated (`limit`/`offset`, with a `total` count). An omitted `limit` returns every match. Reachable with an attempt-scoped Attempt Key.',
+          'List tasks: filtered (`state`, `harness`, `priority`, `parent` — an Epic ref, returning its child tasks), searched (`q`, server-side substring over prompt + title), sorted, and paginated (`limit`/`offset`, with a `total` count). An omitted `limit` returns every match. Reachable with an attempt-scoped Attempt Key.',
         querystring: taskListQuerySchema.extend(paginationQuerySchema.shape),
         response: { 200: tasksListResponseSchema.describe('One page of tasks matching the filters, in the requested order, plus the full match `total`.') },
       },
