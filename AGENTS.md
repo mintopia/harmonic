@@ -6,18 +6,21 @@ See `CONTEXT.md` for the domain glossary.
 
 ## House rules
 
-Use subagents for tasks.
-Use multiple subagents in parallel working as a team, with agent messaging to co-ordinate.
-Subagents must use an appropriate model, defaults:
-
- - Explore, Coding, Code Reviews: Sonnet / Terra
- - Codebase Mapping: jcodemunch MCP and Sonnet / Terra
- - Reasoning and Planning: Opus / Sol
- - Trivial, Documentation: Haiku / Luna
-
-Explicitly specify the model when starting a subagent.
-Subagents must use an appropriate subagent type.
-Do not start a subagent without explicitly setting the model.
+ - Use subagents for tasks.
+ - Use multiple subagents in parallel working as a team, with agent messaging
+   to co-ordinate.
+ - Subagents must use an appropriate model, defaults:
+   - Explore, Coding, Code Reviews: Sonnet / Terra
+   - Codebase Mapping: jcodemunch MCP and Sonnet / Terra
+   - Reasoning and Planning: Opus / Sol
+   - Trivial, Documentation: Haiku / Luna
+ - Explicitly specify the model when starting a subagent.
+ - Subagents must use an appropriate subagent type.
+ - Do not start a subagent without explicitly setting the model.
+ - When building UI to match a mockup, it MUST match the mockup
+   worktree and merge back in when done.
+ - Follow the /no-comments skill when considering adding comments to the
+   code.
 
 ### Testing
 
@@ -42,6 +45,11 @@ Never `git rebase origin/main` (or `origin`/`origin/HEAD`) — that replays your
 work onto the release tip and drags in a mountain of divergence. If you must
 rebase, rebase onto your task's own base branch (the `develop` or `epic/*` ref
 you started from), never the release line.
+
+Never work directly in develop. If you would work directly in develop, create a
+worktree and then merge when done.
+
+Cleanup branches and worktrees when they are finished and merged or abandoned.
 
 ## Agent skills
 
