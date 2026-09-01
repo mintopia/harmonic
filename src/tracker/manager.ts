@@ -14,6 +14,7 @@ import { EpicIntegrateCoordinator, type EpicIntegrateOutcome } from '../executio
 import { verifyEpicIntegration } from '../execution/epic-verification.js';
 import { EpicOperations } from '../execution/epic-operations.js';
 import { resolveRepositoryDefaultBranch } from '../execution/branch-merge.js';
+import { Git } from '../execution/git.js';
 import {
   EpicRefreshCoordinator,
   type EpicRefreshResolveDispatchOutcome,
@@ -461,6 +462,27 @@ export class TrackerPollerManager {
     const workingDir = (await this.getWorkspaces()).find((w) => w.id === workspaceId)?.workingDir;
     if (workingDir == null) return null;
     return resolveRepositoryDefaultBranch(workingDir).catch(() => null);
+  }
+
+  /** The whole-Epic diff (ADR-0018): what `epic/<ref>` changes over base. While
+   * open, the live `base...epic/<ref>` range; once integrated, the frozen
+   * `git diff <M>^1 <M>^2` from the stored merge commit, which survives the
+   * branch's retirement. A branchless/no-op Epic (and any git failure) yields the
+   * empty string — the caller renders an empty state, never an error. */
+  async epicDiff(workspaceId: number, epicRef: number): Promise<string> {
+    const workingDir = (await this.getWorkspaces()).find((w) => w.id === workspaceId)?.workingDir;
+    if (workingDir == null) return '';
+    const row = (await this.tasks.listStoredEpics(workspaceId)).find((r) => r.trackerRef === epicRef);
+    try {
+      if (row?.state === 'integrated') {
+        return row.mergeCommit ? await Git.diffMergeCommit(workingDir, row.mergeCommit) : '';
+      }
+      const base = await resolveRepositoryDefaultBranch(workingDir).catch(() => null);
+      if (base == null) return '';
+      return await Git.diffUnified(workingDir, base, integrationBranchName(epicRef));
+    } catch {
+      return '';
+    }
   }
 
   /**

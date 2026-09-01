@@ -6,6 +6,7 @@ import { DomainError } from '../../domain/errors.js';
 import { errorResponse } from '../schemas.js';
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
 import type { Epic } from '../../domain/epic-view.js';
+import { parseUnifiedDiff, diffFilesResponseSchema } from './diff.js';
 
 /** Path params for a whole-Epic action: the owning Workspace and the Epic's tracker ref. */
 const epicParamsSchema = z.object({
@@ -188,6 +189,34 @@ export async function epicRoutes(fastify: FastifyInstance): Promise<void> {
         );
       }
       return outcome;
+    },
+  );
+
+  app.get(
+    '/workspaces/:workspaceId/epics/:epicRef/diff/files',
+    {
+      schema: {
+        tags: ['Epics'],
+        description:
+          'Per-file unified-diff hunks for the whole-Epic diff panel (ADR-0018): what `epic/<ref>` changes over ' +
+          'base while open, the frozen merge-commit diff once integrated (survives branch retirement). Paginated. ' +
+          'Empty `files` for a branchless/no-op Epic. Operator only.',
+        security: [{ bearerAuth: [] }, { sessionCookie: [] }],
+        params: epicParamsSchema,
+        querystring: paginationQuerySchema,
+        response: {
+          200: diffFilesResponseSchema.describe("The Epic's changed files with parsed +/- hunks; empty for a branchless/no-op Epic."),
+          404: errorResponse('No Workspace has that id.'),
+        },
+      },
+    },
+    async (req) => {
+      await ctx.workspaces.assertExists(req.params.workspaceId);
+      const raw = await ctx.trackerManager.epicDiff(req.params.workspaceId, req.params.epicRef);
+      const files = parseUnifiedDiff(raw);
+      const { limit, offset } = req.query;
+      const { items, total } = paginate(files, { limit, offset });
+      return { files: items, total };
     },
   );
 }

@@ -157,6 +157,24 @@ describe('worktreeDiff — live diff of a running Run against its fork point', (
   });
 });
 
+describe('Git.diffMergeCommit — the frozen whole-Epic diff from a merge commit (ADR-0018)', () => {
+  it('diffs the merge commit\'s first parent against its second, surviving the feature branch\'s own deletion', async () => {
+    const repo = makeRepo();
+    git(repo, 'checkout', '-b', 'feature', 'main');
+    writeFileSync(join(repo, 'feature.txt'), 'from the feature branch\n');
+    git(repo, 'add', '-A');
+    git(repo, 'commit', '-m', 'feature work');
+    git(repo, 'checkout', 'main');
+    git(repo, 'merge', '--no-ff', '-m', 'merge feature', 'feature');
+    const mergeOid = git(repo, 'rev-parse', 'HEAD');
+    git(repo, 'branch', '-D', 'feature');
+
+    const diff = await Git.diffMergeCommit(repo, mergeOid);
+    expect(diff).toContain('feature.txt');
+    expect(diff).toContain('+from the feature branch');
+  });
+});
+
 describe('isValidWorktree / discardOrphanWorktree — orphaned per-task worktree heal (Task 340)', () => {
   it('heals a deregistered-but-present worktree so a later rebase succeeds', async () => {
     const repo = makeRepo();
