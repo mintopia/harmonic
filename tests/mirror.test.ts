@@ -346,6 +346,55 @@ describe('mirrorScan upsert', () => {
     expect(await tasks.list()).toHaveLength(0);
   });
 
+  it('demotes a mirrored work Task when its ticket becomes a container — removed with NO dismissal (ADR-0016, #417)', async () => {
+    const [mirrored] = await mscan([ticket({ number: 77, labels: ['ready-for-agent'] })]);
+    expect(mirrored!.origin).toBe('mirrored');
+    expect(await tasks.list()).toHaveLength(1);
+
+    // The ticket gains the `epic` label on a later poll → now a container.
+    const after = await mscan([ticket({ number: 77, labels: ['epic', 'ready-for-agent'] })]);
+    expect(after).toHaveLength(0); // no longer mirrored as a work Task
+    expect(await tasks.list()).toHaveLength(0); // the stale work row is gone
+    // The distinction from operator Delete: NO tombstone is written.
+    expect(await tasks.isDismissed(wsId, 77)).toBe(false);
+    // It is re-derived as a container instead.
+    expect((await tasks.listTrackerContainers(wsId)).map((c) => c.trackerRef)).toEqual([77]);
+
+    // Re-derivable every poll: it stays a container, never resurrected as work.
+    await mscan([ticket({ number: 77, labels: ['epic', 'ready-for-agent'] })]);
+    expect(await tasks.list()).toHaveLength(0);
+    expect((await tasks.listTrackerContainers(wsId)).map((c) => c.trackerRef)).toEqual([77]);
+  });
+
+  it('a genuine operator Delete still tombstones — the contrast with demotion', async () => {
+    const [mirrored] = await mscan([ticket({ number: 78, labels: ['ready-for-agent'] })]);
+    await tasks.delete(mirrored!.id); // operator hard-delete, NOT a demotion
+    expect(await tasks.isDismissed(wsId, 78)).toBe(true); // tombstoned
+    // The tombstone keeps a re-poll from resurrecting the deleted work Task.
+    expect(await mscan([ticket({ number: 78, labels: ['ready-for-agent'] })])).toHaveLength(0);
+    expect(await tasks.list()).toHaveLength(0);
+  });
+
+  it('never demotes a working mirrored Task — a poll does not interrupt a live Attempt (ADR-0016)', async () => {
+    const [mirrored] = await mscan([ticket({ number: 79, labels: ['ready-for-agent'] })]);
+    await tasks.setState(mirrored!.id, 'working'); // the Auto-Runner picked it up
+
+    // The ticket gains the `epic` label mid-Attempt → now a container.
+    await mscan([ticket({ number: 79, labels: ['epic', 'ready-for-agent'] })]);
+    // The live Run is untouched: the row survives, still working, no dismissal.
+    const still = (await tasks.list()).find((t) => t.trackerRef === 79);
+    expect(still?.state).toBe('working');
+    expect(await tasks.isDismissed(wsId, 79)).toBe(false);
+    // ...but it is already persisted as a container, so grouping is correct now.
+    expect((await tasks.listTrackerContainers(wsId)).map((c) => c.trackerRef)).toEqual([79]);
+
+    // Once it settles, a later poll demotes it — still non-tombstoning.
+    await tasks.setState(still!.id, 'done');
+    await mscan([ticket({ number: 79, labels: ['epic', 'ready-for-agent'] })]);
+    expect((await tasks.list()).some((t) => t.trackerRef === 79)).toBe(false);
+    expect(await tasks.isDismissed(wsId, 79)).toBe(false);
+  });
+
   it('operator cannot add/remove an edge whose dependent is a mirrored Task', async () => {
     const [mirrored] = await mscan([ticket({ number: 5, labels: ['ready-for-agent'] })]);
     const native = await tasks.create({ prompt: 'native' });
