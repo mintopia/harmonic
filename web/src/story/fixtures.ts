@@ -179,3 +179,189 @@ export const verificationAttempts = [
 
 export const config = { maxAttempts: 6 } as any;
 export const workspaces = [workspace];
+
+// ─── Epic summary page (issue #412, ADR-0015) ─────────────────────────────
+
+const E0 = Date.parse('2026-08-30T09:00:00Z');
+const emin = (n: number) => n * 60_000;
+
+// The Epic's own mirrored Task (isEpic: true) — what EpicPage receives as `task`.
+export const epicTask = {
+  id: 166,
+  prompt:
+    'Consolidate the per-workspace guardrail ceilings (max attempts, token budget, wall-clock cap) into one resolver, and expose the fleet-wide defaults in Settings.\n\nBreaks down into: the resolver + migration, the Settings form, and the per-task override UI. Each member Task folds into `epic/166` as it settles; the whole-Epic gate runs once every member is folded.',
+  summary: 'Consolidate guardrail-ceiling defaults',
+  workspaceId: 1,
+  harness: 'claude',
+  model: 'opus-4.8',
+  workingDir: '/home/workspace/harmonic',
+  isolationMode: 'worktree',
+  baseBranch: 'develop',
+  priority: 'high',
+  conflictResolveTurns: 3,
+  overrides: {},
+  state: 'working',
+  escalationReason: null,
+  feedback: null,
+  createdAt: E0,
+  updatedAt: E0 + emin(240),
+  dependsOn: [140, 141],
+  dependents: [],
+  blockedOnFailed: false,
+  openBlockerCount: 0,
+  agentWorkable: false,
+  humanOnly: true,
+  isEpic: true,
+  cost: { totalUsd: 42.18, byModel: { 'opus-4.8': 34.5, 'sonnet-4.5': 7.68 }, incomplete: false },
+  origin: 'mirrored',
+  trackerRef: 166,
+  workflow: 'wayfinder',
+  wayfinderType: null,
+  mapRef: null,
+  url: null,
+  mapTitle: null,
+  branch: null,
+  stat: null,
+  runStartedAt: null,
+  toolCount: null,
+  attemptId: null,
+  currentStep: null,
+  contextTokens: null,
+  contextWindow: null,
+  verifiedRef: null,
+  skipReason: null,
+} as any;
+
+// The Epic read model (`GET /api/workspaces/:id/epics/:ref`) — a mid-integration
+// roster: two members folded, one still running (would read "healing" once an
+// integrate is in flight), one blocked, and a held escalation on the Merge step
+// so the integration bar's escalated state is exercised too.
+export const epic = {
+  ref: 166,
+  title: 'Consolidate guardrail-ceiling defaults',
+  kind: 'map',
+  members: [
+    { ref: 140, title: 'Add the resolveGuardrails() resolver + migration', taskId: 501, state: 'done', escalated: false, mergeStatus: 'completed', ready: false },
+    { ref: 141, title: 'Wire the Settings form to the resolver', taskId: 502, state: 'done', escalated: false, mergeStatus: 'completed', ready: false },
+    { ref: 142, title: 'Per-task override UI + inherit toggle', taskId: 503, state: 'working', escalated: false, mergeStatus: 'pending', ready: true },
+    { ref: 143, title: 'Backfill existing Workspaces onto the new resolver', taskId: 504, state: 'escalated', escalated: true, mergeStatus: 'blocked', ready: false },
+  ],
+  ready: [142],
+  integration: { branch: 'epic/166', exists: true, tip: 'a1b2c3d' },
+  verification: { status: 'pass' },
+  integrate: { inFlight: false, held: 'Whole-Epic verification failed on the last attempt — a command check regressed.' },
+  foldedCount: 2,
+  memberCount: 4,
+} as any;
+
+// All-time child-Task Stats (`GET /api/epics/:ref/stats`, ADR-0008).
+const epicOpusUsage = { inputTokens: 612_000, outputTokens: 74_000, cacheReadTokens: 3_100_000, cacheWriteTokens: 460_000 };
+const epicSonnetUsage = { inputTokens: 240_000, outputTokens: 31_000, cacheReadTokens: 640_000, cacheWriteTokens: 98_000 };
+export const epicStats = {
+  from: E0 - 30 * 24 * 3600_000,
+  to: E0 + emin(240),
+  attemptCount: 9,
+  attemptsByState: { running: 1, completed: 6, failed: 2, cancelled: 0 },
+  failedAttempts: 2,
+  failuresByReason: { 'command-failed': 2 },
+  durationMs: { p50: 22 * 60_000, p95: 74 * 60_000 },
+  totals: { inputTokens: 852_000, outputTokens: 105_000, cacheReadTokens: 3_740_000, cacheWriteTokens: 558_000, totalTokens: 5_255_000 },
+  models: { 'opus-4.8': epicOpusUsage, 'sonnet-4.5': epicSonnetUsage },
+  agents: { root: epicOpusUsage, 'subagent:reviewer': epicSonnetUsage },
+  toolTokens: {},
+  reasoning: undefined,
+  toolCalls: { Edit: 88, Bash: 54, Read: 210 },
+  cost: { totalUsd: 42.18, byModel: { 'opus-4.8': 34.5, 'sonnet-4.5': 7.68 }, incomplete: false },
+  series: [],
+  byWorkspace: [],
+  verdicts: { critic: { pass: 4, block: 1, inconclusive: 0 }, command: { pass: 6, block: 2, inconclusive: 0 } },
+  gateOutcomes: { autoMerged: 2, escalated: 1, revertedOnRed: 0 },
+  guardrailTrips: {},
+  tasksMergedByDay: [],
+  attemptsPerTask: { '1': 2, '2': 1, '3': 0, '4+': 0 },
+  costPerMergedTask: { mergedTasks: 2, mergedCost: { totalUsd: 24.1, byModel: {}, incomplete: false }, wastedCost: null },
+} as any;
+
+// The Epic's member Tasks, as `GET /api/tasks?parent=166` serves them (lean
+// list rows — no `prompt`).
+export const epicChildren = [
+  {
+    id: 501, summary: 'Add the resolveGuardrails() resolver + migration', workspaceId: 1, harness: 'claude', model: 'opus-4.8',
+    workingDir: '/home/workspace/harmonic', isolationMode: 'worktree', baseBranch: 'epic/166', priority: 'high', conflictResolveTurns: 3, overrides: {},
+    state: 'done', escalationReason: null, feedback: null, createdAt: E0 + emin(5), updatedAt: E0 + emin(80), dependsOn: [], dependents: [142, 143],
+    blockedOnFailed: false, openBlockerCount: 0, agentWorkable: false, humanOnly: false, isEpic: false,
+    cost: { totalUsd: 12.4, byModel: { 'opus-4.8': 12.4 }, incomplete: false }, origin: 'mirrored', trackerRef: 140, workflow: 'implement',
+    wayfinderType: null, mapRef: 166, url: null, mapTitle: null, branch: 'harmonic/task-501', stat: null, runStartedAt: null, toolCount: null,
+    attemptId: null, currentStep: null, contextTokens: null, contextWindow: null, verifiedRef: 'aa11bb2', skipReason: null,
+  },
+  {
+    id: 502, summary: 'Wire the Settings form to the resolver', workspaceId: 1, harness: 'claude', model: 'sonnet-4.5',
+    workingDir: '/home/workspace/harmonic', isolationMode: 'worktree', baseBranch: 'epic/166', priority: 'normal', conflictResolveTurns: 3, overrides: {},
+    state: 'done', escalationReason: null, feedback: null, createdAt: E0 + emin(10), updatedAt: E0 + emin(95), dependsOn: [140], dependents: [],
+    blockedOnFailed: false, openBlockerCount: 0, agentWorkable: false, humanOnly: false, isEpic: false,
+    cost: { totalUsd: 4.62, byModel: { 'sonnet-4.5': 4.62 }, incomplete: false }, origin: 'mirrored', trackerRef: 141, workflow: 'implement',
+    wayfinderType: null, mapRef: 166, url: null, mapTitle: null, branch: 'harmonic/task-502', stat: null, runStartedAt: null, toolCount: null,
+    attemptId: null, currentStep: null, contextTokens: null, contextWindow: null, verifiedRef: 'bb22cc3', skipReason: null,
+  },
+  {
+    id: 503, summary: 'Per-task override UI + inherit toggle', workspaceId: 1, harness: 'codex', model: 'gpt-5.1',
+    workingDir: '/home/workspace/harmonic', isolationMode: 'worktree', baseBranch: 'epic/166', priority: 'normal', conflictResolveTurns: 3, overrides: {},
+    state: 'working', escalationReason: null, feedback: null, createdAt: E0 + emin(20), updatedAt: E0 + emin(230), dependsOn: [140], dependents: [],
+    blockedOnFailed: false, openBlockerCount: 0, agentWorkable: true, humanOnly: false, isEpic: false,
+    cost: { totalUsd: 18.9, byModel: { 'gpt-5.1': 18.9 }, incomplete: false }, origin: 'mirrored', trackerRef: 142, workflow: 'implement',
+    wayfinderType: null, mapRef: 166, url: null, mapTitle: null, branch: 'harmonic/task-503', stat: null, runStartedAt: E0 + emin(210), toolCount: 44,
+    attemptId: 9001, currentStep: 'implementation', contextTokens: 120_000, contextWindow: 400_000, verifiedRef: null, skipReason: null,
+  },
+  {
+    id: 504, summary: 'Backfill existing Workspaces onto the new resolver', workspaceId: 1, harness: 'claude', model: 'opus-4.8',
+    workingDir: '/home/workspace/harmonic', isolationMode: 'worktree', baseBranch: 'epic/166', priority: 'low', conflictResolveTurns: 3, overrides: {},
+    state: 'escalated', escalationReason: 'escalated to human: critic blocked — migration drops an existing override.', feedback: null,
+    createdAt: E0 + emin(30), updatedAt: E0 + emin(220), dependsOn: [140, 141], dependents: [],
+    blockedOnFailed: false, openBlockerCount: 0, agentWorkable: false, humanOnly: false, isEpic: false,
+    cost: { totalUsd: 6.26, byModel: { 'opus-4.8': 6.26 }, incomplete: false }, origin: 'mirrored', trackerRef: 143, workflow: 'implement',
+    wayfinderType: null, mapRef: 166, url: null, mapTitle: null, branch: 'harmonic/task-504', stat: null, runStartedAt: null, toolCount: null,
+    attemptId: null, currentStep: null, contextTokens: null, contextWindow: null, verifiedRef: 'cc33dd4', skipReason: null,
+  },
+] as any;
+
+// `GET /api/tasks/:id/usage` per child (ADR-0008) — 504 fetches successfully
+// with zero usage (an escalated Task that never got a priced Attempt) so the
+// row's token bar reads as an honest empty dash.
+export const epicChildUsage: Record<number, any> = {
+  501: {
+    models: { 'opus-4.8': { inputTokens: 180_000, outputTokens: 22_000, cacheReadTokens: 640_000, cacheWriteTokens: 90_000 } },
+    agents: { root: { inputTokens: 180_000, outputTokens: 22_000, cacheReadTokens: 640_000, cacheWriteTokens: 90_000 } },
+    toolCalls: { Edit: 14, Bash: 6 },
+    totals: { inputTokens: 180_000, outputTokens: 22_000, cacheReadTokens: 640_000, cacheWriteTokens: 90_000, totalTokens: 932_000 },
+    source: 'session-log',
+    cost: { totalUsd: 12.4, byModel: { 'opus-4.8': 12.4 }, incomplete: false },
+    attemptCount: 1,
+  },
+  502: {
+    models: { 'sonnet-4.5': { inputTokens: 90_000, outputTokens: 11_000, cacheReadTokens: 210_000, cacheWriteTokens: 34_000 } },
+    agents: { root: { inputTokens: 90_000, outputTokens: 11_000, cacheReadTokens: 210_000, cacheWriteTokens: 34_000 } },
+    toolCalls: { Edit: 9, Bash: 3 },
+    totals: { inputTokens: 90_000, outputTokens: 11_000, cacheReadTokens: 210_000, cacheWriteTokens: 34_000, totalTokens: 345_000 },
+    source: 'session-log',
+    cost: { totalUsd: 4.62, byModel: { 'sonnet-4.5': 4.62 }, incomplete: false },
+    attemptCount: 1,
+  },
+  503: {
+    models: { 'gpt-5.1': { inputTokens: 340_000, outputTokens: 41_000, cacheReadTokens: 1_800_000, cacheWriteTokens: 280_000 } },
+    agents: { root: { inputTokens: 340_000, outputTokens: 41_000, cacheReadTokens: 1_800_000, cacheWriteTokens: 280_000 } },
+    toolCalls: { Edit: 44, Bash: 20, Read: 60 },
+    totals: { inputTokens: 340_000, outputTokens: 41_000, cacheReadTokens: 1_800_000, cacheWriteTokens: 280_000, totalTokens: 2_461_000 },
+    source: 'session-log',
+    cost: { totalUsd: 18.9, byModel: { 'gpt-5.1': 18.9 }, incomplete: false },
+    attemptCount: 1,
+  },
+  504: {
+    models: {},
+    agents: {},
+    toolCalls: {},
+    totals: null,
+    source: null,
+    cost: { totalUsd: 6.26, byModel: { 'opus-4.8': 6.26 }, incomplete: false },
+    attemptCount: 1,
+  },
+};

@@ -1,6 +1,7 @@
 import type {
   Attempt,
   AppConfig,
+  AttemptUsage,
   BudgetGuardrail,
   Channel,
   ContinuationPreview,
@@ -65,10 +66,11 @@ export const api = {
    * The response is the shared paginated envelope (ADR-0045): the page under
    * `tasks` plus the filtered `total`. Pass `limit`/`offset` to page through it;
    * omit `limit` for the whole filtered list. */
-  tasks: ({ workspaceId, state, limit, offset }: { workspaceId?: number; state?: 'open'; limit?: number; offset?: number } = {}) => {
+  tasks: ({ workspaceId, state, parent, limit, offset }: { workspaceId?: number; state?: 'open'; parent?: number; limit?: number; offset?: number } = {}) => {
     const params = new URLSearchParams();
     if (workspaceId) params.set('workspaceId', String(workspaceId));
     if (state) params.set('state', state);
+    if (parent !== undefined) params.set('parent', String(parent));
     if (limit !== undefined) params.set('limit', String(limit));
     if (offset !== undefined) params.set('offset', String(offset));
     const query = params.toString();
@@ -79,6 +81,10 @@ export const api = {
   // attempt-activity heatmap share this one reader path (ADR-0008/0014).
   stats: (from: number, to: number, workspaceId: number) =>
     request<Stats>('GET', `/api/stats?from=${from}&to=${to}&workspaceId=${workspaceId}`),
+  // All-time stats scoped to one Epic's child Tasks (ADR-0014), narrowed to its
+  // Workspace since refs are unique only per Workspace — same shape as `stats`.
+  epicStats: (epicRef: number, workspaceId: number) =>
+    request<Stats>('GET', `/api/epics/${epicRef}/stats?workspaceId=${workspaceId}`),
   createTask: (input: Partial<Task> & { prompt: string; state?: 'draft' | 'ready' }) =>
     request<Task>('POST', '/api/tasks', input),
   // Lazy directory picker (issue #67): one level deep per call; an omitted
@@ -180,7 +186,7 @@ export const api = {
   /** Ticket-wide chronological lifecycle audit projection. */
   taskTimeline: (id: number) => request<{ events: TicketTimelineEvent[]; total: number }>('GET', `/api/tasks/${id}/timeline`),
   taskUsage: (id: number) =>
-    request<{ cost: Cost | null; attemptCount: number }>('GET', `/api/tasks/${id}/usage`),
+    request<AttemptUsage & { cost: Cost | null; attemptCount: number }>('GET', `/api/tasks/${id}/usage`),
   attempt: (id: number) => request<AttemptSummary>('GET', `/api/attempts/${id}`),
   /** The Task's current (latest) Attempt — the follow-forward read for pollers. */
   currentAttempt: (taskId: number) => request<AttemptSummary>('GET', `/api/tasks/${taskId}/attempts/current`),
