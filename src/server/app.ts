@@ -464,6 +464,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     (task) => trackerManagerRef?.urlFor(task.workspaceId, task.trackerRef) ?? null,
     undefined,
     getWorkspaceRow,
+    (workspaceId, ref) => tasks.epicKind(workspaceId, ref),
   );
   // The merging effects an operator Accept applies (issue #115, ADR-0041): a
   // worktree Task's merge, journaled as `target-ref` (idempotency identity is
