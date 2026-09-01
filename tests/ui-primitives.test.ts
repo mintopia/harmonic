@@ -54,12 +54,21 @@ const darkTokens = tokenNames(/:root\[data-theme='dark'\]\s*\{/);
 
 const STATES = ['draft', 'ready', 'working', 'escalated', 'done', 'cancelled'] as const satisfies readonly TaskState[];
 
+/** The attempt-only tones `ui.ts` layers on top of the Task states (issue #454):
+ * `statePill` renders these too; `stateChip` (typed to `TaskState`) never can. */
+const ATTEMPT_TONES = ['passed', 'failed', 'running'] as const;
+const PILL_STATES = [...STATES, ...ATTEMPT_TONES];
+
 /** Every exported helper function, driven across its whole input domain so each
  * branch it can return is in the catalogue. Keyed by export name and asserted
  * complete below, so a newly added helper forces itself into coverage. */
 const HELPERS: Record<string, () => readonly string[]> = {
   stateChip: () => STATES.map(ui.stateChip),
+  // Driven across the whole superset plus a Step type ('implementation'), which
+  // carries no state hue and must hit the neutral fallback (issue #454).
+  statePill: () => [...PILL_STATES.map(ui.statePill), ui.statePill('implementation')],
   blockerBadge: () => [ui.blockerBadge(false), ui.blockerBadge(true)],
+  blockerCountPip: () => [ui.blockerCountPip(false), ui.blockerCountPip(true)],
   stateDot: () => STATES.map(ui.stateDot),
   stateFill: () => STATES.map(ui.stateFill),
   laneBorder: () => STATES.map(ui.laneBorder),
@@ -150,8 +159,10 @@ describe('ui.ts primitives (issue #180)', () => {
     expect([...lightTokens].sort()).toEqual([...darkTokens].sort());
   });
 
-  it('STATES stays in lockstep with the state-keyed maps', () => {
-    expect([...STATES].sort()).toEqual(Object.keys(ui.STATE_CHIP_STYLES).sort());
+  it('STATE_CHIP_STYLES is the Task states plus the attempt-only tones (issue #454)', () => {
+    expect(Object.keys(ui.STATE_CHIP_STYLES).sort()).toEqual([...PILL_STATES].sort());
+    // Every Task state is present, so `stateChip` can never miss one.
+    for (const state of STATES) expect(ui.STATE_CHIP_STYLES[state]).toBeDefined();
   });
 
   it('every exported helper is exercised by the catalogue', () => {

@@ -9,7 +9,7 @@ export interface StreamEvent {
   seq: number;
   ts: number;
   type: string;
-  payload: any;
+  payload: unknown;
 }
 
 /**
@@ -78,14 +78,25 @@ function toolContentOutput(content: unknown): string | null {
   return texts.length ? texts.join('\n') : null;
 }
 
-function toolCallView(payload: any): ToolCallView {
+function toolCallView(payload: unknown): ToolCallView {
+  const p = payload as
+    | {
+        toolCallId?: string;
+        kind?: string;
+        title?: string;
+        status?: string;
+        _meta?: { claudeCode?: { parentToolUseId?: unknown } };
+        content?: unknown;
+      }
+    | null
+    | undefined;
   return {
-    toolCallId: payload?.toolCallId,
-    toolKind: payload?.kind,
-    title: payload?.title,
-    status: payload?.status,
-    subagent: Boolean(payload?._meta?.claudeCode?.parentToolUseId),
-    output: toolContentOutput(payload?.content),
+    toolCallId: p?.toolCallId,
+    toolKind: p?.kind,
+    title: p?.title,
+    status: p?.status,
+    subagent: Boolean(p?._meta?.claudeCode?.parentToolUseId),
+    output: toolContentOutput(p?.content),
   };
 }
 
@@ -164,13 +175,16 @@ export function coalesceEvents<E extends StreamEvent>(events: E[]): StreamItem<E
   let movingBaseIndex: number | undefined;
 
   for (const event of events) {
-    const sessionUpdate =
-      event.type === 'session_update' ? event.payload?.sessionUpdate : undefined;
+    const payload = event.payload as
+      | { sessionUpdate?: string; content?: { text?: string }; event?: string }
+      | null
+      | undefined;
+    const sessionUpdate = event.type === 'session_update' ? payload?.sessionUpdate : undefined;
 
     const variant = sessionUpdate ? TEXT_VARIANT[sessionUpdate] : undefined;
     if (variant) {
       const last = items[items.length - 1];
-      const text = event.payload?.content?.text ?? '';
+      const text = payload?.content?.text ?? '';
       if (last?.kind === 'text' && last.variant === variant) {
         last.text += text;
       } else {
@@ -194,7 +208,7 @@ export function coalesceEvents<E extends StreamEvent>(events: E[]): StreamItem<E
       continue;
     }
 
-    if (event.type === 'lifecycle' && event.payload?.event === 'moving-base') {
+    if (event.type === 'lifecycle' && payload?.event === 'moving-base') {
       if (movingBaseIndex !== undefined) {
         // Advance in place to the latest attempt payload, keeping the first
         // event's id as the React key so the row never remounts as it ticks.

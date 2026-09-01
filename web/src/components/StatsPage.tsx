@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { formatAvgCostPerRun, formatCost, usd } from '../cost';
 import { api } from '../api';
-import { card, displayTitle, labelType, tableHead } from '../ui';
+import { card, displayTitle, labelType, tableHead, touchTarget } from '../ui';
 import {
   cacheHitRate,
   failureRate,
@@ -86,7 +86,7 @@ function SegmentedControl<T extends string>({
           key={label}
           aria-pressed={v === value}
           onClick={() => onChange(v)}
-          className={`rounded-sm px-2.5 py-1.5 transition-colors duration-150 ${
+          className={`${touchTarget} rounded-sm px-2.5 py-1.5 transition-colors duration-150 ${
             v === value ? 'bg-surface font-semibold text-ink shadow-card' : 'font-medium text-muted hover:text-ink'
           }`}
         >

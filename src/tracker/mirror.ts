@@ -1,6 +1,7 @@
 import type { SpanContext } from '@opentelemetry/api';
-import { EPIC_LABEL, type Ticket } from './adapter.js';
+import { isEpicTypeContainer, type Ticket } from './adapter.js';
 import type { MirrorInput, TaskService } from '../domain/tasks.js';
+import { deriveStoredEpics } from '../domain/epic-derivation.js';
 import { WAYFINDER_TYPES, type TaskRow, type TrackerFacts, type WayfinderType, type Workflow } from '../db/schema.js';
 import { forEachYielding } from '../reliability/yield.js';
 import { startOperation } from '../telemetry/operations.js';
@@ -86,8 +87,7 @@ export async function mirrorScan(
   await forEachYielding(tickets, async (ticket) => {
     // A container is a Map (`wayfinder:map`) or a spec Epic (the `epic` label,
     // ADR-0016): persisted to tracker_containers, never mirrored as a work Task.
-    const isContainer = ticket.isMap || ticket.labels.includes(EPIC_LABEL);
-    if (isContainer) {
+    if (isEpicTypeContainer(ticket)) {
       containers.push({ trackerRef: ticket.number, facts: trackerFacts(ticket) });
       // ADR-0016 / #417: a ticket now recognised as a container may have been
       // mirrored as a work Task on an earlier poll. Remove that row (and its
@@ -97,6 +97,12 @@ export async function mirrorScan(
     } else if (!(await tasks.isDismissed(workspaceId, ticket.number))) issues.push(ticket);
   });
   await tasks.syncTrackerContainers(workspaceId, containers);
+  // The durable Epic spine (ADR-0018, #437) lazy-upserts beside the wipe-and-
+  // replace container cache: one row per leaf-most epic-type container with ≥1
+  // member, `kind` re-derived from this scan's live facts. Unlike the container
+  // wipe it never deletes — a row persists through the issue closing and is
+  // removed only on Dismiss. Nothing reads it yet (the expand step).
+  await tasks.syncEpics(workspaceId, deriveStoredEpics(tickets));
   // An Epic is any ticket with children — a Map or a Spec — identified
   // structurally as the parent of some ticket in this scan. Epics are containers:
   // they never block their children (a `Blocked by: #<epic>` edge is never

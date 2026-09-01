@@ -1,16 +1,18 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { api } from '../api';
-import type { Task, ModelUsage } from '../types';
+import { useLiveEffect } from '../useLiveEffect';
+import type { DiffFile, Task, ModelUsage } from '../types';
 import type { Epic, EpicStage, IntegrationStepState } from '../epic-model';
 import { epicLifecycleSteps } from '../epic-model';
 import type { Stats } from '../stats-model';
 import { epicUsageSummary, tokenBarSegments, tokenBarEmpty, rowCost } from '../epic-summary-model';
 import { formatCost } from '../cost';
-import { issueRef, taskKey } from '../id-format.js';
+import { issueRef, ticketRowId } from '../id-format.js';
 import { toastError } from '../toast';
 import { cardTitle } from '../board-sections-model';
 import { card, panel, chip, stateChip, stateDot, PHASE_NODE_STYLES, type PhaseNodeVisual } from '../ui';
 import { CrumbBar } from './CrumbBar';
+import { DiffViewer } from './DiffViewer';
 import { EmptyState } from './EmptyState';
 import { Icon } from './Icon';
 import { Markdown } from './Markdown';
@@ -180,6 +182,32 @@ function UsageCard({ stats, epic }: { stats: Stats; epic: Epic }) {
 }
 
 
+/** The whole-Epic diff (ADR-0018): what `epic/<ref>` changes over base, fetched
+ * once — unlike the live Attempt ChangesPane on TicketPage, an Epic's diff is
+ * static, so it never polls. */
+function ChangesSection({ files, failed }: { files: DiffFile[] | null; failed: boolean }) {
+  return (
+    <section className="mb-8">
+      <div className={`${sectionCaps} mb-3`}>Changes</div>
+      {failed ? (
+        <div className={`${card} p-5 text-muted`}>Couldn&rsquo;t load changes.</div>
+      ) : files === null ? (
+        <div className={`${card} p-5 text-muted`}>Loading changes…</div>
+      ) : files.length === 0 ? (
+        <EmptyState title="No changes" className="py-8">
+          No changes on this Epic yet.
+        </EmptyState>
+      ) : (
+        <div className="flex flex-col gap-4">
+          {files.map((f) => (
+            <DiffViewer key={f.path} file={f} />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 // Column tracks mirror TableView's Tasks-list GRID (ADR-0015: same columns, no
 // bespoke row shape) plus a trailing Tokens track; keep the two in sync.
 const GRID =
@@ -216,7 +244,7 @@ function ChildRow({
       <div role="cell" className="flex items-center justify-end gap-1.5 whitespace-nowrap tabular-nums text-muted">
         <span aria-hidden="true" className={stateDot(child.state)} />
         <span className="sr-only">Id: </span>
-        {taskKey(child.id)}
+        {ticketRowId(child.id, child.trackerRef)}
       </div>
       <div role="cell" className="min-w-0 pr-2">
         <span title={child.summary} className="block truncate text-ink">
@@ -410,27 +438,20 @@ export function EpicPage({
   const [stats, setStats] = useState<Stats | null>(null);
   const [childTasks, setChildTasks] = useState<Task[] | null>(null);
   const [childTotals, setChildTotals] = useState<Map<number, ModelUsage | null>>(() => new Map());
+  const [diffFiles, setDiffFiles] = useState<DiffFile[] | null>(null);
+  const [diffFailed, setDiffFailed] = useState(false);
 
-  useEffect(() => {
-    let live = true;
-    api.epic(workspaceId, epicRef).then((e) => live && setEpic(e), toastError);
-    return () => {
-      live = false;
-    };
+  useLiveEffect((live) => {
+    api.epic(workspaceId, epicRef).then((e) => live() && setEpic(e), toastError);
   }, [workspaceId, epicRef]);
 
-  useEffect(() => {
-    let live = true;
-    api.epicStats(epicRef, workspaceId).then((s) => live && setStats(s), toastError);
-    return () => {
-      live = false;
-    };
+  useLiveEffect((live) => {
+    api.epicStats(epicRef, workspaceId).then((s) => live() && setStats(s), toastError);
   }, [epicRef, workspaceId]);
 
-  useEffect(() => {
-    let live = true;
+  useLiveEffect((live) => {
     api.tasks({ workspaceId, parent: epicRef }).then(({ tasks }) => {
-      if (!live) return;
+      if (!live()) return;
       setChildTasks(tasks);
       // Bounded by the Epic's own member count; tolerate individual failures
       // (a row simply shows no token bar) rather than failing the whole page.
@@ -442,13 +463,23 @@ export function EpicPage({
           ),
         ),
       ).then((pairs) => {
-        if (live) setChildTotals(new Map(pairs));
+        if (live()) setChildTotals(new Map(pairs));
       });
     }, toastError);
+  }, [epicRef, workspaceId]);
+
+  useEffect(() => {
+    let live = true;
+    setDiffFiles(null);
+    setDiffFailed(false);
+    api.epicDiffFiles(workspaceId, epicRef).then(
+      ({ files }) => live && setDiffFiles(files),
+      () => live && setDiffFailed(true),
+    );
     return () => {
       live = false;
     };
-  }, [epicRef, workspaceId]);
+  }, [workspaceId, epicRef]);
 
   useEffect(() => {
     const onKeyDown = (e: globalThis.KeyboardEvent) => {
@@ -506,6 +537,8 @@ export function EpicPage({
               <div className={`${card} p-5 text-muted`}>Loading usage…</div>
             )}
           </div>
+
+          <ChangesSection files={diffFiles} failed={diffFailed} />
 
           <div className="mb-8">
             {childTasks ? (

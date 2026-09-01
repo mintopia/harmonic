@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { api } from '../api';
 import { formatCost, usd } from '../cost';
 import type { Attempt, Step, StepType, GuardrailEvent, AttemptSummary, AttemptLogEvent, AttemptUsageEvent, Task, TicketTimelineEvent, VerificationAttempt, VerifierStatus } from '../types';
-import { appendAttemptLogEvents, eventsAfterLiveCursor, attemptLogCursor } from '../attempt-log-stream-model';
 import { EmptyState } from './EmptyState';
 import { DiffViewer } from './DiffViewer';
 import type { DiffFile } from '../types';
@@ -13,7 +12,7 @@ import { changedFilesFromStat } from '../attempt-rail-model';
 import { sumCosts } from '../activity-model';
 import { Markdown } from './Markdown';
 import { Icon } from './Icon';
-import { subscribe, subscribeAttemptLog } from '../ws';
+import { subscribe } from '../ws';
 import { gateForAttempt } from '../ticket-gate-model';
 import { cardTitle } from '../board-sections-model';
 import { AttemptRail } from './ticket/AttemptRail';
@@ -26,10 +25,15 @@ import { isAtLiveEdge } from '../follow-tail-model';
 import { ChatTranscript } from './ticket/ChatTranscript';
 import { Donut, type DonutSegment } from './Donut';
 import { BarChart, type Bar } from './BarChart';
-import { card, labelType, railSectionHead, railSectionCount, PHASE_NODE_STYLES } from '../ui';
+import { card, labelType, railSectionHead, railSectionCount, PHASE_NODE_STYLES, statePill } from '../ui';
 import { toastError } from '../toast';
 import { ticketIdentity } from '../id-format.js';
 import { splitPathTail } from '../path';
+import { useLiveEffect } from '../useLiveEffect';
+import { useTicketAttempts } from './useTicketAttempts';
+import { useAttemptLogStream } from './useAttemptLogStream';
+import { useAttemptVerification } from './useAttemptVerification';
+import { useLiveUsage } from './useLiveUsage';
 
 
 const sectionCaps = 'text-label font-bold uppercase tracking-[0.1em] text-faint';
@@ -44,29 +48,8 @@ function humanState(state: string): string {
   return STATE_LABEL[state] ?? state.replace(/-/g, ' ');
 }
 
-const STATE_PILL: Record<string, string> = {
-  escalated: 'bg-await-tint text-await',
-  working: 'bg-running-tint text-running',
-  running: 'bg-running-tint text-running',
-  ready: 'bg-ready-tint text-ready',
-  passed: 'bg-merged-tint text-merged',
-  failed: 'bg-fail-tint text-fail',
-  done: 'bg-merged-tint text-merged',
-  merged: 'bg-merged-tint text-merged',
-  cancelled: 'bg-raised text-muted',
-  draft: 'bg-raised text-muted',
-};
-
 function StatePill({ state }: { state: string }) {
-  return (
-    <span
-      className={`inline-flex shrink-0 items-center rounded-sm px-2.5 py-1 text-[11px] font-semibold ${
-        STATE_PILL[state] ?? 'bg-raised text-muted'
-      }`}
-    >
-      {humanState(state)}
-    </span>
-  );
+  return <span className={statePill(state)}>{humanState(state)}</span>;
 }
 
 
@@ -331,12 +314,11 @@ function CriticSession({ attemptId, label, model }: { attemptId: number; label: 
   const [state, setState] = useState<'loading' | 'ready' | 'unavailable'>('loading');
   const [events, setEvents] = useState<AttemptLogEvent[]>([]);
 
-  useEffect(() => {
-    let live = true;
+  useLiveEffect((live) => {
     setState('loading');
     api.criticLog(attemptId).then(
       (log) => {
-        if (!live) return;
+        if (!live()) return;
         if (log.status === 'available' && log.events.length > 0) {
           setEvents(log.events);
           setState('ready');
@@ -344,11 +326,8 @@ function CriticSession({ attemptId, label, model }: { attemptId: number; label: 
           setState('unavailable');
         }
       },
-      () => live && setState('unavailable'),
+      () => live() && setState('unavailable'),
     );
-    return () => {
-      live = false;
-    };
   }, [attemptId]);
 
   if (state === 'loading') return <p className="mt-3 text-[12px] text-muted">Loading critic session…</p>;
@@ -610,25 +589,23 @@ function ChangesPane({
 }) {
   const [files, setFiles] = useState<DiffFile[] | null>(null);
   const [failed, setFailed] = useState(false);
-  useEffect(() => {
+  useLiveEffect((live) => {
     if (attemptId == null) {
       setFiles([]);
       return;
     }
-    let live = true;
     setFiles(null);
     setFailed(false);
     const load = () =>
       api.attemptDiffFiles(attemptId).then(
-        ({ files }) => live && setFiles(files),
-        () => live && setFailed(true),
+        ({ files }) => live() && setFiles(files),
+        () => live() && setFailed(true),
       );
     load();
     // While the run is live the diff keeps growing — refresh so the hunks track
     // the agent's edits, matching the rail's live changed-file list.
     const timer = running ? window.setInterval(load, 2_000) : undefined;
     return () => {
-      live = false;
       if (timer) window.clearInterval(timer);
     };
   }, [attemptId, running]);
@@ -1270,19 +1247,15 @@ export function TicketPage({
   parentEpicRef?: number | null;
   error?: string | null;
 }) {
-  const [runs, setRuns] = useState<AttemptSummary[]>([]);
-  const [attempts, setAttempts] = useState<Attempt[]>([]);
+  const { runs, attempts } = useTicketAttempts(task.id);
+  const liveUsage = useLiveUsage();
   const [maxAttempts, setMaxAttempts] = useState<number | null>(null);
   const [workspaceName, setWorkspaceName] = useState<string | null>(null);
   // The sidebar selection driving the content panel: nothing (Stats), an
   // Attempt, a changed file, or the Timeline. `contentPanel` maps it to the
   // panel that renders.
   const [selection, setSelection] = useState<ContentSelection>({ kind: 'none' });
-  const [events, setEvents] = useState<AttemptLogEvent[]>([]);
-  const [logUnavailable, setLogUnavailable] = useState(false);
   const [guardrailEvents, setGuardrailEvents] = useState<GuardrailEvent[]>([]);
-  const [verificationAttempts, setVerificationAttempts] = useState<VerificationAttempt[]>([]);
-  const [verifierStatuses, setVerifierStatuses] = useState<VerifierStatus[]>([]);
   const [timelineEvents, setTimelineEvents] = useState<TicketTimelineEvent[]>([]);
   const [allTasks, setAllTasks] = useState<Task[]>([]);
   // The full prompt/description lives on the item GET, not the lean list row the
@@ -1290,7 +1263,6 @@ export function TicketPage({
   // whole body even once list rows drop the prompt; the live `task` prop still
   // drives everything state-related.
   const [detail, setDetail] = useState<Task | null>(null);
-  const [liveUsage, setLiveUsage] = useState<Map<number, AttemptUsageEvent>>(() => new Map());
   const [now, setNow] = useState(() => Date.now());
   // The worktree diffstat while a run is in flight. `task.stat` is only
   // snapshotted at settle, so the rail's changed-file list would be empty for
@@ -1304,102 +1276,40 @@ export function TicketPage({
   const selectedRun = selection.kind === 'attempt' ? runForAttempt(runs, { number: selection.attemptNumber }) : null;
   const selectedRunId = selectedRun?.id ?? null;
 
-  useEffect(() => {
-    let live = true;
-    api.tasks().then(({ tasks }) => live && setAllTasks(tasks), toastError);
-    return () => {
-      live = false;
-    };
+  const { events, logUnavailable } = useAttemptLogStream(selectedRunId);
+  const { verificationAttempts, verifierStatuses } = useAttemptVerification(selectedRunId);
+
+  useLiveEffect((live) => {
+    api.tasks().then(({ tasks }) => live() && setAllTasks(tasks), toastError);
   }, [task.id]);
 
-  useEffect(() => {
-    let live = true;
+  useLiveEffect((live) => {
     setDetail(null);
-    api.task(task.id).then((full) => live && setDetail(full), toastError);
-    return () => {
-      live = false;
-    };
+    api.task(task.id).then((full) => live() && setDetail(full), toastError);
   }, [task.id]);
 
-  useEffect(() => {
-    let live = true;
+  useLiveEffect((live) => {
     const load = () =>
       api.taskTimeline(task.id).then(({ events: next }) => {
-        if (live) setTimelineEvents(next);
+        if (live()) setTimelineEvents(next);
       }, toastError);
     load();
     const unsubscribe = subscribe((msg) => {
       if ((msg.type === 'attempt_timeline_changed' && msg.taskId === task.id) || (msg.type === 'attempt_changed' && msg.run.taskId === task.id)) load();
     });
     return () => {
-      live = false;
       unsubscribe();
     };
   }, [task.id]);
 
-  useEffect(() => {
-    let live = true;
+  useLiveEffect((live) => {
     Promise.all([api.config(), api.workspaces()]).then(([config, { workspaces }]) => {
-      if (!live) return;
+      if (!live()) return;
       const workspace = workspaces.find((workspace) => workspace.id === task.workspaceId);
       setMaxAttempts(workspace?.maxAttempts ?? config.maxAttempts);
       setWorkspaceName(workspace?.name ?? null);
     }, toastError);
-    return () => {
-      live = false;
-    };
   }, [task.workspaceId]);
-
-  useEffect(() => {
-    let live = true;
-    const load = () =>
-      api.taskAttemptTimeline(task.id).then(({ attempts: next }) => {
-        if (!live) return;
-        setAttempts(next);
-      }, toastError);
-    load();
-    const unsubscribe = subscribe((msg) => {
-      if (msg.type === 'attempt_timeline_changed' && msg.taskId === task.id) {
-        setAttempts(msg.attempts);
-      }
-    });
-    return () => {
-      live = false;
-      unsubscribe();
-    };
-  }, [task.id]);
-
-  useEffect(() => {
-    let live = true;
-    api.taskAttempts(task.id).then(({ attempts: list }) => {
-      if (!live) return;
-      setRuns(list);
-    });
-    const unsubscribe = subscribe((msg) => {
-      if (msg.type === 'attempt_changed' && msg.run.taskId === task.id) {
-        setRuns((current) => {
-          const rest = current.filter((r) => r.id !== msg.run.id);
-          return [...rest, msg.run].sort((a, b) => a.number - b.number);
-        });
-      }
-    });
-    return () => {
-      live = false;
-      unsubscribe();
-    };
-  }, [task.id]);
-
-  // Live token/cost deltas for the in-flight AttemptSummary (the `attempt_usage` firehose, ~1s)
-  // — `attempt_changed` only merges at Step transitions, so without this the metric
-  // row holds the stale settled figures while the AttemptSummary is executing.
-  useEffect(
-    () =>
-      subscribe((msg) => {
-        if (msg.type !== 'attempt_usage') return;
-        setLiveUsage((prev) => new Map(prev).set(msg.attemptId, msg));
-      }),
-    [],
-  );
 
   // Tick a 1s clock only while a AttemptSummary is live, so Elapsed advances in real time
   // without re-rendering the page once everything has settled.
@@ -1414,110 +1324,35 @@ export function TicketPage({
   // rail's changed-file list fills as the agent edits, instead of staying empty
   // until settle. Idle → clear it and fall back to the settled `task.stat`.
   const latestAttemptId = runs[runs.length - 1]?.id ?? null;
-  useEffect(() => {
+  useLiveEffect((live) => {
     if (!anyRunning || latestAttemptId === null) {
       setLiveStat(null);
       return;
     }
-    let live = true;
     const load = () =>
       api
         .attemptDiff(latestAttemptId)
-        .then((d) => live && setLiveStat(d.stat))
+        .then((d) => live() && setLiveStat(d.stat))
         .catch(() => {});
     load();
     const timer = window.setInterval(load, 2_000);
     return () => {
-      live = false;
       window.clearInterval(timer);
     };
   }, [anyRunning, latestAttemptId]);
 
-  useEffect(() => {
-    if (selectedRunId === null) return;
-    let live = true;
-    let hydrated = false;
-    const pending: AttemptLogEvent[] = [];
-    let cursor = 0;
-    setEvents([]);
-    setLogUnavailable(false);
-    // Subscribe before hydrating but deliberately skip the existing replay:
-    // the REST snapshot already contains it, in a different id space. Events
-    // arriving during hydration are buffered and cut over at its live cursor.
-    const unsubscribe = subscribeAttemptLog({ attemptId: selectedRunId, after: () => cursor, onEvent: (event) => {
-      cursor = Math.max(cursor, event.seq);
-      if (!hydrated) {
-        pending.push(event);
-        return;
-      }
-      setEvents((current) => appendAttemptLogEvents({ current, additions: [event] }));
-    } });
-    api.attemptLog(selectedRunId).then(
-      (log) => {
-        if (!live) return;
-        setLogUnavailable(log.status === 'unavailable');
-        const hydratedEvents = appendAttemptLogEvents({
-          current: log.status === 'available' ? log.events : [],
-          additions: log.status === 'available' ? eventsAfterLiveCursor({ events: pending, liveCursor: log.liveCursor }) : pending,
-        });
-        cursor = Math.max(log.liveCursor, attemptLogCursor({ events: pending }));
-        setEvents(hydratedEvents);
-        hydrated = true;
-      },
-      (error: unknown) => {
-        if (!live) return;
-        const hydratedEvents = appendAttemptLogEvents({ current: [], additions: pending });
-        cursor = attemptLogCursor({ events: pending });
-        setEvents(hydratedEvents);
-        hydrated = true;
-        toastError(error);
-      },
-    );
-    return () => {
-      live = false;
-      unsubscribe();
-    };
-  }, [selectedRunId]);
-
-  useEffect(() => {
+  useLiveEffect((live) => {
     if (selectedRunId === null) {
       setGuardrailEvents([]);
       return;
     }
-    let live = true;
     const load = () =>
-      api.attemptGuardrailEvents(selectedRunId).then(({ guardrailEvents }) => live && setGuardrailEvents(guardrailEvents));
+      api.attemptGuardrailEvents(selectedRunId).then(({ guardrailEvents }) => live() && setGuardrailEvents(guardrailEvents));
     load();
     const unsubscribe = subscribe((msg) => {
       if (msg.type === 'attempt_changed' && msg.run.id === selectedRunId) load();
     });
     return () => {
-      live = false;
-      unsubscribe();
-    };
-  }, [selectedRunId]);
-
-  useEffect(() => {
-    if (selectedRunId === null) {
-      setVerificationAttempts([]);
-      setVerifierStatuses([]);
-      return;
-    }
-    let live = true;
-    const load = () =>
-      api
-        .attemptVerificationAttempts(selectedRunId)
-        .then(({ verificationAttempts, verifierStatuses }) => {
-          if (!live) return;
-          setVerificationAttempts(verificationAttempts);
-          setVerifierStatuses(verifierStatuses);
-        });
-    load();
-    const unsubscribe = subscribe((msg) => {
-      if (msg.type === 'attempt_changed' && msg.run.id === selectedRunId) load();
-    });
-    return () => {
-      live = false;
       unsubscribe();
     };
   }, [selectedRunId]);
@@ -1605,7 +1440,7 @@ export function TicketPage({
 
       {/* two-pane shell */}
       <div className="flex min-h-0 flex-1 overflow-hidden max-rail:flex-col max-rail:overflow-visible">
-        <div
+        <main
           id="main-content"
           ref={scrollRef}
           tabIndex={-1}
@@ -1725,10 +1560,13 @@ export function TicketPage({
               )}
             </div>
           </div>
-        </div>
+        </main>
 
         {/* right navigation sidebar */}
-        <aside className="flex w-[326px] shrink-0 flex-col border-l border-hairline bg-surface max-rail:w-auto max-rail:border-l-0 max-rail:border-t">
+        <aside
+          aria-label="Attempts, timeline and changed files"
+          className="flex w-[326px] shrink-0 flex-col border-l border-hairline bg-surface max-rail:w-auto max-rail:border-l-0 max-rail:border-t"
+        >
           <div className="min-h-0 flex-1 overflow-y-auto max-rail:overflow-visible">
             <AttemptsNav
               attempts={attempts}
@@ -1747,6 +1585,7 @@ export function TicketPage({
               selectedFile={selectedFile}
               onSelectFile={(path) => setSelection({ kind: 'file', path })}
               onSelectChanges={() => setSelection({ kind: 'file', path: '' })}
+              taskState={task.state}
             />
           </div>
           {/* Review Actions, pinned at the bottom with no section title — the

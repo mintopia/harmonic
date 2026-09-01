@@ -363,7 +363,7 @@ describe('Automated merge policy operations (issue #387)', () => {
         workingDir: repo,
         verificationCommand: [verificationCommandSchema.parse({ command: process.execPath, args: ['-e', 'process.exit(0)'], timeoutSeconds: 30 })],
       });
-      await server.app.ctx.configStore.update({
+      await server.app.ctx.settingsStore.updateGlobal({
         merge: { postMergeCheck: false },
         drive: { prompt: JSON.stringify({ writeFiles: { 'impl.txt': 'implementation\n' }, mcpFinish: true }) },
       });

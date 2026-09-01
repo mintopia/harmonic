@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { api } from '../api';
 import { toastSuccess } from '../toast';
+import { useLiveEffect } from '../useLiveEffect';
 import { Modal } from './Modal';
 import { btnPrimary, btnQuietDestructive, field, panelTitle, labelType } from '../ui';
 import { taskLabel } from '../id-format.js';
@@ -31,19 +32,15 @@ export function RejectDialog({
   const [warm, setWarm] = useState(false);
   const trimmed = guidance.trim();
 
-  useEffect(() => {
-    let live = true;
+  useLiveEffect((live) => {
     loadPreview()
       .then((preview) => {
-        if (live) setWarm(preview.available && preview.continueFull.estimate.warm);
+        if (live()) setWarm(preview.available && preview.continueFull.estimate.warm);
       })
       .catch(() => {
         // Preview is advisory; on failure just omit the "start now" option.
-        if (live) setWarm(false);
+        if (live()) setWarm(false);
       });
-    return () => {
-      live = false;
-    };
   }, [loadPreview]);
 
   const submit = async (start: boolean) => {

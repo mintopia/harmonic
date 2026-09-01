@@ -7,7 +7,7 @@ import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { AttemptStore } from '../src/domain/attempts.js';
 import { resolveGuardrails } from '../src/domain/setting-override.js';
-import { resolvePrices } from '../src/execution/pricing.js';
+import { resolvePrices } from '../src/domain/pricing.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { allWorkspaces, makeSettingsStore } from './helpers.js';
 

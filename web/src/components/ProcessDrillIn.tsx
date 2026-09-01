@@ -12,6 +12,7 @@ import {
 } from '../process-tree-model';
 import { EventStream } from './EventStream';
 import { ProcessTree } from './ProcessTree';
+import { useLiveEffect } from '../useLiveEffect';
 
 /** An Activity process the caller has confirmed carries a Process Tree. */
 export type RunWithTree = ActivityProcess & { tree: ProcessNode };
@@ -41,21 +42,19 @@ export function ProcessDrillIn({ process, now }: { process: RunWithTree; now: nu
 
   // A transcript can appear just after session creation, so unavailable is
   // deliberately rechecked too.
-  useEffect(() => {
+  useLiveEffect((live) => {
     if (attemptId === null) return;
-    let live = true;
     setEvents([]);
     setLogUnavailable(false);
     const load = () =>
       api.attemptLog(attemptId).then((log) => {
-        if (!live) return;
+        if (!live()) return;
         setLogUnavailable(log.status === 'unavailable');
         setEvents(log.status === 'available' ? log.events : []);
       });
     load();
     const interval = window.setInterval(load, 1_000);
     return () => {
-      live = false;
       window.clearInterval(interval);
     };
   }, [attemptId]);

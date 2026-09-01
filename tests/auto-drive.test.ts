@@ -116,6 +116,35 @@ describe('Drive Prompt fill (issue #33)', () => {
     expect(await drive.prompt(research)).toBe(`/research 9 https://x/9\n\nInvestigate X::why\n\n${reminder(1)}`);
   });
 
+  it('drives a Map-Epic child with /wayfinder against the map ref, not its own ticket (issue #440)', async () => {
+    const config: AppConfig = {
+      ...defaultConfig(),
+      drive: { ...defaultConfig().drive, prompt: '{skill} {ref} {url}\n\n{title}::{body}' },
+    };
+    const child = worktreeTask({ trackerRef: 7, mapRef: 100, workspaceId: 1, prompt: 'Chart it\n\nwhy' });
+    // 5th ctor arg is the Epic-kind resolver (ADR-0018/#440); the map child's
+    // parent (mapRef 100) is a stored Map.
+    const drive = new AutoDrive(
+      () => config,
+      (task) => `https://x/${task.trackerRef}`,
+      undefined,
+      undefined,
+      async (_ws, ref) => (ref === 100 ? 'map' : null),
+    );
+    expect(await drive.prompt(child)).toBe(`/wayfinder 100 https://x/100\n\nChart it::why\n\n${reminder(1)}`);
+
+    // A plain-Epic child (stored kind 'epic') keeps /implement against its own ref.
+    const plainChild = worktreeTask({ trackerRef: 7, mapRef: 200, workspaceId: 1, prompt: 'Build it\n\nnow' });
+    const plainDrive = new AutoDrive(
+      () => config,
+      (task) => `https://x/${task.trackerRef}`,
+      undefined,
+      undefined,
+      async () => 'epic',
+    );
+    expect(await plainDrive.prompt(plainChild)).toBe(`/implement 7 https://x/7\n\nBuild it::now\n\n${reminder(1)}`);
+  });
+
   it('appends a re-queued mirrored Task’s feedback so the afk retry sees it', async () => {
     const config: AppConfig = {
       ...defaultConfig(),

@@ -15,8 +15,8 @@ import {
 import type { DeterministicContinuation } from './session-continuation.js';
 import { DomainError } from './errors.js';
 import type { ResolvedGuardrails } from './setting-override.js';
-import { costOfUsages, type PriceTable } from '../execution/pricing.js';
-import type { AttemptUsage } from '../execution/usage.js';
+import { costOfUsages, type PriceTable } from './pricing.js';
+import type { AttemptUsage } from './usage.js';
 import { forEachYielding } from '../reliability/yield.js';
 
 /** The Guardrail state an Attempt captures at start (issue #126): the effective
@@ -224,7 +224,7 @@ export class AttemptStore {
    * return it so the caller can fail its task (and notify) — never silently
    * re-run on a possibly dirty working directory.
    *
-   * Sole caller: `CrashRecoveryCoordinator.reconcile` (domain/crash-recovery.ts),
+   * Sole caller: `CrashRecoveryCoordinator.reconcile` (execution/crash-recovery.ts),
    * always as its second pass — a worktree-mode Attempt whose merge already
    * landed (per `git merge-base --is-ancestor`) is settled directly by that
    * first pass and so is no longer `running` by the time this runs (ADR-0001:

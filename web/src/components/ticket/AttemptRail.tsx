@@ -1,6 +1,7 @@
 import { changedFilesFromStat } from '../../attempt-rail-model';
 import { railSectionCount, railSectionHead } from '../../ui';
 import { Icon } from '../Icon';
+import type { TaskState } from '../../types';
 
 const FADED: Record<'M' | 'A' | 'D', string> = {
   M: 'bg-running-tint text-running',
@@ -13,6 +14,7 @@ export function AttemptRail({
   selectedFile,
   onSelectFile,
   onSelectChanges,
+  taskState,
 }: {
   worktree: {
     branch: string | null;
@@ -23,9 +25,12 @@ export function AttemptRail({
   selectedFile?: string | null;
   onSelectFile: (path: string) => void;
   onSelectChanges: () => void;
+  taskState?: TaskState;
 }) {
   const files = changedFilesFromStat(worktree.stat);
   const hasWorktree = worktree.isolationMode === 'worktree';
+  const merged = taskState === 'done';
+  const noChangedFilesCopy = merged ? 'No changed files.' : 'No changed files yet.';
 
   return (
     <div aria-label="Worktree navigation">
@@ -61,7 +66,7 @@ export function AttemptRail({
               Changed files{files.length > 0 && <span className={railSectionCount}>{files.length}</span>}
             </button>
             {files.length === 0 ? (
-              <p className="text-small text-muted">No changed files yet.</p>
+              <p className="text-small text-muted">{noChangedFilesCopy}</p>
             ) : (
               <div className="mt-0.5 flex flex-col">
                 {files.map((file) => {

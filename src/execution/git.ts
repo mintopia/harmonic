@@ -8,6 +8,7 @@ import { withRepoLock } from './repo-lock.js';
 import { startActiveChildOperation } from '../telemetry/operations.js';
 import { forEachYielding } from '../reliability/yield.js';
 import { logger } from '../logger.js';
+import { GitError } from '../domain/errors.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -21,16 +22,6 @@ const GIT_TIMEOUT_MS = 120_000;
  * workspace-prep op (a large repo over the network is legitimately slow), but a
  * genuinely hung clone is still killed and reaped (issue #199). */
 const CLONE_TIMEOUT_MS = 600_000;
-
-export class GitError extends Error {
-  constructor(
-    message: string,
-    public readonly stderr: string,
-  ) {
-    super(message);
-    this.name = 'GitError';
-  }
-}
 
 async function git(cwd: string, ...args: string[]): Promise<string> {
   return gitEnv(cwd, {}, ...args);
@@ -493,6 +484,12 @@ export const Git = {
    * in `dir`'s object store — no checkout required.
    */
   diffRange: (dir: string, base: string, oid: string) => git(dir, 'diff', `${base}..${oid}`),
+
+  /** The frozen whole-Epic diff from an integration merge commit (ADR-0018):
+   * `git diff <M>^1 <M>^2` — first parent (base-before) against second (epic-tip).
+   * Survives the epic branch's retirement, since it reads the merge commit's own
+   * parents straight from the object store — no branch or checkout required. */
+  diffMergeCommit: (dir: string, mergeOid: string) => git(dir, 'diff', `${mergeOid}^1`, `${mergeOid}^2`),
 
   /**
    * Diffstat of a live worktree's current state — committed AND uncommitted

@@ -1,8 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
-import { EpicIntegrateCoordinator, type EpicIntegrate, type EpicIntegrateGit } from '../src/execution/epic-integrate-coordinator.js';
+import { EpicIntegrateCoordinator, type EpicIntegrate, type EpicIntegrateGit } from '../src/execution/epic-integrate-git.js';
 import type { MergePolicyOutcome } from '../src/execution/merge-policy.js';
 import type { VerificationDecision } from '../src/verification/combine.js';
-import type { MemberMergeState } from '../src/domain/epic-integrate.js';
+import type { MemberMergeState } from '../src/domain/epic-integrate-decision.js';
 
 const proceed: VerificationDecision = { outcome: 'proceed', reason: 'all 1 verifier passed' };
 const block: VerificationDecision = { outcome: 'block', reason: 'verifier command failed' };
@@ -65,6 +65,7 @@ const build = (opts: {
   const integrate = vi.fn<EpicIntegrate>(opts.integrate ?? (async () => merged()));
   const retire = vi.fn(async (_ref: number) => {});
   const escalate = vi.fn<(epicRef: number, reason: string) => void>();
+  const recordIntegration = vi.fn(async (_input: { epicRef: number; mergeCommit: string | null; memberRefs: number[] }) => {});
   const onError = vi.fn<(msg: string) => void>();
   // Default clock steps 10min per read so the hard backoff (#218, default 60s)
   // never blocks the many tests that re-submit rapidly; backoff tests inject
@@ -79,9 +80,10 @@ const build = (opts: {
     escalate,
     now: opts.now ?? (() => (t += 600_000)),
     ...(opts.verifyBackoffMs !== undefined ? { verifyBackoffMs: opts.verifyBackoffMs } : {}),
+    recordIntegration,
     onError,
   });
-  return { coord, git, verify, integrate, retire, escalate, onError };
+  return { coord, git, verify, integrate, retire, escalate, recordIntegration, onError };
 };
 
 const members = (...m: MemberMergeState[]): MemberMergeState[] => m;
@@ -120,6 +122,36 @@ describe('EpicIntegrateCoordinator', () => {
     expect(integrate).toHaveBeenCalledWith(expect.objectContaining({ repoDir: '/repo', epicRef: 42, defaultBranch: 'develop', integrationBranch: 'epic/42' }));
     expect(retire).toHaveBeenCalledWith(42);
     expect(escalate).not.toHaveBeenCalled();
+  });
+
+  it('records the real merge-commit + member snapshot on a successful integrate (#438)', async () => {
+    const { coord, recordIntegration } = build();
+    const out = await coord.submit({ ref: 42, members: members('completed', 'completed'), memberRefs: [11, 12] });
+    expect(out).toEqual({ status: 'integrated', oid: 'integrated-oid' });
+    expect(recordIntegration).toHaveBeenCalledWith({ epicRef: 42, mergeCommit: 'integrated-oid', memberRefs: [11, 12] });
+  });
+
+  it('records a null merge-commit (no-op) when the branch is already contained in base (#438)', async () => {
+    const git = new FakeGit();
+    git.setContained('epic/42');
+    const { coord, integrate, recordIntegration } = build({ git });
+    const out = await coord.submit({ ref: 42, members: members('completed'), memberRefs: [7] });
+    expect(out).toEqual({ status: 'integrated', oid: 'oid-epic-42' });
+    // Already contained ⇒ no merge ran, so the snapshot's merge-commit is null.
+    expect(integrate).not.toHaveBeenCalled();
+    expect(recordIntegration).toHaveBeenCalledWith({ epicRef: 42, mergeCommit: null, memberRefs: [7] });
+  });
+
+  it('defers the branch retire when the integration record fails, so the next poll can re-settle (#438)', async () => {
+    const git = new FakeGit();
+    const { coord, retire, recordIntegration, onError } = build({ git });
+    recordIntegration.mockRejectedValueOnce(new Error('db down'));
+    const out = await coord.submit({ ref: 42, members: members('completed'), memberRefs: [11] });
+    // The merge still succeeded (base advanced), so the outcome is integrated…
+    expect(out).toEqual({ status: 'integrated', oid: 'integrated-oid' });
+    // …but the branch is NOT retired: it is what re-triggers the settle next poll.
+    expect(retire).not.toHaveBeenCalled();
+    expect(onError).toHaveBeenCalledWith(expect.stringContaining('integration snapshot record failed'));
   });
 
   it('escalates and never merges when the integrated whole fails verification', async () => {

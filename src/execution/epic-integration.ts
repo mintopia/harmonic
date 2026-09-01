@@ -1,12 +1,14 @@
 import type { TaskRow } from '../db/schema.js';
 import type { TaskService } from '../domain/tasks.js';
 import { deriveLeafEpics } from '../domain/epic-derivation.js';
-import type { MemberMergeState } from '../domain/epic-integrate.js';
+import { reduceMemberState, type MemberMergeState } from '../domain/epic-integrate-decision.js';
 import type { Ticket } from '../tracker/adapter.js';
 import { persistedTickets } from '../tracker/persisted.js';
 import { Git } from './git.js';
 import { logger } from '../logger.js';
 import { EpicOperations } from './epic-operations.js';
+
+export { reduceMemberState };
 
 /**
  * The integration branch Harmonic cuts for an Epic (ADR-0024): `epic/<ref>`,
@@ -60,7 +62,7 @@ const PRE_SPAWN: ReadonlySet<string> = new Set(['draft', 'ready']);
  * `completed`, and after a successful integrate the retired branch makes it a `noop`.
  */
 export interface EpicIntegrateTrigger {
-  submit(target: { ref: number; members: MemberMergeState[] }, opts?: { force?: boolean }): Promise<unknown>;
+  submit(target: { ref: number; members: MemberMergeState[]; memberRefs?: number[] }, opts?: { force?: boolean }): Promise<unknown>;
 }
 
 /** Edge-triggered default-branch refresh hook. It is deliberately separate
@@ -68,20 +70,6 @@ export interface EpicIntegrateTrigger {
  * is allowed to request a refresh. */
 export interface EpicRefreshTrigger {
   refresh(target: { ref: number; repoDir: string; defaultBranch: string }): Promise<unknown>;
-}
-
-/**
- * Reduce a member's mirrored Task to its merge state for the whole-Epic integrate
- * decision (issue #161): `completed` once it has merged onto the integration
- * branch (Task state `done`); `blocked` when it cannot merge (escalated to a
- * human, or `failed`/`cancelled`) and so holds the whole Epic back; `pending`
- * otherwise (still in progress, awaiting review, not yet started, or not mirrored).
- */
-export function reduceMemberState(task: TaskRow | undefined): MemberMergeState {
-  if (!task) return 'pending';
-  if (task.state === 'done') return 'completed';
-  if (task.state === 'escalated' || task.state === 'cancelled') return 'blocked';
-  return 'pending';
 }
 
 /**
@@ -302,10 +290,19 @@ export class EpicIntegrationCoordinator {
           }),
         );
         void this.epicIntegrate
-          .submit({ ref: epic.ref, members })
+          .submit({ ref: epic.ref, members, memberRefs: epic.members })
           .catch((err) => this.onError(`epic ${epic.ref} whole-Epic integrate attempt failed: ${String(err)}`));
       }
     }
+  }
+
+  /**
+   * The member refs of a derived leaf Epic from the most recent scan (ADR-0018,
+   * #438), for the operator force-integrate to snapshot onto the stored record;
+   * `[]` when the Epic isn't in the last scan (never reconciled, or gone).
+   */
+  membersOf(epicRef: number): number[] {
+    return deriveLeafEpics(this.latestTickets).find((epic) => epic.ref === epicRef)?.members ?? [];
   }
 
   /**

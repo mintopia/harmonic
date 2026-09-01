@@ -83,6 +83,12 @@ const TEXT_ON_TINT: ReadonlyArray<readonly [string, string, string]> = [
   ['merged', 'merged', 'merged-tint'],
   ['failed', 'fail', 'fail-tint'],
   ['blocked', 'muted', 'blocked-tint'],
+  // #458 retired the running-amber sub-AA exception: the Working state chip
+  // (running text on its tint) and the blocker-count slate badge (blocked text
+  // on its tint) are now held to the text floor in both themes, like every
+  // other state pill — no more colour-carries-alone carve-out.
+  ['working chip', 'running', 'running-tint'],
+  ['blocked slate badge', 'blocked', 'blocked-tint'],
   ['tool', 'tool', 'tool-tint'],
   // Active navigation renders teal accent text on the accent tint.
   ['accent', 'accent', 'accent-tint'],
@@ -154,15 +160,18 @@ describe('Paper palette meets WCAG AA in both themes (issue #260)', () => {
         });
       }
 
-      // ADR-0033 permits the vivid running amber below 4.5:1. It is never the
-      // sole state signal: the pulsing dot, label, and structural position
-      // carry the same meaning. Keep the exception named here so it cannot
-      // quietly become an unreviewed gap in the Paper contrast gate.
-      it('running amber follows the ADR-0033 light-theme exception', () => {
-        const ratio = contrast(hex(t, 'running'), hex(t, 'surface'));
-        if (themeName === 'light') expect(ratio).toBeLessThan(TEXT_FLOOR);
-        else expect(ratio).toBeGreaterThanOrEqual(TEXT_FLOOR);
-      });
+      // #458 retired the running-amber sub-AA exception (DESIGN.md §2, ADR-0011):
+      // the Running amber and the Blocked slate both render as count/figure text
+      // straight on a neutral panel (STATE_COUNT_COLORS in ui.ts), so both must
+      // now clear the text floor on every neutral, in BOTH themes — no light-only
+      // carve-out.
+      for (const role of ['running', 'blocked'] as const) {
+        for (const bg of ['surface', 'canvas', 'raised'] as const) {
+          it(`${role} count/figure on ${bg} ≥ ${TEXT_FLOOR}:1`, () => {
+            expect(contrast(hex(t, role), hex(t, bg))).toBeGreaterThanOrEqual(TEXT_FLOOR);
+          });
+        }
+      }
 
       // Bright solid await and merged fills need theme-specific ink: white in
       // light, dark ink in dark. DESIGN.md §2 calls this the Ink-Flip Rule.

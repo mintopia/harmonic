@@ -34,8 +34,8 @@
   --hm-heat-3: #2f9d97;
   --hm-heat-4: #0d7271;
 
-  --hm-running: #c0722a;
-  --hm-running-dot: #c0722a;
+  --hm-running: #985417;
+  --hm-running-dot: #985417;
   --hm-running-tint: #f6ebdc;
   --hm-ready: #0d7271;
   --hm-ready-dot: #0d7271;
@@ -55,7 +55,7 @@
   --hm-fail-dot: #af3c52;
   --hm-fail-tint: #f9e4e8;
   --hm-on-fail: #ffffff;
-  --hm-blocked: #6a7079;
+  --hm-blocked: #5b616a;
   --hm-blocked-tint: #ecedea;
   --hm-tool: #0d7271;
   --hm-tool-dot: #0d7271;
@@ -125,7 +125,7 @@
   --hm-fail-dot: #f0768a;
   --hm-fail-tint: #3b1d24;
   --hm-on-fail: #0e1413;
-  --hm-blocked: #8a9099;
+  --hm-blocked: #9aa0a9;
   --hm-blocked-tint: #282b31;
   --hm-tool: #33bdb4;
   --hm-tool-dot: #33bdb4;
@@ -191,7 +191,7 @@
     --hm-fail-dot: #f0768a;
     --hm-fail-tint: #3b1d24;
     --hm-on-fail: #0e1413;
-    --hm-blocked: #8a9099;
+    --hm-blocked: #9aa0a9;
     --hm-blocked-tint: #282b31;
     --hm-tool: #33bdb4;
     --hm-tool-dot: #33bdb4;

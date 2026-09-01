@@ -18,7 +18,7 @@ import {
 } from '../ui';
 import { toastError } from '../toast';
 import { fetchTasks, TABLE_PAGE_SIZE } from '../table-model';
-import { issueRef, taskKey } from '../id-format.js';
+import { issueRef, ticketRowId } from '../id-format.js';
 import { EmptyState } from './EmptyState';
 import { FilterSelect } from './FilterSelect';
 import { ModelLabel, ProviderChip, TaskIdentity } from './TaskIdentity';
@@ -142,7 +142,7 @@ export function TableView({
       <div role="cell" className="flex items-center justify-end gap-1.5 whitespace-nowrap tabular-nums text-muted">
         <span aria-hidden="true" className={stateDot(task.state)} />
         <span className="sr-only">Id: </span>
-        {taskKey(task.id)}
+        {ticketRowId(task.id, task.trackerRef)}
       </div>
       <div role="cell" className="flex min-w-0 items-center gap-2 pr-2">
         <div className="min-w-0 flex-1">

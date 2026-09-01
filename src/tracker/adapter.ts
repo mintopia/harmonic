@@ -49,26 +49,47 @@ export interface TicketComment {
 }
 
 /**
- * The tracker-agnostic issue shape (D1, issue #22): the normalised 13 fields
- * + `url`. `number` is the portable identity — the adapter maps it to whatever
- * native id its calls need. `parent`/`blockedBy`/`blocking` are always
- * populated and directional; no capability flags leak.
+ * The tracker-identity fields every tracker record carries: the portable
+ * `number`, its surface `title`/`state`/`labels`, and the `parent`/`blockedBy`
+ * edges that place it in the tracker graph. {@link Ticket} and the stored Epic
+ * (ADR-0018) are siblings over this base — neither extends the other.
  */
-export interface Ticket {
+export interface TrackerIdentity {
   number: number;
   title: string;
   state: TicketState;
+  labels: string[];
+  parent: number | null;
+  blockedBy: TicketRef[];
+}
+
+/**
+ * The tracker-agnostic issue shape (D1, issue #22): the normalised 13 fields
+ * + `url`, over the shared {@link TrackerIdentity} base. `number` is the
+ * portable identity — the adapter maps it to whatever native id its calls
+ * need. `parent`/`blockedBy`/`blocking` are always populated and directional;
+ * no capability flags leak.
+ */
+export interface Ticket extends TrackerIdentity {
   body: string;
   createdAt: string;
   closedAt: string | null;
-  labels: string[];
   assignees: string[];
-  parent: number | null;
-  blockedBy: TicketRef[];
   blocking: TicketRef[];
   comments: TicketComment[];
   isMap: boolean;
   url: string;
+}
+
+/**
+ * A container is epic-type (ADR-0016) when it is a Map (`wayfinder:map`) or an
+ * `epic`-labelled Epic — the tickets persisted to `tracker_containers` and the
+ * durable Epic spine (ADR-0018), never mirrored as a work Task. The one place
+ * this identity is defined, so the scan (`mirror.ts`) and the stored-Epic
+ * derivation (`epic-derivation.ts`) can't drift apart.
+ */
+export function isEpicTypeContainer(ticket: Pick<Ticket, 'isMap' | 'labels'>): boolean {
+  return ticket.isMap || ticket.labels.includes(EPIC_LABEL);
 }
 
 /**

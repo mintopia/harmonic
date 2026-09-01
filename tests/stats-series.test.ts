@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildDaySeries, type DaySeriesRun } from '../src/server/stats-series.js';
 import type { AttemptUsage } from '../src/execution/usage.js';
-import type { Cost } from '../src/execution/pricing.js';
+import type { Cost } from '../src/domain/pricing.js';
 
 // Local midnight of a day, matching how buildDaySeries floors start times.
 const midnight = (y: number, m: number, d: number) => {

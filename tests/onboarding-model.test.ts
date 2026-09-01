@@ -9,7 +9,19 @@ import {
 
 const autoOff = { enabled: false };
 const autoOn = { enabled: true };
-const task = (state: string) => ({ state }) as Parameters<typeof shouldShowRunHint>[0][number];
+type RunHintTask = Parameters<typeof shouldShowRunHint>[0][number];
+const task = (state: string, overrides: Partial<RunHintTask> = {}) =>
+  ({
+    state,
+    attemptId: null,
+    runStartedAt: null,
+    branch: null,
+    hasCandidate: false,
+    cost: null,
+    feedback: null,
+    verifiedRef: null,
+    ...overrides,
+  }) as RunHintTask;
 
 describe('shouldShowRunHint', () => {
   it('shows when a ready task waits and the auto-runner is off', () => {
@@ -33,6 +45,16 @@ describe('shouldShowRunHint', () => {
 
   it('stays hidden once dismissed', () => {
     expect(shouldShowRunHint([task('ready')], autoOff, true)).toBe(false);
+  });
+
+  it('stays hidden when a ready task already carries attempt evidence', () => {
+    expect(shouldShowRunHint([task('ready', { cost: { usd: 0.01 } as never })], autoOff, false)).toBe(false);
+    expect(shouldShowRunHint([task('ready', { branch: 'harmonic/task-1' })], autoOff, false)).toBe(false);
+    expect(shouldShowRunHint([task('ready', { feedback: 'try again' })], autoOff, false)).toBe(false);
+  });
+
+  it('shows for a pristine ready task with no attempt evidence', () => {
+    expect(shouldShowRunHint([task('ready')], autoOff, false)).toBe(true);
   });
 });
 

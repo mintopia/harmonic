@@ -16,9 +16,8 @@ import { defaultBranchPostMerge, type PostMergeHook } from '../execution/branch-
 import { fileURLToPath } from 'node:url';
 import { ZodError } from 'zod';
 import { openAsyncDb, type AsyncDbHandle } from '../db/async.js';
-import { openStatsReader, type StatsReader } from '../db/stats-reader.js';
+import { openStatsReader, type StatsWorkerClient } from '../db/stats-reader.js';
 import type { AppConfig, DeepPartial } from '../config.js';
-import { ConfigStore } from './config-store.js';
 import { SettingsStore } from './settings-store.js';
 import { TaskService } from '../domain/tasks.js';
 import { AttemptStore } from '../domain/attempts.js';
@@ -37,7 +36,7 @@ import { GuardrailEventStore } from '../domain/guardrail-events.js';
 import { VerificationAttemptStore } from '../domain/verification-attempts.js';
 import type { MergeEffectExec } from '../domain/merge.js';
 import type { TaskRow, AttemptRow } from '../db/schema.js';
-import { CrashRecoveryCoordinator } from '../domain/crash-recovery.js';
+import { CrashRecoveryCoordinator } from '../execution/crash-recovery.js';
 import { resolveVerifiers } from '../domain/setting-override.js';
 import { runCommandVerifier, commandAttemptToInput } from '../verification/command-verifier.js';
 import { Runner } from '../execution/runner.js';
@@ -202,9 +201,8 @@ async function requestIsOperator(req: FastifyRequest, auth: AuthService): Promis
 
 export interface AppContext {
   asyncDb: AsyncDbHandle;
-  statsReader: StatsReader;
+  statsReader: StatsWorkerClient;
   settingsStore: SettingsStore;
-  configStore: ConfigStore;
   workspaces: WorkspaceService;
   tasks: TaskService;
   attempts: AttemptStore;
@@ -265,13 +263,12 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   }
   operationRegistry.setBus(bus);
   const settingsStore = await SettingsStore.create(opts.dataDir, opts.configOverrides);
-  const configStore = new ConfigStore(settingsStore);
   const workspaces = new WorkspaceService(asyncDb, settingsStore);
   const channels = new ChannelService(asyncDb);
   const notifier = new Notifier(channels, logger.error);
   const tasks = new TaskService(
     asyncDb,
-    () => configStore.get(),
+    () => settingsStore.getGlobal(),
     () => workspaces.list(),
     (task) => bus.emit('task_changed', task),
     (event, task) => void notifier.notify(event, task).catch(() => {}),
@@ -288,7 +285,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     if (opts.password === '') await auth.clearPassword();
     else await auth.setPassword(opts.password);
   }
-  const conversationDriver = new ConversationDriver(conversations, () => configStore.get(), {
+  const conversationDriver = new ConversationDriver(conversations, () => settingsStore.getGlobal(), {
     events: {
       onEvent: (event) => bus.emit('conversation_event', event),
       onPermissionRequest: (pending) => bus.emit('permission_request', pending),
@@ -393,7 +390,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     const ws = task.workspaceId == null ? undefined : await workspaces.get(task.workspaceId).catch(() => undefined);
     const { commands } = resolveVerifiers(
       ws ?? { verificationCommand: null, reviewEnabled: null, reviewPrompt: null, reviewModel: null, reviewHarness: null },
-      configStore.get(),
+      settingsStore.getGlobal(),
     );
     if (commands.length === 0) return { pass: true, output: '' };
     mkdirSync(worktreesDir, { recursive: true });
@@ -460,10 +457,11 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     }
   };
   const autoDrive = new AutoDrive(
-    () => configStore.get(),
+    () => settingsStore.getGlobal(),
     (task) => trackerManagerRef?.urlFor(task.workspaceId, task.trackerRef) ?? null,
     undefined,
     getWorkspaceRow,
+    (workspaceId, ref) => tasks.epicKind(workspaceId, ref),
   );
   // The merging effects an operator Accept applies (issue #115, ADR-0041): a
   // worktree Task's merge, journaled as `target-ref` (idempotency identity is
@@ -516,7 +514,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // skips a Task whose base repo is in the resulting backoff window), so a
   // doomed context is escalated/backed off instead of being re-spawned forever.
   const gitBreaker = new GitCircuitBreaker();
-  const runner = new Runner(tasks, asyncDb, () => configStore.get(), {
+  const runner = new Runner(tasks, asyncDb, () => settingsStore.getGlobal(), {
     events: {
       onAttemptEvent: (event) => bus.emit('attempt_event', event),
       onAttemptLogEvent: (event) => bus.emitAttemptLog(event),
@@ -603,7 +601,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     tasks,
     attempts,
     runner,
-    () => configStore.get(),
+    () => settingsStore.getGlobal(),
     () => workspaces.list(),
     {
       mirror,
@@ -623,7 +621,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     undefined,
     // Resolve each Workspace's Verification verifiers for the whole-Epic merge
     // (issue #161): read per poll so a config change follows without a rebuild.
-    () => configStore.get(),
+    () => settingsStore.getGlobal(),
     epicOperations,
     scheduler,
     undefined,
@@ -662,7 +660,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     })().catch(() => {});
   });
 
-  const ctx: AppContext = { asyncDb, statsReader, settingsStore, configStore, workspaces, tasks, attempts, sessions: sessionStore, runner, conversations, conversationDriver, permissionRules, escalation, autoRunner, guardrailEvents, verificationAttempts, trackerManager, scheduler, auth, channels, notifier, bus, flaggedWorktrees };
+  const ctx: AppContext = { asyncDb, statsReader, settingsStore, workspaces, tasks, attempts, sessions: sessionStore, runner, conversations, conversationDriver, permissionRules, escalation, autoRunner, guardrailEvents, verificationAttempts, trackerManager, scheduler, auth, channels, notifier, bus, flaggedWorktrees };
 
   const app = Fastify({ logger: false }) as unknown as App;
   app.decorate('ctx', ctx);

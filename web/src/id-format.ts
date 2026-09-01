@@ -36,3 +36,13 @@ export function issueRef(ref: number): string {
 export function ticketIdentity(id: number, trackerRef: number | null | undefined): string {
   return trackerRef != null ? `${taskLabel(id)} · issue ${issueRef(trackerRef)}` : taskLabel(id);
 }
+
+/**
+ * The compact dual identity for a ticket in a listing — a Board card, a Table or
+ * Graph row, an Epic child: `#185 · T-174`. Tracker ref first (the number triagers
+ * cross-reference), then the task key. A native Task (no tracker ref) shows just
+ * its `T-` key. Keeps every listing surface labelling a ticket the same way.
+ */
+export function ticketRowId(id: number, trackerRef: number | null | undefined): string {
+  return trackerRef != null ? `${issueRef(trackerRef)} · ${taskKey(id)}` : taskKey(id);
+}

@@ -10,6 +10,7 @@ import {
   settings,
   trackerDismissals,
   trackerContainers,
+  epics,
   TASK_STATES,
   type TaskRow,
   type RawTaskRow,
@@ -19,6 +20,8 @@ import {
   type WorkspaceRow,
   type TrackerFacts,
   type TrackerContainerRow,
+  type StoredEpicKind,
+  type EpicRow,
 } from '../db/schema.js';
 import { resolveWorkspace } from './workspaces.js';
 import { resolveScoped } from './setting-override.js';
@@ -29,6 +32,7 @@ import { deleteAttemptsAndChildrenAsync } from './attempt-cascade.js';
 import { forEachYielding } from '../reliability/yield.js';
 import { orderEligibleWorkYielding } from './work-ordering.js';
 import { mirroredAgentEligible } from './agent-workable.js';
+import type { StoredEpicRecord } from './epic-derivation.js';
 
 // Examples ride on the request schemas too, not just the responses: the API
 // page renders whatever the spec declares, so a bare field documents itself as
@@ -641,6 +645,80 @@ export class TaskService {
     });
   }
 
+  /**
+   * Lazy-upsert the durable Epic spine for one scan (ADR-0018, #437). Unlike
+   * {@link syncTrackerContainers}'s wipe-and-replace, this only ever inserts or
+   * refreshes: a first sighting creates the row `open` with a null integration
+   * snapshot; a re-sighting refreshes only `kind` (the one column re-derived
+   * each scan), leaving `state`/`mergeCommit`/`memberRefs` — the integration
+   * path's columns — untouched. Nothing is deleted here, so a row survives the
+   * container wipe and the tracker issue closing; Dismiss (`removeTaskCascade`)
+   * is the sole remover.
+   */
+  async syncEpics(workspaceId: number, records: StoredEpicRecord[]): Promise<void> {
+    await this.db.write(async (db) => {
+      await forEachYielding(records, async ({ ref, kind }) => {
+        await db
+          .insert(epics)
+          .values({ workspaceId, trackerRef: ref, kind, state: 'open' })
+          .onConflictDoUpdate({ target: [epics.workspaceId, epics.trackerRef], set: { kind } })
+          .run();
+      });
+    });
+  }
+
+  /**
+   * The stored Epic `kind` for a ref in a Workspace (ADR-0018, #437), or null
+   * when no spine row exists — an unmapped Task, or a container the scan never
+   * persisted. The drive path reads it to route a Map child to the wayfinder
+   * skill (issue #440).
+   */
+  async epicKind(workspaceId: number, ref: number): Promise<StoredEpicKind | null> {
+    const row = await this.db.read((db) =>
+      db
+        .select({ kind: epics.kind })
+        .from(epics)
+        .where(and(eq(epics.workspaceId, workspaceId), eq(epics.trackerRef, ref)))
+        .get(),
+    );
+    return row?.kind ?? null;
+  }
+
+  /**
+   * Settle a stored Epic's integration snapshot (ADR-0018, #438): flip `state`
+   * `open`→`integrated`, record the integration `mergeCommit` (null for a no-op
+   * finish where the branch already matched base), and snapshot the member refs.
+   * Guarded on `state = 'open'` so it is a once-only transition: a repeated poll
+   * whose retire didn't finish re-offers the already-contained branch with a null
+   * hash, and this WHERE clause makes that a no-op rather than clobbering the real
+   * merge-commit the first (real-merge) settle already stored.
+   */
+  async markEpicIntegrated(
+    workspaceId: number,
+    trackerRef: number,
+    snapshot: { mergeCommit: string | null; memberRefs: number[] },
+  ): Promise<void> {
+    await this.db.write(async (db) => {
+      await db
+        .update(epics)
+        .set({ state: 'integrated', mergeCommit: snapshot.mergeCommit, memberRefs: snapshot.memberRefs })
+        .where(and(eq(epics.workspaceId, workspaceId), eq(epics.trackerRef, trackerRef), eq(epics.state, 'open')))
+        .run();
+    });
+  }
+
+  /**
+   * Every durable Epic spine row for a Workspace (ADR-0018, #439). The readers
+   * join these onto the live derived model: the row is the durable anchor that
+   * outlives the tracker container wipe, so a historical Epic the scan no longer
+   * returns still surfaces from its stored `kind`/lifecycle/`memberRefs` snapshot.
+   */
+  async listStoredEpics(workspaceId: number): Promise<EpicRow[]> {
+    return this.db.read((db) =>
+      db.select().from(epics).where(eq(epics.workspaceId, workspaceId)).all(),
+    );
+  }
+
   async listTrackerContainers(workspaceId?: number): Promise<TrackerContainerRow[]> {
     return this.db.read((db) =>
       db.select().from(trackerContainers)
@@ -1190,6 +1268,18 @@ export class TaskService {
           })
           .onConflictDoNothing()
           .run();
+        // Dismiss is the sole remover of the durable Epic spine (ADR-0018, #437):
+        // the row outlives the tracker issue closing and the container wipe, so
+        // only an operator's hard delete tears it down — atomically with the
+        // tombstone. A no-op for a ref that never had an epics row. Guarded on a
+        // concrete workspace: an epics row is only ever written with one, so a
+        // null-workspace tombstone can't have a row to remove.
+        if (tombstone.workspaceId !== null) {
+          await tx
+            .delete(epics)
+            .where(and(eq(epics.workspaceId, tombstone.workspaceId), eq(epics.trackerRef, tombstone.trackerRef)))
+            .run();
+        }
       }
     });
     for (const depId of formerDependents) {
