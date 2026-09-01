@@ -27,7 +27,7 @@ import { ModelLabel, ProviderChip, TaskIdentity } from './TaskIdentity';
  * the DOM cell count always matches the active track count and the ARIA grid
  * stays valid at every width. */
 const GRID =
-  'grid grid-cols-[3.5rem_minmax(0,1fr)_8rem] md:grid-cols-[3.5rem_minmax(0,1fr)_8rem_5rem_5.5rem] lg:grid-cols-[3.5rem_minmax(0,1fr)_8rem_6rem_9rem_5rem_5.5rem_10rem_10rem] items-center gap-x-3 px-4';
+  'grid grid-cols-[7.5rem_minmax(0,1fr)_8rem] md:grid-cols-[7.5rem_minmax(0,1fr)_8rem_5rem_5.5rem] lg:grid-cols-[7.5rem_minmax(0,1fr)_8rem_6rem_9rem_5rem_5.5rem_8rem_8rem] items-center gap-x-3 px-4';
 
 // Compact, quiet timestamp for the Created / Updated columns — the full locale
 // string (seconds + year) is noise in a dense operator table.
