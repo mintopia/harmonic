@@ -748,18 +748,7 @@ export class Runner {
     try {
       const src = await this.resolveContinuationSource(task);
       if (!src) return run;
-      const env: ResumeEnvironment = {
-        harness: src.session.harness,
-        adapterVersion: adapterVersion(task.harness),
-        model: task.model,
-        // The Session's own recorded permission mode is the only mode known
-        // pre-handshake; `AcpDriver.load` + the post-handshake setMode do the
-        // authoritative live re-verification. Conservative on purpose.
-        availablePermissionModes: src.session.permissionMode ? [src.session.permissionMode] : [],
-        cwd: repoKey(task.workingDir),
-      };
-      const stored = { ...sessionFacts(src.session), cwd: repoKey(src.session.cwd) };
-      if (!assessResumeEligibility(stored, env).eligible) return run;
+      if (!this.resumeEligibilityFor(task, src.session).eligible) return run;
 
       const plan = planSessionContinuation(src.trigger, sessionWarmthFacts(src.session), Date.now());
 
@@ -794,6 +783,36 @@ export class Runner {
    * drifts. */
   private worktreePathForTask(task: TaskRow): string {
     return join(this.worktreesDir, `task-${task.id}`);
+  }
+
+  /** The directory a continuation Attempt of `task` will dispatch into: the
+   * per-Task worktree for worktree isolation (cut once and reused in place by
+   * every Attempt, ADR-0046), else the base checkout. Must mirror the cwd
+   * {@link prepareWorkspace} returns, because {@link resumeEligibilityFor}
+   * compares the Session's recorded cwd against where the next Attempt actually
+   * runs — comparing against `task.workingDir` instead marks every worktree
+   * Session incompatible and forces a cold `session/new`. */
+  private dispatchCwd(task: TaskRow): string {
+    return task.isolationMode === 'worktree' ? this.worktreePathForTask(task) : task.workingDir;
+  }
+
+  /** Whether the prior Run's `session` can be reloaded into the environment
+   * `task`'s next Attempt will run in (issue #142). Shared by the reject/requeue
+   * bind ({@link bindContinuationIfEligible}) and the warm operator-seed
+   * continuation ({@link steerSettled}) so both judge resumability identically.
+   * The Session's own recorded permission mode is the only mode known
+   * pre-handshake; `AcpDriver.load` + the post-handshake setMode do the
+   * authoritative live re-verification. */
+  private resumeEligibilityFor(task: TaskRow, session: SessionRow) {
+    const env: ResumeEnvironment = {
+      harness: session.harness,
+      adapterVersion: adapterVersion(task.harness),
+      model: task.model,
+      availablePermissionModes: session.permissionMode ? [session.permissionMode] : [],
+      cwd: repoKey(this.dispatchCwd(task)),
+    };
+    const stored = { ...sessionFacts(session), cwd: repoKey(session.cwd) };
+    return assessResumeEligibility(stored, env);
   }
 
   private branchForTask(task: TaskRow): string {
@@ -975,15 +994,7 @@ export class Runner {
     // The Session must be resumable into this environment AND still warm; else the
     // operator message would merge on a cold/fresh Session with no conversation
     // context, which is not a continuation.
-    const env: ResumeEnvironment = {
-      harness: src.session.harness,
-      adapterVersion: adapterVersion(task.harness),
-      model: task.model,
-      availablePermissionModes: src.session.permissionMode ? [src.session.permissionMode] : [],
-      cwd: repoKey(task.workingDir),
-    };
-    const stored = { ...sessionFacts(src.session), cwd: repoKey(src.session.cwd) };
-    if (!assessResumeEligibility(stored, env).eligible) return false;
+    if (!this.resumeEligibilityFor(task, src.session).eligible) return false;
     const warmWindowMs = HARNESS_SESSION_WARM_WINDOWS_MS[src.session.harness];
     if (warmWindowMs === undefined || Date.now() - src.session.lastActiveAt >= warmWindowMs) return false;
     // Continue full on the warm Session (`requeue(...'full')` → bindContinuation
