@@ -91,5 +91,27 @@ describe('buildCriticPrompt (issue #136; 2026-08 containment amendment)', () => 
       const args = { operatorPrompt: 'Review it.', fields: FIELDS, verifiedHeadOid: CANDIDATE, baseOid: BASE } as const;
       expect(buildCriticPrompt(args)).toBe(buildCriticPrompt(args));
     });
+
+    it('judges against the ticket, not the (empty) diff, when the candidate is identical to the base', () => {
+      const prompt = buildCriticPrompt({
+        operatorPrompt: 'Review it.',
+        fields: FIELDS,
+        verifiedHeadOid: CANDIDATE,
+        baseOid: CANDIDATE,
+      });
+      expect(prompt).toMatch(/identical to the base/i);
+      expect(prompt).toMatch(/no-change result is correct/i);
+      expect(prompt).toMatch(/do not fail merely\s+because there is no diff/i);
+      // It does not send the critic diffing two identical revisions.
+      expect(prompt).not.toContain(`git diff ${CANDIDATE} ${CANDIDATE}`);
+      expect(prompt).not.toMatch(/branched from/);
+    });
+
+    it('reads the ticket first in every revision-block variant', () => {
+      for (const baseOid of [BASE, CANDIDATE, undefined]) {
+        const prompt = buildCriticPrompt({ operatorPrompt: 'Review it.', fields: FIELDS, verifiedHeadOid: CANDIDATE, ...(baseOid ? { baseOid } : {}) });
+        expect(prompt).toMatch(/First read the referenced ticket/i);
+      }
+    });
   });
 });
