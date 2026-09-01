@@ -95,9 +95,25 @@ export type EpicVerificationStatus = 'pass' | 'fail' | 'pending' | null;
  * its members' mirrored Task states. */
 export interface EpicIntegrateTarget {
   ref: number;
-  /** Each member's reduced merge state; ignored under an operator force-integrate. */
+  /** Each member's reduced merge state. An empty array is only safe under an
+   * operator force-integrate (which bypasses the per-member gate); a non-force
+   * submit with `[]` decides `noop` and never integrates. */
   members: MemberMergeState[];
+  /** The Epic's member refs, snapshotted onto the stored Epic record at integration
+   * (ADR-0018, #438). Absent ⇒ an empty snapshot; the reconcile carries the real list. */
+  memberRefs?: number[];
 }
+
+/** Persist a completed Epic integration onto its stored record (ADR-0018, #438):
+ * the merge-commit hash (null for a no-op finish where the branch already matched
+ * base) and the member-ref snapshot. Injected so the coordinator stays decoupled
+ * from the store; the wire binds it to `TaskService.markEpicIntegrated` for the
+ * Workspace. */
+export type EpicRecordIntegration = (input: {
+  epicRef: number;
+  mergeCommit: string | null;
+  memberRefs: number[];
+}) => Promise<void>;
 
 export type EpicIntegrateOutcome =
   | { status: 'integrated'; oid: string }
@@ -117,6 +133,7 @@ export class EpicIntegrateCoordinator {
   private readonly escalateFn: (epicRef: number, reason: string) => void;
   private readonly onError: (msg: string) => void;
   private readonly operations: EpicOperations;
+  private readonly recordIntegrationFn: EpicRecordIntegration | undefined;
 
   /** Epic refs with a integrate attempt currently in flight — the redundancy guard.
    * In-memory only (ADR-0024): no durable grouping entity, no migration. */
@@ -173,6 +190,9 @@ export class EpicIntegrateCoordinator {
     verifyBackoffMs?: number;
     onError?: (msg: string) => void;
     operations?: EpicOperations;
+    /** Persist the integration snapshot onto the stored Epic record (ADR-0018, #438);
+     * absent ⇒ nothing is recorded (the base-set-only wiring, and unit tests). */
+    recordIntegration?: EpicRecordIntegration;
   }) {
     this.repoDir = deps.repoDir;
     this.git = deps.git ?? Git;
@@ -184,6 +204,7 @@ export class EpicIntegrateCoordinator {
     this.verifyBackoffMs = deps.verifyBackoffMs ?? 60_000;
     this.onError = deps.onError ?? logger.error;
     this.operations = deps.operations ?? new EpicOperations();
+    this.recordIntegrationFn = deps.recordIntegration;
   }
 
   /**
@@ -346,13 +367,19 @@ export class EpicIntegrateCoordinator {
       return this.escalate(target, force, `whole-Epic integrate into '${defaultBranch}' failed (${integrated.reason}): ${integrated.message}`);
     }
 
+    // Settle the stored Epic record before retiring the branch: record the real
+    // merge-commit hash and the member snapshot, and flip the lifecycle to
+    // `integrated` (ADR-0018, #438).
+    const recorded = await this.recordIntegrationQuietly(target, integrated.mergeOid);
+
     // Integrated: clear the sticky escalation and the backoff (but keep the retained
     // `pass` verification for the read model), then retire the integration branch
-    // (idempotent). The integrate already succeeded, so a retire hiccup is logged, not
-    // fatal — the branch is stale; the next poll's containment fast-path (#218)
-    // retires it, never corrupting.
+    // (idempotent). Retire ONLY once the record landed: the branch is what makes the
+    // next poll re-settle (its containment fast-path, #218), so retiring after a
+    // failed record would strand the Epic at `open` with no re-trigger. On a failed
+    // record the branch is left for the next poll to re-record and retire.
     this.clearMergeGuards(target.ref);
-    await this.retireQuietly(target.ref, 'after integrate');
+    if (recorded) await this.retireQuietly(target.ref, 'after integrate');
     this.operations.complete({ repoDir: this.repoDir, epicRef: target.ref });
     return { status: 'integrated', oid: integrated.mergeOid };
   }
@@ -468,9 +495,32 @@ export class EpicIntegrateCoordinator {
   private async retireContained(target: EpicIntegrateTarget, branch: string): Promise<EpicIntegrateOutcome> {
     const tip = await this.git.revParse(this.repoDir, branch);
     this.settledEscalated.delete(target.ref);
-    await this.retireQuietly(target.ref, 'already-contained');
+    // No merge happened — the branch already matched base — so settle the stored
+    // Epic record as a no-op with a null merge-commit (ADR-0018, #438). Retire only
+    // once that landed, so a failed record leaves the branch for the next poll to
+    // re-settle rather than stranding the Epic at `open`.
+    const recorded = await this.recordIntegrationQuietly(target, null);
+    if (recorded) await this.retireQuietly(target.ref, 'already-contained');
     this.operations.complete({ repoDir: this.repoDir, epicRef: target.ref });
     return { status: 'integrated', oid: tip };
+  }
+
+  /** Persist the integration snapshot onto the stored Epic record, logging (not
+   * throwing) on failure (ADR-0018, #438): the merge already advanced the base
+   * branch — the durable truth — so a store hiccup must not fail the integrate or
+   * block the retire. `markEpicIntegrated`'s `state = 'open'` guard makes the write
+   * a once-only transition, so a later poll re-recording the (now retired) branch
+   * with a null hash can't clobber the real merge-commit stored here. Returns
+   * whether the record landed (true when no recorder is wired — nothing to defer),
+   * so the caller can hold the branch retire until it did. */
+  private async recordIntegrationQuietly(target: EpicIntegrateTarget, mergeCommit: string | null): Promise<boolean> {
+    try {
+      await this.recordIntegrationFn?.({ epicRef: target.ref, mergeCommit, memberRefs: target.memberRefs ?? [] });
+      return true;
+    } catch (err) {
+      this.onError(`epic ${target.ref} integration snapshot record failed (deferring branch retire): ${String(err)}`);
+      return false;
+    }
   }
 
   /** Retire the integration branch, logging (not throwing) on failure: the integrate

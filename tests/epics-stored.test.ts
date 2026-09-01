@@ -153,4 +153,48 @@ describe('stored Epic spine (ADR-0018, #437)', () => {
     expect(await tasks.isDismissed(wsId, 10)).toBe(true);
     expect(await readEpics()).toEqual([]);
   });
+
+  describe('integration settle (ADR-0018, #438)', () => {
+    it('flips state open→integrated and stores the merge-commit + member snapshot', async () => {
+      await tasks.syncEpics(wsId, [{ ref: 10, kind: 'spec' }]);
+      await tasks.markEpicIntegrated(wsId, 10, { mergeCommit: 'abc123', memberRefs: [11, 12] });
+      expect(await readEpics()).toEqual([
+        { workspaceId: wsId, trackerRef: 10, kind: 'spec', mergeCommit: 'abc123', state: 'integrated', memberRefs: [11, 12] },
+      ]);
+    });
+
+    it('a no-op finish (branch already matched base) settles with a null merge-commit', async () => {
+      await tasks.syncEpics(wsId, [{ ref: 10, kind: 'epic' }]);
+      await tasks.markEpicIntegrated(wsId, 10, { mergeCommit: null, memberRefs: [11] });
+      const rows = await readEpics();
+      expect(rows[0]).toMatchObject({ state: 'integrated', mergeCommit: null, memberRefs: [11] });
+    });
+
+    it('is a once-only transition: a later null-hash re-settle never clobbers the stored merge-commit', async () => {
+      await tasks.syncEpics(wsId, [{ ref: 10, kind: 'spec' }]);
+      await tasks.markEpicIntegrated(wsId, 10, { mergeCommit: 'real-merge', memberRefs: [11] });
+      // A repeated poll re-offering the already-contained branch would settle a null
+      // hash; the state='open' guard must make that a no-op, not an overwrite.
+      await tasks.markEpicIntegrated(wsId, 10, { mergeCommit: null, memberRefs: [] });
+      expect((await readEpics())[0]).toMatchObject({ state: 'integrated', mergeCommit: 'real-merge', memberRefs: [11] });
+    });
+
+    it('does not resurrect a row for an unknown Epic ref', async () => {
+      await tasks.markEpicIntegrated(wsId, 999, { mergeCommit: 'x', memberRefs: [1] });
+      expect(await readEpics()).toEqual([]);
+    });
+
+    it('a re-scan after integration refreshes kind but never reverts the lifecycle', async () => {
+      await tasks.syncEpics(wsId, [{ ref: 10, kind: 'spec' }]);
+      await tasks.markEpicIntegrated(wsId, 10, { mergeCommit: 'abc123', memberRefs: [11] });
+      // The scan re-upserts `open`; onConflict must leave state/mergeCommit/memberRefs.
+      await tasks.syncEpics(wsId, [{ ref: 10, kind: 'epic' }]);
+      expect((await readEpics())[0]).toMatchObject({
+        kind: 'epic',
+        state: 'integrated',
+        mergeCommit: 'abc123',
+        memberRefs: [11],
+      });
+    });
+  });
 });

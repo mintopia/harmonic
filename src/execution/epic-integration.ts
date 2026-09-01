@@ -60,7 +60,7 @@ const PRE_SPAWN: ReadonlySet<string> = new Set(['draft', 'ready']);
  * `completed`, and after a successful integrate the retired branch makes it a `noop`.
  */
 export interface EpicIntegrateTrigger {
-  submit(target: { ref: number; members: MemberMergeState[] }, opts?: { force?: boolean }): Promise<unknown>;
+  submit(target: { ref: number; members: MemberMergeState[]; memberRefs?: number[] }, opts?: { force?: boolean }): Promise<unknown>;
 }
 
 /** Edge-triggered default-branch refresh hook. It is deliberately separate
@@ -302,10 +302,19 @@ export class EpicIntegrationCoordinator {
           }),
         );
         void this.epicIntegrate
-          .submit({ ref: epic.ref, members })
+          .submit({ ref: epic.ref, members, memberRefs: epic.members })
           .catch((err) => this.onError(`epic ${epic.ref} whole-Epic integrate attempt failed: ${String(err)}`));
       }
     }
+  }
+
+  /**
+   * The member refs of a derived leaf Epic from the most recent scan (ADR-0018,
+   * #438), for the operator force-integrate to snapshot onto the stored record;
+   * `[]` when the Epic isn't in the last scan (never reconciled, or gone).
+   */
+  membersOf(epicRef: number): number[] {
+    return deriveLeafEpics(this.latestTickets).find((epic) => epic.ref === epicRef)?.members ?? [];
   }
 
   /**
