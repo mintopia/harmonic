@@ -1,5 +1,5 @@
 import type { SpanContext } from '@opentelemetry/api';
-import type { Ticket } from './adapter.js';
+import { EPIC_LABEL, type Ticket } from './adapter.js';
 import type { MirrorInput, TaskService } from '../domain/tasks.js';
 import { WAYFINDER_TYPES, type TaskRow, type TrackerFacts, type WayfinderType, type Workflow } from '../db/schema.js';
 import { forEachYielding } from '../reliability/yield.js';
@@ -55,13 +55,14 @@ export function toMirrorInput(ticket: Ticket, trackerCanClose = true): MirrorInp
 }
 
 /**
- * Poll step: mirror every non-Map ticket into a Task 1:1 (idempotent across
- * re-polls, keyed on trackerRef), then project each ticket's `blockedBy` onto
- * real Dependency edges so native + mirrored share one blocking model and one
- * blocked→ready derivation (issue #31). `blocking` never wires (double-edge),
- * `parent`→mapRef (never an edge). A blocker referencing a ticket outside this
- * scan (e.g. a Map, or a Dismissed ticket below) has no mirrored Task and is
- * skipped. Maps are derived, not mirrored — see {@link deriveMaps}. A ticket
+ * Poll step: mirror every non-container ticket into a Task 1:1 (idempotent
+ * across re-polls, keyed on trackerRef), then project each ticket's `blockedBy`
+ * onto real Dependency edges so native + mirrored share one blocking model and
+ * one blocked→ready derivation (issue #31). Containers (Maps and `epic`-labelled
+ * spec Epics, ADR-0016) are persisted to tracker_containers, never mirrored.
+ * `blocking` never wires (double-edge), `parent`→mapRef (never an edge). A
+ * blocker referencing a ticket outside this scan (e.g. a container, or a
+ * Dismissed ticket below) has no mirrored Task and is skipped. A ticket
  * whose ref was Dismissed (issue #162, ADR-0025 — an operator hard-deleted its
  * mirrored Task) is skipped outright: the tombstone means "stop mirroring this
  * issue here", so re-polling it here would defeat the delete.
@@ -83,7 +84,10 @@ export async function mirrorScan(
   const issues: Ticket[] = [];
   const containers: Array<{ trackerRef: number; facts: TrackerFacts }> = [];
   await forEachYielding(tickets, async (ticket) => {
-    if (ticket.isMap) containers.push({ trackerRef: ticket.number, facts: trackerFacts(ticket) });
+    // A container is a Map (`wayfinder:map`) or a spec Epic (the `epic` label,
+    // ADR-0016): persisted to tracker_containers, never mirrored as a work Task.
+    const isContainer = ticket.isMap || ticket.labels.includes(EPIC_LABEL);
+    if (isContainer) containers.push({ trackerRef: ticket.number, facts: trackerFacts(ticket) });
     else if (!(await tasks.isDismissed(workspaceId, ticket.number))) issues.push(ticket);
   });
   await tasks.syncTrackerContainers(workspaceId, containers);

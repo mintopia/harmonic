@@ -171,6 +171,27 @@ describe('mirrorScan upsert', () => {
     expect((await tasks.list()).some((t) => t.trackerRef === 3)).toBe(false);
   });
 
+  it('partitions an `epic`-labelled ticket into containers, not work Tasks (ADR-0016)', async () => {
+    // #300 carries the `epic` label → a container: persisted to tracker_containers
+    // and never mirrored as a work Task, even without a Map label. Its child is
+    // mirrored as usual, and the child's "Blocked by #300" edge is suppressed.
+    const results = await mscan([
+      ticket({ number: 300, labels: ['epic', 'ready-for-agent'] }),
+      ticket({
+        number: 301,
+        parent: 300,
+        labels: ['ready-for-agent'],
+        blockedBy: [{ number: 300, title: 'spine', state: 'open' }],
+      }),
+    ]);
+    expect(results.map((t) => t.trackerRef)).toEqual([301]); // epic not mirrored → only the child
+    expect((await tasks.list()).some((t) => t.trackerRef === 300)).toBe(false);
+    expect((await tasks.listTrackerContainers(wsId)).map((c) => c.trackerRef)).toEqual([300]);
+    const child = results.find((t) => t.trackerRef === 301)!;
+    expect(await tasks.dependsOn(child.id)).toEqual([]); // Epic container is never a blocker
+    expect(child.state).toBe('ready');
+  });
+
   it('an Epic parent is never agent-workable — a container is never auto-run', async () => {
     // #200 carries ready-for-agent, but it has a child (#201), so it is an
     // Epic → derived not agent-workable so the Auto-Runner never runs the container.
