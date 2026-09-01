@@ -388,8 +388,15 @@ function PendingCard({
 }) {
   const muted = item.humanOnly;
   const wash: TaskState | '' = muted || isBlocked(item) || item.state === null ? '' : item.state;
+  // An unmirrored member (no backing Task) has no in-app target — its title button
+  // is disabled and Run now never renders — so the card must not present as clickable:
+  // a cursor-pointer card with no keyboard-focusable control is a WCAG 2.1.1 trap.
+  const interactive = item.taskId != null;
+  const affordance = interactive
+    ? 'cursor-pointer transition duration-150 motion-reduce:transition-none hover:-translate-y-0.5 hover:border-edge hover:shadow-float'
+    : '';
   return (
-    <div className={`bold-wash ${wash} relative w-[300px] shrink-0 cursor-pointer rounded-lg border bg-surface p-2.5 transition duration-150 motion-reduce:transition-none hover:-translate-y-0.5 hover:border-edge hover:shadow-float ${item.runnable ? 'border-ready-dot/40' : 'border-hairline'}`}>
+    <div className={`bold-wash ${wash} relative w-[300px] shrink-0 rounded-lg border bg-surface p-2.5 ${affordance} ${item.runnable ? 'border-ready-dot/40' : 'border-hairline'}`}>
       <div className="flex items-center gap-2">
         <span aria-hidden="true" className={`size-2 shrink-0 rounded-full ${itemDot(item)}`} />
         <span className="font-data text-small text-faint">{item.label}</span>
