@@ -735,7 +735,7 @@ export function App() {
       <div className="group/shell flex min-h-0 min-w-0 flex-1 flex-col">
         <header
           aria-label="Status"
-          className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-hairline bg-shell px-6 py-2.5"
+          className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-hairline bg-shell px-6 py-2.5 max-rail:flex-nowrap max-rail:gap-x-2 max-rail:overflow-x-auto max-rail:px-4"
         >
           {config && (
             <Switch
@@ -775,7 +775,7 @@ export function App() {
           )}
           {cost24h && (
             <span className="text-[13px] text-muted" title="Cost over the last 24 hours">
-              <span className="text-faint">today</span>{' '}
+              <span className="text-faint">last 24h</span>{' '}
               <b className="font-semibold tabular-nums text-ink">{cost24h}</b>
             </span>
           )}

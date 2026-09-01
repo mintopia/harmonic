@@ -11,6 +11,7 @@ export function InheritField<T, R extends T = T>({
   inheritedFrom = 'global default',
   onChange,
   format = String,
+  description,
   children,
 }: {
   label: string;
@@ -20,6 +21,7 @@ export function InheritField<T, R extends T = T>({
   inheritedFrom?: InheritSource;
   onChange: (next: T | null) => void;
   format?: (value: R) => string;
+  description?: ReactNode;
   children: (input: { id?: string; value: T; onChange: (value: T) => void }) => ReactNode;
 }) {
   const { overridden, effective } = inheritState(value, inherited);
@@ -36,6 +38,7 @@ export function InheritField<T, R extends T = T>({
           label={`Override ${label}`}
         />
       </div>
+      {description && <p className="mb-1.5 text-small text-muted">{description}</p>}
       {overridden ? (
         <>
           {children({ id: htmlFor, value: effective, onChange })}

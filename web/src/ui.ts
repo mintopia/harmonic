@@ -195,11 +195,19 @@ export function stateChip(state: TaskState): string {
   return `${chip} ${STATE_CHIP_STYLES[state]}`;
 }
 
-/** The Board card's open-blocker count badge (ADR-0041: blocked-ness is a derived
- * count, never a state). Blocked slate by default; Failed rose when a blocker is
- * escalated or cancelled, so the ticket will not unblock on its own. */
+/** The Board card's primary "Blocked" chip (ADR-0041: blocked-ness is a derived
+ * count, never a state — the word is the state, the count is secondary; issue
+ * #458). Blocked slate by default; Failed rose when a blocker is escalated or
+ * cancelled, so the ticket will not unblock on its own. */
 export function blockerBadge(blockedOnFailed: boolean): string {
   return `${chip} ${blockedOnFailed ? 'bg-fail-tint text-fail' : 'bg-blocked-tint text-blocked'}`;
+}
+
+/** The secondary blocker-count pip beside the "Blocked" chip (issue #458): same
+ * slate/rose tint pairing as `blockerBadge` so the pair reads as one unit, sized
+ * down since the count is supporting information, not the primary label. */
+export function blockerCountPip(blockedOnFailed: boolean): string {
+  return `rounded-full px-1.5 py-0.5 text-[10px] font-bold tabular-nums ${blockedOnFailed ? 'bg-fail-tint text-fail' : 'bg-blocked-tint text-blocked'}`;
 }
 
 /** The human-only (HITL) badge: a mirrored ticket Harmonic never works. Neutral

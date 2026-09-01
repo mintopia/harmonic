@@ -100,7 +100,7 @@ export function DirectoryPicker({
               ) : (
                 <Icon
                   name="chevron-down"
-                  className={`transition-transform duration-150 ${node.expanded ? '' : '-rotate-90'}`}
+                  className={`transition-transform duration-150 motion-reduce:transition-none ${node.expanded ? '' : '-rotate-90'}`}
                 />
               )}
             </button>
