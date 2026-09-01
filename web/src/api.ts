@@ -291,6 +291,8 @@ export const api = {
     request<Epic>('GET', `/api/workspaces/${workspaceId}/epics/${epicRef}`),
   forceIntegrateEpic: (workspaceId: number, epicRef: number) =>
     request<EpicIntegrateOutcome>('POST', `/api/workspaces/${workspaceId}/epics/${epicRef}/force-integrate`),
+  epicDiffFiles: (workspaceId: number, epicRef: number) =>
+    request<{ files: DiffFile[]; total: number }>('GET', `/api/workspaces/${workspaceId}/epics/${epicRef}/diff/files`),
 
   // Derived Map rollup (D7, issue #35), paginated on the shared envelope
   // (ADR-0045, issue #351): `workspaceId` scopes to one board, `limit`/`offset`
