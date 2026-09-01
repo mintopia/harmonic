@@ -10,7 +10,7 @@ import { TrackerPollerManager } from '../src/tracker/manager.js';
 import { deriveEpics } from '../src/domain/epic-derivation.js';
 import { deriveMaps } from '../src/tracker/mirror.js';
 import type { Ticket, TrackerAdapter } from '../src/tracker/adapter.js';
-import { TrackerResolutionError } from '../src/tracker/adapter.js';
+import { EPIC_LABEL, TrackerResolutionError } from '../src/tracker/adapter.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { allWorkspaces, makeSettingsStore, waitFor } from './helpers.js';
 import { yieldToEventLoop } from '../src/reliability/yield.js';
@@ -214,6 +214,120 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     // closed Epic resolves from persisted facts, not a re-poll.
     expect(await manager.epicDetail(workspace.id, 10)).toEqual(beforeRestart);
     expect((await manager.listEpics(workspace.id)).map((epic) => epic.ref)).not.toContain(10);
+  });
+
+  it('resolves an integrated Epic the scan has aged out from its stored snapshot; the Board stays open-only (#439)', async () => {
+    ticketsByRepo.set(repoA, [
+      { ...ticket(19), title: 'Delivery map', labels: ['wayfinder:map'], isMap: true },
+      { ...ticket(20), title: 'Map member', parent: 19 },
+    ]);
+    const workspace = await workspaces.create({ name: 'A', workingDir: repoA, trackerEnabled: true });
+    await manager.sync();
+    await manager.pollNow(workspace.id);
+
+    // The scan persisted the durable Epic row; integration settles its snapshot.
+    await tasks.markEpicIntegrated(workspace.id, 19, { mergeCommit: 'abc123', memberRefs: [20] });
+
+    // The tracker stops returning the Epic and its member: the container cache is
+    // wiped, but the stored record survives.
+    ticketsByRepo.set(repoA, []);
+    await manager.pollNow(workspace.id);
+
+    // The detail page resolves the aged-out Epic from the record, with its snapshot
+    // members and an empty ready frontier.
+    const detail = await manager.epicDetail(workspace.id, 19);
+    expect(detail?.ref).toBe(19);
+    expect(detail?.kind).toBe('map');
+    expect(detail?.members.map((m) => m.ref)).toEqual([20]);
+    expect(detail?.ready).toEqual([]);
+    // The container was never mirrored as a Task and the ticket has aged out, so
+    // the title falls to the ref placeholder.
+    expect(detail?.title).toBe('Epic #19');
+
+    // The Board is open-only by design: a finished Epic is not a stale active band,
+    // and the Tasks-list projection stays live-work only.
+    expect((await manager.listEpics(workspace.id)).map((e) => e.ref)).not.toContain(19);
+    expect((await manager.listEpicTickets(workspace.id)).map((t) => t.number)).not.toContain(19);
+
+    // Persisted-facts-only: after a restart with no adapter, the record still resolves it.
+    manager.stopAll();
+    await asyncDb.close();
+    asyncDb = await openAsyncDb(dataDir);
+    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
+    workspaces = new WorkspaceService(asyncDb, settingsStore);
+    manager = new TrackerPollerManager(tasks, () => workspaces.list(), async () => {
+      throw new Error('restart query must not resolve or poll the tracker');
+    });
+    expect((await manager.epicDetail(workspace.id, 19))?.members.map((m) => m.ref)).toEqual([20]);
+  });
+
+  it('narrows a stored plain-epic kind to the read-model spec when resolving from the record (#439)', async () => {
+    ticketsByRepo.set(repoA, [
+      { ...ticket(10), title: 'Plain epic', labels: [EPIC_LABEL] },
+      { ...ticket(11), title: 'Member', parent: 10 },
+    ]);
+    const workspace = await workspaces.create({ name: 'A', workingDir: repoA, trackerEnabled: true });
+    await manager.sync();
+    await manager.pollNow(workspace.id);
+    await tasks.markEpicIntegrated(workspace.id, 10, { mergeCommit: null, memberRefs: [11] });
+
+    // Age the Epic out so the detail path resolves from the stored record, not
+    // live derivation. The stored `epic` kind narrows to the DTO's two kinds.
+    ticketsByRepo.set(repoA, []);
+    await manager.pollNow(workspace.id);
+
+    const detail = await manager.epicDetail(workspace.id, 10);
+    expect(detail?.kind).toBe('spec');
+    expect(detail?.members.map((m) => m.ref)).toEqual([11]);
+  });
+
+  it('never resolves an open stored Epic from the record once it ages out (#439)', async () => {
+    ticketsByRepo.set(repoA, [
+      { ...ticket(10), title: 'Open epic', labels: [EPIC_LABEL] },
+      { ...ticket(11), parent: 10 },
+    ]);
+    const workspace = await workspaces.create({ name: 'A', workingDir: repoA, trackerEnabled: true });
+    await manager.sync();
+    await manager.pollNow(workspace.id);
+    // #10 has a stored row but is still `open` (null snapshot) — governed by live
+    // derivation, never surfaced from the record.
+
+    ticketsByRepo.set(repoA, []);
+    await manager.pollNow(workspace.id);
+
+    // An open stored row that ages out without integrating is gone, not historical.
+    expect((await manager.listEpics(workspace.id)).map((e) => e.ref)).toEqual([]);
+    expect(await manager.epicDetail(workspace.id, 10)).toBeNull();
+    // A ref with no stored row and no derived Epic never resolves.
+    expect(await manager.epicDetail(workspace.id, 999)).toBeNull();
+  });
+
+  it('resolves an integrated nested leaf-most Epic by ref while its spine parent stays a derived roll-up (#439)', async () => {
+    // Spine A(100) → leaf-most epic-type B(101) → leaf C(102). The stored record
+    // keys to the leaf-most Epic (ADR-0018): only B gets a row, and B is the
+    // first-class integration unit — individually addressable once integrated.
+    ticketsByRepo.set(repoA, [
+      { ...ticket(100), title: 'Spine parent' },
+      { ...ticket(101), title: 'Leaf-most epic B', parent: 100, labels: [EPIC_LABEL] },
+      { ...ticket(102), title: 'Work C', parent: 101 },
+    ]);
+    const workspace = await workspaces.create({ name: 'A', workingDir: repoA, trackerEnabled: true });
+    await manager.sync();
+    await manager.pollNow(workspace.id);
+
+    // B integrates while the whole spine is still live in the scan.
+    await tasks.markEpicIntegrated(workspace.id, 101, { mergeCommit: 'def456', memberRefs: [102] });
+
+    // The Board surfaces the top-level spine A with C rolled up; B is never a
+    // top-level Epic and stays out of the list (unchanged derived roll-up).
+    const listed = await manager.listEpics(workspace.id);
+    expect(listed.map((e) => e.ref)).toEqual([100]);
+    expect(listed[0]?.members.map((m) => m.ref)).toEqual([102]);
+
+    // But the first-class leaf-most Epic B resolves by ref from its stored record.
+    const detail = await manager.epicDetail(workspace.id, 101);
+    expect(detail?.ref).toBe(101);
+    expect(detail?.members.map((m) => m.ref)).toEqual([102]);
   });
 
   it('toggling one Workspace starts/stops just its loop; others are unaffected', async () => {
