@@ -21,6 +21,7 @@ import {
   type TrackerFacts,
   type TrackerContainerRow,
   type StoredEpicKind,
+  type EpicRow,
 } from '../db/schema.js';
 import { resolveWorkspace } from './workspaces.js';
 import { resolveScoped } from './setting-override.js';
@@ -704,6 +705,18 @@ export class TaskService {
         .where(and(eq(epics.workspaceId, workspaceId), eq(epics.trackerRef, trackerRef), eq(epics.state, 'open')))
         .run();
     });
+  }
+
+  /**
+   * Every durable Epic spine row for a Workspace (ADR-0018, #439). The readers
+   * join these onto the live derived model: the row is the durable anchor that
+   * outlives the tracker container wipe, so a historical Epic the scan no longer
+   * returns still surfaces from its stored `kind`/lifecycle/`memberRefs` snapshot.
+   */
+  async listStoredEpics(workspaceId: number): Promise<EpicRow[]> {
+    return this.db.read((db) =>
+      db.select().from(epics).where(eq(epics.workspaceId, workspaceId)).all(),
+    );
   }
 
   async listTrackerContainers(workspaceId?: number): Promise<TrackerContainerRow[]> {

@@ -101,6 +101,46 @@ describe('Epic read model operator surface (issue #167)', () => {
     });
   });
 
+  describe('GET /api/workspaces/:workspaceId/epics/:epicRef/diff/files (ADR-0018, issue #441)', () => {
+    it('parses TrackerPollerManager.epicDiff\'s raw unified diff into files, paginated', async () => {
+      const raw = [
+        'diff --git a/feature.txt b/feature.txt',
+        'new file mode 100644',
+        'index 0000000..1234567',
+        '--- /dev/null',
+        '+++ b/feature.txt',
+        '@@ -0,0 +1 @@',
+        '+added by the epic',
+        '',
+      ].join('\n');
+      const spy = vi.spyOn(ctx().trackerManager, 'epicDiff').mockResolvedValue(raw);
+
+      const res = await server.api('GET', `/api/workspaces/${(await defaultWorkspaceId())}/epics/42/diff/files`);
+      expect(res.status).toBe(200);
+      expect(res.body.total).toBe(1);
+      expect(res.body.files).toHaveLength(1);
+      expect(res.body.files[0]).toMatchObject({ path: 'feature.txt', status: 'A', additions: 1, deletions: 0 });
+      expect(spy).toHaveBeenCalledWith((await defaultWorkspaceId()), 42);
+    });
+
+    it('returns an empty files list, not an error, when epicDiff resolves the empty string (branchless/no-op Epic)', async () => {
+      vi.spyOn(ctx().trackerManager, 'epicDiff').mockResolvedValue('');
+      const res = await server.api('GET', `/api/workspaces/${(await defaultWorkspaceId())}/epics/42/diff/files`);
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ files: [], total: 0 });
+    });
+
+    it('404s when the Workspace does not exist', async () => {
+      const res = await server.api('GET', '/api/workspaces/999999/epics/42/diff/files');
+      expect(res.status).toBe(404);
+    });
+
+    it('400s on a non-numeric workspaceId or epicRef', async () => {
+      expect((await server.api('GET', '/api/workspaces/abc/epics/42/diff/files')).status).toBe(400);
+      expect((await server.api('GET', `/api/workspaces/${(await defaultWorkspaceId())}/epics/xyz/diff/files`)).status).toBe(400);
+    });
+  });
+
   describe('operator-only gating', () => {
     it('denies an attempt-scoped Attempt Key on GET /api/workspaces/:id/epics', async () => {
       const { env } = await captureRunEnv(server, ['HARMONIC_API_KEY']);

@@ -494,6 +494,12 @@ export const Git = {
    */
   diffRange: (dir: string, base: string, oid: string) => git(dir, 'diff', `${base}..${oid}`),
 
+  /** The frozen whole-Epic diff from an integration merge commit (ADR-0018):
+   * `git diff <M>^1 <M>^2` — first parent (base-before) against second (epic-tip).
+   * Survives the epic branch's retirement, since it reads the merge commit's own
+   * parents straight from the object store — no branch or checkout required. */
+  diffMergeCommit: (dir: string, mergeOid: string) => git(dir, 'diff', `${mergeOid}^1`, `${mergeOid}^2`),
+
   /**
    * Diffstat of a live worktree's current state — committed AND uncommitted
    * tracked changes — against `baseOid` (the fork point). For a running Run whose
