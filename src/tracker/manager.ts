@@ -8,6 +8,7 @@ import type { FeatureIndex } from './local-markdown.js';
 import { MirrorCoordinator } from './coordinator.js';
 import { TrackerPoller } from './poller.js';
 import { deriveMaps, type DerivedMap } from './mirror.js';
+import { recordAndCloseIntegratedEpic } from './epic-close.js';
 import { EpicIntegrationCoordinator, integrationBranchName } from '../execution/epic-integration.js';
 import { EpicIntegrateCoordinator, type EpicIntegrateOutcome } from '../execution/epic-integrate-coordinator.js';
 import { verifyEpicIntegration } from '../execution/epic-verification.js';
@@ -194,9 +195,16 @@ export class TrackerPollerManager {
         escalate: (epicRef, reason) => this.onError(`epic ${epicRef} whole-Epic integrate escalated: ${reason}`),
         operations: this.epicOperations,
         // Settle the stored Epic record at integration (ADR-0018, #438): merge-commit
-        // hash (null on a no-op finish), member snapshot, lifecycle → integrated.
+        // hash (null on a no-op finish), member snapshot, lifecycle → integrated —
+        // then close the Epic's tracker issue (#442), which a container's empty agent
+        // path never would.
         recordIntegration: ({ epicRef, mergeCommit, memberRefs }) =>
-          this.tasks.markEpicIntegrated(ws.id, epicRef, { mergeCommit, memberRefs }),
+          recordAndCloseIntegratedEpic({
+            epicRef,
+            settle: () => this.tasks.markEpicIntegrated(ws.id, epicRef, { mergeCommit, memberRefs }),
+            resolveAdapter: () => this.resolveAdapter(ws.workingDir, (slug) => this.tasks.mdFeatureIndex(ws.id, slug)),
+            onError: this.onError,
+          }),
       });
       epics.attachIntegrateTrigger(epicIntegrate);
     }
