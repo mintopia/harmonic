@@ -15,3 +15,4 @@ scratch_*
 .scratch/
 .impeccable/critique/
 .superpowers/
+.worktrees-local/
