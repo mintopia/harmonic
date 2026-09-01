@@ -542,6 +542,7 @@ function EpicBand({
   // In-progress members surface inside the band too (in the board's processing
   // order), not only in the global Running section — reuse the shared model.
   const { running } = epicMemberSections(epic, tasks);
+  const closed = closedMembers(epic);
   const hasColumns = columns.length > 0;
   // A band with pending members opens by default; one whose members are all
   // merged or promoted to the top sections has nothing to expand.
@@ -589,6 +590,12 @@ function EpicBand({
       {open && hasColumns && (
         <div className="border-t border-hairline">
           <BlockerColumns columns={columns} onOpenTask={onOpenTask} onChanged={onChanged} className="p-4" />
+        </div>
+      )}
+
+      {closed.length > 0 && (
+        <div className="border-t border-hairline px-4 py-3">
+          <ClosedRail members={closed} onOpenTask={onOpenTask} collapsible />
         </div>
       )}
     </div>
@@ -736,11 +743,35 @@ function IntegrationProgress({ epic }: { epic: Epic }) {
 }
 
 /** ADR-0011: the rail below the columns holding the Epic's closed (merged/
- * cancelled) members, so finished work stays visible without crowding. */
-function ClosedRail({ members, onOpenTask }: { members: EpicMember[]; onOpenTask: (taskId: number) => void }) {
+ * cancelled) members, so finished work stays visible without crowding. In the
+ * main-board Epic band it renders `collapsible`, collapsed by default, so
+ * finished work doesn't crowd the band. */
+function ClosedRail({
+  members,
+  onOpenTask,
+  collapsible = false,
+}: {
+  members: EpicMember[];
+  onOpenTask: (taskId: number) => void;
+  collapsible?: boolean;
+}) {
+  const [open, setOpen] = useState(!collapsible);
   return (
     <section className="mt-2">
-      <div className={`${sectionLabel} mb-2 px-0.5`}>Closed · {members.length}</div>
+      {collapsible ? (
+        <button
+          type="button"
+          aria-expanded={open}
+          onClick={() => setOpen((v) => !v)}
+          className={`${touchTargetInline} mb-2 gap-1.5 px-0.5`}
+        >
+          <Chevron open={open} />
+          <span className={sectionLabel}>Closed · {members.length}</span>
+        </button>
+      ) : (
+        <div className={`${sectionLabel} mb-2 px-0.5`}>Closed · {members.length}</div>
+      )}
+      {open && (
       <div className="flex flex-wrap gap-2">
         {members.map((m) => {
           const merged = m.mergeStatus === 'completed';
@@ -769,6 +800,7 @@ function ClosedRail({ members, onOpenTask }: { members: EpicMember[]; onOpenTask
           );
         })}
       </div>
+      )}
     </section>
   );
 }
