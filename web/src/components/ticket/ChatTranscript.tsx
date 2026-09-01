@@ -1,5 +1,5 @@
 import { useMemo, type ReactNode } from 'react';
-import { coalesceTail } from '../../event-stream-model';
+import { coalesceEvents, coalesceTail } from '../../event-stream-model';
 import { transcriptLanes } from '../../transcript-timeline-model';
 import { chatRows, type ChatRow, type ChatToolStatus } from '../../attempt-chat-model';
 import type { AttemptLogEvent } from '../../types';
@@ -108,6 +108,26 @@ function Note({ row }: { row: Extract<ChatRow, { kind: 'note' }> }) {
   );
 }
 
+/** A spawned Subagent's own transcript, folded under the Agent call that
+ * spawned it — collapsed by default so the main agent's thread stays legible,
+ * one click away when the operator wants the detail. */
+function SubagentLane({ label, rows, model }: { label: string; rows: ChatRow[]; model: string }) {
+  return (
+    <details className="ml-10 overflow-hidden rounded-md border border-hairline bg-surface">
+      <summary className="flex cursor-pointer items-center gap-2.5 px-3 py-2 text-[12.5px] font-semibold text-ink hover:bg-raised">
+        <span className="rounded-[4px] bg-raised px-1.5 py-px text-[10px] font-bold uppercase tracking-[0.05em] text-muted">subagent</span>
+        <span className="min-w-0 flex-1 truncate">{label}</span>
+        <span className={railSectionCount}>{rows.length}</span>
+      </summary>
+      <div className="flex flex-col gap-3 border-t border-hairline px-3 py-3">
+        {rows.map((row) => (
+          <Row key={row.key} row={row} model={model} />
+        ))}
+      </div>
+    </details>
+  );
+}
+
 function Row({ row, model }: { row: ChatRow; model: string }) {
   switch (row.kind) {
     case 'message':
@@ -146,13 +166,16 @@ export function ChatTranscript({
   model: string;
   stepLabel?: string;
 }) {
-  const { rows, hidden } = useMemo(() => {
-    // Chat the main agent's own turns; a spawned subagent surfaces as its
-    // Agent/Task tool card in this lane, not as interleaved foreign messages.
-    const main = transcriptLanes(events)[0];
+  const { rows, hidden, lanes } = useMemo(() => {
+    // Chat the main agent's own turns; each spawned Subagent's turns lane under
+    // the Agent/Task card that spawned it, never interleaved as foreign messages.
+    const [main, ...subagents] = transcriptLanes(events);
     const { hidden, items } = coalesceTail(main?.events ?? []);
-    return { rows: chatRows(items), hidden };
+    const lanes = new Map(subagents.map((lane) => [lane.id, { label: lane.label, rows: chatRows(coalesceEvents(lane.events)) }]));
+    return { rows: chatRows(items), hidden, lanes };
   }, [events]);
+  // A lane whose spawning card fell outside the rendered tail still shows, at the end.
+  const anchored = new Set(rows.flatMap((row) => (row.kind === 'tool' && row.toolCallId && lanes.has(row.toolCallId) ? [row.toolCallId] : [])));
 
   return (
     <section className="pt-2">
@@ -174,8 +197,17 @@ export function ChatTranscript({
               {hidden.toLocaleString()} earlier event{hidden === 1 ? '' : 's'} hidden — showing the live tail
             </p>
           )}
-          {rows.map((row) => (
-            <Row key={row.key} row={row} model={model} />
+          {rows.map((row) => {
+            const lane = row.kind === 'tool' && row.toolCallId ? lanes.get(row.toolCallId) : undefined;
+            return (
+              <div key={row.key} className="flex flex-col gap-3">
+                <Row row={row} model={model} />
+                {lane && <SubagentLane label={lane.label} rows={lane.rows} model={model} />}
+              </div>
+            );
+          })}
+          {[...lanes].filter(([id]) => !anchored.has(id)).map(([id, lane]) => (
+            <SubagentLane key={id} label={lane.label} rows={lane.rows} model={model} />
           ))}
         </div>
       )}

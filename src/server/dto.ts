@@ -242,6 +242,10 @@ export type ApiAttemptSummary = {
    * the Stats summary card sums it across Attempts; the Attempt panel shows the
    * one Attempt's. */
   toolCalls: number;
+  /** The root session's latest context-window fill (its last live-usage
+   * snapshot) and the model's window; null when unknown. */
+  contextTokens: number | null;
+  contextWindow: number | null;
   startedAt: number;
   finishedAt: number | null;
 };
@@ -257,7 +261,7 @@ function apiAttemptState(state: AttemptState): ApiAttemptSummary['state'] {
 
 /** An `AttemptRow` projected onto its public wire summary, given the Attempt's
  * already summed tool-call total (its native ADR-0031 aggregate). */
-export function attemptToApiSummary(run: AttemptRow, toolCalls: number): ApiAttemptSummary {
+export function attemptToApiSummary(run: AttemptRow, toolCalls: number, contextWindow: number | null = null): ApiAttemptSummary {
   return {
     id: run.id,
     taskId: run.taskId,
@@ -282,9 +286,22 @@ export function attemptToApiSummary(run: AttemptRow, toolCalls: number): ApiAtte
     usage: parseUsage(run.usage),
     cost: parseCost(run.cost),
     toolCalls,
+    contextTokens: liveContextTokens(run.liveUsage),
+    contextWindow,
     startedAt: run.startedAt,
     finishedAt: run.endedAt,
   };
+}
+
+/** The `contextTokens` of an Attempt's persisted live-usage snapshot (ADR 0010), if any. */
+function liveContextTokens(liveUsage: string | null): number | null {
+  if (!liveUsage) return null;
+  try {
+    const snapshot = JSON.parse(liveUsage) as { contextTokens?: unknown };
+    return typeof snapshot.contextTokens === 'number' ? snapshot.contextTokens : null;
+  } catch {
+    return null;
+  }
 }
 
 /** The firehose shape of a live-usage snapshot (ADR 0010): the persisted

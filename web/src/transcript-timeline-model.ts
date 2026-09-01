@@ -24,9 +24,10 @@ function spawnLabel(event: AttemptLogEvent): string | undefined {
 
   const metadata = record(record(payload._meta)?.claudeCode);
   const type = metadata?.toolName ?? payload.kind;
-  const name = payload.title;
   if (typeof type !== 'string' || (type !== 'Agent' && type !== 'Task')) return undefined;
-  return typeof name === 'string' && name.trim() ? `${type}: ${name.trim()}` : type;
+  // The title is `<tool> <target>`; the target alone names the spawn.
+  const name = typeof payload.title === 'string' ? payload.title.replace(/^(Agent|Task)\b\s*/, '').trim() : '';
+  return name || type;
 }
 
 /**

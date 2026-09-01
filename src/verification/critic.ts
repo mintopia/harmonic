@@ -70,6 +70,8 @@ export interface CriticDriveRequest {
   cwd: string;
   prompt: string;
   timeoutMs: number;
+  /** The critic's streamed message text and tool titles, for a live progress view. */
+  onProgress?: (text: string) => void;
 }
 
 /**
@@ -149,9 +151,12 @@ export function createAcpCriticDrive(): CriticHarnessDrive {
 
       const driver = new AcpDriver(child, {
         onSessionUpdate: (update) => {
-          const u = update as { sessionUpdate?: string; content?: { type?: string; text?: unknown } };
+          const u = update as { sessionUpdate?: string; title?: unknown; content?: { type?: string; text?: unknown } };
           if (u.sessionUpdate === 'agent_message_chunk' && u.content?.type === 'text' && typeof u.content.text === 'string') {
             output += u.content.text;
+            req.onProgress?.(u.content.text);
+          } else if (u.sessionUpdate === 'tool_call' && typeof u.title === 'string') {
+            req.onProgress?.(`\n› ${u.title}\n`);
           }
         },
         onRequest: async (method, params) => {
@@ -230,6 +235,8 @@ export interface RunCriticArgs {
   timeoutMs?: number;
   parent?: SpanContext;
   attributes?: Attributes;
+  /** The critic's streamed message text and tool titles, for a live progress view. */
+  onProgress?: (text: string) => void;
 }
 
 export interface CriticAttempt {
@@ -316,6 +323,7 @@ async function runCriticUnchecked(args: RunCriticArgs): Promise<CriticAttempt> {
       cwd: args.cwd,
       prompt,
       timeoutMs,
+      ...(args.onProgress ? { onProgress: args.onProgress } : {}),
     });
     output = result.output;
     sessionId = result.sessionId ?? null;

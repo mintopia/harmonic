@@ -3,7 +3,7 @@ import type { ResolvedVerifiers } from './setting-override.js';
 import type { Verdict } from '../verification/critic-schema.js';
 
 /** The operator-facing state of one verifier category for a Run. */
-export type VerifierStatusState = 'passed' | 'failed' | 'inconclusive' | 'skipped' | 'disabled' | 'unrunnable' | 'planned';
+export type VerifierStatusState = 'passed' | 'failed' | 'inconclusive' | 'skipped' | 'disabled' | 'unrunnable' | 'planned' | 'running';
 
 /** A read-time reconciliation of configured verifiers and their recorded attempts. */
 export interface VerifierStatus {
@@ -52,14 +52,6 @@ export function verifierStatuses({
     if (!previous || attempt.seq > previous.seq) latestByMechanism.set(attempt.mechanism, attempt);
   }
 
-  // Before the Attempt reaches its Verification Step, a configured verifier
-  // hasn't had its chance yet: it is planned, not skipped. `stepType` null (no
-  // Step has started, or one already recorded an attempt) or `verification`/
-  // `review` (already there) means we've reached verification — keep the
-  // reconciled skipped/passed/failed meaning unchanged once any attempt exists.
-  const verificationPending =
-    attempts.length === 0 &&
-    (stepType == null || STEP_TYPES.indexOf(stepType) < STEP_TYPES.indexOf('verification'));
   const commandLabels = verifiers.commands.map((c) => [c.command, ...c.args].join(' ').trim());
 
   return mechanisms.map((mechanism) => {
@@ -74,7 +66,16 @@ export function verifierStatuses({
 
     const configured = mechanism === 'command' ? verifiers.commands.length > 0 : verifiers.review.enabled;
     if (configured) {
-      const state = verificationPending ? 'planned' : 'skipped';
+      // The verifier's own Step is live: it is running now. Before that Step, a
+      // configured verifier hasn't had its chance yet — planned, not skipped
+      // (`stepType` null with no attempt at all is the same no-evidence case).
+      // Past it, or once verification is over, with nothing recorded: skipped.
+      const ownStep: StepType = mechanism === 'command' ? 'verification' : 'review';
+      if (stepType === ownStep) {
+        return withCommands({ mechanism, state: 'running', reason: mechanism === 'command' ? 'Running the command checks now.' : 'The critic is reviewing the candidate now.' });
+      }
+      const pending = stepType == null ? attempts.length === 0 : STEP_TYPES.indexOf(stepType) < STEP_TYPES.indexOf(ownStep);
+      const state = pending ? 'planned' : 'skipped';
       const reason =
         state === 'planned'
           ? 'Configured to run — the run has not reached verification yet.'

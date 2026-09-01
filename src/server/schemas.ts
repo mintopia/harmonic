@@ -68,7 +68,7 @@ export const stepSchema = z
 export const verifierStatusSchema = z
   .object({
     mechanism: z.enum(['command', 'critic']).meta({ example: 'critic' }),
-    state: z.enum(['passed', 'failed', 'inconclusive', 'skipped', 'disabled', 'unrunnable', 'planned']).meta({ example: 'passed' }),
+    state: z.enum(['passed', 'failed', 'inconclusive', 'skipped', 'disabled', 'unrunnable', 'planned', 'running']).meta({ example: 'passed' }),
     reason: z.string().nullable().meta({ example: null }),
     commands: z.array(z.string()).optional().meta({ example: ['npm test'] }),
   })

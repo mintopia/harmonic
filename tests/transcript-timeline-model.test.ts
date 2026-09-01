@@ -25,7 +25,7 @@ describe('transcriptLanes', () => {
 
     expect(transcriptLanes(events)).toEqual([
       { id: 'main', label: 'Main agent', events: [events[0], events[1], events[3]] },
-      { id: parentId, label: 'Agent: Explore the transcript model', events: [events[2]] },
+      { id: parentId, label: 'Explore the transcript model', events: [events[2]] },
     ]);
   });
 
@@ -58,8 +58,8 @@ describe('transcriptLanes', () => {
     const lanes = transcriptLanes(events);
     expect(lanes.map(({ id, label, events: laneEvents }) => ({ id, label, ids: laneEvents.map((item) => item.id) }))).toEqual([
       { id: 'main', label: 'Main agent', ids: [1, 2] },
-      { id: agent, label: 'Agent: Find tests', ids: [3, 5] },
-      { id: task, label: 'Task: Implement model', ids: [4] },
+      { id: agent, label: 'Find tests', ids: [3, 5] },
+      { id: task, label: 'Implement model', ids: [4] },
     ]);
   });
 

@@ -45,13 +45,13 @@ describe('chatRows', () => {
       tool(2, 't1', { status: 'completed' }),
     ]);
     expect(result).toEqual([
-      { kind: 'tool', verb: 'Read', target: 'src/app.ts', status: 'ok', subagent: false, output: null, at: 1, key: 1 },
+      { kind: 'tool', toolCallId: 't1', verb: 'Read', target: 'src/app.ts', status: 'ok', subagent: false, output: null, at: 1, key: 1 },
     ]);
   });
 
   it('keeps a bare-verb tool card with no target and flags a failed run', () => {
     const result = rows([tool(1, 't1', { kind: 'bash', title: 'Bash', status: 'failed' })]);
-    expect(result).toEqual([{ kind: 'tool', verb: 'Bash', target: null, status: 'failed', subagent: false, output: null, at: 1, key: 1 }]);
+    expect(result).toEqual([{ kind: 'tool', toolCallId: 't1', verb: 'Bash', target: null, status: 'failed', subagent: false, output: null, at: 1, key: 1 }]);
   });
 
   it('flags a subagent tool call', () => {
@@ -63,7 +63,7 @@ describe('chatRows', () => {
 
   it('drops an empty-text bubble so a folded-to-nothing chunk leaves no blank message', () => {
     expect(rows([say(1, '   '), tool(2, 't1', { kind: 'read', title: 'Read x', status: 'completed' })])).toEqual([
-      { kind: 'tool', verb: 'Read', target: 'x', status: 'ok', subagent: false, output: null, at: 2, key: 2 },
+      { kind: 'tool', toolCallId: 't1', verb: 'Read', target: 'x', status: 'ok', subagent: false, output: null, at: 2, key: 2 },
     ]);
   });
 

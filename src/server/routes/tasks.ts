@@ -244,6 +244,8 @@ const attemptSchema = z
     /** Total tool calls this Attempt's session made (ADR-0031 native aggregate). */
     toolCalls: z.number().meta({ example: 63 }),
     startedAt: z.number().meta({ example: 1784032020000 }),
+    contextTokens: z.number().nullable().meta({ example: 48210 }),
+    contextWindow: z.number().nullable().meta({ example: 200000 }),
     finishedAt: z.number().nullable().meta({ example: 1784032260000 }),
     cost: costSchema.nullable(),
   })

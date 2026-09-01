@@ -14,7 +14,7 @@ import type { AttemptLogEvent } from './types.js';
 export type ChatRow =
   | { kind: 'message'; author: 'assistant' | 'operator'; text: string; at: number; key: number }
   | { kind: 'thought'; text: string; key: number }
-  | { kind: 'tool'; verb: string; target: string | null; status: ChatToolStatus; subagent: boolean; output: string | null; at: number; key: number }
+  | { kind: 'tool'; toolCallId: string | null; verb: string; target: string | null; status: ChatToolStatus; subagent: boolean; output: string | null; at: number; key: number }
   | { kind: 'note'; label: string; text: string | null; key: number };
 
 /** A tool card's outcome badge — settled ok / failed, or still in flight. */
@@ -73,7 +73,7 @@ export function chatRows(items: readonly StreamItem<AttemptLogEvent>[]): ChatRow
     }
     if (item.kind === 'tool') {
       const { verb, target } = splitTitle(item.tool.title ?? 'Tool call');
-      rows.push({ kind: 'tool', verb, target, status: toolStatus(item.tool.status), subagent: item.tool.subagent, output: item.tool.output, at: item.at, key: item.key });
+      rows.push({ kind: 'tool', toolCallId: item.tool.toolCallId ?? null, verb, target, status: toolStatus(item.tool.status), subagent: item.tool.subagent, output: item.tool.output, at: item.at, key: item.key });
       continue;
     }
     const note = eventRow(item);

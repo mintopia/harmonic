@@ -482,6 +482,45 @@ export class Runner {
    * means the Attempt row raced a task-delete cascade, which callers treat the
    * same way a missing Run row used to be treated under the old `attemptId` keying.
    */
+  /**
+   * A verifier's live output, batched onto the Attempt's transient log stream
+   * (the same channel the builder's ACP updates ride, ADR-0031) as
+   * `verification_output` updates, so the Verify/Review tab can tail a check
+   * while it runs. Batched per ~400ms or 8 KiB so a chatty test runner doesn't
+   * fan out one WebSocket frame per stdout write.
+   */
+  private verificationOutputRelay(attemptId: number, mechanism: 'command' | 'critic', command: string | null): { push: (chunk: string) => void; flush: () => void } {
+    let pending = '';
+    let timer: NodeJS.Timeout | null = null;
+    const flush = (): void => {
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+      if (!pending) return;
+      const text = pending;
+      pending = '';
+      const seq = (this.progressSequences.get(attemptId) ?? 0) + 1;
+      this.progressSequences.set(attemptId, seq);
+      this.events.onAttemptLogEvent?.({
+        id: LIVE_RUN_LOG_EVENT_ID_OFFSET + seq,
+        attemptId,
+        seq,
+        ts: Date.now(),
+        type: 'session_update',
+        payload: { sessionUpdate: 'verification_output', mechanism, command, content: { type: 'text', text } },
+      });
+    };
+    return {
+      push: (chunk) => {
+        pending += chunk;
+        if (pending.length >= 8_192) flush();
+        else if (!timer) timer = setTimeout(flush, 400);
+      },
+      flush,
+    };
+  }
+
   private async attemptFor(task: Pick<TaskRow, 'id'>): Promise<AttemptRow> {
     // The Task's LATEST Attempt, not just its `running` one: this is also
     // called from an operator Accept's merge (`mergePolicyDeps`), which runs
@@ -1323,6 +1362,14 @@ export class Runner {
         verdicts.push(await this.noVerifiedHeadVerdict(task, 'command', record));
       } else {
         mkdirSync(this.worktreesDir, { recursive: true });
+        // The Step opens before the command runs so the Board badge, the Verify
+        // tab and the timeline show it live — not only once its verdict lands.
+        const label = [command.command, ...command.args].join(' ').trim();
+        const timelineAttempt = await this.attemptFor(task);
+        const timelineStep = await this.attempts.createStep(timelineAttempt.id, { type: 'verification', command: command.command });
+        await this.attempts.updateStep(timelineStep.id, { state: 'running', startedAt: Date.now() });
+        record('lifecycle', { event: 'verification-started', mechanism: 'command', command: label });
+        const relay = this.verificationOutputRelay(run.id, 'command', label);
         const attempt = await runCommandVerifier({
           // The base repo owns the candidate ref/objects (`prepareWorkspace`
           // pins `worktree.repoDir = task.workingDir`); the leased worktree is
@@ -1334,14 +1381,14 @@ export class Runner {
           signal,
           parent,
           attributes: { 'task.id': task.id, 'attempt.id': run.id },
+          onOutput: relay.push,
         });
-        const timelineAttempt = await this.attemptFor(task);
+        relay.flush();
         const persisted = await this.verificationAttempts.append(timelineAttempt.id, commandAttemptToInput(attempt));
-        const timelineStep = await this.attempts.createStep(timelineAttempt.id, { type: 'verification', command: command.command, logLocator: `verification_attempt:${persisted.id}` });
         await this.attempts.updateStep(timelineStep.id, {
           state: attempt.verdict === 'pass' ? 'passed' : 'failed',
           verdict: attempt.verdict,
-          startedAt: persisted.ts,
+          logLocator: `verification_attempt:${persisted.id}`,
           endedAt: Date.now(),
         });
         record('lifecycle', {
@@ -1399,6 +1446,11 @@ export class Runner {
         // index must not be dropped/re-parsed here. `indexWorktree` drops the
         // stale index before re-parsing; best-effort, a failure just skips.
         if (run.branch) await indexWorktree(criticCwd);
+        const timelineAttempt = await this.attemptFor(task);
+        const timelineStep = await this.attempts.createStep(timelineAttempt.id, { type: 'review' });
+        await this.attempts.updateStep(timelineStep.id, { state: 'running', startedAt: Date.now() });
+        record('lifecycle', { event: 'verification-started', mechanism: 'critic', model: review.model });
+        const relay = this.verificationOutputRelay(run.id, 'critic', null);
         const attempt = await runCritic({
           cwd: criticCwd,
           verifiedHeadOid: oid,
@@ -1416,8 +1468,9 @@ export class Runner {
           // forbids an explicit `undefined`, and `runCritic` defaults it to the
           // real `createAcpCriticDrive`.
           ...(this.criticDrive ? { drive: this.criticDrive } : {}),
+          onProgress: relay.push,
         });
-        const timelineAttempt = await this.attemptFor(task);
+        relay.flush();
         const persisted = await this.verificationAttempts.append(timelineAttempt.id, criticAttemptToInput(attempt));
         // The harness may not have flushed its log by the session-end boundary,
         // so `attempt.transcriptPath` is often null here; resolve it off the hot
@@ -1430,11 +1483,10 @@ export class Runner {
             sessionLogDir: criticHarness.sessionLogDir,
           });
         }
-        const timelineStep = await this.attempts.createStep(timelineAttempt.id, { type: 'review', logLocator: `verification_attempt:${persisted.id}` });
         await this.attempts.updateStep(timelineStep.id, {
           state: attempt.verdict === 'pass' ? 'passed' : 'failed',
           verdict: attempt.verdict,
-          startedAt: persisted.ts,
+          logLocator: `verification_attempt:${persisted.id}`,
           endedAt: Date.now(),
         });
         record('lifecycle', {

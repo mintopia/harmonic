@@ -75,6 +75,8 @@ export interface CommandSpawnRequest {
   cwd: string;
   timeoutMs: number;
   outputCap: number;
+  /** Each stdout/stderr chunk as it arrives, for a live progress view. */
+  onOutput?: (chunk: string) => void;
   /** Cancellation: an abort kills the child (mirrors the timeout kill). */
   signal?: AbortSignal | undefined;
 }
@@ -113,6 +115,7 @@ export function createChildProcessSpawn(): CommandSpawn {
         let output = '';
         let capped = false;
         const append = (chunk: string): void => {
+          req.onOutput?.(chunk);
           if (capped) return;
           output += chunk;
           if (output.length > req.outputCap) {
@@ -220,6 +223,8 @@ export interface RunCommandVerifierArgs {
   timeoutMs?: number;
   parent?: SpanContext;
   attributes?: Attributes;
+  /** Each output chunk as the command produces it, for a live progress view. */
+  onOutput?: (chunk: string) => void;
 }
 
 /**
@@ -273,6 +278,7 @@ async function runCommandVerifierUnchecked(args: RunCommandVerifierArgs): Promis
         timeoutMs,
         outputCap: OUTPUT_CHAR_CAP,
         signal: args.signal,
+        ...(args.onOutput ? { onOutput: args.onOutput } : {}),
       });
       output = result.output;
       const mapped = exitCodeToVerdict(result);

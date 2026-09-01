@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { readTranscriptLog, withOperatorMessages } from '../src/execution/transcript-log.js';
@@ -176,5 +176,70 @@ describe('withOperatorMessages', () => {
     const op = merged[1]!.payload as { sessionUpdate: string; queued: boolean };
     expect(op.sessionUpdate).toBe('operator_message');
     expect(op.queued).toBe(false);
+  });
+});
+
+describe('Claude transcript: Subagent lanes and tool-call detail', () => {
+  const claudeLine = (ts: string, content: unknown[], extra: Record<string, unknown> = {}) =>
+    JSON.stringify({ type: 'assistant', timestamp: ts, message: { role: 'assistant', content }, ...extra });
+
+  it('folds each Subagent transcript in, tagged with the Agent call that spawned it', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'harmonic-claude-log-'));
+    const root = join(dir, 'sess.jsonl');
+    writeFileSync(
+      root,
+      [
+        claudeLine('2026-08-21T10:01:00.000Z', [{ type: 'tool_use', id: 'toolu_1', name: 'Agent', input: { description: 'Map the callers', subagent_type: 'Explore', prompt: 'long prompt' } }]),
+        claudeLine('2026-08-21T10:01:05.000Z', [{ type: 'text', text: 'done' }]),
+      ].join('\n'),
+    );
+    const subDir = join(dir, 'sess', 'subagents');
+    mkdirSync(subDir, { recursive: true });
+    writeFileSync(join(subDir, 'agent-abc.meta.json'), JSON.stringify({ agentType: 'Explore', description: 'Map the callers', toolUseId: 'toolu_1' }));
+    writeFileSync(
+      join(subDir, 'agent-abc.jsonl'),
+      [
+        claudeLine('2026-08-21T10:01:02.000Z', [{ type: 'text', text: 'looking' }], { agentId: 'abc', isSidechain: true }),
+        claudeLine('2026-08-21T10:01:03.000Z', [{ type: 'tool_use', id: 'toolu_2', name: 'Grep', input: { pattern: 'foo', path: 'src' } }], { agentId: 'abc', isSidechain: true }),
+      ].join('\n'),
+    );
+
+    const log = await readTranscriptLog({ harness: 'claude', path: root, startedAt: Date.parse('2026-08-21T10:00:00.000Z'), finishedAt: null });
+    expect(log.status).toBe('available');
+    const events = log.status === 'available' ? log.events : [];
+    expect(events.map((e) => [e.id, e.payload.sessionUpdate, (e.payload._meta as { claudeCode?: { parentToolUseId?: string } } | undefined)?.claudeCode?.parentToolUseId ?? null])).toEqual([
+      [1, 'tool_call', null],
+      [2, 'agent_message_chunk', 'toolu_1'],
+      [3, 'tool_call', 'toolu_1'],
+      [4, 'agent_message_chunk', null],
+    ]);
+    expect(events[0]!.payload).toMatchObject({ title: 'Agent Map the callers (Explore)', _meta: { claudeCode: { toolName: 'Agent' } } });
+    expect(events[2]!.payload).toMatchObject({ title: 'Grep foo in src' });
+  });
+
+  it('names what a Skill, Agent, TodoWrite or front-door MCP call actually did', async () => {
+    const file = join(mkdtempSync(join(tmpdir(), 'harmonic-claude-log-')), 'sess.jsonl');
+    writeFileSync(
+      file,
+      [
+        claudeLine('2026-08-21T10:01:00.000Z', [
+          { type: 'tool_use', id: 't1', name: 'Skill', input: { skill: 'cloudagent' } },
+          { type: 'tool_use', id: 't2', name: 'Skill', input: { skill: 'ponytail', args: 'lite' } },
+          { type: 'tool_use', id: 't3', name: 'TodoWrite', input: { todos: [{}, {}, {}] } },
+          { type: 'tool_use', id: 't4', name: 'mcp__jcodemunch__order', input: { action: 'resolve_repo', args: { path: '.' } } },
+          { type: 'tool_use', id: 't5', name: 'ToolSearch', input: { query: 'select:Read' } },
+          { type: 'tool_use', id: 't6', name: 'Agent', input: { prompt: 'Review the diff', subagent_type: 'code-reviewer' } },
+        ]),
+      ].join('\n'),
+    );
+    const log = await readTranscriptLog({ harness: 'claude', path: file, startedAt: 0, finishedAt: null });
+    expect(log.status === 'available' ? log.events.map((e) => e.payload.title) : []).toEqual([
+      'Skill /cloudagent',
+      'Skill /ponytail lite',
+      'TodoWrite 3 todos',
+      'mcp__jcodemunch__order resolve_repo {"path":"."}',
+      'ToolSearch select:Read',
+      'Agent Review the diff (code-reviewer)',
+    ]);
   });
 });
