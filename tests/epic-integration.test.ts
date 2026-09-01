@@ -6,7 +6,7 @@ import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { mirrorScan } from '../src/tracker/mirror.js';
-import type { Ticket } from '../src/tracker/adapter.js';
+import { EPIC_LABEL, type Ticket } from '../src/tracker/adapter.js';
 import {
   EpicIntegrationCoordinator,
   integrationBranchName,
@@ -163,6 +163,26 @@ describe('EpicIntegrationCoordinator.reconcile (issue #159)', () => {
     expect(await baseOf(12)).toBe('epic/10');
     // The Epic ticket's own mirrored Task is never retargeted.
     expect(await baseOf(10)).toBeNull();
+  });
+
+  it('cuts an epic/<ref> branch for every kind — map, spec, and plain (ADR-0018, #438)', async () => {
+    const tickets = [
+      // Spec: an epic-labelled container carrying a spec body.
+      ticket({ number: 10, title: 'Spec', labels: [EPIC_LABEL], body: '## What to build\n\nspec' }),
+      ticket({ number: 11, parent: 10, labels: ['ready-for-agent'] }),
+      // Map: a wayfinder map container.
+      ticket({ number: 20, title: 'Map', isMap: true, labels: ['wayfinder:map'] }),
+      ticket({ number: 21, parent: 20, labels: ['ready-for-agent'] }),
+      // Plain: children only — no spec body, no map label.
+      ticket({ number: 30, title: 'Plain' }),
+      ticket({ number: 31, parent: 30, labels: ['ready-for-agent'] }),
+    ];
+    const git = new FakeGit([], 'develop');
+    const coord = new EpicIntegrationCoordinator(tasks, dir, git);
+
+    await coord.reconcile(tickets, await mscan(tickets));
+
+    expect([...git.created].sort()).toEqual(['epic/10', 'epic/20', 'epic/30']);
   });
 
   it('is idempotent across polls: reuses the existing branch, never re-creates', async () => {

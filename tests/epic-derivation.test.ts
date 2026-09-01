@@ -4,8 +4,8 @@
  * no I/O, no fixtures beyond the `ticket()` builder below.
  */
 import { describe, expect, it } from 'vitest';
-import { deriveEpics, deriveLeafEpics } from '../src/domain/epic-derivation.js';
-import { type Ticket } from '../src/tracker/adapter.js';
+import { deriveEpics, deriveLeafEpics, deriveStoredEpics } from '../src/domain/epic-derivation.js';
+import { EPIC_LABEL, type Ticket } from '../src/tracker/adapter.js';
 
 const ticket = (over: Partial<Ticket>): Ticket => ({
   number: 100,
@@ -269,5 +269,76 @@ describe('deriveLeafEpics', () => {
     const result = deriveLeaf(tickets);
     expect(result.map((e) => e.ref)).toEqual([11]);
     expect(result[0]?.members).toEqual([99]);
+  });
+});
+
+/**
+ * The stored-Epic spine view (ADR-0018, #437): leaf-most **epic-type** containers
+ * (a Map or an `epic`-labelled container) with the three-way stored `kind`. A
+ * bare parent of work Tasks is deliberately excluded — it is not an Epic.
+ */
+describe('deriveStoredEpics', () => {
+  it('Map: an isMap container is kind:"map"', () => {
+    const tickets = [
+      ticket({ number: 19, title: 'Map', isMap: true, labels: ['wayfinder:map'] }),
+      ticket({ number: 20, parent: 19 }),
+    ];
+    expect(deriveStoredEpics(tickets)).toEqual([{ ref: 19, kind: 'map' }]);
+  });
+
+  it('Spec: an epic-labelled container with a non-empty body is kind:"spec"', () => {
+    const tickets = [
+      ticket({ number: 10, title: 'Spec', labels: [EPIC_LABEL], body: '## What to build\n\nthe spec' }),
+      ticket({ number: 11, parent: 10 }),
+    ];
+    expect(deriveStoredEpics(tickets)).toEqual([{ ref: 10, kind: 'spec' }]);
+  });
+
+  it('plain Epic: an epic-labelled container with an empty body is kind:"epic"', () => {
+    const tickets = [
+      ticket({ number: 10, title: 'Plain', labels: [EPIC_LABEL], body: '   \n  ' }),
+      ticket({ number: 11, parent: 10 }),
+    ];
+    expect(deriveStoredEpics(tickets)).toEqual([{ ref: 10, kind: 'epic' }]);
+  });
+
+  it('a bare parent of work Tasks (no epic label, not a Map) is not a stored Epic', () => {
+    const tickets = [
+      ticket({ number: 10, title: 'Task with subtasks' }), // default labels: ['ready-for-agent']
+      ticket({ number: 11, parent: 10 }),
+      ticket({ number: 12, parent: 10 }),
+    ];
+    expect(deriveStoredEpics(tickets)).toEqual([]);
+  });
+
+  it('selects the leaf-most epic-type container over a spine', () => {
+    // #106 (epic) → #156 (epic, itself a container) → #157. #106 is a spine
+    // (has a container child) and is suppressed; the leaf-most #156 is stored.
+    const tickets = [
+      ticket({ number: 106, title: 'Spine', labels: [EPIC_LABEL], body: 'top' }),
+      ticket({ number: 156, title: 'Leaf-most', parent: 106, labels: [EPIC_LABEL], body: 'leaf spec' }),
+      ticket({ number: 157, parent: 156 }),
+    ];
+    expect(deriveStoredEpics(tickets)).toEqual([{ ref: 156, kind: 'spec' }]);
+  });
+
+  it('a closed epic-type container is not stored (kind freezes only while live)', () => {
+    const tickets = [
+      ticket({ number: 10, title: 'Closed', state: 'closed', labels: [EPIC_LABEL], body: 'spec' }),
+      ticket({ number: 11, parent: 10 }),
+      ticket({ number: 20, title: 'Open', labels: [EPIC_LABEL], body: 'spec' }),
+      ticket({ number: 21, parent: 20 }),
+    ];
+    expect(deriveStoredEpics(tickets)).toEqual([{ ref: 20, kind: 'spec' }]);
+  });
+
+  it('multiple stored Epics are sorted by ref ascending', () => {
+    const tickets = [
+      ticket({ number: 30, title: 'Map', isMap: true, labels: ['wayfinder:map'] }),
+      ticket({ number: 31, parent: 30 }),
+      ticket({ number: 10, title: 'Spec', labels: [EPIC_LABEL], body: 'spec' }),
+      ticket({ number: 11, parent: 10 }),
+    ];
+    expect(deriveStoredEpics(tickets).map((e) => e.ref)).toEqual([10, 30]);
   });
 });

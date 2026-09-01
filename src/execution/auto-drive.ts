@@ -1,5 +1,5 @@
 import { type AppConfig, type MergeFate } from '../config.js';
-import type { TaskRow, AttemptRow, WorkspaceRow } from '../db/schema.js';
+import type { TaskRow, AttemptRow, WorkspaceRow, StoredEpicKind } from '../db/schema.js';
 import { resolveTrackerAdapter, type TrackerAdapter } from '../tracker/adapter.js';
 import { resolveDrive, type ResolvedDrive } from '../domain/setting-override.js';
 import { driveFields, fillTemplate, splitTitleBody } from './prompt-template.js';
@@ -28,6 +28,10 @@ export class AutoDrive {
     /** Resolves a Task's Workspace so `drive.*` inherits its per-Workspace
      * overrides (ADR-0044); absent → every field resolves the global default. */
     private readonly getWorkspace?: (workspaceId: number | null) => Promise<DriveWorkspace | undefined>,
+    /** Resolves the stored `kind` of a Task's parent Epic (its `mapRef`) from the
+     * Epic spine (ADR-0018, #437); a Map child drives `/wayfinder {mapRef}`
+     * (issue #440). Absent → every child keeps its own research/implement drive. */
+    private readonly getEpicKind?: (workspaceId: number, ref: number) => Promise<StoredEpicKind | null>,
   ) {}
 
   /** The auto-driven path: a mirrored Task Harmonic runs unattended. */
@@ -42,10 +46,18 @@ export class AutoDrive {
     return resolveDrive(ws, this.getConfig());
   }
 
+  /** The stored `kind` of a Task's parent Epic, or null when it has no mapRef or
+   * no resolver is wired. A Map child drives the wayfinder skill (issue #440). */
+  private async epicKindFor(task: TaskRow): Promise<StoredEpicKind | null> {
+    if (task.mapRef == null || task.workspaceId == null || !this.getEpicKind) return null;
+    return this.getEpicKind(task.workspaceId, task.mapRef);
+  }
+
   /** The Drive Prompt for a mirrored Task — the resolved template filled from it. */
   async prompt(task: TaskRow): Promise<string> {
     const drive = await this.resolvedDrive(task);
-    const filled = fillTemplate(drive.prompt, driveFields(task, this.urlFor));
+    const epicKind = await this.epicKindFor(task);
+    const filled = fillTemplate(drive.prompt, driveFields({ ...task, epicKind }, this.urlFor));
     // A re-queued mirrored Task carries operator feedback in its column (the
     // prompt is re-derived from the ticket each poll). Append it so the retry
     // sees it — same section the native review/re-attempt path uses (run-prompt.ts).

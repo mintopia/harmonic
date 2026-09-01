@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { driveFields, fillTemplate, skillFor, splitTitleBody } from '../src/execution/prompt-template.js';
 import type { TaskRow } from '../src/db/schema.js';
 
-const task = (over: Partial<TaskRow>): TaskRow =>
-  ({ prompt: 'Title\n\nBody', harness: 'claude', wayfinderType: 'task', trackerRef: 42, ...over }) as TaskRow;
+const task = (over: Partial<TaskRow> & { epicKind?: string | null }): TaskRow & { epicKind?: string | null } =>
+  ({ prompt: 'Title\n\nBody', harness: 'claude', wayfinderType: 'task', trackerRef: 42, mapRef: null, ...over }) as TaskRow & {
+    epicKind?: string | null;
+  };
 
 describe('fillTemplate (prompt-template.ts)', () => {
   it('fills every token and leaves none behind', () => {
@@ -28,6 +30,14 @@ describe('skillFor', () => {
     expect(skillFor(task({ wayfinderType: 'research' }))).toBe('/research');
     expect(skillFor(task({ wayfinderType: 'grilling' }))).toBe('/implement');
   });
+  it('routes a Map-Epic child to the wayfinder skill, taking precedence over wayfinderType', () => {
+    expect(skillFor({ wayfinderType: null, harness: 'claude', epicKind: 'map' })).toBe('/wayfinder');
+    expect(skillFor({ wayfinderType: null, harness: 'codex', epicKind: 'map' })).toBe('$wayfinder');
+    // A Spec/plain-Epic child is unchanged; a null kind is not a Map.
+    expect(skillFor({ wayfinderType: null, harness: 'claude', epicKind: 'spec' })).toBe('/implement');
+    // Map kind wins even when the child itself carries a research wayfinder label.
+    expect(skillFor({ wayfinderType: 'research', harness: 'claude', epicKind: 'map' })).toBe('/wayfinder');
+  });
 });
 
 describe('splitTitleBody', () => {
@@ -48,5 +58,10 @@ describe('driveFields', () => {
     const fields = driveFields(task({ trackerRef: null }), () => null);
     expect(fields.ref).toBe('');
     expect(fields.url).toBe('');
+  });
+  it('points a Map-Epic child at the map ref/url, not its own ticket', () => {
+    const child = task({ trackerRef: 7, mapRef: 100, epicKind: 'map', prompt: 'Chart it\n\nwhy' });
+    const fields = driveFields(child, (t) => `http://tracker/${t.trackerRef}`);
+    expect(fields).toEqual({ skill: '/wayfinder', ref: '100', url: 'http://tracker/100', title: 'Chart it', body: 'why' });
   });
 });

@@ -193,6 +193,10 @@ export class TrackerPollerManager {
         retire: (epicRef) => epics.retireIntegrationBranch(epicRef),
         escalate: (epicRef, reason) => this.onError(`epic ${epicRef} whole-Epic integrate escalated: ${reason}`),
         operations: this.epicOperations,
+        // Settle the stored Epic record at integration (ADR-0018, #438): merge-commit
+        // hash (null on a no-op finish), member snapshot, lifecycle → integrated.
+        recordIntegration: ({ epicRef, mergeCommit, memberRefs }) =>
+          this.tasks.markEpicIntegrated(ws.id, epicRef, { mergeCommit, memberRefs }),
       });
       epics.attachIntegrateTrigger(epicIntegrate);
     }
@@ -254,9 +258,14 @@ export class TrackerPollerManager {
    * (tracking off), so the caller can surface a 404/409.
    */
   async forceIntegrateEpic(workspaceId: number, epicRef: number): Promise<EpicIntegrateOutcome | null> {
-    const epicIntegrate = this.entries.get(workspaceId)?.epicIntegrate;
-    if (!epicIntegrate) return null;
-    return epicIntegrate.submit({ ref: epicRef, members: [] }, { force: true });
+    const entry = this.entries.get(workspaceId);
+    if (!entry?.epicIntegrate) return null;
+    // Snapshot the Epic's member refs for the record even on the force path (#438),
+    // where `members` is elided because force bypasses the per-member gate.
+    return entry.epicIntegrate.submit(
+      { ref: epicRef, members: [], memberRefs: entry.epics.membersOf(epicRef) },
+      { force: true },
+    );
   }
 
   /**

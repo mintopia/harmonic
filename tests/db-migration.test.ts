@@ -34,6 +34,7 @@ describe('drizzle single-baseline schema (ADR-0001 #388, ADR-0007)', () => {
       'tasks', 'attempts', 'steps', 'sessions', 'conversations', 'conversation_events',
       'task_dependencies', 'tracker_dismissals', 'verification_attempts', 'guardrail_events',
       'attempt_events', 'attempt_tool_calls', 'scheduled_jobs', 'settings', 'workspaces',
+      'tracker_containers', 'epics',
     ]) {
       expect(tableNames, `expected table ${present}`).toContain(present);
     }
