@@ -208,6 +208,23 @@ describe('mirrorScan upsert', () => {
     );
   });
 
+  it('a nested container (has a parent AND children) is never agent-workable, but only the top-level one is an Epic (ADR-0016)', async () => {
+    // #300 (top) → #301 (nested container) → #302 (leaf). #301 carries
+    // ready-for-agent and has its own parent, yet it also has a child, so the
+    // container rule must still keep it human-only — the workability gate is any
+    // nesting level, distinct from the top-level-only `isEpic` display flag.
+    const results = await mscan([
+      ticket({ number: 300, labels: ['ready-for-agent'] }),
+      ticket({ number: 301, parent: 300, labels: ['ready-for-agent'] }),
+      ticket({ number: 302, parent: 301, labels: ['ready-for-agent'] }),
+    ]);
+    const byRefWith = async (ref: number) => tasks.withDeps(results.find((t) => t.trackerRef === ref)!);
+    expect(await byRefWith(300)).toMatchObject({ agentWorkable: false, humanOnly: true, isEpic: true });
+    // Nested container: not workable (has children), but NOT an Epic (has a parent).
+    expect(await byRefWith(301)).toMatchObject({ agentWorkable: false, humanOnly: true, isEpic: false });
+    expect(await byRefWith(302)).toMatchObject({ agentWorkable: true, humanOnly: false, isEpic: false });
+  });
+
   it('an unlabelled parent that is momentarily childless is still not agent-workable (issue #229/#230)', async () => {
     // The create-before-children window: an Epic is created, then its members.
     // While childless it is not yet an Epic, so the container rule does not
