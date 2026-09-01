@@ -3,7 +3,7 @@ import type { AttemptStore } from './attempts.js';
 import type { TaskService } from './tasks.js';
 import type { AttemptSettleCoordinator } from './attempt-settle.js';
 import { Git } from '../execution/git.js';
-import { withRepoLock } from '../execution/repo-lock.js';
+import { withBaseCheckoutLock, withRepoLock } from '../execution/repo-lock.js';
 import type { PostMergeCheckResult } from '../execution/merge-policy.js';
 import type { PostMergeHook } from '../execution/branch-merge.js';
 import { forEachYielding, type YieldOptions } from '../reliability/yield.js';
@@ -113,23 +113,30 @@ export class CrashRecoveryCoordinator {
         const merged = await isMerged(task.workingDir, run.baseBranch!, run.branch!);
         if (!merged) return; // never merged: an ordinary interrupted orphan for pass B
 
-        await withRepoLock(task.workingDir, async () => {
-          const mergeOid = await Git.revParse(task.workingDir, run.baseBranch!);
-          const check = await this.deps.runPostMergeCheck({ task, run, mergeOid, baseDir: task.workingDir });
-          if (check.pass) {
-            await this.settle.settle(task, run, 'agent-finish/unresolved', { runState: 'completed', taskAction: 'done', reason: null });
-            await this.deps.postMerge?.({ repoDir: task.workingDir, baseBranch: run.baseBranch! });
-          } else {
-            // The base is never left red (ADR-0001): revert the merge commit
-            // under the same mutex before releasing it, then escalate.
-            await Git.revertMergeCommit(task.workingDir, mergeOid);
-            await this.settle.settle(task, run, 'escalate', {
-              runState: 'failed',
-              taskAction: 'escalate',
-              reason: `escalated to human: post-merge check failed after restart: ${check.output}`,
-            });
-          }
-        });
+        // The base-checkout lock (issue #455) keeps this reconcile mutually
+        // exclusive with a live merge on the same checkout — the exclusion it
+        // held before the merge lock was split — so it never touches an
+        // in-progress merge's conflicted working tree; the inner metadata lock
+        // serialises its git mutations against worktree ops.
+        await withBaseCheckoutLock(task.workingDir, () =>
+          withRepoLock(task.workingDir, async () => {
+            const mergeOid = await Git.revParse(task.workingDir, run.baseBranch!);
+            const check = await this.deps.runPostMergeCheck({ task, run, mergeOid, baseDir: task.workingDir });
+            if (check.pass) {
+              await this.settle.settle(task, run, 'agent-finish/unresolved', { runState: 'completed', taskAction: 'done', reason: null });
+              await this.deps.postMerge?.({ repoDir: task.workingDir, baseBranch: run.baseBranch! });
+            } else {
+              // The base is never left red (ADR-0001): revert the merge commit
+              // under the lock before releasing it, then escalate.
+              await Git.revertMergeCommit(task.workingDir, mergeOid);
+              await this.settle.settle(task, run, 'escalate', {
+                runState: 'failed',
+                taskAction: 'escalate',
+                reason: `escalated to human: post-merge check failed after restart: ${check.output}`,
+              });
+            }
+          }),
+        );
       },
       this.deps.yieldOptions,
     );

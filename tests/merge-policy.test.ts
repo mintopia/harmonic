@@ -374,6 +374,129 @@ describe('runMergePolicy (ADR-0001, "One merge policy, everywhere")', () => {
     expect(maxActive).toBe(1);
     expect(runPostMergeCheck).toHaveBeenCalledTimes(2);
   });
+
+  it('drops the metadata repo lock around each agentic turn so sibling worktree ops proceed (issue #455)', async () => {
+    // While a merge is stuck in a slow conflict-resolution turn, a sibling task
+    // starting/finishing must still be able to add/remove a worktree on the
+    // shared base repo. If the merge held `withRepoLock` across the turn, the
+    // sibling worktree op below would block until the turn ended — so this test
+    // deadlocks/times out under the old behaviour and passes under the new.
+    const repo = makeRepo();
+    await makeTaskBranch(repo, 'task-during-turn', (wt) => {
+      writeFileSync(join(wt, 'base.txt'), 'task version\n');
+    });
+    writeFileSync(join(repo, 'base.txt'), 'main version\n');
+    git(repo, 'commit', '-am', 'main edits base.txt');
+    const baseHead = git(repo, 'rev-parse', 'HEAD');
+
+    let turnStarted!: () => void;
+    const turnInProgress = new Promise<void>((r) => {
+      turnStarted = r;
+    });
+    let releaseTurn!: () => void;
+    const turnGate = new Promise<void>((r) => {
+      releaseTurn = r;
+    });
+
+    const resolveConflictTurn = vi.fn(async (ctx) => {
+      turnStarted();
+      await turnGate; // hold the merge inside the turn while the sibling op runs
+      writeFileSync(join(ctx.baseDir, 'base.txt'), 'resolved\n');
+      git(ctx.baseDir, 'add', 'base.txt');
+    });
+    const deps: MergePolicyDeps = {
+      resolveConflictTurn,
+      runPostMergeCheck: vi.fn(async () => ({ pass: true, output: '' })),
+      escalate: vi.fn(async () => {}),
+    };
+
+    const mergePromise = runMergePolicy(
+      { baseDir: repo, baseBranch: 'main', taskBranch: 'task-during-turn', conflictResolveTurns: 2, postMergeCheck: true },
+      deps,
+    );
+
+    await turnInProgress; // the merge is now parked inside the resolve turn
+    // A real sibling worktree lifecycle op (each self-locks `withRepoLock`)
+    // completes without waiting for the turn to finish.
+    const wtRoot = mkdtempSync(join(tmpdir(), 'harmonic-sibling-wt-'));
+    tmpDirs.push(wtRoot);
+    const checkout = join(wtRoot, 'check');
+    await Git.addDetachedWorktree(repo, checkout, baseHead);
+    await Git.removeWorktree(repo, checkout);
+
+    releaseTurn();
+    const outcome = await mergePromise;
+    expect(outcome.kind).toBe('merged');
+    expect(resolveConflictTurn).toHaveBeenCalledTimes(1);
+  });
+
+  it('holds the base-checkout lock across the turn so a sibling merge waits (issue #455)', async () => {
+    // The conflicted base checkout is real working-tree state (MERGE_HEAD +
+    // markers), so a sibling merge onto the same shared checkout must NOT run
+    // concurrently with the resolve turn — it serialises on the base-checkout
+    // lock and only proceeds once the first merge has released it.
+    const repo = makeRepo();
+    await makeTaskBranch(repo, 'task-conflict', (wt) => {
+      writeFileSync(join(wt, 'base.txt'), 'task version\n');
+    });
+    writeFileSync(join(repo, 'base.txt'), 'main version\n');
+    git(repo, 'commit', '-am', 'main edits base.txt');
+    await makeTaskBranch(repo, 'task-clean-sibling', (wt) => {
+      writeFileSync(join(wt, 'feature.txt'), 'feature\n');
+    });
+
+    let turnStarted!: () => void;
+    const turnInProgress = new Promise<void>((r) => {
+      turnStarted = r;
+    });
+    let releaseTurn!: () => void;
+    const turnGate = new Promise<void>((r) => {
+      releaseTurn = r;
+    });
+
+    const conflictDeps: MergePolicyDeps = {
+      resolveConflictTurn: vi.fn(async (ctx) => {
+        turnStarted();
+        await turnGate;
+        writeFileSync(join(ctx.baseDir, 'base.txt'), 'resolved\n');
+        git(ctx.baseDir, 'add', 'base.txt');
+      }),
+      runPostMergeCheck: vi.fn(async () => ({ pass: true, output: '' })),
+      escalate: vi.fn(async () => {}),
+    };
+
+    let siblingMergeEntered = false;
+    const siblingDeps: MergePolicyDeps = {
+      resolveConflictTurn: neverCalled('resolveConflictTurn'),
+      runPostMergeCheck: vi.fn(async () => {
+        siblingMergeEntered = true; // only reached once inside the critical section
+        return { pass: true, output: '' };
+      }),
+      escalate: vi.fn(async () => {}),
+    };
+
+    const conflictMerge = runMergePolicy(
+      { baseDir: repo, baseBranch: 'main', taskBranch: 'task-conflict', conflictResolveTurns: 2, postMergeCheck: true },
+      conflictDeps,
+    );
+
+    await turnInProgress; // first merge is parked inside its resolve turn
+    const siblingMerge = runMergePolicy(
+      { baseDir: repo, baseBranch: 'main', taskBranch: 'task-clean-sibling', conflictResolveTurns: 0, postMergeCheck: true },
+      siblingDeps,
+    );
+
+    // Give the sibling merge a chance to run; it must be blocked on the
+    // base-checkout lock and never reach its post-merge check yet.
+    await new Promise((r) => setTimeout(r, 50));
+    expect(siblingMergeEntered).toBe(false);
+
+    releaseTurn();
+    const [conflictOutcome, siblingOutcome] = await Promise.all([conflictMerge, siblingMerge]);
+    expect(conflictOutcome.kind).toBe('merged');
+    expect(siblingOutcome.kind).toBe('merged');
+    expect(siblingMergeEntered).toBe(true); // ran only after the first merge released the lock
+  });
 });
 
 describe('runMergePolicy telemetry (ADR-0010, #387)', () => {
