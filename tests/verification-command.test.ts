@@ -54,7 +54,7 @@ describe('command verifier end-to-end (issue #135)', () => {
     // A failed verifier is now a failed Attempt, followed by one corrective
     // Attempt on the same ticket. Keep this suite's bound explicit so the
     // escalation cases exercise the complete two-attempt loop.
-    await server.app.ctx.configStore.update({ maxAttempts: 2 });
+    await server.app.ctx.settingsStore.updateGlobal({ maxAttempts: 2 });
   });
   afterAll(async () => {
     await server.close();

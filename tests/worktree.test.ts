@@ -484,7 +484,7 @@ describe('worktree isolation — afk no-candidate fail-closed (ADR-0046)', () =>
     // the genuine "work went to the wrong place" case. With the canonical guard
     // deleted, this must still fail closed via the existing no-candidate path.
     await server.app.ctx.asyncDb.write((d) => d.update(workspaces).set({ workingDir: repo }).run());
-    await server.app.ctx.configStore.update({ drive: { prompt: JSON.stringify({ writeFiles: {}, stopReason: 'end_turn' }) } });
+    await server.app.ctx.settingsStore.updateGlobal({ drive: { prompt: JSON.stringify({ writeFiles: {}, stopReason: 'end_turn' }) } });
 
     const task = await server.app.ctx.tasks.upsertMirrored({
       trackerRef: ref++,

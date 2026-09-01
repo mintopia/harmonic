@@ -52,7 +52,7 @@ describe('a finish_task that changed nothing', () => {
     server = await startServer(stubHarness(), { criticDrive });
     workspaceId = (await server.app.ctx.workspaces.list())[0]!.id;
     await server.app.ctx.workspaces.update(workspaceId, { workingDir: repoDir });
-    await server.app.ctx.configStore.update({
+    await server.app.ctx.settingsStore.updateGlobal({
       maxAttempts: 2,
       // The Drive Prompt is the stub scenario: finish_task with no writeFiles —
       // a deliberate no-change finish.

@@ -89,11 +89,6 @@ export interface StatsReadResult {
   guardrailTrips: GuardrailTripRow[];
 }
 
-export interface StatsReader {
-  read(range: StatsRange, opts?: QueryTimeoutOptions): Promise<StatsReadResult>;
-  close(): Promise<void>;
-}
-
 export type StatsWorkerRequest =
   | { kind: 'read'; id: number; range: StatsRange }
   | { kind: 'probe'; id: number; iterations: number }
@@ -202,7 +197,7 @@ function isStatsWorkerResponse(value: unknown): value is StatsWorkerResponse {
 }
 
 /** Typed RPC client for the one heavy read Harmonic currently runs off-loop. */
-export class StatsWorkerClient implements StatsReader {
+export class StatsWorkerClient {
   readonly #worker: Worker;
   readonly #defaultTimeoutMs: number;
   readonly #pending = new Map<number, PendingRequest>();
@@ -336,6 +331,6 @@ export class StatsWorkerClient implements StatsReader {
   };
 }
 
-export function openStatsReader(dataDir: string): StatsReader {
+export function openStatsReader(dataDir: string): StatsWorkerClient {
   return new StatsWorkerClient(dataDir);
 }

@@ -193,7 +193,7 @@ describe('one merge policy, everywhere (issue #381, ADR-0001)', () => {
       // real merge lock — the exact combination that used to deadlock the
       // Runner forever before `withRepoLock` became reentrant.
       await server.app.ctx.workspaces.update(wsId, { workingDir: repo, verificationCommand: [passingVerifier()] });
-      await server.app.ctx.configStore.update({
+      await server.app.ctx.settingsStore.updateGlobal({
         merge: { postMergeCheck: true },
         drive: { prompt: JSON.stringify({ writeFiles: { 'impl-{ref}.txt': 'implementation {ref}\n' }, mcpFinish: true }) },
       });
@@ -228,7 +228,7 @@ describe('one merge policy, everywhere (issue #381, ADR-0001)', () => {
     // Isolate the assertion to the pre-merge verification pass: disable the
     // post-merge check here (covered directly against runMergePolicy below —
     // see the file-level SIMPLIFICATION note).
-    await server.app.ctx.configStore.update({
+    await server.app.ctx.settingsStore.updateGlobal({
       merge: { postMergeCheck: false },
       drive: { prompt: JSON.stringify({ writeFiles: { 'impl-{ref}.txt': 'implementation {ref}\n' }, mcpFinish: true }) },
     });
@@ -267,7 +267,7 @@ describe('one merge policy, everywhere (issue #381, ADR-0001)', () => {
       verificationCommand: [conflictingSiblingVerifier(repo, flag)],
       conflictResolveTurns: 0,
     });
-    await server.app.ctx.configStore.update({
+    await server.app.ctx.settingsStore.updateGlobal({
       merge: { postMergeCheck: false },
       drive: {
         prompt: JSON.stringify({

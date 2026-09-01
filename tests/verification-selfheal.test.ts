@@ -74,7 +74,7 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
       verificationCommand: null,
       maxAttempts: null,
     });
-    await server.app.ctx.configStore.update({ maxAttempts: 2 });
+    await server.app.ctx.settingsStore.updateGlobal({ maxAttempts: 2 });
   });
 
   // `verification_attempts` is keyed off `attempt_id`, not `run_id`
@@ -244,7 +244,7 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
 
   it('AC3: an actionable fail exhausts maxAttempts and escalates', async () => {
     await server.app.ctx.workspaces.update(workspaceId, { verificationCommand: [alwaysFail()] });
-    await server.app.ctx.configStore.update({ maxAttempts: 2 });
+    await server.app.ctx.settingsStore.updateGlobal({ maxAttempts: 2 });
 
     const { taskId, attemptId } = await runWorktreeTask({ writeFiles: { 'marker.txt': 'bad\n' } });
 
@@ -268,7 +268,7 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
 
   it('a workspace maxAttempts override escalates after its first failed attempt', async () => {
     await server.app.ctx.workspaces.update(workspaceId, { verificationCommand: [alwaysFail()] });
-    await server.app.ctx.configStore.update({ maxAttempts: 3 });
+    await server.app.ctx.settingsStore.updateGlobal({ maxAttempts: 3 });
     await server.app.ctx.workspaces.update(workspaceId, { maxAttempts: 1 });
 
     const { taskId, attemptId } = await runWorktreeTask({ writeFiles: { 'marker.txt': 'bad\n' } });
