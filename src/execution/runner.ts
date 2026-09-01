@@ -1187,6 +1187,21 @@ export class Runner {
   }
 
   /**
+   * Whether the agent critic is configured for this Task — the same enablement
+   * gate {@link runVerification} applies before invoking the critic. Used to
+   * decide a no-change finish: the critic judges whether "no change" resolves
+   * the ticket, and with no critic there is nothing to make that call.
+   */
+  private async criticEnabledFor(task: TaskRow): Promise<boolean> {
+    const ws = await this.getWorkspace?.(task.workspaceId);
+    const { review } = resolveVerifiers(
+      ws ?? { verificationCommand: null, reviewEnabled: null, reviewPrompt: null, reviewModel: null, reviewHarness: null },
+      this.getConfig(),
+    );
+    return !!(review.enabled && review.prompt && review.model);
+  }
+
+  /**
    * The shared "verifier configured but no frozen candidate to review" outcome
    * (issue #135/#136): the snapshot was skipped or failed (#134), so there is
    * nothing to characterize — infra doubt. Persist an `inconclusive` attempt and
@@ -3075,6 +3090,13 @@ export class Runner {
       const afkUnresolved = autoDriven && !escalating && !stoppedShort && !active.agentFinished;
       if (afkUnresolved) record('lifecycle', { event: 'unresolved', reason: 'no finish_task signal; verifying anyway' });
       let implementationHead: string | null = null;
+      // A deliberate finish (`finish_task`) that changed nothing: the branch head
+      // is a real revision — equal to the base it integrates with — that the
+      // critic can still review to judge whether "no change" resolves the ticket.
+      // Captured here, acted on in the verify branch (critic → verdict; no critic
+      // → escalate). Never persisted as verifiedHeadOid — there is no new work to
+      // merge.
+      let noChangeFinishHead: string | null = null;
       // The candidate is captured at implementation end so the verifiers review
       // the exact commit the agent left behind. An afk run that ended without
       // finish_task runs this too — its candidate is verified like any other.
@@ -3127,6 +3149,13 @@ export class Runner {
           // row carried it forward (`drive`'s advance step). Re-verify that
           // standing candidate rather than reporting a fresh "no candidate".
           implementationHead = run.verifiedHeadOid;
+        } else if (active.agentFinished && head) {
+          // A deliberate finish with no new commit (head === base). Unlike an
+          // unsignalled empty run (which fails closed below), the agent asserts
+          // it is done — the head is still a valid revision to review, so hand it
+          // to the critic in the verify branch instead of a mechanical "no
+          // candidate" escalation.
+          noChangeFinishHead = head;
         }
       }
       await finalize();
@@ -3155,6 +3184,23 @@ export class Runner {
         // inconclusive with NO candidate Escalates in place with its cause —
         // so broken work never merges.
         await advanceTask('verifying');
+        // A deliberate finish that changed nothing: let the critic judge whether
+        // "no change" is the correct resolution by reviewing the unchanged head.
+        // With no critic configured nothing can make that call, so escalate
+        // rather than silently completing — a no-op is only "done" once something
+        // has vouched it was the right answer.
+        let noChange = false;
+        if (noChangeFinishHead) {
+          if (!(await this.criticEnabledFor(task))) {
+            const reason =
+              'the agent finished without changing any files and no critic is configured to judge whether that is correct';
+            record('lifecycle', { event: 'escalated', reason });
+            await this.settleEscalated(task, run, reason, patch);
+            return { kind: 'terminal' };
+          }
+          implementationHead = noChangeFinishHead;
+          noChange = true;
+        }
         const { decision, ran: verifierRan } = await this.runVerification(
           task,
           run,
@@ -3252,8 +3298,9 @@ export class Runner {
           if (!autoDriven) {
             // A native worktree Run merges its branch onto the base; a native
             // direct Run's commits already sit on the live branch. Nothing more
-            // to merge in the direct case: settle done.
-            if (worktreeMerge && !(await mergeWorktreeBranch())) return { kind: 'terminal' };
+            // to merge in the direct case, nor for a no-change finish (its head
+            // is the base): settle done.
+            if (!noChange && worktreeMerge && !(await mergeWorktreeBranch())) return { kind: 'terminal' };
             await advanceTask('merging');
             await this.settleAutoCompleted(task, run, { ...patch, ...diff });
             return { kind: 'terminal' };
@@ -3273,11 +3320,18 @@ export class Runner {
           // serialises members merging onto the shared integration branch — then
           // `onCompleted` closes the ticket. No separate merge-train path.
           const mergeFate = await this.autoDrive!.mergeFateFor(task);
-          if (worktreeMerge && mergeFate === 'auto-merge' && !(await mergeWorktreeBranch())) {
+          if (!noChange && worktreeMerge && mergeFate === 'auto-merge' && !(await mergeWorktreeBranch())) {
             return { kind: 'terminal' };
           }
 
-          const outcome = await this.autoDrive!.onCompleted(task, await this.attempts.get(run.id));
+          // A no-change finish the critic passed has nothing to merge or PR, so
+          // complete by closing the ticket — the work (none) is done and correct
+          // — independent of the Merge Fate. Otherwise the fate applies as usual.
+          const outcome = noChange
+            ? (await this.autoDrive!.closeCompleted(task))
+              ? 'completed'
+              : 'escalate'
+            : await this.autoDrive!.onCompleted(task, await this.attempts.get(run.id));
           if (outcome === 'escalate') {
             record('lifecycle', { event: 'escalated', reason: 'merge fate could not be applied' });
             await this.settleEscalated(task, run, 'merge fate could not be applied', patch);
