@@ -135,15 +135,22 @@ Deleting a mirrored Task: the row and its Attempts/Usage/edges are removed AND a
 _Avoid_: cancel, delete (Dismiss is specifically the mirrored-Task delete that tombstones the ref).
 
 **Epic**:
-A parent tracker issue that groups typed child tickets — the derived unit a
-batch of related work shares. Two kinds: a **Map** (wayfinding children) and a
-**Spec** (implementation children); both are Epics, differing only in what they
-contain. **Derived, never authored** — Harmonic reads whatever parent/child
-structure the tracker holds (native sub-issues, or a body task-list / `Part of
-#<n>` line) and copes; setting the tickets up is the operator's or an agent's
-job. Not a Task and not a stored entity — a query-time roll-up over the polled
-tracker. The **leaf-most** Epic — the immediate parent of implementation Tasks —
-is the unit its children are scheduled and merged as a group by. An Epic is a
+A parent tracker issue that groups typed child tickets — the unit a batch of
+related work shares. **Three kinds**: a **Map** (wayfinding children), a **Spec**
+(implementation children with a spec-shaped body), and a **plain Epic** (a bare
+parent/child grouping, neither Map nor Spec). Harmonic does not author Epics — it
+reads whatever parent/child structure the tracker holds (native sub-issues, or a
+body task-list / `Part of #<n>` line) and copes; setting the tickets up is the
+operator's or an agent's job. The **leaf-most** Epic — the immediate parent of
+implementation Tasks — is the unit its children are scheduled and merged as a
+group by, and it is a **first-class stored resource** (ADR-0018): a durable
+record — its `kind`, integration merge-commit, lifecycle state, and a member-ref
+snapshot — that outlives the tracker issue closing, so historical Epics and the
+whole-Epic diff resolve without re-derivation. It was formerly a query-time
+roll-up (ADR-0016, superseded). Parent/spine Epics above the leaf stay derived
+roll-ups; membership and agent-workability stay derived. Every Epic cuts an
+`epic/<ref>` integration branch; finishing merges it to base (a **no-op** when
+branch and base already match) and **closes the tracker issue**. An Epic is a
 **container**: it neither **blocks** its children (a `Blocked by: #<epic>` edge
 is never projected — an Epic contains, it does not gate) nor **runs** (it is
 never agent-workable, so the Auto-Runner never executes the container itself).
@@ -153,7 +160,10 @@ _Avoid_: effort, project, batch, tranche, convoy
 A kind of Epic: the mirror of a `wayfinder:map` issue, whose children are
 wayfinding tickets (see Wayfinder Type). Charts a course via the wayfinder
 skill; identified by its `wayfinder:map` label. Its members are the mirrored
-Tasks that share its `mapRef`.
+Tasks that share its `mapRef`. Alone among the kinds, a Map's children drive
+**`/wayfinder {mapRef}`** — each child's session advances the map, pointed at
+the map's issue id, not the child's own; Spec and plain-Epic children drive
+`/implement {ref}`.
 _Avoid_: effort, project (a Map is one *kind* of Epic, not a synonym for Epic)
 
 **Spec**:
@@ -162,8 +172,10 @@ A kind of Epic produced by `/to-spec`: a parent ticket with a spec-shaped body
 Unlike a Map it carries **no label of its own** — it is identified structurally,
 by having children and a spec body, not by a marker. Specs can nest (a spine
 Spec whose children are themselves Specs); the leaf-most one owns the
-implementation Tasks.
-_Avoid_: epic (a Spec is one kind of Epic), story, ticket
+implementation Tasks. A parent/child grouping with **no** spec body and no map
+label is a **plain Epic**, not a Spec — the two differ only by the spec body and
+drive their children identically (`/implement`).
+_Avoid_: story, ticket
 
 **mapRef**:
 On a mirrored Task, the tracker ref of the parent Map issue; absent on native
