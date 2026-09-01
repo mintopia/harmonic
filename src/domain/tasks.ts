@@ -24,7 +24,7 @@ import { resolveWorkspace } from './workspaces.js';
 import { resolveScoped } from './setting-override.js';
 import { HARNESS_IDS, ISOLATION_MODES, PRIORITIES, type AppConfig } from '../config.js';
 import { DomainError } from './errors.js';
-import { decideTaskDeletion } from './task-deletion.js';
+import { decideTaskDeletion, type DeletionDecision } from './task-deletion.js';
 import { deleteAttemptsAndChildrenAsync } from './attempt-cascade.js';
 import { forEachYielding } from '../reliability/yield.js';
 import { orderEligibleWorkYielding } from './work-ordering.js';
@@ -1086,6 +1086,44 @@ export class TaskService {
     const task = await this.get(id);
     const decision = decideTaskDeletion(task);
     if (!decision.ok) throw new DomainError('invalid_state', decision.reason!);
+    await this.removeTaskCascade(id, decision.tombstone);
+  }
+
+  /**
+   * Poll-time demotion (ADR-0016, issue #417): a mirrored Task whose ticket is
+   * now a container is removed — row, Attempts, edges — WITHOUT a
+   * `tracker_dismissals` tombstone, so it stays re-derivable as a container
+   * every poll. Distinct from operator {@link delete}, which tombstones a real
+   * work Task so a re-poll can't resurrect it.
+   *
+   * A poll never interrupts a live Run: if the row is still `working` the
+   * demotion is deferred (the same guard {@link decideTaskDeletion} applies to
+   * Delete, and the working/escalated hold in {@link upsertMirrored}), and a
+   * later poll removes it once it settles. The container is persisted either
+   * way, so grouping is correct immediately.
+   */
+  async demoteMirroredToContainer(workspaceId: number, trackerRef: number): Promise<void> {
+    const row = await this.db.read((db) =>
+      db
+        .select({
+          id: tasks.id,
+          state: tasks.state,
+          origin: tasks.origin,
+          trackerRef: tasks.trackerRef,
+          workspaceId: tasks.workspaceId,
+        })
+        .from(tasks)
+        .where(and(eq(tasks.workspaceId, workspaceId), eq(tasks.trackerRef, trackerRef)))
+        .get(),
+    );
+    if (!row) return;
+    // Reuse Delete's guard (refuse while `working`), but force a non-tombstoning
+    // removal: a demotion is not a dismissal, so its tombstone is always null.
+    if (!decideTaskDeletion(row).ok) return;
+    await this.removeTaskCascade(row.id, null);
+  }
+
+  private async removeTaskCascade(id: number, tombstone: DeletionDecision['tombstone']): Promise<void> {
     // Snapshot before the transaction: once the row is gone, `dependents` would
     // return nothing to re-derive.
     const formerDependents = await this.dependents(id);
@@ -1130,12 +1168,12 @@ export class TaskService {
         .where(or(eq(taskDependencies.taskId, id), eq(taskDependencies.dependsOnId, id)))
         .run();
       await tx.delete(tasks).where(eq(tasks.id, id)).run();
-      if (decision.tombstone) {
+      if (tombstone) {
         await tx
           .insert(trackerDismissals)
           .values({
-            workspaceId: decision.tombstone.workspaceId,
-            trackerRef: decision.tombstone.trackerRef,
+            workspaceId: tombstone.workspaceId,
+            trackerRef: tombstone.trackerRef,
             dismissedAt: Date.now(),
           })
           .onConflictDoNothing()

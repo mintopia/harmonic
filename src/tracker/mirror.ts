@@ -87,8 +87,14 @@ export async function mirrorScan(
     // A container is a Map (`wayfinder:map`) or a spec Epic (the `epic` label,
     // ADR-0016): persisted to tracker_containers, never mirrored as a work Task.
     const isContainer = ticket.isMap || ticket.labels.includes(EPIC_LABEL);
-    if (isContainer) containers.push({ trackerRef: ticket.number, facts: trackerFacts(ticket) });
-    else if (!(await tasks.isDismissed(workspaceId, ticket.number))) issues.push(ticket);
+    if (isContainer) {
+      containers.push({ trackerRef: ticket.number, facts: trackerFacts(ticket) });
+      // ADR-0016 / #417: a ticket now recognised as a container may have been
+      // mirrored as a work Task on an earlier poll. Remove that row (and its
+      // Attempts) WITHOUT a dismissal tombstone, so it stays re-derivable as a
+      // container instead of being permanently skipped like an operator delete.
+      await tasks.demoteMirroredToContainer(workspaceId, ticket.number);
+    } else if (!(await tasks.isDismissed(workspaceId, ticket.number))) issues.push(ticket);
   });
   await tasks.syncTrackerContainers(workspaceId, containers);
   // An Epic is any ticket with children — a Map or a Spec — identified
