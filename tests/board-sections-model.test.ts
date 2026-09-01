@@ -236,6 +236,17 @@ describe('boardSections — Attention / Running / Pending (ADR-0041)', () => {
     expect(sections.pending).toEqual([]);
   });
 
+  it("groups an open epic's children into its band from the derived model, with no epic task row present (ADR-0016)", () => {
+    const sections = boardSections(
+      [task(409, 'ready'), task(410, 'ready'), task(411, 'ready')],
+      [epic(408, [member(409, 409), member(410, 410), member(411, 411)])],
+    );
+    expect(sections.pending.map((group) => group.epic?.ref)).toEqual([408]);
+    expect(layout(sections.pending[0]!.columns)).toEqual([['Frontier', ['T-409', 'T-410', 'T-411']]]);
+    expect(sections.attention).toEqual([]);
+    expect(sections.running).toEqual([]);
+  });
+
   it('keeps a human-only ticket in place in its blocker chain, muted rather than hidden', () => {
     const humanOnly = blocked(2, [1], { humanOnly: true });
     const downstream = blocked(3, [2]);

@@ -24,7 +24,7 @@ import { resolveWorkspace } from './workspaces.js';
 import { resolveScoped } from './setting-override.js';
 import { HARNESS_IDS, ISOLATION_MODES, PRIORITIES, type AppConfig } from '../config.js';
 import { DomainError } from './errors.js';
-import { decideTaskDeletion } from './task-deletion.js';
+import { decideTaskDeletion, type DeletionDecision } from './task-deletion.js';
 import { deleteAttemptsAndChildrenAsync } from './attempt-cascade.js';
 import { forEachYielding } from '../reliability/yield.js';
 import { orderEligibleWorkYielding } from './work-ordering.js';
@@ -157,6 +157,25 @@ export interface TaskListQuery {
 /** Normalise a single-or-array filter to a list; `undefined` ⇒ empty (⇒ "all"). */
 function filterList<T>(v: T | T[] | undefined): T[] {
   return v == null ? [] : Array.isArray(v) ? v : [v];
+}
+
+/** The list sort comparator (ascending; callers apply the requested direction)
+ * shared by {@link TaskService.list}/{@link TaskService.listWithDeps} and the
+ * REST list route — which sorts merged task + derived-epic rows after
+ * serialization (issue #418), where Cost is finally known. `priority` ranks
+ * high→low then breaks ties by creation; every other key (Cost is handled by
+ * the caller) falls back to creation, then id. */
+export function compareListRows(
+  sortBy: string,
+  a: { priority: string; createdAt: number; updatedAt: number; id: number },
+  b: { priority: string; createdAt: number; updatedAt: number; id: number },
+): number {
+  const rank: Record<string, number> = { high: 0, normal: 1, low: 2 };
+  return sortBy === 'priority'
+    ? (rank[a.priority] ?? 1) - (rank[b.priority] ?? 1) || a.createdAt - b.createdAt
+    : sortBy === 'updatedAt'
+      ? a.updatedAt - b.updatedAt || a.id - b.id
+      : a.createdAt - b.createdAt || a.id - b.id;
 }
 
 /** A task plus its dependency context, as the API serves it. */
@@ -303,25 +322,35 @@ export class TaskService {
   }
 
   /** ADR-0041's derived flag: opted in (mirrored: `mirroredAgentEligible` over the
-   * persisted labels) AND no open Blockers. Never stored. `epicRefs` are this
-   * Workspace's Epic containers as `workspaceId:trackerRef` (see {@link epicContainerRefs}). */
-  private agentWorkable(task: TaskRow, openBlockerCount: number, epicRefs: ReadonlySet<string>): boolean {
-    return openBlockerCount === 0 && !this.humanOnly(task, epicRefs);
+   * persisted labels) AND no open Blockers. Never stored. `containerRefs` are this
+   * Workspace's containers as `workspaceId:trackerRef` (see {@link containerRefs}). */
+  private agentWorkable(task: TaskRow, openBlockerCount: number, containerRefs: ReadonlySet<string>): boolean {
+    return openBlockerCount === 0 && !this.humanOnly(task, containerRefs);
   }
 
-  private humanOnly(task: TaskRow, epicRefs: ReadonlySet<string>): boolean {
+  private humanOnly(task: TaskRow, containerRefs: ReadonlySet<string>): boolean {
     if (task.origin !== 'mirrored') return false;
-    return !mirroredAgentEligible(task.trackerLabels ?? [], task.wayfinderType, this.isEpicContainer(task, epicRefs));
+    return !mirroredAgentEligible(task.trackerLabels ?? [], task.wayfinderType, this.isContainer(task, containerRefs));
   }
 
-  /** This ticket is an Epic container: it appears as some mirrored ticket's parent
-   * (see {@link epicContainerRefs}). */
-  private isEpicContainer(task: TaskRow, epicRefs: ReadonlySet<string>): boolean {
-    return epicRefs.has(`${task.workspaceId}:${task.trackerRef}`);
+  /** This ticket is a container: some other mirrored ticket names it as its parent
+   * — a ticket with children, never worked itself, at any nesting level (the gate
+   * `mirroredAgentEligible` reads). See {@link containerRefs}. */
+  private isContainer(task: TaskRow, containerRefs: ReadonlySet<string>): boolean {
+    return containerRefs.has(`${task.workspaceId}:${task.trackerRef}`);
   }
 
-  /** An Epic is any ticket some other mirrored ticket names as its parent — a container, never worked itself. */
-  private async epicContainerRefs(workspaceId?: number): Promise<Set<string>> {
+  /** This ticket is an Epic: a **top-level** container — a container with no parent
+   * of its own (ADR-0016), matching `deriveEpics`. A nested sub-container is a
+   * container but not an Epic. The `isEpic` row flag surfaced to list surfaces. */
+  private isEpic(task: TaskRow, containerRefs: ReadonlySet<string>): boolean {
+    return task.trackerParent == null && this.isContainer(task, containerRefs);
+  }
+
+  /** The refs (`workspaceId:trackerRef`) of every container in this Workspace: a
+   * ticket some other mirrored ticket names as its parent, at any nesting level. A
+   * container is never worked itself; the top-level ones are the Epics ({@link isEpic}). */
+  private async containerRefs(workspaceId?: number): Promise<Set<string>> {
     const rows = await this.db.read((db) =>
       db
         .selectDistinct({ workspaceId: tasks.workspaceId, parent: tasks.trackerParent })
@@ -575,6 +604,16 @@ export class TaskService {
     return row != null;
   }
 
+  /** Remove any dismissal tombstone for a ref (ADR-0016): a recognised container must never stay dismissed. */
+  async clearDismissal(workspaceId: number, trackerRef: number): Promise<void> {
+    await this.db.write((db) =>
+      db
+        .delete(trackerDismissals)
+        .where(and(eq(trackerDismissals.workspaceId, workspaceId), eq(trackerDismissals.trackerRef, trackerRef)))
+        .run(),
+    );
+  }
+
   /** Replace the persisted non-Task containers for one successful tracker scan. */
   async syncTrackerContainers(
     workspaceId: number,
@@ -644,16 +683,7 @@ export class TaskService {
     if (priorityList.length) rows = rows.filter((t) => priorityList.includes(t.priority));
     if (query.sortBy) {
       const dir = query.order === 'desc' ? -1 : 1;
-      const rank: Record<string, number> = { high: 0, normal: 1, low: 2 };
-      rows = rows.sort((a, b) => {
-        const cmp =
-          query.sortBy === 'priority'
-            ? (rank[a.priority] ?? 1) - (rank[b.priority] ?? 1) || a.createdAt - b.createdAt
-            : query.sortBy === 'updatedAt'
-              ? a.updatedAt - b.updatedAt || a.id - b.id
-              : a.createdAt - b.createdAt || a.id - b.id;
-        return cmp * dir;
-      });
+      rows = rows.sort((a, b) => compareListRows(query.sortBy!, a, b) * dir);
     }
     return rows;
   }
@@ -702,11 +732,11 @@ export class TaskService {
     await forEachYielding(completedRows, (task) => {
       completedIds.add(task.id);
     });
-    const epicRefs = await this.epicContainerRefs(workspaceId);
+    const containerRefs = await this.containerRefs(workspaceId);
     const nodes: OrderedEligibleTask[] = [];
     await forEachYielding(candidates, (task) => {
       const blockedBy = (blockersByTaskId.get(task.id) ?? []).filter((id) => !completedIds.has(id));
-      if (!this.agentWorkable(task, blockedBy.length, epicRefs)) return;
+      if (!this.agentWorkable(task, blockedBy.length, containerRefs)) return;
       nodes.push({
         ...task,
         blockedBy,
@@ -1066,6 +1096,47 @@ export class TaskService {
     const task = await this.get(id);
     const decision = decideTaskDeletion(task);
     if (!decision.ok) throw new DomainError('invalid_state', decision.reason!);
+    await this.removeTaskCascade(id, decision.tombstone);
+  }
+
+  /**
+   * Poll-time demotion (ADR-0016, issue #417): a mirrored Task whose ticket is
+   * now a container is removed — row, Attempts, edges — WITHOUT a
+   * `tracker_dismissals` tombstone, so it stays re-derivable as a container
+   * every poll. Distinct from operator {@link delete}, which tombstones a real
+   * work Task so a re-poll can't resurrect it.
+   *
+   * A poll never interrupts a live Run: if the row is still `working` the
+   * demotion is deferred (the same guard {@link decideTaskDeletion} applies to
+   * Delete, and the working/escalated hold in {@link upsertMirrored}), and a
+   * later poll removes it once it settles. The container is persisted either
+   * way, so grouping is correct immediately.
+   */
+  async demoteMirroredToContainer(workspaceId: number, trackerRef: number): Promise<void> {
+    // A container is re-derived every poll, so it must never carry a stale
+    // tombstone (ADR-0016, #420): clear it even when the mirrored row is already gone.
+    await this.clearDismissal(workspaceId, trackerRef);
+    const row = await this.db.read((db) =>
+      db
+        .select({
+          id: tasks.id,
+          state: tasks.state,
+          origin: tasks.origin,
+          trackerRef: tasks.trackerRef,
+          workspaceId: tasks.workspaceId,
+        })
+        .from(tasks)
+        .where(and(eq(tasks.workspaceId, workspaceId), eq(tasks.trackerRef, trackerRef)))
+        .get(),
+    );
+    if (!row) return;
+    // Reuse Delete's guard (refuse while `working`), but force a non-tombstoning
+    // removal: a demotion is not a dismissal, so its tombstone is always null.
+    if (!decideTaskDeletion(row).ok) return;
+    await this.removeTaskCascade(row.id, null);
+  }
+
+  private async removeTaskCascade(id: number, tombstone: DeletionDecision['tombstone']): Promise<void> {
     // Snapshot before the transaction: once the row is gone, `dependents` would
     // return nothing to re-derive.
     const formerDependents = await this.dependents(id);
@@ -1110,12 +1181,12 @@ export class TaskService {
         .where(or(eq(taskDependencies.taskId, id), eq(taskDependencies.dependsOnId, id)))
         .run();
       await tx.delete(tasks).where(eq(tasks.id, id)).run();
-      if (decision.tombstone) {
+      if (tombstone) {
         await tx
           .insert(trackerDismissals)
           .values({
-            workspaceId: decision.tombstone.workspaceId,
-            trackerRef: decision.tombstone.trackerRef,
+            workspaceId: tombstone.workspaceId,
+            trackerRef: tombstone.trackerRef,
             dismissedAt: Date.now(),
           })
           .onConflictDoNothing()
@@ -1135,16 +1206,16 @@ export class TaskService {
     const dependsOn = await this.dependsOn(task.id);
     const depStates = await Promise.all(dependsOn.map(async (depId) => (await this.get(depId)).state));
     const openBlockerCount = depStates.filter((state) => state !== 'done').length;
-    const epicRefs = await this.epicContainerRefs(task.workspaceId ?? undefined);
+    const containerRefs = await this.containerRefs(task.workspaceId ?? undefined);
     return {
       ...task,
       dependsOn,
       dependents: await this.dependents(task.id),
       blockedOnFailed: task.state === 'ready' && depStates.some((s) => s === 'escalated' || s === 'cancelled'),
       openBlockerCount,
-      agentWorkable: this.agentWorkable(task, openBlockerCount, epicRefs),
-      humanOnly: this.humanOnly(task, epicRefs),
-      isEpic: this.isEpicContainer(task, epicRefs),
+      agentWorkable: this.agentWorkable(task, openBlockerCount, containerRefs),
+      humanOnly: this.humanOnly(task, containerRefs),
+      isEpic: this.isEpic(task, containerRefs),
       // The resolved row can't tell inherit from pin, so read the raw overrides
       // straight from storage — the editor needs to distinguish the two.
       overrides: this.overridesOf(await this.getRaw(task.id)),
@@ -1190,16 +1261,7 @@ export class TaskService {
     }
     if (query.sortBy) {
       const dir = query.order === 'desc' ? -1 : 1;
-      const rank: Record<string, number> = { high: 0, normal: 1, low: 2 };
-      listed = listed.sort((a, b) => {
-        const cmp =
-          query.sortBy === 'priority'
-            ? (rank[a.priority] ?? 1) - (rank[b.priority] ?? 1) || a.createdAt - b.createdAt
-            : query.sortBy === 'updatedAt'
-              ? a.updatedAt - b.updatedAt || a.id - b.id
-              : a.createdAt - b.createdAt || a.id - b.id;
-        return cmp * dir;
-      });
+      listed = listed.sort((a, b) => compareListRows(query.sortBy!, a, b) * dir);
     }
     if (listed.length === 0) return [];
     const ids = listed.map((task) => task.id);
@@ -1231,16 +1293,16 @@ export class TaskService {
       if (edge.state === 'escalated' || edge.state === 'cancelled') failedDependencies.add(edge.taskId);
     }
     for (const edge of dependentRows) dependents.get(edge.dependsOnId)?.push(edge.taskId);
-    const epicRefs = await this.epicContainerRefs(query.workspaceId);
+    const containerRefs = await this.containerRefs(query.workspaceId);
     return listed.map((task) => ({
       ...task,
       dependsOn: dependsOn.get(task.id) ?? [],
       dependents: dependents.get(task.id) ?? [],
       blockedOnFailed: task.state === 'ready' && failedDependencies.has(task.id),
       openBlockerCount: openBlockerCounts.get(task.id) ?? 0,
-      agentWorkable: this.agentWorkable(task, openBlockerCounts.get(task.id) ?? 0, epicRefs),
-      humanOnly: this.humanOnly(task, epicRefs),
-      isEpic: this.isEpicContainer(task, epicRefs),
+      agentWorkable: this.agentWorkable(task, openBlockerCounts.get(task.id) ?? 0, containerRefs),
+      humanOnly: this.humanOnly(task, containerRefs),
+      isEpic: this.isEpic(task, containerRefs),
       overrides: this.overridesOf(rawById.get(task.id) ?? task),
     }));
   }

@@ -169,6 +169,25 @@ describe('map badges', () => {
     expect(badges.get(52)).toBe(2);
     expect(badges.size).toBe(2);
   });
+
+  it('badges an epic exactly like a Map (ADR-0016) — members share their epic ref\'s badge, the epic is never a node', () => {
+    // An epic is a derived container: its member work Tasks carry the epic's ref
+    // in mapRef (not the epic as a node), so mapBadges — the same derivation Maps
+    // use — surfaces membership. Two members of epic 408 dedupe to one badge; a
+    // second epic (502) proves ascending 1-based numbering across epics; the
+    // standalone (null mapRef) contributes none.
+    const tasks = [
+      task(410, 'ready', { mapRef: 502, mapTitle: 'Stats enrichment' }),
+      task(409, 'ready', { mapRef: 408, mapTitle: 'Epic summary page' }),
+      task(411, 'ready', { mapRef: 408, mapTitle: 'Epic summary page' }),
+      task(500, 'ready'), // standalone — no epic membership, no badge
+    ];
+    const badges = mapBadges(tasks);
+    // Each Task resolved through mapBadges: epic 408 → 1, epic 502 → 2 (ascending
+    // by ref), both 408 members share badge 1, the standalone resolves to none.
+    expect(tasks.map((t) => (t.mapRef == null ? null : badges.get(t.mapRef)))).toEqual([2, 1, 1, null]);
+    expect(badges.size).toBe(2);
+  });
 });
 
 describe('state-signal palette (the Signal Rule)', () => {

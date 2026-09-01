@@ -171,6 +171,27 @@ describe('mirrorScan upsert', () => {
     expect((await tasks.list()).some((t) => t.trackerRef === 3)).toBe(false);
   });
 
+  it('partitions an `epic`-labelled ticket into containers, not work Tasks (ADR-0016)', async () => {
+    // #300 carries the `epic` label → a container: persisted to tracker_containers
+    // and never mirrored as a work Task, even without a Map label. Its child is
+    // mirrored as usual, and the child's "Blocked by #300" edge is suppressed.
+    const results = await mscan([
+      ticket({ number: 300, labels: ['epic', 'ready-for-agent'] }),
+      ticket({
+        number: 301,
+        parent: 300,
+        labels: ['ready-for-agent'],
+        blockedBy: [{ number: 300, title: 'spine', state: 'open' }],
+      }),
+    ]);
+    expect(results.map((t) => t.trackerRef)).toEqual([301]); // epic not mirrored → only the child
+    expect((await tasks.list()).some((t) => t.trackerRef === 300)).toBe(false);
+    expect((await tasks.listTrackerContainers(wsId)).map((c) => c.trackerRef)).toEqual([300]);
+    const child = results.find((t) => t.trackerRef === 301)!;
+    expect(await tasks.dependsOn(child.id)).toEqual([]); // Epic container is never a blocker
+    expect(child.state).toBe('ready');
+  });
+
   it('an Epic parent is never agent-workable — a container is never auto-run', async () => {
     // #200 carries ready-for-agent, but it has a child (#201), so it is an
     // Epic → derived not agent-workable so the Auto-Runner never runs the container.
@@ -185,6 +206,23 @@ describe('mirrorScan upsert', () => {
     expect((await tasks.listWithDeps({ workspaceId: wsId })).map((t) => [t.trackerRef, t.agentWorkable])).toEqual(
       expect.arrayContaining([[200, false], [201, true]]),
     );
+  });
+
+  it('a nested container (has a parent AND children) is never agent-workable, but only the top-level one is an Epic (ADR-0016)', async () => {
+    // #300 (top) → #301 (nested container) → #302 (leaf). #301 carries
+    // ready-for-agent and has its own parent, yet it also has a child, so the
+    // container rule must still keep it human-only — the workability gate is any
+    // nesting level, distinct from the top-level-only `isEpic` display flag.
+    const results = await mscan([
+      ticket({ number: 300, labels: ['ready-for-agent'] }),
+      ticket({ number: 301, parent: 300, labels: ['ready-for-agent'] }),
+      ticket({ number: 302, parent: 301, labels: ['ready-for-agent'] }),
+    ]);
+    const byRefWith = async (ref: number) => tasks.withDeps(results.find((t) => t.trackerRef === ref)!);
+    expect(await byRefWith(300)).toMatchObject({ agentWorkable: false, humanOnly: true, isEpic: true });
+    // Nested container: not workable (has children), but NOT an Epic (has a parent).
+    expect(await byRefWith(301)).toMatchObject({ agentWorkable: false, humanOnly: true, isEpic: false });
+    expect(await byRefWith(302)).toMatchObject({ agentWorkable: true, humanOnly: false, isEpic: false });
   });
 
   it('an unlabelled parent that is momentarily childless is still not agent-workable (issue #229/#230)', async () => {
@@ -306,6 +344,80 @@ describe('mirrorScan upsert', () => {
     const after = await mscan([ticket({ number: 55, labels: ['ready-for-agent'] })]);
     expect(after).toHaveLength(0); // skipped, not re-created
     expect(await tasks.list()).toHaveLength(0);
+  });
+
+  it('demotes a mirrored work Task when its ticket becomes a container — removed with NO dismissal (ADR-0016, #417)', async () => {
+    const [mirrored] = await mscan([ticket({ number: 77, labels: ['ready-for-agent'] })]);
+    expect(mirrored!.origin).toBe('mirrored');
+    expect(await tasks.list()).toHaveLength(1);
+
+    // The ticket gains the `epic` label on a later poll → now a container.
+    const after = await mscan([ticket({ number: 77, labels: ['epic', 'ready-for-agent'] })]);
+    expect(after).toHaveLength(0); // no longer mirrored as a work Task
+    expect(await tasks.list()).toHaveLength(0); // the stale work row is gone
+    // The distinction from operator Delete: NO tombstone is written.
+    expect(await tasks.isDismissed(wsId, 77)).toBe(false);
+    // It is re-derived as a container instead.
+    expect((await tasks.listTrackerContainers(wsId)).map((c) => c.trackerRef)).toEqual([77]);
+
+    // Re-derivable every poll: it stays a container, never resurrected as work.
+    await mscan([ticket({ number: 77, labels: ['epic', 'ready-for-agent'] })]);
+    expect(await tasks.list()).toHaveLength(0);
+    expect((await tasks.listTrackerContainers(wsId)).map((c) => c.trackerRef)).toEqual([77]);
+  });
+
+  it('a genuine operator Delete still tombstones — the contrast with demotion', async () => {
+    const [mirrored] = await mscan([ticket({ number: 78, labels: ['ready-for-agent'] })]);
+    await tasks.delete(mirrored!.id); // operator hard-delete, NOT a demotion
+    expect(await tasks.isDismissed(wsId, 78)).toBe(true); // tombstoned
+    // The tombstone keeps a re-poll from resurrecting the deleted work Task.
+    expect(await mscan([ticket({ number: 78, labels: ['ready-for-agent'] })])).toHaveLength(0);
+    expect(await tasks.list()).toHaveLength(0);
+  });
+
+  it('clears a stale dismissal when a ref becomes a container — a tombstoned epic can never orphan its children (ADR-0016, #420)', async () => {
+    // The #408 bug: an epic was mirrored as a work Task, an operator deleted it
+    // (writing a tracker_dismissals tombstone), then it was recognised as a
+    // container. The stale tombstone must not survive — a container re-derives
+    // from label + structure every poll, so it can never stay dismissed and
+    // orphan its children.
+    const [mirrored] = await mscan([ticket({ number: 408, labels: ['ready-for-agent'] })]);
+    await tasks.delete(mirrored!.id); // operator delete → tombstone on ref 408
+    expect(await tasks.isDismissed(wsId, 408)).toBe(true);
+
+    // The ticket now carries the `epic` label and groups children.
+    const results = await mscan([
+      ticket({ number: 408, labels: ['epic'] }),
+      ticket({ number: 409, parent: 408, labels: ['ready-for-agent'] }),
+      ticket({ number: 410, parent: 408, labels: ['ready-for-agent'] }),
+    ]);
+
+    // The stale tombstone is cleared and the container re-derives.
+    expect(await tasks.isDismissed(wsId, 408)).toBe(false);
+    expect((await tasks.listTrackerContainers(wsId)).map((c) => c.trackerRef)).toEqual([408]);
+    // Children regroup under the epic — not orphaned, and not blocked by their parent.
+    expect(results.map((t) => t.trackerRef).sort((a, b) => (a ?? 0) - (b ?? 0))).toEqual([409, 410]);
+    expect(results.every((t) => t.state === 'ready')).toBe(true);
+  });
+
+  it('never demotes a working mirrored Task — a poll does not interrupt a live Attempt (ADR-0016)', async () => {
+    const [mirrored] = await mscan([ticket({ number: 79, labels: ['ready-for-agent'] })]);
+    await tasks.setState(mirrored!.id, 'working'); // the Auto-Runner picked it up
+
+    // The ticket gains the `epic` label mid-Attempt → now a container.
+    await mscan([ticket({ number: 79, labels: ['epic', 'ready-for-agent'] })]);
+    // The live Run is untouched: the row survives, still working, no dismissal.
+    const still = (await tasks.list()).find((t) => t.trackerRef === 79);
+    expect(still?.state).toBe('working');
+    expect(await tasks.isDismissed(wsId, 79)).toBe(false);
+    // ...but it is already persisted as a container, so grouping is correct now.
+    expect((await tasks.listTrackerContainers(wsId)).map((c) => c.trackerRef)).toEqual([79]);
+
+    // Once it settles, a later poll demotes it — still non-tombstoning.
+    await tasks.setState(still!.id, 'done');
+    await mscan([ticket({ number: 79, labels: ['epic', 'ready-for-agent'] })]);
+    expect((await tasks.list()).some((t) => t.trackerRef === 79)).toBe(false);
+    expect(await tasks.isDismissed(wsId, 79)).toBe(false);
   });
 
   it('operator cannot add/remove an edge whose dependent is a mirrored Task', async () => {
