@@ -153,6 +153,25 @@ function filterList<T>(v: T | T[] | undefined): T[] {
   return v == null ? [] : Array.isArray(v) ? v : [v];
 }
 
+/** The list sort comparator (ascending; callers apply the requested direction)
+ * shared by {@link TaskService.list}/{@link TaskService.listWithDeps} and the
+ * REST list route — which sorts merged task + derived-epic rows after
+ * serialization (issue #418), where Cost is finally known. `priority` ranks
+ * high→low then breaks ties by creation; every other key (Cost is handled by
+ * the caller) falls back to creation, then id. */
+export function compareListRows(
+  sortBy: string,
+  a: { priority: string; createdAt: number; updatedAt: number; id: number },
+  b: { priority: string; createdAt: number; updatedAt: number; id: number },
+): number {
+  const rank: Record<string, number> = { high: 0, normal: 1, low: 2 };
+  return sortBy === 'priority'
+    ? (rank[a.priority] ?? 1) - (rank[b.priority] ?? 1) || a.createdAt - b.createdAt
+    : sortBy === 'updatedAt'
+      ? a.updatedAt - b.updatedAt || a.id - b.id
+      : a.createdAt - b.createdAt || a.id - b.id;
+}
+
 /** A task plus its dependency context, as the API serves it. */
 export interface TaskWithDeps extends TaskRow {
   dependsOn: number[];
@@ -636,16 +655,7 @@ export class TaskService {
     if (priorityList.length) rows = rows.filter((t) => priorityList.includes(t.priority));
     if (query.sortBy) {
       const dir = query.order === 'desc' ? -1 : 1;
-      const rank: Record<string, number> = { high: 0, normal: 1, low: 2 };
-      rows = rows.sort((a, b) => {
-        const cmp =
-          query.sortBy === 'priority'
-            ? (rank[a.priority] ?? 1) - (rank[b.priority] ?? 1) || a.createdAt - b.createdAt
-            : query.sortBy === 'updatedAt'
-              ? a.updatedAt - b.updatedAt || a.id - b.id
-              : a.createdAt - b.createdAt || a.id - b.id;
-        return cmp * dir;
-      });
+      rows = rows.sort((a, b) => compareListRows(query.sortBy!, a, b) * dir);
     }
     return rows;
   }
@@ -1178,16 +1188,7 @@ export class TaskService {
     }
     if (query.sortBy) {
       const dir = query.order === 'desc' ? -1 : 1;
-      const rank: Record<string, number> = { high: 0, normal: 1, low: 2 };
-      listed = listed.sort((a, b) => {
-        const cmp =
-          query.sortBy === 'priority'
-            ? (rank[a.priority] ?? 1) - (rank[b.priority] ?? 1) || a.createdAt - b.createdAt
-            : query.sortBy === 'updatedAt'
-              ? a.updatedAt - b.updatedAt || a.id - b.id
-              : a.createdAt - b.createdAt || a.id - b.id;
-        return cmp * dir;
-      });
+      listed = listed.sort((a, b) => compareListRows(query.sortBy!, a, b) * dir);
     }
     if (listed.length === 0) return [];
     const ids = listed.map((task) => task.id);

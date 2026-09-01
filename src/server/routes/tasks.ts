@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { App } from '../app.js';
-import { createTaskInputSchema, updateTaskInputSchema, taskListQuerySchema } from '../../domain/tasks.js';
+import { createTaskInputSchema, updateTaskInputSchema, taskListQuerySchema, compareListRows } from '../../domain/tasks.js';
 import { previewHumanRejectContinuation } from '../../domain/session-continuation.js';
 import {
   TASK_STATES,
@@ -434,23 +434,15 @@ async function liveWorktreeDiff(
 const filterEmpty = (value: string | readonly unknown[] | undefined): boolean =>
   value === undefined || (Array.isArray(value) && value.length === 0);
 
-/** Order the merged task + epic list rows by the requested key, mirroring the
- * TaskService comparators (createdAt/updatedAt/priority) and adding cost — which
- * is derived from runs, so it is only known post-serialization. No `sortBy`
- * leaves the rows in their as-listed order (tasks then epics). */
+/** Order the merged task + epic list rows by the requested key. Cost is derived
+ * from runs, so it can only be sorted here, post-serialization; every other key
+ * reuses the shared {@link compareListRows}. No `sortBy` leaves the rows in
+ * their as-listed order (tasks then epics). */
 function sortListRows(rows: ApiTaskListRow[], sortBy: string | undefined, order: string | undefined): ApiTaskListRow[] {
   if (!sortBy) return rows;
   const dir = order === 'desc' ? -1 : 1;
-  const rank: Record<string, number> = { high: 0, normal: 1, low: 2 };
   return rows.sort((a, b) => {
-    const cmp =
-      sortBy === 'cost'
-        ? (a.cost?.totalUsd ?? -1) - (b.cost?.totalUsd ?? -1)
-        : sortBy === 'priority'
-          ? (rank[a.priority] ?? 1) - (rank[b.priority] ?? 1) || a.createdAt - b.createdAt
-          : sortBy === 'updatedAt'
-            ? a.updatedAt - b.updatedAt || a.id - b.id
-            : a.createdAt - b.createdAt || a.id - b.id;
+    const cmp = sortBy === 'cost' ? (a.cost?.totalUsd ?? -1) - (b.cost?.totalUsd ?? -1) : compareListRows(sortBy, a, b);
     return cmp * dir;
   });
 }

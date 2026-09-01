@@ -18,7 +18,7 @@ import {
 } from '../ui';
 import { toastError } from '../toast';
 import { fetchTasks, TABLE_PAGE_SIZE } from '../table-model';
-import { taskKey } from '../id-format.js';
+import { issueRef, taskKey } from '../id-format.js';
 import { EmptyState } from './EmptyState';
 import { FilterSelect } from './FilterSelect';
 import { ModelLabel, ProviderChip, TaskIdentity } from './TaskIdentity';
@@ -203,8 +203,8 @@ export function TableView({
       onClick={() => onOpenEpic(task.trackerRef ?? task.id)}
     >
       <div role="cell" className="flex items-center justify-end gap-1.5 whitespace-nowrap tabular-nums text-muted">
-        <span className="sr-only">Id: </span>
-        {taskKey(task.id)}
+        <span className="sr-only">Issue: </span>
+        {issueRef(task.trackerRef ?? task.id)}
       </div>
       <div role="cell" className="flex min-w-0 items-center gap-2 pr-2">
         <span className={`${chip} shrink-0 bg-accent-tint text-accent`}>
