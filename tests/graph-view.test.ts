@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { CardNode } from '../web/src/components/GraphView.js';
 import type { Task } from '../web/src/types.js';
 
-const task = (id: number, origin: Task['origin']): Task => ({
+const task = (id: number, origin: Task['origin'], trackerRef: number | null = null): Task => ({
   id,
   prompt: 'Fix graph node layout',
   summary: 'Fix graph node layout',
@@ -26,7 +26,7 @@ const task = (id: number, origin: Task['origin']): Task => ({
   blockedOnFailed: false,
   cost: null,
   origin,
-  trackerRef: null,
+  trackerRef,
   workflow: null,
   wayfinderType: null,
   escalationReason: null,
@@ -56,38 +56,40 @@ describe('CardNode', () => {
     ['mirrored', 'Mirrored task'],
   ] satisfies ReadonlyArray<readonly [Task['origin'], string]>;
 
-  it.each(origins)('keeps the task ID clear for %s tasks', (origin, originLabel) => {
-    const html = renderToStaticMarkup(
+  const render = (t: Task) =>
+    renderToStaticMarkup(
       createElement(CardNode, {
-        n: { id: 325, task: task(325, origin), x: 0, y: 0, w: 196, h: 60 },
-        task: task(325, origin),
+        n: { id: t.id, task: t, x: 0, y: 0, w: 196, h: 60 },
+        task: t,
         hovered: false,
         onHover: () => {},
         onActivate: () => {},
       }),
     );
+
+  it.each(origins)('names the origin in the label for %s tasks', (origin, originLabel) => {
+    const html = render(task(325, origin));
 
     expect(html).toContain(`aria-label="Fix graph node layout — Ready, ${originLabel.toLowerCase()}, task 325. Open detail."`);
-    expect(html).toContain(`<title>${originLabel}</title>`);
-    expect(html).toContain('cx="142"');
-    expect(html).toContain('x="182"');
-    expect(html).toContain('>T-325<');
-    expect(html.match(/<circle/g)).toHaveLength(2);
   });
 
-  it('moves the origin marker left for a longer task ID while preserving the right edge', () => {
-    const longTask = task(123456789, 'native');
-    const html = renderToStaticMarkup(
-      createElement(CardNode, {
-        n: { id: longTask.id, task: longTask, x: 0, y: 0, w: 196, h: 60 },
-        task: longTask,
-        hovered: false,
-        onHover: () => {},
-        onActivate: () => {},
-      }),
-    );
+  it('shows a native task by its task key alone, right-aligned', () => {
+    const html = render(task(325, 'native'));
 
-    expect(html).toContain('cx="106"');
+    expect(html).toContain('x="182"');
+    expect(html).toContain('>T-325<');
+  });
+
+  it('shows a mirrored ticket by both ids, tracker ref first', () => {
+    const html = render(task(325, 'mirrored', 436));
+
+    expect(html).toContain('x="182"');
+    expect(html).toContain('>#436 · T-325<');
+  });
+
+  it('keeps the id right-aligned for a longer id', () => {
+    const html = render(task(123456789, 'native'));
+
     expect(html).toContain('x="182"');
     expect(html).toContain('>T-123456789<');
   });

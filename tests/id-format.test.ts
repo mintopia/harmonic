@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { issueRef, taskKey, taskLabel, ticketIdentity } from '../web/src/id-format.js';
+import { issueRef, taskKey, taskLabel, ticketIdentity, ticketRowId } from '../web/src/id-format.js';
 
 describe('id-format', () => {
   it('writes a task id as a `T-` key in compact slots, never a bare `#`', () => {
@@ -24,5 +24,14 @@ describe('id-format', () => {
   it('shows only the task label when there is no tracker ref', () => {
     expect(ticketIdentity(174, null)).toBe('Task 174');
     expect(ticketIdentity(174, undefined)).toBe('Task 174');
+  });
+
+  it('shows both ids compactly in a listing, tracker ref first', () => {
+    expect(ticketRowId(430, 436)).toBe('#436 · T-430');
+  });
+
+  it('shows only the task key in a listing when there is no tracker ref', () => {
+    expect(ticketRowId(430, null)).toBe('T-430');
+    expect(ticketRowId(430, undefined)).toBe('T-430');
   });
 });

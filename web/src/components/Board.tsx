@@ -10,7 +10,7 @@ import {
   type BlockerColumn,
   type PendingItem,
 } from '../board-sections-model';
-import { issueRef, taskKey } from '../id-format.js';
+import { ticketRowId } from '../id-format.js';
 import { api } from '../api';
 import { subscribe } from '../ws';
 import { toastError } from '../toast';
@@ -40,9 +40,7 @@ export function escalationReasonText(reason: string): string {
 }
 
 function rowId(task: Task): string {
-  return task.origin === 'mirrored' && task.trackerRef != null
-    ? issueRef(task.trackerRef)
-    : taskKey(task.id);
+  return ticketRowId(task.id, task.trackerRef);
 }
 
 function Dot({ task }: { task: Task }) {

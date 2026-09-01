@@ -2,7 +2,7 @@
 // project, whose nodenext resolution requires them (Vite maps .js → .ts).
 import type { Task, TaskState } from './types.js';
 import type { Epic, EpicMember } from './epic-model.js';
-import { issueRef, taskKey } from './id-format.js';
+import { issueRef, ticketRowId } from './id-format.js';
 
 /**
  * The Board's attention-ordered sections (ADR-0041 Visibility, DESIGN.md § 5):
@@ -65,7 +65,7 @@ export interface Blocker {
 export interface PendingItem {
   key: string;
   taskId: number | null;
-  /** `T-<id>` native / `#<ref>` mirrored. */
+  /** `T-<id>` native, `#<ref> · T-<id>` mirrored, `#<ref>` for an unmirrored member. */
   label: string;
   title: string;
   state: TaskState | null;
@@ -122,7 +122,7 @@ export function isEscalatedEpic(epic: Epic): boolean {
 
 function itemLabel(task: Task | undefined, taskId: number): string {
   if (!task) return `Task ${taskId}`;
-  return task.origin === 'mirrored' && task.trackerRef != null ? issueRef(task.trackerRef) : taskKey(task.id);
+  return ticketRowId(task.id, task.trackerRef);
 }
 
 /**
