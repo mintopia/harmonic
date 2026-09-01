@@ -20,6 +20,7 @@ import {
 } from '../stats-aggregates.js';
 import { logger } from '../../logger.js';
 import type { AttemptState } from '../../db/schema.js';
+import type { StatsRange, StatsReader } from '../../db/stats-reader.js';
 
 /** The stats view's `attemptsByState` keys: `passed` reads as `completed`, and
  * `escalated` (an Attempt-only state) folds into the generic `failed` bucket,
@@ -237,6 +238,110 @@ const statsResponseSchema = z.object({
     }),
 });
 
+/** Path param for the Epic-scoped surface: the Epic ticket's tracker ref. */
+const epicParamsSchema = z.object({
+  ref: z.coerce.number().int().positive().meta({ example: 410 }),
+});
+
+/**
+ * The one aggregation both Stats surfaces share (issue #410): a `StatsRange` in,
+ * the full Stats response out. The fleet route passes a Workspace-or-unscoped
+ * range; the Epic route adds `epicRef`. Every honest-numbers rule and locked
+ * formula (ADR-0008, ADR-0014) is identical — only the reader's scope differs.
+ */
+async function computeStats(statsReader: StatsReader, range: StatsRange) {
+  const { from, to } = range;
+  const startedAtMs = Date.now();
+  // Local libsql executes file-backed queries inline despite returning a
+  // Promise. The typed worker RPC keeps all four growing range scans off the
+  // server event loop while preserving the separate WAL reader from #213.
+  const { rows, attemptReasons, toolTotals, workspaces, taskWorkspaces, settleEvents, settledTaskAttempts, verifications, guardrailTrips } =
+    await statsReader.read(range);
+
+  const attemptReasonById = new Map(attemptReasons.map((r) => [r.attemptId, r.reason]));
+
+  // Hand the loop back between the blocking reads and the heavy JS
+  // aggregation below (issue #200), so a large Stats request interleaves
+  // with other in-flight work instead of blocking it start-to-finish.
+  if (rows.length >= YIELD_ROW_THRESHOLD) await yieldToEventLoop();
+
+  const usages = rows
+    .map((run) => (run.usage ? (JSON.parse(run.usage) as AttemptUsage) : null))
+    .filter((u): u is AttemptUsage => u !== null);
+  const merged = mergeUsage(usages);
+  const toolCalls: Record<string, number> = {};
+  for (const totals of Object.values(toolTotals.byTask)) {
+    for (const [toolName, count] of Object.entries(totals)) toolCalls[toolName] = (toolCalls[toolName] ?? 0) + count;
+  }
+
+  const attemptsByState: Record<string, number> = {};
+  for (const run of rows) {
+    const state = statsAttemptState(run.state);
+    attemptsByState[state] = (attemptsByState[state] ?? 0) + 1;
+  }
+
+  // Failure rate numerator (ADR-0028): failed-only; cancelled Runs stay out.
+  const failures = rows.filter(isExecutionFailure);
+  const failedAttempts = failures.length;
+  const failReasons = failuresByReason(
+    failures.map((r) => ({ attemptReason: attemptReasonById.get(r.id) ?? null, detailReason: r.reason })),
+  );
+
+  const durations = rows
+    .map((r) =>
+      activeExecutionDurationMs({
+        startedAt: r.startedAt,
+        finishedAt: r.endedAt,
+        // No dedicated agent-finish signal — the disposition lives on
+        // `attempts.reason` (ADR-0001): wall-clock `finished − started`
+        // for every Attempt.
+        agentFinishTs: null,
+      }),
+    )
+    .filter((d): d is number => d !== null);
+  const durationMs = durationPercentiles(durations);
+
+  const series = buildDaySeries(rows, costOfAttempts);
+
+  // A day with runs but no priceable usage shows as unpriceable (null) in
+  // the series. A range total that spans such a day is a floor, not an
+  // exact figure — keep the headline Cost honest with the chart's "at
+  // least" so the visible total and the accessible label agree (issue #92).
+  const cost = costOfAttempts(rows);
+  const flooredCost =
+    cost && !cost.incomplete && series.some((s) => s.totalUsd === null) ? { ...cost, incomplete: true } : cost;
+
+  const elapsedMs = Date.now() - startedAtMs;
+  if (elapsedMs >= SLOW_STATS_MS) {
+    logger.warn(`[stats] slow aggregation: ${elapsedMs}ms over ${rows.length} runs — consider narrowing the range`);
+  }
+
+  return {
+    from,
+    to,
+    attemptCount: rows.length,
+    attemptsByState,
+    failedAttempts,
+    failuresByReason: failReasons,
+    durationMs,
+    totals: merged?.totals ?? null,
+    models: merged?.models ?? {},
+    agents: merged?.agents ?? {},
+    ...(merged?.toolTokens ? { toolTokens: merged.toolTokens } : {}),
+    ...(merged?.reasoning ? { reasoning: merged.reasoning } : {}),
+    toolCalls,
+    cost: flooredCost,
+    series,
+    tasksMergedByDay: tasksMergedByDay(settleEvents),
+    attemptsPerTask: attemptsPerTask(settleEvents, settledTaskAttempts),
+    costPerMergedTask: costPerMergedTask(settleEvents, settledTaskAttempts),
+    verdicts: verdicts(verifications),
+    gateOutcomes: gateOutcomes(settleEvents),
+    guardrailTrips: guardrailTripsByDimension(guardrailTrips),
+    byWorkspace: byWorkspace(rows, taskWorkspaces, workspaces),
+  };
+}
+
 export async function statsRoutes(fastify: FastifyInstance): Promise<void> {
   const { ctx } = fastify as App;
   const app = fastify.withTypeProvider<ZodTypeProvider>();
@@ -262,99 +367,41 @@ export async function statsRoutes(fastify: FastifyInstance): Promise<void> {
       // Omitted `to` means "up to now" — applied here so the query schema
       // carries no dynamic default (keeps the OpenAPI snapshot deterministic).
       const to = req.query.to ?? Date.now();
-      const startedAtMs = Date.now();
-      // Local libsql executes file-backed queries inline despite returning a
-      // Promise. The typed worker RPC keeps all four growing range scans off the
-      // server event loop while preserving the separate WAL reader from #213.
-      const { rows, attemptReasons, toolTotals, workspaces, taskWorkspaces, settleEvents, settledTaskAttempts, verifications, guardrailTrips } =
-        await ctx.statsReader.read({
-          from,
-          to,
-          ...(workspaceId === undefined ? {} : { workspaceId }),
-        });
+      return computeStats(ctx.statsReader, { from, to, ...(workspaceId === undefined ? {} : { workspaceId }) });
+    },
+  );
 
-      const attemptReasonById = new Map(attemptReasons.map((r) => [r.attemptId, r.reason]));
-
-      // Hand the loop back between the blocking reads and the heavy JS
-      // aggregation below (issue #200), so a large Stats request interleaves
-      // with other in-flight work instead of blocking it start-to-finish.
-      if (rows.length >= YIELD_ROW_THRESHOLD) await yieldToEventLoop();
-
-      const usages = rows
-        .map((run) => (run.usage ? (JSON.parse(run.usage) as AttemptUsage) : null))
-        .filter((u): u is AttemptUsage => u !== null);
-      const merged = mergeUsage(usages);
-      const toolCalls: Record<string, number> = {};
-      for (const totals of Object.values(toolTotals.byTask)) {
-        for (const [toolName, count] of Object.entries(totals)) toolCalls[toolName] = (toolCalls[toolName] ?? 0) + count;
-      }
-
-      const attemptsByState: Record<string, number> = {};
-      for (const run of rows) {
-        const state = statsAttemptState(run.state);
-        attemptsByState[state] = (attemptsByState[state] ?? 0) + 1;
-      }
-
-      // Failure rate numerator (ADR-0028): failed-only; cancelled Runs stay out.
-      const failures = rows.filter(isExecutionFailure);
-      const failedAttempts = failures.length;
-      const failReasons = failuresByReason(
-        failures.map((r) => ({ attemptReason: attemptReasonById.get(r.id) ?? null, detailReason: r.reason })),
-      );
-
-      const durations = rows
-        .map((r) =>
-          activeExecutionDurationMs({
-            startedAt: r.startedAt,
-            finishedAt: r.endedAt,
-            // No dedicated agent-finish signal — the disposition lives on
-            // `attempts.reason` (ADR-0001): wall-clock `finished − started`
-            // for every Attempt.
-            agentFinishTs: null,
-          }),
-        )
-        .filter((d): d is number => d !== null);
-      const durationMs = durationPercentiles(durations);
-
-      const series = buildDaySeries(rows, costOfAttempts);
-
-      // A day with runs but no priceable usage shows as unpriceable (null) in
-      // the series. A range total that spans such a day is a floor, not an
-      // exact figure — keep the headline Cost honest with the chart's "at
-      // least" so the visible total and the accessible label agree (issue #92).
-      const cost = costOfAttempts(rows);
-      const flooredCost =
-        cost && !cost.incomplete && series.some((s) => s.totalUsd === null) ? { ...cost, incomplete: true } : cost;
-
-      const elapsedMs = Date.now() - startedAtMs;
-      if (elapsedMs >= SLOW_STATS_MS) {
-        logger.warn(`[stats] slow aggregation: ${elapsedMs}ms over ${rows.length} runs — consider narrowing the range`);
-      }
-
-      return {
+  app.get(
+    '/epics/:ref/stats',
+    {
+      schema: {
+        tags: ['Stats'],
+        description:
+          "Usage, Cost, and attempt-state counts scoped to one Epic's child Tasks (ADR-0014), over a time range by attempt start time. Same shape as the fleet Stats surface. Operator only; not reachable with an attempt-scoped Attempt Key.",
+        security: [{ bearerAuth: [] }, { sessionCookie: [] }],
+        params: epicParamsSchema,
+        querystring: querySchema,
+        response: {
+          200: statsResponseSchema.describe(
+            "Usage, Cost, and attempt-state counts over the Epic's attempts started in the range; totals and Cost count only what the attempts actually reported and could be priced, so they are floors wherever `incomplete` is true.",
+          ),
+        },
+      },
+    },
+    async (req) => {
+      const { ref } = req.params;
+      const { from, workspaceId } = req.query;
+      // Omitted `to` means "up to now" — see the fleet route above.
+      const to = req.query.to ?? Date.now();
+      // `workspaceId` narrows when the same Epic ref exists in more than one
+      // Workspace (refs are unique only per Workspace, ADR-0004); omitted, the
+      // Epic scope spans every Workspace holding a child of this ref.
+      return computeStats(ctx.statsReader, {
         from,
         to,
-        attemptCount: rows.length,
-        attemptsByState,
-        failedAttempts,
-        failuresByReason: failReasons,
-        durationMs,
-        totals: merged?.totals ?? null,
-        models: merged?.models ?? {},
-        agents: merged?.agents ?? {},
-        ...(merged?.toolTokens ? { toolTokens: merged.toolTokens } : {}),
-        ...(merged?.reasoning ? { reasoning: merged.reasoning } : {}),
-        toolCalls,
-        cost: flooredCost,
-        series,
-        tasksMergedByDay: tasksMergedByDay(settleEvents),
-        attemptsPerTask: attemptsPerTask(settleEvents, settledTaskAttempts),
-        costPerMergedTask: costPerMergedTask(settleEvents, settledTaskAttempts),
-        verdicts: verdicts(verifications),
-        gateOutcomes: gateOutcomes(settleEvents),
-        guardrailTrips: guardrailTripsByDimension(guardrailTrips),
-        byWorkspace: byWorkspace(rows, taskWorkspaces, workspaces),
-      };
+        epicRef: ref,
+        ...(workspaceId === undefined ? {} : { workspaceId }),
+      });
     },
   );
 }
