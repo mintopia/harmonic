@@ -83,6 +83,28 @@ describe('AcpDriver — per-turn inactivity timeout (issue #426)', () => {
     expect(result.stopReason).toBe('end_turn');
   }, 15_000);
 
+  it('a completion signal bounds the turn on a short grace despite an outstanding tool', async () => {
+    // A long normal bound the grace must beat. A tool_call opens and never
+    // completes (a detached background sub-agent), then the harness hangs (lost
+    // prompt response) — the case that normally suspends the bound forever. Once
+    // the agent has signalled completion (finish_task/escalate_task), the turn
+    // is bounded on silence alone, so it ends within the grace instead.
+    const driver = spawnDriver(60_000);
+    await driver.handshake({ cwd: '/tmp/finish' });
+    const turn = driver.prompt([
+      {
+        type: 'text',
+        text: scenario({
+          exit: 'hang',
+          updates: [{ sessionUpdate: 'tool_call', toolCallId: 't1', title: 'sub-agent', kind: 'other', status: 'pending' }],
+        }),
+      },
+    ]);
+    await new Promise((r) => setTimeout(r, 100)); // let the tool_call land so t1 is outstanding
+    driver.expectCompletion(200);
+    await expect(turn).rejects.toBeInstanceOf(AcpPromptTimeoutError);
+  }, 15_000);
+
   it('suspends the inactivity bound while a tool call is outstanding', async () => {
     const driver = spawnDriver(200);
     await driver.handshake({ cwd: '/tmp/tool' });

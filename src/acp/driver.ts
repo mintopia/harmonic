@@ -184,6 +184,18 @@ export class AcpDriver {
    */
   private lastActivityAt = 0;
   private readonly outstandingTools = new Set<string>();
+  /**
+   * Set (with a short grace, ms) once the agent has signalled completion via
+   * `finish_task`/`escalate_task`: a lifecycle signal must settle promptly.
+   * While armed it overrides the inactivity bound — the turn ends after
+   * `graceMs` of silence REGARDLESS of any still-outstanding tool, so a finished
+   * agent whose `session/prompt` response is lost, or which left a background
+   * sub-agent tool outstanding, settles to verification/escalation within the
+   * grace instead of hanging until the wall-clock guardrail. Null (unarmed)
+   * keeps the normal "an outstanding tool suspends the bound" behaviour. Reset
+   * at each turn start so it never leaks across turns.
+   */
+  private completionGraceMs: number | null = null;
 
   constructor(
     child: ChildProcess,
@@ -406,6 +418,7 @@ export class AcpDriver {
   private withInactivityTimeout<T>(request: Promise<T>, timeoutMs: number): Promise<T> {
     this.lastActivityAt = Date.now();
     this.outstandingTools.clear();
+    this.completionGraceMs = null;
     return new Promise<T>((resolve, reject) => {
       let settled = false;
       const finish = (fn: () => void) => {
@@ -414,11 +427,16 @@ export class AcpDriver {
         clearInterval(timer);
         fn();
       };
-      const period = Math.max(1_000, Math.min(timeoutMs, 30_000));
+      const period = Math.max(1_000, Math.min(timeoutMs, 5_000));
       const timer = setInterval(() => {
-        if (this.outstandingTools.size > 0) return; // a tool is running — not silence
+        // Once the agent has signalled completion the turn is bounded on silence
+        // alone (a short grace) and outstanding tools no longer suspend it — a
+        // lost prompt response or a lingering background sub-agent must not
+        // strand the settle. Unarmed, a running tool suspends the bound as usual.
+        const grace = this.completionGraceMs;
+        if (grace == null && this.outstandingTools.size > 0) return; // a tool is running — not silence
         const idleMs = Date.now() - this.lastActivityAt;
-        if (idleMs < timeoutMs) return;
+        if (idleMs < (grace ?? timeoutMs)) return;
         finish(() => {
           this.cancel();
           reject(new AcpPromptTimeoutError(idleMs));
@@ -435,6 +453,20 @@ export class AcpDriver {
   /** Cancel the in-flight turn (ACP session/cancel is a notification, not a request). */
   cancel(): void {
     this.connection.notify('session/cancel', { sessionId: this.sessionId });
+  }
+
+  /**
+   * The agent has signalled completion (`finish_task`/`escalate_task`): bound
+   * the in-flight turn to `graceMs` of silence, ignoring outstanding tools, so
+   * the settle can't be stranded by a lost `session/prompt` response or a
+   * lingering background sub-agent tool. The running {@link withInactivityTimeout}
+   * poll picks this up and ends the turn (cancelling it) once the agent's wrap-up
+   * goes quiet; it is cleared at the next turn start. No-op when no inactivity
+   * bound is configured — then the turn is awaited unbounded, nothing to shorten.
+   */
+  expectCompletion(graceMs: number): void {
+    if (!this.promptInactivityTimeoutMs) return;
+    this.completionGraceMs = graceMs;
   }
 
   /**
