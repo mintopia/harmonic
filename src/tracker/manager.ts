@@ -1,4 +1,4 @@
-import type { TaskRow, WorkspaceRow } from '../db/schema.js';
+import type { EpicRow, TaskRow, WorkspaceRow } from '../db/schema.js';
 import type { AppConfig } from '../config.js';
 import type { TaskService, TaskWithDeps } from '../domain/tasks.js';
 import { resolveVerifiers } from '../domain/setting-override.js';
@@ -53,6 +53,29 @@ interface Entry {
 }
 
 const sigOf = (ws: WorkspaceRow): string => `${ws.workingDir}|${ws.trackerPollIntervalSeconds * 1000}`;
+
+/** A placeholder ticket for a historical Epic the tracker scan has aged out, so
+ * the Tasks-list projection can render it from the stored record's snapshot when
+ * no live container ticket survives. Only its identity (ref, title, kind) carries
+ * real data; the list row reads nothing else off it. */
+function historicalEpicTicket(epic: DerivedEpic): Ticket {
+  return {
+    number: epic.ref,
+    title: epic.title,
+    state: 'closed',
+    labels: [],
+    parent: null,
+    blockedBy: [],
+    body: '',
+    createdAt: '',
+    closedAt: null,
+    assignees: [],
+    blocking: [],
+    comments: [],
+    isMap: epic.kind === 'map',
+    url: '',
+  };
+}
 
 /**
  * Owns the fleet of per-Workspace tracker poll loops (issue #45). One
@@ -295,29 +318,61 @@ export class TrackerPollerManager {
     if (entry) await entry.epics.refreshAfterDefaultBranchAdvance(defaultBranch);
   }
 
-  /** Every Epic derived from this Workspace's persisted tracker facts. */
+  /** Every Epic this Workspace surfaces: the live open set derived from the
+   * persisted tracker scan, unioned with the historical Epics the stored record
+   * carries once the scan has aged them out (ADR-0018, #439). An integrated Epic
+   * keeps its band from its frozen member snapshot rather than vanishing; live
+   * derivation stays the fallback for open, not-yet-integrated Epics whose
+   * members the record does not yet snapshot. */
   async listEpics(workspaceId: number): Promise<Epic[]> {
     const entry = this.entries.get(workspaceId);
     const mirrored = (await this.tasks.listWithDeps({ workspaceId })).filter((task) => task.origin === 'mirrored');
     const tickets = await persistedTickets(mirrored, await this.tasks.listTrackerContainers(workspaceId));
-    const derivedEpics = deriveEpics(tickets, this.readinessByRef(mirrored));
+    const derived = await this.surfacedEpics(workspaceId, tickets, mirrored);
     const baseBranch = await this.epicBaseBranch(workspaceId);
-    return Promise.all(derivedEpics.map((derived) => this.composeOne(entry, derived, tickets, mirrored, baseBranch)));
+    return Promise.all(derived.map((one) => this.composeOne(entry, one, tickets, mirrored, baseBranch)));
   }
 
-  /** The container ticket for each top-level Epic (ADR-0016), so the Tasks list
-   * can source epic rows from the same derived model the Board reads — no git or
-   * coordinator facts, just the raw ticket the list-row projection needs. */
+  /** The ticket for each surfaced Epic, so the Tasks list sources epic rows from
+   * the same set the Board reads (ADR-0016, #439): the live container ticket for
+   * an open Epic, and a snapshot-backed placeholder ticket for a historical Epic
+   * the scan has aged out. */
   async listEpicTickets(workspaceId: number): Promise<Ticket[]> {
     const mirrored = (await this.tasks.listWithDeps({ workspaceId })).filter((task) => task.origin === 'mirrored');
     const tickets = await persistedTickets(mirrored, await this.tasks.listTrackerContainers(workspaceId));
     const byRef = new Map(tickets.map((ticket) => [ticket.number, ticket]));
-    return deriveEpics(tickets, this.readinessByRef(mirrored))
-      .map((epic) => byRef.get(epic.ref))
-      .filter((ticket): ticket is Ticket => ticket !== undefined);
+    return (await this.surfacedEpics(workspaceId, tickets, mirrored)).map(
+      (epic) => byRef.get(epic.ref) ?? historicalEpicTicket(epic),
+    );
   }
 
-  /** One Epic derived by ref from this Workspace's persisted tracker facts. */
+  /** The surfaced Epic set (ascending by ref): live open Epics from derivation,
+   * plus the historical Epics the stored record resurrects once the scan ages
+   * them out. The record is the authority for a finished Epic's presence and
+   * members; {@link deriveEpics} is the fallback that composes the live open set
+   * the record cannot express (top-level roll-up, ready frontier). */
+  private async surfacedEpics(
+    workspaceId: number,
+    tickets: Ticket[],
+    mirrored: TaskWithDeps[],
+  ): Promise<DerivedEpic[]> {
+    const open = deriveEpics(tickets, this.readinessByRef(mirrored));
+    // A historical Epic surfaces only once the scan has aged its container out
+    // (`!tickets.some(...)`): while the ticket is still scanned, live derivation
+    // owns it — a nested leaf-most Epic stays rolled up under its top-level spine
+    // (ADR-0016), never a separate card. The stored row keys to the leaf-most
+    // container without its former parent, so an aged-out row resolves as its own
+    // entry; a subtree ages out together, so this is the top-level Epic in the
+    // common flat case.
+    const historical = (await this.tasks.listStoredEpics(workspaceId))
+      .filter((row) => this.isHistoricalEpic(row) && !tickets.some((t) => t.number === row.trackerRef))
+      .map((row) => this.storedEpicToDerived(row, tickets, mirrored));
+    return [...open, ...historical].sort((a, b) => a.ref - b.ref);
+  }
+
+  /** One Epic by ref from this Workspace's persisted tracker facts. A closed
+   * Epic still in the scan resolves live (`includeClosed`); one the scan has
+   * aged out resolves from its stored integration snapshot (ADR-0018, #439). */
   async epicDetail(workspaceId: number, epicRef: number): Promise<Epic | null> {
     const entry = this.entries.get(workspaceId);
     const mirrored = (await this.tasks.listWithDeps({ workspaceId })).filter((task) => task.origin === 'mirrored');
@@ -325,8 +380,43 @@ export class TrackerPollerManager {
     const derived = deriveEpics(tickets, this.readinessByRef(mirrored), { includeClosed: true }).find(
       (e) => e.ref === epicRef,
     );
-    if (!derived) return null;
-    return this.composeOne(entry, derived, tickets, mirrored, await this.epicBaseBranch(workspaceId));
+    if (derived) {
+      return this.composeOne(entry, derived, tickets, mirrored, await this.epicBaseBranch(workspaceId));
+    }
+
+    // Aged out of the scan: resolve the completed Epic from its stored snapshot,
+    // so a deep link to a finished Epic still renders instead of 404ing. The base
+    // branch is resolved lazily — a ref that resolves to nothing pays no git call.
+    const row = (await this.tasks.listStoredEpics(workspaceId)).find((r) => r.trackerRef === epicRef);
+    if (!row || !this.isHistoricalEpic(row)) return null;
+    const derivedFromRecord = this.storedEpicToDerived(row, tickets, mirrored);
+    return this.composeOne(entry, derivedFromRecord, tickets, mirrored, await this.epicBaseBranch(workspaceId));
+  }
+
+  /** A stored Epic surfaces from its record only once integrated with a member
+   * snapshot: an `open` row is still governed by live derivation, and an
+   * integrated row with a null snapshot carries no members to list. */
+  private isHistoricalEpic(row: EpicRow): boolean {
+    return row.state === 'integrated' && row.memberRefs != null;
+  }
+
+  /** A historical stored Epic as a {@link DerivedEpic} composed from its
+   * integration snapshot: members frozen at integration (ascending), an empty
+   * ready frontier (nothing left to drive), and the 3-way stored `kind`
+   * narrowed to the read-model's two kinds. Its title comes from a surviving
+   * ticket/mirrored Task, else a ref placeholder when the scan has aged it out. */
+  private storedEpicToDerived(row: EpicRow, tickets: Ticket[], mirrored: TaskRow[]): DerivedEpic {
+    const title =
+      tickets.find((t) => t.number === row.trackerRef)?.title ??
+      mirrored.find((t) => t.trackerRef === row.trackerRef)?.trackerTitle ??
+      `Epic #${row.trackerRef}`;
+    return {
+      ref: row.trackerRef,
+      title,
+      kind: row.kind === 'map' ? 'map' : 'spec',
+      members: [...(row.memberRefs ?? [])].sort((a, b) => a - b),
+      ready: [],
+    };
   }
 
   /** Frontier eligibility belongs to the mirrored Task, where Blocker edges are persisted. */
