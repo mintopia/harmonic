@@ -10,6 +10,7 @@ import {
   settings,
   trackerDismissals,
   trackerContainers,
+  epics,
   TASK_STATES,
   type TaskRow,
   type RawTaskRow,
@@ -29,6 +30,7 @@ import { deleteAttemptsAndChildrenAsync } from './attempt-cascade.js';
 import { forEachYielding } from '../reliability/yield.js';
 import { orderEligibleWorkYielding } from './work-ordering.js';
 import { mirroredAgentEligible } from './agent-workable.js';
+import type { StoredEpicRecord } from './epic-derivation.js';
 
 // Examples ride on the request schemas too, not just the responses: the API
 // page renders whatever the spec declares, so a bare field documents itself as
@@ -641,6 +643,28 @@ export class TaskService {
     });
   }
 
+  /**
+   * Lazy-upsert the durable Epic spine for one scan (ADR-0018, #437). Unlike
+   * {@link syncTrackerContainers}'s wipe-and-replace, this only ever inserts or
+   * refreshes: a first sighting creates the row `open` with a null integration
+   * snapshot; a re-sighting refreshes only `kind` (the one column re-derived
+   * each scan), leaving `state`/`mergeCommit`/`memberRefs` — the integration
+   * path's columns — untouched. Nothing is deleted here, so a row survives the
+   * container wipe and the tracker issue closing; Dismiss (`removeTaskCascade`)
+   * is the sole remover.
+   */
+  async syncEpics(workspaceId: number, records: StoredEpicRecord[]): Promise<void> {
+    await this.db.write(async (db) => {
+      await forEachYielding(records, async ({ ref, kind }) => {
+        await db
+          .insert(epics)
+          .values({ workspaceId, trackerRef: ref, kind, state: 'open' })
+          .onConflictDoUpdate({ target: [epics.workspaceId, epics.trackerRef], set: { kind } })
+          .run();
+      });
+    });
+  }
+
   async listTrackerContainers(workspaceId?: number): Promise<TrackerContainerRow[]> {
     return this.db.read((db) =>
       db.select().from(trackerContainers)
@@ -1190,6 +1214,18 @@ export class TaskService {
           })
           .onConflictDoNothing()
           .run();
+        // Dismiss is the sole remover of the durable Epic spine (ADR-0018, #437):
+        // the row outlives the tracker issue closing and the container wipe, so
+        // only an operator's hard delete tears it down — atomically with the
+        // tombstone. A no-op for a ref that never had an epics row. Guarded on a
+        // concrete workspace: an epics row is only ever written with one, so a
+        // null-workspace tombstone can't have a row to remove.
+        if (tombstone.workspaceId !== null) {
+          await tx
+            .delete(epics)
+            .where(and(eq(epics.workspaceId, tombstone.workspaceId), eq(epics.trackerRef, tombstone.trackerRef)))
+            .run();
+        }
       }
     });
     for (const depId of formerDependents) {

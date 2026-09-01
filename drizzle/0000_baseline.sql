@@ -98,6 +98,17 @@ CREATE TABLE `conversations` (
 	FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`id`) ON UPDATE no action ON DELETE no action
 );
 --> statement-breakpoint
+CREATE TABLE `epics` (
+	`workspace_id` integer NOT NULL,
+	`tracker_ref` integer NOT NULL,
+	`kind` text NOT NULL,
+	`merge_commit` text,
+	`state` text NOT NULL,
+	`member_refs` text,
+	PRIMARY KEY(`workspace_id`, `tracker_ref`),
+	FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`id`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
 CREATE TABLE `guardrail_events` (
 	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
 	`attempt_id` integer NOT NULL,
