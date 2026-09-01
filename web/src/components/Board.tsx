@@ -586,7 +586,7 @@ function EpicBand({
         </div>
       )}
 
-      {isEpicIntegrating(epic) && <IntegrationProgress epic={epic} />}
+      {isEpicIntegrating(epic) && <EpicIntegrationBar epic={epic} />}
 
       {open && hasColumns && (
         <div className="border-t border-hairline">
