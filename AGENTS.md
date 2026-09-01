@@ -18,9 +18,7 @@ See `CONTEXT.md` for the domain glossary.
  - Subagents must use an appropriate subagent type.
  - Do not start a subagent without explicitly setting the model.
  - When building UI to match a mockup, it MUST match the mockup
-   worktree and merge back in when done.
- - Follow the /no-comments skill when considering adding comments to the
-   code.
+ - When work is complete, before merging or finishing, run /no-comments
 
 ### Testing
 
