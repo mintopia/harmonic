@@ -5,11 +5,6 @@ import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
 
-/**
- * Parse `group/repo` from a repo's `origin` remote so a GitLab tracker needs no
- * redundant `Project:` line (GitHub infers the same way). SSH
- * (`git@gitlab.com:group/repo.git`) and HTTPS both supported; null if no origin.
- */
 async function gitlabRemote(repoRoot: string): Promise<string | null> {
   let url: string;
   try {
@@ -30,7 +25,7 @@ export type TicketState = 'open' | 'closed';
 /** The label that marks a wayfinder Map — convention on every tracker; `isMap` hides which. */
 export const MAP_LABEL = 'wayfinder:map';
 
-/** The label that marks a spec Epic — a container ticket, never mirrored as a work Task (ADR-0016). */
+/** The label that marks a spec Epic — a container ticket, never mirrored as a work Task. */
 export const EPIC_LABEL = 'epic';
 
 export { READY_FOR_AGENT_LABEL, READY_FOR_HUMAN_LABEL } from '../domain/agent-workable.js';
@@ -48,12 +43,7 @@ export interface TicketComment {
   createdAt: string;
 }
 
-/**
- * The tracker-identity fields every tracker record carries: the portable
- * `number`, its surface `title`/`state`/`labels`, and the `parent`/`blockedBy`
- * edges that place it in the tracker graph. {@link Ticket} and the stored Epic
- * (ADR-0018) are siblings over this base — neither extends the other.
- */
+/** The tracker-identity fields every tracker record carries; {@link Ticket} and the stored Epic are siblings over this base. */
 export interface TrackerIdentity {
   number: number;
   title: string;
@@ -63,13 +53,7 @@ export interface TrackerIdentity {
   blockedBy: TicketRef[];
 }
 
-/**
- * The tracker-agnostic issue shape (D1, issue #22): the normalised 13 fields
- * + `url`, over the shared {@link TrackerIdentity} base. `number` is the
- * portable identity — the adapter maps it to whatever native id its calls
- * need. `parent`/`blockedBy`/`blocking` are always populated and directional;
- * no capability flags leak.
- */
+/** The tracker-agnostic issue shape; `number` is the portable identity. `parent`/`blockedBy`/`blocking` are always populated and directional. */
 export interface Ticket extends TrackerIdentity {
   body: string;
   createdAt: string;
@@ -81,24 +65,12 @@ export interface Ticket extends TrackerIdentity {
   url: string;
 }
 
-/**
- * A container is epic-type (ADR-0016) when it is a Map (`wayfinder:map`) or an
- * `epic`-labelled Epic — the tickets persisted to `tracker_containers` and the
- * durable Epic spine (ADR-0018), never mirrored as a work Task. The one place
- * this identity is defined, so the scan (`mirror.ts`) and the stored-Epic
- * derivation (`epic-derivation.ts`) can't drift apart.
- */
+/** A container is epic-type when it is a Map or an `epic`-labelled Epic; persisted to `tracker_containers`, never mirrored as a work Task. */
 export function isEpicTypeContainer(ticket: Pick<Ticket, 'isMap' | 'labels'>): boolean {
   return ticket.isMap || ticket.labels.includes(EPIC_LABEL);
 }
 
-/**
- * A repo-bound tracker (D1). Reads the whole tracker and normalises to
- * `Ticket`; writes only the status transitions Harmonic itself must make —
- * the advisory `claim`/`release` pair (the afk pick's best-effort "hands off",
- * issue #32) and accept-time `close`. Everything else tracker-specific (create,
- * wire edges, mid-flight comments) stays with the skills' `gh`.
- */
+/** A repo-bound tracker: reads the whole tracker as `Ticket`s; writes only the advisory `claim`/`release` pair and lifecycle `close`/`reopen`. */
 export interface TrackerAdapter {
   readonly name: string;
   /** Whole tracker, one read. Poll = call on an interval; frontier/board derive from the array. */
@@ -109,26 +81,11 @@ export interface TrackerAdapter {
   claim(ticket: TicketRef): Promise<void>;
   /** Remove the advisory assignment when Harmonic hands the Task back. */
   release(ticket: TicketRef): Promise<void>;
-  /**
-   * Close the ticket with a comment — the merging step Harmonic runs itself
-   * after verify + merge (issue #139). Only the ticket's portable identity
-   * ({@link TicketRef}) is needed, so a caller that has just a Task's ref
-   * (never a full scanned {@link Ticket}) can close without a round-trip read.
-   */
+  /** Close the ticket with a comment; needs only the portable identity, never a full scanned {@link Ticket}. */
   close?(ticket: TicketRef, comment: string): Promise<void>;
-  /**
-   * Re-open a ticket that was closed prematurely with a comment (issue #139):
-   * under the close-after-verify model Harmonic — not the agent — owns the
-   * close, so a close it did not make (agent-via-skill, or an operator) is
-   * reverted and the Task Escalated. A tracker without lifecycle writes omits
-   * this method and remains an inbound-only source.
-   */
+  /** Re-open a ticket closed prematurely, with a comment. A tracker without lifecycle writes omits this. */
   reopen?(ticket: TicketRef, comment: string): Promise<void>;
-  /**
-   * Open a PR from a Run's worktree branch — the open-PR Merge Fate (issue
-   * #33). Optional: a tracker with no PR concept omits it, and auto-drive
-   * treats an absent one as leave-the-branch (artifact).
-   */
+  /** Open a PR from an Attempt's worktree branch; a tracker with no PR concept omits it (treated as artifact). */
   openPR?(input: OpenPRInput): Promise<void>;
 }
 
@@ -138,7 +95,7 @@ export interface WritableTrackerAdapter extends TrackerAdapter {
   reopen(ticket: TicketRef, comment: string): Promise<void>;
 }
 
-/** The open-PR Merge Fate's inputs (issue #33). */
+/** The open-PR Merge Fate's inputs. */
 export interface OpenPRInput {
   branch: string;
   baseBranch: string;
@@ -147,8 +104,7 @@ export interface OpenPRInput {
 }
 
 /**
- * Why a repo's tracker couldn't resolve (issue #83). Distinct machine codes so
- * the Resolved Tracker surface can word each reason for itself:
+ * Why a repo's tracker couldn't resolve:
  * - `no-declaration`: no `docs/agents/issue-tracker.md` in the repo.
  * - `unsupported`: the declared name is one no adapter serves (or absent).
  * - `misconfigured`: the name resolves but the tracker is mis-set (e.g. a GitLab
@@ -167,12 +123,7 @@ export class TrackerResolutionError extends Error {
   }
 }
 
-/**
- * The Resolved Tracker of a Workspace's repo (issue #83): the adapter's display
- * label on success, or a coded reason it can't resolve. Computed at poll time
- * and cached by the poller manager; a resolution failure stops the poll loop
- * from starting rather than erroring every cycle.
- */
+/** The Resolved Tracker of a Workspace's repo: the adapter's label on success, or a coded reason it can't resolve. */
 export type ResolvedTracker =
   | { ok: true; name: string; label: string }
   | { ok: false; code: TrackerResolveFailureCode; reason: string };
@@ -200,13 +151,7 @@ export function resolutionFailure(err: unknown): ResolvedTracker & { ok: false }
   return { ok: false, code, reason: err instanceof Error ? err.message : String(err) };
 }
 
-/**
- * Resolve a repo's tracker to a structured {@link ResolvedTracker} — the
- * non-throwing sibling of {@link resolveTrackerAdapter} used by the poll-loop
- * gate and the Resolved Tracker surface (issue #83). Reuses the same resolver
- * (injectable for tests); the poller reports its per-cycle resolution the same
- * way via {@link resolutionSuccess}/{@link resolutionFailure}.
- */
+/** The non-throwing sibling of {@link resolveTrackerAdapter}: a structured {@link ResolvedTracker}. */
 export async function resolveTracker(
   repoRoot: string,
   resolve: (r: string) => Promise<TrackerAdapter> = resolveTrackerAdapter,
@@ -219,13 +164,10 @@ export async function resolveTracker(
 }
 
 /**
- * Resolve the repo's tracker from its `docs/agents/issue-tracker.md`
- * declaration (`# Issue tracker: <name>`) — the sibling of the Harness
- * Adapter's `adapterFor`. GitHub uses ambient `gh` auth (no config).
- * local-markdown reads an optional `Path: <dir>` line (default `.scratch`,
- * resolved relative to the repo unless absolute). GitLab reads an optional
- * `Project: <group/repo>` line, inferring it from the repo's `origin` remote
- * when absent; auth and host come from the ambient `glab` CLI (never the doc).
+ * Resolve the repo's tracker from its `docs/agents/issue-tracker.md` declaration (`# Issue tracker: <name>`).
+ * GitHub uses ambient `gh` auth. local-markdown reads an optional `Path: <dir>` line (default `.scratch`).
+ * GitLab reads an optional `Project: <group/repo>` line, inferring it from the `origin` remote when absent;
+ * auth and host come from the ambient `glab` CLI.
  */
 export async function resolveTrackerAdapter(
   repoRoot: string,

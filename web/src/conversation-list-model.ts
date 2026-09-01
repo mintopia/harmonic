@@ -3,9 +3,9 @@
 import type { Conversation } from './types.js';
 
 /**
- * Display text for a Conversation's title (issue #15). The server already
+ * Display text for a Conversation's title. The server already
  * resolves operator-set vs first-Turn-derived title into `Conversation.title`
- * (the LOCKED contract) — this only covers the one case neither could
+ * — this only covers the one case neither could
  * produce: no custom title and no Turn yet, which the API represents as
  * `null`. An honest placeholder, never a blank row.
  */
@@ -32,7 +32,7 @@ export function upsertConversation(list: Conversation[], conversation: Conversat
 }
 
 /** Drops one Conversation by id — the list's local removal on a successful
- * delete (issue #15: deletion doesn't broadcast over the WebSocket). */
+ * delete (deletion doesn't broadcast over the WebSocket). */
 export function removeConversationById(list: Conversation[], id: number): Conversation[] {
   return list.filter((c) => c.id !== id);
 }

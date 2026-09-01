@@ -26,14 +26,11 @@ const toolUpdate = (id: number, toolCallId: string, status: string): AttemptEven
 
 const lifecycle = (id: number, payload: any): AttemptEvent => evt(id, 'lifecycle', payload);
 
-/** The whole pipeline the component runs: raw events → coalesced items →
- * announcements, given a starting cursor. */
 const announce = (events: AttemptEvent[], cursor = EMPTY_ANNOUNCE_CURSOR) =>
   announceTransitions(coalesceEvents(events), cursor);
 
 describe('announceTransitions — transcript transitions for a polite live region', () => {
   it('announces a fresh agent message once, not per streamed chunk', () => {
-    // The exact byte-boundary splits coalescing folds into one utterance.
     const { announcements } = announce([chunk(1, 'I searched the de'), chunk(2, 'ferred list.')]);
     expect(announcements).toEqual(['New message']);
   });
@@ -92,20 +89,15 @@ describe('announceTransitions — transcript transitions for a polite live regio
     const first = announce(events);
     expect(first.announcements).toEqual(['New message', 'Read src/x.ts completed', 'Turn finished']);
 
-    // Same items, carried cursor → nothing, and the same cursor reference so a
-    // caller can skip the re-render.
     const second = announceTransitions(coalesceEvents(events), first.cursor);
     expect(second.announcements).toEqual([]);
     expect(second.cursor).toBe(first.cursor);
   });
 
   it('only speaks the delta as a stream grows across renders', () => {
-    // Render 1: a message begins, a tool is still running.
     const r1 = announce([chunk(1, 'On it. '), tool(2, 'a', 'pending')]);
     expect(r1.announcements).toEqual(['New message']);
 
-    // Render 2: more of the SAME message arrives (no re-announce) and the tool
-    // finishes (new). The message item keeps key 1, so it is not spoken again.
     const r2 = announceTransitions(
       coalesceEvents([chunk(1, 'On it. '), chunk(3, 'Done.'), tool(2, 'a', 'pending'), toolUpdate(4, 'a', 'completed')]),
       r1.cursor,
@@ -115,8 +107,6 @@ describe('announceTransitions — transcript transitions for a polite live regio
 
   it('seeding a backlog marks it seen without announcing, then speaks only what merges after', () => {
     const backlog = [chunk(1, 'old reply'), tool(2, 'a', 'completed'), lifecycle(3, { event: 'finished' })];
-    // Seed: discard announcements, keep the cursor (what the component does on
-    // opening a conversation with history).
     const seeded = announce(backlog).cursor;
 
     const live = announceTransitions(
@@ -127,8 +117,6 @@ describe('announceTransitions — transcript transitions for a polite live regio
   });
 
   it('announces two separate messages in one turn as two distinct transitions', () => {
-    // A tool between them splits the coalesced text into two message items with
-    // distinct keys — both are genuinely new utterances and both are spoken.
     const events = [chunk(1, 'first'), tool(2, 'a', 'completed'), chunk(3, 'second')];
     expect(announce(events).announcements).toEqual([
       'New message',

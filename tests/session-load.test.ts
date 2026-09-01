@@ -7,32 +7,12 @@ import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
 import { AcpDriver } from '../src/acp/driver.js';
 import { graftMcpCredentials } from '../src/domain/sessions.js';
 
-/**
- * The issue #143 seam test: `AcpDriver.load()` — the `session/load` resume
- * handshake — driven over a REAL spawned stub harness process, both
- * advertising and not-advertising `session/load` (AC7). Unlike
- * `tests/sessions.test.ts` (which drives the pure/store helpers in isolation)
- * this proves the driver's discriminated-union incompatibility outcomes and
- * the fresh-credential rebind (issue #143 AC5, via {@link graftMcpCredentials})
- * actually reach a live ACP process — AC1 ("fresh harness process": every
- * `load()` call here spawns its own child) and AC6 ("cold reload is not a
- * degraded path": a spawned stub process has no warm cache and `load()`
- * behaves identically to a warm one) fall out of that setup for free.
- *
- * Deps #141 (Session entity) and #142 (compat matrix) are built; this file
- * exercises the driver seam #142's `assessResumeEligibility` doesn't reach —
- * the live harness's own `initialize` re-advertisement.
- */
-
 const STUB_HARNESS = join(import.meta.dirname, 'stub-harness.mjs');
 
 interface Rig {
   child: ChildProcess;
   driver: AcpDriver;
-  /** Every `session/update` `update` object the stub emitted, in order. */
   updates: { sessionUpdate: string; [key: string]: unknown }[];
-  /** The load-time replay flag (issue #144) delivered alongside each update in
-   * `updates`, index-aligned — true while a `session/load` was in flight. */
   replayFlags: boolean[];
 }
 
@@ -57,7 +37,6 @@ function spawnRig(envOverrides: Record<string, string> = {}): Rig {
   return { child, driver, updates, replayFlags };
 }
 
-/** The JSON-scenario text of a `session/update` `agent_message_chunk`, parsed. */
 function lastEchoedJson(updates: Rig['updates']): unknown {
   const chunk = [...updates]
     .reverse()
@@ -106,7 +85,7 @@ describe('AcpDriver.load() — the session/load resume handshake (issue #143)', 
 
   it('reloads a stored Session, re-verifies modes, and rebinds fresh MCP credentials onto the wire', async () => {
     const { driver, updates } = spawnRig({ STUB_SESSION_ID: 'resume-sess-1' });
-    const templates = [{ name: 'harmonic', type: 'http', url: 'http://x' }]; // credential-free, as stored
+    const templates = [{ name: 'harmonic', type: 'http', url: 'http://x' }];
     const outcome = await driver.load({
       sessionId: 'resume-sess-1',
       cwd: '/tmp/reload-cwd',
@@ -175,8 +154,6 @@ describe('AcpDriver.load() — the session/load resume handshake (issue #143)', 
       permissionMode: 'bypassPermissions',
     });
     expect(outcome).toMatchObject({ loaded: false, reason: 'permission-mode-unestablishable' });
-    // An incompatible outcome adopts no session — even though session/load was
-    // sent to discover the modes, the driver holds no session state (#143 review).
     expect(driver.sessionId).toBe('');
   });
 });
@@ -197,7 +174,6 @@ describe('load-time replay quarantine — the driver marks replayed history (iss
     const outcome = await driver.load({ sessionId: 'replay-sess-1', cwd: '/tmp/reload-cwd' });
     expect(outcome).toEqual({ loaded: true });
 
-    // The whole historical stream arrived during the load, each tagged replay.
     expect(updates.map((u) => u.sessionUpdate)).toEqual([
       'tool_call',
       'agent_message_chunk',
@@ -216,7 +192,6 @@ describe('load-time replay quarantine — the driver marks replayed history (iss
     const replayCount = updates.length;
     expect(replayFlags.slice(0, replayCount).every((r) => r === true)).toBe(true);
 
-    // A fresh prompt turn: its updates are current-turn output, never replay.
     await driver.prompt([
       {
         type: 'text',

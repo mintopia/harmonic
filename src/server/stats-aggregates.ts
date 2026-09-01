@@ -1,9 +1,3 @@
-/**
- * The task-grain, verification, guardrail, and per-Workspace formulas ADR-0014
- * locks onto the attempt-grain `/stats` route. Honest numbers per ADR-0008: cost
- * is null-sticky (a floor, never a fabricated zero), and no aggregate ever
- * reports a single combined token scalar.
- */
 import { sumCosts, type Cost } from '../domain/pricing.js';
 import { mergeUsage, type AttemptUsage } from '../execution/usage.js';
 import { isExecutionFailure } from '../domain/attempt-failure.js';
@@ -18,18 +12,12 @@ import type {
 
 const parseCost = (raw: string | null): Cost | null => (raw ? (JSON.parse(raw) as Cost) : null);
 
-/** Local-midnight (server timezone) epoch-ms of a timestamp — the same day
- * bucket `buildDaySeries` uses, so the settle series and the attempt series
- * share one calendar. */
 function dayBucket(ts: number): number {
   const d = new Date(ts);
   d.setHours(0, 0, 0, 0);
   return d.getTime();
 }
 
-/** A Task settles once, by its *terminal* settling event — the latest by ts. A
- * self-heal Task that escalated then merged settles `merged`; the earlier
- * escalation is not a second settle. */
 function terminalSettleByTask(settleEvents: SettleEventRow[]): Map<number, SettleEventRow> {
   const terminal = new Map<number, SettleEventRow>();
   for (const event of settleEvents) {
@@ -44,11 +32,7 @@ export interface DayCount {
   count: number;
 }
 
-/**
- * Tasks merged / day (ADR-0014 §1). A Task counts once, on the calendar day its
- * merge event settled (server timezone), never per Attempt. Days with no merges
- * are absent — the client fills the gaps. Ordered ascending by day.
- */
+/** Tasks merged per calendar day (server timezone); a Task counts once, on its merge day. Days with no merges are absent. */
 export function tasksMergedByDay(settleEvents: SettleEventRow[]): DayCount[] {
   const byDay = new Map<number, number>();
   for (const settle of terminalSettleByTask(settleEvents).values()) {
@@ -72,12 +56,7 @@ function attemptsByTask(settledTaskAttempts: SettledTaskAttempt[]): Map<number, 
   return counts;
 }
 
-/**
- * Attempts-per-task distribution over merged Tasks (ADR-0014 §2), bucketed
- * `1 / 2 / 3 / 4+`. One is best — a Task that merged first-try needed no
- * self-heal. Open and cancelled Tasks never appear here (only merged Tasks are
- * passed), so an in-flight partial count cannot skew the shape.
- */
+/** Attempts-per-task distribution over merged Tasks, bucketed `1 / 2 / 3 / 4+`. */
 export function attemptsPerTask(
   settleEvents: SettleEventRow[],
   settledTaskAttempts: SettledTaskAttempt[],
@@ -101,12 +80,7 @@ export interface CostPerMergedTask {
   wastedCost: Cost | null;
 }
 
-/**
- * Cost per merged Task (ADR-0014 §3): merged spend and the Task count it divides
- * by, plus the wasted spend reported beside it — the cost of Attempts on Tasks
- * that settled reverted or escalated in range — so the split reconciles instead
- * of hiding non-merged spend in the denominator. Cost null-sticks per ADR-0008.
- */
+/** Merged spend and the Task count it divides by, plus the wasted spend of reverted/escalated Tasks beside it. */
 export function costPerMergedTask(
   settleEvents: SettleEventRow[],
   settledTaskAttempts: SettledTaskAttempt[],
@@ -135,18 +109,11 @@ export interface Verdicts {
   command: VerdictCounts;
 }
 
-/**
- * Verification verdicts at verification-attempt grain (ADR-0014 §4), critic and
- * command counted separately and never folded together. The critic's `fail`
- * verdict is the block outcome; a self-heal records one verdict per pass
- * (ADR-0003), so a re-verified Task contributes each of its verdicts.
- */
+/** Verification verdicts at verification-attempt grain; critic and command counted separately. `fail` is the block outcome. */
 export function verdicts(verifications: VerificationRow[]): Verdicts {
   const empty = (): VerdictCounts => ({ pass: 0, block: 0, inconclusive: 0 });
   const result: Verdicts = { critic: empty(), command: empty() };
   for (const row of verifications) {
-    // Count only the two known mechanisms — a future third must claim its own
-    // bucket, never silently fold into critic.
     const bucket = row.mechanism === 'critic' ? result.critic : row.mechanism === 'command' ? result.command : null;
     if (!bucket) continue;
     if (row.verdict === 'pass') bucket.pass += 1;
@@ -162,14 +129,7 @@ export interface GateOutcomes {
   revertedOnRed: number;
 }
 
-/**
- * Gate outcomes (ADR-0014 §5): how each settled Task left the merge gate.
- * `auto-merged` landed, `reverted-on-red` merged then failed the post-merge
- * check and was reverted (ADR-0001), `escalated` went to a human for any other
- * reason (a conflict, a guardrail, an agent escalation). Counted once per Task
- * by its terminal settle; a cancelled Task never reached the gate, so it is
- * absent by construction (no settling event).
- */
+/** How each settled Task left the merge gate, counted once per Task; a cancelled Task never reached it. */
 export function gateOutcomes(settleEvents: SettleEventRow[]): GateOutcomes {
   const outcomes: GateOutcomes = { autoMerged: 0, escalated: 0, revertedOnRed: 0 };
   for (const settle of terminalSettleByTask(settleEvents).values()) {
@@ -180,12 +140,7 @@ export function gateOutcomes(settleEvents: SettleEventRow[]): GateOutcomes {
   return outcomes;
 }
 
-/**
- * Guardrail trips keyed by dimension (ADR-0014 §6). The worker already collapsed
- * to distinct (Attempt, dimension) pairs, so this is a straight tally: an
- * Attempt that tripped one dimension counts once for it, and an Attempt tripping
- * two dimensions counts in both. A dimension that never tripped is absent.
- */
+/** Guardrail trips keyed by dimension, once per (Attempt, dimension); a dimension that never tripped is absent. */
 export function guardrailTripsByDimension(trips: GuardrailTripRow[]): Record<string, number> {
   const counts: Record<string, number> = {};
   for (const trip of trips) counts[trip.dimension] = (counts[trip.dimension] ?? 0) + 1;
@@ -207,8 +162,7 @@ export interface WorkspaceStats {
   inputTokens: number;
   outputTokens: number;
   tasks: number;
-  /** Failed-only rate (ADR-0028) over the Workspace's non-cancelled Attempts;
-   * null when it ran none, so an empty Workspace is never a fabricated 0%. */
+  /** Failed-only rate over the Workspace's non-cancelled Attempts; null when it ran none. */
   failureRate: number | null;
 }
 
@@ -222,13 +176,7 @@ function inputOutput(usages: AttemptUsage[]): { inputTokens: number; outputToken
   );
 }
 
-/**
- * Per-Workspace breakdown (ADR-0014 §7): the attempt-grain aggregates grouped by
- * owning Workspace, ordered by cost so a single range answers where spend and
- * failures concentrate. Billable tokens stay split input/output (never one
- * scalar). A `workspaceId` filter upstream already narrowed the rows, so a
- * single-Workspace request yields one row.
- */
+/** The attempt-grain aggregates grouped by owning Workspace, ordered by cost. */
 export function byWorkspace(
   rows: WorkspaceAttempt[],
   taskWorkspaces: TaskWorkspaceRow[],

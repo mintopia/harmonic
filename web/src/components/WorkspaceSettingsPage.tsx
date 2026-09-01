@@ -11,7 +11,7 @@ import { workspaceTabs, type SettingTab } from '../../../src/domain/settings-reg
 
 /**
  * The per-Workspace settings surface: a thin data shell over the shared
- * {@link SettingsForm} engine (ADR-0044 Decision G). It owns the override buffer
+ * {@link SettingsForm} engine. It owns the override buffer
  * and the field PATCH, and renders the *same* {@link SETTINGS_SCHEMA} as the
  * global page with the inherit layer on and the `global-only` tabs filtered out.
  */
@@ -58,9 +58,6 @@ export function WorkspaceSettingsPage({
     setError(null);
     setFieldErrors({});
     try {
-      // Working Directory is read-only here (it is Workspace identity, not a
-      // setting), so it's left out of the patch. Overrides go as-is — `null`
-      // clears one back to inherit, a value overrides.
       const updated = await api.updateWorkspace(local.id, {
         name: local.name,
         trackerEnabled: local.trackerEnabled,

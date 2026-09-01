@@ -2,17 +2,6 @@
 // project, whose nodenext resolution requires it (Vite maps .js → .ts).
 import type { AttemptSummary, Step } from './types.js';
 
-/**
- * Pure view-model helpers behind the Ticket page's run rail (issue #183, part
- * of #179 — the Deck redesign). The rail switches per-run detail, so every
- * chip needs a single derived "how this run reads" — a state word, a
- * state-signal dot, and whether that dot pulses (work in flight). That
- * derivation lives here, once, so `AttemptRail` and the read-only result bar
- * (`ticket-gate-model.ts`) never re-derive a run's disposition independently
- * (the same pure-formatter house style as `task-actions-model.ts` /
- * `verification-attempts-model.ts`).
- */
-
 /** The state-signal family a run's dot/word draws from (DESIGN.md § Signal
  * Rule); `neutral` is the un-coloured register (cancelled). */
 export type AttemptDot = 'running' | 'fail' | 'merged' | 'neutral';
@@ -28,8 +17,8 @@ export interface AttemptDisplay {
 /**
  * A run's disposition, folded from its terminal state first and only then its
  * live Step: a still-`running` run reads by whichever Step is currently
- * running in its owning Attempt (ADR-0001 Vocabulary — AttemptSummary/Phase are deleted
- * concepts). `steps` is the matching Attempt's timeline (by `run.attempt` ===
+ * running in its owning Attempt.
+ * `steps` is the matching Attempt's timeline (by `run.attempt` ===
  * `Attempt.number`); pass `[]` when it isn't loaded (e.g. a historical run
  * the gate bar never actually renders `running` for). Pure.
  */
@@ -40,12 +29,8 @@ export function attemptDisplay(run: AttemptSummary, steps: readonly Step[] = [])
     case 'cancelled':
       return { word: 'cancelled', dot: 'neutral', pulse: false };
     case 'completed':
-      // Merged (or an operator Complete) — reads as done, not amber.
       return { word: 'merged', dot: 'merged', pulse: false };
     case 'running': {
-      // The running Step carries its type as the word; no Step running (the
-      // gap before/after merging, or before the first Step starts) reads the
-      // generic 'running'.
       const running = steps.find((step) => step.state === 'running');
       const word = running?.type ?? 'running';
       return { word, dot: 'running', pulse: true };

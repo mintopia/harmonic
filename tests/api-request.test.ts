@@ -1,13 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../web/src/api.js';
 
-/**
- * The API client's shared `request()` (web/src/api.ts) is internal, so these
- * exercise it through a public method. The regression under test: a successful
- * response with an empty body used to be returned as a bare `null`, which blew
- * up far away the moment a caller destructured it — surfacing as Firefox's
- * cryptic "null has no properties". It must now fail honestly and locally.
- */
 const fakeFetch = (body: string | null, init: ResponseInit) =>
   vi.fn().mockResolvedValue(new Response(body, init));
 
@@ -48,12 +41,6 @@ describe('api request()', () => {
   });
 });
 
-/**
- * The Epic + Map list clients migrated onto the shared pagination contract
- * (ADR-0045, issue #351): each threads `limit`/`offset`/`q` into the query so the
- * Board can walk later pages and search, and drops to the bare path when it wants
- * the whole list (the additive default).
- */
 describe('paginated list clients (epics, maps)', () => {
   it('epics() requests the bare workspace path when it wants the whole list', async () => {
     const fetch = fakeFetch(JSON.stringify({ epics: [], total: 0 }), { status: 200 });

@@ -30,9 +30,6 @@ export function ProcessDrillIn({ process, now }: { process: RunWithTree; now: nu
   const [events, setEvents] = useState<AttemptLogEvent[]>([]);
   const [logUnavailable, setLogUnavailable] = useState(false);
 
-  // Age off `now` (the prop), but stamp writes at the moment a snapshot merges —
-  // so re-tracking only happens when the tree object actually changes, not once
-  // a second. A ref carries the live `now` into that tree-triggered effect.
   const nowRef = useRef(now);
   // eslint-disable-next-line react/refs -- deliberately synced during render so the tree-triggered effect reads the live `now` without depending on it
   nowRef.current = now;
@@ -40,8 +37,6 @@ export function ProcessDrillIn({ process, now }: { process: RunWithTree; now: nu
     setActivity((prev) => trackNodeActivity(prev, tree, nowRef.current));
   }, [tree]);
 
-  // A transcript can appear just after session creation, so unavailable is
-  // deliberately rechecked too.
   useLiveEffect((live) => {
     if (attemptId === null) return;
     setEvents([]);
@@ -60,8 +55,6 @@ export function ProcessDrillIn({ process, now }: { process: RunWithTree; now: nu
   }, [attemptId]);
 
   const rows = flattenTree(tree, activity, now);
-  // A selection that aged out of the visible rows falls back to the root, so the
-  // output pane never frames on a node that just disappeared from the tree.
   const selectedVisible = rows.some((r) => r.node.id === selectedId);
   const selected = (selectedVisible ? findNode(tree, selectedId) : undefined) ?? tree;
   const framed = frameEvents(events, selected);
@@ -90,10 +83,7 @@ export function ProcessDrillIn({ process, now }: { process: RunWithTree; now: nu
             <p className="text-small text-muted">
               {selected.depth === 0
                 ? 'No output yet.'
-                : // A Subagent only streams here when the harness tags its tool
-                  // activity onto the parent session (Claude Code). Deeper spawns
-                  // — and harnesses that don't tag — keep their transcript in
-                  // their own log, rolled up under the root rather than shown here.
+                :
                   'This Subagent’s transcript rolls up under the root session — it doesn’t stream separately here.'}
             </p>
           )}

@@ -13,7 +13,6 @@ import type { CriticDriveRequest } from '../src/verification/critic.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { allWorkspaces, makeSettingsStore, waitFor } from './helpers.js';
 
-/** The unit cases fake the merge, so the default-branch tip the refresh pins is faked too. */
 const fakeGit = { revParse: async () => 'develop-tip' };
 
 const conflict = (detail = 'both changed package.json'): MergeIntoBaseOutcome => ({
@@ -143,8 +142,6 @@ describe('EpicRefreshCoordinator', () => {
       status: 'escalated',
       reason: 'no active Epic member is available to resolve refresh conflict for epic/14',
     });
-    // The failed dispatch set no `resolving` flag: the next conflict routes to
-    // dispatch again, never to the still-conflicts-after-corrective-turn path.
     await expect(coordinator.refresh(target)).resolves.toEqual({
       status: 'escalated',
       reason: 'no active Epic member is available to resolve refresh conflict for epic/14',
@@ -152,15 +149,6 @@ describe('EpicRefreshCoordinator', () => {
   });
 });
 
-/**
- * Issue #315 — the corrective turn operates on the Epic integration branch
- * itself: `epic/<ref>` is checked out into a dedicated worktree, the
- * conflicted default-branch merge is reproduced there (markers in place), and
- * one bounded agent turn resolves and commits it; the refresh then re-merges to
- * completion. Exercised through the REAL `Runner.enqueueEpicRefreshResolution`
- * and the real `mergeIntoBase` against a throwaway git repo — only the agent
- * drive is faked.
- */
 describe('epic refresh corrective turn (issue #315)', () => {
   const git = (dir: string, ...args: string[]) =>
     execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
@@ -176,8 +164,6 @@ describe('epic refresh corrective turn (issue #315)', () => {
     asyncDb = await openAsyncDb(dir);
     settingsStore = await makeSettingsStore(dir);
     tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
-    // A repo whose default branch is develop, with epic/5 cut off it and BOTH
-    // sides editing shared.txt — the develop→epic/5 refresh merge conflicts.
     repo = join(dir, 'repo');
     execFileSync('git', ['init', '-b', 'develop', repo], { encoding: 'utf8' });
     git(repo, 'config', 'user.name', 'Test');
@@ -223,8 +209,6 @@ describe('epic refresh corrective turn (issue #315)', () => {
     const retryOutcomes: EpicRefreshOutcome[] = [];
     const runner = makeRunner(async (req) => {
       driveCalls.push(req);
-      // The reproduced merge is in progress in the epic/5 worktree — resolve
-      // the markers and complete it, exactly what the prompt asks the agent to do.
       expect(git(req.cwd, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('epic/5');
       expect(git(req.cwd, 'status', '--porcelain')).toContain('UU shared.txt');
       writeFileSync(join(req.cwd, 'shared.txt'), 'resolved\n');
@@ -232,7 +216,6 @@ describe('epic refresh corrective turn (issue #315)', () => {
       git(req.cwd, 'commit', '--no-edit');
     });
     await runningMember('epic/5');
-    // Nobody has develop checked out, so the refresh merge takes the CAS path.
     git(repo, 'checkout', '--detach');
 
     const target = { ref: 5, repoDir: repo, defaultBranch: 'develop' };
@@ -253,10 +236,8 @@ describe('epic refresh corrective turn (issue #315)', () => {
     expect(driveCalls).toHaveLength(1);
     expect(driveCalls[0]!.cwd).toContain('epic-refresh-5');
     expect(escalations).toEqual([]);
-    // epic/5 now contains develop's advance, and the resolution worktree is gone.
     git(repo, 'merge-base', '--is-ancestor', 'develop', 'epic/5');
     expect(git(repo, 'worktree', 'list').split('\n').filter(Boolean)).toHaveLength(1);
-    // The flag settled: a fresh conflict-free refresh is an ordinary refresh.
     await expect(coordinator.refresh(target)).resolves.toMatchObject({ status: 'refreshed' });
   });
 
@@ -264,7 +245,6 @@ describe('epic refresh corrective turn (issue #315)', () => {
     const escalations: string[] = [];
     const retryOutcomes: EpicRefreshOutcome[] = [];
     const runner = makeRunner(async () => {
-      // The agent turn achieves nothing: the half-merge is discarded with the worktree.
     });
     await runningMember('epic/5');
     git(repo, 'checkout', '--detach');
@@ -320,8 +300,6 @@ describe('epic refresh corrective turn (issue #315)', () => {
       git(req.cwd, 'add', '-A');
       git(req.cwd, 'commit', '--no-edit');
     });
-    // No member is `working` — the Epic is done. The refresh must still run the
-    // corrective turn, borrowing the Workspace default harness/model.
     git(repo, 'checkout', '--detach');
 
     const target = { ref: 5, repoDir: repo, defaultBranch: 'develop' };
@@ -340,7 +318,6 @@ describe('epic refresh corrective turn (issue #315)', () => {
     await waitFor(async () => retryOutcomes.length === 1);
     expect(retryOutcomes[0]).toMatchObject({ status: 'refreshed' });
     expect(escalations).toEqual([]);
-    // The corrective turn ran on the default harness (no member to borrow from).
     const cfg = defaultConfig();
     expect(driveCalls).toHaveLength(1);
     expect(driveCalls[0]!.harnessId).toBe(cfg.defaults.harness);

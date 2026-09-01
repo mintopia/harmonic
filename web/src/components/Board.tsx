@@ -57,8 +57,6 @@ function RunningReadoutLine({ task }: { task: Task }) {
     const timer = setInterval(() => setNow(Date.now()), 1_000);
     return () => clearInterval(timer);
   }, []);
-  // Live context-window fill from the attempt_usage firehose (falls back to the
-  // REST snapshot until the first tick); `ctx %` = contextTokens/contextWindow.
   const [liveContext, setLiveContext] = useState<number | null>(null);
   useEffect(() => {
     if (attemptId == null) return;
@@ -104,7 +102,6 @@ function RunNowButton({ taskId, onChanged }: { taskId: number; onChanged: () => 
   );
 }
 
-/** The escalated card's one action: open the ticket (or Epic peek), where the resolution lives. */
 function ResolveButton({ onOpen }: { onOpen: () => void }) {
   return (
     <button
@@ -125,8 +122,6 @@ function WhoLine({ harness, model }: { harness: string; model: string }) {
   );
 }
 
-/** "Blocked" is the primary label (issue #458: one word for dependency-unmet
- * across Board/Epic); the count is a secondary pip, not the headline. */
 function BlockerBadge({ count, blockedOnFailed }: { count: number; blockedOnFailed: boolean }) {
   return (
     <span
@@ -154,7 +149,6 @@ function HitlBadge() {
   );
 }
 
-/** Attention / Running card: the full ~420px ticket card (DESIGN.md § 6). */
 function TaskCard({ task, onOpen, onChanged }: { task: Task; onOpen: () => void; onChanged: () => void }) {
   const hasReadout = task.runStartedAt != null;
   const action =
@@ -232,7 +226,6 @@ function EpicKindBadge({ epic }: { epic: Epic }) {
   );
 }
 
-/** An escalated Epic in Attention: the whole-Epic merge is held for the operator (ADR-0041). */
 function EpicAttentionCard({ epic, onOpenEpic }: { epic: Epic; onOpenEpic?: (epic: Epic) => void }) {
   const open = () => onOpenEpic?.(epic);
   return (
@@ -322,8 +315,6 @@ function Chevron({ open }: { open: boolean }) {
 
 type SectionTone = 'attn' | 'running' | 'neutral';
 
-// The count pill carries the section's state colour (the Signal Rule): solid
-// indigo for Attention, Running amber tint, neutral for Pending.
 const SECTION_COUNT: Record<SectionTone, string> = {
   attn: 'bg-await text-on-await',
   running: 'bg-running-tint text-running',
@@ -364,8 +355,6 @@ function BoardSection({
 
 const isBlocked = (item: PendingItem): boolean => item.openBlockerCount != null && item.openBlockerCount > 0;
 
-// Ready ≠ blocked (DESIGN.md § 5): a ticket whose stored state is `ready` but
-// which waits on a blocker shows the Blocked slate, never the actionable teal.
 function itemDot(item: PendingItem): string {
   if (item.state === null) return 'bg-edge';
   if (item.humanOnly) return 'bg-faint';
@@ -373,8 +362,6 @@ function itemDot(item: PendingItem): string {
   return stateFill(item.state);
 }
 
-/** Pending node (DESIGN.md § 6): state dot + mono id + title + blocker chips; the
- * ▷ Run now on a runnable frontier node, the blocker-count or HITL badge otherwise. */
 function PendingCard({
   item,
   onOpenTask,
@@ -489,14 +476,12 @@ function EpicBand({
   defaultOpen?: boolean;
   onOpenTask: (taskId: number) => void;
   onChanged: () => void;
-  /** Open this Epic's summary page (ADR-0017) — the one rich Epic surface. */
+  /** Open this Epic's summary page — the one rich Epic surface. */
   onOpenEpic?: (epic: Epic) => void;
 }) {
   const attention = epic.members.filter((m) => m.escalated);
   const closed = closedMembers(epic);
   const hasColumns = columns.length > 0;
-  // A band with open members opens its columns by default; a band that is only
-  // integrating (no open members yet) starts collapsed.
   const [open, setOpen] = useState(defaultOpen || hasColumns);
 
   return (
@@ -632,9 +617,6 @@ const PIP_FILL: Record<MemberPipStatus, string> = {
   waiting: 'bg-edge',
 };
 
-/** ADR-0011: one colour-status pip per member, top-right of the Epic surface.
- * Every pip is the same rounded-rectangle — state is carried by colour alone,
- * never by shape (merged is emerald, ready teal, and they never collapse). */
 function StatusPips({ epic }: { epic: Epic }) {
   return (
     <span
@@ -650,10 +632,6 @@ function StatusPips({ epic }: { epic: Epic }) {
   );
 }
 
-/** ADR-0011: the rail below the columns holding the Epic's closed (merged/
- * cancelled) members, so finished work stays visible without crowding. In the
- * main-board Epic band it renders `collapsible`, collapsed by default, so
- * finished work doesn't crowd the band. */
 function ClosedRail({
   members,
   onOpenTask,
@@ -682,10 +660,6 @@ function ClosedRail({
       {open && (
       <div className="flex flex-wrap gap-2">
         {members.map((m) => {
-          // A merged or done member folded into the integration branch reads
-          // emerald; a cancelled one is neutral faint. Closed-ness is a state,
-          // not a reason to shrink the card — it takes the same full multi-row
-          // shape as an open member (PendingCard), only quietened.
           const merged = m.mergeStatus === 'completed' || m.state === 'done';
           const label = merged ? 'merged' : 'cancelled';
           const inner = (

@@ -18,8 +18,6 @@ import { logger } from '../src/logger.js';
 
 const outPath = join(dirname(fileURLToPath(import.meta.url)), '..', 'website', 'src', 'openapi.json');
 
-// A throwaway data dir: the export opens a real (empty) SQLite DB but never
-// serves traffic, so nothing persists beyond this process.
 const dataDir = mkdtempSync(join(tmpdir(), 'harmonic-openapi-'));
 try {
   const app = await buildApp({ dataDir });

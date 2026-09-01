@@ -2,21 +2,10 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { startServer, stubHarness, type TestServer } from './helpers.js';
 import type { Ticket } from '../src/tracker/adapter.js';
 
-/**
- * The Tasks list sources epic rows from the derived-epic model, not a mirrored
- * `isEpic` task row (ADR-0016, issue #418). These tests exercise the `GET
- * /api/tasks?epics=true` merge — that derived-epic rows join the task rows under
- * one pagination/sort/`total`, and that a task-attribute filter narrows them out
- * (a container has no harness/priority/state). The derivation itself is covered
- * by epic-derivation / tracker-manager tests; here `listEpicTickets` is stubbed.
- */
 describe('Tasks list epic rows from the derived model (issue #418)', () => {
   let server: TestServer;
   let workspaceId: number;
 
-  // Two epics that bracket the "now"-stamped tasks in time, so a createdAt sort
-  // is deterministic: Alpha is ancient (sorts first ascending), Beta is far in
-  // the future (sorts last ascending).
   const epicTicket = (over: Partial<Ticket>): Ticket => ({
     number: 101,
     title: 'Alpha epic',

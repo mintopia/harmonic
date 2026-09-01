@@ -7,7 +7,7 @@ import { renderSection, sectionsForTab, type RenderCtx } from './settings-schema
 import type { SettingTab } from '../../../src/domain/settings-registry.js';
 
 /**
- * The single settings renderer (ADR-0044 Decision G). The global and per-Workspace
+ * The single settings renderer. The global and per-Workspace
  * surfaces are the *same* engine over the *same* {@link SETTINGS_SCHEMA}: this
  * component owns the header, the tab strip, the tabbed section panel, and the
  * buffered save bar. Each surface passes its own tab strip, its render context

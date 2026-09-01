@@ -15,8 +15,6 @@ import {
 } from '../web/src/graph-model.js';
 import { TASK_STATES, type Task, type TaskState } from '../web/src/types.js';
 
-/** A Task fixture — only the fields the Graph reads matter; the rest are the
- * same neutral defaults board-model.test.ts uses. */
 const task = (
   id: number,
   state: TaskState,
@@ -84,8 +82,6 @@ describe('terminal-state visibility', () => {
   });
 
   it('keeps a cancelled blocker that still gates an active Task, but hides a satisfied one', () => {
-    // 1 (cancelled) still blocks 2 → kept so the block is visible; 3 (done)
-    // is satisfied → stays hidden. Matches the domain: unblock only on `done`.
     const tasks = [
       task(1, 'cancelled'),
       task(2, 'ready', { dependsOn: [1] }),
@@ -96,7 +92,6 @@ describe('terminal-state visibility', () => {
   });
 
   it('hides a terminal Task that blocks nothing active', () => {
-    // 1 (cancelled) only blocks a terminal dependent, so it explains no live block.
     const tasks = [task(1, 'cancelled'), task(2, 'done', { dependsOn: [1] })];
     expect(visibleTasks(tasks, false).map((t) => t.id)).toEqual([]);
   });
@@ -122,15 +117,12 @@ describe('dependency edges', () => {
   });
 
   it('drops edges whose other endpoint is hidden, so nothing dangles', () => {
-    // 2 depends on 1, but 1 (completed) is filtered out when terminal is hidden.
     const all = [task(1, 'done'), task(2, 'ready', { dependsOn: [1] })];
     const visible = visibleTasks(all, false);
     expect(graphEdges(visible)).toEqual([]);
   });
 
   it('keeps the blocking edge from a cancelled/failed blocker to an active dependent', () => {
-    // Regression: a cancelled blocker keeps its dependent blocked by the edge, so the
-    // graph must still draw the edge rather than hiding the blocker and reading unblocked.
     const all = [task(1, 'cancelled'), task(2, 'ready', { dependsOn: [1] })];
     const visible = visibleTasks(all, false);
     expect(graphEdges(visible)).toEqual<GraphEdge[]>([{ from: 1, to: 2 }]);
@@ -139,7 +131,6 @@ describe('dependency edges', () => {
   it('ignores self-references and de-duplicates', () => {
     const tasks = [
       task(1, 'ready'),
-      // A malformed self-dep and a doubled dep must not produce phantom edges.
       task(2, 'ready', { dependsOn: [1, 1, 2] }),
     ];
     expect(graphEdges(tasks)).toEqual<GraphEdge[]>([{ from: 1, to: 2 }]);
@@ -172,11 +163,6 @@ describe('map badges', () => {
   });
 
   it('badges an epic exactly like a Map (ADR-0016) — members share their epic ref\'s badge, the epic is never a node', () => {
-    // An epic is a derived container: its member work Tasks carry the epic's ref
-    // in mapRef (not the epic as a node), so mapBadges — the same derivation Maps
-    // use — surfaces membership. Two members of epic 408 dedupe to one badge; a
-    // second epic (502) proves ascending 1-based numbering across epics; the
-    // standalone (null mapRef) contributes none.
     const tasks = [
       task(410, 'ready', { mapRef: 502, mapTitle: 'Stats enrichment' }),
       task(409, 'ready', { mapRef: 408, mapTitle: 'Epic summary page' }),
@@ -184,8 +170,6 @@ describe('map badges', () => {
       task(500, 'ready'),
     ];
     const badges = mapBadges(tasks);
-    // Each Task resolved through mapBadges: epic 408 → 1, epic 502 → 2 (ascending
-    // by ref), both 408 members share badge 1, the standalone resolves to none.
     expect(tasks.map((t) => (t.mapRef == null ? null : badges.get(t.mapRef)))).toEqual([2, 1, 1, null]);
     expect(badges.size).toBe(2);
   });
@@ -202,13 +186,10 @@ describe('state-signal palette (the Signal Rule)', () => {
   });
 
   it('keeps draft and cancelled neutral — only true states carry a hue', () => {
-    // The Signal Rule: nothing-happening (draft) and it's-over (cancelled) get
-    // no state colour, just the neutral Faint dot / Muted text.
     const neutral = { color: 'var(--hm-faint)', text: 'var(--hm-muted)' };
     expect(SIGNAL.draft).toEqual(neutral);
     expect(SIGNAL.cancelled).toEqual(neutral);
 
-    // Every live state reads as something other than the neutral pair.
     for (const s of ['ready', 'working', 'escalated', 'done'] as TaskState[]) {
       expect(SIGNAL[s]).not.toEqual(neutral);
     }
@@ -235,7 +216,6 @@ describe('fitTransform', () => {
 
   it('scales a large graph down to fit inside the padded viewport', () => {
     const t = fitTransform(2000, 2000, 800, 600);
-    // Fits within the 48px padding on the tighter (height) axis.
     expect(t.k).toBeCloseTo((600 - 96) / 2000, 5);
     expect(t.k).toBeLessThan(1);
   });
@@ -243,7 +223,6 @@ describe('fitTransform', () => {
   it('caps the zoom at 1.5× so a tiny graph does not balloon, and centres it', () => {
     const t = fitTransform(100, 100, 800, 600);
     expect(t.k).toBe(1.5);
-    // Centred: equal margin either side of the scaled content.
     expect(t.tx).toBeCloseTo((800 - 100 * 1.5) / 2, 5);
     expect(t.ty).toBeCloseTo((600 - 100 * 1.5) / 2, 5);
   });
@@ -261,7 +240,6 @@ describe('edge geometry', () => {
   it('draws a cubic bezier from source out-port to target in-port', () => {
     const a = box(0, 0);
     const b = box(200, 100);
-    // out(a) = (100, 20), in(b) = (200, 120), mid-x = 150.
     expect(edgePath(a, b)).toBe('M100,20 C150,20 150,120 200,120');
   });
 });

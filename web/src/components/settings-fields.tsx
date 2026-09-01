@@ -14,7 +14,7 @@ export interface FieldOption {
  * and (for a select) enumerate its options. Label and control are taken from
  * the settings registry when the field maps to a registry key (see
  * {@link registryField}), so the schema stays the single source of truth for
- * field metadata (ADR-0044). `errorKey` may depend on the config because a
+ * field metadata. `errorKey` may depend on the config because a
  * server error path can name a nested key (e.g. the default model lives under
  * the current harness).
  */
@@ -82,7 +82,7 @@ export type ScalarControlKind = 'text' | 'number' | 'select' | 'toggle';
  * settings surfaces share: {@link ConfigField} wraps it in a label + error for
  * the global page, and the workspace `OverrideField` wraps it in an
  * `InheritField`'s override slot, so the same select/number/text/toggle markup
- * is never written twice (ADR-0044 Decision G).
+ * is never written twice.
  */
 export function ScalarControl({
   id,
@@ -203,8 +203,6 @@ export function ConfigField({
     />
   );
 
-  // A toggle labels itself via its inline switch text; the others take a
-  // `<label htmlFor>` above the control.
   if (d.control === 'toggle') {
     return (
       <div>
@@ -215,8 +213,6 @@ export function ConfigField({
     );
   }
 
-  // Only text/select/number reach here (toggle returned above); the width
-  // utility applies to the text wrapper, harmless on the others.
   return (
     <div className={d.control === 'text' ? d.widthClass : undefined}>
       <label className={fieldLabel} htmlFor={d.id}>

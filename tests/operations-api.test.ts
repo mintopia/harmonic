@@ -20,9 +20,6 @@ describe('Operations API (issue #293)', () => {
   it('returns the live operation tree and bounded completed-root history', async () => {
     telemetry = initializeTelemetry(resolveTelemetryOptions({ exportEnabled: 'false' }));
     server = await startServer();
-    // Boot-time operations (e.g. the lease sweep's first pass) may still be
-    // in flight; an op that ends after the shutdown below would re-merge in
-    // `recent` and pollute the assertions. Drain live ops first.
     await waitFor(async () => (await server!.api('GET', '/api/operations')).body.operations.length === 0);
     await operationRegistry.shutdown();
 

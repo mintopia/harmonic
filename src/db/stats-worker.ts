@@ -24,13 +24,6 @@ const client = createClient({ url: `file:${join(workerData.dataDir, 'harmonic.db
 const db = drizzle(client, { schema });
 
 async function readStats({ from, to, workspaceId, epicRef }: StatsRange): Promise<StatsReadResult> {
-  // Task scope: optional Workspace and/or Epic predicates, both reaching `tasks`
-  // via the attempt → task join. `and()` drops any `undefined`, so an unscoped
-  // read carries neither. `taskScope` is undefined only when both are omitted,
-  // in which case `scoped` is false and the base scans skip the join entirely.
-  // The Epic key is `tasks.mapRef` (issue #410) — the derived rollup key the
-  // per-Epic tool-call totals already group on, equal to the raw `trackerParent`
-  // for a mirrored child.
   const scoped = workspaceId !== undefined || epicRef !== undefined;
   const taskScope = and(
     workspaceId === undefined ? undefined : eq(tasks.workspaceId, workspaceId),
@@ -48,8 +41,6 @@ async function readStats({ from, to, workspaceId, epicRef }: StatsRange): Promis
           .all()
       ).map((row) => row.attempts);
 
-  // Failed-only Attempts' disposition (ADR-0001): the Attempt is the single
-  // execution ledger, so its own `reason` column is read directly.
   const attemptReasons = !scoped
     ? await db
         .select({ attemptId: attempts.id, reason: attempts.reason })
@@ -73,8 +64,6 @@ async function readStats({ from, to, workspaceId, epicRef }: StatsRange): Promis
 
   const workspaceRows = await db.select({ id: workspaces.id, name: workspaces.name }).from(workspaces).all();
 
-  // The owning Workspace of every Task an in-range Attempt belongs to — the join
-  // key the per-Workspace breakdown groups by.
   const taskIds = [...new Set(rows.map((r) => r.taskId))];
   const taskWorkspaces =
     taskIds.length === 0
@@ -85,10 +74,6 @@ async function readStats({ from, to, workspaceId, epicRef }: StatsRange): Promis
           .where(inArray(tasks.id, taskIds))
           .all();
 
-  // Settling facts (ADR-0014): `merged`/`escalated` lifecycle events whose ts is
-  // in range. `json_extract` filters and projects the payload in SQLite so the
-  // steer/finished/guardrail firehose never crosses into JS. `gate` carries the
-  // merge-policy reason on an escalation, making reverted-on-red a real number.
   const eventKind = sql<'merged' | 'escalated'>`json_extract(${attemptEvents.payload}, '$.event')`;
   const eventGate = sql<GateReason | null>`json_extract(${attemptEvents.payload}, '$.gate')`;
   const settleEvents = await db
@@ -107,9 +92,6 @@ async function readStats({ from, to, workspaceId, epicRef }: StatsRange): Promis
     )
     .all();
 
-  // Every Attempt of a Task that settled in range — its frozen cost, whatever
-  // day the Attempt itself started. A self-heal Task's whole cost-to-settle and
-  // Attempt count derive from these, counted once per Task downstream.
   const settledTaskIds = [...new Set(settleEvents.map((e) => e.taskId))];
   const settledTaskAttempts =
     settledTaskIds.length === 0
@@ -120,7 +102,6 @@ async function readStats({ from, to, workspaceId, epicRef }: StatsRange): Promis
           .where(inArray(attempts.taskId, settledTaskIds))
           .all();
 
-  // Verification-attempt-grain verdicts in range, critic and command kept apart.
   const verifications = await db
     .select({ mechanism: verificationAttempts.mechanism, verdict: verificationAttempts.verdict })
     .from(verificationAttempts)
@@ -129,9 +110,6 @@ async function readStats({ from, to, workspaceId, epicRef }: StatsRange): Promis
     .where(and(gte(verificationAttempts.ts, from), lte(verificationAttempts.ts, to), taskScope))
     .all();
 
-  // Distinct (Attempt, dimension) Guardrail trips in range: an Attempt that
-  // tripped a dimension twice counts once, but one tripping two dimensions
-  // counts in both.
   const guardrailTrips = await db
     .selectDistinct({ attemptId: guardrailEvents.attemptId, dimension: guardrailEvents.dimension })
     .from(guardrailEvents)

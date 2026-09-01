@@ -45,13 +45,6 @@ export async function request<T>(method: string, path: string, body?: unknown): 
   const text = await res.text();
   const json = text ? JSON.parse(text) : null;
   if (!res.ok) throw new ApiError(res.status, json?.error?.message ?? res.statusText);
-  // A successful response with no JSON body is a truncated/transport failure
-  // (e.g. a reverse-proxy hiccup), not a real value — every endpoint here
-  // returns a body on success (even deletes reply `{ ok: true }`). Returning
-  // the bare `null` would surface far away as a cryptic destructure crash
-  // ("null has no properties" in Firefox) the moment a caller reads a field
-  // off it; fail honestly and locally instead. A genuine 204 No Content is
-  // the one legitimate empty body.
   if (json === null && res.status !== 204) {
     throw new ApiError(res.status, `Empty response from ${method} ${path}`);
   }
@@ -63,7 +56,7 @@ export const api = {
   updateConfig: (patch: object) => request<AppConfig>('PATCH', '/api/config', patch),
   replaceConfig: (config: AppConfig) => request<AppConfig>('PUT', '/api/config', config),
   /** `open` is an explicit board optimization. Omit it for full task history.
-   * The response is the shared paginated envelope (ADR-0045): the page under
+   * The response is the shared paginated envelope: the page under
    * `tasks` plus the filtered `total`. Pass `limit`/`offset` to page through it;
    * omit `limit` for the whole filtered list. */
   tasks: ({ workspaceId, state, parent, limit, offset }: { workspaceId?: number; state?: 'open'; parent?: number; limit?: number; offset?: number } = {}) => {
@@ -77,24 +70,20 @@ export const api = {
     return request<{ tasks: Task[]; total: number }>('GET', query ? `/api/tasks?${query}` : '/api/tasks');
   },
   task: (id: number) => request<Task>('GET', `/api/tasks/${id}`),
-  // Attempt-grain aggregates over a time window; the KPI panel and the
-  // attempt-activity heatmap share this one reader path (ADR-0008/0014).
   stats: (from: number, to: number, workspaceId: number) =>
     request<Stats>('GET', `/api/stats?from=${from}&to=${to}&workspaceId=${workspaceId}`),
-  // All-time stats scoped to one Epic's child Tasks (ADR-0014), narrowed to its
-  // Workspace since refs are unique only per Workspace — same shape as `stats`.
   epicStats: (epicRef: number, workspaceId: number) =>
     request<Stats>('GET', `/api/epics/${epicRef}/stats?workspaceId=${workspaceId}`),
   createTask: (input: Partial<Task> & { prompt: string; state?: 'draft' | 'ready' }) =>
     request<Task>('POST', '/api/tasks', input),
-  // Lazy directory picker (issue #67): one level deep per call; an omitted
+  // Lazy directory picker: one level deep per call; an omitted
   // path starts at the server user's home. Operator-only (full-scope session).
   browseFs: (path?: string) =>
     request<FsListing>('GET', path ? `/api/fs?path=${encodeURIComponent(path)}` : '/api/fs'),
   workspaces: () => request<{ workspaces: Workspace[]; total: number }>('GET', '/api/workspaces'),
   createWorkspace: (input: { name: string; workingDir: string }) =>
     request<Workspace>('POST', '/api/workspaces', input),
-  // Overridable fields (ADR-0012, issue #64) accept `null` to clear an override
+  // Overridable fields accept `null` to clear an override
   // back to inherit; an omitted field is left untouched server-side.
   updateWorkspace: (
     id: number,
@@ -132,12 +121,12 @@ export const api = {
   ) => request<Workspace>('PATCH', `/api/workspaces/${id}`, patch),
   // Deletes the Workspace and cascades its board; the server 204s (empty body,
   // handled by request's 204 branch). Deleting the last Workspace is allowed
-  // (issue #61) — the app falls to the empty state; a running Task 409s.
+  // — the app falls to the empty state; a running Task 409s.
   deleteWorkspace: (id: number) => request<null>('DELETE', `/api/workspaces/${id}`),
   // Force an immediate tracker poll (the board's manual refresh) — rescans the
   // repo and mirrors changes now. 409 if the Workspace has tracking disabled.
   refreshTracker: (id: number) => request<{ ok: true }>('POST', `/api/workspaces/${id}/tracker/refresh`),
-  // The inheritable Task-default fields (ADR-0012) accept `null` to clear the override
+  // The inheritable Task-default fields accept `null` to clear the override
   // back to inherit; other fields keep their non-null Partial<Task> shape.
   updateTask: (
     id: number,
@@ -164,11 +153,8 @@ export const api = {
     request<Task>('POST', `/api/tasks/${id}/dependencies`, { dependsOnId }),
   removeDependency: (id: number, depId: number) =>
     request<Task>('DELETE', `/api/tasks/${id}/dependencies/${depId}`),
-  // The continuation preview (issue #170): what the deterministic rule (#311)
-  // will do with the task's live Session when the loop resumes — shown in the
-  // reject dialog as information, never a choice.
   continuationPreview: (id: number) => request<ContinuationPreview>('GET', `/api/tasks/${id}/continuation`),
-  // The three escalation actions (ADR-0041), escalated tickets only.
+  // The three escalation actions, escalated tickets only.
   // `force: true` is the as-is override (Force-Accept): the server skips
   // candidate verification and merges the branch head as it stands. Omitted
   // (or false) is the default Accept, which verifies first.
@@ -177,7 +163,7 @@ export const api = {
   rejectTask: (id: number, guidance: string, start = false) =>
     request<Task>('POST', `/api/tasks/${id}/reject`, { guidance, start }),
   closeTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/close`),
-  // Hard-delete (issue #162, ADR-0025): cascades the Task's Runs/history and
+  // Hard-delete: cascades the Task's Runs/history and
   // vanishes it from the board/graph via the `task_removed` WS broadcast
   // (App.tsx). 409 if the Task is running (stop it first); 404 if it's
   // already gone.
@@ -197,20 +183,12 @@ export const api = {
   attemptEvents: (id: number) => request<{ events: AttemptEvent[]; total: number }>('GET', `/api/attempts/${id}/events`),
   attemptLog: (id: number) =>
     request<{ status: 'available'; events: AttemptLogEvent[]; liveCursor: number } | { status: 'unavailable'; liveCursor: number }>('GET', `/api/attempts/${id}/log`),
-  // Guardrail-trip event log for an Attempt (issue #171): the REST surface over
-  // `GuardrailEventStore.list`, mirroring `attemptEvents`'s shape and 404 behaviour.
   attemptGuardrailEvents: (id: number) =>
     request<{ guardrailEvents: GuardrailEvent[]; total: number }>('GET', `/api/attempts/${id}/guardrail-events`),
-  // Per-verifier Verification-attempt log for an Attempt (issue #169, part of
-  // #109): the REST surface over the attempts store, mirroring
-  // `attemptGuardrailEvents`'s shape and 404 behaviour.
   attemptVerificationAttempts: (id: number) =>
     request<{ verificationAttempts: VerificationAttempt[]; verifierStatuses: VerifierStatus[]; total: number }>('GET', `/api/attempts/${id}/verification-attempts`),
   verificationAttempt: (id: number) =>
     request<{ output: string; summary: string; hasTranscript: boolean }>('GET', `/api/verification-attempts/${id}`),
-  // A critic verification attempt's own native session transcript (ADR-0040) —
-  // same shape as `attemptLog`, keyed by attempt id, "unavailable" when no
-  // transcript was captured.
   criticLog: (attemptId: number) =>
     request<{ status: 'available'; events: AttemptLogEvent[]; liveCursor: number } | { status: 'unavailable'; liveCursor: number }>(
       'GET',
@@ -236,27 +214,25 @@ export const api = {
   createConversation: (input: { workspaceId?: number; harness?: string; model?: string; workingDir?: string }) =>
     request<Conversation>('POST', '/api/conversations', input),
   // title: null clears an operator-set title, falling back to the one
-  // derived from the first Turn (issue #15's LOCKED contract).
+  // derived from the first Turn.
   renameConversation: (id: number, title: string | null) =>
     request<Conversation>('PATCH', `/api/conversations/${id}`, { title }),
-  // Cascades events and revokes the conversation's key server-side; the
-  // panel removes it from the list locally on success (no WS broadcast).
   deleteConversation: (id: number) => request<{ ok: true }>('DELETE', `/api/conversations/${id}`),
   conversationEvents: (id: number) =>
     request<{ events: ConversationEvent[]; total: number }>('GET', `/api/conversations/${id}/events`),
-  // `queued: true` (issue #14's LOCKED contract) means a Turn was already
+  // `queued: true` means a Turn was already
   // running server-side and this message was enqueued as the next Turn
   // rather than started immediately.
   sendTurn: (id: number, text: string) =>
     request<{ ok: true; queued: boolean }>('POST', `/api/conversations/${id}/turns`, { text }),
   endConversation: (id: number) => request<Conversation>('POST', `/api/conversations/${id}/end`),
   // Cancels the in-flight Turn (ACP session/cancel); a non-empty `text`
-  // becomes the next Turn, an empty/omitted one just stops it (issue #14).
+  // becomes the next Turn, an empty/omitted one just stops it.
   // `text` is included in the body only when non-empty, mirroring
   // answerPermission's optional `remember` below.
   interrupt: (id: number, text?: string) =>
     request<{ ok: true }>('POST', `/api/conversations/${id}/interrupt`, text ? { text } : {}),
-  // remember (issue #13 / ADR-0007) is omitted from the body entirely unless
+  // remember is omitted from the body entirely unless
   // true — the escalation is opt-in, so the common one-off answer stays a
   // plain { optionId } post exactly as before.
   answerPermission: (conversationId: number, reqId: string, optionId: string, remember?: boolean) =>
@@ -274,9 +250,7 @@ export const api = {
     request<Channel>('PATCH', `/api/channels/${id}`, patch),
   deleteChannel: (id: number) => request<unknown>('DELETE', `/api/channels/${id}`),
 
-  // Parallel-Epic read model + force-integrate (issue #167, ADR-0026): operator-scope
-  // only, mirroring the force-integrate allowlist. See epic-model.ts for the DTO shape.
-  // Paginated on the shared envelope (ADR-0045, issue #351): pass `limit`/`offset`
+  // Paginated on the shared envelope: pass `limit`/`offset`
   // to page, `q` to substring-search the Epic title; omit `limit` for the whole list.
   epics: (workspaceId: number, { limit, offset, q }: { limit?: number; offset?: number; q?: string } = {}) => {
     const params = new URLSearchParams();
@@ -294,8 +268,8 @@ export const api = {
   epicDiffFiles: (workspaceId: number, epicRef: number) =>
     request<{ files: DiffFile[]; total: number }>('GET', `/api/workspaces/${workspaceId}/epics/${epicRef}/diff/files`),
 
-  // Derived Map rollup (D7, issue #35), paginated on the shared envelope
-  // (ADR-0045, issue #351): `workspaceId` scopes to one board, `limit`/`offset`
+  // Derived Map rollup, paginated on the shared envelope
+  // `workspaceId` scopes to one board, `limit`/`offset`
   // page, `q` substring-searches the Map title; omit `limit` for the whole list.
   maps: ({ workspaceId, limit, offset, q }: { workspaceId?: number; limit?: number; offset?: number; q?: string } = {}) => {
     const params = new URLSearchParams();

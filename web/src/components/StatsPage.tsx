@@ -31,9 +31,6 @@ const STATE_DONUT_COLOR: Record<string, string> = {
   cancelled: 'var(--hm-faint)',
 };
 
-// Warm categorical donut palette (ADR-0014 token ramp + the teal accent): the
-// same hues the token-class bars use, so every token-composition surface reads
-// from one warm family instead of a drab neutral ramp.
 const TOOL_TOKEN_COLORS = [
   'var(--hm-token-output)',
   'var(--hm-token-input)',
@@ -42,9 +39,6 @@ const TOOL_TOKEN_COLORS = [
   'var(--hm-accent)',
 ];
 
-/** Friendly labels for the failures-by-reason buckets (the winning terminal
- * disposition). Any bucket not mapped falls back to its raw key, so a newer
- * disposition still renders rather than vanishing. */
 const REASON_LABEL: Record<string, string> = {
   failed: 'Error',
   escalate: 'Escalated',
@@ -148,8 +142,6 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
   const failRate = stats ? failureRate(stats.failedAttempts, stats.attemptCount) : null;
   const avgCostText = stats ? formatAvgCostPerRun(stats.cost, stats.attemptCount) : null;
   const medDuration = stats?.durationMs ? fmtDuration(stats.durationMs.p50) : null;
-  // Per-model / per-agent rows carry the full four-class split so every combined-
-  // token surface renders the warm token-class breakdown, not a flat total.
   const sortedUsage = (byKey: Record<string, ModelUsage>): { key: string; usage: ModelUsage }[] =>
     Object.entries(byKey)
       .map(([key, usage]) => ({ key, usage }))
@@ -211,10 +203,6 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
         valueLabel: fmt(count),
       }))
     : [];
-  // Fails/day: the failed-only count spread across the span of days that
-  // actually held runs (first to last bucket, inclusive), not the raw request
-  // window — so "All time" (from epoch 0) reads as an honest daily rate rather
-  // than a near-zero one. Null with no runs.
   const DAY_MS = 24 * 3600_000;
   const dataDays =
     stats && stats.series.length > 0

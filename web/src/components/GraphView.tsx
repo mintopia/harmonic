@@ -27,15 +27,9 @@ import { displayTitle, labelType, touchTarget, touchTargetInline } from '../ui';
 const NODE_W = 196;
 const NODE_H = 60;
 
-// Below this zoom node labels stop being readable, so fit-to-all on a large
-// graph merges on an illegible thumbnail. The default view clamps to the floor
-// and parks on the frontier (layout flows RIGHT → the frontier is the left
-// edge) instead; explicit Fit still fits the whole graph.
 const FIT_FLOOR = 0.8;
 function initialTransform(w: number, h: number, vw: number, vh: number): Transform {
   const fit = fitTransform(w, h, vw, vh);
-  // The default view never zooms past 100%: a small graph parks at 1:1, centred,
-  // rather than ballooning to fill the viewport. Explicit Fit still scales up.
   if (fit.k > 1) {
     const k = 1;
     return { k, tx: (vw - w * k) / 2, ty: (vh - h * k) / 2 };
@@ -50,15 +44,10 @@ export function GraphView({
   workspaceId,
   onOpen,
 }: {
-  /** Scopes the graph to the active Workspace (ADR-0008); no fetch until resolved. */
+  /** Scopes the graph to the active Workspace; no fetch until resolved. */
   workspaceId: number | null;
   onOpen: (task: Task) => void;
 }) {
-  // The Graph owns its whole-graph dataset (ADR-0045): it fetches every task
-  // with its dependency context for the Workspace, lazily on open, rather than
-  // consuming the Board's now-paginated `tasks` page — which drops the terminal
-  // rows and off-page nodes the graph still needs to draw edges and the
-  // "Show terminal" toggle. No `limit` ⇒ the endpoint returns the whole graph.
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [showTerminal, setShowTerminal] = useState(false);
@@ -76,13 +65,8 @@ export function GraphView({
   const visible = useMemo(() => visibleTasks(tasks, showTerminal), [tasks, showTerminal]);
   const edges = useMemo(() => graphEdges(visible), [visible]);
   const badges = useMemo(() => mapBadges(visible), [visible]);
-  // Live Task lookup for the render: positions come from the (structural)
-  // layout, but colours / titles / glyphs read the current Task, so a firehose
-  // update repaints a node without waiting on a relayout.
   const byId = useMemo(() => new Map(visible.map((t) => [t.id, t])), [visible]);
 
-  // Relayout only when the graph's *structure* changes — the set of nodes,
-  // their Map, or the edges — not on every unrelated field tick (cost, etc.).
   const structureKey = useMemo(
     () =>
       JSON.stringify({
@@ -104,18 +88,13 @@ export function GraphView({
       (l) => live() && setLayout(l),
       () => live() && setLayoutError(true),
     );
-    // Structure key stands in for (visible, edges): same nodes+edges ⇒ same layout.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [structureKey]);
 
-  // ── Pan + zoom viewport ────────────────────────────────────────────────────
   const hostRef = useRef<HTMLDivElement>(null);
   const [vp, setVp] = useState({ w: 0, h: 0 });
   const [t, setT] = useState<Transform>({ k: 1, tx: 0, ty: 0 });
   const drag = useRef<{ x: number; y: number; tx: number; ty: number } | null>(null);
-  // A render-visible mirror of `drag`: the cursor must flip to "grabbing" the
-  // instant a pan starts, but `drag` is a ref (no re-render), so the style would
-  // otherwise only catch up on the first pointer-move. Kept in state for that.
   const [dragging, setDragging] = useState(false);
   const moved = useRef(false);
   const pressed = useRef<number | null>(null);

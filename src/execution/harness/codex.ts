@@ -23,21 +23,11 @@ interface Rollout {
 }
 
 /**
- * The running fold of a rollout log: per-model usage (turn_context ×
- * token_count deltas) plus the latest context-window fill, updated line by
- * line so a whole-file scan (`scanRollout`) and an incremental tail
- * (`LineCursor`, #217) share the exact accounting. `turn_context` names the
- * model driving the turn; `event_msg/token_count` carries the *cumulative*
- * session usage, so each entry's delta against the previous one is the
- * current model's spend. Rollout `input_tokens` includes cached reads;
- * ModelUsage.inputTokens is uncached-only. No cache-write figure exists
- * (report 0). Context fill is the most recent request's input footprint
- * (`last_token_usage.input_tokens`, cache included) — how full the window
- * is right now.
- *
- * The `prev` cumulative baseline is what makes re-folding the exact same line
- * a no-op (its delta is 0), so the tail cursor can speculatively re-fold the
- * trailing line without double-counting.
+ * Codex rollout format: `turn_context` names the model driving the turn;
+ * `event_msg/token_count` carries the *cumulative* session usage, so each
+ * entry's delta against the previous one is the current model's spend.
+ * Rollout `input_tokens` includes cached reads (ModelUsage.inputTokens is
+ * uncached-only) and no cache-write figure exists.
  *
  * ponytail: the rollout's `model_context_window` (window *size*) is not
  * surfaced — ProcessNode has no capacity field (T1/#47) and window size
@@ -101,14 +91,12 @@ class RolloutAcc implements LineAccumulator {
     const input = num(total.input_tokens);
     const cached = num(total.cached_input_tokens);
     const output = num(total.output_tokens);
-    // A shrinking cumulative counter means it was reset (session resume):
-    // the entry is its own delta. Never emit negatives.
+    // Codex resets the cumulative counter on session resume: a shrinking
+    // counter means the entry is its own delta.
     const reset = input < this.prev.input || cached < this.prev.cached || output < this.prev.output;
     const delta = reset
       ? { input, cached, output }
       : { input: input - this.prev.input, cached: cached - this.prev.cached, output: output - this.prev.output };
-    // Pre-turn_context spend is unattributable: drop it (never guess),
-    // but still advance the baseline so it can't leak into a model.
     if (this.model) {
       const bucket = (this.models[this.model] ??= {
         inputTokens: 0,
@@ -141,7 +129,6 @@ class RolloutAcc implements LineAccumulator {
   }
 }
 
-/** One whole-file pass over a rollout log (the run-end `collectUsage` path). */
 function scanRollout(file: string, subagent = false): RolloutScan {
   const acc = new RolloutAcc(subagent);
   if (!existsSync(file)) return acc.snapshot();
@@ -163,7 +150,6 @@ function mergeModels(scans: RolloutScan[]): Record<string, ModelUsage> {
   return models;
 }
 
-/** Build Codex's recursive Process Tree from rollout `parent_thread_id`s. */
 function buildRolloutTree(rootId: string, rollouts: Rollout[]): ParsedSession {
   const byParent = new Map<string, Rollout[]>();
   const included = new Map<string, Rollout>();
@@ -194,13 +180,6 @@ function buildRolloutTree(rootId: string, rollouts: Rollout[]): ParsedSession {
   } satisfies ParsedSession;
 }
 
-/**
- * The incremental, async live reader for a codex run's rollout log (#217): a
- * single `LineCursor` folds only newly-appended bytes each tick instead of
- * re-reading the whole rollout, off the event loop. The rollout filename
- * embeds an unpredictable timestamp, so the path can't be resolved until the
- * file exists — keep re-resolving until it appears, then the path is stable.
- */
 class CodexSessionTailReader implements SessionTailReader {
   private readonly cursors = new Map<string, LineCursor<RolloutAcc>>();
   private cached: ParsedSession | null = null;
@@ -213,8 +192,6 @@ class CodexSessionTailReader implements SessionTailReader {
   }
 
   sample(): Promise<ParsedSession | null> {
-    // Serialize onto the cursor: a slow tick and an on-demand read must never
-    // advance the same byte offset concurrently. Chain past whatever ran last.
     const run = (this.inflight ?? Promise.resolve(null)).then(
       () => this.doSample(),
       () => this.doSample(),
@@ -225,7 +202,7 @@ class CodexSessionTailReader implements SessionTailReader {
 
   private async doSample(): Promise<ParsedSession | null> {
     const rollouts = await findRolloutsYielding(this.input);
-    if (rollouts.length === 0) return this.cached; // rollout not written yet → stays null
+    if (rollouts.length === 0) return this.cached;
     for (const rollout of rollouts) {
       let cursor = this.cursors.get(rollout.file);
       if (!cursor) {
@@ -240,7 +217,6 @@ class CodexSessionTailReader implements SessionTailReader {
   }
 }
 
-/** Entries of `dir`, newest name first; [] when unreadable. */
 function entriesNewestFirst(dir: string): string[] {
   try {
     return readdirSync(dir).sort().reverse();
@@ -364,39 +340,25 @@ function emptyScan(): RolloutScan {
   return { models: {}, contextTokens: null, turns: [] };
 }
 
-/**
- * Our model ids use Codex's ACP modelId grammar `<model>[<effort>]`
- * (spike, issue 22); effort is optional.
- */
+/** Codex's ACP modelId grammar is `<model>[<effort>]`; effort is optional. */
 function splitModelId(model: string): { base: string; effort: string | null } {
   const match = /^(.*)\[([^\]]+)\]$/.exec(model);
   return match ? { base: match[1]!, effort: match[2]! } : { base: model, effort: null };
 }
 
 export const codexAdapter: HarnessAdapter = {
-  // CODEX_CONFIG is a JSON object merged into the Codex session config —
-  // the verified spawn-time pinning mechanism. The model actually used is
-  // observable on the prompt result's `_meta.quota.model_usage`.
+  // CODEX_CONFIG is a JSON object merged into the Codex session config.
   spawnEnv: ({ model }) => {
     const { base, effort } = splitModelId(model);
     return {
-      // `approval_policy: on-request` is the safe default for an attended
-      // Conversation: Codex asks before a privileged action rather than running
-      // full-auto, and the human answers. An afk Run has no human, so the Runner
-      // forces Codex's `agent-full-access` ACP session mode after the handshake
-      // (session/set_mode) — the only mechanism that grants unattended full
-      // access; `approval_policy`/command-line YOLO flags do not take effect over
-      // ACP. (The mode id is `agent-full-access`; `danger-full-access` is that
-      // mode's sandbox-policy name, not the ACP id.) A request that still
-      // surfaces (mode unavailable) Escalates to the
-      // operator (ADR-0007 held-request approval for Runs will later let the
-      // operator approve-and-remember in place).
+      // Over ACP neither `approval_policy` nor Codex's command-line YOLO flags
+      // grant unattended access; only the `agent-full-access` session mode
+      // (session/set_mode, which the Runner sets after the handshake) does.
+      // `danger-full-access` is that mode's sandbox-policy name, not the ACP id.
       CODEX_CONFIG: JSON.stringify({ approval_policy: 'on-request', model: base, ...(effort ? { model_reasoning_effort: effort } : {}) }),
     };
   },
 
-  // Verified end-to-end in the spike: every MCP request arrives with the
-  // bearer header, so the Attempt Key mechanism needs zero operator setup.
   mcpServers: ({ url, token }) => [
     {
       name: 'harmonic',
@@ -410,29 +372,20 @@ export const codexAdapter: HarnessAdapter = {
     resolveTranscriptPath({ sessionLogDir, sessionId }) {
       return Promise.resolve(codexAdapter.usage!.sessionLogFile({ sessionLogDir, cwd: '', sessionId }));
     },
-    /**
-     * Rollout parse into rolled-up Usage + Process Tree (ADR 0009), for the
-     * one-shot run-end `collectUsage`. Returns null when the rollout has not
-     * appeared yet. See `buildRolloutTree` for the single-node tree shape.
-     */
     parse(input) {
       if (!input.sessionId) return null;
       const rollouts = findRollouts({ ...input, sessionId: input.sessionId });
       return rollouts.length > 0 ? buildRolloutTree(input.sessionId, rollouts) : null;
     },
 
-    /** The live path (#217): an incremental, off-the-event-loop tailer that
-     *  folds only newly-appended rollout bytes each tick, versus `parse`'s
-     *  whole-file re-scan. */
     createTailReader(input) {
       return new CodexSessionTailReader(input);
     },
 
     /**
-     * Codex attributes usage per model on the prompt result itself —
-     * `_meta.quota.model_usage` (spike finding); `inputTokens` there is
-     * uncached input, `cachedInputTokens` the cache reads, and no
-     * cache-write figure exists (report 0).
+     * Codex attributes usage per model on the prompt result itself,
+     * `_meta.quota.model_usage`; `inputTokens` there is uncached input,
+     * `cachedInputTokens` the cache reads, and no cache-write figure exists.
      */
     modelsFromPromptResult(result) {
       const entries = (result as any)?._meta?.quota?.model_usage;
@@ -446,8 +399,6 @@ export const codexAdapter: HarnessAdapter = {
           cacheReadTokens: 0,
           cacheWriteTokens: 0,
         });
-        // ACP prompt result reports uncached `inputTokens` already (see the
-        // docstring above) — unlike the rollout-log path, so no subtraction.
         bucket.inputTokens += num(entry.token_count.inputTokens);
         bucket.outputTokens += num(entry.token_count.outputTokens);
         bucket.cacheReadTokens += num(entry.token_count.cachedInputTokens);
@@ -456,14 +407,10 @@ export const codexAdapter: HarnessAdapter = {
     },
 
     /**
-     * Rollout logs (audit fallback — the prompt result is the primary
-     * source) live at `<root>/<YYYY>/<MM>/<DD>/rollout-<ts>-<sessionId>.jsonl`;
-     * the ACP sessionId is embedded verbatim in the filename (spike
-     * finding). The timestamp part is unknowable, so search the dated
-     * tree, newest day first. Returning null when the file has not
-     * appeared yet skips the flush-race retry; the boot-time
-     * `backfillUsage` sweep is the backstop, and clean runs never get
-     * here (the prompt result carries the breakdown).
+     * Codex rollout logs live at
+     * `<root>/<YYYY>/<MM>/<DD>/rollout-<ts>-<sessionId>.jsonl`; the ACP
+     * sessionId is embedded verbatim in the filename and the timestamp part is
+     * unknowable, so search the dated tree, newest day first.
      */
     sessionLogFile({ sessionLogDir, sessionId }) {
       if (!sessionId) return null;
@@ -483,14 +430,10 @@ export const codexAdapter: HarnessAdapter = {
       return null;
     },
 
-    // Rollout parse (audit fallback — the prompt result is the primary
-    // source): per-model usage from turn_context × token_count deltas.
     modelsFromSessionLog(file) {
       return scanRollout(file).models;
     },
 
-    // No `_meta.<harness>.toolName` equivalent exists (spike finding);
-    // the generic `title`/`kind` fallback is the right source.
     toolName() {
       return null;
     },

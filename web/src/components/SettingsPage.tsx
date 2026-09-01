@@ -9,7 +9,7 @@ import { SETTING_TABS, type SettingTab } from '../../../src/domain/settings-regi
 
 /**
  * The global settings surface: a thin data shell over the shared
- * {@link SettingsForm} engine (ADR-0044 Decision G). It owns the whole-config
+ * {@link SettingsForm} engine. It owns the whole-config
  * buffer and the notification channels, and renders every field from the one
  * {@link SETTINGS_SCHEMA} with the inherit layer off.
  */
@@ -57,8 +57,6 @@ export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void
       const updated = await api.replaceConfig(local);
       setPristine(updated);
       setLocal(updated);
-      // Advance the saved baseline per successful PATCH so a mid-loop failure
-      // leaves only the still-unsaved channels marked dirty, not the persisted ones.
       let savedChannels = pristineChannels;
       for (const { id, events } of changedChannelEvents(localChannels, pristineChannels)) {
         await api.updateChannel(id, { events });

@@ -13,7 +13,6 @@ const STEP_ORDER: LifecycleStepKey[] = [
 
 const stateAttempt = (state: AttemptSummary['state']): Pick<AttemptSummary, 'state'> => ({ state });
 
-/** The step statuses keyed by step, so a state's expectation reads as a map. */
 function statuses(state: TaskState, attempts: Pick<AttemptSummary, 'state'>[] = []): Record<LifecycleStepKey, LifecycleStepStatus> {
   const { steps } = taskLifecycle(state, attempts);
   return Object.fromEntries(steps.map((s) => [s.key, s.status])) as Record<LifecycleStepKey, LifecycleStepStatus>;
@@ -91,7 +90,6 @@ describe('taskLifecycle', () => {
     for (const state of ['draft', 'ready', 'working', 'escalated', 'done', 'cancelled'] as TaskState[]) {
       const { steps, current } = taskLifecycle(state, [stateAttempt('running')]);
       const highlighted = steps.filter((s) => s.status === 'current' || s.status === 'failed' || s.status === 'awaiting');
-      // `done` settles every node, so it has no lone highlight — it is the one exception.
       if (state === 'done') {
         expect(steps.every((s) => s.status === 'done')).toBe(true);
       } else {
@@ -153,8 +151,6 @@ describe('taskLifecycle', () => {
   });
 
   it('sits an escalated Task at the Merge gate, awaiting review', () => {
-    // A passed Attempt at the review gate: Implementation is done and Merge is
-    // the highlighted `awaiting` node (the indigo needs-you voice), not a failure.
     expect(taskLifecycle('escalated', [stateAttempt('completed')]).current).toBe('merge');
     expect(statuses('escalated', [stateAttempt('completed')])).toEqual({
       worktree: 'done',
@@ -204,9 +200,6 @@ describe('taskLifecycle', () => {
 
 describe('taskStats', () => {
   it('combines one model used across roles and Attempts into a single row', () => {
-    // Attempt 1: opus serves the root agent AND a code-reviewer subagent, plus a
-    // sonnet helper. Attempt 2: opus again, this time as the critic model. The
-    // same model across agent/subagent/critic roles must fold into one opus row.
     const stats = taskStats([
       attempt(
         { 'opus-4.8': tok(100, 20, 5, 2), 'sonnet-4.5': tok(50, 10) },
@@ -220,7 +213,6 @@ describe('taskStats', () => {
       { model: 'opus-4.8', input: 140, output: 28, cachedIn: 5, cachedOut: 2, cost: 0.42 },
       { model: 'sonnet-4.5', input: 50, output: 10, cachedIn: 0, cachedOut: 0, cost: 0.05 },
     ]);
-    // Roles combined: exactly one opus row despite root + subagent + critic usage.
     expect(stats.byModel.filter((m) => m.model === 'opus-4.8')).toHaveLength(1);
     expect(stats.costByModel).toEqual([
       { model: 'opus-4.8', cost: 0.42 },
@@ -233,13 +225,10 @@ describe('taskStats', () => {
   it('reports billable I/O as input+output only when cache dominates, and leaks no total scalar', () => {
     const stats = taskStats([attempt({ 'opus-4.8': tok(10, 5, 100_000, 5_000) }, { 'opus-4.8': 2 })]);
 
-    // Cache is 105,000 tokens; the honest headline counts only the 15 billable.
     expect(stats.billableIO).toBe(15);
     expect(stats.byModel).toEqual([
       { model: 'opus-4.8', input: 10, output: 5, cachedIn: 100_000, cachedOut: 5_000, cost: 2 },
     ]);
-    // No total-token scalar anywhere in the shape (cost and billable I/O are the
-    // honest headlines; the summary-card counts carry no token total).
     expect(Object.keys(stats).sort()).toEqual([
       'agentVsSubagent',
       'agents',
@@ -309,9 +298,6 @@ describe('taskStats', () => {
   });
 
   it('keys the cost donut by the server cost.byModel keys, so a role-qualified or critic slice stands alone', () => {
-    // Cost carries a role-qualified subagent slice and a critic slice that have
-    // no token-usage bucket of their own; each must still show as its own slice,
-    // and the total cost sums them all.
     const stats = taskStats([
       attempt(
         { 'opus-4.8': tok(100, 20) },
@@ -332,7 +318,6 @@ describe('taskStats', () => {
       { ...attempt({ 'opus-4.8': tok(10, 2) }, { 'opus-4.8': 0.1 }, { root: tok(8, 1), tester: tok(2, 1) }), toolCalls: 23 },
     ]);
     expect(stats.agents).toBe(1);
-    // Two distinct subagent names (reviewer, tester) across the Attempts.
     expect(stats.subagents).toBe(2);
     expect(stats.toolCalls).toBe(63);
   });
@@ -360,7 +345,6 @@ describe('taskStats', () => {
         toolTokens: { Bash: { outputTokens: 20 } },
       }),
     ]);
-    // Tokens sum; cost is dropped for good once a contribution is unpriced.
     expect(stats.toolTokens).toEqual([{ key: 'Bash', label: 'Bash', outputTokens: 50 }]);
     expect(stats.toolTokens[0]).not.toHaveProperty('cost');
   });
@@ -440,7 +424,6 @@ describe('attemptStepTabs', () => {
       step('verification', 'pending'),
     ]);
     expect(tabs.filter((t) => t.type === 'verification')).toHaveLength(1);
-    // A live command wins the roll-up even beside a passed and a pending sibling.
     expect(tabs.find((t) => t.type === 'verification')).toMatchObject({ state: 'running', pending: false });
   });
 

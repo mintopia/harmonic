@@ -6,37 +6,15 @@ import { afterEach, describe, expect, it } from 'vitest';
 import * as ui from '../web/src/ui.js';
 import type { TaskState } from '../web/src/types.js';
 
-/**
- * Storybook-less smoke render of every Deck primitive in `web/src/ui.ts`, in
- * both themes (issue #180 acceptance).
- *
- * `ui.ts` is the shared component vocabulary expressed as Tailwind class
- * strings, so there is nothing to import into a component library. This test
- * proves, without one, that:
- *   1. every exported primitive mounts onto a real element (jsdom) under a
- *      light-themed AND a dark-themed root without throwing — the smoke render;
- *   2. every colour utility a primitive uses resolves to a `--hm-*` token that
- *      is defined in BOTH themes, so a primitive can never reference a colour
- *      only one theme carries — the "in both themes" guarantee that a jsdom
- *      mount alone (no CSS engine) can't give;
- *   3. the catalogue stays honest: every exported string, style-map value, and
- *      helper function is covered, so a new primitive can't ship untested.
- *
- * It reads the same source of truth as `contrast.test.ts` — the `--hm-*` custom
- * properties in `web/src/index.css`.
- */
-
 // The jsdom environment rewrites `import.meta.url` to an http URL, so resolve
 // the stylesheet from the vitest root (the repo root) instead.
 const CSS = readFileSync(join(process.cwd(), 'web/src/index.css'), 'utf8');
 
-/** The `--hm-*` names declared in one CSS rule (brace-counted so the nested
- * media block never bleeds in — the same scan `contrast.test.ts` uses). */
 function tokenNames(selector: RegExp): Set<string> {
   const m = selector.exec(CSS);
   if (!m) throw new Error(`token block not found: ${selector}`);
   let depth = 0;
-  let i = m.index + m[0].length - 1; // sits on the opening `{`
+  let i = m.index + m[0].length - 1;
   const bodyStart = i + 1;
   for (; i < CSS.length; i++) {
     if (CSS[i] === '{') depth++;
@@ -54,18 +32,11 @@ const darkTokens = tokenNames(/:root\[data-theme='dark'\]\s*\{/);
 
 const STATES = ['draft', 'ready', 'working', 'escalated', 'done', 'cancelled'] as const satisfies readonly TaskState[];
 
-/** The attempt-only tones `ui.ts` layers on top of the Task states (issue #454):
- * `statePill` renders these too; `stateChip` (typed to `TaskState`) never can. */
 const ATTEMPT_TONES = ['passed', 'failed', 'running'] as const;
 const PILL_STATES = [...STATES, ...ATTEMPT_TONES];
 
-/** Every exported helper function, driven across its whole input domain so each
- * branch it can return is in the catalogue. Keyed by export name and asserted
- * complete below, so a newly added helper forces itself into coverage. */
 const HELPERS: Record<string, () => readonly string[]> = {
   stateChip: () => STATES.map(ui.stateChip),
-  // Driven across the whole superset plus a Step type ('implementation'), which
-  // carries no state hue and must hit the neutral fallback (issue #454).
   statePill: () => [...PILL_STATES.map(ui.statePill), ui.statePill('implementation')],
   blockerBadge: () => [ui.blockerBadge(false), ui.blockerBadge(true)],
   blockerCountPip: () => [ui.blockerCountPip(false), ui.blockerCountPip(true)],
@@ -85,9 +56,6 @@ const HELPERS: Record<string, () => readonly string[]> = {
 
 type Entry = { readonly name: string; readonly cls: string };
 
-/** The full primitive catalogue, built from the module's own exports so it can't
- * drift from `ui.ts`: string exports are primitives, object exports are
- * style-maps (each value a primitive), function exports are driven by HELPERS. */
 const catalogue: Entry[] = [];
 for (const [name, value] of Object.entries(ui)) {
   if (typeof value === 'string') {
@@ -102,11 +70,6 @@ for (const [name, drive] of Object.entries(HELPERS)) {
   drive().forEach((cls, i) => catalogue.push({ name: `${name}()#${i}`, cls }));
 }
 
-/** A Tailwind colour utility carries a colour token in its suffix; a sizing or
- * layout utility (`text-label`, `px-3.5`, `rounded-xl`) does not. We tell them
- * apart by the token table itself: only a suffix that names a real `--hm-*`
- * colour is asserted, so `text-label` (a font-size) and `border-transparent`
- * fall through untouched. */
 const COLOUR_UTIL =
   /^(?:bg|text|border|ring|from|via|to|divide|fill|stroke|outline|placeholder|shadow)-(.+)$/;
 
@@ -114,8 +77,8 @@ function colourTokensOf(cls: string): string[] {
   const out: string[] = [];
   for (const raw of cls.split(/\s+/)) {
     if (!raw) continue;
-    const util = raw.slice(raw.lastIndexOf(':') + 1); // drop variant prefixes (hover:, disabled:, motion-safe:)
-    const base = util.split('/')[0] ?? util; // drop the opacity modifier (/50)
+    const util = raw.slice(raw.lastIndexOf(':') + 1);
+    const base = util.split('/')[0] ?? util;
     const m = COLOUR_UTIL.exec(base);
     if (!m || !m[1]) continue;
     const token = m[1];
@@ -124,13 +87,6 @@ function colourTokensOf(cls: string): string[] {
   return out;
 }
 
-/** Custom-property references inside a Tailwind arbitrary value —
- * `shadow-[0_0_0_1.5px_var(--hm-accent)]` on `runChipActive`, etc. Unlike a
- * utility suffix (where `text-label` is a font-size, not a colour, so an
- * unknown suffix can't be assumed to be a token), a `var(--hm-*)` reference is
- * unambiguously meant to resolve, so a name here that isn't defined in a theme
- * is a real defect, not a false positive — this closes the hole where a typo'd
- * `var(--hm-accnet)` would render nothing and pass a CSS-engine-less smoke mount. */
 function cssVarsOf(cls: string): string[] {
   return [...cls.matchAll(/var\(--hm-([\w-]+)\)/g)].map(([, name]) => name!).filter(Boolean);
 }
@@ -161,7 +117,6 @@ describe('ui.ts primitives (issue #180)', () => {
 
   it('STATE_CHIP_STYLES is the Task states plus the attempt-only tones (issue #454)', () => {
     expect(Object.keys(ui.STATE_CHIP_STYLES).sort()).toEqual([...PILL_STATES].sort());
-    // Every Task state is present, so `stateChip` can never miss one.
     for (const state of STATES) expect(ui.STATE_CHIP_STYLES[state]).toBeDefined();
   });
 

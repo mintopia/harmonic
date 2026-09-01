@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { withRepoLock, repoKey } from '../src/execution/repo-lock.js';
 
-/** Resolve on the next macrotask, letting other queued work interleave. */
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
 describe('repo-operation lock (issue #121)', () => {
@@ -28,8 +27,6 @@ describe('repo-operation lock (issue #121)', () => {
 
       await Promise.all([op('A'), op('B'), op('C')]);
 
-      // Never two critical sections at once, and each op's enter/exit is
-      // an uninterrupted pair.
       expect(maxActive).toBe(1);
       expect(trace).toEqual(['A:enter', 'A:exit', 'B:enter', 'B:exit', 'C:enter', 'C:exit']);
     });
@@ -48,7 +45,6 @@ describe('repo-operation lock (issue #121)', () => {
 
       await Promise.all([op('/repo/a'), op('/repo/b'), op('/repo/c')]);
 
-      // Different keys don't block each other.
       expect(maxActive).toBe(3);
     });
 
@@ -68,7 +64,6 @@ describe('repo-operation lock (issue #121)', () => {
 
       await expect(boom).rejects.toThrow('kaboom');
       await expect(next).resolves.toBe('ok');
-      // The failure did not deadlock the queue.
       expect(order).toEqual(['boom:enter', 'next:enter']);
     });
 
@@ -77,9 +72,6 @@ describe('repo-operation lock (issue #121)', () => {
     });
 
     it('serialises only the wrapped section — same-repo work outside it still overlaps (AC2)', async () => {
-      // Two Runs on the *same* base repo: their execution (the work outside
-      // withRepoLock) must run concurrently; only the short mutation window
-      // inside withRepoLock serialises. The lock does not serialise execution.
       const repo = '/repo/parallel';
       let execActive = 0;
       let execMax = 0;
@@ -87,13 +79,11 @@ describe('repo-operation lock (issue #121)', () => {
       let critMax = 0;
 
       const run = () => async () => {
-        // Unlocked "execution" phase — overlaps with the other Run.
         execActive++;
         execMax = Math.max(execMax, execActive);
         await tick();
         await tick();
         execActive--;
-        // Short locked mutation window — serialised against the other Run.
         await withRepoLock(repo, async () => {
           critActive++;
           critMax = Math.max(critMax, critActive);
@@ -109,10 +99,6 @@ describe('repo-operation lock (issue #121)', () => {
     });
 
     it('is reentrant: a nested acquisition of a held key runs inline instead of deadlocking', async () => {
-      // The one merge policy (ADR-0001) holds the repo lock across its
-      // post-merge check, whose verifier calls a locked git primitive on the
-      // same repo. A non-reentrant mutex would self-deadlock; reentrancy runs it
-      // inline. Fails by timing out rather than asserting if reentrancy regresses.
       const repo = '/repo/reentrant';
       const result = await withRepoLock(repo, async () => {
         const inner = await withRepoLock(repo, async () => 'inner');
@@ -122,8 +108,6 @@ describe('repo-operation lock (issue #121)', () => {
     });
 
     it('reentrancy does not weaken exclusion against a concurrent holder', async () => {
-      // A reentrant nested acquisition must not let a *different* async stack's
-      // acquisition of the same key run concurrently with the held section.
       const repo = '/repo/reentrant-excl';
       let active = 0;
       let maxActive = 0;
@@ -133,7 +117,6 @@ describe('repo-operation lock (issue #121)', () => {
           maxActive = Math.max(maxActive, active);
           await tick();
           if (label === 'A') {
-            // Reentrant hop while A still holds the outer lock.
             await withRepoLock(repo, async () => {
               await tick();
             });
@@ -147,7 +130,6 @@ describe('repo-operation lock (issue #121)', () => {
     });
 
     it('a nested acquisition of a DIFFERENT key still serialises normally', async () => {
-      // Reentrancy is per-key: holding /repo/x does not grant /repo/y.
       const x = '/repo/nest-x';
       const y = '/repo/nest-y';
       let yActive = 0;
@@ -210,7 +192,6 @@ describe('repo-operation lock (issue #121)', () => {
     it('falls back to an absolute path for a non-existent directory', () => {
       const missing = join(tmpdir(), 'repo-key-does-not-exist-xyz');
       expect(repoKey(missing)).toBe(missing);
-      // Trailing slash still normalises even without realpath.
       expect(repoKey(missing + '/')).toBe(missing);
     });
   });

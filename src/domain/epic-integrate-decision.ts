@@ -1,32 +1,3 @@
-/**
- * Whole-Epic integrate decision (issue #161, parallel-epic tranche). The last step
- * of an Epic's life: once every member has merged onto the Epic's integration
- * branch (`epic/<ref>`, cut by #159) under the one merge policy (ADR-0001), the
- * whole integrated tree is Verified as a unit and, only on a pass, merged into the
- * default branch in one go and the integration branch retired (ADR-0024). This
- * module is the **pure** half of that step: no git I/O, no database, no clock.
- * The coordinator
- * gathers the observed facts (does the integration branch exist, what state is
- * each member in, what did a whole-Epic Verification produce) and passes them
- * in; this function only classifies those facts into the action to execute.
- *
- * Two invariants the acceptance criteria pin (issue #161):
- *
- *  - `integration → default` fires **only** when every member is `completed`
- *    **and** the whole-Epic Verification `proceed`s. A member that cannot merge
- *    (`blocked`) holds the whole Epic back — nothing reaches the default branch.
- *  - A Verification `block`/`escalate` on the integrated whole (which can break
- *    even when each member passed alone) **never** integrates: it escalates,
- *    fail-safe, so broken work never reaches the trunk silently.
- *
- * `force` is the operator's explicit **force-integrate-the-ready-subset** override
- * (issue #161): it bypasses the all-members-`completed` gate — integrating whatever
- * subset is currently folded into the integration branch even though a sibling
- * member is stuck — but it does **not** bypass Verification. Partial integration is
- * therefore never automatic: only an operator action sets `force`, and even then
- * a failing whole-Epic Verification still blocks the integrate.
- */
-
 import type { TaskRow } from '../db/schema.js';
 import type { VerificationDecision } from '../verification/combine.js';
 
@@ -42,13 +13,7 @@ import type { VerificationDecision } from '../verification/combine.js';
  */
 export type MemberMergeState = 'completed' | 'blocked' | 'pending';
 
-/**
- * Reduce a member's mirrored Task to its merge state for the whole-Epic integrate
- * decision (issue #161): `completed` once it has merged onto the integration
- * branch (Task state `done`); `blocked` when it cannot merge (escalated to a
- * human, or `failed`/`cancelled`) and so holds the whole Epic back; `pending`
- * otherwise (still in progress, awaiting review, not yet started, or not mirrored).
- */
+/** Reduce a member's mirrored Task to its {@link MemberMergeState}; a missing Task is `pending`. */
 export function reduceMemberState(task: TaskRow | undefined): MemberMergeState {
   if (!task) return 'pending';
   if (task.state === 'done') return 'completed';
@@ -56,10 +21,7 @@ export function reduceMemberState(task: TaskRow | undefined): MemberMergeState {
   return 'pending';
 }
 
-/**
- * The facts the whole-Epic integrate decision needs, gathered by the coordinator so
- * this module stays git-free.
- */
+/** The facts the whole-Epic integrate decision needs, gathered by the coordinator. */
 export interface EpicIntegrateFacts {
   /** Does the Epic's integration branch (`epic/<ref>`) still exist? A retired
    * branch (a completed integrate) or one that was never cut means nothing to integrate. */
@@ -71,8 +33,7 @@ export interface EpicIntegrateFacts {
    * re-decides with the result folded in (a two-pass gate: decide `verify`, run
    * it, decide again). */
   verification: VerificationDecision | null;
-  /** The operator's explicit force-integrate-the-ready-subset override. Never set by
-   * the automatic poll trigger — only by the operator action (issue #161). */
+  /** The operator's explicit force-integrate-the-ready-subset override. Never set by the automatic poll trigger. */
   force: boolean;
 }
 
@@ -97,19 +58,15 @@ export type EpicIntegrateDecision =
   | { action: 'escalate'; reason: string };
 
 /**
- * Decide the whole-Epic integrate action (issue #161). Pure and total: the same facts
- * always yield the same decision and it never throws. Precedence:
+ * Decide the whole-Epic integrate action. Precedence:
  *
- *  1. no integration branch → `noop` (already integrated/retired, or never cut);
+ *  1. no integration branch → `noop`;
  *  2. (automatic path only) no members → `noop`; any `blocked` member →
- *     `blocked` (a member that cannot merge holds the whole Epic); any `pending`
- *     member → `wait`; else every member is `completed` and the gate opens;
- *  3. `force` opens the gate unconditionally (operator force-integrate-ready-subset),
- *     skipping step 2 but **not** Verification;
+ *     `blocked`; any `pending` member → `wait`; else the gate opens;
+ *  3. `force` opens the gate unconditionally, skipping step 2 but not Verification;
  *  4. gate open, Verification not yet run → `verify`;
- *  5. gate open, Verification `proceed` → `integrate` (then the coordinator retires
- *     the branch); any other outcome → `escalate`, fail-safe — a `block` at Epic
- *     scope has no heal loop, so it escalates to the operator rather than integrating.
+ *  5. gate open, Verification `proceed` → `integrate`; any other outcome →
+ *     `escalate`, fail-safe.
  */
 export function decideEpicIntegrate(facts: EpicIntegrateFacts): EpicIntegrateDecision {
   if (!facts.integrationExists) {

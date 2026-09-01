@@ -3,14 +3,6 @@
 import type { Task, TaskState } from './types.js';
 import { TERMINAL_STATES } from './task-state-model.js';
 
-/**
- * The read-only Dependency Graph view (issue #85, ADR 0015). The layout
- * (elkjs) and rendering (hand-rolled SVG) live in graph-layout.ts /
- * GraphView.tsx; the pure derivations the view needs — which Tasks show, which
- * edges connect them, how a node reads — live here so they're unit-testable
- * without a browser or elk.
- */
-
 /** A directed Dependency edge: `from` is a prerequisite of `to`. */
 export interface GraphEdge {
   from: number;
@@ -42,7 +34,7 @@ export function visibleTasks(tasks: Task[], showTerminal: boolean): Task[] {
   if (showTerminal) return tasks;
   const stillBlocking = new Set<number>();
   for (const t of tasks) {
-    if (isTerminalState(t.state)) continue; // only an active dependent can be waiting on a blocker
+    if (isTerminalState(t.state)) continue;
     for (const dep of t.dependsOn) stillBlocking.add(dep);
   }
   return tasks.filter(
@@ -53,7 +45,7 @@ export function visibleTasks(tasks: Task[], showTerminal: boolean): Task[] {
 /**
  * The DAG's directed edges over the Dependency relation, restricted to the
  * given (visible) Task set. `dependsOn` is already unified across native and
- * mirrored origins (ADR 0015), so both kinds flow through the same derivation.
+ * mirrored origins, so both kinds flow through the same derivation.
  *
  * - An edge is kept only when *both* endpoints are visible, so an edge never
  *   dangles into a hidden terminal Task.
@@ -89,7 +81,7 @@ export function nodeTitle(prompt: string): string {
 /**
  * Stable 1-based badge numbers for the Maps present in the set, keyed by
  * `mapRef` in ascending order. Map membership reads as a per-node badge plus a
- * quiet label rather than a drawn container (ADR 0015 / prototype #84): elk
+ * quiet label rather than a drawn container: elk
  * layers by dependency first, scattering a Map's members, so a box would tear —
  * the shared badge number is what actually carries membership.
  */
@@ -99,10 +91,6 @@ export function mapBadges(tasks: Task[]): Map<number, number> {
   );
   return new Map(refs.map((ref, i) => [ref, i + 1]));
 }
-
-// ── View-model: the state palette + the SVG geometry the render needs ────────
-// Kept here (not in GraphView.tsx) so both are exercised without a browser: the
-// palette encodes the Deck Signal Rule, the geometry is pure maths.
 
 /** A node's display state on the graph: its stored {@link TaskState}, plus the
  * derived `blocked` — a `ready` Task with open blockers reads as blocked, not
@@ -138,8 +126,6 @@ export const SIGNAL: Record<GraphNodeState, Signal> = {
   escalated: { color: 'var(--hm-await-dot)', text: 'var(--hm-await)' },
   done: { color: 'var(--hm-merged-dot)', text: 'var(--hm-merged)' },
   cancelled: { color: 'var(--hm-faint)', text: 'var(--hm-muted)' },
-  // Blocked is a hold, not activity — the neutral (Muted) voice, so it reads as
-  // "waiting", clearly distinct from ready's go-green.
   blocked: { color: 'var(--hm-muted)', text: 'var(--hm-muted)' },
 };
 
@@ -199,11 +185,6 @@ export function edgePath(a: NodeBox, b: NodeBox): string {
   return `M${p.x},${p.y} C${mx},${p.y} ${mx},${q.y} ${q.x},${q.y}`;
 }
 
-// ── Layout result: types + the pure coordinate flatten ───────────────────────
-// elk itself is called in graph-layout.ts (the browser-only adapter); the shapes
-// and the parent-relative→absolute flatten — the bug-prone part — live here so
-// they're testable without pulling elkjs into the node test project.
-
 export type Direction = 'DOWN' | 'RIGHT';
 
 /** A laid-out Task node in absolute canvas coordinates. */
@@ -211,7 +192,7 @@ export interface LaidNode extends NodeBox {
   id: number;
   task: Task;
 }
-/** A laid-out Map group box (never drawn as a container — ADR 0015 — only its
+/** A laid-out Map group box (never drawn as a container — only its
  * origin/size inform the floating label). */
 export interface LaidGroup extends NodeBox {
   ref: number;

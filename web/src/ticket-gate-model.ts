@@ -4,7 +4,7 @@ import type { AttemptSummary, Task } from './types.js';
 import { currentAttemptId, attemptDisplay, type AttemptDot } from './attempt-rail-model.js';
 
 /**
- * Pure decision behind the Ticket page's bottom bar (issue #183, part of #179).
+ * Pure decision behind the Ticket page's bottom bar.
  * The Ticket page lets the operator scrub back through a task's runs, but the
  * state actions must never act on the wrong one: they are live only on the
  * *current* run (the latest attempt). Selecting any earlier run turns the bar

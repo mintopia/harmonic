@@ -8,12 +8,6 @@ import {
 } from '../src/domain/session-resume.js';
 import type { SessionRow } from '../src/db/schema.js';
 
-/**
- * The pure resume compatibility matrix (issue #142, reliability-design Unit C):
- * `(stored Session, current environment) → eligible | incompatible + reason`,
- * tested in isolation (no db/clock/harness) with each incompatibility axis
- * exercised independently — the same seam as run-disposition.ts.
- */
 describe('assessResumeEligibility (issue #142)', () => {
   const stored: StoredSessionFacts = {
     harness: 'claude',
@@ -102,7 +96,6 @@ describe('assessResumeEligibility (issue #142)', () => {
 
   describe('verdict shape', () => {
     it('every incompatible verdict carries a machine-usable reason and a detail string', () => {
-      // Each axis, incl. load-session-unsupported (a `stored` mutation, not `env`).
       const cases: Array<[StoredSessionFacts, ResumeEnvironment]> = [
         [stored, { ...env, harness: 'codex' }],
         [{ ...stored, supportsLoadSession: false }, env],
@@ -122,8 +115,6 @@ describe('assessResumeEligibility (issue #142)', () => {
     });
 
     it('checks axes in the RESUME_INCOMPATIBILITY_REASONS order, deepest first', () => {
-      // A Session broken on every axis: peeling off one violation at a time must
-      // surface the reasons in exactly the declared precedence order.
       let s: StoredSessionFacts = {
         harness: 'codex',
         adapterVersion: 'claude@9',
@@ -133,13 +124,11 @@ describe('assessResumeEligibility (issue #142)', () => {
         supportsLoadSession: false,
       };
       const seen: string[] = [];
-      // 5 real axes → expect 5 reasons then eligible.
       for (let i = 0; i < RESUME_INCOMPATIBILITY_REASONS.length; i++) {
         const verdict = assessResumeEligibility(s, env);
         expect(verdict.eligible).toBe(false);
         if (verdict.eligible) break;
         seen.push(verdict.reason);
-        // Heal exactly the axis that just tripped, so the next-deepest surfaces.
         switch (verdict.reason) {
           case 'harness-mismatch':
             s = { ...s, harness: env.harness };

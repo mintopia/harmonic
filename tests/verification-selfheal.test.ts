@@ -11,7 +11,6 @@ import { AttemptStore } from '../src/domain/attempts.js';
 const git = (dir: string, ...args: string[]) =>
   execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
 
-/** A throwaway git repo on branch main with one committed file. */
 function makeRepo(): string {
   const dir = mkdtempSync(join(tmpdir(), 'harmonic-selfheal-e2e-'));
   execFileSync('git', ['init', '-b', 'main', dir], { encoding: 'utf8' });
@@ -23,9 +22,6 @@ function makeRepo(): string {
   return dir;
 }
 
-/** A verifier that passes iff the candidate's `marker.txt` reads exactly `want`.
- * The command runs in a disposable checkout of the frozen candidate, so it sees
- * whatever the builder wrote into the worktree that turn. */
 const markerCommand = (want: string): VerificationCommand =>
   verificationCommandSchema.parse({
     command: process.execPath,
@@ -36,22 +32,12 @@ const markerCommand = (want: string): VerificationCommand =>
     timeoutSeconds: 30,
   });
 
-/** A verifier that always fails (exit 1) — an actionable fail on every run. */
 const alwaysFail = (): VerificationCommand =>
   verificationCommandSchema.parse({ command: process.execPath, args: ['-e', 'process.exit(1)'], timeoutSeconds: 30 });
 
-/** A verifier whose executable doesn't exist → a spawn error the command
- * verifier reads as `inconclusive` (infra doubt), never an actionable fail. */
 const inconclusiveCommand = (): VerificationCommand =>
   verificationCommandSchema.parse({ command: join(tmpdir(), 'harmonic-no-such-verify-binary-xyz'), args: [], timeoutSeconds: 30 });
 
-/**
- * Bounded Attempt loop end to end (issue #310), driven
- * through the stub harness at the Runner seam: an actionable verification fail
- * drives a corrective builder turn through the next Attempt in the same Run,
- * opens a fresh Implementation Step, and reruns the FULL verifier suite; an
- * inconclusive never heals; exhausting the heal budget Escalates.
- */
 describe('verification Attempt loop end-to-end (issue #310)', () => {
   let server: TestServer;
   let repoDir: string;
@@ -69,7 +55,6 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
     rmSync(repoDir, { recursive: true, force: true });
   });
   beforeEach(async () => {
-    // Reset per-test verifier config and cap; each test sets its own.
     await server.app.ctx.workspaces.update(workspaceId, {
       verificationCommand: null,
       maxAttempts: null,
@@ -77,10 +62,6 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
     await server.app.ctx.settingsStore.updateGlobal({ maxAttempts: 2 });
   });
 
-  // `verification_attempts` is keyed off `attempt_id`, not `run_id`
-  // (ADR-0001 #388 S-F): a self-heal loop's failed attempts share one Run row
-  // but each get their own Attempt row, so "this Run's verification
-  // attempts" now folds the log across every Attempt of the Run's Task.
   const attempts = async (attemptId: number) => {
     const store = new VerificationAttemptStore(server.app.ctx.asyncDb);
     const run = await server.app.ctx.attempts.get(attemptId);
@@ -107,8 +88,6 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
     });
     const baseOidBefore = git(repoDir, 'rev-parse', 'main');
 
-    // Turn 0 writes a marker the verifier rejects; attempt 2
-    // overwrites it with the passing value.
     const { taskId, attemptId } = await runWorktreeTask({
       turns: [{ writeFiles: { 'marker.txt': 'bad\n' } }, { writeFiles: { 'marker.txt': 'ok\n' } }],
     });
@@ -122,15 +101,10 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
     const run = (await server.api('GET', `/api/tasks/${taskId}/attempts/current`)).body;
     expect(run.state).toBe('completed');
 
-    // The healed work merged: the base branch moved and carries the fixed marker.
     const baseOidAfter = git(repoDir, 'rev-parse', 'main');
     expect(baseOidAfter).not.toBe(baseOidBefore);
     expect(git(repoDir, 'show', `${baseOidAfter}:marker.txt`)).toBe('ok');
 
-    // AC2: the FULL suite reran — two attempts against two candidates: the first
-    // fail, then the heal's pass (not just the failed check re-run). A third
-    // `pass` follows: the one merge policy's post-merge check (ADR-0001, #381)
-    // re-running the same deterministic verifier against the merged tip.
     const rows = await attempts(attemptId);
     expect(rows.map((r) => r.verdict)).toEqual(['fail', 'pass', 'pass']);
     expect(rows[0]!.inputOid).not.toBe(rows[1]!.inputOid);
@@ -142,10 +116,6 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
     ]);
     expect(attemptsByTicket[0]!.feedback).toContain('verifier command failed');
 
-    // The Step re-entry is recorded, not inferred: the heal turn (Attempt 2)
-    // opens its own fresh Implementation Step before re-running verification —
-    // never reusing or skipping Attempt 1's, so the whole Step sequence per
-    // Attempt is reconstructable from the timeline (ADR-0001 Vocabulary).
     const stepTypesByAttempt = await Promise.all(
       attemptsByTicket.map(async (a) => (await server.app.ctx.attempts.listSteps(a.id)).map((s) => s.type)),
     );
@@ -155,7 +125,6 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
     ]);
   });
 
-  /** The durable Session an Attempt's implementation Task points at (`session:<row id>`). */
   async function implementationSession(attemptId: number) {
     const steps = await new AttemptStore(server.app.ctx.asyncDb).listSteps(attemptId);
     const locator = steps.find((step) => step.type === 'implementation')?.logLocator ?? '';
@@ -164,8 +133,6 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
     return server.app.ctx.sessions.get(Number(match![1]));
   }
 
-  /** Attempt 1 reports `inputTokens` as its context footprint; the rule (a raw
-   * 20-token reuse limit) decides Attempt 2's Session from that. */
   async function runContinuationScenario(inputTokens: number) {
     await server.app.ctx.workspaces.update(workspaceId, {
       verificationCommand: [markerCommand('ok')],
@@ -181,9 +148,6 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
     const attemptsByTicket = await ticketAttempts(taskId);
     expect(attemptsByTicket.map((a) => a.state)).toEqual(['failed', 'passed']);
     const [first, second] = await Promise.all([implementationSession(attemptsByTicket[0]!.id), implementationSession(attemptsByTicket[1]!.id)]);
-    // Each self-heal turn is its own new Attempt row (ADR-0001 #388 S-G), so
-    // the "current state of this execution" read follows forward via the Task,
-    // exactly like `/api/tasks/:id/attempts/current` does.
     const run = await server.app.ctx.attempts.currentForTask(taskId);
     const reloaded = (await server.api('GET', `/api/attempts/${run.id}/events`)).body.events
       .filter((event: { payload: { event?: string } }) => event.payload.event === 'session-reloaded')
@@ -208,8 +172,6 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
     expect(second.harnessSessionId).not.toBe(first.harnessSessionId);
     expect(reloaded).toEqual([]);
     expect(run.sessionId).toBe(second.harnessSessionId);
-    // The scenario head stays parseable; the condensed context is its own section
-    // after the corrective feedback, naming the Session it condenses.
     const prompt = run.prompt!;
     expect(JSON.parse(prompt.split('\n\n## Previous attempt failed')[0]!)).toHaveProperty('turns');
     const verification = prompt.indexOf('## Previous attempt failed — fix required (self-heal 1)');
@@ -233,7 +195,6 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
     const run = (await server.api('GET', `/api/tasks/${taskId}/attempts/current`)).body;
     expect(run.state).toBe('failed');
 
-    // The verifier runs once per Attempt and the failed Attempt retains feedback.
     const rows = await attempts(attemptId);
     expect(rows.map((row) => row.verdict)).toEqual(['inconclusive', 'inconclusive']);
     expect(await ticketAttempts(taskId)).toMatchObject([
@@ -257,7 +218,6 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
     const task = (await server.api('GET', `/api/tasks/${taskId}`)).body;
     expect(task.state).toBe('escalated');
 
-    // Both implementation attempts fail; no third attempt is created.
     const rows = await attempts(attemptId);
     expect(rows.map((r) => r.verdict)).toEqual(['fail', 'fail']);
     expect(await ticketAttempts(taskId)).toMatchObject([

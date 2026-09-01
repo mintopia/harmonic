@@ -1,7 +1,4 @@
 /* eslint-disable */
-// Fixture data for the Epic-393 TicketPage story harness. Shaped to match the
-// design canvas (Stats/Attempt/Timeline/Diff artboards). Cast `as any` freely —
-// the story build strips types and only runtime-read fields matter.
 
 const T0 = Date.parse('2026-08-29T14:02:00Z');
 const min = (n: number) => n * 60_000;
@@ -94,7 +91,6 @@ export const task = {
   priority_: undefined,
 } as any;
 
-// AttemptSummary rows (GET /api/tasks/:id/attempts)
 export const runs = [
   { id: 501, taskId: 172, number: 1, state: 'failed', reason: 'pnpm test failed — 2 assertions in guardrail-defaults.test.ts.', stopReason: null, sessionId: '01H9ABC1', prompt: null, branch: 'harmonic/task-172', baseBranch: 'develop', usage: null, cost: null, toolCalls: 52, startedAt: T0 + min(3), finishedAt: T0 + min(18) },
   { id: 502, taskId: 172, number: 2, state: 'failed', reason: 'Critic blocked — defaults leaked into per-task overrides.', stopReason: null, sessionId: '01H9ABC2', prompt: null, branch: 'harmonic/task-172', baseBranch: 'develop', usage: null, cost: null, toolCalls: 53, startedAt: T0 + min(20), finishedAt: T0 + min(29) },
@@ -108,14 +104,12 @@ const steps3 = [
   { id: 4, attemptId: 503, type: 'review', position: 3, state: 'passed', command: null, verdict: null, logLocator: null, startedAt: T0 + min(85), endedAt: T0 + min(89) },
 ];
 
-// Attempt (timeline, step-bearing) rows (GET /api/tasks/:id/attempt-timeline)
 export const attempts = [
   { id: 501, taskId: 172, number: 1, state: 'failed', startedAt: T0 + min(3), endedAt: T0 + min(18), feedback: '2 assertions failed', verifiedSha: null, escalationReason: null, verifierStatuses: [], continuation: null, steps: [] },
   { id: 502, taskId: 172, number: 2, state: 'failed', startedAt: T0 + min(20), endedAt: T0 + min(29), feedback: 'defaults leaked', verifiedSha: null, escalationReason: null, verifierStatuses: [], continuation: null, steps: [] },
   { id: 503, taskId: 172, number: 3, state: 'passed', startedAt: T0 + min(31), endedAt: T0 + min(90), feedback: null, verifiedSha: 'e33b4ae', escalationReason: null, verifierStatuses: [], continuation: { path: 'continued-session' }, steps: steps3 },
 ] as any;
 
-// Transcript for attempt 3 (GET /api/attempts/:id/log)
 export const attemptLog = [
   { id: 1, seq: 1, ts: T0 + min(32), type: 'session_update', payload: { sessionUpdate: 'agent_message_chunk', content: { text: "The guardrail ceilings live in `config.ts` as workspace fields. Here's the **plan**:\n\n1. Add a `GUARDRAIL_DEFAULTS` block to `config.ts`\n2. Wire the `SettingsPage` form to it\n3. Have workspace creation *inherit* it\n\n```ts\nexport const GUARDRAIL_DEFAULTS = { maxAttempts: 6, tokenBudget: null };\n```\n\nA task-level override still wins where present." } } },
   { id: 2, seq: 2, ts: T0 + min(33), type: 'session_update', payload: { sessionUpdate: 'tool_call', toolCallId: 't1', kind: 'edit', title: 'Edit src/config.ts', status: 'completed' } },
@@ -124,8 +118,6 @@ export const attemptLog = [
   { id: 5, seq: 5, ts: T0 + min(89), type: 'session_update', payload: { sessionUpdate: 'agent_message_chunk', content: { text: 'On it — regenerated the OpenAPI schema and added guardrail-defaults.test.ts. All 12 tests pass and the per-task override still wins. Handing to verification.' } } },
 ] as any;
 
-// Critic session transcript for the critic verification attempt 9002
-// (GET /api/verification-attempts/:id/log) — the critic's own native session.
 export const criticLog = [
   { id: 1, seq: 1, ts: T0 + min(85), type: 'session_update', payload: { sessionUpdate: 'agent_message_chunk', content: { text: "Reviewing the change against issue #185: the guardrail defaults must resolve fleet-wide **and** a task-level override must still win. Reading the resolver and its tests." } } },
   { id: 2, seq: 2, ts: T0 + min(85), type: 'session_update', payload: { sessionUpdate: 'tool_call', toolCallId: 'c1', kind: 'read', title: 'Read src/config.ts', status: 'completed', content: [{ content: { text: 'export function resolveGuardrails(task, workspace) {\n  return { ...GUARDRAIL_DEFAULTS, ...workspace.guardrails, ...task.overrides };\n}' } }] } },
@@ -181,18 +173,9 @@ export const verificationAttempts = [
 export const config = { maxAttempts: 6 } as any;
 export const workspaces = [workspace];
 
-// ─── Epic summary page (issue #412, ADR-0015) ─────────────────────────────
-
 const E0 = Date.parse('2026-08-30T09:00:00Z');
 const emin = (n: number) => n * 60_000;
 
-// The Epic read model (`GET /api/workspaces/:id/epics/:ref`) — a mid-integration
-// roster: two members folded, one still running, one blocked, and a held
-// escalation on the Merge step so the integration bar's escalated state is
-// exercised too.
-// Board EpicBand fixture (issue #430): one member per pip status so
-// the uniform rounded-rect pips and the merged-vs-ready colour split are both
-// visible, plus closed (merged/done/cancelled) members for the full-card rail.
 const boardMember = (o: any) => ({
   title: `Member ${o.ref}`,
   taskId: null,
@@ -208,14 +191,14 @@ export const boardEpic = {
   kind: 'spec',
   state: 'open',
   members: [
-    boardMember({ ref: 431, title: 'Wire the ready frontier', taskId: 431, state: 'ready', ready: true }), // ready → teal pip + Frontier card
-    boardMember({ ref: 432, title: 'Waiting on a sibling', taskId: 432, state: 'ready' }), // blocked → neutral pip
+    boardMember({ ref: 431, title: 'Wire the ready frontier', taskId: 431, state: 'ready', ready: true }),
+    boardMember({ ref: 432, title: 'Waiting on a sibling', taskId: 432, state: 'ready' }),
     boardMember({ ref: 433, title: 'Escalated to the operator', taskId: 433, state: 'escalated', escalated: true }), // escalated → indigo pip
-    boardMember({ ref: 434, title: 'Blocked on a failed dep', taskId: 434, state: 'ready', mergeStatus: 'blocked' }), // blocked → rose pip
-    boardMember({ ref: 435, title: 'Running right now', taskId: 435, state: 'running' }), // running → amber pip
-    boardMember({ ref: 436, title: 'Wire the read endpoint', taskId: 436, mergeStatus: 'completed' }), // merged → emerald
-    boardMember({ ref: 437, title: 'Render the epic band', taskId: 437, state: 'done', mergeStatus: 'completed' }), // done → emerald
-    boardMember({ ref: 438, title: 'Retire the legacy peek', taskId: 438, state: 'cancelled' }), // cancelled → faint
+    boardMember({ ref: 434, title: 'Blocked on a failed dep', taskId: 434, state: 'ready', mergeStatus: 'blocked' }),
+    boardMember({ ref: 435, title: 'Running right now', taskId: 435, state: 'running' }),
+    boardMember({ ref: 436, title: 'Wire the read endpoint', taskId: 436, mergeStatus: 'completed' }),
+    boardMember({ ref: 437, title: 'Render the epic band', taskId: 437, state: 'done', mergeStatus: 'completed' }),
+    boardMember({ ref: 438, title: 'Retire the legacy peek', taskId: 438, state: 'cancelled' }),
   ],
   ready: [431],
   integration: { branch: 'epic/421', exists: true, tip: 'a1b2c3d' },
@@ -225,8 +208,6 @@ export const boardEpic = {
   memberCount: 8,
 } as any;
 
-// Member Tasks backing boardEpic's open members, so the band demo shows the real
-// ready/blocked/running/escalated columns rather than an Unmirrored fallback.
 const boardTask = (id: number, state: string, extra: any = {}) => ({
   id,
   summary: boardEpic.members.find((m: any) => m.ref === id)?.title ?? `Task ${id}`,
@@ -256,11 +237,6 @@ export const boardTasks = [
   boardTask(435, 'working'),
 ] as any;
 
-// An Epic whose child tasks are all done and folded into the epic branch, but the
-// whole-Epic merge into develop has not happened yet — the "done with tasks, not
-// yet merged" state. Every member is completed (emerald pips), the columns are
-// empty, the integration bar shows the whole-Epic gate mid-flight, and the closed
-// rail holds every finished member.
 export const doneEpic = {
   ref: 422,
   title: 'Parallel Epic — done, awaiting whole-Epic merge',
@@ -298,7 +274,6 @@ export const epic = {
   memberCount: 4,
 } as any;
 
-// All-time child-Task Stats (`GET /api/epics/:ref/stats`, ADR-0008).
 const epicOpusUsage = { inputTokens: 612_000, outputTokens: 74_000, cacheReadTokens: 3_100_000, cacheWriteTokens: 460_000 };
 const epicSonnetUsage = { inputTokens: 240_000, outputTokens: 31_000, cacheReadTokens: 640_000, cacheWriteTokens: 98_000 };
 export const epicStats = {
@@ -326,8 +301,6 @@ export const epicStats = {
   costPerMergedTask: { mergedTasks: 2, mergedCost: { totalUsd: 24.1, byModel: {}, incomplete: false }, wastedCost: null },
 } as any;
 
-// The Epic's member Tasks, as `GET /api/tasks?parent=166` serves them (lean
-// list rows — no `prompt`).
 export const epicChildren = [
   {
     id: 501, summary: 'Add the resolveGuardrails() resolver + migration', workspaceId: 1, harness: 'claude', model: 'opus-4.8',
@@ -368,9 +341,6 @@ export const epicChildren = [
   },
 ] as any;
 
-// `GET /api/tasks/:id/usage` per child (ADR-0008) — 504 fetches successfully
-// with zero usage (an escalated Task that never got a priced Attempt) so the
-// row's token bar reads as an honest empty dash.
 export const epicChildUsage: Record<number, any> = {
   501: {
     models: { 'opus-4.8': { inputTokens: 180_000, outputTokens: 22_000, cacheReadTokens: 640_000, cacheWriteTokens: 90_000 } },

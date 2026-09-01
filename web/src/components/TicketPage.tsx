@@ -38,8 +38,6 @@ import { useLiveUsage } from './useLiveUsage';
 
 const sectionCaps = 'text-label font-bold uppercase tracking-[0.1em] text-faint';
 
-// An escalated Task is awaiting the operator's review at the merge gate; the
-// pill says so in the operator's words rather than the internal state name.
 const STATE_LABEL: Record<string, string> = {
   escalated: 'awaiting review',
 };
@@ -57,7 +55,6 @@ function descriptionBody(prompt: string): string {
   const title = cardTitle(prompt);
   let body = prompt.trimStart();
   if (body.startsWith(title)) body = body.slice(title.length);
-  // Strip a leading heading line the title split left behind ("## Summary").
   body = body.replace(/^[\s]*#{1,6}[^\n]*\n+/, '').trim();
   return body || prompt;
 }
@@ -104,12 +101,8 @@ function Metrics({
   live: Map<number, AttemptUsageEvent>;
   now: number;
 }) {
-  // A live AttemptSummary reads its freshest `attempt_usage` snapshot; a settled AttemptSummary its
-  // persisted totals/cost — so Cost, I/O, and Elapsed all tick as it runs.
   const costFor = (r: AttemptSummary) => (r.state === 'running' ? live.get(r.id)?.cost ?? r.cost : r.cost);
   const cost = sumCosts(runs.map(costFor)) ?? task.cost;
-  // A finished AttemptSummary contributes its settled span; a live AttemptSummary its wall-clock so
-  // far (now − startedAt), which the 1s `now` tick advances while it executes.
   const elapsed = runs.reduce(
     (s, r) =>
       s +
@@ -209,7 +202,6 @@ const STEP_LABEL_TONE: Record<LifecycleStepStatus, string> = {
   failed: 'text-fail',
 };
 
-// Status word for screen readers, since sighted status reads from colour + glyph.
 const STEP_STATUS_LABEL: Record<LifecycleStepStatus, string> = {
   done: 'completed',
   current: 'in progress',
@@ -218,9 +210,6 @@ const STEP_STATUS_LABEL: Record<LifecycleStepStatus, string> = {
   failed: 'failed',
 };
 
-/** The second line beneath a lifecycle node — the concrete thing that node
- * stands for: the worktree branch, the attempt count, the awaiting-review note,
- * the post-merge policy, the issue to close, the teardown. */
 function stepCaption(key: LifecycleStepKey, status: LifecycleStepStatus, task: Task, attemptCount: number): string | null {
   switch (key) {
     case 'worktree':
@@ -238,9 +227,6 @@ function stepCaption(key: LifecycleStepKey, status: LifecycleStepStatus, task: T
   }
 }
 
-/** The full-width Task-progress bar: the six lifecycle nodes as a horizontal
- * stepper, each with its label stacked below so all six fit. Every Attempt's own
- * Steps collapse into the single Implementation node (see `taskLifecycle`). */
 function TaskProgressBar({ task, attempts }: { task: Task; attempts: AttemptSummary[] }) {
   const { steps } = taskLifecycle(task.state, attempts);
   return (
@@ -291,9 +277,6 @@ const VERDICT_TONE: Record<string, string> = {
   inconclusive: 'text-running',
 };
 
-/** The critic model behind an Attempt's critic pass — the `· model` half of the
- * role-qualified `critic · <model>` usage key, or null when no critic usage was
- * recorded. */
 function criticModel(run: AttemptSummary): string | null {
   const key = Object.keys(run.usage?.models ?? {}).find((k) => /critic/i.test(k));
   return key?.split('·')[1]?.trim() ?? null;
@@ -307,9 +290,6 @@ function mechanismName(mechanism: string, run: AttemptSummary): string {
   return mechanism.charAt(0).toUpperCase() + mechanism.slice(1);
 }
 
-/** The critic's own native session transcript (ADR-0040) — what it read, ran,
- * and reasoned to reach its verdict — fetched on mount and rendered like the
- * Attempt's session log (the chat register), shown by default. */
 function CriticSession({ attemptId, label, model }: { attemptId: number; label: string; model: string }) {
   const [state, setState] = useState<'loading' | 'ready' | 'unavailable'>('loading');
   const [events, setEvents] = useState<AttemptLogEvent[]>([]);
@@ -335,10 +315,6 @@ function CriticSession({ attemptId, label, model }: { attemptId: number; label: 
   return <ChatTranscript events={events} unavailable={false} model={model} stepLabel={label} />;
 }
 
-/** Every critic pass's session transcript, oldest first — one per critic attempt
- * that captured a transcript, so a corrective back-and-forth surfaces all of
- * them (ADR-0040). Rendered like the Attempt's session log and expanded by
- * default; the Review tab pairs it with the verdict summary above. */
 function CriticSessions({ attempts, run }: { attempts: VerificationAttempt[]; run: AttemptSummary }) {
   const sessions = attempts.filter((a) => a.mechanism === 'critic' && a.hasTranscript);
   if (sessions.length === 0) return null;
@@ -357,27 +333,15 @@ function CriticSessions({ attempts, run }: { attempts: VerificationAttempt[]; ru
   );
 }
 
-/** `only` narrows the block to a single mechanism — the Attempt panel's Verify
- * tab passes `'command'` and its Review tab `'critic'`, so each Step tab shows
- * just its own checks; unset renders the whole verification block (its header
- * and gate caption included). */
 function Verification({ attempts, statuses, run, only }: { attempts: VerificationAttempt[]; statuses: VerifierStatus[]; run: AttemptSummary; only?: 'command' | 'critic' }) {
   const decision = overallDecision(attempts);
   const rows = verificationRows(statuses, attempts).filter(({ status }) => !only || status.mechanism === only);
-  // Every critic attempt with a transcript, oldest first (the store lists in
-  // seq order): a corrective-attempt back-and-forth records one critic
-  // session per pass, and the operator needs to see all of them, not just the
-  // latest (ADR-0040).
   const criticSessions = attempts.filter((a) => a.mechanism === 'critic' && a.hasTranscript);
   const hasPlanned = statuses.some((status) => status.state === 'planned');
-  // The gate-on-pass caption: commands run in order, review (if in the plan)
-  // gates on all of them passing (issue #345).
   const commandRow = rows.find(({ status }) => status.mechanism === 'command');
   const commandCount = commandRow?.status.commands?.length ?? 0;
   const reviewRow = rows.find(({ status }) => status.mechanism === 'critic');
   const reviewInPlan = reviewRow ? reviewRow.status.state !== 'disabled' : false;
-  // "review gates on all commands passing" only reads true when commands exist;
-  // with none it would be a vacuous sentence. A lone step needs no ordering line.
   const gateCaption =
     reviewInPlan && commandCount >= 1
       ? 'Runs top to bottom — review gates on all commands passing.'
@@ -398,8 +362,6 @@ function Verification({ attempts, statuses, run, only }: { attempts: Verificatio
       {!only && gateCaption && <p className="mt-1 text-[12px] text-muted">{gateCaption}</p>}
       <div className="mt-3 flex flex-col gap-3">
         {rows.map(({ status, attempt }) => {
-          // With no critic-session log to show, say *why* (driven by the #327
-          // status): disabled / did-not-run / not-captured — not a bare blank.
           const criticReason =
             status.mechanism === 'critic' && criticSessions.length === 0
               ? criticUnavailableReason(status.state, !!attempt, false)
@@ -460,10 +422,6 @@ function Verification({ attempts, statuses, run, only }: { attempts: Verificatio
 }
 
 
-/** The selected Attempt's headline facts as a compact card: the model it ran,
- * the cost and wall-clock of this run, its tool-call count, and the harness
- * session id (or a cold-start note). A live Attempt's settled cost is still
- * null, so the `attempt_usage` snapshot feeds the ticking figure. */
 function AttemptSummaryCard({
   run,
   snapshot,
@@ -552,9 +510,6 @@ function SteerBox({ taskId }: { taskId: number }) {
 }
 
 
-/** `steps` is the owning Attempt's timeline (matched by `run.number` ===
- * `Attempt.number`) — the currently-running Step's type carries the pill
- * word for a live run (ADR-0001 Vocabulary; AttemptSummary/Phase are deleted concepts). */
 function attemptPillState(run: AttemptSummary, steps: readonly Step[]): string {
   if (run.state === 'completed') return 'passed';
   if (run.state === 'running') return steps.find((step) => step.state === 'running')?.type ?? 'running';
@@ -602,18 +557,12 @@ function ChangesPane({
         () => live() && setFailed(true),
       );
     load();
-    // While the run is live the diff keeps growing — refresh so the hunks track
-    // the agent's edits, matching the rail's live changed-file list.
     const timer = running ? window.setInterval(load, 2_000) : undefined;
     return () => {
       if (timer) window.clearInterval(timer);
     };
   }, [attemptId, running]);
 
-  // A single changed file selected in the sidebar: its filename is the content
-  // title, a ± summary and the full path sit beneath it, then the hunks. The
-  // diff is the run-agnostic cumulative worktree diff (the latest Attempt's
-  // worktree state), not tied to the Attempt the operator has open.
   if (selectedFile) {
     const file = (files ?? []).find((f) => f.path === selectedFile);
     return (
@@ -745,9 +694,6 @@ const NAV_WORD: Record<TimelineTone, string> = {
 const NAV_SELECTED = 'border-await bg-await-tint';
 const NAV_IDLE = 'border-transparent hover:bg-raised';
 
-/** The Attempts list: one row per Attempt — `Attempt N` + a state dot + the
- * state word, no per-attempt Step breakdown. Selecting a row opens that Attempt
- * in the content panel. */
 function AttemptsNav({
   attempts,
   maxAttempts,
@@ -808,12 +754,6 @@ function TimelineNav({ selected, onSelect }: { selected: boolean; onSelect: () =
   );
 }
 
-// The token bars use a warm categorical set — input gold, output orange,
-// cache-read coral, cache-write magenta — the ADR-0014 exception to the Two
-// Voices monochrome rule: the class split is load-bearing, so it earns colour,
-// and the four hues sit clear of the status palette so a class can't pre-read
-// as a running/merged/fail/await state. Defined once here so every breakdown
-// that renders it — the whole-Task Stats panel and the per-Attempt block — stays identical.
 const TOKEN_SEGMENTS = [
   { key: 'input' as const, label: 'input', fill: 'bg-token-input' },
   { key: 'output' as const, label: 'output', fill: 'bg-token-output' },
@@ -821,8 +761,6 @@ const TOKEN_SEGMENTS = [
   { key: 'cachedOut' as const, label: 'cached out', fill: 'bg-token-cache-write' },
 ];
 
-/** Donut palette for the per-model cost slices (mirrors StatsPage's ramp): the
- * teal accent for the largest, then the neutral ink→edge steps. */
 const COST_DONUT_COLORS = [
   'var(--hm-accent)',
   'var(--hm-ink)',
@@ -833,9 +771,6 @@ const COST_DONUT_COLORS = [
 
 const compactTokens = new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 });
 
-/** One model's stacked input/output/cached-in/cached-out bar, scaled so the
- * widest bar is the model with the most tokens. Values are shown beneath so the
- * magnitude is honest without a total-token scalar. */
 function ModelTokenBar({ model, maxTotal }: { model: TaskModelStats; maxTotal: number }) {
   const total = modelTotal(model);
   const widthPct = maxTotal > 0 ? (total / maxTotal) * 100 : 0;
@@ -868,8 +803,6 @@ function ModelTokenBar({ model, maxTotal }: { model: TaskModelStats; maxTotal: n
   );
 }
 
-/** The four-class colour key shown once at a token card's top-right, so the
- * stacked bars beneath it repeat no swatches. */
 function TokenLegend() {
   return (
     <div className="flex flex-wrap gap-x-3 gap-y-1 text-label text-faint">
@@ -883,9 +816,6 @@ function TokenLegend() {
   );
 }
 
-/** The per-model token-breakdown card — caps title, the shared legend, and one
- * stacked bar per model — shared by the whole-Task Stats panel and a single
- * Attempt's stats. */
 function TokenBreakdownCard({ byModel }: { byModel: TaskModelStats[] }) {
   const maxTotal = Math.max(...byModel.map(modelTotal), 1);
   return (
@@ -903,9 +833,6 @@ function TokenBreakdownCard({ byModel }: { byModel: TaskModelStats[] }) {
   );
 }
 
-/** The agent-vs-subagent donut card: the share of tokens the root session held
- * versus everything spawned beneath it, centred on the `primary + subagents`
- * count. Models aren't named here — the per-model breakdown owns that. */
 function AgentDonutCard({ stats }: { stats: TaskStats }) {
   const { agentTokens, subagentTokens } = stats.agentVsSubagent;
   const total = agentTokens + subagentTokens;
@@ -936,8 +863,6 @@ function AgentDonutCard({ stats }: { stats: TaskStats }) {
   );
 }
 
-/** The cost-by-model donut card — one slice per priced `cost.byModel` key
- * (role-qualified slices and a critic slice included), centred on the total. */
 function CostDonutCard({ stats }: { stats: TaskStats }) {
   const segments: DonutSegment[] = stats.costByModel.map((m, i) => ({
     key: m.model,
@@ -965,9 +890,6 @@ function CostDonutCard({ stats }: { stats: TaskStats }) {
   );
 }
 
-/** The Stats panel's headline figures as a compact fact card: total cost, how
- * many primary/subagent sessions ran, and the tool-call count. No total-token
- * scalar — the honest headline is cost and billable I/O, surfaced elsewhere. */
 function StatsSummaryCard({ stats }: { stats: TaskStats }) {
   const items: Array<[string, ReactNode]> = [
     ['Cost', usd(stats.cost)],
@@ -987,10 +909,6 @@ function StatsSummaryCard({ stats }: { stats: TaskStats }) {
   );
 }
 
-/** The default content-panel view (nothing selected): the whole-Task AI-usage
- * breakdown. Honest-numbers rule — no total-token scalar; the token magnitude
- * is surfaced only as the per-model bars and the donut proportions, and the
- * headline figures are cost and billable I/O. */
 function StatsPanel({ stats }: { stats: TaskStats }) {
   if (stats.byModel.length === 0) {
     return (
@@ -1012,9 +930,6 @@ function StatsPanel({ stats }: { stats: TaskStats }) {
   );
 }
 
-/** The Attempt's output tokens attributed per tool (ADR-0008): ranked bars of
- * output tokens · cost, the no-tool reasoning bucket last. Unpriced tools read
- * as tokens only. Rendered only when the Attempt carried tool attribution. */
 function ToolTokenCard({ tools }: { tools: TaskStats['toolTokens'] }) {
   const bars: Bar[] = tools.map((t) => ({
     key: t.key,
@@ -1033,10 +948,6 @@ function ToolTokenCard({ tools }: { tools: TaskStats['toolTokens'] }) {
   );
 }
 
-/** A single Attempt's own stats: the token breakdown and the agent-vs-subagent
- * donut side by side, then the per-tool output-token card beneath. Scoped to the
- * Attempt (not the whole Task), and without the whole-Task summary card, heading,
- * or cost donut. */
 function AttemptStats({ stats }: { stats: TaskStats }) {
   if (stats.byModel.length === 0) return null;
   return (
@@ -1050,9 +961,6 @@ function AttemptStats({ stats }: { stats: TaskStats }) {
   );
 }
 
-/** The live-merged {usage, cost} each Attempt contributes to the Stats
- * breakdown: a running Attempt reads its `attempt_usage` firehose snapshot (its
- * settled row is still null), a finished one its persisted figures. */
 function statsAttemptsOf(runs: AttemptSummary[], live: Map<number, AttemptUsageEvent>): StatsAttempt[] {
   return runs.map((r) => {
     const snapshot = r.state === 'running' ? live.get(r.id) : undefined;
@@ -1061,9 +969,6 @@ function statsAttemptsOf(runs: AttemptSummary[], live: Map<number, AttemptUsageE
 }
 
 
-/** The Attempt's Step tabs (one per Step type present). The active tab underlines
- * in the teal action voice; each tab carries a state dot rolled up from its
- * Steps. */
 function StepTabsBar({ tabs, active, onSelect }: { tabs: StepTab[]; active: StepType; onSelect: (type: StepType) => void }) {
   return (
     <div role="tablist" aria-label="Attempt steps" className="mt-4 flex flex-wrap gap-1 border-b border-hairline">
@@ -1099,8 +1004,6 @@ function StepTabsBar({ tabs, active, onSelect }: { tabs: StepTab[]; active: Step
   );
 }
 
-/** The Rebase Step's content: which base it rebased onto, its outcome, and any
- * verdict note (a conflict the rebase hit). */
 function RebaseStatus({ step, baseBranch }: { step: Step; baseBranch: string | null }) {
   const tone = stateTone(step.state);
   return (
@@ -1127,11 +1030,6 @@ function PendingStep({ label }: { label: string }) {
   );
 }
 
-/** The Attempt content panel: the Attempt header and session line, its own
- * per-model / agent-vs-subagent Stats (the #395 aggregation scoped to this one
- * Attempt), then the Step tabs whose selected tab shows that Step's content —
- * the chat transcript for Implementation, the command checks for Verify, the
- * critic for Review — a pending Step showing an empty placeholder. */
 function AttemptPanel({
   run,
   attempt,
@@ -1163,16 +1061,10 @@ function AttemptPanel({
 }) {
   const steps = attempt?.steps ?? [];
   const tabs = attemptStepTabs(steps, attempt?.verifierStatuses ?? verifierStatuses);
-  // Repair (rather than reset) the operator's tab pick as the run progresses: a
-  // still-valid choice stands; otherwise fall back to the default tab. The panel
-  // is remounted per Attempt (keyed on run id), so switching Attempts starts
-  // fresh at the default.
   const [picked, setPicked] = useState<StepType | null>(null);
   const active = picked && tabs.some((tab) => tab.type === picked) ? picked : defaultStepTab(tabs);
   const activeTab = tabs.find((tab) => tab.type === active);
 
-  // The Implementation Step's content — the session chat, with the steer input
-  // at its foot while the run is live.
   const topModel = stats.byModel[0]?.model ?? primaryModel;
   const chat = (
     <ChatTranscript
@@ -1210,8 +1102,6 @@ function AttemptPanel({
       chat
     );
 
-  // Order (mockup): the Attempt header, its Step tabs, the per-Attempt summary
-  // card and stats (always shown), then the selected Step's content beneath.
   return (
     <>
       <AttemptHeader run={run} steps={steps} />
@@ -1239,7 +1129,7 @@ export function TicketPage({
   onChanged: () => void;
   onClose: () => void;
   onOpenTask: (taskId: number) => void;
-  /** Open this Ticket's parent Epic's summary page (ADR-0017), from the crumb bar. */
+  /** Open this Ticket's parent Epic's summary page, from the crumb bar. */
   onOpenEpic?: (ref: number) => void;
   /** The Epic this Ticket belongs to, resolved by the caller from the derived
    * Epic model (rolls up nested containers to the top-level Epic); null when it
@@ -1251,28 +1141,14 @@ export function TicketPage({
   const liveUsage = useLiveUsage();
   const [maxAttempts, setMaxAttempts] = useState<number | null>(null);
   const [workspaceName, setWorkspaceName] = useState<string | null>(null);
-  // The sidebar selection driving the content panel: nothing (Stats), an
-  // Attempt, a changed file, or the Timeline. `contentPanel` maps it to the
-  // panel that renders.
   const [selection, setSelection] = useState<ContentSelection>({ kind: 'none' });
   const [guardrailEvents, setGuardrailEvents] = useState<GuardrailEvent[]>([]);
   const [timelineEvents, setTimelineEvents] = useState<TicketTimelineEvent[]>([]);
   const [allTasks, setAllTasks] = useState<Task[]>([]);
-  // The full prompt/description lives on the item GET, not the lean list row the
-  // Board/list pass in (ADR-0045). Fetch it here so the description renders the
-  // whole body even once list rows drop the prompt; the live `task` prop still
-  // drives everything state-related.
   const [detail, setDetail] = useState<Task | null>(null);
   const [now, setNow] = useState(() => Date.now());
-  // The worktree diffstat while a run is in flight. `task.stat` is only
-  // snapshotted at settle, so the rail's changed-file list would be empty for
-  // the whole run; poll the live diffstat instead so files appear as the agent
-  // writes them, falling back to the settled `task.stat` once it merges.
   const [liveStat, setLiveStat] = useState<string | null>(null);
 
-  // The AttemptSummary the selected Attempt owns (its log/verification/guardrail
-  // streams key off this). Only an Attempt selection loads run-scoped data; the
-  // Stats / Timeline / diff panels don't need it.
   const selectedRun = selection.kind === 'attempt' ? runForAttempt(runs, { number: selection.attemptNumber }) : null;
   const selectedRunId = selectedRun?.id ?? null;
 
@@ -1311,8 +1187,6 @@ export function TicketPage({
     }, toastError);
   }, [task.workspaceId]);
 
-  // Tick a 1s clock only while a AttemptSummary is live, so Elapsed advances in real time
-  // without re-rendering the page once everything has settled.
   const anyRunning = runs.some((r) => r.state === 'running');
   useEffect(() => {
     if (!anyRunning) return;
@@ -1320,9 +1194,6 @@ export function TicketPage({
     return () => window.clearInterval(timer);
   }, [anyRunning]);
 
-  // Poll the live worktree diffstat while the latest run is in flight so the
-  // rail's changed-file list fills as the agent edits, instead of staying empty
-  // until settle. Idle → clear it and fall back to the settled `task.stat`.
   const latestAttemptId = runs[runs.length - 1]?.id ?? null;
   useLiveEffect((live) => {
     if (!anyRunning || latestAttemptId === null) {
@@ -1358,9 +1229,6 @@ export function TicketPage({
   }, [selectedRunId]);
 
   const scrollRef = useRef<HTMLDivElement>(null);
-  // The follow/tail state shared by the Timeline and the Attempt transcript:
-  // while engaged, a newly-appended event (either live stream) keeps the panel
-  // pinned to the bottom. Releasing it — by scrolling up — frees the view.
   const [following, setFollowing] = useState(false);
   useEffect(() => {
     const el = scrollRef.current;
@@ -1368,9 +1236,6 @@ export function TicketPage({
     el.scrollTop = el.scrollHeight;
   }, [events, timelineEvents, following]);
 
-  // Every selection change re-homes the panel to the top and releases the tail,
-  // so a new Attempt, file, or the Timeline always starts from its beginning
-  // rather than inheriting the previous content's scroll depth.
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = 0;
@@ -1389,13 +1254,9 @@ export function TicketPage({
   const latestAttempt = attempts.at(-1) ?? null;
   const failureLabel = task.state === 'escalated' ? null : runFailureBannerLabel(latestRun, latestAttempt);
   const failure = failureLabel ? latestRun?.reason ?? null : null;
-  // The escalation trigger — the reason this Task was handed to a human. Its
-  // Accept / Reject / Close actions live in the pinned sidebar Actions block.
   const escalationReason =
     task.state === 'escalated'
-      ? // `task.escalationReason` carries the descriptive cause; the attempt's
-        // `escalationReason` is only the bare disposition kind (e.g. "escalate"),
-        // so prefer the task's and fall back to the attempt's.
+      ?
         (task.escalationReason ?? latestAttempt?.escalationReason)?.replace(/^escalated to human:\s*/i, '') ?? null
       : null;
   const skipHolderId = parseSkipReasonTaskRef(task.skipReason);
@@ -1438,7 +1299,6 @@ export function TicketPage({
         </div>
       )}
 
-      {/* two-pane shell */}
       <div className="flex min-h-0 flex-1 overflow-hidden max-rail:flex-col max-rail:overflow-visible">
         <main
           id="main-content"
@@ -1461,16 +1321,8 @@ export function TicketPage({
               </span>
             </div>
 
-            {/* Condensed two-column header: the description (with its Show more
-                clamp) on the left, the metrics row above the Properties fact-list
-                on the right. Stacks under the rail breakpoint. */}
             <div className="mt-3 grid grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)] gap-11 max-rail:grid-cols-1 max-rail:gap-3">
               <div className="min-w-0">
-                {/* The full prompt lives on the item GET (`detail`) or a WS-full
-                    store task, never on a lean list row (issue #350). Until one
-                    arrives, render nothing rather than the truncated `summary`,
-                    which would flash through the markdown "Show more" body as if
-                    it were the whole description. */}
                 {(detail?.prompt ?? task.prompt) != null && (
                   <Description prompt={detail?.prompt ?? task.prompt ?? ''} />
                 )}
@@ -1523,8 +1375,6 @@ export function TicketPage({
               </div>
             )}
 
-            {/* content panel: driven by the sidebar selection — Stats (default),
-                an Attempt, a changed-file diff, or the Timeline. */}
             <div className="min-w-0 border-t border-hairline">
               {panel.kind === 'diff' ? (
                 <ChangesPane task={task} attemptId={latestAttemptId} selectedFile={selectedFile ?? ''} running={anyRunning} />
@@ -1562,7 +1412,6 @@ export function TicketPage({
           </div>
         </main>
 
-        {/* right navigation sidebar */}
         <aside
           aria-label="Attempts, timeline and changed files"
           className="flex w-[326px] shrink-0 flex-col border-l border-hairline bg-surface max-rail:w-auto max-rail:border-l-0 max-rail:border-t"
@@ -1588,9 +1437,6 @@ export function TicketPage({
               taskState={task.state}
             />
           </div>
-          {/* Review Actions, pinned at the bottom with no section title — the
-              buttons speak for themselves. Escalated Accept / Reject / Close ride
-              the same block (TaskActions handles the escalated state). */}
           <Gate
             model={gateModel}
             task={task}

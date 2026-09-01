@@ -1,4 +1,3 @@
-// Astro + Starlight config for the Harmonic docs site.
 // Deploys as a GitHub Pages *project* page at https://mintopia.github.io/harmonic/,
 // so `site` + `base` must match that path exactly (see .github/workflows/docs.yml).
 import starlight from '@astrojs/starlight';
@@ -10,10 +9,7 @@ export default defineConfig({
   base: '/harmonic',
   // `astro preview` blocks unknown Host headers (DNS-rebind protection); its
   // static preview server reads THIS key (server.allowedHosts), not
-  // vite.preview.allowedHosts. The previewed docs are reached only through an
-  // authenticated cloudagent HTTPS forward whose subdomain varies per
-  // workspace, so allow any host. Dev/preview only — unused by the static
-  // GitHub Pages build.
+  // vite.preview.allowedHosts.
   server: {
     allowedHosts: true,
   },
@@ -26,8 +22,6 @@ export default defineConfig({
         { icon: 'github', label: 'GitHub', href: 'https://github.com/mintopia/harmonic' },
       ],
       customCss: ['./src/styles/aurora.css'],
-      // Aurora theme is dark-first: give a fresh visitor a dark default
-      // instead of Starlight's default `auto` (prefers-color-scheme) pick.
       head: [
         {
           tag: 'script',

@@ -50,9 +50,6 @@ export function useConversationDetail(
         setEvents((current) =>
           current.some((e) => e.id === msg.event.id) ? current : [...current, msg.event],
         );
-        // The resolution signal (LOCKED contract): a permission_request
-        // conversation_event whose payload.reqId matches a pending prompt
-        // clears it, whether it was answered here or elsewhere/crashed.
         setPending((current) => resolvePendingPermissionFromEvent(current, msg.event));
       }
       if (msg.type === 'permission_request' && msg.conversationId === id) {
@@ -61,9 +58,6 @@ export function useConversationDetail(
       if (msg.type === 'conversation_changed' && msg.conversation.id === id) {
         setConversation(msg.conversation);
         upsertConversationInList(msg.conversation);
-        // Belt-and-braces: the server auto-clears pending permissions on
-        // end/crash via the resolution signal above, but a prompt should
-        // never outlive the conversation's own 'ended' state in the UI.
         if (msg.conversation.state === 'ended') setPending({});
       }
     });
@@ -121,11 +115,6 @@ export function useConversationDetail(
     }
   };
 
-  // Optimistic relative to the *resolving event*, not the HTTP response:
-  // the server confirms via a conversation_event carrying this reqId, but
-  // there is no reason to wait for it once the answer POST itself
-  // succeeded — remove the prompt immediately, and re-add it (implicitly,
-  // by leaving state untouched) on failure so the operator can retry.
   const answerPermission = async (p: PendingPermission, optionId: string, remember?: boolean) => {
     try {
       await api.answerPermission(p.conversationId, p.reqId, optionId, remember);

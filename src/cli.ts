@@ -125,8 +125,6 @@ async function main(): Promise<void> {
   const dataDir = values['data-dir'] ?? defaultDataDir();
   const port = Number(values.port);
   const host = values.host!;
-  // Refuse to boot against a data dir a live instance holds — otherwise crash
-  // recovery would mark the other instance's in-flight runs interrupted (#40).
   const holder = acquireLock(dataDir, { port, host });
   if (holder) {
     logger.error(
@@ -135,8 +133,6 @@ async function main(): Promise<void> {
     );
     process.exit(1);
   }
-  // Last-resort net for any fire-and-forget rejection that slips a per-site
-  // `.catch` — log it instead of letting Node make it fatal (issue #371).
   installProcessSafetyNet();
   const password = values.password ?? process.env.HARMONIC_PASSWORD;
   const telemetryOptions = resolveTelemetryOptions({
@@ -146,8 +142,6 @@ async function main(): Promise<void> {
     metricExportIntervalMillis: values['otel-metric-export-interval'],
     stdoutLogLevel: values['otel-stdout-log-level'],
   });
-  // The scheduler owns the metrics-summary cadence here (ADR-0010, issue
-  // #386), not telemetry's own timer — see `metricsSummary` below.
   const telemetry = initializeTelemetry(telemetryOptions, { ownsMetricSummaryInterval: false });
   let app: Awaited<ReturnType<typeof buildApp>>;
   try {

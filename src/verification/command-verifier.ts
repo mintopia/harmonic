@@ -7,34 +7,7 @@ import { startOperation } from '../telemetry/operations.js';
 import type { Verdict } from './critic-schema.js';
 import type { VerificationAttemptInput } from '../domain/verification-attempts.js';
 
-/**
- * The command verifier (issue #135, ADR-0021, reliability-design Unit B): the
- * first real verifier and the first end-to-end proof that broken work never
- * merges unattended. The operator-configured command (`VerificationCommand`,
- * #132) is spawned against the frozen candidate — an argv/args exec with an
- * explicit cwd/env, a hard timeout, an output cap, and cancellation — and its
- * exit code maps to a {@link Verdict} per the table in {@link exitCodeToVerdict}.
- *
- * Like the sibling critic (`verification/critic.ts`, #136) this is a
- * self-contained, fully-tested unit: everything the command sees is bracketed
- * by `withDetachedWorktree` (`execution/detached-worktree.ts`), so the command
- * runs against a stable, detached candidate checkout it can never merge, and it
- * never throws for a verdict — every plumbing failure (missing command, spawn
- * error, timeout, cancellation, a checkout that could not be created) folds
- * into `inconclusive`, which the combination function (#133) treats as
- * fail-safe (Escalate). A non-zero exit is an actionable `fail`; only a clean
- * exit 0 is a `pass`.
- *
- * Unlike the critic, a command verifier is *expected* to mutate its checkout
- * (a test runner writes coverage, a build writes artifacts), so the before/
- * after fingerprint is reported for audit but never overrides the verdict —
- * the detached, disposable, removed-after worktree is the containment, not the
- * read-only assumption the critic's mutation fail-safe enforces.
- */
-
-/** The verdict a command run produced, plus the captured output and the
- * candidate OID it ran against. Shaped to map straight onto a persisted
- * {@link VerificationAttemptInput} via {@link commandAttemptToInput}. */
+/** The verdict a command run produced, plus the captured output and the candidate OID. */
 export interface CommandAttempt {
   verifier: 'command';
   verdict: Verdict;
@@ -45,14 +18,10 @@ export interface CommandAttempt {
   inputOid: string;
 }
 
-/** Combined stdout+stderr past this many characters is truncated — a chatty
- * command must not blow the stored `output` size (mirrors `critic.ts`'s
- * `DIFF_CHAR_CAP`; #132's locked config schema carries no per-command cap). */
+/** Combined stdout+stderr past this many characters is truncated. */
 export const OUTPUT_CHAR_CAP = 200_000;
 
-/** What one spawn of the configured command resolved to — the raw plumbing
- * result {@link exitCodeToVerdict} maps to a {@link Verdict}. Exactly one of the
- * failure flags is set, or none (a clean `code`). */
+/** What one spawn resolved to; exactly one failure flag is set, or none (a clean `code`). */
 export interface CommandSpawnResult {
   /** The child could not be spawned at all (missing command, EACCES). */
   spawnError?: Error | undefined;
@@ -79,33 +48,16 @@ export interface CommandSpawnRequest {
   signal?: AbortSignal | undefined;
 }
 
-/**
- * The injectable seam between {@link runCommandVerifier} and a real child
- * process (mirrors the critic's `CriticHarnessDrive`): the unit tests
- * substitute a fake that returns a canned {@link CommandSpawnResult} so the
- * checkout / verdict-mapping / mutation-reporting logic is testable without
- * spawning a process, while the end-to-end Runner test drives the real spawn.
- */
+/** The injectable seam between {@link runCommandVerifier} and a real child process. */
 export interface CommandSpawn {
   run(req: CommandSpawnRequest): Promise<CommandSpawnResult>;
 }
 
-/**
- * The real spawner: exec the configured argv (never a shell string) with an
- * explicit cwd/env, capping combined stdout+stderr and enforcing the timeout
- * and cancellation by SIGKILL. Never rejects — a spawn failure (`ENOENT`/
- * `EACCES`) resolves with `spawnError` set, so the caller maps it to
- * `inconclusive` rather than catching a throw.
- */
+/** Exec the configured argv (never a shell string); never rejects — a spawn failure resolves with `spawnError` set. */
 export function createChildProcessSpawn(): CommandSpawn {
   return {
     run(req: CommandSpawnRequest): Promise<CommandSpawnResult> {
       return new Promise<CommandSpawnResult>((resolve) => {
-        // The command's env is `process.env` overlaid with its configured env,
-        // minus the tracker credentials — belt-and-braces, exactly like the
-        // critic (`critic.ts` `criticSpawnEnv`): a verifier command has no
-        // legitimate reason to reach the Harmonic MCP server, so those two keys
-        // never survive into it whatever it inherits.
         const env: NodeJS.ProcessEnv = { ...process.env, ...req.command.env };
         delete env.HARMONIC_API_KEY;
         delete env.HARMONIC_MCP_URL;
@@ -135,7 +87,6 @@ export function createChildProcessSpawn(): CommandSpawn {
           try {
             if (child.exitCode === null && !child.killed) child.kill('SIGKILL');
           } catch {
-            // already gone
           }
         };
 
@@ -166,10 +117,7 @@ export function createChildProcessSpawn(): CommandSpawn {
         child.stderr?.setEncoding('utf8');
         child.stderr?.on('data', append);
 
-        // A missing/unspawnable command emits 'error' (ENOENT/EACCES) and never
-        // starts — resolve with the error so it maps to inconclusive. 'error'
-        // always fires before 'close', and `finish` is idempotent, so the later
-        // 'close' (which carries no spawn error) is ignored in that case.
+        // node emits 'error' (ENOENT/EACCES) before 'close' for an unspawnable command; `finish` is idempotent so the later 'close' is ignored.
         child.on('error', (err) => finish({ spawnError: err, code: null, signal: null, output }));
         child.on('close', (code, signal) => finish({ timedOut, aborted, code, signal, output }));
       });
@@ -178,8 +126,7 @@ export function createChildProcessSpawn(): CommandSpawn {
 }
 
 /**
- * The documented exit-code → verdict table (issue #135 AC, ADR-0021), the one
- * place a raw {@link CommandSpawnResult} becomes a {@link Verdict}:
+ * The exit-code → verdict table:
  *
  * | Command result                              | Verdict      |
  * | ------------------------------------------- | ------------ |
@@ -189,9 +136,6 @@ export function createChildProcessSpawn(): CommandSpawn {
  * | timeout (killed after `timeoutSeconds`)     | inconclusive |
  * | cancelled (AbortSignal)                     | inconclusive |
  * | killed by signal / no exit code             | inconclusive |
- *
- * `inconclusive` is the fail-safe direction (ADR-0021): any infra doubt
- * Escalates rather than being mistaken for a pass or driving a heal loop.
  */
 export function exitCodeToVerdict(r: CommandSpawnResult): { verdict: Verdict; summary: string } {
   if (r.spawnError) {
@@ -222,22 +166,7 @@ export interface RunCommandVerifierArgs {
   attributes?: Attributes;
 }
 
-/**
- * Run the command verifier against a candidate OID and resolve a
- * {@link CommandAttempt} (issue #135, reliability-design Unit B).
- *
- * 1. Checks the candidate out in a disposable detached worktree
- *    (`withDetachedWorktree`, #134), torn down when the command exits.
- * 2. Spawns the configured command at the checkout root (plus the command's
- *    optional relative `cwd`), captures capped output, and enforces the
- *    timeout + cancellation.
- * 3. Maps the spawn result to a verdict via {@link exitCodeToVerdict}.
- * 4. If setting up the worktree itself failed (bad OID, git/FS error), that is a
- *    genuine infra failure folded into `inconclusive`, never a thrown error.
- *
- * Never throws for a verdict outcome — a command is expected to write to its
- * disposable checkout, so only its exit code decides the verdict.
- */
+/** Run the command verifier against a candidate OID in a disposable detached worktree and resolve a {@link CommandAttempt}. Never throws for a verdict outcome; a worktree setup failure folds into `inconclusive`. */
 export async function runCommandVerifier(args: RunCommandVerifierArgs): Promise<CommandAttempt> {
   const operation = args.parent
     ? startOperation({ type: 'verify.command', parent: args.parent, attributes: { 'verification.mechanism': 'command', ...args.attributes } })
@@ -280,9 +209,6 @@ async function runCommandVerifierUnchecked(args: RunCommandVerifierArgs): Promis
       summary = mapped.summary;
     });
   } catch (err) {
-    // Setting up the disposable worktree failed (bad OID, git/FS error) — a
-    // genuine infra failure, folded into inconclusive rather than thrown, same
-    // as every other failure mode this function handles.
     return {
       verifier: 'command',
       verdict: 'inconclusive',
@@ -295,12 +221,7 @@ async function runCommandVerifierUnchecked(args: RunCommandVerifierArgs): Promis
   return { verifier: 'command', verdict, summary, output, inputOid: args.verifiedHeadOid };
 }
 
-/**
- * Map a {@link CommandAttempt} to the persisted {@link VerificationAttemptInput}
- * shape (mirrors the critic's `criticAttemptToInput`): the command's
- * `verifier: 'command'` tag is the store's `mechanism`, every other field maps
- * straight across.
- */
+/** Map a {@link CommandAttempt} to the persisted {@link VerificationAttemptInput}. */
 export function commandAttemptToInput(attempt: CommandAttempt): VerificationAttemptInput {
   return {
     mechanism: attempt.verifier,

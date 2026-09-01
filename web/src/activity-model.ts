@@ -3,15 +3,14 @@
 import type { ActivityProcess, Cost, AttemptUsage, AttemptUsageEvent } from './types.js';
 
 /**
- * The Activity view's attention model (issue #52). Every in-flight process is
+ * The Activity view's attention model. Every in-flight process is
  * sorted into one of three tiers so the fleet re-ranks by what the operator
  * should look at first — the view holds no state of its own (CONTEXT.md:
  * Activity), so the ranking is a pure function of the snapshot + live deltas.
  *
- * - **Needs you**: an afk Run that escalated to a human (issue #33), or any
+ * - **Needs you**: an afk Run that escalated to a human, or any
  *   process past its context window (degrading — a human should intervene).
- *   These are the only rows that genuinely block on the operator; #55 adds the
- *   resolve action, #54 the pin.
+ *   These are the only rows that genuinely block on the operator.
  * - **High load**: a process running hot — context fill at or above
  *   `HIGH_LOAD_FILL` but still under the window. The "watch this one" tier.
  * - **Steady**: everything else, including any process whose window is
@@ -76,7 +75,7 @@ export function rankActivity(processes: ActivityProcess[]): ActivityProcess[] {
   });
 }
 
-/** The Activity toolbar's type segments (issue #54): the fleet, just Runs, or just Chats. */
+/** The Activity toolbar's type segments: the fleet, just Runs, or just Chats. */
 export const ACTIVITY_TYPE_FILTERS = ['all', 'attempts', 'chats'] as const;
 export type ActivityTypeFilter = (typeof ACTIVITY_TYPE_FILTERS)[number];
 
@@ -91,7 +90,7 @@ export interface ActivityFilter {
 export const NO_ACTIVITY_FILTER: ActivityFilter = { type: 'all', workspaceId: null };
 
 /**
- * The toolbar's filter (issue #54): narrow by process type and/or Workspace.
+ * The toolbar's filter: narrow by process type and/or Workspace.
  * Order-preserving so a later sort owns ordering outright. An empty result is
  * honest — the view shows a filtered empty state rather than a stale list.
  */
@@ -131,7 +130,7 @@ export function resolveActivityFilter(filter: ActivityFilter, workspaces: Worksp
 }
 
 /**
- * The Activity toolbar's sort modes (issue #54). 'attention' is the default —
+ * The Activity toolbar's sort modes. 'attention' is the default —
  * the tiered ranker above; the rest order by a single live metric, largest
  * first, with the "Needs you" tier always pinned on top (see `sortActivity`).
  */
@@ -149,11 +148,6 @@ export function sortLabel(sort: ActivitySort): string {
   return SORT_LABELS[sort];
 }
 
-/**
- * The sortable metric for a process under a non-attention sort, or null when it
- * can't be known honestly (unpriced Cost, unconfigured window, no tokens yet) —
- * a null always sorts last, never a fake zero. Elapsed is always knowable.
- */
 function sortMetric(process: ActivityProcess, sort: ActivitySort, now: number): number | null {
   switch (sort) {
     case 'cost':
@@ -165,12 +159,10 @@ function sortMetric(process: ActivityProcess, sort: ActivitySort, now: number): 
     case 'elapsed':
       return elapsedMs(process, now);
     case 'attention':
-      return null; // unused — attention has its own ranker
+      return null;
   }
 }
 
-/** Split the fleet into its pinned "Needs you" tier and everything else — the
- * partition both the metric sorter and the section grouping share (issue #54). */
 function partitionNeedsYou(processes: ActivityProcess[]): [ActivityProcess[], ActivityProcess[]] {
   const needsYou: ActivityProcess[] = [];
   const rest: ActivityProcess[] = [];
@@ -179,7 +171,7 @@ function partitionNeedsYou(processes: ActivityProcess[]): [ActivityProcess[], Ac
 }
 
 /**
- * Order the fleet for display (issue #54). 'attention' defers to `rankActivity`
+ * Order the fleet for display. 'attention' defers to `rankActivity`
  * (tier, then fill, then age). Every other sort orders by its live metric —
  * largest first, unknown last, oldest-first on a tie — but keeps the whole
  * "Needs you" tier pinned above the sorted rest, so an escalation never scrolls
@@ -212,7 +204,7 @@ export interface ActivitySection {
 }
 
 /**
- * Group the (already-filtered) fleet into the table's display bands (issue #54).
+ * Group the (already-filtered) fleet into the table's display bands.
  * Under 'attention', the three attention tiers (empty ones dropped). Under a
  * metric sort, the pinned "Needs you" band above a single "By {metric}" band —
  * so escalations stay pinned whatever the sort. Pure.
@@ -280,7 +272,7 @@ export function sumCosts(costs: (Cost | null | undefined)[]): Cost | null {
   const modelNull = new Set<string>();
   for (const c of present) {
     if (c.incomplete) incomplete = true;
-    if (c.totalUsd === null) incomplete = true; // usage existed but none priced
+    if (c.totalUsd === null) incomplete = true;
     else total = (total ?? 0) + c.totalUsd;
     for (const [model, v] of Object.entries(c.byModel)) {
       if (v === null) {
@@ -320,7 +312,7 @@ export function mergeRunUsage(processes: ActivityProcess[], event: AttemptUsageE
   );
 }
 
-/** The summary strip's figures (issue #52): the one-glance fleet readout above the rows. */
+/** The summary strip's figures: the one-glance fleet readout above the rows. */
 export interface ActivitySummary {
   /** In-flight Runs (afk work) — the machine-ceiling numerator. */
   runningCount: number;

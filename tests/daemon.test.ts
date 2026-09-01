@@ -21,8 +21,6 @@ const raceClaim = (dir: string, port: number) => {
     `import { acquireLock } from '${daemonUrl}';`,
     `const holder = acquireLock(${JSON.stringify(dir)}, { port: ${port}, host: '0.0.0.0' });`,
     `console.log(JSON.stringify(holder));`,
-    // A winner that exits immediately would look dead to a slower-starting
-    // racer, letting it wrongly reclaim — stay alive to prove exclusivity holds.
     `if (holder === null) await new Promise((resolve) => setTimeout(resolve, 500));`,
   ].join('\n');
   return new Promise<{ pid: number | undefined; holder: DaemonInfo | null }>((resolve, reject) => {

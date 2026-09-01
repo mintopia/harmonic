@@ -1,11 +1,8 @@
 /* eslint-disable */
-// Stub of the `api` surface for the story harness — resolves fixtures, no network.
 import * as f from './fixtures';
 
 const ok = <T>(v: T) => Promise.resolve(v);
 
-// Some component graphs import `request` from `../api` directly; the story never
-// hits the network, so resolve to nothing rather than provide a real client.
 export const request = <T>() => Promise.resolve(undefined as T);
 
 export const api = {

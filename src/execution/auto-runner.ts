@@ -24,35 +24,15 @@ function taskOperationAttributes(task: Pick<TaskRow, 'id' | 'origin' | 'priority
   };
 }
 
-/**
- * The direct-mode Work Context identity a Task would occupy, or `undefined` in
- * worktree mode. Worktree Runs each get a unique per-Run path+branch (their key
- * is distinct by construction), so the "≤1 afk Run per context" House Rule is
- * vacuous there and those Tasks are exempt from the pick predicate (ADR-0001).
- * Direct-mode Tasks share one physical checkout, so their key is derivable from
- * the Task alone — no Run needed — collapsing trailing-slash/symlink
- * variants of the same directory onto one identity.
- */
 function directContextKey(task: TaskRow): string | undefined {
   if (task.isolationMode !== 'direct') return undefined;
   return workContextKey({ isolationMode: 'direct', workingDir: task.workingDir });
 }
 
-/** An integration base already assigned to an Epic member. If this ref is gone,
- * only the Epic reconcile can restore it; the scheduler gives that one pass,
- * then escalates rather than returning the member to a permanent retry loop. */
 function hasAssignedEpicBase(task: TaskRow): boolean {
   return task.baseBranch?.startsWith('epic/') ?? false;
 }
 
-/**
- * Direct-mode Work Contexts occupied by an afk Run that is mid-flight (`running`)
- * (`working`), keyed by context to the Task
- * that holds it — the input to the House Rule pick predicate (ADR-0022, issue
- * #120). Worktree Tasks (unique key per
- * Run) never occupy a context here. First holder found wins the key, so the skip
- * reason names a stable occupant.
- */
 async function occupiedDirectContexts(tasks: readonly TaskRow[]): Promise<Map<string, TaskRow>> {
   const occupied = new Map<string, TaskRow>();
   await forEachYielding(tasks, (t) => {
@@ -64,9 +44,8 @@ async function occupiedDirectContexts(tasks: readonly TaskRow[]): Promise<Map<st
 }
 
 /**
- * The tracker-facing hooks the Auto-Runner consults for mirrored afk Tasks
- * (issue #32); absent on a native-only server, where every ready Task is
- * pick-eligible as before.
+ * The tracker-facing hooks the Auto-Runner consults for mirrored afk Tasks;
+ * absent on a native-only server, where every ready Task is pick-eligible.
  */
 export interface MirrorClaim {
   /** Post-lock: advertise Harmonic's local claim without reading tracker ownership. */
@@ -88,31 +67,18 @@ export interface AutoRunnerOptions {
   clock?: () => number;
 }
 
-// Must comfortably exceed the tracker poll/epic-reconcile cadence (default 60s,
-// `trackerPollIntervalSeconds`), which is what re-cuts a missing `epic/<ref>` base:
-// a one-poll-late reconcile must not race the grace boundary into a false escalate
-// (#238). ~5× the reconcile period gives several polls to recover.
 const DEFAULT_MISSING_EPIC_BASE_GRACE_MS = 300_000;
 
 /**
  * The scheduler. When enabled, fills free run slots with ready tasks —
  * highest priority first, FIFO by creation time within a priority. `poke()`
- * whenever something may have changed (task became ready, run finished, config
- * toggled); it coalesces and never re-enters.
+ * whenever something may have changed; it coalesces and never re-enters.
  *
- * Concurrency is two-level (ADR-0012, issue #60): the global **Machine
- * Ceiling** (`config.autoRunner.maxConcurrentAttempts`) caps total concurrent Attempts
+ * Concurrency is two-level: the global Machine Ceiling
+ * (`config.autoRunner.maxConcurrentAttempts`) caps total concurrent Attempts
  * across all Workspaces, and each Workspace has its own cap clamped to the
- * ceiling — so per-Workspace caps summing higher than the ceiling still can't
- * breach it. Enable is gated too: a Task runs only if `master ∧ workspace
- * enabled`, where `master` is the global switch and the per-Workspace enable
- * inherits it when unset.
- *
- * A mirrored afk Task's pick is more than a spawn: the predicate is
- * `agent-workable ∧ deps satisfied (ready)`, and the sequence is
- * flip(ready→running) — the lock — then best-effort advisory claim before
- * spawning (issues #32, #230, and #232). Assignment is never read as an
- * eligibility or ownership signal (ADR-0030).
+ * ceiling. A Task runs only if `master ∧ workspace enabled`, where the
+ * per-Workspace enable inherits `master` when unset.
  */
 export class AutoRunner {
   private timer: NodeJS.Timeout | undefined;
@@ -125,31 +91,10 @@ export class AutoRunner {
   private readonly intervalMs: number;
   private readonly missingEpicBaseGraceMs: number;
   private readonly clock: () => number;
-  /**
-   * Why a Task was not picked on the most recent scheduler pass, keyed by
-   * Task id. Rebuilt from the local queue each pass, so the API reports the
-   * condition holding now instead of a stale scheduling decision. The rebuild
-   * populates a fresh map and swaps it in whole: the pass yields the event
-   * loop while it works, so an in-place clear-then-repopulate would let a
-   * concurrent API read observe a half-built map (skipReason flickering null).
-   */
   private schedulerSkipReasons = new Map<number, string>();
 
-  /** Assigned Epic bases that were missing on the preceding scheduler pass.
-   * A null base is still awaiting its first reconcile and remains transient;
-   * an assigned `epic/<ref>` that stays absent has no scheduler-side recovery. */
   private readonly missingEpicBaseSince = new Map<number, number>();
 
-  /**
-   * Epoch ms a Task first started being House-Rule-skipped on a still-current
-   * streak, keyed by Task id. Reports (via {@link waitingSince}) how
-   * long a blocked Task has been waiting on an occupied Work Context. Set the
-   * first time a pick pass skips a Task and left alone on every subsequent
-   * pass it's still skipped, so the clock reflects when the wait *began*, not
-   * the last time it was observed; pruned in the same pass to any Task no
-   * longer present in the freshly-rebuilt `schedulerSkipReasons` — the Task
-   * started (or its blocker cleared) and a later wait starts a fresh clock.
-   */
   private readonly contextWaitingSince = new Map<number, number>();
 
   constructor(
@@ -203,31 +148,19 @@ export class AutoRunner {
   }
 
   private async fill(): Promise<void> {
-    // The claim step awaits the tracker, so a poke arriving mid-fill can't just
-    // re-enter; mark it and loop once more instead of dropping it.
     if (this.filling) {
       this.refill = true;
       return;
     }
     this.filling = true;
-    // An idle pass — no Task attempted — is not a meaningful Operation, and at
-    // the 1s scheduler cadence a per-tick span floods the Operations page,
-    // firehose, and OTLP with heartbeat noise of no trace value. Start the tick
-    // span lazily on the first pick attempt; a pass that picks nothing produces
-    // no span at all. Picks parent off the returned SpanContext, so the tick
-    // still nests them.
     let tick: Operation | undefined;
     const tickParent = (): SpanContext =>
       (tick ??= startOperation({ type: 'auto-runner.tick', attributes: {} })).spanContext;
     try {
       do {
         this.refill = false;
-        // `enabled` is the fleet-wide master switch; `maxConcurrentAttempts` the
-        // Machine Ceiling. Master off ⇒ nothing runs, whatever a Workspace enable says.
         const { enabled: master, maxConcurrentAttempts: ceiling } = this.getConfig().autoRunner;
         const workspacesById = new Map((await this.getWorkspaces()).map((w) => [w.id, w]));
-        // Refresh before the capacity loop: a full machine never reaches
-        // `pickNext`, but its queued Tasks still need to say why they wait.
         await this.refreshSkipReasons({ master, ceiling, workspacesById });
         if (!master) break;
         await this.fillSlots(workspacesById, ceiling, tickParent);
@@ -236,16 +169,11 @@ export class AutoRunner {
       tick?.end();
     } catch (error) {
       tick?.fail(failureReason(error));
-      // Filling is best-effort; the next poke retries.
     } finally {
       this.filling = false;
     }
   }
 
-  /**
-   * Claim one picked Task, then spawn it. The conditional DB claim is the local
-   * ownership lock; only its winner may advertise a mirrored claim or launch.
-   */
   private async startPicked(task: TaskRow, skip: Set<number>, tickParent: () => SpanContext): Promise<boolean> {
     const pick = startOperation({
       type: 'auto-runner.pick-start',
@@ -268,7 +196,6 @@ export class AutoRunner {
           try {
             await this.mirror.advertiseClaim(claimed);
           } catch {
-            // Advisory claim failed — proceed; reconcile retries the assignment.
           }
         }
         try {
@@ -276,7 +203,7 @@ export class AutoRunner {
           return true;
         } catch (error) {
           pick.fail(failureReason(error));
-          await this.taskService.setState(task.id, 'ready'); // couldn't spawn (e.g. bad harness) — don't strand it running
+          await this.taskService.setState(task.id, 'ready');
           skip.add(task.id);
           return false;
         }
@@ -293,19 +220,10 @@ export class AutoRunner {
     this.schedulerSkipReasons.set(taskId, reason);
   }
 
-  /** The wait clock applies only to waits that contend for a
-   * Work Context, plus the existing git-workspace backoff. Other scheduler
-   * explanations are intentionally current-state only. */
   private recordWaiting(taskId: number): void {
     if (!this.contextWaitingSince.has(taskId)) this.contextWaitingSince.set(taskId, Date.now());
   }
 
-  /**
-   * Rebuild the legible scheduler state for every waiting Task. This runs once
-   * per scheduler pass, independently of whether the machine has a free slot,
-   * so capacity and disabled-workspace waits cannot disappear behind the pick
-   * loop's early exit.
-   */
   private async refreshSkipReasons({
     master,
     ceiling,
@@ -317,9 +235,6 @@ export class AutoRunner {
   }): Promise<void> {
     const [all, readyWithDeps, running, runningByWorkspace] = await Promise.all([
       this.taskService.list(),
-      // Dependency details are only needed for ready tasks that may need a
-      // blocker diagnostic. Keep the all-state scan below cheap: it also feeds
-      // Work Context occupancy, which includes running and review tasks.
       this.taskService.listWithDeps({ state: 'ready' }),
       this.runStore.countRunning(),
       this.runStore.countRunningByWorkspace(),
@@ -402,39 +317,11 @@ export class AutoRunner {
     });
   }
 
-  /**
-   * Fill every free run slot in a single pass. The ordered eligible-work list,
-   * the direct-context occupancy map, the epic-base gate verdicts, and the
-   * running/capacity counts are all computed ONCE here and then maintained with
-   * local bookkeeping as each Task is claimed — instead of re-issuing
-   * `list()` + `orderedEligibleWork()` + two count queries on every slot. libsql
-   * runs those scans synchronously on the main thread (ADR-0029), so the old
-   * per-slot fan-out issued O(slots) full-table scans and blocked the event loop
-   * on every 1s tick (#236).
-   *
-   * Ordering is unchanged: candidates are still visited in DB-owned priority /
-   * topological-rank / age order, and starting a Task only ever *adds* running
-   * counts and occupancy — it never frees an earlier-skipped Task — so a forward
-   * single pass is equivalent to the old restart-from-the-top pick loop.
-   *
-   * Picks skip any Task parked this cycle, a Task whose Workspace is
-   * Auto-Runner-disabled (master is already on here, so an inheriting Workspace
-   * counts as enabled) or already at its resolved cap — the per-Workspace half of
-   * the two-level limit (ADR-0012, issue #60) — and, the House Rule (ADR-0001),
-   * a Task whose direct-mode Work Context is already occupied by a
-   * working Run. This predicate is the sole gate preventing the Auto-Runner from
-   * picking a second execution into an occupied direct-mode Work Context; it reads
-   * occupancy from **Task state** (a `working` Task occupies its context until it
-   * settles). A Task started earlier this pass is folded into `occupied`, so it
-   * correctly blocks a same-context sibling visited later.
-   */
   private async fillSlots(
     workspacesById: Map<number, WorkspaceRow>,
     ceiling: number,
     tickParent: () => SpanContext,
   ): Promise<void> {
-    // Tasks parked this cycle because they are un-spawnable, so the slow claim
-    // path can't spin re-picking the same one before a re-scan.
     const skip = new Set<number>();
     const [all, ordered, running0, runningByWorkspace0] = await Promise.all([
       this.taskService.list(),
@@ -445,18 +332,10 @@ export class AutoRunner {
     let running = running0;
     const runningByWorkspace = new Map(runningByWorkspace0);
     const occupied = await occupiedDirectContexts(all);
-    // Parallel-Epic pick gate (issue #159, git ground-truth #231): a ready Epic
-    // member isn't spawnable until its integration branch exists in git and its
-    // base is set. The check hits git, so resolve it for the mirrored ready
-    // candidates up front and read the verdicts in the sync filter below.
-    // Transient (a reconcile cuts the branch and re-pokes), so it isn't recorded
-    // as a wait-clock skip.
     const epicGate = new Map<number, boolean>();
     if (this.epicBaseNotReady) {
       const gate = this.epicBaseNotReady;
       await forEachYielding(all, async (t) => {
-        // Same cheap exclusions the pick filter below applies, so a skipped
-        // task doesn't cost a `branchExists` call.
         if (t.state === 'ready' && t.origin === 'mirrored' && !skip.has(t.id)) {
           epicGate.set(t.id, await gate(t));
         }
@@ -470,9 +349,6 @@ export class AutoRunner {
       }
       const started = await this.startPicked(task, skip, tickParent);
       if (!started) continue;
-      // Local bookkeeping mirrors what a fresh count query would report after the
-      // claim: a Workspace can now reach its own cap mid-fill while the ceiling
-      // still has room, and a just-started direct Task occupies its context.
       running += 1;
       if (task.workspaceId != null) {
         runningByWorkspace.set(task.workspaceId, (runningByWorkspace.get(task.workspaceId) ?? 0) + 1);
@@ -481,20 +357,11 @@ export class AutoRunner {
       if (key && !occupied.has(key)) occupied.set(key, { ...task, state: 'working' });
     }
 
-    // A Task no longer House-Rule-skipped this pass — started, or its
-    // blocker cleared — resets its wait clock rather than carrying a stale
-    // start time into a later, unrelated block.
     await forEachYielding(this.contextWaitingSince.keys(), (taskId) => {
       if (!this.schedulerSkipReasons.has(taskId)) this.contextWaitingSince.delete(taskId);
     });
   }
 
-  /**
-   * The synchronous pick predicate for one candidate, read against the locally
-   * maintained capacity/occupancy state. Records the git-backoff and House-Rule
-   * skip reasons (and their wait clock) exactly as the pick pass always has; the
-   * bracketing {@link refreshSkipReasons} still owns the authoritative rebuild.
-   */
   private slotCandidate(
     t: OrderedEligibleTask,
     {
@@ -516,17 +383,10 @@ export class AutoRunner {
     if (t.state !== 'ready' || skip.has(t.id)) return false;
     if (epicGate.get(t.id)) return false;
     const workspace = t.workspaceId != null ? workspacesById.get(t.workspaceId) : undefined;
-    // Master is on (fill returned early otherwise), so an inheriting
-    // Workspace (null) is enabled; only an explicit `false` opts out.
     if (!resolveScoped('autoRunnerEnabled', workspace?.autoRunnerEnabled, true)) return false;
     const cap = resolveCap(workspace?.maxConcurrentAttempts, ceiling);
     const wsRunning = t.workspaceId != null ? (runningByWorkspace.get(t.workspaceId) ?? 0) : 0;
     if (wsRunning >= cap) return false;
-    // Git-backoff skip (issue #199): a base repo whose workspace-prep git just
-    // fast-failed is in an exponential-backoff window — pass its Tasks over so
-    // the scheduler doesn't re-spawn git at fork-rate. Keyed on the base repo,
-    // so a direct Run and a worktree Run colliding on the same repo share the
-    // window. Recorded on the wait-clock so the block is legible to an operator.
     if (this.gitBreaker && !this.gitBreaker.allows(repoKey(t.workingDir))) {
       this.recordSkipReason(t.id, 'git workspace-prep backoff (repeated failures on this repo)');
       this.recordWaiting(t.id);

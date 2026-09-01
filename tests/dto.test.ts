@@ -1,8 +1,3 @@
-/**
- * Pure row->DTO mapper tests (issue #448). Every function under test lives in
- * `src/server/dto.ts` and takes no `AppContext` — these tests build plain
- * in-memory row objects and assert on the returned DTOs, no server/store.
- */
 import { describe, expect, it } from 'vitest';
 import {
   summarize,

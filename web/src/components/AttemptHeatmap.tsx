@@ -6,9 +6,9 @@ import { buildHeatmap, HEATMAP_WEEKS, type Heatmap } from './heatmap-model';
 
 const DAY_MS = 24 * 3600_000;
 const CELL = 11;
-const STEP = 14; // cell + gap
-const LEFT = 26; // gutter for weekday labels
-const TOP = 16; // gutter for month labels
+const STEP = 14;
+const LEFT = 26;
+const TOP = 16;
 const RADIUS = 2;
 const WEEKDAY_LABELS = ['', 'Mon', '', 'Wed', '', 'Fri', ''];
 
@@ -18,7 +18,6 @@ const monthLabel = (ms: number) => new Date(ms).toLocaleDateString(undefined, { 
 const rangeLabel = (from: number, to: number) =>
   `${new Date(from).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} – ${new Date(to).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
 
-/** Month labels along the top: one per column where the month first appears. */
 function monthTicks(hm: Heatmap): { x: number; label: string }[] {
   const ticks: { x: number; label: string }[] = [];
   let prev = -1;
@@ -35,16 +34,11 @@ function monthTicks(hm: Heatmap): { x: number; label: string }[] {
 }
 
 export function AttemptHeatmap({ workspaceId, aside }: { workspaceId: number | null; aside?: ReactNode }) {
-  // Capture `now` at fetch time so the grid's "today" stays stable across
-  // re-renders (a bare Date.now() in render is impure and drifts the anchor).
   const [loaded, setLoaded] = useState<{ series: DayCost[]; now: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (workspaceId === null) return;
-    // Fixed trailing window, deliberately independent of the KPI range toggle —
-    // fetch a hair wider than the grid so the Sunday-anchored window is fully
-    // covered, then buildHeatmap trims and gap-fills. Same /stats reader path.
     const now = Date.now();
     const from = now - (HEATMAP_WEEKS + 1) * 7 * DAY_MS;
     let cancelled = false;

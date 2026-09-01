@@ -15,7 +15,6 @@ import type { TrackerFacts } from '../src/db/schema.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { allWorkspaces, makeSettingsStore } from './helpers.js';
 
-/** Persisted tracker facts for an opted-in ticket: the `ready-for-agent` label is what makes it agent-workable (ADR-0041). */
 const agentFacts = (ref: number): TrackerFacts => ({
   state: 'open',
   parent: null,
@@ -38,7 +37,6 @@ const mirroredAfk = (ref: number, over: Partial<MirrorInput> = {}): MirrorInput 
   ...over,
 });
 
-/** Persisted tracker facts for a ticket a human must drive: no `ready-for-agent` label (ADR-0041). */
 const humanOnlyFacts = (ref: number): TrackerFacts => ({ ...agentFacts(ref), labels: ['ready-for-human'] });
 
 describe('AutoRunner — mirrored afk pick predicate + flip→claim ordering (issue #32)', () => {
@@ -51,10 +49,6 @@ describe('AutoRunner — mirrored afk pick predicate + flip→claim ordering (is
     dir = mkdtempSync(join(tmpdir(), 'harmonic-arun-'));
     asyncDb = await openAsyncDb(dir);
     settingsStore = await makeSettingsStore(dir);
-    // Worktree default so these Tasks are exempt from the Work Context House Rule
-    // (issue #120): mirrored Tasks all inherit the one Workspace workingDir, and
-    // in direct mode that shared context would serialize them — this test is about
-    // the mirrored pick and claim path, not context occupancy.
     tasks = new TaskService(
       asyncDb,
       () => ({ ...defaultConfig(), defaults: { ...defaultConfig().defaults, isolationMode: 'worktree' } }),
@@ -104,15 +98,12 @@ describe('AutoRunner — mirrored afk pick predicate + flip→claim ordering (is
     await vi.waitFor(() => expect(started).toHaveLength(4));
 
     const startedIds = started.map((s) => s.id);
-    // Picked: native (start), afk + assigned + failed-claim (launchClaimed).
     expect(startedIds).toContain(native.id);
     expect(started).toContainEqual({ id: afk.id, via: 'launchClaimed' });
     expect(started).toContainEqual({ id: assigned.id, via: 'launchClaimed' });
     expect(started).toContainEqual({ id: failedClaim.id, via: 'launchClaimed' });
-    // Skipped: hitl (drive). Assignment does not enter the predicate.
     expect(startedIds).not.toContain(hitl.id);
 
-    // Every recheck saw the Task already flipped to running → flip precedes claim.
     expect(claims.length).toBeGreaterThan(0);
     for (const claim of claims) expect(claim.stateAtClaim).toBe('working');
     expect(claims.map((claim) => claim.ref).sort()).toEqual([42, 44, 45]);
@@ -174,13 +165,6 @@ describe('AutoRunner — self-scheduling from DB (issue #236)', () => {
   });
 });
 
-/**
- * The parallel-Epic base pick gate (issue #159): the Auto-Runner skips a ready
- * mirrored Epic member whose integration-branch base has not yet been set by the
- * poll's reconcile, leaving it `ready` on the frontier. Without this, the mirror
- * insert's `ready` poke could spawn the member before its base is resolved,
- * forking it from the working dir's branch instead of `epic/<ref>`.
- */
 describe('AutoRunner — parallel-Epic base pick gate (issue #159)', () => {
   let dir: string;
   let asyncDb: AsyncDbHandle;
@@ -191,8 +175,6 @@ describe('AutoRunner — parallel-Epic base pick gate (issue #159)', () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-arun-epic-'));
     asyncDb = await openAsyncDb(dir);
     settingsStore = await makeSettingsStore(dir);
-    // Worktree default so these mirrored Tasks are exempt from the Work Context
-    // House Rule (issue #120) — this test is about the Epic base gate alone.
     tasks = new TaskService(
       asyncDb,
       () => ({ ...defaultConfig(), defaults: { ...defaultConfig().defaults, isolationMode: 'worktree' } }),
@@ -237,7 +219,6 @@ describe('AutoRunner — parallel-Epic base pick gate (issue #159)', () => {
     expect(started).not.toContain(gated.id);
     expect((await tasks.get(gated.id)).state).toBe('ready');
 
-    // The reconcile sets its base → the gate opens → the next pass picks it.
     pending.delete(gated.id);
     ar.poke();
     await vi.waitFor(() => expect(started).toContain(gated.id));
@@ -322,16 +303,11 @@ describe('AutoRunner — skip reasons and unresolvable integration bases (issue 
     await vi.waitFor(() => expect(autoRunner.skipReasonFor(task.id)).toBe('integration branch missing'));
     expect(started).toEqual([]);
 
-    // The next scheduler pass still permits tracker reconciliation to re-cut
-    // the branch. An absent branch alone is not proof that it cannot recover.
     autoRunner.poke();
     await vi.waitFor(async () => expect((await tasks.get(task.id)).state).not.toBe('escalated'));
 
     now = 100;
     autoRunner.poke();
-    // The escalate is trigger 3 (permanent infrastructure failure): the ticket
-    // leaves the ready frontier with the reason recorded on it, so the
-    // scheduler no longer has a skip reason to keep for it.
     await vi.waitFor(async () => {
       expect(await tasks.get(task.id)).toMatchObject({
         state: 'escalated',
@@ -372,15 +348,6 @@ describe('AutoRunner — skip reasons and unresolvable integration bases (issue 
   });
 });
 
-/**
- * The Work Context House Rule pick predicate (ADR-0001): the Auto-Runner
- * skips a ready Task whose direct-mode Work Context is already occupied by a
- * working Run, leaving it `ready` with a legible skip-reason. This predicate
- * is the SOLE enforcement of "at most one active execution per work context"
- * — there is no separate lease/claim underneath it. It reads occupancy
- * straight from Task state, so a worktree-mode Task (whose context is unique
- * per Task by construction) never needs it at all.
- */
 describe('AutoRunner — Work Context House Rule pick predicate (ADR-0001)', () => {
   let dir: string;
   let asyncDb: AsyncDbHandle;
@@ -398,8 +365,6 @@ describe('AutoRunner — Work Context House Rule pick predicate (ADR-0001)', () 
     rmSync(dir, { recursive: true, force: true });
   });
 
-  // A ceiling well above the task count, so the two-level cap never masks the
-  // context predicate under test.
   const build = () => {
     const started: number[] = [];
     const runner = {
@@ -485,10 +450,7 @@ describe('AutoRunner — Work Context House Rule pick predicate (ADR-0001)', () 
     const busy = freshDir();
     const occupant = await directTask(busy, 'occupant');
     await tasks.setState(occupant.id, 'working');
-    // A high-priority Task sharing the occupied context: it must be skipped
-    // despite its priority, and skipping it must not perturb the others' order.
     const blocked = await tasks.create({ prompt: 'blocked high', workingDir: busy, isolationMode: 'direct', priority: 'high' });
-    // Distinct contexts, mixed priorities + a same-priority pair for the FIFO tiebreak.
     const low = await tasks.create({ prompt: 'low', workingDir: freshDir(), isolationMode: 'direct', priority: 'low' });
     const high = await tasks.create({ prompt: 'high', workingDir: freshDir(), isolationMode: 'direct', priority: 'high' });
     const normalFirst = await tasks.create({ prompt: 'normal 1', workingDir: freshDir(), isolationMode: 'direct', priority: 'normal' });
@@ -498,8 +460,6 @@ describe('AutoRunner — Work Context House Rule pick predicate (ADR-0001)', () 
     ar.poke();
     await vi.waitFor(() => expect(started).toHaveLength(4));
 
-    // High, then FIFO within normal, then low — the context-blocked high-priority
-    // Task is simply absent, not reordering anything.
     expect(started).toEqual([high.id, normalFirst.id, normalSecond.id, low.id]);
     expect(started).not.toContain(blocked.id);
     expect(ar.skipReasonFor(blocked.id)).toBe(`Work Context held by task ${occupant.id} (working)`);
@@ -521,13 +481,10 @@ describe('AutoRunner — Work Context House Rule pick predicate (ADR-0001)', () 
     expect(startedWaiting).toBeDefined();
     expect(ar.waitingSince(free.id)).toBeUndefined();
 
-    // A later pass while still blocked doesn't restart the clock.
     ar.poke();
     await new Promise((r) => setTimeout(r, 20));
     expect(ar.waitingSince(blocked.id)).toBe(startedWaiting);
 
-    // The occupant frees the context — a later pass admits `blocked`, and its
-    // clock is cleared when the scheduler reason is gone.
     await tasks.setState(occupant.id, 'done');
     ar.poke();
     await vi.waitFor(() => expect(started).toContain(blocked.id));

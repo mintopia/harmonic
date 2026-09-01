@@ -254,8 +254,6 @@ describe('Auto-Runner operations (issue #289)', () => {
 
     try {
       autoRunner.poke();
-      // The empty pass only awaits in-memory reads; let it settle, then assert
-      // it left no heartbeat span behind — no page row, firehose, or export.
       await new Promise((resolve) => setTimeout(resolve, 50));
       expect(launchAttempts).toBe(0);
       expect(exporter.getFinishedSpans().some((span) => span.name === 'harmonic.auto-runner.tick')).toBe(false);
@@ -271,8 +269,6 @@ describe('Auto-Runner operations (issue #289)', () => {
 describe('Run operations (issue #290)', () => {
   it('closes the Run operation at escalation and merges the operator Accept as its own operation on that Run', async () => {
     const { exporter, registry } = installOperations();
-    // One attempt with a failing verifier: the ticket escalates with a real
-    // verified head, so the operator Accept merges it.
     const server = await startServer({ ...stubHarness(), maxAttempts: 1 });
     try {
       const repo = mkdtempSync(join(tmpdir(), 'harmonic-ops-merge-'));
@@ -295,31 +291,20 @@ describe('Run operations (issue #290)', () => {
         expect((await server.api('GET', `/api/tasks/${task.body.id}`)).body.state).toBe('escalated');
       }, { timeout: 10_000 });
       const attemptId = started.body.id;
-      // Escalation settles the Run: its operation closes there (the human
-      // decision is not part of the Run's execution), and nothing is left live.
       await vi.waitFor(() => {
         expect(exporter.getFinishedSpans().find((span) => span.name === 'harmonic.attempt' && span.attributes['attempt.id'] === attemptId)).toBeDefined();
       });
       expect(registry.list().find((operation) => operation.name === 'harmonic.attempt' && operation.attributes['attempt.id'] === attemptId)).toBeUndefined();
 
-      // The operator addressed the failure, so the post-merge check the one
-      // merge policy runs on Accept (ADR-0001, #383) is green and the merge lands.
       await server.app.ctx.workspaces.update(wsId, {
         verificationCommand: [verificationCommandSchema.parse({ command: process.execPath, args: ['-e', 'process.exit(0)'], timeoutSeconds: 30 })],
       });
 
-      // The operator Accept merges as its own operation, keyed to the Attempt it
-      // acts on. Under the one-execution-ledger fold (ADR-0001 #388) each attempt
-      // is its own row and Accept runs on the escalated (latest) Attempt — the
-      // Task's current Attempt.
       const escalatedAttempt = await server.app.ctx.attempts.currentForTask(task.body.id);
       expect((await server.api('POST', `/api/tasks/${task.body.id}/accept`)).status).toBe(200);
       await vi.waitFor(() => {
         const merge = exporter.getFinishedSpans().find((span) => span.name === 'harmonic.merge' && span.attributes['attempt.id'] === escalatedAttempt.id);
         expect(merge).toBeDefined();
-        // The one merge policy (ADR-0001 #388): operator Accept runs runMergePolicy
-        // directly now (the journaled MergeCoordinator is deleted), so the merge
-        // span's mechanism is 'policy', keyed to the Attempt via spanAttributes.
         expect(merge?.attributes['merge.mechanism']).toBe('policy');
       });
     } finally {
@@ -330,16 +315,6 @@ describe('Run operations (issue #290)', () => {
 
 describe('Automated merge policy operations (issue #387)', () => {
   it('nests the harmonic.merge span tree under the real Attempt operation when a worktree task auto-merges', async () => {
-    // Proves the code-review concern for #387 empirically: `runMergePolicy`
-    // (src/execution/merge-policy.ts) only emits its `harmonic.merge` span
-    // when a Harmonic Operation is the ACTIVE span at call time, and that
-    // active span is ambient OTel context carried across awaits through the
-    // real Runner's async completion path (runner.ts drive() -> the
-    // automated worktree `mergeWorktreeBranch` call), not a synthetic
-    // `parent.run(() => runMergePolicy(...))` wrapper like the direct unit
-    // test in tests/merge-policy.test.ts. This drives a real afk worktree
-    // Task (modelled on tests/auto-merge-policy.test.ts case (a)) all the
-    // way to a real automated merge and inspects the exported span tree.
     const { exporter } = installOperations();
     const repo = mkdtempSync(join(tmpdir(), 'harmonic-ops-merge-policy-'));
     execFileSync('git', ['init', '-b', 'main', repo]);
@@ -395,10 +370,6 @@ describe('Automated merge policy operations (issue #387)', () => {
 
       const spans = exporter.getFinishedSpans();
       const attempt = spans.find((span) => span.name === 'harmonic.attempt' && span.attributes['attempt.id'] === run.id);
-      // The merge span itself carries no `run.id` attribute (only
-      // `merge.mechanism`/`merge.base_branch`/`merge.task_branch`); this test
-      // only ever drives one Task through to merge, so identifying it by
-      // name + mechanism is unambiguous.
       const merge = spans.find((span) => span.name === 'harmonic.merge' && span.attributes['merge.mechanism'] === 'policy');
       if (!attempt || !merge) {
         throw new Error(`missing span(s); exported spans: ${JSON.stringify(spans.map((s) => s.name))}`);

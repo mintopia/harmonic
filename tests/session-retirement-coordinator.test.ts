@@ -13,11 +13,6 @@ import type { AttemptRow } from '../src/db/schema.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { allWorkspaces, makeSettingsStore } from './helpers.js';
 
-/**
- * Session retirement store transitions + coordinator (issue #148,
- * reliability-design Unit C): Session retirement is the sole owner of
- * builder-worktree removal, gated on the Session having no active Run.
- */
 describe('Session retirement (issue #148)', () => {
   let dir: string;
   let asyncDb: AsyncDbHandle;
@@ -43,7 +38,6 @@ describe('Session retirement (issue #148)', () => {
       ...overrides,
     });
 
-  /** A running Run bound to `sessionRowId`. */
   const runForSession = async (sessionRowId: number): Promise<AttemptRow> => {
     const task = await tasks.create({ prompt: 'p', state: 'ready' });
     const run = await runs.create(task.id);
@@ -193,7 +187,6 @@ describe('Session retirement (issue #148)', () => {
       expect(removeWorktree).not.toHaveBeenCalled();
       expect((await sessions.get(s.id)).status).toBe('retiring');
 
-      // Once the Run leaves 'running', a later drain completes the retirement.
       await runs.update(run.id, { state: 'passed' });
       await coord.drain(now + 1);
       expect(removeWorktree).toHaveBeenCalledOnce();

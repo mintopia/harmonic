@@ -1,13 +1,6 @@
 // Explicit .js extension: this module is shared with the node-side test
 // project, whose nodenext resolution requires it (Vite maps .js → .ts).
 
-/**
- * Pure derivations for the Epic summary page (issue #412, ADR-0015): shapes
- * the whole-Epic Usage & statistics card and the per-child-Task token bar so
- * `EpicPage.tsx` stays declarative. Composes the existing `stats-model.ts` /
- * `cost.ts` helpers rather than re-deriving their formulas (ADR-0008).
- */
-
 import type { Cost, ModelUsage } from './types.js';
 import type { Stats, UsageBar } from './stats-model.js';
 import { cacheHitRate, failureRate, subagentShare, usageBars } from './stats-model.js';
@@ -20,7 +13,6 @@ function formatPct(rate: number | null): string {
   return rate === null ? NONE : `${Math.round(rate * 100)}%`;
 }
 
-/** Sum of every tool's call count (`stats.toolCalls` is keyed by tool name). */
 function totalToolCalls(toolCalls: Record<string, number>): number {
   return Object.values(toolCalls).reduce((sum, n) => sum + n, 0);
 }
@@ -56,7 +48,7 @@ export interface EpicUsageSummary {
   modelBars: UsageBar[];
 }
 
-/** Shapes an Epic's all-time child-Task Stats (ADR-0008) into the card's
+/** Shapes an Epic's all-time child-Task Stats into the card's
  * headline figures. `childCount` is the Epic's own Task-list count (not
  * `attemptCount`, which is Attempt-grain) — the honest denominator for a
  * per-Task average. */
@@ -79,7 +71,7 @@ export function epicUsageSummary(stats: EpicUsageStats, childCount: number): Epi
   };
 }
 
-/** One class of a stacked token bar (the ADR-0014 four-class split: input,
+/** One class of a stacked token bar (the four-class split: input,
  * output, cache-read, cache-write), coloured with the shared `--hm-token-*`
  * vocabulary (TicketPage's `TOKEN_SEGMENTS`, TableView's `TokenTypeBar`). */
 export interface TokenBarSegment {
@@ -98,7 +90,7 @@ const TOKEN_SEGMENT_META: { key: TokenBarSegment['key']; label: string; fill: st
   { key: 'cacheWrite', label: 'cache write', fill: 'bg-token-cache-write', field: 'cacheWriteTokens' },
 ];
 
-/** A child Task row's stacked token bar (issue #412): the four token classes
+/** A child Task row's stacked token bar: the four token classes
  * of its `taskUsage` totals, each segment's share of that row's own total.
  * `totals` is null when the Task hasn't run, or its usage fetch failed — every
  * segment reads 0/0% rather than throwing, so the row degrades to an empty bar. */

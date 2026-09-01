@@ -10,16 +10,6 @@ import { AttemptSettleCoordinator } from '../src/domain/attempt-settle.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { allWorkspaces, makeSettingsStore } from './helpers.js';
 
-/**
- * `AttemptSettleCoordinator.settle` as a guarded state transition (ADR-0001 #388
- * S-E/S-G): the append-only `run_facts` log + precedence replay is gone, and
- * Attempt is the single execution ledger (no separate Run row) — a
- * disposition is applied directly to the Attempt, guarded to only move it out
- * of `running` (mirroring `AttemptStore.finish`/`markInterrupted`'s
- * `WHERE state='running'` discipline), with the one explicit exception that an
- * operator disposition (`operator-cancel` / `operator-accept`) may also act on
- * an already-`escalated` Attempt. Everything else is first-writer-wins.
- */
 describe('AttemptSettleCoordinator.settle — guarded state transition', () => {
   let dir: string;
   let asyncDb: AsyncDbHandle;
@@ -41,7 +31,6 @@ describe('AttemptSettleCoordinator.settle — guarded state transition', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  /** A `working` Task with a `running` Attempt. */
   async function runningTask() {
     const task = await tasks.create({ prompt: 'p', state: 'ready' });
     await tasks.setState(task.id, 'working');
@@ -56,7 +45,6 @@ describe('AttemptSettleCoordinator.settle — guarded state transition', () => {
 
     const attempt = await attempts.get(run.id);
     expect(attempt).toMatchObject({ state: 'failed', reason: 'failed' });
-    // taskAction 'ready' requeues a still-`working` Task.
     expect((await tasks.get(task.id)).state).toBe('ready');
   });
 
@@ -65,10 +53,6 @@ describe('AttemptSettleCoordinator.settle — guarded state transition', () => {
     await settle.settle(task, run, 'failed', { runState: 'failed', taskAction: 'ready', reason: 'boom' });
     const settledAttempt = await attempts.get(run.id);
 
-    // A straggler racing signal — even one that would have outranked 'failed'
-    // under the old fact-log precedence (e.g. 'escalate') — arrives after the
-    // Attempt already left `running`. It is not an operator override, so it
-    // no-ops entirely: the Attempt and the Task action are untouched.
     await settle.settle(await tasks.get(task.id), run, 'escalate', {
       runState: 'failed',
       taskAction: 'escalate',
@@ -76,8 +60,6 @@ describe('AttemptSettleCoordinator.settle — guarded state transition', () => {
     });
 
     expect(await attempts.get(run.id)).toEqual(settledAttempt);
-    // The Task stayed 'ready' from the first settle's taskAction — the second
-    // settle's 'escalate' taskAction never applied.
     expect((await tasks.get(task.id)).state).toBe('ready');
   });
 
@@ -111,9 +93,6 @@ describe('AttemptSettleCoordinator.settle — guarded state transition', () => {
       reason: 'escalated to human: attempt 1 of 1 failed',
     });
 
-    // Close: taskAction 'none' leaves the Task to its own cancel call (the
-    // caller — EscalationService.close/Runner.cancelForTask — transitions the
-    // Task through TaskService directly); settle only owns the Attempt.
     await settle.settle(await tasks.get(task.id), await attempts.get(run.id), 'operator-cancel', {
       runState: 'cancelled',
       taskAction: 'none',
@@ -132,8 +111,6 @@ describe('AttemptSettleCoordinator.settle — guarded state transition', () => {
       reason: 'escalated to human: wall-clock budget exceeded',
     });
     const attempt = await attempts.get(run.id);
-    // The free-text detail lands on the Task's escalationReason (unaffected by
-    // this refactor); attempts.reason is the cheap, low-cardinality kind.
     expect(attempt).toMatchObject({ state: 'escalated', reason: 'guardrail-trip' });
     expect((await tasks.get(task.id)).escalationReason).toBe('escalated to human: wall-clock budget exceeded');
   });

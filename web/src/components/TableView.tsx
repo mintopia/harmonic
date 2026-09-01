@@ -29,8 +29,6 @@ import { ModelLabel, ProviderChip, TaskIdentity } from './TaskIdentity';
 const GRID =
   'grid grid-cols-[3.5rem_minmax(0,1fr)_8rem] md:grid-cols-[3.5rem_minmax(0,1fr)_8rem_5rem_5.5rem] lg:grid-cols-[3.5rem_minmax(0,1fr)_8rem_6rem_9rem_5rem_5.5rem_10rem_10rem] items-center gap-x-3 px-4';
 
-// Compact, quiet timestamp for the Created / Updated columns — the full locale
-// string (seconds + year) is noise in a dense operator table.
 const fmtTime = (ms: number) =>
   new Date(ms).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
@@ -41,12 +39,12 @@ export function TableView({
   filters,
   onFiltersChange,
 }: {
-  /** Scopes the table to the active Workspace (ADR-0008); no fetch until resolved. */
+  /** Scopes the table to the active Workspace; no fetch until resolved. */
   workspaceId: number | null;
   onOpen: (task: Task) => void;
   /** Opens the Board focused on an epic's summary panel, keyed by tracker ref. */
   onOpenEpic: (ref: number) => void;
-  /** Filter/sort selection — lives in the URL (issue #103), owned by App. */
+  /** Filter/sort selection — lives in the URL, owned by App. */
   filters: TableFilters;
   onFiltersChange: (next: TableFilters) => void;
 }) {
@@ -55,23 +53,16 @@ export function TableView({
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const { state, harness, priority, search, sortBy, order } = filters;
-  // Multi-select filters are arrays; join them to stable primitives so the
-  // fetch/reset effects below fire on a real selection change, not on every
-  // unrelated re-render that hands back a fresh array reference.
   const stateKey = state.join(',');
   const harnessKey = harness.join(',');
   const priorityKey = priority.join(',');
 
-  // Search is server-side now (ADR-0045): debounce the box so a keystroke burst
-  // folds to a single request instead of a fetch per character.
   const [debouncedSearch, setDebouncedSearch] = useState(search);
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(search), 250);
     return () => clearTimeout(timer);
   }, [search]);
 
-  // Reset to page 1 whenever the query (filters, search, or sort) changes, so
-  // narrowing the list never strands the operator on a page past the new end.
   useEffect(() => {
     setPage(1);
   }, [workspaceId, stateKey, harnessKey, priorityKey, sortBy, order, debouncedSearch]);
@@ -79,7 +70,6 @@ export function TableView({
   useEffect(() => {
     if (workspaceId === null) return;
     setLoading(true);
-    // Filter/search/sort/paginate are all server-side now (ADR-0045).
     fetchTasks({
       workspaceId,
       state,
@@ -104,9 +94,6 @@ export function TableView({
   const currentPage = Math.min(page, pageCount);
   const pageTasks = tasks;
 
-  // Pull the requested page back in range when a smaller `total` shrinks the
-  // page count (a deletion, say), so the offset the next fetch sends can never
-  // strand the operator on a blank page past the end.
   useEffect(() => {
     if (page > pageCount) setPage(pageCount);
   }, [page, pageCount]);
@@ -192,9 +179,6 @@ export function TableView({
     </div>
   );
 
-  // Epics carry no state/harness/model/priority/cost (server sends neutral
-  // placeholders, ADR-0016); render those cells as an em-dash rather than the
-  // task chips so the row reads as a container, not a task.
   const renderEpicRow = (task: Task) => (
     <div
       key={`epic-${task.trackerRef ?? task.id}`}

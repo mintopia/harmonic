@@ -1,16 +1,3 @@
-/**
- * Process-level unhandled-rejection safety net (issue #371).
- *
- * The runner fire-and-forgets promises on its hottest paths (e.g. run-event
- * appends). Each such site owns its own `.catch`, but a future miss would reach
- * Node's default `unhandledRejection` behaviour — terminating the process. This
- * installs a last-resort handler that logs the rejection as a legible error,
- * with Run/Task context when the rejected value carries it, instead of letting
- * it be fatal.
- *
- * It is a backstop, not a substitute for per-site handling: a rejection that
- * reaches here is a bug to fix, but it degrades to a logged event, not a crash.
- */
 import { logger } from '../logger.js';
 
 export interface RejectionContext {
@@ -50,10 +37,7 @@ function defaultReport(reason: unknown, context: RejectionContext): void {
   logger.error(`unhandled rejection (non-fatal): ${describe(reason)}`, { ...context });
 }
 
-/**
- * Install the last-resort unhandled-rejection handler. Returns an uninstaller
- * that removes it again (used by tests; the server keeps it for its whole life).
- */
+/** Install the last-resort unhandled-rejection handler; returns an uninstaller. */
 export function installProcessSafetyNet(options: ProcessSafetyNetOptions = {}): () => void {
   const target = options.target ?? process;
   const report = options.onUnhandledRejection ?? defaultReport;

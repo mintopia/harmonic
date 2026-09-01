@@ -5,14 +5,6 @@ import { ROOT_AGENT, totalTokens } from './stats-model.js';
 import type { AttemptSummary, Step, StepState, StepType, TaskState, ToolTokenAttribution, VerificationMechanism, VerifierStatus } from './types.js';
 
 /**
- * The reworked Task detail page's view-model seam. The page is a thin renderer
- * over this module plus the sibling `*-model.ts` helpers (attempt-timeline,
- * attempt-rail, verification-attempts, ticket-gate); the derivations that carry
- * the page's decisions live here so they are unit-tested in isolation, away
- * from the component.
- */
-
-/**
  * What the operator has selected in the navigation sidebar, normalised for the
  * selector. Nothing selected is the default (the whole-Task Stats view); an
  * Attempt is picked by its display number; a changed file by its worktree path;
@@ -98,9 +90,6 @@ const LIFECYCLE_STEPS: readonly { key: LifecycleStepKey; label: string }[] = [
   { key: 'retire', label: 'Retire' },
 ];
 
-/** Where the lifecycle currently sits: which node is active (`current`), whether
- * the flow halted there without completing (`halted`), and whether the whole
- * lifecycle has settled (`allDone`). */
 interface LifecyclePosition {
   current: LifecycleStepKey;
   halted: boolean;
@@ -116,24 +105,16 @@ function lifecyclePosition(
   switch (state) {
     case 'draft':
     case 'ready':
-      // Not started: the worktree is the imminent first node.
       return { current: 'worktree', ...settled };
     case 'working':
-      // A passed Attempt (`completed`) means Implementation is done and the Task
-      // has moved into the merge pipeline; otherwise Implementation is live.
       return attempts.some((a) => a.state === 'completed')
         ? { current: 'merge', ...settled }
         : { current: 'implementation', ...settled };
     case 'escalated':
-      // A passed Attempt is at the merge gate awaiting the operator's review:
-      // Implementation is done and Merge is the highlighted "awaiting review"
-      // node (the indigo needs-you voice), not a failure.
       return { current: 'merge', halted: false, allDone: false, awaiting: true };
     case 'done':
       return { current: 'retire', halted: false, allDone: true, awaiting: false };
     case 'cancelled':
-      // Aborted at whatever node it had reached: Implementation once an Attempt
-      // has run, else before the worktree was ever cut.
       return attempts.length > 0
         ? { current: 'implementation', halted: true, allDone: false, awaiting: false }
         : { current: 'worktree', halted: true, allDone: false, awaiting: false };
@@ -170,8 +151,6 @@ export function taskLifecycle(
   });
   return { steps, current };
 }
-
-// ─── Stats aggregation ─────────────────────────────────────────────────────────
 
 /** The `usage` + `cost` an Attempt contributes to the Stats breakdown — the
  * only fields the aggregation reads, so the whole-Task view and the single-
@@ -226,7 +205,7 @@ export interface TaskStats {
   /** Tool calls made across every aggregated Attempt's session. */
   toolCalls: number;
   /** Output tokens (and API-equivalent cost) attributed per tool across the
-   * aggregated Attempts (ADR-0008), largest first, with the no-tool `reasoning`
+   * aggregated Attempts, largest first, with the no-tool `reasoning`
    * bucket appended last. `cost` is null-sticky per bucket — once a contribution
    * is unpriced the bucket is a tokens-only floor. Empty when no Attempt carried
    * tool attribution (an ACP-only harness), so the card hides rather than
@@ -271,9 +250,6 @@ export function taskStats(attempts: readonly StatsAttempt[]): TaskStats {
   let reasoning: ToolTokenAttribution | undefined;
   let reasoningUnpriced = false;
 
-  // Fold one attempt's attribution into a running bucket. Null-sticky like the
-  // cost donut: once an unpriced (cost-less) contribution lands, the bucket drops
-  // its dollars for good and stays a tokens-only floor.
   const fold = (
     target: ToolTokenAttribution,
     add: ToolTokenAttribution,
@@ -327,9 +303,6 @@ export function taskStats(attempts: readonly StatsAttempt[]): TaskStats {
     .filter((m) => modelTotal(m) > 0)
     .sort((a, b) => modelTotal(b) - modelTotal(a) || a.model.localeCompare(b.model));
 
-  // The cost donut is keyed by the server's own `cost.byModel` keys, not the
-  // token models — so a role-qualified slice (`sonnet-4.5 · sub`) or a `critic`
-  // slice, which carries dollars but no token-usage bucket, still shows.
   const donutCostByModel = [...costByModel.entries()]
     .filter((entry): entry is [string, number] => entry[1] !== null && entry[1] > 0)
     .map(([model, cost]) => ({ model, cost }))
@@ -338,8 +311,6 @@ export function taskStats(attempts: readonly StatsAttempt[]): TaskStats {
   const billableIO = byModel.reduce((sum, m) => sum + m.input + m.output, 0);
   const cost = donutCostByModel.reduce((sum, m) => sum + m.cost, 0);
 
-  // Tools ranked by output tokens, largest first; the reasoning bucket is a
-  // distinct kind, so it trails the tools rather than ranking among them.
   const rankedToolTokens = [
     ...[...toolTokens.entries()]
       .filter(([, b]) => b.outputTokens > 0)
@@ -363,8 +334,6 @@ export function taskStats(attempts: readonly StatsAttempt[]): TaskStats {
   };
 }
 
-// ─── Attempt step tabs ─────────────────────────────────────────────────────────
-
 /** One tab of the Attempt panel — a Step *type*, not an individual Step: an
  * Attempt with several `verification` command steps still shows a single Verify
  * tab whose content lists them all. `state` is the type's rolled-up status for
@@ -381,8 +350,6 @@ export interface StepTab {
   pending: boolean;
 }
 
-/** Canonical left-to-right tab order — the Attempt's own lifecycle: rebase onto
- * base, implement, run the command checks, then the critic review. */
 const STEP_TAB_ORDER: readonly StepType[] = ['rebase', 'implementation', 'verification', 'review'];
 
 const STEP_TAB_LABEL: Record<StepType, string> = {
@@ -392,10 +359,6 @@ const STEP_TAB_LABEL: Record<StepType, string> = {
   review: 'Review',
 };
 
-/** A type's rolled-up state across its Steps, by attention precedence: a live
- * Step wins, then a failure, then a pass, then the terminal skipped/cancelled
- * outcomes, and pending last — so a Verify tab with one passed and one running
- * command reads as running, and one with a single failure reads as failed. */
 const STEP_STATE_PRECEDENCE: readonly StepState[] = ['running', 'failed', 'passed', 'cancelled', 'skipped', 'pending'];
 
 function rolledUpState(steps: readonly Step[]): StepState {
@@ -405,38 +368,22 @@ function rolledUpState(steps: readonly Step[]): StepState {
   return 'pending';
 }
 
-/**
- * The Attempt panel's tab strip: one tab per Step *type* present on the Attempt,
- * in canonical lifecycle order. Pure — the panel is a thin renderer over this.
- * A type whose every Step is still `pending` carries `pending: true`, which the
- * panel renders as an empty placeholder rather than that step's content.
- */
-/** The tab's qualifier: the verification command for a Verify tab, none for the
- * others. */
 function stepTabDetail(type: StepType, ofType: readonly Step[]): string | null {
   if (type === 'verification') return ofType.map((step) => step.command).find((command): command is string => !!command) ?? null;
   return null;
 }
 
-/** A verifier mechanism is part of the Attempt's plan unless it is explicitly
- * `disabled` (turned off in config). `unrunnable`/`skipped`/`planned` all still
- * count — the operator should see the step that was meant to run. */
 function mechanismPlanned(verifierStatuses: readonly VerifierStatus[], mechanism: VerificationMechanism): boolean {
   const status = verifierStatuses.find((s) => s.mechanism === mechanism);
   return status !== undefined && status.state !== 'disabled';
 }
 
-/** Whether a type is part of this Attempt's pipeline even before any Step of it
- * exists: rebase and implementation run on every Attempt; verification and
- * review only when their verifier is configured. */
 function typePlanned(type: StepType, verifierStatuses: readonly VerifierStatus[]): boolean {
   if (type === 'rebase' || type === 'implementation') return true;
   if (type === 'verification') return mechanismPlanned(verifierStatuses, 'command');
   return mechanismPlanned(verifierStatuses, 'critic');
 }
 
-/** A not-yet-started type's qualifier: the first planned command for Verify, so
- * the pending tab still names what it will run; none for the others. */
 function plannedTabDetail(type: StepType, verifierStatuses: readonly VerifierStatus[]): string | null {
   if (type !== 'verification') return null;
   return verifierStatuses.find((s) => s.mechanism === 'command')?.commands?.[0] ?? null;

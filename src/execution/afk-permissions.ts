@@ -1,11 +1,3 @@
-/**
- * The unattended ("afk") permission posture, shared by the builder Run
- * (`runner.ts`) and the critic (`verification/critic.ts`) so both grant tool
- * access the same way. ADR-0003 requires the critic to run "with the same
- * unattended permission posture as the builder" — sharing this selection is how
- * that guarantee is kept literal, instead of a second copy that can drift.
- */
-
 /** ACP session modes an afk turn tries, in order: Claude's 'auto' classifier
  * (asks only on risky tools) first, then 'bypassPermissions' (no callback) for
  * harnesses without 'auto'. Set via session/set_mode after the handshake. */

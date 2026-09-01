@@ -1,4 +1,4 @@
-/** Compact ms → "1m 20s" / "12s" (issue #176). Input is always a settled
+/** Compact ms → "1m 20s" / "12s". Input is always a settled
  * non-negative span; it doesn't tick. */
 export function fmtDuration(ms: number): string {
   const s = Math.floor(ms / 1000);

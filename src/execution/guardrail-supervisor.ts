@@ -24,34 +24,27 @@ import { totalTokensOf, type AttemptUsageSnapshot } from './usage.js';
 import { costOfUsages, type PriceTable } from '../domain/pricing.js';
 
 /** The single nudge the progress Guardrail delivers through the steer channel
- * on a first detected stall (issue #131, ADR-0019) before it trips. A plain
- * course-correction prompt — one turn, no back-and-forth. */
+ * on a first detected stall before it trips. */
 export const PROGRESS_NUDGE_TEXT =
   'You appear to be repeating the same step without making progress. Stop, re-read the task and the most ' +
   'recent error or result, and try a genuinely different approach — or finish if the work is already done.';
 
-/** The two Workspace override columns the supervisor consults for a trip's
- * `configSource` provenance (`workspace` vs `default`). */
 type GuardrailWorkspace = Pick<WorkspaceRow, 'guardrailBudget' | 'guardrailProgress'>;
 
-/** The stable collaborators the supervisor reads — the same stores the Runner
- * owns, narrowed to the methods the guardrails touch. Injected so the trip logic
- * is exercisable with fakes, without a full drive turn. */
+/** The collaborators the supervisor reads, narrowed to the methods the guardrails touch. */
 export interface GuardrailDeps {
   attempts: Pick<AttemptStore, 'get' | 'currentStepType'>;
   guardrailEvents: Pick<GuardrailEventStore, 'append'>;
   getWorkspace?: ((workspaceId: number | null) => Promise<GuardrailWorkspace | undefined>) | undefined;
-  /** The live-usage snapshot for the spend poll (#217): the spend guard advances
-   * the reader itself so a budget trip never lags the real spend. */
+  /** The live-usage snapshot for the spend poll: the spend guard advances the
+   * reader itself so a budget trip never lags the real spend. */
   sampleSnapshot: (attemptId: number) => Promise<AttemptUsageSnapshot | null>;
   spendPollMs: number;
   spendGraceMs: number;
 }
 
 /** The per-turn seam back into the drive loop's live state: which Attempt is
- * running, the progress trace being accumulated, and the effects a trip applies
- * (record a lifecycle event, claim the settle, abort the in-flight turn, kill
- * the harness). Bundled so a test can drive a trip with plain callbacks. */
+ * running, the progress trace being accumulated, and the effects a trip applies. */
 export interface GuardrailTurn {
   taskId: number;
   workspaceId: number | null;
@@ -80,20 +73,14 @@ export interface GuardrailTurn {
 }
 
 /**
- * Owns the four execution Guardrails for one builder turn (issue #127/#128/#131,
- * ADR-0019, reliability-design Unit A): the wall-clock deadline, the token/cost
- * spend poll, the hard tool-timeout watchdog, and the stall/loop progress
- * detector. Each trips by the same recipe — append structured `guardrail_events`
- * evidence, record a `guardrail-tripped` lifecycle event, then settle through the
- * coordinator by precedence (`guardrail-trip` → Escalation) — so the second of
- * two concurrent trips no-ops (first-writer-wins) with no dimension-priority
- * table. Constructed per {@link driveOnce}; {@link prime} resolves the Run's
- * immutable start snapshot once, the `arm*` methods start the timers, and
- * {@link disarm} clears them as the Attempt leaves its counted Steps.
- *
- * The `evaluate*` methods are the per-fire trip bodies the timers call; they are
- * public so the trip logic is unit-testable directly (e.g. "spend trips at the
- * cap") without arming a timer or driving a turn.
+ * Owns the four execution Guardrails for one builder turn: the wall-clock
+ * deadline, the token/cost spend poll, the hard tool-timeout watchdog, and the
+ * stall/loop progress detector. Each trips by the same recipe — append
+ * `guardrail_events` evidence, record a `guardrail-tripped` lifecycle event,
+ * then settle (first-writer-wins). {@link prime} resolves the Attempt's start
+ * snapshot once, the `arm*` methods start the timers, and {@link disarm}
+ * clears them. The `evaluate*` methods are the per-fire trip bodies the
+ * timers call, public so the trip logic is unit-testable directly.
  */
 export class GuardrailSupervisor {
   private startedAt = 0;
@@ -110,8 +97,6 @@ export class GuardrailSupervisor {
   private spendSampling = false;
   private unmeasurableSince: number | null = null;
   private progressNudged = false;
-  /** Tool-call liveness, fed from the ACP `session/update` stream. A `tool_call`
-   * opens an entry; a terminal `tool_call_update` closes it. */
   private readonly outstandingTools = new Map<string, { startedAt: number; title: string | null }>();
 
   constructor(
@@ -120,12 +105,9 @@ export class GuardrailSupervisor {
   ) {}
 
   /**
-   * Resolve the Run's immutable start snapshot once (issue #126) — the frozen
+   * Resolve the Attempt's immutable start snapshot once — the frozen
    * budget/price table, the progress toggle, the tool-timeout bound, and each
-   * dimension's `configSource` provenance. Provenance is captured here at (or
-   * within milliseconds of) the snapshot instant rather than at fire time, so a
-   * since-changed Workspace override can never be attributed to the snapshotted
-   * limit.
+   * dimension's `configSource` provenance.
    */
   async prime(): Promise<void> {
     const started = await this.deps.attempts.get(this.turn.attemptId);
@@ -140,13 +122,9 @@ export class GuardrailSupervisor {
     this.toolTimeoutMs = this.progressEnabled && config ? toolTimeoutBudgetMs(config.toolTimeoutMinutes) : null;
   }
 
-  /** Arm the wall-clock deadline for the Run's *remaining* execution budget. A
-   * one-shot timer: the counted Steps run as a contiguous prefix of the Attempt,
-   * so it can only fire while `driveOnce` is running and `disarm` clears it the
-   * instant the Attempt merges or settles — that IS the Step scoping. No-op with
-   * no snapshot (legacy Run). */
+  /** Arm the wall-clock deadline for the Attempt's remaining execution budget. No-op with no snapshot. */
   armWallClock(): void {
-    if (!this.budget) return; // no snapshot (legacy Run) → no wall-clock guard
+    if (!this.budget) return;
     const remaining = Math.max(0, wallClockBudgetMs(this.budget) - (Date.now() - this.startedAt));
     this.wallClockTimer = setTimeout(() => {
       this.wallClockTimer = null;
@@ -155,13 +133,12 @@ export class GuardrailSupervisor {
     this.wallClockTimer.unref?.();
   }
 
-  /** Arm the token/cost spend poll (issue #128); a no-op when neither `tokens`
-   * nor `costUsd` is configured on the frozen budget. */
+  /** Arm the token/cost spend poll; a no-op when neither `tokens` nor `costUsd`
+   * is configured on the frozen budget. */
   armSpend(): void {
-    if (!this.budget) return; // no snapshot (legacy Run) → no spend guard
-    if (this.budget.tokens == null && this.budget.costUsd == null) return; // no spend caps configured
+    if (!this.budget) return;
+    if (this.budget.tokens == null && this.budget.costUsd == null) return;
     this.spendTimer = setInterval(() => {
-      // Skip a fire while a prior async evaluation is still reading.
       if (this.spendSampling) return;
       this.spendSampling = true;
       void this.evaluateSpend().finally(() => {
@@ -171,18 +148,15 @@ export class GuardrailSupervisor {
     this.spendTimer.unref?.();
   }
 
-  /** Arm the hard tool-timeout watchdog (issue #131); a no-op when the progress
-   * Guardrail is off. Polls at a fraction of the bound (capped) so a hang is
-   * caught within a small fraction of the timeout without a per-tool timer. */
+  /** Arm the hard tool-timeout watchdog; a no-op when the progress Guardrail is off. */
   armToolTimeout(): void {
-    if (!this.toolTimeoutMs) return; // guardrail off (or no snapshot)
+    if (!this.toolTimeoutMs) return;
     const period = Math.max(1_000, Math.min(this.toolTimeoutMs, 30_000));
     this.toolTimeoutTimer = setInterval(() => void this.evaluateToolTimeout(), period);
     this.toolTimeoutTimer.unref?.();
   }
 
-  /** Disarm every timer: `driveOnce` is returning, so the Attempt is leaving
-   * every counted Step and time past this point must not count. */
+  /** Disarm every timer. */
   disarm(): void {
     if (this.wallClockTimer) clearTimeout(this.wallClockTimer);
     if (this.toolTimeoutTimer) clearInterval(this.toolTimeoutTimer);
@@ -196,7 +170,7 @@ export class GuardrailSupervisor {
    * trips on the OLDEST still-open call, so a burst of concurrent tools is
    * bounded by the first to hang. */
   observeTool(update: unknown): void {
-    if (!this.toolTimeoutMs) return; // guardrail off → don't even track
+    if (!this.toolTimeoutMs) return;
     const u = update as {
       sessionUpdate?: string;
       toolCallId?: unknown;
@@ -214,18 +188,16 @@ export class GuardrailSupervisor {
     }
   }
 
-  /** One wall-clock watchdog fire. A trip only counts while a Step is actively
-   * running (`now - startedAt` is the execution clock precisely because the
-   * counted Steps are a contiguous prefix). */
+  /** One wall-clock watchdog fire. A trip only counts while a Step is actively running. */
   async evaluateWallClock(): Promise<void> {
     if (!this.budget) return;
-    if (this.turn.isSettled()) return; // already ended some other way
+    if (this.turn.isSettled()) return;
     const now = await this.deps.attempts.get(this.turn.attemptId);
-    if (now.state !== 'running') return; // settled/terminal — nothing to trip
+    if (now.state !== 'running') return;
     const stepType = await this.deps.attempts.currentStepType(this.turn.taskId, this.turn.attemptNumber);
-    if (!stepType) return; // Attempt has reached merging, which never charges execution time.
+    if (!stepType) return;
     const trip = wallClockTrip({ elapsedMs: Date.now() - now.startedAt, stepType, budget: this.budget });
-    if (!trip) return; // fired with no Step running, or not actually over budget
+    if (!trip) return;
     await this.appendAndSettle(
       now,
       { dimension: trip.dimension, limitValue: trip.limitMs, observedValue: trip.observedMs, configSource: this.budgetConfigSource },
@@ -236,9 +208,7 @@ export class GuardrailSupervisor {
   }
 
   /** One spend-poll iteration: read the live snapshot, evaluate tokens/cost
-   * against the frozen budget, and trip (or hold through the unmeasurable grace).
-   * #128's per-Run spend check — a retry is the next Attempt inside this SAME
-   * Run, so its spend is already folded into this poll's observed usage. */
+   * against the frozen budget, and trip (or hold through the unmeasurable grace). */
   async evaluateSpend(): Promise<void> {
     if (!this.budget) return;
     if (this.turn.isSettled()) return;
@@ -274,7 +244,6 @@ export class GuardrailSupervisor {
       );
       return;
     }
-    // outcome.kind === 'trip'
     this.unmeasurableSince = null;
     const trip = outcome.trip;
     const event: GuardrailEventInput =
@@ -297,8 +266,7 @@ export class GuardrailSupervisor {
   }
 
   /** One tool-timeout watchdog fire: trip on the oldest outstanding tool call
-   * that has been open past the bound, but only while a counted Step is running
-   * (same Step scoping as the wall-clock budget). */
+   * that has been open past the bound, but only while a counted Step is running. */
   async evaluateToolTimeout(): Promise<void> {
     if (!this.toolTimeoutMs) return;
     if (this.turn.isSettled()) return;
@@ -309,7 +277,7 @@ export class GuardrailSupervisor {
     for (const [id, t] of this.outstandingTools) {
       if (!oldest || t.startedAt < oldest.startedAt) oldest = { id, startedAt: t.startedAt, title: t.title };
     }
-    if (!oldest) return; // nothing outstanding right now
+    if (!oldest) return;
     const trip = toolTimeoutTrip({
       outstandingMs: Date.now() - oldest.startedAt,
       limitMs: this.toolTimeoutMs,
@@ -334,14 +302,11 @@ export class GuardrailSupervisor {
   /**
    * Evaluate the stall detector at a turn boundary (the agent is parked — never
    * concurrent with an in-flight turn). First stall → one nudge via the steer
-   * channel (does not spend the continue budget, ADR-0018); a stall that survives
-   * the nudge turn → trip → Escalate. Returns true when it tripped so the caller
+   * channel (does not spend the continue budget); a stall that survives the
+   * nudge turn → trip → Escalate. Returns true when it tripped so the caller
    * breaks the drive loop to settle.
    */
   async checkProgressAtBoundary(): Promise<boolean> {
-    // Off, already settled, or the agent has signalled finish/escalate — in the
-    // last case the Run is completing this turn, so a lingering pre-finish stall
-    // tail must not nudge or (worse) trip it: honour the finish.
     if (!this.progressEnabled || this.turn.isSettled() || this.turn.isFinishing()) return false;
     const outstanding = this.turn.outstandingAction();
     const progressTrace =
@@ -349,28 +314,19 @@ export class GuardrailSupervisor {
         ? [outstanding, ...this.turn.progressTrace]
         : this.turn.progressTrace;
     const report = detectStall(progressTrace, { enabled: true });
-    if (!report) return false; // progressing, or a tool is outstanding (suspend guard)
+    if (!report) return false;
     if (!this.progressNudged) {
-      // One nudge, delivered as the next turn by the steer drain. `attempt` is
-      // untouched, so it never spends the continue budget (ADR-0018).
       this.progressNudged = true;
       this.turn.record({ event: 'progress-nudge', pattern: report.pattern });
       this.turn.pushSteer(PROGRESS_NUDGE_TEXT);
       return false;
     }
-    // Already nudged. Only trip once that nudge has actually been delivered
-    // (drained from the queue) and a turn has run — otherwise the same pre-nudge
-    // tail would trip before the agent ever saw the nudge.
     if (this.turn.hasPendingSteer()) return false;
     const now = await this.deps.attempts.get(this.turn.attemptId);
     if (now.state !== 'running') return false;
     await this.tripProgress(
       now,
       {
-        // A stall has no numeric bound the way wall-clock/tool-timeout do — its
-        // thresholds are internal to the detector and pattern-specific — so
-        // `limitValue` is 0 (a "no scalar limit" sentinel) and the real evidence
-        // rides in `payload` (pattern + seqs + signatures).
         dimension: 'progress',
         limitValue: 0,
         observedValue: report.count,
@@ -381,8 +337,6 @@ export class GuardrailSupervisor {
     return true;
   }
 
-  /** The spend trip's extra teardown beyond the shared recipe: abort/kill and
-   * stop the poll so it cannot fire again after settling. */
   private async tripSpend(now: AttemptRow, event: GuardrailEventInput, reason: string): Promise<void> {
     await this.appendAndSettle(now, event, reason);
     this.turn.abort();
@@ -393,9 +347,6 @@ export class GuardrailSupervisor {
     }
   }
 
-  /** Trip a progress-dimension Guardrail (stall or tool-timeout): the shared
-   * recipe with the progress `configSource`. The tool-timeout caller adds
-   * abort/kill; the boundary stall path (agent parked) does not. */
   private async tripProgress(
     now: AttemptRow,
     evidence: { dimension: 'progress' | 'tool-timeout'; limitValue: number; observedValue: number; payload: unknown },
@@ -414,9 +365,6 @@ export class GuardrailSupervisor {
     );
   }
 
-  /** The shared trip recipe: append structured evidence first (the Escalation
-   * card reason derives from this row), record the lifecycle event, then claim
-   * the settle and coordinate the `guardrail-trip` disposition. */
   private async appendAndSettle(now: AttemptRow, event: GuardrailEventInput, reason: string): Promise<void> {
     const tripAttempt = await this.turn.attemptForTrip();
     await this.deps.guardrailEvents.append(tripAttempt.id, event);

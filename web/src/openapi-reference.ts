@@ -53,7 +53,6 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-/** Resolves a local `#/a/b/c` JSON pointer against the document root. */
 function resolveRef(doc: unknown, ref: string): unknown {
   if (!ref.startsWith('#/')) return undefined;
   let node: unknown = doc;
@@ -128,7 +127,6 @@ function buildSchemaNode(schema: unknown, doc: unknown, seenRefs: ReadonlySet<st
   const branches = Array.isArray(schema.oneOf) ? schema.oneOf : Array.isArray(schema.anyOf) ? schema.anyOf : undefined;
   if (branches) {
     const options = branches.map((b) => toSchemaNode(b, doc, seenRefs));
-    // A union of scalars reads well as "number | null", so keep it whole.
     if (options.every((o) => o.kind === 'primitive' || o.kind === 'enum')) {
       return { kind: 'union', options, description };
     }
@@ -187,8 +185,6 @@ function buildSchemaNode(schema: unknown, doc: unknown, seenRefs: ReadonlySet<st
 
   if (type === 'object' || isPlainObject(schema.properties)) {
     if (!isPlainObject(schema.properties)) {
-      // Object with no declared shape (e.g. a free-form dictionary via
-      // additionalProperties): not one of the "common constructs" — fall back.
       return { kind: 'raw', raw: schema, description };
     }
     const required = Array.isArray(schema.required) ? schema.required.filter((r) => typeof r === 'string') : [];
@@ -204,8 +200,6 @@ function buildSchemaNode(schema: unknown, doc: unknown, seenRefs: ReadonlySet<st
     return { kind: 'primitive', type, nullable, description };
   }
 
-  // No recognizable `type`, no properties, no enum/union/allOf: e.g. `{}`
-  // (any), or an unsupported keyword like `not`/`patternProperties`.
   return { kind: 'raw', raw: schema, description };
 }
 

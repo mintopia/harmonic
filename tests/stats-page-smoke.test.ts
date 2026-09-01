@@ -36,9 +36,6 @@ function makeStats(overrides: Partial<Stats> = {}): Stats {
   };
 }
 
-/** Every /api/stats request (StatsPage's own fetch and AttemptHeatmap's) shares
- *  this one stub; `build` is invoked fresh per request so each gets its own
- *  readable Response body. */
 function stubStatsFetch(build: () => Response) {
   vi.stubGlobal('fetch', async (input: string | URL | Request) => {
     const path = String(input);

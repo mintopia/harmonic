@@ -1,10 +1,3 @@
-/**
- * The whole-Epic diff (ADR-0018, issue #441): {@link TrackerPollerManager.epicDiff}
- * resolves the raw unified diff — the live `base...epic/<ref>` range while open,
- * the frozen `git diff <M>^1 <M>^2` from the stored merge commit once integrated
- * (surviving the branch's own retirement), and the empty string for a
- * branchless/no-op Epic or any git failure, never an error.
- */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -23,7 +16,6 @@ function git(dir: string, ...args: string[]): string {
   return execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
 }
 
-/** A throwaway git repo on branch main with one committed file. */
 function makeRepo(): string {
   const dir = mkdtempSync(join(tmpdir(), 'harmonic-epic-diff-repo-'));
   execFileSync('git', ['init', '-b', 'main', dir], { encoding: 'utf8' });
@@ -86,7 +78,6 @@ describe('TrackerPollerManager.epicDiff (ADR-0018, issue #441)', () => {
     git(repo, 'checkout', 'main');
     git(repo, 'merge', '--no-ff', '-m', 'integrate epic', branch);
     const mergeCommit = git(repo, 'rev-parse', 'HEAD');
-    // The branch is retired after integration — the frozen diff must not depend on it.
     git(repo, 'branch', '-D', branch);
 
     await tasks.syncEpics(wsId, [{ ref, kind: 'epic' }]);

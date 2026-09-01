@@ -1,5 +1,5 @@
 /**
- * Inheritance-field logic (ADR-0012, issue #65). An overridable setting stores
+ * Inheritance-field logic. An overridable setting stores
  * `null`/`undefined` on a Workspace to mean *inherit* the global default; any
  * other value (including falsy ones like `0`) is an explicit override. The
  * component is the thin shell around these two pure transitions — kept here so
@@ -26,7 +26,7 @@ export function inheritState<T>(value: T | null | undefined, inherited: T): Inhe
 
 /**
  * Which layer supplies an inheriting field's value, for the "Inherited from …"
- * note (issue #93). A Task inherits the *Workspace* override when the Workspace
+ * note. A Task inherits the *Workspace* override when the Workspace
  * pinned that field (non-nullish, same rule as {@link inheritState}); only when
  * the Workspace also inherits does the value fall through to the global default.
  * Pass the Workspace's stored value for the field, not the Task's.

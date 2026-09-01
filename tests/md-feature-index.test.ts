@@ -30,7 +30,6 @@ describe('TaskService.mdFeatureIndex', () => {
     expect(await tasks.mdFeatureIndex(1, 'autoplay-webhooks')).toBe(1);
     expect(await tasks.mdFeatureIndex(1, 'autoplay-webhooks')).toBe(1);
     expect(await tasks.mdFeatureIndex(1, 'musicparty-soloist')).toBe(0);
-    // A later feature never steals an earlier one's index (the recycling bug).
     expect(await tasks.mdFeatureIndex(1, 'a-sorts-first')).toBe(2);
   });
 

@@ -82,9 +82,6 @@ describe('combineVerdicts', () => {
   });
 
   it('escalates fail-safe on a verdict outside the known union (server ahead of this bundle)', () => {
-    // Version skew: a future server emits a verdict this bundle does not model.
-    // `proceed` would be the fail-unsafe direction, so an unrecognized verdict
-    // must escalate — mirrors task-actions-model.ts guarding unhandled states.
     const skewed = [v('lint', 'pass'), { verifier: 'sandbox', verdict: 'timeout' as unknown as Verdict }];
     expect(combineVerdicts(skewed)).toEqual({
       outcome: 'escalate',

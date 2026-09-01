@@ -11,7 +11,6 @@ import { AttemptStore } from '../src/domain/attempts.js';
 const git = (dir: string, ...args: string[]) =>
   execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
 
-/** A throwaway git repo on branch main with one committed file. */
 function makeRepo(): string {
   const dir = mkdtempSync(join(tmpdir(), 'harmonic-cmdverify-e2e-'));
   execFileSync('git', ['init', '-b', 'main', dir], { encoding: 'utf8' });
@@ -23,7 +22,6 @@ function makeRepo(): string {
   return dir;
 }
 
-/** A `VerificationCommand` running an inline node script with the given exit code. */
 const exitCommand = (code: number): VerificationCommand =>
   verificationCommandSchema.parse({
     command: process.execPath,
@@ -31,13 +29,6 @@ const exitCommand = (code: number): VerificationCommand =>
     timeoutSeconds: 30,
   });
 
-/**
- * End-to-end verification gate at the Runner drive-loop seam (issue #135 AC5):
- * a native Run over the stub harness against a real git Workspace, with a
- * command verifier configured. A pass lets the Run park for review; a fail
- * Escalates and never merges. The driven path freezes a candidate OID in
- * `validating` and the persisted attempt records exactly that OID.
- */
 describe('command verifier end-to-end (issue #135)', () => {
   let server: TestServer;
   let repoDir: string;
@@ -46,14 +37,9 @@ describe('command verifier end-to-end (issue #135)', () => {
   beforeAll(async () => {
     repoDir = makeRepo();
     server = await startServer(stubHarness());
-    // Point the default Workspace at a real git repo so `validating` freezes a
-    // candidate to verify (the helper's default workdir is a non-git temp dir).
     const ws = (await server.app.ctx.workspaces.list())[0]!;
     workspaceId = ws.id;
     await server.app.ctx.workspaces.update(workspaceId, { workingDir: repoDir });
-    // A failed verifier is now a failed Attempt, followed by one corrective
-    // Attempt on the same ticket. Keep this suite's bound explicit so the
-    // escalation cases exercise the complete two-attempt loop.
     await server.app.ctx.settingsStore.updateGlobal({ maxAttempts: 2 });
   });
   afterAll(async () => {
@@ -61,8 +47,6 @@ describe('command verifier end-to-end (issue #135)', () => {
     rmSync(repoDir, { recursive: true, force: true });
   });
 
-  // Verification is pinned to a committed branch head, so the stub agent must
-  // leave a real commit behind (a unique file per run keeps heads distinct).
   let implSeq = 0;
   async function createAndRun(
     scenario: Record<string, unknown> = { writeFiles: { [`impl-${++implSeq}.txt`]: 'implementation\n' } },
@@ -76,10 +60,6 @@ describe('command verifier end-to-end (issue #135)', () => {
     return { taskId: created.body.id, attemptId: started.body.id };
   }
 
-  // \`verification_attempts\` is keyed off \`attempt_id\`, not \`run_id\`
-  // (ADR-0001 #388 S-F): a self-heal loop's failed attempts share one Run row
-  // but each get their own Attempt row, so "this Run's verification
-  // attempts" now folds the log across every Attempt of the Run's Task.
   const attempts = async (taskId: number) => {
     const store = new VerificationAttemptStore(server.app.ctx.asyncDb);
     const taskAttempts = await server.app.ctx.attempts.listForTask(taskId);
@@ -104,7 +84,6 @@ describe('command verifier end-to-end (issue #135)', () => {
     expect(run).toMatchObject({ state: 'completed' });
     expect(run.verifiedHeadOid).toMatch(/^[0-9a-f]{40}$/);
 
-    // AC3/AC5: the attempt is persisted at the branch head the command saw.
     const rows = await attempts(taskId);
     expect(rows).toHaveLength(1);
     expect(rows[0]!).toMatchObject({ mechanism: 'command', verdict: 'pass' });
@@ -130,13 +109,9 @@ describe('command verifier end-to-end (issue #135)', () => {
     expect(task.state).toBe('done');
 
     const run = (await server.api('GET', `/api/tasks/${taskId}/attempts/current`)).body;
-    // The candidate is the agent's own commit, and it already sits on the live
-    // base branch — the branch advanced forward in place, nothing was merged.
     expect(run.verifiedHeadOid).toMatch(/^[0-9a-f]{40}$/);
     expect(git(repoDir, 'rev-parse', 'main')).toBe(run.verifiedHeadOid);
     expect(run.verifiedHeadOid).not.toBe(baseBefore);
-    // No private direct ref, and no operator-facing run branch: direct isolation
-    // has no candidate ref at all now.
     expect(git(repoDir, 'for-each-ref', 'refs/harmonic/')).toBe('');
     expect(run.branch).toBeNull();
     expect(run.verifiedRef).toBeNull();
@@ -147,7 +122,6 @@ describe('command verifier end-to-end (issue #135)', () => {
       isolationMode: 'direct',
       verificationCommand: [exitCommand(0)],
     });
-    // Uncommitted changes the agent did not make, present before the Run starts.
     writeFileSync(join(repoDir, 'operator-scratch.txt'), 'not the agent\n');
 
     const { taskId } = await createAndRun();
@@ -155,7 +129,7 @@ describe('command verifier end-to-end (issue #135)', () => {
       const { body } = await server.api('GET', `/api/tasks/${taskId}`);
       return body.state === 'done' ? body : undefined;
     });
-    expect(task.state).toBe('done'); // tolerated — never escalated for the dirty tree
+    expect(task.state).toBe('done');
     const run = (await server.api('GET', `/api/tasks/${taskId}/attempts/current`)).body;
     expect(run.verifiedHeadOid).toMatch(/^[0-9a-f]{40}$/);
 
@@ -166,7 +140,6 @@ describe('command verifier end-to-end (issue #135)', () => {
     await server.app.ctx.workspaces.update(workspaceId, { verificationCommand: [exitCommand(1)] });
     const { taskId } = await createAndRun();
 
-    // The Run terminates failed rather than parking for review or merging.
     const run = await waitFor(async () => {
       const { body } = await server.api('GET', `/api/tasks/${taskId}/attempts/current`);
       return body.state === 'failed' ? body : undefined;
@@ -174,7 +147,6 @@ describe('command verifier end-to-end (issue #135)', () => {
     expect(run.state).toBe('failed');
     expect(run.finishedAt).not.toBeNull();
 
-    // The Task never merged; it was handed back to a human.
     const task = (await server.api('GET', `/api/tasks/${taskId}`)).body;
     expect(task.state).toBe('escalated');
 
@@ -240,8 +212,6 @@ describe('command verifier end-to-end (issue #135)', () => {
     const rows = await attempts(taskId);
     expect(rows).toHaveLength(1);
     expect(rows[0]!).toMatchObject({ mechanism: 'command', verdict: 'inconclusive', inputOid: '' });
-    // Leave the shared repo clean: a leftover dirty file would mark the next
-    // direct Run startDirty and suppress its commit nudge.
     rmSync(join(repoDir, 'uncommitted.txt'), { force: true });
   });
 
@@ -264,23 +234,13 @@ describe('command verifier end-to-end (issue #135)', () => {
       const events = (await server.api('GET', `/api/attempts/${attemptId}/events`)).body.events;
       return events.some((event: { payload: { event?: string } }) => event.payload.event === 'commit-nudge') ? true : undefined;
     });
-    // The nudge is corrective guidance inside the Attempt, not a new one: the
-    // Run settles on the same single Attempt.
     await waitFor(async () => ((await server.api('GET', `/api/tasks/${taskId}/attempts/current`)).body.state !== 'running' ? true : undefined));
     const timeline = await server.api('GET', `/api/tasks/${taskId}/attempts/timeline`);
     expect(timeline.body.attempts).toHaveLength(1);
     expect(timeline.body.attempts[0]).toMatchObject({ number: 1 });
-    // Leave the shared repo clean for the merges that follow (the stub never committed).
     rmSync(join(repoDir, 'nudge-me.txt'), { force: true });
   });
 
-  // Was "a pass records a verified-head fact at the exact SHA, and the gate
-  // refuses a moved tip" — the `verified-head` run-fact and the Runner's
-  // `mergeFreshness` freshness gate are BOTH deleted by #381 (ADR-0001, the
-  // one merge policy): a moved base is normal and is never re-verified, the
-  // merge commit reconciles it. The surviving purpose — a command pass
-  // actually merges the Run's work onto the base — is now proven by asserting
-  // the merge landed as a real merge commit (never a fast-forward).
   it('a pass merges the Run onto the base as an ordinary merge commit (ADR-0001)', async () => {
     await server.app.ctx.workspaces.update(workspaceId, {
       isolationMode: 'worktree',
@@ -294,9 +254,6 @@ describe('command verifier end-to-end (issue #135)', () => {
 
     const run = (await server.api('GET', `/api/tasks/${taskId}/attempts/current`)).body;
     expect(run.verifiedHeadOid).toBeTruthy();
-    // The one merge policy: an ordinary `git merge --no-ff` — main's merge
-    // commit has the run's verified branch tip as its second parent, and
-    // shows up in `--merges` history (never a fast-forward).
     expect(git(repoDir, 'rev-parse', 'main^2')).toBe(run.verifiedHeadOid);
     expect(git(repoDir, 'log', '--merges', 'main')).not.toBe('');
   });
@@ -337,8 +294,6 @@ describe('command verifier end-to-end (issue #135)', () => {
       return body.state === 'failed' ? body : undefined;
     });
 
-    // Two attempts (maxAttempts: 2), each running CMD1 then failing fast on
-    // CMD2 — one attempt row per executed command, and CMD3 never runs.
     const rows = await attempts(taskId);
     expect(rows.map((row) => `${row.mechanism}:${row.verdict}`)).toEqual([
       'command:pass',
@@ -350,16 +305,6 @@ describe('command verifier end-to-end (issue #135)', () => {
   });
 });
 
-/**
- * Native merging (issue #138,
- * ADR-0021). The single new row: native + a verifier that actually RAN and
- * PASSED + auto-accept ON → merge with no human gate. Every other cell of the
- * table (no verifier, auto-accept off, a fail/inconclusive verdict) still
- * routes to review/Escalate exactly as #135 left it — auto-accept only ever
- * *skips* the human gate on a genuine pass, it never rescues a red verdict
- * and never fires with nothing verified. A dedicated server + repo (rather
- * than the shared one above) keeps each transition's Workspace state isolated.
- */
 describe('native merging (issue #138, ADR-0021, ADR-0041)', () => {
   let server: TestServer;
   let repoDir: string;
@@ -388,10 +333,6 @@ describe('native merging (issue #138, ADR-0021, ADR-0041)', () => {
     return { taskId: created.body.id, attemptId: started.body.id };
   }
 
-  // \`verification_attempts\` is keyed off \`attempt_id\`, not \`run_id\`
-  // (ADR-0001 #388 S-F): a self-heal loop's failed attempts share one Run row
-  // but each get their own Attempt row, so "this Run's verification
-  // attempts" now folds the log across every Attempt of the Run's Task.
   const attempts = async (taskId: number) => {
     const store = new VerificationAttemptStore(server.app.ctx.asyncDb);
     const taskAttempts = await server.app.ctx.attempts.listForTask(taskId);
@@ -434,10 +375,6 @@ describe('native merging (issue #138, ADR-0021, ADR-0041)', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]!).toMatchObject({ mechanism: 'command', verdict: 'pass' });
 
-    // Harmonic merging the Run is not an operator — the Attempt settles under
-    // the default `agent-finish/unresolved` disposition, never the
-    // operator-only `operator-accept` one, so the audit trail stays honest
-    // about who actually accepted the work.
     const ticketAttempt = await new AttemptStore(server.app.ctx.asyncDb).getForTaskNumber(taskId, run.number);
     expect(ticketAttempt).toMatchObject({ state: 'passed', reason: 'agent-finish/unresolved' });
   });
@@ -476,7 +413,6 @@ describe('native merging (issue #138, ADR-0021, ADR-0041)', () => {
     const run = (await server.api('GET', `/api/tasks/${taskId}/attempts/current`)).body;
     expect(run.state).toBe('completed');
 
-    // No verifier ran at all — the attempt log is empty.
     expect(await attempts(taskId)).toHaveLength(0);
   });
 
@@ -504,8 +440,6 @@ describe('native merging (issue #138, ADR-0021, ADR-0041)', () => {
     const run = (await server.api('GET', `/api/attempts/${started.body.id}`)).body;
     expect(run.state).toBe('completed');
 
-    // The merge actually happened: the base branch moved and now contains the
-    // Run's commit, without any human ever calling Accept.
     const baseOidAfter = git(repoDir, 'rev-parse', 'main');
     expect(baseOidAfter).not.toBe(baseOidBefore);
     const mergedFiles = git(repoDir, 'show', `${baseOidAfter}:auto-accept-feature.txt`);

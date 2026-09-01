@@ -29,7 +29,6 @@ const usage = (input: number, output: number): string =>
     source: 'acp',
   });
 
-// A local-day timestamp helper, tz-independent: noon on the given calendar day.
 const dayAt = (y: number, m: number, d: number, h = 12): number => new Date(y, m, d, h, 0, 0).getTime();
 
 describe('tasksMergedByDay (ADR-0014 §1)', () => {

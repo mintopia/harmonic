@@ -1,35 +1,3 @@
-/**
- * Retry & reject continuation in the same Session (issue #147, reliability-design
- * Unit C).
- *
- * When a Run is retried or its result rejected, the follow-up work should
- * continue **in the existing Session** — the same ACP conversation — so the agent
- * still remembers what it already tried and the feedback it just received, rather
- * than re-deriving everything from a cold start. This seam is the pure decision
- * of *how* that continuation is offered:
- *
- * - An **automated** trigger — an automatic retry, or the verify-agent (the #109
- *   critic) rejecting within seconds — reuses the warm Session **silently**: no
- *   operator dialog, the follow-up turn just merges on the same Session.
- * - A **human** rejection surfaces a **choice**: "continue the full conversation
- *   (with an estimated cost)" vs "start a condensed new Session". The choice is
- *   gated on **cost**, never on an elapsed-time clock.
- *
- * Cache warmth is the cost signal that informs — but never gates — that choice:
- * `estimatedWarmUntil` / `lastActiveAt` say whether the provider prompt cache is
- * likely still primed, so a full continuation is cheap (cache hit) or dear (the
- * whole conversation re-primes). It is **never a correctness gate**: a cold
- * Session can still be continued in full; it just costs more, and the operator
- * decides. There is no keepalive — the estimate only reads what is already
- * recorded, it never schedules anything to keep a Session warm.
- *
- * Like its sibling seams (`session-resume.ts` #142, `session-fallback.ts` #145,
- * `run-disposition.ts` #112) this is a **pure decision**: no database, no clock,
- * no I/O. The caller reads the trigger and the Session's warmth facts and passes
- * them in with an explicit `now`; recomputing over the same inputs always yields
- * the same plan, so every branch is exhaustively unit-testable in isolation.
- */
-
 import type { AttemptRow, SessionRow } from '../db/schema.js';
 
 /** Fixed provider cache windows. They are execution facts, not settings. */
@@ -72,16 +40,14 @@ export function decideAttemptContinuation(input: {
 }
 
 /**
- * What prompted the continuation. Two are **automated** (they reuse the Session
- * silently); one is a **human** rejection (it surfaces the cost-gated choice).
- * The array is the single source of truth — the union type and the automated Set
- * below are derived from it, so a new trigger is ranked in exactly one place.
+ * What prompted the continuation. Two are automated (they reuse the Session
+ * silently); one is a human rejection (it surfaces the cost-gated choice).
  */
 export const CONTINUATION_TRIGGERS = [
   /** Harmonic re-ran the work itself after a transient/interrupted failure. */
   'automatic-retry',
-  /** The verify-agent (the #109 verification gate) rejected the result — an
-   * automated critic that fires within seconds, while the Session is still warm. */
+  /** The verify-agent rejected the result — an automated critic that fires
+   * while the Session is still warm. */
   'verify-reject',
   /** An operator rejected the result with feedback — the only trigger that
    * surfaces the "continue full vs condensed new" choice. */
@@ -89,60 +55,40 @@ export const CONTINUATION_TRIGGERS = [
 ] as const;
 export type ContinuationTrigger = (typeof CONTINUATION_TRIGGERS)[number];
 
-/**
- * The triggers Harmonic fires without a human in the loop — they reuse the warm
- * Session silently, with no dialog and no cost gate. `human-reject` is the sole
- * trigger *not* in this set, so it is the only one that surfaces the choice.
- */
+/** The triggers Harmonic fires without a human in the loop; they reuse the warm Session silently. */
 export const AUTOMATED_CONTINUATION_TRIGGERS = ['automatic-retry', 'verify-reject'] as const satisfies readonly ContinuationTrigger[];
 export type AutomatedContinuationTrigger = (typeof AUTOMATED_CONTINUATION_TRIGGERS)[number];
 
 const AUTOMATED_TRIGGER_SET: ReadonlySet<ContinuationTrigger> = new Set(AUTOMATED_CONTINUATION_TRIGGERS);
 
-/** Whether `trigger` is one Harmonic fires automatically (silent warm reuse), as
- * opposed to a human rejection (which surfaces the cost-gated choice) — the
- * runtime counterpart of {@link AutomatedContinuationTrigger}. */
+/** Whether `trigger` is one Harmonic fires automatically (silent warm reuse). */
 export function isAutomatedTrigger(trigger: ContinuationTrigger): trigger is AutomatedContinuationTrigger {
   return AUTOMATED_TRIGGER_SET.has(trigger);
 }
 
-/**
- * The facet of a stored Session the cost estimate reads — exactly the two warmth
- * fields. A whole {@link SessionRow} is structurally assignable, so callers pass
- * the row directly (or the {@link sessionWarmthFacts} projection); the narrow
- * shape keeps the pure decision independent of the rest of the Session record.
- */
+/** The facet of a stored Session the cost estimate reads. A whole {@link SessionRow} is structurally assignable. */
 export interface SessionWarmthFacts {
-  /** Estimated epoch-ms at which the provider prompt cache goes cold (a per-
-   * Harness COST estimate, `estimateWarmUntil` in sessions.ts), or `null` when
-   * the harness has no known warm window — the *absence* of an estimate, never a
-   * claim the Session is instantly cold. */
+  /** Estimated epoch-ms at which the provider prompt cache goes cold, or `null`
+   * when the harness has no known warm window. */
   estimatedWarmUntil: number | null;
-  /** Epoch-ms of the Session's last dispatch/prompt activity — the freshness
-   * anchor the estimate reports alongside the warmth verdict. */
+  /** Epoch-ms of the Session's last dispatch/prompt activity. */
   lastActiveAt: number;
 }
 
 /**
- * How warm the Session's prompt cache is likely to be — the qualitative cost
- * band a full continuation faces. Deliberately three coarse states, not a
- * time-bucketed clock: the design gates the human choice on *cost*, so inventing
- * fine-grained elapsed-time thresholds here would be exactly the TTL gate it
- * rejects.
- * - `warm`: `now` is within the estimated warm window — a full continuation
- *   likely hits the cache, so its incremental cost is low.
- * - `cold`: the estimated warm window has lapsed — a full continuation re-primes
- *   the whole conversation, so it costs materially more (but is still allowed).
- * - `unknown`: the harness has no known warm window (`estimatedWarmUntil` null),
- *   so warmth — and therefore the full-continuation cost — cannot be estimated.
+ * How warm the Session's prompt cache is likely to be — the cost band a full
+ * continuation faces.
+ * - `warm`: `now` is within the estimated warm window.
+ * - `cold`: the window has lapsed — a full continuation re-primes the whole
+ *   conversation (still allowed).
+ * - `unknown`: the harness has no known warm window.
  */
 export type WarmthBand = 'warm' | 'cold' | 'unknown';
 
 /**
- * The cost signal shown alongside the "continue full" option (issue #147 AC3/AC4).
- * A read-only estimate derived from the Session's warmth facts and `now` — never
- * a promise, never a gate. `band` is the headline; the raw deltas are carried so
- * the UI can render its own copy without re-deriving them.
+ * The cost signal shown alongside the "continue full" option — a read-only
+ * estimate, never a gate. `band` is the headline; the raw deltas are carried so
+ * the UI can render its own copy.
  */
 export interface ContinuationCostEstimate {
   /** The qualitative warmth/cost band (see {@link WarmthBand}). */
@@ -168,27 +114,20 @@ export interface ContinuationCostEstimate {
 }
 
 /**
- * The cost signal shown alongside the "start condensed" option (issue #177). A
- * condensed re-attempt spawns a **fresh** Session re-primed from a compact
- * summary, so — unlike {@link ContinuationCostEstimate}, which reads the source
- * Session's own cache warmth — its cost is best expressed **relative to** the
- * full continuation: the two paths trade places on which is cheaper as the source
- * warmth changes. Deliberately the stated minimum (a `band` + a `note`): a
- * condensed re-prime is a small, bounded cost, so the interesting signal is which
- * of the two paths is the pricier one right now, not a second set of cache deltas.
+ * The cost signal shown alongside the "start condensed" option. A condensed
+ * re-attempt spawns a fresh Session re-primed from a compact summary, so its
+ * cost is expressed relative to the full continuation: the two paths trade
+ * places on which is cheaper as the source warmth changes.
  */
 export interface CondensedContinuationEstimate {
-  /** The condensed path's cost band, **relative to continuing full**:
-   * - `cold`: the source Session is warm, so continuing full is a live cache hit
-   *   that beats a cold summary re-prime — condensed is the *pricier* of the two
-   *   (it wears the amber, see `continuationCostChip`). Still a bounded cost.
+  /** The condensed path's cost band, relative to continuing full:
+   * - `cold`: the source Session is warm, so continuing full is a live cache hit;
+   *   condensed is the pricier of the two.
    * - `warm`: the source Session is cold or has no known warm window, so a fresh
-   *   Session re-priming only a summary is the *cheaper* / steadier path.
-   * Never `unknown`: a condensed re-prime is always an estimable, bounded cost —
-   * the uncertainty only ever attaches to the *full* path. */
+   *   Session re-priming only a summary is the cheaper path.
+   * Never `unknown`: a condensed re-prime is always a bounded cost. */
   band: WarmthBand;
-  /** A human-legible one-liner for the dialog — the cost signal as a signal,
-   * never a guarantee, mirroring {@link ContinuationCostEstimate.note}. */
+  /** A human-legible one-liner for the dialog — a cost signal, never a guarantee. */
   note: string;
 }
 
@@ -213,12 +152,9 @@ export type SessionContinuationPlan =
     };
 
 /**
- * Estimate the cost of continuing the **full** conversation in `warmth`'s Session
- * as of `now` (issue #147 AC4). Pure and total: it reads only the two recorded
- * warmth fields and the passed clock, so recomputing over the same inputs always
- * yields the same estimate. Warmth is reported as a *cost* band, never a gate —
- * `cold` and `unknown` both still permit a full continuation, they only raise the
- * cost the caller shows.
+ * Estimate the cost of continuing the full conversation in `warmth`'s Session
+ * as of `now`. `cold` and `unknown` both still permit a full continuation; they
+ * only raise the cost the caller shows.
  */
 export function estimateContinuationCost(warmth: SessionWarmthFacts, now: number): ContinuationCostEstimate {
   const msSinceActive = now - warmth.lastActiveAt;
@@ -249,19 +185,10 @@ export function estimateContinuationCost(warmth: SessionWarmthFacts, now: number
 }
 
 /**
- * Estimate the cost of starting a **condensed** re-attempt (a fresh Session
- * re-primed from a compact summary) on `warmth`'s Session as of `now` (issue
- * #177). Pure and total, and derived from the same warmth facts as
- * {@link estimateContinuationCost} — because the useful condensed signal is
- * *comparative*: the two re-attempt paths trade places on which is cheaper.
- *
- * - When the source Session is **warm**, continuing full is a live cache hit that
- *   likely beats re-priming even a small summary from cold, so condensed is the
- *   *pricier* path → `cold` (it wears the amber). Still a small, bounded cost.
- * - When the source Session is **cold** or has **no known warm window**, a fresh
- *   Session that re-primes only a summary is the *cheaper* / steadier path →
- *   `warm`. (No warm window ⇒ the saving is pure token count, not a cache bet, so
- *   condensed is if anything the surer win — hence `warm`, never `unknown`.)
+ * Estimate the cost of starting a condensed re-attempt (a fresh Session
+ * re-primed from a compact summary) as of `now`, relative to continuing full:
+ * `cold` when the source Session is warm (full is a live cache hit, condensed
+ * is the pricier path), `warm` when the source is cold or has no known window.
  */
 export function estimateCondensedContinuationCost(warmth: SessionWarmthFacts, now: number): CondensedContinuationEstimate {
   const full = estimateContinuationCost(warmth, now);
@@ -281,14 +208,10 @@ export function estimateCondensedContinuationCost(warmth: SessionWarmthFacts, no
 
 /**
  * Decide how a continuation triggered by `trigger` is offered on a Session with
- * the given `warmth`, as of `now` (issue #147 AC1–AC4). Pure and total.
- *
- * An automated trigger ({@link isAutomatedTrigger}) reuses the same Session
- * silently — no dialog, no cost gate (`silent-continue`). A human rejection
- * surfaces the choice (`offer-choice`): "continue full (same Session, with the
- * estimated cost)" vs "start a condensed new Session". The gate is the cost
- * estimate, not an elapsed-time clock, and both options are always present —
- * warmth informs the estimate, it never removes the full-continuation option.
+ * the given `warmth`, as of `now`. An automated trigger reuses the same Session
+ * silently (`silent-continue`). A human rejection surfaces the choice
+ * (`offer-choice`); both options are always present — warmth informs the
+ * estimate, it never removes an option.
  */
 export function planSessionContinuation(
   trigger: ContinuationTrigger,
@@ -306,28 +229,17 @@ export function planSessionContinuation(
   };
 }
 
-/**
- * Narrowing convenience: a whole {@link SessionRow} projected to the
- * {@link SessionWarmthFacts} the cost estimate reads. (A `SessionRow` is already
- * structurally assignable; this documents the exact projection for callers, the
- * same way `sessionFacts` does for the resume compatibility matrix.)
- */
+/** A whole {@link SessionRow} projected to the {@link SessionWarmthFacts} the cost estimate reads. */
 export function sessionWarmthFacts(row: SessionRow): SessionWarmthFacts {
   return { estimatedWarmUntil: row.estimatedWarmUntil, lastActiveAt: row.lastActiveAt };
 }
 
 /**
- * Preview the human-reject continuation choice for a Task *before* the operator
- * rejects it (issue #170), so the reject dialog can show "continue full (est.
- * cost)" vs "start condensed". The runtime {@link Runner.resolveContinuationSource}
- * only fires *after* a reject (it keys off `review === 'rejected'`); this looks
- * one step earlier — at the newest Run that already holds a live Session — and
- * projects the same `human-reject` plan against its warmth. Pure and total: the
- * caller supplies the Task's Runs (newest last, as `listForTask` returns them),
- * a `getSession` lookup that returns `null` when the row is gone, and `now`.
- *
- * Returns the `offer-choice` plan, or `null` when there is nothing to continue —
- * no Run ever bound a Session, or the Session has since been retired and swept.
+ * Preview the human-reject continuation choice for a Task before the operator
+ * rejects it, so the reject dialog can show both options. Looks at the newest
+ * Attempt (`runsForTask` is newest-last) that holds a live Session and projects
+ * the `human-reject` plan against its warmth. Returns the `offer-choice` plan,
+ * or `null` when no Attempt ever bound a Session or it has since been swept.
  */
 export function previewHumanRejectContinuation(
   runsForTask: readonly AttemptRow[],
@@ -340,8 +252,6 @@ export function previewHumanRejectContinuation(
     const session = getSession(run.sessionRowId);
     if (!session) continue;
     const plan = planSessionContinuation('human-reject', sessionWarmthFacts(session), now);
-    // 'human-reject' is not automated, so this is always `offer-choice`; the
-    // cast documents that invariant for the return type.
     return plan as Extract<SessionContinuationPlan, { mode: 'offer-choice' }>;
   }
   return null;

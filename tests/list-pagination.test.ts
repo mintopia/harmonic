@@ -3,13 +3,6 @@ import { startServer, type TestServer } from './helpers.js';
 import type { Epic } from '../src/domain/epic-view.js';
 import type { DerivedMap } from '../src/tracker/mirror.js';
 
-/**
- * The shared pagination envelope (ADR-0045, issue #352) applied to the migrated
- * list endpoints: an omitted `limit` returns the whole list plus a `total`
- * (additive rollout), and `limit`/`offset` slice a page while `total` stays the
- * full match count. `/api/tasks` has its own coverage in tasks.test.ts; this
- * exercises a representative migrated endpoint end to end.
- */
 describe('list endpoint pagination envelope', () => {
   let server: TestServer;
 
@@ -56,13 +49,6 @@ describe('list endpoint pagination envelope', () => {
   });
 });
 
-/**
- * The two derived read-model rollups this contract also covers (issue #351):
- * `/api/epics` and `/api/maps` slice on the shared envelope even though their
- * pages come from a query-time scan rather than a table. Pagination runs in the
- * route over the whole derived list, so a fixed service result proves the
- * slice/`total` behaviour without standing up a real tracker loop.
- */
 describe('derived-rollup pagination (epics, maps)', () => {
   let server: TestServer;
 
@@ -135,7 +121,6 @@ describe('derived-rollup pagination (epics, maps)', () => {
     expect(res.body.total).toBe(2);
     expect(res.body.epics.map((e: Epic) => e.ref)).toEqual([1, 3]);
 
-    // A blank query matches every Epic (whitespace-only ⇒ no filter).
     const blank = await server.api('GET', `/api/workspaces/${workspaceId}/epics?q=%20`);
     expect(blank.body.total).toBe(3);
   });

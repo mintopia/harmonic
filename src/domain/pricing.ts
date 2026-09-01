@@ -11,10 +11,10 @@ export interface ModelPrice {
 export type PriceTable = Record<string, ModelPrice>;
 
 /**
- * Cost (see ADR-0035): the dollar value of Usage. Settled Runs store this
- * value; live usage can still derive it on read.
- * A model without a price contributes null, and the whole aggregate is
- * flagged incomplete — a partial total is a floor, never a fake zero.
+ * Cost: the dollar value of Usage. Settled Attempts store this value; live
+ * usage can still derive it on read. A model without a price contributes null,
+ * and the whole aggregate is flagged incomplete — a partial total is a floor,
+ * never a fake zero.
  */
 export interface Cost {
   /** Sum over priced models; null when nothing could be priced. */
@@ -53,9 +53,8 @@ export const DEFAULT_PRICES: PriceTable = {
   'gpt-5.2': { input: 1.25, output: 10, cacheRead: 0.125, cacheWrite: 0 },
   'gpt-5.2-codex': { input: 1.25, output: 10, cacheRead: 0.125, cacheWrite: 0 },
   'gpt-5.2-codex-mini': { input: 0.25, output: 2, cacheRead: 0.025, cacheWrite: 0 },
-  // Copilot serves models under its own dotted ids (spike, issue 25);
-  // Cost stays API-equivalent per observed serving model (decision Q4).
-  // Anthropic rates match the dashed entries above per family.
+  // Copilot serves models under its own dotted ids; Anthropic rates match the
+  // dashed entries above per family.
   'claude-sonnet-4.6': { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
   'claude-sonnet-4.5': { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
   'claude-haiku-4.5': { input: 1, output: 5, cacheRead: 0.1, cacheWrite: 1.25 },
@@ -63,7 +62,7 @@ export const DEFAULT_PRICES: PriceTable = {
   'claude-opus-4.7': { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
   'claude-opus-4.6': { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
   'claude-opus-4.5': { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
-  // Observed from copilot's auto router (spike Q3); OpenAI published rate.
+  // OpenAI published rate.
   'gpt-5-mini': { input: 0.25, output: 2, cacheRead: 0.025, cacheWrite: 0 },
   // Codex-family models share their generation's codex rate (cf. gpt-5.2-codex).
   'gpt-5.3-codex': { input: 1.25, output: 10, cacheRead: 0.125, cacheWrite: 0 },
@@ -192,7 +191,7 @@ export function costOfUsages(usages: (AttemptUsage | null)[], prices: PriceTable
   return { totalUsd, byModel, incomplete };
 }
 
-/** Sum Costs already frozen on Runs, preserving unknown-model floors. */
+/** Sum Costs already frozen on Attempts, preserving unknown-model floors. */
 export function sumCosts(costs: (Cost | null)[]): Cost | null {
   const present = costs.filter((cost): cost is Cost => cost !== null);
   if (present.length === 0) return null;

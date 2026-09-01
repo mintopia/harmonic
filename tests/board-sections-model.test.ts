@@ -62,7 +62,6 @@ const task = (id: number, state: TaskState, extra: Partial<Task> = {}): Task => 
   ...extra,
 });
 
-/** A mirrored ticket blocked on `dependsOn`, with the API's derived count/flags as the server would send them. */
 const blocked = (id: number, dependsOn: number[], extra: Partial<Task> = {}): Task =>
   task(id, 'ready', {
     origin: 'mirrored',
@@ -123,8 +122,6 @@ describe('boardSections — Attention / Running / Pending (ADR-0041)', () => {
     );
     expect(attentionIds(sections)).toEqual(['task:2', 'task:1']);
     expect(sections.running.map((entry) => entry.id)).toEqual([3, 4]);
-    // ADR-0017: every active Epic gets a band, and a working member stays in its
-    // band columns while also appearing in the global Running section.
     expect(sections.pending.map((group) => group.epic?.ref)).toEqual([30]);
     expect(layout(sections.pending[0]!.columns)).toEqual([['Frontier', ['T-4']]]);
   });
@@ -138,7 +135,6 @@ describe('boardSections — Attention / Running / Pending (ADR-0041)', () => {
       ],
     );
     expect(sections.pending.map((group) => group.epic?.ref)).toEqual([30, 31]);
-    // Epic 30: the working member stays in the band; the merged one drops to the closed rail.
     expect(layout(sections.pending[0]!.columns)).toEqual([['Frontier', ['T-1']]]);
     expect(layout(sections.pending[1]!.columns)).toEqual([['Frontier', ['T-3']]]);
   });
@@ -151,8 +147,6 @@ describe('boardSections — Attention / Running / Pending (ADR-0041)', () => {
     expect(isEscalatedEpic(held)).toBe(true);
     expect(isActiveEpic(held)).toBe(true);
     expect(attentionIds(sections)).toEqual(['task:7', 'epic:60']);
-    // Active, so it also gets a band; its only member is folded, so the band has
-    // no open columns — the integration bar is its content.
     expect(sections.pending.map((group) => group.epic?.ref)).toEqual([60]);
     expect(sections.pending[0]!.columns).toEqual([]);
   });
@@ -164,7 +158,6 @@ describe('boardSections — Attention / Running / Pending (ADR-0041)', () => {
     );
     expect(attentionIds(sections)).toEqual(['task:5']);
     expect(sections.running).toEqual([]);
-    // Escalated member first (attention-first band order), then the ready one.
     expect(layout(sections.pending[0]!.columns)).toEqual([['Frontier', ['T-5', 'T-6']]]);
   });
 
@@ -210,18 +203,13 @@ describe('boardSections — Attention / Running / Pending (ADR-0041)', () => {
       [epic(31, [member(311, 4)]), epic(30, [member(301, 2, { state: 'working' }), member(302, 3)])],
     );
     expect(sections.pending.map((group) => group.epic?.ref ?? 'standalone')).toEqual([30, 31, 'standalone']);
-    // Epic 30's working member (T-2) stays in its band, ordered before the ready one.
     expect(layout(sections.pending[0]!.columns)).toEqual([['Frontier', ['T-2', 'T-3']]]);
     expect(layout(sections.pending[1]!.columns)).toEqual([['Frontier', ['T-4']]]);
-    // The driver ticket (task 9) is neither a card nor in Running.
     expect(layout(sections.pending[2]!.columns)).toEqual([['Frontier', ['T-1']]]);
     expect(sections.running.map((entry) => entry.id)).toEqual([2]);
   });
 
   it('keeps a fully-folded Epic on the board until it retires — folded ≠ finished (ADR-0017)', () => {
-    // Every member merged into the epic branch, but the whole-Epic gate hasn't
-    // merged into the base yet: still active, shown as a band (empty columns +
-    // closed rail), not dropped, and its member is not returned to standalone.
     const folded = epic(50, [member(1, 501, { mergeStatus: 'completed', state: 'done' })]);
     const sections = boardSections([task(501, 'done')], [folded]);
     expect(isActiveEpic(folded)).toBe(true);
@@ -235,13 +223,10 @@ describe('boardSections — Attention / Running / Pending (ADR-0041)', () => {
       integrate: { inFlight: true, held: null },
     });
     const sections = boardSections([task(701, 'done')], [integrating]);
-    // Active (integrate in flight) but not escalated, so it is a band, not an Attention card.
     expect(isActiveEpic(integrating)).toBe(true);
     expect(isEscalatedEpic(integrating)).toBe(false);
     expect(sections.attention).toEqual([]);
     expect(sections.pending.map((group) => group.epic?.ref)).toEqual([70]);
-    // Its one member is folded, so the band has no pending columns — the
-    // IntegrationProgress bar is its main content instead.
     expect(sections.pending[0]!.columns).toEqual([]);
   });
 
@@ -291,7 +276,6 @@ describe('epicPendingColumns', () => {
     const working = task(1, 'working');
     const humanOnly = task(2, 'ready', { origin: 'mirrored', trackerRef: 2, agentWorkable: false, humanOnly: true });
     const columns = epicPendingColumns(epic(90, [member(1, 1), member(2, 2)]), [working, humanOnly]);
-    // Working member first (band order), then the human-only ready ticket.
     expect(layout(columns)).toEqual([['Frontier', ['T-1', '#2 · T-2']]]);
     expect(columns[0]!.items[0]).toMatchObject({ label: 'T-1', state: 'working', runnable: false });
     expect(columns[0]!.items[1]).toMatchObject({ label: '#2 · T-2', runnable: false, humanOnly: true });
@@ -341,8 +325,6 @@ describe('blocker columns', () => {
 
   it('resolves a visible blocker as satisfied only when it is done — a cancelled blocker still counts, as on the server', () => {
     const tasks = new Map([task(1, 'done'), task(2, 'cancelled')].map((t) => [t.id, t]));
-    // Server-consistent: blockers 2 (cancelled) and 4 (absent) are the two
-    // non-done edges, so openBlockerCount is 2 and blockedOnFailed is set.
     const dependant = task(3, 'ready', { dependsOn: [1, 2, 4], openBlockerCount: 2, blockedOnFailed: true });
     expect(resolveBlockers(dependant, tasks)).toEqual([
       { taskId: 1, label: 'T-1', satisfied: true },
@@ -352,16 +334,11 @@ describe('blocker columns', () => {
   });
 
   it('reads satisfied from openBlockerCount when the done blocker is off the lean page (ADR-0045)', () => {
-    // The Board now fetches an open-only page, so a done blocker is absent from
-    // the array. openBlockerCount === 0 means every edge is cleared, so the
-    // chip strikes through even though its blocker task is not in the map.
     const cleared = task(9, 'ready', { dependsOn: [1, 2], openBlockerCount: 0 });
     expect(resolveBlockers(cleared, new Map())).toEqual([
       { taskId: 1, label: 'Task 1', satisfied: true },
       { taskId: 2, label: 'Task 2', satisfied: true },
     ]);
-    // With an open blocker still outstanding, an absent edge we cannot prove
-    // done stays unsatisfied rather than falsely clearing.
     const partly = task(10, 'ready', { dependsOn: [1, 2], openBlockerCount: 1 });
     expect(resolveBlockers(partly, new Map()).map((b) => b.satisfied)).toEqual([false, false]);
   });

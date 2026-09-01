@@ -138,23 +138,19 @@ describe('MirrorCoordinator (issue #32)', () => {
     const coord = new MirrorCoordinator(tasks, wsId);
     await coord.observe(adapter);
 
-    // First reconcile advertises each once.
     await coord.reconcile();
     expect(calls.claim).toEqual([20]);
     expect(calls.release).toEqual([21]);
 
-    // Second reconcile with unchanged Task state must NOT grow the write counts.
     await coord.reconcile();
     expect(calls.claim).toEqual([20]);
     expect(calls.release).toEqual([21]);
 
-    // A state change (working → handed-back) must re-advertise: 20 now releases.
     await tasks.escalate(running.id, 'escalated to human: attempt 2 of 2 failed');
     await coord.reconcile();
     expect(calls.claim).toEqual([20]);
     expect(calls.release).toEqual([21, 20]);
 
-    // And a further reconcile with that new state stays idempotent.
     await coord.reconcile();
     expect(calls.release).toEqual([21, 20]);
   });

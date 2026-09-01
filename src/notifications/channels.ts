@@ -37,11 +37,6 @@ const CONFIG_SCHEMAS: Record<ChannelType, z.ZodType> = {
   email: emailConfigSchema,
 };
 
-// Examples ride on the request schema too: the API page renders whatever the
-// spec declares, and a bare field documents itself as `"string"`. `config` is a
-// record, so it needs an example of its own — without one the docs print its
-// JSON Schema, which is exactly the shape a reader can't use. The example is a
-// Discord channel's; each type takes a different config (see CONFIG_SCHEMAS).
 export const createChannelSchema = z.object({
   name: z.string().min(1).meta({ example: 'ops-alerts' }),
   type: z.enum(CHANNEL_TYPES).meta({ example: 'discord' }),
@@ -101,9 +96,6 @@ export class ChannelService {
     return rows.map(deserialize);
   }
 
-  // Read-then-write (the current row, then a patch derived from it) runs as
-  // one `this.db.write()` unit — ADR-0029 §3 — so no concurrent update can
-  // interleave between the 404-check/type lookup and the write.
   update(id: number, input: z.infer<typeof updateChannelSchema>): Promise<Channel> {
     return this.db
       .write(async (db) => {

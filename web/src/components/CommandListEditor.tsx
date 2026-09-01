@@ -4,8 +4,8 @@ import { FieldError, fieldLabel } from './SettingsSection';
 import { EMPTY_COMMAND, argsText, setCommandField } from './verification-override-model';
 
 /**
- * The add/remove editor for an ordered verification-command list (ADR-0021,
- * ADR-0044 §D). One component for both settings surfaces: the global page edits
+ * The add/remove editor for an ordered verification-command list.
+ * One component for both settings surfaces: the global page edits
  * `config.verify.commands` directly; the workspace page edits an override array
  * inside an `InheritField` slot. The only per-surface differences are the input
  * id prefix and the server error-path prefix, so those are props — the markup

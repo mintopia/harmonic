@@ -8,28 +8,6 @@ import { verificationCommandSchema } from '../src/config.js';
 import type { MirrorInput } from '../src/domain/tasks.js';
 import { runMergePolicy } from '../src/execution/merge-policy.js';
 
-/**
- * Issue #381 — automated task completion rewired through the one-merge-policy
- * primitive (ADR-0001, #380): an ordinary `git merge --no-ff` under the base
- * repo's mutex, a deterministic post-merge check on the merged tip (no
- * critic), and `git revert -m 1` + escalate on a red check. There is no
- * freshness gate, no rebase re-entry, and no carry-forward verified-head: a
- * base that moved between verification and merging is normal — the merge
- * commit reconciles it, and the base is never re-verified.
- *
- * HISTORY: `mergePolicyDeps.runPostMergeCheck` (runner.ts) runs the real
- * command verifier with `repoDir: baseDir` — the SAME base repo the merge
- * itself just locked via `withRepoLock` — and that verifier adds its own
- * detached worktree via `Git.addDetachedWorktree`, itself locked. This used
- * to deadlock the Runner forever the first time postMergeCheck ran with a
- * real configured command (confirmed by hand while writing this file).
- * `withRepoLock` (src/execution/repo-lock.ts) is now reentrant on the same
- * repo key, so that self-nesting runs inline instead of hanging — case (a)
- * below drives the real production path end to end to prove it. The direct-
- * `runMergePolicy` post-merge-red/revert cases further down stay as focused,
- * fast coverage of the primitive's revert/escalate behaviour in isolation.
- */
-
 const git = (dir: string, ...args: string[]) => execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
 
 const tmpDirs: string[] = [];
@@ -39,8 +17,6 @@ const tmpPath = (prefix: string) => {
   return p;
 };
 
-/** A throwaway git repo on main with a local-markdown tracker declaration (so
- * the auto-merge close resolves a real no-op adapter). */
 function makeRepo(): string {
   const dir = tmpPath('harmonic-auto-merge-');
   execFileSync('git', ['init', '-b', 'main', dir], { encoding: 'utf8' });
@@ -54,9 +30,6 @@ function makeRepo(): string {
   return dir;
 }
 
-/** A verify command that always passes — a real spawned process, real exit
- * code, run against a real disposable detached worktree by the real command
- * verifier (no side effects on the repo). */
 function passingVerifier() {
   return verificationCommandSchema.parse({
     command: process.execPath,
@@ -65,12 +38,6 @@ function passingVerifier() {
   });
 }
 
-/**
- * A verify command that PASSES, and on its first run only, advances `main`
- * behind the candidate's back with an unrelated empty commit — modelling a
- * sibling task merging while this one is still verifying. The flag file makes
- * the effect fire once, so a re-run (there should be none) leaves main alone.
- */
 function siblingAdvanceVerifier(repo: string, flag: string) {
   return verificationCommandSchema.parse({
     command: process.execPath,
@@ -85,12 +52,6 @@ function siblingAdvanceVerifier(repo: string, flag: string) {
   });
 }
 
-/**
- * A verify command that PASSES, and on its first run only, writes CONFLICTING
- * content to `conflict.txt` (a fixed name, distinct from the per-ref impl
- * file) — so merging the candidate branch hits a real content conflict. The
- * flag file makes the effect fire once.
- */
 function conflictingSiblingVerifier(repo: string, flag: string) {
   const conflictFile = join(repo, 'conflict.txt');
   return verificationCommandSchema.parse({
@@ -139,9 +100,6 @@ describe('one merge policy, everywhere (issue #381, ADR-0001)', () => {
     closed: false,
   });
 
-  /** Mirror an afk Task (auto-merge onto main) with its local-markdown ticket
-   * committed on main: the ticket file lives in the base repo's checkout, and
-   * an in-place merge requires that checkout clean. */
   async function seedAfk(): Promise<{ taskId: number; trackerRef: number }> {
     const trackerRef = ref++;
     const task = await server.app.ctx.tasks.upsertMirrored(mirroredAfk(trackerRef));
@@ -188,10 +146,6 @@ describe('one merge policy, everywhere (issue #381, ADR-0001)', () => {
     '(a) an afk auto-merge Task with a REAL post-merge check merges as an ordinary merge commit (never a fast-forward), closes the ticket, and does not deadlock',
     async () => {
       const repo = makeRepo();
-      // A real configured verify command AND postMergeCheck: true drives the
-      // production `runPostMergeCheck` → `runCommandVerifier` path under the
-      // real merge lock — the exact combination that used to deadlock the
-      // Runner forever before `withRepoLock` became reentrant.
       await server.app.ctx.workspaces.update(wsId, { workingDir: repo, verificationCommand: [passingVerifier()] });
       await server.app.ctx.settingsStore.updateGlobal({
         merge: { postMergeCheck: true },
@@ -199,20 +153,13 @@ describe('one merge policy, everywhere (issue #381, ADR-0001)', () => {
       });
 
       const { taskId, attemptId, trackerRef } = await launchAfk();
-      // A generous but bounded wait: a regression back to the deadlock must
-      // surface as a `waitFor` timeout (then the `it` timeout below as a
-      // backstop), never as the test suite hanging forever.
       const task = await waitDone(taskId, attemptId, { timeoutMs: 20_000 });
       expect(task.state).toBe('done');
 
-      // A REAL merge commit: main's tip has two parents and appears in the
-      // branch's merge history — the inverse of the old fast-forward assertion.
       expect(git(repo, 'rev-parse', 'main^2')).toMatch(/^[0-9a-f]{40}$/);
       expect(Number(git(repo, 'rev-list', '--count', '--merges', 'main'))).toBeGreaterThanOrEqual(1);
       expect(git(repo, 'show', `main:impl-${trackerRef}.txt`)).toBe(`implementation ${trackerRef}`);
 
-      // Both the pre-merge candidate verification AND the post-merge check on
-      // the merged tip actually ran — the check is no longer skipped/hung.
       const events = await lifecycle(attemptId);
       const commandVerifications = events.filter((e) => e.event === 'verification' && e.mechanism === 'command');
       expect(commandVerifications).toHaveLength(2);
@@ -225,9 +172,6 @@ describe('one merge policy, everywhere (issue #381, ADR-0001)', () => {
     const repo = makeRepo();
     const flag = join(tmpPath('harmonic-auto-merge-flag-'), 'advanced');
     await server.app.ctx.workspaces.update(wsId, { workingDir: repo, verificationCommand: [siblingAdvanceVerifier(repo, flag)] });
-    // Isolate the assertion to the pre-merge verification pass: disable the
-    // post-merge check here (covered directly against runMergePolicy below —
-    // see the file-level SIMPLIFICATION note).
     await server.app.ctx.settingsStore.updateGlobal({
       merge: { postMergeCheck: false },
       drive: { prompt: JSON.stringify({ writeFiles: { 'impl-{ref}.txt': 'implementation {ref}\n' }, mcpFinish: true }) },
@@ -237,23 +181,17 @@ describe('one merge policy, everywhere (issue #381, ADR-0001)', () => {
     const task = await waitDone(taskId, attemptId);
     expect(task.state).toBe('done');
 
-    // main really did advance independently during verification...
     const events = await lifecycle(attemptId);
     const commandVerifications = events.filter((e) => e.event === 'verification' && e.mechanism === 'command');
-    // ...yet the candidate's verification ran exactly ONCE — no re-verification
-    // of a rebased/replayed tree, no `rebase-required`/`moving-base` events.
     expect(commandVerifications).toHaveLength(1);
     expect(events.map((e) => e.event)).not.toContain('rebase-required');
     expect(events.map((e) => e.event)).not.toContain('moving-base');
 
-    // The ordinary merge commit reconciled the moved base and the candidate.
     expect(git(repo, 'rev-parse', 'main^2')).toMatch(/^[0-9a-f]{40}$/);
     expect(Number(git(repo, 'rev-list', '--count', '--merges', 'main'))).toBeGreaterThanOrEqual(1);
     expect(git(repo, 'log', '--format=%s', 'main')).toContain('sibling advances independently');
     expect(git(repo, 'show', `main:impl-${trackerRef}.txt`)).toBe(`implementation ${trackerRef}`);
 
-    // Only the Attempt-start Rebase Task ran — no second (completion-rebase)
-    // row: that machinery no longer exists.
     const timeline = await timelineFor(taskId);
     expect(timeline).toHaveLength(1);
     expect(timeline[0]!.steps.filter((t) => t.type === 'rebase')).toHaveLength(1);
@@ -281,14 +219,9 @@ describe('one merge policy, everywhere (issue #381, ADR-0001)', () => {
     const task = await waitEscalated(taskId);
     expect(task.state).toBe('escalated');
 
-    // Task.escalationReason carries settleEscalated's "escalated to human: "
-    // prefix; the lifecycle event carries the raw merge-policy message. Both
-    // must name the 0-turn budget in plain language.
     expect(task.escalationReason).toMatch(/hit conflicts and automated resolution is disabled \(0 resolve turns\)/);
     expect(task.escalationReason).not.toMatch(/<<<<<<<|CONFLICT/);
 
-    // Nothing merged: the conflicted merge was aborted, main is still just the
-    // sibling's own commit.
     expect(git(repo, 'log', '--merges', 'main')).toBe('');
     expect(git(repo, 'show', 'main:conflict.txt')).toBe('sibling version');
 
@@ -299,17 +232,6 @@ describe('one merge policy, everywhere (issue #381, ADR-0001)', () => {
   });
 });
 
-/**
- * The post-merge check, driven directly against the real `runMergePolicy`
- * primitive (src/execution/merge-policy.ts) rather than through the Runner —
- * see the file-level SIMPLIFICATION note for why. `resolveConflictTurn` and
- * `escalate` are stubbed (ADR-0001 documents both as injected, variable
- * behaviour); `runPostMergeCheck` is a plain function under test control, so
- * these cases isolate exactly the merge / post-merge-check / revert sequence
- * against a REAL git repo with a REAL `git merge --no-ff` and a REAL
- * `git revert -m 1` — only the "run some verify commands" mechanics are
- * swapped out for a stub that doesn't hit the runner's deadlock.
- */
 describe('post-merge check (issue #381, ADR-0001) — direct against runMergePolicy', () => {
   function makeMergeableRepo(): { repo: string; taskBranch: string } {
     const repo = makeRepo();
@@ -342,8 +264,6 @@ describe('post-merge check (issue #381, ADR-0001) — direct against runMergePol
     expect(git(repo, 'rev-parse', 'main^2')).toMatch(/^[0-9a-f]{40}$/);
     expect(Number(git(repo, 'rev-list', '--count', '--merges', 'main'))).toBeGreaterThanOrEqual(1);
     expect(git(repo, 'show', 'main:impl.txt')).toBe('implementation');
-    // The post-merge check ran exactly once, against the merge commit that
-    // actually landed on main — never the pre-merge candidate tip.
     expect(checkedOids).toEqual([git(repo, 'rev-parse', 'main')]);
   });
 
@@ -368,8 +288,6 @@ describe('post-merge check (issue #381, ADR-0001) — direct against runMergePol
     expect(escalated).toMatch(/reverted/);
     expect(escalated).not.toMatch(/<<<<<<<|CONFLICT/);
 
-    // The merge commit is still in history (it happened) — a revert commit
-    // now sits on top of it, so the base's content is unaffected.
     expect(Number(git(repo, 'rev-list', '--count', '--merges', 'main'))).toBeGreaterThanOrEqual(1);
     expect(git(repo, 'log', '-1', '--format=%s', 'main')).toMatch(/^Revert /);
     expect(() => git(repo, 'show', 'main:impl.txt')).toThrow();

@@ -22,7 +22,6 @@ import {
 } from '../web/src/activity-model.js';
 import type { ActivityProcess, Cost, AttemptUsage, AttemptUsageEvent } from '../web/src/types.js';
 
-/** A AttemptUsage with a single-model total; `null` totals model the pre-first-token state. */
 function usage(total: number | null, extra: Partial<AttemptUsage> = {}): AttemptUsage {
   return {
     models: {},
@@ -199,7 +198,6 @@ describe('sortActivity', () => {
     const cheap = proc({ attemptId: 1, cost: { totalUsd: 0.1, byModel: {}, incomplete: false } });
     const dear = proc({ attemptId: 2, cost: { totalUsd: 9.0, byModel: {}, incomplete: false } });
     const needsCheap = proc({ attemptId: 3, escalated: true, cost: { totalUsd: 0.01, byModel: {}, incomplete: false } });
-    // Escalated row stays on top even though it is the cheapest.
     expect(sortActivity([cheap, dear, needsCheap], 'cost', 0).map((p) => p.attemptId)).toEqual([3, 2, 1]);
   });
 
@@ -292,7 +290,6 @@ describe('usageTotalTokens', () => {
 
 describe('tokensPerSecond', () => {
   it('is tokens over elapsed seconds', () => {
-    // 6000 tokens over 3s = 2000 tok/s
     expect(tokensPerSecond(proc({ startedAt: 1_000, usage: usage(6000) }), 4_000)).toBeCloseTo(2000);
   });
   it('is 0 before any tokens or before any elapsed time', () => {
@@ -355,7 +352,6 @@ describe('mergeRunUsage', () => {
     expect(merged.contextTokens).toBe(123);
     expect(merged.cost?.totalUsd).toBe(2.0);
     expect(usageTotalTokens(merged.usage)).toBe(9999);
-    // The untouched row is preserved.
     expect(after.find((p) => p.attemptId === 1)!.activity).toBeNull();
   });
 
@@ -395,10 +391,8 @@ describe('activitySummary', () => {
     expect(s.runningCount).toBe(2);
     expect(s.needsYouCount).toBe(1);
     expect(s.ceiling).toEqual({ running: 2, max: 4 });
-    // cost floor: 1 priced + 0.5 chat, with an unpriced member → incomplete
     expect(s.cost?.totalUsd).toBeCloseTo(1.5);
     expect(s.cost?.incomplete).toBe(true);
-    // tok/s: 6000/3 + 3000/2 + 3000/2 = 2000 + 1500 + 1500 = 5000
     expect(s.tokensPerSecond).toBeCloseTo(5000);
   });
 

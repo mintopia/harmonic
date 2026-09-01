@@ -28,8 +28,6 @@ interface SettingsFile {
   workspaces: Record<string, WorkspaceOverrides>;
 }
 
-/** The raw shape read back off disk before validation — everything is
- * `unknown` until `appConfigSchema`/`workspaceOverridesSchema` parse it. */
 interface RawSettingsFile {
   global?: unknown;
   workspaces?: Record<string, unknown>;
@@ -43,10 +41,6 @@ function loadFromDisk(path: string): SettingsFile {
     throw new Error(`Invalid Harmonic settings file at ${path}: ${err instanceof Error ? err.message : String(err)}`);
   }
   try {
-    // A settings file saved before a global field existed is missing it, and a
-    // bare parse would throw on boot; merging onto `defaultConfig()` fills new
-    // fields, and `migrateLegacyConfig` folds any still-lingering retired keys
-    // (mirrors the old boot-time config overlay).
     const global = appConfigSchema.parse(
       mergeConfig(defaultConfig(), migrateLegacyConfig((raw.global ?? {}) as LegacyConfig)),
     );
@@ -61,19 +55,9 @@ function loadFromDisk(path: string): SettingsFile {
 }
 
 /**
- * The YAML-backed settings store (ADR-0009, issue #391): owns the global
- * `AppConfig` and every per-Workspace setting override, both previously
- * persisted in SQLite (the `settings.config` row and nullable `workspaces`
- * columns respectively). In-memory state is authoritative for writes; reads
- * reload from disk when the file changed underneath us (an operator hand-
- * editing `settings.yaml`), throttled to at most one `stat` per second so the
- * hot resolve path (`getGlobal`/`getOverrides`, called per-Run/per-Task) never
- * pays a syscall per call.
- *
- * A malformed *existing* file (bad YAML, or a value that fails
- * `appConfigSchema`/`workspaceOverridesSchema`) fails loud at load time — it is
- * never silently discarded for defaults, since that would quietly drop an
- * operator's configured settings.
+ * The YAML-backed settings store: owns the global `AppConfig` and per-Workspace overrides. In-memory state
+ * is authoritative for writes; reads reload when the file changed on disk (throttled to one `stat`/s).
+ * A malformed existing file fails loud rather than falling back to defaults.
  */
 export class SettingsStore implements WorkspaceSettingsStore {
   private global: AppConfig;
@@ -138,10 +122,6 @@ export class SettingsStore implements WorkspaceSettingsStore {
     const stored = this.workspaces[String(workspaceId)];
     const merged = blankOverrides();
     if (stored) {
-      // `stored` only ever holds keys `setOverrides` didn't strip as null, so
-      // every present value here is a real override, never null — the cast is
-      // just working around the generic key/value pairing TS can't track
-      // through a runtime loop over a mapped type.
       for (const key of OVERRIDE_KEYS) {
         const value = stored[key];
         if (value !== undefined) (merged as Record<string, unknown>)[key] = value;
@@ -157,9 +137,9 @@ export class SettingsStore implements WorkspaceSettingsStore {
     const merged: Record<string, unknown> = { ...current };
     for (const field of OVERRIDE_KEYS) {
       const next = patch[field];
-      if (next === undefined) continue; // omitted: keep the current value
+      if (next === undefined) continue;
       if (next === null) {
-        delete merged[field]; // null = inherit = absent
+        delete merged[field];
       } else {
         merged[field] = next;
       }
@@ -178,13 +158,6 @@ export class SettingsStore implements WorkspaceSettingsStore {
     this.persist();
   }
 
-  /**
-   * Reload policy: the in-memory state is authoritative for our own writes,
-   * but an operator can hand-edit `settings.yaml` on disk, so every getter
-   * checks whether it changed first. Throttled to at most one `stat` per
-   * second — the hot resolve path (per-Run/per-Task) must not pay a syscall
-   * on every call.
-   */
   private reloadIfChanged(): void {
     const now = this.clock();
     if (now - this.lastCheckMs < 1000) return;
@@ -193,7 +166,7 @@ export class SettingsStore implements WorkspaceSettingsStore {
     try {
       stat = statSync(this.path);
     } catch {
-      return; // file missing (e.g. deleted underneath us): keep the in-memory state
+      return;
     }
     if (stat.mtimeMs === this.loadedMtimeMs) return;
     const file = loadFromDisk(this.path);
@@ -208,8 +181,6 @@ export class SettingsStore implements WorkspaceSettingsStore {
       if (Object.keys(entry).length > 0) workspaces[id] = entry;
     }
     writeFileSync(this.path, stringify({ global: this.global, workspaces }));
-    // Refresh the loaded mtime off our own write so the next getter's
-    // `reloadIfChanged` doesn't re-parse the file we just wrote.
     this.loadedMtimeMs = statSync(this.path).mtimeMs;
   }
 }

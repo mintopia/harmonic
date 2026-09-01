@@ -7,14 +7,6 @@ import { listResponse, paginate, paginationQuerySchema } from '../pagination.js'
 
 export const SESSION_COOKIE = 'harmonic_session';
 
-/**
- * Examples on this file's schemas follow schemas.ts's convention, with one
- * exception: no field that carries a credential gets a plausible-looking
- * value. Passwords and the once-returned key token use angle-bracket
- * placeholders instead, so nothing in the published spec can be mistaken for
- * a working secret or copied out of the docs page as one.
- */
-
 const loginBodySchema = z.object({
   password: z.string().meta({ example: '<your-operator-password>' }),
 });

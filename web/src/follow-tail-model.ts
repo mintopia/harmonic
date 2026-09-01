@@ -1,11 +1,3 @@
-/**
- * The follow/tail seam shared by the Timeline and the Attempt transcript. A
- * live stream is "following" while the viewport sits at (or within a small
- * threshold of) the bottom, so a newly-appended event keeps the latest in
- * view. The decision is kept pure and unit-tested here, away from the
- * scroll-container effect that reads it.
- */
-
 /** The scroll geometry the tail decision reads off a scroll container. */
 export interface ScrollExtent {
   scrollTop: number;

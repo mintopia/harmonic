@@ -5,14 +5,6 @@ import { join } from 'node:path';
 import { AcpConnection, AcpConnectionClosedError } from '../src/acp/connection.js';
 import { AcpDriver, AcpPromptTimeoutError } from '../src/acp/driver.js';
 
-/**
- * Issue #426 — bounding a single ACP prompt turn so a completed turn whose
- * `session/prompt` response is never delivered ends the turn instead of
- * blocking the drive loop until the 60m wall-clock guardrail. Two seams:
- * the connection's stdout-EOF rejection (readline `close`), and the driver's
- * per-turn inactivity timeout (suspended while a tool call is outstanding).
- */
-
 const STUB_HARNESS = join(import.meta.dirname, 'stub-harness.mjs');
 const scenario = (s: object) => JSON.stringify(s);
 
@@ -25,7 +17,6 @@ describe('AcpConnection — stdout EOF rejects pending requests (issue #426)', (
       onRequest: async () => null,
     });
     const pending = conn.request('session/prompt', { sessionId: 's' });
-    // The response never arrives; the harness closes stdout instead.
     stdout.end();
     await expect(pending).rejects.toBeInstanceOf(AcpConnectionClosedError);
   });
@@ -39,9 +30,6 @@ describe('AcpConnection — stdout EOF rejects pending requests (issue #426)', (
     });
     const pending = conn.request('session/prompt', { sessionId: 's' });
     conn.dispose();
-    // dispose() rejects nothing itself, but the run-end fail() a caller pairs
-    // with it is what settles pending — assert the close handler did not double
-    // up by rejecting with the EOF error. We settle it via fail() here.
     conn.fail(new Error('run finished'));
     await expect(pending).rejects.toThrow('run finished');
   });
@@ -67,8 +55,6 @@ describe('AcpDriver — per-turn inactivity timeout (issue #426)', () => {
   it('rejects a silent (never-responding) turn with AcpPromptTimeoutError', async () => {
     const driver = spawnDriver(200);
     await driver.handshake({ cwd: '/tmp/eof' });
-    // `exit: hang` runs the scenario updates then never sends the prompt
-    // response and never exits — the lost-response case.
     await expect(driver.prompt([{ type: 'text', text: scenario({ exit: 'hang' }) }])).rejects.toBeInstanceOf(
       AcpPromptTimeoutError,
     );
@@ -84,11 +70,6 @@ describe('AcpDriver — per-turn inactivity timeout (issue #426)', () => {
   }, 15_000);
 
   it('a completion signal bounds the turn on a short grace despite an outstanding tool', async () => {
-    // A long normal bound the grace must beat. A tool_call opens and never
-    // completes (a detached background sub-agent), then the harness hangs (lost
-    // prompt response) — the case that normally suspends the bound forever. Once
-    // the agent has signalled completion (finish_task/escalate_task), the turn
-    // is bounded on silence alone, so it ends within the grace instead.
     const driver = spawnDriver(60_000);
     await driver.handshake({ cwd: '/tmp/finish' });
     const turn = driver.prompt([
@@ -108,10 +89,6 @@ describe('AcpDriver — per-turn inactivity timeout (issue #426)', () => {
   it('suspends the inactivity bound while a tool call is outstanding', async () => {
     const driver = spawnDriver(200);
     await driver.handshake({ cwd: '/tmp/tool' });
-    // A tool_call opens, a 600ms gap (> the 200ms bound) passes while it is
-    // outstanding, then it completes and the turn ends. The bound must stay
-    // suspended across that gap, so the turn resolves normally instead of
-    // tripping the timeout.
     const result = await driver.prompt([
       {
         type: 'text',

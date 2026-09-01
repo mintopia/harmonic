@@ -12,12 +12,6 @@ import type { Ticket, TrackerAdapter } from '../src/tracker/adapter.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { allWorkspaces, makeSettingsStore } from './helpers.js';
 
-// Tracker state is an input, never a control path (ADR-0041): a mirrored
-// ticket closed in the tracker while its Task is `working` changes nothing
-// locally — no reopen, no escalation, no premature "done". Harmonic's own
-// merging closes the ticket idempotently when the Run gets there; a human
-// closing it early is simply mirrored once the Task rests.
-
 const mirrored = (ref: number, over: Partial<MirrorInput> = {}): MirrorInput => ({
   trackerRef: ref,
   prompt: `ticket ${ref}\n\nbody`,

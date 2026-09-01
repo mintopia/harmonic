@@ -39,7 +39,7 @@ export function fillSeries(series: DayCost[], from: number, to: number): DayCost
   const start = dayKey(from);
   const end = dayKey(Math.min(to, Date.now()));
   const span = Math.round((end - start) / DAY) + 1;
-  if (span < 2 || span > 62) return series; // all-time sprawl: plot the data as-is
+  if (span < 2 || span > 62) return series;
   const byDay = new Map(series.map((s) => [dayKey(s.day), s]));
   const out: DayCost[] = [];
   for (let i = 0; i < span; i++) {

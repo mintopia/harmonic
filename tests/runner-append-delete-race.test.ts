@@ -46,13 +46,8 @@ describe('Runner.recordRunEvent — task deleted mid-append (issue #371)', () =>
     };
     const run = await runs.create(task.id, snapshot);
 
-    // The production race: the task (still 'ready', so deletable) is deleted,
-    // cascading its Run + run_events away, before an in-flight turn's event
-    // append lands — the append then FK-violates against the vanished Run.
     await tasks.delete(task.id);
 
-    // Without containment this rejection reaches the process as an unhandled
-    // rejection and takes the whole server down. Assert none escapes.
     const rejections: unknown[] = [];
     const onRejection = (reason: unknown): void => {
       rejections.push(reason);

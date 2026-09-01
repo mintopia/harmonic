@@ -11,14 +11,14 @@ import { costSchema, errorResponse, idParamsSchema, okResponseSchema, attemptUsa
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
 
 const createConversationInputSchema = z.object({
-  /** The owning Workspace (ADR-0008); defaults to the earliest-created Workspace when omitted. */
+  /** The owning Workspace; defaults to the earliest-created Workspace when omitted. */
   workspaceId: z.number().int().positive().optional().meta({ example: 1 }),
   harness: z.enum(HARNESS_IDS).optional().meta({ example: 'claude' }),
   model: z.string().min(1).optional().meta({ example: 'sonnet-5' }),
   workingDir: z.string().min(1).optional().meta({ example: '/home/dev/harmonic' }),
 });
 
-/** Rename a Conversation; null clears the custom title, falling back to the derived one (issue 15). */
+/** Rename a Conversation; null clears the custom title, falling back to the derived one. */
 const updateConversationInputSchema = z.object({
   title: z.string().nullable().meta({ example: 'Rate limiting for the tasks API' }),
 });
@@ -28,7 +28,7 @@ const turnInputSchema = z.object({
 });
 const turnResponseSchema = z.object({
   ok: z.literal(true).meta({ example: true }),
-  /** True when a Turn was already running and this message was queued as the next Turn (issue 14). */
+  /** True when a Turn was already running and this message was queued as the next Turn. */
   queued: z.boolean().meta({ example: false }),
 });
 const interruptInputSchema = z
@@ -42,7 +42,7 @@ const permissionParamsSchema = z.object({
 });
 const answerPermissionInputSchema = z.object({
   optionId: z.string().min(1).meta({ example: 'allow_once' }),
-  /** "Always allow in {dir}" — persist a Permission Rule for this tool kind + Working Directory (ADR-0007). */
+  /** "Always allow in {dir}" — persist a Permission Rule for this tool kind + Working Directory. */
   remember: z.boolean().optional().meta({ example: false }),
 });
 
@@ -50,9 +50,8 @@ const answerPermissionInputSchema = z.object({
 const conversationSchema = z
   .object({
     id: z.number().meta({ example: 7402 }),
-    /** Operator-set title; null falls back to a title derived from the first Turn (issue 15). */
+    /** Operator-set title; null falls back to a title derived from the first Turn. */
     title: z.string().nullable().meta({ example: 'Rate limiting for the tasks API' }),
-    /** The owning Workspace (ADR-0008). */
     workspaceId: z.number().meta({ example: 1 }),
     /** One of config.ts's HARNESS_IDS; stored as plain text. */
     harness: z.string().meta({ example: 'claude' }),
@@ -61,7 +60,7 @@ const conversationSchema = z
     state: z.enum(CONVERSATION_STATES).meta({ example: 'active' }),
     /** The warm ACP session id, set once the harness spawns; null before the first Turn. */
     sessionId: z.string().nullable().meta({ example: 'b7e4d2a1-6c93-4f18-8a52-1d0f3b9e7c46' }),
-    /** Running Usage accumulated across Turns (issue 12); null before any usage. */
+    /** Running Usage accumulated across Turns; null before any usage. */
     usage: attemptUsageSchema.nullable(),
     /** Cost of the running Usage; honest-incomplete for unpriced models. */
     cost: costSchema.nullable(),
@@ -80,7 +79,7 @@ const conversationSchema = z
 
 const conversationsListResponseSchema = listResponse('conversations', conversationSchema);
 const conversationsListQuerySchema = z.object({
-  /** Scope to one Workspace's Conversations (ADR-0008); omitted means every Workspace. */
+  /** Scope to one Workspace's Conversations; omitted means every Workspace. */
   workspaceId: z.coerce.number().int().positive().optional().meta({ example: 1 }),
 });
 

@@ -55,12 +55,6 @@ import {
   touchTargetInline,
 } from '../ui';
 
-/**
- * The cold-cache read is time-dependent — idle time keeps growing with no new
- * Turn, unlike every other field here, which changes only on a
- * `conversation_changed` message — so this re-evaluates on a 20s interval
- * rather than only when `conversation` itself changes.
- */
 function TelemetryStrip({ conversation, events }: { conversation: Conversation; events: ConversationEvent[] }) {
   const [now, setNow] = useState(() => Date.now());
 
@@ -72,8 +66,6 @@ function TelemetryStrip({ conversation, events }: { conversation: Conversation; 
   const tokens = formatTokens(conversation.usage);
   const cost = formatCost(conversation.cost);
   const context = formatContextUsage(computeContextUsage(conversation));
-  // The cold-cache clock runs from the last Turn, not the Conversation's
-  // updatedAt (which a rename bumps without refreshing any cache).
   const coldCache = formatColdCacheMessage({
     lastTurnAt: lastConversationTurnAt(events) ?? conversation.updatedAt,
     cacheTtlSeconds: conversation.cacheTtlSeconds,
@@ -152,9 +144,6 @@ function StreamAnnouncer({
 
   useEffect(() => {
     const items = coalesceEvents(events);
-    // First render for a Conversation: swallow its backlog. Opening a
-    // conversation with history must not read every past tool call aloud —
-    // only transitions that merge *while the operator is here* get spoken.
     if (seededFor.current !== resetKey) {
       cursor.current = announceTransitions(items, EMPTY_ANNOUNCE_CURSOR).cursor;
       seededFor.current = resetKey;
@@ -164,8 +153,6 @@ function StreamAnnouncer({
     const { announcements, cursor: next } = announceTransitions(items, cursor.current);
     cursor.current = next;
     if (announcements.length === 0) return;
-    // Cap the node list so a long-lived conversation doesn't grow the DOM
-    // without bound; dropping old nodes is silent (removals aren't announced).
     setLog((prev) =>
       [...prev, ...announcements.map((text) => ({ id: nextId.current++, text }))].slice(-20),
     );
@@ -194,7 +181,7 @@ function PermissionPrompt({
   const kind = pending.request.toolCall?.kind;
   const alwaysAllowOptionId = chooseAlwaysAllowOptionId(pending.request.options);
 
-  // When this prompt appears focus moves to its first choice (issue #96). In
+  // When this prompt appears focus moves to its first choice. In
   // the same pass an assertive live region is filled — empty at first render,
   // populated a tick later — because an `aria-live` node inserted with its text
   // already present isn't reliably announced; only a change observed *after* the
@@ -591,8 +578,6 @@ export function ConversationLauncher({
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
 
-  // `focusedRef` mirrors `open`/`view` into a ref so the always-on subscription
-  // below never needs to reconnect just because the operator switched panes.
   const [attention, setAttention] = useState<AttentionState>(NO_ATTENTION);
 
   const upsertConversationInList = useCallback((c: Conversation) => {
@@ -608,17 +593,12 @@ export function ConversationLauncher({
     focusedRef.current = open && view.kind === 'detail' ? view.conversationId : null;
   }, [open, view]);
 
-  // Clears the whole badge on the collapsed → open transition (the LOCKED
-  // contract's first clearing trigger).
   const wasOpenRef = useRef(false);
   useEffect(() => {
     if (open && !wasOpenRef.current) setAttention((current) => clearAllAttention(current));
     wasOpenRef.current = open;
   }, [open]);
 
-  // Clears one Conversation's entry the moment the operator views it (the
-  // LOCKED contract's other trigger) — covers switching between
-  // Conversations without closing the panel in between.
   useEffect(() => {
     if (open && view.kind === 'detail' && view.conversationId !== null) {
       setAttention((current) => clearAttention(current, view.conversationId as number));
@@ -689,19 +669,11 @@ export function ConversationLauncher({
     <div
       role="dialog"
       aria-label="Conversation"
-      // Layout-only signal, read by the toast stack via `group-has-` so it can
-      // dodge a docked panel without this component publishing its open state
-      // (see toast.tsx). Expanded is deliberately a different value: it is a
-      // viewport overlay with no free corner to dodge into.
       data-dock={expanded ? 'expanded' : 'docked'}
       onKeyDown={(e) => e.key === 'Escape' && setOpen(false)}
       className={`z-40 flex flex-col rounded-lg bg-surface shadow-bar ${
         flourish ? 'motion-safe:animate-[dialog-in_150ms_var(--ease-out-quint)]' : ''
       } ${
-        // Docked: absolute within App's below-header region, so the panel
-        // runs the full height of the working view without ever needing to
-        // know where the header ends. Expanded stays `fixed`: it is a
-        // viewport overlay and covers the header by design.
         expanded
           ? 'fixed inset-6'
           : 'absolute inset-y-4 right-4 w-[26rem] max-w-[calc(100%-2rem)]'

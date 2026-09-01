@@ -17,13 +17,6 @@ const OUTCOME_TONE: Record<VerificationOutcome, string> = {
   escalate: 'bg-running-tint text-running',
 };
 
-/**
- * Verdict/outcome → glyph (issue #174): the tone above is colour alone, which
- * fails for colourblind operators, so every chip also carries a shape —
- * `check` for the good outcome, `close` for the bad one, and the new
- * `alert-triangle` for "needs a human" (inconclusive/escalate), mirroring the
- * tone's own pass/fail/inconclusive grouping one-for-one.
- */
 const VERDICT_ICON: Record<Verdict, IconName> = {
   pass: 'check',
   fail: 'close',
@@ -36,9 +29,6 @@ const OUTCOME_ICON: Record<VerificationOutcome, IconName> = {
   escalate: 'alert-triangle',
 };
 
-// `inline-flex items-center gap-1` lets the glyph sit before the label inside
-// the chip (icon+colour+text, never colour alone) without touching `chip`
-// itself, which other callers rely on staying a plain inline pill.
 function verdictChip(verdict: Verdict): string {
   return `${chip} ${VERDICT_TONE[verdict]} inline-flex items-center gap-1`;
 }

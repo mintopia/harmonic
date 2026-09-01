@@ -15,9 +15,9 @@ const STEP_TEXT: Record<IntegrationStepState, string> = {
   pending: 'text-faint',
 };
 
-/** ADR-0011: the whole-Epic integration progress bar (verify → merge →
+/** The whole-Epic integration progress bar (verify → merge →
  * post-merge check → retire), shown once the Epic reaches the gate. Shared
- * by the Board surface and the Epic summary page (ADR-0015/0016) so both
+ * by the Board surface and the Epic summary page so both
  * render the same server-authoritative bar without drift. */
 export function EpicIntegrationBar({ epic }: { epic: Epic }) {
   const steps = integrationSteps(epic);

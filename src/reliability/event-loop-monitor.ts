@@ -1,20 +1,3 @@
-/**
- * Event-loop stall detector (issue #200 / ADR-0029 §5).
- *
- * Every HTTP handler and background loop shares the one Node event loop, so a
- * slow query or a hot loop blocks *every* request at once. This
- * probes loop delay on a fixed cadence: it schedules a timer for `probeMs` and,
- * when the timer fires, measures how much later than that it actually ran. That
- * overshoot is the time the loop spent blocked. When the overshoot crosses
- * `stallMs` it reports a stall, turning a silent freeze into a logged event, and
- * exposes {@link underPressure} so cooperative callers can shed work.
- *
- * It cannot pre-empt the blocking code — it only observes and reports. The cure
- * is async DB access plus loops that yield (see `./yield.ts`).
- *
- * Named "monitor", not "watchdog": CONTEXT.md reserves watchdog/timeout/limit
- * vocabulary for the per-Run Guardrail concept, which this is not.
- */
 import { logger } from '../logger.js';
 
 export interface StallInfo {

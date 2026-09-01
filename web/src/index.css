@@ -2,7 +2,6 @@
 @import '@fontsource/jetbrains-mono/400.css';
 @import '@fontsource/jetbrains-mono/600.css'; /* the code face (Mono Is Code Rule) */
 
-/* ── Paper (DESIGN.md) ────────────────────────────────────────────── */
 :root {
   color-scheme: light;
 
@@ -24,10 +23,6 @@
   --hm-accent-tint: #e0f0ef;
   --hm-on-accent: #ffffff;
 
-  /* Attempt-activity heatmap ramp (issue #405): a neutral empty tile, then a
-     four-step teal intensity ramp. Empty is neutral so "no activity" never
-     pre-reads as a faint teal count; the ramp darkens with intensity on Paper,
-     brightens on dark. Monotonic + distinguishable, gated in contrast.test.ts. */
   --hm-heat-0: #e7ebe7;
   --hm-heat-1: #bfe4e0;
   --hm-heat-2: #7fcbc4;
@@ -61,22 +56,17 @@
   --hm-tool-dot: #0d7271;
   --hm-tool-tint: #ddefee;
 
-  /* Token-class ramp (ADR-0014): warm categorical, deliberately off the status
-     hues above so a class can't pre-read as a running/merged/fail/await state. */
   --hm-token-input: #9e760c;
   --hm-token-output: #c86418;
   --hm-token-cache-read: #cf584a;
   --hm-token-cache-write: #b8478c;
 
-  /* Depth: real shadows in light… */
   --hm-shadow-card: 0 1px 2px rgb(27 30 36 / 0.06), 0 6px 18px rgb(27 30 36 / 0.07);
   --hm-shadow-float: 0 8px 20px rgb(23 26 34 / 0.12), 0 24px 60px rgb(23 26 34 / 0.16);
   --hm-shadow-bar: 0 16px 44px rgb(27 30 36 / 0.16), 0 0 0 1px var(--hm-hairline);
   --hm-shadow-btn: 0 1px 2px rgb(13 114 113 / 0.32);
 }
 
-/* …and lightness steps in dark (warm-neutral near-black). Floating elements keep a
-   hairline ring since their shadow disappears on a dark field. */
 :root[data-theme='dark'] {
   color-scheme: dark;
 
@@ -266,26 +256,15 @@
 }
 
 @theme {
-  /* Paper Soft radii. `.bold` below swaps these for the compact density. */
   --radius-sm: 8px;
   --radius-md: 10px;
   --radius-lg: 13px;
   --radius-xl: 13px;
 
-  /* Code face: JetBrains Mono, code only (the Mono Is Code Rule). */
   --font-data: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 
-  /* Display / UI / body all ride the system sans; character comes from the
-     scale, weight, and spacing. (Space Grotesk is retired with the Ledger —
-     `--font-display` stays as a token so `font-display` usages keep working,
-     now resolving to the same system sans as the rest of the UI.) */
   --font-display: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 
-  /* Type roles (fixed rem scale). Weights ride the Three Weights ramp
-     (DESIGN.md §3): 400 body / 500–550 UI emphasis / 650 headings, with 750
-     for the Display title, the Stats hero, and the wordmark (the
-     `font-display-weight` utility below). tabular-nums lets figures line up in
-     sans, so numbers never need the code face. */
   --text-hero: 3.25rem;
   --text-hero--line-height: 1;
   --text-hero--letter-spacing: -0.03em;
@@ -304,15 +283,11 @@
   --text-data: 0.8125rem;
   --text-data--line-height: 1.5;
 
-  /* The sidebar collapses to a top drawer below this width. */
   --breakpoint-rail: 900px;
 
   --ease-out-quint: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* Paper Bold density keeps the same information hierarchy in less rounded
-   geometry. State-tint washes let cards and graph nodes retain their state
-   layer even where their own structure becomes deliberately flat. */
 .bold {
   --radius-sm: 3px;
   --radius-md: 3px;
@@ -329,10 +304,7 @@
 .bold :is(.node.await, .node.escalated) .node-fill { fill: var(--hm-await-tint); }
 .bold :is(.node.merged, .node.done) .node-fill { fill: var(--hm-merged-tint); }
 
-/* The Display weight — the top of the Three Weights ramp (DESIGN.md §3: "750
-   for the Display title"). A named utility so the Display title, the Stats hero
-   figure, and the wordmark never fall back to Tailwind's stock font-bold (700).
-   Kept off the `--font-weight-*` theme namespace so it doesn't collide with the
+/* Kept off the `--font-weight-*` theme namespace so it doesn't collide with the
    `font-display` family utility (`--font-display`). */
 @utility font-display-weight {
   font-weight: 750;
@@ -345,14 +317,9 @@
     font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
     font-size: var(--text-body);
     line-height: var(--text-body--line-height);
-    /* Live-updating digits must not jitter, whatever their role. */
     font-variant-numeric: tabular-nums;
   }
 
-  /* Themed text selection uses Paper's teal action voice (Accent Tint fill / Ink text)
-     instead of
-     the OS default blue, so a drag-select reads as part of the system in both
-     themes. `color-scheme` already flips native form controls and scrollbars. */
   ::selection {
     background-color: var(--hm-accent-tint);
     color: var(--hm-ink);
@@ -378,9 +345,6 @@
     }
   }
 
-  /* Toasts rise a few px into place; motion-safe: gates it in the markup. */
-  /* Toasts hang from under the header, so they enter downward — the reverse
-     of the bottom-right stack this replaced. */
   @keyframes toast-in {
     from {
       opacity: 0;
@@ -388,9 +352,6 @@
     }
   }
 
-  /* Indeterminate top-edge progress: a sliver sweeps across the track while a
-     fetch is in flight. motion-reduce falls back to a static filled track so
-     the affordance is still visible without animation. */
   @keyframes indeterminate-progress {
     from {
       transform: translateX(-100%);
@@ -404,9 +365,6 @@
     animation: indeterminate-progress 1.1s ease-in-out infinite;
   }
 
-  /* Running state-dots pulse so "work in flight" reads at a glance on Paper
-     and the run rail (DESIGN.md § 6). motion-reduce holds the dot at full
-     opacity — the figure never disappears, only the motion does. */
   @keyframes dot-pulse {
     0%,
     100% {
@@ -438,8 +396,6 @@
   }
 }
 
-/* Rendered tracker-issue Markdown (see markdown.ts / Markdown.tsx). Paper
-   tokens throughout; mono only on code (the Mono Is Code Rule). */
 .markdown {
   min-width: 0;
 }
@@ -539,8 +495,6 @@
   max-width: 100%;
 }
 
-/* Native <select> chevron replaced with a Paper one so the control reads as a
-   field, not an OS widget (the option popup stays native/accessible). */
 .hm-select {
   -webkit-appearance: none;
   appearance: none;

@@ -20,33 +20,13 @@ export interface GuardrailEventInput {
 }
 
 /**
- * The Guardrail-trip event log store (issue #127, ADR-0019, reliability-design
- * Unit A line 104): persists every Guardrail trip — today only the
- * Step-scoped wall-clock Guardrail — as an immutable row with a per-Run
- * monotonic `seq`. Mirrors `VerificationAttemptStore`
- * (`domain/verification-attempts.ts`) exactly, down to the `seq`-assignment
- * recipe and its rationale: this is the persisted substrate only. Nothing
- * here decides anything, trips a Run to Escalation, or touches the Run/settle
- * path — a caller (the Runner, out of scope here) invokes `append` when its
- * own pure trip-detection logic fires, and a later reader derives the
- * Escalation card's reason from `list(runId)` itself. Events are only ever
- * appended and read; there is no update or delete path, by design.
+ * The Guardrail-trip event log store: every Guardrail trip as an immutable row
+ * with a per-Attempt monotonic `seq`. Append and read only.
  */
 export class GuardrailEventStore {
   constructor(private readonly db: AsyncDbHandle) {}
 
-  /**
-   * Append a Guardrail-trip event to `attemptId`'s log, assigning the next
-   * monotonic `seq` as `max(seq)+1` (1-based) — same recipe, and the same
-   * cross-process integrity backstop (the `(attempt_id, seq)` unique index
-   * rejects a racing duplicate `seq` with a raw UNIQUE violation rather than
-   * corrupting the log's total order), as `VerificationAttemptStore.append`.
-   *
-   * The `max(seq)` read and the insert run as one write-queue unit (ADR-0029 §3):
-   * the async single-writer queue now stands in for better-sqlite3's synchrony,
-   * so no concurrent append can interleave between the read and the insert and
-   * steal the `seq` — mirroring `VerificationAttemptStore.append`.
-   */
+  /** Append a Guardrail-trip event to `attemptId`'s log, assigning the next monotonic `seq` (1-based). */
   append(attemptId: number, event: GuardrailEventInput, now: number = Date.now()): Promise<GuardrailEventRow> {
     return this.db.write(async (db) => {
       const seq =

@@ -1,15 +1,6 @@
 import { fillTemplate, type DriveFields } from '../../src/execution/prompt-template.js';
 import { buildCriticPrompt } from '../../src/verification/critic-prompt.js';
 
-/**
- * Compile the settings prompts to the exact text the server would send, so each
- * editor can show a full "Compiled preview" (issue: operator-authored prompts).
- * The preview is fidelity-critical, so it calls the SAME pure builders the server
- * uses (`prompt-template.ts`, `critic-prompt.ts`) rather than re-implementing the
- * interpolation or the critic scaffolding — the only difference is that the
- * tokens are filled with illustrative sample values instead of a live Task's.
- */
-
 /** Illustrative values for the `{skill}/{ref}/{url}/{title}/{body}` tokens. */
 export const SAMPLE_DRIVE_FIELDS: DriveFields = {
   skill: '/implement',
@@ -22,7 +13,6 @@ export const SAMPLE_DRIVE_FIELDS: DriveFields = {
 /** Illustrative value for the `{taskId}` token. */
 export const SAMPLE_TASK_ID = '123';
 
-/** Illustrative verified-head/base revisions for the critic preview's revision block. */
 const SAMPLE_VERIFIED_HEAD_OID = 'ec5ed1f1edead000000000000000000000000000';
 const SAMPLE_BASE_OID = 'ba5e0000000000000000000000000000000000000';
 

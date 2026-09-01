@@ -59,8 +59,6 @@ export function buildHeatmap(series: DayCost[], now: number, weeks = HEATMAP_WEE
   const today = dayKey(now);
   const lastSunday = addDays(today, -new Date(today).getDay());
   const from = addDays(lastSunday, -(weeks - 1) * 7);
-  // Re-key the server's day series onto the client's local-midnight grid (see
-  // dayKey) so a non-UTC viewer's cells actually find their attempt counts.
   const byDay = new Map(series.map((s) => [dayKey(s.day), s.attempts]));
 
   const grid: (HeatCell | null)[][] = [];

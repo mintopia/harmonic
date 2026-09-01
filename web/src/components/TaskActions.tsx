@@ -25,8 +25,6 @@ function CancelButton({ className, onConfirm }: { className: string; onConfirm: 
   );
 }
 
-/** Force-complete a working task, armed with a two-step confirm — it SIGKILLs a
- * working agent and skips verification, so no single misclick commits it. */
 function CompleteButton({ className, onConfirm }: { className: string; onConfirm: () => void }) {
   const { armed, trigger, ref } = useArmedConfirm(onConfirm);
   return (
@@ -40,11 +38,6 @@ function CompleteButton({ className, onConfirm }: { className: string; onConfirm
   );
 }
 
-/** Accept, armed with a two-step confirm when the run's Verification verdict
- * is block/escalate (issue #174 FIX 1). The critic's verdict lives in an
- * un-flagged Details tab, so a red verdict was invisible here and Accept could
- * merge it blind; arming forces a second, verdict-naming click before it does,
- * mirroring CancelButton/CompleteButton's own gate above. */
 function AcceptButton({ className, label, onConfirm }: { className: string; label: string; onConfirm: () => void }) {
   const { armed, trigger, ref } = useArmedConfirm(onConfirm);
   return (
@@ -58,10 +51,6 @@ function AcceptButton({ className, label, onConfirm }: { className: string; labe
   );
 }
 
-/** Force-Accept: the as-is override that skips server-side candidate
- * verification and merges the branch head as it stands. Quiet (never the
- * loudest control on the surface — Accept keeps that) and armed like
- * CompleteButton, since it shares the same "skips verification" risk. */
 function ForceAcceptButton({ className, onConfirm }: { className: string; onConfirm: () => void }) {
   const { armed, trigger, ref } = useArmedConfirm(onConfirm);
   return (
@@ -75,7 +64,6 @@ function ForceAcceptButton({ className, onConfirm }: { className: string; onConf
   );
 }
 
-/** Close an escalated ticket (cancel + branch/worktree/tracker cleanup), armed like Cancel. */
 function CloseButton({ className, label, onConfirm }: { className: string; label: string; onConfirm: () => void }) {
   const { armed, trigger, ref } = useArmedConfirm(onConfirm);
   return (
@@ -98,9 +86,6 @@ export function TaskActions({
 }: {
   task: Task;
   variant: 'card' | 'footer';
-  // Optional (issue #174 FIX 1): only the detail modal's footer has the
-  // selected run's Verification log in scope; card callers pass nothing and
-  // Accept stays the plain immediate button it always was.
   verificationAttempts?: VerificationAttempt[];
   onEdit: (task: Task) => void;
   onChanged: () => void;
@@ -127,8 +112,6 @@ export function TaskActions({
     switch (action) {
       case 'accept': {
         const onConfirm = actDone(() => api.acceptTask(task.id), `${taskLabel(task.id)} accepted — merging`);
-        // Force-Accept (as-is override): skips server-side candidate
-        // verification and merges the branch head as it stands.
         const onForceConfirm = actDone(
           () => api.acceptTask(task.id, { force: true }),
           `${taskLabel(task.id)} force-accepted — merging`,
@@ -212,11 +195,6 @@ export function TaskActions({
     }
   };
 
-  // Footer (ticket rail) stacks the verbs vertically and full-width to match
-  // the Paper mockup — Accept on top. `card` keeps the original inline row. The
-  // escalated review gate drops Delete on this surface (the mockup's pinned
-  // Actions are just Accept / Reject / Close); Delete stays on the card and the
-  // other footer states as the rare escape hatch.
   const container =
     variant === 'footer'
       ? 'flex flex-col gap-2 [&>button]:w-full [&>button]:justify-center'

@@ -15,49 +15,20 @@ export type Priority = (typeof PRIORITIES)[number];
 export const MERGE_FATES = ['auto-merge', 'open-PR', 'artifact'] as const;
 export type MergeFate = (typeof MERGE_FATES)[number];
 
-/**
- * The default Drive Prompt template (issue #33). Placeholders `{skill}` (from
- * the Task's Workflow / Wayfinder Type), `{ref}`, `{url}` are filled from the
- * mirrored Task. `{title}`/`{body}` are still supported for operators who want
- * to inline the ticket text, but the default omits them — the agent fetches
- * the issue itself, so the skill stays the source of truth and Harmonic only
- * points at the ticket and states its contract (fetch → resolve → finish_task).
- */
+/** The default Drive Prompt template. Placeholders: `{skill}`, `{ref}`, `{url}`; `{title}`/`{body}` are also supported. */
 export const DEFAULT_DRIVE_PROMPT = `{skill}
 
 Resolve tracker issue #{ref} ({url}) autonomously, end to end — read the issue yourself for the details. Work only on the branch you start on; Harmonic owns branching and closes the ticket once it verifies your work, so don't create branches or close the ticket yourself. When the work is done, comment a summary on the issue and call \`finish_task\`.`;
 
-/**
- * The default Unattended Reminder, appended to every auto-driven prompt (initial
- * and continue) by `AutoDrive.prompt`/`continuePrompt`. Operator-editable via
- * `config.drive.unattendedReminder`. Harmonic settles a run when the prompt turn
- * resolves, so an agent that ends its turn to idle-wait used to look "done".
- * This tells the agent the turn boundary is a checkpoint, not an exit, and gives
- * it the two signals the Runner reads — `finish_task` and `escalate_task` — with
- * its Harmonic Task id filled into `{taskId}`. The don't-close-the-ticket rule
- * lives in the Drive Prompt; it is not repeated here.
- */
+/** The default Unattended Reminder, appended to every auto-driven prompt; `{taskId}` is filled per Task. */
 export const UNATTENDED_REMINDER = `## Running unattended
 
 You are Harmonic Task {taskId} — no human is watching this turn. Ending a turn is a checkpoint, not a handoff, and Harmonic re-prompts you only a limited number of times, so don't idle-wait on background work (CI, watchers) or input. Keep working until the task is genuinely done, then call \`finish_task\` (taskId={taskId}). If you're blocked on a decision only a human can make, call \`escalate_task\` (taskId={taskId}) with a reason instead of guessing or waiting.`;
 
-/**
- * The default Continue Prompt, sent when an auto-driven Run ends its turn
- * without a finish/escalate signal (`AutoDrive.continuePrompt`). Operator-editable
- * via `config.drive.continuePrompt`. The Unattended Reminder is appended after
- * it, so this carries only the "pick it back up" nudge. `{taskId}` is filled
- * per Task.
- */
+/** The default Continue Prompt, sent when an auto-driven Attempt ends its turn without a finish/escalate signal; `{taskId}` is filled per Task. */
 export const DEFAULT_CONTINUE_PROMPT = `Your last turn ended but Task {taskId} isn't finished — you haven't called \`finish_task\`. Pick the work back up and drive it to completion now; don't idle-wait, then call \`finish_task\` when it's done.`;
 
-/**
- * The default Task Prompt template for a **native** (non-mirrored) Run. The
- * bare `{prompt}` preserves the pre-template behaviour exactly — the Task's own
- * prompt is sent verbatim. Operators can wrap it (a house preamble, a "when
- * done" coda) using the placeholders `{prompt}` (the Task's prompt), `{id}`,
- * `{workingDir}`, `{harness}`, `{model}`. Mirrored Tasks ignore this and use
- * the Drive Prompt instead (auto-drive.ts).
- */
+/** The default Task Prompt template for a native Attempt. Placeholders: `{prompt}`, `{id}`, `{workingDir}`, `{harness}`, `{model}`. */
 export const DEFAULT_TASK_PROMPT = `{prompt}`;
 
 export const harnessConfigSchema = z.object({
@@ -86,12 +57,7 @@ export const modelPriceSchema = z.object({
   cacheWrite: z.number().nonnegative().meta({ example: 3.75 }),
 });
 
-/**
- * Optional per-model facts for Conversation telemetry (issue 12). Both
- * optional: with no window, context usage degrades to raw token counts; with
- * no TTL, the cold-cache warning is suppressed — never a fake percentage or a
- * guessed staleness.
- */
+/** Optional per-model facts for Conversation telemetry; without a window, context usage degrades to raw token counts, and without a TTL the cold-cache warning is suppressed. */
 export const modelInfoSchema = z.object({
   /** Total context window in tokens, for the context-usage percentage. */
   contextWindow: z.number().int().positive().optional().meta({ example: 200000 }),
@@ -145,24 +111,10 @@ export const verificationReviewSchema = z
   });
 export type VerificationReview = z.infer<typeof verificationReviewSchema>;
 
-/**
- * A Workspace's command-verifier override is **list-grain** (ADR-0044 §D, issue
- * #338): the whole command list inherits or overrides as a unit. At the field
- * level `null`/absent = inherit the global list; here a non-empty array overrides
- * it with that exact ordered list, and an explicit empty array is *off* — run no
- * commands in this Workspace. There is no per-command inheritance and no
- * `{ off: true }` sentinel: an empty array *is* off.
- */
+/** List-grain override: `null`/absent inherits the global list, a non-empty array replaces it, an empty array runs no commands. */
 export const verificationCommandOverrideSchema = z.array(verificationCommandSchema);
 
-/**
- * The budget Guardrail (issue #108/#126, ADR-0019): a mandatory wall-clock bound
- * per afk Run plus optional token and cost caps. Wall-clock is never null — it
- * always guards; tokens and cost are opt-in (null = unset). All three are
- * enforced live off the Usage tailer (wall-clock #127, token/cost #128). The
- * effective config is snapshotted onto a Run at start (`RunStore.create`) so a
- * later limit change can't retroactively change whether that Run would trip.
- */
+/** Wall-clock is mandatory; tokens and cost are opt-in (null = unset). The effective config is snapshotted onto an Attempt at start. */
 export const budgetGuardrailSchema = z.object({
   /** Mandatory wall-clock bound in minutes, scoped to execution/validation/verification. */
   wallClockMinutes: z.number().positive().default(60).meta({ example: 60 }),
@@ -173,14 +125,7 @@ export const budgetGuardrailSchema = z.object({
 });
 export type BudgetGuardrail = z.infer<typeof budgetGuardrailSchema>;
 
-/**
- * The configured models a cost cap can't measure (issue #126, ADR-0019). A cost
- * cap with no token fallback needs every model a Run could bill against to be
- * priced — an unpriced model has no enforceable spend bound. Returns the empty
- * set when the cap is measurable (no cost cap, a token fallback exists, or every
- * model is priced). Shared by the global-config check and the per-Workspace
- * budget-override check (issue #166) so both reject the same invalid combination.
- */
+/** The configured models a cost cap can't measure: a cost cap with no token fallback needs every model priced. Empty when the cap is measurable. */
 export function unpricedModelsForCostCap(
   budget: Pick<BudgetGuardrail, 'costUsd' | 'tokens'>,
   config: Pick<AppConfig, 'harnesses' | 'prices' | 'verify'>,
@@ -192,33 +137,18 @@ export function unpricedModelsForCostCap(
     for (const m of harness.models) configured.add(m);
     configured.add(harness.defaultModel);
   }
-  // The agent critic (#132) is another model a Run bills against — the budget
-  // scopes to the Review Step too (ADR-0019) — so its model must be priced on
-  // the same footing as a harness model.
   if (config.verify.review.enabled && config.verify.review.model) configured.add(config.verify.review.model);
   return [...configured].filter((m) => !isModelPriced(m, prices));
 }
 
-/**
- * The field message for an unmeasurable cost cap. Deliberately free of `'; '` —
- * both the API error handler and the settings form's `parseFieldErrors` split
- * `path: message` pairs on that delimiter, so a `'; '` in the body would slice
- * the unpriced-model list off into a bogus, unrendered field (issue #166).
- */
+/** Must stay free of `'; '`: the API error handler and the settings form's `parseFieldErrors` split `path: message` pairs on it. */
 export function costCapMessage(unpriced: string[]): string {
   return `a cost cap with no token fallback requires every configured model to be priced — unpriced: ${unpriced.join(', ')}`;
 }
 
 export const appConfigSchema = z.object({
-  /**
-   * Operator-chosen display name for this instance (issue: instance rename).
-   * Harmonic still calls itself Harmonic everywhere in prose; this only feeds
-   * the sidebar heading and the browser title (`Harmonic - {name} - {workspace}`).
-   * Empty string (the default) means unnamed — the UI falls back to "Harmonic".
-   */
+  /** Operator-chosen display name; feeds the sidebar heading and browser title. Empty (the default) falls back to "Harmonic". */
   name: z.string().default('').meta({ example: 'Production' }),
-  // A record declares no shape, so the API docs fall back to printing its
-  // JSON Schema unless it carries an example of its own.
   harnesses: z.record(z.enum(HARNESS_IDS), harnessConfigSchema).meta({
     example: {
       claude: {
@@ -238,7 +168,7 @@ export const appConfigSchema = z.object({
     .record(z.string(), modelPriceSchema)
     .default({})
     .meta({ example: { 'sonnet-5': { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 } } }),
-  /** Optional per-model context-window / cache-TTL facts for Conversation telemetry (issue 12). */
+  /** Optional per-model context-window / cache-TTL facts for Conversation telemetry. */
   modelInfo: z
     .record(z.string(), modelInfoSchema)
     .default({})
@@ -248,33 +178,15 @@ export const appConfigSchema = z.object({
     workingDir: z.string().meta({ example: '/home/dev/harmonic' }),
     isolationMode: z.enum(ISOLATION_MODES).meta({ example: 'worktree' }),
     priority: z.enum(PRIORITIES).meta({ example: 'normal' }),
-    /** Bounded agentic resolve-turns a rebase content conflict gets before it
-     * escalates; 0 escalates on the first conflict (ADR-0046). */
+    /** Agentic resolve-turns a rebase conflict gets before it escalates; 0 escalates on the first conflict. */
     conflictResolveTurns: z.number().int().min(0).meta({ example: 2 }),
   }),
-  /**
-   * The default Harness and model a new Conversation ("chat") starts with,
-   * separate from the Task defaults above — an operator often wants to *talk*
-   * to a different agent than the one that runs the board. Global-default with
-   * a per-Workspace override (ADR-0012): a Workspace stores `null` to inherit
-   * these, a value to override, resolved at Conversation-create time. Unlike
-   * the Task default, the chat model is its own stored value (not derived from
-   * the harness's `defaultModel`), so chat and Tasks can pin different models
-   * of the same Harness.
-   */
+  /** The default Harness and model a new Conversation starts with; a Workspace stores `null` to inherit. */
   chat: z.object({
     harness: z.enum(HARNESS_IDS).meta({ example: 'claude' }),
     model: z.string().meta({ example: 'claude-sonnet-5' }),
   }),
-  /**
-   * Global Auto-Runner settings (ADR-0012). `enabled` is the fleet-wide
-   * **master switch** — the one-click pause that gates every Workspace
-   * (a Task runs only if `master ∧ workspace-enabled`, where the per-Workspace
-   * enable lives on the Workspace row and inherits when unset).
-   * `maxConcurrentAttempts` is the **Machine Ceiling**: the global cap on total
-   * concurrent Attempts across all Workspaces, which a per-Workspace cap override
-   * can never breach (it is clamped to this — see `resolveCap`).
-   */
+  /** `enabled` is the fleet-wide master switch gating every Workspace; `maxConcurrentAttempts` is the Machine Ceiling a per-Workspace cap can never exceed. */
   autoRunner: z.object({
     enabled: z.boolean().meta({ example: true }),
     maxConcurrentAttempts: z.number().int().min(1).meta({ example: 3 }),
@@ -286,22 +198,10 @@ export const appConfigSchema = z.object({
    * token count (not a fraction), so it is independent of the model's window. */
   contextReuseTokenLimit: z.number().int().min(0).default(200_000).meta({ example: 200_000 }),
   /**
-   * Auto-drive settings for afk mirrored Tasks (issue #33). `prompt` is the
-   * global Drive Prompt template; `unattendedReminder` is appended to every
-   * auto-driven turn and `continuePrompt` is the re-prompt nudge — both
-   * operator-editable so the whole mirrored-drive prompt is visible, not
-   * hardcoded. `mergeFate` is the default fate of a
-   * completed worktree Run's branch (research Tasks are always artifacts);
-   * `continueAttempts` is how many times a
-   * Run that ended its turn without an explicit finish/escalate signal is
-   * re-prompted to continue before the Run is treated as unresolved and verified
-   * as-is — 0 keeps the old single-turn behaviour. It is a generous cap, not the
-   * primary runaway guard: the Progress Guardrail (issue #131) already escalates a
-   * Run that stalls, so this only needs to be high enough that a genuinely-
-   * progressing multi-turn Task is not cut short (a budget of 1 escalated real
-   * multi-turn work — Task 340). `finish_task` (not the agent closing the
-   * ticket) is the execution-complete signal: Harmonic verifies, merges per
-   * `mergeFate`, and closes the ticket itself (issue #139).
+   * `prompt` is the global Drive Prompt template; `unattendedReminder` is appended to every auto-driven turn;
+   * `continuePrompt` is the re-prompt nudge; `mergeFate` is the default fate of a completed worktree branch
+   * (research Tasks are always artifacts); `continueAttempts` is how many re-prompts an Attempt gets before it
+   * is verified as-is (0 = single turn).
    */
   drive: z
     .object({
@@ -312,29 +212,10 @@ export const appConfigSchema = z.object({
       continueAttempts: z.number().int().min(0).default(10).meta({ example: 10 }),
     })
     .prefault({}),
-  /**
-   * The Task Prompt template for native (non-mirrored) Runs: the global,
-   * operator-editable wrapper around a Task's own prompt, with `{prompt}` /
-   * `{id}` / `{workingDir}` / `{harness}` / `{model}` placeholders. Defaults to
-   * bare `{prompt}`, so out of the box the Task's prompt is sent verbatim.
-   */
+  /** Operator-editable wrapper around a native Task's prompt (`{prompt}`, `{id}`, `{workingDir}`, `{harness}`, `{model}`); defaults to bare `{prompt}`. */
   taskPrompt: z.string().default(DEFAULT_TASK_PROMPT).meta({ example: DEFAULT_TASK_PROMPT }),
-  /**
-   * End a Conversation with no Turn for this many minutes (issue 15); its
-   * transcript survives read-only. 0 disables the idle timeout. Fractional
-   * values are allowed.
-   */
+  /** End a Conversation with no Turn for this many minutes; 0 disables. Fractional values are allowed. */
   conversationIdleTimeoutMinutes: z.number().nonnegative().default(30).meta({ example: 30 }),
-  /**
-   * Global-default Verification config (issue #109/#132, ADR-0021): the command
-   * verifier and the agent critic, each nullable and defaulting to null — nothing
-   * configured — so the resolved verifier set is empty and a Run behaves exactly
-   * as it does today. Per-Workspace overrides resolve per-key over these defaults
-   * (`resolveVerifiers`, domain/setting-override.ts). Once configured, both the
-   * command verifier and the agent critic execute live in the Attempt's
-   * Verification/Review Steps (`execution/runner.ts`) and gate merging
-   * (#135/#164) — their verdicts feed `combineVerdicts` and drive settle.
-   */
   /** Ordered verification contract. Commands fail fast; review runs last. */
   verify: z
     .object({
@@ -342,49 +223,16 @@ export const appConfigSchema = z.object({
       review: verificationReviewSchema.prefault({}),
     })
     .prefault({}),
-  /**
-   * Merge-policy config (ADR-0001): the one merge policy runs a deterministic
-   * post-merge check on the merged base tip under the repo mutex. `postMergeCheck`
-   * is the off-switch for slow suites — default on, since the branch was already
-   * script- and critic-verified and the check verifies what the base actually
-   * becomes. Global-only for now: ADR-0009 classifies it an overridable
-   * setting, but the per-Workspace override column rides with the settings
-   * migration, not this primitive.
-   */
+  /** `postMergeCheck` runs the verification commands on the merged base tip; the off-switch for slow suites. */
   merge: z
     .object({
       postMergeCheck: z.boolean().default(true),
     })
     .prefault({}),
   /**
-   * Global-default Guardrail config (issue #108/#126, ADR-0019): the budget
-   * Guardrail (mandatory wall-clock, optional tokens/cost) and the progress
-   * (stall/loop) detector toggle, off by default until trace-validated. Resolve
-   * as a global default with a per-Workspace override (`resolveGuardrails`,
-   * domain/setting-override.ts); per-Task deferred. Enforced live: wall-clock
-   * (#127), progress + tool-timeout (#131), and token/cost spend (#128). The
-   * effective config + price table are snapshotted onto a Run at start so a
-   * mid-Run change never retroactively trips it.
-   *
-   * `toolTimeoutMinutes` (issue #131) is a hard backstop paired with the
-   * progress detector, not an override of it: the stall detector suspends
-   * itself for the duration of any outstanding tool call (reliability-design
-   * Unit A), so a genuinely hung tool call would otherwise never trip —
-   * this bounds how long any single tool call may run before it does. The
-   * default (20 minutes) is deliberately generous, well above any legitimate
-   * slow build/test, so it only fires on a tool that is truly stuck.
-   * Global-only: there is no per-Workspace override column for it yet.
-   *
-   * `promptInactivityTimeoutMinutes` (issue #426) bounds a single ACP prompt
-   * turn by inactivity, so a completed turn whose `session/prompt` response is
-   * never delivered (harness idle / a wrapper that lingers past the inner
-   * process) ends the turn instead of blocking the drive loop until the 60m
-   * wall-clock guardrail. It is inactivity-based and suspended while any tool
-   * call is outstanding (reusing the driver's outstanding-tool tracking), so a
-   * legitimately long tool is never cut off — only true silence trips it. Unlike
-   * the progress/tool-timeout guardrails it is always on (not gated on
-   * `progress`): it is a transport-liveness bound, not a stall heuristic. The
-   * default (15 minutes) sits well below the wall-clock budget.
+   * `budget` = the wall-clock/token/cost caps; `progress` toggles the stall/loop detector;
+   * `toolTimeoutMinutes` bounds any single tool call (the stall detector suspends itself while one is outstanding);
+   * `promptInactivityTimeoutMinutes` bounds an ACP prompt turn by silence, suspended while a tool call is outstanding, always on.
    */
   guardrails: z
     .object({
@@ -395,9 +243,6 @@ export const appConfigSchema = z.object({
     })
     .prefault({}),
 }).superRefine((config, ctx) => {
-  // A harness's defaultModel must be one of its models (when any are
-  // listed) — the Settings UI offers a select over `models`, and a stray
-  // default would silently start Runs on an unintended model.
   for (const [id, harness] of Object.entries(config.harnesses)) {
     if (harness.models.length > 0 && !harness.models.includes(harness.defaultModel)) {
       ctx.addIssue({
@@ -407,9 +252,6 @@ export const appConfigSchema = z.object({
       });
     }
   }
-  // The chat default model must be one of its harness's models (same rationale
-  // as defaultModel above — the Settings UI offers a select over that list, and
-  // a stray value would silently start Conversations on an unintended model).
   const chatHarness = config.harnesses[config.chat.harness];
   if (chatHarness && chatHarness.models.length > 0 && !chatHarness.models.includes(config.chat.model)) {
     ctx.addIssue({
@@ -418,11 +260,6 @@ export const appConfigSchema = z.object({
       message: `chat model must be one of the ${config.chat.harness} harness's models`,
     });
   }
-  // A cost cap you can't measure is a lie: if a cost budget is set with no token
-  // fallback, every model a Run could pick must be priced — otherwise a Run on an
-  // unpriced model has no enforceable spend bound (ADR-0019). Reject at config time
-  // rather than accept-then-silently-ignore. A token fallback, or no cost cap, makes
-  // any model fine.
   const unpriced = unpricedModelsForCostCap(config.guardrails.budget, config);
   if (unpriced.length > 0) {
     ctx.addIssue({
@@ -445,8 +282,6 @@ export function defaultConfig(): AppConfig {
     name: '',
     harnesses: {
       claude: {
-        // Per the spike: the bare npm name `claude-code-acp` is a
-        // low-fidelity third-party package; Zed's adapter is canonical.
         command: 'npx',
         args: ['--yes', '@agentclientprotocol/claude-agent-acp'],
         env: {},
@@ -454,30 +289,20 @@ export function defaultConfig(): AppConfig {
         defaultModel: 'claude-sonnet-5',
       },
       codex: {
-        // Per the issue-22 spike: `codex acp` is not a subcommand; the
-        // canonical ACP entry point is the adapter package (same org as
-        // the Claude adapter), which bridges to its own bundled Codex.
+        // `codex acp` is not a Codex CLI subcommand; the adapter package is the ACP entry point.
         command: 'npx',
         args: ['--yes', '@agentclientprotocol/codex-acp'],
         env: {},
-        // Verified against session/new's live availableModels (spike Q2).
         // Ids may carry a reasoning-effort suffix, e.g. gpt-5.4-mini[low].
         models: ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini'],
         defaultModel: 'gpt-5.6-sol',
       },
       copilot: {
-        // Per the issue-25 spike: `copilot --acp` speaks ACP on stdio
-        // natively — no adapter package. The built-in github-mcp-server
-        // is a per-session network dependency Runs don't need.
+        // `copilot --acp` speaks ACP natively; the built-in github-mcp-server is a per-session network dependency Attempts don't need.
         command: 'copilot',
         args: ['--acp', '--disable-builtin-mcps'],
         env: {},
-        // Verified against session/new's live availableModels on an
-        // entitled plan (spike capture 12), minus ids with no published
-        // API-equivalent rate (gemini-*, mai-*) — a shipped model must
-        // have a shipped price. Operators whose plan serves those can add
-        // them here plus a `prices` entry. Auto-only plans ignore any pin
-        // (silently) and report whatever actually served.
+        // Only ids with a published API-equivalent rate (gemini-*/mai-* excluded); auto-only plans silently ignore any pin.
         models: [
           'auto',
           'claude-sonnet-5',
@@ -553,13 +378,11 @@ export function mergeConfig(base: AppConfig, overrides?: DeepPartial<AppConfig>)
   return appConfigSchema.parse(merge(base, overrides));
 }
 
-/** A stored/patched config that may still carry the retired `agentReview` flag (#140). */
+/** A stored/patched config that may still carry the retired `agentReview` flag. */
 export type LegacyConfig = DeepPartial<AppConfig> & {
   agentReview?: boolean;
   verification?: { command?: VerificationCommand | null; critic?: VerificationCritic | null; autoAccept?: boolean; maxSelfHeals?: number };
-  /** The retired context-reuse *fraction* (0–1), replaced by the raw-token
-   * `contextReuseTokenLimit`. A fraction cannot map to a token count without a
-   * model window, so it is dropped (falling to the new default), not converted. */
+  /** The retired context-reuse fraction; dropped, not converted. */
   contextReuseThreshold?: number;
 };
 
@@ -578,9 +401,6 @@ export function migrateLegacyConfig(raw: LegacyConfig): DeepPartial<AppConfig> {
     if (verify.review === undefined && 'critic' in legacyVerification) {
       verify.review = legacyVerification.critic === null ? { enabled: false } : { enabled: true, ...legacyVerification.critic! };
     }
-    // Legacy `maxSelfHeals` and `autoAccept` are dropped, not migrated: the
-    // self-heal budget was replaced by the top-level `maxAttempts` cap (#310),
-    // and auto-accept described a review gate that no longer exists (ADR-0041).
   }
   return Object.keys(verify).length === 0 ? rest : { ...rest, verify };
 }

@@ -40,11 +40,8 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
   let tasks: TaskService;
   let workspaces: WorkspaceService;
   let manager: TrackerPollerManager;
-  /** Working dirs the manager actually resolved an adapter for — a tracker-off Workspace must never appear. */
   let polled: string[];
-  /** Per-repo canned scan; both repos deliberately share issue #5 to prove board isolation. */
   let ticketsByRepo: Map<string, Ticket[]>;
-  /** Repos whose tracker won't resolve — the "enabled but unresolvable" gate (issue #83). */
   let unresolvable: Set<string>;
 
   beforeEach(async () => {
@@ -81,11 +78,9 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
   });
 
   it('starts a loop only for tracker-enabled Workspaces; a tracker-off one never polls', async () => {
-    // Default (boot-time) Workspace: tracker off. A second, tracker-on Workspace.
     const on = await workspaces.create({ name: 'On', workingDir: repoA, trackerEnabled: true });
     await manager.sync();
     expect(manager.coordinatorFor(on.id)).toBeDefined();
-    // The default Workspace has tracker off — its dir was never resolved.
     const off = (await workspaces.list()).find((w) => w.id !== on.id)!;
     expect(manager.coordinatorFor(off.id)).toBeUndefined();
     expect(polled).not.toContain(off.workingDir);
@@ -146,15 +141,8 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     const mirrored = (await tasks.list({ workspaceId: workspace.id })).filter((task) => task.origin === 'mirrored');
     const legacyMaps = deriveMaps(fixture, mirrored, workspace.id);
     const beforeRestart = await manager.listEpics(workspace.id);
-    // listEpicTickets sources the Tasks-list epic rows from the same stored set
-    // (ADR-0018, #443): #10 (epic-labelled) and #19 (Map) both get a stored row,
-    // as their raw tickets, ready for the list-row projection.
     expect((await manager.listEpicTickets(workspace.id)).map((t) => t.number).sort((a, b) => a - b)).toEqual([10, 19]);
-    // #13 is excluded through the real TaskService Blocker edge and its
-    // derived agentWorkable flag, not a hand-built frontier input.
     expect(beforeRestart.find((epic) => epic.ref === 10)?.ready).toEqual([11]);
-    // The stored record enumerates #10 and #19; their live membership and ready
-    // frontier are derived at read time (DerivedEpic carries no `kind` field).
     expect(beforeRestart.map((epic) => ({
       ref: epic.ref,
       title: epic.title,
@@ -181,7 +169,6 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
   });
 
   it('epicDetail resolves a closed Epic from persisted facts; listEpics stays open-only (#409, #443)', async () => {
-    // Phase 1: #10 open and epic-labelled, so the scan lazy-upserts its stored row.
     ticketsByRepo.set(repoA, [
       { ...ticket(10), title: 'Closed epic', labels: [EPIC_LABEL] },
       { ...ticket(11), title: 'Closed epic member', parent: 10 },
@@ -190,9 +177,6 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     await manager.sync();
     await manager.pollNow(workspace.id);
 
-    // Phase 2: #10 closes, still in the scan. The stored row survives (only
-    // Dismiss removes it); its live membership still resolves via
-    // `includeClosed`, but the Board stays open-only.
     ticketsByRepo.set(repoA, [
       { ...ticket(10), title: 'Closed epic', state: 'closed', closedAt: '2026-08-10T00:00:00Z', labels: [EPIC_LABEL] },
       { ...ticket(11), title: 'Closed epic member', parent: 10 },
@@ -213,8 +197,6 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
       throw new Error('restart query must not resolve or poll the tracker');
     });
 
-    // Persisted-facts-only: no adapter is wired above, so this proves the
-    // closed Epic resolves from persisted facts, not a re-poll.
     expect(await manager.epicDetail(workspace.id, 10)).toEqual(beforeRestart);
     expect((await manager.listEpics(workspace.id)).map((epic) => epic.ref)).not.toContain(10);
   });
@@ -228,31 +210,22 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     await manager.sync();
     await manager.pollNow(workspace.id);
 
-    // The scan persisted the durable Epic row; integration settles its snapshot.
     await tasks.markEpicIntegrated(workspace.id, 19, { mergeCommit: 'abc123', memberRefs: [20] });
 
-    // The tracker stops returning the Epic and its member: the container cache is
-    // wiped, but the stored record survives.
     ticketsByRepo.set(repoA, []);
     await manager.pollNow(workspace.id);
 
-    // The detail page resolves the aged-out Epic from the record, with its snapshot
-    // members and an empty ready frontier.
     const detail = await manager.epicDetail(workspace.id, 19);
     expect(detail?.ref).toBe(19);
     expect(detail?.kind).toBe('map');
     expect(detail?.members.map((m) => m.ref)).toEqual([20]);
     expect(detail?.ready).toEqual([]);
-    // The container was never mirrored as a Task and the ticket has aged out, so
-    // the title falls to the ref placeholder.
     expect(detail?.title).toBe('Epic #19');
 
-    // A finished Epic is off the Board; the Tasks list still offers it as a filter.
     expect(detail?.state).toBe('integrated');
     expect((await manager.listEpics(workspace.id)).map((e) => e.ref)).not.toContain(19);
     expect((await manager.listEpicTickets(workspace.id)).map((t) => t.number)).toContain(19);
 
-    // Persisted-facts-only: after a restart with no adapter, the record still resolves it.
     manager.stopAll();
     await asyncDb.close();
     asyncDb = await openAsyncDb(dataDir);
@@ -274,8 +247,6 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     await manager.pollNow(workspace.id);
     await tasks.markEpicIntegrated(workspace.id, 10, { mergeCommit: null, memberRefs: [11] });
 
-    // Age the Epic out so the detail path resolves from the stored record, not
-    // live derivation. The stored `epic` kind narrows to the DTO's two kinds.
     ticketsByRepo.set(repoA, []);
     await manager.pollNow(workspace.id);
 
@@ -292,25 +263,16 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     const workspace = await workspaces.create({ name: 'A', workingDir: repoA, trackerEnabled: true });
     await manager.sync();
     await manager.pollNow(workspace.id);
-    // #10 has a stored row but is still `open` (null snapshot) — governed by live
-    // derivation, never surfaced from the record.
 
     ticketsByRepo.set(repoA, []);
     await manager.pollNow(workspace.id);
 
-    // An open stored row that ages out without integrating is gone, not historical.
     expect((await manager.listEpics(workspace.id)).map((e) => e.ref)).toEqual([]);
     expect(await manager.epicDetail(workspace.id, 10)).toBeNull();
-    // A ref with no stored row and no derived Epic never resolves.
     expect(await manager.epicDetail(workspace.id, 999)).toBeNull();
   });
 
   it('resolves an integrated nested leaf-most Epic by ref; its bare spine parent never surfaces (#439, #443)', async () => {
-    // Spine A(100) → leaf-most epic-type B(101) → leaf C(102). The stored record
-    // keys to the leaf-most Epic (ADR-0018): only B gets a row, and B is the
-    // first-class integration unit — individually addressable once integrated.
-    // A is a bare parent (no `epic` label, not a Map): it never gets a row and
-    // never surfaces (ADR-0018/#443 — no top-level roll-up to fall back to).
     ticketsByRepo.set(repoA, [
       { ...ticket(100), title: 'Spine parent' },
       { ...ticket(101), title: 'Leaf-most epic B', parent: 100, labels: [EPIC_LABEL] },
@@ -320,13 +282,10 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     await manager.sync();
     await manager.pollNow(workspace.id);
 
-    // B integrates while the whole spine is still live in the scan.
     await tasks.markEpicIntegrated(workspace.id, 101, { mergeCommit: 'def456', memberRefs: [102] });
 
-    // Integrated B is off the Board; A (bare spine parent, no row) never appears.
     expect((await manager.listEpics(workspace.id)).map((e) => e.ref)).toEqual([]);
 
-    // The first-class leaf-most Epic B also resolves individually by ref.
     const detail = await manager.epicDetail(workspace.id, 101);
     expect(detail?.ref).toBe(101);
     expect(detail?.members.map((m) => m.ref)).toEqual([102]);
@@ -379,12 +338,10 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
   it('pollNow forces an immediate re-poll for a Workspace; a tracker-off one is a no-op', async () => {
     const a = await workspaces.create({ name: 'A', workingDir: repoA, trackerEnabled: true });
     await manager.sync();
-    // A ticket appears after the loop started; a manual refresh mirrors it now.
     ticketsByRepo.set(repoA, [ticket(7)]);
     await manager.pollNow(a.id);
     expect((await tasks.list({ workspaceId: a.id })).map((t) => t.trackerRef)).toContain(7);
 
-    // The default (tracker-off) Workspace has no loop — pollNow resolves without polling it.
     const off = (await workspaces.list()).find((w) => w.id !== a.id)!;
     const before = polled.length;
     await expect(manager.pollNow(off.id)).resolves.toBeUndefined();
@@ -409,7 +366,6 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     const a = await workspaces.create({ name: 'A', workingDir: repoA, trackerEnabled: true });
     await manager.sync();
     expect(manager.resolvedTracker(a.id)).toEqual({ ok: true, name: 'stub', label: 'stub' });
-    // The tracker-off default Workspace has nothing to resolve.
     const off = (await workspaces.list()).find((w) => w.id !== a.id)!;
     expect(manager.resolvedTracker(off.id)).toBeNull();
   });
@@ -421,7 +377,6 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     expect(manager.coordinatorFor(a.id)).toBeUndefined();
     expect(manager.resolvedTracker(a.id)).toMatchObject({ ok: false, code: 'no-declaration' });
     expect(ticketsByRepo.get(repoA)).toBeUndefined();
-    // The gate never scanned the repo — resolution failed before any poll.
     expect(polled).not.toContain(repoA);
   });
 
@@ -442,7 +397,6 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     await manager.sync();
     expect(manager.coordinatorFor(a.id)).toBeUndefined();
 
-    // The operator adds the declaration; a refresh resolves it and brings the loop up now.
     unresolvable.delete(repoA);
     ticketsByRepo.set(repoA, [ticket(9)]);
     await manager.pollNow(a.id);
@@ -450,7 +404,6 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     expect(manager.coordinatorFor(a.id)).toBeDefined();
     await waitFor(async () => (await tasks.list({ workspaceId: a.id })).some((t) => t.trackerRef === 9) || undefined);
 
-    // It breaks again; a refresh caches the failure and stops the loop.
     unresolvable.add(repoA);
     await manager.pollNow(a.id);
     expect(manager.resolvedTracker(a.id)).toMatchObject({ ok: false });

@@ -13,13 +13,6 @@ import {
 } from '../src/domain/settings-registry.js';
 import { resolveScoped, resolveCap, resolveVerifiers, resolveGuardrails } from '../src/domain/setting-override.js';
 
-/**
- * Temporarily override a setting's scope in the live registry, run `fn`, then
- * restore. This exercises the *real* resolvers against a changed registry, so a
- * test can prove the registry — not hard-coded call-site logic — controls
- * resolution. `settingsRegistry` is `as const` only at the type level, so the
- * object is mutable at runtime and the resolvers read it live on every call.
- */
 function withScope(key: SettingKey, scope: SettingScope, fn: () => void): void {
   const mutable = settingsRegistry as unknown as Record<SettingKey, { scope: SettingScope }>;
   const original = mutable[key].scope;
@@ -32,10 +25,6 @@ function withScope(key: SettingKey, scope: SettingScope, fn: () => void): void {
 }
 
 describe('Settings registry (issue #336) — single authority for scope', () => {
-  // Every per-Workspace override column in `db/schema.ts` must be declared in the
-  // registry as `overridable`. This is the regression guard the critic asked for:
-  // a new override column that is not registered (or is resolved without a
-  // registry key) fails here, so the registry stays the single authority.
   const OVERRIDABLE_COLUMNS: SettingKey[] = [
     'harness',
     'model',
@@ -54,7 +43,6 @@ describe('Settings registry (issue #336) — single authority for scope', () => 
     'reviewHarness',
     'guardrailBudget',
     'guardrailProgress',
-    // Reclassified into the overridable set (ADR-0044, issue #339).
     'toolTimeoutMinutes',
     'drivePrompt',
     'driveUnattendedReminder',
@@ -162,15 +150,10 @@ describe('tab taxonomy (ADR-0044) — settings group into Settings UI tabs', () 
   });
 
   it('workspaceTabs drops the tabs with no overridable field (ADR-0044 Decision G)', () => {
-    // The Workspace surface is the same taxonomy minus the global-only tabs;
-    // Integrations/Security have no registry-declared field, so they fall off.
     expect(workspaceTabs().map((t) => t.id)).toEqual(['general', 'execution', 'verification', 'prompts']);
   });
 
   it('a tab whose only field turns global-only drops off the Workspace surface', () => {
-    // Prompts holds only overridable fields today; flip them all global-only and
-    // the tab must disappear from workspaceTabs — proving the filter reads scope
-    // from the registry, not a hand-kept exclusion list.
     const promptKeys = settingsForTab('prompts');
     const mutable = settingsRegistry as unknown as Record<SettingKey, { scope: SettingScope }>;
     const originals = promptKeys.map((key) => [key, mutable[key].scope] as const);
@@ -199,15 +182,11 @@ describe('resolveScoped — the scoped resolver reads scope from the registry', 
   });
 
   it('a now-overridable setting lets the Workspace value win (toolTimeoutMinutes, #339)', () => {
-    // toolTimeoutMinutes was reclassified overridable (ADR-0044): a set Workspace
-    // value now wins, and null/undefined still inherits the global default.
     expect(resolveScoped('toolTimeoutMinutes', 99, 20)).toBe(99);
     expect(resolveScoped('toolTimeoutMinutes', null, 20)).toBe(20);
   });
 
   it('ignores any Workspace value for a global-only setting and always returns the global default', () => {
-    // No registry key is global-only today, so flip one at runtime to prove the
-    // scoped resolver ignores a set Workspace value for a global-only setting.
     withScope('harness', 'global-only', () => {
       expect(resolveScoped('harness', 'codex', 'claude')).toBe('claude');
       expect(resolveScoped('harness', null, 'claude')).toBe('claude');
@@ -215,11 +194,6 @@ describe('resolveScoped — the scoped resolver reads scope from the registry', 
   });
 });
 
-// The proof the critic asked for: changing a setting's scope in the registry
-// changes what the LIVE resolvers return, for the same inputs. If any resolver
-// resolved a value without consulting the registry, its output would not move
-// when the scope flips — these tests would fail. This is what makes the registry
-// the single authority in practice, not just by declaration.
 describe('scope changes control live resolution (registry is the single authority)', () => {
   it('resolveScoped: flipping harness to global-only stops the Workspace value winning', () => {
     expect(resolveScoped('harness', 'codex', 'claude')).toBe('codex');
@@ -281,8 +255,6 @@ describe('scope changes control live resolution (registry is the single authorit
   });
 
   it('hasWorkspaceOverride: an explicit boolean false counts as an override (not truthiness)', () => {
-    // reviewEnabled=false means the Workspace deliberately turned review off — a
-    // real override, distinct from null/inherit. Presence is != null, not Boolean().
     expect(hasWorkspaceOverride('reviewEnabled', false)).toBe(true);
     expect(hasWorkspaceOverride('reviewEnabled', true)).toBe(true);
     expect(hasWorkspaceOverride('reviewEnabled', null)).toBe(false);

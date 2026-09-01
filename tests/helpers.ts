@@ -16,7 +16,7 @@ import { WorkspaceService } from '../src/domain/workspaces.js';
 
 /**
  * Build the one `SettingsStore` a hand-built-service test should share for its
- * whole lifetime (issue #391). `SettingsStore` throttles disk reloads to once
+ * whole lifetime. `SettingsStore` throttles disk reloads to once
  * per second, so two instances pointed at the same `dataDir` can disagree for
  * up to that long — every reader (`allWorkspaces`, a hand-built
  * `WorkspaceService`) and writer (`setOverrides`, `workspaces.update`) in a
@@ -30,10 +30,8 @@ export function makeSettingsStore(dataDir: string, overrides?: DeepPartial<AppCo
 /** A `TaskService`/`AutoRunner`-shaped `getWorkspaces` callback over
  * whatever Workspaces already exist in `db` (openAsyncDb's boot-time backfill
  * seeds a default one), composed with `settings`'s per-Workspace overrides
- * (ADR-0009, issue #391) — the plumbing every domain test that constructs
- * `TaskService` by hand needs, without repeating the select everywhere.
- * Async (`() => Promise<WorkspaceRow[]>`) to match the migrated
- * `TaskService`/`AutoRunner` `getWorkspaces` contract (ADR-0029). `settings`
+ * — the plumbing every domain test that constructs
+ * `TaskService` by hand needs, without repeating the select everywhere. `settings`
  * must be the SAME `SettingsStore` instance any override writer in the test
  * uses — see {@link makeSettingsStore}. */
 export const allWorkspaces = (db: AsyncDbHandle, settings: SettingsStore) => () =>
@@ -61,10 +59,8 @@ export async function cancelRunningTasks(server: TestServer): Promise<void> {
  * Seed a local-markdown ticket file so the mirrored close-after-merge step can
  * find it. A repo whose `docs/agents/issue-tracker.md` names `Path: tickets`
  * resolves a single unnamed scope (base id 0), so `<repo>/tickets/<ref>.md`
- * parses to ticket id `<ref>` (`local-markdown.ts`). Since f705011 made
- * `close()` write the `**Status:**` field (rather than no-op), an afk auto-merge
- * Task with no on-disk ticket now Escalates on close — production always has the
- * file (it came from a scan), so integration tests must seed it too.
+ * parses to ticket id `<ref>` (`local-markdown.ts`). An afk auto-merge Task with
+ * no on-disk ticket Escalates on close, so integration tests must seed it.
  */
 export function seedLocalMarkdownTicket(
   repoDir: string,
@@ -174,9 +170,8 @@ export interface TestServer {
 
 /**
  * Start a native Run and capture the value of env vars injected into the harness
- * (e.g. the raw attempt-scoped `HARMONIC_API_KEY`). ACP session updates are no longer
- * persisted (ADR-0031), so the stub writes the requested env to a file this reads
- * instead of the defunct `/events` session_update echo. Defaults to `exit:'hang'`
+ * (e.g. the raw attempt-scoped `HARMONIC_API_KEY`). The stub writes the requested
+ * env to a file this reads. Defaults to `exit:'hang'`
  * so the Run (and its Attempt Key) stay live while the caller asserts on the token.
  */
 export async function captureRunEnv(
@@ -193,22 +188,6 @@ export async function captureRunEnv(
   return { taskId: created.body.id as number, attemptId: started.body.id as number, env };
 }
 
-/**
- * Boot-cost fast paths (test-suite optimization, 2026-08). `startServer` is
- * called ~174 times across the suite; per boot the naive path pays ~50ms of
- * drizzle migrations on an empty file DB plus two ~35ms `scryptSync` calls
- * (setPassword at boot, verifyLogin over HTTP). Two caches shave all three:
- *
- * - A once-per-process migrated template DB, copied into each fresh dataDir so
- *   `openAsyncDb` sees an already-migrated file (~4ms instead of ~50ms).
- * - A once-per-process scrypt hash of TEST_PASSWORD, written straight to the
- *   `settings` row, with the session minted via `AuthService.createSession()`
- *   instead of a real HTTP login.
- *
- * Both apply only when the caller did not pass `opts.password` — a test that
- * sets a password explicitly is testing auth/boot semantics and keeps the real
- * setPassword + HTTP-login path (`tests/auth.test.ts`).
- */
 let dbTemplatePath: string | undefined;
 async function migratedDbTemplate(): Promise<string> {
   if (!dbTemplatePath) {
@@ -234,12 +213,12 @@ export async function startServer(
   opts: {
     dataDir?: string;
     password?: string;
-    /** Test-only Runner cadence overrides (issue #128), forwarded to `buildApp`. */
+    /** Test-only Runner cadence overrides, forwarded to `buildApp`. */
     runnerTuning?: { spendGuardrail?: { pollMs?: number; graceMs?: number } } | undefined;
-    /** Test-only agent-critic drive override (issue #164), forwarded to `buildApp`. */
+    /** Test-only agent-critic drive override, forwarded to `buildApp`. */
     criticDrive?: CriticHarnessDrive | undefined;
     scheduledJobRegistrations?: ScheduledJobRegistration[] | undefined;
-    /** Test-only metrics-summary Scheduler Job wiring (issue #386), forwarded to `buildApp`. */
+    /** Test-only metrics-summary Scheduler Job wiring, forwarded to `buildApp`. */
     metricsSummary?: { intervalMs: number; flush: () => Promise<void> } | undefined;
   } = {},
 ): Promise<TestServer> {
@@ -252,22 +231,16 @@ export async function startServer(
   const app = await buildApp({
     dataDir,
     configOverrides,
-    // Fast path: leave the password untouched at boot and seed the settings
-    // row below — skips one scryptSync per boot.
     password: fastAuth ? undefined : opts.password,
     runnerTuning: opts.runnerTuning,
     criticDrive: opts.criticDrive,
     scheduledJobRegistrations: opts.scheduledJobRegistrations,
     metricsSummary: opts.metricsSummary,
-    // The event-loop stall monitor (issue #200) is process-health noise in
-    // tests: heavy synchronous test setup can trip a stall warning. Keep it off.
+    // Heavy synchronous test setup can trip the event-loop stall monitor.
     reliabilityTuning: { eventLoop: { enabled: false } },
   });
-  // A test server must never operate on the developer's real checkout: the
-  // Default Workspace seeds its workingDir from process.cwd(), and direct-mode
-  // Runs now snapshot a verification candidate against it (issue #134). Point
-  // it at an isolated, non-git temp dir so tests that don't set an explicit
-  // workingDir stay hermetic (worktree tests pass their own repo per task).
+  // The Default Workspace seeds workingDir from process.cwd(); never let a test
+  // server operate on the developer's real checkout.
   const workspaceDir = mkdtempSync(join(tmpdir(), 'harmonic-workdir-'));
   await app.ctx.asyncDb.write((d) => d.update(workspaces).set({ workingDir: workspaceDir }).run());
   await app.listen({ port: 0, host: '127.0.0.1' });
@@ -288,15 +261,9 @@ export async function startServer(
       return { status: res.status, body: text ? JSON.parse(text) : null };
     };
 
-  // The house test style drives the API as the SPA does: log in, keep the
-  // session cookie.
   const anonApi = request({});
   let sessionToken: string;
   if (fastAuth) {
-    // Gate the server with the cached TEST_PASSWORD hash and mint the session
-    // directly (sessions are in-memory on AuthService) — skips the HTTP login
-    // round trip and its scryptSync verify. Equivalent to the login below:
-    // `sessionToken` works as both the cookie and the `?token=` credential.
     const value = testPasswordSettingsValue();
     await app.ctx.asyncDb.write((d) =>
       d.insert(settings).values({ key: 'auth', value }).onConflictDoUpdate({ target: settings.key, set: { value } }).run(),

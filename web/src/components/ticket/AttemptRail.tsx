@@ -70,8 +70,6 @@ export function AttemptRail({
             ) : (
               <div className="mt-0.5 flex flex-col">
                 {files.map((file) => {
-                  // The stat model only tags 'M'; a file with additions and no
-                  // deletions reads as newly added — surface it as 'A'.
                   const kind: 'M' | 'A' = file.deletions === 0 && file.additions > 0 ? 'A' : 'M';
                   const sel = selectedFile === file.path;
                   return (

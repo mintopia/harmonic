@@ -4,7 +4,7 @@ import type { Task, TaskState } from './types.js';
 
 /**
  * The operator actions the TaskDetail footer and TaskCard offer in a given
- * state (ADR-0041). Order is display order (left to right).
+ * state. Order is display order (left to right).
  */
 export type TaskAction =
   | 'accept'
@@ -20,29 +20,19 @@ export type TaskAction =
 
 export function taskActions(state: TaskState): TaskAction[] {
   switch (state) {
-    // The one human surface: exactly the three escalation actions, Accept last
-    // so the affirmative sits in the strongest (terminal) position, Close first
-    // among them as the destructive disposition. Delete (issue #162, ADR-0025)
-    // is a permanent, rare escape hatch that sits before them, out of the flow.
     case 'escalated':
       return ['delete', 'close', 'reject', 'accept'];
     case 'ready':
       return ['delete', 'run', 'edit', 'cancel'];
     case 'draft':
       return ['delete', 'ready', 'edit', 'cancel'];
-    // Complete is an operator override (stop the agent, mark it done); Cancel
-    // keeps its familiar rightmost destructive slot. No delete while working
-    // (issue #162) — the same guard the server enforces (409).
     case 'working':
       return ['complete', 'cancel'];
-    // Uncancel returns the card to the queue in place (issue #57).
     case 'cancelled':
       return ['delete', 'uncancel'];
     case 'done':
       return ['delete'];
   }
-  // A state from a server ahead of this bundle (version skew): offer
-  // nothing rather than crash the modal on `.length` of undefined.
   return [];
 }
 

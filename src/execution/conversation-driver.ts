@@ -11,13 +11,11 @@ import type { PermissionRuleStore } from '../domain/permission-rules.js';
 import type { ConversationRow } from '../db/schema.js';
 import { startOperation } from '../telemetry/operations.js';
 
-/** The ACP tool kind of a permission request (read / edit / execute / fetch), or null. */
 function permissionKind(request: unknown): string | null {
   const kind = (request as any)?.toolCall?.kind;
   return typeof kind === 'string' && kind ? kind : null;
 }
 
-/** The option id to allow a request with — allow_once preferred, then allow_always, then anything. */
 function allowOptionId(request: unknown): string | null {
   const options = (request as any)?.options ?? [];
   const pick =
@@ -39,8 +37,8 @@ export interface ConversationDriverEvents {
   onEvent?: (event: PersistedConversationEvent) => void;
   /**
    * A Harness is asking permission and the Turn is now blocked on the
-   * operator (ADR-0007). Broadcast so the panel can prompt; the request is
-   * answered out-of-band via `answerPermission`.
+   * operator. Broadcast so the panel can prompt; the request is answered
+   * out-of-band via `answerPermission`.
    */
   onPermissionRequest?: (pending: PendingPermissionBroadcast) => void;
 }
@@ -49,18 +47,16 @@ type PermissionOutcome = { outcome: 'selected'; optionId: string } | { outcome: 
 
 interface PendingPermission {
   conversationId: number;
-  /** The Conversation's Working Directory — the key half of an "Always allow in {dir}" rule. */
   workingDir: string;
   request: unknown;
-  /** Resolves the held ACP request_permission — the Harness's Turn unblocks. */
   resolve: (outcome: PermissionOutcome) => void;
 }
 
 export interface ConversationDriverOptions {
   events?: ConversationDriverEvents;
-  /** Persistent Permission Rules (ADR-0007); when set, a matching rule auto-approves without prompting. */
+  /** Persistent Permission Rules; when set, a matching rule auto-approves without prompting. */
   rules?: PermissionRuleStore;
-  /** Mints/revokes the per-Conversation scoped MCP key injected into the harness (issue 16). */
+  /** Mints/revokes the per-Conversation scoped MCP key injected into the harness. */
   keys?: {
     mint: (conversationId: number) => Promise<string>;
     revoke: (conversationId: number) => void | Promise<void>;
@@ -71,35 +67,26 @@ interface ActiveConversation {
   conversationId: number;
   child: ChildProcess;
   driver: AcpDriver;
-  /** A Turn is being prompted right now — one at a time per Conversation. */
   turning: boolean;
-  /** Follow-up Turns queued while one is in flight, sent FIFO on completion (issue 14). */
   queue: string[];
-  /** Fires when the Conversation has been idle past the timeout, ending it (issue 15). */
   idleTimer?: ReturnType<typeof setTimeout> | undefined;
 }
 
 /**
- * Drives Conversations (ADR-0006): lazily spawns a Harness on the first
- * Turn, keeps it warm across many Turns on one ACP session (surviving
- * panel/socket close), and tears it down on an explicit End or a harness
- * death. The inverse of the Runner in lifetime — a Runner disposes after
- * one prompt; a Conversation prompts many times on one session.
- *
- * Direct mode only — no Isolation Mode (ADR-0006). Permissions are
- * human-in-the-loop: the driver holds each session/request_permission open
- * and prompts the operator (ADR-0007), the inverse of the auto-approving
- * Runner.
+ * Drives Conversations: lazily spawns a Harness on the first Turn, keeps it
+ * warm across many Turns on one ACP session (surviving panel/socket close),
+ * and tears it down on an explicit End or a harness death. Direct mode only.
+ * Permissions are human-in-the-loop: the driver holds each
+ * session/request_permission open and prompts the operator.
  */
 export class ConversationDriver {
   private readonly active = new Map<number, ActiveConversation>();
-  /** Held ACP permission requests awaiting an operator decision, by request id. */
   private readonly pendingPermissions = new Map<string, PendingPermission>();
   private nextPermissionId = 0;
   private readonly events: ConversationDriverEvents;
   private readonly rules: PermissionRuleStore | undefined;
   private readonly keys: ConversationDriverOptions['keys'];
-  /** The MCP endpoint agents call back to; set once the server listens (issue 16). */
+  /** The MCP endpoint agents call back to; set once the server listens. */
   mcpUrl: string | null = null;
 
   constructor(
@@ -116,12 +103,7 @@ export class ConversationDriver {
     return this.active.size;
   }
 
-  /**
-   * The ids of every warm (active) Conversation — the live-process set the
-   * Activity snapshot joins against Conversation rows (issue #51). A
-   * Conversation has no live-usage tailer/Process Tree, so the endpoint
-   * derives its Usage/context from the Conversation row instead.
-   */
+  /** The ids of every warm (active) Conversation. */
   activeConversationIds(): number[] {
     return [...this.active.keys()];
   }
@@ -136,7 +118,7 @@ export class ConversationDriver {
    * so spawn/handshake errors reach the caller); the reply then streams
    * over the firehose while this returns. A second Turn reuses the warm
    * session. If a Turn is already in flight, the message is queued and sent
-   * as the next Turn on completion (issue 14) — `queued` reports which.
+   * as the next Turn on completion — `queued` reports which.
    */
   async submitTurn(conversationId: number, text: string): Promise<{ queued: boolean }> {
     const convo = await this.store.get(conversationId);
@@ -154,11 +136,10 @@ export class ConversationDriver {
   }
 
   /**
-   * Steer a running Turn (issue 14): cancel the in-flight Turn via ACP
-   * session/cancel and re-prompt with `text` as the next Turn — or just stop
-   * it, when `text` is empty. The transcript stays honest: the cancelled
-   * Turn records a `cancelled` stop reason and the steering message opens a
-   * new Turn, no illusion of seamless mid-thought redirection.
+   * Steer a running Turn: cancel the in-flight Turn via ACP session/cancel
+   * and re-prompt with `text` as the next Turn — or just stop it, when `text`
+   * is empty. The cancelled Turn records a `cancelled` stop reason and the
+   * steering message opens a new Turn.
    */
   async interrupt(conversationId: number, text?: string): Promise<void> {
     const convo = await this.store.get(conversationId);
@@ -168,32 +149,26 @@ export class ConversationDriver {
     const steer = text && text.trim().length > 0 ? text : undefined;
     const entry = this.active.get(conversationId);
     if (entry?.turning) {
-      // The redirect supersedes any queued follow-ups; the cancelled Turn
-      // resolves and drainQueue then runs the steering message (or nothing).
       entry.queue = steer ? [steer] : [];
       entry.driver.cancel();
       return;
     }
-    // Nothing in flight: a steering message just starts a Turn; empty is a no-op.
     if (steer !== undefined) await this.submitTurn(conversationId, steer);
   }
 
-  /** Record the operator's message and drive the Turn, streaming the reply over the firehose. */
   private async beginTurn(entry: ActiveConversation, text: string): Promise<void> {
-    this.clearIdle(entry); // activity — the idle clock only runs between Turns
+    this.clearIdle(entry);
     entry.turning = true;
     await this.record(entry.conversationId, 'user_turn', { text });
     void this.runTurn(entry, text);
   }
 
-  /** After a Turn settles, send the next queued follow-up, if any (issue 14). */
   private async drainQueue(entry: ActiveConversation): Promise<void> {
     if (!this.active.has(entry.conversationId)) return;
     const next = entry.queue.shift();
     if (next !== undefined) await this.beginTurn(entry, next);
   }
 
-  /** Arm the idle timeout (issue 15): a Conversation with no Turn for N minutes ends. */
   private armIdle(entry: ActiveConversation): void {
     this.clearIdle(entry);
     const minutes = this.getConfig().conversationIdleTimeoutMinutes;
@@ -216,10 +191,10 @@ export class ConversationDriver {
   }
 
   /**
-   * Answer a held permission request (ADR-0007). `optionId` is the ACP
-   * option the operator chose — its kind (allow_once / allow_always /
-   * reject_*) is the Harness's to interpret; "Allow for this conversation"
-   * is just the native allow_always option, remembered for the session.
+   * Answer a held permission request. `optionId` is the ACP option the
+   * operator chose — its kind (allow_once / allow_always / reject_*) is the
+   * Harness's to interpret; "Allow for this conversation" is just the native
+   * allow_always option, remembered for the session.
    */
   async answerPermission(conversationId: number, reqId: string, optionId: string, remember = false): Promise<void> {
     const pending = this.pendingPermissions.get(reqId);
@@ -227,9 +202,6 @@ export class ConversationDriver {
       throw new DomainError('not_found', `no pending permission '${reqId}' for conversation ${conversationId}`);
     }
     this.pendingPermissions.delete(reqId);
-    // "Always allow in {dir}" (ADR-0007): persist a Rule for this tool kind
-    // + Working Directory so future matching requests auto-approve. A no-op
-    // when the request carries no kind to key on.
     let rule: { kind: string; workingDir: string } | undefined;
     if (remember && this.rules) {
       const kind = permissionKind(pending.request);
@@ -240,8 +212,6 @@ export class ConversationDriver {
     }
     const outcome = { outcome: 'selected' as const, optionId };
     pending.resolve(outcome);
-    // Record the resolution for the transcript/replay; reqId lets the panel
-    // clear the matching prompt.
     await this.record(conversationId, 'permission_request', { request: pending.request, outcome, reqId, ...(rule ? { rule } : {}) });
   }
 
@@ -279,11 +249,6 @@ export class ConversationDriver {
         sessionLogDir: harness.sessionLogDir,
       }),
     };
-    // The chatting agent reaches Harmonic's MCP server with zero setup, the
-    // same as a Run (issue 16): an ephemeral Conversation Key plus the
-    // endpoint in the environment — and, where the harness supports it,
-    // registered directly via session/new mcpServers. The key's lifetime
-    // follows the Conversation's.
     let mcpServers: unknown[] = [];
     if (this.keys && this.mcpUrl) {
       const token = await this.keys.mint(convo.id);
@@ -302,10 +267,6 @@ export class ConversationDriver {
         void this.record(convo.id, 'session_update', update).catch(() => {});
       },
       onRequest: async (method, params) => {
-        // Human-in-the-loop (ADR-0007): a persistent Permission Rule for
-        // this tool kind + Working Directory auto-approves; otherwise hold
-        // the request open and prompt the operator — the Turn genuinely
-        // blocks until they answer. The deliberate inverse of the Runner.
         if (method === 'session/request_permission') return this.decidePermission(convo.id, convo.workingDir, params);
         return null;
       },
@@ -324,9 +285,6 @@ export class ConversationDriver {
         },
       });
     } catch (err) {
-      // Spawn/handshake failed: the Conversation never became warm. Clean
-      // up (the key must not outlive the dead process) but leave it active —
-      // the operator can try again.
       this.active.delete(convo.id);
       this.kill(entry);
       this.revokeKey(convo.id);
@@ -348,9 +306,6 @@ export class ConversationDriver {
           operation.update({ ...(result.stopReason === undefined ? {} : { 'conversation.turn.stop-reason': result.stopReason }) });
           operation.end();
         } catch (err) {
-          // The harness died mid-Turn: the warm session is gone, so the
-          // Conversation ends honestly (it cannot resume) rather than silently
-          // re-spawning a fresh, context-less session.
           const message = err instanceof Error ? err.message : String(err);
           operation.fail(message);
           await this.record(entry.conversationId, 'lifecycle', { event: 'error', message });
@@ -360,26 +315,17 @@ export class ConversationDriver {
       });
     } finally {
       entry.turning = false;
-      // Send the next queued follow-up, if the Conversation is still warm;
-      // otherwise start the idle clock until the next Turn.
       await this.drainQueue(entry);
       if (this.active.has(entry.conversationId) && !entry.turning) this.armIdle(entry);
     }
   }
 
-  /**
-   * Decide a permission request: a persistent Rule matching its tool kind +
-   * Working Directory auto-approves silently (no prompt, no broadcast);
-   * otherwise the request is held open and the operator is prompted.
-   */
   private async decidePermission(conversationId: number, workingDir: string, request: unknown): Promise<PermissionOutcome> {
     const kind = permissionKind(request);
     const rule = kind ? ((await this.rules?.findMatch(kind, workingDir)) ?? null) : null;
     if (rule) {
       const optionId = allowOptionId(request);
       const outcome: PermissionOutcome = optionId ? { outcome: 'selected', optionId } : { outcome: 'cancelled' };
-      // Recorded for the transcript/audit, flagged as rule-driven — never a
-      // silent grant. No prompt broadcast: nothing to answer.
       await this.record(conversationId, 'permission_request', {
         request,
         outcome,
@@ -394,11 +340,6 @@ export class ConversationDriver {
     });
   }
 
-  /**
-   * A pending request that outlives its process (End/crash) must not leak:
-   * cancel it, so the held ACP promise settles and the panel clears the
-   * prompt.
-   */
   private cancelPendingPermissions(conversationId: number): void {
     for (const [reqId, pending] of this.pendingPermissions) {
       if (pending.conversationId !== conversationId) continue;
@@ -409,12 +350,6 @@ export class ConversationDriver {
     }
   }
 
-  /**
-   * Fold the completed Turn's Usage into the Conversation's running total
-   * and record the latest context fill (issue 12). Usage is decoration on a
-   * finished Turn — never let it fail the Turn; a bump-only update (the
-   * `touch`) still broadcasts the change either way.
-   */
   private async accumulateTurnUsage(
     conversationId: number,
     result: { stopReason?: string; usage?: Record<string, unknown>; _meta?: unknown },
@@ -431,19 +366,14 @@ export class ConversationDriver {
           sessionId: convo.sessionId,
           promptResult: result,
           prices: resolvePrices(this.getConfig().prices),
-          // Conversation events share the run-event shape the collector reads.
           events: (await this.store.listEvents(conversationId)) as unknown as Parameters<typeof collectUsageWithRetry>[0]['events'],
         });
       }
     } catch {
-      // Usage is best-effort; fall through to a plain touch.
     }
     const convo = await this.store.get(conversationId);
     const stored = convo.usage ? (JSON.parse(convo.usage) as AttemptUsage) : null;
     const accumulated = accumulateUsage(stored, turnUsage);
-    // Window fill is the parsed tree's last-turn footprint (collectUsage), not the
-    // ACP prompt-result aggregate — the aggregate sums every round-trip of the
-    // turn and reads far past the window on multi-tool turns.
     const contextTokens = turnUsage?.contextTokens ?? null;
     await this.store.update(conversationId, {
       ...(accumulated ? { usage: JSON.stringify(accumulated) } : {}),
@@ -470,13 +400,10 @@ export class ConversationDriver {
     entry.driver.dispose();
   }
 
-  /** Best-effort Conversation Key revocation; the boot-time sweep is the backstop. */
   private revokeKey(conversationId: number): void {
     try {
-      // revoke may be sync or async; swallow both failure modes.
       void Promise.resolve(this.keys?.revoke(conversationId)).catch(() => {});
     } catch {
-      // Keys also die with the database row and the startup sweep.
     }
   }
 

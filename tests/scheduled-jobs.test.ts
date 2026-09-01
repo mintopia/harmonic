@@ -140,9 +140,6 @@ describe('Scheduled Job registry (ADR-0038)', () => {
       metricsSummary: { intervalMs: 60_000, flush: async () => { flushes += 1; } },
     });
     await server.app.ctx.scheduler.runNow('Metrics summary');
-    // The scheduler fires a just-registered Job immediately if it is already
-    // due (`runIfDueOnStart`), so boot itself may have run this once already;
-    // this only proves the explicit `runNow` reached the flush at least once.
     expect(flushes).toBeGreaterThan(0);
     const jobs = await server.api('GET', '/api/scheduled-jobs');
     expect(jobs.body.jobs).toEqual(

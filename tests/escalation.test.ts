@@ -2,17 +2,10 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
 import { AttemptStore } from '../src/domain/attempts.js';
 
-/**
- * ADR-0041's one human surface, end to end over the stub harness in direct
- * mode: a passing native Run merges to `done` with no review gate; an exhausted
- * attempt budget escalates; an escalated ticket exposes exactly Accept /
- * Reject with guidance / Close, and nothing else moves it.
- */
 describe('escalation: the three actions (direct mode)', () => {
   let server: TestServer;
 
   beforeAll(async () => {
-    // One attempt: the first failure escalates, so a scripted crash is enough.
     server = await startServer({ ...stubHarness(), maxAttempts: 1 });
   });
   afterAll(async () => {
@@ -33,7 +26,6 @@ describe('escalation: the three actions (direct mode)', () => {
     return created.body.id;
   }
 
-  /** A native ticket whose only attempt crashes: escalated, no verified head. */
   async function runToEscalated(scenario: Record<string, unknown> = {}): Promise<number> {
     const created = await server.api('POST', '/api/tasks', {
       prompt: JSON.stringify({ exit: 'crash-before-response', ...scenario }),
@@ -49,13 +41,11 @@ describe('escalation: the three actions (direct mode)', () => {
     expect(task.state).toBe('done');
     expect(task.escalationReason).toBeNull();
 
-    // Terminal: no cancel, and the escalation actions do not apply.
     expect((await server.api('POST', `/api/tasks/${taskId}/cancel`)).status).toBe(409);
     expect((await server.api('POST', `/api/tasks/${taskId}/accept`)).status).toBe(409);
     expect((await server.api('POST', `/api/tasks/${taskId}/reject`, { guidance: 'x' })).status).toBe(409);
     expect((await server.api('POST', `/api/tasks/${taskId}/close`)).status).toBe(409);
 
-    // Harmonic merged it itself: the default merge disposition, never the operator's.
     const run = (await server.api('GET', `/api/tasks/${taskId}/attempts`)).body.attempts[0];
     expect(run).toMatchObject({ state: 'completed' });
     const attempt = await new AttemptStore(server.app.ctx.asyncDb).getForTaskNumber(taskId, run.number);
@@ -85,22 +75,13 @@ describe('escalation: the three actions (direct mode)', () => {
 
   it('Reject with start now resumes the loop: the guidance is feedback and the budget resets', async () => {
     const taskId = await runToEscalated();
-    // start:true is the warm-Session "start now" override (ADR-0048); without it a
-    // reject requeues to `ready` and, with the Auto-Runner off in tests, waits.
     const rejected = await server.api('POST', `/api/tasks/${taskId}/reject`, {
       guidance: 'Do not crash; write the CSV header first.',
       start: true,
     });
     expect(rejected.status).toBe(200);
-    // The loop resumed on the spot: a fresh Run is working (or, the scripted
-    // crash being instant, already exhausted the reset budget).
     expect(['working', 'escalated']).toContain(rejected.body.state);
 
-    // The guidance is recorded on the escalated Attempt AND baked into the next
-    // prompt (a native ticket owns its prompt). Attempt 2 is the budget's fresh
-    // start: with maxAttempts 1 it would otherwise have escalated on entry. The
-    // stub replays the crash, so the reset budget is exhausted again — counted
-    // from the reset, not from the ticket's history.
     const again = await waitFor(async () => {
       const { body } = await server.api('GET', `/api/tasks/${taskId}`);
       return body.state === 'escalated' && (await timeline(taskId)).length === 2 ? body : undefined;
@@ -125,15 +106,11 @@ describe('escalation: the three actions (direct mode)', () => {
       guidance: 'Do not crash; write the CSV header first.',
     });
     expect(rejected.status).toBe(200);
-    // Requeued, not force-started: with the Auto-Runner off in tests the ticket
-    // stays `ready` instead of stampeding into a fresh Run.
     expect(rejected.body.state).toBe('ready');
-    // Give any (absent) auto-start a chance to fire, then confirm it did not.
     await new Promise((r) => setTimeout(r, 50));
     expect((await server.api('GET', `/api/tasks/${taskId}`)).body.state).toBe('ready');
     const runs = (await server.api('GET', `/api/tasks/${taskId}/attempts`)).body.attempts;
     expect(runs).toHaveLength(1);
-    // The guidance is recorded as the next Attempt's feedback all the same.
     expect((await timeline(taskId)).find((a) => a.number === 1)!.feedback).toBe(
       'Do not crash; write the CSV header first.',
     );
@@ -152,7 +129,6 @@ describe('escalation: the three actions (direct mode)', () => {
     expect(closed.status).toBe(200);
     expect(closed.body).toMatchObject({ state: 'cancelled', escalationReason: null });
     expect((await server.api('POST', `/api/tasks/${taskId}/close`)).status).toBe(409);
-    // Uncancel returns it to the queue as any cancelled ticket.
     expect((await server.api('POST', `/api/tasks/${taskId}/uncancel`)).body.state).toBe('ready');
   });
 
@@ -161,7 +137,6 @@ describe('escalation: the three actions (direct mode)', () => {
     expect((await server.api('POST', `/api/tasks/${created.body.id}/accept`)).status).toBe(409);
     expect((await server.api('POST', `/api/tasks/${created.body.id}/reject`, { guidance: 'x' })).status).toBe(409);
     expect((await server.api('POST', `/api/tasks/${created.body.id}/close`)).status).toBe(409);
-    // The retired surfaces are gone, not merely gated.
     expect((await server.api('POST', `/api/tasks/${created.body.id}/requeue`, {})).status).toBe(404);
     expect((await server.api('POST', `/api/tasks/${created.body.id}/unescalate`)).status).toBe(404);
     expect((await server.api('POST', `/api/tasks/${created.body.id}/adopt-review`)).status).toBe(404);
@@ -169,12 +144,6 @@ describe('escalation: the three actions (direct mode)', () => {
   });
 
   it("the agent's escalate_task escalates to a human immediately, superseding the retry budget", async () => {
-    // A mirrored ticket (the Drive Prompt carries the taskId the stub's MCP call
-    // needs) whose agent asks for a human. The budget is 3, so the retired
-    // fail-and-retry behaviour would burn three attempts before escalating; the
-    // signal is terminal now, so it escalates on the FIRST attempt, untouched
-    // budget. Its own server (a higher cap than the shared one) proves the
-    // supersession rather than coinciding with an exhausted cap of 1.
     const escServer = await startServer({ ...stubHarness(), maxAttempts: 3 });
     try {
       await escServer.app.ctx.settingsStore.updateGlobal({
@@ -189,7 +158,6 @@ describe('escalation: the three actions (direct mode)', () => {
       await waitFor(async () => (await escServer.api('GET', `/api/tasks/${mirrored.id}`)).body.state === 'escalated');
       const task = (await escServer.api('GET', `/api/tasks/${mirrored.id}`)).body;
       expect(task.escalationReason).toMatch(/the agent asked for a human: need a decision on the schema/);
-      // Terminal on the first attempt — no retry despite a budget of 3.
       const attempts = await new AttemptStore(escServer.app.ctx.asyncDb).listForTask(mirrored.id);
       expect(attempts.map((attempt) => attempt.state)).toEqual(['escalated']);
     } finally {

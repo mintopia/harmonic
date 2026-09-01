@@ -6,7 +6,7 @@ import { Modal } from './Modal';
 import { btnPrimary, btnQuietDestructive, field, panelTitle, labelType } from '../ui';
 import { taskLabel } from '../id-format.js';
 
-/** ADR-0041 "Reject with guidance", amended by ADR-0048: the guidance becomes the
+/** Reject with guidance: the guidance becomes the
  * next Attempt's feedback and the attempt budget resets, but the ticket only
  * *requeues* to `ready` — the Auto-Runner starts the next Attempt when capacity
  * frees. Guidance is required — a reject without it teaches nothing. When the
@@ -38,7 +38,6 @@ export function RejectDialog({
         if (live()) setWarm(preview.available && preview.continueFull.estimate.warm);
       })
       .catch(() => {
-        // Preview is advisory; on failure just omit the "start now" option.
         if (live()) setWarm(false);
       });
   }, [loadPreview]);

@@ -61,7 +61,6 @@ export function ModelCombobox({
       e.preventDefault();
       setHighlight((h) => Math.max(h - 1, 0));
     } else if (e.key === 'Enter') {
-      // While the list is open, Enter picks/closes and never submits the form.
       if (panelOpen) {
         e.preventDefault();
         if (highlight >= 0 && highlight < shown.length) commit(shown[highlight]!);
@@ -128,7 +127,7 @@ export function ModelCombobox({
                 i === highlight ? 'bg-raised' : ''
               }`}
               onPointerDown={(e) => {
-                e.preventDefault(); // keep focus on the input
+                e.preventDefault();
                 commit(m);
               }}
               onMouseEnter={() => setHighlight(i)}

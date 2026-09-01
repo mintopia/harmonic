@@ -108,8 +108,6 @@ describe('EscalationService', () => {
       expect(verifyCandidateCalls).toEqual([{ taskId: task.id, runId: run.id, head: 'cand-oid' }]);
       expect(applied).toBe(1);
       expect(accepted).toMatchObject({ state: 'done', escalationReason: null });
-      // The operator's accept is the one disposition allowed to override an
-      // already-`escalated` Attempt/Run (ADR-0001 #388 S-E's guarded transition).
       expect(await attempts.get(run.id)).toMatchObject({ state: 'passed', reason: 'operator-accept', verifiedHeadOid: 'cand-oid' });
       expect(resumed).toEqual([]);
     });

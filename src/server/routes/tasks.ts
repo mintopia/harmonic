@@ -27,26 +27,19 @@ import { diffFilesResponseSchema } from './diff.js';
 import { parseUnifiedDiff, type DiffFile } from '../../domain/unified-diff.js';
 import { liveWorktreeDiff } from '../../execution/worktree-diff.js';
 
-/** The operator's guidance on an escalated ticket (ADR-0041 "Reject with guidance"): becomes the next Attempt's feedback. */
+/** The operator's guidance on an escalated ticket: becomes the next Attempt's feedback. */
 const guidanceExample = 'The limiter is per-process; it needs to be shared across workers.';
 const rejectInputSchema = z.object({
   guidance: z.string().trim().min(1).meta({ example: guidanceExample }),
-  /** ADR-0048: force-start the next Attempt now (the warm-Session "start now"
-   * override, bypassing Auto-Runner capacity). Omitted/false requeues to `ready`
-   * and lets capacity pick it up. */
+  /** Force-start the next Attempt now, bypassing Auto-Runner capacity; omitted/false requeues to `ready`. */
   start: z.boolean().optional().meta({ example: false }),
 });
-/** Accept (issue #429): omitted/false verifies the candidate first (a pass
- * merges, a non-pass re-enters the Attempt loop like Reject); `true` skips
- * verification and merges the candidate as-is. */
+/** Omitted/false verifies the candidate first; `true` skips verification and merges it as-is. */
 const acceptInputSchema = z.object({
   force: z.boolean().optional().meta({ example: false }),
 }).nullish();
 const cancelInputSchema = z.object({ withDependents: z.boolean().optional().meta({ example: true }) }).nullish();
-/** The reject dialog's continuation preview (issue #170, deterministic since
- * #311): what the continuation rule will do with this Task's live Session, so
- * the operator sees the warm-session estimate. `available: false` means there
- * is nothing to continue (no Run ever bound a Session, or it has been retired). */
+/** What the continuation rule will do with this Task's live Session; `available: false` when there is nothing to continue. */
 const continuationPreviewSchema = z.discriminatedUnion('available', [
   z.object({ available: z.literal(false) }),
   z.object({
@@ -88,7 +81,6 @@ const taskWithDepsSchema = z
   .object({
     id: z.number().meta({ example: 4821 }),
     prompt: z.string().meta({ example: 'Add rate limiting to POST /api/tasks' }),
-    /** The owning Workspace (ADR-0008). */
     workspaceId: z.number().meta({ example: 1 }),
     /** One of config.ts's HARNESS_IDS ('claude' | 'codex' | 'copilot'); stored as plain text. */
     harness: z.string().meta({ example: 'claude' }),
@@ -96,21 +88,17 @@ const taskWithDepsSchema = z
     workingDir: z.string().meta({ example: '/home/dev/harmonic' }),
     /** 'direct' | 'worktree' (config.ts ISOLATION_MODES); stored as plain text. */
     isolationMode: z.string().meta({ example: 'worktree' }),
-    /** Explicit base branch a worktree Run is cut from and merges back onto
-     * (issue #157, ADR-0024); null resolves at spawn to the working dir's
-     * current branch. */
+    /** Explicit base branch a worktree Attempt is cut from; null resolves at spawn to the working dir's current branch. */
     baseBranch: z.string().nullable().meta({ example: 'integration/epic-42' }),
     /** 'high' | 'normal' | 'low' (config.ts PRIORITIES); stored as plain text. */
     priority: z.string().meta({ example: 'normal' }),
-    /** Resolved conflict-resolve-turn bound (ADR-0046). */
     conflictResolveTurns: z.number().int().meta({ example: 2 }),
-    /** ADR-0041: draft → ready → working → done, plus escalated (the one human surface) and cancelled. Blocked-ness is derived (`openBlockerCount`), never stored. */
+    /** draft → ready → working → done, plus escalated and cancelled. Blocked-ness is derived (`openBlockerCount`), never stored. */
     state: z.enum(TASK_STATES).meta({ example: 'working' }),
     /** Why the ticket is `escalated` — the trigger's recorded reason; null in every other state. */
     escalationReason: z.string().nullable().meta({ example: null }),
     feedback: z.string().nullable().meta({ example: null }),
-    /** How the next Attempt continues the prior Session (issue #170, decided by the #311 rule): 'full'
-     * resumes the same Session, 'condensed' starts fresh; null before any continuation (⇒ full). */
+    /** 'full' resumes the same Session, 'condensed' starts fresh; null before any continuation (⇒ full). */
     continuationChoice: z.enum(['full', 'condensed']).nullable().meta({ example: null }),
     /** 'native' (authored here) | 'mirrored' (1:1 tracker projection). */
     origin: z.enum(TASK_ORIGINS).meta({ example: 'native' }),
@@ -130,16 +118,13 @@ const taskWithDepsSchema = z
     blockedOnFailed: z.boolean().meta({ example: false }),
     /** Number of blocker edges whose blocker has not completed. */
     openBlockerCount: z.number().int().nonnegative().meta({ example: 1 }),
-    /** ADR-0041's derived flag: opted in (mirrored: the `ready-for-agent` label, not an Epic container) and no open Blockers. */
+    /** Derived: opted in (mirrored: the `ready-for-agent` label, not an Epic container) and no open Blockers. */
     agentWorkable: z.boolean().meta({ example: false }),
     /** A mirrored ticket Harmonic never works (no `ready-for-agent`, an Epic container, or a human wayfinder kind); false on native Tasks. Independent of blockers, so a blocked human-only ticket still reads human-only. */
     humanOnly: z.boolean().meta({ example: false }),
     /** This ticket is an Epic container — some other mirrored ticket names it as its parent. List surfaces mark and link it as an Epic (closed ones included); false on native Tasks and leaf tickets. */
     isEpic: z.boolean().meta({ example: false }),
-    /** The inheritable Task-default overrides as stored (ADR-0012): `null` ⇒ this field
-     * *inherits* (Workspace override → global default), so the sibling
-     * harness/model/isolationMode/priority above are the resolved effective
-     * values while these say whether each was pinned. The editor reads both. */
+    /** The Task-default overrides as stored: `null` ⇒ inherits; the sibling fields above are the resolved values. */
     overrides: z
       .object({
         harness: z.string().nullable().meta({ example: null }),
@@ -155,9 +140,7 @@ const taskWithDepsSchema = z
 /** The task shape the REST API and WebSocket both serve (serialize.ts `ApiTask`) — `TaskWithDeps` plus Cost and the tracker url. */
 const taskSchema = taskWithDepsSchema
   .extend({
-    /** The prompt's first line, bounded (ADR-0045): the card title every list
-     * surface renders, so the Board need not carry the full prompt. Present on
-     * both list rows and the item GET; the full `prompt` is item-GET-only (issue #350). */
+    /** The prompt's first line, bounded: the card title; the full `prompt` is item-GET-only. */
     summary: z.string().meta({ example: 'Add rate limiting to POST /api/tasks' }),
     cost: costSchema.nullable(),
     /** The mirrored issue's tracker URL (from the last poll); null on native Tasks or before a poll. */
@@ -168,50 +151,33 @@ const taskSchema = taskWithDepsSchema
     branch: z.string().nullable().meta({ example: 'agent/4821-rate-limiting' }),
     /** The latest run's diffstat, snapshotted at merging; null before then or in direct mode. */
     stat: z.string().nullable().meta({ example: ' src/server/rate-limit.ts | 96 ++++++++++++++\n 1 file changed, 96 insertions(+)' }),
-    /** The running run's `startedAt`; null unless the Task is running (issue #100). */
+    /** The running attempt's `startedAt`; null unless the Task is running. */
     runStartedAt: z.number().nullable().meta({ example: 1784032020000 }),
-    /** Total tool-call count of the running run; null unless the Task is running (issue #100). */
+    /** Total tool-call count of the running attempt; null unless the Task is running. */
     toolCount: z.number().nullable().meta({ example: 12 }),
-    /** The running run's id, so the board can match the attempt_usage firehose to this card; null unless running (issue #100). */
+    /** The running attempt's id, so the board can match the attempt_usage firehose to this card; null unless running. */
     attemptId: z.number().nullable().meta({ example: 41 }),
-    /** The running run's current Attempt Step (ADR-0001 Vocabulary), so the
-     * Board's Active card can badge it; null unless the Task is working, or
-     * between Steps (e.g. mid-merge). */
+    /** The running attempt's current Step; null unless the Task is working, or between Steps. */
     currentStep: z.enum(STEP_TYPES).nullable().meta({ example: 'verification' }),
-    /** The running run's context-window occupancy in tokens; null unless running
-     * (or unreported). Live via the attempt_usage firehose (issue #52). */
+    /** The running attempt's context-window occupancy in tokens; null unless running (or unreported). */
     contextTokens: z.number().nullable().meta({ example: 48210 }),
-    /** The model's effective context window (config override, else shipped
-     * default); null when unknown. The Board card shows `ctx %` =
-     * contextTokens/contextWindow — never a fabricated percentage (issue #52). */
+    /** The model's effective context window; null when unknown. */
     contextWindow: z.number().nullable().meta({ example: 200000 }),
-    /** The current scheduler reason this Task is waiting, such as a blocker,
-     * capacity limit, disabled Workspace, or missing integration branch;
-     * null when it is not waiting (issue #238). */
+    /** Why the scheduler is skipping this Task (blocker, capacity, disabled Workspace, missing integration branch); null when not waiting. */
     skipReason: z.string().nullable().meta({ example: 'blocked-by #12' }),
-    /** The latest run's verified branch head ref (issue #134's Run `verifiedRef`),
-     * surfaced so an escalated Task shows whether Accept has work to merge; null
-     * when no attempt has produced a verified head yet. */
+    /** The latest attempt's verified head ref; null when no attempt has produced a verified head yet. */
     verifiedRef: z.string().nullable().meta({ example: 'refs/harmonic/direct/attempt-9137' }),
-    /** Whether the branch holds a candidate (commits ahead of base) an Accept
-     * could merge (issue #429). */
+    /** Whether the branch holds commits ahead of base an Accept could merge. */
     hasCandidate: z.boolean().meta({ example: true }),
   })
   .meta({ id: 'Task' });
 
-/** A lean list row (ADR-0045, issue #350): the full task shape minus the full
- * `prompt`, which is dropped to keep the list payload small — list surfaces
- * render `summary` instead. The full prompt stays on the item GET (`Task`). */
+/** The full task shape minus `prompt`; list surfaces render `summary` instead. */
 const taskListRowSchema = taskSchema.omit({ prompt: true }).meta({ id: 'TaskListRow' });
 
 const tasksListResponseSchema = listResponse('tasks', taskListRowSchema);
 
-/**
- * An Attempt as the REST API and WebSocket both serve it (serialize.ts
- * `ApiAttempt`) — a translated projection of `AttemptRow` (`attemptToApi`),
- * not a raw dump: `number`/`finishedAt`/the 4-value `state` are deliberate
- * wire choices (ADR-0001, #390).
- */
+/** An Attempt as the REST API and WebSocket both serve it (serialize.ts `ApiAttempt`). */
 const attemptSchema = z
   .object({
     id: z.number().meta({ example: 9137 }),
@@ -223,25 +189,18 @@ const attemptSchema = z
     /** ACP stopReason from the session/prompt result. */
     stopReason: z.string().nullable().meta({ example: 'end_turn' }),
     sessionId: z.string().nullable().meta({ example: 'a3f2c1d0-8b4e-4c1a-9f7d-2e6b5a0c3d91' }),
-    /** The durable Harmonic Session (issue #141) this Attempt bound to on dispatch;
-     * a retry/reject continuation (issue #147) inherits its predecessor's, so two
-     * Attempts sharing a `sessionRowId` continued the same ACP conversation. */
+    /** The Session this Attempt bound to on dispatch; a continuation inherits its predecessor's. */
     sessionRowId: z.number().nullable().meta({ example: 42 }),
-    /** The exact prompt text sent to the harness for this Attempt; null for
-     * pre-feature Attempts and until the prompt turn is sent. */
+    /** The exact prompt text sent to the harness; null until the prompt turn is sent. */
     prompt: z.string().nullable().meta({ example: 'Fix the rate-limiting bug in src/api.ts' }),
     /** Worktree mode: the attempt's branch and the branch it was cut from. */
     branch: z.string().nullable().meta({ example: 'agent/4821-rate-limiting' }),
     baseBranch: z.string().nullable().meta({ example: 'main' }),
-    /** The verified head (ADR-0001): the `commit-tree` OID
-     * captured in `validating` and the private Harmonic ref it is pinned to,
-     * built without moving the target branch. Null when no verified head was
-     * produced (pre-feature, escalated before `validating`, or a dirty
-     * direct-mode context). */
+    /** The verified head OID and the private ref it is pinned to; null when no verified head was produced. */
     verifiedHeadOid: z.string().nullable().meta({ example: '0f758cd2200565e7605902a86c2827c65ad25ce0' }),
     verifiedRef: z.string().nullable().meta({ example: 'refs/harmonic/direct/attempt-9137' }),
     usage: attemptUsageSchema.nullable(),
-    /** Total tool calls this Attempt's session made (ADR-0031 native aggregate). */
+    /** Total tool calls this Attempt's session made. */
     toolCalls: z.number().meta({ example: 63 }),
     startedAt: z.number().meta({ example: 1784032020000 }),
     finishedAt: z.number().nullable().meta({ example: 1784032260000 }),
@@ -278,7 +237,7 @@ const attemptLogResponseSchema = z.discriminatedUnion('status', [
   z.object({ status: z.literal('unavailable'), liveCursor: z.number() }),
 ]);
 
-/** A Guardrail-trip event as the REST API serves it (`domain/guardrail-events.ts` `GuardrailEventRow`, issue #171). */
+/** A Guardrail-trip event as the REST API serves it. */
 const guardrailEventSchema = z.object({
   id: z.number().meta({ example: 812 }),
   /** The Attempt this event is keyed to (`guardrail_events.attempt_id`). */
@@ -299,7 +258,7 @@ const guardrailEventSchema = z.object({
 
 const guardrailEventsListResponseSchema = listResponse('guardrailEvents', guardrailEventSchema);
 
-/** One persisted verification attempt as the REST API serves it (`domain/verification-attempts.ts` `VerificationAttemptRow`, issue #169, part of #109). */
+/** One persisted verification attempt as the REST API serves it. */
 const verificationAttemptSchema = z.object({
   id: z.number().meta({ example: 4210 }),
   /** The Attempt this row is keyed to (`verification_attempts.attempt_id`). */
@@ -316,9 +275,7 @@ const verificationAttemptSchema = z.object({
   summary: z.string().meta({ example: 'all checks passed' }),
   /** Raw verifier output, caller-capped. */
   output: z.string().meta({ example: '' }),
-  /** Whether a critic-session transcript is available for this attempt
-   * (ADR-0040). The raw path is server-only; fetch the parsed log from
-   * `GET /api/verification-attempts/:id/log`. */
+  /** Whether a critic transcript is available; fetch the parsed log from `GET /api/verification-attempts/:id/log`. */
   hasTranscript: z.boolean().meta({ example: false }),
 });
 
@@ -341,16 +298,9 @@ const diffResponseSchema = z.object({
   }),
 });
 
-/** A task-attribute filter that constrains nothing: absent, or an empty
- * multi-select. The `open` state shortcut is a real filter, so a bare string
- * (state `'open'`) counts as non-empty. */
 const filterEmpty = (value: string | readonly unknown[] | undefined): boolean =>
   value === undefined || (Array.isArray(value) && value.length === 0);
 
-/** Order the merged task + epic list rows by the requested key. Cost is derived
- * from runs, so it can only be sorted here, post-serialization; every other key
- * reuses the shared {@link compareListRows}. No `sortBy` leaves the rows in
- * their as-listed order (tasks then epics). */
 function sortListRows(rows: ApiTaskListRow[], sortBy: string | undefined, order: string | undefined): ApiTaskListRow[] {
   if (!sortBy) return rows;
   const dir = order === 'desc' ? -1 : 1;
@@ -402,10 +352,6 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
     async (req) => {
       const { sortBy, order, limit, offset, epics, ...query } = req.query;
       const taskRows = await tasksToApi(ctx, await ctx.tasks.listWithDeps(query));
-      // ADR-0016: epics are a derived container model, surfaced here as
-      // epic-format rows rather than mirrored `isEpic` task rows. Only the
-      // unfiltered view surfaces them — a container has no harness/priority/state,
-      // so any task-attribute filter narrows it out; a title search still applies.
       const needle = query.q?.trim().toLowerCase();
       const wantEpics =
         epics === 'true' && query.workspaceId != null && filterEmpty(query.state) && filterEmpty(query.harness) && filterEmpty(query.priority);
@@ -414,9 +360,6 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
             .filter((ticket) => !needle || ticket.title.toLowerCase().includes(needle))
             .map((ticket) => epicToListRow(ticket, query.workspaceId!))
         : [];
-      // Sort the merged rows in one pass (cost is derived from runs, not a task
-      // column, so it can only be sorted after serialization) and paginate last,
-      // so `total` counts the whole merged match set and the page stays stable.
       const rows = sortListRows([...taskRows, ...epicRows], sortBy, order);
       const { items, total } = paginate(rows, { limit, offset });
       return { tasks: items, total };
@@ -693,16 +636,13 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
     async (req) => {
       await ctx.tasks.assertExists(req.params.id);
       const runsForTask = await ctx.attempts.listForTask(req.params.id);
-      // `previewHumanRejectContinuation` stays a pure, synchronous domain
-      // function; resolve every candidate Session row up front so its
-      // `getSession` lookup can remain sync.
       const sessions = new Map<number, Awaited<ReturnType<typeof ctx.sessions.get>> | null>();
       for (const run of runsForTask) {
         if (run.sessionRowId === null || sessions.has(run.sessionRowId)) continue;
         try {
           sessions.set(run.sessionRowId, await ctx.sessions.get(run.sessionRowId));
         } catch {
-          sessions.set(run.sessionRowId, null); // Session retired + swept — nothing to continue
+          sessions.set(run.sessionRowId, null);
         }
       }
       const plan = previewHumanRejectContinuation(
@@ -846,9 +786,6 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       } catch {
         return { status: 'unavailable' as const, liveCursor: ctx.bus.latestAttemptLogSeq({ attemptId: run.id }) };
       }
-      // Resolve the transcript locator on demand when the eager capture at
-      // dispatch missed it (the harness had not flushed its log inside that
-      // window). By read time the file exists, so this removes the startup race.
       const path = session.transcriptPath ?? (await ctx.runner.ensureSessionTranscript(run.sessionRowId));
       const log = await readTranscriptLog({
         harness: session.harness,
@@ -858,9 +795,6 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       });
       const liveCursor = ctx.bus.latestAttemptLogSeq({ attemptId: run.id });
       if (log.status !== 'available') return { ...log, liveCursor };
-      // The JSONL is only the agent's side; fold in the operator's steer
-      // messages (Harmonic's own attempt-events) so the transcript shows the
-      // back-and-forth, not just the agent's turns.
       const operator: OperatorMessage[] = (await ctx.attempts.listEvents(run.id)).flatMap((e) => {
         const p = e.payload as { event?: string; text?: unknown } | null;
         return (p?.event === 'steer_injected' || p?.event === 'steer_queued') && typeof p.text === 'string'
@@ -939,12 +873,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       const run = await ctx.attempts.get(req.params.id);
       const { limit, offset } = req.query;
       const attempts = await ctx.verificationAttempts.list(run.id);
-      // verifierStatuses is derived from the whole attempt set, so compute it
-      // before paginating the attempts page (ADR-0045).
       const verifierStatuses = await verifierStatusesToApi(ctx, run, attempts);
-      // The raw `transcriptPath`/`harness` columns stay server-only (an absolute
-      // FS path is not the client's business); the response schema strips them
-      // and the client reads the parsed log by attempt id when `hasTranscript`.
       const { items, total } = paginate(
         attempts.map((a) => ({ ...a, hasTranscript: a.transcriptPath != null })),
         { limit, offset },
@@ -990,8 +919,6 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
     async (req) => {
       const attempt = await ctx.verificationAttempts.get(req.params.id);
       if (!attempt?.transcriptPath || !attempt.harness) return { status: 'unavailable' as const, liveCursor: 0 };
-      // No Run window to bound against — a critic attempt has its own single-turn
-      // transcript, so accept every event in the file.
       const log = await readTranscriptLog({
         harness: attempt.harness,
         path: attempt.transcriptPath,
@@ -1043,11 +970,6 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
     async (req) => {
       const run = await ctx.attempts.get(req.params.id);
       if (!run.branch || !run.baseBranch) return { branch: null, baseBranch: null, stat: null };
-      // Prefer the settle-time snapshot so this endpoint and the board card can
-      // never show two different stats (issue #36). Before settle, show the live
-      // worktree stat (committed + uncommitted) for a running Run, falling back to
-      // the committed `base...branch` range when no worktree is checked out. Any
-      // git failure yields a null stat (the empty-state contract), never a 500.
       const task = await ctx.tasks.get(run.taskId);
       let stat = run.stat;
       if (stat === null) {
@@ -1084,12 +1006,8 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       try {
         let raw: string;
         if (run.diffBaseOid && run.diffHeadOid) {
-          // Settled: the immutable snapshot revisions, outliving the branch.
           raw = await Git.diffRange(task.workingDir, run.diffBaseOid, run.diffHeadOid);
         } else {
-          // Running: the live worktree diff (committed + uncommitted) against the
-          // fork point, so an attempt still editing files shows its work. Falls
-          // back to the committed range when no worktree is checked out.
           const live = await liveWorktreeDiff(task.workingDir, run.branch, run.baseBranch);
           raw = live
             ? await Git.worktreeDiffUnified(live.worktree, live.baseOid)
@@ -1099,8 +1017,6 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
         }
         files = parseUnifiedDiff(raw);
       } catch {
-        // A missing revision (legacy row or pruned object) is "nothing to diff",
-        // not a server error — mirror the empty-state contract.
         files = [];
       }
       const { items, total } = paginate(files, { limit, offset });

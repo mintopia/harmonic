@@ -37,15 +37,10 @@ export class TranscriptCapture {
   }
 
   /**
-   * Resolve a Session's native transcript path on demand and persist it — the
-   * read-path counterpart to {@link captureSessionTranscript}. The eager capture at
-   * dispatch races the harness writing its `${sessionId}.jsonl` and gives up after
-   * a few hundred ms; anything that delays the first turn (e.g. pre-turn work) can
-   * push the file past that window and leave `transcriptPath` null forever. By the
-   * time a reader asks for the transcript the file exists, so resolving here
-   * removes the dependence on that startup race entirely and self-heals a Session
-   * the eager pass missed. Returns the stored or freshly-resolved path, or null
-   * when it still cannot be resolved (unknown harness, no resolver, file absent).
+   * Resolve a Session's native transcript path on demand and persist it —
+   * self-heals a Session the eager {@link captureSessionTranscript} missed.
+   * Returns the stored or freshly-resolved path, or null when it still cannot
+   * be resolved.
    */
   async ensureSessionTranscript(sessionRowId: number): Promise<string | null> {
     const session = await this.sessionStore.get(sessionRowId).catch(() => null);
@@ -61,11 +56,7 @@ export class TranscriptCapture {
     return transcriptPath;
   }
 
-  /** The critic equivalent of {@link captureSessionTranscript}: the harness may
-   * not have flushed its `${sessionId}.jsonl` by the time the critic turn ends
-   * and the attempt is appended (root cause of a persistently null critic
-   * transcript). Retry a few times off the hot path, then fill the attempt's
-   * transcript locator so the operator's on-demand critic-session log resolves. */
+  /** The critic equivalent of {@link captureSessionTranscript}. */
   async captureCriticTranscript(input: {
     attemptId: number;
     sessionId: string;

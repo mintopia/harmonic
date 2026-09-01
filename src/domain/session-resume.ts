@@ -1,31 +1,6 @@
 import type { SessionRow } from '../db/schema.js';
 
-/**
- * The resume compatibility matrix (issue #142, reliability-design Unit C).
- *
- * The pure decision of whether a stored {@link SessionRow} may be resumed via
- * `session/load` into the current environment, or whether an incompatibility
- * forces a **fresh** Session instead. This is the highest, cheapest seam in the
- * resume unit (parent #110): given a stored Session plus the environment a
- * dispatch would reload it into, it returns `eligible` or `incompatible` **with a
- * machine-usable reason** — no database, no clock, no harness I/O — so every
- * incompatibility axis can be exhaustively unit-tested in isolation (the same
- * seam as `run-disposition.ts` / `session-retirement.ts`).
- *
- * Resume is eligible when the harness is the same, the adapter/config version is
- * compatible, the cwd / Work-Context identity is unchanged, the harness still
- * advertised `session/load`, and the Session's permission mode can be
- * re-established. A **model change is allowed** — it never blocks resume — but it
- * is flagged so the loader re-verifies at load. Any incompatibility yields a
- * persisted reason string that later forces a new Session rather than a reload.
- */
-
-/**
- * The facet of a stored Session the compatibility matrix reads — exactly the
- * fields of the resume compatibility key. A whole {@link SessionRow} is
- * structurally assignable, so callers pass the row directly; the narrow shape
- * keeps the pure decision independent of the rest of the Session record.
- */
+/** The facet of a stored Session the compatibility matrix reads. A whole {@link SessionRow} is structurally assignable. */
 export interface StoredSessionFacts {
   /** The Harness the Session ran against (claude/codex/copilot). */
   harness: string;
@@ -33,12 +8,8 @@ export interface StoredSessionFacts {
    * null for a legacy Session that never recorded one. */
   adapterVersion: string | null;
   /** The working directory / Work-Context identity it executed in. Compared for
-   * exact equality against {@link ResumeEnvironment.cwd}, so **both operands must
-   * be the canonical form** — the caller runs each through `repoKey`
-   * (execution/repo-lock.ts, the same canonicaliser `workContextKey` uses:
-   * trailing slashes, `.`/`..` segments and symlinks collapse) before calling.
-   * Canonicalising here would make the decision touch the filesystem; this seam
-   * stays pure, so the normalisation is the caller's contract. */
+   * exact equality against {@link ResumeEnvironment.cwd}, so both operands must
+   * be the canonical (`repoKey`) form; the caller normalises. */
   cwd: string;
   /** The ACP permission mode in effect (e.g. `auto`/`bypassPermissions`), or
    * null when none was set. */
@@ -49,21 +20,13 @@ export interface StoredSessionFacts {
   supportsLoadSession: boolean;
 }
 
-/**
- * The current environment a resume would reload the Session into: the same
- * compatibility key computed fresh at dispatch, plus the set of permission modes
- * the current harness advertises (against which the stored mode is checked for
- * re-establishability).
- */
+/** The current environment a resume would reload the Session into. */
 export interface ResumeEnvironment {
   /** The Harness the reload would target. */
   harness: string;
-  /** The adapter/config version the reload would run under (current
-   * {@link adapterVersion}). */
+  /** The adapter/config version the reload would run under. */
   adapterVersion: string;
-  /** The working directory / Work-Context identity the reload would execute in —
-   * canonical form (`repoKey`-normalised), matching {@link
-   * StoredSessionFacts.cwd} so the equality check compares like with like. */
+  /** The working directory the reload would execute in — canonical (`repoKey`) form, matching {@link StoredSessionFacts.cwd}. */
   cwd: string;
   /** The model the reload would run under; may differ from the stored one. */
   model: string;
@@ -72,11 +35,7 @@ export interface ResumeEnvironment {
   availablePermissionModes: readonly string[];
 }
 
-/**
- * The machine-usable reason a resume is incompatible — one per axis of the
- * compatibility key. Persisted on the incompatible verdict so the loader records
- * *why* it minted a fresh Session rather than reloading.
- */
+/** The machine-usable reason a resume is incompatible — one per axis of the compatibility key. */
 export const RESUME_INCOMPATIBILITY_REASONS = [
   /** The current harness differs from the one the Session ran against. */
   'harness-mismatch',
@@ -107,23 +66,11 @@ export type ResumeEligibility =
   | { eligible: false; reason: ResumeIncompatibilityReason; detail: string };
 
 /**
- * Decide whether `stored` may be resumed into `env`. Pure and total: it checks
- * each axis of the compatibility key in a fixed precedence and returns the first
- * incompatibility, or `eligible` (with the model-change flag) when every axis
- * holds. Recomputing over the same inputs always yields the same verdict.
- *
- * Precedence — most fundamental first, so the reason names the deepest problem:
- * harness → `session/load` support → adapter version → cwd → permission mode.
- * This is exactly the declaration order of {@link RESUME_INCOMPATIBILITY_REASONS}
- * (kept in lockstep; the ordered-cascade unit test guards against drift). A model
- * change is deliberately *not* an axis: it is surfaced on the eligible verdict for
- * re-verification, never a block.
- *
- * `session/load` support is read from the *stored* Session
- * ({@link StoredSessionFacts.supportsLoadSession}, what the harness advertised at
- * its `initialize`); a current harness that dropped the capability is caught by
- * the adapter-version axis, which is Harmonic's proxy for adapter/harness
- * capability drift — resume never has to reload before discovering it lost.
+ * Decide whether `stored` may be resumed into `env`: checks each axis in fixed
+ * precedence (harness → `session/load` support → adapter version → cwd →
+ * permission mode, the declaration order of {@link RESUME_INCOMPATIBILITY_REASONS})
+ * and returns the first incompatibility, else `eligible`. A model change is not
+ * an axis; it is flagged for re-verification.
  */
 export function assessResumeEligibility(stored: StoredSessionFacts, env: ResumeEnvironment): ResumeEligibility {
   if (stored.harness !== env.harness) {
@@ -165,11 +112,7 @@ export function assessResumeEligibility(stored: StoredSessionFacts, env: ResumeE
   return { eligible: true, modelChanged, requiresReverification: modelChanged };
 }
 
-/**
- * Narrowing convenience: a whole {@link SessionRow} projected to the
- * {@link StoredSessionFacts} the matrix reads. (A `SessionRow` is already
- * structurally assignable; this documents the exact projection for callers.)
- */
+/** A whole {@link SessionRow} projected to the {@link StoredSessionFacts} the matrix reads. */
 export function sessionFacts(row: SessionRow): StoredSessionFacts {
   return {
     harness: row.harness,

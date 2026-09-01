@@ -123,7 +123,6 @@ describe('worktreeDiff — live diff of a running Run against its fork point', (
     const wt = mkdtempSync(join(tmpdir(), 'harmonic-git-operations-livewt-'));
     tmpDirs.push(wt);
     await Git.addWorktree(repo, wt, 'work', 'main');
-    // One change committed on the branch, one left uncommitted in the worktree.
     writeFileSync(join(wt, 'committed.txt'), 'committed\n');
     git(wt, 'add', '-A');
     git(wt, 'commit', '-m', 'committed work');
@@ -134,7 +133,6 @@ describe('worktreeDiff — live diff of a running Run against its fork point', (
 
     const stat = await Git.worktreeDiffStat(wt, base);
     const unified = await Git.worktreeDiffUnified(wt, base);
-    // The whole live state shows — both the committed file and the uncommitted edit.
     expect(stat).toContain('committed.txt');
     expect(stat).toContain('base.txt');
     expect(unified).toContain('edited but not committed');
@@ -145,13 +143,9 @@ describe('worktreeDiff — live diff of a running Run against its fork point', (
     const wt = mkdtempSync(join(tmpdir(), 'harmonic-git-operations-livewt2-'));
     tmpDirs.push(wt);
     await Git.addWorktree(repo, wt, 'work2', 'main');
-    // Nothing committed on the branch — only an uncommitted edit, as for a running
-    // attempt whose agent has not committed yet.
     writeFileSync(join(wt, 'base.txt'), 'uncommitted only\n');
 
-    // The committed three-dot range (the old endpoint computation) sees nothing…
     expect(await Git.diffStat(repo, 'main', 'work2')).toBe('');
-    // …but the live worktree diff surfaces the in-progress edit.
     const base = await Git.mergeBase(repo, 'main', 'work2');
     expect(await Git.worktreeDiffStat(wt, base)).toContain('base.txt');
   });
@@ -182,29 +176,20 @@ describe('isValidWorktree / discardOrphanWorktree — orphaned per-task worktree
     tmpDirs.push(root);
     const wt = join(root, 'task-1');
     await Git.addWorktree(repo, wt, 'harmonic/task-1', 'main');
-    // A freshly-created worktree is live and registered.
     expect(await Git.isValidWorktree(repo, wt)).toBe(true);
 
-    // Simulate the orphan: the directory survives on disk but its git
-    // registration is gone (gitlink + backing admin dir removed), exactly the
-    // state that made the live rebase run inside a non-repository.
     rmSync(join(wt, '.git'), { recursive: true, force: true });
     rmSync(join(repo, '.git', 'worktrees', 'task-1'), { recursive: true, force: true });
     expect(await Git.isValidWorktree(repo, wt)).toBe(false);
-    // A rebase inside the orphan fails the way production did.
     const baseOid = git(repo, 'rev-parse', 'main');
     const brokenRebase = await Git.rebaseOnto(wt, baseOid);
     expect(brokenRebase.ok).toBe(false);
 
-    // Heal: clear the stray directory, then re-create the worktree on the
-    // surviving branch — the reuse path in prepareWorkspace.
     await Git.discardOrphanWorktree(repo, wt);
     expect(existsSync(wt)).toBe(false);
     await Git.addWorktreeCheckout(repo, wt, 'harmonic/task-1');
     expect(await Git.isValidWorktree(repo, wt)).toBe(true);
 
-    // Move the base and rebase in the healed worktree — it now succeeds instead
-    // of failing with "not a git repository".
     writeFileSync(join(repo, 'moved.txt'), 'moved\n');
     git(repo, 'add', '-A');
     git(repo, 'commit', '-m', 'advance base');

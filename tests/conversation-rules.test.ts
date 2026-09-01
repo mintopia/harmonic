@@ -17,7 +17,6 @@ async function events(server: TestServer, id: number): Promise<any[]> {
   return (await server.api('GET', `/api/conversations/${id}/events`)).body.events;
 }
 
-/** Ask one permission (given kind) in a conversation and wait for the held request to broadcast. */
 async function ask(server: TestServer, ws: { messages: any[] }, convoId: number, kind = 'edit') {
   await server.api('POST', `/api/conversations/${convoId}/turns`, {
     text: JSON.stringify({ requestPermission: { title: `${kind} thing`, kind }, updates: [] }),
@@ -38,7 +37,6 @@ describe('persistent permission rules (issue 13)', () => {
   it('"Always allow in {dir}" writes a rule that auto-approves matching requests across Conversations', async () => {
     const ws = await connectWs(server);
 
-    // Conversation A: prompt, then answer with remember → persists a rule.
     const { body: a } = await server.api('POST', '/api/conversations', {});
     const pending = await ask(server, ws, a.id, 'edit');
     const allowOnce = pending.request.options.find((o: any) => o.kind === 'allow_once');
@@ -47,15 +45,12 @@ describe('persistent permission rules (issue 13)', () => {
       remember: true,
     });
 
-    // A rule now exists, keyed on kind + the conversation's working dir.
     const rules = await waitFor(async () => {
       const { body } = await server.api('GET', '/api/permission-rules');
       return body.rules.length > 0 ? body.rules : undefined;
     });
     expect(rules[0]).toMatchObject({ kind: 'edit', workingDir: a.workingDir });
 
-    // A NEW Conversation in the same working dir: the same-kind request is
-    // auto-approved — no prompt broadcast — and recorded flagged as rule-driven.
     const { body: b } = await server.api('POST', '/api/conversations', {});
     const before = ws.messages.filter((m) => m.type === 'permission_request').length;
     await server.api('POST', `/api/conversations/${b.id}/turns`, {
@@ -74,13 +69,10 @@ describe('persistent permission rules (issue 13)', () => {
 
   it('a non-matching request (different kind or dir) still prompts', async () => {
     const ws = await connectWs(server);
-    // A rule for (edit, cwd) exists from the previous test. A different kind
-    // in the same dir prompts.
     const { body: a } = await server.api('POST', '/api/conversations', {});
     const promptDifferentKind = await ask(server, ws, a.id, 'execute');
     expect(promptDifferentKind.request.toolCall.kind).toBe('execute');
 
-    // Same kind (edit) but a different working directory does not match.
     const { body: b } = await server.api('POST', '/api/conversations', { workingDir: tmpdir() });
     const promptDifferentDir = await ask(server, ws, b.id, 'edit');
     expect(promptDifferentDir.conversationId).toBe(b.id);
@@ -98,12 +90,10 @@ describe('persistent permission rules (issue 13)', () => {
     expect(del.status).toBe(200);
     expect((await server.api('GET', '/api/permission-rules')).body.rules.some((r: any) => r.id === rule.id)).toBe(false);
 
-    // Now an edit request in that dir prompts again instead of auto-approving.
     const { body: c } = await server.api('POST', '/api/conversations', {});
     const prompt = await ask(server, ws, c.id, 'edit');
     expect(prompt.request.toolCall.kind).toBe('edit');
 
-    // Revoking an unknown rule is a 404.
     const missing = await server.api('DELETE', '/api/permission-rules/999999');
     expect(missing.status).toBe(404);
 

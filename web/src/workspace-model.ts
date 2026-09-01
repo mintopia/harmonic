@@ -1,11 +1,5 @@
 import type { Workspace } from './types.js';
 
-/**
- * The active Workspace (ADR-0008): which one the board/table/stats and the
- * status strip are scoped to, and where a new Task/Conversation merges.
- * Persisted like the rail's collapse state (rail-model.ts) so a reload
- * returns to the same Workspace.
- */
 type StorageLike = Pick<Storage, 'getItem' | 'setItem'>;
 
 export const ACTIVE_WORKSPACE_KEY = 'harmonic.active-workspace';
@@ -16,7 +10,7 @@ export function loadActiveWorkspaceId(storage: StorageLike): number | null {
     const id = raw ? Number(raw) : NaN;
     return Number.isFinite(id) ? id : null;
   } catch {
-    return null; // private browsing etc.
+    return null;
   }
 }
 
@@ -24,7 +18,6 @@ export function storeActiveWorkspaceId(storage: StorageLike, id: number): void {
   try {
     storage.setItem(ACTIVE_WORKSPACE_KEY, String(id));
   } catch {
-    // best-effort: losing persistence must not break switching
   }
 }
 
@@ -37,9 +30,9 @@ export function resolveActiveWorkspace(workspaces: Workspace[], persistedId: num
   return persisted ?? workspaces[0]!;
 }
 
-/** Whether to show the full-screen "No workspace open" empty state (issue #68):
+/** Whether to show the full-screen "No workspace open" empty state:
  * the list has finished loading and come back empty — genuine first launch, or
- * after deleting the last Workspace (#61). Gated on `loaded` so the initial
+ * after deleting the last Workspace. Gated on `loaded` so the initial
  * `[]` before the first fetch resolves never flashes the empty state over the
  * board. */
 export function hasNoWorkspaces(workspaces: Workspace[], loaded: boolean): boolean {

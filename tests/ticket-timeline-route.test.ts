@@ -27,8 +27,6 @@ describe('GET /api/tasks/:id/timeline (issue #328)', () => {
     await server.app.ctx.guardrailEvents.append(attempt.id, {
       dimension: 'wall-clock', limitValue: 60_000, observedValue: 60_001, configSource: 'default',
     }, 250);
-    // Cross-task isolation: an unrelated task's Attempt gets its own lifecycle
-    // event, which must never leak into this task's timeline.
     const otherTask = await server.api('POST', '/api/tasks', { prompt: 'another timeline' });
     const otherAttempt = await server.app.ctx.attempts.create(otherTask.body.id);
     await server.app.ctx.attempts.appendEvent(otherAttempt.id, { type: 'lifecycle', payload: { event: 'unrelated' } });
@@ -36,12 +34,6 @@ describe('GET /api/tasks/:id/timeline (issue #328)', () => {
     const response = await server.api('GET', `/api/tasks/${task.body.id}/timeline`);
 
     expect(response.status).toBe(200);
-    // Run/Attempt are one execution ledger now (ADR-0001 #388 S-G): no more
-    // duplicate 'run-started'/'run-finished' entries alongside 'attempt-started'/
-    // 'attempt-finished' for the same fact.
-    // A `task-created` fact heads the lifecycle (its ts is the Task's real
-    // createdAt, so it sorts among the wall-clock events, before the lifecycle
-    // event appended after it).
     expect(response.body.events.map((event: { kind: string }) => event.kind)).toEqual([
       'attempt-started', 'verification', 'guardrail', 'verification', 'verification', 'attempt-finished', 'fact', 'lifecycle',
     ]);
@@ -75,8 +67,6 @@ describe('GET /api/tasks/:id/timeline (issue #328)', () => {
       ts: 200,
       data: { attempt: 1, feedback: 'Use the documented timeout.' },
     }));
-    // The Attempt's disposition-kind reason (ADR-0001 #388 S-E) rides on its
-    // own attempt-finished event, not a separate fact-derived one.
     expect(response.body.events).toContainEqual(expect.objectContaining({
       kind: 'attempt-finished',
       ts: 150,
@@ -88,7 +78,6 @@ describe('GET /api/tasks/:id/timeline (issue #328)', () => {
   it('shows only the task-created row for a task with no runs, and 404 for an unknown task', async () => {
     const task = await server.api('POST', '/api/tasks', { prompt: 'empty timeline' });
 
-    // A run-less Task still has its own creation event — the head of the lifecycle.
     await expect(server.api('GET', `/api/tasks/${task.body.id}/timeline`)).resolves.toMatchObject({
       status: 200,
       body: { events: [{ kind: 'fact', data: { type: 'task-created' } }] },

@@ -1,26 +1,10 @@
-/**
- * Settings registry (issue #336, part of #335). One declaration, per setting, of
- * its **scope** — `global-only` (a single instance-wide value) or `overridable`
- * (a Workspace may store its own value that wins over the global default,
- * ADR-0012) — plus the UI control, label, help text, and tab.
- *
- * This registry is the single authority for which settings are overridable. The
- * resolver (`setting-override.ts`) reads scope from here rather than each call
- * site deciding independently, so a global-only setting can never be resolved
- * from a per-Workspace value. It is also the seam a later phase's Settings UI
- * consumes for control/label/help — no UI change ships with this ticket.
- *
- * Keys match the `workspaces` override columns (`db/schema.ts`) so every
- * resolution path names its setting by the same key.
- */
-
 /** Whether a setting can be overridden per Workspace, or is instance-wide only. */
 export type SettingScope = 'global-only' | 'overridable';
 
-/** The UI control a setting renders as (consumed by the Phase-2 Settings UI). */
+/** The UI control a setting renders as. */
 export type SettingControl = 'select' | 'toggle' | 'number' | 'text' | 'json' | 'verifier';
 
-/** The tab a setting groups under in the Settings UI (ADR-0044 Decision G). */
+/** The tab a setting groups under in the Settings UI. */
 export type SettingTab = 'general' | 'execution' | 'verification' | 'prompts' | 'integrations' | 'security';
 
 export interface SettingSpec {
@@ -165,9 +149,6 @@ export const settingsRegistry = {
     label: 'Tool timeout (minutes)',
     help: 'Hard per-tool-call timeout; overridable per Workspace (ADR-0044) — repos differ in tolerance for slow tools.',
   },
-  // Drive settings (ADR-0044): the `drive.*` block decomposes into five
-  // independently-inheritable fields, each overridable per Workspace — repos
-  // genuinely differ in merge policy and how a mirrored Task is framed/driven.
   drivePrompt: {
     scope: 'overridable',
     control: 'text',
@@ -227,24 +208,14 @@ export function isOverridable(key: SettingKey): boolean {
 
 /**
  * True when a Workspace actually overrides this setting: the registry declares
- * it overridable AND the Workspace column holds a value. This is the registry-
- * driven test for *override presence* (e.g. attributing a config's provenance to
- * 'workspace' vs 'default'), so provenance decisions honour the same single
- * authority as value resolution — flip a setting to `global-only` and no column
- * value counts as an override anywhere.
- *
- * Presence is `!= null`, not truthiness: for a boolean scalar like `reviewEnabled`
- * or `guardrailProgress`, an explicit `false` is a deliberate override (the
- * Workspace turned the setting off) and must be distinguished from `null`/inherit.
+ * it overridable AND the column holds a value. Presence is `!= null`, not
+ * truthiness: an explicit `false` is a deliberate override.
  */
 export function hasWorkspaceOverride(key: SettingKey, columnValue: unknown): boolean {
   return isOverridable(key) && columnValue != null;
 }
 
-/** The Settings UI tab strip, in display order (ADR-0044 Decision G). Both the
- * global and per-Workspace surfaces render this same taxonomy; a tab with no
- * registry-declared fields still exists on the surface for its bespoke sections
- * (e.g. Prompts, Integrations, Security). */
+/** The Settings UI tab strip, in display order. */
 export const SETTING_TABS: readonly { readonly id: SettingTab; readonly label: string }[] = [
   { id: 'general', label: 'General' },
   { id: 'execution', label: 'Execution' },
@@ -259,13 +230,7 @@ export function settingsForTab(tab: SettingTab): SettingKey[] {
   return (Object.keys(settingsRegistry) as SettingKey[]).filter((key) => settingsRegistry[key].tab === tab);
 }
 
-/**
- * The tab strip the per-Workspace surface renders (ADR-0044 Decision G: "the
- * same renderer with the inherit layer enabled and `global-only` tabs hidden").
- * A tab appears only when it holds at least one overridable field, so tabs whose
- * settings are all instance-wide (Integrations, Security) drop off the Workspace
- * surface by construction rather than by a hand-kept exclusion list.
- */
+/** The tab strip the per-Workspace surface renders: only tabs holding at least one overridable field. */
 export function workspaceTabs(): { readonly id: SettingTab; readonly label: string }[] {
   return SETTING_TABS.filter((tab) => settingsForTab(tab.id).some((key) => isOverridable(key)));
 }

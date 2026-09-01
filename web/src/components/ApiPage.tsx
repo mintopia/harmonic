@@ -79,8 +79,6 @@ export function ApiPage() {
     const created = await json<ApiKey & { token: string }>('POST', '/api/keys', { name, scope });
     setFreshToken(created.token);
     setName('');
-    // Back to the least-privileged-surprising default: a minted `read` key
-    // must not silently carry over and mint the next key `read` too.
     setScope('full');
     load();
   };

@@ -72,7 +72,6 @@ describe('task authoring', () => {
     expect(promoted.status).toBe(200);
     expect(promoted.body.state).toBe('ready');
 
-    // Still editable while ready.
     const editedAgain = await server.api('PATCH', `/api/tasks/${created.body.id}`, {
       model: 'my-custom-model-id',
     });
@@ -95,7 +94,6 @@ describe('task authoring', () => {
     expect(cancelled.status).toBe(200);
     expect(cancelled.body.state).toBe('cancelled');
 
-    // cancelled is terminal: no edit, no promote, no second cancel.
     expect((await server.api('PATCH', `/api/tasks/${created.body.id}`, { prompt: 'x' })).status).toBe(409);
     expect((await server.api('POST', `/api/tasks/${created.body.id}/ready`)).status).toBe(409);
     expect((await server.api('POST', `/api/tasks/${created.body.id}/cancel`)).status).toBe(409);
@@ -109,7 +107,6 @@ describe('task authoring', () => {
     expect(uncancelled.status).toBe(200);
     expect(uncancelled.body.state).toBe('ready');
 
-    // ready is not cancelled: uncancel refuses.
     expect((await server.api('POST', `/api/tasks/${created.body.id}/uncancel`)).status).toBe(409);
   });
 
@@ -199,14 +196,10 @@ describe('task authoring', () => {
     const emitted: number[] = [];
     const off = server.app.ctx.bus.on('task_changed', (t) => emitted.push(t.id));
 
-    // Same issue, same fields: a re-poll that mirrors nothing new must be a true
-    // no-op — no write, no task_changed. A large mirrored backlog otherwise fires
-    // one frame per issue every poll, a firehose that hammers the board and Stats.
     await server.app.ctx.tasks.upsertMirrored(input, ws);
     expect(emitted).not.toContain(first.id);
     expect((await server.app.ctx.tasks.get(first.id)).updatedAt).toBe(before.updatedAt);
 
-    // A material change still writes, emits, and bumps updatedAt.
     await server.app.ctx.tasks.upsertMirrored({ ...input, prompt: 'reworded body' }, ws);
     expect(emitted).toContain(first.id);
     expect((await server.app.ctx.tasks.get(first.id)).updatedAt).toBeGreaterThan(before.updatedAt);
@@ -229,11 +222,6 @@ describe('task authoring', () => {
   });
 });
 
-/**
- * Per-Task explicit base branch (issue #157, ADR-0024): the branch a worktree
- * Run is cut from and merges back onto. Plain and per-Task, unlike the four
- * inheritable defaults — it never resolves against a Workspace/global value.
- */
 describe('task baseBranch (issue #157)', () => {
   let server: TestServer;
 
@@ -287,11 +275,6 @@ describe('task baseBranch (issue #157)', () => {
   });
 });
 
-/**
- * Per-Task default overrides that inherit at read time (ADR-0012): a Task that
- * never pinned a default follows its Workspace/global default as it changes,
- * and a blocked Task can be re-pointed while it waits.
- */
 describe('task-default inheritance', () => {
   let server: TestServer;
 
@@ -328,24 +311,20 @@ describe('task-default inheritance', () => {
   });
 
   it('resolves the conflict-resolve bound through the same chain as isolationMode', async () => {
-    // Bare task: resolves the global default (config.ts), unpinned.
     const inherited = (await server.api('POST', '/api/tasks', { prompt: 'inherit the conflict-resolve bound' })).body;
     expect(inherited.conflictResolveTurns).toBe(2);
     expect(inherited.overrides.conflictResolveTurns).toBeNull();
 
-    // Per-task override pins the value and marks it in `overrides`.
     const pinned = (await server.api('POST', '/api/tasks', { prompt: 'pin K', conflictResolveTurns: 9 })).body;
     expect(pinned.conflictResolveTurns).toBe(9);
     expect(pinned.overrides.conflictResolveTurns).toBe(9);
 
-    // Workspace override moves every unpinned task; the pinned one holds.
     const patched = await server.api('PATCH', `/api/workspaces/${await workspaceId()}`, { conflictResolveTurns: 4 });
     expect(patched.status).toBe(200);
     const afterWs = (await server.api('GET', `/api/tasks/${inherited.id}`)).body;
     expect(afterWs.conflictResolveTurns).toBe(4);
     expect(afterWs.overrides.conflictResolveTurns).toBeNull();
 
-    // Clearing a pinned override falls back to inherit.
     const cleared = await server.api('PATCH', `/api/tasks/${pinned.id}`, { conflictResolveTurns: null });
     expect(cleared.status).toBe(200);
     expect(cleared.body.overrides.conflictResolveTurns).toBeNull();
@@ -371,18 +350,10 @@ describe('task-default inheritance', () => {
     const cleared = await server.api('PATCH', `/api/tasks/${blocked.body.id}`, { model: null });
     expect(cleared.status).toBe(200);
     expect(cleared.body.overrides.model).toBeNull();
-    // Inherit resolves to the Workspace default set by the test above — proof
-    // the cleared field tracks the Workspace, not a frozen global default.
     expect(cleared.body.model).toBe('ws-default-model');
   });
 });
 
-/**
- * `skipReason` (issue #171): the transient House-Rule reason (ADR-0001) a
- * ready Task's own API shape carries when the Auto-Runner's last pick pass
- * skipped it for an occupied Work Context — surfaced directly on `taskToApi`
- * (`AutoRunner.skipReasonFor`).
- */
 describe('task skipReason (issue #171)', () => {
   let server: TestServer;
 
@@ -402,8 +373,6 @@ describe('task skipReason (issue #171)', () => {
       workingDir: occupant.body.workingDir,
     });
 
-    // Enabling Auto-Runner pokes it; the fill pass skips `blocked` (context
-    // occupied, per the House Rule — the scheduler pick predicate, ADR-0001).
     await server.api('PATCH', '/api/config', { autoRunner: { enabled: true, maxConcurrentAttempts: 1 } });
     await waitFor(async () => server.app.ctx.autoRunner.skipReasonFor(blocked.body.id) ?? undefined);
 
@@ -491,7 +460,6 @@ describe('task list pagination, search, and summary (ADR-0045, #347)', () => {
     expect(res.body.tasks).toHaveLength(3);
     expect(res.body.total).toBe(3);
     const first = res.body.tasks.find((t: any) => t.summary === 'Add rate limiting to POST /api/tasks');
-    // The full prompt is dropped from list rows (ADR-0045); summary is the first line.
     expect(first).toBeDefined();
     expect(first.prompt).toBeUndefined();
     expect(res.body.tasks.every((t: any) => t.prompt === undefined)).toBe(true);
@@ -513,10 +481,8 @@ describe('task list pagination, search, and summary (ADR-0045, #347)', () => {
   it('searches server-side: case-insensitive substring over the prompt, with a filtered total', async () => {
     const res = await server.api('GET', '/api/tasks?q=rate');
     expect(res.status).toBe(200);
-    // "rate limiting" and "RATE limiter" both match, case-insensitively; "auth" does not.
     expect(res.body.total).toBe(2);
     expect(res.body.tasks).toHaveLength(2);
-    // Search is server-side over the full prompt; the lean rows carry only summary.
     expect(res.body.tasks.every((t: any) => t.summary.toLowerCase().includes('rate'))).toBe(true);
   });
 

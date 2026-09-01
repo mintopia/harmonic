@@ -16,7 +16,6 @@ const chunk = (id: number, text: string, sessionUpdate = 'agent_message_chunk'):
 
 describe('coalesceEvents', () => {
   it('folds consecutive message chunks into one text item so words reflow', () => {
-    // These are the exact byte-boundary splits that broke words mid-line.
     const items = coalesceEvents([chunk(1, 'I searched the de'), chunk(2, 'ferred tool list.')]);
     expect(items).toEqual([
       { kind: 'text', variant: 'message', text: 'I searched the deferred tool list.', at: 1, key: 1 },

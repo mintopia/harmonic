@@ -7,16 +7,6 @@ import { startServer, stubHarness, waitFor, seedLocalMarkdownTicket, type TestSe
 import { verificationCommandSchema } from '../src/config.js';
 import type { MirrorInput } from '../src/domain/tasks.js';
 
-/**
- * Operator Accept runs the one merge policy (ADR-0001, #383): a `git merge
- * --no-ff` merge commit under the base repo mutex, bounded resolve turns, a
- * post-merge check, and revert-on-red — the same primitive the automated path
- * drives. A base that moved since verification is reconciled by the merge
- * commit (no rebase mode); only a genuine conflict or a red post-merge check
- * comes back to the operator. The escalated-diff-snapshot case is general (any
- * auto worktree Run), not Accept-specific.
- */
-
 const git = (dir: string, ...args: string[]) => execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
 
 const tmpDirs: string[] = [];
@@ -26,8 +16,6 @@ const tmpPath = (prefix: string) => {
   return p;
 };
 
-/** A throwaway git repo on main with a local-markdown tracker declaration (so
- * the auto-merge close resolves a real no-op adapter). */
 function makeRepo(): string {
   const dir = tmpPath('harmonic-accept-merge-');
   execFileSync('git', ['init', '-b', 'main', dir], { encoding: 'utf8' });
@@ -41,7 +29,6 @@ function makeRepo(): string {
   return dir;
 }
 
-/** Advance main in the base repo's own (clean, checked-out) working tree. */
 function advanceMain(repo: string, file: string, content: string): string {
   writeFileSync(join(repo, file), content);
   git(repo, 'add', '-A');
@@ -62,14 +49,11 @@ describe('operator Accept merge (ADR-0001, issue #383)', () => {
     wsId = (await server.app.ctx.workspaces.list())[0]!.id;
 
     const repo = makeRepo();
-    // A verifier that fails: both attempts fail, so the ticket escalates with a
-    // real commit as its verified head — Accept has work to merge.
     await server.app.ctx.workspaces.update(wsId, {
       workingDir: repo,
       verificationCommand: [verificationCommandSchema.parse({ command: process.execPath, args: ['-e', 'process.exit(1)'], timeoutSeconds: 30 })],
     });
 
-    // A native worktree Run: its prompt IS the stub scenario.
     const created = await server.api('POST', '/api/tasks', {
       prompt: JSON.stringify({ writeFiles: { 'impl-native.txt': 'implementation\n' } }),
     });
@@ -86,26 +70,16 @@ describe('operator Accept merge (ADR-0001, issue #383)', () => {
     const verified = (await server.app.ctx.attempts.get(attemptId)).verifiedHeadOid;
     expect(verified).toMatch(/^[0-9a-f]{40}$/);
 
-    // The base moves non-conflictingly while the ticket sits escalated — the
-    // common case during the operator's review delay. Base movement is never
-    // detected or classified; the merge commit reconciles it (ADR-0001).
     const mainTip = advanceMain(repo, 'other.txt', 'someone else merged\n');
 
-    // The operator has addressed what made verification fail, so the post-merge
-    // check the one merge policy runs on Accept is now green and the merge stands.
     await server.app.ctx.workspaces.update(wsId, {
       verificationCommand: [verificationCommandSchema.parse({ command: process.execPath, args: ['-e', 'process.exit(0)'], timeoutSeconds: 30 })],
     });
 
-    // force: true is the pure as-is merge-policy path (issue #429) — the
-    // scenario this test exercises is the merge commit/post-merge-check
-    // machinery itself, not the pre-merge verify gate.
     const accepted = await server.api('POST', `/api/tasks/${taskId}/accept`, { force: true });
     expect(accepted.status).toBe(200);
     expect(accepted.body).toMatchObject({ state: 'done', escalationReason: null });
 
-    // main now carries BOTH the independent advance and the implementation,
-    // reconciled by a real `--no-ff` merge commit (no fast-forward rebase mode).
     expect(git(repo, 'rev-parse', 'main')).not.toBe(mainTip);
     expect(git(repo, 'show', 'main:other.txt')).toBe('someone else merged');
     expect(git(repo, 'show', 'main:impl-native.txt')).toBe('implementation');
@@ -119,8 +93,6 @@ describe('operator Accept merge (ADR-0001, issue #383)', () => {
     wsId = (await server.app.ctx.workspaces.list())[0]!.id;
 
     const repo = makeRepo();
-    // A verifier that fails: both attempts fail, so the ticket escalates with a
-    // real commit as its verified head — Accept has work to merge.
     await server.app.ctx.workspaces.update(wsId, {
       workingDir: repo,
       verificationCommand: [verificationCommandSchema.parse({ command: process.execPath, args: ['-e', 'process.exit(1)'], timeoutSeconds: 30 })],
@@ -138,9 +110,6 @@ describe('operator Accept merge (ADR-0001, issue #383)', () => {
       return t.state === 'escalated' ? t : undefined;
     });
 
-    // The operator has addressed what made verification fail; the same
-    // configured verifier now passes, so a default (non-force) Accept's own
-    // pre-merge verify (issue #429) proceeds straight to the merge.
     await server.app.ctx.workspaces.update(wsId, {
       verificationCommand: [verificationCommandSchema.parse({ command: process.execPath, args: ['-e', 'process.exit(0)'], timeoutSeconds: 30 })],
     });
@@ -158,8 +127,6 @@ describe('operator Accept merge (ADR-0001, issue #383)', () => {
     wsId = (await server.app.ctx.workspaces.list())[0]!.id;
 
     const repo = makeRepo();
-    // conflictResolveTurns: 0 → a conflict escalates immediately with no resolve
-    // turn, exactly as the automated path does at zero turns (ADR-0001).
     await server.app.ctx.workspaces.update(wsId, {
       workingDir: repo,
       conflictResolveTurns: 0,
@@ -178,13 +145,8 @@ describe('operator Accept merge (ADR-0001, issue #383)', () => {
       return t.state === 'escalated' ? t : undefined;
     });
 
-    // The base advance touches the SAME file the candidate wrote, so the
-    // `--no-ff` merge conflicts and there is nothing safe to merge without help.
     const mainTip = advanceMain(repo, 'impl-native.txt', 'someone else changed this\n');
 
-    // force: true — the verifier is still red (that's what drove the
-    // escalation), so a default Accept would just verify-fail and resume the
-    // loop; this test means to exercise the merge-conflict path itself.
     const accepted = await server.api('POST', `/api/tasks/${taskId}/accept`, { force: true });
     expect(accepted.status).toBe(409);
     expect((await server.app.ctx.tasks.get(taskId)).state).toBe('escalated');
@@ -198,8 +160,6 @@ describe('operator Accept merge (ADR-0001, issue #383)', () => {
     wsId = (await server.app.ctx.workspaces.list())[0]!.id;
 
     const repo = makeRepo();
-    // The verifier stays red through Accept: both attempts fail (→ escalated),
-    // and the same command run as the post-merge check fails on the merged tip.
     await server.app.ctx.workspaces.update(wsId, {
       workingDir: repo,
       verificationCommand: [verificationCommandSchema.parse({ command: process.execPath, args: ['-e', 'process.exit(1)'], timeoutSeconds: 30 })],
@@ -217,17 +177,11 @@ describe('operator Accept merge (ADR-0001, issue #383)', () => {
       return t.state === 'escalated' ? t : undefined;
     });
 
-    // A non-conflicting advance: the merge itself succeeds, so the post-merge
-    // check is what fails and drives the revert-on-red.
     advanceMain(repo, 'other.txt', 'someone else merged\n');
 
-    // force: true — the verifier stays red, so a default Accept would
-    // verify-fail before ever attempting the merge; this test means to
-    // exercise the post-merge check and revert-on-red themselves.
     const accepted = await server.api('POST', `/api/tasks/${taskId}/accept`, { force: true });
     expect(accepted.status).toBe(409);
     expect((await server.app.ctx.tasks.get(taskId)).state).toBe('escalated');
-    // The merge was reverted, so the candidate's file is not on the base tip.
     expect(() => git(repo, 'show', 'main:impl-native.txt')).toThrow();
     expect(git(repo, 'show', 'main:other.txt')).toBe('someone else merged');
 
@@ -236,11 +190,6 @@ describe('operator Accept merge (ADR-0001, issue #383)', () => {
 });
 
 describe('escalated worktree Run diff snapshot', () => {
-  // A Run that escalates still has its work committed on the run branch. The
-  // diffstat used to be snapshotted only on the merge path, so an escalated Run
-  // persisted none and the review pane went blank exactly when a human needs to
-  // see the work. The settle now snapshots the diff on every terminal path.
-  // General behaviour, not Accept-specific — untouched by #381.
   it('an escalated worktree Run snapshots its diff so the review pane is never blank', async () => {
     const server = await startServer({
       ...stubHarness(),

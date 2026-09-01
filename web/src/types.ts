@@ -1,6 +1,6 @@
 import type { Verdict } from './verification-model.js';
 
-/** The stored Ticket states (ADR-0041); blocked-ness and agent-workability are derived, never stored. */
+/** The stored Ticket states; blocked-ness and agent-workability are derived, never stored. */
 export const TASK_STATES = ['draft', 'ready', 'working', 'escalated', 'done', 'cancelled'] as const;
 export type TaskState = (typeof TASK_STATES)[number];
 
@@ -48,11 +48,11 @@ export interface Attempt {
   steps: Step[];
 }
 
-/** A budget dimension a Guardrail can trip on (ADR-0019, issue #171); mirrors
+/** A budget dimension a Guardrail can trip on; mirrors
  * the server's `GUARDRAIL_DIMENSIONS` (`db/schema.ts`). */
 export type GuardrailDimension = 'wall-clock' | 'tokens' | 'cost' | 'progress' | 'tool-timeout';
 
-/** One persisted Guardrail-trip event (issue #171), as `GET
+/** One persisted Guardrail-trip event, as `GET
  * /api/attempts/:id/guardrail-events` serves it — mirrors the server's
  * `GuardrailEventRow` (`domain/guardrail-events.ts`). `limitValue`/
  * `observedValue` are in the dimension's own unit (ms for wall-clock and
@@ -71,7 +71,7 @@ export interface GuardrailEvent {
   payload: unknown;
 }
 
-/** A Verification mechanism (ADR-0021, issue #132): a command verifier runs an
+/** A Verification mechanism: a command verifier runs an
  * argv check against a frozen candidate; a critic verifier is a read-only
  * agent reviewer. Mirrors the server's `VERIFICATION_MECHANISMS`. */
 export type VerificationMechanism = 'critic' | 'command';
@@ -85,7 +85,7 @@ export interface VerifierStatus {
   commands?: string[];
 }
 
-/** One persisted Verification-attempt event (issue #169, part of #109), as
+/** One persisted Verification-attempt event, as
  * `GET /api/attempts/:id/verification-attempts` serves it — mirrors the server's
  * `VerificationAttemptRow` (`domain/verification-attempts.ts`). A Task's
  * self-heal retries append further attempts for the same `mechanism`, so the
@@ -104,7 +104,7 @@ export interface VerificationAttempt {
   summary: string;
   output: string;
   /** Whether a critic-session transcript can be read for this attempt
-   * (ADR-0040) — fetch it with `api.criticLog(id)`. */
+   * — fetch it with `api.criticLog(id)`. */
   hasTranscript: boolean;
 }
 
@@ -125,7 +125,7 @@ export type TicketTimelineEvent = {
   [K in TicketTimelineKind]: { attemptId: number | null; ts: number; kind: K; data: unknown };
 }[TicketTimelineKind];
 
-/** Tracker mirroring (issue #30): a Task is authored here or a 1:1 projection of a tracker issue. */
+/** Tracker mirroring: a Task is authored here or a 1:1 projection of a tracker issue. */
 export type TaskOrigin = 'native' | 'mirrored';
 export type Workflow = 'wayfinder' | 'implement';
 export type WayfinderType = 'research' | 'prototype' | 'grilling' | 'task';
@@ -141,7 +141,7 @@ export interface Cost {
 }
 
 /**
- * A derived Map rollup (D7, issue #35) as `GET /api/maps` serves it — the
+ * A derived Map rollup as `GET /api/maps` serves it — the
  * server's `mapSchema`: a `wayfinder:map` issue paired with its member Tasks and
  * per-state counts. Query-time, not stored; kept in lockstep with the route.
  */
@@ -156,14 +156,14 @@ export interface MapRollup {
   counts: Record<string, number>;
 }
 
-/** One immediate child directory from `GET /api/fs` (issue #62). */
+/** One immediate child directory from `GET /api/fs`. */
 export interface FsEntry {
   name: string;
   /** Absolute path — feed straight back as `?path=` to descend into it. */
   path: string;
 }
 
-/** The immediate child directories of one path, for the lazy directory picker (issue #62). */
+/** The immediate child directories of one path, for the lazy directory picker. */
 export interface FsListing {
   /** The absolute path that was browsed (the resolved home when none was given). */
   path: string;
@@ -173,7 +173,7 @@ export interface FsListing {
 }
 
 /**
- * A Workspace's Resolved Tracker (issue #83), as the API flattens it: a display
+ * A Workspace's Resolved Tracker, as the API flattens it: a display
  * `label` when resolved, else a coded `reason` it can't. A discriminated union so
  * `ok` narrows which fields are present, matching the flat JSON on the wire.
  */
@@ -181,32 +181,32 @@ export type ResolvedTracker =
   | { ok: true; label: string; code: null; reason: null }
   | { ok: false; label: null; code: string; reason: string };
 
-/** A Workspace (ADR-0008): a named Working Directory, unique by absolute path. */
+/** A Workspace: a named Working Directory, unique by absolute path. */
 export interface Workspace {
   id: number;
   name: string;
   workingDir: string;
   trackerEnabled: boolean;
   trackerPollIntervalSeconds: number;
-  /** The {@link ResolvedTracker} (issue #83); `null` when tracking is off. */
+  /** The {@link ResolvedTracker}; `null` when tracking is off. */
   resolvedTracker: ResolvedTracker | null;
-  /** Per-workspace setting overrides (ADR-0012, issue #64). `null` inherits the
-   * global default; a value overrides it. Resolved at read time (issue #60). */
+  /** Per-workspace setting overrides. `null` inherits the
+   * global default; a value overrides it. Resolved at read time. */
   harness: string | null;
   model: string | null;
-  /** Chat defaults (ADR-0012); `null` inherits `config.chat.*`. */
+  /** Chat defaults; `null` inherits `config.chat.*`. */
   chatHarness: string | null;
   chatModel: string | null;
   isolationMode: 'direct' | 'worktree' | null;
   priority: 'high' | 'normal' | 'low' | null;
-  /** Conflict-resolve bound (ADR-0046); `null` inherits `config.defaults.*`. */
+  /** Conflict-resolve bound; `null` inherits `config.defaults.*`. */
   conflictResolveTurns: number | null;
   maxConcurrentAttempts: number | null;
   autoRunnerEnabled: boolean | null;
   /** Per-workspace attempt cap; null inherits `config.maxAttempts`. */
   maxAttempts: number | null;
   contextReuseTokenLimit: number | null;
-  /** Verification overrides (ADR-0021, issues #132/#138/#165/#174/#337/#338). The
+  /** Verification overrides. The
    * command verifier is list-grain, exactly mirroring the global editor: `null`
    * inherits the global `config.verify.commands` list, an empty array turns
    * verification off for this Workspace (no commands run here), and a
@@ -214,7 +214,7 @@ export interface Workspace {
    * shape it was PATCHed as. */
   verificationCommand: VerificationCommand[] | null;
   /**
-   * Critic-review override (issue #337, ADR-0044 §C), decomposed into four
+   * Critic-review override, decomposed into four
    * independently-inheritable scalars: null inherits the matching global
    * `config.verify.review.*`, a value overrides it. "Off" is `reviewEnabled:false`.
    */
@@ -222,27 +222,27 @@ export interface Workspace {
   reviewPrompt: string | null;
   reviewModel: string | null;
   reviewHarness: string | null;
-  /** Guardrail overrides (ADR-0019, issue #166); `null` inherits
+  /** Guardrail overrides; `null` inherits
    * `config.guardrails.{budget,progress}`. The budget reads back as the parsed
    * object shape it was PATCHed as. */
   guardrailBudget: BudgetGuardrail | null;
   guardrailProgress: boolean | null;
-  /** Tool-timeout override (ADR-0044); `null` inherits `config.guardrails.toolTimeoutMinutes`. */
+  /** Tool-timeout override; `null` inherits `config.guardrails.toolTimeoutMinutes`. */
   toolTimeoutMinutes: number | null;
-  /** Drive overrides (ADR-0044 §C), decomposed into independently-inheritable
+  /** Drive overrides, decomposed into independently-inheritable
    * fields; each `null` inherits the matching global `config.drive.*`. */
   drivePrompt: string | null;
   driveUnattendedReminder: string | null;
   driveContinuePrompt: string | null;
   driveMergeFate: 'auto-merge' | 'open-PR' | 'artifact' | null;
   driveContinueAttempts: number | null;
-  /** Task Prompt override (ADR-0044); `null` inherits `config.taskPrompt`. */
+  /** Task Prompt override; `null` inherits `config.taskPrompt`. */
   taskPrompt: string | null;
   createdAt: number;
   updatedAt: number;
 }
 
-/** A command verifier (ADR-0021, issue #132): an argv-based check run against a
+/** A command verifier: an argv-based check run against a
  * frozen candidate in a disposable checkout. Mirrors `verificationCommandSchema`. */
 export interface VerificationCommand {
   command: string;
@@ -252,7 +252,7 @@ export interface VerificationCommand {
   timeoutSeconds: number;
 }
 
-/** An agent critic verifier (ADR-0021, issue #132): a read-only reviewer with
+/** An agent critic verifier: a read-only reviewer with
  * its own prompt and model. Mirrors `verificationCriticSchema`. */
 export interface VerificationCritic {
   prompt: string;
@@ -269,7 +269,7 @@ export interface VerificationReview {
   harness?: string;
 }
 
-/** The budget Guardrail (ADR-0019): a mandatory wall-clock bound per afk Run
+/** The budget Guardrail: a mandatory wall-clock bound per afk Run
  * plus optional token and cost caps (`null` = that cap is off). */
 export interface BudgetGuardrail {
   wallClockMinutes: number;
@@ -280,28 +280,28 @@ export interface BudgetGuardrail {
 export interface Task {
   id: number;
   /** The full prompt is served only on the item GET (`GET /api/tasks/:id`) and
-   * the WS `task_changed` broadcast, never on a lean list row (ADR-0045, issue
-   * #350) — hence optional. List surfaces render {@link Task.summary} instead. */
+   * the WS `task_changed` broadcast, never on a lean list row
+   * — hence optional. List surfaces render {@link Task.summary} instead. */
   prompt?: string;
-  /** The prompt's first line, bounded server-side (ADR-0045): the card title
+  /** The prompt's first line, bounded server-side: the card title
    * every list surface renders, so the Board never processes the full prompt.
    * Present on both list rows and the item GET. */
   summary: string;
-  /** The owning Workspace (ADR-0008). */
+  /** The owning Workspace. */
   workspaceId: number;
   /** Effective (resolved) Task defaults: a pinned override, else the
-   * Workspace override, else the global default (ADR-0012). `overrides` says
+   * Workspace override, else the global default. `overrides` says
    * which of these were pinned vs inherited. */
   harness: string;
   model: string;
   workingDir: string;
   isolationMode: 'direct' | 'worktree';
   /** Explicit base branch a worktree Run is cut from and merges back onto
-   * (issue #157, ADR-0024); null resolves at spawn to the working dir's
+   *; null resolves at spawn to the working dir's
    * current branch. */
   baseBranch: string | null;
   priority: 'high' | 'normal' | 'low';
-  /** Resolved conflict-resolve bound (ADR-0046). */
+  /** Resolved conflict-resolve bound. */
   conflictResolveTurns: number;
   /** The defaults as stored: `null` ⇒ inherited (tracks the Workspace/
    * global default), a value ⇒ pinned to this Task. The editor seeds its
@@ -314,7 +314,7 @@ export interface Task {
     conflictResolveTurns: number | null;
   };
   state: TaskState;
-  /** Why the ticket is `escalated` — the trigger's recorded reason (ADR-0041); null in every other state. */
+  /** Why the ticket is `escalated` — the trigger's recorded reason; null in every other state. */
   escalationReason: string | null;
   /** Feedback held for the next same-ticket Attempt, if any. */
   feedback: string | null;
@@ -324,9 +324,9 @@ export interface Task {
   dependents: number[];
   /** Ready, and at least one blocker is escalated or cancelled — it will not unblock on its own. */
   blockedOnFailed: boolean;
-  /** Blocker edges whose blocker is not done; blocked-ness is this count, never a state (ADR-0041). */
+  /** Blocker edges whose blocker is not done; blocked-ness is this count, never a state. */
   openBlockerCount: number;
-  /** ADR-0041's derived flag: opted in (mirrored: `ready-for-agent`, not an Epic container) and no open blockers. */
+  /** Derived flag: opted in (mirrored: `ready-for-agent`, not an Epic container) and no open blockers. */
   agentWorkable: boolean;
   /** A mirrored ticket Harmonic never works (no `ready-for-agent`, an Epic container, a human wayfinder kind); independent of blockers. */
   humanOnly: boolean;
@@ -334,7 +334,7 @@ export interface Task {
   isEpic: boolean;
   /** Summed over ALL runs, retries and failed attempts included. */
   cost: Cost | null;
-  /** native = authored here; mirrored = a projection of a tracker issue (issue #30). */
+  /** native = authored here; mirrored = a projection of a tracker issue. */
   origin: TaskOrigin;
   /** The mirrored issue's number; null on native Tasks. */
   trackerRef: number | null;
@@ -344,36 +344,36 @@ export interface Task {
   wayfinderType: WayfinderType | null;
   /** The parent Map's tracker ref; null when unmapped or native. */
   mapRef: number | null;
-  /** The mirrored issue's tracker URL, from the last poll; null on native Tasks or before a poll (issue #35). */
+  /** The mirrored issue's tracker URL, from the last poll; null on native Tasks or before a poll. */
   url: string | null;
-  /** The parent Map's title, resolved from mapRef; null when unmapped or before a poll (issue #34). */
+  /** The parent Map's title, resolved from mapRef; null when unmapped or before a poll. */
   mapTitle: string | null;
   /** The latest run's branch (worktree mode only); null in direct mode or before any run. */
   branch: string | null;
   /** The latest run's `git diff --stat`, snapshotted at merging; null until then or in direct mode. */
   stat: string | null;
-  /** The running run's `startedAt`; null unless the Task is working (issue #100). */
+  /** The running run's `startedAt`; null unless the Task is working. */
   runStartedAt: number | null;
-  /** Total tool-call count of the running run; null unless the Task is working (issue #100). */
+  /** Total tool-call count of the running run; null unless the Task is working. */
   toolCount: number | null;
-  /** The running run's id, so the board can match the `attempt_usage` firehose to this card; null unless the Task is working (issue #100). */
+  /** The running run's id, so the board can match the `attempt_usage` firehose to this card; null unless the Task is working. */
   attemptId: number | null;
-  /** The running run's current Attempt Step (ADR-0001 Vocabulary), for the
+  /** The running run's current Attempt Step, for the
    * Board's Active-card status badge; null unless the Task is working, or
    * between Steps (e.g. mid-merge). */
   currentStep: StepType | null;
-  /** The running run's context-window occupancy in tokens; null unless running (or unreported). Live via the attempt_usage firehose (issue #52). */
+  /** The running run's context-window occupancy in tokens; null unless running (or unreported). Live via the attempt_usage firehose. */
   contextTokens: number | null;
-  /** The model's effective context window; null when unknown. The board card shows `ctx %` = contextTokens/contextWindow (issue #52). */
+  /** The model's effective context window; null when unknown. The board card shows `ctx %` = contextTokens/contextWindow. */
   contextWindow: number | null;
-  /** The latest run's verified branch head ref (issue #134's Run `verifiedRef`);
+  /** The latest run's verified branch head ref;
    * null when no attempt has produced a verified head yet. Whether Accept has
-   * work to merge is now `hasCandidate` (issue #429), not this. */
+   * work to merge is `hasCandidate`, not this. */
   verifiedRef: string | null;
   /** Whether the branch holds a candidate (commits ahead of base) an Accept could merge. */
   hasCandidate: boolean;
   /** Transient scheduler-pick skip reason for a `ready` Task whose Work
-   * Context is already occupied (issue #171, e.g. "Work Context held by task
+   * Context is already occupied (e.g. "Work Context held by task
    * 12 (working)"); null normally, including once the Task starts working. */
   skipReason: string | null;
 }
@@ -410,7 +410,7 @@ export interface AttemptSummary {
     /** Per-agent-type breakdown (root session + each Subagent type); absent when
      * the harness parsed no Process Tree, or on Attempts recorded before it existed. */
     agents?: Record<string, ModelUsage>;
-    /** Output tokens and API-equivalent cost attributed per tool (ADR-0008); absent
+    /** Output tokens and API-equivalent cost attributed per tool; absent
      * on an ACP-only harness that reports no parseable turns. */
     toolTokens?: Record<string, ToolTokenAttribution>;
     /** Output tokens (and cost) from turns that called no tool; absent likewise. */
@@ -419,7 +419,7 @@ export interface AttemptSummary {
     source: string | null;
   } | null;
   cost: Cost | null;
-  /** Total tool calls this Attempt's session made (ADR-0031 native aggregate).
+  /** Total tool calls this Attempt's session made.
    * Always present on the wire; optional here so partial test fixtures need not
    * set it, and every reader floors it with `?? 0`. */
   toolCalls?: number;
@@ -427,7 +427,7 @@ export interface AttemptSummary {
   finishedAt: number | null;
 }
 
-/** A Task's continuation preview (issue #170), as `GET
+/** A Task's continuation preview, as `GET
  * /api/tasks/:id/continuation` serves it: whether the Task has a live Session
  * to continue, and if so the two re-attempt paths on offer — resume the same
  * Session/conversation in full, or start a new Session on a condensed
@@ -451,7 +451,7 @@ export type ContinuationPreview =
           note: string;
         };
       };
-      /** The condensed path's cost signal (issue #177): a fresh Session
+      /** The condensed path's cost signal: a fresh Session
        * re-primed from a summary, its `band` computed **relative to** the full
        * continuation (`estimateCondensedContinuationCost`). `cold` (amber,
        * "pricier") only when the full path is a warm cache hit that beats a cold
@@ -511,13 +511,13 @@ export interface AttemptLogEvent {
 /**
  * A Conversation: an interactive, multi-turn live chat the operator drives
  * with an agent Harness over ACP — a sibling to Task, not a queued unit of
- * work. `title` is null until named/derived (issue #15); a fresh skeleton
+ * work. `title` is null until named/derived; a fresh skeleton
  * conversation may carry a null title indefinitely.
  */
 export interface Conversation {
   id: number;
   title: string | null;
-  /** The owning Workspace (ADR-0008). */
+  /** The owning Workspace. */
   workspaceId: number;
   harness: string;
   model: string;
@@ -527,7 +527,7 @@ export interface Conversation {
   createdAt: number;
   updatedAt: number;
   endedAt: number | null;
-  /** Running usage accumulated across this Conversation's Turns (issue #12);
+  /** Running usage accumulated across this Conversation's Turns;
    * null before any usage has merged. */
   usage: {
     totals: {
@@ -542,18 +542,18 @@ export interface Conversation {
     source: string | null;
   } | null;
   /** Derived from `usage` + configured prices; honest-incomplete like Task's
-   * `cost` (issue #12). */
+   * `cost`. */
   cost: Cost | null;
   /** The latest Turn's input-side token footprint (context fill); null when
-   * unknown (issue #12). */
+   * unknown. */
   contextTokens: number | null;
   /** The model's configured context window; null when unconfigured — the
    * telemetry strip shows raw tokens instead of a fabricated percentage
-   * (issue #12). */
+   *. */
   contextWindow: number | null;
   /** The model's configured cache TTL, in seconds; null when unconfigured —
    * the telemetry strip never shows the cold-cache estimate in that case
-   * (issue #12). */
+   *. */
   cacheTtlSeconds: number | null;
 }
 
@@ -572,10 +572,9 @@ export interface ConversationEvent {
 }
 
 /**
- * One selectable resolution to a pending ACP permission request (issue #11's
- * LOCKED contract). `allow_always`/`reject_always` persist beyond this one
- * tool call within the harness session; the "always allow in {dir}" variant
- * is issue #13 and deliberately out of scope here — only the options the
+ * One selectable resolution to a pending ACP permission request.
+ * `allow_always`/`reject_always` persist beyond this one
+ * tool call within the harness session; only the options the
  * ACP request actually offers are ever rendered.
  */
 export interface PermissionAcpRequestOption {
@@ -594,7 +593,7 @@ export interface PermissionAcpRequest {
 }
 
 /**
- * A persistent auto-approval escalation (issue #13 / ADR-0007): matching
+ * A persistent auto-approval escalation: matching
  * future permission requests — same tool `kind` + Working Directory, any
  * Conversation — resolve server-side with no prompt. Operator-visible and
  * revocable in Settings; deleting one makes matching requests prompt again.
@@ -641,7 +640,7 @@ export interface ModelUsage {
 }
 
 /** Output tokens (and API-equivalent cost) attributed to one tool or the
- * reasoning bucket (ADR-0008); `cost` is absent when the tokens are unpriced. */
+ * reasoning bucket; `cost` is absent when the tokens are unpriced. */
 export interface ToolTokenAttribution {
   outputTokens: number;
   cost?: number;
@@ -676,14 +675,14 @@ export interface ProcessNode {
   status: ProcessStatus;
   depth: number;
   /** For a Subagent, the spawning `Agent`/`Task` tool-use id — the key the
-   * Activity drill-in frames its transcript on (issue #53); null for the root. */
+   * Activity drill-in frames its transcript on; null for the root. */
   toolUseId: string | null;
   children: ProcessNode[];
 }
 export type ProcessTree = ProcessNode;
 
 /**
- * One live process in the instance-wide Activity snapshot (issue #52,
+ * One live process in the instance-wide Activity snapshot (
  * `GET /api/activity`): an in-flight Run or a warm Conversation, joined with
  * its latest Usage, context fill, and derived Cost. `startedAt` is the source
  * of truth for elapsed — the client ticks it live. A Conversation's
@@ -707,9 +706,9 @@ export interface ActivityProcess {
   /** Epoch ms the process started; the client derives elapsed from it. */
   startedAt: number;
   trackerRef: number | null;
-  /** The mirrored issue's tracker URL — the row's ticket deep-link (issue #55); null on native Tasks, Conversations, or before a poll. */
+  /** The mirrored issue's tracker URL — the row's ticket deep-link; null on native Tasks, Conversations, or before a poll. */
   trackerUrl: string | null;
-  /** True when the Task is escalated (ADR-0041) — the "Needs you" signal; always false for a Conversation. */
+  /** True when the Task is escalated — the "Needs you" signal; always false for a Conversation. */
   escalated: boolean;
   usage: AttemptUsage | null;
   contextTokens: number | null;
@@ -722,7 +721,7 @@ export interface ActivityProcess {
 }
 
 /**
- * The live `attempt_usage` firehose delta (ADR 0010): a Run's latest live-usage
+ * The live `attempt_usage` firehose delta: a Run's latest live-usage
  * snapshot plus Cost derived on read. The Activity view merges it into the
  * matching row so tokens, context fill, cost, and the activity line tick live
  * between snapshot polls.
@@ -746,12 +745,12 @@ export interface AppConfig {
     workingDir: string;
     isolationMode: 'direct' | 'worktree';
     priority: 'high' | 'normal' | 'low';
-    /** Conflict-resolve bound (ADR-0046). */
+    /** Conflict-resolve bound. */
     conflictResolveTurns: number;
   };
   /** The default Harness and model a new Conversation ("chat") starts with,
    * separate from the Task defaults. Global-default with a per-Workspace
-   * override (ADR-0012), resolved server-side at Conversation-create time. */
+   * override, resolved server-side at Conversation-create time. */
   chat: {
     harness: string;
     model: string;
@@ -762,11 +761,10 @@ export interface AppConfig {
     commands: VerificationCommand[];
     review: VerificationReview;
   };
-  /** Run Guardrails (ADR-0019): the global-default budget bounds, progress
-   * toggle, and tool-timeout a Workspace inherits until it overrides them
-   * (issue #166; toolTimeoutMinutes reclassified overridable per ADR-0044). */
+  /** Run Guardrails: the global-default budget bounds, progress
+   * toggle, and tool-timeout a Workspace inherits until it overrides them. */
   guardrails: { budget: BudgetGuardrail; progress: boolean; toolTimeoutMinutes: number };
-  /** How mirrored Tasks are driven (issue #33): prompt and branch fate. */
+  /** How mirrored Tasks are driven: prompt and branch fate. */
   drive: {
     /** The Drive Prompt template, with {skill}/{ref}/{url}/{title}/{body} placeholders. The default omits {title}/{body} — the agent fetches the issue itself. */
     prompt: string;

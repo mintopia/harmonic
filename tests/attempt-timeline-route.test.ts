@@ -80,9 +80,6 @@ describe('attempt timeline API', () => {
     expect(rest.body.attempts[0].verifiedSha).toBe('verified-sha');
     expect(rest.body.attempts[0].escalationReason).toBe('escalate');
     expect(rest.body.attempts[0].continuation).toMatchObject({ path: 'new-session-condensed', contextTokens: 250_000 });
-    // The recorded 'command' verification attempt (seeded above for
-    // `verifiedSha`) is itself ground truth that a command verifier ran —
-    // it reconciles to 'passed', not the config-derived 'disabled'.
     expect(rest.body.attempts[0].verifierStatuses).toEqual([
       { mechanism: 'command', state: 'passed', reason: null },
       { mechanism: 'critic', state: 'disabled', reason: 'Critic verification is disabled.' },

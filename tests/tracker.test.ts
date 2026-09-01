@@ -10,7 +10,6 @@ import { githubAdapter, type GhRunner } from '../src/tracker/github.js';
 import { gitlabAdapter, type GlabRunner } from '../src/tracker/gitlab.js';
 import { localMarkdownAdapter } from '../src/tracker/local-markdown.js';
 
-// A real `gh issue view --json` payload, trimmed to the fields the adapter reads.
 const issue29 = {
   number: 29,
   title: 'Tracker Adapter interface + GitHub adapter',
@@ -30,14 +29,13 @@ const issue29 = {
   url: 'https://github.com/mintopia/harmonic/issues/29',
 };
 
-/** Fake `gh`: returns canned JSON for reads, records writes. */
 function fakeGh() {
   const calls: string[][] = [];
   const run: GhRunner = async (args) => {
     calls.push(args);
     if (args[0] === 'issue' && args[1] === 'list') return JSON.stringify([issue29]);
     if (args[0] === 'issue' && args[1] === 'view') return JSON.stringify(issue29);
-    return ''; // edit / close write nothing
+    return '';
   };
   return { run, calls };
 }
@@ -226,9 +224,6 @@ describe('resolveTracker (Resolved Tracker surface, issue #83)', () => {
 });
 
 describe('local-markdown tracker adapter (mattpocock format)', () => {
-  // Fixture: mattpocock prose tickets under a single feature dir. 02 declares
-  // "Blocked by: 01"; the reverse blocking edge onto 01 is synthesised. 02's
-  // "Status: done" closes it; 01 stays open. `notes.md` isn't a ticket.
   const fixture: Record<string, string> = {
     '01-adapter-interface.md': [
       '# 01 — Tracker Adapter interface',
@@ -249,7 +244,7 @@ describe('local-markdown tracker adapter (mattpocock format)', () => {
       '',
       '**Blocked by:** 01',
       '',
-      '**Status:** ready-for-agent', // stays ready-for-agent; completeness is the ticked boxes below
+      '**Status:** ready-for-agent',
       '',
       '- [x] parse heading',
       '- [X] parse status',
@@ -259,7 +254,6 @@ describe('local-markdown tracker adapter (mattpocock format)', () => {
 
   const specBody = ['# Spec: local-markdown tracker', '', 'The problem and the solution.'].join('\n');
 
-  /** Writes the fixture under `<root>/<feature>/issues/`, with a sibling `spec.md` unless `withSpec` is false. */
   const mkTree = (feature = 'harmonic-v1', withSpec = true) => {
     const root = mkdtempSync(join(tmpdir(), 'harmonic-local-md-'));
     const issues = join(root, feature, 'issues');
@@ -273,7 +267,7 @@ describe('local-markdown tracker adapter (mattpocock format)', () => {
     const root = mkTree();
     try {
       const tickets = (await localMarkdownAdapter(root).scan()).sort((a, b) => a.number - b.number);
-      expect(tickets.map((t) => t.number)).toEqual([0, 1, 2]); // 0 is the spec Map
+      expect(tickets.map((t) => t.number)).toEqual([0, 1, 2]);
       const t1 = tickets.find((t) => t.number === 1)!;
       expect(t1).toMatchObject({
         title: 'Tracker Adapter interface',
@@ -300,7 +294,6 @@ describe('local-markdown tracker adapter (mattpocock format)', () => {
       expect(map).toMatchObject({ isMap: true, title: 'local-markdown tracker', parent: null });
       expect(map.body).toBe('The problem and the solution.');
       expect(map.url).toMatch(/spec\.md$/);
-      // both issues parent onto the Map; the Map itself is not blocked/blocking.
       expect(tickets.filter((t) => !t.isMap).every((t) => t.parent === 0)).toBe(true);
       expect(map.blockedBy).toEqual([]);
       expect(map.blocking).toEqual([]);
@@ -327,16 +320,12 @@ describe('local-markdown tracker adapter (mattpocock format)', () => {
       const tickets = await localMarkdownAdapter(root).scan();
       const t1 = tickets.find((t) => t.number === 1)!;
       const t2 = tickets.find((t) => t.number === 2)!;
-      // 02 declares blockedBy 01; the reverse blocking edge is synthesised onto 01.
       expect(t2.blockedBy).toEqual([{ number: 1, title: 'Tracker Adapter interface', state: 'open' }]);
       expect(t1.blocking).toEqual([{ number: 2, title: 'local-markdown tracker adapter', state: 'closed' }]);
-      // "Blocked by: None" → no blockers.
       expect(t1.blockedBy).toEqual([]);
-      // 02: all checkboxes ticked → closed (even though Status is still ready-for-agent).
       expect(t2.state).toBe('closed');
       expect(t2.closedAt).not.toBeNull();
       expect(t2.labels).toEqual(['ready-for-agent']);
-      // 01: has unticked checkboxes → open.
       expect(t1.state).toBe('open');
       expect(t1.closedAt).toBeNull();
     } finally {
@@ -350,11 +339,11 @@ describe('local-markdown tracker adapter (mattpocock format)', () => {
     mkdirSync(issues, { recursive: true });
     const t = (n: number, status: string, ...lines: string[]) =>
       writeFileSync(join(issues, `0${n}-t.md`), [`# 0${n} — T${n}`, '', `**Status:** ${status}`, '', ...lines].join('\n'));
-    t(1, 'ready-for-agent', '- [x] a', '- [ ] b'); // one unticked, status not done → open
-    t(2, 'ready-for-agent', '- [x] a', '- [X] b'); // all ticked (mixed case) → closed
-    t(3, 'done'); // no checkboxes → Status → closed
-    t(4, 'ready-for-agent'); // no checkboxes, status not done → open
-    t(5, 'done', '- [ ] a'); // Status done OR-closes even with an unticked box
+    t(1, 'ready-for-agent', '- [x] a', '- [ ] b');
+    t(2, 'ready-for-agent', '- [x] a', '- [X] b');
+    t(3, 'done');
+    t(4, 'ready-for-agent');
+    t(5, 'done', '- [ ] a');
     try {
       const byNum = new Map((await localMarkdownAdapter(root).scan()).map((x) => [x.number, x.state]));
       expect([byNum.get(1), byNum.get(2), byNum.get(3), byNum.get(4), byNum.get(5)]).toEqual([
@@ -399,11 +388,8 @@ describe('local-markdown tracker adapter (mattpocock format)', () => {
     mkdirSync(issues, { recursive: true });
     const t = (n: number, status: string, ...lines: string[]) =>
       writeFileSync(join(issues, `0${n}-t.md`), [`# 0${n} — T${n}`, '', `**Status:** ${status}`, '', ...lines].join('\n'));
-    // All boxes ticked, but an explicit **open** Status forces open (else reopen no-ops).
     t(1, 'open', '- [x] a', '- [X] b');
-    // All boxes ticked + explicit **closed** Status → closed.
     t(2, 'closed', '- [x] a', '- [X] b');
-    // No Status line at all + all ticked → the allChecked fallback closes it.
     writeFileSync(join(issues, '03-t.md'), ['# 03 — T3', '', '- [x] a', '- [X] b'].join('\n'));
     try {
       const byNum = new Map((await localMarkdownAdapter(root).scan()).map((x) => [x.number, x.state]));
@@ -418,13 +404,11 @@ describe('local-markdown tracker adapter (mattpocock format)', () => {
     const issues = join(root, 'f', 'issues');
     mkdirSync(issues, { recursive: true });
     const file = join(issues, '01-t.md');
-    // Prematurely closed: every acceptance box ticked AND Status closed.
     writeFileSync(file, ['# 01 — T1', '', '**Status:** closed', '', '- [x] a', '- [X] b'].join('\n'));
     try {
       const md = localMarkdownAdapter(root);
       expect((await md.readTicket({ number: 1, title: '', state: 'open' })).state).toBe('closed');
       await md.reopen({ number: 1, title: '', state: 'closed' }, 'premature');
-      // The boxes stay ticked; only Status flipped to open — yet parse now reads open.
       expect(readFileSync(file, 'utf8')).toContain('- [x] a');
       expect(readFileSync(file, 'utf8')).toContain('**Status:** open');
       expect((await md.readTicket({ number: 1, title: '', state: 'closed' })).state).toBe('open');
@@ -433,7 +417,6 @@ describe('local-markdown tracker adapter (mattpocock format)', () => {
     }
   });
 
-  /** Adds a `feature-b` (issues 01 Foo, 02 Bar→01, + spec) beside an existing feature root. */
   const addFeatureB = (root: string) => {
     const issuesB = join(root, 'feature-b', 'issues');
     mkdirSync(issuesB, { recursive: true });
@@ -447,13 +430,11 @@ describe('local-markdown tracker adapter (mattpocock format)', () => {
     try {
       addFeatureB(root);
 
-      // Standalone (no store) → sorted position: feature-a base 0, feature-b base 10000.
       const tickets = (await localMarkdownAdapter(root).scan()).sort((a, b) => a.number - b.number);
       expect(tickets.map((t) => t.number)).toEqual([0, 1, 2, 10000, 10001, 10002]);
       expect(tickets.filter((t) => t.isMap).map((t) => t.number)).toEqual([0, 10000]);
       expect(tickets.find((t) => t.number === 1)!.parent).toBe(0);
       expect(tickets.find((t) => t.number === 10001)!.parent).toBe(10000);
-      // feature-local "Blocked by: 01" resolves within feature-b (→ 10001), not feature-a.
       expect(tickets.find((t) => t.number === 10002)!.blockedBy).toEqual([
         { number: 10001, title: 'Foo', state: 'open' },
       ]);
@@ -462,13 +443,8 @@ describe('local-markdown tracker adapter (mattpocock format)', () => {
     }
   });
 
-  // Regression: an existing feature's ticket numbers are its identity for the mirror's
-  // dedup. Adding an earlier-sorting sibling must not renumber it (nor hand the sibling
-  // its refs) — else already-run work reappears as new/done. This is the musicparty-soloist
-  // case (a completed feature + a later autoplay batch). A persistent, assign-once
-  // `featureIndex` (Harmonic backs it with the DB) is what makes the base stable.
   it('keeps a feature\'s ids stable across an earlier-sorting insertion via featureIndex', async () => {
-    const root = mkTree('m-feature'); // sorts after the sibling added below
+    const root = mkTree('m-feature');
     const store = new Map<string, number>();
     const featureIndex = async (slug: string) => store.get(slug) ?? (store.set(slug, store.size), store.size - 1);
     try {
@@ -476,15 +452,12 @@ describe('local-markdown tracker adapter (mattpocock format)', () => {
         (await localMarkdownAdapter(root, { featureIndex }).scan()).map((t) => [t.url, t.number]),
       );
 
-      // 'a-feature' sorts before 'm-feature' — the case the old positional base broke.
       const issuesA = join(root, 'a-feature', 'issues');
       mkdirSync(issuesA, { recursive: true });
       writeFileSync(join(issuesA, '01-new.md'), '# 01 — New\n\n**Status:** ready-for-agent\n');
 
       const after = await localMarkdownAdapter(root, { featureIndex }).scan();
-      // Every pre-existing ticket keeps its exact number (m-feature stayed index 0).
       for (const t of after) if (before.has(t.url)) expect(t.number).toBe(before.get(t.url));
-      // The new feature's refs are disjoint from every ref recorded before it existed.
       const priorRefs = new Set(before.values());
       const aIds = after.filter((t) => t.url.includes('/a-feature/')).map((t) => t.number);
       expect(aIds.length).toBe(1);
@@ -496,7 +469,6 @@ describe('local-markdown tracker adapter (mattpocock format)', () => {
 });
 
 describe('gitlab tracker adapter', () => {
-  // 36 (opened) declares `Part of #19` + `Blocked by: #22`; 22 (closed) is the Map.
   const issues: Record<number, any> = {
     36: {
       iid: 36,
@@ -522,7 +494,6 @@ describe('gitlab tracker adapter', () => {
     },
   };
 
-  /** Fake `glab api`: canned reads, recorded writes. Endpoint is the last arg, `-X <method>` when mutating. */
   function fakeGlab() {
     const writes: { method: string; path: string }[] = [];
     const run: GlabRunner = async (args) => {
@@ -559,14 +530,13 @@ describe('gitlab tracker adapter', () => {
     const t22 = tickets.find((t) => t.number === 22)!;
     expect(t36).toMatchObject({
       number: 36,
-      state: 'open', // 'opened' → open
-      parent: 19, // body-line `Part of #19`
+      state: 'open',
+      parent: 19,
       isMap: false,
       labels: ['ready-for-agent'],
       url: 'https://gitlab.com/mintopia/harmonic/-/issues/36',
     });
     expect(t36.blockedBy).toEqual([{ number: 22, title: 'The Tracker Adapter interface', state: 'closed' }]);
-    // reverse edge synthesised onto 22
     expect(t22.blocking).toEqual([{ number: 36, title: 'GitLab tracker adapter', state: 'open' }]);
     expect(t22).toMatchObject({ state: 'closed', isMap: true });
     expect(t22.assignees).toEqual(['mintopia']);
@@ -591,7 +561,7 @@ describe('gitlab tracker adapter', () => {
   });
 
   it('scan follows pages past the old 1000-issue (10-page) cap', async () => {
-    const totalIssues = 1250; // 12 full pages + a partial 13th — past the old cap
+    const totalIssues = 1250;
     const run: GlabRunner = async (args) => {
       const path = args[args.length - 1]!;
       const page = Number(new URLSearchParams(path.split('?')[1]).get('page') ?? '1');
@@ -608,8 +578,6 @@ describe('gitlab tracker adapter', () => {
 
   it('warns loudly (never truncates silently) when the page safety valve is hit', async () => {
     const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
-    // Every page comes back full (100 issues), so the loop never sees a short
-    // page to break on and runs all the way to the valve.
     const run: GlabRunner = async (args) => {
       const path = args[args.length - 1]!;
       const page = Number(new URLSearchParams(path.split('?')[1]).get('page') ?? '1');

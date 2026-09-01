@@ -1,12 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { EventLoopMonitor, type StallInfo } from '../src/reliability/event-loop-monitor.js';
 
-/**
- * Single-slot fake scheduler + manual clock. The monitor only ever has one
- * probe armed at a time, so one pending slot is enough. `fireAt` sets the clock
- * to a chosen value and runs the pending probe — letting a test simulate a
- * timer that fired *late* (the loop was blocked) by firing it past its due time.
- */
 class FakeScheduler {
   clock = 0;
   private pending: (() => void) | null = null;

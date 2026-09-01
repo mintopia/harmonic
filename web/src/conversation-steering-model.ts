@@ -4,7 +4,7 @@
 import type { ConversationEvent } from './types.js';
 
 /**
- * Whether the Conversation's latest Turn is still in flight (issue #14):
+ * Whether the Conversation's latest Turn is still in flight:
  * true when the most recent `user_turn` has no subsequent `lifecycle` event
  * whose `payload.event` is `'finished'` or `'error'` — those are the two
  * ways a Turn concludes. Turns are strictly sequential (the server only

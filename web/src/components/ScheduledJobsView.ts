@@ -17,13 +17,6 @@ function empty() {
   return createElement('span', { className: 'text-muted' }, '—');
 }
 
-/**
- * A handle onto the firing's own Operation span (ADR-0010): a monospace
- * anchor into the Live spans rail below, so an operator can jump from "this
- * job last ran" straight to that run's own span (and, nested under it, the
- * logs of whatever the job did). The span id also correlates directly with
- * server-side operation logs when the live row has already scrolled off.
- */
 function OperationCell({ job }: { job: ScheduledJob }) {
   if (job.lastOperationSpanId === null) return empty();
   return createElement(

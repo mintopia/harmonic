@@ -2,7 +2,6 @@ import { readFileSync } from 'node:fs';
 import { defineConfig, configDefaults } from 'vitest/config';
 
 // Files vetted to share a worker process (see the criteria in the list file).
-// Everything else gets the safe default: a fresh fork per file.
 const fastFiles = readFileSync(new URL('./tests/fast-pool.list', import.meta.url), 'utf8')
   .split('\n')
   .map((line) => line.trim())

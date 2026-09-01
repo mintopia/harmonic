@@ -33,9 +33,7 @@ describe('skillFor', () => {
   it('routes a Map-Epic child to the wayfinder skill, taking precedence over wayfinderType', () => {
     expect(skillFor({ wayfinderType: null, harness: 'claude', epicKind: 'map' })).toBe('/wayfinder');
     expect(skillFor({ wayfinderType: null, harness: 'codex', epicKind: 'map' })).toBe('$wayfinder');
-    // A Spec/plain-Epic child is unchanged; a null kind is not a Map.
     expect(skillFor({ wayfinderType: null, harness: 'claude', epicKind: 'spec' })).toBe('/implement');
-    // Map kind wins even when the child itself carries a research wayfinder label.
     expect(skillFor({ wayfinderType: 'research', harness: 'claude', epicKind: 'map' })).toBe('/wayfinder');
   });
 });

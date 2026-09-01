@@ -6,12 +6,6 @@ import { join } from 'node:path';
 import { defaultBranchPostMerge, mergeIntoBase, mergeIntoBaseAndRunPostMerge, resolveRepositoryDefaultBranch } from '../src/execution/branch-merge.js';
 import { Git } from '../src/execution/git.js';
 
-/**
- * Journaled crash-idempotent branch merging (issue #153, reliability-design
- * Unit D). Every case runs against a throwaway git repo, exercising the
- * admin-worktree + CAS operation directly — no server, no DB.
- */
-
 const git = (dir: string, ...args: string[]) => execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
 
 const tmpDirs: string[] = [];
@@ -21,7 +15,6 @@ const tmpPath = (prefix: string) => {
   return p;
 };
 
-/** A throwaway git repo on `branch` (default main) with one committed README. */
 function makeRepo(branch = 'main'): string {
   const dir = tmpPath('harmonic-merge-repo-');
   execFileSync('git', ['init', '-b', branch, dir], { encoding: 'utf8' });
@@ -33,8 +26,6 @@ function makeRepo(branch = 'main'): string {
   return dir;
 }
 
-/** Create `branch` off `from`, add a commit touching `file`, without disturbing
- * the base repo's own checkout (built in a disposable worktree, then removed). */
 function makeBranchAhead(repo: string, branch: string, file: string, content: string, from = 'main'): void {
   const wt = join(tmpPath('harmonic-merge-wt-'), 'wt');
   git(repo, 'worktree', 'add', '-b', branch, wt, from);
@@ -66,7 +57,7 @@ describe('branch merging (issue #153)', () => {
   });
 
   it('does not refresh Epics when a merge targets a non-default base branch (real resolver)', async () => {
-    const repo = makeRepo('develop'); // the base repo's live symbolic HEAD is develop
+    const repo = makeRepo('develop');
     makeBranchAhead(repo, 'feature-base', 'base.txt', 'base\n', 'develop');
     makeBranchAhead(repo, 'feat', 'feat.txt', 'work\n', 'feature-base');
     const refreshAfterDefaultBranchAdvance = vi.fn<(repoDir: string, defaultBranch: string) => Promise<void>>(async () => {});
@@ -83,10 +74,6 @@ describe('branch merging (issue #153)', () => {
   it('refreshes on a default-branch merge even when invoked from a task checkout parked on another branch (real resolver)', async () => {
     const repo = makeRepo('develop');
     makeBranchAhead(repo, 'feat', 'feat.txt', 'work\n', 'develop');
-    // A direct-mode merge runs from the task's own checkout, parked on the task
-    // branch — resolving the default there would compare task-branch to
-    // task-branch and fire on every merge. The threaded `baseRepoDir` makes the
-    // hook resolve against the base repo's symbolic HEAD instead.
     const taskCheckout = join(tmpPath('harmonic-merge-task-'), 'checkout');
     git(repo, 'worktree', 'add', '-b', 'task-branch', taskCheckout, 'develop');
     const refreshAfterDefaultBranchAdvance = vi.fn<(repoDir: string, defaultBranch: string) => Promise<void>>(async () => {});
@@ -118,7 +105,6 @@ describe('branch merging (issue #153)', () => {
     const base = oid(repo, 'main');
     makeBranchAhead(repo, 'feat', 'feat.txt', 'work\n');
     const featTip = oid(repo, 'feat');
-    // Detach the base repo's HEAD so `main` is checked out by nobody.
     git(repo, 'checkout', '--detach', 'main');
 
     const out = await mergeIntoBase({ repoDir: repo, baseBranch: 'main', branch: 'feat', expectedOid: oid(repo, 'feat') });
@@ -126,7 +112,6 @@ describe('branch merging (issue #153)', () => {
     expect(out).toMatchObject({ ok: true, mode: 'cas' });
     expect(oid(repo, 'main')).toBe(featTip);
     expect(oid(repo, 'main')).not.toBe(base);
-    // No live checkout was touched, no admin worktree lingered.
     expect(git(repo, 'status', '--porcelain')).toBe('');
     expect(worktreeCount(repo)).toBe(1);
   });
@@ -151,7 +136,7 @@ describe('branch merging (issue #153)', () => {
     makeBranchAhead(repo, 'feat', 'feat.txt', 'work\n');
     const base = oid(repo, 'main');
 
-    const out = await mergeIntoBase({ repoDir: repo, baseBranch: 'main', branch: 'feat', expectedOid: oid(repo, 'feat') }); // mutexHeld defaults false
+    const out = await mergeIntoBase({ repoDir: repo, baseBranch: 'main', branch: 'feat', expectedOid: oid(repo, 'feat') });
 
     expect(out).toMatchObject({ ok: false, reason: 'fallback-pr-manual' });
     expect(oid(repo, 'main')).toBe(base);
@@ -168,15 +153,12 @@ describe('branch merging (issue #153)', () => {
 
     expect(out).toMatchObject({ ok: false, reason: 'fallback-pr-manual' });
     expect(oid(repo, 'main')).toBe(base);
-    // The operator's uncommitted file is untouched.
     expect(git(repo, 'status', '--porcelain')).toContain('operator-wip.txt');
   });
 
   it('stale-base (default fast-forward mode): a base that advanced after verification is refused, nothing merged, nothing touched', async () => {
     const repo = makeRepo();
     makeBranchAhead(repo, 'feat', 'feat.txt', 'verified work\n');
-    // main moves after verification — even a non-conflicting advance is a tree
-    // nobody verified, so the merge refuses instead of merging.
     writeFileSync(join(repo, 'README.md'), '# main advanced\n');
     git(repo, 'commit', '-am', 'main advances');
     const mainTip = oid(repo, 'main');
@@ -199,16 +181,14 @@ describe('branch merging (issue #153)', () => {
     const out = await mergeIntoBase({ repoDir: repo, baseBranch: 'main', branch: 'feat', expectedOid: featTip, mode: 'merge', mutexHeld: true });
 
     expect(out).toMatchObject({ ok: true, mode: 'in-place' });
-    expect(git(repo, 'rev-parse', 'main^2')).toBe(featTip); // a real merge commit whose second parent is the verified tip
+    expect(git(repo, 'rev-parse', 'main^2')).toBe(featTip);
     expect(git(repo, 'status', '--porcelain')).toBe('');
     expect(worktreeCount(repo)).toBe(1);
   });
 
   it('merge mode conflict: aborts in the admin worktree, returns ok:false, and never enters the live checkout', async () => {
     const repo = makeRepo();
-    // feat forks from the original README and changes it one way...
     makeBranchAhead(repo, 'feat', 'README.md', '# from feat\n');
-    // ...while main moves and changes the same file another way (in place).
     writeFileSync(join(repo, 'README.md'), '# from main\n');
     git(repo, 'commit', '-am', 'main diverges');
     const mainTip = oid(repo, 'main');
@@ -217,7 +197,7 @@ describe('branch merging (issue #153)', () => {
 
     expect(out).toMatchObject({ ok: false, reason: 'conflict' });
     expect(oid(repo, 'main')).toBe(mainTip);
-    expect(git(repo, 'status', '--porcelain')).toBe(''); // base repo pristine — abort happened off to the side
+    expect(git(repo, 'status', '--porcelain')).toBe('');
     expect(worktreeCount(repo)).toBe(1);
   });
 
@@ -260,7 +240,6 @@ describe('branch merging (issue #153)', () => {
     const repo = makeRepo();
     makeBranchAhead(repo, 'feat', 'feat.txt', 'work\n');
     git(repo, 'checkout', '--detach', 'main');
-    // Operator hand-merges feat into main before Harmonic's merge applies.
     const handTip = oid(repo, 'feat');
     git(repo, 'update-ref', 'refs/heads/main', handTip);
 
@@ -276,12 +255,10 @@ describe('branch merging (issue #153)', () => {
     makeBranchAhead(repo, 'feat', 'feat.txt', 'work\n');
     const featTip = oid(repo, 'feat');
 
-    // Correct expected-old advances the ref.
     const good = await Git.casUpdateRef(repo, 'main', featTip, a);
     expect(good.ok).toBe(true);
     expect(oid(repo, 'main')).toBe(featTip);
 
-    // A stale expected-old (still `a`, but main is now featTip) is refused.
     makeBranchAhead(repo, 'other', 'other.txt', 'other\n', a);
     const otherTip = oid(repo, 'other');
     const stale = await Git.casUpdateRef(repo, 'main', otherTip, a);
@@ -292,10 +269,8 @@ describe('branch merging (issue #153)', () => {
   it('AC2 in-place CAS-via-ff: a target that diverged off the computed base is refused, not force-reset', async () => {
     const repo = makeRepo();
     const a = oid(repo, 'main');
-    // A commit that is NOT a descendant of main's current tip.
     makeBranchAhead(repo, 'sidecar', 'side.txt', 'side\n', a);
     const sidecar = oid(repo, 'sidecar');
-    // main diverges to its own new commit.
     writeFileSync(join(repo, 'README.md'), '# main advanced\n');
     git(repo, 'commit', '-am', 'main advances');
     const mainTip = oid(repo, 'main');

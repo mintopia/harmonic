@@ -21,23 +21,12 @@ function mergeInto(dest: Record<string, ModelUsage>, src: Record<string, ModelUs
 interface Transcript {
   /** Per-model usage; chunked assistant messages repeat the id, so dedupe on it. */
   models: Record<string, ModelUsage>;
-  /** Latest assistant message's input-side footprint (inputs + cache) — the window fill. */
   contextTokens: number | null;
   /** tool_use ids that received a tool_result here — a spawned Subagent that has finished. */
   completed: Set<string>;
-  /** Assistant messages are native turn boundaries; their tool_use blocks and
-   * output counters make exact output-token attribution possible. */
   turns: UsageTurn[];
 }
 
-/**
- * The running fold of one `<sessionId>.jsonl` / `agent-<id>.jsonl` transcript,
- * updated line-by-line so a whole-file scan (`scanTranscript`) and an
- * incremental tail (`TranscriptCursor`, #217) share the exact accounting.
- * `seen` and `completed` persist across incremental reads, so a chunked
- * assistant message (repeated id) is deduped even when its chunks merge in two
- * different ticks.
- */
 class TranscriptAcc implements LineAccumulator {
   readonly models: Record<string, ModelUsage> = {};
   private readonly seen = new Set<string>();
@@ -93,7 +82,6 @@ class TranscriptAcc implements LineAccumulator {
   }
 }
 
-/** One whole-file pass over a transcript (the run-end `collectUsage` path). */
 function scanTranscript(file: string): Transcript {
   const acc = new TranscriptAcc();
   if (!existsSync(file)) return acc.snapshot();
@@ -118,11 +106,9 @@ interface Subagent {
 }
 
 /**
- * Every Subagent under `<sessionId>/subagents/`, walked recursively so
- * nested spawns and workflow agents (`workflows/wf_<id>`) are all included.
- * A Subagent is a `agent-<id>.jsonl` transcript plus its `.meta.json`
- * sidecar; either can appear before the other mid-run, so a stem with only
- * one of the pair is still returned (empty usage / default meta).
+ * Claude Code writes a Subagent's `agent-<id>.jsonl` and `.meta.json` sidecar
+ * non-atomically; either can appear before the other mid-run, so a stem with
+ * only one of the pair is still returned.
  */
 function readSubagents(subDir: string): Subagent[] {
   if (!existsSync(subDir)) return [];
@@ -143,7 +129,6 @@ function readSubagents(subDir: string): Subagent[] {
       try {
         parsed = JSON.parse(readFileSync(meta, 'utf8'));
       } catch {
-        /* incomplete write mid-run: default meta */
       }
     }
     subs.push({ id, meta: parsed, scan: jsonl ? scanTranscript(jsonl) : { models: {}, contextTokens: null, completed: new Set(), turns: [] } });
@@ -151,21 +136,11 @@ function readSubagents(subDir: string): Subagent[] {
   return subs;
 }
 
-/** The `<sessionId>/subagents/` dir beside a root transcript. */
 function subagentsDir(rootFile: string): string {
   return join(dirname(rootFile), basename(rootFile, '.jsonl'), 'subagents');
 }
 
-/**
- * Fold a root transcript plus its recursive Subagents into rolled-up Usage +
- * the Process Tree (ADR 0009). Shared by the whole-file `parse` and the
- * incremental `ClaudeSessionTailReader` so both build an identical tree from
- * whatever `Transcript`s they were handed. See `parse`'s doc for the nesting
- * rules (`parentAgentId`, the completed-set status, depth).
- */
 function buildParsed(rootId: string, rootScan: Transcript, subs: Subagent[]): ParsedSession {
-  // A Subagent is finished once its spawning tool_use has a tool_result,
-  // recorded in the parent (root or another Subagent) transcript.
   const completed = new Set<string>(rootScan.completed);
   for (const s of subs) for (const id of s.scan.completed) completed.add(id);
 
@@ -227,11 +202,9 @@ async function resolveTranscriptPath(sessionLogDir: string | undefined, sessionI
         await access(candidate);
         return await realpath(candidate);
       } catch {
-        // This project is not the Session's transcript directory.
       }
     }
   } catch {
-    // No transcript root yet, or the harness has not flushed its log.
   }
   return null;
 }
@@ -242,18 +215,9 @@ interface SubEntry {
   metaPath?: string;
   cursor?: LineCursor<TranscriptAcc>;
   meta: SubagentMeta;
-  /** True once `.meta.json` parsed; a mid-run incomplete write retries next tick. */
   metaResolved: boolean;
 }
 
-/**
- * The incremental, async live reader for a claude run's session log (#217).
- * Holds a `LineCursor` per file (root + each Subagent) so every tick folds
- * only newly-appended bytes instead of re-reading the whole tree, and rebuilds
- * the (cheap, O(#agents)) Process Tree from the accumulated transcripts.
- * `latest()` serves the last build to the on-demand callers (Activity
- * snapshot, spend guard) with no I/O.
- */
 class ClaudeSessionTailReader implements SessionTailReader {
   private readonly rootFile: string | null;
   private readonly subDir: string | null;
@@ -272,8 +236,6 @@ class ClaudeSessionTailReader implements SessionTailReader {
   }
 
   sample(): Promise<ParsedSession | null> {
-    // Serialize onto the cursors: a slow tick and an on-demand read must never
-    // advance the same byte offset concurrently. Chain past whatever ran last.
     const run = (this.inflight ?? Promise.resolve(null)).then(
       () => this.doSample(),
       () => this.doSample(),
@@ -285,7 +247,7 @@ class ClaudeSessionTailReader implements SessionTailReader {
   private async doSample(): Promise<ParsedSession | null> {
     if (!this.rootFile) return null;
     if (!this.rootCursor) {
-      if (!existsSync(this.rootFile)) return this.cached; // no log yet → stays null
+      if (!existsSync(this.rootFile)) return this.cached;
       this.rootCursor = new LineCursor(this.rootFile, () => new TranscriptAcc());
     }
     await this.discoverSubs();
@@ -299,14 +261,13 @@ class ClaudeSessionTailReader implements SessionTailReader {
     return this.cached;
   }
 
-  /** Pick up Subagent files that have appeared since the last tick. */
   private async discoverSubs(): Promise<void> {
     if (!this.subDir) return;
     let entries: string[];
     try {
       entries = (await readdir(this.subDir, { recursive: true })) as string[];
     } catch {
-      return; // no subagents dir this run
+      return;
     }
     for (const rel of entries) {
       const m = /^agent-(.+)\.(jsonl|meta\.json)$/.exec(basename(rel));
@@ -336,24 +297,21 @@ class ClaudeSessionTailReader implements SessionTailReader {
       s.meta = JSON.parse(await readFile(s.metaPath, 'utf8'));
       s.metaResolved = true;
     } catch {
-      /* incomplete write mid-run: keep default meta, retry next tick */
     }
   }
 }
 
 export const claudeAdapter: HarnessAdapter = {
   spawnEnv: ({ model }) => ({
-    // The adapter refuses to start nested inside a Claude Code session
-    // (spike finding); Harmonic itself may have been launched from one.
+    // Claude Code refuses to start nested inside another Claude Code session;
+    // Harmonic itself may have been launched from one.
     CLAUDECODE: undefined,
     CLAUDE_CODE_ENTRYPOINT: undefined,
     ANTHROPIC_MODEL: model,
   }),
 
-  // Register Harmonic's MCP server over ACP `session/new`, same as codex
-  // and copilot — the HARMONIC_MCP_URL/HARMONIC_API_KEY env vars alone
-  // don't make Claude Code load an MCP server, so an empty list left the
-  // agent with no `harmonic` tools at all.
+  // The HARMONIC_MCP_URL/HARMONIC_API_KEY env vars alone don't make Claude
+  // Code load an MCP server; it has to be registered over ACP `session/new`.
   mcpServers: ({ url, token }) => [
     {
       name: 'harmonic',
@@ -368,14 +326,9 @@ export const claudeAdapter: HarnessAdapter = {
       return resolveTranscriptPath(sessionLogDir, sessionId);
     },
     /**
-     * Parse the session transcript plus every Subagent under
-     * `<sessionId>/subagents/` (recursively — nested spawns and
-     * `workflows/wf_<id>` included) into rolled-up Usage + the Process Tree
-     * (ADR 0009). Each Subagent's `.meta.json` nests it under its parent via
-     * `parentAgentId` (the spawning agent's `agentId`); depth-1 Subagents and
-     * workflow/teammate agents (no `parentAgentId`) hang off the root. The
-     * flat `usage` sums the whole tree — Subagent tokens now count toward the
-     * Run, the undercount fix (#48). Returns null when no transcript exists.
+     * Each Subagent's `.meta.json` nests it under its parent via
+     * `parentAgentId`; depth-1 Subagents and workflow/teammate agents (no
+     * `parentAgentId`) hang off the root.
      *
      * ponytail: single-model-per-node — a node whose calls span models folds
      * under its dominant model; the flat `usage` keeps the true per-model
@@ -393,9 +346,6 @@ export const claudeAdapter: HarnessAdapter = {
       return buildParsed(input.sessionId ?? rootFile, rootScan, subs);
     },
 
-    /** The live path (#217): an incremental, off-the-event-loop tailer that
-     *  folds only newly-appended bytes each tick, versus `parse`'s whole-file
-     *  re-read (kept for the one-shot run-end `collectUsage`). */
     createTailReader(input) {
       return new ClaudeSessionTailReader(input);
     },
@@ -403,7 +353,7 @@ export const claudeAdapter: HarnessAdapter = {
     /**
      * Claude Code writes `<sessionLogDir>/<slug(cwd)>/<sessionId>.jsonl`
      * where the slug replaces every non-alphanumeric character with '-',
-     * and the ACP sessionId equals the log filename (spike finding).
+     * and the ACP sessionId equals the log filename.
      */
     sessionLogFile({ sessionLogDir, cwd, sessionId }) {
       const logDir = sessionLogDir ?? join(homedir(), '.claude', 'projects');
@@ -412,10 +362,6 @@ export const claudeAdapter: HarnessAdapter = {
       return join(logDir, slug, `${sessionId}.jsonl`);
     },
 
-    /**
-     * Per-model usage from the parent transcript alone (the generic
-     * `collectUsage` fallback); `parse` rolls in Subagents for the tree.
-     */
     modelsFromSessionLog(file) {
       return scanTranscript(file).models;
     },

@@ -9,7 +9,7 @@ export interface ModelUsage {
   cacheWriteTokens: number;
 }
 
-/** One row of the per-Workspace spend breakdown (ADR-0014): billable tokens stay
+/** One row of the per-Workspace spend breakdown: billable tokens stay
  * split in/out, and cost is null-sticky (a floor, never a fake $0). */
 export interface WorkspaceStats {
   workspaceId: number;
@@ -22,8 +22,8 @@ export interface WorkspaceStats {
   failureRate: number | null;
 }
 
-/** The `/api/stats` response (attempt-grain aggregates over from/to/workspaceId,
- *  ADR-0008/0014). Shared by the KPI panel and the attempt-activity heatmap so
+/** The `/api/stats` response (attempt-grain aggregates over from/to/workspaceId).
+ *  Shared by the KPI panel and the attempt-activity heatmap so
  *  the one fetch contract lives in one place. */
 export interface Stats {
   from: number;
@@ -48,9 +48,9 @@ export interface Stats {
   /** Attempt-grain aggregates grouped by owning Workspace, ordered by cost. */
   byWorkspace: WorkspaceStats[];
   /** Verification verdicts at verification-attempt grain; only the critic split
-   * feeds the card — command verdicts are never folded in (ADR-0014 §4). */
+   * feeds the card — command verdicts are never folded in. */
   verdicts: { critic: VerdictCounts; command: VerdictCounts };
-  /** How settled Tasks left the merge gate (ADR-0014 §5). */
+  /** How settled Tasks left the merge gate. */
   gateOutcomes: GateOutcomes;
   /** Guardrail trip counts keyed by dimension; a dimension that never tripped is absent. */
   guardrailTrips: Record<string, number>;
@@ -58,7 +58,7 @@ export interface Stats {
   tasksMergedByDay: MergedDay[];
   /** Distribution of attempts-to-settle over merged Tasks (self-heal depth); 1 is best. */
   attemptsPerTask: AttemptsPerTask;
-  /** Merged spend ÷ merged Tasks with reverted/abandoned spend beside it; costs null-stick (ADR-0008). */
+  /** Merged spend ÷ merged Tasks with reverted/abandoned spend beside it; costs null-stick. */
   costPerMergedTask: CostPerMergedTask;
 }
 
@@ -67,7 +67,6 @@ export interface AttemptStateCount {
   count: number;
 }
 
-/** The canonical AttemptSummary-state order (mirrors the server's `RUN_STATES`): live, then merged, then the failure slices. */
 const ATTEMPT_STATE_ORDER = ['running', 'completed', 'failed', 'cancelled'] as const satisfies readonly AttemptSummary['state'][];
 
 /** AttemptSummary-state distribution in canonical AttemptSummary-state order, with zero-count states dropped.
@@ -88,7 +87,7 @@ export function orderedAttemptStates(attemptsByState: Record<string, number>): A
 }
 
 /**
- * The run-states breakdown for the reliability donut (ADR-0028): `failed` is
+ * The run-states breakdown for the reliability donut: `failed` is
  * the backend's failed-only count and cancelled stays its own slice. Everything
  * is shown so the failure rate can be reconciled against the whole picture,
  * never a hidden number. Zero-count slices are dropped, canonical order kept.
@@ -143,7 +142,7 @@ export function usageBars(byKey: Record<string, TokenCounts>): UsageBar[] {
 }
 
 /**
- * Cache hit rate (0..1, ADR-0028): cache-read tokens over *all* input-side
+ * Cache hit rate (0..1): cache-read tokens over *all* input-side
  * tokens — `read / (input + read + write)`. The denominator includes cache-write
  * on purpose, so priming the cache counts against the rate until it pays back.
  * null when there is no usage or no input-side tokens — the caller shows "—",
@@ -157,7 +156,7 @@ export function cacheHitRate(totals: TokenCounts | null | undefined): number | n
 }
 
 /**
- * Failure rate (0..1, ADR-0028): `failedAttempts / total`, failed-only — the
+ * Failure rate (0..1): `failedAttempts / total`, failed-only — the
  * backend's honest numerator (cancelled Runs excluded).
  * null when there are no Runs — the caller shows "—", never a fabricated 0%.
  */
@@ -184,7 +183,7 @@ export function subagentShare(agents: Record<string, TokenCounts> | undefined): 
   return (total - root) / total;
 }
 
-/** Critic/command verdict tallies at verification-attempt grain (ADR-0014 §4):
+/** Critic/command verdict tallies at verification-attempt grain:
  * pass / block / inconclusive, never folded together. */
 export interface VerdictCounts {
   pass: number;
@@ -192,7 +191,7 @@ export interface VerdictCounts {
   inconclusive: number;
 }
 
-/** How settled Tasks left the merge gate (ADR-0014 §5): auto-merged, escalated
+/** How settled Tasks left the merge gate: auto-merged, escalated
  * to a human, or merged-then-reverted on a red post-merge check. */
 export interface GateOutcomes {
   autoMerged: number;
@@ -206,9 +205,6 @@ export interface CountRow {
   count: number;
 }
 
-/** Fixed pass / block / inconclusive order so the critic donut keeps a stable
- * legend even when a bucket is empty. Only the critic feeds this card; command
- * verdicts are never folded in (ADR-0014 §4). */
 const VERDICT_ORDER = ['pass', 'block', 'inconclusive'] as const;
 export function criticVerdictSlices(critic: VerdictCounts): CountRow[] {
   return VERDICT_ORDER.map((key) => ({ key, count: critic[key] }));
@@ -218,8 +214,6 @@ export function criticVerdictTotal(critic: VerdictCounts): number {
   return critic.pass + critic.block + critic.inconclusive;
 }
 
-/** Fixed auto-merged / escalated / reverted-on-red order; the three sum to the
- * settled-Task total (`settledTaskTotal`) so the gate reconciles visibly. */
 const GATE_ORDER = ['autoMerged', 'escalated', 'revertedOnRed'] as const;
 export function gateOutcomeBars(gate: GateOutcomes): CountRow[] {
   return GATE_ORDER.map((key) => ({ key, count: gate[key] }));

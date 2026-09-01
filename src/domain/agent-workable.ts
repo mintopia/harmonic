@@ -1,24 +1,16 @@
 import type { WayfinderType } from '../db/schema.js';
 
-/**
- * The one triage label that opts a mirrored ticket into autonomous work (issue
- * #230): present ⇒ agent-eligible, absent ⇒ human-only (never auto-picked).
- * Read through this shared constant by every eligibility gate so the polarity
- * holds on every tracker, no per-call literal.
- */
+/** The triage label that opts a mirrored ticket into autonomous work: present ⇒ agent-eligible, absent ⇒ human-only. */
 export const READY_FOR_AGENT_LABEL = 'ready-for-agent';
 
-/** The triage label that keeps a ticket human-only whatever else it carries (issue #230). */
+/** The triage label that keeps a ticket human-only whatever else it carries. */
 export const READY_FOR_HUMAN_LABEL = 'ready-for-human';
 
 /**
- * The label half of ADR-0041's derived agent-workable flag for a mirrored
- * ticket (the other half is "no open Blockers", derived from edges). Opt-in:
- * `ready-for-agent` present, and not forced human-only — by `ready-for-human`,
- * by a wayfinder kind a human must drive (grilling / prototype / task), or by
- * being a container (a ticket with children is never worked itself, at any
- * nesting level). Assignment is never consulted (issue #208). Pure, so the
- * Auto-Runner pick, the Epic ready-frontier, and the board all agree.
+ * The label half of the derived agent-workable flag for a mirrored ticket (the
+ * other half is "no open Blockers"). Opt-in: `ready-for-agent` present, and
+ * not forced human-only — by `ready-for-human`, by a wayfinder kind a human
+ * must drive, or by being a container. Assignment is never consulted.
  */
 export function mirroredAgentEligible(
   labels: readonly string[],

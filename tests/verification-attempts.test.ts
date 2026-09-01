@@ -10,11 +10,6 @@ import { AttemptStore } from '../src/domain/attempts.js';
 import { VerificationAttemptStore } from '../src/domain/verification-attempts.js';
 import { allWorkspaces, makeSettingsStore } from './helpers.js';
 
-/**
- * The append-only Verification attempt log store (issue #136, mirroring
- * `tests/run-facts.test.ts`'s template for `RunFactStore`, issue #112).
- * Re-keyed off `attempt_id` at ADR-0001 #388 S-F (was `run_id` before).
- */
 describe('VerificationAttemptStore (issue #136)', () => {
   let dir: string;
   let asyncDb: AsyncDbHandle;
@@ -123,10 +118,8 @@ describe('VerificationAttemptStore (issue #136)', () => {
       verdict: 'pass',
       summary: 's1',
       output: 'o1',
-    }); // seq 1
+    });
 
-    // Force a raw duplicate seq against the same file — the store never does
-    // this, but the index must guarantee no two attempts share a seq in a Run.
     const raw = createClient({ url: `file:${join(dir, 'harmonic.db')}` });
     await expect(
       raw.execute({
@@ -136,7 +129,6 @@ describe('VerificationAttemptStore (issue #136)', () => {
       }),
     ).rejects.toThrow(/UNIQUE constraint failed/);
 
-    // A different seq for the same Run is fine.
     await expect(
       raw.execute({
         sql: `insert into verification_attempts (attempt_id, seq, ts, mechanism, input_oid, verdict, summary, output)
@@ -160,7 +152,6 @@ describe('VerificationAttemptStore (issue #136)', () => {
     expect(withLocator).toMatchObject({ transcriptPath: '/home/u/.claude/projects/x/sess.jsonl', harness: 'claude' });
     expect(await attempts.get(withLocator.id)).toEqual(withLocator);
 
-    // The command verifier (and any attempt that resolved no session) leaves both null.
     const noLocator = await attempts.append(attemptId, {
       mechanism: 'command',
       inputOid: 'a'.repeat(40),

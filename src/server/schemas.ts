@@ -7,18 +7,6 @@ import {
 } from '../db/schema.js';
 import { listResponse } from './pagination.js';
 
-/**
- * Shared response schemas for zod-declared routes (ADR-0005). Every route's
- * `schema.response` should reuse these instead of redefining the error
- * envelope shape, so the generated spec documents one consistent contract.
- *
- * Fields carry `.meta({ example })` wherever a plausible value helps more than
- * a type name does: the API page renders the spec's examples verbatim and only
- * synthesizes placeholders where none is declared, so an example here is the
- * difference between a reader seeing `"claude"` and seeing `"string"`.
- * Examples are illustrative, not captured traffic.
- */
-
 /** The `{ error: { code, message } }` envelope every error response uses — see app.ts's error handler. */
 export const errorResponseSchema = z
   .object({
@@ -29,15 +17,7 @@ export const errorResponseSchema = z
   })
   .meta({ id: 'ErrorResponse' });
 
-/**
- * The error envelope with a description for one specific failure.
- *
- * `.describe()` on a registered schema keeps the `$ref` and adds the
- * description beside it, so each status documents what *it* means without
- * inlining a copy of the envelope or renaming the shared definition. Fastify's
- * swagger integration reads that description as the response's own — this is
- * what replaces "Default Response".
- */
+/** The error envelope with a per-status description; `.describe()` on a registered schema keeps the `$ref`, and fastify-swagger reads the description as the response's own. */
 export const errorResponse = (description: string) => errorResponseSchema.describe(description);
 
 /** The trivial `{ ok: true }` body returned by actions with nothing else to report. */
@@ -48,7 +28,7 @@ export const okResponseSchema = z
 /** A numeric `:id` path param, coerced from the route string — shared by tasks/runs/channels. */
 export const idParamsSchema = z.object({ id: z.coerce.number().int().meta({ example: 4821 }) });
 
-/** One persisted step in an Attempt's ordered ticket timeline (ADR-0041). */
+/** One persisted step in an Attempt's ordered ticket timeline. */
 export const stepSchema = z
   .object({
     id: z.number().meta({ example: 73 }),
@@ -64,7 +44,7 @@ export const stepSchema = z
   })
   .meta({ id: 'Step' });
 
-/** One configured verifier category's reconciled read-time state (issue #327). */
+/** One configured verifier category's reconciled read-time state. */
 export const verifierStatusSchema = z
   .object({
     mechanism: z.enum(['command', 'critic']).meta({ example: 'critic' }),
@@ -104,15 +84,10 @@ export const attemptSchema = z
   })
   .meta({ id: 'Attempt' });
 
-/** The ticket timeline shape shared by REST and the WebSocket firehose. The REST
- * `/tasks/:id/attempts` view carries the shared `total` envelope (ADR-0045); the
- * firehose broadcast (ws.ts) sends the whole `attempts` list and simply omits the
- * REST-only `total`, so both surfaces stay in step when no page is requested. */
+/** The ticket timeline shape shared by REST and the WebSocket firehose; the firehose omits the REST-only `total`. */
 export const attemptTimelineResponseSchema = listResponse('attempts', attemptSchema)
   .extend({
-    /** The attempt number the `maxAttempts` budget counts from (ADR-0041): the last
-     * escalated Attempt, or 0. `latest.number - budgetBase` is the position within
-     * the current budget — history numbering never resets, the budget does. */
+    /** The attempt number the `maxAttempts` budget counts from: the last escalated Attempt, or 0. History numbering never resets, the budget does. */
     budgetBase: z.number().int().nonnegative().meta({ example: 0 }),
   })
   .meta({ id: 'AttemptTimelineResponse' })
@@ -209,26 +184,17 @@ export const processNodeSchema = z
   })
   .meta({ id: 'ProcessNode' });
 
-/**
- * One live process in the instance-wide Activity snapshot (issue #51): an
- * in-flight Run or a warm Conversation, from the in-memory registries joined
- * with each session's latest Usage. A Run carries the full live snapshot
- * (rolled-up Usage, context fill, current-activity line, Process Tree,
- * derived Cost); a Conversation has no live tailer, so its `tree`/`activity`
- * are null and its Usage/context come from the Conversation row. `startedAt`
- * is the source of truth for elapsed — the client ticks it live rather than
- * reading a value stale the moment it was sent.
- */
+/** One live process in the Activity snapshot: an in-flight Attempt or a warm Conversation. A Conversation has no live tailer, so its `tree`/`activity` are null. */
 export const activityProcessSchema = z
   .object({
     type: z.enum(['attempt', 'chat']).meta({ example: 'attempt' }),
-    /** The Run's id (type `run`), else null. */
+    /** The Attempt's id (type `attempt`), else null. */
     attemptId: z.number().nullable().meta({ example: 4821 }),
     /** The Conversation's id (type `chat`), else null. */
     conversationId: z.number().nullable().meta({ example: null }),
-    /** The owning Task's id (type `run`), else null. */
+    /** The owning Task's id (type `attempt`), else null. */
     taskId: z.number().nullable().meta({ example: 512 }),
-    /** Display title: a Run's Task prompt first line, a Conversation's title. */
+    /** Display title: an Attempt's Task prompt first line, a Conversation's title. */
     title: z.string().meta({ example: 'Add the Activity rail view' }),
     workspaceId: z.number().meta({ example: 1 }),
     /** The owning Workspace's name — the view spans Workspaces. */
@@ -236,17 +202,17 @@ export const activityProcessSchema = z
     /** One of config.ts's HARNESS_IDS ('claude' | 'codex' | 'copilot'); stored as plain text. */
     harness: z.string().meta({ example: 'claude' }),
     model: z.string().meta({ example: 'sonnet-5' }),
-    /** A running Run's AttemptState, or a warm Conversation's ConversationState. */
+    /** A running Attempt's AttemptState, or a warm Conversation's ConversationState. */
     state: z.enum([...ATTEMPT_STATES, ...CONVERSATION_STATES]).meta({ example: 'running' }),
-    /** Isolation Mode ('direct' | 'worktree', config.ts ISOLATION_MODES); always 'direct' for a Conversation (ADR-0006). Stored as plain text. */
+    /** Isolation Mode ('direct' | 'worktree', config.ts ISOLATION_MODES); always 'direct' for a Conversation. Stored as plain text. */
     isolation: z.string().meta({ example: 'worktree' }),
     /** Epoch ms the process started; the client derives elapsed from it. */
     startedAt: z.number().meta({ example: 1784032260000 }),
-    /** The mirrored issue's tracker ref (a Run's Task); null on native Tasks and Conversations. */
+    /** The mirrored issue's tracker ref (an Attempt's Task); null on native Tasks and Conversations. */
     trackerRef: z.number().nullable().meta({ example: 51 }),
-    /** The mirrored issue's tracker URL — the Activity row's ticket deep-link (issue #55); null on native Tasks, Conversations, or before a poll. */
+    /** The mirrored issue's tracker URL; null on native Tasks, Conversations, or before a poll. */
     trackerUrl: z.string().nullable().meta({ example: 'https://github.com/mintopia/harmonic/issues/55' }),
-    /** True when the Task is escalated (ADR-0041) — the "Needs you" signal; always false for a Conversation. */
+    /** True when the Task is escalated; always false for a Conversation. */
     escalated: z.boolean().meta({ example: false }),
     /** Rolled-up Usage; null before any tokens are reported. */
     usage: attemptUsageSchema.nullable(),
@@ -254,16 +220,16 @@ export const activityProcessSchema = z
     contextTokens: z.number().nullable().meta({ example: 48210 }),
     /** The model's configured context window; null when unconfigured (percentage suppressed). */
     contextWindow: z.number().nullable().meta({ example: 200000 }),
-    /** One-line "what the agent is doing now" (Runs only); null otherwise. */
+    /** One-line "what the agent is doing now" (Attempts only); null otherwise. */
     activity: z.string().nullable().meta({ example: 'Editing src/foo.ts' }),
-    /** The process's Process Tree (Runs only); null for a Conversation. */
+    /** The process's Process Tree (Attempts only); null for a Conversation. */
     tree: processNodeSchema.nullable(),
     /** Cost derived from Usage on read; null when nothing could be priced. */
     cost: costSchema.nullable(),
   })
   .meta({ id: 'ActivityProcess' });
 
-/** One recurring, centrally registered Scheduled Job (ADR-0038). */
+/** One recurring, centrally registered Scheduled Job. */
 export const scheduledJobSchema = z
   .object({
     jobKey: z.string().meta({ example: 'session-retirement:global' }),
@@ -275,14 +241,13 @@ export const scheduledJobSchema = z
     lastStatus: z.enum(['ok', 'error']).nullable().meta({ example: 'ok' }),
     lastDurationMs: z.number().int().nonnegative().nullable().meta({ example: 124 }),
     lastError: z.string().nullable().meta({ example: null }),
-    /** The OTel span id of the Job's most recent firing this process (ADR-0010); null before its first run since boot. */
+    /** The OTel span id of the Job's most recent firing this process; null before its first run since boot. */
     lastOperationSpanId: z.string().nullable().meta({ example: 'a1b2c3d4e5f60718' }),
     nextRunAt: z.number().nullable().meta({ example: 1784032560000 }),
   })
   .meta({ id: 'ScheduledJob' });
 
-/** A managed worktree the boot/periodic reconciler will not delete until an
- * operator disposes of it by hand (ADR-0010, issue #386). */
+/** A managed worktree the reconciler will not delete until an operator disposes of it by hand. */
 export const flaggedWorktreeSchema = z
   .object({
     path: z.string().meta({ example: '/data/worktrees/task-42' }),

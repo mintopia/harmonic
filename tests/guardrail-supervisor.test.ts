@@ -11,13 +11,6 @@ import type { GuardrailEventInput } from '../src/domain/guardrail-events.js';
 import type { StepType } from '../src/db/schema.js';
 import type { ProgressEvent } from '../src/domain/stall-detector.js';
 
-/**
- * Unit tests for the guardrail-trip logic in isolation (issue #445 acceptance):
- * each dimension trips (or holds) without a full drive turn — the supervisor is
- * driven with plain fakes for its stores + turn callbacks, and the per-fire
- * `evaluate*` bodies are invoked directly.
- */
-
 interface GuardrailSnapshot {
   budget: { wallClockMinutes: number; tokens: number | null; costUsd: number | null };
   progress: boolean;
@@ -167,8 +160,6 @@ describe('GuardrailSupervisor spend (issue #128)', () => {
   });
 
   it('holds an unmeasurable cap through the grace window, then trips', async () => {
-    // A configured token cap with no usage feed → unmeasurable, not "ok". Grace
-    // window 0 so the first fire past grace trips.
     const h = makeSupervisor({ config: budgetSnapshot({ tokens: 100 }), snapshot: null, spendGraceMs: 0 });
     await h.sup.prime();
 
@@ -180,7 +171,7 @@ describe('GuardrailSupervisor spend (issue #128)', () => {
   it('short-circuits once the turn is already settled', async () => {
     const h = makeSupervisor({ config: budgetSnapshot({ tokens: 100 }), snapshot: snapshotWithTokens(150) });
     await h.sup.prime();
-    h.state.settled = true; // an operator/other guardrail already claimed the settle
+    h.state.settled = true;
     await h.sup.evaluateSpend();
 
     expect(h.appended).toHaveLength(0);
@@ -191,7 +182,7 @@ describe('GuardrailSupervisor spend (issue #128)', () => {
 describe('GuardrailSupervisor wall-clock (issue #127)', () => {
   it('trips once the execution clock passes the budget', async () => {
     const h = makeSupervisor({
-      config: budgetSnapshot({}), // 45m budget
+      config: budgetSnapshot({}),
       startedAt: Date.now() - 46 * 60_000,
       stepType: 'implementation' as StepType,
     });
@@ -222,11 +213,10 @@ describe('GuardrailSupervisor wall-clock (issue #127)', () => {
 describe('GuardrailSupervisor tool-timeout (issue #131)', () => {
   it('trips on the oldest outstanding tool call past the bound', async () => {
     const h = makeSupervisor({
-      config: { ...budgetSnapshot({}), progress: true, toolTimeoutMinutes: 0.001 }, // 60ms bound
+      config: { ...budgetSnapshot({}), progress: true, toolTimeoutMinutes: 0.001 },
       stepType: 'implementation' as StepType,
     });
     await h.sup.prime();
-    // Open a tool call, then let it age past the tiny bound.
     h.sup.observeTool({ sessionUpdate: 'tool_call', toolCallId: 'tc-1', title: 'Run tests' });
     await new Promise((r) => setTimeout(r, 80));
     await h.sup.evaluateToolTimeout();
@@ -250,7 +240,6 @@ describe('GuardrailSupervisor tool-timeout (issue #131)', () => {
 });
 
 describe('GuardrailSupervisor progress (issue #131)', () => {
-  // 3 identical (action A -> result rA) pairs — a stall the detector flags.
   const stallTrace: ProgressEvent[] = [
     { seq: 1, kind: 'action', signature: 'A' },
     { seq: 2, kind: 'result', signature: 'rA' },
@@ -267,17 +256,14 @@ describe('GuardrailSupervisor progress (issue #131)', () => {
     });
     await h.sup.prime();
 
-    // First boundary: nudge, do not trip.
     expect(await h.sup.checkProgressAtBoundary()).toBe(false);
     expect(h.steer).toEqual([PROGRESS_NUDGE_TEXT]);
     expect(h.records).toContainEqual({ event: 'progress-nudge', pattern: expect.any(String) });
     expect(h.appended).toHaveLength(0);
 
-    // The nudge is still queued (turn not yet run) → still no trip.
     expect(await h.sup.checkProgressAtBoundary()).toBe(false);
     expect(h.appended).toHaveLength(0);
 
-    // Nudge delivered (drained) and its turn ran → trip.
     h.steer.length = 0;
     expect(await h.sup.checkProgressAtBoundary()).toBe(true);
     expect(h.appended).toHaveLength(1);

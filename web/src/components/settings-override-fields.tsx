@@ -6,15 +6,12 @@ import { InheritField } from './InheritField';
 import { ScalarControl, type FieldOption, type ScalarControlKind } from './settings-fields';
 import type { InheritSource } from './inherit-field-model';
 
-/** A scalar override value. Kept non-generic (like {@link ScalarDescriptor}) so
- * descriptors sit together in one array and map through {@link OverrideField}
- * without function-parameter variance fights; each `set` narrows with `as`. */
 type Scalar = string | number | boolean;
 
 /**
  * One overridable setting bound to a Workspace column: how to read its override
  * (`null` = inherit), write it, and what global default it inherits. The label
- * and control come from the settings registry (ADR-0044) so the schema stays the
+ * and control come from the settings registry so the schema stays the
  * single source of truth. This is the workspace-surface twin of
  * {@link ScalarDescriptor}: where the global page maps `ScalarDescriptor[]`
  * through `ConfigField`, the workspace page maps `OverridableDescriptor[]`

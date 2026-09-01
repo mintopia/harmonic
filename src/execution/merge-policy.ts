@@ -1,14 +1,3 @@
-/**
- * The one merge policy, everywhere (ADR-0001, "One merge policy, everywhere").
- * A self-contained, dependency-injected primitive: it knows nothing about
- * TaskService, the runner, config, or the DB — every variable behaviour
- * (resolving a conflict turn, running the post-merge check, escalating) is
- * injected by the caller — the runner's completion path and operator Accept
- * both drive it through this one entry point.
- *
- * The primitive checks `input.baseBranch` out at `input.baseDir` under the
- * mutex before merging, so the caller need not pre-position the base checkout.
- */
 import { Git } from './git.js';
 import { withBaseCheckoutLock, withRepoLock } from './repo-lock.js';
 import { startActiveChildOperation, type Operation } from '../telemetry/operations.js';
@@ -49,7 +38,7 @@ export interface MergePolicyInput {
   taskBranch: string;
   conflictResolveTurns: number; // bounded agentic resolve turns; 0 => escalate on first conflict
   postMergeCheck: boolean; // run the post-merge deterministic check under the mutex
-  spanAttributes?: Record<string, string | number | boolean>; // extra attributes for the merge span (e.g. run.id), so a caller's merge is observable keyed to its execution (ADR-0010)
+  spanAttributes?: Record<string, string | number | boolean>; // extra attributes for the merge span (e.g. run.id)
 }
 
 export type MergePolicyOutcome =
@@ -68,36 +57,19 @@ function postMergeRedMessage(taskBranch: string, baseBranch: string, output: str
   return `The post-merge check on ${baseBranch} failed after merging ${taskBranch}; the merge was reverted so the base stays green.\n\nFailing output:\n${output}`;
 }
 
-// Aborts the in-progress merge under the metadata lock and composes the
-// escalation outcome, but does not deliver it — deps.escalate runs after the
-// lock is released (ADR-0001).
 async function escalateConflict(input: MergePolicyInput): Promise<MergePolicyOutcome> {
   await withRepoLock(input.baseDir, () => Git.abortMerge(input.baseDir));
   const message = conflictMessage(input.taskBranch, input.baseBranch, input.conflictResolveTurns);
   return { kind: 'escalated', reason: 'conflict', message };
 }
 
-/**
- * Bounded agentic resolve loop (ADR-0001 step 3): up to `conflictResolveTurns`
- * turns, each re-checking `Git.unmergedPaths` before and after so a turn that
- * resolves everything completes the merge itself without spending a turn it
- * didn't need. `conflictResolveTurns === 0` runs zero turns and escalates
- * immediately.
- *
- * The whole loop runs under {@link withBaseCheckoutLock} (held by the caller),
- * so no sibling merge/refresh/reconcile touches the conflicted base checkout.
- * But the slow agentic turn deliberately runs with NO metadata `withRepoLock`
- * held — it only edits and `git add`s files in `baseDir`'s own working tree —
- * so sibling tasks can create/remove worktrees while it runs (issue #455). The
- * short git reads/writes on either side re-take `withRepoLock` briefly.
- */
 async function resolveConflict(
   input: MergePolicyInput,
   deps: MergePolicyDeps,
 ): Promise<{ mergeOid: string } | { escalated: true }> {
   for (let turn = 1; turn <= input.conflictResolveTurns; turn++) {
     const unmerged = await withRepoLock(input.baseDir, () => Git.unmergedPaths(input.baseDir));
-    if (unmerged.length === 0) break; // already resolved between turns
+    if (unmerged.length === 0) break;
 
     const turnOp = startActiveChildOperation('merge.resolve', {
       'merge.turn': turn,
@@ -134,7 +106,7 @@ async function resolveConflict(
           logger.info('merge: completed after resolution', { 'merge.turn': turn, 'merge.oid': done.mergeOid });
           return { mergeOid: done.mergeOid };
         }
-        return 'failed'; // completeMerge failed unexpectedly; fall through to escalation
+        return 'failed';
       },
     );
     if (typeof settled === 'object') return settled;
@@ -143,25 +115,9 @@ async function resolveConflict(
   return { escalated: true };
 }
 
-/** The merge/resolve/post-check work done while the base-checkout lock is held
- * (the `withBaseCheckoutLock` critical section) — split out so the lock-hold
- * span (`merge.lock-hold`) can wrap exactly this and nothing else. The
- * base-checkout lock bars every sibling operation that mutates this shared
- * checkout's working tree (merge/refresh/reconcile); the shorter metadata
- * `withRepoLock` is re-taken only around the git ref/index mutations, and
- * deliberately dropped around the slow agentic resolve turn (issue #455). */
 async function criticalSection(input: MergePolicyInput, deps: MergePolicyDeps): Promise<MergePolicyOutcome> {
-  // Read once up front so the `finally` can restore it; stable for the whole
-  // critical section since the base-checkout lock bars any sibling from moving
-  // this checkout's HEAD.
   const parkedBranch = await Git.currentBranch(input.baseDir).catch(() => null);
   try {
-    // Point the shared base checkout at this task's base branch and start the
-    // merge, under the metadata lock so no worktree op races the ref/index
-    // mutations. The base repo is a shared per-Workspace checkout that worktree
-    // tasks never sit on their base branch, and sibling tasks may target
-    // different bases. Non-force: an unexpectedly dirty base checkout fails
-    // loudly here rather than having its uncommitted work discarded.
     const started = await withRepoLock(
       input.baseDir,
       async (): Promise<{ mergeOid: string } | { conflict: true }> => {
@@ -175,8 +131,6 @@ async function criticalSection(input: MergePolicyInput, deps: MergePolicyDeps): 
           logger.warn('merge: conflicts detected', { 'merge.task_branch': input.taskBranch });
           return { conflict: true };
         }
-        // A hard git fault, not a resolvable conflict — the primitive does not
-        // escalate infra faults; the caller decides how to handle them.
         throw new Error(merge.detail);
       },
     );
@@ -207,27 +161,12 @@ async function criticalSection(input: MergePolicyInput, deps: MergePolicyDeps): 
 
     return { kind: 'merged', mergeOid };
   } finally {
-    // Restore the base repo to the branch it was parked on (normally the default
-    // branch), so merging a NON-default base — an epic/<ref> member merging onto
-    // its integration branch (ADR-0001) — never leaves the shared base checkout
-    // switched off the default branch. A parked-off base would mislead the
-    // whole-Epic integrate's `symbolic-ref HEAD` default-branch read and the
-    // develop→epic refresh. Under the metadata lock, so no worktree op races the
-    // switch. A no-op in the ordinary case where the base branch IS the parked
-    // branch.
     if (parkedBranch && parkedBranch !== input.baseBranch) {
       await withRepoLock(input.baseDir, () => Git.checkout(input.baseDir, parkedBranch).catch(() => {}));
     }
   }
 }
 
-/** Acquires the base-checkout lock, separating the WAIT (until acquisition)
- * from the HOLD (critical-section duration) as two distinct child spans so a
- * merge queued behind a sibling shows up as time waiting, not time working.
- * This lock is held across the whole merge — including the bounded agentic
- * resolve turns — so it serialises every sibling operation that mutates the
- * shared checkout's working tree, while the merge internally drops the shorter
- * metadata lock around each turn (issue #455). */
 async function mergeUnderLock(input: MergePolicyInput, deps: MergePolicyDeps): Promise<MergePolicyOutcome> {
   const waitOp = startActiveChildOperation('merge.lock-wait', { 'merge.repo': input.baseDir });
   logger.debug('merge: awaiting base checkout lock', { 'merge.repo': input.baseDir });
@@ -262,9 +201,6 @@ export async function runMergePolicy(input: MergePolicyInput, deps: MergePolicyD
 
       const outcome = await mergeUnderLock(input, deps);
 
-      // Escalation is delivered after the repo mutex is released (ADR-0001: "...
-      // release the mutex, escalate ..."), so a slow/network-bound escalation
-      // never holds up other merges waiting on this base repo.
       if (outcome.kind === 'escalated') {
         logger.warn('merge: escalating', { 'merge.reason': outcome.reason });
         await deps.escalate(outcome.message);

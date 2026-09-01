@@ -50,7 +50,6 @@ describe('trackNodeActivity — the idle-lifecycle bookkeeping', () => {
   it('keeps the old timestamp when a node\'s write signature is unchanged, so it keeps aging', () => {
     const first = trackNodeActivity(NO_NODE_ACTIVITY, tree, 1_000);
     const later = trackNodeActivity(first, tree, 5_000);
-    // Unchanged tokens/context → lastWrite still 1_000, so at 5_000 it has aged 4s.
     expect(nodeStatus(tree, later, 1_000 + INACTIVE_AFTER_MS)).toBe('inactive');
   });
 
@@ -58,9 +57,7 @@ describe('trackNodeActivity — the idle-lifecycle bookkeeping', () => {
     const first = trackNodeActivity(NO_NODE_ACTIVITY, tree, 1_000);
     const grew = node({ id: 'root', usage: mu(200), children: [node({ id: 'a', depth: 1, usage: mu(5) })] });
     const second = trackNodeActivity(first, grew, 1_000 + INACTIVE_AFTER_MS + 1);
-    // The root wrote again → active despite the elapsed idle window.
     expect(nodeStatus(grew, second, 1_000 + INACTIVE_AFTER_MS + 1)).toBe('active');
-    // The child didn't change → still aging from 1_000, now inactive.
     expect(nodeStatus(grew.children[0]!, second, 1_000 + INACTIVE_AFTER_MS + 1)).toBe('inactive');
   });
 
@@ -85,7 +82,6 @@ describe('nodeStatus — active → inactive → hidden by idle age', () => {
   it('never revives a node the server already retired (server status is a floor)', () => {
     const server = node({ id: 'x', status: 'inactive' });
     const map = trackNodeActivity(NO_NODE_ACTIVITY, server, 100);
-    // A fresh client stamp alone says "active", but the server said "inactive" → stays inactive.
     expect(nodeStatus(server, map, 100)).toBe('inactive');
   });
 
@@ -98,10 +94,6 @@ describe('flattenTree — rows, connectors, and hidden pruning', () => {
   const fresh = (tree: ProcessNode): NodeActivityMap => trackNodeActivity(NO_NODE_ACTIVITY, tree, 0);
 
   it('flattens depth-first with correct guides/isLast for a nested tree', () => {
-    //  root
-    //  ├─ a
-    //  │  └─ x
-    //  └─ b
     const tree = node({
       id: 'root',
       children: [
@@ -117,13 +109,9 @@ describe('flattenTree — rows, connectors, and hidden pruning', () => {
     expect(byId.a!.isLast).toBe(false);
     expect(byId.b!.isLast).toBe(true);
     expect(byId.x!.isLast).toBe(true);
-    // x sits under a, which still has a later sibling (b) → its one ancestor
-    // spine continues.
     expect(byId.x!.guides).toEqual([true]);
-    // A depth-1 node draws only an elbow, no ancestor spine.
     expect(byId.a!.guides).toEqual([]);
 
-    // aria-posinset/aria-setsize: 1-based position and count among *visible* siblings.
     expect(byId.root!.posInSet).toBe(1);
     expect(byId.root!.setSize).toBe(1);
     expect(byId.a!.posInSet).toBe(1);
@@ -142,7 +130,6 @@ describe('flattenTree — rows, connectors, and hidden pruning', () => {
         node({ id: 'spine', depth: 1, status: 'hidden', children: [node({ id: 'live', depth: 2, status: 'active' })] }),
       ],
     });
-    // Force ages: everything long-idle so status derives from server flags via the floor.
     const map = trackNodeActivity(NO_NODE_ACTIVITY, tree, 0);
     const rows = flattenTree(tree, map, 0);
     const ids = rows.map((r) => r.node.id);
@@ -152,7 +139,6 @@ describe('flattenTree — rows, connectors, and hidden pruning', () => {
   });
 
   it('recomputes isLast over visible siblings only', () => {
-    // b is hidden; a becomes the last *visible* child.
     const tree = node({
       id: 'root',
       children: [node({ id: 'a', depth: 1, status: 'active' }), node({ id: 'b', depth: 1, status: 'hidden' })],

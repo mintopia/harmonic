@@ -29,7 +29,6 @@ async function buildCandidate({ workspaceDir }: { workspaceDir: string }): Promi
   return git(workspaceDir, 'rev-parse', 'HEAD');
 }
 
-/** A throwaway git repo on branch main with one committed README. */
 function makeRepo(): string {
   const dir = mkdtempSync(join(tmpdir(), 'harmonic-cmdverify-repo-'));
   execFileSync('git', ['init', '-b', 'main', dir], { encoding: 'utf8' });
@@ -41,7 +40,6 @@ function makeRepo(): string {
   return dir;
 }
 
-/** A `VerificationCommand` running an inline node script, all fields explicit. */
 function nodeCommand(script: string, over: Partial<VerificationCommand> = {}): VerificationCommand {
   return {
     command: process.execPath,
@@ -52,8 +50,6 @@ function nodeCommand(script: string, over: Partial<VerificationCommand> = {}): V
   };
 }
 
-/** A fake spawner returning a canned result — the injectable seam that lets the
- * checkout / verdict / mutation logic be tested without a real process. */
 const fakeSpawn = (result: CommandSpawnResult): CommandSpawn => ({
   async run() {
     return result;
@@ -71,7 +67,6 @@ describe('command verifier (issue #135)', () => {
   const repoWithCandidate = async (): Promise<{ repo: string; oid: string }> => {
     const repo = makeRepo();
     repos.push(repo);
-    // A candidate that differs from base, so a verifier has a real tree to run.
     writeFileSync(join(repo, 'work.txt'), 'candidate work\n');
     const oid = await buildCandidate({ workspaceDir: repo });
     return { repo, oid };
@@ -214,7 +209,6 @@ describe('command verifier (issue #135)', () => {
       repoDir: repo,
       verifiedHeadOid: oid,
       worktreePath: freshWorktreePath(),
-      // Sleeps well past the timeout; the spawner SIGKILLs it.
       command: nodeCommand('setTimeout(() => {}, 60000)'),
       spawn: createChildProcessSpawn(),
       timeoutMs: 150,
@@ -259,8 +253,6 @@ describe('command verifier (issue #135)', () => {
       repoDir: repo,
       verifiedHeadOid: oid,
       worktreePath: freshWorktreePath(),
-      // work.txt exists only in the candidate, not the base commit — a pass here
-      // proves the command ran against the frozen candidate checkout.
       command: nodeCommand('require("node:fs").readFileSync("work.txt"); process.exit(0)'),
       spawn: createChildProcessSpawn(),
     });
@@ -273,7 +265,6 @@ describe('command verifier (issue #135)', () => {
       repoDir: repo,
       verifiedHeadOid: oid,
       worktreePath: freshWorktreePath(),
-      // Writes a file into the disposable checkout then exits 0.
       command: nodeCommand('require("node:fs").writeFileSync("artifact.txt", "built"); process.exit(0)'),
       spawn: createChildProcessSpawn(),
     });

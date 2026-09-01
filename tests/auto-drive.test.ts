@@ -27,7 +27,6 @@ const mirroredAfk = (ref: number, over: Partial<MirrorInput> = {}): MirrorInput 
   ...over,
 });
 
-// A worktree Task + Run pair, crafted for the Merge Fate branch (no real git).
 const worktreeTask = (over: Partial<TaskRow> = {}): TaskRow =>
   ({
     id: 1,
@@ -82,14 +81,12 @@ function fakeAdapter(ticketState: 'open' | 'closed' = 'open') {
   return { adapter, calls };
 }
 
-/** The unattended reminder AutoDrive.prompt appends, with the Task id filled in. */
 const reminder = (taskId: number) => UNATTENDED_REMINDER.replace(/\{taskId\}/g, String(taskId));
 
 describe('Drive Prompt fill (issue #33)', () => {
   it('splits title/body, maps skill by workflow/type, and fills every placeholder', () => {
     expect(skillFor({ wayfinderType: 'research', harness: 'claude' })).toBe('/research');
     expect(skillFor({ wayfinderType: null, harness: 'claude' })).toBe('/implement');
-    // Codex invokes skills with a `$` prefix; the name is otherwise unchanged.
     expect(skillFor({ wayfinderType: 'research', harness: 'codex' })).toBe('$research');
     expect(skillFor({ wayfinderType: null, harness: 'codex' })).toBe('$implement');
     expect(skillFor({ wayfinderType: null, harness: 'copilot' })).toBe('/implement');
@@ -122,8 +119,6 @@ describe('Drive Prompt fill (issue #33)', () => {
       drive: { ...defaultConfig().drive, prompt: '{skill} {ref} {url}\n\n{title}::{body}' },
     };
     const child = worktreeTask({ trackerRef: 7, mapRef: 100, workspaceId: 1, prompt: 'Chart it\n\nwhy' });
-    // 5th ctor arg is the Epic-kind resolver (ADR-0018/#440); the map child's
-    // parent (mapRef 100) is a stored Map.
     const drive = new AutoDrive(
       () => config,
       (task) => `https://x/${task.trackerRef}`,
@@ -133,7 +128,6 @@ describe('Drive Prompt fill (issue #33)', () => {
     );
     expect(await drive.prompt(child)).toBe(`/wayfinder 100 https://x/100\n\nChart it::why\n\n${reminder(1)}`);
 
-    // A plain-Epic child (stored kind 'epic') keeps /implement against its own ref.
     const plainChild = worktreeTask({ trackerRef: 7, mapRef: 200, workspaceId: 1, prompt: 'Build it\n\nnow' });
     const plainDrive = new AutoDrive(
       () => config,
@@ -155,7 +149,6 @@ describe('Drive Prompt fill (issue #33)', () => {
     expect(await drive.prompt(withFeedback)).toBe(
       `/implement 9\n\nFix it::details\n\n## Feedback from the previous attempt\n\ntests are red\n\n${reminder(1)}`,
     );
-    // No feedback column → the drive prompt is just template + reminder.
     const plain = worktreeTask({ trackerRef: 9, prompt: 'Fix it\n\ndetails', feedback: null });
     expect(await drive.prompt(plain)).toBe(`/implement 9\n\nFix it::details\n\n${reminder(1)}`);
   });
@@ -192,7 +185,6 @@ describe('Drive Prompt fill (issue #33)', () => {
       driveMergeFate: 'open-PR',
       driveContinueAttempts: 5,
     };
-    // 4th ctor arg is the Workspace resolver (ADR-0044): drive.* resolves against it.
     const drive = new AutoDrive(() => config, () => null, undefined, async () => wsOverride as never);
     const task = worktreeTask({ id: 3, trackerRef: 9, workspaceId: 2 });
     expect(await drive.prompt(task)).toBe('WS 9\n\nws-reminder 3');
@@ -200,7 +192,6 @@ describe('Drive Prompt fill (issue #33)', () => {
     expect(await drive.continueAttempts(task)).toBe(5);
     expect(await drive.mergeFateFor(task)).toBe('open-PR');
 
-    // A Task whose Workspace resolves to no overrides inherits every global default.
     const globalDrive = new AutoDrive(() => config, () => null, undefined, async () => undefined);
     expect(await globalDrive.mergeFateFor(task)).toBe('auto-merge');
     expect(await globalDrive.continueAttempts(task)).toBe(1);
@@ -212,13 +203,11 @@ describe('Drive Prompt fill (issue #33)', () => {
     expect(await drive.closeTicket(worktreeTask(), 'Closed by a Harmonic operator without merging (task 1).')).toBe(true);
     expect(open.calls.close).toEqual([7]);
 
-    // An already-closed ticket needs no second close (some trackers error on it).
     const closed = fakeAdapter('closed');
     const idempotent = new AutoDrive(() => defaultConfig(), () => null, async () => closed.adapter);
     expect(await idempotent.closeTicket(worktreeTask())).toBe(true);
     expect(closed.calls.close).toEqual([]);
 
-    // A native Task with no ticket ref has nothing to close.
     expect(await drive.closeTicket(worktreeTask({ trackerRef: null }))).toBe(true);
   });
 
@@ -260,7 +249,7 @@ describe('Drive Prompt fill (issue #33)', () => {
     const { adapter, calls } = fakeAdapter('closed');
     const drive = new AutoDrive(() => defaultConfig(), () => null, async () => adapter);
     expect(await drive.closeCompleted(worktreeTask())).toBe(true);
-    expect(calls.close).toEqual([]); // a closed issue needs no second close (would error on gh)
+    expect(calls.close).toEqual([]);
   });
 });
 
@@ -269,9 +258,6 @@ describe('AutoDrive.onCompleted — Merge Fate close-after-verify (issue #139)',
     ...defaultConfig(),
     drive: { ...defaultConfig().drive, prompt: '', mergeFate },
   });
-  // finish_task (the Runner's agentFinished gate), not the agent closing the
-  // ticket, is the signal that gets a Run here — so every fixture leaves the
-  // ticket OPEN and asserts what Harmonic itself does about the close.
 
   it('auto-merge: the Runner has merged the verified tip, so Harmonic closes the ticket', async () => {
     const { adapter, calls } = fakeAdapter('open');
@@ -295,7 +281,7 @@ describe('AutoDrive.onCompleted — Merge Fate close-after-verify (issue #139)',
     expect(await drive.onCompleted(worktreeTask(), run())).toBe('completed');
     expect(calls.openPR).toHaveLength(1);
     expect(calls.openPR[0]).toMatchObject({ branch: 'harmonic/task-1-run-1', baseBranch: 'main' });
-    expect(calls.close).toEqual([]); // the PR's own merge closes the issue later
+    expect(calls.close).toEqual([]);
   });
 
   it('open-PR that fails to create a PR escalates', async () => {
@@ -361,7 +347,7 @@ describe('Runner auto-drive settle (issue #33)', () => {
   });
 
   const startMirrored = async (id: number) => {
-    await tasks.setState(id, 'working'); // the afk pick's lock, before launchClaimed (issue #32)
+    await tasks.setState(id, 'working');
     await runner.launchClaimed(id);
   };
 
@@ -369,10 +355,6 @@ describe('Runner auto-drive settle (issue #33)', () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-drive-'));
     asyncDb = await openAsyncDb(dir);
     settingsStore = await makeSettingsStore(dir);
-    // The default workspace seeds `workingDir` to `process.cwd()` — the (dirty)
-    // Harmonic repo during a test run, which these settle-logic tests must not
-    // touch. Point the workspace at an isolated non-git directory so each Run
-    // exercises its intended settle path (a non-git context yields no candidate).
     workDir = mkdtempSync(join(tmpdir(), 'harmonic-drive-wd-'));
     await asyncDb.write((d) => d.update(workspaces).set({ workingDir: workDir }).run());
   });
@@ -386,21 +368,12 @@ describe('Runner auto-drive settle (issue #33)', () => {
   function build(cfg: AppConfig, ticketState: 'open' | 'closed' = 'closed') {
     tasks = new TaskService(asyncDb, () => cfg, allWorkspaces(asyncDb, settingsStore));
     attempts = new AttemptStore(asyncDb);
-    // Default: a resolved (agent-closed) ticket so a clean run completes (ADR 0011).
-    // 'open' leaves the ticket unresolved, so the continue loop engages.
     const drive = new AutoDrive(() => cfg, () => 'https://x/7', async () => fakeAdapter(ticketState).adapter);
     runner = new Runner(tasks, asyncDb, () => cfg, { autoDrive: drive });
   }
 
-  /** The Attempt's persisted event log — `run` already IS the Attempt
-   * (ADR-0001 #388 S-G: one execution ledger, no separate Run row to bridge
-   * through). */
   const eventsForRun = async (run: AttemptRow) => attempts.listEvents(run.id);
 
-  /** Every persisted event across a Task's whole Attempt history — self-heal
-   * turns are now separate Attempt rows (ADR-0001 #388 S-G), so a fact that
-   * landed on an earlier turn (e.g. the one-time session mode handshake)
-   * isn't necessarily on the latest one. */
   const eventsForTask = async (taskId: number) => {
     const rows = await attempts.listForTask(taskId);
     const perAttempt = await Promise.all(rows.map((row) => attempts.listEvents(row.id)));
@@ -411,7 +384,6 @@ describe('Runner auto-drive settle (issue #33)', () => {
     (await eventsForRun(run)).filter((e) => e.type === 'lifecycle' && (e.payload as any).event === 'continue');
 
   it('a Run blocking on a human prompt fails the Attempt (no human drives it); the exhausted cap then Escalates', async () => {
-    // The Drive Prompt template IS what reaches the harness — script the stub there.
     build(config({ prompt: JSON.stringify({ requestPermission: { title: 'Write file' } }) }, 2));
     const task = await tasks.upsertMirrored(mirroredAfk(7));
     await startMirrored(task.id);
@@ -471,12 +443,9 @@ describe('Runner auto-drive settle (issue #33)', () => {
   });
 
   it('retries a failed afk Run within the cap, then Escalates when it is exhausted', async () => {
-    // The Drive Prompt template reaches the harness; make it crash before responding.
     build(config({ prompt: JSON.stringify({ exit: 'crash-before-response' }) }, 2));
     const task = await tasks.upsertMirrored(mirroredAfk(7));
 
-    // Attempt 1 fails. The unified loop immediately drives attempt 2 in the
-    // same Run, then the cap escalates without creating a second Run.
     await startMirrored(task.id);
     const settled = await vi.waitFor(async () => {
       const t = await tasks.get(task.id);
@@ -489,16 +458,10 @@ describe('Runner auto-drive settle (issue #33)', () => {
       { number: 1, state: 'failed' },
       { number: 2, state: 'escalated' },
     ]);
-    // A self-heal retry drives the SAME worktree/branch, not a fresh one
-    // (ADR-0046) — the physical identity `drive()` carries forward onto each
-    // new Attempt (ADR-0001 #388 S-G), even though each turn is its own row.
     expect(taskAttempts[1]!.branch).toBe(taskAttempts[0]!.branch);
   });
 
   it('re-prompts an unfinished (ticket-open) Run continueAttempts times, then treats it as unresolved', async () => {
-    // The stub echoes the (non-JSON) drive prompt and ends its turn without
-    // closing the ticket — exactly the "parked / not done" case. One permitted
-    // the exhausted-continue unresolved path Escalates to a deterministic end.
     build(config({ continueAttempts: 2 }, 1), 'open');
     const task = await tasks.upsertMirrored(mirroredAfk(7));
     await startMirrored(task.id);
@@ -529,11 +492,6 @@ describe('Runner auto-drive settle (issue #33)', () => {
   });
 
   it('a closed ticket alone no longer completes a Run — finish_task is the signal (#139)', async () => {
-    // Pre-#139 a ticket the agent closed was the completion signal. Now
-    // finish_task is: a Run whose ticket is already closed but which never signals
-    // finish is NOT completed — it runs the continue budget and then Escalates as
-    // unresolved. (The finish→verify→merge→close happy path needs the MCP endpoint
-    // and is covered at the execution seam.)
     build(config({ continueAttempts: 0 }, 1), 'closed');
     const task = await tasks.upsertMirrored(mirroredAfk(7));
     await startMirrored(task.id);

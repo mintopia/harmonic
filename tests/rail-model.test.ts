@@ -10,7 +10,6 @@ import {
   storeRailCollapsed,
 } from '../web/src/rail-model.js';
 
-/** Minimal Storage stand-in — node tests have no localStorage. */
 const memoryStorage = (initial: Record<string, string> = {}) => {
   const data = new Map(Object.entries(initial));
   return {
@@ -68,8 +67,6 @@ describe('rail primary views', () => {
     expect(VIEW_LABELS.graph).toBe('Graph');
     expect(VIEW_LABELS.operations).toBe('Operations');
     expect(VIEW_LABELS.settings).toBe('Settings');
-    // The per-Workspace settings page reads as plain "Settings" in the rail
-    // (global Settings is the status-strip cog, so no rail-side collision).
     expect(VIEW_LABELS.workspace).toBe('Settings');
   });
 

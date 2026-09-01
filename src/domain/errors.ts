@@ -22,9 +22,7 @@ export class DomainError extends Error {
   }
 }
 
-/** Thrown by the git primitive (`execution/git.ts`); lives here, not in
- * execution, so domain policy (e.g. `worktree-reconciler`) can `instanceof`-check
- * it without importing up into the execution layer. */
+/** Thrown by the git primitive (`execution/git.ts`). */
 export class GitError extends Error {
   constructor(
     message: string,
