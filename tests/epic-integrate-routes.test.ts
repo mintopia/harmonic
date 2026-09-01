@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll, vi } 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { startServer, stubHarness, captureRunEnv, type TestServer } from './helpers.js';
-import type { EpicIntegrateOutcome } from '../src/execution/epic-integrate-coordinator.js';
+import type { EpicIntegrateOutcome } from '../src/execution/epic-integrate-git.js';
 
 async function mcpClient(server: TestServer, token: string): Promise<Client> {
   const client = new Client({ name: 'test', version: '0.0.0' });

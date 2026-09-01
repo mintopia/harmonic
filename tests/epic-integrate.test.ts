@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { decideEpicIntegrate, type EpicIntegrateFacts, type MemberMergeState } from '../src/domain/epic-integrate.js';
+import { decideEpicIntegrate, type EpicIntegrateFacts, type MemberMergeState } from '../src/domain/epic-integrate-decision.js';
 import type { VerificationDecision } from '../src/verification/combine.js';
 
 const proceed: VerificationDecision = { outcome: 'proceed', reason: 'all 1 verifier passed' };

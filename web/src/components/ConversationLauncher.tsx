@@ -38,6 +38,7 @@ import {
 import { conversationDisplayTitle, removeConversationById, upsertConversation } from '../conversation-list-model';
 import { formatCost } from '../cost';
 import { ArmedButton } from './ArmedButton';
+import { useLiveEffect } from '../useLiveEffect';
 import { ConversationList } from './ConversationList';
 import { EventStream } from './EventStream';
 import { ModelCombobox } from './ModelCombobox';
@@ -635,7 +636,7 @@ export function ConversationLauncher({
     return unsubscribe;
   }, [workspaceId]);
 
-  useEffect(() => {
+  useLiveEffect((live) => {
     if (focusedId === null) {
       setConversation(null);
       setEvents([]);
@@ -643,16 +644,15 @@ export function ConversationLauncher({
       return;
     }
     const id = focusedId;
-    let live = true;
     setConversation(null);
     setEvents([]);
     setPending({});
     api.conversation(id).then((c) => {
-      if (!live) return;
+      if (!live()) return;
       setConversation(c);
       setConversations((current) => upsertConversation(current, c));
     }, toastError);
-    api.conversationEvents(id).then(({ events }) => live && setEvents(events), toastError);
+    api.conversationEvents(id).then(({ events }) => live() && setEvents(events), toastError);
     const unsubscribe = subscribe((msg) => {
       if (msg.type === 'conversation_event' && msg.event.conversationId === id) {
         setEvents((current) =>
@@ -676,7 +676,6 @@ export function ConversationLauncher({
       }
     });
     return () => {
-      live = false;
       unsubscribe();
     };
   }, [focusedId]);
