@@ -4,9 +4,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Git, GitError } from './git.js';
 import { classifyGitFailure, type GitCircuitBreaker } from './git-failure.js';
-import { adapterFor, adapterVersion, wholeFileReader, type SessionTailReader } from './harness/adapter.js';
-import { collectUsage, collectUsageWithRetry, observedModelMismatch, activityLine, agentsFromTree, toolCallName, totalTokensOf, type AttemptUsage, type AttemptUsageSnapshot, type ParsedSession } from './usage.js';
+import { adapterFor, adapterVersion } from './harness/adapter.js';
+import { collectUsage, observedModelMismatch, activityLine, toolCallName, type AttemptUsage, type AttemptUsageSnapshot } from './usage.js';
 import { LiveUsageTailer, type TailerCadence } from './live-usage-tailer.js';
+import { UsageSampler } from './usage-sampler.js';
+import { TranscriptCapture } from './transcript-capture.js';
+import { GuardrailSupervisor } from './guardrail-supervisor.js';
 import { codeIndexRepoGuidance, driveFields, promptForTask } from './prompt-template.js';
 import { indexWorktree, dropIndexForPath } from './code-index.js';
 import { AFK_PERMISSION_MODES, afkRequestGated, afkSessionMode } from './afk-permissions.js';
@@ -31,31 +34,15 @@ import { AttemptStore, type AttemptGuardrailSnapshot, type PersistedAttemptEvent
 import { AttemptSettleCoordinator, type SettleProjection, type DispositionKind } from '../domain/attempt-settle.js';
 import type { SessionRetirementHook } from '../domain/session-retirement-coordinator.js';
 import type { TaskService } from '../domain/tasks.js';
-import { resolveGuardrails, resolveVerifiers, resolveScoped, resolveTaskPrompt, type ResolvedGuardrails } from '../domain/setting-override.js';
-import { hasWorkspaceOverride } from '../domain/settings-registry.js';
+import { resolveGuardrails, resolveVerifiers, resolveScoped, resolveTaskPrompt } from '../domain/setting-override.js';
 import { VerificationAttemptStore } from '../domain/verification-attempts.js';
 import { GuardrailEventStore } from '../domain/guardrail-events.js';
-import {
-  wallClockBudgetMs,
-  wallClockTrip,
-  formatBudgetReason,
-  formatUnmeasurableReason,
-  countsTowardExecutionBudget,
-  spendTrip,
-  toMicroUsd,
-} from '../domain/guardrail-budget.js';
-import { detectStall } from '../domain/stall-detector.js';
-import { toProgressEvents, formatProgressReason } from '../domain/guardrail-progress.js';
+import { toProgressEvents } from '../domain/guardrail-progress.js';
 import type { ProgressEvent } from '../domain/stall-detector.js';
-import {
-  toolTimeoutBudgetMs,
-  toolTimeoutTrip,
-  formatToolTimeoutReason,
-} from '../domain/guardrail-tool-timeout.js';
 import { runCommandVerifier, commandAttemptToInput } from '../verification/command-verifier.js';
 import { createAcpCriticDrive, runCritic, criticAttemptToInput, type CriticHarnessDrive } from '../verification/critic.js';
 import { combineVerdicts, type VerificationDecision, type VerifierVerdict } from '../verification/combine.js';
-import { resolvePrices, costOfUsages, type PriceTable } from './pricing.js';
+import { resolvePrices } from './pricing.js';
 import { isForeignKeyViolation } from '../db/errors.js';
 import { logger } from '../logger.js';
 import type { PostMergeHook } from './branch-merge.js';
@@ -81,13 +68,6 @@ const STDERR_TAIL_CAP = 8000;
  * the full inactivity bound, or hanging on a lost turn-end or an outstanding
  * background sub-agent tool, until the wall-clock guardrail. */
 const LIFECYCLE_SETTLE_GRACE_MS = 15_000;
-
-/** The single nudge the progress Guardrail delivers through the steer channel
- * on a first detected stall (issue #131, ADR-0019) before it trips. A plain
- * course-correction prompt — one turn, no back-and-forth. */
-const PROGRESS_NUDGE_TEXT =
-  'You appear to be repeating the same step without making progress. Stop, re-read the task and the most ' +
-  'recent error or result, and try a genuinely different approach — or finish if the work is already done.';
 
 /** Id floor for transient live session-update log events, kept clear of
  * parser-assigned transcript ids so the browser can merge the two streams
@@ -337,6 +317,24 @@ type TurnOutcome =
  * a merge-conflict resolution, so double the critic's read-only bound. */
 const EPIC_REFRESH_RESOLVE_TIMEOUT_MS = 10 * 60 * 1000;
 
+/**
+ * The per-turn state {@link Runner.persistSession} writes the durable Session
+ * (Unit C #141) against, captured once in {@link Runner.driveOnce} so the ACP
+ * `onSessionCreated`/reload callbacks only pass the harness session id.
+ */
+interface PersistSessionContext {
+  task: TaskRow;
+  run: AttemptRow;
+  harness: HarnessConfig;
+  workspace: Workspace;
+  mcpServers: unknown[];
+  attemptAtStart: AttemptRow;
+  /** The `initialize` capability snapshot, read at persist time (set by the
+   * handshake's `onInitialize`, which fires before `onSessionCreated`). */
+  getSessionInit: () => AcpInitializeResult | undefined;
+  setSessionRowId: (id: number) => void;
+}
+
 export class Runner {
   private readonly runOperations = new Map<number, Operation>();
   private active = new Map<number, ActiveRun>(); // by run id
@@ -376,12 +374,14 @@ export class Runner {
   private readonly settleCoordinator: AttemptSettleCoordinator;
   private readonly sessionRetirement: SessionRetirementHook | undefined;
   private readonly tailer: LiveUsageTailer;
-  /** One incremental session-log reader per active Run (#217): the tailer tick
-   *  advances it off the event loop; the Activity snapshot and spend guard read
-   *  its cached `latest()`. Created lazily once a session id exists, dropped on
-   *  `tailer.stop`. */
-  private readonly readers = new Map<number, SessionTailReader>();
-  /** Bounded per-Run ACP rollups, retained across corrective turns. */
+  /** Owns the live-usage read path (#217): the per-Attempt incremental readers,
+   *  snapshot decoration, and settle-time Usage collection. */
+  private readonly usage: UsageSampler;
+  /** Resolves + persists the harnesses' native transcript paths for Sessions
+   *  and critic verification attempts (best-effort, off the hot path). */
+  private readonly transcripts: TranscriptCapture;
+  /** Bounded per-Run ACP rollups, retained across corrective turns. Owned by the
+   *  drive loop (written per turn), read by {@link usage} for the live tool tally. */
   private readonly toolCallTotals = new Map<number, Map<string, number>>();
   /** The latest turn's ACP-reported input footprint per run — the context-usage
    * source for harnesses whose session log the tailer cannot read (stub, codex). */
@@ -434,6 +434,15 @@ export class Runner {
     this.verificationAttempts = new VerificationAttemptStore(this.asyncDb);
     this.guardrailEvents = new GuardrailEventStore(this.asyncDb);
     this.sessionStore = new SessionStore(this.asyncDb);
+    this.transcripts = new TranscriptCapture(this.sessionStore, this.verificationAttempts, this.getConfig);
+    this.usage = new UsageSampler(
+      this.attempts,
+      (attemptId) => {
+        const a = this.active.get(attemptId);
+        return a ? { harnessId: a.harnessId, harness: a.harness, cwd: a.cwd, activity: a.activity } : undefined;
+      },
+      this.toolCallTotals,
+    );
     this.settleCoordinator = new AttemptSettleCoordinator(
       this.taskService,
       this.attempts,
@@ -443,7 +452,7 @@ export class Runner {
     this.sessionRetirement = options.sessionRetirement;
     this.tailer = new LiveUsageTailer(
       {
-        sample: (attemptId) => this.sampleSnapshot(attemptId),
+        sample: (attemptId) => this.usage.sampleSnapshot(attemptId),
         emit: (attemptId, snapshot) => this.events.onAttemptUsage?.({ attemptId, snapshot }),
         // A live snapshot is decoration; a DB hiccup must never fail a run.
         persist: (attemptId, snapshot) => {
@@ -495,7 +504,7 @@ export class Runner {
       [...this.active.values()].map(async (a) => ({
         attemptId: a.attemptId,
         taskId: a.taskId,
-        snapshot: await this.latestSnapshot(a.attemptId),
+        snapshot: await this.usage.latestSnapshot(a.attemptId),
       })),
     );
   }
@@ -1032,7 +1041,7 @@ export class Runner {
       this.kill(active);
     }
     this.active.clear();
-    this.readers.clear();
+    this.usage.clearReaders();
   }
 
   private spawnHarness(
@@ -1413,7 +1422,7 @@ export class Runner {
         // so `attempt.transcriptPath` is often null here; resolve it off the hot
         // path and fill the row once the `${sessionId}.jsonl` merges (ADR-0040).
         if (attempt.transcriptPath === null && attempt.sessionId) {
-          void this.captureCriticTranscriptPath({
+          void this.transcripts.captureCriticTranscript({
             attemptId: persisted.id,
             sessionId: attempt.sessionId,
             harnessId: criticHarnessId,
@@ -1658,7 +1667,7 @@ export class Runner {
     // three are the last turn's raw context footprint; the reuse gate compares it
     // against a raw token limit, so no context-window fraction is involved.
     const persisted = run.usage ? (JSON.parse(run.usage) as AttemptUsage).contextTokens ?? null : null;
-    const contextTokens = (await this.latestSnapshot(run.id))?.contextTokens ?? this.lastTurnContextTokens.get(run.id) ?? persisted;
+    const contextTokens = (await this.usage.latestSnapshot(run.id))?.contextTokens ?? this.lastTurnContextTokens.get(run.id) ?? persisted;
     return decideAttemptContinuation({
       harness: task.harness,
       contextTokens,
@@ -2297,7 +2306,7 @@ export class Runner {
       await this.tailer.stop(run.id);
       if (toolCallFlushTimer) clearInterval(toolCallFlushTimer);
       await flushToolCalls().catch(() => {});
-      this.readers.delete(run.id);
+      this.usage.dropReader(run.id);
       this.kill(active);
       try {
         void Promise.resolve(this.keys?.revoke(run.id)).catch(() => {});
@@ -2344,7 +2353,7 @@ export class Runner {
           const name = toolCallName(update, (payload) => adapterFor(task.harness).usage?.toolName(payload) ?? null);
           toolCalls.set(name, (toolCalls.get(name) ?? 0) + 1);
         }
-        observeTool(update);
+        guardrails.observeTool(update);
       },
       onRequest: async (method, params) => {
         if (method === 'session/request_permission') {
@@ -2407,371 +2416,44 @@ export class Runner {
     toolCallFlushTimer = setInterval(() => void flushToolCalls().catch(() => {}), 10_000);
     toolCallFlushTimer.unref?.();
 
-    // Wall-clock Guardrail watchdog (issue #127, ADR-0019). Armed once the
-    // session is live (below) for the Run's *remaining* execution budget; a
-    // one-shot timer because the counted Step types (rebase/implementation/
-    // verification/review) run as a contiguous prefix of the Attempt — it can
-    // only fire while this `driveOnce` is running, and the `finally` clears it
-    // the instant the Attempt merges or settles. That is exactly the Step
-    // scoping: time spent in a non-interruptible merge (no Step running) never
-    // counts, because the watchdog isn't armed then. On fire it appends a
-    // structured `guardrail_events` row and settles
-    // the Run through the coordinator by precedence — `guardrail-trip` →
-    // Escalation, never a direct settle, never a new terminal state.
-    let guardrailTimer: ReturnType<typeof setTimeout> | null = null;
-    const armGuardrail = async () => {
-      const started = await this.attempts.get(run.id);
-      const budget = started.guardrailConfig
-        ? (JSON.parse(started.guardrailConfig) as ResolvedGuardrails).budget
-        : null;
-      if (!budget) return; // no snapshot (legacy Run) → no wall-clock guard
-      // Resolve the limit's provenance now — at (or within milliseconds of) the
-      // Run-start snapshot instant — and capture it, rather than looking it up
-      // when the timer fires. The enforced limit is the immutable snapshot's
-      // (issue #126); a live workspace lookup at fire time (possibly long after)
-      // could attribute the snapshotted limit to a since-changed override.
-      const ws = await this.getWorkspace?.(task.workspaceId);
-      const configSource = hasWorkspaceOverride('guardrailBudget', ws?.guardrailBudget) ? 'workspace' : 'default';
-      const remaining = Math.max(0, wallClockBudgetMs(budget) - (Date.now() - started.startedAt));
-      guardrailTimer = setTimeout(async () => {
-        guardrailTimer = null;
-        if (active.externallySettled) return; // already ended some other way
-        const now = await this.attempts.get(run.id);
-        if (now.state !== 'running') return; // settled/terminal — nothing to trip
-        const stepType = await this.attempts.currentStepType(task.id, attemptNumber);
-        if (!stepType) return; // Attempt has reached merging, which never charges execution time.
-        // Step-scoped (issue #127, reliability-design Unit A): a trip only
-        // counts while a Step is actively running. `now - startedAt` is the
-        // execution clock precisely because the counted Steps are a
-        // contiguous prefix — this watchdog is armed only within `driveOnce`,
-        // which the Run leaves for merging by *returning*, and the `finally`
-        // clears the timer at that point. If the timer nonetheless fires
-        // mid-merge, `wallClockTrip` returns null (no Step is running, so it
-        // does not count) and the Run is left alone.
-        const trip = wallClockTrip({ elapsedMs: Date.now() - now.startedAt, stepType, budget });
-        if (!trip) return; // fired with no Step running, or not actually over budget
-        // Structured evidence first — the card reason derives from this row.
-        const tripAttempt = await this.attemptFor(task);
-        await this.guardrailEvents.append(tripAttempt.id, {
-          dimension: trip.dimension,
-          limitValue: trip.limitMs,
-          observedValue: trip.observedMs,
-          configSource,
-        });
-        const reason = formatBudgetReason(trip);
-        record('lifecycle', { event: 'guardrail-tripped', dimension: trip.dimension, reason });
-        // Claim the settle so the drive loop's own settle path (unwinding from
-        // the killed harness) no-ops instead of finishing the Run twice.
-        active.externallySettled = true;
-        await this.coordinateSettle(task, now, 'guardrail-trip', { runState: 'failed', taskAction: 'escalate', reason }, {});
-        // Interrupt whatever is in flight so `driver.prompt()` / the verifier
-        // unwinds and `driveOnce` returns through its `externallySettled` guards.
-        active.verifyAbort.abort();
-        this.kill(active);
-      }, remaining);
-      guardrailTimer.unref?.();
-    };
-
-    // Token/cost budget Guardrail poll (issue #128, ADR-0019, reliability-design
-    // Unit A), extending the wall-clock watchdog's two other `BudgetGuardrail`
-    // dimensions. Unlike wall-clock (a single deadline known up front), spend
-    // accrues continuously and can only be read from the live-usage snapshot, so
-    // this is a poll (like `armToolTimeout`'s hard-tool-timeout watchdog) rather
-    // than a one-shot timer. Armed only when a spend cap is actually configured
-    // (a Run with neither `tokens` nor `costUsd` set never even starts the
-    // interval — wall-clock alone still guards it). Records the same
-    // `guardrail_events` row + `guardrail-trip` disposition + coordinator-settle
-    // path as every other Guardrail dimension.
-    let spendTimer: ReturnType<typeof setInterval> | null = null;
-    const tripSpend = async (
-      now: AttemptRow,
-      event: {
-        dimension: 'tokens' | 'cost';
-        limitValue: number;
-        observedValue: number;
-        configSource: 'default' | 'workspace';
-        payload?: unknown;
+    // Execution Guardrails for this turn (issue #127/#128/#131, ADR-0019): the
+    // wall-clock deadline, token/cost spend poll, hard tool-timeout watchdog and
+    // stall/loop progress detector, extracted onto GuardrailSupervisor. Primed +
+    // armed once the session is live (below); each trips through the same
+    // structured-evidence + coordinator-settle recipe, and the `finally` disarms
+    // them as the Attempt leaves its counted Steps.
+    const guardrails = new GuardrailSupervisor(
+      {
+        attempts: this.attempts,
+        guardrailEvents: this.guardrailEvents,
+        getWorkspace: this.getWorkspace,
+        sampleSnapshot: (attemptId) => this.usage.sampleSnapshot(attemptId),
+        spendPollMs: this.spendPollMs,
+        spendGraceMs: this.spendGraceMs,
       },
-      reason: string,
-    ) => {
-      const tripAttempt = await this.attemptFor(task);
-      await this.guardrailEvents.append(tripAttempt.id, event);
-      record('lifecycle', { event: 'guardrail-tripped', dimension: event.dimension, reason });
-      active.externallySettled = true;
-      await this.coordinateSettle(task, now, 'guardrail-trip', { runState: 'failed', taskAction: 'escalate', reason }, {});
-      active.verifyAbort.abort();
-      this.kill(active);
-      if (spendTimer) {
-        clearInterval(spendTimer);
-        spendTimer = null;
-      }
-    };
-    const armSpendGuardrail = async () => {
-      const started = await this.attempts.get(run.id);
-      const budget = started.guardrailConfig
-        ? (JSON.parse(started.guardrailConfig) as ResolvedGuardrails).budget
-        : null;
-      if (!budget) return; // no snapshot (legacy Run) → no spend guard
-      if (budget.tokens == null && budget.costUsd == null) return; // no spend caps configured
-      const priceTable: PriceTable = started.priceTable ? (JSON.parse(started.priceTable) as PriceTable) : {};
-      // Resolved at arm time, not fire time — same provenance rule as `armGuardrail`.
-      const ws = await this.getWorkspace?.(task.workspaceId);
-      const configSource: 'default' | 'workspace' = hasWorkspaceOverride('guardrailBudget', ws?.guardrailBudget) ? 'workspace' : 'default';
-      let unmeasurableSince: number | null = null;
-      let spendSampling = false;
-      spendTimer = setInterval(() => {
-        // The spend guard is a correctness control, so it advances the reader
-        // itself (#217 — incremental, off the event loop) rather than riding the
-        // tailer's cached snapshot: a budget trip must never lag the real spend.
-        // Skip a fire while a prior async evaluation is still reading.
-        if (spendSampling) return;
-        spendSampling = true;
-        void (async () => {
-          try {
-            if (active.externallySettled) return;
-            const now = await this.attempts.get(run.id);
-            if (now.state !== 'running') return;
-            const stepType = await this.attempts.currentStepType(task.id, attemptNumber);
-            const snap = await this.sampleSnapshot(run.id);
-            const observedTokens = snap ? totalTokensOf(snap.usage) : null;
-            const cost = snap ? costOfUsages([snap.usage], priceTable) : null;
-            const observedUsd = cost?.totalUsd ?? null;
-            const costIncomplete = cost?.incomplete ?? true;
-            // #128's per-Run spend check (issue #128; ADR-0001 dropped the
-            // cross-Run Execution Chain cumulative — a retry is the next
-            // Attempt inside this SAME Run, so its spend is already folded into
-            // this poll's observed usage; there is no sibling Run to fold in).
-            // The Attempt cap (`maxAttempts`/`budgetBase`, `drive`'s loop above)
-            // is what bounds how many Attempts a Run can spend on in the first
-            // place.
-            const outcome = spendTrip({ stepType, budget, observedTokens, observedUsd, costIncomplete });
-            if (outcome.kind === 'ok') {
-              unmeasurableSince = null;
-              return;
-            }
-            if (outcome.kind === 'unmeasurable') {
-              if (unmeasurableSince == null) unmeasurableSince = Date.now();
-              if (Date.now() - unmeasurableSince < this.spendGraceMs) return;
-              const reason = formatUnmeasurableReason(outcome.dimension);
-              const limitValue =
-                outcome.dimension === 'tokens' ? (budget.tokens ?? 0) : toMicroUsd(budget.costUsd ?? 0);
-              await tripSpend(
-                now,
-                {
-                  dimension: outcome.dimension,
-                  limitValue,
-                  observedValue: 0,
-                  configSource,
-                  payload: { unmeasurable: true, graceMs: this.spendGraceMs },
-                },
-                reason,
-              );
-              return;
-            }
-            // outcome.kind === 'trip'
-            unmeasurableSince = null;
-            const trip = outcome.trip;
-            const event =
-              trip.dimension === 'tokens'
-                ? {
-                    dimension: 'tokens' as const,
-                    limitValue: trip.limitTokens,
-                    observedValue: trip.observedTokens,
-                    configSource,
-                    payload: {},
-                  }
-                : {
-                    dimension: 'cost' as const,
-                    limitValue: toMicroUsd(trip.limitUsd),
-                    observedValue: toMicroUsd(trip.observedUsd),
-                    configSource,
-                    payload: { limitUsd: trip.limitUsd, observedUsd: trip.observedUsd },
-                  };
-            const reason = formatBudgetReason(trip);
-            await tripSpend(now, event, reason);
-          } finally {
-            spendSampling = false;
-          }
-        })();
-      }, this.spendPollMs);
-      spendTimer.unref?.();
-    };
-
-    // Progress Guardrail (issue #131, ADR-0019, reliability-design Unit A). Two
-    // paired mechanisms, both OFF unless `guardrails.progress` was enabled in
-    // the Run's immutable start snapshot (issue #126):
-    //
-    //  1. A stall/loop detector (`detectStall`, issue #130) evaluated at each
-    //     turn boundary in the drive loop below. On the first detected stall it
-    //     delivers exactly ONE nudge through the steer channel (does not spend
-    //     the continue budget — ADR-0018); if the Run is still stalled after
-    //     that nudge turn it trips → Escalates through the same
-    //     `guardrail_events` + coordinator-settle machinery as the wall-clock
-    //     Guardrail.
-    //  2. A hard tool-timeout watchdog. The detector deliberately SUSPENDS while
-    //     a tool call is outstanding (a slow build is indistinguishable from a
-    //     stuck agent), so a genuinely hung tool would otherwise never trip. The
-    //     watchdog backstops that rule: a tool call outstanding past the
-    //     generous configured bound emits a `tool-timeout` `guardrail_events`
-    //     row and Escalates under `guardrail-trip`. When it and the wall-clock
-    //     both fire, the coordinator's guarded transition (ADR-0001)
-    //     is first-writer-wins: whichever settles first decides the primary
-    //     reason, and the second's settle no-ops — no dimension-priority table
-    //     needed.
-    const progressStart = await this.attempts.get(run.id);
-    const progressSnapshot = progressStart.guardrailConfig
-      ? (JSON.parse(progressStart.guardrailConfig) as ResolvedGuardrails)
-      : null;
-    const progressEnabled = progressSnapshot?.progress === true;
-    const progressConfigSource: 'default' | 'workspace' = hasWorkspaceOverride(
-      'guardrailProgress',
-      (await this.getWorkspace?.(task.workspaceId))?.guardrailProgress,
-    )
-      ? 'workspace'
-      : 'default';
-    const toolTimeoutMs =
-      progressEnabled && progressSnapshot ? toolTimeoutBudgetMs(progressSnapshot.toolTimeoutMinutes) : null;
-    let progressNudged = false;
-
-    // Trip the progress Guardrail to Escalation — shared by both the stall
-    // detector and the tool-timeout watchdog. Records structured evidence
-    // first, then settles through the coordinator by precedence (`guardrail-trip`
-    // → Escalation), exactly like the wall-clock watchdog above. `abort` kills a
-    // verifier/prompt in flight (the tool-timeout path fires from a timer that
-    // can race an in-flight turn); the boundary stall path passes it too and it
-    // is a harmless no-op when nothing is in flight.
-    const tripProgressGuardrail = async (
-      now: AttemptRow,
-      evidence: { dimension: 'progress' | 'tool-timeout'; limitValue: number; observedValue: number; payload: unknown },
-      reason: string,
-    ) => {
-      const tripAttempt = await this.attemptFor(task);
-      await this.guardrailEvents.append(tripAttempt.id, {
-        dimension: evidence.dimension,
-        limitValue: evidence.limitValue,
-        observedValue: evidence.observedValue,
-        configSource: progressConfigSource,
-        payload: evidence.payload,
-      });
-      record('lifecycle', { event: 'guardrail-tripped', dimension: evidence.dimension, reason });
-      active.externallySettled = true;
-      await this.coordinateSettle(task, now, 'guardrail-trip', { runState: 'failed', taskAction: 'escalate', reason }, {});
-    };
-
-    // Tool-call liveness, fed from the ACP `session/update` stream (below). A
-    // `tool_call` opens an entry; a `tool_call_update` with a terminal status
-    // closes it. The watchdog trips on the OLDEST still-open call, so a burst of
-    // concurrent tools is bounded by the first to hang.
-    const outstandingTools = new Map<string, { startedAt: number; title: string | null }>();
-    const observeTool = (update: unknown) => {
-      if (!toolTimeoutMs) return; // guardrail off → don't even track
-      const u = update as {
-        sessionUpdate?: string;
-        toolCallId?: unknown;
-        title?: unknown;
-        kind?: unknown;
-        status?: unknown;
-      };
-      const id = typeof u?.toolCallId === 'string' ? u.toolCallId : null;
-      if (!id) return;
-      if (u.sessionUpdate === 'tool_call') {
-        const title = typeof u.title === 'string' ? u.title : typeof u.kind === 'string' ? u.kind : null;
-        outstandingTools.set(id, { startedAt: Date.now(), title });
-      } else if (u.sessionUpdate === 'tool_call_update' && (u.status === 'completed' || u.status === 'failed')) {
-        outstandingTools.delete(id);
-      }
-    };
-
-    let toolTimeoutTimer: ReturnType<typeof setInterval> | null = null;
-    const armToolTimeout = () => {
-      if (!toolTimeoutMs) return; // guardrail off (or no snapshot)
-      // Poll at a fraction of the bound (capped) so a hang is caught within a
-      // small fraction of the timeout without a per-tool timer.
-      const period = Math.max(1_000, Math.min(toolTimeoutMs, 30_000));
-      toolTimeoutTimer = setInterval(async () => {
-        if (active.externallySettled) return;
-        const now = await this.attempts.get(run.id);
-        if (now.state !== 'running') return;
-        // Only a counted Step type counts (reliability-design Unit A) — the
-        // same Step scoping as the wall-clock budget.
-        if (!countsTowardExecutionBudget(await this.attempts.currentStepType(task.id, attemptNumber))) return;
-        let oldest: { id: string; startedAt: number; title: string | null } | null = null;
-        for (const [id, t] of outstandingTools) {
-          if (!oldest || t.startedAt < oldest.startedAt) oldest = { id, startedAt: t.startedAt, title: t.title };
-        }
-        if (!oldest) return; // nothing outstanding right now
-        const trip = toolTimeoutTrip({
-          outstandingMs: Date.now() - oldest.startedAt,
-          limitMs: toolTimeoutMs,
-          toolCallId: oldest.id,
-          title: oldest.title,
-        });
-        if (!trip) return;
-        await tripProgressGuardrail(
-          now,
-          {
-            dimension: 'tool-timeout',
-            limitValue: trip.limitMs,
-            observedValue: trip.observedMs,
-            payload: { toolCallId: trip.toolCallId, title: trip.title },
-          },
-          formatToolTimeoutReason(trip),
-        );
-        // Interrupt whatever is in flight so `driver.prompt()` unwinds and
-        // `driveOnce` returns through its `externallySettled` guards.
-        active.verifyAbort.abort();
-        this.kill(active);
-      }, period);
-      toolTimeoutTimer.unref?.();
-    };
-
-    // Evaluate the stall detector at a turn boundary (called from the drive loop
-    // below, where the agent is parked — never concurrent with an in-flight
-    // turn). First stall → one nudge via the steer channel; a stall that
-    // survives the nudge turn → trip → Escalate. Returns true when it tripped,
-    // so the caller breaks the loop to settle.
-    const checkProgressAtBoundary = async (): Promise<boolean> => {
-      // Off, already settled, or the agent has signalled finish/escalate — in
-      // the last case the Run is completing this turn, so a lingering pre-finish
-      // stall tail must not nudge or (worse) trip it: honour the finish.
-      if (!progressEnabled || active.externallySettled || active.agentFinished || active.escalateReason) return false;
-      const outstanding = this.outstandingProgressActions.get(run.id);
-      const progressTrace = outstanding && !progressEvents.some((event) => event.seq === outstanding.seq)
-        ? [outstanding, ...progressEvents]
-        : progressEvents;
-      const report = detectStall(progressTrace, { enabled: true });
-      if (!report) return false; // progressing, or a tool is outstanding (suspend guard)
-      if (!progressNudged) {
-        // One nudge, delivered as the next turn by the steer drain just below in
-        // the loop. `attempt` is untouched, so it never spends the continue
-        // budget (ADR-0018). Recorded so the redirect is visible in the stream.
-        progressNudged = true;
-        record('lifecycle', { event: 'progress-nudge', pattern: report.pattern });
-        active.steerQueue.push(PROGRESS_NUDGE_TEXT);
-        return false;
-      }
-      // Already nudged. Only trip once that nudge has actually been delivered
-      // (drained from the queue) and a turn has run — otherwise the same
-      // pre-nudge tail would trip before the agent ever saw the nudge.
-      if (active.steerQueue.length > 0) return false;
-      const now = await this.attempts.get(run.id);
-      if (now.state !== 'running') return false;
-      await tripProgressGuardrail(
-        now,
-        {
-          dimension: 'progress',
-          // A stall has no numeric bound the way wall-clock/tool-timeout do — its
-          // thresholds are internal to the detector and pattern-specific — so
-          // `limitValue` is 0 (a "no scalar limit" sentinel for this dimension)
-          // and the real evidence rides in `payload` (pattern + seqs + signatures).
-          limitValue: 0,
-          observedValue: report.count,
-          payload: { pattern: report.pattern, signatures: report.signatures, seqs: report.seqs },
+      {
+        taskId: task.id,
+        workspaceId: task.workspaceId,
+        attemptId: run.id,
+        attemptNumber,
+        progressTrace: progressEvents,
+        attemptForTrip: () => this.attemptFor(task),
+        outstandingAction: () => this.outstandingProgressActions.get(run.id),
+        record: (payload) => record('lifecycle', payload),
+        settle: async (now, reason) => {
+          // Claim the settle so the drive loop's own settle path (unwinding from
+          // the killed harness) no-ops instead of finishing the Run twice.
+          active.externallySettled = true;
+          await this.coordinateSettle(task, now, 'guardrail-trip', { runState: 'failed', taskAction: 'escalate', reason }, {});
         },
-        formatProgressReason(report),
-      );
-      return true;
-    };
+        abort: () => active.verifyAbort.abort(),
+        kill: () => this.kill(active),
+        isSettled: () => active.externallySettled,
+        isFinishing: () => active.agentFinished || active.escalateReason != null,
+        hasPendingSteer: () => active.steerQueue.length > 0,
+        pushSteer: (text) => active.steerQueue.push(text),
+      },
+    );
 
     try {
       // Harnesses with no reliable spawn-time pin (copilot) pin per
@@ -2788,40 +2470,21 @@ export class Runner {
       // harness session id), keeping `run.sessionRowId` stable. Best-effort:
       // written *alongside* the Run, so a Session persistence hiccup never fails
       // a dispatch that would otherwise proceed (AC: in-flight Run unchanged).
-      const persistSession = async (harnessSessionId: string) => {
-        void this.attempts.update(run.id, { sessionId: harnessSessionId }).catch(() => {});
-        try {
-          const transcriptResolver = adapterFor(task.harness).usage?.resolveTranscriptPath;
-          const transcriptPath = await transcriptResolver?.({
-            sessionLogDir: harness.sessionLogDir,
-            sessionId: harnessSessionId,
-          });
-          const session = await this.sessionStore.recordDispatch({
-            harness: task.harness,
-            harnessSessionId,
-            model: task.model,
-            cwd: workspace.cwd,
-            workspaceId: task.workspaceId,
-            ...(transcriptPath !== undefined ? { transcriptPath } : {}),
-            mcpTemplates: mcpServers,
-            capabilities: sessionInit,
-            adapterVersion: adapterVersion(task.harness),
-            now: Date.now(),
-          });
-          sessionRowId = session.id;
-          void this.attempts.update(run.id, { sessionRowId: session.id }).catch(() => {});
-          // The timeline decoration must not delay the ACP handshake. A steer
-          // can arrive as soon as the session becomes live.
-          void this.attempts.listSteps(attemptAtStart.id).then(async (steps) => {
-            const implementation = steps.find((row) => row.type === 'implementation' && row.state === 'running');
-            if (implementation) await this.attempts.updateStep(implementation.id, { logLocator: `session:${session.id}` });
-          }).catch(() => {});
-          if (transcriptPath === null && transcriptResolver) {
-            void this.captureTranscriptPath({ sessionId: harnessSessionId, sessionRowId: session.id, sessionLogDir: harness.sessionLogDir, transcriptResolver });
-          }
-        } catch {
-          /* best-effort; the Session is additive, the Run proceeds regardless */
-        }
+      // The per-turn context {@link persistSession} writes against — captured
+      // once here so the callback the ACP handshake/reload fire only needs the
+      // harness session id. `setSessionRowId` hands the resolved Session row id
+      // back for the autoDriven `setMode` block to record the permission mode.
+      const persistCtx: PersistSessionContext = {
+        task,
+        run,
+        harness,
+        workspace,
+        mcpServers,
+        attemptAtStart,
+        getSessionInit: () => sessionInit,
+        setSessionRowId: (id) => {
+          sessionRowId = id;
+        },
       };
       // Snapshot the harness's `initialize` capabilities (incl. `loadSession`)
       // for the durable Session; shared by both dispatch paths.
@@ -2859,27 +2522,28 @@ export class Runner {
         });
         if (outcome.loaded) {
           record('lifecycle', { event: 'session-reloaded', sessionId: continueSessionId });
-          await persistSession(continueSessionId);
+          await this.persistSession(continueSessionId, persistCtx);
         } else {
           // Fail forward to a fresh Session — never leave the Run session-less.
           record('lifecycle', { event: 'session-reload-declined', reason: outcome.reason, detail: outcome.detail });
-          await driver.handshake({ cwd: workspace.cwd, mcpServers, modelId, onInitialize, onSessionCreated: persistSession });
+          await driver.handshake({ cwd: workspace.cwd, mcpServers, modelId, onInitialize, onSessionCreated: (sid) => this.persistSession(sid, persistCtx) });
         }
       } else {
-        await driver.handshake({ cwd: workspace.cwd, mcpServers, modelId, onInitialize, onSessionCreated: persistSession });
+        await driver.handshake({ cwd: workspace.cwd, mcpServers, modelId, onInitialize, onSessionCreated: (sid) => this.persistSession(sid, persistCtx) });
       }
 
       // The session id is persisted; start tailing its native log (ADR 0010).
       this.tailer.start(run.id);
       // Arm the wall-clock Guardrail now the Run is genuinely executing.
-      await armGuardrail();
+      await guardrails.prime();
+      guardrails.armWallClock();
       // Arm the hard tool-timeout watchdog alongside it (issue #131; a no-op
       // when the progress Guardrail is off). The stall detector is evaluated at
       // turn boundaries in the loop below, not on a timer.
-      armToolTimeout();
+      guardrails.armToolTimeout();
       // Arm the token/cost spend Guardrail poll (issue #128; a no-op when
       // neither `tokens` nor `costUsd` is configured on the Run's frozen budget).
-      await armSpendGuardrail();
+      guardrails.armSpend();
 
       // An afk Run executes unattended, so put the harness into an auto
       // permission mode: Claude's 'auto' classifier auto-approves safe tools
@@ -3001,23 +2665,9 @@ export class Runner {
       // `connectionGone`, which stops every further prompt and falls straight to
       // the settle/verify path below.
       let connectionGone = false;
-      const promptTurn = async (text: string): Promise<PromptResult | null> => {
-        try {
-          return await driver.prompt([{ type: 'text', text }]);
-        } catch (err) {
-          if (err instanceof AcpPromptTimeoutError) {
-            record('lifecycle', { event: 'turn-timeout', reason: err.message });
-            return null; // turn end, connection alive — loop continues/finishes
-          }
-          if (err instanceof AcpConnectionClosedError) {
-            record('lifecycle', { event: 'turn-eof', reason: err.message });
-            connectionGone = true;
-            return null; // turn end, connection gone — fall to settle/verify
-          }
-          throw err; // child death and everything else: unchanged
-        }
-      };
-      let result: PromptResult = (await promptTurn(promptText)) ?? {};
+      const first = await this.promptTurn(driver, promptText, record);
+      connectionGone ||= first.connectionGone;
+      let result: PromptResult = first.result ?? {};
       active.idle = true;
       // Steering + auto-drive continue loop. `attempt` counts only auto-drive
       // continue nudges, so operator steers never eat into the continue budget.
@@ -3037,15 +2687,16 @@ export class Runner {
         // nudge (drained as the next turn just below); a stall that survives that
         // nudge trips → Escalate, and we break to unwind through the
         // `externallySettled` guards.
-        if (await checkProgressAtBoundary()) break;
+        if (await guardrails.checkProgressAtBoundary()) break;
         // A queued operator steer takes the next turn — for native and afk Runs
         // alike — ahead of any continue nudge, without spending continue budget.
         const steer = active.steerQueue.shift();
         if (steer !== undefined) {
           record('lifecycle', { event: 'steer_delivered', text: steer });
           active.idle = false; // a new turn is in flight — not parked, don't stop it
-          const turn = await promptTurn(steer);
-          if (turn) result = turn;
+          const turn = await this.promptTurn(driver, steer, record);
+          connectionGone ||= turn.connectionGone;
+          if (turn.result) result = turn.result;
           active.idle = true;
           if (connectionGone) break; // connection gone → settle/verify below
           continue; // re-check: more steers, then the agent's own finish/continue state
@@ -3056,8 +2707,9 @@ export class Runner {
         record('lifecycle', { event: 'continue', attempt });
         promptText = await this.autoDrive!.continuePrompt(task);
         active.idle = false; // a new turn is in flight — not parked, don't stop it
-        const turn = await promptTurn(promptText);
-        if (turn) result = turn;
+        const turn = await this.promptTurn(driver, promptText, record);
+        connectionGone ||= turn.connectionGone;
+        if (turn.result) result = turn.result;
         active.idle = true;
         if (connectionGone) break; // connection gone → settle/verify below
         attempt++;
@@ -3078,8 +2730,9 @@ export class Runner {
       while (!connectionGone && !active.externallySettled && !escalating && !stoppedShort && active.steerQueue.length > 0) {
         const steer = active.steerQueue.shift()!;
         record('lifecycle', { event: 'steer_delivered', text: steer });
-        const turn = await promptTurn(steer);
-        if (turn) result = turn;
+        const turn = await this.promptTurn(driver, steer, record);
+        connectionGone ||= turn.connectionGone;
+        if (turn.result) result = turn.result;
         if (connectionGone) break;
       }
       if (active.externallySettled) {
@@ -3123,8 +2776,9 @@ export class Runner {
           const nudge = 'Your implementation left uncommitted changes. Commit the completed work now, then finish.';
           record('lifecycle', { event: 'commit-nudge' });
           active.idle = false;
-          const turn = await promptTurn(nudge);
-          if (turn) result = turn;
+          const turn = await this.promptTurn(driver, nudge, record);
+          connectionGone ||= turn.connectionGone;
+          if (turn.result) result = turn.result;
           active.idle = true;
         }
         // A worktree Run's work lives on its own branch, not the live one, so if
@@ -3170,7 +2824,7 @@ export class Runner {
         }
       }
       await finalize();
-      const usage = await this.collectUsageSafe(task, run, harness, workspace, result);
+      const usage = await this.usage.collectUsageSafe({ harnessId: task.harness, harness, cwd: workspace.cwd, attemptId: run.id, promptResult: result });
       // The continuation gate's context-fill fallback (decideContinuation) reads
       // this once the run has settled and its live tailer is gone. Seed it from
       // the parsed tree's last-turn footprint (usage.contextTokens), NOT the ACP
@@ -3372,7 +3026,7 @@ export class Runner {
       // failure. Leave the Run `running` so boot reconciliation settles it
       // interrupted (process-death), not a spurious "harness exited" failure.
       if (this.shuttingDown) return { kind: 'terminal' };
-      const usage = await this.collectUsageSafe(task, run, harness, workspace, undefined);
+      const usage = await this.usage.collectUsageSafe({ harnessId: task.harness, harness, cwd: workspace.cwd, attemptId: run.id, promptResult: undefined });
       this.noteModelMismatch(task, usage, record);
       const patch = { usage: usage ? JSON.stringify(usage) : null };
       if (escalating) {
@@ -3395,9 +3049,7 @@ export class Runner {
       // Disarm the wall-clock watchdog: `driveOnce` is returning, so the
       // Attempt is leaving every counted Step (merging or settled) — time past
       // this point must not count against the execution budget.
-      if (guardrailTimer) clearTimeout(guardrailTimer);
-      if (toolTimeoutTimer) clearInterval(toolTimeoutTimer);
-      if (spendTimer) clearInterval(spendTimer);
+      guardrails.disarm();
       driver.fail(new Error('run finished'));
       driver.dispose();
       this.active.delete(run.id);
@@ -3406,166 +3058,89 @@ export class Runner {
   }
 
   /**
-   * The run's incremental session-log reader (#217), created lazily once a
-   * session id exists. claude tails only newly-appended bytes each tick; the
-   * other harnesses fall back to a whole-file `parse()` per tick
-   * (`wholeFileReader`). null before a session id, or for a harness with no
-   * Usage Collector. Reused across ticks so the byte cursor persists.
+   * One builder prompt turn. Beyond a normal result a turn can end two other ways
+   * (issue #426): the per-turn ACP inactivity bound fires (turn end, connection
+   * alive → re-promptable, `connectionGone: false`) or the harness's stdout hits
+   * EOF (turn end, connection gone → NOT re-promptable, `connectionGone: true`).
+   * Both fold into a null `result`; the caller routes by the existing
+   * finish/continue rule instead of hanging. Child death and anything else throw,
+   * as before.
    */
-  private async readerFor(attemptId: number): Promise<SessionTailReader | null> {
-    const existing = this.readers.get(attemptId);
-    if (existing) return existing;
-    const active = this.active.get(attemptId);
-    if (!active) return null;
-    const sessionId = (await this.attempts.get(attemptId)).sessionId;
-    if (!sessionId) return null;
-    const collector = adapterFor(active.harnessId).usage;
-    if (!collector) return null;
-    const input = { sessionLogDir: active.harness.sessionLogDir, cwd: active.cwd, sessionId };
-    const reader = collector.createTailReader?.(input) ?? wholeFileReader(collector, input);
-    this.readers.set(attemptId, reader);
-    return reader;
+  private async promptTurn(
+    driver: AcpDriver,
+    text: string,
+    record: (type: 'permission_request' | 'lifecycle', payload: unknown) => void,
+  ): Promise<{ result: PromptResult | null; connectionGone: boolean }> {
+    try {
+      return { result: await driver.prompt([{ type: 'text', text }]), connectionGone: false };
+    } catch (err) {
+      if (err instanceof AcpPromptTimeoutError) {
+        record('lifecycle', { event: 'turn-timeout', reason: err.message });
+        return { result: null, connectionGone: false };
+      }
+      if (err instanceof AcpConnectionClosedError) {
+        record('lifecycle', { event: 'turn-eof', reason: err.message });
+        return { result: null, connectionGone: true };
+      }
+      throw err;
+    }
   }
 
-  /** Claude can create its JSONL just after `session/new`; retry a few times
-   * without holding up the Run, then leave the Session transcript-less. */
-  private async captureTranscriptPath(input: {
-    sessionId: string;
-    sessionRowId: number;
-    sessionLogDir: string | undefined;
-    transcriptResolver: (input: { sessionLogDir?: string | undefined; sessionId: string }) => Promise<string | null>;
-  }): Promise<void> {
-    for (const delayMs of [100, 500, 2_000]) {
-      await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
-      const transcriptPath = await input.transcriptResolver({ sessionLogDir: input.sessionLogDir, sessionId: input.sessionId }).catch(
-        () => null,
-      );
-      if (!transcriptPath) continue;
-      await this.sessionStore.setTranscriptPath(input.sessionRowId, transcriptPath, Date.now()).catch(() => {});
-      return;
+  /**
+   * Persist the harness session id + the durable Session (Unit C #141) the moment
+   * the id is known — shared by the fresh `session/new` (`onSessionCreated`) and
+   * the reload (`session/load`, #147) paths so persistence is identical. It
+   * records the harness/model/cwd identity, credential-free MCP templates (secrets
+   * stripped, never stored) and the captured `initialize` capability snapshot; on
+   * a reload it upserts the SAME row (keyed on harness session id). Best-effort:
+   * written *alongside* the Run, so a Session persistence hiccup never fails a
+   * dispatch that would otherwise proceed (AC: in-flight Run unchanged).
+   */
+  private async persistSession(harnessSessionId: string, ctx: PersistSessionContext): Promise<void> {
+    const { task, run, harness, workspace, mcpServers, attemptAtStart } = ctx;
+    void this.attempts.update(run.id, { sessionId: harnessSessionId }).catch(() => {});
+    try {
+      const transcriptResolver = adapterFor(task.harness).usage?.resolveTranscriptPath;
+      const transcriptPath = await transcriptResolver?.({
+        sessionLogDir: harness.sessionLogDir,
+        sessionId: harnessSessionId,
+      });
+      const session = await this.sessionStore.recordDispatch({
+        harness: task.harness,
+        harnessSessionId,
+        model: task.model,
+        cwd: workspace.cwd,
+        workspaceId: task.workspaceId,
+        ...(transcriptPath !== undefined ? { transcriptPath } : {}),
+        mcpTemplates: mcpServers,
+        capabilities: ctx.getSessionInit(),
+        adapterVersion: adapterVersion(task.harness),
+        now: Date.now(),
+      });
+      ctx.setSessionRowId(session.id);
+      void this.attempts.update(run.id, { sessionRowId: session.id }).catch(() => {});
+      // The timeline decoration must not delay the ACP handshake. A steer
+      // can arrive as soon as the session becomes live.
+      void this.attempts.listSteps(attemptAtStart.id).then(async (steps) => {
+        const implementation = steps.find((row) => row.type === 'implementation' && row.state === 'running');
+        if (implementation) await this.attempts.updateStep(implementation.id, { logLocator: `session:${session.id}` });
+      }).catch(() => {});
+      if (transcriptPath === null && transcriptResolver) {
+        void this.transcripts.captureSessionTranscript({ sessionId: harnessSessionId, sessionRowId: session.id, sessionLogDir: harness.sessionLogDir, transcriptResolver });
+      }
+    } catch {
+      /* best-effort; the Session is additive, the Run proceeds regardless */
     }
   }
 
   /**
    * Resolve a Session's native transcript path on demand and persist it — the
-   * read-path counterpart to {@link captureTranscriptPath}. The eager capture at
-   * dispatch races the harness writing its `${sessionId}.jsonl` and gives up after
-   * a few hundred ms; anything that delays the first turn (e.g. pre-turn work) can
-   * push the file past that window and leave `transcriptPath` null forever. By the
-   * time a reader asks for the transcript the file exists, so resolving here
-   * removes the dependence on that startup race entirely and self-heals a Session
-   * the eager pass missed. Returns the stored or freshly-resolved path, or null
-   * when it still cannot be resolved (unknown harness, no resolver, file absent).
+   * read-path counterpart to the eager dispatch-time capture. Delegates to
+   * {@link TranscriptCapture}; kept on the Runner as the public surface the REST
+   * task-detail route calls (`ctx.runner.ensureSessionTranscript`).
    */
   async ensureSessionTranscript(sessionRowId: number): Promise<string | null> {
-    const session = await this.sessionStore.get(sessionRowId).catch(() => null);
-    if (!session) return null;
-    if (session.transcriptPath) return session.transcriptPath;
-    const resolver = adapterFor(session.harness).usage?.resolveTranscriptPath;
-    if (!resolver) return null;
-    const harnesses = this.getConfig().harnesses;
-    const sessionLogDir = harnesses[session.harness as keyof typeof harnesses]?.sessionLogDir;
-    const transcriptPath = await resolver({ sessionLogDir, sessionId: session.harnessSessionId }).catch(() => null);
-    if (!transcriptPath) return null;
-    await this.sessionStore.setTranscriptPath(sessionRowId, transcriptPath, Date.now()).catch(() => {});
-    return transcriptPath;
-  }
-
-  /** The critic equivalent of {@link captureTranscriptPath}: the harness may
-   * not have flushed its `${sessionId}.jsonl` by the time the critic turn ends
-   * and the attempt is appended (root cause of a persistently null critic
-   * transcript). Retry a few times off the hot path, then fill the attempt's
-   * transcript locator so the operator's on-demand critic-session log resolves. */
-  private async captureCriticTranscriptPath(input: {
-    attemptId: number;
-    sessionId: string;
-    harnessId: string;
-    sessionLogDir: string | undefined;
-  }): Promise<void> {
-    const resolver = adapterFor(input.harnessId).usage?.resolveTranscriptPath;
-    if (!resolver) return;
-    for (const delayMs of [100, 500, 2_000]) {
-      await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
-      const transcriptPath = await resolver({ sessionLogDir: input.sessionLogDir, sessionId: input.sessionId }).catch(() => null);
-      if (!transcriptPath) continue;
-      await this.verificationAttempts.setTranscriptPath(input.attemptId, transcriptPath).catch(() => {});
-      return;
-    }
-  }
-
-  /**
-   * The live snapshot for a run's tailer (ADR 0010): advance the incremental
-   * reader (#217 — off the event loop, only newly-appended bytes) and decorate
-   * its parse with the event-derived tool tally + activity line. Called only by
-   * the tailer tick; the on-demand callers read `latestSnapshot`.
-   */
-  private async sampleSnapshot(attemptId: number): Promise<AttemptUsageSnapshot | null> {
-    const reader = await this.readerFor(attemptId);
-    if (!reader) return null;
-    return await this.decorateSnapshot(attemptId, await reader.sample());
-  }
-
-  /**
-   * The freshest snapshot the tailer has already sampled, with no I/O — for the
-   * on-demand callers (Activity snapshot #51, spend guard #128) that ride the
-   * tailer's ~1s cadence instead of re-parsing the whole log themselves (#217).
-   * null before the tailer's first sample.
-   */
-  private async latestSnapshot(attemptId: number): Promise<AttemptUsageSnapshot | null> {
-    return await this.decorateSnapshot(attemptId, this.readers.get(attemptId)?.latest() ?? null);
-  }
-
-  /**
-   * `parse`/the reader yield the per-model roll-up and tree but no tool tally
-   * (computed from the in-memory ACP rollup) — so the live "· N tools" figure the Board
-   * ticks off `attempt_usage` (issue #100) would be stuck at zero. Tally the run's
-   * rollup here, and fold the per-agent breakdown in for parity with the
-   * settle-time Usage. The current-activity line comes off the active Run.
-   */
-  private async decorateSnapshot(attemptId: number, parsed: ParsedSession | null): Promise<AttemptUsageSnapshot | null> {
-    if (!parsed) return null;
-    const active = this.active.get(attemptId);
-    const toolCalls = Object.fromEntries(await this.toolCallsFor(attemptId));
-    const agents = agentsFromTree(parsed.tree);
-    const usage: AttemptUsage = { ...parsed.usage, toolCalls, ...(Object.keys(agents).length > 0 ? { agents } : {}) };
-    return { usage, contextTokens: parsed.tree.contextTokens, activity: active?.activity ?? null, tree: parsed.tree };
-  }
-
-  /** Usage is decoration on a finished run — never let it fail the run. */
-  private async collectUsageSafe(
-    task: TaskRow,
-    run: AttemptRow,
-    harness: HarnessConfig,
-    workspace: Workspace,
-    promptResult: { stopReason?: string; usage?: Record<string, unknown>; _meta?: unknown } | undefined,
-  ): Promise<AttemptUsage | null> {
-    try {
-      const usage = await collectUsageWithRetry({
-        harnessId: task.harness,
-        harness,
-        cwd: workspace.cwd,
-        sessionId: (await this.attempts.get(run.id)).sessionId,
-        promptResult,
-      });
-      if (!usage) return null;
-      // `usage.contextTokens` is the parsed tree's last-turn footprint (see
-      // collectUsage) — the true window fill; never re-derive it from the ACP
-      // aggregate here (that sums every round-trip and reads past the window).
-      return {
-        ...usage,
-        toolCalls: Object.fromEntries(await this.toolCallsFor(run.id)),
-      };
-    } catch {
-      return null;
-    }
-  }
-
-  /** The live tool-call rollup for `attemptId`: the in-memory cache while a
-   * `driveOnce` owns it, else the persisted Attempt-keyed snapshot. */
-  private async toolCallsFor(attemptId: number): Promise<Map<string, number>> {
-    const cached = this.toolCallTotals.get(attemptId);
-    if (cached) return cached;
-    return this.attempts.listToolCalls(attemptId);
+    return this.transcripts.ensureSessionTranscript(sessionRowId);
   }
 
   /**
@@ -3605,7 +3180,7 @@ export class Runner {
           sessionId: run.sessionId,
         });
         if (!fresh || Object.keys(fresh.models).length === 0) continue;
-        fresh.toolCalls = Object.fromEntries(await this.toolCallsFor(run.id));
+        fresh.toolCalls = Object.fromEntries(await this.usage.toolCallsFor(run.id));
         const stored = run.usage ? (JSON.parse(run.usage) as AttemptUsage) : null;
         const healed: AttemptUsage = stored?.totals
           ? { ...fresh, totals: stored.totals, source: 'combined' }
