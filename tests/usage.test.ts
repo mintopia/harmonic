@@ -423,7 +423,7 @@ describe('Process Tree roll-up (T1)', () => {
 
   it('prices a rolled-up Usage; an unpriced node in the tree flags incomplete', async () => {
     const { rollUpUsage } = await import('../src/execution/usage.js');
-    const { costOfUsages, DEFAULT_PRICES } = await import('../src/execution/pricing.js');
+    const { costOfUsages, DEFAULT_PRICES } = await import('../src/domain/pricing.js');
 
     const priced = rollUpUsage(
       node({

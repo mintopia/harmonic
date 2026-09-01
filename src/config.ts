@@ -1,7 +1,7 @@
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { z } from 'zod';
-import { resolvePrices, isModelPriced } from './execution/pricing.js';
+import { resolvePrices, isModelPriced } from './domain/pricing.js';
 
 export const HARNESS_IDS = ['claude', 'codex', 'copilot'] as const;
 export type HarnessId = (typeof HARNESS_IDS)[number];
@@ -78,7 +78,7 @@ export const harnessConfigSchema = z.object({
   sessionLogDir: z.string().optional().meta({ example: '~/.claude/projects' }),
 });
 
-/** Per-model API rates in $/Mtok; must match `ModelPrice` in execution/pricing.ts. */
+/** Per-model API rates in $/Mtok; must match `ModelPrice` in domain/pricing.ts. */
 export const modelPriceSchema = z.object({
   input: z.number().nonnegative().meta({ example: 3 }),
   output: z.number().nonnegative().meta({ example: 15 }),
@@ -232,7 +232,7 @@ export const appConfigSchema = z.object({
   }),
   /**
    * Price-table overrides for Cost: entries here override or extend the
-   * shipped `DEFAULT_PRICES` (execution/pricing.ts).
+   * shipped `DEFAULT_PRICES` (domain/pricing.ts).
    */
   prices: z
     .record(z.string(), modelPriceSchema)

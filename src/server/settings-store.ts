@@ -1,7 +1,8 @@
 import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse, stringify } from 'yaml';
-import { workspaceOverridesSchema, type WorkspaceOverrides } from '../domain/workspaces.js';
+import { workspaceOverridesSchema, OVERRIDE_KEYS } from '../domain/workspaces.js';
+import type { WorkspaceOverrides, ResolvedOverrides, WorkspaceSettingsStore } from '../domain/workspaces.js';
 import {
   appConfigSchema,
   defaultConfig,
@@ -13,41 +14,6 @@ import {
 } from '../config.js';
 
 export type { WorkspaceOverrides };
-
-/** Every per-Workspace setting override key (ADR-0009) — the full set that
- * moved off `workspaces` columns and into the YAML settings file's sparse
- * per-Workspace entries. */
-export const OVERRIDE_KEYS = [
-  'harness',
-  'model',
-  'chatHarness',
-  'chatModel',
-  'isolationMode',
-  'priority',
-  'conflictResolveTurns',
-  'maxConcurrentAttempts',
-  'autoRunnerEnabled',
-  'maxAttempts',
-  'contextReuseTokenLimit',
-  'verificationCommand',
-  'reviewEnabled',
-  'reviewPrompt',
-  'reviewModel',
-  'reviewHarness',
-  'guardrailBudget',
-  'guardrailProgress',
-  'toolTimeoutMinutes',
-  'drivePrompt',
-  'driveUnattendedReminder',
-  'driveContinuePrompt',
-  'driveMergeFate',
-  'driveContinueAttempts',
-  'taskPrompt',
-] as const;
-
-/** A fully-populated overrides object: every key present, `null` meaning
- * *inherit* the global default — what `SettingsStore.getOverrides` returns. */
-export type ResolvedOverrides = { [K in (typeof OVERRIDE_KEYS)[number]]: NonNullable<WorkspaceOverrides[K]> | null };
 
 function blankOverrides(): ResolvedOverrides {
   const out = {} as ResolvedOverrides;
@@ -109,7 +75,7 @@ function loadFromDisk(path: string): SettingsFile {
  * never silently discarded for defaults, since that would quietly drop an
  * operator's configured settings.
  */
-export class SettingsStore {
+export class SettingsStore implements WorkspaceSettingsStore {
   private global: AppConfig;
   private workspaces: Record<string, WorkspaceOverrides>;
   private loadedMtimeMs = 0;

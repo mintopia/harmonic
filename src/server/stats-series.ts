@@ -1,5 +1,5 @@
 import { mergeUsage, type AttemptUsage } from '../execution/usage.js';
-import type { Cost } from '../execution/pricing.js';
+import type { Cost } from '../domain/pricing.js';
 import { isExecutionFailure } from '../domain/attempt-failure.js';
 
 /** One day's bucket in the Stats time series (by run start time). */

@@ -16,7 +16,7 @@ import type { TaskWithDeps } from '../domain/tasks.js';
 import type { Ticket } from '../tracker/adapter.js';
 import { resolveVerifiers } from '../domain/setting-override.js';
 import { verifierStatuses, type VerifierStatus } from '../domain/verifier-status.js';
-import { costOfUsages, resolveContextWindow, resolvePrices, sumCosts, type Cost } from '../execution/pricing.js';
+import { costOfUsages, resolveContextWindow, resolvePrices, sumCosts, type Cost } from '../domain/pricing.js';
 import type { ProcessTree, AttemptUsage, AttemptUsageSnapshot } from '../execution/usage.js';
 import { Git } from '../execution/git.js';
 import type { OperationEvent, OperationSnapshot } from '../telemetry/operations.js';
