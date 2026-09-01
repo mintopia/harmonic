@@ -549,8 +549,8 @@ export type TrackerContainerRow = typeof trackerContainers.$inferSelect;
  * tracks reality while the Epic is live and freezes when its tracker issue
  * closes: `map` is the `wayfinder:map` container; `spec` is an Epic container
  * whose body carries a spec; `epic` is a plain parent/child container with no
- * spec body. Distinct from `epic-derivation.ts`'s two-kind derived `EpicKind`
- * (`map | spec`) — the stored spine adds the plain `epic`.
+ * spec body. The read-model `Epic` DTO narrows this to two kinds (`map | spec`,
+ * folding the plain `epic` into `spec`) at the manager boundary.
  */
 export const STORED_EPIC_KINDS = ['map', 'spec', 'epic'] as const;
 export type StoredEpicKind = (typeof STORED_EPIC_KINDS)[number];

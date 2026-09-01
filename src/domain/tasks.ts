@@ -345,8 +345,8 @@ export class TaskService {
   }
 
   /** This ticket is an Epic: a **top-level** container — a container with no parent
-   * of its own (ADR-0016), matching `deriveEpics`. A nested sub-container is a
-   * container but not an Epic. The `isEpic` row flag surfaced to list surfaces. */
+   * of its own (ADR-0016). A nested sub-container is a container but not an Epic.
+   * The `isEpic` row flag surfaced to list surfaces. */
   private isEpic(task: TaskRow, containerRefs: ReadonlySet<string>): boolean {
     return task.trackerParent == null && this.isContainer(task, containerRefs);
   }
