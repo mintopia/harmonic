@@ -30,6 +30,9 @@ export type TicketState = 'open' | 'closed';
 /** The label that marks a wayfinder Map — convention on every tracker; `isMap` hides which. */
 export const MAP_LABEL = 'wayfinder:map';
 
+/** The label that marks a spec Epic — a container ticket, never mirrored as a work Task (ADR-0016). */
+export const EPIC_LABEL = 'epic';
+
 export { READY_FOR_AGENT_LABEL, READY_FOR_HUMAN_LABEL } from '../domain/agent-workable.js';
 
 /** A directional edge target: the referenced ticket's portable identity + surface state. */
