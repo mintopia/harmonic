@@ -297,25 +297,35 @@ export class TaskService {
   }
 
   /** ADR-0041's derived flag: opted in (mirrored: `mirroredAgentEligible` over the
-   * persisted labels) AND no open Blockers. Never stored. `epicRefs` are this
-   * Workspace's Epic containers as `workspaceId:trackerRef` (see {@link epicContainerRefs}). */
-  private agentWorkable(task: TaskRow, openBlockerCount: number, epicRefs: ReadonlySet<string>): boolean {
-    return openBlockerCount === 0 && !this.humanOnly(task, epicRefs);
+   * persisted labels) AND no open Blockers. Never stored. `containerRefs` are this
+   * Workspace's containers as `workspaceId:trackerRef` (see {@link containerRefs}). */
+  private agentWorkable(task: TaskRow, openBlockerCount: number, containerRefs: ReadonlySet<string>): boolean {
+    return openBlockerCount === 0 && !this.humanOnly(task, containerRefs);
   }
 
-  private humanOnly(task: TaskRow, epicRefs: ReadonlySet<string>): boolean {
+  private humanOnly(task: TaskRow, containerRefs: ReadonlySet<string>): boolean {
     if (task.origin !== 'mirrored') return false;
-    return !mirroredAgentEligible(task.trackerLabels ?? [], task.wayfinderType, this.isEpicContainer(task, epicRefs));
+    return !mirroredAgentEligible(task.trackerLabels ?? [], task.wayfinderType, this.isContainer(task, containerRefs));
   }
 
-  /** This ticket is an Epic container: it appears as some mirrored ticket's parent
-   * (see {@link epicContainerRefs}). */
-  private isEpicContainer(task: TaskRow, epicRefs: ReadonlySet<string>): boolean {
-    return epicRefs.has(`${task.workspaceId}:${task.trackerRef}`);
+  /** This ticket is a container: some other mirrored ticket names it as its parent
+   * — a ticket with children, never worked itself, at any nesting level (the gate
+   * `mirroredAgentEligible` reads). See {@link containerRefs}. */
+  private isContainer(task: TaskRow, containerRefs: ReadonlySet<string>): boolean {
+    return containerRefs.has(`${task.workspaceId}:${task.trackerRef}`);
   }
 
-  /** An Epic is any ticket some other mirrored ticket names as its parent — a container, never worked itself. */
-  private async epicContainerRefs(workspaceId?: number): Promise<Set<string>> {
+  /** This ticket is an Epic: a **top-level** container — a container with no parent
+   * of its own (ADR-0016), matching `deriveEpics`. A nested sub-container is a
+   * container but not an Epic. The `isEpic` row flag surfaced to list surfaces. */
+  private isEpic(task: TaskRow, containerRefs: ReadonlySet<string>): boolean {
+    return task.trackerParent == null && this.isContainer(task, containerRefs);
+  }
+
+  /** The refs (`workspaceId:trackerRef`) of every container in this Workspace: a
+   * ticket some other mirrored ticket names as its parent, at any nesting level. A
+   * container is never worked itself; the top-level ones are the Epics ({@link isEpic}). */
+  private async containerRefs(workspaceId?: number): Promise<Set<string>> {
     const rows = await this.db.read((db) =>
       db
         .selectDistinct({ workspaceId: tasks.workspaceId, parent: tasks.trackerParent })
@@ -684,11 +694,11 @@ export class TaskService {
     await forEachYielding(completedRows, (task) => {
       completedIds.add(task.id);
     });
-    const epicRefs = await this.epicContainerRefs(workspaceId);
+    const containerRefs = await this.containerRefs(workspaceId);
     const nodes: OrderedEligibleTask[] = [];
     await forEachYielding(candidates, (task) => {
       const blockedBy = (blockersByTaskId.get(task.id) ?? []).filter((id) => !completedIds.has(id));
-      if (!this.agentWorkable(task, blockedBy.length, epicRefs)) return;
+      if (!this.agentWorkable(task, blockedBy.length, containerRefs)) return;
       nodes.push({
         ...task,
         blockedBy,
@@ -1114,16 +1124,16 @@ export class TaskService {
     const dependsOn = await this.dependsOn(task.id);
     const depStates = await Promise.all(dependsOn.map(async (depId) => (await this.get(depId)).state));
     const openBlockerCount = depStates.filter((state) => state !== 'done').length;
-    const epicRefs = await this.epicContainerRefs(task.workspaceId ?? undefined);
+    const containerRefs = await this.containerRefs(task.workspaceId ?? undefined);
     return {
       ...task,
       dependsOn,
       dependents: await this.dependents(task.id),
       blockedOnFailed: task.state === 'ready' && depStates.some((s) => s === 'escalated' || s === 'cancelled'),
       openBlockerCount,
-      agentWorkable: this.agentWorkable(task, openBlockerCount, epicRefs),
-      humanOnly: this.humanOnly(task, epicRefs),
-      isEpic: this.isEpicContainer(task, epicRefs),
+      agentWorkable: this.agentWorkable(task, openBlockerCount, containerRefs),
+      humanOnly: this.humanOnly(task, containerRefs),
+      isEpic: this.isEpic(task, containerRefs),
       // The resolved row can't tell inherit from pin, so read the raw overrides
       // straight from storage — the editor needs to distinguish the two.
       overrides: this.overridesOf(await this.getRaw(task.id)),
@@ -1209,16 +1219,16 @@ export class TaskService {
       if (edge.state === 'escalated' || edge.state === 'cancelled') failedDependencies.add(edge.taskId);
     }
     for (const edge of dependentRows) dependents.get(edge.dependsOnId)?.push(edge.taskId);
-    const epicRefs = await this.epicContainerRefs(query.workspaceId);
+    const containerRefs = await this.containerRefs(query.workspaceId);
     return listed.map((task) => ({
       ...task,
       dependsOn: dependsOn.get(task.id) ?? [],
       dependents: dependents.get(task.id) ?? [],
       blockedOnFailed: task.state === 'ready' && failedDependencies.has(task.id),
       openBlockerCount: openBlockerCounts.get(task.id) ?? 0,
-      agentWorkable: this.agentWorkable(task, openBlockerCounts.get(task.id) ?? 0, epicRefs),
-      humanOnly: this.humanOnly(task, epicRefs),
-      isEpic: this.isEpicContainer(task, epicRefs),
+      agentWorkable: this.agentWorkable(task, openBlockerCounts.get(task.id) ?? 0, containerRefs),
+      humanOnly: this.humanOnly(task, containerRefs),
+      isEpic: this.isEpic(task, containerRefs),
       overrides: this.overridesOf(rawById.get(task.id) ?? task),
     }));
   }

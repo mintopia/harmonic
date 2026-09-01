@@ -16,16 +16,16 @@ export const READY_FOR_HUMAN_LABEL = 'ready-for-human';
  * ticket (the other half is "no open Blockers", derived from edges). Opt-in:
  * `ready-for-agent` present, and not forced human-only — by `ready-for-human`,
  * by a wayfinder kind a human must drive (grilling / prototype / task), or by
- * being an Epic container (a ticket with children is never worked itself).
- * Assignment is never consulted (issue #208). Pure, so the Auto-Runner pick,
- * the Epic ready-frontier, and the board all agree.
+ * being a container (a ticket with children is never worked itself, at any
+ * nesting level). Assignment is never consulted (issue #208). Pure, so the
+ * Auto-Runner pick, the Epic ready-frontier, and the board all agree.
  */
 export function mirroredAgentEligible(
   labels: readonly string[],
   wayfinderType: WayfinderType | null,
-  isEpicContainer: boolean,
+  isContainer: boolean,
 ): boolean {
-  if (isEpicContainer) return false;
+  if (isContainer) return false;
   if (!labels.includes(READY_FOR_AGENT_LABEL)) return false;
   if (labels.includes(READY_FOR_HUMAN_LABEL)) return false;
   return wayfinderType !== 'grilling' && wayfinderType !== 'prototype' && wayfinderType !== 'task';
