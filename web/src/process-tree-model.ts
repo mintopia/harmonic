@@ -163,7 +163,8 @@ export function findNode(tree: ProcessTree, id: string): ProcessNode | undefined
  * calls with the spawning `Agent`/`Task` tool-use id (Claude Code's
  * `_meta.claudeCode.parentToolUseId`); a root-session event carries none. */
 function parentToolUseId(event: StreamEvent): string | undefined {
-  const id = event.payload?._meta?.claudeCode?.parentToolUseId;
+  const payload = event.payload as { _meta?: { claudeCode?: { parentToolUseId?: unknown } } } | null | undefined;
+  const id = payload?._meta?.claudeCode?.parentToolUseId;
   return typeof id === 'string' ? id : undefined;
 }
 

@@ -16,7 +16,7 @@ import {
   type EpicIntegrateTrigger,
   type EpicRefreshTrigger,
 } from '../src/execution/epic-integration.js';
-import type { MemberMergeState } from '../src/domain/epic-integrate.js';
+import type { MemberMergeState } from '../src/domain/epic-integrate-decision.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { allWorkspaces, makeSettingsStore } from './helpers.js';
 

@@ -19,6 +19,7 @@ import {
 } from '../graph-model';
 import { layoutGraph } from '../graph-layout';
 import { ticketRowId } from '../id-format.js';
+import { useLiveEffect } from '../useLiveEffect';
 import { Switch } from './Switch';
 import { EmptyState } from './EmptyState';
 import { displayTitle, labelType, touchTarget, touchTargetInline } from '../ui';
@@ -93,20 +94,16 @@ export function GraphView({
 
   const [layout, setLayout] = useState<Layout | null>(null);
   const [layoutError, setLayoutError] = useState(false);
-  useEffect(() => {
-    let live = true;
+  useLiveEffect((live) => {
     setLayoutError(false);
     if (visible.length === 0) {
       setLayout({ nodes: [], groups: [], edges: [], width: 0, height: 0 });
       return;
     }
     layoutGraph(visible, edges, { direction: 'RIGHT', nodeW: NODE_W, nodeH: NODE_H, groupLabelPad: 34 }).then(
-      (l) => live && setLayout(l),
-      () => live && setLayoutError(true),
+      (l) => live() && setLayout(l),
+      () => live() && setLayoutError(true),
     );
-    return () => {
-      live = false;
-    };
     // Structure key stands in for (visible, edges): same nodes+edges ⇒ same layout.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [structureKey]);

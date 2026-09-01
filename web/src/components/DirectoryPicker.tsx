@@ -1,4 +1,4 @@
-import { useEffect, useReducer } from 'react';
+import { useReducer } from 'react';
 import { api } from '../api';
 import {
   emptyPicker,
@@ -7,6 +7,7 @@ import {
   type DirNode,
 } from '../directory-picker-model';
 import { Icon } from './Icon';
+import { useLiveEffect } from '../useLiveEffect';
 
 const errText = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
@@ -23,15 +24,11 @@ export function DirectoryPicker({
 }) {
   const [state, dispatch] = useReducer(reducePicker, undefined, emptyPicker);
 
-  useEffect(() => {
-    let live = true;
+  useLiveEffect((live) => {
     api
       .browseFs()
-      .then((listing) => live && dispatch({ type: 'loaded', listing }))
-      .catch((e) => live && dispatch({ type: 'root-error', message: errText(e) }));
-    return () => {
-      live = false;
-    };
+      .then((listing) => live() && dispatch({ type: 'loaded', listing }))
+      .catch((e) => live() && dispatch({ type: 'root-error', message: errText(e) }));
   }, []);
 
   const toggle = (node: DirNode): void => {

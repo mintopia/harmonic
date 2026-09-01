@@ -30,6 +30,7 @@ import { card, labelType, railSectionHead, railSectionCount, PHASE_NODE_STYLES, 
 import { toastError } from '../toast';
 import { ticketIdentity } from '../id-format.js';
 import { splitPathTail } from '../path';
+import { useLiveEffect } from '../useLiveEffect';
 
 
 const sectionCaps = 'text-label font-bold uppercase tracking-[0.1em] text-faint';
@@ -310,12 +311,11 @@ function CriticSession({ attemptId, label, model }: { attemptId: number; label: 
   const [state, setState] = useState<'loading' | 'ready' | 'unavailable'>('loading');
   const [events, setEvents] = useState<AttemptLogEvent[]>([]);
 
-  useEffect(() => {
-    let live = true;
+  useLiveEffect((live) => {
     setState('loading');
     api.criticLog(attemptId).then(
       (log) => {
-        if (!live) return;
+        if (!live()) return;
         if (log.status === 'available' && log.events.length > 0) {
           setEvents(log.events);
           setState('ready');
@@ -323,11 +323,8 @@ function CriticSession({ attemptId, label, model }: { attemptId: number; label: 
           setState('unavailable');
         }
       },
-      () => live && setState('unavailable'),
+      () => live() && setState('unavailable'),
     );
-    return () => {
-      live = false;
-    };
   }, [attemptId]);
 
   if (state === 'loading') return <p className="mt-3 text-[12px] text-muted">Loading critic session…</p>;
@@ -589,25 +586,23 @@ function ChangesPane({
 }) {
   const [files, setFiles] = useState<DiffFile[] | null>(null);
   const [failed, setFailed] = useState(false);
-  useEffect(() => {
+  useLiveEffect((live) => {
     if (attemptId == null) {
       setFiles([]);
       return;
     }
-    let live = true;
     setFiles(null);
     setFailed(false);
     const load = () =>
       api.attemptDiffFiles(attemptId).then(
-        ({ files }) => live && setFiles(files),
-        () => live && setFailed(true),
+        ({ files }) => live() && setFiles(files),
+        () => live() && setFailed(true),
       );
     load();
     // While the run is live the diff keeps growing — refresh so the hunks track
     // the agent's edits, matching the rail's live changed-file list.
     const timer = running ? window.setInterval(load, 2_000) : undefined;
     return () => {
-      live = false;
       if (timer) window.clearInterval(timer);
     };
   }, [attemptId, running]);
@@ -1283,57 +1278,42 @@ export function TicketPage({
   const selectedRun = selection.kind === 'attempt' ? runForAttempt(runs, { number: selection.attemptNumber }) : null;
   const selectedRunId = selectedRun?.id ?? null;
 
-  useEffect(() => {
-    let live = true;
-    api.tasks().then(({ tasks }) => live && setAllTasks(tasks), toastError);
-    return () => {
-      live = false;
-    };
+  useLiveEffect((live) => {
+    api.tasks().then(({ tasks }) => live() && setAllTasks(tasks), toastError);
   }, [task.id]);
 
-  useEffect(() => {
-    let live = true;
+  useLiveEffect((live) => {
     setDetail(null);
-    api.task(task.id).then((full) => live && setDetail(full), toastError);
-    return () => {
-      live = false;
-    };
+    api.task(task.id).then((full) => live() && setDetail(full), toastError);
   }, [task.id]);
 
-  useEffect(() => {
-    let live = true;
+  useLiveEffect((live) => {
     const load = () =>
       api.taskTimeline(task.id).then(({ events: next }) => {
-        if (live) setTimelineEvents(next);
+        if (live()) setTimelineEvents(next);
       }, toastError);
     load();
     const unsubscribe = subscribe((msg) => {
       if ((msg.type === 'attempt_timeline_changed' && msg.taskId === task.id) || (msg.type === 'attempt_changed' && msg.run.taskId === task.id)) load();
     });
     return () => {
-      live = false;
       unsubscribe();
     };
   }, [task.id]);
 
-  useEffect(() => {
-    let live = true;
+  useLiveEffect((live) => {
     Promise.all([api.config(), api.workspaces()]).then(([config, { workspaces }]) => {
-      if (!live) return;
+      if (!live()) return;
       const workspace = workspaces.find((workspace) => workspace.id === task.workspaceId);
       setMaxAttempts(workspace?.maxAttempts ?? config.maxAttempts);
       setWorkspaceName(workspace?.name ?? null);
     }, toastError);
-    return () => {
-      live = false;
-    };
   }, [task.workspaceId]);
 
-  useEffect(() => {
-    let live = true;
+  useLiveEffect((live) => {
     const load = () =>
       api.taskAttemptTimeline(task.id).then(({ attempts: next }) => {
-        if (!live) return;
+        if (!live()) return;
         setAttempts(next);
       }, toastError);
     load();
@@ -1343,15 +1323,13 @@ export function TicketPage({
       }
     });
     return () => {
-      live = false;
       unsubscribe();
     };
   }, [task.id]);
 
-  useEffect(() => {
-    let live = true;
+  useLiveEffect((live) => {
     api.taskAttempts(task.id).then(({ attempts: list }) => {
-      if (!live) return;
+      if (!live()) return;
       setRuns(list);
     });
     const unsubscribe = subscribe((msg) => {
@@ -1363,7 +1341,6 @@ export function TicketPage({
       }
     });
     return () => {
-      live = false;
       unsubscribe();
     };
   }, [task.id]);
@@ -1393,28 +1370,25 @@ export function TicketPage({
   // rail's changed-file list fills as the agent edits, instead of staying empty
   // until settle. Idle → clear it and fall back to the settled `task.stat`.
   const latestAttemptId = runs[runs.length - 1]?.id ?? null;
-  useEffect(() => {
+  useLiveEffect((live) => {
     if (!anyRunning || latestAttemptId === null) {
       setLiveStat(null);
       return;
     }
-    let live = true;
     const load = () =>
       api
         .attemptDiff(latestAttemptId)
-        .then((d) => live && setLiveStat(d.stat))
+        .then((d) => live() && setLiveStat(d.stat))
         .catch(() => {});
     load();
     const timer = window.setInterval(load, 2_000);
     return () => {
-      live = false;
       window.clearInterval(timer);
     };
   }, [anyRunning, latestAttemptId]);
 
-  useEffect(() => {
+  useLiveEffect((live) => {
     if (selectedRunId === null) return;
-    let live = true;
     let hydrated = false;
     const pending: AttemptLogEvent[] = [];
     let cursor = 0;
@@ -1433,7 +1407,7 @@ export function TicketPage({
     } });
     api.attemptLog(selectedRunId).then(
       (log) => {
-        if (!live) return;
+        if (!live()) return;
         setLogUnavailable(log.status === 'unavailable');
         const hydratedEvents = appendAttemptLogEvents({
           current: log.status === 'available' ? log.events : [],
@@ -1444,7 +1418,7 @@ export function TicketPage({
         hydrated = true;
       },
       (error: unknown) => {
-        if (!live) return;
+        if (!live()) return;
         const hydratedEvents = appendAttemptLogEvents({ current: [], additions: pending });
         cursor = attemptLogCursor({ events: pending });
         setEvents(hydratedEvents);
@@ -1453,41 +1427,37 @@ export function TicketPage({
       },
     );
     return () => {
-      live = false;
       unsubscribe();
     };
   }, [selectedRunId]);
 
-  useEffect(() => {
+  useLiveEffect((live) => {
     if (selectedRunId === null) {
       setGuardrailEvents([]);
       return;
     }
-    let live = true;
     const load = () =>
-      api.attemptGuardrailEvents(selectedRunId).then(({ guardrailEvents }) => live && setGuardrailEvents(guardrailEvents));
+      api.attemptGuardrailEvents(selectedRunId).then(({ guardrailEvents }) => live() && setGuardrailEvents(guardrailEvents));
     load();
     const unsubscribe = subscribe((msg) => {
       if (msg.type === 'attempt_changed' && msg.run.id === selectedRunId) load();
     });
     return () => {
-      live = false;
       unsubscribe();
     };
   }, [selectedRunId]);
 
-  useEffect(() => {
+  useLiveEffect((live) => {
     if (selectedRunId === null) {
       setVerificationAttempts([]);
       setVerifierStatuses([]);
       return;
     }
-    let live = true;
     const load = () =>
       api
         .attemptVerificationAttempts(selectedRunId)
         .then(({ verificationAttempts, verifierStatuses }) => {
-          if (!live) return;
+          if (!live()) return;
           setVerificationAttempts(verificationAttempts);
           setVerifierStatuses(verifierStatuses);
         });
@@ -1496,7 +1466,6 @@ export function TicketPage({
       if (msg.type === 'attempt_changed' && msg.run.id === selectedRunId) load();
     });
     return () => {
-      live = false;
       unsubscribe();
     };
   }, [selectedRunId]);

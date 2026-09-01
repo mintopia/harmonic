@@ -1,8 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
-import { EpicIntegrateCoordinator, type EpicIntegrate, type EpicIntegrateGit } from '../src/execution/epic-integrate-coordinator.js';
+import { EpicIntegrateCoordinator, type EpicIntegrate, type EpicIntegrateGit } from '../src/execution/epic-integrate-git.js';
 import type { MergePolicyOutcome } from '../src/execution/merge-policy.js';
 import type { VerificationDecision } from '../src/verification/combine.js';
-import type { MemberMergeState } from '../src/domain/epic-integrate.js';
+import type { MemberMergeState } from '../src/domain/epic-integrate-decision.js';
 
 const proceed: VerificationDecision = { outcome: 'proceed', reason: 'all 1 verifier passed' };
 const block: VerificationDecision = { outcome: 'block', reason: 'verifier command failed' };
