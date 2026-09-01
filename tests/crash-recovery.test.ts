@@ -8,7 +8,7 @@ import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { AttemptStore } from '../src/domain/attempts.js';
 import { AttemptSettleCoordinator } from '../src/domain/attempt-settle.js';
-import { CrashRecoveryCoordinator } from '../src/domain/crash-recovery.js';
+import { CrashRecoveryCoordinator } from '../src/execution/crash-recovery.js';
 import { Git } from '../src/execution/git.js';
 import type { TaskRow, AttemptRow } from '../src/db/schema.js';
 import type { SettingsStore } from '../src/server/settings-store.js';

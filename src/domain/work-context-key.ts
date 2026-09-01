@@ -1,4 +1,5 @@
-import { repoKey } from '../execution/repo-lock.js';
+import { realpathSync } from 'node:fs';
+import { resolve } from 'node:path';
 import type { IsolationMode } from '../config.js';
 import { DomainError } from './errors.js';
 
@@ -10,9 +11,24 @@ export interface WorkContextKeyInput {
 }
 
 /**
+ * Canonical identity for a base repository directory, stable across
+ * trailing slashes, `.`/`..` segments, and symlinks — so two references to
+ * the same physical checkout serialize on the same lock. Falls back to a
+ * normalised absolute path when the directory can't be resolved (e.g. it
+ * doesn't exist yet or isn't readable).
+ */
+export function repoKey(dir: string): string {
+  try {
+    return realpathSync(resolve(dir));
+  } catch {
+    return resolve(dir);
+  }
+}
+
+/**
  * The canonical Work Context identity key (ADR-0001,
  * reliability-design §0.5): the identity a Work Context's occupancy is tracked
- * against. Pure and side-effect free; reuses `repoKey` (execution/repo-lock.ts,
+ * against. Pure and side-effect free; reuses `repoKey` (defined below,
  * issue #121) for path canonicalisation rather than re-deriving it, so the
  * occupancy key and the base-repo lock key agree on what "the same directory"
  * means (trailing slashes, `.`/`..` segments, symlinks all collapse).

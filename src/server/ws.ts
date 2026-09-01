@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { App } from './app.js';
-import { attemptTimelineToApi, conversationToApi, flaggedWorktreesToApi, operationEventToApi, attemptToApi, attemptUsageToApi, scheduledJobsToApi, taskToApi } from './serialize.js';
+import { attemptTimelineToApi, conversationToApi, attemptToApi, attemptUsageToApi, taskToApi } from './serialize.js';
+import { flaggedWorktreesToApi, operationEventToApi, scheduledJobsToApi } from './dto.js';
 import { forEachYielding } from '../reliability/yield.js';
 
 /**

@@ -36,7 +36,7 @@ import { GuardrailEventStore } from '../domain/guardrail-events.js';
 import { VerificationAttemptStore } from '../domain/verification-attempts.js';
 import type { MergeEffectExec } from '../domain/merge.js';
 import type { TaskRow, AttemptRow } from '../db/schema.js';
-import { CrashRecoveryCoordinator } from '../domain/crash-recovery.js';
+import { CrashRecoveryCoordinator } from '../execution/crash-recovery.js';
 import { resolveVerifiers } from '../domain/setting-override.js';
 import { runCommandVerifier, commandAttemptToInput } from '../verification/command-verifier.js';
 import { Runner } from '../execution/runner.js';

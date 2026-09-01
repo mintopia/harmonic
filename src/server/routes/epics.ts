@@ -6,7 +6,8 @@ import { DomainError } from '../../domain/errors.js';
 import { errorResponse } from '../schemas.js';
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
 import type { Epic } from '../../domain/epic-view.js';
-import { parseUnifiedDiff, diffFilesResponseSchema } from './diff.js';
+import { diffFilesResponseSchema } from './diff.js';
+import { parseUnifiedDiff } from '../../domain/unified-diff.js';
 
 /** Path params for a whole-Epic action: the owning Workspace and the Epic's tracker ref. */
 const epicParamsSchema = z.object({

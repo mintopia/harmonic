@@ -27,6 +27,7 @@
  * a failing whole-Epic Verification still blocks the integrate.
  */
 
+import type { TaskRow } from '../db/schema.js';
 import type { VerificationDecision } from '../verification/combine.js';
 
 /**
@@ -40,6 +41,20 @@ import type { VerificationDecision } from '../verification/combine.js';
  *    or no mirrored Task at all): the Epic is not ready to integrate yet.
  */
 export type MemberMergeState = 'completed' | 'blocked' | 'pending';
+
+/**
+ * Reduce a member's mirrored Task to its merge state for the whole-Epic integrate
+ * decision (issue #161): `completed` once it has merged onto the integration
+ * branch (Task state `done`); `blocked` when it cannot merge (escalated to a
+ * human, or `failed`/`cancelled`) and so holds the whole Epic back; `pending`
+ * otherwise (still in progress, awaiting review, not yet started, or not mirrored).
+ */
+export function reduceMemberState(task: TaskRow | undefined): MemberMergeState {
+  if (!task) return 'pending';
+  if (task.state === 'done') return 'completed';
+  if (task.state === 'escalated' || task.state === 'cancelled') return 'blocked';
+  return 'pending';
+}
 
 /**
  * The facts the whole-Epic integrate decision needs, gathered by the coordinator so

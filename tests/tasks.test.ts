@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { trackerDismissals } from '../src/db/schema.js';
 import { startServer, waitFor, type TestServer } from './helpers.js';
-import { summarize } from '../src/server/serialize.js';
+import { summarize } from '../src/server/dto.js';
 import { toMirrorInput } from '../src/tracker/mirror.js';
 import type { Ticket } from '../src/tracker/adapter.js';
 

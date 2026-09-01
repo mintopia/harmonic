@@ -1,21 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { realpathSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { repoKey } from '../domain/work-context-key.js';
 
-/**
- * Canonical identity for a base repository directory, stable across
- * trailing slashes, `.`/`..` segments, and symlinks — so two references to
- * the same physical checkout serialize on the same lock. Falls back to a
- * normalised absolute path when the directory can't be resolved (e.g. it
- * doesn't exist yet or isn't readable).
- */
-export function repoKey(dir: string): string {
-  try {
-    return realpathSync(resolve(dir));
-  } catch {
-    return resolve(dir);
-  }
-}
+export { repoKey };
 
 /**
  * A reentrant, per-`dir` mutual-exclusion lock. Each factory instance owns its

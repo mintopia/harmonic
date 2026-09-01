@@ -1,5 +1,3 @@
-import type { EventBus } from '../server/bus.js';
-
 export type FlaggedWorktreeReason = 'dirty' | 'unreadable' | 'unrecognized';
 
 /**
@@ -17,6 +15,10 @@ export interface FlaggedWorktree {
   reason: FlaggedWorktreeReason;
 }
 
+export interface FlaggedWorktreeEmitter {
+  emit(event: 'flagged_worktrees', flags: readonly FlaggedWorktree[]): void;
+}
+
 /**
  * In-memory operator-disposition registry (issue #386). A flagged worktree
  * persists on disk and is re-derived from scratch on every reconcile pass —
@@ -27,7 +29,7 @@ export interface FlaggedWorktree {
 export class FlaggedWorktreeRegistry {
   private current: readonly FlaggedWorktree[] = [];
 
-  constructor(private readonly bus: EventBus) {}
+  constructor(private readonly bus: FlaggedWorktreeEmitter) {}
 
   replace(flags: readonly FlaggedWorktree[]): void {
     this.current = flags;

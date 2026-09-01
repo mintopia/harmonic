@@ -3,7 +3,7 @@ import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { App } from '../app.js';
 import { mergeUsage, type AttemptUsage } from '../../execution/usage.js';
-import { costOfAttempts } from '../serialize.js';
+import { costOfAttempts } from '../dto.js';
 import { buildDaySeries } from '../stats-series.js';
 import { costSchema, modelUsageSchema, toolTokenUsageSchema } from '../schemas.js';
 import { yieldToEventLoop } from '../../reliability/yield.js';

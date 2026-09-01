@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import { AcpDriver } from '../acp/driver.js';
 import { adapterFor } from './harness/adapter.js';
 import { accumulateUsage, collectUsageWithRetry, type AttemptUsage } from './usage.js';
-import { resolvePrices } from './pricing.js';
+import { resolvePrices } from '../domain/pricing.js';
 import { DomainError } from '../domain/errors.js';
 import type { AppConfig } from '../config.js';
 import type { ConversationStore, PersistedConversationEvent } from '../domain/conversations.js';
