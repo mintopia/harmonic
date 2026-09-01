@@ -683,6 +683,29 @@ export class TaskService {
     return row?.kind ?? null;
   }
 
+  /**
+   * Settle a stored Epic's integration snapshot (ADR-0018, #438): flip `state`
+   * `open`→`integrated`, record the integration `mergeCommit` (null for a no-op
+   * finish where the branch already matched base), and snapshot the member refs.
+   * Guarded on `state = 'open'` so it is a once-only transition: a repeated poll
+   * whose retire didn't finish re-offers the already-contained branch with a null
+   * hash, and this WHERE clause makes that a no-op rather than clobbering the real
+   * merge-commit the first (real-merge) settle already stored.
+   */
+  async markEpicIntegrated(
+    workspaceId: number,
+    trackerRef: number,
+    snapshot: { mergeCommit: string | null; memberRefs: number[] },
+  ): Promise<void> {
+    await this.db.write(async (db) => {
+      await db
+        .update(epics)
+        .set({ state: 'integrated', mergeCommit: snapshot.mergeCommit, memberRefs: snapshot.memberRefs })
+        .where(and(eq(epics.workspaceId, workspaceId), eq(epics.trackerRef, trackerRef), eq(epics.state, 'open')))
+        .run();
+    });
+  }
+
   async listTrackerContainers(workspaceId?: number): Promise<TrackerContainerRow[]> {
     return this.db.read((db) =>
       db.select().from(trackerContainers)
