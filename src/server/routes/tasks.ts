@@ -32,6 +32,12 @@ const rejectInputSchema = z.object({
    * and lets capacity pick it up. */
   start: z.boolean().optional().meta({ example: false }),
 });
+/** Accept (issue #429): omitted/false verifies the candidate first (a pass
+ * merges, a non-pass re-enters the Attempt loop like Reject); `true` skips
+ * verification and merges the candidate as-is. */
+const acceptInputSchema = z.object({
+  force: z.boolean().optional().meta({ example: false }),
+}).nullish();
 const cancelInputSchema = z.object({ withDependents: z.boolean().optional().meta({ example: true }) }).nullish();
 /** The reject dialog's continuation preview (issue #170, deterministic since
  * #311): what the continuation rule will do with this Task's live Session, so
@@ -183,6 +189,9 @@ const taskSchema = taskWithDepsSchema
      * surfaced so an escalated Task shows whether Accept has work to merge; null
      * when no attempt has produced a verified head yet. */
     verifiedRef: z.string().nullable().meta({ example: 'refs/harmonic/direct/attempt-9137' }),
+    /** Whether the branch holds a candidate (commits ahead of base) an Accept
+     * could merge (issue #429). */
+    hasCandidate: z.boolean().meta({ example: true }),
   })
   .meta({ id: 'Task' });
 
@@ -715,15 +724,16 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       schema: {
         tags: ['Tasks'],
         description:
-          "Accept an escalated ticket (ADR-0041): merge its verified branch head as-is and continue the success path — merge (worktree mode), close the tracker issue, clean up — moving it to done. Human-only.",
+          "Accept an escalated ticket (ADR-0041, amended by issue #429): verifies the ticket's candidate first — a pass merges it as-is and continues the success path (merge, close the tracker issue, clean up, moving it to done); a non-pass re-enters the Attempt loop with the verifier's reason as feedback, exactly like Reject, and the ticket stays escalated-turned-working. Force-Accept (`{ force: true }`) skips verification and merges the candidate as-is. Human-only.",
         params: idParamsSchema,
+        body: acceptInputSchema,
         response: {
-          200: taskSchema.describe('The task, done.'),
-          409: errorResponse('The task is not escalated, has no verified branch head to merge, or the merging failed (the detail says why); it stays escalated.'),
+          200: taskSchema.describe('The task, done (a passing or forced Accept) or back in the Attempt loop (a non-pass verify).'),
+          409: errorResponse('The task is not escalated, has no candidate to accept (the branch has no commits ahead of its base), or the merging failed (the detail says why); it stays escalated.'),
         },
       },
     },
-    async (req) => await withDeps(await ctx.escalation.accept(req.params.id)),
+    async (req) => await withDeps(await ctx.escalation.accept(req.params.id, { force: req.body?.force ?? false })),
   );
 
   app.post(

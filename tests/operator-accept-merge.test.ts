@@ -97,7 +97,10 @@ describe('operator Accept merge (ADR-0001, issue #383)', () => {
       verificationCommand: [verificationCommandSchema.parse({ command: process.execPath, args: ['-e', 'process.exit(0)'], timeoutSeconds: 30 })],
     });
 
-    const accepted = await server.api('POST', `/api/tasks/${taskId}/accept`);
+    // force: true is the pure as-is merge-policy path (issue #429) — the
+    // scenario this test exercises is the merge commit/post-merge-check
+    // machinery itself, not the pre-merge verify gate.
+    const accepted = await server.api('POST', `/api/tasks/${taskId}/accept`, { force: true });
     expect(accepted.status).toBe(200);
     expect(accepted.body).toMatchObject({ state: 'done', escalationReason: null });
 
@@ -107,6 +110,45 @@ describe('operator Accept merge (ADR-0001, issue #383)', () => {
     expect(git(repo, 'show', 'main:other.txt')).toBe('someone else merged');
     expect(git(repo, 'show', 'main:impl-native.txt')).toBe('implementation');
     expect(git(repo, 'log', '--merges', '--oneline', 'main')).not.toBe(''); // a merge commit, not a fast-forward
+
+    await server.close();
+  });
+
+  it('operator Accept without force verifies the candidate first; a passing verification merges it (issue #429)', async () => {
+    server = await startServer({ ...stubHarness(), defaults: { isolationMode: 'worktree' }, maxAttempts: 2 });
+    wsId = (await server.app.ctx.workspaces.list())[0]!.id;
+
+    const repo = makeRepo();
+    // A verifier that fails: both attempts fail, so the ticket escalates with a
+    // real commit as its verified head — Accept has work to merge.
+    await server.app.ctx.workspaces.update(wsId, {
+      workingDir: repo,
+      verificationCommand: [verificationCommandSchema.parse({ command: process.execPath, args: ['-e', 'process.exit(1)'], timeoutSeconds: 30 })],
+    });
+
+    const created = await server.api('POST', '/api/tasks', {
+      prompt: JSON.stringify({ writeFiles: { 'impl-native.txt': 'implementation\n' } }),
+    });
+    expect(created.status).toBe(201);
+    const taskId: number = created.body.id;
+    const started = await server.api('POST', `/api/tasks/${taskId}/run`);
+    expect(started.status).toBe(201);
+    await waitFor(async () => {
+      const t = (await server.api('GET', `/api/tasks/${taskId}`)).body;
+      return t.state === 'escalated' ? t : undefined;
+    });
+
+    // The operator has addressed what made verification fail; the same
+    // configured verifier now passes, so a default (non-force) Accept's own
+    // pre-merge verify (issue #429) proceeds straight to the merge.
+    await server.app.ctx.workspaces.update(wsId, {
+      verificationCommand: [verificationCommandSchema.parse({ command: process.execPath, args: ['-e', 'process.exit(0)'], timeoutSeconds: 30 })],
+    });
+
+    const accepted = await server.api('POST', `/api/tasks/${taskId}/accept`);
+    expect(accepted.status).toBe(200);
+    expect(accepted.body).toMatchObject({ state: 'done', escalationReason: null });
+    expect(git(repo, 'show', 'main:impl-native.txt')).toBe('implementation');
 
     await server.close();
   });
@@ -140,7 +182,10 @@ describe('operator Accept merge (ADR-0001, issue #383)', () => {
     // `--no-ff` merge conflicts and there is nothing safe to merge without help.
     const mainTip = advanceMain(repo, 'impl-native.txt', 'someone else changed this\n');
 
-    const accepted = await server.api('POST', `/api/tasks/${taskId}/accept`);
+    // force: true — the verifier is still red (that's what drove the
+    // escalation), so a default Accept would just verify-fail and resume the
+    // loop; this test means to exercise the merge-conflict path itself.
+    const accepted = await server.api('POST', `/api/tasks/${taskId}/accept`, { force: true });
     expect(accepted.status).toBe(409);
     expect((await server.app.ctx.tasks.get(taskId)).state).toBe('escalated');
     expect(git(repo, 'rev-parse', 'main')).toBe(mainTip); // the conflicted merge aborted; nothing merged
@@ -176,7 +221,10 @@ describe('operator Accept merge (ADR-0001, issue #383)', () => {
     // check is what fails and drives the revert-on-red.
     advanceMain(repo, 'other.txt', 'someone else merged\n');
 
-    const accepted = await server.api('POST', `/api/tasks/${taskId}/accept`);
+    // force: true — the verifier stays red, so a default Accept would
+    // verify-fail before ever attempting the merge; this test means to
+    // exercise the post-merge check and revert-on-red themselves.
+    const accepted = await server.api('POST', `/api/tasks/${taskId}/accept`, { force: true });
     expect(accepted.status).toBe(409);
     expect((await server.app.ctx.tasks.get(taskId)).state).toBe('escalated');
     // The merge was reverted, so the candidate's file is not on the base tip.

@@ -530,6 +530,23 @@ export const Git = {
   },
 
   /**
+   * Count of commits on `tip` that are not on `base` (`git rev-list --count
+   * <base>..<tip>`) — the candidate check (issue #429): a positive count means
+   * `tip` has committed work an Accept could merge. Never throws: an unknown
+   * ref or any other git failure resolves 0 rather than propagating — a failed
+   * lookup must read as "no evidence of a candidate", not crash the caller.
+   */
+  async commitsAhead(dir: string, base: string, tip: string): Promise<number> {
+    try {
+      const out = await git(dir, 'rev-list', '--count', `${base}..${tip}`);
+      const count = parseInt(out, 10);
+      return Number.isFinite(count) ? count : 0;
+    } catch {
+      return 0;
+    }
+  },
+
+  /**
    * Whether merging `branch` into `baseBranch` would introduce **no net
    * content** — `branch`'s work is already present in `baseBranch` even when its
    * commits were **squashed or rebased** so the tip is *not* a literal ancestor

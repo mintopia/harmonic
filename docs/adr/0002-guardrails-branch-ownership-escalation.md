@@ -57,8 +57,18 @@ Exactly three actions there:
 
 - **Reject with guidance** — guidance becomes feedback, the counter resets,
   and the Task **requeues** to `ready`.
-- **Accept** — counts as success; the normal success path (merge, close,
-  cleanup) continues.
+- **Accept** — offered whenever the branch holds a candidate (commits ahead of
+  its base); disabled with a plain reason only when the branch is genuinely
+  empty. Accept **verifies the candidate first** with a freshly-refreshed code
+  index (ADR-0003): a pass merges it through the one merge policy (ADR-0001) and
+  continues the success path (merge, close, cleanup); a fail drops the Task back
+  into the corrective loop — a bounded Attempt seeded with the verifier
+  feedback, exactly as the automatic verification-fail path does. **Force-Accept**
+  is an as-is override that skips verification and merges the candidate
+  regardless — the operator's escape hatch while a verification is in flight.
+  An escalated candidate carries no trustworthy prior pass, so Accept re-checks
+  it rather than merging blind (this supersedes ADR-0001's "operator Accept never
+  re-verifies").
 - **Close/Cancel** — closes the Task and runs cleanup (remove branch and
   worktree, close the tracker issue).
 
