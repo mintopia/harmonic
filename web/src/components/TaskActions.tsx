@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { api } from '../api';
 import type { Task, VerificationAttempt } from '../types';
 import { escalationActions, taskActions, type TaskAction } from '../task-actions-model';
@@ -58,6 +58,23 @@ function AcceptButton({ className, label, onConfirm }: { className: string; labe
   );
 }
 
+/** Force-Accept: the as-is override that skips server-side candidate
+ * verification and merges the branch head as it stands. Quiet (never the
+ * loudest control on the surface — Accept keeps that) and armed like
+ * CompleteButton, since it shares the same "skips verification" risk. */
+function ForceAcceptButton({ className, onConfirm }: { className: string; onConfirm: () => void }) {
+  const { armed, trigger, ref } = useArmedConfirm(onConfirm);
+  return (
+    <button
+      ref={ref}
+      className={armed ? 'font-semibold text-fail transition-colors duration-150' : className}
+      onClick={trigger}
+    >
+      {armed ? 'Skip verification and merge?' : 'Force accept'}
+    </button>
+  );
+}
+
 /** Close an escalated ticket (cancel + branch/worktree/tracker cleanup), armed like Cancel. */
 function CloseButton({ className, label, onConfirm }: { className: string; label: string; onConfirm: () => void }) {
   const { armed, trigger, ref } = useArmedConfirm(onConfirm);
@@ -110,20 +127,31 @@ export function TaskActions({
     switch (action) {
       case 'accept': {
         const onConfirm = actDone(() => api.acceptTask(task.id), `${taskLabel(task.id)} accepted — merging`);
+        // Force-Accept (as-is override): skips server-side candidate
+        // verification and merges the branch head as it stands.
+        const onForceConfirm = actDone(
+          () => api.acceptTask(task.id, { force: true }),
+          `${taskLabel(task.id)} force-accepted — merging`,
+        );
         const label = variant === 'footer' ? 'Accept & merge' : 'Accept';
         if (escalation && !escalation.accept) {
           return (
-            <button key={action} className={btnAccept} disabled title="No verified branch head to merge">
+            <button key={action} className={btnAccept} disabled title="Branch is empty — nothing to merge">
               {label}
             </button>
           );
         }
-        return decision && decision.outcome !== 'proceed' ? (
-          <AcceptButton key={action} className={btnAccept} label={label} onConfirm={onConfirm} />
-        ) : (
-          <button key={action} className={btnAccept} onClick={onConfirm}>
-            {label}
-          </button>
+        return (
+          <Fragment key={action}>
+            {decision && decision.outcome !== 'proceed' ? (
+              <AcceptButton className={btnAccept} label={label} onConfirm={onConfirm} />
+            ) : (
+              <button className={btnAccept} onClick={onConfirm}>
+                {label}
+              </button>
+            )}
+            <ForceAcceptButton className={secondary} onConfirm={onForceConfirm} />
+          </Fragment>
         );
       }
       case 'reject':

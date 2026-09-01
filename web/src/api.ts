@@ -169,7 +169,11 @@ export const api = {
   // reject dialog as information, never a choice.
   continuationPreview: (id: number) => request<ContinuationPreview>('GET', `/api/tasks/${id}/continuation`),
   // The three escalation actions (ADR-0041), escalated tickets only.
-  acceptTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/accept`),
+  // `force: true` is the as-is override (Force-Accept): the server skips
+  // candidate verification and merges the branch head as it stands. Omitted
+  // (or false) is the default Accept, which verifies first.
+  acceptTask: (id: number, opts?: { force?: boolean }) =>
+    request<Task>('POST', `/api/tasks/${id}/accept`, opts?.force ? { force: true } : {}),
   rejectTask: (id: number, guidance: string, start = false) =>
     request<Task>('POST', `/api/tasks/${id}/reject`, { guidance, start }),
   closeTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/close`),

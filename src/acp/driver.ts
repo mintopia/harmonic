@@ -1,6 +1,23 @@
 import type { ChildProcess } from 'node:child_process';
-import { AcpConnection } from './connection.js';
+import { AcpConnection, AcpConnectionClosedError } from './connection.js';
 import { startOperation } from '../telemetry/operations.js';
+
+/**
+ * A single prompt turn was cancelled because the harness fell silent — no
+ * `session/update` and no outstanding tool call — for longer than the
+ * configured inactivity bound (issue #426). The turn's `session/prompt`
+ * response was likely never coming (harness idle / lost response), so the
+ * driver cancels the in-flight turn (ACP `session/cancel`) and surfaces this
+ * rather than blocking forever. The drive loop treats it as a turn *end*, not
+ * a failure: the connection is still alive, so it continues/finishes per the
+ * turn-boundary rule.
+ */
+export class AcpPromptTimeoutError extends Error {
+  constructor(public readonly inactivityMs: number) {
+    super(`ACP prompt turn cancelled after ${inactivityMs}ms of inactivity`);
+    this.name = 'AcpPromptTimeoutError';
+  }
+}
 
 export interface AcpDriverHandlers {
   /**
@@ -157,10 +174,28 @@ export class AcpDriver {
    * `domain/replay-quarantine.ts`).
    */
   private loading = false;
+  /**
+   * The per-turn inactivity clock (issue #426): the timestamp of the most
+   * recent `session/update`, and the set of tool-call ids currently
+   * outstanding. {@link prompt} bounds a turn on inactivity — no update and no
+   * outstanding tool for `promptInactivityTimeoutMs` — reusing this same
+   * outstanding-tool tracking so a legitimately long tool suspends the bound
+   * instead of tripping it. 0 when no timeout is configured.
+   */
+  private lastActivityAt = 0;
+  private readonly outstandingTools = new Set<string>();
 
-  constructor(child: ChildProcess, handlers: AcpDriverHandlers) {
+  constructor(
+    child: ChildProcess,
+    handlers: AcpDriverHandlers,
+    /** Inactivity bound for a single prompt turn, ms (issue #426); undefined/0 disables it. */
+    private readonly promptInactivityTimeoutMs?: number,
+  ) {
     this.connection = new AcpConnection(child.stdin!, child.stdout!, {
-      onSessionUpdate: (params) => handlers.onSessionUpdate(params.update, this.loading),
+      onSessionUpdate: (params) => {
+        this.observeActivity(params.update);
+        handlers.onSessionUpdate(params.update, this.loading);
+      },
       onRequest: handlers.onRequest,
     });
     this.exited = new Promise<never>((_, reject) => {
@@ -331,9 +366,70 @@ export class AcpDriver {
     await this.race(this.connection.request('session/set_mode', { sessionId: this.sessionId, modeId }));
   }
 
-  /** One prompt turn on the current session; rejects if the harness dies first. */
+  /**
+   * Feed the per-turn inactivity clock (issue #426): every `session/update` is
+   * activity, and `tool_call`/`tool_call_update` open and close the outstanding
+   * set so the inactivity bound suspends while a tool is running.
+   */
+  private observeActivity(update: { sessionUpdate: string; [key: string]: unknown }): void {
+    this.lastActivityAt = Date.now();
+    const u = update as { sessionUpdate?: string; toolCallId?: unknown; status?: unknown };
+    const id = typeof u.toolCallId === 'string' ? u.toolCallId : null;
+    if (!id) return;
+    if (u.sessionUpdate === 'tool_call') this.outstandingTools.add(id);
+    else if (u.sessionUpdate === 'tool_call_update' && (u.status === 'completed' || u.status === 'failed'))
+      this.outstandingTools.delete(id);
+  }
+
+  /**
+   * One prompt turn on the current session; rejects if the harness dies first.
+   * When an inactivity bound is configured (issue #426) it also rejects with
+   * {@link AcpPromptTimeoutError} — after cancelling the in-flight turn — if the
+   * harness falls silent (no `session/update`, no outstanding tool call) for
+   * longer than the bound, so a lost `session/prompt` response ends the turn
+   * instead of blocking forever.
+   */
   async prompt(prompt: unknown): Promise<PromptResult> {
-    return this.race(this.connection.request('session/prompt', { sessionId: this.sessionId, prompt }));
+    const request = this.connection.request('session/prompt', { sessionId: this.sessionId, prompt });
+    if (!this.promptInactivityTimeoutMs) return this.race(request);
+    return this.race(this.withInactivityTimeout(request, this.promptInactivityTimeoutMs));
+  }
+
+  /**
+   * Bound a request on inactivity: reject with {@link AcpPromptTimeoutError}
+   * once no activity has been seen for `timeoutMs` AND no tool call is
+   * outstanding, cancelling the in-flight turn first. A fresh turn resets the
+   * clock and the outstanding set (the agent is parked between turns, so any
+   * lingering id is stale). Polls at a fraction of the bound rather than one
+   * absolute timer so an outstanding tool keeps suspending it as it runs.
+   */
+  private withInactivityTimeout<T>(request: Promise<T>, timeoutMs: number): Promise<T> {
+    this.lastActivityAt = Date.now();
+    this.outstandingTools.clear();
+    return new Promise<T>((resolve, reject) => {
+      let settled = false;
+      const finish = (fn: () => void) => {
+        if (settled) return;
+        settled = true;
+        clearInterval(timer);
+        fn();
+      };
+      const period = Math.max(1_000, Math.min(timeoutMs, 30_000));
+      const timer = setInterval(() => {
+        if (this.outstandingTools.size > 0) return; // a tool is running — not silence
+        const idleMs = Date.now() - this.lastActivityAt;
+        if (idleMs < timeoutMs) return;
+        finish(() => {
+          this.cancel();
+          reject(new AcpPromptTimeoutError(idleMs));
+        });
+      }, period);
+      timer.unref?.();
+      request.then(
+        (value) => finish(() => resolve(value)),
+        (err) => finish(() => reject(err)),
+      );
+    });
   }
 
   /** Cancel the in-flight turn (ACP session/cancel is a notification, not a request). */
@@ -359,9 +455,42 @@ export class AcpDriver {
     );
   }
 
-  /** Race any request against child death. */
-  private race<T>(p: Promise<T>): Promise<T> {
-    return Promise.race([p, this.exited]);
+  /**
+   * Race any request against child death — and disambiguate a stdout-EOF
+   * rejection (issue #426). Killing the harness (guardrail, shutdown, an
+   * operator cancel) closes stdout too, so the connection's readline `close`
+   * can reject the in-flight request with {@link AcpConnectionClosedError}
+   * moments before (or after) the child `exit` this races against fires. That
+   * is child death, not the lingering-wrapper EOF the connection guard exists
+   * for: prefer the child-death error so the Runner's existing
+   * child-death/shutdown/cancel handling runs unchanged. A close with the child
+   * still alive (no exit within the grace) is the genuine EOF and surfaces as
+   * {@link AcpConnectionClosedError} for the caller to treat as a turn end.
+   */
+  private async race<T>(p: Promise<T>): Promise<T> {
+    try {
+      return await Promise.race([p, this.exited]);
+    } catch (err) {
+      if (err instanceof AcpConnectionClosedError) {
+        const exitErr = await this.raceChildExit(100);
+        if (exitErr) throw exitErr;
+      }
+      throw err;
+    }
+  }
+
+  /** The child-death error if the child has exited (or exits within `ms`), else null. */
+  private raceChildExit(ms: number): Promise<Error | null> {
+    return Promise.race([
+      this.exited.then(
+        () => null,
+        (err: Error) => err,
+      ),
+      new Promise<null>((resolve) => {
+        const timer = setTimeout(() => resolve(null), ms);
+        timer.unref?.();
+      }),
+    ]);
   }
 
   fail(err: Error): void {

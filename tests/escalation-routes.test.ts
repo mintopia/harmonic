@@ -118,11 +118,13 @@ describe('escalation actions on a worktree ticket (ADR-0041)', () => {
   });
 
   describe('POST /tasks/:id/accept', () => {
-    it('merges the verified head into the base branch and moves the ticket to done — an operator accept overrides the escalated Attempt', async () => {
+    it('force: true merges the candidate as-is, overriding a still-failing critic — an operator override', async () => {
       const baseOidBefore = git(repoDir, 'rev-parse', 'main');
       const { taskId, file } = await escalateViaCriticFail();
+      // criticResult is still 'fail' from beforeEach: force skips the pre-merge
+      // verify (issue #429) and merges as-is regardless.
 
-      const accepted = await server.api('POST', `/api/tasks/${taskId}/accept`);
+      const accepted = await server.api('POST', `/api/tasks/${taskId}/accept`, { force: true });
       expect(accepted.status).toBe(200);
       expect(accepted.body).toMatchObject({ state: 'done', escalationReason: null });
 
@@ -139,6 +141,27 @@ describe('escalation actions on a worktree ticket (ADR-0041)', () => {
       expect(git(repoDir, 'show', `main:${file}`)).toBe('work');
     });
 
+    it('a default accept (no force) verifies the candidate first; a passing verify merges it and moves the ticket to done (issue #429)', async () => {
+      const baseOidBefore = git(repoDir, 'rev-parse', 'main');
+      const { taskId, file } = await escalateViaCriticFail();
+      criticResult = { verdict: 'pass', summary: 'looks correct now' };
+
+      const accepted = await server.api('POST', `/api/tasks/${taskId}/accept`);
+      expect(accepted.status).toBe(200);
+      expect(accepted.body).toMatchObject({ state: 'done', escalationReason: null });
+      expect(git(repoDir, 'rev-parse', 'main')).not.toBe(baseOidBefore);
+      expect(git(repoDir, 'show', `main:${file}`)).toBe('work');
+    });
+
+    it('an empty body ({}) also defaults force to false and still verifies', async () => {
+      const { taskId } = await escalateViaCriticFail();
+      criticResult = { verdict: 'pass', summary: 'looks correct now' };
+
+      const accepted = await server.api('POST', `/api/tasks/${taskId}/accept`, {});
+      expect(accepted.status).toBe(200);
+      expect(accepted.body).toMatchObject({ state: 'done', escalationReason: null });
+    });
+
     it('409s invalid_state when the ticket is not escalated (a passing critic merges on its own)', async () => {
       criticResult = { verdict: 'pass', summary: 'looks correct' };
       const { taskId } = await createAndRun();
@@ -149,9 +172,10 @@ describe('escalation actions on a worktree ticket (ADR-0041)', () => {
       expect(res.body.error.code).toBe('invalid_state');
     });
 
-    it('409s conflict when the escalated ticket never produced a verified head', async () => {
-      // Direct mode + a dirty tree: no commit, so verification fails closed with
-      // nothing a corrective turn could fix (mirrors verification-critic.test.ts).
+    it('409s conflict when the escalated ticket has no candidate to accept (the branch has no commits ahead of its base)', async () => {
+      // Direct mode + a dirty tree: no commit, so there is no candidate head at
+      // all — Accept 409s before it would even reach verification (mirrors
+      // verification-critic.test.ts).
       await server.app.ctx.workspaces.update(workspaceId, { isolationMode: 'direct' });
       writeFileSync(join(repoDir, 'uncommitted-escalation.txt'), 'dirty\n');
       try {

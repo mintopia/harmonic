@@ -59,23 +59,23 @@ describe('taskActions', () => {
   });
 });
 
-// ADR-0041: Accept merges the verified branch head, so it needs one; Reject with
-// guidance and Close never depend on a candidate.
+// ADR-0041: Accept merges the branch's candidate, so it needs one (commits
+// ahead of base); Reject with guidance and Close never depend on a candidate.
 describe('escalationActions', () => {
   it('is null off the escalation surface, even with a candidate', () => {
-    expect(escalationActions({ state: 'ready', verifiedRef: 'refs/harmonic/direct/attempt-9137' })).toBeNull();
-    expect(escalationActions({ state: 'working', verifiedRef: 'refs/harmonic/direct/attempt-9137' })).toBeNull();
+    expect(escalationActions({ state: 'ready', hasCandidate: true })).toBeNull();
+    expect(escalationActions({ state: 'working', hasCandidate: true })).toBeNull();
   });
 
-  it('offers all three when the escalated ticket has a verified branch head', () => {
-    expect(escalationActions({ state: 'escalated', verifiedRef: 'refs/harmonic/direct/attempt-9137' })).toEqual({
+  it('offers all three when the escalated ticket has a candidate', () => {
+    expect(escalationActions({ state: 'escalated', hasCandidate: true })).toEqual({
       accept: true,
       reject: true,
       close: true,
     });
   });
 
-  it('withholds only Accept when no run ever produced a verified head', () => {
-    expect(escalationActions({ state: 'escalated', verifiedRef: null })).toEqual({ accept: false, reject: true, close: true });
+  it('withholds only Accept when the branch has no candidate', () => {
+    expect(escalationActions({ state: 'escalated', hasCandidate: false })).toEqual({ accept: false, reject: true, close: true });
   });
 });

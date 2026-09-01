@@ -47,14 +47,14 @@ export function taskActions(state: TaskState): TaskAction[] {
 }
 
 export interface EscalationActions {
-  /** Accept merges the verified branch head, so it needs one. */
+  /** Accept merges the branch's candidate, so it needs one (commits ahead of base). */
   accept: boolean;
   reject: boolean;
   close: boolean;
 }
 
 /** Which of the three escalation actions an escalated ticket can take right now; null off the surface. */
-export function escalationActions(task: Pick<Task, 'verifiedRef' | 'state'>): EscalationActions | null {
+export function escalationActions(task: Pick<Task, 'hasCandidate' | 'state'>): EscalationActions | null {
   if (task.state !== 'escalated') return null;
-  return { accept: task.verifiedRef !== null, reject: true, close: true };
+  return { accept: task.hasCandidate, reject: true, close: true };
 }
