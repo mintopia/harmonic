@@ -54,7 +54,7 @@ describe('FALLBACK_TRIGGER_REASONS / classification (issue #145 AC1)', () => {
   it('isFallbackTriggerReason narrows a classified failure and rejects anything else', () => {
     expect(isFallbackTriggerReason('cwd-mismatch')).toBe(true);
     expect(isFallbackTriggerReason('permission-mode-unestablishable')).toBe(true);
-    expect(isFallbackTriggerReason('merged')).toBe(false); // a retire reason, not a reload failure
+    expect(isFallbackTriggerReason('merged')).toBe(false);
     expect(isFallbackTriggerReason('')).toBe(false);
   });
 

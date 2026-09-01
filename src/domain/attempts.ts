@@ -151,8 +151,6 @@ export class AttemptStore {
     );
   }
 
-  /** Every Attempt row, unfiltered. Branch retirement scans it to find
-   * Attempts to retire. */
   listAll(): Promise<AttemptRow[]> {
     return this.db.read((db) => db.select().from(attempts).all());
   }

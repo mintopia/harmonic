@@ -11,9 +11,6 @@ import {
   resetCodeIndexAvailabilityForTest,
 } from '../src/execution/code-index.js';
 
-// A fake jCodeMunch CLI that appends each invocation's subcommand to FAKE_CLI_LOG
-// and returns a single repo whose source_root is FAKE_CLI_ROOT, so repoIdForPath
-// resolves it. Lets a test assert the ORDER of subcommands indexWorktree issues.
 const FAKE_CLI = `#!/usr/bin/env node
 const fs = require('node:fs');
 const args = process.argv.slice(2);
@@ -55,7 +52,6 @@ describe('code-index CLI wrapper (best-effort — a missing CLI degrades to a sk
     resetCodeIndexAvailabilityForTest();
     expect(await codeIndexAvailable()).toBe(false);
     expect(await indexWorktree('/tmp/whatever')).toBeNull();
-    // Reaping must be a silent no-op, not a rejection, so teardown never wedges.
     await expect(dropIndex('local/x-1')).resolves.toBeUndefined();
     await expect(dropIndexForPath('/tmp/whatever')).resolves.toBeUndefined();
   });
@@ -81,7 +77,7 @@ describe('code-index CLI wrapper (best-effort — a missing CLI degrades to a sk
     const calls = readFileSync(join(dir, 'calls.log'), 'utf8').trim().split('\n');
     const dropAt = calls.indexOf('delete-index');
     const indexAt = calls.indexOf('index');
-    expect(dropAt).toBeGreaterThanOrEqual(0); // the stale index was dropped
-    expect(indexAt).toBeGreaterThan(dropAt); // ...before the fresh parse
+    expect(dropAt).toBeGreaterThanOrEqual(0);
+    expect(indexAt).toBeGreaterThan(dropAt);
   });
 });

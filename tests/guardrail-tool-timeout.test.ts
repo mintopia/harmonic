@@ -13,7 +13,7 @@ describe('toolTimeoutBudgetMs (issue #131)', () => {
 });
 
 describe('toolTimeoutTrip (issue #131)', () => {
-  const limitMs = toolTimeoutBudgetMs(20); // 1_200_000ms
+  const limitMs = toolTimeoutBudgetMs(20);
 
   it('does not trip below the limit', () => {
     expect(toolTimeoutTrip({ outstandingMs: limitMs - 1, limitMs })).toBeNull();

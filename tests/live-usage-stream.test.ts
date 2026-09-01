@@ -73,7 +73,7 @@ describe('live attempt_usage firehose (ADR 0010)', () => {
 
     const msg = await waitFor(async () => messages.find((m) => m.type === 'attempt_usage' && m.attemptId === attemptId));
     expect(msg.usage.models['claude-opus-4-8']).toMatchObject({ inputTokens: 100, outputTokens: 10, cacheReadTokens: 5 });
-    expect(msg.contextTokens).toBe(105); // input + cache read
+    expect(msg.contextTokens).toBe(105);
     expect(msg.tree).toMatchObject({ id: sessionId, depth: 0 });
     expect(msg.cost.totalUsd).toBeGreaterThan(0);
     // The tool call drove the current-activity line.

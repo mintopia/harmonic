@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
 
-/** Collect WS messages into an inspectable list. */
 async function connectWs(server: TestServer): Promise<{ messages: any[]; close: () => void }> {
   const ws = new WebSocket(`${server.baseUrl.replace('http', 'ws')}/api/ws?token=${server.sessionToken}`);
   const messages: any[] = [];
@@ -13,7 +12,6 @@ async function connectWs(server: TestServer): Promise<{ messages: any[]; close: 
   return { messages, close: () => ws.close() };
 }
 
-/** Poll a Conversation's persisted events until `predicate` matches. */
 async function waitForEvent(server: TestServer, id: number, predicate: (e: any) => boolean) {
   return waitFor(async () => {
     const { body } = await server.api('GET', `/api/conversations/${id}/events`);
@@ -36,7 +34,6 @@ describe('conversation walking skeleton (issue 10)', () => {
     expect(status).toBe(201);
     expect(body.state).toBe('active');
     expect(body.sessionId).toBeNull();
-    // Defaults come from config, like tasks.
     expect(body.harness).toBe('claude');
     expect(body.workingDir).toBeTruthy();
     expect(server.app.ctx.conversationDriver.isWarm(body.id)).toBe(false);
@@ -56,11 +53,9 @@ describe('conversation walking skeleton (issue 10)', () => {
     expect(turn.status).toBe(200);
     expect(turn.body).toEqual({ ok: true, queued: false });
 
-    // The harness spawned and the ACP session was created.
     await waitFor(async () => (await server.api('GET', `/api/conversations/${convo.id}`)).body.sessionId !== null);
     expect(server.app.ctx.conversationDriver.isWarm(convo.id)).toBe(true);
 
-    // The reply streamed over the firehose.
     await waitFor(async () =>
       ws.messages.some(
         (m) => m.type === 'conversation_event' && m.event.conversationId === convo.id && m.event.type === 'session_update',
@@ -68,12 +63,9 @@ describe('conversation walking skeleton (issue 10)', () => {
     );
     await waitForEvent(server, convo.id, (e) => e.type === 'lifecycle' && e.payload.event === 'finished');
 
-    // Replay renders from the same persisted records: the operator's Turn is
-    // recorded, agent output follows, and the WS stream equals the REST replay.
     const replay = await server.api('GET', `/api/conversations/${convo.id}/events`);
     const events = replay.body.events as any[];
     expect(events[0]).toMatchObject({ type: 'user_turn' });
-    // The operator's Turn text is stored verbatim (here, the stub scenario).
     expect(events[0].payload.text).toContain('agent_message_chunk');
     const streamedUpdates = ws.messages
       .filter((m) => m.type === 'conversation_event' && m.event.conversationId === convo.id && m.event.type === 'session_update')
@@ -111,7 +103,6 @@ describe('conversation walking skeleton (issue 10)', () => {
       e.type === 'session_update' && e.payload?.content?.text === 'two',
     );
 
-    // Same session id, and no extra warm process appeared — the harness was reused.
     const afterSecond = await server.api('GET', `/api/conversations/${convo.id}`);
     expect(afterSecond.body.sessionId).toBe(sessionId);
     expect(server.app.ctx.conversationDriver.activeCount).toBe(activeCountAfterFirst);
@@ -147,7 +138,6 @@ describe('conversation walking skeleton (issue 10)', () => {
   });
 
   it('never lets an attempt-scoped key reach the operator-only Conversation API', async () => {
-    // A Conversation route is not in the attempt-scoped allowlist (app.ts).
     const { body: convo } = await server.api('POST', '/api/conversations', {});
     const key = await server.app.ctx.auth.createKey('run-1', { scope: 'attempt', attemptId: 1 });
     const res = await fetch(`${server.baseUrl}/api/conversations/${convo.id}`, {

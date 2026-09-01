@@ -103,7 +103,6 @@ export class ConversationStore {
     return row!;
   }
 
-  /** Bump updatedAt (a Turn merged) and broadcast the change. */
   async touch(id: number): Promise<ConversationRow> {
     return this.update(id, {});
   }
@@ -126,7 +125,6 @@ export class ConversationStore {
     });
   }
 
-  /** Delete a Conversation and cascade its events (issue 15). */
   async delete(id: number): Promise<void> {
     await this.db.write(async (db) => {
       const current = await db.select().from(conversations).where(eq(conversations.id, id)).get();

@@ -1,11 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { decideTaskDeletion, type DeletableTaskFacts } from '../src/domain/task-deletion.js';
 
-/**
- * The pure hard-delete decision (issue #162, ADR-0025): `state === 'working'`
- * is refused regardless of origin; otherwise a mirrored Task with a
- * tracker ref carries a tombstone instruction, native never does.
- */
 describe('decideTaskDeletion (issue #162)', () => {
   const base: DeletableTaskFacts = {
     state: 'ready',

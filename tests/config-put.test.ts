@@ -31,24 +31,19 @@ describe('PUT /api/config', () => {
     expect(put.status).toBe(400);
     expect(put.body).toMatchObject({ error: { code: 'validation' } });
 
-    // No partial write: the old config is exactly what GET still returns.
     const after = await server.api('GET', '/api/config');
     expect(after.body).toEqual(current);
   });
 
   it('full-replace deletes a record key that a PATCH cannot remove', async () => {
-    // Add a price override via PATCH.
     const patched = await server.api('PATCH', '/api/config', {
       prices: { 'gpt-4': { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 } },
     });
     expect(patched.body.prices['gpt-4']).toBeTruthy();
 
-    // Confirm PATCH alone cannot remove it: an empty `prices` patch deep-merges
-    // onto the existing prices object and changes nothing.
     const noopPatch = await server.api('PATCH', '/api/config', { prices: {} });
     expect(noopPatch.body.prices['gpt-4']).toBeTruthy();
 
-    // A full-replace PUT that omits the key actually deletes it.
     const current = (await server.api('GET', '/api/config')).body;
     const { 'gpt-4': _dropped, ...pricesWithoutGpt4 } = current.prices;
     const put = await server.api('PUT', '/api/config', { ...current, prices: pricesWithoutGpt4 });

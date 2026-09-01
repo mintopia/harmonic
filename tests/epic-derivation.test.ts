@@ -188,9 +188,9 @@ describe('deriveEpics', () => {
   it('14. a member that is not agent-workable is a member but never on the ready frontier', () => {
     const tickets = [
       ticket({ number: 10, title: 'Spec' }),
-      ticket({ number: 11, parent: 10 }), // ready-for-agent (builder default)
-      ticket({ number: 12, parent: 10, labels: [] }), // no opt-in — not auto-runnable
-      ticket({ number: 13, parent: 10, labels: ['needs-triage'] }), // some other label, still no opt-in
+      ticket({ number: 11, parent: 10 }),
+      ticket({ number: 12, parent: 10, labels: [] }),
+      ticket({ number: 13, parent: 10, labels: ['needs-triage'] }),
     ];
     const result = derive(tickets, [12, 13]);
     expect(result[0]?.members).toEqual([11, 12, 13]);

@@ -92,7 +92,6 @@ describe('attemptDisplay', () => {
       dot: 'running',
       pulse: true,
     });
-    // Every Step already settled (passed) — the gap before merge completes.
     expect(attemptDisplay(run({ state: 'running' }), [step({ type: 'implementation', state: 'passed' })]).word).toBe('running');
   });
 

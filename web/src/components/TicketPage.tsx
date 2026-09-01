@@ -31,7 +31,6 @@ import { toastError } from '../toast';
 import { ticketIdentity } from '../id-format.js';
 import { splitPathTail } from '../path';
 
-// ─── small shared bits ───────────────────────────────────────────────────────
 
 const sectionCaps = 'text-label font-bold uppercase tracking-[0.1em] text-faint';
 
@@ -70,7 +69,6 @@ function StatePill({ state }: { state: string }) {
   );
 }
 
-// ─── description ─────────────────────────────────────────────────────────────
 
 function descriptionBody(prompt: string): string {
   const title = cardTitle(prompt);
@@ -102,7 +100,6 @@ function Description({ prompt }: { prompt: string }) {
   );
 }
 
-// ─── flat metric row ─────────────────────────────────────────────────────────
 
 function fmtDur(ms: number): string {
   const s = Math.floor(ms / 1000);
@@ -170,7 +167,6 @@ function Metrics({
   );
 }
 
-// ─── properties fact-list ────────────────────────────────────────────────────
 
 function Fact({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -215,7 +211,6 @@ function Properties({ task, allTasks, workspaceName }: { task: Task; allTasks: T
   );
 }
 
-// ─── task-progress bar ───────────────────────────────────────────────────────
 
 function stepGlyph(status: LifecycleStepStatus, index: number) {
   if (status === 'done') return <Icon name="check" className="size-3.5" />;
@@ -301,7 +296,6 @@ function TaskProgressBar({ task, attempts }: { task: Task; attempts: AttemptSumm
   );
 }
 
-// ─── verification ────────────────────────────────────────────────────────────
 
 const OUTCOME_TONE: Record<string, string> = {
   proceed: 'text-merged',
@@ -486,7 +480,6 @@ function Verification({ attempts, statuses, run, only }: { attempts: Verificatio
   );
 }
 
-// ─── session line ────────────────────────────────────────────────────────────
 
 /** The selected Attempt's headline facts as a compact card: the model it ran,
  * the cost and wall-clock of this run, its tool-call count, and the harness
@@ -529,7 +522,6 @@ function AttemptSummaryCard({
   );
 }
 
-// ─── steer ───────────────────────────────────────────────────────────────────
 
 function SteerBox({ taskId }: { taskId: number }) {
   const [text, setText] = useState('');
@@ -580,7 +572,6 @@ function SteerBox({ taskId }: { taskId: number }) {
   );
 }
 
-// ─── run header + pane ───────────────────────────────────────────────────────
 
 /** `steps` is the owning Attempt's timeline (matched by `run.number` ===
  * `Attempt.number`) — the currently-running Step's type carries the pill
@@ -760,7 +751,6 @@ function GuardrailAlert({ events }: { events: GuardrailEvent[] }) {
   );
 }
 
-// ─── navigation sidebar ──────────────────────────────────────────────────────
 
 const NAV_DOT: Record<TimelineTone, string> = {
   running: 'bg-running-dot motion-safe:animate-dot-pulse',
@@ -825,7 +815,6 @@ function AttemptsNav({
   );
 }
 
-/** The lone Timeline entry: opens the Task's lifecycle stream in the content panel. */
 function TimelineNav({ selected, onSelect }: { selected: boolean; onSelect: () => void }) {
   return (
     <section className="border-b border-hairline px-3.5 py-3.5">
@@ -1094,7 +1083,6 @@ function statsAttemptsOf(runs: AttemptSummary[], live: Map<number, AttemptUsageE
   });
 }
 
-// ─── attempt panel ─────────────────────────────────────────────────────────────
 
 /** The Attempt's Step tabs (one per Step type present). The active tab underlines
  * in the teal action voice; each tab carries a state dot rolled up from its
@@ -1258,7 +1246,6 @@ function AttemptPanel({
   );
 }
 
-// ─── page ────────────────────────────────────────────────────────────────────
 
 export function TicketPage({
   task,

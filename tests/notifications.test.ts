@@ -95,7 +95,6 @@ describe('notification channels', () => {
     const list = await server.api('GET', '/api/channels');
     expect(list.body.channels.find((c: any) => c.id === created.body.id)).toBeUndefined();
 
-    // Junk is rejected.
     expect(
       (await server.api('POST', '/api/channels', { name: 'x', type: 'carrier-pigeon', config: {} })).status,
     ).toBe(400);
@@ -234,7 +233,6 @@ describe('notification channels', () => {
     const mail = sink.mails[0]!;
     expect(mail.from).toBe('harmonic@example.com');
     expect(mail.to).toEqual(['operator@example.com']);
-    // The body carries the documented JSON payload.
     expect(mail.data).toContain('"event": "task.escalated"');
     expect(mail.data).toContain(`"id": ${taskId}`);
 

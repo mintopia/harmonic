@@ -58,7 +58,7 @@ describe('buildHeatmap', () => {
     // Today (Monday) sits in the last column, row 1 (Monday).
     const last = hm.weeks[HEATMAP_WEEKS - 1]!;
     expect(last[1]).toMatchObject({ attempts: 4, level: 4 });
-    expect(last[0]).toMatchObject({ attempts: 0, level: 0 }); // Sunday, quiet
+    expect(last[0]).toMatchObject({ attempts: 0, level: 0 });
   });
 
   it('fills quiet days as empty cells rather than omitting them', () => {
@@ -94,9 +94,9 @@ describe('buildHeatmap', () => {
       now,
     );
     expect(hm.max).toBe(10);
-    expect(hm.total).toBe(15); // the 2020 day is outside the window
+    expect(hm.total).toBe(15);
     const last = hm.weeks[HEATMAP_WEEKS - 1]!;
-    expect(last[1]!.level).toBe(4); // 10/10
-    expect(last[0]!.level).toBe(2); // 5/10 → ceil(2)
+    expect(last[1]!.level).toBe(4);
+    expect(last[0]!.level).toBe(2);
   });
 });

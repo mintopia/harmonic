@@ -8,7 +8,6 @@ import { Git } from '../src/execution/git.js';
 const raw = (dir: string, ...args: string[]) =>
   execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
 
-/** A throwaway git repo on branch main with one committed README. */
 function makeRepo(): string {
   const dir = mkdtempSync(join(tmpdir(), 'harmonic-gitbranch-'));
   execFileSync('git', ['init', '-b', 'main', dir], { encoding: 'utf8' });
@@ -36,9 +35,7 @@ describe('Git branch primitives (issue #159)', () => {
     try {
       await Git.createBranch(dir, 'epic/42', 'main');
       expect(await Git.branchExists(dir, 'epic/42')).toBe(true);
-      // Cut from main's tip.
       expect(raw(dir, 'rev-parse', 'epic/42')).toBe(raw(dir, 'rev-parse', 'main'));
-      // HEAD was never switched — the working tree is still on main.
       expect(await Git.currentBranch(dir)).toBe('main');
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -95,12 +92,11 @@ describe('Git.isContentContained (issue #218)', () => {
       raw(dir, 'add', '-A');
       raw(dir, 'commit', '-m', 'feat 2');
       raw(dir, 'checkout', 'main');
-      // Squash-merge: the same net content as a single unrelated commit.
       writeFileSync(join(dir, 'f.txt'), 'a\nb\n');
       raw(dir, 'add', '-A');
       raw(dir, 'commit', '-m', 'squash of feature');
-      expect(await Git.isAncestor(dir, 'main', 'feature')).toBe(false); // tier 1 misses it
-      expect(await Git.isContentContained(dir, 'main', 'feature')).toBe(true); // tier 2 catches it
+      expect(await Git.isAncestor(dir, 'main', 'feature')).toBe(false);
+      expect(await Git.isContentContained(dir, 'main', 'feature')).toBe(true);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

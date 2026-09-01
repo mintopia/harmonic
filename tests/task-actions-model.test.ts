@@ -3,10 +3,6 @@ import { escalationActions, taskActions } from '../web/src/task-actions-model.js
 import { TASK_STATES } from '../web/src/types.js';
 
 describe('taskActions', () => {
-  // ADR-0041: escalated is the one human surface — exactly the three actions.
-  // Accept is last so the affirmative holds the terminal position, Close leads
-  // them as the destructive disposition, and Delete (issue #162) sits first,
-  // ahead of the surface, rather than disturbing Accept's terminal slot.
   it('offers exactly the three escalation actions on escalated, accept last, delete first', () => {
     expect(taskActions('escalated')).toEqual(['delete', 'close', 'reject', 'accept']);
   });
@@ -21,8 +17,6 @@ describe('taskActions', () => {
     expect(taskActions('draft')).toEqual(['delete', 'ready', 'edit', 'cancel']);
   });
 
-  // Issue #162: delete is guarded to non-working Tasks, mirroring the
-  // server's 409 — working is the one state that never offers it.
   it('offers complete (operator override) and cancel while a task is working, no delete', () => {
     expect(taskActions('working')).toEqual(['complete', 'cancel']);
   });
@@ -32,7 +26,6 @@ describe('taskActions', () => {
     expect(taskActions('cancelled')).toEqual(['delete', 'uncancel']);
   });
 
-  // Delete is the one action offered on every state except working (issue #162).
   it('offers delete on every non-working state', () => {
     for (const state of TASK_STATES) {
       expect(taskActions(state).includes('delete')).toBe(state !== 'working');
@@ -59,8 +52,6 @@ describe('taskActions', () => {
   });
 });
 
-// ADR-0041: Accept merges the branch's candidate, so it needs one (commits
-// ahead of base); Reject with guidance and Close never depend on a candidate.
 describe('escalationActions', () => {
   it('is null off the escalation surface, even with a candidate', () => {
     expect(escalationActions({ state: 'ready', hasCandidate: true })).toBeNull();

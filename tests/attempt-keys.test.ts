@@ -3,11 +3,9 @@ import { eq } from 'drizzle-orm';
 import { startServer, stubHarness, waitFor, captureRunEnv, type TestServer } from './helpers.js';
 import { apiKeys } from '../src/db/schema.js';
 
-/** All scope='attempt' key rows currently in the server's database. */
 const attemptKeyRows = (server: TestServer) =>
   server.app.ctx.asyncDb.read((d) => d.select().from(apiKeys).where(eq(apiKeys.scope, 'attempt')).all());
 
-/** Start a run that echoes its injected Attempt Key, return the key + run info. */
 async function startEchoRun(server: TestServer, exit: 'clean' | 'hang') {
   const { taskId, attemptId, env } = await captureRunEnv(server, ['HARMONIC_API_KEY'], { exit });
   return { taskId, attemptId, token: env.HARMONIC_API_KEY as string };
@@ -57,8 +55,6 @@ describe('attempt key lifecycle (issue 16)', () => {
 
   it('hard-deletes the run key when the harness fails to even spawn', async () => {
     server = await startServer({ ...stubHarness(), maxAttempts: 1 });
-    // An empty command makes spawn throw synchronously — after the key
-    // was already minted.
     await server.api('PATCH', '/api/config', { harnesses: { claude: { command: '' } } });
     const created = await server.api('POST', '/api/tasks', { prompt: 'never runs' });
     await server.api('POST', `/api/tasks/${created.body.id}/run`);
@@ -70,7 +66,6 @@ describe('attempt key lifecycle (issue 16)', () => {
 
   it('startup sweep deletes orphaned run keys, not operator keys', async () => {
     server = await startServer(stubHarness());
-    // An orphan: a Attempt Key whose run does not exist / is not running.
     const orphan = await server.app.ctx.auth.createKey('run-999', { scope: 'attempt', attemptId: 999 });
     const operator = await server.api('POST', '/api/keys', { name: 'ops' });
 
@@ -84,7 +79,6 @@ describe('attempt key lifecycle (issue 16)', () => {
     });
     expect(orphanRes.status).toBe(401);
 
-    // The operator key survived the sweep and still authenticates.
     const opRes = await fetch(`${server.baseUrl}/api/tasks`, {
       headers: { authorization: `Bearer ${operator.body.token}` },
     });
@@ -95,7 +89,7 @@ describe('attempt key lifecycle (issue 16)', () => {
     server = await startServer(stubHarness());
     await server.api('POST', '/api/keys', { name: 'ops' });
     const { taskId } = await startEchoRun(server, 'hang');
-    expect((await attemptKeyRows(server)).length).toBe(1); // the run key exists right now
+    expect((await attemptKeyRows(server)).length).toBe(1);
 
     const { body } = await server.api('GET', '/api/keys');
     expect(body.keys.map((k: any) => k.name)).toEqual(['ops']);

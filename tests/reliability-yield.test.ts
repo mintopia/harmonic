@@ -25,9 +25,6 @@ describe('forEachYielding', () => {
   });
 
   it('yields once the wall-clock budget is exceeded, then resets the slice', async () => {
-    // Fake clock advances 10ms per item; budget 25ms ⇒ yield after items that
-    // push the slice to/over 25ms (i.e. after the 3rd item and again after the
-    // 6th), never mid-slice.
     let clock = 0;
     let yields = 0;
     const yieldedAt: number[] = [];
@@ -45,8 +42,6 @@ describe('forEachYielding', () => {
         },
       },
     );
-    // After item#2 slice=30>=25 ⇒ yield (clock 30); reset. After item#5
-    // slice=30>=25 ⇒ yield (clock 60).
     expect(yields).toBe(2);
     expect(yieldedAt).toEqual([30, 60]);
   });

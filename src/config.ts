@@ -100,9 +100,8 @@ export const modelInfoSchema = z.object({
 });
 
 /**
- * A command verifier (issue #132, ADR-0021): an argv-based check (a Workspace's
- * test/lint) run against a frozen candidate in a disposable checkout. Only the
- * config surface exists in #132 — nothing executes yet.
+ * A command verifier: an argv-based check (a Workspace's test/lint) run against
+ * a frozen candidate in a disposable checkout.
  */
 export const verificationCommandSchema = z.object({
   /** The executable to spawn (argv[0]); args are passed separately, never a shell string. */
@@ -117,9 +116,8 @@ export const verificationCommandSchema = z.object({
 export type VerificationCommand = z.infer<typeof verificationCommandSchema>;
 
 /**
- * An agent critic verifier (issue #132, ADR-0021): a read-only reviewer Harness
- * with its own prompt and model that judges the candidate diff. Config surface
- * only in #132 — no critic runs yet.
+ * An agent critic verifier: a read-only reviewer Harness with its own prompt and
+ * model that judges the candidate diff.
  */
 export const verificationCriticSchema = z.object({
   prompt: z

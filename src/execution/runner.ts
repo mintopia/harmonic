@@ -2344,7 +2344,7 @@ export class Runner {
           const name = toolCallName(update, (payload) => adapterFor(task.harness).usage?.toolName(payload) ?? null);
           toolCalls.set(name, (toolCalls.get(name) ?? 0) + 1);
         }
-        observeTool(update); // feed the tool-timeout watchdog (issue #131)
+        observeTool(update);
       },
       onRequest: async (method, params) => {
         if (method === 'session/request_permission') {
@@ -3018,7 +3018,7 @@ export class Runner {
         }
       };
       let result: PromptResult = (await promptTurn(promptText)) ?? {};
-      active.idle = true; // turn ended → parked
+      active.idle = true;
       // Steering + auto-drive continue loop. `attempt` counts only auto-drive
       // continue nudges, so operator steers never eat into the continue budget.
       for (let attempt = 1; !escalating && !stoppedShort && !connectionGone; ) {
@@ -3051,7 +3051,7 @@ export class Runner {
           continue; // re-check: more steers, then the agent's own finish/continue state
         }
         if (!autoDriven) break; // native Run with nothing queued → settle the single turn
-        if (active.agentFinished) break; // explicit finish signal — the execution-complete signal (#139)
+        if (active.agentFinished) break;
         if (attempt > (await this.autoDrive!.continueAttempts(task))) break; // budget spent → unresolved
         record('lifecycle', { event: 'continue', attempt });
         promptText = await this.autoDrive!.continuePrompt(task);

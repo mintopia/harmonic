@@ -23,7 +23,6 @@ describe('buildCriticPrompt (issue #136; 2026-08 containment amendment)', () => 
     expect(prompt).toContain('Review issue 123 (https://tracker.example/issues/123): Fix the timeout.');
     expect(prompt).toContain('Skill /implement.');
     expect(prompt).toContain('Body: The request hangs forever');
-    // No token survives uninterpolated.
     expect(prompt).not.toMatch(/\{(skill|ref|url|title|body)\}/);
   });
 
@@ -102,7 +101,6 @@ describe('buildCriticPrompt (issue #136; 2026-08 containment amendment)', () => 
       expect(prompt).toMatch(/identical to the base/i);
       expect(prompt).toMatch(/no-change result is correct/i);
       expect(prompt).toMatch(/do not fail merely\s+because there is no diff/i);
-      // It does not send the critic diffing two identical revisions.
       expect(prompt).not.toContain(`git diff ${CANDIDATE} ${CANDIDATE}`);
       expect(prompt).not.toMatch(/branched from/);
     });

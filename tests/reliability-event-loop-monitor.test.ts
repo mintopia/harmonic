@@ -48,7 +48,7 @@ describe('EventLoopMonitor', () => {
     const sched = new FakeScheduler();
     const { monitor, stalls } = monitorWith(sched);
     monitor.start();
-    sched.fireAt(1300); // due at 1000, ran 300ms late
+    sched.fireAt(1300);
     expect(stalls).toEqual([{ lagMs: 300, delayMs: 1300 }]);
     expect(monitor.lastLagMs).toBe(300);
     expect(monitor.underPressure).toBe(true);
@@ -58,8 +58,8 @@ describe('EventLoopMonitor', () => {
     const sched = new FakeScheduler();
     const { monitor, stalls } = monitorWith(sched);
     monitor.start();
-    sched.fireAt(1300); // stall
-    sched.fireAt(2300); // due at 1300, on time ⇒ lag 0
+    sched.fireAt(1300);
+    sched.fireAt(2300);
     expect(stalls).toHaveLength(1);
     expect(monitor.lastLagMs).toBe(0);
     expect(monitor.underPressure).toBe(false);
@@ -78,10 +78,10 @@ describe('EventLoopMonitor', () => {
     const sched = new FakeScheduler();
     const { monitor, stalls } = monitorWith(sched, { reportThrottleMs: 5000 });
     monitor.start();
-    sched.fireAt(1300); // report #1 at t=1300
-    sched.fireAt(2600); // still stalled but within 5s of #1 ⇒ suppressed
+    sched.fireAt(1300);
+    sched.fireAt(2600);
     expect(stalls).toHaveLength(1);
-    sched.fireAt(8000); // 6.7s after #1 ⇒ report #2
+    sched.fireAt(8000);
     expect(stalls).toHaveLength(2);
   });
 

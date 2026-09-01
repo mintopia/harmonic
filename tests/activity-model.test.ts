@@ -241,7 +241,7 @@ describe('activitySections', () => {
     const steady = proc({ attemptId: 1, contextTokens: 10_000, contextWindow: 200_000 });
     const needs = proc({ attemptId: 2, escalated: true });
     const sections = activitySections([steady, needs], 'attention', 0);
-    expect(sections.map((s) => s.key)).toEqual(['needs-you', 'steady']); // high-load empty → dropped
+    expect(sections.map((s) => s.key)).toEqual(['needs-you', 'steady']);
     expect(sections[0]!.pinned).toBe(true);
     expect(sections[0]!.rows.map((p) => p.attemptId)).toEqual([2]);
   });
@@ -254,7 +254,7 @@ describe('activitySections', () => {
     expect(sections.map((s) => s.key)).toEqual(['needs-you', 'sorted']);
     expect(sections[0]!.pinned).toBe(true);
     expect(sections[0]!.rows.map((p) => p.attemptId)).toEqual([3]);
-    expect(sections[1]!.rows.map((p) => p.attemptId)).toEqual([1, 2]); // dear before cheap
+    expect(sections[1]!.rows.map((p) => p.attemptId)).toEqual([1, 2]);
   });
 
   it('under a metric sort with no escalations, is a single sorted section', () => {
@@ -298,7 +298,7 @@ describe('tokensPerSecond', () => {
   it('is 0 before any tokens or before any elapsed time', () => {
     expect(tokensPerSecond(proc({ usage: usage(null) }), 5_000)).toBe(0);
     expect(tokensPerSecond(proc({ startedAt: 5_000, usage: usage(1000) }), 5_000)).toBe(0);
-    expect(tokensPerSecond(proc({ startedAt: 9_000, usage: usage(1000) }), 5_000)).toBe(0); // clock skew
+    expect(tokensPerSecond(proc({ startedAt: 9_000, usage: usage(1000) }), 5_000)).toBe(0);
   });
 });
 
@@ -368,8 +368,8 @@ describe('mergeRunUsage', () => {
     const chat = proc({ type: 'chat', attemptId: null, conversationId: 2, activity: null });
     const input = [chat];
     const after = mergeRunUsage(input, event({ attemptId: 2 }));
-    expect(after).toBe(input); // no Run matched (a chat has no attemptId) → same reference
-    expect(after[0]!.activity).toBeNull(); // chat untouched
+    expect(after).toBe(input);
+    expect(after[0]!.activity).toBeNull();
   });
 
   it('preserves the object reference of every unchanged Run row (lets React.memo skip them)', () => {
@@ -377,9 +377,9 @@ describe('mergeRunUsage', () => {
     const r2 = proc({ attemptId: 2, activity: null });
     const before = [r1, r2];
     const after = mergeRunUsage(before, event({ attemptId: 2 }));
-    expect(after).not.toBe(before); // a match rebuilds the array
-    expect(after.find((p) => p.attemptId === 1)!).toBe(r1); // untouched row keeps its identity
-    expect(after.find((p) => p.attemptId === 2)!).not.toBe(r2); // only the matched row is a new object
+    expect(after).not.toBe(before);
+    expect(after.find((p) => p.attemptId === 1)!).toBe(r1);
+    expect(after.find((p) => p.attemptId === 2)!).not.toBe(r2);
   });
 });
 
@@ -392,8 +392,8 @@ describe('activitySummary', () => {
       proc({ type: 'chat', attemptId: null, conversationId: 5, startedAt: 2_000, usage: usage(3000), cost: { totalUsd: 0.5, byModel: {}, incomplete: false } }),
     ];
     const s = activitySummary(procs, 4, now);
-    expect(s.runningCount).toBe(2); // two Runs; the chat is not a Run
-    expect(s.needsYouCount).toBe(1); // the escalated Run
+    expect(s.runningCount).toBe(2);
+    expect(s.needsYouCount).toBe(1);
     expect(s.ceiling).toEqual({ running: 2, max: 4 });
     // cost floor: 1 priced + 0.5 chat, with an unpriced member → incomplete
     expect(s.cost?.totalUsd).toBeCloseTo(1.5);

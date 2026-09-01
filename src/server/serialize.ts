@@ -124,8 +124,6 @@ export async function attemptTimelineToApi(ctx: AppContext, taskId: number): Pro
   return {
     budgetBase,
     attempts: await Promise.all(rows.map(async (attempt) => {
-      // `verification_attempts` is keyed by `attempt_id`, so this Attempt's
-      // own id is the read key directly.
       const [stepRows, verificationAttempts] = await Promise.all([
         ctx.attempts.listSteps(attempt.id),
         ctx.verificationAttempts.list(attempt.id),
@@ -212,9 +210,6 @@ export async function ticketTimelineToApi(ctx: AppContext, taskId: number): Prom
   const workspace = await ctx.workspaces.get(atRestWorkspaceId(task.workspaceId));
   const configuredVerifiers = resolveVerifiers(workspace, ctx.configStore.get());
   const attemptsByNumber = new Map<number, AttemptRow>(taskAttempts.map((a) => [a.number, a]));
-  // Grouped by Attempt id (ADR-0001: Attempt is the single execution
-  // ledger, so the "configured verifier never ran" derived note below asks
-  // "did THIS Attempt see this mechanism at all" directly — no Run bridge).
   const verificationByAttempt = new Map<number, VerificationAttemptRow[]>();
   for (const { attempt: v } of verification) {
     const rows = verificationByAttempt.get(v.attemptId) ?? [];

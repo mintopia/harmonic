@@ -12,7 +12,6 @@ describe('Paper accessibility contract (issue #266)', () => {
 
     expect(app).toContain('advanceReviewAnnouncements');
     expect(board).toContain("aria-live={attn ? 'polite' : undefined}");
-    // Assertive announcements (merge outcomes, errors) ride the toast stack.
     expect(toasts).toContain('aria-live="assertive"');
   });
 
@@ -23,8 +22,6 @@ describe('Paper accessibility contract (issue #266)', () => {
     const ui = source('web/src/ui.ts');
 
     expect(board).toContain('role="img" aria-label={task.state.replaceAll');
-    // The sidebar Attempts nav owns attempt-switching: named state dots on
-    // touchable (min-h-11) rows.
     expect(ticket).toContain('role="img" aria-label={attempt.state}');
     expect(ticket).toContain('min-h-11 w-full items-center');
     expect(gate).toContain('role="img" aria-label={DOT_LABEL[model.dot]}');

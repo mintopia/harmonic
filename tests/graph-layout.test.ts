@@ -2,8 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { flattenElkLayout, type ElkLaidGraph, type GraphEdge } from '../web/src/graph-model.js';
 import type { Task, TaskState } from '../web/src/types.js';
 
-/** A Task fixture — the flatten only reads id (via the elk node id) and carries
- * the whole Task through; the rest are the neutral defaults the model test uses. */
 const task = (id: number, state: TaskState = 'ready', extra: Partial<Task> = {}): Task => ({
   id,
   prompt: `task ${id}`,
@@ -99,10 +97,8 @@ describe('flattenElkLayout', () => {
     const layout = flattenElkLayout(res, new Map([[41, 'Graph view']]), byId, []);
 
     expect(layout.groups).toEqual([{ ref: 41, title: 'Graph view', x: 100, y: 50, w: 240, h: 160 }]);
-    // Members are absolute now: group origin (100,50) + relative (14,34)/(14,110).
     expect(layout.nodes).toContainEqual({ id: 1, task: byId.get(1), x: 114, y: 84, w: 196, h: 60 });
     expect(layout.nodes).toContainEqual({ id: 2, task: byId.get(2), x: 114, y: 160, w: 196, h: 60 });
-    // The loose node stays at root, unshifted.
     expect(layout.nodes).toContainEqual({ id: 3, task: byId.get(3), x: 400, y: 60, w: 196, h: 60 });
   });
 

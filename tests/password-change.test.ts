@@ -3,8 +3,6 @@ import { eq } from 'drizzle-orm';
 import { settings } from '../src/db/schema.js';
 import { startServer, TEST_PASSWORD, type TestServer } from './helpers.js';
 
-/** Logs in with the given password against a running server, returning the
- * `harmonic_session=...` cookie pair on success (or null on a rejected login). */
 async function loginAs(server: TestServer, password: string): Promise<string | null> {
   const res = await fetch(`${server.baseUrl}/api/auth/login`, {
     method: 'POST',
@@ -34,7 +32,6 @@ describe('change operator password', () => {
     expect(res.status).toBe(401);
     expect(res.body.error.code).toBe('unauthenticated');
 
-    // The old password still logs in.
     expect(await loginAs(server, TEST_PASSWORD)).not.toBeNull();
     expect(await loginAs(server, 'brand-new-pw')).toBeNull();
   });
@@ -47,7 +44,6 @@ describe('change operator password', () => {
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('validation');
 
-    // The old password still logs in.
     expect(await loginAs(server, TEST_PASSWORD)).not.toBeNull();
   });
 
@@ -65,7 +61,6 @@ describe('change operator password', () => {
     const cookieB = (await loginAs(fresh, TEST_PASSWORD))!;
     expect(cookieA).not.toBe(cookieB);
 
-    // Sanity: both sessions currently work.
     const meA0 = await fetch(`${fresh.baseUrl}/api/auth/me`, { headers: { cookie: cookieA } });
     expect(((await meA0.json()) as { authenticated: boolean }).authenticated).toBe(true);
     const meB0 = await fetch(`${fresh.baseUrl}/api/auth/me`, { headers: { cookie: cookieB } });
@@ -79,17 +74,14 @@ describe('change operator password', () => {
     expect(change.status).toBe(200);
     expect((await change.json()) as { ok: boolean }).toEqual({ ok: true });
 
-    // Session A (the caller) is untouched.
     const meA1 = await fetch(`${fresh.baseUrl}/api/auth/me`, { headers: { cookie: cookieA } });
     expect(((await meA1.json()) as { authenticated: boolean }).authenticated).toBe(true);
     const tasksA = await fetch(`${fresh.baseUrl}/api/tasks`, { headers: { cookie: cookieA } });
     expect(tasksA.status).toBe(200);
 
-    // Session B is dead.
     const tasksB = await fetch(`${fresh.baseUrl}/api/tasks`, { headers: { cookie: cookieB } });
     expect(tasksB.status).toBe(401);
 
-    // The new password logs in; the old one doesn't.
     expect(await loginAs(fresh, 'a-new-password')).not.toBeNull();
     expect(await loginAs(fresh, TEST_PASSWORD)).toBeNull();
 

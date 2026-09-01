@@ -12,8 +12,6 @@ import { combineVerdicts as combineWeb, type VerifierVerdict } from '../web/src/
 describe('combineVerdicts src↔web parity (issue #135)', () => {
   const verdicts: VerifierVerdict['verdict'][] = ['pass', 'fail', 'inconclusive'];
 
-  // Every batch of 0, 1, and 2 verifiers over the full verdict alphabet, plus a
-  // bogus verdict to exercise the unrecognized-verdict fail-safe branch.
   const batches: VerifierVerdict[][] = [[]];
   for (const a of verdicts) {
     batches.push([{ verifier: 'command', verdict: a }]);

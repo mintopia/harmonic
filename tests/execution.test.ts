@@ -111,8 +111,8 @@ describe('run execution over ACP (direct mode)', () => {
 
     expect(inheritPrompt).not.toBeNull();
     expect(overridePrompt).not.toBeNull();
-    expect(inheritPrompt!.startsWith(scenario(scenarioObj))).toBe(true); // global `{prompt}` → verbatim
-    expect(overridePrompt!.startsWith('WS-TASKPROMPT::')).toBe(true); // the override reached the harness prompt
+    expect(inheritPrompt!.startsWith(scenario(scenarioObj))).toBe(true);
+    expect(overridePrompt!.startsWith('WS-TASKPROMPT::')).toBe(true);
   });
 
   it('a native Run merges terminal exactly once — done is final and the escalation actions refuse (ADR-0041)', async () => {
@@ -282,8 +282,8 @@ describe('run execution over ACP (direct mode)', () => {
 
       const run = (await codexServer.api('GET', `/api/tasks/${created.body.id}/attempts/current`)).body;
       expect(run.state).toBe('failed');
-      expect(run.reason).toContain('exited (code 1'); // still says what happened…
-      expect(run.reason).toContain(detail); // …and now why
+      expect(run.reason).toContain('exited (code 1');
+      expect(run.reason).toContain(detail);
     } finally {
       await codexServer.close();
     }
@@ -566,7 +566,7 @@ describe('token/cost budget guardrail (issue #128)', () => {
    */
   const serverWithSpendGuardrail = async (opts: {
     workDir: string;
-    models: Record<string, number>; // model -> input_tokens
+    models: Record<string, number>;
     guardrails: { budget: { wallClockMinutes?: number; tokens?: number | null; costUsd?: number | null } };
     prices?: Record<string, { input: number; output: number; cacheRead: number; cacheWrite: number }>;
     pollMs?: number;

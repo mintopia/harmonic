@@ -105,7 +105,7 @@ describe('dispatching a Run persists a durable Session (issue #141)', () => {
     const capabilities = JSON.parse(session.capabilitySnapshot);
     expect(capabilities).toMatchObject({ protocolVersion: 1, agentCapabilities: { loadSession: true } });
     expect(session.supportsLoadSession).toBe(true);
-    expect(['retiring', 'retired']).toContain(session.status); // the Run merged, so its Session is owed retirement (issue #148)
+    expect(['retiring', 'retired']).toContain(session.status);
     expect(session.lastActiveAt).toBeGreaterThan(0);
 
     // Permission mode is only resolved for auto-driven (afk mirrored) Runs —

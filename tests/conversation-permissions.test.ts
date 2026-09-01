@@ -16,7 +16,6 @@ async function events(server: TestServer, id: number): Promise<any[]> {
   return (await server.api('GET', `/api/conversations/${id}/events`)).body.events;
 }
 
-/** Start a Conversation whose first Turn asks one permission, and return it once the request is broadcast. */
 async function askPermission(server: TestServer, ws: { messages: any[] }) {
   const { body: convo } = await server.api('POST', '/api/conversations', {});
   await server.api('POST', `/api/conversations/${convo.id}/turns`, {
@@ -42,20 +41,15 @@ describe('interactive conversation permissions (issue 11)', () => {
     const ws = await connectWs(server);
     const { convo, reqId, request } = await askPermission(server, ws);
 
-    // The request surfaced with its ACP options, and the Turn is blocked —
-    // no resolution recorded yet.
     expect(request.options.map((o: any) => o.kind)).toContain('allow_once');
     expect((await events(server, convo.id)).some((e) => e.type === 'permission_request')).toBe(false);
 
-    // Answer "Allow once".
     const allowOnce = request.options.find((o: any) => o.kind === 'allow_once');
     const res = await server.api('POST', `/api/conversations/${convo.id}/permissions/${reqId}`, {
       optionId: allowOnce.optionId,
     });
     expect(res.status).toBe(200);
 
-    // The resolution is recorded (transcript/replay) with the chosen option,
-    // and the harness got the answer and continued the Turn.
     const resolved = await waitFor(async () =>
       (await events(server, convo.id)).find((e) => e.type === 'permission_request'),
     );
@@ -98,7 +92,6 @@ describe('interactive conversation permissions (issue 11)', () => {
     const { convo, reqId, request } = await askPermission(server, ws);
     const optionId = request.options[0].optionId;
     await server.api('POST', `/api/conversations/${convo.id}/permissions/${reqId}`, { optionId });
-    // Answering the same reqId again is a 404 — it was resolved and removed.
     const again = await server.api('POST', `/api/conversations/${convo.id}/permissions/${reqId}`, { optionId });
     expect(again.status).toBe(404);
     const bogus = await server.api('POST', `/api/conversations/${convo.id}/permissions/perm-999999`, { optionId });
@@ -112,13 +105,11 @@ describe('interactive conversation permissions (issue 11)', () => {
 
     await server.api('POST', `/api/conversations/${convo.id}/end`);
 
-    // The held request settled as cancelled and was recorded, so the panel clears.
     const cancelled = await waitFor(async () =>
       (await events(server, convo.id)).find((e) => e.type === 'permission_request' && e.payload.reqId === reqId),
     );
     expect(cancelled.payload.outcome).toEqual({ outcome: 'cancelled' });
     expect((await server.api('GET', `/api/conversations/${convo.id}`)).body.state).toBe('ended');
-    // Answering it now is a 404 — it is gone, not leaked.
     const answer = await server.api('POST', `/api/conversations/${convo.id}/permissions/${reqId}`, { optionId: 'x' });
     expect(answer.status).toBe(404);
     ws.close();

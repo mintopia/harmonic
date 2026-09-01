@@ -2,14 +2,6 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { startServer, stubHarness, captureRunEnv, type TestServer } from './helpers.js';
 import type { Epic } from '../src/domain/epic-view.js';
 
-/**
- * The operator Epic read-model surface (issue #167, ADR-0026), over REST.
- * `TrackerPollerManager.listEpics`/`epicDetail` are exercised directly by
- * `epic-view.test.ts` (pure composer) and the manager's own tests; these
- * tests exercise the operator-facing plumbing around them — routing, param
- * parsing, the null→404 mapping, and the operator-only auth gate — spying on
- * the manager rather than standing up a real tracker loop.
- */
 describe('Epic read model operator surface (issue #167)', () => {
   let server: TestServer;
 

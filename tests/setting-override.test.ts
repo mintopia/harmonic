@@ -103,7 +103,7 @@ describe('Setting Override resolution (ADR-0012, issue #59)', () => {
       );
       expect(resolved.review).toMatchObject({ enabled: true, ...override });
       expect(resolved.critic).toEqual(override);
-      expect(resolved.commands).toEqual([globalCommand]); // commands still inherit their own global
+      expect(resolved.commands).toEqual([globalCommand]);
     });
 
     it('resolves no auto-accept at all — a passing verification merges, there is no gate to skip (ADR-0041)', () => {
@@ -302,13 +302,13 @@ describe('Setting Override resolution (ADR-0012, issue #59)', () => {
         config as any,
       );
       expect(resolved.budget).toEqual(override);
-      expect(resolved.progress).toBe(true); // still inherits its own global
+      expect(resolved.progress).toBe(true);
     });
 
     it('uses a Workspace progress override, keeping an explicit false distinct from inherit; budget still inherits', () => {
       const resolved = resolveGuardrails({ guardrailBudget: null, guardrailProgress: false, toolTimeoutMinutes: null }, config as any);
-      expect(resolved.progress).toBe(false); // an explicit "off", not inherit
-      expect(resolved.budget).toEqual(config.guardrails.budget); // budget still inherits its own global
+      expect(resolved.progress).toBe(false);
+      expect(resolved.budget).toEqual(config.guardrails.budget);
     });
 
     it('resolves toolTimeoutMinutes per-Workspace now (ADR-0044/#339): value wins, null inherits', () => {
@@ -360,10 +360,10 @@ describe('Setting Override resolution (ADR-0012, issue #59)', () => {
         { ...noOverrides, driveMergeFate: 'open-PR', driveContinueAttempts: 3 },
         config as any,
       );
-      expect(resolved.mergeFate).toBe('open-PR'); // overridden
-      expect(resolved.continueAttempts).toBe(3); // overridden
-      expect(resolved.prompt).toBe('GLOBAL PROMPT'); // still inherited
-      expect(resolved.continuePrompt).toBe('GLOBAL CONTINUE'); // still inherited
+      expect(resolved.mergeFate).toBe('open-PR');
+      expect(resolved.continueAttempts).toBe(3);
+      expect(resolved.prompt).toBe('GLOBAL PROMPT');
+      expect(resolved.continuePrompt).toBe('GLOBAL CONTINUE');
     });
 
     it('keeps continueAttempts 0 (a falsy-but-set value) as an override, not inherit', () => {

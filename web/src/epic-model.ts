@@ -260,7 +260,7 @@ const INTEGRATION_STEP_ORDER: readonly IntegrationStepKey[] = ['verify', 'merge'
  * `held`, so escalation is legible on the bar itself. */
 export function integrationSteps(epic: Epic): IntegrationStep[] {
   const verified = epic.verification.status === 'pass';
-  const currentIndex = verified ? 1 : 0; // Verify until it passes, then Merge.
+  const currentIndex = INTEGRATION_STEP_ORDER.indexOf(verified ? 'merge' : 'verify');
   return INTEGRATION_STEP_ORDER.map((key, i): IntegrationStep => {
     const label = INTEGRATION_STEP_LABELS[key];
     if (i < currentIndex) return { key, label, state: 'done' };

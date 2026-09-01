@@ -45,7 +45,7 @@ describe('wallClockBudgetMs', () => {
 });
 
 describe('wallClockTrip (issue #127, the Step-scoping decision)', () => {
-  const budget = { wallClockMinutes: 45 }; // 2_700_000ms
+  const budget = { wallClockMinutes: 45 };
 
   it('trips when elapsed >= budget while any Step is running', () => {
     for (const stepType of STEP_TYPES) {
@@ -82,7 +82,7 @@ describe('wallClockTrip (issue #127, the Step-scoping decision)', () => {
   });
 
   it('trip payload carries the correct limitMs/observedMs for a different budget', () => {
-    const smallBudget = { wallClockMinutes: 5 }; // 300_000ms
+    const smallBudget = { wallClockMinutes: 5 };
     expect(wallClockTrip({ elapsedMs: 450_000, stepType: 'implementation', budget: smallBudget })).toEqual({
       dimension: 'wall-clock',
       limitMs: 300_000,

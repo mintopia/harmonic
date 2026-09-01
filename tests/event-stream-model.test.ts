@@ -53,7 +53,6 @@ describe('coalesceEvents', () => {
   });
 
   it('folds a tool_call and its later tool_call_update into one row, advancing status', () => {
-    // The exact double-render from the screenshot: a call, then its update.
     const call = evt(1, 'session_update', {
       sessionUpdate: 'tool_call',
       toolCallId: 'toolu_01EtAM',
@@ -131,7 +130,6 @@ describe('moving-base folding (ADR-0046, #368)', () => {
 
   it('folds every rebase re-entry into one row, kept at its first-seen position with the latest attempt', () => {
     const items = coalesceEvents([retry(1, 1, 5), retry(2, 2, 5), retry(3, 3, 5)]);
-    // One row, first event's key, payload advanced to the latest attempt.
     expect(items).toEqual([{ kind: 'event', event: retry(3, 3, 5), key: 1 }]);
   });
 
@@ -139,7 +137,6 @@ describe('moving-base folding (ADR-0046, #368)', () => {
     const other = (id: number) => evt(id, 'lifecycle', { event: 'progress-nudge', pattern: 'monologue' });
     const items = coalesceEvents([retry(1, 1, 5), other(2), retry(3, 2, 5), other(4)]);
     expect(items.map((i) => i.key)).toEqual([1, 2, 4]);
-    // The single moving-base row still holds the newest attempt payload.
     expect(items[0]).toEqual({ kind: 'event', event: retry(3, 2, 5), key: 1 });
   });
 });
@@ -185,7 +182,6 @@ describe('coalesceTail', () => {
     const events = [perm(1), perm(2), perm(3), perm(4), perm(5)];
     const { hidden, items } = coalesceTail(events, 2);
     expect(hidden).toBe(3);
-    // Order preserved, only the ancient head dropped — the last two survive.
     expect(items.map((i) => i.key)).toEqual([4, 5]);
   });
 
@@ -210,10 +206,6 @@ describe('coalesceTail', () => {
   });
 
   it('renders a degraded-but-intact tool row when the opening tool_call aged out of the tail', () => {
-    // A long-running tool whose `tool_call` fell before the cut: only its later
-    // `tool_call_update` (status-only) survives, so title/kind can't be merged
-    // back. The row must still render safely — ToolLine falls back to
-    // 'Tool call'/'tool' — not vanish or crash. Bounded fidelity, never loss.
     const call = evt(1, 'session_update', {
       sessionUpdate: 'tool_call',
       toolCallId: 't',

@@ -692,7 +692,7 @@ describe('usage collection and statistics', () => {
     midnight.setHours(0, 0, 0, 0);
     expect(all.body.series).toHaveLength(1);
     expect(all.body.series[0].day).toBe(midnight.getTime());
-    expect(all.body.series[0].tokens).toBe(12); // 5 input + 7 output
+    expect(all.body.series[0].tokens).toBe(12);
     expect(all.body.series[0].attempts).toBe(1);
     expect(all.body.series[0]).toHaveProperty('totalUsd');
     expect(all.body.series[0]).toHaveProperty('incomplete');

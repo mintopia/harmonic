@@ -63,7 +63,6 @@ describe('subagentShare', () => {
 
 describe('cacheHitRate', () => {
   it('is cache-read over all input-side tokens, cache-write included (ADR-0028)', () => {
-    // read=30 over input+read+write = 10+30+10 = 50 → 0.6
     expect(cacheHitRate(u(10, 5, 30, 10))).toBeCloseTo(0.6, 10);
   });
 
@@ -73,7 +72,6 @@ describe('cacheHitRate', () => {
   });
 
   it('is null (not 0) when there are no input-side tokens', () => {
-    // output-only usage has an empty denominator — "—", never a fake 0%.
     expect(cacheHitRate(u(0, 100, 0, 0))).toBeNull();
   });
 });

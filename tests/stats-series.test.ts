@@ -99,7 +99,7 @@ describe('buildDaySeries', () => {
   it('counts failed-only runs per day, excluding cancelled/completed (ADR-0028)', () => {
     const series = buildDaySeries(
       [
-        outcome(at(2026, 0, 10, 8), 'failed'), // genuine failure
+        outcome(at(2026, 0, 10, 8), 'failed'),
         outcome(at(2026, 0, 10, 10), 'cancelled'), // operator cancel — not a fail
         outcome(at(2026, 0, 10, 11), 'completed'),
         outcome(at(2026, 0, 11, 8), 'failed'),

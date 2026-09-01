@@ -77,7 +77,7 @@ describe('requeue feedback — origin-aware placement', () => {
 
     const requeued = await tasks.requeue(mirrored!.id, 'try harder');
     expect(requeued.state).toBe('ready');
-    expect(requeued.prompt).toBe(derivedPrompt); // untouched — no baked-in feedback
+    expect(requeued.prompt).toBe(derivedPrompt);
     expect(requeued.feedback).toBe('try harder');
   });
 

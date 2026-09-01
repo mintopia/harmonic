@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { detectStall, type ProgressEvent } from '../src/domain/stall-detector.js';
 
-// Tiny inline builders, mirroring the run-disposition/event-stream-model idiom:
-// each test reads as a short literal event array.
 const action = (seq: number, signature: string, ref?: string): ProgressEvent => ({ seq, kind: 'action', signature, ref });
 const result = (seq: number, signature: string, ref?: string): ProgressEvent => ({ seq, kind: 'result', signature, ref });
 const errored = (seq: number, signature: string | undefined, ref?: string): ProgressEvent => ({
@@ -19,8 +17,6 @@ describe('detectStall (issue #130)', () => {
   });
 
   describe('off by default', () => {
-    // A blatant action-error-repeat trace: without an explicit opt-in, this
-    // must never flag, no matter how loop-shaped the trace is.
     const loopy: ProgressEvent[] = [
       action(1, 'A'),
       errored(2, 'e1'),
@@ -107,7 +103,7 @@ describe('detectStall (issue #130)', () => {
         action(5, 'A'),
         errored(6, 'e3'),
         action(7, 'A'),
-        result(8, 'rA'), // recovered: the tail is no longer an error run
+        result(8, 'rA'),
       ];
       expect(detectStall(events, { enabled: true })).toBeNull();
     });
@@ -229,7 +225,7 @@ describe('detectStall (issue #130)', () => {
         errored(4, 'e2'),
         action(5, 'A'),
         errored(6, 'e3'),
-        action(7, 'A', 't9'), // never resolved
+        action(7, 'A', 't9'),
       ];
       expect(detectStall(events, { enabled: true })).toBeNull();
     });
@@ -240,11 +236,8 @@ describe('detectStall (issue #130)', () => {
     });
 
     it('a stale orphaned action from earlier history does not blind a later real loop', () => {
-      // The orphan (t0) never gets a result, but the agent plainly moved on and
-      // is now hammering a different action that keeps erroring — that loop must
-      // still be caught; a single lost result must not disable the Guardrail.
       const events: ProgressEvent[] = [
-        action(1, 'orphan', 't0'), // result never emitted
+        action(1, 'orphan', 't0'),
         action(2, 'A', 't1'),
         errored(3, 'e1', 't1'),
         action(4, 'A', 't2'),

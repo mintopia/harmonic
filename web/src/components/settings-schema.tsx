@@ -85,7 +85,6 @@ function pick<T>(value: PerSurface<T>, surface: Surface): T {
     : (value as T);
 }
 
-// ── Shared field helpers ──────────────────────────────────────────────────────
 
 /** All harnesses as options, keeping a Workspace's pinned-but-unconfigured
  * harness visible/selectable rather than snapping to another (mirrors the
@@ -105,7 +104,6 @@ function summarizePrompt(prompt: string): string {
   return firstLine.length > 60 ? `${firstLine.slice(0, 60)}…` : firstLine;
 }
 
-// ── Prompt-template fields (textarea + placeholder legend + compiled preview) ──
 
 /** A prompt-template field bound to the global `AppConfig` — the global twin of
  * {@link OverridablePrompt}. Renders the shared {@link PromptField} directly (no
@@ -200,7 +198,6 @@ function OverridePrompt({
   );
 }
 
-// ── Field nodes: one setting, paired global + workspace bindings ───────────────
 
 interface ScalarFieldNode {
   kind: 'scalar';
@@ -291,7 +288,6 @@ function overrideGrid(
   );
 }
 
-// ── Field declarations (one per setting, both bindings) ───────────────────────
 
 const instanceName = scalar(
   {
@@ -686,7 +682,6 @@ const continuePromptField = prompt(
   },
 );
 
-// ── Bespoke section renderers ─────────────────────────────────────────────────
 
 /** A loud, visible flag for an enabled-but-unrunnable review — toggled on yet
  * resolving to no model or prompt, so it can never run (ADR-0044 §F, issue #340).
@@ -1172,7 +1167,6 @@ function WorkspaceDelete({ ctx }: { ctx: WorkspaceRenderCtx }) {
   );
 }
 
-// ── The schema ────────────────────────────────────────────────────────────────
 
 /** One rendered card on a settings surface. */
 interface SectionNode {
@@ -1191,7 +1185,6 @@ function twoColGrid(surface: Surface): string {
 }
 
 export const SETTINGS_SCHEMA: SectionNode[] = [
-  // ── General ──
   {
     tab: 'general',
     surfaces: ['global'],
@@ -1236,7 +1229,6 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
     body: (ctx) => (ctx.surface === 'workspace' ? <WorkspaceDelete ctx={ctx} /> : null),
   },
 
-  // ── Execution ──
   {
     tab: 'execution',
     surfaces: BOTH,
@@ -1300,7 +1292,6 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
     body: (ctx) => (ctx.surface === 'global' ? <GlobalGuardrails ctx={ctx} /> : <WorkspaceGuardrails ctx={ctx} />),
   },
 
-  // ── Verification ──
   {
     tab: 'verification',
     surfaces: BOTH,
@@ -1314,7 +1305,6 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
     body: (ctx) => (ctx.surface === 'global' ? <GlobalVerification ctx={ctx} /> : <WorkspaceVerification ctx={ctx} />),
   },
 
-  // ── Prompts ──
   {
     tab: 'prompts',
     surfaces: BOTH,
@@ -1345,7 +1335,6 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
     ),
   },
 
-  // ── Integrations (global-only) ──
   {
     tab: 'integrations',
     surfaces: ['global'],
@@ -1383,7 +1372,6 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
       ) : null,
   },
 
-  // ── Security (global-only) ──
   {
     tab: 'security',
     surfaces: ['global'],

@@ -10,10 +10,6 @@ import { WorkspaceService } from '../src/domain/workspaces.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { allWorkspaces, makeSettingsStore } from './helpers.js';
 
-/**
- * Delete-guard behaviour after issue #61: the "refuse the last Workspace" guard
- * is gone, but the "refuse a running Task" guard stays.
- */
 describe('WorkspaceService.delete guards (issue #61)', () => {
   let dataDir: string;
   let asyncDb: AsyncDbHandle;
@@ -22,7 +18,7 @@ describe('WorkspaceService.delete guards (issue #61)', () => {
 
   beforeEach(async () => {
     dataDir = mkdtempSync(join(tmpdir(), 'harmonic-ws-del-'));
-    asyncDb = await openAsyncDb(dataDir); // backfills the single Default Workspace
+    asyncDb = await openAsyncDb(dataDir);
     const settingsStore = await makeSettingsStore(dataDir);
     workspaces = new WorkspaceService(asyncDb, settingsStore);
     tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
@@ -46,7 +42,7 @@ describe('WorkspaceService.delete guards (issue #61)', () => {
     await tasks.setState(task.id, 'working');
 
     await expect(workspaces.delete(ws.id)).rejects.toThrowError(/running task/);
-    expect(await workspaces.list()).toHaveLength(1); // untouched
+    expect(await workspaces.list()).toHaveLength(1);
   });
 
   it('deletes a Workspace that has a dismissal tombstone (issue #162 FK)', async () => {

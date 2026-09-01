@@ -1,8 +1,3 @@
-/**
- * Pure `composeEpicView` tests (issue #167, ADR-0026). Table-style like
- * `epic-derivation.test.ts` — no I/O, exercises the composer directly against
- * hand-built `DerivedEpic`/`TaskRow`/facts inputs.
- */
 import { describe, expect, it } from 'vitest';
 import { composeEpicView, type EpicFacts, type EpicMeta } from '../src/domain/epic-view.js';
 import type { DerivedEpic } from '../src/domain/epic-derivation.js';
@@ -157,7 +152,7 @@ describe('composeEpicView', () => {
     expect(epic.description).toBe('The epic body.');
     expect(epic.createdAt).toBe(1_700_000_000_000);
     expect(epic.dependsOn).toEqual([7, 3]);
-    expect(epic.updatedAt).toBe(900); // the most recent member updatedAt
+    expect(epic.updatedAt).toBe(900);
   });
 
   it('leaves updatedAt null when no member is mirrored', () => {

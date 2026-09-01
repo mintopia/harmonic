@@ -87,10 +87,10 @@ describe('WorkspaceService override persistence (issue #64)', () => {
     // Chat and Tasks are separate columns: pointing chat at a different agent
     // leaves the Task default untouched.
     const updated = await workspaces.update(ws.id, { harness: 'codex', chatHarness: 'claude', chatModel: 'claude-opus-5' });
-    expect(updated.harness).toBe('codex'); // Task default
-    expect(updated.chatHarness).toBe('claude'); // chat default, independent
+    expect(updated.harness).toBe('codex');
+    expect(updated.chatHarness).toBe('claude');
     expect(updated.chatModel).toBe('claude-opus-5');
-    expect(updated.model).toBeNull(); // Task model still inherits
+    expect(updated.model).toBeNull();
   });
 
   it('clears an override back to inherit with null', async () => {
@@ -113,14 +113,14 @@ describe('WorkspaceService override persistence (issue #64)', () => {
     await workspaces.update(ws.id, { harness: 'codex', priority: 'low' });
     const renamed = await workspaces.update(ws.id, { name: 'Renamed' });
     expect(renamed.name).toBe('Renamed');
-    expect(renamed.harness).toBe('codex'); // untouched
-    expect(renamed.priority).toBe('low'); // untouched
+    expect(renamed.harness).toBe('codex');
+    expect(renamed.priority).toBe('low');
   });
 
   it('keeps a false autoRunnerEnabled override distinct from inherit (null)', async () => {
     const ws = (await workspaces.list())[0]!;
     const off = await workspaces.update(ws.id, { autoRunnerEnabled: false });
-    expect(off.autoRunnerEnabled).toBe(false); // an explicit "off", not inherit
+    expect(off.autoRunnerEnabled).toBe(false);
     const untouched = await workspaces.update(ws.id, { name: ws.name });
     expect(untouched.autoRunnerEnabled).toBe(false);
   });
@@ -183,7 +183,7 @@ describe('WorkspaceService override persistence (issue #64)', () => {
     await workspaces.update(ws.id, { verificationCommand: [verificationCommandSchema.parse({ command: 'npm', args: ['test'] })] });
     const renamed = await workspaces.update(ws.id, { name: 'Renamed' });
     expect(renamed.name).toBe('Renamed');
-    expect(JSON.parse(renamed.verificationCommand!)).toMatchObject([{ command: 'npm', args: ['test'] }]); // untouched
+    expect(JSON.parse(renamed.verificationCommand!)).toMatchObject([{ command: 'npm', args: ['test'] }]);
   });
 
   it('keeps a false guardrailProgress override distinct from inherit (null) (issue #165)', async () => {
@@ -191,11 +191,11 @@ describe('WorkspaceService override persistence (issue #64)', () => {
     const on = await workspaces.update(ws.id, { guardrailProgress: true });
     expect(on.guardrailProgress).toBe(true);
     const off = await workspaces.update(ws.id, { guardrailProgress: false });
-    expect(off.guardrailProgress).toBe(false); // an explicit "off", not inherit
+    expect(off.guardrailProgress).toBe(false);
     const untouched = await workspaces.update(ws.id, { name: ws.name });
-    expect(untouched.guardrailProgress).toBe(false); // omitted ⇒ left alone
+    expect(untouched.guardrailProgress).toBe(false);
     const cleared = await workspaces.update(ws.id, { guardrailProgress: null });
-    expect(cleared.guardrailProgress).toBeNull(); // back to inherit
+    expect(cleared.guardrailProgress).toBeNull();
   });
 
   it('sets explicit guardrail overrides (issue #126)', async () => {
@@ -223,7 +223,7 @@ describe('WorkspaceService override persistence (issue #64)', () => {
   it('keeps a false guardrailProgress override distinct from inherit (null) (issue #126)', async () => {
     const ws = (await workspaces.list())[0]!;
     const off = await workspaces.update(ws.id, { guardrailProgress: false });
-    expect(off.guardrailProgress).toBe(false); // an explicit "off", not inherit
+    expect(off.guardrailProgress).toBe(false);
     const untouched = await workspaces.update(ws.id, { name: ws.name });
     expect(untouched.guardrailProgress).toBe(false);
   });
@@ -259,14 +259,14 @@ describe('WorkspaceService override persistence (issue #64)', () => {
     const cleared = await workspaces.update(ws.id, { driveMergeFate: null, toolTimeoutMinutes: null });
     expect(cleared.driveMergeFate).toBeNull();
     expect(cleared.toolTimeoutMinutes).toBeNull();
-    expect(cleared.drivePrompt).toBe('WS drive prompt'); // untouched
-    expect(cleared.driveContinueAttempts).toBe(3); // untouched
+    expect(cleared.drivePrompt).toBe('WS drive prompt');
+    expect(cleared.driveContinueAttempts).toBe(3);
   });
 
   it('keeps a driveContinueAttempts 0 override distinct from inherit, and resolveDrive reads it (#339)', async () => {
     const ws = (await workspaces.list())[0]!;
     const zero = await workspaces.update(ws.id, { driveContinueAttempts: 0 });
-    expect(zero.driveContinueAttempts).toBe(0); // an explicit 0, not inherit
+    expect(zero.driveContinueAttempts).toBe(0);
     const resolved = resolveDrive(zero, {
       drive: {
         prompt: 'g',
@@ -276,8 +276,8 @@ describe('WorkspaceService override persistence (issue #64)', () => {
         continueAttempts: 1,
       },
     } as any);
-    expect(resolved.continueAttempts).toBe(0); // the stored override wins over the global 1
-    expect(resolved.mergeFate).toBe('auto-merge'); // an unset field still inherits
+    expect(resolved.continueAttempts).toBe(0);
+    expect(resolved.mergeFate).toBe('auto-merge');
   });
 
   // issue #391: overrides now persist through `SettingsStore`'s YAML file rather

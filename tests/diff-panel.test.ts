@@ -7,8 +7,6 @@ const DIFF_VIEWER = readFileSync(fileURLToPath(new URL('../web/src/components/Di
 
 describe('single-file diff panel', () => {
   it('titles the panel by the filename and shows the ± summary and full path', () => {
-    // Filename as the content title (the path tail), the ± counts, then the
-    // full path beneath it.
     expect(TICKET_PAGE).toContain('splitPathTail(selectedFile).tail');
     expect(TICKET_PAGE).toMatch(/\+\{file\.additions\}/);
     expect(TICKET_PAGE).toMatch(/−\{file\.deletions\}/);
@@ -20,8 +18,6 @@ describe('single-file diff panel', () => {
   });
 
   it('reads the run-agnostic worktree diff, not the selected Attempt', () => {
-    // The diff pane is fed the latest Attempt's worktree state regardless of
-    // which Attempt is open in the panel.
     expect(TICKET_PAGE).toContain('attemptId={latestAttemptId}');
   });
 });

@@ -36,9 +36,8 @@ function fmtRelative(ms: number): string {
   return `${Math.floor(h / 24)}d ago`;
 }
 
-// ─── small shared bits (deliberately re-implemented, not imported, from
-// TicketPage's private helpers of the same name — see EpicPage's file header
-// in the PR description) ─────────────────────────────────────────────────
+// Deliberately re-implemented, not imported from TicketPage's private helpers
+// of the same name.
 
 function Fact({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -97,7 +96,6 @@ function Properties({ epic }: { epic: Epic }) {
   );
 }
 
-// ─── usage & statistics ──────────────────────────────────────────────────
 
 interface Metric {
   label: string;
@@ -181,7 +179,6 @@ function UsageCard({ stats, epic }: { stats: Stats; epic: Epic }) {
   );
 }
 
-// ─── child tasks table ───────────────────────────────────────────────────
 
 // Column tracks mirror TableView's Tasks-list GRID (ADR-0015: same columns, no
 // bespoke row shape) plus a trailing Tokens track; keep the two in sync.
@@ -315,7 +312,6 @@ function ChildTasksTable({
   );
 }
 
-// ─── page ────────────────────────────────────────────────────────────────
 
 const PHASE_WORD: Record<EpicStage['key'], string> = {
   build: 'building',

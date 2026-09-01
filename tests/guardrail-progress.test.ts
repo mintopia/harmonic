@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { formatProgressReason, toProgressEvents, type RunEventLike } from '../src/domain/guardrail-progress.js';
 import { detectStall } from '../src/domain/stall-detector.js';
 
-// Tiny inline builders for RunEventLike, mirroring stall-detector.test.ts's idiom.
 const toolCall = (seq: number, toolCallId: string, extra: Record<string, unknown> = {}): RunEventLike => ({
   seq,
   type: 'session_update',
@@ -153,11 +152,6 @@ describe('replay quarantine (issue #144)', () => {
     ]);
   });
 
-  // AC4 ("does not advance progress/stall detection") and, transitively, AC3
-  // ("does not emit run_facts for the current turn"): a `guardrail-trip` is the
-  // ONLY run_fact a session/update can influence, and it fires only when
-  // detectStall returns a report. Prove a replay-only trace that WOULD stall
-  // yields null here — so no trip, hence no spurious guardrail-trip run_fact.
   it('a stall pattern formed entirely by replayed events does not trip (AC4/AC3); the same events as current do', () => {
     const log: RunEventLike[] = [];
     let seq = 1;
@@ -168,11 +162,8 @@ describe('replay quarantine (issue #144)', () => {
         replay: true,
       });
     }
-    // Replay-only: no stall report → the guardrail-trip run_fact never fires.
     expect(detectStall(toProgressEvents(log), { enabled: true })).toBeNull();
 
-    // The SAME trace as current-turn work does trip — proving the quarantine,
-    // not a too-short trace, is what suppressed the stall (and the fact).
     const currentLog: RunEventLike[] = log.map((event) => ({ ...event, replay: false }));
     const report = detectStall(toProgressEvents(currentLog), { enabled: true });
     expect(report?.pattern).toBe('action-error-repeat');

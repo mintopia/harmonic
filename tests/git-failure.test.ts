@@ -66,7 +66,7 @@ describe('breakerStep (pure exponential-backoff reducer)', () => {
 
     const r3 = breakerStep(s, 'failure', 1500, CFG);
     expect(r3.backoffMs).toBe(400);
-    expect(r3.opened).toBe(true); // threshold (3) reached → escalate
+    expect(r3.opened).toBe(true);
   });
 
   it('caps the backoff at maxMs', () => {
@@ -105,8 +105,8 @@ describe('GitCircuitBreaker (stateful per-context holder)', () => {
 
     const f1 = b.recordFailure(key);
     expect(f1.opened).toBe(false);
-    expect(b.allows(key)).toBe(false); // in backoff window
-    now = f1.backoffMs; // advance to the half-open boundary
+    expect(b.allows(key)).toBe(false);
+    now = f1.backoffMs;
     expect(b.allows(key)).toBe(true);
 
     const f2 = b.recordFailure(key);
@@ -114,7 +114,7 @@ describe('GitCircuitBreaker (stateful per-context holder)', () => {
     now += f2.backoffMs;
 
     const f3 = b.recordFailure(key);
-    expect(f3.opened).toBe(true); // circuit open → caller escalates the context
+    expect(f3.opened).toBe(true);
   });
 
   it('isolates contexts by key — one bad repo does not open another', () => {
@@ -133,7 +133,6 @@ describe('GitCircuitBreaker (stateful per-context holder)', () => {
     b.recordFailure(key);
     b.recordSuccess(key);
     now = 10_000;
-    // Back to a clean slate: one failure again is just the first step, not near open.
     const f = b.recordFailure(key);
     expect(f.opened).toBe(false);
     expect(f.backoffMs).toBe(CFG.baseMs);

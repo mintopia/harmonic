@@ -293,7 +293,7 @@ describe('epic refresh corrective turn (issue #315)', () => {
     const runner = makeRunner(async () => {
       throw new Error('the corrective turn must not run when the worktree cannot be prepared');
     });
-    await runningMember('epic/9'); // a host exists, but no epic/9 branch does
+    await runningMember('epic/9');
 
     const outcome = await runner.enqueueEpicRefreshResolution(
       { ref: 9, repoDir: repo, defaultBranch: 'develop' },

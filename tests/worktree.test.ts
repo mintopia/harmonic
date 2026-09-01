@@ -142,7 +142,7 @@ describe('worktree isolation mode', () => {
   });
 
   it('a Task with an explicit baseBranch (issue #157, ADR-0024) forks from it, not the current branch, and merges back onto it', async () => {
-    const repo = makeRepo(); // current branch is main
+    const repo = makeRepo();
     // A second branch carrying a commit that never touches main — the tell
     // for "did the worktree fork from feature-base, or from main (today's
     // default)?"
@@ -151,7 +151,7 @@ describe('worktree isolation mode', () => {
     writeFileSync(join(repo, 'base-marker.txt'), 'from feature-base\n');
     git(repo, 'add', '-A');
     git(repo, 'commit', '-m', 'feature-base marker');
-    git(repo, 'checkout', 'main'); // main stays checked out and current throughout
+    git(repo, 'checkout', 'main');
 
     const { taskId } = await runWorktreeTask(
       repo,
@@ -330,7 +330,7 @@ describe('worktree isolation mode', () => {
   });
 
   it('escalates instead of forking off "HEAD" when the base repo is detached and no base branch is set (issue #198)', async () => {
-    const repo = makeRepo(); // on branch main
+    const repo = makeRepo();
     // Simulate the state a prior merging/merge-train leaves behind: the base
     // repo detached at a commit (== main here, no divergence — the merging just
     // didn't return HEAD to the branch). `--abbrev-ref HEAD` now reports the
@@ -425,8 +425,8 @@ describe('worktree isolation mode', () => {
   });
 
   it('an Epic member (mapRef) never forks off the current branch: an unresolved epic base re-queues instead (issue #334)', async () => {
-    const repo = makeRepo(); // on branch main
-    git(repo, 'branch', 'epic/424'); // the Epic's integration branch exists
+    const repo = makeRepo();
+    git(repo, 'branch', 'epic/424');
     const worktreesBefore = git(repo, 'worktree', 'list').split('\n').length;
 
     // A recognised Epic member (durable `mapRef`) whose base has NOT been
@@ -455,7 +455,7 @@ describe('worktree isolation mode', () => {
     expect(runs.length).toBe(1);
     expect(runs[0].state).toBe('failed');
     expect(runs[0].reason).toContain('epic/424');
-    expect(runs[0].baseBranch ?? null).toBeNull(); // never resolved to main
+    expect(runs[0].baseBranch ?? null).toBeNull();
     // Base repo untouched: no worktree, no run branch forged off main.
     expect(git(repo, 'worktree', 'list').split('\n')).toHaveLength(worktreesBefore);
     expect(git(repo, 'branch', '--list', `harmonic/task-${created.body.id}`)).toBe('');

@@ -163,7 +163,7 @@ describe('map badges', () => {
       task(1, 'ready', { mapRef: 52, mapTitle: 'Activity' }),
       task(2, 'ready', { mapRef: 30, mapTitle: 'Mirroring' }),
       task(3, 'ready', { mapRef: 52, mapTitle: 'Activity' }),
-      task(4, 'ready'), // unmapped — no badge
+      task(4, 'ready'),
     ];
     const badges = mapBadges(tasks);
     expect(badges.get(30)).toBe(1);
@@ -181,7 +181,7 @@ describe('map badges', () => {
       task(410, 'ready', { mapRef: 502, mapTitle: 'Stats enrichment' }),
       task(409, 'ready', { mapRef: 408, mapTitle: 'Epic summary page' }),
       task(411, 'ready', { mapRef: 408, mapTitle: 'Epic summary page' }),
-      task(500, 'ready'), // standalone — no epic membership, no badge
+      task(500, 'ready'),
     ];
     const badges = mapBadges(tasks);
     // Each Task resolved through mapBadges: epic 408 → 1, epic 502 → 2 (ascending
@@ -254,8 +254,8 @@ describe('edge geometry', () => {
 
   it('ports out of the trailing edge and into the leading edge (L→R flow)', () => {
     const n = box(10, 20);
-    expect(port(n, 'out')).toEqual({ x: 110, y: 40 }); // right-centre
-    expect(port(n, 'in')).toEqual({ x: 10, y: 40 }); // left-centre
+    expect(port(n, 'out')).toEqual({ x: 110, y: 40 });
+    expect(port(n, 'in')).toEqual({ x: 10, y: 40 });
   });
 
   it('draws a cubic bezier from source out-port to target in-port', () => {

@@ -74,7 +74,6 @@ export function toastIntegrateOutcome(outcome: EpicIntegrateOutcome): void {
   else toastError(banner.text);
 }
 
-/** Mounted once by App. */
 export function Toaster() {
   const items = useSyncExternalStore(
     (cb) => {

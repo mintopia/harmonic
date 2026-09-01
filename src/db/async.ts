@@ -10,10 +10,8 @@ import { conversations, settings, tasks, workspaces } from './schema.js';
 import { defaultConfig } from '../config.js';
 
 /**
- * The async, libsql-backed sibling of the sync {@link import('./index.js').Db}.
- * ADR-0029: every `.get/.all/.run` is a Promise. This lives *alongside* the sync
- * driver during the expand-contract migration — the sync `Db` remains the live
- * path until stores are ported over one batch at a time.
+ * The libsql-backed Drizzle database (ADR-0029): every `.get/.all/.run` is a
+ * Promise.
  */
 export type AsyncDb = LibSQLDatabase<typeof schema>;
 
@@ -105,9 +103,7 @@ function withTimeout<T>(work: Promise<T>, timeoutMs: number, kind: QueryKind): P
  * - `read(fn)` runs immediately and concurrently — WAL lets readers proceed
  *   without waiting on the writer.
  * - `write(fn)` serialises through a single-writer queue: at most one write is in
- *   flight, the next starts only after the previous settles. This preserves the
- *   single-writer invariant the coordination spine assumes (`RunStore.finish`,
- *   `run_facts` `seq`) which synchronous better-sqlite3 gave for free.
+ *   flight, the next starts only after the previous settles.
  * - `transaction(fn)` is one exclusive write-queue unit wrapping a real DB
  *   transaction, so multi-statement atomic sequences (the 6 `.transaction()`
  *   sites) run without any other write interleaving.
@@ -196,10 +192,8 @@ type LegacyStoredConfig = {
 const TRACKER_BACKFILL_KEY = 'trackerEnabledBackfilled';
 
 /**
- * Async port of the sync `backfillDefaultWorkspace` (see src/db/index.ts). Runs
- * as one write-queue unit so the read-then-write backfill can't interleave with
- * other writers. Kept as a faithful duplicate rather than shared during
- * expand-contract; the sync copy is deleted in the contract step.
+ * Runs as one write-queue unit so the read-then-write backfill can't interleave
+ * with other writers.
  */
 async function backfillDefaultWorkspaceAsync(handle: AsyncDbHandle): Promise<void> {
   await handle.write(async (db) => {

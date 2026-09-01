@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { costFloor, cumulative, fillSeries, metricValue, type DayCost } from '../web/src/components/costChart-model.js';
 
-// Local midnight, matching how fillSeries normalises day keys.
 const day = (y: number, m: number, d: number) => {
   const t = new Date(y, m, d);
   t.setHours(0, 0, 0, 0);
@@ -31,7 +30,7 @@ describe('fillSeries', () => {
     // $0 — the regression behind the live cost-per-day chart reading all zeros.
     const d1 = day(2026, 0, 10);
     const d2 = day(2026, 0, 11);
-    const offGrid = d2 + 3 * 3600_000; // same calendar day, off the grid
+    const offGrid = d2 + 3 * 3600_000;
     const out = fillSeries(
       [
         { day: d1, totalUsd: 1, incomplete: false, tokens: 100, attempts: 1 },

@@ -133,7 +133,7 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
     // re-running the same deterministic verifier against the merged tip.
     const rows = await attempts(attemptId);
     expect(rows.map((r) => r.verdict)).toEqual(['fail', 'pass', 'pass']);
-    expect(rows[0]!.inputOid).not.toBe(rows[1]!.inputOid); // a fresh candidate per turn
+    expect(rows[0]!.inputOid).not.toBe(rows[1]!.inputOid);
 
     const attemptsByTicket = await ticketAttempts(taskId);
     expect(attemptsByTicket).toMatchObject([

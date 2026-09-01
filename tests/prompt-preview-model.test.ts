@@ -28,12 +28,9 @@ describe('prompt-preview-model (settings compiled preview)', () => {
 
   it('compileCriticPreview interpolates the note AND appends the read-only + verdict scaffolding', () => {
     const out = compileCriticPreview('Review issue {ref}: {title}.');
-    // Interpolated operator note.
     expect(out).toContain(`Review issue ${SAMPLE_DRIVE_FIELDS.ref}: ${SAMPLE_DRIVE_FIELDS.title}.`);
-    // Appended scaffolding proves the preview is the full compiled prompt.
     expect(out).toMatch(/READ-ONLY/i);
     expect(out).toContain('"verdict":"pass|fail|inconclusive"');
-    // No diff is injected.
     expect(out).not.toContain('HARMONIC_UNTRUSTED_DIFF');
   });
 });

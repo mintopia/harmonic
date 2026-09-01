@@ -57,7 +57,6 @@ describe('conversation telemetry (issue 12)', () => {
       const { body } = await server.api('GET', `/api/conversations/${convo.id}`);
       return body.usage?.totals?.outputTokens === 80 ? body : undefined;
     });
-    // Running tokens accumulate; context fill is the LATEST Turn's input.
     expect(after.usage.totals).toMatchObject({ inputTokens: 300, outputTokens: 80 });
     expect(after.contextTokens).toBe(200);
   });
@@ -70,8 +69,6 @@ describe('conversation telemetry (issue 12)', () => {
       const { body } = await server.api('GET', `/api/conversations/${convo.id}`);
       return body.usage ? body : undefined;
     });
-    // Aggregate-only usage cannot be attributed to a priced model — flagged
-    // incomplete, never a fake zero.
     expect(after.cost.incomplete).toBe(true);
     expect(after.cost.totalUsd).toBeNull();
   });

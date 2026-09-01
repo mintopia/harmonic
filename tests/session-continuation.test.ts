@@ -294,7 +294,7 @@ describe('previewHumanRejectContinuation (issue #170)', () => {
   it('walks back from the newest Run — the latest Session-bound Run wins', () => {
     const store = new Map([
       [1, session(1, now + HOUR)],
-      [2, session(2, now - HOUR)], // newer Run, cold Session
+      [2, session(2, now - HOUR)],
     ]);
     const plan = previewHumanRejectContinuation([run(1), run(2)], (id) => store.get(id) ?? null, now);
     // The second (newer) Run's cold Session is the one previewed, not the first.

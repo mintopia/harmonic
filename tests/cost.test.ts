@@ -115,7 +115,7 @@ describe('cost surfaces (API)', () => {
 
   /** Boot a server whose stub harness "logs" the given per-model token usage. */
   const serverWithLoggedUsage = async (
-    workDirModels: Record<string, Record<string, number>>, // workDir -> model -> input_tokens
+    workDirModels: Record<string, Record<string, number>>,
     prices: Record<string, { input: number; output: number; cacheRead: number; cacheWrite: number }>,
   ) => {
     const logRoot = mkdtempSync(join(tmpdir(), 'harmonic-cost-logs-'));
@@ -276,7 +276,7 @@ describe('cost surfaces (API)', () => {
 
     const healed = (await server.api('GET', `/api/attempts/${started.body.id}`)).body;
     expect(healed.usage.models.modelA.inputTokens).toBe(1_000_000);
-    expect(healed.usage.totals.totalTokens).toBe(3); // ACP totals preserved
+    expect(healed.usage.totals.totalTokens).toBe(3);
     expect(healed.usage.source).toBe('combined');
     expect(healed.cost).toEqual({ totalUsd: null, byModel: {}, incomplete: true });
   });

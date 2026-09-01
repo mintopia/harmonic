@@ -109,7 +109,7 @@ describe('operator Accept merge (ADR-0001, issue #383)', () => {
     expect(git(repo, 'rev-parse', 'main')).not.toBe(mainTip);
     expect(git(repo, 'show', 'main:other.txt')).toBe('someone else merged');
     expect(git(repo, 'show', 'main:impl-native.txt')).toBe('implementation');
-    expect(git(repo, 'log', '--merges', '--oneline', 'main')).not.toBe(''); // a merge commit, not a fast-forward
+    expect(git(repo, 'log', '--merges', '--oneline', 'main')).not.toBe('');
 
     await server.close();
   });
@@ -188,7 +188,7 @@ describe('operator Accept merge (ADR-0001, issue #383)', () => {
     const accepted = await server.api('POST', `/api/tasks/${taskId}/accept`, { force: true });
     expect(accepted.status).toBe(409);
     expect((await server.app.ctx.tasks.get(taskId)).state).toBe('escalated');
-    expect(git(repo, 'rev-parse', 'main')).toBe(mainTip); // the conflicted merge aborted; nothing merged
+    expect(git(repo, 'rev-parse', 'main')).toBe(mainTip);
 
     await server.close();
   });
@@ -257,7 +257,7 @@ describe('escalated worktree Run diff snapshot', () => {
         verificationCommand: [
           verificationCommandSchema.parse({
             command: process.execPath,
-            args: ['-e', 'process.exit(1)'], // a verifier that always fails → escalate at the cap
+            args: ['-e', 'process.exit(1)'],
             timeoutSeconds: 30,
           }),
         ],

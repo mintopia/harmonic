@@ -62,8 +62,6 @@ describe('chatRows', () => {
   });
 
   it('drops an empty-text bubble so a folded-to-nothing chunk leaves no blank message', () => {
-    // A lone whitespace-only message (a tool call splits it from any real text
-    // so the two don't coalesce) contributes no row.
     expect(rows([say(1, '   '), tool(2, 't1', { kind: 'read', title: 'Read x', status: 'completed' })])).toEqual([
       { kind: 'tool', verb: 'Read', target: 'x', status: 'ok', subagent: false, output: null, at: 2, key: 2 },
     ]);

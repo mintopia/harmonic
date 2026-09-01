@@ -23,9 +23,7 @@
  * replayed update could ever influence is a `guardrail-trip`, which is gated by
  * the progress/stall seam this file already quarantines. Exclude replay from the
  * stall input (as `guardrail-progress.ts` does) and the spurious fact cannot be
- * emitted; the `run_facts` guarantee holds transitively, not by accident. The
- * live-runner wiring that stores the deduped history and drives a resumed turn
- * merges in a later ticket of the unit — this file only decides.
+ * emitted; the `run_facts` guarantee holds transitively, not by accident.
  */
 
 /**

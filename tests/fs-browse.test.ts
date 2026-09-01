@@ -4,18 +4,12 @@ import { tmpdir, homedir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { startServer, type TestServer } from './helpers.js';
 
-/**
- * GET /api/fs — the lazy, one-level directory browser behind the workspace
- * directory picker (issue #62). Returns immediate child directories of a path,
- * defaulting to the server user's home; hidden dirs excluded; files omitted.
- */
 describe('GET /api/fs (issue #62)', () => {
   let server: TestServer;
   let root: string;
 
   beforeAll(async () => {
     server = await startServer();
-    // A scratch tree: two visible dirs, one hidden dir, one file.
     root = mkdtempSync(join(tmpdir(), 'harmonic-fs-'));
     mkdirSync(join(root, 'alpha'));
     mkdirSync(join(root, 'beta'));
@@ -89,8 +83,8 @@ describe('GET /api/fs (issue #62)', () => {
     const { body } = await server.api('GET', `/api/fs?path=${encodeURIComponent(root)}`);
     const names = body.entries.map((e: { name: string }) => e.name);
     expect(names).toContain('link-to-beta');
-    expect(names).not.toContain('link-to-file'); // symlink to a file, not a dir
-    expect(names).not.toContain('link-dangling'); // broken symlink
+    expect(names).not.toContain('link-to-file');
+    expect(names).not.toContain('link-dangling');
   });
 
   it('requires authentication (not reachable anonymously)', async () => {

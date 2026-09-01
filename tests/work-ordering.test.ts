@@ -68,7 +68,7 @@ describe('orderEligibleWork', () => {
     const PRIORITIES = ['high', 'normal', 'low', 'urgent', '', 'unknown'];
 
     const randomInput = (rng: () => number): OrderableTask[] => {
-      const size = Math.floor(rng() * 51); // 0..50
+      const size = Math.floor(rng() * 51);
       // Unique ids drawn from a shuffled pool so ordering is fully determined
       // by the comparator (id is the final tiebreak) yet id values vary.
       const pool = Array.from({ length: size }, () => Math.floor(rng() * 100000));

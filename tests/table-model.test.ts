@@ -2,14 +2,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fetchTasks, tasksQuery, type TableQuery } from '../web/src/table-model.js';
 import type { Task } from '../web/src/types.js';
 
-/**
- * The table's fetch used to have no error handling and no `res.ok` check
- * (issue #91): a failed/non-OK response was parsed as `{ tasks }` data,
- * silently bricking the view instead of surfacing on the error toast.
- * `fetchTasks` routes through the shared `api.ts` transport, so it stubs the
- * global `fetch` like `api-request.test.ts` does. Filter, search, sort, and
- * pagination are all server-side now (ADR-0045).
- */
 const fakeFetch = (body: string, init: ResponseInit) => vi.fn().mockResolvedValue(new Response(body, init));
 
 const baseQuery: TableQuery = {

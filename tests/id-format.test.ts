@@ -1,12 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { issueRef, taskKey, taskLabel, ticketIdentity } from '../web/src/id-format.js';
 
-/**
- * Task ids and tracker (GitHub issue) refs are two different number spaces that
- * used to collide as bare `#n` (issue #192). These formatters are the single
- * place that decides how each space is written: a task id is never a bare `#n`;
- * `#n` is reserved for a tracker issue (GitHub's own convention).
- */
 describe('id-format', () => {
   it('writes a task id as a `T-` key in compact slots, never a bare `#`', () => {
     expect(taskKey(174)).toBe('T-174');

@@ -119,8 +119,8 @@ describe('Enriched /stats aggregates (ADR-0014)', () => {
     expect(body.tasksMergedByDay.reduce((sum: number, d: { count: number }) => sum + d.count, 0)).toBe(1);
     expect(body.attemptsPerTask).toEqual({ '1': 0, '2': 0, '3': 1, '4+': 0 });
     expect(body.costPerMergedTask.mergedTasks).toBe(1);
-    expect(body.costPerMergedTask.mergedCost.totalUsd).toBeCloseTo(4); // 1 + 1 + 2 over the merged task's attempts
-    expect(body.costPerMergedTask.wastedCost.totalUsd).toBeCloseTo(5); // the reverted task's spend
+    expect(body.costPerMergedTask.mergedCost.totalUsd).toBeCloseTo(4);
+    expect(body.costPerMergedTask.wastedCost.totalUsd).toBeCloseTo(5);
 
     // Verification & gate & guardrails.
     expect(body.verdicts.critic).toEqual({ pass: 1, block: 1, inconclusive: 0 });
@@ -130,7 +130,7 @@ describe('Enriched /stats aggregates (ADR-0014)', () => {
 
     // Per-workspace: two rows, ordered by cost (other = 5 outranks default = 4).
     expect(body.byWorkspace).toHaveLength(2);
-    expect(body.byWorkspace[0].workspaceId).toBe(other.id); // highest cost first
+    expect(body.byWorkspace[0].workspaceId).toBe(other.id);
     expect(body.byWorkspace[0].cost.totalUsd).toBeCloseTo(5);
     expect(body.byWorkspace[0].name).toBe('other');
   });
@@ -159,7 +159,7 @@ describe('Enriched /stats aggregates (ADR-0014)', () => {
 
     const scoped = await server.api('GET', `/api/stats?from=0&to=${now + 1000}&workspaceId=${other.id}`);
     expect(scoped.status).toBe(200);
-    expect(scoped.body.gateOutcomes.autoMerged).toBe(1); // only the scoped workspace's merge
+    expect(scoped.body.gateOutcomes.autoMerged).toBe(1);
     expect(scoped.body.byWorkspace).toHaveLength(1);
     expect(scoped.body.byWorkspace[0].workspaceId).toBe(other.id);
   });

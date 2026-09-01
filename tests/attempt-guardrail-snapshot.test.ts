@@ -11,15 +11,8 @@ import { resolvePrices } from '../src/execution/pricing.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { allWorkspaces, makeSettingsStore } from './helpers.js';
 
-/**
- * The Run Guardrail snapshot (issue #126, ADR-0019): the effective Guardrail
- * config + price table are captured onto a Run at start, so a later config
- * change can never retroactively alter what that Run would trip against.
- */
 describe('AttemptStore.create Guardrail snapshot (issue #126, ADR-0019)', () => {
   let dir: string;
-  // AttemptStore migrated to the async libsql Db (ADR-0029 #203); this fixture
-  // runs both connections on the one file.
   let asyncDb: AsyncDbHandle;
   let settingsStore: SettingsStore;
   let tasks: TaskService;
@@ -62,11 +55,9 @@ describe('AttemptStore.create Guardrail snapshot (issue #126, ADR-0019)', () => 
     const run = await runStore.create(task.id, originalSnapshot);
     const originalPriceTable = run.priceTable;
 
-    // A later config change — a mid-Run price edit — resolves a different price table...
     const laterPrices = resolvePrices({ 'claude-sonnet-5': { input: 999, output: 999, cacheRead: 999, cacheWrite: 999 } });
     expect(laterPrices['claude-sonnet-5']).not.toEqual(resolvePrices(config.prices)['claude-sonnet-5']);
 
-    // ...but the already-created Run's stored snapshot is unaffected.
     const refetched = await runStore.get(run.id);
     expect(refetched.priceTable).toBe(originalPriceTable);
     expect(JSON.parse(refetched.priceTable!)['claude-sonnet-5']).toEqual(resolvePrices(config.prices)['claude-sonnet-5']);

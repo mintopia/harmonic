@@ -66,7 +66,6 @@ export function Gate({
     );
   }
 
-  // kind === 'live'
   return (
     <div className={WRAP}>
       <TaskActions

@@ -6,8 +6,6 @@ describe('task list filtering and sorting (table view backend)', () => {
 
   beforeAll(async () => {
     server = await startServer(stubHarness());
-    // A varied population. Stub config only defines the claude harness's
-    // command; harness names are still claude/codex/copilot.
     await server.api('POST', '/api/tasks', { prompt: 'a', priority: 'low', state: 'draft' });
     await server.api('POST', '/api/tasks', { prompt: 'b', priority: 'high', harness: 'codex' });
     await server.api('POST', '/api/tasks', { prompt: 'c', priority: 'normal' });
@@ -20,8 +18,6 @@ describe('task list filtering and sorting (table view backend)', () => {
     await server.close();
   });
 
-  // Lean list rows carry `summary`, not the full `prompt` (issue #350); the
-  // single-word seeds above make summary equal the prompt they were created with.
   const summaries = (body: any) => body.tasks.map((t: any) => t.summary);
 
   it('filters by state, harness, and priority', async () => {
@@ -62,7 +58,6 @@ describe('task list filtering and sorting (table view backend)', () => {
     expect(summaries(byCreatedAsc.body)).toEqual(['a', 'b', 'c', 'd', 'e']);
 
     const byPriority = await server.api('GET', '/api/tasks?sortBy=priority&order=asc');
-    // high before normal before low; FIFO within a rank.
     expect(summaries(byPriority.body)).toEqual(['b', 'd', 'c', 'e', 'a']);
   });
 

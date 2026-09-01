@@ -17,20 +17,15 @@ describe('ConfigStore', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  /** Seed `<dir>/settings.yaml` with a raw (pre-validation) global config, the
-   * same shape `SettingsStore.create` boots off disk — the YAML-era stand-in
-   * for the old "insert a settings row" seeding (issue #391). */
   function seedGlobal(global: unknown): void {
     writeFileSync(join(dir, 'settings.yaml'), stringify({ global, workspaces: {} }));
   }
 
   it('boots a config saved before a field existed, filling it from defaults', async () => {
-    // A config persisted by an older build — no `drive` key at all.
     const legacy: any = { ...defaultConfig() };
     delete legacy.drive;
     seedGlobal(legacy);
 
-    // A bare parse would throw here; the overlay-on-defaults boot must not.
     const store = new ConfigStore(await SettingsStore.create(dir));
     expect(store.get().drive).toEqual(defaultConfig().drive);
   });
@@ -44,13 +39,11 @@ describe('ConfigStore', () => {
   });
 
   it('boots an existing config saved before verification existed, defaulting to no verifiers (issue #132)', async () => {
-    // An install that predates #312: the stored config has no `verify` key.
     const legacy: any = { ...defaultConfig() };
     delete legacy.verify;
     seedGlobal(legacy);
 
     const store = new ConfigStore(await SettingsStore.create(dir));
-    // Default resolution yields "no verifiers" — an existing Run's outcome is unchanged.
     expect(store.get().verify).toEqual({ commands: [], review: { enabled: false } });
   });
 
@@ -69,7 +62,6 @@ describe('ConfigStore', () => {
   });
 
   it('boots an existing config saved before guardrails existed, filling it from defaults (issue #126)', async () => {
-    // An install that predates #126: the stored config has no `guardrails` key.
     const legacy: any = { ...defaultConfig() };
     delete legacy.guardrails;
     seedGlobal(legacy);

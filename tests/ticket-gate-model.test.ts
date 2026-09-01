@@ -29,7 +29,7 @@ function task(over: Partial<Task> = {}): Task {
 const RUNS = [
   run({ id: 10, number: 1, state: 'failed' }),
   run({ id: 20, number: 2, state: 'failed' }),
-  run({ id: 30, number: 3, state: 'failed' }), // current: the attempt that escalated
+  run({ id: 30, number: 3, state: 'failed' }),
 ];
 
 describe('gateForAttempt', () => {

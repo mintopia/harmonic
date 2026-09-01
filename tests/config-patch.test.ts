@@ -66,8 +66,6 @@ describe('PATCH /api/config verification', () => {
   });
 
   it('accepts a critic with no harness (issue #174) — the field is optional, "Same as task"', async () => {
-    // A fresh critic patched with no `harness` key at all validates and
-    // resolves to "reuse the builder's harness" (no key present).
     const patched = await server.api('PATCH', '/api/config', {
       verify: { review: { enabled: true, prompt: 'Review the diff.', model: 'claude-opus-5' } },
     });

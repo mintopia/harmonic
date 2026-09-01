@@ -27,9 +27,6 @@ describe('parseCriticOutput (issue #136)', () => {
   });
 
   it('resolves inconclusive on a balanced-but-unparseable JSON object', () => {
-    // Braces balance (so `lastBalancedObject` extracts a candidate), but the
-    // unquoted `pass` makes it invalid JSON — exercises the JSON.parse-catch
-    // path distinctly from "no JSON found at all".
     const result = parseCriticOutput('{"verdict": pass, "summary": "unquoted value breaks JSON"}');
     expect(result.ok).toBe(false);
     if (!result.ok) {

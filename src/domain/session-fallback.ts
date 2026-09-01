@@ -21,10 +21,7 @@ import type { ResumeIncompatibilityReason } from './session-resume.js';
  * no clock, no I/O. The caller reads the persisted events/outcome/verified head/
  * tracker rows and passes them in; recomputing over the same inputs always
  * yields the same summary and the same plan, so both halves are exhaustively
- * unit-testable in isolation. The live wiring (drive the reload, mint the
- * fresh Session, seed it with this summary, persist the reason via
- * `SessionStore`) merges with the rest of the resume orchestration; this file
- * is the engine it consumes.
+ * unit-testable in isolation.
  */
 
 /**

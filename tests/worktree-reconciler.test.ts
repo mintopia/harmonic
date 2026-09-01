@@ -53,7 +53,7 @@ describe('worktree reconciler (issue #386, ADR-0010)', () => {
     const removeWorktreeAndDeleteBranch = vi.fn();
 
     const reconciler = new WorktreeReconciler(
-      async () => [], // task 5 is terminal (done/cancelled) — no longer "active"
+      async () => [],
       async () => [{ id: 1, workingDir: '/repo' }],
       fakeGit({
         listWorktrees: async () => [{ path, branch: 'harmonic/task-5' }],
@@ -105,7 +105,7 @@ describe('worktree reconciler (issue #386, ADR-0010)', () => {
     let beforeRemoveResult: boolean | undefined;
 
     const reconciler = new WorktreeReconciler(
-      async () => [], // task 2 is terminal — not active
+      async () => [],
       async () => [{ id: 1, workingDir: '/repo' }],
       fakeGit({
         listWorktrees: async () => [{ path, branch: 'harmonic/task-2' }],
@@ -139,7 +139,7 @@ describe('worktree reconciler (issue #386, ADR-0010)', () => {
     const addWorktreeCheckout = vi.fn(async () => {});
 
     const reconciler = new WorktreeReconciler(
-      async () => [{ id: 7, workspaceId: 1 }], // live (non-terminal) task, worktree missing
+      async () => [{ id: 7, workspaceId: 1 }],
       async () => [{ id: 1, workingDir: '/repo' }],
       fakeGit({
         listWorktrees: async () => [],
@@ -166,7 +166,7 @@ describe('worktree reconciler (issue #386, ADR-0010)', () => {
     const addWorktreeCheckout = vi.fn(async () => {});
 
     const reconciler = new WorktreeReconciler(
-      async () => [{ id: 7, workspaceId: 1 }], // live task, path present but not a valid worktree
+      async () => [{ id: 7, workspaceId: 1 }],
       async () => [{ id: 1, workingDir: '/repo' }],
       fakeGit({
         listWorktrees: async () => [],
@@ -245,7 +245,7 @@ describe('worktree reconciler (issue #386, ADR-0010)', () => {
     const { store, snapshot } = flagStore();
 
     const reconciler = new WorktreeReconciler(
-      async () => [], // no active tasks — task 1 is terminal
+      async () => [],
       async () => [{ id: 1, workingDir: repo }],
       Git,
       managedRoot,
@@ -274,7 +274,7 @@ describe('worktree reconciler (issue #386, ADR-0010)', () => {
     const { store, snapshot } = flagStore();
 
     const reconciler = new WorktreeReconciler(
-      async () => [], // no active tasks — task 2 is terminal
+      async () => [],
       async () => [{ id: 1, workingDir: repo }],
       Git,
       managedRoot,

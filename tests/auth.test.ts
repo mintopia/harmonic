@@ -81,9 +81,7 @@ describe('auth and api keys', () => {
 
       expect((await s.api('DELETE', '/api/auth/password', { currentPassword: TEST_PASSWORD })).status).toBe(200);
       expect(await s.app.ctx.auth.hasPassword()).toBe(false);
-      // Now ungated: an unauthenticated request goes through.
       expect((await s.anonApi('GET', '/api/tasks')).status).toBe(200);
-      // Removing again is idempotent.
       expect((await s.anonApi('DELETE', '/api/auth/password', { currentPassword: '' })).status).toBe(200);
     } finally {
       await s.close();
@@ -132,7 +130,6 @@ describe('auth and api keys', () => {
     const token = created.body.token;
     expect(token).toMatch(/^adk_/);
 
-    // The token authenticates REST calls.
     const viaKey = await fetch(`${server.baseUrl}/api/tasks`, {
       headers: { authorization: `Bearer ${token}` },
     });
@@ -145,7 +142,6 @@ describe('auth and api keys', () => {
     expect(key.token).toBeUndefined();
     expect(key.tokenHash).toBeUndefined();
 
-    // Revocation is immediate.
     expect((await server.api('DELETE', `/api/keys/${created.body.id}`)).status).toBe(200);
     const revoked = await fetch(`${server.baseUrl}/api/tasks`, {
       headers: { authorization: `Bearer ${token}` },

@@ -1,11 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { startServer, stubHarness, type TestServer } from './helpers.js';
 
-/**
- * `GET /api/attempts/:id/guardrail-events` (issue #171): the REST surface over
- * `GuardrailEventStore.list`, mirroring `GET /runs/:id/events`'s shape and
- * 404 behaviour.
- */
 describe('GET /api/attempts/:id/guardrail-events (issue #171)', () => {
   let server: TestServer;
   const ctx = () => server.app.ctx;

@@ -3,7 +3,6 @@ import { eq } from 'drizzle-orm';
 import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
 import { apiKeys, conversationEvents } from '../src/db/schema.js';
 
-/** Send a first Turn and wait for it to finish, so the conversation is warm and idle. */
 async function firstTurn(server: TestServer, text: string) {
   const { body: convo } = await server.api('POST', '/api/conversations', {});
   await server.api('POST', `/api/conversations/${convo.id}/turns`, { text });
@@ -24,15 +23,12 @@ describe('conversation history & lifecycle (issue 15)', () => {
     server = await startServer(stubHarness());
     const convo = await firstTurn(server, 'Refactor the ACP connection handling');
 
-    // Derived title = the first Turn's first non-empty line.
     let got = (await server.api('GET', `/api/conversations/${convo.id}`)).body;
     expect(got.title).toBe('Refactor the ACP connection handling');
 
-    // Operator rename wins.
     const renamed = await server.api('PATCH', `/api/conversations/${convo.id}`, { title: 'Parser work' });
     expect(renamed.body.title).toBe('Parser work');
 
-    // Clearing it falls back to the derived title.
     const cleared = await server.api('PATCH', `/api/conversations/${convo.id}`, { title: null });
     expect(cleared.body.title).toBe('Refactor the ACP connection handling');
   });
@@ -45,14 +41,13 @@ describe('conversation history & lifecycle (issue 15)', () => {
 
     const { body } = await server.api('GET', '/api/conversations');
     const ids = (body.conversations as any[]).map((c) => c.id);
-    expect(ids.slice(0, 2)).toEqual([b.id, a.id]); // reverse-chronological
+    expect(ids.slice(0, 2)).toEqual([b.id, a.id]);
     expect((body.conversations as any[]).find((c) => c.id === b.id).state).toBe('ended');
   });
 
   it('deletes a Conversation, cascading its events and revoking its key', async () => {
     server = await startServer(stubHarness());
     const convo = await firstTurn(server, 'to be deleted');
-    // It has events and a live conversation key while warm.
     expect((await server.app.ctx.asyncDb.read((d) => d.select().from(conversationEvents).where(eq(conversationEvents.conversationId, convo.id)).all())).length).toBeGreaterThan(0);
     expect((await server.app.ctx.asyncDb.read((d) => d.select().from(apiKeys).where(eq(apiKeys.scope, 'conversation')).all())).length).toBe(1);
 
@@ -69,7 +64,6 @@ describe('conversation history & lifecycle (issue 15)', () => {
     const convo = await firstTurn(server, 'idle me out');
     expect(server.app.ctx.conversationDriver.isWarm(convo.id)).toBe(true);
 
-    // ~1.8s idle → ended, harness stopped, recorded honestly.
     await waitFor(
       async () => ((await server.api('GET', `/api/conversations/${convo.id}`)).body.state === 'ended' ? true : undefined),
       { timeoutMs: 6000 },
@@ -90,7 +84,6 @@ describe('conversation history & lifecycle (issue 15)', () => {
 
     const restored = await server.api('GET', `/api/conversations/${convo.id}`);
     expect(restored.body.state).toBe('ended');
-    // Its transcript is intact and read-only — a further Turn is refused.
     const events = await server.api('GET', `/api/conversations/${convo.id}/events`);
     expect((events.body.events as any[]).some((e) => e.type === 'user_turn')).toBe(true);
     const turn = await server.api('POST', `/api/conversations/${convo.id}/turns`, { text: 'nope' });

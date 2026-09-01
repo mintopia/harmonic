@@ -38,7 +38,7 @@ describe('AcpConnection — stdout EOF rejects pending requests (issue #426)', (
       onRequest: async () => null,
     });
     const pending = conn.request('session/prompt', { sessionId: 's' });
-    conn.dispose(); // sets closed first, then closes readline
+    conn.dispose();
     // dispose() rejects nothing itself, but the run-end fail() a caller pairs
     // with it is what settles pending — assert the close handler did not double
     // up by rejecting with the EOF error. We settle it via fail() here.
@@ -100,7 +100,7 @@ describe('AcpDriver — per-turn inactivity timeout (issue #426)', () => {
         }),
       },
     ]);
-    await new Promise((r) => setTimeout(r, 100)); // let the tool_call land so t1 is outstanding
+    await new Promise((r) => setTimeout(r, 100));
     driver.expectCompletion(200);
     await expect(turn).rejects.toBeInstanceOf(AcpPromptTimeoutError);
   }, 15_000);

@@ -8,10 +8,8 @@
  * brain that decides *whether* a given elapsed duration trips that bound —
  * as a pure function: no database, no clock, no I/O — the same seam as
  * `work-context-key.ts` and `run-disposition.ts`, so the trip contract can
- * be exhaustively unit-tested in isolation. Nothing calls this from the live
- * drive loop yet; that wiring (reading the wall clock, appending the
- * `guardrail-trip` run_fact) is later spine work. This unit only has to get
- * the *decision* right.
+ * be exhaustively unit-tested in isolation. This unit only has to get the
+ * *decision* right.
  */
 
 import type { StepType } from '../db/schema.js';
