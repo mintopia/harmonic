@@ -291,7 +291,9 @@ export class TrackerPollerManager {
     const entry = this.entries.get(workspaceId);
     const mirrored = (await this.tasks.listWithDeps({ workspaceId })).filter((task) => task.origin === 'mirrored');
     const tickets = await persistedTickets(mirrored, await this.tasks.listTrackerContainers(workspaceId));
-    const derived = deriveEpics(tickets, this.readinessByRef(mirrored)).find((e) => e.ref === epicRef);
+    const derived = deriveEpics(tickets, this.readinessByRef(mirrored), { includeClosed: true }).find(
+      (e) => e.ref === epicRef,
+    );
     if (!derived) return null;
     return this.composeOne(entry, derived, tickets, mirrored);
   }

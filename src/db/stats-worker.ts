@@ -23,49 +23,53 @@ const port = parentPort;
 const client = createClient({ url: `file:${join(workerData.dataDir, 'harmonic.db')}` });
 const db = drizzle(client, { schema });
 
-async function readStats({ from, to, workspaceId }: StatsRange): Promise<StatsReadResult> {
-  const rows =
-    workspaceId === undefined
-      ? await db.select().from(attempts).where(and(gte(attempts.startedAt, from), lte(attempts.startedAt, to))).all()
-      : (
-          await db
-            .select({ attempts })
-            .from(attempts)
-            .innerJoin(tasks, eq(attempts.taskId, tasks.id))
-            .where(and(gte(attempts.startedAt, from), lte(attempts.startedAt, to), eq(tasks.workspaceId, workspaceId)))
-            .all()
-        ).map((row) => row.attempts);
+async function readStats({ from, to, workspaceId, epicRef }: StatsRange): Promise<StatsReadResult> {
+  // Task scope: optional Workspace and/or Epic predicates, both reaching `tasks`
+  // via the attempt → task join. `and()` drops any `undefined`, so an unscoped
+  // read carries neither. `taskScope` is undefined only when both are omitted,
+  // in which case `scoped` is false and the base scans skip the join entirely.
+  // The Epic key is `tasks.mapRef` (issue #410) — the derived rollup key the
+  // per-Epic tool-call totals already group on, equal to the raw `trackerParent`
+  // for a mirrored child.
+  const scoped = workspaceId !== undefined || epicRef !== undefined;
+  const taskScope = and(
+    workspaceId === undefined ? undefined : eq(tasks.workspaceId, workspaceId),
+    epicRef === undefined ? undefined : eq(tasks.mapRef, epicRef),
+  );
+
+  const rows = !scoped
+    ? await db.select().from(attempts).where(and(gte(attempts.startedAt, from), lte(attempts.startedAt, to))).all()
+    : (
+        await db
+          .select({ attempts })
+          .from(attempts)
+          .innerJoin(tasks, eq(attempts.taskId, tasks.id))
+          .where(and(gte(attempts.startedAt, from), lte(attempts.startedAt, to), taskScope))
+          .all()
+      ).map((row) => row.attempts);
 
   // Failed-only Attempts' disposition (ADR-0001): the Attempt is the single
   // execution ledger, so its own `reason` column is read directly.
-  const attemptReasons =
-    workspaceId === undefined
-      ? await db
-          .select({ attemptId: attempts.id, reason: attempts.reason })
-          .from(attempts)
-          .where(and(eq(attempts.state, 'failed'), gte(attempts.startedAt, from), lte(attempts.startedAt, to)))
-          .all()
-      : await db
-          .select({ attemptId: attempts.id, reason: attempts.reason })
-          .from(attempts)
-          .innerJoin(tasks, eq(attempts.taskId, tasks.id))
-          .where(
-            and(
-              eq(attempts.state, 'failed'),
-              gte(attempts.startedAt, from),
-              lte(attempts.startedAt, to),
-              eq(tasks.workspaceId, workspaceId),
-            ),
-          )
-          .all();
+  const attemptReasons = !scoped
+    ? await db
+        .select({ attemptId: attempts.id, reason: attempts.reason })
+        .from(attempts)
+        .where(and(eq(attempts.state, 'failed'), gte(attempts.startedAt, from), lte(attempts.startedAt, to)))
+        .all()
+    : await db
+        .select({ attemptId: attempts.id, reason: attempts.reason })
+        .from(attempts)
+        .innerJoin(tasks, eq(attempts.taskId, tasks.id))
+        .where(and(eq(attempts.state, 'failed'), gte(attempts.startedAt, from), lte(attempts.startedAt, to), taskScope))
+        .all();
 
-  const range = { from, to, ...(workspaceId === undefined ? {} : { workspaceId }) };
+  const range = {
+    from,
+    to,
+    ...(workspaceId === undefined ? {} : { workspaceId }),
+    ...(epicRef === undefined ? {} : { epicRef }),
+  };
   const toolTotals = await totalsForRange(db, range);
-
-  // Workspace scope predicate, reused across the task-grain/verification/guardrail
-  // scans below. `and()` drops the `undefined`, so an unscoped read carries no
-  // extra filter; every table reaches its owning Workspace via attempt → task.
-  const wsScope = workspaceId === undefined ? undefined : eq(tasks.workspaceId, workspaceId);
 
   const workspaceRows = await db.select({ id: workspaces.id, name: workspaces.name }).from(workspaces).all();
 
@@ -98,7 +102,7 @@ async function readStats({ from, to, workspaceId }: StatsRange): Promise<StatsRe
         gte(attemptEvents.ts, from),
         lte(attemptEvents.ts, to),
         sql`json_extract(${attemptEvents.payload}, '$.event') in ('merged', 'escalated')`,
-        wsScope,
+        taskScope,
       ),
     )
     .all();
@@ -122,7 +126,7 @@ async function readStats({ from, to, workspaceId }: StatsRange): Promise<StatsRe
     .from(verificationAttempts)
     .innerJoin(attempts, eq(verificationAttempts.attemptId, attempts.id))
     .innerJoin(tasks, eq(attempts.taskId, tasks.id))
-    .where(and(gte(verificationAttempts.ts, from), lte(verificationAttempts.ts, to), wsScope))
+    .where(and(gte(verificationAttempts.ts, from), lte(verificationAttempts.ts, to), taskScope))
     .all();
 
   // Distinct (Attempt, dimension) Guardrail trips in range: an Attempt that
@@ -133,7 +137,7 @@ async function readStats({ from, to, workspaceId }: StatsRange): Promise<StatsRe
     .from(guardrailEvents)
     .innerJoin(attempts, eq(guardrailEvents.attemptId, attempts.id))
     .innerJoin(tasks, eq(attempts.taskId, tasks.id))
-    .where(and(gte(guardrailEvents.ts, from), lte(guardrailEvents.ts, to), wsScope))
+    .where(and(gte(guardrailEvents.ts, from), lte(guardrailEvents.ts, to), taskScope))
     .all();
 
   return {

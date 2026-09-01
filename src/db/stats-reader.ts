@@ -9,6 +9,15 @@ export interface StatsRange {
   from: number;
   to: number;
   workspaceId?: number;
+  /**
+   * Scope to one Epic's child Tasks (issue #410, ADR-0014): the Attempts of the
+   * Tasks whose derived Epic rollup key (`tasks.mapRef`) is this ref. `mapRef`
+   * is the canonical Epic/Map rollup key across the domain — for a mirrored
+   * child it holds the parent Epic ref (equal to the raw `trackerParent`), and
+   * it is the same key the per-Epic tool-call rollup already groups on. Composes
+   * with `workspaceId`; omitted means no Epic scope.
+   */
+  epicRef?: number;
 }
 
 /** The merge-policy escalation reason (merge-policy.ts `MergePolicyOutcome`): a
@@ -121,7 +130,8 @@ function isStatsRange(value: unknown): value is StatsRange {
   return isRecord(value)
     && typeof value.from === 'number'
     && typeof value.to === 'number'
-    && (value.workspaceId === undefined || typeof value.workspaceId === 'number');
+    && (value.workspaceId === undefined || typeof value.workspaceId === 'number')
+    && (value.epicRef === undefined || typeof value.epicRef === 'number');
 }
 
 export function isStatsWorkerRequest(value: unknown): value is StatsWorkerRequest {
