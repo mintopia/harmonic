@@ -1,8 +1,10 @@
 /**
  * The pure Epic read-model composer (issue #167, ADR-0026). The operator UI's
- * `GET …/epics` / `GET …/epics/:ref` surface a derived Epic (`deriveEpics`,
- * issue #158) enriched with per-member merge state (`reduceMemberState`, issue
- * #161) and server-only integration/verification/integrate-coordinator facts. This
+ * `GET …/epics` / `GET …/epics/:ref` surface a stored Epic (ADR-0018: the
+ * `epics` record is the single enumeration source) whose live membership and
+ * ready frontier are derived at read time (`deriveLeafEpics`), enriched with
+ * per-member merge state (`reduceMemberState`, issue #161) and server-only
+ * integration/verification/integrate-coordinator facts. This
  * module is the composition seam: it takes a {@link DerivedEpic} plus the
  * already-gathered member Task rows, member titles, and facts, and folds them
  * into the frozen `Epic` DTO (`.notes/issue-167-dto-contract.md`) — no
