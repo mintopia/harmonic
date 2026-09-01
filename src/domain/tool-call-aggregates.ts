@@ -11,6 +11,8 @@ export interface ToolCallRange {
   from: number;
   to: number;
   workspaceId?: number;
+  /** Scope to one Epic's child Tasks by their rollup key (`tasks.mapRef`, issue #410). */
+  epicRef?: number;
 }
 
 /**
@@ -54,35 +56,29 @@ export class ToolCallAggregateStore {
  * concurrent-read snapshot (ADR-0029 §5).
  */
 export async function totalsForRange(db: AsyncDb, range: ToolCallRange): Promise<ToolCallTotals> {
-  const { from, to, workspaceId } = range;
-  const rows =
-    workspaceId === undefined
-      ? await db
-          .select({
-            taskId: tasks.id,
-            epicRef: tasks.mapRef,
-            toolName: attemptToolCalls.toolName,
-            count: sql<number>`sum(${attemptToolCalls.count})`,
-          })
-          .from(attemptToolCalls)
-          .innerJoin(attempts, eq(attemptToolCalls.attemptId, attempts.id))
-          .innerJoin(tasks, eq(attempts.taskId, tasks.id))
-          .where(and(gte(attempts.startedAt, from), lte(attempts.startedAt, to)))
-          .groupBy(tasks.id, tasks.mapRef, attemptToolCalls.toolName)
-          .all()
-      : await db
-          .select({
-            taskId: tasks.id,
-            epicRef: tasks.mapRef,
-            toolName: attemptToolCalls.toolName,
-            count: sql<number>`sum(${attemptToolCalls.count})`,
-          })
-          .from(attemptToolCalls)
-          .innerJoin(attempts, eq(attemptToolCalls.attemptId, attempts.id))
-          .innerJoin(tasks, eq(attempts.taskId, tasks.id))
-          .where(and(gte(attempts.startedAt, from), lte(attempts.startedAt, to), eq(tasks.workspaceId, workspaceId)))
-          .groupBy(tasks.id, tasks.mapRef, attemptToolCalls.toolName)
-          .all();
+  const { from, to, workspaceId, epicRef } = range;
+  // Optional Workspace/Epic predicates both reach `tasks` via the same join;
+  // `and()` drops any `undefined`, so an unscoped read carries neither.
+  const rows = await db
+    .select({
+      taskId: tasks.id,
+      epicRef: tasks.mapRef,
+      toolName: attemptToolCalls.toolName,
+      count: sql<number>`sum(${attemptToolCalls.count})`,
+    })
+    .from(attemptToolCalls)
+    .innerJoin(attempts, eq(attemptToolCalls.attemptId, attempts.id))
+    .innerJoin(tasks, eq(attempts.taskId, tasks.id))
+    .where(
+      and(
+        gte(attempts.startedAt, from),
+        lte(attempts.startedAt, to),
+        workspaceId === undefined ? undefined : eq(tasks.workspaceId, workspaceId),
+        epicRef === undefined ? undefined : eq(tasks.mapRef, epicRef),
+      ),
+    )
+    .groupBy(tasks.id, tasks.mapRef, attemptToolCalls.toolName)
+    .all();
 
   const totals: ToolCallTotals = { byTask: {}, byEpic: {} };
   for (const row of rows) {
