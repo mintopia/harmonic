@@ -57,6 +57,14 @@ const request = (method, params) => {
 const notify = (method, params) => send({ jsonrpc: '2.0', method, params });
 
 const sessionId = process.env.STUB_SESSION_ID ?? `stub-${process.pid}`;
+// A real harness mints a fresh session id on every session/new and keeps it on
+// session/load. The default stub returns one fixed id, which collapses "reused
+// warm Session" and "fresh Session" onto the same `(harness, harnessSessionId)`
+// row — masking a continuation that failed to rebind. STUB_UNIQUE_SESSION_ID
+// makes session/new mint a distinct id per call so a resume-vs-new test can tell
+// them apart; session/load keeps the loaded id (it never returns a new one).
+let sessionNewCount = 0;
+const mintSessionId = () => (process.env.STUB_UNIQUE_SESSION_ID ? `${sessionId}-${++sessionNewCount}` : sessionId);
 let sessionNewParams = null;
 let sessionLoadParams = null;
 let setModelParams = null;
@@ -390,7 +398,7 @@ rl.on('line', (line) => {
       }
       {
         const modes = stubModes();
-        send({ jsonrpc: '2.0', id: msg.id, result: { sessionId, ...(modes ? { modes } : {}) } });
+        send({ jsonrpc: '2.0', id: msg.id, result: { sessionId: mintSessionId(), ...(modes ? { modes } : {}) } });
       }
       break;
     case 'session/load':

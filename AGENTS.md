@@ -18,9 +18,7 @@ See `CONTEXT.md` for the domain glossary.
  - Subagents must use an appropriate subagent type.
  - Do not start a subagent without explicitly setting the model.
  - When building UI to match a mockup, it MUST match the mockup
-   worktree and merge back in when done.
- - Follow the /no-comments skill when considering adding comments to the
-   code.
+ - When work is complete, before merging or finishing, run /no-comments
 
 ### Testing
 
@@ -56,6 +54,11 @@ Cleanup branches and worktrees when they are finished and merged or abandoned.
 ### Issue tracker
 
 Issues live in GitHub Issues (mintopia/harmonic), via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+All tickets created as part of an epic must all have the parent properly assigned
+and any blocking relationships configured in GitHub.
+If possible, all tickets should have a defined method to verify the work - for example:
+ - Mock/screenshot comprison
+ - User stories that map to test cases that must be written
 
 ### Triage labels
 

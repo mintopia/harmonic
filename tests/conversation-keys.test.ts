@@ -6,7 +6,6 @@ import { apiKeys } from '../src/db/schema.js';
 const conversationKeyRows = (server: TestServer) =>
   server.app.ctx.asyncDb.read((d) => d.select().from(apiKeys).where(eq(apiKeys.scope, 'conversation')).all());
 
-/** Run one Turn that echoes the injected key, and return the conversation + token. */
 async function echoTurn(server: TestServer) {
   const { body: convo } = await server.api('POST', '/api/conversations', {});
   await server.api('POST', `/api/conversations/${convo.id}/turns`, {
@@ -30,7 +29,6 @@ describe('conversation key lifecycle (issue 16)', () => {
     const { env } = await echoTurn(server);
     expect(env.HARMONIC_API_KEY).toMatch(/^adk_/);
     expect(env.HARMONIC_MCP_URL).toContain('/mcp');
-    // Exactly one conversation key exists, and it is never an operator key.
     const rows = await conversationKeyRows(server);
     expect(rows).toHaveLength(1);
     expect(rows[0]?.scope).toBe('conversation');
@@ -44,7 +42,6 @@ describe('conversation key lifecycle (issue 16)', () => {
     });
     await waitFor(async () => {
       const { body } = await server.api('GET', '/api/tasks');
-      // Lean list rows carry `summary`, not the full `prompt` (issue #350).
       return (body.tasks as any[]).some((t) => t.summary === 'scheduled from a conversation') || undefined;
     });
   });
@@ -76,10 +73,8 @@ describe('conversation key lifecycle (issue 16)', () => {
     server = await startServer(stubHarness());
     const { env } = await echoTurn(server);
     const token = env.HARMONIC_API_KEY;
-    // Reaches the agent surface (tasks)…
     const tasks = await fetch(`${server.baseUrl}/api/tasks`, { headers: { authorization: `Bearer ${token}` } });
     expect(tasks.status).toBe(200);
-    // …but not operator-only surfaces (config, the Conversations API itself).
     const config = await fetch(`${server.baseUrl}/api/config`, { headers: { authorization: `Bearer ${token}` } });
     expect(config.status).toBe(403);
     const convos = await fetch(`${server.baseUrl}/api/conversations`, { headers: { authorization: `Bearer ${token}` } });

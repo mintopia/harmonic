@@ -3,7 +3,6 @@ import { buildApiReference, describeType, endpointAnchor, filterApiReference, to
 import type { ApiReferenceGroup } from '../web/src/openapi-reference.js';
 import { startServer, type TestServer } from './helpers.js';
 
-/** Minimal hand-written OpenAPI 3.1-shaped fixture, built up per test. */
 function fixture(overrides: Record<string, unknown> = {}) {
   return {
     openapi: '3.1.0',
@@ -37,7 +36,6 @@ describe('buildApiReference: grouping', () => {
       },
     });
     const groups = buildApiReference(spec);
-    // Runs is discovered first in paths, but Tasks is declared first in tags.
     expect(groups.map((g) => g.name)).toEqual(['Tasks', 'Runs']);
   });
 
@@ -69,7 +67,6 @@ describe('buildApiReference: grouping', () => {
   it('never drops a group even when Runs has no endpoints in the spec', () => {
     const spec = fixture({ paths: { '/api/tasks': { post: { tags: ['Tasks'], responses: { '200': {} } } } } });
     const groups = buildApiReference(spec);
-    // Declared but unused tags simply don't produce an empty group.
     expect(groups.map((g) => g.name)).toEqual(['Tasks']);
   });
 });
@@ -200,8 +197,6 @@ describe('toSchemaNode: declared examples', () => {
     const spec = fixture({
       components: { schemas: { Cost: { type: 'number', example: 0.52 } } },
     });
-    // Same precedence as `description`: the definition is authoritative, and a
-    // use-site annotation only fills a gap.
     expect(toSchemaNode({ $ref: '#/components/schemas/Cost' }, spec).example).toBe(0.52);
     expect(toSchemaNode({ $ref: '#/components/schemas/Cost', example: 1.75 }, spec).example).toBe(0.52);
   });
@@ -379,8 +374,6 @@ describe('buildApiReference: real spec invariant', () => {
       for (const endpoint of group.endpoints) {
         expect(endpoint.method).toBeTruthy();
         expect(endpoint.path).toBeTruthy();
-        // Every response must resolve to either a structured node or a
-        // documented absence (no content) — never throw/undefined shape.
         for (const response of endpoint.responses) {
           expect(response.schema === null || typeof response.schema.kind === 'string').toBe(true);
         }

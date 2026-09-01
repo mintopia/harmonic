@@ -120,7 +120,6 @@ describe('Workspace CRUD (ADR-0008, issue #41)', () => {
     expect(declared.status).toBe(201);
     expect(declared.body.resolvedTracker).toMatchObject({ ok: true, label: 'GitHub' });
 
-    // It also comes back on a plain GET.
     const fetched = await server.api('GET', `/api/workspaces/${declared.body.id}`);
     expect(fetched.body.resolvedTracker).toMatchObject({ ok: true, label: 'GitHub' });
 
@@ -137,7 +136,7 @@ describe('Workspace CRUD (ADR-0008, issue #41)', () => {
     expect(created.body.reviewEnabled).toBeNull();
     expect(created.body.reviewPrompt).toBeNull();
     expect(created.body.reviewModel).toBeNull();
-    expect(created.body).not.toHaveProperty('verificationAutoAccept'); // the review gate's knob is gone (ADR-0041)
+    expect(created.body).not.toHaveProperty('verificationAutoAccept');
 
     const set = await server.api('PATCH', `/api/workspaces/${created.body.id}`, {
       verificationCommand: [{ command: 'npm', args: ['test'] }],
@@ -164,8 +163,8 @@ describe('Workspace CRUD (ADR-0008, issue #41)', () => {
     });
     expect(disabled.status).toBe(200);
     expect(disabled.body.reviewEnabled).toBe(false);
-    expect(disabled.body.reviewPrompt).toBe('review the diff'); // untouched
-    expect(disabled.body.reviewModel).toBe('claude-opus-5'); // untouched
+    expect(disabled.body.reviewPrompt).toBe('review the diff');
+    expect(disabled.body.reviewModel).toBe('claude-opus-5');
     // Restore the enabled override the rest of the test asserts against.
     await server.api('PATCH', `/api/workspaces/${created.body.id}`, { reviewEnabled: true });
 
@@ -175,8 +174,8 @@ describe('Workspace CRUD (ADR-0008, issue #41)', () => {
     });
     expect(cleared.status).toBe(200);
     expect(cleared.body.verificationCommand).toBeNull();
-    expect(cleared.body.reviewEnabled).toBe(true); // untouched
-    expect(cleared.body.reviewPrompt).toBe('review the diff'); // untouched
+    expect(cleared.body.reviewEnabled).toBe(true);
+    expect(cleared.body.reviewPrompt).toBe('review the diff');
     rmSync(dir, { recursive: true, force: true });
   });
 
@@ -222,7 +221,7 @@ describe('Workspace CRUD (ADR-0008, issue #41)', () => {
     expect(set.status).toBe(200);
     // Reads back as the same object shape it was PATCHed as, not the raw JSON string.
     expect(set.body.guardrailBudget).toEqual(override);
-    expect(set.body.guardrailProgress).toBe(false); // an explicit "off", not inherit
+    expect(set.body.guardrailProgress).toBe(false);
 
     const fetched = await server.api('GET', `/api/workspaces/${created.body.id}`);
     expect(fetched.body.guardrailBudget).toEqual(override);

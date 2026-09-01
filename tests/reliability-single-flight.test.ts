@@ -33,12 +33,12 @@ describe('singleFlight', () => {
     const gate = deferred<void>();
     const invoke = singleFlight(async () => {
       runs++;
-      await gate.promise; // hold the first run open
+      await gate.promise;
     });
-    const first = invoke(); // starts run #1, now in flight
-    const second = invoke(); // arrives mid-flight → should schedule one rerun
-    const third = invoke(); // also mid-flight → folds into the same single rerun
-    expect(runs).toBe(1); // still only the first run has started
+    const first = invoke();
+    const second = invoke();
+    const third = invoke();
+    expect(runs).toBe(1);
     gate.resolve();
     await Promise.all([first, second, third]);
     // The three overlapping calls collapse to run #1 + exactly one rerun.
@@ -93,7 +93,7 @@ describe('singleFlight', () => {
       return runs;
     });
     const first = invoke();
-    const second = invoke(); // coalesced into the failing run's window
+    const second = invoke();
     gate.resolve();
     await expect(first).rejects.toThrow('first-failed');
     await expect(second).rejects.toThrow('first-failed');

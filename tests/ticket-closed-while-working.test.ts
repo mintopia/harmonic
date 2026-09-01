@@ -46,7 +46,6 @@ const ticket = (over: Partial<Ticket>): Ticket => ({
   ...over,
 });
 
-/** A tracker adapter that records every write; `reopen` is never called by Harmonic any more. */
 function writeSpy(tickets: () => Ticket[]) {
   const calls = { reopen: [] as number[], close: [] as number[], claim: [] as number[], release: [] as number[] };
   const adapter: TrackerAdapter = {
@@ -118,7 +117,6 @@ describe('a mirrored ticket closed while its Task is working', () => {
 
     await mirrorScan(tasks, [ticket({ number: 1, state: 'closed', closedAt: '2026-08-07T01:00:00Z' })], wsId);
 
-    // Still working, still blocking: only the Run's verdict and merging finish it.
     expect((await tasks.get(blocker.id)).state).toBe('working');
     expect((await tasks.withDeps(await tasks.get(dependent.id))).openBlockerCount).toBe(1);
     expect((await tasks.withDeps(await tasks.get(dependent.id))).agentWorkable).toBe(false);

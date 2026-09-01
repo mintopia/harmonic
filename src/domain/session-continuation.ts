@@ -27,10 +27,7 @@
  * `run-disposition.ts` #112) this is a **pure decision**: no database, no clock,
  * no I/O. The caller reads the trigger and the Session's warmth facts and passes
  * them in with an explicit `now`; recomputing over the same inputs always yields
- * the same plan, so every branch is exhaustively unit-testable in isolation. The
- * live wiring — bind the follow-up Run to the same Session, render the dialog,
- * seed the condensed alternative (via `buildResumeFallbackSummary`) — is the
- * caller's; this file only decides.
+ * the same plan, so every branch is exhaustively unit-testable in isolation.
  */
 
 import type { AttemptRow, SessionRow } from '../db/schema.js';

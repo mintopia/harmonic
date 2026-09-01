@@ -95,7 +95,7 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
 
   it('mirrors each repo into its own board — overlapping issue numbers stay distinct', async () => {
     ticketsByRepo.set(repoA, [ticket(5)]);
-    ticketsByRepo.set(repoB, [ticket(5)]); // same number, different repo
+    ticketsByRepo.set(repoB, [ticket(5)]);
     const a = await workspaces.create({ name: 'A', workingDir: repoA, trackerEnabled: true });
     const b = await workspaces.create({ name: 'B', workingDir: repoB, trackerEnabled: true });
     await manager.sync();
@@ -107,21 +107,21 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     expect(inB).toHaveLength(1);
     expect(inA[0]).toMatchObject({ trackerRef: 5, workspaceId: a.id });
     expect(inB[0]).toMatchObject({ trackerRef: 5, workspaceId: b.id });
-    expect(inA[0]!.id).not.toBe(inB[0]!.id); // distinct Tasks, not one shared row
+    expect(inA[0]!.id).not.toBe(inB[0]!.id);
   });
 
   it('maps() stamps each rollup with its Workspace and scopes by id — colliding map refs stay distinct', async () => {
     const mapTicket = { ...ticket(19), isMap: true, title: 'Wayfinder', labels: ['wayfinder:map'] };
     const member = (n: number): Ticket => ({ ...ticket(n), parent: 19 });
     ticketsByRepo.set(repoA, [mapTicket, member(30)]);
-    ticketsByRepo.set(repoB, [mapTicket, member(31)]); // same map ref #19, different repo
+    ticketsByRepo.set(repoB, [mapTicket, member(31)]);
     const a = await workspaces.create({ name: 'A', workingDir: repoA, trackerEnabled: true });
     const b = await workspaces.create({ name: 'B', workingDir: repoB, trackerEnabled: true });
     await manager.sync();
     await waitFor(async () => (await tasks.list()).length === 2 || undefined);
 
     const all = await manager.maps();
-    expect(all).toHaveLength(2); // one per Workspace, not one collapsed row
+    expect(all).toHaveLength(2);
     expect(all.map((m) => m.workspaceId).sort()).toEqual([a.id, b.id].sort());
 
     const scopedA = await manager.maps(a.id);
@@ -223,27 +223,27 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     expect(manager.coordinatorFor(a.id)).toBeDefined();
     expect(manager.coordinatorFor(b.id)).toBeUndefined();
 
-    await workspaces.update(b.id, { trackerEnabled: true }); // enable B
+    await workspaces.update(b.id, { trackerEnabled: true });
     await manager.sync();
-    expect(manager.coordinatorFor(a.id)).toBeDefined(); // A untouched
+    expect(manager.coordinatorFor(a.id)).toBeDefined();
     expect(manager.coordinatorFor(b.id)).toBeDefined();
 
-    await workspaces.update(a.id, { trackerEnabled: false }); // disable A
+    await workspaces.update(a.id, { trackerEnabled: false });
     await manager.sync();
-    expect(manager.coordinatorFor(a.id)).toBeUndefined(); // only A's loop stopped
+    expect(manager.coordinatorFor(a.id)).toBeUndefined();
     expect(manager.coordinatorFor(b.id)).toBeDefined();
   });
 
   it('deleting a Workspace stops its loop and cascades its board', async () => {
     const a = await workspaces.create({ name: 'A', workingDir: repoA, trackerEnabled: true });
-    await tasks.create({ prompt: 'on A', workspaceId: a.id }); // a Task on the doomed board
+    await tasks.create({ prompt: 'on A', workspaceId: a.id });
     await manager.sync();
     expect(manager.coordinatorFor(a.id)).toBeDefined();
 
     await workspaces.delete(a.id);
     await manager.sync();
     expect(manager.coordinatorFor(a.id)).toBeUndefined();
-    expect(await tasks.list({ workspaceId: a.id })).toHaveLength(0); // board went with it
+    expect(await tasks.list({ workspaceId: a.id })).toHaveLength(0);
   });
 
   it('delete refuses a running Task but allows the last Workspace (issue #61)', async () => {
@@ -253,10 +253,10 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     await expect(workspaces.delete(a.id)).rejects.toThrow(/running/);
 
     await tasks.setState(running.id, 'ready');
-    await workspaces.delete(a.id); // now allowed
+    await workspaces.delete(a.id);
     const last = await workspaces.list();
     expect(last).toHaveLength(1);
-    await workspaces.delete(last[0]!.id); // the last Workspace goes too — no more guard
+    await workspaces.delete(last[0]!.id);
     expect(await workspaces.list()).toHaveLength(0);
   });
 
@@ -285,7 +285,7 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     await manager.sync();
     const after = manager.coordinatorFor(a.id);
     expect(after).toBeDefined();
-    expect(after).not.toBe(before); // fresh coordinator ⇒ fresh poll loop
+    expect(after).not.toBe(before);
     expect(polled).toContain(repoB);
   });
 
@@ -302,7 +302,7 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     unresolvable.add(repoA);
     const a = await workspaces.create({ name: 'A', workingDir: repoA, trackerEnabled: true });
     await manager.sync();
-    expect(manager.coordinatorFor(a.id)).toBeUndefined(); // no poll loop
+    expect(manager.coordinatorFor(a.id)).toBeUndefined();
     expect(manager.resolvedTracker(a.id)).toMatchObject({ ok: false, code: 'no-declaration' });
     expect(ticketsByRepo.get(repoA)).toBeUndefined();
     // The gate never scanned the repo — resolution failed before any poll.
@@ -324,7 +324,7 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     unresolvable.add(repoA);
     const a = await workspaces.create({ name: 'A', workingDir: repoA, trackerEnabled: true });
     await manager.sync();
-    expect(manager.coordinatorFor(a.id)).toBeUndefined(); // enabled but unresolvable ⇒ no loop yet
+    expect(manager.coordinatorFor(a.id)).toBeUndefined();
 
     // The operator adds the declaration; a refresh resolves it and brings the loop up now.
     unresolvable.delete(repoA);

@@ -57,10 +57,6 @@ describe('attempt timeline API', () => {
     await server.app.ctx.verificationAttempts.append(attempt.id, {
       mechanism: 'command', inputOid: 'verified-sha', verdict: 'pass', summary: 'checks passed', output: '',
     });
-    // `verifiedSha` now derives from the passing verification attempt above
-    // (ADR-0001 #388 S-E: the `verified-head` fact was a redundant second
-    // copy); `escalate` closes the Attempt with its disposition-kind reason,
-    // the same write `AttemptSettleCoordinator.settle` makes.
     await server.app.ctx.attempts.finish(attempt.id, 'escalated', 15, undefined, 'escalate');
     server.app.ctx.bus.emit('attempt_changed', run);
     await waitFor(async () => messages.find(

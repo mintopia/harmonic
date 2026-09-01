@@ -594,7 +594,7 @@ describe("codex's incremental rollout tail reader (#217)", () => {
   it('folds only newly-appended rollout bytes across ticks and never double-counts a re-read line', async () => {
     const { file, reader } = setup('s1');
     expect(reader.latest()).toBeNull();
-    expect(await reader.sample()).toBeNull(); // rollout not written yet
+    expect(await reader.sample()).toBeNull();
 
     writeFileSync(file, turn('gpt-5.6-sol') + '\n' + tokenCount(16173, 9984, 5, 16173) + '\n');
     const first = await reader.sample();

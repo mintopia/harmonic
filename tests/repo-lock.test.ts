@@ -104,8 +104,8 @@ describe('repo-operation lock (issue #121)', () => {
 
       await Promise.all([run()(), run()()]);
 
-      expect(execMax).toBe(2); // executions ran in parallel on the same repo
-      expect(critMax).toBe(1); // mutation windows serialised
+      expect(execMax).toBe(2);
+      expect(critMax).toBe(1);
     });
 
     it('is reentrant: a nested acquisition of a held key runs inline instead of deadlocking', async () => {

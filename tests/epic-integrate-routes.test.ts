@@ -14,15 +14,6 @@ async function mcpClient(server: TestServer, token: string): Promise<Client> {
 }
 const parse = (result: any) => JSON.parse(result.content[0].text);
 
-/**
- * The operator force-integrate-the-ready-subset surface over a whole Epic (issue
- * #161, ADR-0024), over both REST and MCP. `TrackerPollerManager.forceIntegrateEpic`
- * itself (src/tracker/manager.ts) is already covered by
- * epic-integrate-coordinator.test.ts; these tests exercise the operator-facing
- * plumbing around it — routing, param parsing, the null→404/409 mapping, and
- * the operator-only auth gate — spying on the manager rather than standing up
- * a real tracker loop.
- */
 describe('Whole-Epic force-integrate operator surface (issue #161)', () => {
   let server: TestServer;
 

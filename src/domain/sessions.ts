@@ -136,9 +136,8 @@ export interface DispatchSessionInput {
  * Session — one ACP conversation with a Harness, a first-class resource — on
  * every dispatch, capturing the harness's `initialize` capability advertisement
  * (previously discarded) and the dispatch identity, keyed uniquely on
- * `(harness, harnessSessionId)`. Written *alongside* Run/Task state, never in
- * place of it. No resume behaviour yet: this is the substrate the rest of Unit
- * C builds on, so the store only records and reads — retirement/load merge later.
+ * `(harness, harnessSessionId)`. Written *alongside* Task state, never in place
+ * of it.
  */
 export class SessionStore {
   constructor(private readonly db: AsyncDbHandle) {}

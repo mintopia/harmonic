@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { githubAdapter } from '../src/tracker/github.js';
 
-/** Minimal RawIssue; only the fields `normalise` reads matter here. */
 const raw = (over: Record<string, unknown>) => ({
   number: 0,
   title: 't',
@@ -49,7 +48,6 @@ describe('GitHub adapter — body-line dependency fallback (issue #46 regression
   });
 
   it('does not leak a same-line "Blocks:" clause into blockedBy (reverse-edge regression)', async () => {
-    // "Depends on: none. Blocks: #a, #b" declares only outgoing edges; none belong in blockedBy.
     const [t] = await scanning([
       raw({ number: 59, body: 'Part of #70. Depends on: none. Blocks: #60, #63, #64, #65.' }),
     ]).scan();

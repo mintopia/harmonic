@@ -124,7 +124,7 @@ describe('branch merging (issue #153)', () => {
     const out = await mergeIntoBase({ repoDir: repo, baseBranch: 'main', branch: 'feat', expectedOid: oid(repo, 'feat') });
 
     expect(out).toMatchObject({ ok: true, mode: 'cas' });
-    expect(oid(repo, 'main')).toBe(featTip); // fast-forwarded to feat
+    expect(oid(repo, 'main')).toBe(featTip);
     expect(oid(repo, 'main')).not.toBe(base);
     // No live checkout was touched, no admin worktree lingered.
     expect(git(repo, 'status', '--porcelain')).toBe('');
@@ -132,16 +132,16 @@ describe('branch merging (issue #153)', () => {
   });
 
   it('AC1 (checked out, clean, mutex held): merges coherently in place — HEAD stays on the branch, tree advances, status clean', async () => {
-    const repo = makeRepo(); // main is checked out here
+    const repo = makeRepo();
     makeBranchAhead(repo, 'feat', 'feat.txt', 'work\n');
     const featTip = oid(repo, 'feat');
 
     const out = await mergeIntoBase({ repoDir: repo, baseBranch: 'main', branch: 'feat', expectedOid: oid(repo, 'feat'), mutexHeld: true });
 
     expect(out).toMatchObject({ ok: true, mode: 'in-place' });
-    expect(git(repo, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('main'); // still on main, not desynced
+    expect(git(repo, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('main');
     expect(oid(repo, 'main')).toBe(featTip);
-    expect(git(repo, 'show', 'HEAD:feat.txt')).toBe('work'); // working tree coherent
+    expect(git(repo, 'show', 'HEAD:feat.txt')).toBe('work');
     expect(git(repo, 'status', '--porcelain')).toBe('');
     expect(worktreeCount(repo)).toBe(1);
   });
@@ -154,7 +154,7 @@ describe('branch merging (issue #153)', () => {
     const out = await mergeIntoBase({ repoDir: repo, baseBranch: 'main', branch: 'feat', expectedOid: oid(repo, 'feat') }); // mutexHeld defaults false
 
     expect(out).toMatchObject({ ok: false, reason: 'fallback-pr-manual' });
-    expect(oid(repo, 'main')).toBe(base); // target untouched
+    expect(oid(repo, 'main')).toBe(base);
     expect(worktreeCount(repo)).toBe(1);
   });
 
@@ -184,9 +184,9 @@ describe('branch merging (issue #153)', () => {
     const out = await mergeIntoBase({ repoDir: repo, baseBranch: 'main', branch: 'feat', expectedOid: oid(repo, 'feat'), mutexHeld: true });
 
     expect(out).toMatchObject({ ok: false, reason: 'stale-base' });
-    expect(oid(repo, 'main')).toBe(mainTip); // untouched
+    expect(oid(repo, 'main')).toBe(mainTip);
     expect(git(repo, 'status', '--porcelain')).toBe('');
-    expect(worktreeCount(repo)).toBe(1); // no admin worktree was ever needed
+    expect(worktreeCount(repo)).toBe(1);
   });
 
   it('merge mode: a diverged, non-conflicting base is folded in with a merge commit (integration refresh)', async () => {
@@ -201,7 +201,7 @@ describe('branch merging (issue #153)', () => {
     expect(out).toMatchObject({ ok: true, mode: 'in-place' });
     expect(git(repo, 'rev-parse', 'main^2')).toBe(featTip); // a real merge commit whose second parent is the verified tip
     expect(git(repo, 'status', '--porcelain')).toBe('');
-    expect(worktreeCount(repo)).toBe(1); // admin worktree cleaned up
+    expect(worktreeCount(repo)).toBe(1);
   });
 
   it('merge mode conflict: aborts in the admin worktree, returns ok:false, and never enters the live checkout', async () => {
@@ -216,7 +216,7 @@ describe('branch merging (issue #153)', () => {
     const out = await mergeIntoBase({ repoDir: repo, baseBranch: 'main', branch: 'feat', expectedOid: oid(repo, 'feat'), mode: 'merge', mutexHeld: true });
 
     expect(out).toMatchObject({ ok: false, reason: 'conflict' });
-    expect(oid(repo, 'main')).toBe(mainTip); // untouched
+    expect(oid(repo, 'main')).toBe(mainTip);
     expect(git(repo, 'status', '--porcelain')).toBe(''); // base repo pristine — abort happened off to the side
     expect(worktreeCount(repo)).toBe(1);
   });
@@ -251,8 +251,8 @@ describe('branch merging (issue #153)', () => {
 
     const second = await mergeIntoBase({ repoDir: repo, baseBranch: 'main', branch: 'feat', expectedOid: oid(repo, 'feat') });
     expect(second).toMatchObject({ ok: true, mode: 'cas' });
-    expect(oid(repo, 'main')).toBe(afterFirst); // did not move
-    expect(git(repo, 'rev-list', '--count', 'main')).toBe(countAfterFirst); // no new commit
+    expect(oid(repo, 'main')).toBe(afterFirst);
+    expect(git(repo, 'rev-list', '--count', 'main')).toBe(countAfterFirst);
     expect(await Git.isAncestor(repo, 'main', 'feat')).toBe(true);
   });
 
@@ -267,7 +267,7 @@ describe('branch merging (issue #153)', () => {
     const out = await mergeIntoBase({ repoDir: repo, baseBranch: 'main', branch: 'feat', expectedOid: oid(repo, 'feat') });
 
     expect(out).toMatchObject({ ok: true, mode: 'cas' });
-    expect(oid(repo, 'main')).toBe(handTip); // the hand-merge stands
+    expect(oid(repo, 'main')).toBe(handTip);
   });
 
   it('AC2 CAS primitive: an expected-old mismatch is rejected, the ref is not overwritten', async () => {
@@ -286,7 +286,7 @@ describe('branch merging (issue #153)', () => {
     const otherTip = oid(repo, 'other');
     const stale = await Git.casUpdateRef(repo, 'main', otherTip, a);
     expect(stale.ok).toBe(false);
-    expect(oid(repo, 'main')).toBe(featTip); // NOT overwritten
+    expect(oid(repo, 'main')).toBe(featTip);
   });
 
   it('AC2 in-place CAS-via-ff: a target that diverged off the computed base is refused, not force-reset', async () => {
@@ -302,8 +302,8 @@ describe('branch merging (issue #153)', () => {
 
     const ff = await Git.ffOnly(repo, sidecar);
     expect(ff.ok).toBe(false);
-    expect(oid(repo, 'main')).toBe(mainTip); // not moved
-    expect(git(repo, 'status', '--porcelain')).toBe(''); // checkout coherent
+    expect(oid(repo, 'main')).toBe(mainTip);
+    expect(git(repo, 'status', '--porcelain')).toBe('');
   });
 
   it('branchCheckedOutAt distinguishes a checked-out target from a detached / absent one', async () => {

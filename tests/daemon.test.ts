@@ -16,7 +16,6 @@ import {
 
 const daemonUrl = pathToFileURL(new URL('../src/daemon.ts', import.meta.url).pathname).href;
 
-/** Runs `acquireLock(dir, ...)` in its own process and prints the result as JSON. */
 const raceClaim = (dir: string, port: number) => {
   const script = [
     `import { acquireLock } from '${daemonUrl}';`,
@@ -55,14 +54,12 @@ const info = (pid: number): DaemonInfo => ({
   startedAt: Date.now(),
 });
 
-/** A child that exits immediately — a guaranteed-dead pid once awaited. */
 const deadPid = () =>
   new Promise<number>((resolve) => {
     const child = spawn(process.execPath, ['-e', '']);
     child.on('exit', () => resolve(child.pid!));
   });
 
-/** A child that sticks around until killed. */
 const livePid = () => {
   const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)']);
   return {
@@ -151,7 +148,6 @@ describe('data-dir lock', () => {
     acquireLock(dir, { port: 4700, host: '0.0.0.0' });
     releaseLock(dir);
     expect(existsSync(pidFilePath(dir))).toBe(false);
-    // A lock owned by someone else survives our release.
     writeDaemon(dir, info(999999));
     releaseLock(dir);
     expect(existsSync(pidFilePath(dir))).toBe(true);

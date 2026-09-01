@@ -544,7 +544,6 @@ export class TaskService {
           workflow: input.workflow,
           wayfinderType: input.wayfinderType,
           mapRef: input.mapRef,
-          // Persist durable tracker facts on first mirror (issue #233).
           ...(input.facts ? trackerFactColumns(input.facts) : {}),
           createdAt: now,
           updatedAt: now,

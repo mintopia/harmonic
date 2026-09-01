@@ -12,7 +12,6 @@ describe('EpicBand collapsible closed-tasks section (issue #423)', () => {
   const board = source('web/src/components/Board.tsx');
 
   it('renders the closed members via a collapsible ClosedRail, only when there are any', () => {
-    // Reuses the shared closed-member set and the ClosedRail presentation.
     expect(board).toContain('const closed = closedMembers(epic);');
     expect(board).toContain('{closed.length > 0 && (');
     expect(board).toContain('<ClosedRail members={closed} onOpenTask={onOpenTask} collapsible />');
@@ -20,19 +19,14 @@ describe('EpicBand collapsible closed-tasks section (issue #423)', () => {
 
   it('makes ClosedRail collapsible, collapsed by default, with a chevron disclosure', () => {
     expect(board).toContain('collapsible = false,');
-    // Collapsed by default when collapsible; expanded (open) otherwise.
     expect(board).toContain('const [open, setOpen] = useState(!collapsible);');
-    // A chevron/disclosure that toggles the member list.
     expect(board).toContain('<Chevron open={open} />');
     expect(board).toContain('aria-expanded={open}');
   });
 
   it('renders each closed member as a full multi-row card, not a short row (issue #430)', () => {
-    // Same width/shape as an open member card (PendingCard is w-[300px]); the
-    // retired short-row form was a w-[240px] single-line flex row.
     expect(board).toContain('w-[300px] shrink-0 rounded-lg border border-hairline bg-surface p-2.5');
     expect(board).not.toContain('w-[240px]');
-    // The title sits on its own row below the id/state header — multi-row.
     expect(board).toContain('mt-1 truncate text-small font-medium text-muted');
   });
 });

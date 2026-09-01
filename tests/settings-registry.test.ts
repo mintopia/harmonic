@@ -222,17 +222,17 @@ describe('resolveScoped — the scoped resolver reads scope from the registry', 
 // the single authority in practice, not just by declaration.
 describe('scope changes control live resolution (registry is the single authority)', () => {
   it('resolveScoped: flipping harness to global-only stops the Workspace value winning', () => {
-    expect(resolveScoped('harness', 'codex', 'claude')).toBe('codex'); // overridable
+    expect(resolveScoped('harness', 'codex', 'claude')).toBe('codex');
     withScope('harness', 'global-only', () => {
-      expect(resolveScoped('harness', 'codex', 'claude')).toBe('claude'); // now ignored
+      expect(resolveScoped('harness', 'codex', 'claude')).toBe('claude');
     });
-    expect(resolveScoped('harness', 'codex', 'claude')).toBe('codex'); // restored
+    expect(resolveScoped('harness', 'codex', 'claude')).toBe('codex');
   });
 
   it('resolveCap: flipping maxConcurrentAttempts to global-only ignores the Workspace cap', () => {
-    expect(resolveCap(2, 3)).toBe(2); // overridable → Workspace cap wins (≤ ceiling)
+    expect(resolveCap(2, 3)).toBe(2);
     withScope('maxConcurrentAttempts', 'global-only', () => {
-      expect(resolveCap(2, 3)).toBe(3); // now the ceiling, Workspace cap ignored
+      expect(resolveCap(2, 3)).toBe(3);
     });
   });
 
@@ -242,14 +242,14 @@ describe('scope changes control live resolution (registry is the single authorit
     const ws = { guardrailBudget: JSON.stringify(wsOverride), guardrailProgress: false, toolTimeoutMinutes: null };
 
     const before = resolveGuardrails(ws, config);
-    expect(before.budget).toEqual(wsOverride); // overridable → Workspace budget wins
-    expect(before.progress).toBe(false); // overridable → explicit-off wins
+    expect(before.budget).toEqual(wsOverride);
+    expect(before.progress).toBe(false);
 
     withScope('guardrailBudget', 'global-only', () => {
       withScope('guardrailProgress', 'global-only', () => {
         const after = resolveGuardrails(ws, config);
-        expect(after.budget).toEqual({ wallClockMinutes: 60, tokens: null, costUsd: null }); // global
-        expect(after.progress).toBe(true); // global
+        expect(after.budget).toEqual({ wallClockMinutes: 60, tokens: null, costUsd: null });
+        expect(after.progress).toBe(true);
       });
     });
   });
@@ -266,18 +266,18 @@ describe('scope changes control live resolution (registry is the single authorit
       reviewHarness: null,
     };
 
-    expect(resolveVerifiers(ws, config).commands).toEqual([wsCommand]); // overridable
+    expect(resolveVerifiers(ws, config).commands).toEqual([wsCommand]);
     withScope('verificationCommand', 'global-only', () => {
-      expect(resolveVerifiers(ws, config).commands).toEqual([globalCommand]); // ignored → global
+      expect(resolveVerifiers(ws, config).commands).toEqual([globalCommand]);
     });
   });
 
   it('hasWorkspaceOverride: flipping to global-only makes a set column stop counting as an override', () => {
-    expect(hasWorkspaceOverride('guardrailBudget', '{"wallClockMinutes":30}')).toBe(true); // overridable + set
+    expect(hasWorkspaceOverride('guardrailBudget', '{"wallClockMinutes":30}')).toBe(true);
     withScope('guardrailBudget', 'global-only', () => {
-      expect(hasWorkspaceOverride('guardrailBudget', '{"wallClockMinutes":30}')).toBe(false); // never an override
+      expect(hasWorkspaceOverride('guardrailBudget', '{"wallClockMinutes":30}')).toBe(false);
     });
-    expect(hasWorkspaceOverride('guardrailBudget', null)).toBe(false); // set-ness still required
+    expect(hasWorkspaceOverride('guardrailBudget', null)).toBe(false);
   });
 
   it('hasWorkspaceOverride: an explicit boolean false counts as an override (not truthiness)', () => {

@@ -29,11 +29,8 @@ export interface VerificationAttemptInput {
  * OID, as an immutable row with a per-Run monotonic `seq`. Mirrors
  * `GuardrailEventStore` (`domain/guardrail-events.ts`) exactly, down to the `seq`-assignment
  * recipe and its rationale: the store class itself is pure persistence
- * substrate — it decides nothing and combines no verdicts. But its appended
- * attempts now drive the live verify path: the runner reads them back, folds
- * the verdicts through `combineVerdicts`, and settles the Run on the result
- * (`execution/runner.ts`, #135/#164). Attempts are only ever appended and
- * read; there is no update or delete path, by design.
+ * substrate — it decides nothing and combines no verdicts. Attempts are only
+ * ever appended and read; there is no update or delete path, by design.
  */
 export class VerificationAttemptStore {
   constructor(private readonly db: AsyncDbHandle) {}

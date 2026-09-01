@@ -45,7 +45,6 @@ describe('tasksMergedByDay (ADR-0014 §1)', () => {
 
   it('counts a self-healed Task once, on its merge day — an earlier escalation is not a settle', () => {
     const jan15 = dayAt(2026, 0, 15);
-    // Task 1 escalated on attempt 1, then merged on attempt 2 (later ts) — terminal is the merge.
     const series = tasksMergedByDay([escalated(1, jan15 - 1000), merged(1, jan15)]);
     expect(series).toEqual([{ day: new Date(jan15).setHours(0, 0, 0, 0), count: 1 }]);
   });
@@ -59,7 +58,7 @@ describe('tasksMergedByDay (ADR-0014 §1)', () => {
 describe('attemptsPerTask (ADR-0014 §2)', () => {
   it('buckets by Attempts-to-settle over merged Tasks; a 3-Attempt merged Task lands in 3×', () => {
     const settle = [escalated(1, 100), escalated(1, 200), merged(1, 300)];
-    const attempts = [att(1), att(1), att(1)]; // 3 attempts of the merged task
+    const attempts = [att(1), att(1), att(1)];
     expect(attemptsPerTask(settle, attempts)).toEqual({ '1': 0, '2': 0, '3': 1, '4+': 0 });
   });
 
@@ -81,9 +80,9 @@ describe('costPerMergedTask (ADR-0014 §3)', () => {
     const settle = [merged(1, 100), escalated(2, 100, 'post-merge-red'), escalated(3, 100)];
     const attempts = [
       { taskId: 1, cost: cost(2) },
-      { taskId: 1, cost: cost(1) }, // merged task, 2 attempts → 3.00 merged
-      { taskId: 2, cost: cost(4) }, // reverted-on-red → wasted
-      { taskId: 3, cost: cost(1.5) }, // escalated/abandoned → wasted
+      { taskId: 1, cost: cost(1) },
+      { taskId: 2, cost: cost(4) },
+      { taskId: 3, cost: cost(1.5) },
     ];
     const result = costPerMergedTask(settle, attempts);
     expect(result.mergedTasks).toBe(1);
@@ -124,7 +123,7 @@ describe('gateOutcomes (ADR-0014 §5)', () => {
       merged(2, 10),
       escalated(3, 10, 'conflict'),
       escalated(4, 10, 'post-merge-red'),
-      escalated(5, 10), // guardrail/agent escalation, no gate
+      escalated(5, 10),
     ]);
     expect(result).toEqual({ autoMerged: 2, escalated: 2, revertedOnRed: 1 });
   });
@@ -167,12 +166,11 @@ describe('byWorkspace (ADR-0014 §7)', () => {
       { taskId: 20, state: 'passed', usage: usage(10, 5), cost: cost(9) },
     ];
     const result = byWorkspace(rows, taskWorkspaces, workspaces);
-    // beta (9.00) outranks alpha (2.00): ordered by cost.
     expect(result.map((r) => r.workspaceId)).toEqual([2, 1]);
     const alpha = result.find((r) => r.workspaceId === 1)!;
     expect(alpha).toMatchObject({ name: 'alpha', inputTokens: 150, outputTokens: 30, tasks: 2 });
     expect(alpha.cost?.totalUsd).toBeCloseTo(2);
-    expect(alpha.failureRate).toBeCloseTo(0.5); // 1 failed of 2 non-cancelled
+    expect(alpha.failureRate).toBeCloseTo(0.5);
   });
 
   it('returns a single row when the rows were already scoped to one Workspace', () => {

@@ -106,13 +106,13 @@ describe('MirrorCoordinator (issue #32)', () => {
 
   it('reconcile: derives advisory writes from local Task state only', async () => {
     const running = await tasks.upsertMirrored(mirrored(10));
-    await tasks.setState(running.id, 'working'); // claimed, but the scan shows it dropped
+    await tasks.setState(running.id, 'working');
     const escalated = await tasks.upsertMirrored(mirrored(11));
-    await tasks.escalate(escalated.id, 'escalated to human: attempt 2 of 2 failed'); // handed back to a human, still ours
+    await tasks.escalate(escalated.id, 'escalated to human: attempt 2 of 2 failed');
     const retrying = await tasks.upsertMirrored(mirrored(14));
-    await tasks.setState(retrying.id, 'working'); // mid Attempt loop: the claim is held across retries (ADR-0041)
-    await tasks.upsertMirrored(mirrored(12)); // ready locally, so no ownership write
-    await tasks.upsertMirrored(mirrored(13, { closed: true })); // done → close path (D5), not us
+    await tasks.setState(retrying.id, 'working');
+    await tasks.upsertMirrored(mirrored(12));
+    await tasks.upsertMirrored(mirrored(13, { closed: true }));
 
     const { adapter, calls } = fakeAdapter();
     const coord = new MirrorCoordinator(tasks, wsId);
@@ -130,9 +130,9 @@ describe('MirrorCoordinator (issue #32)', () => {
 
   it('reconcile: idempotency guard skips redundant claim/release when state is unchanged, re-writes on change (issue #232)', async () => {
     const running = await tasks.upsertMirrored(mirrored(20));
-    await tasks.setState(running.id, 'working'); // → claim
+    await tasks.setState(running.id, 'working');
     const escalated = await tasks.upsertMirrored(mirrored(21));
-    await tasks.escalate(escalated.id, 'escalated to human: attempt 2 of 2 failed'); // → release
+    await tasks.escalate(escalated.id, 'escalated to human: attempt 2 of 2 failed');
 
     const { adapter, calls } = fakeAdapter();
     const coord = new MirrorCoordinator(tasks, wsId);

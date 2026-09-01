@@ -73,7 +73,7 @@ describe('AutoRunner — mirrored afk pick predicate + flip→claim ordering (is
     const assigned = await tasks.upsertMirrored(mirroredAfk(44));
     const failedClaim = await tasks.upsertMirrored(mirroredAfk(45));
 
-    const throwRefs = new Set([45]); // advertiseClaim throws → must still spawn
+    const throwRefs = new Set([45]);
     const claims: Array<{ ref: number | null; stateAtClaim: string }> = [];
     const mirror: MirrorClaim = {
       advertiseClaim: async (t) => {
@@ -87,7 +87,7 @@ describe('AutoRunner — mirrored afk pick predicate + flip→claim ordering (is
       escalateUnspawned: async () => {},
       start: async (id: number) => {
         started.push({ id, via: 'start' });
-        await tasks.setState(id, 'working'); // native path flips inside the runner
+        await tasks.setState(id, 'working');
       },
       launchClaimed: (id: number) => {
         started.push({ id, via: 'launchClaimed' });
@@ -226,8 +226,8 @@ describe('AutoRunner — parallel-Epic base pick gate (issue #159)', () => {
   };
 
   it('skips a base-pending Epic member, admits a non-gated Task, and picks it once the gate opens', async () => {
-    const gated = await tasks.upsertMirrored(mirroredAfk(11)); // Epic member, base pending
-    const free = await tasks.upsertMirrored(mirroredAfk(99)); // not an Epic member
+    const gated = await tasks.upsertMirrored(mirroredAfk(11));
+    const free = await tasks.upsertMirrored(mirroredAfk(99));
     const pending = new Set<number>([gated.id]);
 
     const { ar, started } = build((t) => pending.has(t.id));
@@ -235,7 +235,7 @@ describe('AutoRunner — parallel-Epic base pick gate (issue #159)', () => {
     await vi.waitFor(() => expect(started).toContain(free.id));
 
     expect(started).not.toContain(gated.id);
-    expect((await tasks.get(gated.id)).state).toBe('ready'); // held on the frontier, not spawned unbased
+    expect((await tasks.get(gated.id)).state).toBe('ready');
 
     // The reconcile sets its base → the gate opens → the next pass picks it.
     pending.delete(gated.id);
@@ -406,7 +406,7 @@ describe('AutoRunner — Work Context House Rule pick predicate (ADR-0001)', () 
       escalateUnspawned: async () => {},
       start: async (id: number) => {
         started.push(id);
-        await tasks.setState(id, 'working'); // native path flips inside the runner
+        await tasks.setState(id, 'working');
       },
       launchClaimed: (id: number) => started.push(id),
     } as unknown as Runner;
@@ -427,17 +427,17 @@ describe('AutoRunner — Work Context House Rule pick predicate (ADR-0001)', () 
     const busy = freshDir();
     const occupant = await directTask(busy, 'occupant');
     await tasks.setState(occupant.id, 'working');
-    const blocked = await directTask(busy, 'same context'); // shares the occupied dir
-    const free = await directTask(freshDir(), 'other context'); // distinct dir → admits
+    const blocked = await directTask(busy, 'same context');
+    const free = await directTask(freshDir(), 'other context');
 
     const { ar, started } = build();
     ar.poke();
     await vi.waitFor(() => expect(started).toContain(free.id));
 
     expect(started).not.toContain(blocked.id);
-    expect((await tasks.get(blocked.id)).state).toBe('ready'); // stays on the frontier
+    expect((await tasks.get(blocked.id)).state).toBe('ready');
     expect(ar.skipReasonFor(blocked.id)).toBe(`Work Context held by task ${occupant.id} (working)`);
-    expect(ar.skipReasonFor(free.id)).toBeUndefined(); // admitted → no reason
+    expect(ar.skipReasonFor(free.id)).toBeUndefined();
   });
 
   it('reports only open blocker edges in a ready task dependency diagnostic', async () => {
@@ -457,7 +457,7 @@ describe('AutoRunner — Work Context House Rule pick predicate (ADR-0001)', () 
   it('an escalated occupant no longer holds the context — its Run settled and the branch is evidence, not live work (ADR-0041)', async () => {
     const busy = freshDir();
     const escalated = await directTask(busy, 'escalated');
-    await tasks.escalate(escalated.id, 'escalated to human: attempt 2 of 2 failed'); // its Run settled; context freed
+    await tasks.escalate(escalated.id, 'escalated to human: attempt 2 of 2 failed');
     const next = await directTask(busy, 'same context');
 
     const { ar, started } = build();
@@ -510,7 +510,7 @@ describe('AutoRunner — Work Context House Rule pick predicate (ADR-0001)', () 
     const occupant = await directTask(busy, 'occupant');
     await tasks.setState(occupant.id, 'working');
     const blocked = await directTask(busy, 'same context');
-    const free = await directTask(freshDir(), 'other context'); // barrier: proves the fill pass ran
+    const free = await directTask(freshDir(), 'other context');
 
     const { ar, started } = build();
     ar.poke();
@@ -519,7 +519,7 @@ describe('AutoRunner — Work Context House Rule pick predicate (ADR-0001)', () 
     expect(ar.skipReasonFor(blocked.id)).toBeDefined();
     const startedWaiting = ar.waitingSince(blocked.id);
     expect(startedWaiting).toBeDefined();
-    expect(ar.waitingSince(free.id)).toBeUndefined(); // never blocked → no clock
+    expect(ar.waitingSince(free.id)).toBeUndefined();
 
     // A later pass while still blocked doesn't restart the clock.
     ar.poke();

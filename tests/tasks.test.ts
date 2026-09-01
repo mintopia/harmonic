@@ -306,8 +306,8 @@ describe('task-default inheritance', () => {
 
   it('serves the effective model but marks an unpinned default as inherited (overrides null)', async () => {
     const { body } = await server.api('POST', '/api/tasks', { prompt: 'inherit my model' });
-    expect(body.model).toBe('claude-sonnet-5'); // resolved global default
-    expect(body.overrides.model).toBeNull(); // ...but not pinned
+    expect(body.model).toBe('claude-sonnet-5');
+    expect(body.overrides.model).toBeNull();
   });
 
   it("follows the Workspace default model for tasks that haven't pinned one, leaving pinned tasks alone", async () => {
@@ -320,11 +320,11 @@ describe('task-default inheritance', () => {
     expect(patched.status).toBe(200);
 
     const after = (await server.api('GET', `/api/tasks/${inheriting.id}`)).body;
-    expect(after.model).toBe('ws-default-model'); // the inheriting task moved
-    expect(after.overrides.model).toBeNull(); // still inheriting, not silently pinned
+    expect(after.model).toBe('ws-default-model');
+    expect(after.overrides.model).toBeNull();
 
     const stillPinned = (await server.api('GET', `/api/tasks/${pinned.id}`)).body;
-    expect(stillPinned.model).toBe('pinned-model'); // the pinned task did not
+    expect(stillPinned.model).toBe('pinned-model');
   });
 
   it('resolves the conflict-resolve bound through the same chain as isolationMode', async () => {
@@ -342,14 +342,14 @@ describe('task-default inheritance', () => {
     const patched = await server.api('PATCH', `/api/workspaces/${await workspaceId()}`, { conflictResolveTurns: 4 });
     expect(patched.status).toBe(200);
     const afterWs = (await server.api('GET', `/api/tasks/${inherited.id}`)).body;
-    expect(afterWs.conflictResolveTurns).toBe(4); // followed the workspace
-    expect(afterWs.overrides.conflictResolveTurns).toBeNull(); // still inheriting
+    expect(afterWs.conflictResolveTurns).toBe(4);
+    expect(afterWs.overrides.conflictResolveTurns).toBeNull();
 
     // Clearing a pinned override falls back to inherit.
     const cleared = await server.api('PATCH', `/api/tasks/${pinned.id}`, { conflictResolveTurns: null });
     expect(cleared.status).toBe(200);
     expect(cleared.body.overrides.conflictResolveTurns).toBeNull();
-    expect(cleared.body.conflictResolveTurns).toBe(4); // back to the workspace override set above
+    expect(cleared.body.conflictResolveTurns).toBe(4);
   });
 
   it('edits a task with open blockers to re-point its model, and clears it back to inherit', async () => {
@@ -363,14 +363,14 @@ describe('task-default inheritance', () => {
 
     const pinned = await server.api('PATCH', `/api/tasks/${blocked.body.id}`, { model: 'chosen-model' });
     expect(pinned.status).toBe(200);
-    expect(pinned.body.state).toBe('ready'); // blockers are derived, just re-pointed
+    expect(pinned.body.state).toBe('ready');
     expect(pinned.body.openBlockerCount).toBe(1);
     expect(pinned.body.model).toBe('chosen-model');
     expect(pinned.body.overrides.model).toBe('chosen-model');
 
     const cleared = await server.api('PATCH', `/api/tasks/${blocked.body.id}`, { model: null });
     expect(cleared.status).toBe(200);
-    expect(cleared.body.overrides.model).toBeNull(); // back to inherit
+    expect(cleared.body.overrides.model).toBeNull();
     // Inherit resolves to the Workspace default set by the test above — proof
     // the cleared field tracks the Workspace, not a frozen global default.
     expect(cleared.body.model).toBe('ws-default-model');
@@ -507,7 +507,7 @@ describe('task list pagination, search, and summary (ADR-0045, #347)', () => {
     expect(page2.body.total).toBe(3);
 
     const ids = [...page1.body.tasks, ...page2.body.tasks].map((t: any) => t.id);
-    expect(new Set(ids).size).toBe(3); // disjoint pages covering the whole list
+    expect(new Set(ids).size).toBe(3);
   });
 
   it('searches server-side: case-insensitive substring over the prompt, with a filtered total', async () => {

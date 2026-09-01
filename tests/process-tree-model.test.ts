@@ -76,7 +76,7 @@ describe('nodeStatus — active → inactive → hidden by idle age', () => {
   const n = node({ id: 'x' });
 
   it('walks the ladder as idle age crosses each threshold', () => {
-    const map = trackNodeActivity(NO_NODE_ACTIVITY, n, 0); // lastWrite = 0
+    const map = trackNodeActivity(NO_NODE_ACTIVITY, n, 0);
     expect(nodeStatus(n, map, INACTIVE_AFTER_MS - 1)).toBe('active');
     expect(nodeStatus(n, map, INACTIVE_AFTER_MS)).toBe('inactive');
     expect(nodeStatus(n, map, HIDDEN_AFTER_MS)).toBe('hidden');
@@ -84,7 +84,7 @@ describe('nodeStatus — active → inactive → hidden by idle age', () => {
 
   it('never revives a node the server already retired (server status is a floor)', () => {
     const server = node({ id: 'x', status: 'inactive' });
-    const map = trackNodeActivity(NO_NODE_ACTIVITY, server, 100); // fresh stamp at now
+    const map = trackNodeActivity(NO_NODE_ACTIVITY, server, 100);
     // A fresh client stamp alone says "active", but the server said "inactive" → stays inactive.
     expect(nodeStatus(server, map, 100)).toBe('inactive');
   });
@@ -114,7 +114,7 @@ describe('flattenTree — rows, connectors, and hidden pruning', () => {
 
     const byId = Object.fromEntries(rows.map((r) => [r.node.id, r]));
     expect(byId.root!.isLast).toBe(true);
-    expect(byId.a!.isLast).toBe(false); // b follows
+    expect(byId.a!.isLast).toBe(false);
     expect(byId.b!.isLast).toBe(true);
     expect(byId.x!.isLast).toBe(true);
     // x sits under a, which still has a later sibling (b) → its one ancestor
@@ -146,9 +146,9 @@ describe('flattenTree — rows, connectors, and hidden pruning', () => {
     const map = trackNodeActivity(NO_NODE_ACTIVITY, tree, 0);
     const rows = flattenTree(tree, map, 0);
     const ids = rows.map((r) => r.node.id);
-    expect(ids).toContain('spine'); // kept — it's above a live descendant
+    expect(ids).toContain('spine');
     expect(ids).toContain('live');
-    expect(ids).not.toContain('gone'); // hidden leaf drops out
+    expect(ids).not.toContain('gone');
   });
 
   it('recomputes isLast over visible siblings only', () => {

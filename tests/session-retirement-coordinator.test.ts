@@ -90,7 +90,7 @@ describe('Session retirement (issue #148)', () => {
       const s = await dispatch();
       await sessions.beginRetiring(s.id, 'merged', now);
       const stuck = await sessions.markIdle(s.id, now + 5_000, 'retention-ttl', now);
-      expect(stuck.status).toBe('retiring'); // markIdle was a no-op
+      expect(stuck.status).toBe('retiring');
     });
 
     it('reactivate returns an idle Session to active for a continuation', async () => {
@@ -105,8 +105,8 @@ describe('Session retirement (issue #148)', () => {
       const b = await dispatch({ harnessSessionId: 'b' });
       const c = await dispatch({ harnessSessionId: 'c' });
       await sessions.beginRetiring(a.id, 'merged', now);
-      await sessions.markIdle(b.id, now + 10, 'retention-ttl', now); // not yet due at `now`
-      await sessions.markIdle(c.id, now - 10, 'retention-ttl', now); // overdue
+      await sessions.markIdle(b.id, now + 10, 'retention-ttl', now);
+      await sessions.markIdle(c.id, now - 10, 'retention-ttl', now);
       expect((await sessions.listRetiring()).map((s) => s.id)).toEqual([a.id]);
       expect((await sessions.listRetentionDue(now)).map((s) => s.id)).toEqual([c.id]);
     });
@@ -137,7 +137,7 @@ describe('Session retirement (issue #148)', () => {
 
     it('is a no-op for a Run with no Session', async () => {
       const task = await tasks.create({ prompt: 'p', state: 'ready' });
-      const run = await runs.create(task.id); // sessionRowId null
+      const run = await runs.create(task.id);
       await expect(makeCoord().onAttemptSettled(run, 'merged', now)).resolves.toBeUndefined();
     });
 
@@ -146,7 +146,7 @@ describe('Session retirement (issue #148)', () => {
       const run = await runForSession(s.id);
       const coord = makeCoord();
       await coord.onAttemptSettled(run, 'merged', now);
-      await coord.onAttemptSettled(run, 'other', now + 1); // a later ending must not un-retire it
+      await coord.onAttemptSettled(run, 'other', now + 1);
       expect((await sessions.get(s.id)).status).toBe('retiring');
     });
   });
@@ -182,7 +182,7 @@ describe('Session retirement (issue #148)', () => {
     it('does NOT remove a worktree a live Run is still executing in', async () => {
       const s = await dispatch();
       await sessions.bindWorktree(s.id, '/repo', '/wt/run-1', now);
-      const run = await runForSession(s.id); // still 'running'
+      const run = await runForSession(s.id);
       await sessions.beginRetiring(s.id, 'merged', now);
       const removeWorktree = vi.fn(async () => {});
       const coord = new SessionRetirementCoordinator(sessions, runs, removeWorktree, cfg, () => now);
@@ -191,7 +191,7 @@ describe('Session retirement (issue #148)', () => {
 
       expect(retired).toBe(0);
       expect(removeWorktree).not.toHaveBeenCalled();
-      expect((await sessions.get(s.id)).status).toBe('retiring'); // left for a later drain
+      expect((await sessions.get(s.id)).status).toBe('retiring');
 
       // Once the Run leaves 'running', a later drain completes the retirement.
       await runs.update(run.id, { state: 'passed' });

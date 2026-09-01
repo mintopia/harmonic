@@ -9,7 +9,6 @@ import { Git } from '../src/execution/git.js';
 const git = (dir: string, ...args: string[]) =>
   execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
 
-/** A throwaway git repo on branch main with one committed README. */
 function makeRepo(): string {
   const dir = mkdtempSync(join(tmpdir(), 'harmonic-repo-'));
   execFileSync('git', ['init', '-b', 'main', dir], { encoding: 'utf8' });
@@ -53,10 +52,7 @@ describe('task list payload: latest run branch', () => {
 
     const task = list.body.tasks.find((t: any) => t.id === created.body.id);
     expect(task.branch).toBe(`harmonic/task-${created.body.id}`);
-    // The diffstat was snapshotted at settle and rides the same payload.
     expect(task.stat).toContain('insertion');
-    // The attempt-scoped endpoint serves that same snapshot, so the card and Task
-    // detail can never show two different stats.
     const runs = await server.api('GET', `/api/tasks/${created.body.id}/attempts`);
     const diff = await server.api('GET', `/api/attempts/${runs.body.attempts.at(-1).id}/diff`);
     expect(diff.body.stat).toBe(task.stat);

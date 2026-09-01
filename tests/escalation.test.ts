@@ -116,7 +116,7 @@ describe('escalation: the three actions (direct mode)', () => {
     expect(runs).toHaveLength(2);
     expect(runs[1].number).toBe(2);
     expect(runs[1].prompt).toContain('Do not crash; write the CSV header first.');
-    expect(runs[1].prompt).toContain('crash-before-response'); // the original prompt is kept
+    expect(runs[1].prompt).toContain('crash-before-response');
   });
 
   it('Reject without start requeues to ready and records the guidance, but does not force-start (ADR-0048)', async () => {
@@ -132,7 +132,7 @@ describe('escalation: the three actions (direct mode)', () => {
     await new Promise((r) => setTimeout(r, 50));
     expect((await server.api('GET', `/api/tasks/${taskId}`)).body.state).toBe('ready');
     const runs = (await server.api('GET', `/api/tasks/${taskId}/attempts`)).body.attempts;
-    expect(runs).toHaveLength(1); // only the original escalated Run; no new one
+    expect(runs).toHaveLength(1);
     // The guidance is recorded as the next Attempt's feedback all the same.
     expect((await timeline(taskId)).find((a) => a.number === 1)!.feedback).toBe(
       'Do not crash; write the CSV header first.',

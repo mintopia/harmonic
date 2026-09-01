@@ -13,7 +13,6 @@ const listing = (path: string, parent: string | null, childNames: string[]): FsL
   entries: childNames.map((name) => ({ name, path: `${path === '/' ? '' : path}/${name}` })),
 });
 
-/** Load the root (home) listing into a fresh picker. */
 const withRoot = (l: FsListing): PickerState => reducePicker(emptyPicker(), { type: 'loaded', listing: l });
 
 describe('reducePicker — loading a listing', () => {
@@ -40,9 +39,7 @@ describe('reducePicker — loading a listing', () => {
     expect(alpha.expanded).toBe(true);
     expect(alpha.loading).toBe(false);
     expect(alpha.children).toEqual(['/home/dev/alpha/nested']);
-    // sibling untouched
     expect(state.nodes['/home/dev/beta']!.children).toBeNull();
-    // newly discovered grandchild present
     expect(state.nodes['/home/dev/alpha/nested']!.name).toBe('nested');
   });
 
@@ -86,7 +83,6 @@ describe('reducePicker — expand / collapse / loading / error', () => {
     state = reducePicker(state, { type: 'error', path: '/home/dev/alpha', message: 'nope' });
     const alpha = state.nodes['/home/dev/alpha']!;
     expect(alpha.loading).toBe(false);
-    // collapsed so the next click refetches rather than toggling a phantom shut
     expect(alpha.expanded).toBe(false);
     expect(alpha.children).toBeNull();
     expect(alpha.error).toBe('nope');
@@ -143,7 +139,6 @@ describe('visibleRows', () => {
   it('does not descend into a node whose children are still loading', () => {
     let state = withRoot(listing('/home/dev', '/home', ['alpha']));
     state = reducePicker(state, { type: 'loading', path: '/home/dev/alpha' });
-    // expanded but children still null → no phantom rows
     expect(visibleRows(state).map((r) => r.node.path)).toEqual(['/home/dev', '/home/dev/alpha']);
   });
 });

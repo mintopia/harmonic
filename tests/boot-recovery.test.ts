@@ -64,7 +64,7 @@ describe('boot crash-recovery', () => {
 
     server = await startServer(undefined, { dataDir });
     const recovered = await server.api('GET', `/api/tasks/${id}`);
-    expect(recovered.body.state).toBe('ready'); // an interruption is not a failed Attempt (ADR-0041)
+    expect(recovered.body.state).toBe('ready');
   });
 
   it('leaves a done ticket and its merged Run untouched across a restart', async () => {
@@ -202,7 +202,7 @@ describe('boot crash-recovery', () => {
       const check = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
       const rows = await check.execute({ sql: 'SELECT id FROM attempts WHERE task_id = ?', args: [taskId] });
       check.close();
-      expect(rows.rows).toHaveLength(1); // no re-pick spawned a second Attempt
+      expect(rows.rows).toHaveLength(1);
     },
   );
 
@@ -236,7 +236,7 @@ describe('boot crash-recovery', () => {
       server = await startServer({ ...stubHarness(), defaults: { isolationMode: 'worktree' }, maxAttempts: 1 }, { dataDir });
 
       const task = await server.api('GET', `/api/tasks/${taskId}`);
-      expect(task.body.state).toBe('done'); // the merge is owed a `done`, not left escalated
+      expect(task.body.state).toBe('done');
       const run = await server.api('GET', `/api/attempts/${attemptId}`);
       expect(run.body.state).toBe('completed');
       expect(git(repo, 'rev-parse', 'main')).toBe(mainTipAfterMerge);

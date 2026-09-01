@@ -72,9 +72,7 @@ describe('epicUsageSummary', () => {
     expect(summary.durationP95).toBe('1h 2m');
     expect(summary.tokensIn).toBe(1000);
     expect(summary.tokensOut).toBe(200);
-    // cacheHitRate = cacheRead / (input + cacheRead + cacheWrite) = 300 / 1400
     expect(summary.cacheHitPct).toBe(`${Math.round((300 / 1400) * 100)}%`);
-    // subagentShare = (total - root) / total = 400 / 1850
     expect(summary.subagentSharePct).toBe(`${Math.round((400 / 1850) * 100)}%`);
     expect(summary.toolCalls).toBe(50);
     expect(summary.modelBars).toEqual([

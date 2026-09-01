@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
 
-/** Collect WS messages into an inspectable list. */
 async function connectWs(server: TestServer): Promise<{ messages: any[]; send: (message: unknown) => void; close: () => void }> {
   const ws = new WebSocket(`${server.baseUrl.replace('http', 'ws')}/api/ws?token=${server.sessionToken}`);
   const messages: any[] = [];
@@ -37,8 +36,6 @@ describe('live structured run event streaming and replay', () => {
     });
     const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
     const attemptId = started.body.id;
-    // The log firehose is opt-in and cursor-resumable, unlike global board
-    // events. Start at zero to receive this Run's complete live stream.
     ws.send({ type: 'attempt_log_subscribe', attemptId, after: 0 });
 
     await waitFor(async () =>
@@ -114,7 +111,6 @@ describe('live structured run event streaming and replay', () => {
     expect(msg.task.dependsOn).toEqual([dep.body.id]);
     expect(msg.task.dependents).toEqual([]);
     expect(msg.task.blockedOnFailed).toBe(false);
-    // The Board's Pending columns and HITL treatment read these off the payload.
     expect(msg.task.openBlockerCount).toBe(1);
     expect(msg.task.humanOnly).toBe(false);
 

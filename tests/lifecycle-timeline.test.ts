@@ -18,8 +18,6 @@ describe('LifecycleTimeline', () => {
   });
 
   it('threads state-coloured nodes on a continuous connector rail with a time gutter', () => {
-    // A continuous rail (each row's left border joins the next) with the node
-    // punched over it by a surface ring, and a dedicated time-gutter column.
     expect(SOURCE).toContain('border-l border-hairline');
     expect(SOURCE).toContain('ring-4 ring-surface');
     expect(SOURCE).toContain('grid-cols-[64px_minmax(0,1fr)]');

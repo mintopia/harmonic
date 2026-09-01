@@ -280,12 +280,12 @@ describe('local-markdown tracker adapter (mattpocock format)', () => {
         state: 'open',
         labels: ['ready-for-agent'],
         assignees: [],
-        parent: 0, // points at the spec Map
+        parent: 0,
         isMap: false,
         comments: [],
       });
       expect(t1.body).toContain('**What to build:**');
-      expect(t1.body).not.toMatch(/^# 01/); // heading stripped from body
+      expect(t1.body).not.toMatch(/^# 01/);
       expect(t1.url).toMatch(/^file:.*01-adapter-interface\.md$/);
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -443,7 +443,7 @@ describe('local-markdown tracker adapter (mattpocock format)', () => {
   };
 
   it('aggregates coexisting feature specs, namespacing ids per feature', async () => {
-    const root = mkTree('feature-a'); // feature-a: map + issues 01, 02
+    const root = mkTree('feature-a');
     try {
       addFeatureB(root);
 
@@ -585,7 +585,7 @@ describe('gitlab tracker adapter', () => {
     await gl.claim({ number: 36 } as any);
     await gl.close({ number: 36 } as any, 'done');
     const put = writes.find((w) => w.method === 'PUT' && w.path.includes('assignee_ids'))!;
-    expect(put.path).toContain('7'); // our user id assigned
+    expect(put.path).toContain('7');
     expect(writes.some((w) => w.method === 'POST' && /\/issues\/36\/notes\?body=done/.test(w.path))).toBe(true);
     expect(writes.some((w) => w.method === 'PUT' && /\/issues\/36\?state_event=close/.test(w.path))).toBe(true);
   });

@@ -1,12 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { appConfigSchema, defaultConfig, mergeConfig, migrateLegacyConfig } from '../src/config.js';
 
-/**
- * The retired `agentReview` flag (ADR-0021, issue #140): folded into
- * `verification.autoAccept` — the verifier's pass now IS the accept. The
- * legacy key is always dropped so it never lingers in stored config nor
- * re-exposes the removed accept/reject surface.
- */
 describe('migrateLegacyConfig (#140, ADR-0021)', () => {
   it('drops agentReview without inventing any verify key (the review gate it described is gone, ADR-0041)', () => {
     const result = migrateLegacyConfig({ agentReview: true });

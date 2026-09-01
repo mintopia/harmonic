@@ -9,11 +9,6 @@ import {
 } from '../src/domain/session-retirement.js';
 import { SESSION_STATUSES } from '../src/db/schema.js';
 
-/**
- * The pure Session-retirement decision (issue #148, reliability-design Unit C):
- * the deadline policy and the legal `active → idle → retiring → retired` graph,
- * tested in isolation (no db/clock/git) — the same seam as run-disposition.ts.
- */
 describe('decideRetirement (issue #148)', () => {
   const now = 1_000_000;
   const cfg: RetentionConfig = { retentionTtlMs: 100_000 };

@@ -231,7 +231,7 @@ describe('EpicIntegrateCoordinator', () => {
 
     it('retires a squash/rebase-merged branch whose content is contained but tip is not an ancestor (tier 2, #218)', async () => {
       const git = new FakeGit();
-      git.setContentContained('epic/42'); // content in default, but NOT an ancestor
+      git.setContentContained('epic/42');
       const { coord, verify, integrate, retire } = build({ git });
       const out = await coord.submit({ ref: 42, members: members('completed', 'completed') });
       expect(out).toEqual({ status: 'integrated', oid: 'oid-epic-42' });
@@ -245,11 +245,11 @@ describe('EpicIntegrateCoordinator', () => {
       const git = new FakeGit();
       const isContentContained = vi.spyOn(git, 'isContentContained');
       const { coord } = build({ git, verify: async () => inconclusive, now: () => clock, verifyBackoffMs: 60_000 });
-      await coord.submit({ ref: 42, members: members('completed') }); // runs tier 2, then escalates
+      await coord.submit({ ref: 42, members: members('completed') });
       expect(isContentContained).toHaveBeenCalledTimes(1);
-      clock = 30_000; // inside the window
-      await coord.submit({ ref: 42, members: members('completed', 'completed') }); // churn → deferred by backoff
-      expect(isContentContained).toHaveBeenCalledTimes(1); // NOT re-run under backoff
+      clock = 30_000;
+      await coord.submit({ ref: 42, members: members('completed', 'completed') });
+      expect(isContentContained).toHaveBeenCalledTimes(1);
     });
 
     it('keeps the backoff when a contained-branch retire fails, so tier 2 does not re-run every poll (#218)', async () => {
@@ -258,7 +258,7 @@ describe('EpicIntegrateCoordinator', () => {
       // merge would re-run every poll — the storm class #218 targets.
       let clock = 0;
       const git = new FakeGit();
-      git.setContentContained('epic/42'); // content merged (squash), tip not an ancestor
+      git.setContentContained('epic/42');
       const isContentContained = vi.spyOn(git, 'isContentContained');
       const retire = vi.fn(async (_ref: number) => {
         throw new Error('branch -d failed');
@@ -276,15 +276,15 @@ describe('EpicIntegrateCoordinator', () => {
         onError,
       });
       const first = await coord.submit({ ref: 42, members: members('completed') });
-      expect(first.status).toBe('integrated'); // tier 2 retires (retire throws, logged non-fatal)
+      expect(first.status).toBe('integrated');
       expect(isContentContained).toHaveBeenCalledTimes(1);
       expect(retire).toHaveBeenCalledTimes(1);
       expect(onError).toHaveBeenCalledWith(expect.stringContaining('already-contained'));
-      clock = 30_000; // still inside the backoff window
+      clock = 30_000;
       const second = await coord.submit({ ref: 42, members: members('completed') });
-      expect(second.status).toBe('waiting'); // deferred by the retained backoff
-      expect(isContentContained).toHaveBeenCalledTimes(1); // heavy check NOT re-run
-      expect(retire).toHaveBeenCalledTimes(1); // no per-poll retire retry storm
+      expect(second.status).toBe('waiting');
+      expect(isContentContained).toHaveBeenCalledTimes(1);
+      expect(retire).toHaveBeenCalledTimes(1);
     });
 
     it('retains the last verification verdict on the containment fast-path (read-model consistency, #218)', async () => {
@@ -314,7 +314,7 @@ describe('EpicIntegrateCoordinator', () => {
       const out = await coord.submit({ ref: 42, members: members('completed') });
       expect(out).toEqual({ status: 'integrated', oid: 'oid-epic-42' });
       expect(retire).toHaveBeenCalledWith(42);
-      expect(verify).toHaveBeenCalledTimes(1); // never re-ran verify
+      expect(verify).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -327,7 +327,7 @@ describe('EpicIntegrateCoordinator', () => {
       const { coord, verify } = build({ verify: async () => inconclusive, now: () => clock, verifyBackoffMs: 60_000 });
       const first = await coord.submit({ ref: 42, members: members('completed') });
       expect(first.status).toBe('escalated');
-      clock = 30_000; // < 60s
+      clock = 30_000;
       const second = await coord.submit({ ref: 42, members: members('completed', 'completed') });
       expect(second.status).toBe('waiting');
       expect(verify).toHaveBeenCalledTimes(1);
@@ -337,7 +337,7 @@ describe('EpicIntegrateCoordinator', () => {
       let clock = 0;
       const { coord, verify } = build({ verify: async () => inconclusive, now: () => clock, verifyBackoffMs: 60_000 });
       await coord.submit({ ref: 42, members: members('completed') });
-      clock = 60_001; // past the window
+      clock = 60_001;
       await coord.submit({ ref: 42, members: members('completed', 'completed') });
       expect(verify).toHaveBeenCalledTimes(2);
     });
@@ -353,7 +353,7 @@ describe('EpicIntegrateCoordinator', () => {
       });
       const first = await coord.submit({ ref: 42, members: members('completed') });
       expect(first.status).toBe('escalated');
-      clock = 10_000; // well inside the window
+      clock = 10_000;
       const forced = await coord.submit({ ref: 42, members: members('completed') }, { force: true });
       expect(forced.status).toBe('integrated');
       expect(verify).toHaveBeenCalledTimes(2);

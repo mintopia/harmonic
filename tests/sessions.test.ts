@@ -15,10 +15,6 @@ import {
 } from '../src/domain/sessions.js';
 import { allWorkspaces, makeSettingsStore } from './helpers.js';
 
-/**
- * The durable Session store and its pure helpers (issue #141, reliability-design
- * Unit C), mirroring `tests/guardrail-events.test.ts`'s store-test template.
- */
 describe('Sessions (issue #141)', () => {
   describe('stripMcpCredentials', () => {
     it('strips headers from a realistic credentialed mcpServers list, leaking the secret nowhere', () => {

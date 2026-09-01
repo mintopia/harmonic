@@ -51,7 +51,7 @@ describe('SettingsStore (issue #391)', () => {
     const store = await SettingsStore.create(dir);
     const wsId = 1;
 
-    expect(store.getOverrides(wsId).harness).toBeNull(); // fresh: inherit
+    expect(store.getOverrides(wsId).harness).toBeNull();
 
     await store.setOverrides(wsId, { harness: 'codex', priority: 'high' });
     expect(store.getOverrides(wsId)).toMatchObject({ harness: 'codex', priority: 'high' });

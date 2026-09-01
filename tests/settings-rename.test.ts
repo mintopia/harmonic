@@ -11,7 +11,7 @@ describe('renameRecordKey', () => {
       ['C', '3'],
     ]);
     expect(next).not.toBe(obj);
-    expect(obj).toEqual({ A: '1', B: '2', C: '3' }); // input untouched
+    expect(obj).toEqual({ A: '1', B: '2', C: '3' });
   });
 
   it('preserves position when renaming the first and last keys', () => {

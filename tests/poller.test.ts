@@ -84,14 +84,14 @@ describe('TrackerPoller.poll', () => {
   it('scans and mirrors 1:1 into its Workspace without scheduling work', async () => {
     const { adapter, scans } = stubAdapter([
       ticket({ number: 42, title: 'Add rate limiting', labels: ['ready-for-agent'] }),
-      ticket({ number: 43, isMap: true, labels: ['wayfinder:map'] }), // not mirrored
+      ticket({ number: 43, isMap: true, labels: ['wayfinder:map'] }),
     ]);
     const poller = new TrackerPoller(tasks, wsId, dir, 60_000, async () => adapter);
 
     await poller.poll();
 
     expect(scans()).toBe(1);
-    expect(await tasks.list()).toHaveLength(1); // map skipped
+    expect(await tasks.list()).toHaveLength(1);
     expect((await tasks.list())[0]).toMatchObject({ origin: 'mirrored', trackerRef: 42, state: 'ready', workspaceId: wsId });
   });
 
@@ -145,7 +145,7 @@ describe('TrackerPoller.poll', () => {
         scans++;
         inScan++;
         maxConcurrent = Math.max(maxConcurrent, inScan);
-        if (scans === 1) await gateFirst; // hold the first pass open
+        if (scans === 1) await gateFirst;
         inScan--;
         return [ticket({ number: 9, labels: ['ready-for-agent'] })];
       },
@@ -157,8 +157,8 @@ describe('TrackerPoller.poll', () => {
     };
     const poller = new TrackerPoller(tasks, wsId, dir, 60_000, async () => adapter);
 
-    const first = poller.poll(); // starts pass #1, now held in scan
-    const second = poller.poll(); // arrives mid-flight → must coalesce, not overlap
+    const first = poller.poll();
+    const second = poller.poll();
     release?.();
     await Promise.all([first, second]);
 
@@ -189,7 +189,7 @@ describe('TrackerPoller.poll', () => {
     expect(reported.at(-1)).toEqual({ ok: true, name: 'stub', label: 'stub' });
 
     broken = true;
-    await expect(poller.poll()).rejects.toThrow(/declaration vanished/); // scan never reached
+    await expect(poller.poll()).rejects.toThrow(/declaration vanished/);
     expect(reported.at(-1)).toMatchObject({ ok: false, code: 'misconfigured' });
   });
 
@@ -212,11 +212,11 @@ describe('TrackerPoller.poll', () => {
     await poller.poll();
 
     expect(poller.urlFor(30)).toBe('https://x/30');
-    expect(poller.urlFor(999)).toBeNull(); // unknown ref
-    expect(poller.urlFor(null)).toBeNull(); // native Task
-    expect(poller.titleForMap(19)).toBe('Wayfinder'); // mapRef → Map title (issue #34)
-    expect(poller.titleForMap(999)).toBeNull(); // unknown ref
-    expect(poller.titleForMap(null)).toBeNull(); // unmapped Task
+    expect(poller.urlFor(999)).toBeNull();
+    expect(poller.urlFor(null)).toBeNull();
+    expect(poller.titleForMap(19)).toBe('Wayfinder');
+    expect(poller.titleForMap(999)).toBeNull();
+    expect(poller.titleForMap(null)).toBeNull();
   });
 
   /** Poll #42, flip it working, then re-poll it with a new state — the board-refresh path. */
@@ -226,7 +226,7 @@ describe('TrackerPoller.poll', () => {
     const poller = new TrackerPoller(tasks, wsId, dir, 60_000, async () => ({ ...stubAdapter([]).adapter, scan: async () => [current] }));
     await poller.poll();
     const task = (await tasks.list())[0]!;
-    await tasks.setState(task.id, 'working'); // a live Run flipped it (Runner.start / launchClaimed)
+    await tasks.setState(task.id, 'working');
     current = ticket({ number: 42, labels: ['ready-for-agent'], state: finalState });
     await poller.poll();
     return { taskId: task.id };
@@ -254,9 +254,9 @@ describe('TrackerPoller.poll', () => {
       60_000,
       async () => ({ ...adapter, scan: async () => [ticket({ number: 42, labels: ['ready-for-agent'], state })] }),
     );
-    await poller.poll(); // ready
+    await poller.poll();
     state = 'closed';
-    await poller.poll(); // resting → done via upsert
+    await poller.poll();
     expect((await tasks.list())[0]!.state).toBe('done');
   });
 

@@ -166,7 +166,7 @@ describe('Drive Prompt fill (issue #33)', () => {
     // 4th ctor arg is the Workspace resolver (ADR-0044): drive.* resolves against it.
     const drive = new AutoDrive(() => config, () => null, undefined, async () => wsOverride as never);
     const task = worktreeTask({ id: 3, trackerRef: 9, workspaceId: 2 });
-    expect(await drive.prompt(task)).toBe('WS 9\n\nws-reminder 3'); // WS prompt + WS reminder
+    expect(await drive.prompt(task)).toBe('WS 9\n\nws-reminder 3');
     expect(await drive.continuePrompt(task)).toBe('ws-continue 3\n\nws-reminder 3');
     expect(await drive.continueAttempts(task)).toBe(5);
     expect(await drive.mergeFateFor(task)).toBe('open-PR');
@@ -181,7 +181,7 @@ describe('Drive Prompt fill (issue #33)', () => {
     const open = fakeAdapter('open');
     const drive = new AutoDrive(() => defaultConfig(), () => null, async () => open.adapter);
     expect(await drive.closeTicket(worktreeTask(), 'Closed by a Harmonic operator without merging (task 1).')).toBe(true);
-    expect(open.calls.close).toEqual([7]); // worktreeTask trackerRef
+    expect(open.calls.close).toEqual([7]);
 
     // An already-closed ticket needs no second close (some trackers error on it).
     const closed = fakeAdapter('closed');
@@ -224,7 +224,7 @@ describe('Drive Prompt fill (issue #33)', () => {
     const { adapter, calls } = fakeAdapter('open');
     const drive = new AutoDrive(() => defaultConfig(), () => null, async () => adapter);
     expect(await drive.closeCompleted(worktreeTask())).toBe(true);
-    expect(calls.close).toEqual([7]); // worktreeTask trackerRef
+    expect(calls.close).toEqual([7]);
   });
 
   it('closeCompleted is idempotent — an already-closed ticket is not re-closed', async () => {
@@ -248,7 +248,7 @@ describe('AutoDrive.onCompleted — Merge Fate close-after-verify (issue #139)',
     const { adapter, calls } = fakeAdapter('open');
     const drive = new AutoDrive(() => cfg('auto-merge'), () => null, async () => adapter);
     expect(await drive.onCompleted(worktreeTask(), run())).toBe('completed');
-    expect(calls.close).toEqual([7]); // Harmonic closes it — trackerRef 7
+    expect(calls.close).toEqual([7]);
   });
 
   it('auto-merge whose close fails escalates', async () => {
@@ -419,12 +419,12 @@ describe('Runner auto-drive settle (issue #33)', () => {
     const modeSet = (await eventsForTask(task.id)).find(
       (e) => e.type === 'lifecycle' && (e.payload as any).event === 'mode_set',
     );
-    expect((modeSet?.payload as any)?.mode).toBe('auto'); // session/set_mode auto went over the wire
+    expect((modeSet?.payload as any)?.mode).toBe('auto');
   });
 
   it('an afk Run fails closed when the harness offers no unattended permission mode', async () => {
     const cfg = config({}, 1);
-    cfg.harnesses.claude.env = { STUB_MODES: '' }; // advertise no session modes
+    cfg.harnesses.claude.env = { STUB_MODES: '' };
     build(cfg);
     const task = await tasks.upsertMirrored(mirroredAfk(8));
     await startMirrored(task.id);
@@ -436,7 +436,7 @@ describe('Runner auto-drive settle (issue #33)', () => {
     }, { timeout: 10_000 });
 
     const last = (await attempts.listForTask(task.id)).at(-1)!;
-    expect(last.state).toBe('escalated'); // one permitted Attempt → escalates on the first failure
+    expect(last.state).toBe('escalated');
     expect(last.detail).toMatch(/unattended permission mode/);
     expect(settled.state).toBe('escalated');
   });
@@ -481,7 +481,7 @@ describe('Runner auto-drive settle (issue #33)', () => {
     }, { timeout: 10_000 });
 
     const lastRun = (await attempts.listForTask(task.id)).at(-1)!;
-    expect(await continueEvents(lastRun)).toHaveLength(2); // re-prompted exactly continueAttempts times
+    expect(await continueEvents(lastRun)).toHaveLength(2);
     expect(lastRun.detail).toMatch(/finish_task|escalated to human/);
     expect(settled.state).toBe('escalated');
   });
@@ -496,7 +496,7 @@ describe('Runner auto-drive settle (issue #33)', () => {
     }, { timeout: 10_000 });
 
     const lastRun = (await attempts.listForTask(task.id)).at(-1)!;
-    expect(await continueEvents(lastRun)).toHaveLength(0); // straight to the unresolved path
+    expect(await continueEvents(lastRun)).toHaveLength(0);
   });
 
   it('a closed ticket alone no longer completes a Run — finish_task is the signal (#139)', async () => {
@@ -515,7 +515,7 @@ describe('Runner auto-drive settle (issue #33)', () => {
       return t;
     }, { timeout: 10_000 });
 
-    expect(settled.state).toBe('escalated'); // a closed ticket did not complete it
+    expect(settled.state).toBe('escalated');
     const lastRun = (await attempts.listForTask(task.id)).at(-1)!;
     expect(lastRun.detail).toMatch(/finish_task|escalated to human/);
   });

@@ -1,14 +1,6 @@
 // Explicit .js extensions: shared with the node-side test project (see
 // board-model.ts for the same nodenext/Vite note).
 
-/**
- * Pure transform: fetched OpenAPI 3.x spec JSON -> a grouped, expandable
- * endpoint tree for the API page's rendered reference (issue 7). No React,
- * no fetch — the component owns those; this module only shapes data an
- * endpoint must never be dropped for having a schema this model doesn't
- * understand, it degrades to a `raw` node instead (see toSchemaNode).
- */
-
 /** `example` is whatever the spec declared for this node (zod `.meta({ example })`
  * in src/server/schemas.ts and the route modules). Absent means the spec author
  * didn't supply one — renderers should say so rather than invent precision. */

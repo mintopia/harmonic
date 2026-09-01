@@ -98,7 +98,7 @@ describe('openapi spec', () => {
     const apiRoutes = server.app.registeredRoutes.filter(
       (r) => r.url.startsWith('/api') && r.method !== 'HEAD' && !excluded.has(r.url),
     );
-    expect(apiRoutes.length).toBeGreaterThan(20); // sanity: the filter isn't vacuously empty
+    expect(apiRoutes.length).toBeGreaterThan(20);
 
     for (const route of apiRoutes) {
       const specPath = toSpecPath(route.url);

@@ -66,7 +66,6 @@ describe('persistent permission rules (issue 13)', () => {
     );
     expect(resolved.payload.rule).toEqual({ kind: 'edit', workingDir: b.workingDir });
     expect(resolved.payload.outcome.outcome).toBe('selected');
-    // No new prompt was broadcast for conversation B.
     expect(ws.messages.filter((m) => m.type === 'permission_request' && m.conversationId === b.id)).toHaveLength(0);
     expect(ws.messages.filter((m) => m.type === 'permission_request').length).toBe(before);
 
@@ -95,7 +94,6 @@ describe('persistent permission rules (issue 13)', () => {
     const rule = body.rules.find((r: any) => r.kind === 'edit');
     expect(rule).toBeTruthy();
 
-    // Revoke it.
     const del = await server.api('DELETE', `/api/permission-rules/${rule.id}`);
     expect(del.status).toBe(200);
     expect((await server.api('GET', '/api/permission-rules')).body.rules.some((r: any) => r.id === rule.id)).toBe(false);

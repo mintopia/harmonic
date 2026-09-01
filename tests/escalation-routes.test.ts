@@ -240,8 +240,8 @@ describe('escalation actions on a worktree ticket (ADR-0041)', () => {
       expect(runs).toHaveLength(3);
       expect(runs[2].number).toBe(3);
       expect(runs[2].prompt).toContain('The timeout is intentional');
-      expect(branch).toBe(`harmonic/task-${taskId}`); // per-Task, no -run-<attempt> suffix
-      expect(runs[2].branch).toBe(branch); // same working copy across Attempts
+      expect(branch).toBe(`harmonic/task-${taskId}`);
+      expect(runs[2].branch).toBe(branch);
       expect(runs[0].branch).toBe(branch);
     });
 

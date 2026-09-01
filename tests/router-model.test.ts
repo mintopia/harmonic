@@ -31,7 +31,6 @@ describe('parseRoute', () => {
   });
 
   it('drops non-terminal states from peek — only terminal columns are peekable', () => {
-    // working/ready/escalated aren't collapsible columns, so they can never be "peeked".
     expect(parseRoute('/', '?peek=working,ready,escalated').peeked).toEqual([]);
     expect(parseRoute('/', '?peek=done,working,cancelled').peeked).toEqual(['done', 'cancelled']);
   });

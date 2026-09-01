@@ -129,7 +129,6 @@ describe('lastConversationTurnAt', () => {
       ev({ type: 'user_turn', ts: 100 }),
       ev({ type: 'session_update', ts: 150 }),
       ev({ type: 'lifecycle', ts: 200, payload: { event: 'finished' } }),
-      // A later permission event is NOT a Turn boundary and must not advance the clock.
       ev({ type: 'permission_request', ts: 300 }),
     ];
     expect(lastConversationTurnAt(events)).toBe(200);
@@ -145,13 +144,13 @@ describe('isColdCache / formatColdCacheMessage', () => {
   });
 
   it('is false while idle time is within the TTL', () => {
-    const now = base.lastTurnAt + 100_000; // 100s idle, 300s TTL
+    const now = base.lastTurnAt + 100_000;
     expect(isColdCache({ ...base, now })).toBe(false);
     expect(formatColdCacheMessage({ ...base, now })).toBeNull();
   });
 
   it('is true once idle time exceeds the TTL, worded as an estimate', () => {
-    const now = base.lastTurnAt + 400_000; // 400s idle, 300s (5m) TTL
+    const now = base.lastTurnAt + 400_000;
     expect(isColdCache({ ...base, now })).toBe(true);
     expect(formatColdCacheMessage({ ...base, now })).toBe('Cache likely cold — idle 6m, TTL 5m (estimate)');
   });

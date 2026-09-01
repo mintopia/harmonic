@@ -60,7 +60,7 @@ describe('chooseRejectOptionId', () => {
 describe('permissionGrantDeny', () => {
   it('collapses the option list into a canonical Grant and Deny optionId', () => {
     const gd = permissionGrantDeny(pending([ALLOW_ALWAYS, ALLOW_ONCE, REJECT_ONCE]));
-    expect(gd).toEqual({ grantOptionId: 'a1', denyOptionId: 'r1' }); // allow_once / reject_once preferred
+    expect(gd).toEqual({ grantOptionId: 'a1', denyOptionId: 'r1' });
   });
   it('leaves a verb null when the request cannot support it (never fabricates one)', () => {
     expect(permissionGrantDeny(pending([ALLOW_ONCE]))).toEqual({ grantOptionId: 'a1', denyOptionId: null });
@@ -88,7 +88,7 @@ describe('activityRowActions', () => {
     const a = activityRowActions(proc({ taskId: 42, escalated: true }));
     expect(a.resolve).toEqual({ kind: 'escalated', taskId: 42 });
     expect(a.stopDemoted).toBe(true);
-    expect(a.stop).toEqual({ kind: 'attempt', taskId: 42 }); // Stop stays available, just demoted
+    expect(a.stop).toEqual({ kind: 'attempt', taskId: 42 });
   });
 
   it('a chat blocked on a pending permission resolves via Grant/Deny and demotes Stop', () => {
@@ -100,7 +100,6 @@ describe('activityRowActions', () => {
   });
 
   it('a pending permission outranks an escalated flag on the same row', () => {
-    // (Belt-and-braces: escalated is always false for a chat, but the precedence is explicit.)
     const p = pending([ALLOW_ONCE, REJECT_ONCE], { conversationId: 5 });
     const a = activityRowActions(proc({ type: 'chat', attemptId: null, taskId: null, conversationId: 5, escalated: true }), p);
     expect(a.resolve?.kind).toBe('permission');

@@ -4,11 +4,6 @@ import { StatsWorkerClient } from '../src/db/stats-reader.js';
 import { attemptToolCalls, attempts, tasks, workspaces } from '../src/db/schema.js';
 import { EventLoopMonitor, type StallInfo } from '../src/reliability/event-loop-monitor.js';
 
-/**
- * #257 (ADR-0029 §5): the Stats range scan runs in a worker because local
- * libsql executes its supposedly async queries inline. These tests pin the
- * typed RPC, WAL visibility, lifecycle cleanup, and event-loop isolation.
- */
 describe('Stats heavy aggregate runs in a worker (#257)', () => {
   let server: TestServer | undefined;
 
@@ -25,7 +20,6 @@ describe('Stats heavy aggregate runs in a worker (#257)', () => {
     server = await startServer(stubHarness());
     const { ctx } = server.app;
 
-    // The async single writer commits a run…
     const now = Date.now();
     const ws = (await ctx.asyncDb.read((d) => d.select().from(workspaces).get()))!;
     const task = await ctx.asyncDb.write((d) =>
@@ -50,7 +44,6 @@ describe('Stats heavy aggregate runs in a worker (#257)', () => {
     );
     await ctx.asyncDb.write((d) => d.insert(attemptToolCalls).values({ attemptId: attempt.id, toolName: 'Read', count: 3 }).run());
 
-    // …and the aggregate is served off the async read connection, seeing it.
     const readSpy = vi.spyOn(ctx.statsReader, 'read');
     const res = await server.api('GET', `/api/stats?from=0&to=${now + 1000}`);
 

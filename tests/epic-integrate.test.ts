@@ -19,7 +19,6 @@ const members = (...m: MemberMergeState[]): MemberMergeState[] => m;
 describe('decideEpicIntegrate', () => {
   it('is a noop when the integration branch does not exist (already integrated/retired or never cut)', () => {
     expect(decideEpicIntegrate(facts({ integrationExists: false, members: members('completed') })).action).toBe('noop');
-    // even a force-integrate is a noop with no branch to integrate
     expect(decideEpicIntegrate(facts({ integrationExists: false, force: true })).action).toBe('noop');
   });
 

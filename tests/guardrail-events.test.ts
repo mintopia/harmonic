@@ -9,16 +9,8 @@ import { AttemptStore } from '../src/domain/attempts.js';
 import { GuardrailEventStore } from '../src/domain/guardrail-events.js';
 import { allWorkspaces, makeSettingsStore } from './helpers.js';
 
-/**
- * The append-only Guardrail-trip event log store (issue #127, ADR-0019,
- * mirroring `tests/verification-attempts.test.ts`'s template for
- * `VerificationAttemptStore`, issue #136). Re-keyed off `attempt_id` at
- * ADR-0001 #388 S-F (was `run_id` before).
- */
 describe('GuardrailEventStore (issue #127)', () => {
   let dir: string;
-  // AttemptStore migrated to the async libsql Db (ADR-0029 #203); this fixture
-  // runs both connections on the one file.
   let asyncDb: AsyncDbHandle;
   let events: GuardrailEventStore;
   let attemptId: number;
@@ -103,7 +95,7 @@ describe('GuardrailEventStore (issue #127)', () => {
       observedValue: 103,
       configSource: 'workspace',
     });
-    expect(other.seq).toBe(1); // a fresh Run starts at 1 regardless of other Runs
+    expect(other.seq).toBe(1);
   });
 
   it("list returns a Run's events in seq order, and only that Run's", async () => {

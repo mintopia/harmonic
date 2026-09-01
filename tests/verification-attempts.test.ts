@@ -85,7 +85,7 @@ describe('VerificationAttemptStore (issue #136)', () => {
       summary: 's3',
       output: 'o3',
     });
-    expect(other.seq).toBe(1); // a fresh Run starts at 1 regardless of other Runs
+    expect(other.seq).toBe(1);
   });
 
   it("list returns a Run's attempts in seq order, and only that Run's", async () => {

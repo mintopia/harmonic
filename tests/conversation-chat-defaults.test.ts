@@ -33,8 +33,8 @@ describe('Conversation chat defaults (ADR-0012)', () => {
   it('a new Conversation uses the global chat default, not the Task default', async () => {
     const { status, body } = await server.api('POST', '/api/conversations', {});
     expect(status).toBe(201);
-    expect(body.harness).toBe('codex'); // chat default, not the claude Task default
-    expect(body.model).toBe('codex-b'); // the chat default model
+    expect(body.harness).toBe('codex');
+    expect(body.model).toBe('codex-b');
   });
 
   it("a Workspace's chat override wins over the global chat default", async () => {

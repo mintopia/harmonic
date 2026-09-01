@@ -1,8 +1,8 @@
 /**
  * Event-loop stall detector (issue #200 / ADR-0029 §5).
  *
- * Synchronous better-sqlite3 and every HTTP handler share the one Node event
- * loop, so a slow query or a hot loop blocks *every* request at once. This
+ * Every HTTP handler and background loop shares the one Node event loop, so a
+ * slow query or a hot loop blocks *every* request at once. This
  * probes loop delay on a fixed cadence: it schedules a timer for `probeMs` and,
  * when the timer fires, measures how much later than that it actually ran. That
  * overshoot is the time the loop spent blocked. When the overshoot crosses

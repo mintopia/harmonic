@@ -263,7 +263,7 @@ describe('auto-runner — two-level cap + master gate (issue #60)', () => {
     await server.api('PATCH', '/api/config', { autoRunner: { enabled: true } });
     const { maxTotal } = await samplePeaksUntil(allSettled(ids));
     expect(maxTotal).toBeLessThanOrEqual(2);
-    expect(maxTotal).toBe(2); // the cap is actually reached, not trivially low
+    expect(maxTotal).toBe(2);
   });
 
   it('runs only master ∧ workspace-enabled: skips a disabled workspace while the master is on', async () => {

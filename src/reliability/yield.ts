@@ -2,8 +2,8 @@
  * Cooperative event-loop yielding for background loops and heavy in-request
  * work (issue #200 / ADR-0029 §5).
  *
- * Harmonic runs synchronous better-sqlite3 on the single Node event loop,
- * shared by every HTTP handler and every background loop. A loop that runs
+ * Harmonic runs on a single Node event loop, shared by every HTTP handler and
+ * every background loop. A loop that runs
  * unbounded JS between `await`s starves every in-flight request until it
  * finishes. These helpers let such a loop hand the loop back on a wall-clock
  * budget, so it never blocks for more than ~`budgetMs` at a stretch however

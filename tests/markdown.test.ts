@@ -21,7 +21,6 @@ describe('renderMarkdown', () => {
   it('strips XSS: inline handlers, scripts, and javascript: hrefs', async () => {
     expect(await renderMarkdown('<img src=x onerror=alert(1)>')).not.toContain('onerror');
     expect(await renderMarkdown('<script>alert(1)</script>')).not.toContain('<script');
-    // A javascript: link keeps the text but drops the dangerous href.
     expect(await renderMarkdown('[click](javascript:alert(1))')).not.toContain('javascript:');
   });
 });

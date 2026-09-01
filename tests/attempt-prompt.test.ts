@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import { fillTemplate, promptForTask } from '../src/execution/prompt-template.js';
 import { DEFAULT_TASK_PROMPT } from '../src/config.js';
 
-/** A native Task's fields as promptForTask consumes them. */
 const task = (over: Partial<Parameters<typeof promptForTask>[0]> = {}) => ({
   id: 7,
   prompt: 'Do the thing',
@@ -16,7 +15,6 @@ describe('promptForTask', () => {
   it('sends the prompt verbatim under the default bare {prompt} template', () => {
     expect(promptForTask(task(), DEFAULT_TASK_PROMPT)).toBe('Do the thing');
     expect(promptForTask(task({ feedback: null }), DEFAULT_TASK_PROMPT)).toBe('Do the thing');
-    // whitespace-only feedback counts as none
     expect(promptForTask(task({ feedback: '   \n ' }), DEFAULT_TASK_PROMPT)).toBe('Do the thing');
   });
 
@@ -24,7 +22,6 @@ describe('promptForTask', () => {
     const feedback = 'Add a header row.\n\nHandle empty result sets.';
     const out = promptForTask(task({ prompt: 'Export CSV', feedback }), DEFAULT_TASK_PROMPT);
     expect(out).toBe(`Export CSV\n\n## Feedback from the previous attempt\n\n${feedback}`);
-    // the feedback is preserved verbatim, not truncated
     expect(out).toContain(feedback);
   });
 

@@ -15,13 +15,6 @@ import type { SettingsStore } from '../src/server/settings-store.js';
 import type { VerificationDecision } from '../src/verification/combine.js';
 import { allWorkspaces, makeSettingsStore } from './helpers.js';
 
-/**
- * `EscalationService` against the real stores (ADR-0041): exactly three
- * actions, each gated to `escalated`, each with the behaviour the ADR
- * specifies — Accept merges the verified head and continues the success path,
- * Reject with guidance hands the guidance to the loop, Close cancels and
- * cleans up.
- */
 describe('EscalationService', () => {
   let dir: string;
   let asyncDb: AsyncDbHandle;
@@ -74,7 +67,6 @@ describe('EscalationService', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  /** An escalated ticket whose Run settled `failed` with a verified head (unless `candidate` is false). */
   async function escalated(candidate = true): Promise<{ task: TaskRow; run: AttemptRow }> {
     const created = await tasks.create({ prompt: 'p', state: 'ready' });
     await tasks.setState(created.id, 'working');

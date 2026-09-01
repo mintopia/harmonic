@@ -11,9 +11,6 @@ import {
 import type { VerificationAttempt, VerificationMechanism, VerifierStatus } from '../web/src/types.js';
 import type { Verdict } from '../web/src/verification-model.js';
 
-/** Fills the fields the model helpers don't look at with plain defaults so
- * each test only spells out what it's asserting on (mirrors
- * `verification-model.test.ts`'s `v` factory). */
 const attempt = (
   seq: number,
   mechanism: VerificationMechanism,
@@ -83,7 +80,7 @@ describe('latestVerdicts', () => {
   it('picks the max-seq attempt per mechanism when a mechanism retries', () => {
     const attempts = [
       attempt(1, 'command', 'fail'),
-      attempt(2, 'command', 'pass'), // the self-heal retry that fixed it
+      attempt(2, 'command', 'pass'),
     ];
     expect(latestVerdicts(attempts)).toEqual([{ verifier: 'command', verdict: 'pass' }]);
   });
@@ -153,8 +150,8 @@ describe('groupAttemptsByMechanism', () => {
   it('numbers every retry after the first as a self-heal attempt', () => {
     const attempts = [
       attempt(1, 'command', 'fail'),
-      attempt(3, 'command', 'fail'), // second retry
-      attempt(5, 'command', 'pass'), // third retry, the one that fixed it
+      attempt(3, 'command', 'fail'),
+      attempt(5, 'command', 'pass'),
     ];
     const group = groupAttemptsByMechanism(attempts)[0]!;
     expect(group.attempts.map((a) => [a.seq, a.attemptNumber, a.isSelfHeal])).toEqual([
@@ -168,8 +165,8 @@ describe('groupAttemptsByMechanism', () => {
     const attempts = [
       attempt(1, 'command', 'fail'),
       attempt(2, 'critic', 'pass'),
-      attempt(3, 'command', 'pass'), // command's self-heal retry
-      attempt(4, 'critic', 'fail'), // critic's self-heal retry
+      attempt(3, 'command', 'pass'),
+      attempt(4, 'critic', 'fail'),
     ];
     const groups = groupAttemptsByMechanism(attempts);
     expect(groups.map((g) => [g.mechanism, g.attempts.map((a) => [a.seq, a.attemptNumber, a.isSelfHeal])])).toEqual([

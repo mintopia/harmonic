@@ -8,7 +8,6 @@ import {
   type QuarantinableEvent,
 } from '../src/domain/replay-quarantine.js';
 
-// Tiny inline builders, mirroring stall-detector.test.ts / guardrail-progress.test.ts's idiom.
 const ev = (id: string, replay?: boolean): QuarantinableEvent & { id: string } => {
   const base: QuarantinableEvent & { id: string } = { id, type: 'session_update', payload: { id } };
   return replay === undefined ? base : { ...base, replay };

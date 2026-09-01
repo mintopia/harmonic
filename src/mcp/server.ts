@@ -11,9 +11,7 @@ const taskId = { taskId: z.number().int().positive().describe('Task id') };
 /**
  * The agent-facing MCP surface: everything needed to build autonomous
  * pipelines — task CRUD, dependencies, queue/cancel, and read access to
- * runs and run events. Accept/Reject exist only behind the agent-review
- * config flag (default off): the merge gate stays human unless full
- * autonomy is deliberately enabled (ADR-0002).
+ * runs and run events.
  *
  * A new server is built per request (stateless streamable HTTP), so the
  * tool list always reflects the current config. `opts.operator` gates the
@@ -39,8 +37,6 @@ export function buildMcpServer(ctx: AppContext, opts: { operator?: boolean } = {
     }
   };
 
-  /** Wrap a tool handler so a thrown `DomainError` becomes an `isError` tool
-   * result rather than a raw 500. */
   const wrapAsync = <A, R>(fn: (args: A) => Promise<R>) => {
     return async (args: A) => {
       try {

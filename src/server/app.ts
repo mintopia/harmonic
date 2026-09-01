@@ -397,7 +397,6 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     );
     if (commands.length === 0) return { pass: true, output: '' };
     mkdirSync(worktreesDir, { recursive: true });
-    // `run` IS the Attempt (ADR-0001) — no separate lookup needed.
     for (const command of commands) {
       const cmdAttempt = await runCommandVerifier({
         repoDir: baseDir,

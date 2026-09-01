@@ -28,7 +28,6 @@ describe('TaskService.mdFeatureIndex', () => {
   it('assigns dense first-seen indices, stable across re-queries', async () => {
     expect(await tasks.mdFeatureIndex(1, 'musicparty-soloist')).toBe(0);
     expect(await tasks.mdFeatureIndex(1, 'autoplay-webhooks')).toBe(1);
-    // Re-query in any order returns the same index — the assignment is persisted.
     expect(await tasks.mdFeatureIndex(1, 'autoplay-webhooks')).toBe(1);
     expect(await tasks.mdFeatureIndex(1, 'musicparty-soloist')).toBe(0);
     // A later feature never steals an earlier one's index (the recycling bug).
@@ -37,7 +36,7 @@ describe('TaskService.mdFeatureIndex', () => {
 
   it('namespaces indices per Workspace', async () => {
     expect(await tasks.mdFeatureIndex(1, 'feat')).toBe(0);
-    expect(await tasks.mdFeatureIndex(2, 'feat')).toBe(0); // different Workspace, own map
+    expect(await tasks.mdFeatureIndex(2, 'feat')).toBe(0);
     expect(await tasks.mdFeatureIndex(2, 'other')).toBe(1);
     expect(await tasks.mdFeatureIndex(1, 'feat')).toBe(0);
   });

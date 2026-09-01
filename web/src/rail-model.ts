@@ -31,15 +31,9 @@ export function storeRailCollapsed(storage: StorageLike, collapsed: boolean): vo
  * Settings (issue 6) joins the same way, as the operator config editor;
  * the former Channels modal now lives inside Settings as Notifications.
  */
-// Activity (issue #52) joins as a primary view beside the Deck: the
-// instance-wide live view of every in-flight process across Workspaces, so it
-// sits high in the rail next to the queue it complements.
-// Workspace (issue #64) is the per-Workspace settings page, scoped to the
-// active Workspace (the switcher above the nav picks which). It sits last, next
-// to the global Settings it mirrors — Settings holds machine + default config,
-// Workspace holds one Workspace's identity and its overrides of those defaults.
-// Graph (issue #85, ADR 0015) is the read-only Dependency Graph view — a
-// workspace-scoped sibling of Board/Table, so it sits beside Table in the rail.
+// Rail order: Activity sits high, beside the queue it complements; Graph is a
+// workspace-scoped sibling of Board/Table, so it sits beside Table; Workspace
+// sits last, next to the global Settings it mirrors.
 export const VIEWS = ['board', 'activity', 'operations', 'table', 'graph', 'stats', 'api', 'settings', 'workspace'] as const;
 export type View = (typeof VIEWS)[number];
 
