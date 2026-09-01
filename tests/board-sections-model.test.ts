@@ -212,6 +212,30 @@ describe('boardSections — Attention / Running / Pending (ADR-0041)', () => {
     expect(sections.pending[0]!.columns[0]!.items.map((item) => item.taskId)).toEqual([501]);
   });
 
+  it('keeps a fully-folded, actively-integrating Epic on the board with an empty band', () => {
+    const integrating = epic(70, [member(1, 701, { mergeStatus: 'completed', state: 'done' })], {
+      integrate: { inFlight: true, held: null },
+    });
+    const sections = boardSections([task(701, 'done')], [integrating]);
+    // Active (integrate in flight) but not escalated, so it is a band, not an Attention card.
+    expect(isActiveEpic(integrating)).toBe(true);
+    expect(isEscalatedEpic(integrating)).toBe(false);
+    expect(sections.attention).toEqual([]);
+    expect(sections.pending.map((group) => group.epic?.ref)).toEqual([70]);
+    // Its one member is folded, so the band has no pending columns — the
+    // IntegrationProgress bar is its main content instead.
+    expect(sections.pending[0]!.columns).toEqual([]);
+  });
+
+  it('drops a fully-folded Epic once its whole-Epic integration finishes (no isActiveEpic regression)', () => {
+    const retired = epic(71, [member(1, 711, { mergeStatus: 'completed', state: 'done' })], {
+      integrate: { inFlight: false, held: null },
+    });
+    const sections = boardSections([task(711, 'done')], [retired]);
+    expect(isActiveEpic(retired)).toBe(false);
+    expect(sections.pending).toEqual([]);
+  });
+
   it('keeps a human-only ticket in place in its blocker chain, muted rather than hidden', () => {
     const humanOnly = blocked(2, [1], { humanOnly: true });
     const downstream = blocked(3, [2]);

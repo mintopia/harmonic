@@ -2,6 +2,7 @@
 // project, whose nodenext resolution requires them (Vite maps .js → .ts).
 import type { Task, TaskState } from './types.js';
 import type { Epic, EpicMember } from './epic-model.js';
+import { isEpicIntegrating } from './epic-model.js';
 import { issueRef, taskKey } from './id-format.js';
 
 /**
@@ -239,11 +240,13 @@ export function boardSections(tasks: Task[], epics: Epic[]): BoardSections {
 
   const running = tasks.filter((t) => t.state === 'working' && !isDriver(t)).sort(byProcessingOrder);
 
-  // An Epic with nothing pending (members all merged or promoted) has no band —
-  // a held one is already its Attention card.
+  // An Epic with nothing pending keeps its band only while it is integrating, so
+  // the whole-Epic verify → merge progress stays on the board — except a held
+  // (escalated) one with nothing pending, which surfaces as an Attention card
+  // instead. A fully-merged/retired Epic is already off the board (isActiveEpic).
   const pending: PendingGroup[] = activeEpics
     .map((epic) => ({ epic, columns: epicPendingColumns(epic, tasks) }))
-    .filter((group) => group.columns.length > 0);
+    .filter((group) => group.columns.length > 0 || (isEpicIntegrating(group.epic) && !isEscalatedEpic(group.epic)));
   const standalone = tasks
     .filter((t) => isPending(t) && !activeMemberIds.has(t.id) && !isDriver(t))
     .sort(byPendingOrder)

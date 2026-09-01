@@ -586,6 +586,8 @@ function EpicBand({
         </div>
       )}
 
+      {isEpicIntegrating(epic) && <IntegrationProgress epic={epic} />}
+
       {open && hasColumns && (
         <div className="border-t border-hairline">
           <BlockerColumns columns={columns} onOpenTask={onOpenTask} onChanged={onChanged} className="p-4" />
