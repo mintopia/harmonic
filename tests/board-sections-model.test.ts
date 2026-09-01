@@ -45,6 +45,7 @@ const task = (id: number, state: TaskState, extra: Partial<Task> = {}): Task => 
   openBlockerCount: 0,
   agentWorkable: true,
   humanOnly: false,
+  isEpic: false,
   mapRef: null,
   url: null,
   mapTitle: null,

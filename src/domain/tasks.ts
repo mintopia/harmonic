@@ -84,12 +84,47 @@ export interface TaskOverrides {
   conflictResolveTurns: number | null;
 }
 
+/** A comma-separated multi-select filter param (`draft,ready`): parsed to a
+ * deduped list, each value validated against `values` (an unknown value is a
+ * 400, same as the old single-enum param). Blank ⇒ an empty list ⇒ "all". */
+function csvEnum<T extends string>(values: readonly T[], example: string) {
+  return z
+    .string()
+    .meta({ example })
+    .transform((raw, ctx) => {
+      const parts = [...new Set(raw.split(',').map((v) => v.trim()).filter(Boolean))];
+      for (const p of parts) {
+        if (!(values as readonly string[]).includes(p)) {
+          ctx.addIssue({ code: 'custom', message: `Invalid value: ${p}` });
+          return z.NEVER;
+        }
+      }
+      return parts as T[];
+    })
+    .optional();
+}
+
 export const taskListQuerySchema = z.object({
   workspaceId: z.coerce.number().int().positive().optional().meta({ example: 1 }),
-  /** `open` excludes closed Tasks for the board poll; omitting state still returns every Task. */
-  state: z.union([z.enum(TASK_STATES), z.literal('open')]).optional().meta({ example: 'working' }),
-  harness: z.enum(HARNESS_IDS).optional().meta({ example: 'claude' }),
-  priority: z.enum(PRIORITIES).optional().meta({ example: 'high' }),
+  /** Multi-select state filter (`draft,ready`), or the `open` shortcut that
+   * excludes closed Tasks for the board poll; omitting it returns every Task. */
+  state: z
+    .string()
+    .meta({ example: 'working' })
+    .transform((raw, ctx) => {
+      if (raw === 'open') return 'open' as const;
+      const parts = [...new Set(raw.split(',').map((v) => v.trim()).filter(Boolean))];
+      for (const p of parts) {
+        if (!(TASK_STATES as readonly string[]).includes(p)) {
+          ctx.addIssue({ code: 'custom', message: `Invalid state: ${p}` });
+          return z.NEVER;
+        }
+      }
+      return parts as TaskState[];
+    })
+    .optional(),
+  harness: csvEnum(HARNESS_IDS, 'claude'),
+  priority: csvEnum(PRIORITIES, 'high'),
   /** An Epic's children (ADR-0011's Epic presentation): the tasks whose
    * `trackerParent` is this Epic ref. Server-filtered in SQL like `state`; pair
    * with `workspaceId` to scope a ref that overlaps across repos. */
@@ -99,10 +134,30 @@ export const taskListQuerySchema = z.object({
    * Task. Replaces the client-side `filterBySearch` (issue #104). */
   q: z.string().optional().meta({ example: 'rate limiting' }),
   /** 'cost' is handled by the API layer (cost is derived from runs, not a task column). */
-  sortBy: z.enum(['createdAt', 'priority', 'cost']).optional().meta({ example: 'createdAt' }),
+  sortBy: z.enum(['createdAt', 'updatedAt', 'priority', 'cost']).optional().meta({ example: 'createdAt' }),
   order: z.enum(['asc', 'desc']).optional().meta({ example: 'desc' }),
 });
-export type TaskListQuery = z.infer<typeof taskListQuerySchema>;
+/** The task-list query as the domain consumes it. The HTTP layer parses the
+ * multi-select filters to arrays (see {@link taskListQuerySchema}), but internal
+ * callers pass a single value — so each filter accepts either, normalised at
+ * the filter step. Decoupled from the schema's inferred type for exactly that. */
+export interface TaskListQuery {
+  workspaceId?: number | undefined;
+  /** A state list, or the `open` shortcut (every non-terminal state). */
+  state?: 'open' | TaskState | TaskState[] | undefined;
+  harness?: string | string[] | undefined;
+  priority?: string | string[] | undefined;
+  /** An Epic's children: Tasks whose `trackerParent` is this Epic ref. */
+  parent?: number | undefined;
+  q?: string | undefined;
+  sortBy?: 'createdAt' | 'updatedAt' | 'priority' | 'cost' | undefined;
+  order?: 'asc' | 'desc' | undefined;
+}
+
+/** Normalise a single-or-array filter to a list; `undefined` ⇒ empty (⇒ "all"). */
+function filterList<T>(v: T | T[] | undefined): T[] {
+  return v == null ? [] : Array.isArray(v) ? v : [v];
+}
 
 /** A task plus its dependency context, as the API serves it. */
 export interface TaskWithDeps extends TaskRow {
@@ -118,6 +173,10 @@ export interface TaskWithDeps extends TaskRow {
    * human wayfinder kind) — visible because it can block others. Independent of
    * blockers, unlike `agentWorkable`. */
   humanOnly: boolean;
+  /** This ticket is an Epic container: some other mirrored ticket names it as its
+   * parent. Lets list surfaces mark and link an Epic — including closed ones in
+   * history — without the derived active-Epics read model. */
+  isEpic: boolean;
   /** The inheritable defaults as stored (`null` ⇒ inherited): lets the editor tell an
    * inherited field from a pinned one, since the row's own fields are resolved. */
   overrides: TaskOverrides;
@@ -252,11 +311,13 @@ export class TaskService {
 
   private humanOnly(task: TaskRow, epicRefs: ReadonlySet<string>): boolean {
     if (task.origin !== 'mirrored') return false;
-    return !mirroredAgentEligible(
-      task.trackerLabels ?? [],
-      task.wayfinderType,
-      epicRefs.has(`${task.workspaceId}:${task.trackerRef}`),
-    );
+    return !mirroredAgentEligible(task.trackerLabels ?? [], task.wayfinderType, this.isEpicContainer(task, epicRefs));
+  }
+
+  /** This ticket is an Epic container: it appears as some mirrored ticket's parent
+   * (see {@link epicContainerRefs}). */
+  private isEpicContainer(task: TaskRow, epicRefs: ReadonlySet<string>): boolean {
+    return epicRefs.has(`${task.workspaceId}:${task.trackerRef}`);
   }
 
   /** An Epic is any ticket some other mirrored ticket names as its parent — a container, never worked itself. */
@@ -546,8 +607,8 @@ export class TaskService {
       query.workspaceId ? eq(tasks.workspaceId, query.workspaceId) : undefined,
       query.state === 'open'
         ? notInArray(tasks.state, TERMINAL_STATES)
-        : query.state
-          ? eq(tasks.state, query.state)
+        : filterList(query.state).length > 0
+          ? inArray(tasks.state, filterList(query.state))
           : undefined,
       query.parent !== undefined ? eq(tasks.trackerParent, query.parent) : undefined,
     ].filter((f) => f !== undefined);
@@ -566,8 +627,10 @@ export class TaskService {
       const workspace = resolveWorkspace(workspaceRows, raw.workspaceId ?? undefined);
       rows.push({ ...raw, ...this.resolveDefaults(this.overridesOf(raw), workspace) });
     });
-    if (query.harness) rows = rows.filter((t) => t.harness === query.harness);
-    if (query.priority) rows = rows.filter((t) => t.priority === query.priority);
+    const harnessList = filterList(query.harness);
+    if (harnessList.length) rows = rows.filter((t) => harnessList.includes(t.harness));
+    const priorityList = filterList(query.priority);
+    if (priorityList.length) rows = rows.filter((t) => priorityList.includes(t.priority));
     if (query.sortBy) {
       const dir = query.order === 'desc' ? -1 : 1;
       const rank: Record<string, number> = { high: 0, normal: 1, low: 2 };
@@ -575,7 +638,9 @@ export class TaskService {
         const cmp =
           query.sortBy === 'priority'
             ? (rank[a.priority] ?? 1) - (rank[b.priority] ?? 1) || a.createdAt - b.createdAt
-            : a.createdAt - b.createdAt || a.id - b.id;
+            : query.sortBy === 'updatedAt'
+              ? a.updatedAt - b.updatedAt || a.id - b.id
+              : a.createdAt - b.createdAt || a.id - b.id;
         return cmp * dir;
       });
     }
@@ -1065,6 +1130,7 @@ export class TaskService {
       openBlockerCount,
       agentWorkable: this.agentWorkable(task, openBlockerCount, epicRefs),
       humanOnly: this.humanOnly(task, epicRefs),
+      isEpic: this.isEpicContainer(task, epicRefs),
       // The resolved row can't tell inherit from pin, so read the raw overrides
       // straight from storage — the editor needs to distinguish the two.
       overrides: this.overridesOf(await this.getRaw(task.id)),
@@ -1078,8 +1144,8 @@ export class TaskService {
       query.workspaceId ? eq(tasks.workspaceId, query.workspaceId) : undefined,
       query.state === 'open'
         ? notInArray(tasks.state, TERMINAL_STATES)
-        : query.state
-          ? eq(tasks.state, query.state)
+        : filterList(query.state).length > 0
+          ? inArray(tasks.state, filterList(query.state))
           : undefined,
       query.parent !== undefined ? eq(tasks.trackerParent, query.parent) : undefined,
     ].filter((f) => f !== undefined);
@@ -1097,8 +1163,10 @@ export class TaskService {
       const workspace = resolveWorkspace(workspaceRows, raw.workspaceId ?? undefined);
       return { ...raw, ...this.resolveDefaults(this.overridesOf(raw), workspace) };
     });
-    if (query.harness) listed = listed.filter((task) => task.harness === query.harness);
-    if (query.priority) listed = listed.filter((task) => task.priority === query.priority);
+    const harnessList = filterList(query.harness);
+    if (harnessList.length) listed = listed.filter((task) => harnessList.includes(task.harness));
+    const priorityList = filterList(query.priority);
+    if (priorityList.length) listed = listed.filter((task) => priorityList.includes(task.priority));
     const needle = query.q?.trim().toLowerCase();
     if (needle) {
       listed = listed.filter(
@@ -1113,7 +1181,9 @@ export class TaskService {
         const cmp =
           query.sortBy === 'priority'
             ? (rank[a.priority] ?? 1) - (rank[b.priority] ?? 1) || a.createdAt - b.createdAt
-            : a.createdAt - b.createdAt || a.id - b.id;
+            : query.sortBy === 'updatedAt'
+              ? a.updatedAt - b.updatedAt || a.id - b.id
+              : a.createdAt - b.createdAt || a.id - b.id;
         return cmp * dir;
       });
     }
@@ -1156,6 +1226,7 @@ export class TaskService {
       openBlockerCount: openBlockerCounts.get(task.id) ?? 0,
       agentWorkable: this.agentWorkable(task, openBlockerCounts.get(task.id) ?? 0, epicRefs),
       humanOnly: this.humanOnly(task, epicRefs),
+      isEpic: this.isEpicContainer(task, epicRefs),
       overrides: this.overridesOf(rawById.get(task.id) ?? task),
     }));
   }

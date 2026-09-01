@@ -507,14 +507,15 @@ function AttemptSummaryCard({
   const durMs = run.finishedAt
     ? Math.max(0, run.finishedAt - run.startedAt)
     : run.state === 'running'
-      ? Math.max(0, Date.now() - run.startedAt)
+      ? // eslint-disable-next-line react/purity -- one-shot elapsed snapshot for a running attempt; this card does not tick
+        Math.max(0, Date.now() - run.startedAt)
       : 0;
   const items: Array<[string, ReactNode]> = [
-    ['Model', <span className="font-data">{model}</span>],
+    ['Model', <span key="model" className="font-data">{model}</span>],
     ['Cost', formatCost(runCost) ?? '—'],
     ['Duration', durMs > 0 ? fmtDur(durMs) : '—'],
     ['Tool calls', toolCalls > 0 ? toolCalls.toLocaleString() : '—'],
-    ['Session', run.sessionId ? <span className="font-data text-[12.5px]">{run.sessionId}</span> : 'cold start'],
+    ['Session', run.sessionId ? <span key="session" className="font-data text-[12.5px]">{run.sessionId}</span> : 'cold start'],
   ];
   return (
     <section className={`${card} mt-4 flex flex-wrap gap-x-9 gap-y-3 p-4`}>

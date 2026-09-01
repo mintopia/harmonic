@@ -65,6 +65,7 @@ export const task = {
   openBlockerCount: 0,
   agentWorkable: false,
   humanOnly: false,
+  isEpic: false,
   cost: cost3,
   origin: 'mirrored',
   trackerRef: 185,

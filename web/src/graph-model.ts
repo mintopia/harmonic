@@ -104,6 +104,17 @@ export function mapBadges(tasks: Task[]): Map<number, number> {
 // Kept here (not in GraphView.tsx) so both are exercised without a browser: the
 // palette encodes the Deck Signal Rule, the geometry is pure maths.
 
+/** A node's display state on the graph: its stored {@link TaskState}, plus the
+ * derived `blocked` — a `ready` Task with open blockers reads as blocked, not
+ * ready, so the graph and the Board agree on what can actually run next. */
+export type GraphNodeState = TaskState | 'blocked';
+
+/** The graph's display state for a Task: `blocked` when a `ready` Task still has
+ * open blockers (it cannot run yet), otherwise its stored state. */
+export function graphNodeState(task: Task): GraphNodeState {
+  return task.state === 'ready' && task.openBlockerCount > 0 ? 'blocked' : task.state;
+}
+
 /** The state signal for a node, on the Deck state/signal layer. */
 export interface Signal {
   /** State-dot / edge-stroke / arrowhead colour (a state hue, or neutral). */
@@ -120,23 +131,27 @@ export interface Signal {
  * themes. `escalated` is the one state that speaks in Paper's indigo
  * needs-you voice.
  */
-export const SIGNAL: Record<TaskState, Signal> = {
+export const SIGNAL: Record<GraphNodeState, Signal> = {
   draft: { color: 'var(--hm-faint)', text: 'var(--hm-muted)' },
   ready: { color: 'var(--hm-ready-dot)', text: 'var(--hm-ready)' },
   working: { color: 'var(--hm-running-dot)', text: 'var(--hm-running)' },
   escalated: { color: 'var(--hm-await-dot)', text: 'var(--hm-await)' },
   done: { color: 'var(--hm-merged-dot)', text: 'var(--hm-merged)' },
   cancelled: { color: 'var(--hm-faint)', text: 'var(--hm-muted)' },
+  // Blocked is a hold, not activity — the neutral (Muted) voice, so it reads as
+  // "waiting", clearly distinct from ready's go-green.
+  blocked: { color: 'var(--hm-muted)', text: 'var(--hm-muted)' },
 };
 
 /** Short, human state word for the node's state label (uppercased at render). */
-export const STATE_LABEL: Record<TaskState, string> = {
+export const STATE_LABEL: Record<GraphNodeState, string> = {
   draft: 'Draft',
   ready: 'Ready',
   working: 'Working',
   escalated: 'Escalated',
   done: 'Merged',
   cancelled: 'Cancelled',
+  blocked: 'Blocked',
 };
 
 /** Ellipsis-truncate to `n` chars (the card is too small for a full title). */

@@ -11,6 +11,7 @@ import {
   edgePath,
   fitTransform,
   graphEdges,
+  graphNodeState,
   mapBadges,
   nodeTitle,
   truncate,
@@ -32,6 +33,12 @@ const NODE_H = 60;
 const FIT_FLOOR = 0.8;
 function initialTransform(w: number, h: number, vw: number, vh: number): Transform {
   const fit = fitTransform(w, h, vw, vh);
+  // The default view never zooms past 100%: a small graph parks at 1:1, centred,
+  // rather than ballooning to fill the viewport. Explicit Fit still scales up.
+  if (fit.k > 1) {
+    const k = 1;
+    return { k, tx: (vw - w * k) / 2, ty: (vh - h * k) / 2 };
+  }
   if (fit.k >= FIT_FLOOR) return fit;
   const k = FIT_FLOOR;
   const pad = 24;
@@ -274,7 +281,8 @@ export function GraphView({
                 const b = layout.nodes.find((n) => n.id === e.to);
                 if (!a || !b) return null;
                 const src = byId.get(a.id) ?? a.task;
-                const sig = SIGNAL[src.state];
+                const srcState = graphNodeState(src);
+                const sig = SIGNAL[srcState];
                 return (
                   <path
                     key={`${e.from}-${e.to}`}
@@ -283,7 +291,7 @@ export function GraphView({
                     stroke={sig.color}
                     strokeWidth={1.5}
                     opacity={0.55}
-                    markerEnd={`url(#hm-graph-arrow-${src.state})`}
+                    markerEnd={`url(#hm-graph-arrow-${srcState})`}
                   />
                 );
               })}
@@ -354,7 +362,8 @@ export function CardNode({
   onHover: (id: number | null) => void;
   onActivate: () => void;
 }) {
-  const sig = SIGNAL[task.state];
+  const displayState = graphNodeState(task);
+  const sig = SIGNAL[displayState];
   const taskId = taskKey(task.id);
   const originLabel = task.origin === 'mirrored' ? 'Mirrored task' : 'Native task';
   const taskIdEnd = n.x + n.w - 14;
@@ -366,8 +375,8 @@ export function CardNode({
       data-task-id={task.id}
       role="button"
       tabIndex={0}
-      aria-label={`${nodeTitle(task.summary)} — ${STATE_LABEL[task.state]}, ${originLabel.toLowerCase()}, task ${task.id}. Open detail.`}
-      className={`node ${task.state} cursor-pointer focus:outline-none focus-visible:outline-2 focus-visible:outline-accent`}
+      aria-label={`${nodeTitle(task.summary)} — ${STATE_LABEL[displayState]}, ${originLabel.toLowerCase()}, task ${task.id}. Open detail.`}
+      className={`node ${displayState} cursor-pointer focus:outline-none focus-visible:outline-2 focus-visible:outline-accent`}
       onMouseEnter={() => onHover(n.id)}
       onMouseLeave={() => onHover(null)}
       onKeyDown={(e) => {
@@ -393,13 +402,13 @@ export function CardNode({
         cy={n.y + 18}
         r={4}
         fill={sig.color}
-        className={task.state === 'working' ? 'motion-safe:animate-pulse' : undefined}
+        className={displayState === 'working' ? 'motion-safe:animate-pulse' : undefined}
       />
       <text x={n.x + 30} y={n.y + 22} className="fill-ink" fontSize={12.5} fontWeight={600}>
         {truncate(nodeTitle(task.summary), 24)}
       </text>
       <text x={n.x + 30} y={n.y + 44} fontSize={10.5} fontWeight={600} fill={sig.text} letterSpacing="0.03em">
-        {STATE_LABEL[task.state].toUpperCase()}
+        {STATE_LABEL[displayState].toUpperCase()}
       </text>
       <circle
         cx={originMarkerX}

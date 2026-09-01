@@ -1,9 +1,11 @@
-import type { DayCost } from './costChart-model';
+import { dayKey, type DayCost } from './costChart-model';
 
-/** Weeks in the heatmap's fixed trailing window. Deliberately independent of the
- *  Stats page's KPI range toggle: the calendar always shows the same span so the
- *  rhythm of attempt activity reads the same whatever range the KPIs are on. */
-export const HEATMAP_WEEKS = 26;
+/** Weeks in the heatmap's fixed trailing window: a full year (GitHub uses 53
+ *  columns so 365/366 days incl. today's partial week are always visible).
+ *  Deliberately independent of the Stats page's KPI range toggle: the calendar
+ *  always shows the same span so the rhythm of attempt activity reads the same
+ *  whatever range the KPIs are on. */
+export const HEATMAP_WEEKS = 53;
 
 /** 0 = no attempts (empty tone); 1–4 = teal intensity, scaled to the busiest day. */
 export type HeatLevel = 0 | 1 | 2 | 3 | 4;
@@ -32,12 +34,6 @@ export interface Heatmap {
   to: number;
 }
 
-function midnight(ms: number): number {
-  const d = new Date(ms);
-  d.setHours(0, 0, 0, 0);
-  return d.getTime();
-}
-
 /** Step whole calendar days off a local-midnight ms and re-floor — DST-safe, so
  *  a spring-forward day still advances by exactly one weekday. */
 function addDays(ms: number, n: number): number {
@@ -60,10 +56,12 @@ export function heatLevel(attempts: number, max: number): HeatLevel {
  *  (Sunday-start), quiet days are filled with zero-attempt cells so gaps read as
  *  empty rather than vanishing, and days after today are left null. */
 export function buildHeatmap(series: DayCost[], now: number, weeks = HEATMAP_WEEKS): Heatmap {
-  const today = midnight(now);
+  const today = dayKey(now);
   const lastSunday = addDays(today, -new Date(today).getDay());
   const from = addDays(lastSunday, -(weeks - 1) * 7);
-  const byDay = new Map(series.map((s) => [s.day, s.attempts]));
+  // Re-key the server's day series onto the client's local-midnight grid (see
+  // dayKey) so a non-UTC viewer's cells actually find their attempt counts.
+  const byDay = new Map(series.map((s) => [dayKey(s.day), s.attempts]));
 
   const grid: (HeatCell | null)[][] = [];
   let max = 0;

@@ -977,8 +977,6 @@ export function App() {
                       onOpen={openRow}
                       filters={route.table}
                       onFiltersChange={setTableFilters}
-                      epics={epics}
-                      onForceIntegrateEpic={forceIntegrateEpic}
                     />
                   )}
                   {view === 'graph' && (

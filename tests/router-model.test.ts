@@ -39,13 +39,20 @@ describe('parseRoute', () => {
   it('parses table filters and validates each against its allowed set', () => {
     const t = parseRoute('/', '?view=table&state=working&harness=claude&priority=high&sort=cost&order=asc').table;
     expect(t).toEqual({
-      state: 'working',
-      harness: 'claude',
-      priority: 'high',
+      state: ['working'],
+      harness: ['claude'],
+      priority: ['high'],
       search: '',
       sortBy: 'cost',
       order: 'asc',
     });
+  });
+
+  it('parses multi-select filters (comma-separated), dropping invalid values and duplicates', () => {
+    const t = parseRoute('/', '?view=table&state=working,ready,bogus,working&harness=claude,codex&priority=high,low').table;
+    expect(t.state).toEqual(['working', 'ready']);
+    expect(t.harness).toEqual(['claude', 'codex']);
+    expect(t.priority).toEqual(['high', 'low']);
   });
 
   it('drops invalid table filter values back to their defaults', () => {
@@ -107,7 +114,7 @@ describe('serializeRoute', () => {
     const route: Route = {
       ...DEFAULT_ROUTE,
       view: 'table',
-      table: { state: 'working', harness: '', priority: '', search: '', sortBy: 'cost', order: 'asc' },
+      table: { state: ['working'], harness: [], priority: [], search: '', sortBy: 'cost', order: 'asc' },
     };
     const parsed = parseRoute('/', serializeRoute(route));
     expect(parsed.table).toEqual(route.table);
@@ -159,12 +166,12 @@ describe('round-trip', () => {
     {
       ...DEFAULT_ROUTE,
       view: 'table',
-      table: { state: 'working', harness: 'codex', priority: 'low', search: '', sortBy: 'priority', order: 'asc' },
+      table: { state: ['working'], harness: ['codex'], priority: ['low'], search: '', sortBy: 'priority', order: 'asc' },
     },
     { ...DEFAULT_ROUTE, peeked: ['done', 'cancelled'] },
     { ...DEFAULT_ROUTE, view: 'stats', peeked: ['done'], table: { ...DEFAULT_TABLE_FILTERS, sortBy: 'cost' } },
     { ...DEFAULT_ROUTE, task: 172 },
-    { ...DEFAULT_ROUTE, view: 'table', task: 42, table: { ...DEFAULT_TABLE_FILTERS, priority: 'high' } },
+    { ...DEFAULT_ROUTE, view: 'table', task: 42, table: { ...DEFAULT_TABLE_FILTERS, priority: ['high'] } },
     {
       ...DEFAULT_ROUTE,
       view: 'stats',

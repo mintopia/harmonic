@@ -13,6 +13,20 @@ export interface DayCost {
   fails?: number;
 }
 
+/** Snap a timestamp to the client's local-midnight day key.
+ *
+ * The /stats series carries day keys at the *server's* local midnight. The
+ * client must re-key those incoming days and generate its own grid through this
+ * same boundary — otherwise a browser in a different timezone (UTC server, a
+ * BST/EDT viewer) matches none of the server's keys and every day zero-fills:
+ * blank heatmap, cost bars flat at $0, empty merge sparkline, while the range
+ * totals (which never bucket by day) still read correctly. */
+export function dayKey(ms: number): number {
+  const d = new Date(ms);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
 /** Zero-fill a bounded requested range so quiet days read as $0, not skipped
  * points — including quiet days before the first recorded bucket.
  * Ranges must still be small enough to label honestly.
@@ -22,18 +36,14 @@ export function fillSeries(series: DayCost[], from: number, to: number): DayCost
   const first = series[0];
   if (!first) return [];
   const DAY = 24 * 3600_000;
-  const start = new Date(from);
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(Math.min(to, Date.now()));
-  end.setHours(0, 0, 0, 0);
-  const span = Math.round((end.getTime() - start.getTime()) / DAY) + 1;
+  const start = dayKey(from);
+  const end = dayKey(Math.min(to, Date.now()));
+  const span = Math.round((end - start) / DAY) + 1;
   if (span < 2 || span > 62) return series; // all-time sprawl: plot the data as-is
-  const byDay = new Map(series.map((s) => [s.day, s]));
+  const byDay = new Map(series.map((s) => [dayKey(s.day), s]));
   const out: DayCost[] = [];
   for (let i = 0; i < span; i++) {
-    const d = new Date(start.getTime() + i * DAY + DAY / 2); // DST-safe: mid-day, then floor
-    d.setHours(0, 0, 0, 0);
-    const key = d.getTime();
+    const key = dayKey(start + i * DAY + DAY / 2); // DST-safe: mid-day, then floor
     out.push(byDay.get(key) ?? { day: key, totalUsd: 0, incomplete: false, tokens: 0, attempts: 0, fails: 0 });
   }
   return out;

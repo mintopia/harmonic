@@ -1,100 +1,44 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { formatCost } from '../cost';
 import type { Task } from '../types';
 import { TASK_STATES } from '../types';
-import type { Epic, EpicIntegrateOutcome } from '../epic-model';
-import { FORCE_INTEGRATE_CONSEQUENCE, epicByTaskId } from '../epic-model';
-import { isActiveEpic } from '../board-sections-model';
 import { TABLE_HARNESSES, TABLE_PRIORITIES, type TableFilters, type SortKey } from '../router-model';
 import {
   btnGhost,
   btnQuiet,
-  btnQuietDestructive,
+  chip,
   displayTitle,
   labelType,
   panel,
   searchField,
-  selectField,
   stateChip,
   stateDot,
   tableHead,
-  toolChip,
   touchOverlay,
-  touchTargetInline,
 } from '../ui';
-import { toastError, toastIntegrateOutcome } from '../toast';
+import { toastError } from '../toast';
 import { fetchTasks, TABLE_PAGE_SIZE } from '../table-model';
 import { taskKey } from '../id-format.js';
 import { EmptyState } from './EmptyState';
-import { ArmedButton } from './ArmedButton';
-import { Icon } from './Icon';
+import { FilterSelect } from './FilterSelect';
 import { ModelLabel, ProviderChip, TaskIdentity } from './TaskIdentity';
 
 /** The dropped header + row cells hide together (`hidden md:*`/`hidden lg:*`) so
  * the DOM cell count always matches the active track count and the ARIA grid
  * stays valid at every width. */
 const GRID =
-  'grid grid-cols-[3.5rem_minmax(0,1fr)_8rem] md:grid-cols-[3.5rem_minmax(0,1fr)_8rem_5rem_5.5rem] lg:grid-cols-[3.5rem_minmax(0,1fr)_8rem_6rem_9rem_5rem_5.5rem_12rem] items-center gap-x-3 px-4';
+  'grid grid-cols-[3.5rem_minmax(0,1fr)_8rem] md:grid-cols-[3.5rem_minmax(0,1fr)_8rem_5rem_5.5rem] lg:grid-cols-[3.5rem_minmax(0,1fr)_8rem_6rem_9rem_5rem_5.5rem_10rem_10rem] items-center gap-x-3 px-4';
 
-// Compact, quiet timestamp for the Created column — the full locale string
-// (seconds + year) is noise in a dense operator table.
-const fmtCreated = (ms: number) =>
+// Compact, quiet timestamp for the Created / Updated columns — the full locale
+// string (seconds + year) is noise in a dense operator table.
+const fmtTime = (ms: number) =>
   new Date(ms).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-
-function EpicBandHeader({
-  epic,
-  collapsed,
-  onToggle,
-  onForceIntegrateEpic,
-}: {
-  epic: Epic;
-  collapsed: boolean;
-  onToggle: () => void;
-  onForceIntegrateEpic?: (epicRef: number) => Promise<EpicIntegrateOutcome>;
-}) {
-  return (
-    <div className="flex flex-wrap items-center gap-2.5 bg-raised/40 px-4 py-1.5">
-      <button
-        type="button"
-        aria-expanded={!collapsed}
-        aria-label={`${collapsed ? 'Expand' : 'Collapse'} Epic #${epic.ref}`}
-        className={`${touchTargetInline} shrink-0 text-faint transition-colors duration-150 hover:text-ink`}
-        onClick={onToggle}
-      >
-        <Icon name="chevron-down" className={collapsed ? '-rotate-90' : ''} />
-      </button>
-      <span className={toolChip}>{epic.kind}</span>
-      <span className="truncate font-semibold text-ink">{epic.title}</span>
-      <span className="font-data text-small text-faint">epic/{epic.ref}</span>
-      <span className="text-small tabular-nums text-muted">
-        {epic.foldedCount}/{epic.memberCount} merged
-      </span>
-      <div className="flex-1" />
-      {onForceIntegrateEpic && (
-        <div className="flex shrink-0 flex-col items-end gap-1">
-          <ArmedButton
-            label="Force-merge"
-            armedLabel="Confirm force-merge"
-            ariaLabel={`Force-merge Epic #${epic.ref}`}
-            className={btnQuietDestructive}
-            onConfirm={() => {
-              onForceIntegrateEpic(epic.ref).then(toastIntegrateOutcome, toastError);
-            }}
-          />
-          <p className="max-w-[220px] text-right text-label text-faint">{FORCE_INTEGRATE_CONSEQUENCE}.</p>
-        </div>
-      )}
-    </div>
-  );
-}
 
 export function TableView({
   workspaceId,
   onOpen,
   filters,
   onFiltersChange,
-  epics = [],
-  onForceIntegrateEpic,
 }: {
   /** Scopes the table to the active Workspace (ADR-0008); no fetch until resolved. */
   workspaceId: number | null;
@@ -102,17 +46,18 @@ export function TableView({
   /** Filter/sort selection — lives in the URL (issue #103), owned by App. */
   filters: TableFilters;
   onFiltersChange: (next: TableFilters) => void;
-  /** The active Workspace's Epics (issue #167, ADR-0026): groups member rows
-   * into collapsible bands; empty means the table stays a flat list. */
-  epics?: Epic[];
-  onForceIntegrateEpic?: (epicRef: number) => Promise<EpicIntegrateOutcome>;
 }) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
-  const [collapsedBands, setCollapsedBands] = useState<ReadonlySet<number>>(new Set());
   const { state, harness, priority, search, sortBy, order } = filters;
+  // Multi-select filters are arrays; join them to stable primitives so the
+  // fetch/reset effects below fire on a real selection change, not on every
+  // unrelated re-render that hands back a fresh array reference.
+  const stateKey = state.join(',');
+  const harnessKey = harness.join(',');
+  const priorityKey = priority.join(',');
 
   // Search is server-side now (ADR-0045): debounce the box so a keystroke burst
   // folds to a single request instead of a fetch per character.
@@ -126,7 +71,7 @@ export function TableView({
   // narrowing the list never strands the operator on a page past the new end.
   useEffect(() => {
     setPage(1);
-  }, [workspaceId, state, harness, priority, sortBy, order, debouncedSearch]);
+  }, [workspaceId, stateKey, harnessKey, priorityKey, sortBy, order, debouncedSearch]);
 
   useEffect(() => {
     if (workspaceId === null) return;
@@ -149,7 +94,8 @@ export function TableView({
       })
       .catch(toastError)
       .finally(() => setLoading(false));
-  }, [workspaceId, state, harness, priority, debouncedSearch, sortBy, order, page]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- filter arrays are tracked via their joined keys so a new reference alone can't refetch
+  }, [workspaceId, stateKey, harnessKey, priorityKey, debouncedSearch, sortBy, order, page]);
 
   const pageCount = Math.max(1, Math.ceil(total / TABLE_PAGE_SIZE));
   const currentPage = Math.min(page, pageCount);
@@ -161,30 +107,6 @@ export function TableView({
   useEffect(() => {
     if (page > pageCount) setPage(pageCount);
   }, [page, pageCount]);
-
-  // Bands only for Epics still in flight (mirrors the Board's `isActiveEpic`): a
-  // fully-integrated Epic gets no band and no force-merge; its merged members fall
-  // through to plain rows.
-  const activeEpics = useMemo(() => epics.filter(isActiveEpic), [epics]);
-  // An Epic's driver ticket (the parent the members hang off) is represented by its
-  // band, never a row of its own — its mirrored Task carries the Epic ref as
-  // `trackerRef`. Excludes drivers of every Epic, active or not.
-  const epicRefs = useMemo(() => new Set(epics.map((e) => e.ref)), [epics]);
-  const rows = pageTasks.filter((t) => t.trackerRef == null || !epicRefs.has(t.trackerRef));
-  const epicLookup = useMemo(() => epicByTaskId(activeEpics), [activeEpics]);
-  const bands = activeEpics
-    .map((epic) => ({ epic, members: rows.filter((t) => epicLookup.get(t.id) === epic) }))
-    .filter((band) => band.members.length > 0);
-  const ungrouped = rows.filter((t) => !epicLookup.has(t.id));
-
-  const toggleBand = (epicRef: number) => {
-    setCollapsedBands((current) => {
-      const next = new Set(current);
-      if (next.has(epicRef)) next.delete(epicRef);
-      else next.add(epicRef);
-      return next;
-    });
-  };
 
   const sortHeader = (key: SortKey, label: string, opts?: { align?: 'right'; tier?: 'md' | 'lg' }) => (
     <span
@@ -207,11 +129,11 @@ export function TableView({
     </span>
   );
 
-  const renderRow = (task: Task, indent = false) => (
+  const renderRow = (task: Task) => (
     <div
       key={task.id}
       role="row"
-      className={`${GRID} min-h-11 cursor-pointer py-2 transition-colors duration-150 hover:bg-raised/50 ${indent ? 'pl-7' : ''}`}
+      className={`${GRID} min-h-11 cursor-pointer py-2 transition-colors duration-150 hover:bg-raised/50`}
       onClick={() => onOpen(task)}
     >
       <div role="cell" className="flex items-center justify-end gap-1.5 whitespace-nowrap tabular-nums text-muted">
@@ -219,24 +141,31 @@ export function TableView({
         <span className="sr-only">Id: </span>
         {taskKey(task.id)}
       </div>
-      <div role="cell" className="min-w-0 pr-2">
-        <button
-          type="button"
-          title={task.summary}
-          className="block w-full cursor-pointer truncate text-left text-ink"
-          onClick={(e) => {
-            e.stopPropagation();
-            onOpen(task);
-          }}
-        >
-          {task.summary}
-        </button>
-        <div className="mt-1 lg:hidden">
-          <TaskIdentity harness={task.harness} model={task.model} compact className="text-small" />
+      <div role="cell" className="flex min-w-0 items-center gap-2 pr-2">
+        {task.isEpic && (
+          <span className={`${chip} shrink-0 bg-accent-tint text-accent`}>
+            <span className="sr-only">Epic: </span>epic
+          </span>
+        )}
+        <div className="min-w-0 flex-1">
+          <button
+            type="button"
+            title={task.summary}
+            className="block w-full cursor-pointer truncate text-left text-ink"
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpen(task);
+            }}
+          >
+            {task.summary}
+          </button>
+          <div className="mt-1 lg:hidden">
+            <TaskIdentity harness={task.harness} model={task.model} compact className="text-small" />
+          </div>
         </div>
       </div>
       <div role="cell">
-        <span className={stateChip(task.state)}>{task.state}</span>
+        <span className={`${stateChip(task.state)} capitalize`}>{task.state}</span>
       </div>
       <div role="cell" className="hidden lg:block">
         <ProviderChip harness={task.harness} />
@@ -246,7 +175,7 @@ export function TableView({
       </div>
       <div
         role="cell"
-        className={`hidden md:block ${task.priority === 'high' ? 'font-semibold text-ink' : 'text-muted'}`}
+        className={`hidden capitalize md:block ${task.priority === 'high' ? 'font-semibold text-ink' : 'text-muted'}`}
       >
         {task.priority}
       </div>
@@ -256,7 +185,11 @@ export function TableView({
       </div>
       <div role="cell" className="hidden text-right tabular-nums text-faint lg:block">
         <span className="sr-only">Created: </span>
-        {fmtCreated(task.createdAt)}
+        {fmtTime(task.createdAt)}
+      </div>
+      <div role="cell" className="hidden text-right tabular-nums text-faint lg:block">
+        <span className="sr-only">Updated: </span>
+        {fmtTime(task.updatedAt)}
       </div>
     </div>
   );
@@ -280,45 +213,29 @@ export function TableView({
           value={search}
           onChange={(e) => onFiltersChange({ ...filters, search: e.target.value })}
         />
-        <select
-          aria-label="Filter by state"
-          className={selectField}
-          value={state}
-          onChange={(e) => onFiltersChange({ ...filters, state: e.target.value })}
-        >
-          <option value="">All states</option>
-          {TASK_STATES.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </select>
-        <select
-          aria-label="Filter by harness"
-          className={selectField}
-          value={harness}
-          onChange={(e) => onFiltersChange({ ...filters, harness: e.target.value })}
-        >
-          <option value="">All harnesses</option>
-          {TABLE_HARNESSES.map((h) => (
-            <option key={h} value={h}>
-              {h}
-            </option>
-          ))}
-        </select>
-        <select
-          aria-label="Filter by priority"
-          className={selectField}
-          value={priority}
-          onChange={(e) => onFiltersChange({ ...filters, priority: e.target.value })}
-        >
-          <option value="">All priorities</option>
-          {TABLE_PRIORITIES.map((p) => (
-            <option key={p} value={p}>
-              {p}
-            </option>
-          ))}
-        </select>
+        <FilterSelect
+          label="State"
+          allLabel="All states"
+          options={TASK_STATES}
+          selected={state}
+          onChange={(next) => onFiltersChange({ ...filters, state: next })}
+          capitalize
+        />
+        <FilterSelect
+          label="Harness"
+          allLabel="All harnesses"
+          options={TABLE_HARNESSES}
+          selected={harness}
+          onChange={(next) => onFiltersChange({ ...filters, harness: next })}
+        />
+        <FilterSelect
+          label="Priority"
+          allLabel="All priorities"
+          options={TABLE_PRIORITIES}
+          selected={priority}
+          onChange={(next) => onFiltersChange({ ...filters, priority: next })}
+          capitalize
+        />
       </div>
 
       <div className={`${panel} relative overflow-x-auto`} aria-busy={loading} role="table" aria-label="Tasks">
@@ -347,44 +264,17 @@ export function TableView({
             {sortHeader('priority', 'Priority')}
             {sortHeader('cost', 'Cost', { align: 'right' })}
             {sortHeader('createdAt', 'Created', { align: 'right', tier: 'lg' })}
+            {sortHeader('updatedAt', 'Updated', { align: 'right', tier: 'lg' })}
           </div>
         </div>
 
-        {bands.length === 0 ? (
-          <div role="rowgroup" className="divide-y divide-hairline">
-            {rows.map((t) => renderRow(t))}
-          </div>
-        ) : (
-          <div className="divide-y divide-hairline">
-            {bands.map(({ epic, members }) => (
-              <div key={`band-${epic.ref}`} role="rowgroup">
-                <EpicBandHeader
-                  epic={epic}
-                  collapsed={collapsedBands.has(epic.ref)}
-                  onToggle={() => toggleBand(epic.ref)}
-                  onForceIntegrateEpic={onForceIntegrateEpic}
-                />
-                {!collapsedBands.has(epic.ref) && (
-                  <div className="divide-y divide-hairline border-t border-hairline">
-                    {members.map((t) => renderRow(t, true))}
-                  </div>
-                )}
-              </div>
-            ))}
-            {ungrouped.length > 0 && (
-              <div role="rowgroup">
-                <div className={`${labelType} px-4 pb-1 pt-3 text-faint`}>Ungrouped</div>
-                <div className="divide-y divide-hairline border-t border-hairline">
-                  {ungrouped.map((t) => renderRow(t))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
+        <div role="rowgroup" className="divide-y divide-hairline">
+          {pageTasks.map((t) => renderRow(t))}
+        </div>
 
         {!loading && total === 0 && (
           <div className="px-4">
-            {state || harness || priority || search ? (
+            {state.length || harness.length || priority.length || search ? (
               <EmptyState
                 title="No matches"
                 className="my-8"
@@ -392,7 +282,7 @@ export function TableView({
                   <button
                     className={btnQuiet}
                     onClick={() =>
-                      onFiltersChange({ ...filters, state: '', harness: '', priority: '', search: '' })
+                      onFiltersChange({ ...filters, state: [], harness: [], priority: [], search: '' })
                     }
                   >
                     Clear filters

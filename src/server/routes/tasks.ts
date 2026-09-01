@@ -123,6 +123,8 @@ const taskWithDepsSchema = z
     agentWorkable: z.boolean().meta({ example: false }),
     /** A mirrored ticket Harmonic never works (no `ready-for-agent`, an Epic container, or a human wayfinder kind); false on native Tasks. Independent of blockers, so a blocked human-only ticket still reads human-only. */
     humanOnly: z.boolean().meta({ example: false }),
+    /** This ticket is an Epic container — some other mirrored ticket names it as its parent. List surfaces mark and link it as an Epic (closed ones included); false on native Tasks and leaf tickets. */
+    isEpic: z.boolean().meta({ example: false }),
     /** The inheritable Task-default overrides as stored (ADR-0012): `null` ⇒ this field
      * *inherits* (Workspace override → global default), so the sibling
      * harness/model/isolationMode/priority above are the resolved effective

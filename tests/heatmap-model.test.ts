@@ -76,6 +76,18 @@ describe('buildHeatmap', () => {
     expect(last.slice(2)).toEqual([null, null, null, null, null]);
   });
 
+  it('re-keys server day keys that fall off the client midnight grid', () => {
+    // The /stats series carries day keys at the *server's* local midnight; a
+    // viewer in another timezone (UTC server, a BST/EDT browser) sees each key
+    // offset from its own midnight. The count must still land in that calendar
+    // day, not vanish — the regression behind the blank live-instance heatmap.
+    const offGrid: DayCost = { ...cell('2026-08-31', 4), day: day('2026-08-31') + 3 * 3600_000 };
+    const hm = buildHeatmap([offGrid], now);
+    expect(hm.total).toBe(4);
+    const last = hm.weeks[HEATMAP_WEEKS - 1]!;
+    expect(last[1]).toMatchObject({ attempts: 4, level: 4 });
+  });
+
   it('scales levels to the busiest day and totals only in-window attempts', () => {
     const hm = buildHeatmap(
       [cell('2026-08-31', 10), cell('2026-08-30', 5), cell('2020-01-01', 99)],
