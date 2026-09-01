@@ -417,6 +417,22 @@ describe('durable tracker facts (issue #233, ADR-0030 expand)', () => {
     expect(row.trackerLabels).toEqual(['done']);
   });
 
+  it('an unchanged re-poll neither writes nor emits — the JSON facts compare by value, not reference', async () => {
+    const changed: number[] = [];
+    const spied = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore), (t) =>
+      changed.push(t.id),
+    );
+    // `rich` carries non-empty blockedBy/labels — the JSON columns a reference
+    // `===` would wrongly read as changed on every poll, defeating the guard.
+    const first = (await mirrorScan(spied, [rich], wsId))[0]!;
+    const emittedOnInsert = changed.length;
+    const before = (await spied.get(first.id)).updatedAt;
+    const second = (await mirrorScan(spied, [rich], wsId))[0]!;
+    expect(second.id).toBe(first.id);
+    expect((await spied.get(first.id)).updatedAt).toBe(before); // no bookkeeping-only write
+    expect(changed.length).toBe(emittedOnInsert); // no task_changed firehose for a no-op poll
+  });
+
   it('last-known-good facts survive a restart with no fresh poll', async () => {
     await mirrorScan(tasks, [rich], wsId);
     await asyncDb.close();

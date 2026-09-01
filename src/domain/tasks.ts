@@ -457,13 +457,24 @@ export class TaskService {
         // and, because each frame flips the status strip's period-cost shape,
         // spams the heavy /api/stats aggregate. Skip when nothing the update
         // would set has actually moved (updatedAt is bookkeeping, not a change).
+        // trackerBlockedBy/trackerLabels are JSON columns: Drizzle parses them
+        // into a fresh array on every read, so `===` reference-compares two
+        // distinct arrays and never holds — which would defeat this whole guard
+        // and fire task_changed for every mirrored issue on every poll. Compare
+        // object-valued facts structurally; the scalar facts compare by value.
+        const factUnchanged = ([col, value]: [string, unknown]) => {
+          const current = existing[col as keyof typeof existing];
+          return typeof value === 'object' && value !== null
+            ? JSON.stringify(current) === JSON.stringify(value)
+            : current === value;
+        };
         const unchanged =
           existing.state === state &&
           existing.prompt === input.prompt &&
           existing.workflow === input.workflow &&
           existing.wayfinderType === input.wayfinderType &&
           existing.mapRef === input.mapRef &&
-          Object.entries(factCols).every(([col, value]) => existing[col as keyof typeof existing] === value);
+          Object.entries(factCols).every(factUnchanged);
         if (unchanged) return { row: existing, dirty: false };
         // Re-poll never touches the four operator picks (harness/model/isolation/
         // priority), so an operator's pin on a mirrored Task survives every scan.
@@ -962,21 +973,24 @@ export class TaskService {
   async reconcileMirroredDeps(taskId: number, dependsOnIds: number[]): Promise<void> {
     const desired = new Set(dependsOnIds.filter((id) => id !== taskId));
     const current = new Set(await this.dependsOn(taskId));
+    const toAdd = [...desired].filter((id) => !current.has(id));
+    const toRemove = [...current].filter((id) => !desired.has(id));
+    // A re-poll whose edge set is unchanged must not re-derive or emit: like the
+    // upsert guard above, rederiveBlocked fires task_changed unconditionally, so
+    // an unconditional call here would spam one event per mirrored issue every
+    // poll — the very firehose the upsert guard exists to prevent.
+    if (toAdd.length === 0 && toRemove.length === 0) return;
     // Apply the edge diff as one write-queue unit, then re-derive after (the
     // re-derive issues its own queued ops, so it can't run inside this unit).
     await this.db.write(async (db) => {
-      for (const id of desired) {
-        if (!current.has(id)) {
-          await db.insert(taskDependencies).values({ taskId, dependsOnId: id }).onConflictDoNothing().run();
-        }
+      for (const id of toAdd) {
+        await db.insert(taskDependencies).values({ taskId, dependsOnId: id }).onConflictDoNothing().run();
       }
-      for (const id of current) {
-        if (!desired.has(id)) {
-          await db
-            .delete(taskDependencies)
-            .where(and(eq(taskDependencies.taskId, taskId), eq(taskDependencies.dependsOnId, id)))
-            .run();
-        }
+      for (const id of toRemove) {
+        await db
+          .delete(taskDependencies)
+          .where(and(eq(taskDependencies.taskId, taskId), eq(taskDependencies.dependsOnId, id)))
+          .run();
       }
     });
     await this.rederiveBlocked(taskId);
