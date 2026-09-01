@@ -19,7 +19,8 @@
  *
  * No database, no clock, no I/O: the same seam as `run-disposition.ts`.
  */
-import type { Ticket } from '../tracker/adapter.js';
+import { isEpicTypeContainer, type Ticket } from '../tracker/adapter.js';
+import type { StoredEpicKind } from '../db/schema.js';
 
 export type EpicKind = 'map' | 'spec';
 
@@ -141,29 +142,71 @@ export function deriveEpics(
 }
 
 /**
- * Derive each **leaf-most** container — one none of whose children is itself a
- * container — with its direct children as members. This is the integration
- * coordinator's view: the immediate parent of implementation Tasks that owns an
- * `epic/<ref>` integration branch, not the top-level surfaced Epic. A mixed node
- * (a leaf child beside a sub-container) is a spine parent and is suppressed here.
+ * Each open **leaf-most** container — one none of whose children is itself a
+ * container — paired with its direct children. The shared spine both leaf-most
+ * views select over: a mixed node (a leaf child beside a sub-container) is a
+ * spine parent and is excluded. Dangling and closed containers drop out.
+ */
+function leafMostContainers(index: TicketIndex): Array<{ container: Ticket; children: Ticket[] }> {
+  const { byRef, containerRefs, childrenOf } = index;
+  const out: Array<{ container: Ticket; children: Ticket[] }> = [];
+  for (const ref of containerRefs) {
+    const container = byRef.get(ref);
+    if (!container) continue; // dangling parent ref: not resolvable in this scan
+    if (container.state !== 'open') continue;
+
+    const children = childrenOf.get(ref) ?? [];
+    if (children.some((c) => containerRefs.has(c.number))) continue; // not leaf-most: a spine parent
+
+    out.push({ container, children });
+  }
+  return out;
+}
+
+/**
+ * Derive each **leaf-most** container with its direct children as members. This
+ * is the integration coordinator's view: the immediate parent of implementation
+ * Tasks that owns an `epic/<ref>` integration branch, not the top-level surfaced
+ * Epic.
  */
 export function deriveLeafEpics(
   tickets: Ticket[],
   readinessByRef: ReadonlyMap<number, EpicMemberReadiness> = new Map(),
 ): DerivedEpic[] {
-  const { byRef, containerRefs, childrenOf } = indexTickets(tickets);
+  return leafMostContainers(indexTickets(tickets))
+    .map(({ container, children }) => toDerivedEpic(container, children, readinessByRef))
+    .sort((a, b) => a.ref - b.ref);
+}
 
-  const epics: DerivedEpic[] = [];
-  for (const ref of containerRefs) {
-    const epic = byRef.get(ref);
-    if (!epic) continue; // dangling parent ref: not resolvable in this scan
-    if (epic.state !== 'open') continue;
+/** The stored-Epic spine record the scan lazy-upserts (ADR-0018, issue #437). */
+export interface StoredEpicRecord {
+  ref: number;
+  kind: StoredEpicKind;
+}
 
-    const children = childrenOf.get(ref) ?? [];
-    if (children.some((c) => containerRefs.has(c.number))) continue; // not leaf-most: a spine parent
+/**
+ * The stored `kind` (ADR-0018), re-derived every scan from live facts: a Map is
+ * the `wayfinder:map` container; a non-Map epic-type container is a Spec when its
+ * body carries a spec, else a plain Epic (children only, no spec body).
+ */
+function storedEpicKind(epic: Ticket): StoredEpicKind {
+  if (epic.isMap) return 'map';
+  return epic.body.trim().length > 0 ? 'spec' : 'epic';
+}
 
-    epics.push(toDerivedEpic(epic, children, readinessByRef));
-  }
-
-  return epics.sort((a, b) => a.ref - b.ref);
+/**
+ * Derive the leaf-most **epic-type** containers a scan should persist as stored
+ * Epics (ADR-0018, issue #437): each open, label-identified Epic (a Map or an
+ * `epic`-labelled container — a bare parent of work Tasks is not one) that is
+ * leaf-most (none of its children is itself a container) and has ≥1 member,
+ * tagged with its re-derived `kind`. Distinct from {@link deriveLeafEpics}: this
+ * gates on label identity and the three-way stored `kind`, not the derived
+ * two-kind roll-up. Pure — the same no-I/O seam as the rest of this module.
+ */
+export function deriveStoredEpics(tickets: Ticket[]): StoredEpicRecord[] {
+  return leafMostContainers(indexTickets(tickets))
+    // A bare parent of work Tasks is not an Epic; a container always has ≥1 child.
+    .filter(({ container, children }) => isEpicTypeContainer(container) && children.length > 0)
+    .map(({ container }) => ({ ref: container.number, kind: storedEpicKind(container) }))
+    .sort((a, b) => a.ref - b.ref);
 }

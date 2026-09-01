@@ -82,6 +82,17 @@ export interface Ticket extends TrackerIdentity {
 }
 
 /**
+ * A container is epic-type (ADR-0016) when it is a Map (`wayfinder:map`) or an
+ * `epic`-labelled Epic — the tickets persisted to `tracker_containers` and the
+ * durable Epic spine (ADR-0018), never mirrored as a work Task. The one place
+ * this identity is defined, so the scan (`mirror.ts`) and the stored-Epic
+ * derivation (`epic-derivation.ts`) can't drift apart.
+ */
+export function isEpicTypeContainer(ticket: Pick<Ticket, 'isMap' | 'labels'>): boolean {
+  return ticket.isMap || ticket.labels.includes(EPIC_LABEL);
+}
+
+/**
  * A repo-bound tracker (D1). Reads the whole tracker and normalises to
  * `Ticket`; writes only the status transitions Harmonic itself must make —
  * the advisory `claim`/`release` pair (the afk pick's best-effort "hands off",

@@ -544,6 +544,50 @@ export const trackerContainers = sqliteTable('tracker_containers', {
 }, (t) => [primaryKey({ columns: [t.workspaceId, t.trackerRef] })]);
 export type TrackerContainerRow = typeof trackerContainers.$inferSelect;
 
+/**
+ * The stored-Epic kinds (ADR-0018). Re-derived every scan from live facts, so it
+ * tracks reality while the Epic is live and freezes when its tracker issue
+ * closes: `map` is the `wayfinder:map` container; `spec` is an Epic container
+ * whose body carries a spec; `epic` is a plain parent/child container with no
+ * spec body. Distinct from `epic-derivation.ts`'s two-kind derived `EpicKind`
+ * (`map | spec`) — the stored spine adds the plain `epic`.
+ */
+export const STORED_EPIC_KINDS = ['map', 'spec', 'epic'] as const;
+export type StoredEpicKind = (typeof STORED_EPIC_KINDS)[number];
+
+/**
+ * A stored Epic's lifecycle state (ADR-0018): `open` while the Epic is live (the
+ * only state the scan writes), `integrated` once its branch is merged to base
+ * (or a no-op finish settles it). The scan lazy-creates rows `open`; the
+ * integration path (a later expand ticket) owns the transition to `integrated`.
+ */
+export const EPIC_LIFECYCLE_STATES = ['open', 'integrated'] as const;
+export type EpicLifecycleState = (typeof EPIC_LIFECYCLE_STATES)[number];
+
+/**
+ * The leaf-most Epic as a first-class stored resource (ADR-0018, issue #437): a
+ * thin durable spine beside the wipe-and-replace {@link trackerContainers} live
+ * cache. Keyed `(workspaceId, trackerRef)`. The scan lazy-upserts a row for each
+ * leaf-most epic-type container with ≥1 member, re-deriving `kind` each scan; the
+ * row survives the tracker issue closing and the container wipe, and is removed
+ * only on Dismiss (its tombstone insert, `removeTaskCascade`). `mergeCommit` and
+ * `memberRefs` are the integration snapshot — null while live, filled by the
+ * integration path (a later expand ticket); the merge commit's two parents give
+ * both whole-Epic diff endpoints, so no start-hash is stored.
+ */
+export const epics = sqliteTable('epics', {
+  workspaceId: integer('workspace_id').notNull().references(() => workspaces.id, { onDelete: 'cascade' }),
+  trackerRef: integer('tracker_ref').notNull(),
+  /** Re-derived every scan (Map = `wayfinder:map` label, Spec = spec body + children, plain Epic = children only). */
+  kind: text('kind').$type<StoredEpicKind>().notNull(),
+  /** The integration merge-commit hash; null while live and on a no-op finish (branch already matched base). */
+  mergeCommit: text('merge_commit'),
+  state: text('state').$type<EpicLifecycleState>().notNull(),
+  /** Member refs snapshotted at integration (JSON int array); null while live. */
+  memberRefs: text('member_refs', { mode: 'json' }).$type<number[]>(),
+}, (t) => [primaryKey({ columns: [t.workspaceId, t.trackerRef] })]);
+export type EpicRow = typeof epics.$inferSelect;
+
 export type AttemptEventRow = typeof attemptEvents.$inferSelect;
 
 /**
