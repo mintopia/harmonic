@@ -156,6 +156,10 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     );
     const legacyMaps = deriveMaps(fixture, mirrored, workspace.id);
     const beforeRestart = await manager.listEpics(workspace.id);
+    // listEpicTickets sources the Tasks-list epic rows from the same derived
+    // model (ADR-0016, #418): the top-level containers — spec epic #10 and map
+    // #19 — as their raw tickets, ready for the list-row projection.
+    expect((await manager.listEpicTickets(workspace.id)).map((t) => t.number).sort((a, b) => a - b)).toEqual([10, 19]);
     // #13 is excluded through the real TaskService Blocker edge and its
     // derived agentWorkable flag, not a hand-built frontier input.
     expect(beforeRestart.find((epic) => epic.ref === 10)?.ready).toEqual([11]);

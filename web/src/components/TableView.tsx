@@ -37,12 +37,15 @@ const fmtTime = (ms: number) =>
 export function TableView({
   workspaceId,
   onOpen,
+  onOpenEpic,
   filters,
   onFiltersChange,
 }: {
   /** Scopes the table to the active Workspace (ADR-0008); no fetch until resolved. */
   workspaceId: number | null;
   onOpen: (task: Task) => void;
+  /** Opens the Board focused on an epic's summary panel, keyed by tracker ref. */
+  onOpenEpic: (ref: number) => void;
   /** Filter/sort selection — lives in the URL (issue #103), owned by App. */
   filters: TableFilters;
   onFiltersChange: (next: TableFilters) => void;
@@ -142,11 +145,6 @@ export function TableView({
         {taskKey(task.id)}
       </div>
       <div role="cell" className="flex min-w-0 items-center gap-2 pr-2">
-        {task.isEpic && (
-          <span className={`${chip} shrink-0 bg-accent-tint text-accent`}>
-            <span className="sr-only">Epic: </span>epic
-          </span>
-        )}
         <div className="min-w-0 flex-1">
           <button
             type="button"
@@ -182,6 +180,64 @@ export function TableView({
       <div role="cell" className="hidden text-right tabular-nums text-muted md:block">
         <span className="sr-only">Cost: </span>
         {formatCost(task.cost) ?? '—'}
+      </div>
+      <div role="cell" className="hidden text-right tabular-nums text-faint lg:block">
+        <span className="sr-only">Created: </span>
+        {fmtTime(task.createdAt)}
+      </div>
+      <div role="cell" className="hidden text-right tabular-nums text-faint lg:block">
+        <span className="sr-only">Updated: </span>
+        {fmtTime(task.updatedAt)}
+      </div>
+    </div>
+  );
+
+  // Epics carry no state/harness/model/priority/cost (server sends neutral
+  // placeholders, ADR-0016); render those cells as an em-dash rather than the
+  // task chips so the row reads as a container, not a task.
+  const renderEpicRow = (task: Task) => (
+    <div
+      key={`epic-${task.trackerRef ?? task.id}`}
+      role="row"
+      className={`${GRID} min-h-11 cursor-pointer py-2 transition-colors duration-150 hover:bg-raised/50`}
+      onClick={() => onOpenEpic(task.trackerRef ?? task.id)}
+    >
+      <div role="cell" className="flex items-center justify-end gap-1.5 whitespace-nowrap tabular-nums text-muted">
+        <span className="sr-only">Id: </span>
+        {taskKey(task.id)}
+      </div>
+      <div role="cell" className="flex min-w-0 items-center gap-2 pr-2">
+        <span className={`${chip} shrink-0 bg-accent-tint text-accent`}>
+          <span className="sr-only">Epic: </span>epic
+        </span>
+        <div className="min-w-0 flex-1">
+          <button
+            type="button"
+            title={task.summary}
+            className="block w-full cursor-pointer truncate text-left text-ink"
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenEpic(task.trackerRef ?? task.id);
+            }}
+          >
+            {task.summary}
+          </button>
+        </div>
+      </div>
+      <div role="cell" className="text-muted">
+        —
+      </div>
+      <div role="cell" className="hidden text-muted lg:block">
+        —
+      </div>
+      <div role="cell" className="hidden text-muted lg:block">
+        —
+      </div>
+      <div role="cell" className="hidden text-muted md:block">
+        —
+      </div>
+      <div role="cell" className="hidden text-right tabular-nums text-muted md:block">
+        <span className="sr-only">Cost: </span>—
       </div>
       <div role="cell" className="hidden text-right tabular-nums text-faint lg:block">
         <span className="sr-only">Created: </span>
@@ -269,7 +325,7 @@ export function TableView({
         </div>
 
         <div role="rowgroup" className="divide-y divide-hairline">
-          {pageTasks.map((t) => renderRow(t))}
+          {pageTasks.map((t) => (t.isEpic ? renderEpicRow(t) : renderRow(t)))}
         </div>
 
         {!loading && total === 0 && (

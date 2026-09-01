@@ -13,6 +13,7 @@ import type {
 import { attempts, steps, guardrailEvents, attemptEvents, verificationAttempts } from '../db/schema.js';
 import { and, desc, eq } from 'drizzle-orm';
 import type { TaskWithDeps } from '../domain/tasks.js';
+import type { Ticket } from '../tracker/adapter.js';
 import { resolveVerifiers } from '../domain/setting-override.js';
 import { verifierStatuses, type VerifierStatus } from '../domain/verifier-status.js';
 import { costOfUsages, resolveContextWindow, resolvePrices, sumCosts, type Cost } from '../execution/pricing.js';
@@ -518,6 +519,63 @@ export async function tasksToApi(ctx: AppContext, tasks: TaskWithDeps[]): Promis
  * (issue #350); `summary` already carries the card title every list surface needs. */
 function toListRow({ prompt: _prompt, ...row }: ApiTask): ApiTaskListRow {
   return row;
+}
+
+/**
+ * Project a top-level Epic's container ticket (ADR-0016) into a Tasks-list row
+ * so the list can surface epics from the derived-epic model rather than a
+ * mirrored `isEpic` task row. An Epic is a container, never a runnable Task, so
+ * every task-only field is a neutral placeholder the epic-format row does not
+ * render (`isEpic` rows drop harness/model/state/priority/cost in the table);
+ * only the identity a list surface reads — ref, title, url, and the ticket's
+ * created timestamp — carries real data.
+ */
+export function epicToListRow(ticket: Ticket, workspaceId: number): ApiTaskListRow {
+  const created = Date.parse(ticket.createdAt) || 0;
+  return {
+    id: ticket.number,
+    workspaceId,
+    harness: '',
+    model: '',
+    workingDir: '',
+    isolationMode: 'worktree',
+    baseBranch: null,
+    priority: 'normal',
+    conflictResolveTurns: 0,
+    state: 'ready',
+    escalationReason: null,
+    feedback: null,
+    continuationChoice: null,
+    origin: 'mirrored',
+    trackerRef: ticket.number,
+    workflow: null,
+    wayfinderType: null,
+    mapRef: null,
+    createdAt: created,
+    updatedAt: created,
+    dependsOn: [],
+    dependents: [],
+    blockedOnFailed: false,
+    openBlockerCount: 0,
+    agentWorkable: false,
+    humanOnly: true,
+    isEpic: true,
+    overrides: { harness: null, model: null, isolationMode: null, priority: null, conflictResolveTurns: null },
+    summary: ticket.title,
+    cost: null,
+    url: ticket.url,
+    mapTitle: null,
+    branch: null,
+    stat: null,
+    runStartedAt: null,
+    toolCount: null,
+    attemptId: null,
+    currentStep: null,
+    contextTokens: null,
+    contextWindow: null,
+    skipReason: null,
+    verifiedRef: null,
+  };
 }
 
 /** Peel the durable tracker-fact columns (issue #233) off a task: they are

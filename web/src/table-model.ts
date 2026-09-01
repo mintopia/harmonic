@@ -38,6 +38,9 @@ export function tasksQuery(q: TableQuery): string {
   params.set('order', q.order);
   params.set('limit', String(q.limit));
   params.set('offset', String(q.offset));
+  // Epics are a derived source merged server-side (ADR-0016); always opt in
+  // and let the server decide whether the current filters admit them.
+  params.set('epics', 'true');
   return params.toString();
 }
 

@@ -975,6 +975,12 @@ export function App() {
                     <TableView
                       workspaceId={activeWorkspaceId}
                       onOpen={openRow}
+                      onOpenEpic={(ref) => {
+                        const epic = epics.find((e) => e.ref === ref);
+                        if (!epic) return;
+                        setFocusEpic(epic);
+                        navigate({ ...route, view: 'board', task: null });
+                      }}
                       filters={route.table}
                       onFiltersChange={setTableFilters}
                     />
