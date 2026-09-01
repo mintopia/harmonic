@@ -11,7 +11,7 @@
  * calls this function.
  */
 import type { TaskRow } from '../db/schema.js';
-import type { DerivedEpic, EpicKind } from './epic-derivation.js';
+import type { DerivedEpic } from './epic-derivation.js';
 import type { MemberMergeState } from './epic-integrate-decision.js';
 import { reduceMemberState } from '../execution/epic-integration.js';
 
@@ -56,7 +56,7 @@ export interface EpicIntegrateState {
 export interface Epic {
   ref: number;
   title: string;
-  kind: EpicKind;
+  kind: 'map' | 'spec';
   /** The Epic container ticket's body — the summary page's description (ADR-0015/0017). */
   description: string;
   /** Epic container ticket creation time (ms). */
@@ -89,6 +89,7 @@ export interface EpicMeta {
   /** Repo default branch (git-derived by the impure half); `null` if unresolved. */
   baseBranch: string | null;
   dependsOn: number[];
+  kind: 'map' | 'spec';
 }
 
 /** The server-only facts the impure accessor gathers (git branch/tip,
@@ -136,7 +137,7 @@ export function composeEpicView(
   return {
     ref: derived.ref,
     title: derived.title,
-    kind: derived.kind,
+    kind: meta.kind,
     description: meta.description,
     createdAt: meta.createdAt,
     updatedAt,

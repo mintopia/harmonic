@@ -22,14 +22,10 @@
 import { isEpicTypeContainer, type Ticket } from '../tracker/adapter.js';
 import type { StoredEpicKind } from '../db/schema.js';
 
-export type EpicKind = 'map' | 'spec';
-
 export interface DerivedEpic {
   /** The Epic ticket's tracker ref (its `number`). */
   ref: number;
   title: string;
-  /** A Map (wayfinder:map) vs a Spec (any other Epic). */
-  kind: EpicKind;
   /** The member refs, ascending. */
   members: number[];
   /**
@@ -83,7 +79,6 @@ function toDerivedEpic(
   return {
     ref: epic.number,
     title: epic.title,
-    kind: epic.isMap ? 'map' : 'spec',
     members: members.map((c) => c.number).sort((a, b) => a - b),
     ready: members.filter((c) => isReady(c, readinessByRef)).map((c) => c.number).sort((a, b) => a - b),
   };

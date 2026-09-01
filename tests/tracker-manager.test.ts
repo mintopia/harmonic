@@ -166,7 +166,6 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     expect(beforeRestart.map((epic) => ({
       ref: epic.ref,
       title: epic.title,
-      kind: epic.kind,
       members: epic.members.map((member) => member.ref),
       ready: epic.ready,
     }))).toEqual(legacyEpics);

@@ -43,18 +43,7 @@ describe('deriveEpics', () => {
       ticket({ number: 12, parent: 10 }),
     ];
     const result = derive(tickets);
-    expect(result).toEqual([{ ref: 10, title: 'Spec', kind: 'spec', members: [11, 12], ready: [11, 12] }]);
-  });
-
-  it('2. Map: parent with isMap:true is kind:"map"', () => {
-    const tickets = [
-      ticket({ number: 19, title: 'Map', isMap: true, labels: ['wayfinder:map'] }),
-      ticket({ number: 20, parent: 19 }),
-      ticket({ number: 21, parent: 19 }),
-    ];
-    const result = derive(tickets);
-    expect(result).toHaveLength(1);
-    expect(result[0]?.kind).toBe('map');
+    expect(result).toEqual([{ ref: 10, title: 'Spec', members: [11, 12], ready: [11, 12] }]);
   });
 
   it('3. blocked member: #12 blockedBy open #11, both children of #10', () => {
