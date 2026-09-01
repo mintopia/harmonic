@@ -352,12 +352,10 @@ export const apiKeys = sqliteTable('api_keys', {
 
 export type ApiKeyRow = typeof apiKeys.$inferSelect;
 
-/** The raw `tasks` row: the inheritable Task-default overrides read back nullable
- * (`null` ⇒ inherit). Used only inside TaskService, which resolves them. */
+/** The raw `tasks` row: the inheritable Task-default overrides read back nullable (`null` ⇒ inherit). */
 export type RawTaskRow = typeof tasks.$inferSelect;
 /** A `tasks` row as every consumer sees it: the inheritable defaults
- * already resolved to their effective values (never null). TaskService.get/
- * list/etc. return this; storage speaks `RawTaskRow`. */
+ * already resolved to their effective values (never null). */
 export type TaskRow = Omit<
   RawTaskRow,
   'harness' | 'model' | 'isolationMode' | 'priority' | 'conflictResolveTurns'
@@ -384,7 +382,7 @@ export const trackerContainers = sqliteTable('tracker_containers', {
 }, (t) => [primaryKey({ columns: [t.workspaceId, t.trackerRef] })]);
 export type TrackerContainerRow = typeof trackerContainers.$inferSelect;
 
-/** Re-derived every scan: `map` = the `wayfinder:map` container; `spec` = a container whose body carries a spec; `epic` = a plain parent/child container. The `Epic` DTO folds `epic` into `spec`. */
+/** Re-derived every scan: `map` = the `wayfinder:map` container; `spec` = a container whose body carries a spec; `epic` = a plain parent/child container. */
 export const STORED_EPIC_KINDS = ['map', 'spec', 'epic'] as const;
 export type StoredEpicKind = (typeof STORED_EPIC_KINDS)[number];
 
@@ -416,7 +414,7 @@ export const verificationAttempts = sqliteTable('verification_attempts', {
   attemptId: integer('attempt_id')
     .notNull()
     .references(() => attempts.id),
-  /** Monotonic per-Attempt sequence (1-based); same discipline as `guardrail_events.seq`. */
+  /** Monotonic per-Attempt sequence (1-based). */
   seq: integer('seq').notNull(),
   ts: integer('ts').notNull(),
   mechanism: text('mechanism').$type<VerificationMechanism>().notNull(),
@@ -450,7 +448,7 @@ export const guardrailEvents = sqliteTable('guardrail_events', {
   attemptId: integer('attempt_id')
     .notNull()
     .references(() => attempts.id),
-  /** Monotonic per-Attempt sequence (1-based); same discipline as `verification_attempts.seq`. */
+  /** Monotonic per-Attempt sequence (1-based). */
   seq: integer('seq').notNull(),
   ts: integer('ts').notNull(),
   dimension: text('dimension').$type<GuardrailDimension>().notNull(),

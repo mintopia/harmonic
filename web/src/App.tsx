@@ -117,9 +117,9 @@ async function fetchAllEpics(workspaceId: number): Promise<Epic[]> {
 
 function usePeriodCost(authed: boolean, tasks: Task[] | null, workspaceId: number | null) {
   const [cost, setCost] = useState<Cost | null>(null);
-  const shape = tasks ? `${tasks.length}:${tasks.filter((t) => t.state === 'working').length}` : '';
+  const taskListSignature = tasks ? `${tasks.length}:${tasks.filter((t) => t.state === 'working').length}` : '';
   const refresh = useRef<(() => void) | null>(null);
-  const shapeSettled = useRef(false);
+  const signatureSettled = useRef(false);
   useLiveEffect((live) => {
     if (!authed || workspaceId === null) {
       refresh.current = null;
@@ -134,7 +134,7 @@ function usePeriodCost(authed: boolean, tasks: Task[] | null, workspaceId: numbe
     };
     const debounced = debounce(load, 1000);
     refresh.current = debounced;
-    shapeSettled.current = false;
+    signatureSettled.current = false;
     load();
     const timer = setInterval(load, 60_000);
     return () => {
@@ -144,12 +144,12 @@ function usePeriodCost(authed: boolean, tasks: Task[] | null, workspaceId: numbe
     };
   }, [authed, workspaceId]);
   useEffect(() => {
-    if (!shapeSettled.current) {
-      shapeSettled.current = true;
+    if (!signatureSettled.current) {
+      signatureSettled.current = true;
       return;
     }
     refresh.current?.();
-  }, [shape]);
+  }, [taskListSignature]);
   return cost;
 }
 

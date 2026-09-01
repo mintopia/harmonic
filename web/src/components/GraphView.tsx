@@ -27,15 +27,15 @@ import { displayTitle, labelType, touchTarget, touchTargetInline } from '../ui';
 const NODE_W = 196;
 const NODE_H = 60;
 
-const FIT_FLOOR = 0.8;
+const MIN_READABLE_ZOOM = 0.8;
 function initialTransform(w: number, h: number, vw: number, vh: number): Transform {
   const fit = fitTransform(w, h, vw, vh);
   if (fit.k > 1) {
     const k = 1;
     return { k, tx: (vw - w * k) / 2, ty: (vh - h * k) / 2 };
   }
-  if (fit.k >= FIT_FLOOR) return fit;
-  const k = FIT_FLOOR;
+  if (fit.k >= MIN_READABLE_ZOOM) return fit;
+  const k = MIN_READABLE_ZOOM;
   const pad = 24;
   return { k, tx: pad, ty: h * k <= vh ? (vh - h * k) / 2 : pad };
 }

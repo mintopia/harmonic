@@ -264,7 +264,7 @@ export class AttemptStore {
     return row;
   }
 
-  /** The Task's latest Attempt. Backs `GET /tasks/:id/attempts/current`. */
+  /** The Task's latest Attempt. */
   async currentForTask(taskId: number): Promise<AttemptRow> {
     const latest = await this.db.read((db) =>
       db.select().from(attempts).where(eq(attempts.taskId, taskId)).orderBy(asc(attempts.number)).all(),

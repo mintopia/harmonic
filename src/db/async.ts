@@ -45,7 +45,6 @@ export interface QueryTimeoutOptions {
 
 // The local libsql `file:` client has no per-query interrupt (only `client.close()`), so the deadline bounds the caller's wait; the statement still runs to completion.
 function withTimeout<T>(work: Promise<T>, timeoutMs: number, kind: QueryKind): Promise<T> {
-  // `!(timeoutMs > 0)` also treats NaN as disabled.
   if (!(timeoutMs > 0)) return work;
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => reject(new QueryTimeoutError(kind, timeoutMs)), timeoutMs);

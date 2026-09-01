@@ -62,9 +62,7 @@ export const DEFAULT_PRICES: PriceTable = {
   'claude-opus-4.7': { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
   'claude-opus-4.6': { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
   'claude-opus-4.5': { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
-  // OpenAI published rate.
   'gpt-5-mini': { input: 0.25, output: 2, cacheRead: 0.025, cacheWrite: 0 },
-  // Codex-family models share their generation's codex rate (cf. gpt-5.2-codex).
   'gpt-5.3-codex': { input: 1.25, output: 10, cacheRead: 0.125, cacheWrite: 0 },
 };
 
@@ -91,18 +89,14 @@ export const DEFAULT_CONTEXT_WINDOWS: Record<string, number> = {
   'claude-haiku-4-5': 200_000, 'claude-haiku-4.5': 200_000,
   'claude-sonnet-4-5': 200_000, 'claude-sonnet-4.5': 200_000,
   'claude-opus-4-5': 200_000, 'claude-opus-4.5': 200_000,
-  // OpenAI GPT-5 family — 400k, except 5.4/5.5 which lift to ~1.05M.
   'gpt-5.6-sol': 400_000, 'gpt-5.6-terra': 400_000, 'gpt-5.6-luna': 400_000,
   'gpt-5.5': 1_050_000, 'gpt-5.4': 1_050_000, 'gpt-5.4-mini': 400_000, 'gpt-5.2': 400_000,
   'gpt-5.2-codex': 400_000, 'gpt-5.2-codex-mini': 400_000, 'gpt-5.3-codex': 400_000,
   'gpt-5-mini': 400_000, 'gpt-5-codex': 400_000,
-  // OpenAI GPT-4.1 — 1M context.
   'gpt-4.1': 1_047_576,
-  // Google Gemini — 1M across the 2.5 and 3.x Pro/Flash lines.
   'gemini-3-pro': 1_000_000, 'gemini-3-flash': 1_000_000,
   'gemini-2.5-pro': 1_048_576, 'gemini-2.5-flash': 1_048_576,
-  // Bare family aliases some Harnesses report. Current-gen opus/sonnet are 1M;
-  // haiku stays 200k.
+  // Bare family aliases some Harnesses report.
   opus: 1_000_000, sonnet: 1_000_000, haiku: 200_000,
 };
 
@@ -151,8 +145,8 @@ export function turnCost(model: string, usage: ModelUsage, prices: PriceTable): 
 }
 
 /**
- * Cost of a set of run Usages (a single run, a task's runs, a stats
- * range), computed on read. Returns null when no run reported any usage —
+ * Cost of a set of Attempt Usages (one Attempt, a task's Attempts, a stats
+ * range), computed on read. Returns null when no Attempt reported any usage —
  * unknown, not zero. A usage with only aggregate totals (no per-model
  * split) has tokens we cannot attribute, so it flags the result
  * incomplete without contributing dollars.

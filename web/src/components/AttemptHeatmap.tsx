@@ -6,9 +6,9 @@ import { buildHeatmap, HEATMAP_WEEKS, type Heatmap } from './heatmap-model';
 
 const DAY_MS = 24 * 3600_000;
 const CELL = 11;
-const STEP = 14;
-const LEFT = 26;
-const TOP = 16;
+const CELL_PITCH_PX = 14;
+const WEEKDAY_GUTTER_PX = 26;
+const MONTH_GUTTER_PX = 16;
 const RADIUS = 2;
 const WEEKDAY_LABELS = ['', 'Mon', '', 'Wed', '', 'Fri', ''];
 
@@ -26,7 +26,7 @@ function monthTicks(hm: Heatmap): { x: number; label: string }[] {
     if (!anchor) return;
     const month = new Date(anchor.day).getMonth();
     if (month !== prev) {
-      ticks.push({ x: LEFT + w * STEP, label: monthLabel(anchor.day) });
+      ticks.push({ x: WEEKDAY_GUTTER_PX + w * CELL_PITCH_PX, label: monthLabel(anchor.day) });
       prev = month;
     }
   });
@@ -58,8 +58,8 @@ export function AttemptHeatmap({ workspaceId, aside }: { workspaceId: number | n
 
   const hm = loaded ? buildHeatmap(loaded.series, loaded.now) : null;
   const cols = HEATMAP_WEEKS;
-  const width = LEFT + cols * STEP;
-  const height = TOP + 7 * STEP;
+  const width = WEEKDAY_GUTTER_PX + cols * CELL_PITCH_PX;
+  const height = MONTH_GUTTER_PX + 7 * CELL_PITCH_PX;
 
   return (
     <section className={`${card} mb-4 p-5`}>
@@ -90,7 +90,7 @@ export function AttemptHeatmap({ workspaceId, aside }: { workspaceId: number | n
               ))}
               {WEEKDAY_LABELS.map((label, row) =>
                 label ? (
-                  <text key={row} x={0} y={TOP + row * STEP + CELL - 1} className="fill-muted" fontSize="9">
+                  <text key={row} x={0} y={MONTH_GUTTER_PX + row * CELL_PITCH_PX + CELL - 1} className="fill-muted" fontSize="9">
                     {label}
                   </text>
                 ) : null,
@@ -100,8 +100,8 @@ export function AttemptHeatmap({ workspaceId, aside }: { workspaceId: number | n
                   cell ? (
                     <rect
                       key={cell.day}
-                      x={LEFT + w * STEP}
-                      y={TOP + row * STEP}
+                      x={WEEKDAY_GUTTER_PX + w * CELL_PITCH_PX}
+                      y={MONTH_GUTTER_PX + row * CELL_PITCH_PX}
                       width={CELL}
                       height={CELL}
                       rx={RADIUS}

@@ -25,7 +25,7 @@ export const okResponseSchema = z
   .object({ ok: z.literal(true) })
   .meta({ id: 'OkResponse', example: { ok: true } });
 
-/** A numeric `:id` path param, coerced from the route string — shared by tasks/runs/channels. */
+/** A numeric `:id` path param, coerced from the route string. */
 export const idParamsSchema = z.object({ id: z.coerce.number().int().meta({ example: 4821 }) });
 
 /** One persisted step in an Attempt's ordered ticket timeline. */
@@ -112,7 +112,7 @@ export const toolTokenUsageSchema = z.object({
   cost: z.number().optional().meta({ example: 0.05415 }),
 });
 
-/** Usage aggregate for a run or a rolled-up set of runs (execution/usage.ts `AttemptUsage`). */
+/** Usage aggregate for an Attempt or a rolled-up set of Attempts (execution/usage.ts `AttemptUsage`). */
 export const attemptUsageSchema = z
   .object({
     /** Per-model breakdown (session-log fallback; ACP only reports aggregates). */
@@ -137,7 +137,7 @@ export const attemptUsageSchema = z
     reasoning: toolTokenUsageSchema.optional(),
     /** Aggregate token counts; null when no source reported tokens. */
     totals: modelUsageSchema.extend({ totalTokens: z.number().meta({ example: 49450 }).nullable() }).nullable(),
-    /** Tool-call tallies from the run's events. */
+    /** Tool-call tallies from the Attempt's events. */
     toolCalls: z.record(z.string(), z.number()).meta({ example: { read: 14, edit: 6, bash: 3 } }),
     source: z.enum(['acp', 'session-log', 'combined']).nullable().meta({ example: 'acp' }),
   })
@@ -157,13 +157,13 @@ export const costSchema = z
 
 /**
  * One node of a Process Tree (execution/usage.ts `ProcessNode`): the root
- * Run/Conversation session or a recursive Subagent. Recursive via a Zod-4
+ * Attempt/Conversation session or a recursive Subagent. Recursive via a Zod-4
  * lazy getter on `children`; `usage` is the node's *own* tokens (roll-ups
  * sum the subtree).
  */
 export const processNodeSchema = z
   .object({
-    /** Harness session/subagent id (root: the run's sessionId). */
+    /** Harness session/subagent id (root: the Attempt's sessionId). */
     id: z.string().meta({ example: 'sess_01H8X…' }),
     /** Subagent agentType, or a label for the root process. */
     name: z.string().meta({ example: 'root' }),

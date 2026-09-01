@@ -147,9 +147,9 @@ const taskSchema = taskWithDepsSchema
     url: z.string().nullable().meta({ example: 'https://github.com/mintopia/harmonic/issues/35' }),
     /** The parent Map's title (resolved from mapRef, last poll); null when unmapped or before a poll. */
     mapTitle: z.string().nullable().meta({ example: 'Wayfinder' }),
-    /** The latest run's branch (worktree mode only); null in direct mode or before any run. */
+    /** The latest Attempt's branch (worktree mode only); null in direct mode or before any Attempt. */
     branch: z.string().nullable().meta({ example: 'agent/4821-rate-limiting' }),
-    /** The latest run's diffstat, snapshotted at merging; null before then or in direct mode. */
+    /** The latest Attempt's diffstat, snapshotted at merging; null before then or in direct mode. */
     stat: z.string().nullable().meta({ example: ' src/server/rate-limit.ts | 96 ++++++++++++++\n 1 file changed, 96 insertions(+)' }),
     /** The running attempt's `startedAt`; null unless the Task is running. */
     runStartedAt: z.number().nullable().meta({ example: 1784032020000 }),
@@ -285,7 +285,7 @@ const verificationAttemptsListResponseSchema = listResponse('verificationAttempt
 
 const usageResponseSchema = attemptUsageSchema.extend({
   cost: costSchema.nullable(),
-  /** How many of the task's runs (including failed retries) reported usage. */
+  /** How many of the task's Attempts (including failed retries) reported usage. */
   attemptCount: z.number().meta({ example: 2 }),
 });
 

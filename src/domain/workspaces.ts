@@ -255,8 +255,7 @@ export class WorkspaceService {
    * Delete a Workspace and everything on its board. Refuses any Workspace with
    * a running Task. Deleting the last Workspace is allowed. Cascades in a
    * transaction: its Tasks (+ Attempts, Attempt events, Dependency edges,
-   * Channel links) and Conversations (+ events) go first, since no FK declares
-   * ON DELETE CASCADE.
+   * Channel links) and Conversations (+ events) go first.
    */
   async delete(id: number): Promise<void> {
     await this.get(id);

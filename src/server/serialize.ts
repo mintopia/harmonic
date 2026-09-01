@@ -55,7 +55,7 @@ export async function attemptTimelineToApi(ctx: AppContext, taskId: number): Pro
   };
 }
 
-/** The configured-or-recorded verifier rows for one Run's always-visible read model. */
+/** The configured-or-recorded verifier rows for one Attempt's always-visible read model. */
 export async function verifierStatusesToApi(
   ctx: AppContext,
   run: Pick<AttemptRow, 'id' | 'taskId' | 'number'>,
@@ -147,7 +147,7 @@ export function attemptUsageToApi(ctx: AppContext, snapshot: AttemptUsageSnapsho
   return { ...snapshot, cost: costOfUsages([snapshot.usage], pricesOf(ctx)) };
 }
 
-/** A task's Cost sums ALL its runs — retries and failed attempts included. */
+/** A task's Cost sums ALL its Attempts — retries and failed ones included. */
 export async function taskToApi(ctx: AppContext, task: TaskWithDeps): Promise<ApiTask> {
   const runs = await ctx.attempts.listForTask(task.id);
   const running = task.state === 'working' ? runs.find((r) => r.state === 'running') : undefined;

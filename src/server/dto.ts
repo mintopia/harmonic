@@ -416,7 +416,7 @@ export function taskToApiDto(
   };
 }
 
-/** Cost of an arbitrary set of Runs, summed from their frozen values. */
+/** Cost of an arbitrary set of Attempts, summed from their frozen values. */
 export function costOfAttempts(runs: AttemptRow[]): Cost | null {
   return sumCosts(runs.map((run) => parseCost(run.cost)));
 }

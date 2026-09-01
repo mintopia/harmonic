@@ -5,7 +5,7 @@ export interface StoredSessionFacts {
   /** The Harness the Session ran against (claude/codex/copilot). */
   harness: string;
   /** The adapter/config version it was dispatched under (e.g. `claude@1`), or
-   * null for a legacy Session that never recorded one. */
+   * null when the Session never recorded one. */
   adapterVersion: string | null;
   /** The working directory / Work-Context identity it executed in. Compared for
    * exact equality against {@link ResumeEnvironment.cwd}, so both operands must

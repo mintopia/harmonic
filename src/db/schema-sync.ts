@@ -47,7 +47,7 @@ export function parseBaseline(sql: string): Baseline {
 }
 
 /**
- * Converge a live database onto the baseline (ADR-0007): create missing tables
+ * Converge a live database onto the baseline: create missing tables
  * and indexes, add missing columns, drop tables, indexes and columns the
  * baseline no longer declares. No migration history is kept — the baseline is
  * edited in place and every data dir converges on boot. A change SQLite cannot

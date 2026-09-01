@@ -307,7 +307,7 @@ export class Runner {
     return this.active.size;
   }
 
-  private async attemptFor(task: Pick<TaskRow, 'id'>): Promise<AttemptRow> {
+  private async latestAttemptFor(task: Pick<TaskRow, 'id'>): Promise<AttemptRow> {
     const rows = await this.attempts.listForTask(task.id);
     const attempt = rows.at(-1);
     if (!attempt) throw new DomainError('not_found', `no attempt for task ${task.id} found`);
@@ -735,7 +735,7 @@ export class Runner {
     if (task.baseBranch) return task.baseBranch;
     const branch = await Git.symbolicBranch(task.workingDir);
     if (branch) return branch;
-    await Git.revParse(task.workingDir, 'HEAD');
+    await Git.assertRepo(task.workingDir);
     throw new BaseBranchUnresolved(
       `base repo ${task.workingDir} is on a detached HEAD with no current branch, and the Task has no explicit base branch; ` +
         'reattach the base repo to a branch (e.g. `git checkout <branch>`) or set an explicit base branch on the Task, then retry',
@@ -805,7 +805,7 @@ export class Runner {
     mechanism: 'command' | 'critic',
     record: (type: 'lifecycle', payload: unknown) => void,
   ): Promise<VerifierVerdict> {
-    const attempt = await this.attemptFor(task);
+    const attempt = await this.latestAttemptFor(task);
     const persisted = await this.verificationAttempts.append(attempt.id, {
       mechanism,
       inputOid: '',
@@ -858,7 +858,7 @@ export class Runner {
           parent,
           attributes: { 'task.id': task.id, 'attempt.id': run.id },
         });
-        const timelineAttempt = await this.attemptFor(task);
+        const timelineAttempt = await this.latestAttemptFor(task);
         const persisted = await this.verificationAttempts.append(timelineAttempt.id, commandAttemptToInput(attempt));
         const timelineStep = await this.attempts.createStep(timelineAttempt.id, { type: 'verification', command: command.command, logLocator: `verification_attempt:${persisted.id}` });
         await this.attempts.updateStep(timelineStep.id, {
@@ -907,7 +907,7 @@ export class Runner {
           // `exactOptionalPropertyTypes` forbids an explicit `undefined`.
           ...(this.criticDrive ? { drive: this.criticDrive } : {}),
         });
-        const timelineAttempt = await this.attemptFor(task);
+        const timelineAttempt = await this.latestAttemptFor(task);
         const persisted = await this.verificationAttempts.append(timelineAttempt.id, criticAttemptToInput(attempt));
         // The harness may not have flushed its log by the session-end boundary,
         // so `attempt.transcriptPath` is often null here.
@@ -974,7 +974,7 @@ export class Runner {
     decision: VerificationDecision,
     record: (type: 'lifecycle', payload: unknown) => void,
   ): Promise<TurnOutcome> {
-    const attemptRow = await this.attemptFor(task);
+    const attemptRow = await this.latestAttemptFor(task);
     const attempts = await this.verificationAttempts.list(attemptRow.id);
     const output = attempts[attempts.length - 1]?.output ?? '';
     record('lifecycle', { event: 'verification-actionable-fail', reason: decision.reason });
@@ -1292,7 +1292,7 @@ export class Runner {
         );
         if (commands.length === 0) return { pass: true, output: '' };
         mkdirSync(this.worktreesDir, { recursive: true });
-        const timelineAttempt = await this.attemptFor(task);
+        const timelineAttempt = await this.latestAttemptFor(task);
         for (const command of commands) {
           const attempt = await runCommandVerifier({
             repoDir: baseDir,
@@ -1621,7 +1621,7 @@ export class Runner {
         attemptId: run.id,
         attemptNumber,
         progressTrace: progressEvents,
-        attemptForTrip: () => this.attemptFor(task),
+        attemptForTrip: () => this.latestAttemptFor(task),
         outstandingAction: () => this.outstandingProgressActions.get(run.id),
         record: (payload) => record('lifecycle', payload),
         settle: async (now, reason) => {

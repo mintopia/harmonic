@@ -27,7 +27,7 @@ const removePasswordBodySchema = z.object({
 
 const createKeyBodySchema = z.object({
   name: z.string().min(1).meta({ example: 'ci-pipeline' }),
-  /** 'full' (default) drives the whole fleet; 'read' is a viz-client key — GET tasks/attempts/maps + WS, no mutations (issue #35). */
+  /** 'full' (default) drives the whole fleet; 'read' is a viz-client key — GET tasks/attempts/maps + WS, no mutations. */
   scope: z.enum(['full', 'read']).optional().meta({ example: 'read' }),
 });
 
@@ -39,7 +39,7 @@ const keySchema = z.object({
   name: z.string().meta({ example: 'ci-pipeline' }),
   /** First characters of the token, for display — too short to authenticate with. */
   prefix: z.string().meta({ example: 'adk_1f3c9e02' }),
-  /** 'full' or 'read' (issue #35); 'attempt'/'conversation' keys are internal and never listed. */
+  /** 'full' or 'read'; 'attempt'/'conversation' keys are internal and never listed. */
   scope: z.string().meta({ example: 'full' }),
   /** Set only on attempt-scoped keys, so null on every key this API returns. */
   attemptId: z.number().nullable().meta({ example: null }),

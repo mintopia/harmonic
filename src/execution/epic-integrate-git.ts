@@ -73,6 +73,8 @@ export type EpicIntegrateOutcome =
   /** A integrate attempt for this Epic is already in flight; the caller re-submits next poll. */
   | { status: 'busy' };
 
+const STICKY_ESCALATION_HOLD_REASON = 'already escalated for this member state; awaiting operator or a state change';
+
 export class EpicIntegrateCoordinator {
   private readonly repoDir: string;
   private readonly git: EpicIntegrateGit;
@@ -189,7 +191,7 @@ export class EpicIntegrateCoordinator {
     }
 
     if (!force && this.settledEscalated.get(target.ref) === this.signatureOf(target.members)) {
-      return { status: 'escalated', reason: 'already escalated for this member state; awaiting operator or a state change' };
+      return { status: 'escalated', reason: STICKY_ESCALATION_HOLD_REASON };
     }
 
     if (!force) {
@@ -271,9 +273,7 @@ export class EpicIntegrateCoordinator {
 
   /** The hold reason if `epicRef` is currently held by the sticky-escalation guard, else `null`. */
   heldReason(epicRef: number): string | null {
-    return this.settledEscalated.has(epicRef)
-      ? 'already escalated for this member state; awaiting operator or a state change'
-      : null;
+    return this.settledEscalated.has(epicRef) ? STICKY_ESCALATION_HOLD_REASON : null;
   }
 
   /** The integration branch's existence and tip OID for `epicRef`; `tip:null` when the branch is absent. */

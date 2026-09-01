@@ -35,7 +35,6 @@ const defaultGlab: GlabRunner = async (args, cwd) => {
   }
 };
 
-// GitLab's REST v4 JSON (via `glab api`), only the fields we read.
 interface RawIssue {
   iid: number;
   title: string;

@@ -21,7 +21,6 @@ export type FeatureIndex = (slug: string) => Promise<number>;
 async function assignBases(scopes: Scope[], featureIndex?: FeatureIndex): Promise<number[]> {
   if (scopes.length === 1 && scopes[0]!.slug === '') return [0];
   const bases: number[] = [];
-  // Sequential: each first-seen slug's index is assigned from the prior count, so earlier siblings must be recorded first.
   for (let i = 0; i < scopes.length; i++) {
     bases.push((featureIndex ? await featureIndex(scopes[i]!.slug) : i) * STRIDE);
   }
@@ -193,7 +192,7 @@ function headingTitle(raw: string, path: string): { heading: string; title: stri
 const stripHeading = (raw: string, heading: string): string =>
   (heading ? raw.slice(raw.indexOf(heading) + heading.length) : raw).trim();
 
-/** `**Status:**` / `**Blocked by:**` are the skills' literal field markers; a body reusing them mis-parses. Adapter-owned format, so we control it. */
+/** `**Status:**` / `**Blocked by:**` are the skills' literal field markers; a body reusing them mis-parses. */
 function parse(raw: string, id: number, path: string, mtime: string, parent: number | null, base: number): Parsed {
   const { heading, title } = headingTitle(raw, path);
 

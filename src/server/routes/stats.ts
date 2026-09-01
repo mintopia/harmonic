@@ -131,8 +131,7 @@ const statsResponseSchema = z.object({
       }),
     )
     .meta({ example: [{ day: 1783987200000, count: 4 }] }),
-  /** Distribution of Attempts-to-settle over merged Tasks (open/cancelled excluded);
-   * one is best (merged first-try, no self-heal). */
+  /** Distribution of Attempts-to-settle over merged Tasks (open/cancelled excluded). */
   attemptsPerTask: z
     .object({
       '1': z.number(),

@@ -1,13 +1,7 @@
 /**
- * Build-time OpenAPI export (issue #74).
- *
- * Builds the Fastify app in-process and calls `app.swagger()` to write a
- * committed `website/src/openapi.json` snapshot — no server boot, no port.
- * `buildApp` never calls `.listen()`, so the `onListen` hook (MCP URL wiring,
- * tracker sync) stays dormant; `app.ready()` is enough for @fastify/swagger to
- * collect every zod-declared route (ADR-0005). The committed snapshot lets the
- * Starlight `dev` build work offline; the Pages workflow regenerates it before
- * the docs build so the API reference can never drift from the route schemas.
+ * Builds the Fastify app in-process and calls `app.swagger()` to write
+ * `website/src/openapi.json`. Nothing calls `.listen()`, so the `onListen` hook
+ * stays dormant; `app.ready()` is enough for @fastify/swagger to collect every route.
  */
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';

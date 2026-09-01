@@ -107,10 +107,7 @@ export class AuthService {
 
   /**
    * Validate a bearer token; touches last-used. Returns null when invalid or
-   * revoked. The read and the `lastUsedAt` bump are one `write()` unit so the
-   * touch has committed by the time the request that authenticated resolves —
-   * a caller that immediately re-reads the key (the last-used tracking test)
-   * never races the async queue.
+   * revoked. The read and the `lastUsedAt` bump are one `write()` unit.
    */
   async verifyKey(token: string): Promise<ApiKeyRow | null> {
     if (!token.startsWith(KEY_PREFIX)) return null;

@@ -119,7 +119,6 @@ export const taskListQuerySchema = z.object({
   /** Server-side search: case-insensitive substring over the prompt and (for
    * mirrored Tasks) the tracker title. Blank/whitespace matches every Task. */
   q: z.string().optional().meta({ example: 'rate limiting' }),
-  /** 'cost' is handled by the API layer (cost is derived from runs, not a task column). */
   sortBy: z.enum(['createdAt', 'updatedAt', 'priority', 'cost']).optional().meta({ example: 'createdAt' }),
   order: z.enum(['asc', 'desc']).optional().meta({ example: 'desc' }),
 });

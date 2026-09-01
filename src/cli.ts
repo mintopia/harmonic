@@ -108,7 +108,6 @@ async function main(): Promise<void> {
     });
     child.unref();
     writeDaemon(dataDir, { pid: child.pid!, port, host, startedAt: Date.now() });
-    // Give the child a moment so first-run mistakes (no password) fail loudly here.
     await new Promise((resolve) => setTimeout(resolve, 1500));
     if (!daemonStatus(dataDir).running) {
       logger.error(`Failed to start — see ${logFilePath(dataDir)}`);

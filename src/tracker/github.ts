@@ -34,7 +34,6 @@ const defaultGh: GhRunner = async (args, cwd) => {
   }
 };
 
-// gh's raw JSON, only the bits we read. Everything else is discarded on normalise.
 interface RawRef {
   number: number;
   title: string;

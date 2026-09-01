@@ -95,6 +95,11 @@ export const Git = {
   /** Resolve a revision to its object id (e.g. a branch tip, `HEAD`). */
   revParse: (dir: string, rev: string) => git(dir, 'rev-parse', rev),
 
+  /** Rejects with the git error when `dir` is not a repository with a resolvable `HEAD`. */
+  assertRepo: async (dir: string): Promise<void> => {
+    await git(dir, 'rev-parse', 'HEAD');
+  },
+
   /** Whether the working tree at `dir` has uncommitted changes (tracked,
    * staged, or untracked). Empty `git status --porcelain` output → clean. */
   async isDirty(dir: string): Promise<boolean> {
