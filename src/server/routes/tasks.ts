@@ -22,7 +22,9 @@ import { attemptTimelineToApi, atRestWorkspaceId, costOfAttempts, attemptToApi, 
 import type { ApiTaskListRow } from '../serialize.js';
 import { attemptTimelineResponseSchema, errorResponse, idParamsSchema, costSchema, attemptUsageSchema, okResponseSchema, verifierStatusSchema } from '../schemas.js';
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
-import { parseUnifiedDiff, diffFilesResponseSchema, type DiffFile } from './diff.js';
+import { diffFilesResponseSchema } from './diff.js';
+import { parseUnifiedDiff, type DiffFile } from '../../domain/unified-diff.js';
+import { liveWorktreeDiff } from '../../execution/worktree-diff.js';
 
 /** The operator's guidance on an escalated ticket (ADR-0041 "Reject with guidance"): becomes the next Attempt's feedback. */
 const guidanceExample = 'The limiter is per-process; it needs to be shared across workers.';
@@ -337,27 +339,6 @@ const diffResponseSchema = z.object({
     example: ' src/server/rate-limit.ts | 96 ++++++++++++++\n src/server/app.ts       |  8 +-\n 2 files changed, 100 insertions(+), 4 deletions(-)',
   }),
 });
-
-/**
- * For a Run whose work is still live in a worktree (running, before the settle
- * snapshot), the worktree path and the fork-point OID to diff its current state
- * against — so the review pane reflects committed AND uncommitted work rather
- * than the empty `base...branch` range a not-yet-committed attempt produces.
- * Null when the branch is not checked out in a worktree (settled / cleaned up)
- * or the base can't be resolved, so the caller falls back to the committed range.
- */
-async function liveWorktreeDiff(
-  workingDir: string,
-  branch: string | null,
-  baseBranch: string | null,
-): Promise<{ worktree: string; baseOid: string } | null> {
-  if (!branch || !baseBranch) return null;
-  const worktree = await Git.branchCheckedOutAt(workingDir, branch).catch(() => null);
-  if (!worktree) return null;
-  const baseOid = await Git.mergeBase(workingDir, baseBranch, branch).catch(() => null);
-  if (!baseOid) return null;
-  return { worktree, baseOid };
-}
 
 /** A task-attribute filter that constrains nothing: absent, or an empty
  * multi-select. The `open` state shortcut is a real filter, so a bare string
