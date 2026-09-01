@@ -53,6 +53,16 @@ export interface Epic {
   ref: number;
   title: string;
   kind: 'map' | 'spec';
+  /** The Epic container ticket's body — the summary page's description (ADR-0017). */
+  description: string;
+  /** Epic container ticket creation time (ms). */
+  createdAt: number;
+  /** Most recent member-Task activity (ms); null when no member is mirrored. */
+  updatedAt: number | null;
+  /** The repo default branch the whole-Epic gate merges into (git-derived); null if unresolved. */
+  baseBranch: string | null;
+  /** The Epic container ticket's own blocker refs, ascending. */
+  dependsOn: number[];
   /** Ascending by ref. */
   members: EpicMember[];
   /** Ready-frontier refs (ascending). */
@@ -78,43 +88,6 @@ export type EpicIntegrateOutcome =
   | { status: 'escalated'; reason: string }
   | { status: 'noop'; reason: string }
   | { status: 'busy' };
-
-/**
- * Merge-rail segment coloring (ADR-0026's peek IA hero): members render as
- * segments coloured by merge status. `healing` is a best-effort inference —
- * the DTO does not carry a per-member "currently in a merge-train heal turn"
- * flag, so a running member is upgraded from `running` to `healing` only
- * when the Epic as a whole has an integrate attempt `inFlight`. That over-paints
- * every concurrently-running member as "healing" while an integrate is in flight,
- * even ones that are just doing their normal Run and never touched the
- * merge train — an acceptable approximation until a dedicated per-member
- * signal exists, but not a precise one.
- */
-export type RailSegmentStatus = 'merged' | 'running' | 'healing' | 'waiting' | 'blocking';
-
-export function memberRailStatus(m: EpicMember, epic: Epic): RailSegmentStatus {
-  if (m.mergeStatus === 'completed') return 'merged';
-  if (m.mergeStatus === 'blocked') return 'blocking';
-  // m.mergeStatus === 'pending'
-  if (m.state === 'running') {
-    return epic.integrate.inFlight ? 'healing' : 'running';
-  }
-  return 'waiting';
-}
-
-/** Merge rail segments in member order (ascending by ref, per the DTO). */
-export function railSegments(epic: Epic): { ref: number; status: RailSegmentStatus }[] {
-  return epic.members.map((m) => ({ ref: m.ref, status: memberRailStatus(m, epic) }));
-}
-
-/**
- * True when any member's rail segment is currently `healing` — the single
- * genuinely-live thing on the peek (ADR-0026: "motion (a pulse) is reserved
- * for the single genuinely-live thing, a heal in progress").
- */
-export function hasLiveHeal(epic: Epic): boolean {
-  return epic.members.some((m) => memberRailStatus(m, epic) === 'healing');
-}
 
 const VERIFICATION_GLYPH: Record<'pass' | 'fail' | 'pending', string> = {
   pass: '✓',
@@ -284,8 +257,7 @@ const INTEGRATION_STEP_ORDER: readonly IntegrationStepKey[] = ['verify', 'merge'
  * carries a positive signal only for the first two steps — `verification.status`
  * and `integrate.inFlight` — so `check`/`retire` stay `pending` until the Epic
  * integrates and drops off the list. A held integrate marks the current step
- * `held`, so escalation is legible on the bar itself. Deliberate approximation,
- * like `memberRailStatus`'s `healing`. */
+ * `held`, so escalation is legible on the bar itself. */
 export function integrationSteps(epic: Epic): IntegrationStep[] {
   const verified = epic.verification.status === 'pass';
   const currentIndex = verified ? 1 : 0; // Verify until it passes, then Merge.
@@ -295,4 +267,63 @@ export function integrationSteps(epic: Epic): IntegrationStep[] {
     if (i > currentIndex) return { key, label, state: 'pending' };
     return { key, label, state: epic.integrate.held != null ? 'held' : 'current' };
   });
+}
+
+/** The full Epic lifecycle for the summary-page stepper (ADR-0017): the parallel
+ * member **Build** phase, then the whole-Epic integration gate (ADR-0001's
+ * verify → merge → post-merge check → retire). The board band's compact bar
+ * (`integrationSteps`) only shows the gate — it appears once the Epic is
+ * integrating — but the page shows overall progress from the first member on.
+ * The gate steps stay `pending` past `merge` for the same reason `integrationSteps`
+ * does: the read model carries a positive signal only through merge. */
+export type EpicStageKey = 'build' | IntegrationStepKey;
+export interface EpicStage {
+  key: EpicStageKey;
+  label: string;
+  /** The small line under the step label in the mockup (e.g. "into develop"). */
+  sublabel: string;
+  state: IntegrationStepState;
+}
+
+export function epicLifecycleSteps(epic: Epic): EpicStage[] {
+  const allFolded = epic.memberCount > 0 && epic.foldedCount === epic.memberCount;
+  const held = epic.integrate.held;
+  const verification = epic.verification.status;
+  const verified = verification === 'pass';
+
+  const build: EpicStage = {
+    key: 'build',
+    label: 'Build',
+    sublabel: `${epic.foldedCount}/${epic.memberCount} merged`,
+    state: allFolded ? 'done' : 'current',
+  };
+
+  // Before every member is folded the gate hasn't opened, so the four gate
+  // steps are all still ahead.
+  const gate: EpicStage[] = INTEGRATION_STEP_ORDER.map((key): EpicStage => {
+    const label = INTEGRATION_STEP_LABELS[key];
+    const sublabel =
+      key === 'verify'
+        ? verified
+          ? 'passed'
+          : verification === 'fail'
+            ? 'failed'
+            : 'whole-epic critic'
+        : key === 'merge'
+          ? held != null
+            ? `held — ${held}`
+            : 'into develop'
+          : key === 'check'
+            ? 'revert on red'
+            : 'cleanup';
+    if (!allFolded) return { key, label, sublabel, state: 'pending' };
+    // Gate current step: Verify until it passes, then Merge (held if escalated).
+    const currentKey: IntegrationStepKey = verified ? 'merge' : 'verify';
+    if (key === currentKey) return { key, label, sublabel, state: held != null ? 'held' : 'current' };
+    const order = INTEGRATION_STEP_ORDER.indexOf(key);
+    const currentOrder = INTEGRATION_STEP_ORDER.indexOf(currentKey);
+    return { key, label, sublabel, state: order < currentOrder ? 'done' : 'pending' };
+  });
+
+  return [build, ...gate];
 }

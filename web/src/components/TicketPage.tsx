@@ -1266,6 +1266,8 @@ export function TicketPage({
   onChanged,
   onClose,
   onOpenTask,
+  onOpenEpic,
+  parentEpicRef = null,
   error,
 }: {
   task: Task;
@@ -1273,6 +1275,12 @@ export function TicketPage({
   onChanged: () => void;
   onClose: () => void;
   onOpenTask: (taskId: number) => void;
+  /** Open this Ticket's parent Epic's summary page (ADR-0017), from the crumb bar. */
+  onOpenEpic?: (ref: number) => void;
+  /** The Epic this Ticket belongs to, resolved by the caller from the derived
+   * Epic model (rolls up nested containers to the top-level Epic); null when it
+   * has none or its Epic isn't currently derived. */
+  parentEpicRef?: number | null;
   error?: string | null;
 }) {
   const [runs, setRuns] = useState<AttemptSummary[]>([]);
@@ -1580,7 +1588,7 @@ export function TicketPage({
       <CrumbBar
         crumbs={[
           { node: <span className="font-semibold text-ink">{workspaceName ?? '…'}</span>, onClick: onClose },
-          ...(task.mapRef !== null
+          ...((parentEpicRef ?? task.mapRef) !== null
             ? [
                 {
                   node: (
@@ -1588,10 +1596,10 @@ export function TicketPage({
                       <span className="rounded-[5px] bg-tool-tint px-1.5 py-px text-[10px] font-bold uppercase tracking-[0.06em]">
                         Epic
                       </span>
-                      <span className="font-data text-[12.5px]">epic/{task.mapRef}</span>
+                      <span className="font-data text-[12.5px]">epic/{parentEpicRef ?? task.mapRef}</span>
                     </span>
                   ),
-                  onClick: onClose,
+                  onClick: () => onOpenEpic?.((parentEpicRef ?? task.mapRef)!),
                 },
               ]
             : []),

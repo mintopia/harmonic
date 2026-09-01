@@ -2,13 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   closedMembers,
   epicByTaskId,
-  hasLiveHeal,
   integrateOutcomeBanner,
   integrationSteps,
   isEpicIntegrating,
   memberPipStatus,
-  memberRailStatus,
-  railSegments,
   statusLineParts,
 } from '../web/src/epic-model.js';
 import type { Epic, EpicIntegrateOutcome, EpicMember } from '../web/src/epic-model.js';
@@ -29,6 +26,11 @@ const epic = (overrides: Partial<Epic> = {}): Epic => {
     ref: 1,
     title: 'epic 1',
     kind: 'map',
+    description: '',
+    createdAt: 0,
+    updatedAt: null,
+    baseBranch: null,
+    dependsOn: [],
     members,
     ready: [],
     integration: { branch: 'epic/1', exists: true, tip: null },
@@ -40,73 +42,6 @@ const epic = (overrides: Partial<Epic> = {}): Epic => {
   };
 };
 
-describe('memberRailStatus / railSegments', () => {
-  it('maps completed to merged', () => {
-    const m = member({ ref: 1, mergeStatus: 'completed' });
-    expect(memberRailStatus(m, epic({ members: [m] }))).toBe('merged');
-  });
-
-  it('maps blocked to blocking', () => {
-    const m = member({ ref: 1, mergeStatus: 'blocked' });
-    expect(memberRailStatus(m, epic({ members: [m] }))).toBe('blocking');
-  });
-
-  it('maps pending + running, integrate not in flight, to running', () => {
-    const m = member({ ref: 1, mergeStatus: 'pending', state: 'running' });
-    const e = epic({ members: [m], integrate: { inFlight: false, held: null } });
-    expect(memberRailStatus(m, e)).toBe('running');
-  });
-
-  it('maps pending + running, integrate in flight, to healing (best-effort)', () => {
-    const m = member({ ref: 1, mergeStatus: 'pending', state: 'running' });
-    const e = epic({ members: [m], integrate: { inFlight: true, held: null } });
-    expect(memberRailStatus(m, e)).toBe('healing');
-  });
-
-  it('maps pending + not running to waiting', () => {
-    const m = member({ ref: 1, mergeStatus: 'pending', state: null });
-    const e = epic({ members: [m] });
-    expect(memberRailStatus(m, e)).toBe('waiting');
-  });
-
-  it('maps pending + a non-running state (e.g. failed) to waiting, not healing, even with integrate in flight', () => {
-    const m = member({ ref: 1, mergeStatus: 'pending', state: 'failed' });
-    const e = epic({ members: [m], integrate: { inFlight: true, held: null } });
-    expect(memberRailStatus(m, e)).toBe('waiting');
-  });
-
-  it('produces rail segments in member order', () => {
-    const m1 = member({ ref: 3, mergeStatus: 'completed' });
-    const m2 = member({ ref: 1, mergeStatus: 'blocked' });
-    const m3 = member({ ref: 2, mergeStatus: 'pending', state: 'running' });
-    const e = epic({ members: [m1, m2, m3] });
-    expect(railSegments(e)).toEqual([
-      { ref: 3, status: 'merged' },
-      { ref: 1, status: 'blocking' },
-      { ref: 2, status: 'running' },
-    ]);
-  });
-});
-
-describe('hasLiveHeal', () => {
-  it('is false when no member is healing', () => {
-    const m1 = member({ ref: 1, mergeStatus: 'completed' });
-    const m2 = member({ ref: 2, mergeStatus: 'pending', state: 'running' });
-    const e = epic({ members: [m1, m2], integrate: { inFlight: false, held: null } });
-    expect(hasLiveHeal(e)).toBe(false);
-  });
-
-  it('is true when a running member coincides with an in-flight integrate', () => {
-    const m1 = member({ ref: 1, mergeStatus: 'completed' });
-    const m2 = member({ ref: 2, mergeStatus: 'pending', state: 'running' });
-    const e = epic({ members: [m1, m2], integrate: { inFlight: true, held: null } });
-    expect(hasLiveHeal(e)).toBe(true);
-  });
-
-  it('is false on an empty roster', () => {
-    expect(hasLiveHeal(epic({ members: [], integrate: { inFlight: true, held: null } }))).toBe(false);
-  });
-});
 
 describe('statusLineParts', () => {
   it('renders tip, pass verification, and the fold count', () => {

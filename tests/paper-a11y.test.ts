@@ -12,7 +12,7 @@ describe('Paper accessibility contract (issue #266)', () => {
 
     expect(app).toContain('advanceReviewAnnouncements');
     expect(board).toContain("aria-live={attn ? 'polite' : undefined}");
-    expect(board).toContain('aria-live="assertive"');
+    // Assertive announcements (merge outcomes, errors) ride the toast stack.
     expect(toasts).toContain('aria-live="assertive"');
   });
 

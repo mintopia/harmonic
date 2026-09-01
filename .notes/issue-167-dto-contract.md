@@ -47,6 +47,11 @@ interface Epic {
   ref: number;
   title: string;
   kind: 'map' | 'spec';
+  description: string;         // ADR-0017: Epic container ticket body (summary-page description)
+  createdAt: number;           // ADR-0017: Epic container ticket creation time (ms)
+  updatedAt: number | null;    // ADR-0017: most recent member-Task activity (ms); null if none mirrored
+  baseBranch: string | null;   // ADR-0017: repo default branch the gate merges epic/<ref> into (git-derived); null if unresolved
+  dependsOn: number[];         // ADR-0017: the Epic container ticket's own blocker refs (ascending)
   members: EpicMember[];       // ascending by ref
   ready: number[];             // ready-frontier refs (ascending)
   integration: EpicIntegration;

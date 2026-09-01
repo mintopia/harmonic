@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_ROUTE,
   DEFAULT_TABLE_FILTERS,
-  focusedSurface,
   parseRoute,
   serializeRoute,
   type Route,
@@ -92,6 +91,32 @@ describe('parseRoute — Ticket path (#181)', () => {
   });
 });
 
+describe('parseRoute — Epic summary path (ADR-0017)', () => {
+  it('reads a focused Epic ref from /epic/:ref, defaulting the view to deck', () => {
+    const route = parseRoute('/epic/421', '');
+    expect(route.epic).toBe(421);
+    expect(route.task).toBeNull();
+    expect(route.view).toBe('board');
+  });
+
+  it('carries the underlying view alongside the Epic ref', () => {
+    const route = parseRoute('/epic/421', '?view=table');
+    expect(route.epic).toBe(421);
+    expect(route.view).toBe('table');
+  });
+
+  it('rejects a zero, non-numeric, or missing ref — no Epic focused', () => {
+    expect(parseRoute('/epic/0', '').epic).toBeNull();
+    expect(parseRoute('/epic/abc', '').epic).toBeNull();
+    expect(parseRoute('/epic/', '').epic).toBeNull();
+  });
+
+  it('has no Epic focused on the root or a Ticket path', () => {
+    expect(parseRoute('/', '').epic).toBeNull();
+    expect(parseRoute('/task/172', '').epic).toBeNull();
+  });
+});
+
 describe('serializeRoute', () => {
   it('serializes the all-default deck route to the root path (clean URL)', () => {
     expect(serializeRoute(DEFAULT_ROUTE)).toBe('/');
@@ -128,6 +153,11 @@ describe('serializeRoute', () => {
 
   it('carries the underlying view as a query param on the Ticket path', () => {
     expect(serializeRoute({ ...DEFAULT_ROUTE, view: 'table', task: 172 })).toBe('/task/172?view=table');
+  });
+
+  it('builds an /epic/:ref path when an Epic is focused (ADR-0017)', () => {
+    expect(serializeRoute({ ...DEFAULT_ROUTE, epic: 421 })).toBe('/epic/421');
+    expect(serializeRoute({ ...DEFAULT_ROUTE, view: 'table', epic: 421 })).toBe('/epic/421?view=table');
   });
 });
 
@@ -180,6 +210,8 @@ describe('round-trip', () => {
       peeked: ['done', 'cancelled'],
       table: { ...DEFAULT_TABLE_FILTERS, search: 'timeout', order: 'asc' },
     },
+    { ...DEFAULT_ROUTE, epic: 421 },
+    { ...DEFAULT_ROUTE, view: 'table', epic: 421, table: { ...DEFAULT_TABLE_FILTERS, priority: ['high'] } },
   ];
 
   it('serialize → parse is the identity on normalized routes', () => {
@@ -188,15 +220,5 @@ describe('round-trip', () => {
       const u = new URL(url, 'http://x');
       expect(parseRoute(u.pathname, u.search)).toEqual(route);
     }
-  });
-});
-
-describe('focusedSurface (#413)', () => {
-  it("opens the Epic summary page for an Epic's mirrored driver Task", () => {
-    expect(focusedSurface({ isEpic: true })).toBe('epic');
-  });
-
-  it('opens the Ticket page for an ordinary Task', () => {
-    expect(focusedSurface({ isEpic: false })).toBe('ticket');
   });
 });

@@ -4,7 +4,6 @@ import {
   blockerColumns,
   boardSections,
   cardTitle,
-  epicMemberSections,
   epicPendingColumns,
   fmtElapsed,
   isActiveEpic,
@@ -89,6 +88,11 @@ const epic = (ref: number, members: EpicMember[], extra: Partial<Epic> = {}): Ep
   ref,
   title: `epic ${ref}`,
   kind: 'spec',
+  description: '',
+  createdAt: 0,
+  updatedAt: null,
+  baseBranch: null,
+  dependsOn: [],
   members,
   ready: [],
   integration: { branch: `epic/${ref}`, exists: true, tip: 'a1f9c02' },
@@ -118,11 +122,13 @@ describe('boardSections — Attention / Running / Pending (ADR-0041)', () => {
     );
     expect(attentionIds(sections)).toEqual(['task:2', 'task:1']);
     expect(sections.running.map((entry) => entry.id)).toEqual([3, 4]);
-    // Nothing of Epic 30 is pending (its one member is Running), so it has no band.
-    expect(sections.pending).toEqual([]);
+    // ADR-0017: every active Epic gets a band, and a working member stays in its
+    // band columns while also appearing in the global Running section.
+    expect(sections.pending.map((group) => group.epic?.ref)).toEqual([30]);
+    expect(layout(sections.pending[0]!.columns)).toEqual([['Frontier', ['T-4']]]);
   });
 
-  it('skips a Pending band for an Epic whose members are all promoted or merged', () => {
+  it('gives every active Epic a band, with open members in its columns and merged ones dropped (ADR-0017)', () => {
     const sections = boardSections(
       [task(1, 'working'), task(2, 'done'), task(3, 'ready')],
       [
@@ -130,10 +136,13 @@ describe('boardSections — Attention / Running / Pending (ADR-0041)', () => {
         epic(31, [member(311, 3)]),
       ],
     );
-    expect(sections.pending.map((group) => group.epic?.ref)).toEqual([31]);
+    expect(sections.pending.map((group) => group.epic?.ref)).toEqual([30, 31]);
+    // Epic 30: the working member stays in the band; the merged one drops to the closed rail.
+    expect(layout(sections.pending[0]!.columns)).toEqual([['Frontier', ['T-1']]]);
+    expect(layout(sections.pending[1]!.columns)).toEqual([['Frontier', ['T-3']]]);
   });
 
-  it('surfaces an escalated Epic (held whole-Epic merge) in Attention after the escalated tickets', () => {
+  it('surfaces an escalated Epic (held whole-Epic merge) in Attention and as a band (ADR-0017)', () => {
     const held = epic(60, [member(1, 601, { mergeStatus: 'completed', state: 'done' })], {
       integrate: { inFlight: false, held: 'already escalated for this member state; awaiting operator or a state change' },
     });
@@ -141,18 +150,21 @@ describe('boardSections — Attention / Running / Pending (ADR-0041)', () => {
     expect(isEscalatedEpic(held)).toBe(true);
     expect(isActiveEpic(held)).toBe(true);
     expect(attentionIds(sections)).toEqual(['task:7', 'epic:60']);
-    // Its folded member is not pending work, so the Attention card is its only surface.
-    expect(sections.pending).toEqual([]);
+    // Active, so it also gets a band; its only member is folded, so the band has
+    // no open columns — the integration bar is its content.
+    expect(sections.pending.map((group) => group.epic?.ref)).toEqual([60]);
+    expect(sections.pending[0]!.columns).toEqual([]);
   });
 
-  it('promotes an escalated Epic member to Attention and keeps it out of the band', () => {
+  it('keeps an escalated Epic member in its band columns while also surfacing it in Attention (ADR-0017)', () => {
     const sections = boardSections(
       [task(5, 'escalated'), task(6, 'ready')],
       [epic(40, [member(1, 5, { state: 'escalated', escalated: true }), member(2, 6)])],
     );
     expect(attentionIds(sections)).toEqual(['task:5']);
     expect(sections.running).toEqual([]);
-    expect(layout(sections.pending[0]!.columns)).toEqual([['Frontier', ['T-6']]]);
+    // Escalated member first (attention-first band order), then the ready one.
+    expect(layout(sections.pending[0]!.columns)).toEqual([['Frontier', ['T-5', 'T-6']]]);
   });
 
   it('keeps ready and draft tickets out of Attention — only escalated is the human surface', () => {
@@ -197,20 +209,24 @@ describe('boardSections — Attention / Running / Pending (ADR-0041)', () => {
       [epic(31, [member(311, 4)]), epic(30, [member(301, 2, { state: 'working' }), member(302, 3)])],
     );
     expect(sections.pending.map((group) => group.epic?.ref ?? 'standalone')).toEqual([30, 31, 'standalone']);
-    expect(layout(sections.pending[0]!.columns)).toEqual([['Frontier', ['T-3']]]);
+    // Epic 30's working member (T-2) stays in its band, ordered before the ready one.
+    expect(layout(sections.pending[0]!.columns)).toEqual([['Frontier', ['T-2', 'T-3']]]);
     expect(layout(sections.pending[1]!.columns)).toEqual([['Frontier', ['T-4']]]);
-    // The driver ticket (task 9) is neither pending nor running.
+    // The driver ticket (task 9) is neither a card nor in Running.
     expect(layout(sections.pending[2]!.columns)).toEqual([['Frontier', ['T-1']]]);
     expect(sections.running.map((entry) => entry.id)).toEqual([2]);
   });
 
-  it('drops fully merged Epics and returns their members to standalone treatment', () => {
-    const merged = epic(50, [member(1, 501, { mergeStatus: 'completed', state: 'done' })]);
-    const sections = boardSections([task(501, 'ready')], [merged]);
-    expect(isActiveEpic(merged)).toBe(false);
-    expect(sections.pending).toEqual([{ epic: null, columns: [expect.objectContaining({ label: 'Frontier' })] }]);
+  it('keeps a fully-folded Epic on the board until it retires — folded ≠ finished (ADR-0017)', () => {
+    // Every member merged into the epic branch, but the whole-Epic gate hasn't
+    // merged into the base yet: still active, shown as a band (empty columns +
+    // closed rail), not dropped, and its member is not returned to standalone.
+    const folded = epic(50, [member(1, 501, { mergeStatus: 'completed', state: 'done' })]);
+    const sections = boardSections([task(501, 'done')], [folded]);
+    expect(isActiveEpic(folded)).toBe(true);
+    expect(sections.pending.map((group) => group.epic?.ref)).toEqual([50]);
+    expect(sections.pending[0]!.columns).toEqual([]);
     expect(sections.attention).toEqual([]);
-    expect(sections.pending[0]!.columns[0]!.items.map((item) => item.taskId)).toEqual([501]);
   });
 
   it('keeps a fully-folded, actively-integrating Epic on the board with an empty band', () => {
@@ -228,13 +244,10 @@ describe('boardSections — Attention / Running / Pending (ADR-0041)', () => {
     expect(sections.pending[0]!.columns).toEqual([]);
   });
 
-  it('drops a fully-folded Epic once its whole-Epic integration finishes (no isActiveEpic regression)', () => {
-    const retired = epic(71, [member(1, 711, { mergeStatus: 'completed', state: 'done' })], {
-      integrate: { inFlight: false, held: null },
-    });
-    const sections = boardSections([task(711, 'done')], [retired]);
-    expect(isActiveEpic(retired)).toBe(false);
-    expect(sections.pending).toEqual([]);
+  it('is inactive only for an Epic with no members — a finished Epic drops by leaving the open-derived list, not here (ADR-0017)', () => {
+    const empty = epic(71, []);
+    expect(isActiveEpic(empty)).toBe(false);
+    expect(boardSections([], [empty]).pending).toEqual([]);
   });
 
   it("groups an open epic's children into its band from the derived model, with no epic task row present (ADR-0016)", () => {
@@ -273,16 +286,14 @@ describe('epicPendingColumns', () => {
     ]);
   });
 
-  it('excludes human-only ready work from Run now and promotes working members out of the band', () => {
+  it('keeps working members in the band (ADR-0017) and marks human-only ready work non-runnable', () => {
     const working = task(1, 'working');
     const humanOnly = task(2, 'ready', { origin: 'mirrored', trackerRef: 2, agentWorkable: false, humanOnly: true });
     const columns = epicPendingColumns(epic(90, [member(1, 1), member(2, 2)]), [working, humanOnly]);
-    expect(columns).toEqual([
-      expect.objectContaining({
-        label: 'Frontier',
-        items: [expect.objectContaining({ label: '#2', runnable: false, humanOnly: true })],
-      }),
-    ]);
+    // Working member first (band order), then the human-only ready ticket.
+    expect(layout(columns)).toEqual([['Frontier', ['T-1', '#2']]]);
+    expect(columns[0]!.items[0]).toMatchObject({ label: 'T-1', state: 'working', runnable: false });
+    expect(columns[0]!.items[1]).toMatchObject({ label: '#2', runnable: false, humanOnly: true });
   });
 
   it('places an unmirrored member by its tracker-ready flag: Frontier when ready, an Unmirrored column otherwise', () => {
@@ -302,35 +313,6 @@ describe('epicPendingColumns', () => {
   it('hides a done-but-unfolded member — it is no longer pending work', () => {
     const columns = epicPendingColumns(epic(90, [member(1, 1), member(2, 2)]), [task(1, 'done'), task(2, 'ready')]);
     expect(layout(columns)).toEqual([['Frontier', ['T-2']]]);
-  });
-});
-
-describe('epicMemberSections', () => {
-  it('promotes escalated members to Attention and working members to Running', () => {
-    const e = epic(90, [member(1, 1), member(2, 2), member(3, 3), member(4, null)]);
-    const sections = epicMemberSections(e, [
-      task(1, 'escalated'),
-      task(2, 'working'),
-      task(3, 'ready'),
-    ]);
-    expect(sections.attention.map((t) => t.id)).toEqual([1]);
-    expect(sections.running.map((t) => t.id)).toEqual([2]);
-  });
-
-  it('ignores tasks that are not members of the Epic', () => {
-    const e = epic(90, [member(1, 1)]);
-    const sections = epicMemberSections(e, [task(1, 'working'), task(2, 'working')]);
-    expect(sections.running.map((t) => t.id)).toEqual([1]);
-  });
-
-  it('orders each section by processing order (priority, then id)', () => {
-    const e = epic(90, [member(1, 1), member(2, 2), member(3, 3)]);
-    const sections = epicMemberSections(e, [
-      task(2, 'working'),
-      task(3, 'working', { priority: 'high' }),
-      task(1, 'working'),
-    ]);
-    expect(sections.running.map((t) => t.id)).toEqual([3, 1, 2]);
   });
 });
 

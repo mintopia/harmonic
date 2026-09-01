@@ -12,6 +12,7 @@ import { EpicIntegrationCoordinator, integrationBranchName } from '../execution/
 import { EpicIntegrateCoordinator, type EpicIntegrateOutcome } from '../execution/epic-integrate-coordinator.js';
 import { verifyEpicIntegration } from '../execution/epic-verification.js';
 import { EpicOperations } from '../execution/epic-operations.js';
+import { resolveRepositoryDefaultBranch } from '../execution/branch-merge.js';
 import {
   EpicRefreshCoordinator,
   type EpicRefreshResolveDispatchOutcome,
@@ -31,7 +32,7 @@ export type MergeEpicIntegration = (input: {
   runPostMergeCheck: (mergeOid: string, baseDir: string) => Promise<PostMergeCheckResult>;
 }) => Promise<MergePolicyOutcome>;
 import { deriveEpics, type DerivedEpic } from '../domain/epic-derivation.js';
-import { composeEpicView, type Epic, type EpicFacts } from '../domain/epic-view.js';
+import { composeEpicView, type Epic, type EpicFacts, type EpicMeta } from '../domain/epic-view.js';
 import { persistedTickets } from './persisted.js';
 import { forEachYielding, type YieldOptions } from '../reliability/yield.js';
 import { logger } from '../logger.js';
@@ -283,7 +284,8 @@ export class TrackerPollerManager {
     const mirrored = (await this.tasks.listWithDeps({ workspaceId })).filter((task) => task.origin === 'mirrored');
     const tickets = await persistedTickets(mirrored, await this.tasks.listTrackerContainers(workspaceId));
     const derivedEpics = deriveEpics(tickets, this.readinessByRef(mirrored));
-    return Promise.all(derivedEpics.map((derived) => this.composeOne(entry, derived, tickets, mirrored)));
+    const baseBranch = await this.epicBaseBranch(workspaceId);
+    return Promise.all(derivedEpics.map((derived) => this.composeOne(entry, derived, tickets, mirrored, baseBranch)));
   }
 
   /** The container ticket for each top-level Epic (ADR-0016), so the Tasks list
@@ -307,7 +309,7 @@ export class TrackerPollerManager {
       (e) => e.ref === epicRef,
     );
     if (!derived) return null;
-    return this.composeOne(entry, derived, tickets, mirrored);
+    return this.composeOne(entry, derived, tickets, mirrored, await this.epicBaseBranch(workspaceId));
   }
 
   /** Frontier eligibility belongs to the mirrored Task, where Blocker edges are persisted. */
@@ -328,6 +330,7 @@ export class TrackerPollerManager {
     derived: DerivedEpic,
     tickets: Ticket[],
     mirrored: TaskRow[],
+    baseBranch: string | null,
   ): Promise<Epic> {
     const titleByRef = new Map(tickets.map((t) => [t.number, t.title]));
     const taskByRef = new Map<number, TaskRow>();
@@ -335,7 +338,22 @@ export class TrackerPollerManager {
       if (task.trackerRef != null) taskByRef.set(task.trackerRef, task);
     }
     const facts = await this.epicFacts(entry, derived.ref);
-    return composeEpicView(derived, taskByRef, titleByRef, facts);
+    const ticket = tickets.find((t) => t.number === derived.ref);
+    const meta: EpicMeta = {
+      description: ticket?.body ?? '',
+      createdAt: ticket ? Date.parse(ticket.createdAt) || 0 : 0,
+      baseBranch,
+      dependsOn: (ticket?.blockedBy ?? []).map((b) => b.number).sort((a, b) => a - b),
+    };
+    return composeEpicView(derived, taskByRef, titleByRef, facts, meta);
+  }
+
+  /** The repo default branch the whole-Epic gate merges `epic/<ref>` into
+   * (ADR-0017 Properties) — git-derived, best-effort, `null` if unresolved. */
+  private async epicBaseBranch(workspaceId: number): Promise<string | null> {
+    const workingDir = (await this.getWorkspaces()).find((w) => w.id === workspaceId)?.workingDir;
+    if (workingDir == null) return null;
+    return resolveRepositoryDefaultBranch(workingDir).catch(() => null);
   }
 
   /**

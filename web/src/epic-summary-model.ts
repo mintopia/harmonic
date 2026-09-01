@@ -40,6 +40,8 @@ export interface EpicUsageSummary {
    * caller shows a restrained empty note instead of the grid. */
   hasActivity: boolean;
   totalCost: string;
+  /** The total is a floor (some tokens couldn't be priced) — the "≥ floor" note. */
+  costIncomplete: boolean;
   attemptCount: number;
   avgCostPerTask: string;
   failureRatePct: string;
@@ -62,6 +64,7 @@ export function epicUsageSummary(stats: EpicUsageStats, childCount: number): Epi
   return {
     hasActivity: stats.attemptCount > 0,
     totalCost: formatCost(stats.cost) ?? NONE,
+    costIncomplete: stats.cost?.incomplete ?? false,
     attemptCount: stats.attemptCount,
     avgCostPerTask: formatAvgCostPerRun(stats.cost, childCount) ?? NONE,
     failureRatePct: formatPct(failureRate(stats.failedAttempts, stats.attemptCount)),

@@ -32,6 +32,9 @@ not-yet-torn-down machinery is marked `legacy until ADR-1 epic`.
 | 0012 | [Distribution, tooling, and docs site](0012-distribution-tooling-and-docs-site.md) |
 | 0013 | [Release automation: release-please](0013-release-automation-release-please.md) |
 | 0014 | [Enriched fleet Stats: task-grain aggregates and colour encoding](0014-enriched-fleet-stats.md) |
+| 0015 | [Epic summary page](0015-epic-summary-page.md) |
+| 0016 | [Epics are label-driven containers, not work tasks](0016-epics-are-containers.md) |
+| 0017 | [The Epic summary page replaces the board's epic-focus surface](0017-epic-summary-page-replaces-board-focus.md) |
 
 ## Where every pre-reset ADR went
 

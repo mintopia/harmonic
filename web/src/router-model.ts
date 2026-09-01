@@ -2,7 +2,7 @@
 // project, whose nodenext resolution requires them (Vite maps .js → .ts).
 import { TERMINAL_STATES } from './task-state-model.js';
 import { VIEWS, type View } from './rail-model.js';
-import { TASK_STATES, type Task, type TaskState } from './types.js';
+import { TASK_STATES, type TaskState } from './types.js';
 
 /**
  * Client routing (issue #103, #181): the active view and its per-view filter/sort/peek
@@ -61,6 +61,12 @@ export interface Route {
    * restores exactly where the operator was.
    */
   task: number | null;
+  /**
+   * The focused Epic (ADR-0017): `null` when on a view, or the Epic ref when the
+   * pathname is `/epic/:ref`. Opens the Epic summary page; mutually exclusive
+   * with `task` (both live in the pathname, one path at a time).
+   */
+  epic: number | null;
   /** Deck terminal columns the operator has peeked open. */
   peeked: TaskState[];
   table: TableFilters;
@@ -69,25 +75,10 @@ export interface Route {
 export const DEFAULT_ROUTE: Route = {
   view: 'board',
   task: null,
+  epic: null,
   peeked: [],
   table: DEFAULT_TABLE_FILTERS,
 };
-
-/** The full-bleed surface a focused Ticket (`/task/:id`) opens onto. An Epic's
- * mirrored driver Task opens the Epic summary page (ADR-0015); every other Task
- * opens the Ticket page. */
-export type FocusedSurface = 'epic' | 'ticket';
-
-/**
- * Which surface the focused Task opens (issue #413): the Epic summary page for
- * an Epic's mirrored driver Task, else the Ticket page. Every entry point — the
- * Tasks-list row, the Graph node, a deep link — navigates to `/task/:id`, so
- * this one rule decides the destination for all of them, keeping the choice a
- * pure, testable seam rather than inline JSX in App.tsx.
- */
-export function focusedSurface(task: Pick<Task, 'isEpic'>): FocusedSurface {
-  return task.isEpic ? 'epic' : 'ticket';
-}
 
 /** Query param keys — one flat namespace; only one view is active at a time so
  * the board's `peek` and the table's filters never contend for a name. */
@@ -120,6 +111,8 @@ const isSortKey = (v: string | null): v is SortKey => v !== null && (SORT_KEYS a
 
 /** Matches the Ticket path `/task/:id` (optional trailing slash). */
 const TASK_PATH = /^\/task\/(\d+)\/?$/;
+/** Matches the Epic summary path `/epic/:ref` (optional trailing slash). */
+const EPIC_PATH = /^\/epic\/(\d+)\/?$/;
 
 /** Accept a full URL, a `?a=b` search string, or a bare `a=b`; return just the
  * query portion for URLSearchParams. */
@@ -144,6 +137,11 @@ export function parseRoute(pathname: string, search: string): Route {
   const taskId = taskMatch ? Number(taskMatch[1]) : NaN;
   const task = taskMatch && Number.isSafeInteger(taskId) && taskId > 0 ? taskId : null;
 
+  // The Epic summary path: a bare positive integer Epic ref, else no Epic open.
+  const epicMatch = EPIC_PATH.exec(pathname);
+  const epicRef = epicMatch ? Number(epicMatch[1]) : NaN;
+  const epic = epicMatch && Number.isSafeInteger(epicRef) && epicRef > 0 ? epicRef : null;
+
   // Dedupe while preserving order; drop anything that isn't a peekable column.
   const peeked: TaskState[] = [];
   for (const raw of (params.get(PARAM.peek) ?? '').split(',')) {
@@ -162,7 +160,7 @@ export function parseRoute(pathname: string, search: string): Route {
     order: rawOrder === 'asc' ? 'asc' : 'desc',
   };
 
-  return { view, task, peeked, table };
+  return { view, task, epic, peeked, table };
 }
 
 /**
@@ -190,6 +188,9 @@ export function serializeRoute(route: Route): string {
   if (t.order !== 'desc') params.set(PARAM.order, t.order);
 
   const query = params.toString();
-  const base = route.task !== null ? `/task/${route.task}` : '/';
+  // The pathname carries at most one focused entity; a focused Ticket wins over
+  // a focused Epic if both are somehow set (they never are — navigation clears
+  // the sibling), so the order here is only a defensive tiebreak.
+  const base = route.task !== null ? `/task/${route.task}` : route.epic !== null ? `/epic/${route.epic}` : '/';
   return query ? `${base}?${query}` : base;
 }

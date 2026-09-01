@@ -186,59 +186,11 @@ export const workspaces = [workspace];
 const E0 = Date.parse('2026-08-30T09:00:00Z');
 const emin = (n: number) => n * 60_000;
 
-// The Epic's own mirrored Task (isEpic: true) — what EpicPage receives as `task`.
-export const epicTask = {
-  id: 166,
-  prompt:
-    'Consolidate the per-workspace guardrail ceilings (max attempts, token budget, wall-clock cap) into one resolver, and expose the fleet-wide defaults in Settings.\n\nBreaks down into: the resolver + migration, the Settings form, and the per-task override UI. Each member Task folds into `epic/166` as it settles; the whole-Epic gate runs once every member is folded.',
-  summary: 'Consolidate guardrail-ceiling defaults',
-  workspaceId: 1,
-  harness: 'claude',
-  model: 'opus-4.8',
-  workingDir: '/home/workspace/harmonic',
-  isolationMode: 'worktree',
-  baseBranch: 'develop',
-  priority: 'high',
-  conflictResolveTurns: 3,
-  overrides: {},
-  state: 'working',
-  escalationReason: null,
-  feedback: null,
-  createdAt: E0,
-  updatedAt: E0 + emin(240),
-  dependsOn: [140, 141],
-  dependents: [],
-  blockedOnFailed: false,
-  openBlockerCount: 0,
-  agentWorkable: false,
-  humanOnly: true,
-  isEpic: true,
-  cost: { totalUsd: 42.18, byModel: { 'opus-4.8': 34.5, 'sonnet-4.5': 7.68 }, incomplete: false },
-  origin: 'mirrored',
-  trackerRef: 166,
-  workflow: 'wayfinder',
-  wayfinderType: null,
-  mapRef: null,
-  url: null,
-  mapTitle: null,
-  branch: null,
-  stat: null,
-  runStartedAt: null,
-  toolCount: null,
-  attemptId: null,
-  currentStep: null,
-  contextTokens: null,
-  contextWindow: null,
-  verifiedRef: null,
-  hasCandidate: false,
-  skipReason: null,
-} as any;
-
 // The Epic read model (`GET /api/workspaces/:id/epics/:ref`) — a mid-integration
-// roster: two members folded, one still running (would read "healing" once an
-// integrate is in flight), one blocked, and a held escalation on the Merge step
-// so the integration bar's escalated state is exercised too.
-// Board EpicBoard/EpicBand fixture (issue #430): one member per pip status so
+// roster: two members folded, one still running, one blocked, and a held
+// escalation on the Merge step so the integration bar's escalated state is
+// exercised too.
+// Board EpicBand fixture (issue #430): one member per pip status so
 // the uniform rounded-rect pips and the merged-vs-ready colour split are both
 // visible, plus closed (merged/done/cancelled) members for the full-card rail.
 const boardMember = (o: any) => ({
@@ -255,14 +207,14 @@ export const boardEpic = {
   title: 'Parallel Epic — board band demo',
   kind: 'spec',
   members: [
-    boardMember({ ref: 431, title: 'Wire the ready frontier', ready: true }), // ready → teal pip + Frontier card
-    boardMember({ ref: 432, title: 'Waiting on a sibling' }), // waiting → neutral pip
-    boardMember({ ref: 433, title: 'Escalated to the operator', escalated: true }), // escalated → indigo pip
-    boardMember({ ref: 434, title: 'Blocked on a failed dep', mergeStatus: 'blocked' }), // blocked → rose pip
-    boardMember({ ref: 435, title: 'Running right now', state: 'running' }), // running → amber pip
-    boardMember({ ref: 436, title: 'Wire the read endpoint', mergeStatus: 'completed' }), // merged → emerald
-    boardMember({ ref: 437, title: 'Render the epic band', state: 'done', mergeStatus: 'completed' }), // done → emerald
-    boardMember({ ref: 438, title: 'Retire the legacy peek', state: 'cancelled' }), // cancelled → faint
+    boardMember({ ref: 431, title: 'Wire the ready frontier', taskId: 431, state: 'ready', ready: true }), // ready → teal pip + Frontier card
+    boardMember({ ref: 432, title: 'Waiting on a sibling', taskId: 432, state: 'ready' }), // blocked → neutral pip
+    boardMember({ ref: 433, title: 'Escalated to the operator', taskId: 433, state: 'escalated', escalated: true }), // escalated → indigo pip
+    boardMember({ ref: 434, title: 'Blocked on a failed dep', taskId: 434, state: 'ready', mergeStatus: 'blocked' }), // blocked → rose pip
+    boardMember({ ref: 435, title: 'Running right now', taskId: 435, state: 'running' }), // running → amber pip
+    boardMember({ ref: 436, title: 'Wire the read endpoint', taskId: 436, mergeStatus: 'completed' }), // merged → emerald
+    boardMember({ ref: 437, title: 'Render the epic band', taskId: 437, state: 'done', mergeStatus: 'completed' }), // done → emerald
+    boardMember({ ref: 438, title: 'Retire the legacy peek', taskId: 438, state: 'cancelled' }), // cancelled → faint
   ],
   ready: [431],
   integration: { branch: 'epic/421', exists: true, tip: 'a1b2c3d' },
@@ -270,6 +222,59 @@ export const boardEpic = {
   integrate: { inFlight: false, held: null },
   foldedCount: 2,
   memberCount: 8,
+} as any;
+
+// Member Tasks backing boardEpic's open members, so the band demo shows the real
+// ready/blocked/running/escalated columns rather than an Unmirrored fallback.
+const boardTask = (id: number, state: string, extra: any = {}) => ({
+  id,
+  summary: boardEpic.members.find((m: any) => m.ref === id)?.title ?? `Task ${id}`,
+  state,
+  workspaceId: 1,
+  harness: 'claude',
+  model: 'opus-4.8',
+  priority: 'normal',
+  origin: 'mirrored',
+  trackerRef: id,
+  dependsOn: [],
+  dependents: [],
+  blockedOnFailed: false,
+  openBlockerCount: 0,
+  agentWorkable: state === 'ready',
+  humanOnly: false,
+  isEpic: false,
+  mapRef: null,
+  runStartedAt: state === 'running' ? Date.now() - min(6) : null,
+  ...extra,
+});
+export const boardTasks = [
+  boardTask(431, 'ready'),
+  boardTask(432, 'ready', { openBlockerCount: 1, agentWorkable: false }),
+  boardTask(433, 'escalated', { escalationReason: 'attempt 3 of 3 failed' }),
+  boardTask(434, 'ready', { openBlockerCount: 1, blockedOnFailed: true, agentWorkable: false }),
+  boardTask(435, 'working'),
+] as any;
+
+// An Epic whose child tasks are all done and folded into the epic branch, but the
+// whole-Epic merge into develop has not happened yet — the "done with tasks, not
+// yet merged" state. Every member is completed (emerald pips), the columns are
+// empty, the integration bar shows the whole-Epic gate mid-flight, and the closed
+// rail holds every finished member.
+export const doneEpic = {
+  ref: 422,
+  title: 'Parallel Epic — done, awaiting whole-Epic merge',
+  kind: 'spec',
+  members: [
+    boardMember({ ref: 451, title: 'Reader worker', taskId: 451, state: 'done', mergeStatus: 'completed' }),
+    boardMember({ ref: 452, title: 'Flow cards', taskId: 452, state: 'done', mergeStatus: 'completed' }),
+    boardMember({ ref: 453, title: 'Heatmap component', taskId: 453, state: 'done', mergeStatus: 'completed' }),
+  ],
+  ready: [],
+  integration: { branch: 'epic/422', exists: true, tip: 'd4e5f6a' },
+  verification: { status: 'pending' },
+  integrate: { inFlight: true, held: null },
+  foldedCount: 3,
+  memberCount: 3,
 } as any;
 
 export const epic = {

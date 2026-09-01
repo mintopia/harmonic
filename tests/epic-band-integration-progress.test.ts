@@ -11,9 +11,8 @@ import { describe, expect, it } from 'vitest';
 const source = (path: string) => readFileSync(join(process.cwd(), path), 'utf8');
 
 // Slice one top-level component's body out of Board.tsx: from `function <Name>(`
-// up to the next top-level `function ` declaration. Lets an assertion target the
-// main-board band (EpicBand) specifically, not the focused Epic surface
-// (EpicBoard), which also renders the bar and would satisfy a whole-file grep.
+// up to the next top-level `function ` declaration, so an assertion can target
+// the EpicBand specifically rather than a whole-file grep.
 function componentBody(board: string, name: string): string {
   const start = board.indexOf(`function ${name}(`);
   if (start === -1) throw new Error(`component ${name} not found in Board.tsx`);
@@ -27,8 +26,6 @@ describe('EpicBand whole-Epic integration progress (issue #424)', () => {
   const epicBand = componentBody(board, 'EpicBand');
 
   it("makes the main-board band's content the shared integration bar while the Epic is integrating", () => {
-    // Scoped to EpicBand — the main board's band — not EpicBoard (the focused
-    // single-Epic surface), which renders the same bar.
     expect(epicBand).toContain('{isEpicIntegrating(epic) && <EpicIntegrationBar epic={epic} />}');
   });
 

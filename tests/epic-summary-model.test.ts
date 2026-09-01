@@ -36,6 +36,7 @@ describe('epicUsageSummary', () => {
     expect(summary).toEqual({
       hasActivity: false,
       totalCost: '—',
+      costIncomplete: false,
       attemptCount: 0,
       avgCostPerTask: '—',
       failureRatePct: '—',

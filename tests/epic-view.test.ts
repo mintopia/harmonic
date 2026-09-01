@@ -4,7 +4,7 @@
  * hand-built `DerivedEpic`/`TaskRow`/facts inputs.
  */
 import { describe, expect, it } from 'vitest';
-import { composeEpicView, type EpicFacts } from '../src/domain/epic-view.js';
+import { composeEpicView, type EpicFacts, type EpicMeta } from '../src/domain/epic-view.js';
 import type { DerivedEpic } from '../src/domain/epic-derivation.js';
 import type { TaskRow } from '../src/db/schema.js';
 
@@ -44,11 +44,13 @@ const noFacts: EpicFacts = {
   integrate: { inFlight: false, held: null },
 };
 
+const noMeta: EpicMeta = { description: '', createdAt: 0, baseBranch: null, dependsOn: [] };
+
 describe('composeEpicView', () => {
   it('maps a done member Task to mergeStatus completed, folds it in, and preserves its raw state', () => {
     const memberTasks = new Map<number, TaskRow>([[11, task({ id: 101, trackerRef: 11, state: 'done' })]]);
     const titleByRef = new Map([[11, 'Member eleven']]);
-    const epic = composeEpicView(derived(), memberTasks, titleByRef, noFacts);
+    const epic = composeEpicView(derived(), memberTasks, titleByRef, noFacts, noMeta);
 
     const m11 = epic.members.find((m) => m.ref === 11);
     expect(m11).toEqual({
@@ -65,7 +67,7 @@ describe('composeEpicView', () => {
 
   it('maps an escalated member to mergeStatus blocked', () => {
     const memberTasks = new Map<number, TaskRow>([[12, task({ id: 102, trackerRef: 12, state: 'escalated', escalationReason: 'escalated to human: attempt 3 of 3 failed' })]]);
-    const epic = composeEpicView(derived(), memberTasks, new Map(), noFacts);
+    const epic = composeEpicView(derived(), memberTasks, new Map(), noFacts, noMeta);
 
     const m12 = epic.members.find((m) => m.ref === 12);
     expect(m12?.mergeStatus).toBe('blocked');
@@ -74,7 +76,7 @@ describe('composeEpicView', () => {
   });
 
   it('maps an unmirrored member (no matching Task row) to pending, null taskId/state, empty title', () => {
-    const epic = composeEpicView(derived(), new Map(), new Map(), noFacts);
+    const epic = composeEpicView(derived(), new Map(), new Map(), noFacts, noMeta);
     const m13 = epic.members.find((m) => m.ref === 13);
     expect(m13).toEqual({
       ref: 13,
@@ -88,7 +90,7 @@ describe('composeEpicView', () => {
   });
 
   it('flags only ready-frontier refs as ready:true and echoes the ready list ascending', () => {
-    const epic = composeEpicView(derived({ members: [11, 12, 13], ready: [11, 13] }), new Map(), new Map(), noFacts);
+    const epic = composeEpicView(derived({ members: [11, 12, 13], ready: [11, 13] }), new Map(), new Map(), noFacts, noMeta);
     expect(epic.members.map((m) => ({ ref: m.ref, ready: m.ready }))).toEqual([
       { ref: 11, ready: true },
       { ref: 12, ready: false },
@@ -103,7 +105,7 @@ describe('composeEpicView', () => {
       [12, task({ id: 2, trackerRef: 12, state: 'done' })],
       [13, task({ id: 3, trackerRef: 13, state: 'working' })],
     ]);
-    const epic = composeEpicView(derived(), memberTasks, new Map(), noFacts);
+    const epic = composeEpicView(derived(), memberTasks, new Map(), noFacts, noMeta);
     expect(epic.foldedCount).toBe(2);
     expect(epic.memberCount).toBe(3);
   });
@@ -114,7 +116,7 @@ describe('composeEpicView', () => {
       verification: { status: null },
       integrate: { inFlight: false, held: null },
     };
-    const epic = composeEpicView(derived({ members: [], ready: [] }), new Map(), new Map(), facts);
+    const epic = composeEpicView(derived({ members: [], ready: [] }), new Map(), new Map(), facts, noMeta);
     expect(epic.integration).toEqual({ branch: 'epic/10', exists: false, tip: null });
     expect(epic.verification).toEqual({ status: null });
     expect(epic.integrate).toEqual({ inFlight: false, held: null });
@@ -128,16 +130,38 @@ describe('composeEpicView', () => {
       verification: { status: 'pass' },
       integrate: { inFlight: true, held: 'already escalated for this member state; awaiting operator or a state change' },
     };
-    const epic = composeEpicView(derived({ members: [], ready: [] }), new Map(), new Map(), facts);
+    const epic = composeEpicView(derived({ members: [], ready: [] }), new Map(), new Map(), facts, noMeta);
     expect(epic.integration).toEqual({ branch: 'epic/10', exists: true, tip: 'a1b2c3d' });
     expect(epic.verification).toEqual({ status: 'pass' });
     expect(epic.integrate).toEqual({ inFlight: true, held: expect.stringContaining('escalated') });
   });
 
   it('carries ref/title/kind straight from the DerivedEpic', () => {
-    const epic = composeEpicView(derived({ ref: 42, title: 'Map it', kind: 'map', members: [], ready: [] }), new Map(), new Map(), noFacts);
+    const epic = composeEpicView(derived({ ref: 42, title: 'Map it', kind: 'map', members: [], ready: [] }), new Map(), new Map(), noFacts, noMeta);
     expect(epic.ref).toBe(42);
     expect(epic.title).toBe('Map it');
     expect(epic.kind).toBe('map');
+  });
+
+  it('carries the container-ticket meta (description, createdAt, dependsOn) and derives updatedAt from the latest member activity (ADR-0017)', () => {
+    const memberTasks = new Map<number, TaskRow>([
+      [11, task({ id: 1, trackerRef: 11, updatedAt: 500 })],
+      [12, task({ id: 2, trackerRef: 12, updatedAt: 900 })],
+    ]);
+    const epic = composeEpicView(derived({ members: [11, 12], ready: [] }), memberTasks, new Map(), noFacts, {
+      description: 'The epic body.',
+      createdAt: 1_700_000_000_000,
+      baseBranch: 'develop',
+      dependsOn: [7, 3],
+    });
+    expect(epic.description).toBe('The epic body.');
+    expect(epic.createdAt).toBe(1_700_000_000_000);
+    expect(epic.dependsOn).toEqual([7, 3]);
+    expect(epic.updatedAt).toBe(900); // the most recent member updatedAt
+  });
+
+  it('leaves updatedAt null when no member is mirrored', () => {
+    const epic = composeEpicView(derived({ members: [11], ready: [] }), new Map(), new Map(), noFacts, noMeta);
+    expect(epic.updatedAt).toBeNull();
   });
 });

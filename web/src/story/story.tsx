@@ -4,7 +4,7 @@ import '../index.css';
 import { TicketPage } from '../components/TicketPage';
 import { EpicPage } from '../components/EpicPage';
 import { Board } from '../components/Board';
-import { task, epicTask, boardEpic } from './fixtures';
+import { task, boardEpic, boardTasks, doneEpic } from './fixtures';
 
 const params = new URLSearchParams(window.location.search);
 const which = params.get('story');
@@ -15,16 +15,14 @@ function Story() {
     return (
       <div style={{ minHeight: '100vh', background: 'var(--hm-canvas)', padding: 24 }}>
         <Board
-          tasks={[]}
+          tasks={boardTasks}
           loading={false}
-          epics={[boardEpic]}
-          focusEpic={boardEpic}
+          epics={[boardEpic, doneEpic]}
           onOpen={() => {}}
           onOpenTask={() => {}}
           onChanged={() => {}}
           onNewTask={() => {}}
           onOpenEpic={() => {}}
-          onForceIntegrateEpic={async () => ({ status: 'noop', reason: 'demo' })}
         />
       </div>
     );
@@ -32,7 +30,7 @@ function Story() {
   if (which === 'epic') {
     return (
       <div style={{ height: '100vh', background: 'var(--hm-canvas)' }}>
-        <EpicPage task={epicTask as any} onClose={() => {}} onOpenTask={() => {}} />
+        <EpicPage epicRef={boardEpic.ref} workspaceId={1} onClose={() => {}} onOpenTask={() => {}} />
       </div>
     );
   }

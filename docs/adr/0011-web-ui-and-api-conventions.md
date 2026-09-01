@@ -5,6 +5,9 @@ Date: 2026-08-28
 Part of the 2026-08-28 ADR reset (see README.md). Target-state note: the Epic
 presentation below replaces the pre-reset Epic Peek and ships with the
 ADR-0001 epic's UI work.
+Refined by: 0017-epic-summary-page-replaces-board-focus.md (the epic-focus
+"board of open tasks" surface below is retired; the Board shows every Epic as a
+band and Epic clicks open the summary page at `/epic/:ref`).
 
 ## API conventions
 

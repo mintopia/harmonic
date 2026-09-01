@@ -2,7 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useS
 import { api } from './api';
 import { formatCost } from './cost';
 import type { AppConfig, Cost, Task, Workspace } from './types';
-import type { Epic, EpicIntegrateOutcome } from './epic-model';
+import type { Epic } from './epic-model';
 import { Board } from './components/Board';
 import { boardSections } from './board-sections-model';
 import { TaskForm } from './components/TaskForm';
@@ -27,7 +27,7 @@ import { EmptyState } from './components/EmptyState';
 import { RAIL_GROUPS, VIEW_LABELS, isWorkspaceScopedView, loadRailCollapsed, storeRailCollapsed } from './rail-model';
 import { CrumbBar } from './components/CrumbBar';
 import type { View } from './rail-model';
-import { parseRoute, serializeRoute, focusedSurface, type Route, type TableFilters } from './router-model';
+import { parseRoute, serializeRoute, type Route, type TableFilters } from './router-model';
 import {
   hasNoWorkspaces,
   loadActiveWorkspaceId,
@@ -232,11 +232,10 @@ export function App() {
   // deep-link, a cross-Workspace id) so the derived `openTask` below can still
   // resolve it; a Task that IS in the list stays live off the poll/socket.
   const [fetchedTask, setFetchedTask] = useState<Task | null>(null);
-  // Parallel-Epic read model (issue #167, ADR-0026): epics is the active
-  // Workspace's derived Epic list; focusEpic mirrors openTask's "which one is
-  // the operator looking at" pattern for the Board's focused Epic surface.
+  // Parallel-Epic read model (issue #167, ADR-0026): the active Workspace's
+  // derived Epic list, feeding the Board's bands and the "Needs you" count. The
+  // focused Epic is the URL (`/epic/:ref`, ADR-0017), not local state.
   const [epics, setEpics] = useState<Epic[]>([]);
-  const [focusEpic, setFocusEpic] = useState<Epic | null>(null);
   const [route, navigate] = useRoute();
   const view = route.view;
   // Latest route for the ws subscription's task_removed handler, which lives
@@ -320,27 +319,11 @@ export function App() {
   const refreshEpics = useCallback(async () => {
     if (activeWorkspaceId === null) return;
     try {
-      const epics = await fetchAllEpics(activeWorkspaceId);
-      setEpics(epics);
-      setFocusEpic((current) => (current ? (epics.find((e) => e.ref === current.ref) ?? null) : current));
+      setEpics(await fetchAllEpics(activeWorkspaceId));
     } catch {
       // Soft-fail: see comment above.
     }
   }, [activeWorkspaceId]);
-
-  // Force-integrate an Epic (issue #167, ADR-0026), used by the Board's focus-mode
-  // header and the Table's group-by-Epic band headers; the focused Epic board calls
-  // the API directly since it already carries `workspaceId`. Refetches epics on any
-  // outcome so the caller's toast/banner and the next render agree.
-  const forceIntegrateEpic = useCallback(
-    async (epicRef: number): Promise<EpicIntegrateOutcome> => {
-      if (activeWorkspaceId === null) throw new Error('No active workspace');
-      const outcome = await api.forceIntegrateEpic(activeWorkspaceId, epicRef);
-      refreshEpics();
-      return outcome;
-    },
-    [activeWorkspaceId, refreshEpics],
-  );
 
   useEffect(() => {
     if (!authed) return;
@@ -380,9 +363,9 @@ export function App() {
         setFetchedTask((current) =>
           current?.id === msg.task.id || routeRef.current.task === msg.task.id ? msg.task : current,
         );
-        // Keep the Epic peek + merge rail live (ADR-0026): a member's
-        // task_changed is exactly the signal an Epic's fold/integrate/verification
-        // state may have moved, so refetch alongside the Task-list update.
+        // Keep the Epic bands live (ADR-0026): a member's task_changed is
+        // exactly the signal an Epic's fold/integrate/verification state may
+        // have moved, so refetch alongside the Task-list update.
         debouncedRefreshEpics();
       }
       // Hard-delete (issue #162): drop the Task from local state so the
@@ -477,12 +460,17 @@ export function App() {
     setAssertiveMergeAnnouncement(next.assertive);
   }, [tasks, needsYouCount]);
 
-  // The focused-Epic deep-link into the Ticket, and TaskDetail's skip-holder link:
-  // both navigate to /task/:id so the focus is a real, bookmarkable route.
-  const openTaskById = (taskId: number) => navigate({ ...route, task: taskId });
+  // A Ticket deep-link (a Board/Table/Graph row, a child-task link on the Epic
+  // page): navigate to /task/:id, clearing any focused Epic so the two pathname
+  // surfaces stay mutually exclusive (ADR-0017).
+  const openTaskById = (taskId: number) => navigate({ ...route, task: taskId, epic: null });
   // A Board/Table/Graph row's click target — the one seam every surface's
   // `onOpen(task)` shares, so a row always opens the same /task/:id route.
   const openRow = (t: Task) => openTaskById(t.id);
+  // An Epic's click target (ADR-0017): the Tasks-list Epic row, the Board band
+  // header, and a Ticket's parent-Epic breadcrumb all open the Epic summary page
+  // at /epic/:ref, clearing any focused Ticket.
+  const openEpicByRef = (ref: number) => navigate({ ...route, epic: ref, task: null });
 
   // Browser tab title: `Harmonic - {name} - {workspace}`. The instance name is
   // dropped when unset and the workspace when none has resolved yet, so an
@@ -533,7 +521,7 @@ export function App() {
   // (clears route.task): choosing a rail destination leaves the focused Task
   // behind, and the sibling "Focus on board" handler clears it in step.
   const pickView = (v: View) => {
-    navigate({ ...route, view: v, task: null });
+    navigate({ ...route, view: v, task: null, epic: null });
     setMenuOpen(false);
   };
 
@@ -567,11 +555,10 @@ export function App() {
     setActiveWorkspaceId(id);
     storeActiveWorkspaceId(localStorage, id);
     setTasks(null); // "loading", not a flash of the old Workspace's (now stale) board
-    // The old Workspace's Epics (and any peek/focus onto one of them) are
-    // meaningless once scoped elsewhere — drop them rather than flash stale
-    // Epic state over the new board until refreshEpics resolves.
+    // The old Workspace's Epics are meaningless once scoped elsewhere — drop
+    // them rather than flash stale Epic state over the new board until
+    // refreshEpics resolves.
     setEpics([]);
-    setFocusEpic(null);
   };
 
   // One "a Workspace was created" flow for both entry points (the switcher's +
@@ -605,7 +592,6 @@ export function App() {
         setActiveWorkspaceId(null);
         setTasks(null);
         setEpics([]);
-        setFocusEpic(null);
       }
     }
     // Programmatic redirect off the deleted Workspace's page, not a place the
@@ -842,34 +828,36 @@ export function App() {
             rail, drops below the drawer under 900px, and wraps to two rows
             under ~520px (63 → 121 → 165px measured). */}
         <div className="relative min-h-0 flex-1">
-          {openTask ? (
+          {route.epic !== null && activeWorkspaceId !== null ? (
+            // The Epic summary page (ADR-0015/0017) is its own full-bleed surface,
+            // keyed by ref off the `/epic/:ref` route — the one rich Epic surface,
+            // reached from the Tasks-list Epic row, the Board band header, and a
+            // child Ticket's parent-Epic breadcrumb. Like the Ticket page it
+            // replaces the padded <main> view-switch and keeps the `#main-content`
+            // skip target.
+            <EpicPage
+              epicRef={route.epic}
+              workspaceId={activeWorkspaceId}
+              onClose={() => navigate({ ...route, epic: null }, { replace: true })}
+              onOpenTask={openTaskById}
+            />
+          ) : openTask ? (
             // The Ticket page is its own full-bleed surface (crumb bar, its
             // own scroll region, its own review-gate footer) — it replaces
             // the padded <main> view-switch below entirely rather than
             // layering over it, so it isn't fighting the view's own padding
             // (issue #183). It keeps the same skip-link target (`#main-
             // content`) the <main> below carries when no Ticket is open.
-            // An Epic's mirrored Task opens its own summary page instead — same
-            // route, same navigation, a different surface (issue #412/#413,
-            // ADR-0015). `focusedSurface` is the pure seam that decides which,
-            // so every entry point (Tasks-list row, Graph node, deep link) lands
-            // on the same destination.
-            focusedSurface(openTask) === 'epic' ? (
-              <EpicPage
-                task={openTask}
-                onClose={() => navigate({ ...route, task: null }, { replace: true })}
-                onOpenTask={openTaskById}
-              />
-            ) : (
-              <TicketPage
-                task={openTask}
-                onEdit={setEditing}
-                onChanged={refresh}
-                onClose={() => navigate({ ...route, task: null }, { replace: true })}
-                onOpenTask={openTaskById}
-                error={error}
-              />
-            )
+            <TicketPage
+              task={openTask}
+              onEdit={setEditing}
+              onChanged={refresh}
+              onClose={() => navigate({ ...route, task: null }, { replace: true })}
+              onOpenTask={openTaskById}
+              onOpenEpic={openEpicByRef}
+              parentEpicRef={epics.find((e) => e.members.some((m) => m.taskId === openTask.id))?.ref ?? null}
+              error={error}
+            />
           ) : (
             // Full-view surface (issue: shared crumb bar): the breadcrumb is
             // pinned above the scrolling <main> — the same shrink-0 crumb /
@@ -975,13 +963,7 @@ export function App() {
                         onOpenTask={openTaskById}
                         onChanged={refresh}
                         onNewTask={() => setEditing('new')}
-                        onOpenEpic={(epic) => {
-                          setFocusEpic(epic);
-                          navigate({ ...route, view: 'board', task: null });
-                        }}
-                        onForceIntegrateEpic={forceIntegrateEpic}
-                        focusEpic={focusEpic}
-                        onClearFocus={() => setFocusEpic(null)}
+                        onOpenEpic={(epic) => openEpicByRef(epic.ref)}
                       />
                     )}
                   {view === 'activity' && <ActivityView config={config} />}
@@ -989,12 +971,7 @@ export function App() {
                     <TableView
                       workspaceId={activeWorkspaceId}
                       onOpen={openRow}
-                      onOpenEpic={(ref) => {
-                        const epic = epics.find((e) => e.ref === ref);
-                        if (!epic) return;
-                        setFocusEpic(epic);
-                        navigate({ ...route, view: 'board', task: null });
-                      }}
+                      onOpenEpic={openEpicByRef}
                       filters={route.table}
                       onFiltersChange={setTableFilters}
                     />

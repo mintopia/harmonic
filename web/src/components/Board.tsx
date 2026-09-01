@@ -1,28 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Task, TaskState } from '../types';
-import type {
-  Epic,
-  EpicIntegrateOutcome,
-  EpicMember,
-  IntegrateOutcomeBanner,
-  IntegrateOutcomeBannerTone,
-  MemberPipStatus,
-  RailSegmentStatus,
-} from '../epic-model';
-import {
-  closedMembers,
-  FORCE_INTEGRATE_CONSEQUENCE,
-  integrateOutcomeBanner,
-  isEpicIntegrating,
-  memberPipStatus,
-  railSegments,
-  statusLineParts,
-} from '../epic-model';
+import type { Epic, EpicMember, MemberPipStatus } from '../epic-model';
+import { closedMembers, isEpicIntegrating, memberPipStatus } from '../epic-model';
 import {
   boardSections,
   cardTitle,
-  epicMemberSections,
-  epicPendingColumns,
   fmtElapsed,
   type AttentionEntry,
   type BlockerColumn,
@@ -33,14 +15,12 @@ import { api } from '../api';
 import { subscribe } from '../ws';
 import { toastError } from '../toast';
 import { Icon } from './Icon';
-import { ArmedButton } from './ArmedButton';
 import { EpicIntegrationBar } from './EpicIntegrationBar';
 import { formatModelLabel, providerLabel } from './TaskIdentity';
 import {
   blockerBadge,
   boardSectionTitle,
   btnPrimary,
-  btnQuietDestructive,
   chip,
   displayTitle,
   hitlBadge,
@@ -233,28 +213,6 @@ function TaskCard({ task, onOpen, onChanged }: { task: Task; onOpen: () => void;
   );
 }
 
-const SEGMENT_FILL: Record<RailSegmentStatus, string> = {
-  merged: 'bg-merged-dot',
-  running: 'bg-running-dot',
-  healing: 'bg-running-dot motion-safe:animate-pulse',
-  waiting: 'bg-raised',
-  blocking: 'bg-raised',
-};
-
-function MergeTrain({ epic }: { epic: Epic }) {
-  return (
-    <span
-      className="flex shrink-0 items-center gap-1"
-      role="img"
-      aria-label={`Merge train — ${epic.foldedCount} of ${epic.memberCount} merged`}
-    >
-      {railSegments(epic).map((seg) => (
-        <span key={seg.ref} className={`h-1.5 w-4 rounded-full ${SEGMENT_FILL[seg.status]}`} />
-      ))}
-    </span>
-  );
-}
-
 function EpicKindBadge({ epic }: { epic: Epic }) {
   return (
     <span className="shrink-0 rounded bg-tool-tint px-1.5 py-0.5 text-label font-bold text-tool">
@@ -290,7 +248,6 @@ function EpicAttentionCard({ epic, onOpenEpic }: { epic: Epic; onOpenEpic?: (epi
           </span>
         </div>
         <div className="mt-auto flex items-center gap-2.5 pt-3 text-small text-muted">
-          <MergeTrain epic={epic} />
           <span className="tabular-nums">
             {epic.foldedCount} of {epic.memberCount} merged
           </span>
@@ -501,27 +458,9 @@ function BlockerColumns({
   );
 }
 
-/** A working Epic member shown inside its band: amber pulsing dot, id, title and
- * the live run readout, above the band's pending columns. */
-function RunningMemberRow({ task, onOpenTask }: { task: Task; onOpenTask: (taskId: number) => void }) {
-  return (
-    <button
-      type="button"
-      onClick={() => onOpenTask(task.id)}
-      className="flex w-full items-center gap-2.5 px-4 py-2 text-left transition-colors duration-150 motion-reduce:transition-none hover:bg-raised focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent"
-    >
-      <span role="img" aria-label="working" className="size-2 shrink-0 rounded-full bg-running-dot motion-safe:animate-pulse" />
-      <span className="shrink-0 font-data text-small text-faint">{rowId(task)}</span>
-      <span className="min-w-0 flex-1 truncate text-small font-medium text-ink">{cardTitle(task.summary)}</span>
-      {task.runStartedAt != null && <RunningReadoutLine task={task} />}
-    </button>
-  );
-}
-
 function EpicBand({
   epic,
   columns,
-  tasks,
   defaultOpen = false,
   onOpenTask,
   onChanged,
@@ -529,22 +468,17 @@ function EpicBand({
 }: {
   epic: Epic;
   columns: BlockerColumn[];
-  tasks: Task[];
   defaultOpen?: boolean;
   onOpenTask: (taskId: number) => void;
   onChanged: () => void;
-  /** Focus this Epic — the ADR-0011 board surface where its members, closed-task
-   * rail, status pips, and force-merge control live. */
+  /** Open this Epic's summary page (ADR-0017) — the one rich Epic surface. */
   onOpenEpic?: (epic: Epic) => void;
 }) {
   const attention = epic.members.filter((m) => m.escalated);
-  // In-progress members surface inside the band too (in the board's processing
-  // order), not only in the global Running section — reuse the shared model.
-  const { running } = epicMemberSections(epic, tasks);
   const closed = closedMembers(epic);
   const hasColumns = columns.length > 0;
-  // A band with pending members opens by default; one whose members are all
-  // merged or promoted to the top sections has nothing to expand.
+  // A band with open members opens its columns by default; a band that is only
+  // integrating (no open members yet) starts collapsed.
   const [open, setOpen] = useState(defaultOpen || hasColumns);
 
   return (
@@ -552,8 +486,8 @@ function EpicBand({
       <div className="flex items-center gap-2.5 px-4 py-3">
         <button
           type="button"
-          aria-expanded={hasColumns ? open : undefined}
-          onClick={() => (hasColumns ? setOpen((v) => !v) : onOpenEpic?.(epic))}
+          onClick={() => onOpenEpic?.(epic)}
+          title={`Open Epic #${epic.ref}`}
           className={`${touchTargetInline} min-w-0 flex-1 gap-2.5 text-left`}
         >
           <EpicKindBadge epic={epic} />
@@ -563,7 +497,6 @@ function EpicBand({
         {attention.length > 0 && (
           <span className={`${chip} shrink-0 bg-await-tint text-await`}>{attention.length} in attention</span>
         )}
-        <MergeTrain epic={epic} />
         <StatusPips epic={epic} />
         {hasColumns && (
           <button
@@ -577,14 +510,6 @@ function EpicBand({
           </button>
         )}
       </div>
-
-      {running.length > 0 && (
-        <div className="border-t border-hairline py-1">
-          {running.map((task) => (
-            <RunningMemberRow key={task.id} task={task} onOpenTask={onOpenTask} />
-          ))}
-        </div>
-      )}
 
       {isEpicIntegrating(epic) && <EpicIntegrationBar epic={epic} />}
 
@@ -776,147 +701,6 @@ function ClosedRail({
   );
 }
 
-const BANNER_TONE: Record<IntegrateOutcomeBannerTone, string> = {
-  ok: 'bg-merged-tint text-merged',
-  warn: 'bg-running-tint text-running',
-  bad: 'bg-fail-tint text-fail',
-  info: 'bg-raised text-muted',
-};
-const BANNER_TIMEOUT_MS = 6000;
-
-/**
- * The focused Epic surface (ADR-0011, replaces the retired Epic Peek): the
- * Epic's board of open tasks (members as ordinary cards in the normal board
- * structure), colour-status pips summarising every member, a closed-task rail
- * below the columns, and — once the Epic reaches the integration gate — the
- * whole-Epic integration progress bar with any escalation legible.
- */
-function EpicBoard({
-  epic,
-  tasks,
-  onOpen,
-  onOpenTask,
-  onChanged,
-  onClearFocus,
-  onForceIntegrate,
-}: {
-  epic: Epic;
-  tasks: Task[];
-  onOpen: (task: Task) => void;
-  onOpenTask: (taskId: number) => void;
-  onChanged: () => void;
-  onClearFocus?: () => void;
-  onForceIntegrate: (epicRef: number) => Promise<EpicIntegrateOutcome>;
-}) {
-  const [banner, setBanner] = useState<IntegrateOutcomeBanner | null>(null);
-  // Drop a stale outcome banner when the operator focuses a different Epic.
-  useEffect(() => setBanner(null), [epic.ref]);
-  useEffect(() => {
-    if (!banner) return;
-    const timer = setTimeout(() => setBanner(null), BANNER_TIMEOUT_MS);
-    return () => clearTimeout(timer);
-  }, [banner]);
-
-  const handleForceIntegrate = () => {
-    onForceIntegrate(epic.ref).then((outcome) => setBanner(integrateOutcomeBanner(outcome)), toastError);
-  };
-
-  const { attention, running } = epicMemberSections(epic, tasks);
-  const columns = epicPendingColumns(epic, tasks);
-  const pendingCount = columns.reduce((n, c) => n + c.items.length, 0);
-  const closed = closedMembers(epic);
-  const s = statusLineParts(epic);
-  const hasOpen = attention.length > 0 || running.length > 0 || columns.length > 0;
-
-  return (
-    <div>
-      <div className={`${panel} mb-4`}>
-        <div className="flex items-start gap-2.5 px-4 py-3">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2.5">
-              <EpicKindBadge epic={epic} />
-              <span className="shrink-0 font-data text-small text-faint">epic/{epic.ref}</span>
-              <span className="truncate text-title font-semibold text-ink">{epic.title}</span>
-            </div>
-            <div className="mt-1.5 text-small text-muted tabular-nums">
-              <span className="font-data">{s.ref}</span> @ <span className="font-data">{s.tip}</span> · verification{' '}
-              {s.verification} · {s.foldedCount}/{s.memberCount} merged
-            </div>
-          </div>
-          <div className="flex shrink-0 flex-col items-end gap-2">
-            {onClearFocus && (
-              <button
-                type="button"
-                className={`${touchTargetInline} text-small font-medium text-muted hover:text-ink`}
-                onClick={onClearFocus}
-              >
-                Clear focus
-              </button>
-            )}
-            <StatusPips epic={epic} />
-          </div>
-        </div>
-
-        {epic.integrate.held != null && (
-          <div aria-atomic="true" aria-live="polite" className="mx-4 mb-3 rounded-md bg-await-tint px-3 py-2 text-small text-await">
-            <span className="font-semibold">Merge escalated — awaiting you.</span> {epic.integrate.held}
-          </div>
-        )}
-
-        {isEpicIntegrating(epic) && <EpicIntegrationBar epic={epic} />}
-
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-hairline px-4 py-3">
-          <ArmedButton
-            label="Force-merge ready subset"
-            armedLabel="Confirm force-merge"
-            ariaLabel={`Force-merge Epic #${epic.ref}`}
-            className={btnQuietDestructive}
-            onConfirm={handleForceIntegrate}
-          />
-          <p className="min-w-0 flex-1 text-label text-faint">{FORCE_INTEGRATE_CONSEQUENCE}.</p>
-        </div>
-        {banner && (
-          <div aria-atomic="true" aria-live="assertive" className={`mx-4 mb-3 rounded-md px-3 py-2 text-small ${BANNER_TONE[banner.tone]}`}>
-            {banner.text}
-          </div>
-        )}
-      </div>
-
-      {attention.length > 0 && (
-        <BoardSection label="Attention" count={String(attention.length)} tone="attn">
-          <CardStrip count={attention.length}>
-            {attention.map((task) => (
-              <TaskCard key={task.id} task={task} onOpen={() => onOpen(task)} onChanged={onChanged} />
-            ))}
-          </CardStrip>
-        </BoardSection>
-      )}
-
-      {running.length > 0 && (
-        <BoardSection label="Running" count={String(running.length)} tone="running">
-          <CardStrip count={running.length}>
-            {running.map((task) => (
-              <TaskCard key={task.id} task={task} onOpen={() => onOpen(task)} onChanged={onChanged} />
-            ))}
-          </CardStrip>
-        </BoardSection>
-      )}
-
-      {columns.length > 0 && (
-        <BoardSection label="Pending" count={String(pendingCount)}>
-          <BlockerColumns columns={columns} onOpenTask={onOpenTask} onChanged={onChanged} className="pb-2" />
-        </BoardSection>
-      )}
-
-      {!hasOpen && (
-        <p className="mb-6 px-1 text-small text-muted">No open tasks — every member has merged or been closed.</p>
-      )}
-
-      {closed.length > 0 && <ClosedRail members={closed} onOpenTask={onOpenTask} />}
-    </div>
-  );
-}
-
 export function Board({
   tasks,
   loading,
@@ -926,9 +710,6 @@ export function Board({
   onChanged,
   onNewTask,
   onOpenEpic,
-  onForceIntegrateEpic,
-  focusEpic = null,
-  onClearFocus,
 }: {
   tasks: Task[];
   loading: boolean;
@@ -938,27 +719,10 @@ export function Board({
   onChanged: () => void;
   onNewTask: () => void;
   onOpenEpic?: (epic: Epic) => void;
-  onForceIntegrateEpic: (epicRef: number) => Promise<EpicIntegrateOutcome>;
-  focusEpic?: Epic | null;
-  onClearFocus?: () => void;
 }) {
   const sections = useMemo(() => boardSections(tasks, epics), [tasks, epics]);
 
   if (loading) return <BoardSkeleton />;
-
-  if (focusEpic) {
-    return (
-      <EpicBoard
-        epic={focusEpic}
-        tasks={tasks}
-        onOpen={onOpen}
-        onOpenTask={onOpenTask}
-        onChanged={onChanged}
-        onClearFocus={onClearFocus}
-        onForceIntegrate={onForceIntegrateEpic}
-      />
-    );
-  }
 
   if (tasks.length === 0 && epics.length === 0) return <FirstRunBoard onNewTask={onNewTask} />;
 
@@ -1007,7 +771,6 @@ export function Board({
                   key={`epic:${group.epic.ref}`}
                   epic={group.epic}
                   columns={group.columns}
-                  tasks={tasks}
                   onOpenTask={onOpenTask}
                   onChanged={onChanged}
                   onOpenEpic={onOpenEpic}

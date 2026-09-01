@@ -2,7 +2,6 @@
 // project, whose nodenext resolution requires them (Vite maps .js → .ts).
 import type { Task, TaskState } from './types.js';
 import type { Epic, EpicMember } from './epic-model.js';
-import { isEpicIntegrating } from './epic-model.js';
 import { issueRef, taskKey } from './id-format.js';
 
 /**
@@ -37,6 +36,20 @@ const PENDING_RANK: Partial<Record<TaskState, number>> = { ready: 0, draft: 1 };
 
 function isPending(task: Task): boolean {
   return PENDING_RANK[task.state] !== undefined;
+}
+
+// An Epic band is self-contained (ADR-0017): its columns hold every open member —
+// escalated and working included, not just the ready/draft frontier — so the band
+// shows all of an Epic's live work at once. Attention-first within a column: an
+// escalated member reads before a running one, then the ready frontier, then draft.
+const OPEN_MEMBER_RANK: Partial<Record<TaskState, number>> = { escalated: 0, working: 1, ready: 2, draft: 3 };
+
+function isOpenMember(task: Task): boolean {
+  return OPEN_MEMBER_RANK[task.state] !== undefined;
+}
+
+function byBandOrder(a: Task, b: Task): number {
+  return OPEN_MEMBER_RANK[a.state]! - OPEN_MEMBER_RANK[b.state]! || byQueueOrder(a, b);
 }
 
 export type AttentionEntry = { kind: 'task'; task: Task } | { kind: 'epic'; epic: Epic };
@@ -89,13 +102,17 @@ export interface BoardSections {
 }
 
 /**
- * An Epic stays on the Board until every member has folded in (and no whole-Epic
- * integrate is mid-flight). `merge.inFlight` keeps a fully-folded Epic visible while
- * its subset is still integrating; `merge.held` keeps a fully-folded Epic whose
- * whole-Epic integrate escalated — it needs the operator, not silence.
+ * An Epic is active — and stays on the Board — for its whole lifecycle: an Epic
+ * is not finished until its integration branch has merged into the base and it
+ * retires. "Every member folded in" only means the parallel work reached the
+ * epic branch; the whole-Epic verify → merge → post-merge check → retire gate is
+ * still ahead. A finished (retired) Epic leaves on its own — its ticket closes,
+ * so it drops out of the open-derived Epic model entirely rather than being
+ * filtered here. So any derived Epic with members is active; an empty Epic (no
+ * members yet) has nothing to show.
  */
 export function isActiveEpic(epic: Epic): boolean {
-  return epic.foldedCount < epic.memberCount || epic.integrate.inFlight || epic.integrate.held != null;
+  return epic.memberCount > 0;
 }
 
 /** The whole-Epic integrate escalated — the coordinator is holding for the operator. */
@@ -182,10 +199,11 @@ function byPendingOrder(a: Task, b: Task): number {
 }
 
 /**
- * An Epic band's Pending columns: its members that are neither merged (folded
- * into the epic branch) nor promoted to Attention / Running, by open-blocker
- * count. A member whose Task is done or cancelled but not yet folded is hidden
- * too — it is no longer pending work.
+ * An Epic band's columns (ADR-0017): every open member — ready, blocked,
+ * working, and escalated — by open-blocker count, so the band shows all of the
+ * Epic's live work at once. Working and escalated members appear here **and** in
+ * the global Running / Attention sections (deliberate duplication). A merged
+ * (folded) member, or one whose Task is done/cancelled, drops to the closed rail.
  */
 export function epicPendingColumns(epic: Epic, tasks: Task[]): BlockerColumn[] {
   const tasksById = new Map(tasks.map((task) => [task.id, task]));
@@ -198,25 +216,10 @@ export function epicPendingColumns(epic: Epic, tasks: Task[]): BlockerColumn[] {
       if (member.taskId == null) unmirrored.push(unmirroredItem(member));
       continue;
     }
-    if (isPending(task)) mirrored.push(task);
+    if (isOpenMember(task)) mirrored.push(task);
   }
-  const items = [...mirrored.sort(byPendingOrder).map((task) => taskItem(task, tasksById)), ...unmirrored];
+  const items = [...mirrored.sort(byBandOrder).map((task) => taskItem(task, tasksById)), ...unmirrored];
   return blockerColumns(items);
-}
-
-/**
- * An Epic's open member Tasks promoted to the board's attention-ordered sections
- * (ADR-0011's focused Epic surface): escalated members to Attention, working
- * members to Running, each in the same processing order the whole-board sections
- * use — so a focused Epic never sorts its members differently from the main board.
- */
-export function epicMemberSections(epic: Epic, tasks: Task[]): { attention: Task[]; running: Task[] } {
-  const memberIds = new Set(epic.members.map((m) => m.taskId).filter((id): id is number => id != null));
-  const memberTasks = tasks.filter((t) => memberIds.has(t.id));
-  return {
-    attention: memberTasks.filter((t) => t.state === 'escalated').sort(byProcessingOrder),
-    running: memberTasks.filter((t) => t.state === 'working').sort(byProcessingOrder),
-  };
 }
 
 export function boardSections(tasks: Task[], epics: Epic[]): BoardSections {
@@ -240,13 +243,11 @@ export function boardSections(tasks: Task[], epics: Epic[]): BoardSections {
 
   const running = tasks.filter((t) => t.state === 'working' && !isDriver(t)).sort(byProcessingOrder);
 
-  // An Epic with nothing pending keeps its band only while it is integrating, so
-  // the whole-Epic verify → merge progress stays on the board — except a held
-  // (escalated) one with nothing pending, which surfaces as an Attention card
-  // instead. A fully-merged/retired Epic is already off the board (isActiveEpic).
-  const pending: PendingGroup[] = activeEpics
-    .map((epic) => ({ epic, columns: epicPendingColumns(epic, tasks) }))
-    .filter((group) => group.columns.length > 0 || (isEpicIntegrating(group.epic) && !isEscalatedEpic(group.epic)));
+  // Every active Epic gets a band (ADR-0017): the board shows all non-complete
+  // Epics at once, each with its own columns of open members, integration
+  // progress, and closed rail — never a one-Epic focus. A fully-merged/retired
+  // Epic is already off the board (isActiveEpic).
+  const pending: PendingGroup[] = activeEpics.map((epic) => ({ epic, columns: epicPendingColumns(epic, tasks) }));
   const standalone = tasks
     .filter((t) => isPending(t) && !activeMemberIds.has(t.id) && !isDriver(t))
     .sort(byPendingOrder)

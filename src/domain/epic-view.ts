@@ -57,6 +57,17 @@ export interface Epic {
   ref: number;
   title: string;
   kind: EpicKind;
+  /** The Epic container ticket's body — the summary page's description (ADR-0015/0017). */
+  description: string;
+  /** Epic container ticket creation time (ms). */
+  createdAt: number;
+  /** Most recent member-Task activity (ms); `null` when no member is mirrored. */
+  updatedAt: number | null;
+  /** The repo's default branch the whole-Epic gate merges `epic/<ref>` into
+   * (git-derived); `null` when it can't be resolved. */
+  baseBranch: string | null;
+  /** The Epic container ticket's own blocker refs (its `Blocked by`), ascending. */
+  dependsOn: number[];
   /** Ascending by ref. */
   members: EpicMember[];
   /** Ready-frontier refs, ascending. */
@@ -67,6 +78,17 @@ export interface Epic {
   /** Members with `mergeStatus === 'completed'`. */
   foldedCount: number;
   memberCount: number;
+}
+
+/** The Epic container ticket + Workspace facts the impure half resolves and
+ * passes to {@link composeEpicView} (ADR-0017): the summary page's description
+ * and properties come from the container ticket, not the derived member set. */
+export interface EpicMeta {
+  description: string;
+  createdAt: number;
+  /** Repo default branch (git-derived by the impure half); `null` if unresolved. */
+  baseBranch: string | null;
+  dependsOn: number[];
 }
 
 /** The server-only facts the impure accessor gathers (git branch/tip,
@@ -89,6 +111,7 @@ export function composeEpicView(
   memberTasks: ReadonlyMap<number, TaskRow>,
   titleByRef: ReadonlyMap<number, string>,
   facts: EpicFacts,
+  meta: EpicMeta,
 ): Epic {
   const readySet = new Set(derived.ready);
   const members: EpicMember[] = derived.members.map((ref) => {
@@ -104,10 +127,21 @@ export function composeEpicView(
     };
   });
 
+  let updatedAt: number | null = null;
+  for (const ref of derived.members) {
+    const task = memberTasks.get(ref);
+    if (task && (updatedAt === null || task.updatedAt > updatedAt)) updatedAt = task.updatedAt;
+  }
+
   return {
     ref: derived.ref,
     title: derived.title,
     kind: derived.kind,
+    description: meta.description,
+    createdAt: meta.createdAt,
+    updatedAt,
+    baseBranch: meta.baseBranch,
+    dependsOn: meta.dependsOn,
     members,
     ready: derived.ready,
     integration: facts.integration,
