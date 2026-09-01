@@ -20,6 +20,7 @@ import {
   type WorkspaceRow,
   type TrackerFacts,
   type TrackerContainerRow,
+  type StoredEpicKind,
 } from '../db/schema.js';
 import { resolveWorkspace } from './workspaces.js';
 import { resolveScoped } from './setting-override.js';
@@ -663,6 +664,23 @@ export class TaskService {
           .run();
       });
     });
+  }
+
+  /**
+   * The stored Epic `kind` for a ref in a Workspace (ADR-0018, #437), or null
+   * when no spine row exists — an unmapped Task, or a container the scan never
+   * persisted. The drive path reads it to route a Map child to the wayfinder
+   * skill (issue #440).
+   */
+  async epicKind(workspaceId: number, ref: number): Promise<StoredEpicKind | null> {
+    const row = await this.db.read((db) =>
+      db
+        .select({ kind: epics.kind })
+        .from(epics)
+        .where(and(eq(epics.workspaceId, workspaceId), eq(epics.trackerRef, ref)))
+        .get(),
+    );
+    return row?.kind ?? null;
   }
 
   async listTrackerContainers(workspaceId?: number): Promise<TrackerContainerRow[]> {

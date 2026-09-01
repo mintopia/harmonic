@@ -3,7 +3,8 @@
  * `epics` row per leaf-most epic-type container, re-deriving `kind` each scan.
  * The row coexists with the wipe-and-replace `tracker_containers` cache, survives
  * the container wipe and the tracker issue closing, and is removed only on
- * Dismiss. Nothing reads it yet, so these assert directly against the table.
+ * Dismiss. Most assertions here read the table directly; the drive path reads a
+ * single row's `kind` through {@link TaskService.epicKind} (issue #440).
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -78,6 +79,17 @@ describe('stored Epic spine (ADR-0018, #437)', () => {
       { workspaceId: wsId, trackerRef: 10, kind: 'spec', mergeCommit: null, state: 'open', memberRefs: null },
       { workspaceId: wsId, trackerRef: 19, kind: 'map', mergeCommit: null, state: 'open', memberRefs: null },
     ]);
+  });
+
+  it('epicKind reads a single stored row, and null when unmapped', async () => {
+    await mirrorScan(tasks, [
+      ticket({ number: 19, title: 'Map', isMap: true, labels: ['wayfinder:map'] }),
+      ticket({ number: 20, parent: 19 }),
+    ], wsId);
+    expect(await tasks.epicKind(wsId, 19)).toBe('map');
+    // A ref with no spine row (a member, or an unknown ref) resolves to null.
+    expect(await tasks.epicKind(wsId, 20)).toBeNull();
+    expect(await tasks.epicKind(wsId, 999)).toBeNull();
   });
 
   it('a bare parent of work Tasks (not epic-type) gets no row', async () => {
