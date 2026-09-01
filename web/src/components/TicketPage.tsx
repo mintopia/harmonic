@@ -1563,7 +1563,10 @@ export function TicketPage({
   // Accept / Reject / Close actions live in the pinned sidebar Actions block.
   const escalationReason =
     task.state === 'escalated'
-      ? (latestAttempt?.escalationReason ?? task.escalationReason)?.replace(/^escalated to human:\s*/i, '') ?? null
+      ? // `task.escalationReason` carries the descriptive cause; the attempt's
+        // `escalationReason` is only the bare disposition kind (e.g. "escalate"),
+        // so prefer the task's and fall back to the attempt's.
+        (task.escalationReason ?? latestAttempt?.escalationReason)?.replace(/^escalated to human:\s*/i, '') ?? null
       : null;
   const skipHolderId = parseSkipReasonTaskRef(task.skipReason);
   const gateModel = gateForAttempt({ task, runs, selectedAttemptId: selectedRunId });
