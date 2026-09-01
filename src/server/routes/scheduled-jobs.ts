@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import type { App } from '../app.js';
 import { scheduledJobSchema } from '../schemas.js';
-import { scheduledJobsToApi } from '../serialize.js';
+import { scheduledJobsToApi } from '../dto.js';
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
 
 const scheduledJobsResponseSchema = listResponse('jobs', scheduledJobSchema);

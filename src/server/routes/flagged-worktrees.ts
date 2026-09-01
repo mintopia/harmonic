@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import type { App } from '../app.js';
 import { flaggedWorktreeSchema } from '../schemas.js';
-import { flaggedWorktreesToApi } from '../serialize.js';
+import { flaggedWorktreesToApi } from '../dto.js';
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
 
 const flaggedWorktreesResponseSchema = listResponse('worktrees', flaggedWorktreeSchema);

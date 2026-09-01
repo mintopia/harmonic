@@ -3,7 +3,7 @@ import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { operationRegistry } from '../../telemetry/operations.js';
 import { operationSchema } from '../schemas.js';
-import { operationsToApi, recentOperationsToApi } from '../serialize.js';
+import { operationsToApi, recentOperationsToApi } from '../dto.js';
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
 
 const operationsResponseSchema = listResponse('operations', operationSchema).extend({
