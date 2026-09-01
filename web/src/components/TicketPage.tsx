@@ -26,7 +26,7 @@ import { isAtLiveEdge } from '../follow-tail-model';
 import { ChatTranscript } from './ticket/ChatTranscript';
 import { Donut, type DonutSegment } from './Donut';
 import { BarChart, type Bar } from './BarChart';
-import { card, labelType, railSectionHead, railSectionCount, PHASE_NODE_STYLES } from '../ui';
+import { card, labelType, railSectionHead, railSectionCount, PHASE_NODE_STYLES, statePill } from '../ui';
 import { toastError } from '../toast';
 import { ticketIdentity } from '../id-format.js';
 import { splitPathTail } from '../path';
@@ -44,29 +44,8 @@ function humanState(state: string): string {
   return STATE_LABEL[state] ?? state.replace(/-/g, ' ');
 }
 
-const STATE_PILL: Record<string, string> = {
-  escalated: 'bg-await-tint text-await',
-  working: 'bg-running-tint text-running',
-  running: 'bg-running-tint text-running',
-  ready: 'bg-ready-tint text-ready',
-  passed: 'bg-merged-tint text-merged',
-  failed: 'bg-fail-tint text-fail',
-  done: 'bg-merged-tint text-merged',
-  merged: 'bg-merged-tint text-merged',
-  cancelled: 'bg-raised text-muted',
-  draft: 'bg-raised text-muted',
-};
-
 function StatePill({ state }: { state: string }) {
-  return (
-    <span
-      className={`inline-flex shrink-0 items-center rounded-sm px-2.5 py-1 text-[11px] font-semibold ${
-        STATE_PILL[state] ?? 'bg-raised text-muted'
-      }`}
-    >
-      {humanState(state)}
-    </span>
-  );
+  return <span className={statePill(state)}>{humanState(state)}</span>;
 }
 
 
