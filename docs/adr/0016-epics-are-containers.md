@@ -48,6 +48,9 @@ An epic is a **container**, never a runnable work Task.
   (`deriveEpics` / `listEpics`), not from a mirrored task row. The Tasks list,
   Board grouping, and Graph all read the same derived epics; the Tasks list
   renders an epic as an epic-format row (the row work already done stays).
+  (Superseded by ADR-0018: the stored `epics` record is the single enumeration
+  source; `deriveEpics` is deleted and each Epic's membership is derived
+  per-Epic at read time.)
 
 ## Consequences
 

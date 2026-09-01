@@ -6,7 +6,6 @@ import type { TaskRow } from '../src/db/schema.js';
 const derived = (over: Partial<DerivedEpic> = {}): DerivedEpic => ({
   ref: 10,
   title: 'Spec',
-  kind: 'spec',
   members: [11, 12, 13],
   ready: [13],
   ...over,
@@ -39,7 +38,7 @@ const noFacts: EpicFacts = {
   integrate: { inFlight: false, held: null },
 };
 
-const noMeta: EpicMeta = { description: '', createdAt: 0, baseBranch: null, dependsOn: [] };
+const noMeta: EpicMeta = { description: '', createdAt: 0, baseBranch: null, dependsOn: [], kind: 'spec' };
 
 describe('composeEpicView', () => {
   it('maps a done member Task to mergeStatus completed, folds it in, and preserves its raw state', () => {
@@ -131,8 +130,14 @@ describe('composeEpicView', () => {
     expect(epic.integrate).toEqual({ inFlight: true, held: expect.stringContaining('escalated') });
   });
 
-  it('carries ref/title/kind straight from the DerivedEpic', () => {
-    const epic = composeEpicView(derived({ ref: 42, title: 'Map it', kind: 'map', members: [], ready: [] }), new Map(), new Map(), noFacts, noMeta);
+  it('carries ref/title from the DerivedEpic and kind from the meta record', () => {
+    const epic = composeEpicView(
+      derived({ ref: 42, title: 'Map it', members: [], ready: [] }),
+      new Map(),
+      new Map(),
+      noFacts,
+      { ...noMeta, kind: 'map' },
+    );
     expect(epic.ref).toBe(42);
     expect(epic.title).toBe('Map it');
     expect(epic.kind).toBe('map');
@@ -148,6 +153,7 @@ describe('composeEpicView', () => {
       createdAt: 1_700_000_000_000,
       baseBranch: 'develop',
       dependsOn: [7, 3],
+      kind: 'spec',
     });
     expect(epic.description).toBe('The epic body.');
     expect(epic.createdAt).toBe(1_700_000_000_000);

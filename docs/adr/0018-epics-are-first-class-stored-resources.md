@@ -61,9 +61,15 @@ replacement for it.
   (integrated, or a no-op finish), Harmonic closes its tracker issue via the
   writable adapter — the container itself never runs an agent, so nothing else
   would close it.
-- **Membership and structure stay derived.** Parent/spine Epics remain derived
-  roll-ups; live members come from `mapRef`/parentage. Only the snapshot (for
-  historical fidelity) and the spine columns above are stored.
+- **The stored `epics` record is the single enumeration source for surfaced
+  Epics.** `listStoredEpics` drives both `listEpics` and `epicDetail` — there is
+  no second, tree-walking surfacer alongside it. Each Epic's live membership and
+  ready frontier are still derived at read time (`deriveLeafEpics`) while its
+  container is in the scan, open or closed (`includeClosed`), falling back to
+  the frozen integration snapshot once the Epic is integrated or has aged out of
+  the scan. A bare parent of work Tasks — no `epic` label, not a Map — is not an
+  Epic and never surfaces, stored or derived. Nested spine parents surface as
+  their own leaf-most stored Epics, never rolled up into a top-level container.
 
 ## Consequences
 
@@ -80,11 +86,17 @@ replacement for it.
   Spec); only `map` changes child-drive behaviour.
 - `/wayfinder {mapRef}` child drive is net-new: `skillFor` currently emits only
   `/research` or `/implement`, always against the child's own ref.
+- `deriveEpics` (the top-level roll-up surfacer) is deleted. Board and Tasks
+  list enumerate Epics from the stored record, not a tree walk. User-visible: a
+  bare-parent band and a top-level roll-up of a nested-open structure no longer
+  surface as an Epic — only stored, label-identified leaf-most Epics do.
 
 ## Supersedes
 
 None wholesale. Reverses the storage claim of
-0016-epics-are-containers.md (leaf-most Epics are now stored; the container and
-derived-roll-up model otherwise stands), reverses the closure direction of
+0016-epics-are-containers.md (leaf-most Epics are now stored; the container
+model otherwise stands) and its "one source of truth = the derived model"
+enumeration claim (the stored record is now the single enumeration source;
+`deriveEpics` is deleted), reverses the closure direction of
 0004-tracker-mirroring-and-ticket-sourcing.md for Epics, and extends
 0017-epic-summary-page-replaces-board-focus.md with the whole-Epic diff.

@@ -1,8 +1,10 @@
 /**
  * The pure Epic read-model composer (issue #167, ADR-0026). The operator UI's
- * `GET …/epics` / `GET …/epics/:ref` surface a derived Epic (`deriveEpics`,
- * issue #158) enriched with per-member merge state (`reduceMemberState`, issue
- * #161) and server-only integration/verification/integrate-coordinator facts. This
+ * `GET …/epics` / `GET …/epics/:ref` surface a stored Epic (ADR-0018: the
+ * `epics` record is the single enumeration source) whose live membership and
+ * ready frontier are derived at read time (`deriveLeafEpics`), enriched with
+ * per-member merge state (`reduceMemberState`, issue #161) and server-only
+ * integration/verification/integrate-coordinator facts. This
  * module is the composition seam: it takes a {@link DerivedEpic} plus the
  * already-gathered member Task rows, member titles, and facts, and folds them
  * into the frozen `Epic` DTO (`.notes/issue-167-dto-contract.md`) — no
@@ -11,7 +13,7 @@
  * calls this function.
  */
 import type { TaskRow } from '../db/schema.js';
-import type { DerivedEpic, EpicKind } from './epic-derivation.js';
+import type { DerivedEpic } from './epic-derivation.js';
 import { reduceMemberState, type MemberMergeState } from './epic-integrate-decision.js';
 
 /** A member's merge status in the Epic DTO — the same enum `reduceMemberState` returns. */
@@ -55,7 +57,7 @@ export interface EpicIntegrateState {
 export interface Epic {
   ref: number;
   title: string;
-  kind: EpicKind;
+  kind: 'map' | 'spec';
   /** The Epic container ticket's body — the summary page's description (ADR-0015/0017). */
   description: string;
   /** Epic container ticket creation time (ms). */
@@ -88,6 +90,7 @@ export interface EpicMeta {
   /** Repo default branch (git-derived by the impure half); `null` if unresolved. */
   baseBranch: string | null;
   dependsOn: number[];
+  kind: 'map' | 'spec';
 }
 
 /** The server-only facts the impure accessor gathers (git branch/tip,
@@ -135,7 +138,7 @@ export function composeEpicView(
   return {
     ref: derived.ref,
     title: derived.title,
-    kind: derived.kind,
+    kind: meta.kind,
     description: meta.description,
     createdAt: meta.createdAt,
     updatedAt,
