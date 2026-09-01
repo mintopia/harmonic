@@ -49,22 +49,32 @@ export interface TicketComment {
 }
 
 /**
- * The tracker-agnostic issue shape (D1, issue #22): the normalised 13 fields
- * + `url`. `number` is the portable identity — the adapter maps it to whatever
- * native id its calls need. `parent`/`blockedBy`/`blocking` are always
- * populated and directional; no capability flags leak.
+ * The tracker-identity fields every tracker record carries: the portable
+ * `number`, its surface `title`/`state`/`labels`, and the `parent`/`blockedBy`
+ * edges that place it in the tracker graph. {@link Ticket} and the stored Epic
+ * (ADR-0018) are siblings over this base — neither extends the other.
  */
-export interface Ticket {
+export interface TrackerIdentity {
   number: number;
   title: string;
   state: TicketState;
+  labels: string[];
+  parent: number | null;
+  blockedBy: TicketRef[];
+}
+
+/**
+ * The tracker-agnostic issue shape (D1, issue #22): the normalised 13 fields
+ * + `url`, over the shared {@link TrackerIdentity} base. `number` is the
+ * portable identity — the adapter maps it to whatever native id its calls
+ * need. `parent`/`blockedBy`/`blocking` are always populated and directional;
+ * no capability flags leak.
+ */
+export interface Ticket extends TrackerIdentity {
   body: string;
   createdAt: string;
   closedAt: string | null;
-  labels: string[];
   assignees: string[];
-  parent: number | null;
-  blockedBy: TicketRef[];
   blocking: TicketRef[];
   comments: TicketComment[];
   isMap: boolean;
