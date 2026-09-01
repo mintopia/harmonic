@@ -1,13 +1,8 @@
 import { changedFilesFromStat } from '../../attempt-rail-model';
-import { railSectionCount, railSectionHead } from '../../ui';
+import { railSectionHead } from '../../ui';
 import { Icon } from '../Icon';
 import type { TaskState } from '../../types';
-
-const FADED: Record<'M' | 'A' | 'D', string> = {
-  M: 'bg-running-tint text-running',
-  A: 'bg-merged-tint text-merged',
-  D: 'bg-fail-tint text-fail',
-};
+import { ChangedFilesNav } from './ChangedFilesNav';
 
 export function AttemptRail({
   worktree,
@@ -30,7 +25,6 @@ export function AttemptRail({
   const files = changedFilesFromStat(worktree.stat);
   const hasWorktree = worktree.isolationMode === 'worktree';
   const merged = taskState === 'done';
-  const noChangedFilesCopy = merged ? 'No changed files.' : 'No changed files yet.';
 
   return (
     <div aria-label="Worktree navigation">
@@ -57,53 +51,14 @@ export function AttemptRail({
         )}
 
         {hasWorktree && (
-          <>
-            <button
-              type="button"
-              onClick={onSelectChanges}
-              className={`${railSectionHead} mt-4 hover:text-ink`}
-            >
-              Changed files{files.length > 0 && <span className={railSectionCount}>{files.length}</span>}
-            </button>
-            {files.length === 0 ? (
-              <p className="text-small text-muted">{noChangedFilesCopy}</p>
-            ) : (
-              <div className="mt-0.5 flex flex-col">
-                {files.map((file) => {
-                  // The stat model only tags 'M'; a file with additions and no
-                  // deletions reads as newly added — surface it as 'A'.
-                  const kind: 'M' | 'A' = file.deletions === 0 && file.additions > 0 ? 'A' : 'M';
-                  const sel = selectedFile === file.path;
-                  return (
-                    <button
-                      key={file.path}
-                      type="button"
-                      aria-pressed={sel}
-                      onClick={() => onSelectFile(file.path)}
-                      className={`flex items-center gap-2.5 rounded-sm px-[9px] py-2 text-left text-small transition-colors ${
-                        sel ? 'bg-accent-tint' : 'hover:bg-raised'
-                      }`}
-                    >
-                      <span
-                        className={`grid size-[16px] shrink-0 place-items-center rounded-[4px] font-data text-[10px] font-bold ${FADED[kind]}`}
-                      >
-                        {kind}
-                      </span>
-                      <span
-                        className={`min-w-0 flex-1 truncate font-data text-[12px] ${sel ? 'text-accent' : 'text-ink'}`}
-                      >
-                        {file.path}
-                      </span>
-                      <span className="shrink-0 font-data text-[11px] tabular-nums">
-                        {file.additions > 0 && <span className="text-merged">+{file.additions}</span>}
-                        {file.deletions > 0 && <span className="ml-1 text-fail">−{file.deletions}</span>}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </>
+          <ChangedFilesNav
+            files={files}
+            selectedFile={selectedFile}
+            onSelectFile={onSelectFile}
+            onSelectChanges={onSelectChanges}
+            emptyCopy={merged ? 'No changed files.' : 'No changed files yet.'}
+            className="mt-4"
+          />
         )}
       </section>
     </div>

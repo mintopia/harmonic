@@ -30,7 +30,7 @@ function Story() {
   if (which === 'epic') {
     return (
       <div style={{ height: '100vh', background: 'var(--hm-canvas)' }}>
-        <EpicPage epicRef={boardEpic.ref} workspaceId={1} onClose={() => {}} onOpenTask={() => {}} />
+        <EpicPage epicRef={boardEpic.ref} workspaceId={1} onClose={() => {}} onOpenTask={() => {}} selection={{ kind: 'none' }} onSelect={() => {}} />
       </div>
     );
   }
@@ -42,6 +42,8 @@ function Story() {
         onChanged={() => {}}
         onClose={() => {}}
         onOpenTask={() => {}}
+        selection={{ kind: 'none' }}
+        onSelect={() => {}}
       />
     </div>
   );

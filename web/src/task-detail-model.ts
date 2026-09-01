@@ -1,8 +1,9 @@
 // Explicit .js extension: this module is shared with the node-side test
 // project, whose nodenext resolution requires it (Vite maps .js → .ts).
 import { splitPathTail } from './path.js';
+import type { RailSelection } from './router-model.js';
 import { ROOT_AGENT, totalTokens } from './stats-model.js';
-import type { AttemptSummary, Step, StepState, StepType, TaskState, ToolTokenAttribution, VerificationMechanism, VerifierStatus } from './types.js';
+import type { AttemptLogEvent, AttemptSummary, Step, StepState, StepType, TaskState, ToolTokenAttribution, VerificationMechanism, VerifierStatus } from './types.js';
 
 /**
  * The reworked Task detail page's view-model seam. The page is a thin renderer
@@ -18,11 +19,7 @@ import type { AttemptSummary, Step, StepState, StepType, TaskState, ToolTokenAtt
  * Attempt is picked by its display number; a changed file by its worktree path;
  * the Timeline is a lone entry.
  */
-export type ContentSelection =
-  | { kind: 'none' }
-  | { kind: 'attempt'; attemptNumber: number }
-  | { kind: 'file'; path: string }
-  | { kind: 'timeline' };
+export type ContentSelection = RailSelection;
 
 /** The content-panel kind the selection resolves to. `stats` is the default
  * whole-Task view; `attempt` an Attempt's own content; `diff` a changed-file
@@ -45,11 +42,14 @@ export interface ContentPanel {
 export function contentPanel(selection: ContentSelection): ContentPanel {
   switch (selection.kind) {
     case 'none':
+    case 'stats':
       return { kind: 'stats', title: 'Stats' };
     case 'attempt':
       return { kind: 'attempt', title: `Attempt ${selection.attemptNumber}` };
     case 'file':
       return { kind: 'diff', title: splitPathTail(selection.path).tail };
+    case 'changes':
+      return { kind: 'diff', title: 'Changes' };
     case 'timeline':
       return { kind: 'timeline', title: 'Timeline' };
   }
@@ -454,15 +454,52 @@ export function attemptStepTabs(steps: readonly Step[], verifierStatuses: readon
 }
 
 /**
+ * The tail of a verifier's live output — the `verification_output` updates the
+ * Runner relays onto the Attempt's log stream while a check runs — joined and
+ * capped to the last `cap` characters. Null when nothing has streamed yet.
+ */
+export function verificationOutputTail(events: readonly AttemptLogEvent[], mechanism: VerificationMechanism, cap = 6_000): string | null {
+  let text = '';
+  for (const event of events) {
+    const payload = event.payload as { sessionUpdate?: string; mechanism?: string; content?: { text?: unknown } };
+    if (payload.sessionUpdate !== 'verification_output' || payload.mechanism !== mechanism) continue;
+    if (typeof payload.content?.text === 'string') text += payload.content.text;
+  }
+  if (!text) return null;
+  return text.length > cap ? text.slice(-cap) : text;
+}
+
+/**
+ * The panel a Ticket opens on when the operator picked nothing: a working
+ * Task shows its live Attempt, an escalated one the Attempt awaiting review
+ * (the latest), and a Task that is waiting, finished or cancelled shows Stats.
+ */
+export function defaultSelection(
+  taskState: TaskState,
+  attempts: readonly Pick<AttemptSummary, 'number' | 'state'>[],
+): ContentSelection {
+  if (attempts.length === 0) return { kind: 'stats' };
+  if (taskState === 'working') {
+    const live = attempts.find((attempt) => attempt.state === 'running') ?? attempts[attempts.length - 1]!;
+    return { kind: 'attempt', attemptNumber: live.number };
+  }
+  if (taskState === 'escalated') return { kind: 'attempt', attemptNumber: attempts[attempts.length - 1]!.number };
+  return { kind: 'stats' };
+}
+
+/**
  * The tab to open by default when an Attempt is selected: the live Step wins
- * (that's where the operator's attention is), else the Implementation tab once
- * it has content, else the furthest-progressed tab, else the first. Null only
- * when the Attempt has no Steps at all.
+ * (that's where the operator's attention is), else a failed Step (what an
+ * escalated Attempt needs reviewed), else the Implementation tab once it has
+ * content, else the furthest-progressed tab, else the first. Null only when
+ * the Attempt has no Steps at all.
  */
 export function defaultStepTab(tabs: readonly StepTab[]): StepType | null {
   if (tabs.length === 0) return null;
   const running = tabs.find((tab) => tab.state === 'running');
   if (running) return running.type;
+  const failed = tabs.find((tab) => tab.state === 'failed');
+  if (failed) return failed.type;
   const implementation = tabs.find((tab) => tab.type === 'implementation' && !tab.pending);
   if (implementation) return implementation.type;
   const progressed = [...tabs].reverse().find((tab) => !tab.pending);

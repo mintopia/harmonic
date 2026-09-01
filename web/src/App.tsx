@@ -29,7 +29,7 @@ import { EmptyState } from './components/EmptyState';
 import { VIEW_LABELS, isWorkspaceScopedView, loadRailCollapsed, storeRailCollapsed } from './rail-model';
 import { CrumbBar } from './components/CrumbBar';
 import type { View } from './rail-model';
-import { parseRoute, serializeRoute, type Route, type TableFilters } from './router-model';
+import { NO_SELECTION, parseRoute, serializeRoute, type Route, type TableFilters } from './router-model';
 import {
   hasNoWorkspaces,
   loadActiveWorkspaceId,
@@ -361,7 +361,7 @@ export function App() {
         // rather than stranding the URL on a dead /task/:id. Refs keep this out
         // of the subscription's deps so a navigation never re-subscribes the ws.
         if (routeRef.current.task === msg.id) {
-          navigate({ ...routeRef.current, task: null }, { replace: true });
+          navigate({ ...routeRef.current, task: null, panel: NO_SELECTION }, { replace: true });
         }
       }
     });
@@ -440,14 +440,14 @@ export function App() {
   // A Ticket deep-link (a Board/Table/Graph row, a child-task link on the Epic
   // page): navigate to /task/:id, clearing any focused Epic so the two pathname
   // surfaces stay mutually exclusive (ADR-0017).
-  const openTaskById = (taskId: number) => navigate({ ...route, task: taskId, epic: null });
+  const openTaskById = (taskId: number) => navigate({ ...route, task: taskId, epic: null, panel: NO_SELECTION });
   // A Board/Table/Graph row's click target — the one seam every surface's
   // `onOpen(task)` shares, so a row always opens the same /task/:id route.
   const openRow = (t: Task) => openTaskById(t.id);
   // An Epic's click target (ADR-0017): the Tasks-list Epic row, the Board band
   // header, and a Ticket's parent-Epic breadcrumb all open the Epic summary page
   // at /epic/:ref, clearing any focused Ticket.
-  const openEpicByRef = (ref: number) => navigate({ ...route, epic: ref, task: null });
+  const openEpicByRef = (ref: number) => navigate({ ...route, epic: ref, task: null, panel: NO_SELECTION });
 
   // Browser tab title: `Harmonic - {name} - {workspace}`. The instance name is
   // dropped when unset and the workspace when none has resolved yet, so an
@@ -498,7 +498,7 @@ export function App() {
   // (clears route.task): choosing a rail destination leaves the focused Task
   // behind, and the sibling "Focus on board" handler clears it in step.
   const pickView = (v: View) => {
-    navigate({ ...route, view: v, task: null, epic: null });
+    navigate({ ...route, view: v, task: null, epic: null, panel: NO_SELECTION });
     setMenuOpen(false);
   };
 
@@ -573,7 +573,7 @@ export function App() {
     }
     // Programmatic redirect off the deleted Workspace's page, not a place the
     // operator chose to visit — replace, no history entry.
-    navigate({ ...route, view: 'board', task: null }, { replace: true });
+    navigate({ ...route, view: 'board', task: null, panel: NO_SELECTION }, { replace: true });
   };
 
   return (
@@ -673,8 +673,10 @@ export function App() {
             <EpicPage
               epicRef={route.epic}
               workspaceId={activeWorkspaceId}
-              onClose={() => navigate({ ...route, epic: null }, { replace: true })}
+              onClose={() => navigate({ ...route, epic: null, panel: NO_SELECTION }, { replace: true })}
               onOpenTask={openTaskById}
+              selection={route.panel}
+              onSelect={(panel) => navigate({ ...route, panel })}
             />
           ) : openTask ? (
             // The Ticket page is its own full-bleed surface (crumb bar, its
@@ -687,8 +689,10 @@ export function App() {
               task={openTask}
               onEdit={setEditing}
               onChanged={refresh}
-              onClose={() => navigate({ ...route, task: null }, { replace: true })}
+              onClose={() => navigate({ ...route, task: null, panel: NO_SELECTION }, { replace: true })}
               onOpenTask={openTaskById}
+              selection={route.panel}
+              onSelect={(panel) => navigate({ ...route, panel })}
               onOpenEpic={openEpicByRef}
               parentEpicRef={epics.find((e) => e.members.some((m) => m.taskId === openTask.id))?.ref ?? null}
               error={error}

@@ -51,6 +51,23 @@ export const DEFAULT_TABLE_FILTERS: TableFilters = {
   order: 'desc',
 };
 
+/**
+ * A detail page's rail selection — which content panel the Ticket or Epic page
+ * shows. `none` means the operator picked nothing, so the page opens on the
+ * panel most relevant to the Task's state (`defaultSelection`); `stats` is the
+ * explicit whole-Task Stats pick (the Epic's overview). Lives in the URL so a
+ * refresh or a shared link lands on the same panel and Back steps between panels.
+ */
+export type RailSelection =
+  | { kind: 'none' }
+  | { kind: 'stats' }
+  | { kind: 'attempt'; attemptNumber: number }
+  | { kind: 'timeline' }
+  | { kind: 'changes' }
+  | { kind: 'file'; path: string };
+
+export const NO_SELECTION: RailSelection = { kind: 'none' };
+
 /** A full app location: active view plus every view's persisted state. */
 export interface Route {
   view: View;
@@ -70,6 +87,8 @@ export interface Route {
   /** Deck terminal columns the operator has peeked open. */
   peeked: TaskState[];
   table: TableFilters;
+  /** The focused Ticket's or Epic's rail selection; `none` whenever neither is focused. */
+  panel: RailSelection;
 }
 
 export const DEFAULT_ROUTE: Route = {
@@ -78,6 +97,7 @@ export const DEFAULT_ROUTE: Route = {
   epic: null,
   peeked: [],
   table: DEFAULT_TABLE_FILTERS,
+  panel: NO_SELECTION,
 };
 
 /** Query param keys — one flat namespace; only one view is active at a time so
@@ -91,7 +111,33 @@ const PARAM = {
   q: 'q',
   sort: 'sort',
   order: 'order',
+  panel: 'panel',
 } as const;
+
+/** `panel` param ⇄ {@link RailSelection}: `timeline`, `changes`, `attempt:<n>`,
+ * `file:<path>`; anything else (or a bad attempt number) is the default panel. */
+function parsePanel(raw: string | null): RailSelection {
+  if (raw === 'stats' || raw === 'timeline' || raw === 'changes') return { kind: raw };
+  if (raw?.startsWith('attempt:')) {
+    const n = Number(raw.slice('attempt:'.length));
+    return Number.isSafeInteger(n) && n > 0 ? { kind: 'attempt', attemptNumber: n } : NO_SELECTION;
+  }
+  if (raw?.startsWith('file:') && raw.length > 'file:'.length) return { kind: 'file', path: raw.slice('file:'.length) };
+  return NO_SELECTION;
+}
+
+function serializePanel(panel: RailSelection): string | null {
+  switch (panel.kind) {
+    case 'none':
+      return null;
+    case 'attempt':
+      return `attempt:${panel.attemptNumber}`;
+    case 'file':
+      return `file:${panel.path}`;
+    default:
+      return panel.kind;
+  }
+}
 
 const isView = (v: string | null): v is View => v !== null && (VIEWS as readonly string[]).includes(v);
 /** Parse a comma-separated filter param into a validated, deduped, order-preserving
@@ -160,7 +206,10 @@ export function parseRoute(pathname: string, search: string): Route {
     order: rawOrder === 'asc' ? 'asc' : 'desc',
   };
 
-  return { view, task, epic, peeked, table };
+  // A rail selection only means something on a detail page.
+  const panel = task !== null || epic !== null ? parsePanel(params.get(PARAM.panel)) : NO_SELECTION;
+
+  return { view, task, epic, peeked, table, panel };
 }
 
 /**
@@ -186,6 +235,9 @@ export function serializeRoute(route: Route): string {
   if (t.search) params.set(PARAM.q, t.search);
   if (t.sortBy !== 'createdAt') params.set(PARAM.sort, t.sortBy);
   if (t.order !== 'desc') params.set(PARAM.order, t.order);
+
+  const panel = route.task !== null || route.epic !== null ? serializePanel(route.panel) : null;
+  if (panel !== null) params.set(PARAM.panel, panel);
 
   const query = params.toString();
   // The pathname carries at most one focused entity; a focused Ticket wins over

@@ -79,7 +79,7 @@ export type VerificationMechanism = 'critic' | 'command';
 /** One verifier category's current read-time status, including categories that did not run. */
 export interface VerifierStatus {
   mechanism: VerificationMechanism;
-  state: 'passed' | 'failed' | 'inconclusive' | 'skipped' | 'disabled' | 'unrunnable' | 'planned';
+  state: 'passed' | 'failed' | 'inconclusive' | 'skipped' | 'disabled' | 'unrunnable' | 'planned' | 'running';
   reason: string | null;
   /** The ordered command plan; `command` mechanism only. */
   commands?: string[];
@@ -423,6 +423,10 @@ export interface AttemptSummary {
    * Always present on the wire; optional here so partial test fixtures need not
    * set it, and every reader floors it with `?? 0`. */
   toolCalls?: number;
+  /** The root session's latest context-window fill and the model's window
+   * (config override, else shipped default); null when unknown. */
+  contextTokens?: number | null;
+  contextWindow?: number | null;
   startedAt: number;
   finishedAt: number | null;
 }

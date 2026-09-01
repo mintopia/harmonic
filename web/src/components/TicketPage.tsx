@@ -20,16 +20,17 @@ import { Gate } from './ticket/Gate';
 import { CrumbBar } from './CrumbBar';
 import { LifecycleTimeline } from './ticket/LifecycleTimeline';
 import { attemptTone, runFailureBannerLabel, runForAttempt, stateTone, type TimelineTone } from '../attempt-timeline-model';
-import { attemptStepTabs, contentPanel, defaultStepTab, taskLifecycle, modelTotal, taskStats, type ContentSelection, type LifecycleStepKey, type LifecycleStepStatus, type StatsAttempt, type StepTab, type TaskModelStats, type TaskStats } from '../task-detail-model';
+import { attemptStepTabs, contentPanel, defaultSelection, defaultStepTab, taskLifecycle, modelTotal, taskStats, verificationOutputTail, type ContentSelection, type LifecycleStepKey, type LifecycleStepStatus, type StatsAttempt, type StepTab, type TaskModelStats, type TaskStats } from '../task-detail-model';
 import { isAtLiveEdge } from '../follow-tail-model';
 import { ChatTranscript } from './ticket/ChatTranscript';
 import { Donut, type DonutSegment } from './Donut';
 import { BarChart, type Bar } from './BarChart';
-import { card, labelType, railSectionHead, railSectionCount, PHASE_NODE_STYLES, statePill } from '../ui';
+import { card, labelType, railSectionHead, railSectionCount, railNavButton, railNavSelected, railNavIdle, PHASE_NODE_STYLES, statePill } from '../ui';
 import { toastError } from '../toast';
 import { ticketIdentity } from '../id-format.js';
 import { splitPathTail } from '../path';
 import { useLiveEffect } from '../useLiveEffect';
+import { useScrollToPanel } from '../useScrollToPanel';
 import { useTicketAttempts } from './useTicketAttempts';
 import { useAttemptLogStream } from './useAttemptLogStream';
 import { useAttemptVerification } from './useAttemptVerification';
@@ -357,11 +358,51 @@ function CriticSessions({ attempts, run }: { attempts: VerificationAttempt[]; ru
   );
 }
 
+/** A verifier in flight: how long it has been running, and the live tail of
+ * what it has printed so far (pinned to the bottom as it grows). */
+function RunningVerifier({ step, output }: { step: Step | undefined; output: string | null }) {
+  const tailRef = useRef<HTMLPreElement>(null);
+  useEffect(() => {
+    const el = tailRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [output]);
+  // eslint-disable-next-line react/purity -- one-shot elapsed read; the parent re-renders on every live update
+  const elapsed = step?.startedAt ? Date.now() - step.startedAt : null;
+  return (
+    <div className="mt-2">
+      <p className="text-[12px] text-running">{elapsed !== null && elapsed > 0 ? `Running for ${fmtDur(elapsed)}` : 'Starting…'}</p>
+      {output ? (
+        <pre ref={tailRef} className="mt-2 max-h-72 overflow-auto rounded-md border border-hairline bg-sunken px-3 py-2 font-data text-[11.5px] leading-[1.55] text-muted">
+          {output}
+        </pre>
+      ) : (
+        <p className="mt-1 text-[12px] text-faint">Waiting for output…</p>
+      )}
+    </div>
+  );
+}
+
 /** `only` narrows the block to a single mechanism — the Attempt panel's Verify
  * tab passes `'command'` and its Review tab `'critic'`, so each Step tab shows
  * just its own checks; unset renders the whole verification block (its header
  * and gate caption included). */
-function Verification({ attempts, statuses, run, only }: { attempts: VerificationAttempt[]; statuses: VerifierStatus[]; run: AttemptSummary; only?: 'command' | 'critic' }) {
+function Verification({
+  attempts,
+  statuses,
+  run,
+  only,
+  steps = [],
+  liveOutput = null,
+}: {
+  attempts: VerificationAttempt[];
+  statuses: VerifierStatus[];
+  run: AttemptSummary;
+  only?: 'command' | 'critic';
+  /** The Attempt's Steps — a running verifier's elapsed time reads off its Step. */
+  steps?: readonly Step[];
+  /** The tail of a running verifier's streamed output. */
+  liveOutput?: string | null;
+}) {
   const decision = overallDecision(attempts);
   const rows = verificationRows(statuses, attempts).filter(({ status }) => !only || status.mechanism === only);
   // Every critic attempt with a transcript, oldest first (the store lists in
@@ -412,10 +453,14 @@ function Verification({ attempts, statuses, run, only }: { attempts: Verificatio
                   ? 'bg-fail-tint text-fail'
                   : status.state === 'passed'
                     ? 'bg-merged-tint text-merged'
-                    : 'bg-raised text-muted'
+                    : status.state === 'running'
+                      ? 'bg-running-tint text-running'
+                      : 'bg-raised text-muted'
               }`}
             >
-              {status.state === 'failed' ? (
+              {status.state === 'running' ? (
+                <span className="size-2 animate-pulse rounded-full bg-current motion-reduce:animate-none" />
+              ) : status.state === 'failed' ? (
                 <span className="text-[11px] leading-none">✕</span>
               ) : status.state === 'unrunnable' ? (
                 <span className="text-[11px] leading-none font-bold">!</span>
@@ -445,9 +490,10 @@ function Verification({ attempts, statuses, run, only }: { attempts: Verificatio
                 </ol>
               )}
               {criticReason && <p className="mt-2 text-[12px] text-muted">{criticReason}</p>}
+              {status.state === 'running' && <RunningVerifier step={steps.find((s) => s.type === (status.mechanism === 'command' ? 'verification' : 'review') && s.state === 'running')} output={liveOutput} />}
             </div>
             <span
-              className={`shrink-0 text-[10px] font-bold uppercase tracking-[0.04em] ${attempt ? VERDICT_TONE[attempt.verdict] ?? 'text-muted' : 'text-muted'}`}
+              className={`shrink-0 text-[10px] font-bold uppercase tracking-[0.04em] ${attempt ? VERDICT_TONE[attempt.verdict] ?? 'text-muted' : status.state === 'running' ? 'text-running' : 'text-muted'}`}
             >
               {status.state}
             </span>
@@ -482,11 +528,28 @@ function AttemptSummaryCard({
       ? // eslint-disable-next-line react/purity -- one-shot elapsed snapshot for a running attempt; this card does not tick
         Math.max(0, Date.now() - run.startedAt)
       : 0;
+  const contextTokens = run.state === 'running' ? (snapshot?.contextTokens ?? run.contextTokens ?? null) : (run.contextTokens ?? null);
+  const contextWindow = run.contextWindow ?? null;
   const items: Array<[string, ReactNode]> = [
     ['Model', <span key="model" className="font-data">{model}</span>],
     ['Cost', formatCost(runCost) ?? '—'],
     ['Duration', durMs > 0 ? fmtDur(durMs) : '—'],
     ['Tool calls', toolCalls > 0 ? toolCalls.toLocaleString() : '—'],
+    [
+      'Context',
+      contextTokens === null ? (
+        '—'
+      ) : (
+        <span key="context">
+          {contextTokens.toLocaleString()}
+          {contextWindow !== null && (
+            <span className="ml-1 font-medium text-muted">
+              / {contextWindow.toLocaleString()} · {Math.round((contextTokens / contextWindow) * 100)}%
+            </span>
+          )}
+        </span>
+      ),
+    ],
     ['Session', run.sessionId ? <span key="session" className="font-data text-[12.5px]">{run.sessionId}</span> : 'cold start'],
   ];
   return (
@@ -742,8 +805,6 @@ const NAV_WORD: Record<TimelineTone, string> = {
   neutral: 'text-muted',
 };
 
-const NAV_SELECTED = 'border-await bg-await-tint';
-const NAV_IDLE = 'border-transparent hover:bg-raised';
 
 /** The Attempts list: one row per Attempt — `Attempt N` + a state dot + the
  * state word, no per-attempt Step breakdown. Selecting a row opens that Attempt
@@ -777,7 +838,7 @@ function AttemptsNav({
                   type="button"
                   aria-pressed={selected}
                   onClick={() => onSelect(attempt)}
-                  className={`flex min-h-11 w-full items-center gap-2.5 rounded-sm border px-2.5 py-2 text-left transition-colors ${selected ? NAV_SELECTED : NAV_IDLE}`}
+                  className={`${railNavButton} ${selected ? railNavSelected : railNavIdle}`}
                 >
                   <span role="img" aria-label={attempt.state} className={`size-2 shrink-0 rounded-full ${NAV_DOT[tone]}`} />
                   <span className="text-data font-semibold text-ink">Attempt {attempt.number}</span>
@@ -792,18 +853,26 @@ function AttemptsNav({
   );
 }
 
-function TimelineNav({ selected, onSelect }: { selected: boolean; onSelect: () => void }) {
+/** The whole-Task panels: Stats and the lifecycle Timeline. */
+function PanelNav({ selected, onSelect }: { selected: 'stats' | 'timeline' | null; onSelect: (s: ContentSelection) => void }) {
+  const entries = [
+    { kind: 'stats', label: 'Stats', icon: 'stats' },
+    { kind: 'timeline', label: 'Timeline', icon: 'activity' },
+  ] as const;
   return (
-    <section className="border-b border-hairline px-3.5 py-3.5">
-      <button
-        type="button"
-        aria-pressed={selected}
-        onClick={onSelect}
-        className={`flex min-h-11 w-full items-center gap-2.5 rounded-sm border px-2.5 py-2 text-left transition-colors ${selected ? NAV_SELECTED : NAV_IDLE}`}
-      >
-        <Icon name="activity" className="size-3.5 shrink-0 text-muted" />
-        <span className="text-data font-semibold text-ink">Timeline</span>
-      </button>
+    <section className="flex flex-col gap-1 border-b border-hairline px-3.5 py-3.5">
+      {entries.map((entry) => (
+        <button
+          key={entry.kind}
+          type="button"
+          aria-pressed={selected === entry.kind}
+          onClick={() => onSelect({ kind: entry.kind })}
+          className={`${railNavButton} ${selected === entry.kind ? railNavSelected : railNavIdle}`}
+        >
+          <Icon name={entry.icon} className="size-3.5 shrink-0 text-muted" />
+          <span className="text-data font-semibold text-ink">{entry.label}</span>
+        </button>
+      ))}
     </section>
   );
 }
@@ -1198,11 +1267,11 @@ function AttemptPanel({
         </>
       ) : active === 'verification' ? (
         <div className="mt-4">
-          <Verification attempts={verificationAttempts} statuses={verifierStatuses} run={run} only="command" />
+          <Verification attempts={verificationAttempts} statuses={verifierStatuses} run={run} only="command" steps={steps} liveOutput={verificationOutputTail(events, 'command')} />
         </div>
       ) : (
         <div className="mt-4">
-          <Verification attempts={verificationAttempts} statuses={verifierStatuses} run={run} only="critic" />
+          <Verification attempts={verificationAttempts} statuses={verifierStatuses} run={run} only="critic" steps={steps} liveOutput={verificationOutputTail(events, 'critic')} />
           <CriticSessions attempts={verificationAttempts} run={run} />
         </div>
       )
@@ -1233,6 +1302,8 @@ export function TicketPage({
   onOpenEpic,
   parentEpicRef = null,
   error,
+  selection,
+  onSelect,
 }: {
   task: Task;
   onEdit: (task: Task) => void;
@@ -1246,15 +1317,14 @@ export function TicketPage({
    * has none or its Epic isn't currently derived. */
   parentEpicRef?: number | null;
   error?: string | null;
+  /** The rail selection — owned by the route so a refresh restores the panel. */
+  selection: ContentSelection;
+  onSelect: (selection: ContentSelection) => void;
 }) {
   const { runs, attempts } = useTicketAttempts(task.id);
   const liveUsage = useLiveUsage();
   const [maxAttempts, setMaxAttempts] = useState<number | null>(null);
   const [workspaceName, setWorkspaceName] = useState<string | null>(null);
-  // The sidebar selection driving the content panel: nothing (Stats), an
-  // Attempt, a changed file, or the Timeline. `contentPanel` maps it to the
-  // panel that renders.
-  const [selection, setSelection] = useState<ContentSelection>({ kind: 'none' });
   const [guardrailEvents, setGuardrailEvents] = useState<GuardrailEvent[]>([]);
   const [timelineEvents, setTimelineEvents] = useState<TicketTimelineEvent[]>([]);
   const [allTasks, setAllTasks] = useState<Task[]>([]);
@@ -1273,7 +1343,12 @@ export function TicketPage({
   // The AttemptSummary the selected Attempt owns (its log/verification/guardrail
   // streams key off this). Only an Attempt selection loads run-scoped data; the
   // Stats / Timeline / diff panels don't need it.
-  const selectedRun = selection.kind === 'attempt' ? runForAttempt(runs, { number: selection.attemptNumber }) : null;
+  // Nothing picked ⇒ the panel most relevant to the Task's state (a working
+  // Task's live Attempt, an escalated one's latest, else Stats).
+  const resolved = selection.kind === 'none' ? defaultSelection(task.state, runs) : selection;
+  // The content panel: what a rail pick scrolls to.
+  const contentRef = useRef<HTMLDivElement>(null);
+  const selectedRun = resolved.kind === 'attempt' ? runForAttempt(runs, { number: resolved.attemptNumber }) : null;
   const selectedRunId = selectedRun?.id ?? null;
 
   const { events, logUnavailable } = useAttemptLogStream(selectedRunId);
@@ -1368,12 +1443,12 @@ export function TicketPage({
     el.scrollTop = el.scrollHeight;
   }, [events, timelineEvents, following]);
 
-  // Every selection change re-homes the panel to the top and releases the tail,
-  // so a new Attempt, file, or the Timeline always starts from its beginning
-  // rather than inheriting the previous content's scroll depth.
+  // Every selection change releases the tail and re-homes the scroll: a rail
+  // pick (or a deep link to a panel) lands on the content panel itself, so the
+  // Attempt, file or Timeline the operator asked for is what they see; a fresh
+  // open with nothing picked starts at the Ticket header.
+  useScrollToPanel(scrollRef, contentRef, selection.kind !== 'none', selection);
   useEffect(() => {
-    const el = scrollRef.current;
-    if (el) el.scrollTop = 0;
     setFollowing(false);
   }, [selection]);
 
@@ -1400,13 +1475,13 @@ export function TicketPage({
       : null;
   const skipHolderId = parseSkipReasonTaskRef(task.skipReason);
   const gateModel = gateForAttempt({ task, runs, selectedAttemptId: selectedRunId });
-  const panel = contentPanel(selection);
-  const selectAttempt = (attempt: Attempt) => setSelection({ kind: 'attempt', attemptNumber: attempt.number });
+  const panel = contentPanel(resolved);
+  const selectAttempt = (attempt: Attempt) => onSelect({ kind: 'attempt', attemptNumber: attempt.number });
   const selectRunById = (runId: number) => {
     const run = runs.find((r) => r.id === runId);
-    if (run) setSelection({ kind: 'attempt', attemptNumber: run.number });
+    if (run) onSelect({ kind: 'attempt', attemptNumber: run.number });
   };
-  const selectedFile = selection.kind === 'file' ? selection.path : null;
+  const selectedFile = resolved.kind === 'file' ? resolved.path : null;
 
   return (
     <div className="flex h-full flex-col">
@@ -1525,7 +1600,7 @@ export function TicketPage({
 
             {/* content panel: driven by the sidebar selection — Stats (default),
                 an Attempt, a changed-file diff, or the Timeline. */}
-            <div className="min-w-0 border-t border-hairline">
+            <div ref={contentRef} className="min-w-0 border-t border-hairline">
               {panel.kind === 'diff' ? (
                 <ChangesPane task={task} attemptId={latestAttemptId} selectedFile={selectedFile ?? ''} running={anyRunning} />
               ) : panel.kind === 'timeline' ? (
@@ -1571,10 +1646,10 @@ export function TicketPage({
             <AttemptsNav
               attempts={attempts}
               maxAttempts={maxAttempts}
-              selectedNumber={selection.kind === 'attempt' ? selection.attemptNumber : null}
+              selectedNumber={resolved.kind === 'attempt' ? resolved.attemptNumber : null}
               onSelect={selectAttempt}
             />
-            <TimelineNav selected={selection.kind === 'timeline'} onSelect={() => setSelection({ kind: 'timeline' })} />
+            <PanelNav selected={resolved.kind === 'timeline' ? 'timeline' : resolved.kind === 'none' || resolved.kind === 'stats' ? 'stats' : null} onSelect={onSelect} />
             <AttemptRail
               worktree={{
                 branch: task.branch,
@@ -1583,8 +1658,8 @@ export function TicketPage({
                 stat: liveStat ?? task.stat,
               }}
               selectedFile={selectedFile}
-              onSelectFile={(path) => setSelection({ kind: 'file', path })}
-              onSelectChanges={() => setSelection({ kind: 'file', path: '' })}
+              onSelectFile={(path) => onSelect({ kind: 'file', path })}
+              onSelectChanges={() => onSelect({ kind: 'changes' })}
               taskState={task.state}
             />
           </div>

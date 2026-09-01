@@ -366,6 +366,11 @@ export function stateDot(state: TaskState): string {
 export const railSectionHead = 'mb-2.5 flex items-center gap-2 text-label font-bold uppercase tracking-[0.1em] text-faint';
 export const railSectionCount = 'rounded-full bg-raised px-[7px] text-[11px] font-bold normal-case tracking-normal text-muted';
 
+/** A rail navigation entry (Timeline, Tasks, an Attempt): the selected one carries the await ring. */
+export const railNavButton = 'flex min-h-11 w-full items-center gap-2.5 rounded-sm border px-2.5 py-2 text-left transition-colors';
+export const railNavSelected = 'border-await bg-await-tint';
+export const railNavIdle = 'border-transparent hover:bg-raised';
+
 /** AttemptDot → the dot's fill utility, shared by the Ticket run rail's chips and
  * its read-only result bar so the run-signal mapping lives in one place (the
  * pulse is applied separately in the markup, never baked in here). */

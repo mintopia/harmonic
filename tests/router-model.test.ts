@@ -221,3 +221,41 @@ describe('round-trip', () => {
     }
   });
 });
+
+describe('detail-page rail selection (panel)', () => {
+  it('parses each panel form on a Ticket or Epic path', () => {
+    expect(parseRoute('/task/12', '?panel=stats').panel).toEqual({ kind: 'stats' });
+    expect(parseRoute('/task/12', '?panel=timeline').panel).toEqual({ kind: 'timeline' });
+    expect(parseRoute('/task/12', '?panel=changes').panel).toEqual({ kind: 'changes' });
+    expect(parseRoute('/task/12', '?panel=attempt:3').panel).toEqual({ kind: 'attempt', attemptNumber: 3 });
+    expect(parseRoute('/epic/5', '?panel=file:src/a%2Fb.ts').panel).toEqual({ kind: 'file', path: 'src/a/b.ts' });
+  });
+
+  it('falls back to the default panel for a malformed or absent value', () => {
+    expect(parseRoute('/task/12', '').panel).toEqual({ kind: 'none' });
+    expect(parseRoute('/task/12', '?panel=bogus').panel).toEqual({ kind: 'none' });
+    expect(parseRoute('/task/12', '?panel=attempt:zero').panel).toEqual({ kind: 'none' });
+    expect(parseRoute('/task/12', '?panel=attempt:0').panel).toEqual({ kind: 'none' });
+    expect(parseRoute('/task/12', '?panel=file:').panel).toEqual({ kind: 'none' });
+  });
+
+  it('ignores a panel outside a detail page', () => {
+    expect(parseRoute('/', '?view=table&panel=timeline').panel).toEqual({ kind: 'none' });
+  });
+
+  it('round-trips through serializeRoute and omits the default panel', () => {
+    const base: Route = { ...DEFAULT_ROUTE, task: 12 };
+    expect(serializeRoute(base)).toBe('/task/12');
+    for (const panel of [
+      { kind: 'stats' },
+      { kind: 'timeline' },
+      { kind: 'changes' },
+      { kind: 'attempt', attemptNumber: 3 },
+      { kind: 'file', path: 'web/src/App.tsx' },
+    ] as const) {
+      const url = serializeRoute({ ...base, panel });
+      expect(parseRoute('/task/12', url.slice(url.indexOf('?'))).panel).toEqual(panel);
+    }
+    expect(serializeRoute({ ...DEFAULT_ROUTE, panel: { kind: 'timeline' } })).toBe('/');
+  });
+});

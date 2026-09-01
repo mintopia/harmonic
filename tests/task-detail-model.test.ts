@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { attemptStepTabs, contentPanel, defaultStepTab, taskLifecycle, taskStats, type LifecycleStepKey, type LifecycleStepStatus, type StatsAttempt } from '../web/src/task-detail-model.js';
+import { attemptStepTabs, contentPanel, defaultSelection, defaultStepTab, taskLifecycle, taskStats, verificationOutputTail, type LifecycleStepKey, type LifecycleStepStatus, type StatsAttempt } from '../web/src/task-detail-model.js';
 import type { AttemptSummary, Cost, ModelUsage, Step, StepState, StepType, TaskState } from '../web/src/types.js';
 
 const STEP_ORDER: LifecycleStepKey[] = [
@@ -487,5 +487,54 @@ describe('defaultStepTab', () => {
 
   it('returns null for an Attempt with no Steps', () => {
     expect(defaultStepTab([])).toBeNull();
+  });
+
+  it('opens a failed Step ahead of Implementation — what an escalated Attempt needs reviewed', () => {
+    const tabs = attemptStepTabs([step('implementation', 'passed'), step('verification', 'failed')]);
+    expect(defaultStepTab(tabs)).toBe('verification');
+  });
+});
+
+describe('defaultSelection', () => {
+  const attempts = [
+    { number: 1, state: 'failed' as const },
+    { number: 2, state: 'running' as const },
+  ];
+
+  it('opens a working Task on its live Attempt', () => {
+    expect(defaultSelection('working', attempts)).toEqual({ kind: 'attempt', attemptNumber: 2 });
+    expect(defaultSelection('working', [{ number: 1, state: 'completed' }])).toEqual({ kind: 'attempt', attemptNumber: 1 });
+  });
+
+  it('opens an escalated Task on its latest Attempt', () => {
+    expect(defaultSelection('escalated', [{ number: 1, state: 'failed' }, { number: 2, state: 'failed' }])).toEqual({ kind: 'attempt', attemptNumber: 2 });
+  });
+
+  it('opens a waiting, finished or cancelled Task on Stats', () => {
+    for (const state of ['draft', 'ready', 'done', 'cancelled'] as const) {
+      expect(defaultSelection(state, attempts)).toEqual({ kind: 'stats' });
+    }
+    expect(defaultSelection('working', [])).toEqual({ kind: 'stats' });
+  });
+});
+
+describe('verificationOutputTail', () => {
+  const out = (id: number, mechanism: string, text: string) => ({
+    id,
+    seq: id,
+    ts: id,
+    type: 'session_update' as const,
+    payload: { sessionUpdate: 'verification_output', mechanism, content: { type: 'text', text } },
+  });
+
+  it('joins one mechanism’s streamed chunks and keeps only the tail', () => {
+    const events = [out(1, 'command', 'a'), out(2, 'critic', 'X'), out(3, 'command', 'bcdef')];
+    expect(verificationOutputTail(events, 'command')).toBe('abcdef');
+    expect(verificationOutputTail(events, 'command', 3)).toBe('def');
+    expect(verificationOutputTail(events, 'critic')).toBe('X');
+  });
+
+  it('is null before anything streamed', () => {
+    expect(verificationOutputTail([], 'command')).toBeNull();
   });
 });

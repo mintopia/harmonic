@@ -26,6 +26,7 @@ export const api = {
   attemptGuardrailEvents: (_id: number) => ok({ guardrailEvents: [] }),
   attemptVerificationAttempts: (_id: number) => ok({ verificationAttempts: f.verificationAttempts, verifierStatuses: f.verifierStatuses }),
   attemptDiffFiles: (_id: number) => ok({ files: f.diffFiles }),
+  epicDiffFiles: (_workspaceId: number, _epicRef: number) => ok({ files: f.diffFiles }),
   attemptDiff: (_id: number) => ok({ stat: f.task.stat }),
   steerTask: (_id: number, _msg: string) => ok(undefined),
 } as any;

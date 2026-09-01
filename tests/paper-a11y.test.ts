@@ -23,7 +23,7 @@ describe('Paper accessibility contract (issue #266)', () => {
 
     expect(board).toContain('role="img" aria-label={task.state.replaceAll');
     expect(ticket).toContain('role="img" aria-label={attempt.state}');
-    expect(ticket).toContain('min-h-11 w-full items-center');
+    expect(ui).toContain("export const railNavButton = 'flex min-h-11 w-full items-center");
     expect(gate).toContain('role="img" aria-label={DOT_LABEL[model.dot]}');
     expect(ui).toContain("export const btnQuiet = 'inline-flex min-h-11");
   });

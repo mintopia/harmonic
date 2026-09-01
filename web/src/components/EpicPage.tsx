@@ -1,6 +1,7 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { api } from '../api';
 import { useLiveEffect } from '../useLiveEffect';
+import { useScrollToPanel } from '../useScrollToPanel';
 import type { DiffFile, Task, ModelUsage } from '../types';
 import type { Epic, EpicStage, IntegrationStepState } from '../epic-model';
 import { epicLifecycleSteps } from '../epic-model';
@@ -10,7 +11,22 @@ import { formatCost } from '../cost';
 import { issueRef, ticketRowId } from '../id-format.js';
 import { toastError } from '../toast';
 import { cardTitle } from '../board-sections-model';
-import { card, panel, chip, stateChip, stateDot, PHASE_NODE_STYLES, type PhaseNodeVisual } from '../ui';
+import {
+  card,
+  panel,
+  chip,
+  stateChip,
+  stateDot,
+  railSectionHead,
+  railSectionCount,
+  railNavButton,
+  railNavSelected,
+  railNavIdle,
+  PHASE_NODE_STYLES,
+  type PhaseNodeVisual,
+} from '../ui';
+import { splitPathTail } from '../path';
+import { NO_SELECTION, type RailSelection } from '../router-model';
 import { CrumbBar } from './CrumbBar';
 import { DiffViewer } from './DiffViewer';
 import { EmptyState } from './EmptyState';
@@ -18,6 +34,7 @@ import { Icon } from './Icon';
 import { Markdown } from './Markdown';
 import { TokenTypeBar, TokenTypeLegend } from './TokenTypeBar';
 import { ModelLabel, ProviderChip } from './TaskIdentity';
+import { ChangedFilesNav, changedFileKind } from './ticket/ChangedFilesNav';
 
 const sectionCaps = 'text-label font-bold uppercase tracking-[0.1em] text-faint';
 
@@ -83,18 +100,48 @@ function DependsOn({ refs }: { refs: number[] }) {
   );
 }
 
-function Properties({ epic }: { epic: Epic }) {
+/** The rail's Epic facts: the header's Properties card moved beside the content,
+ * plus the two roll-ups an operator scans for first (Tasks done, Total cost). */
+function EpicMeta({ epic, stats }: { epic: Epic | null; stats: Stats | null }) {
+  const summary = epic && stats ? epicUsageSummary(stats, epic.memberCount) : null;
   return (
-    <dl className="grid grid-cols-2 gap-x-6 gap-y-3.5">
-      <Fact label="Depends on">
-        <DependsOn refs={epic.dependsOn} />
-      </Fact>
-      <Fact label="Base branch">
-        <span className="font-data">{epic.baseBranch ?? epic.integration.branch}</span>
-      </Fact>
-      <Fact label="Created">{fmtDate(epic.createdAt)}</Fact>
-      <Fact label="Last activity">{epic.updatedAt != null ? fmtRelative(epic.updatedAt) : '—'}</Fact>
-    </dl>
+    <section className="border-b border-hairline px-3.5 py-3.5">
+      <div className={railSectionHead}>Epic</div>
+      {epic ? (
+        <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
+          <Fact label="Tasks done">
+            <span className="tabular-nums">
+              {epic.foldedCount} / {epic.memberCount}
+            </span>
+          </Fact>
+          <Fact label="Total cost">
+            <span className="tabular-nums">{summary?.hasActivity ? summary.totalCost : '—'}</span>
+          </Fact>
+          <Fact label="Base branch">
+            <span className="font-data">{epic.baseBranch ?? epic.integration.branch}</span>
+          </Fact>
+          <Fact label="Depends on">
+            <DependsOn refs={epic.dependsOn} />
+          </Fact>
+          <Fact label="Created">{fmtDate(epic.createdAt)}</Fact>
+          <Fact label="Last activity">{epic.updatedAt != null ? fmtRelative(epic.updatedAt) : '—'}</Fact>
+        </dl>
+      ) : (
+        <p className="text-small text-muted">Loading…</p>
+      )}
+    </section>
+  );
+}
+
+function TasksNav({ count, selected, onSelect }: { count: number | null; selected: boolean; onSelect: () => void }) {
+  return (
+    <section className="border-b border-hairline px-3.5 py-3.5">
+      <button type="button" aria-pressed={selected} onClick={onSelect} className={`${railNavButton} ${selected ? railNavSelected : railNavIdle}`}>
+        <Icon name="table" className="size-3.5 shrink-0 text-muted" />
+        <span className="text-data font-semibold text-ink">Tasks</span>
+        {count != null && <span className={railSectionCount}>{count}</span>}
+      </button>
+    </section>
   );
 }
 
@@ -184,10 +231,70 @@ function UsageCard({ stats, epic }: { stats: Stats; epic: Epic }) {
 
 /** The whole-Epic diff (ADR-0018): what `epic/<ref>` changes over base, fetched
  * once — unlike the live Attempt ChangesPane on TicketPage, an Epic's diff is
- * static, so it never polls. */
-function ChangesSection({ files, failed }: { files: DiffFile[] | null; failed: boolean }) {
+ * static, so it never polls. A rail-selected file shows alone under its own
+ * title; the Changed-files header shows every file. */
+function ChangesPanel({
+  files,
+  failed,
+  selectedFile,
+  epic,
+}: {
+  files: DiffFile[] | null;
+  failed: boolean;
+  selectedFile: string;
+  epic: Epic | null;
+}) {
+  if (selectedFile) {
+    const file = (files ?? []).find((f) => f.path === selectedFile);
+    return (
+      <div>
+        <div className="mx-0.5 mb-3 mt-4">
+          <h2 className="flex items-center gap-2 text-[16.5px] font-bold leading-tight tracking-[-0.01em] text-ink">
+            {file && (
+              <span
+                className={`grid size-[18px] shrink-0 place-items-center rounded-[4px] font-data text-[10px] font-bold ${
+                  changedFileKind(file) === 'A' ? 'bg-merged-tint text-merged' : changedFileKind(file) === 'D' ? 'bg-fail-tint text-fail' : 'bg-running-tint text-running'
+                }`}
+              >
+                {changedFileKind(file)}
+              </span>
+            )}
+            {splitPathTail(selectedFile).tail}
+          </h2>
+          <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 font-data text-[12px] text-faint">
+            {file && (
+              <>
+                <span className="tabular-nums">
+                  <span className="text-merged">+{file.additions}</span> <span className="text-fail">−{file.deletions}</span>
+                </span>
+                <span aria-hidden className="text-edge">·</span>
+              </>
+            )}
+            <span className="min-w-0 truncate">{selectedFile}</span>
+            {epic && (
+              <>
+                <span aria-hidden className="text-edge">·</span>
+                <span>
+                  epic diff · {epic.baseBranch ?? epic.integration.branch}…{epic.integration.branch}
+                </span>
+              </>
+            )}
+          </div>
+        </div>
+        {files === null && !failed ? (
+          <p className="text-muted">Loading diff…</p>
+        ) : !file ? (
+          <p className="text-muted">No changed-file content available for {selectedFile}.</p>
+        ) : (
+          <div className="overflow-hidden rounded-lg border border-hairline shadow-card">
+            <DiffViewer file={file} headerless />
+          </div>
+        )}
+      </div>
+    );
+  }
   return (
-    <section className="mb-8">
+    <section className="mt-6">
       <div className={`${sectionCaps} mb-3`}>Changes</div>
       {failed ? (
         <div className={`${card} p-5 text-muted`}>Couldn&rsquo;t load changes.</div>
@@ -211,7 +318,7 @@ function ChangesSection({ files, failed }: { files: DiffFile[] | null; failed: b
 // Column tracks mirror TableView's Tasks-list GRID (ADR-0015: same columns, no
 // bespoke row shape) plus a trailing Tokens track; keep the two in sync.
 const GRID =
-  'grid grid-cols-[3.5rem_minmax(0,1fr)_8rem] md:grid-cols-[3.5rem_minmax(0,1fr)_8rem_5rem_5.5rem] lg:grid-cols-[3.5rem_minmax(0,1fr)_8rem_6rem_9rem_5rem_5.5rem_10rem_9rem] items-center gap-x-3 px-4';
+  'grid grid-cols-[7.5rem_minmax(0,1fr)_8rem] md:grid-cols-[7.5rem_minmax(0,1fr)_8rem_5rem_5.5rem] lg:grid-cols-[7.5rem_minmax(0,1fr)_8rem_6rem_9rem_5rem_5.5rem_8rem_8rem] items-center gap-x-3 px-4';
 
 function ChildTokenBar({ totals }: { totals: ModelUsage | null | undefined }) {
   const segments = tokenBarSegments(totals);
@@ -428,11 +535,17 @@ export function EpicPage({
   workspaceId,
   onClose,
   onOpenTask,
+  selection,
+  onSelect,
 }: {
   epicRef: number;
   workspaceId: number;
   onClose: () => void;
   onOpenTask: (taskId: number) => void;
+  /** The rail selection — owned by the route so a refresh restores the panel.
+   * Only `changes` and `file` mean anything here; anything else is the overview. */
+  selection: RailSelection;
+  onSelect: (selection: RailSelection) => void;
 }) {
   const [epic, setEpic] = useState<Epic | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
@@ -490,6 +603,13 @@ export function EpicPage({
   }, [onClose]);
 
   const title = epic?.title || `Epic ${epicRef}`;
+  const selectedFile = selection.kind === 'file' ? selection.path : null;
+  const showChanges = selection.kind === 'file' || selection.kind === 'changes';
+  // A rail pick (or a deep link to a panel) lands on the content panel itself;
+  // a fresh open with nothing picked starts at the Epic header.
+  const scrollRef = useRef<HTMLElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  useScrollToPanel(scrollRef, contentRef, selection.kind !== 'none', selection);
 
   return (
     <div className="flex h-full flex-col">
@@ -500,54 +620,77 @@ export function EpicPage({
         ]}
       />
 
-      <div id="main-content" tabIndex={-1} className="min-w-0 flex-1 overflow-y-auto pb-10 focus:outline-none">
-        <div className="px-[30px]">
-          <div className="flex flex-wrap items-start gap-2.5 pb-1 pt-7">
-            <span className={`${chip} shrink-0 bg-accent-tint text-accent`}>Epic</span>
-            <h1 className="max-w-[680px] flex-1 text-[26px] font-extrabold leading-[1.15] tracking-[-0.03em]">{cardTitle(title)}</h1>
-            {epic && <span className="mt-1.5"><EpicLifecycleChip epic={epic} /></span>}
-          </div>
+      {/* two-pane shell, mirroring TicketPage: content left, navigation rail right;
+          stacks under the rail breakpoint. */}
+      <div className="flex min-h-0 flex-1 overflow-hidden max-rail:flex-col max-rail:overflow-visible">
+        <main ref={scrollRef} id="main-content" tabIndex={-1} className="min-w-0 flex-1 overflow-y-auto pb-10 focus:outline-none max-rail:overflow-visible">
+          <div className="px-[30px]">
+            <div className="flex flex-wrap items-start gap-2.5 pb-1 pt-7">
+              <span className={`${chip} shrink-0 bg-accent-tint text-accent`}>Epic</span>
+              <h1 className="max-w-[680px] flex-1 text-[26px] font-extrabold leading-[1.15] tracking-[-0.03em]">{cardTitle(title)}</h1>
+              {epic && <span className="mt-1.5"><EpicLifecycleChip epic={epic} /></span>}
+            </div>
 
-          {epic?.description && <Description text={epic.description} />}
+            {epic?.description && <Description text={epic.description} />}
 
-          {/* Integration progress (left) beside Properties (right), matching the
-              ADR-0015/0017 design canvas. */}
-          <div className="mb-6 mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
-            <section className="min-w-0">
-              <div className={`${sectionCaps} mb-3`}>Integration progress</div>
-              {epic ? (
-                <EpicStepper epic={epic} />
+            <div ref={contentRef} className="min-w-0 border-t border-hairline">
+              {showChanges ? (
+                <ChangesPanel files={diffFiles} failed={diffFailed} selectedFile={selectedFile ?? ''} epic={epic} />
               ) : (
-                <div className={`${card} px-[22px] py-5 text-muted`}>Loading…</div>
+                <>
+                  <section className="mb-6 mt-6 min-w-0">
+                    <div className={`${sectionCaps} mb-3`}>Integration progress</div>
+                    {epic ? (
+                      <EpicStepper epic={epic} />
+                    ) : (
+                      <div className={`${card} px-[22px] py-5 text-muted`}>Loading…</div>
+                    )}
+                  </section>
+
+                  <div className="mb-6">
+                    <div className={`${sectionCaps} mb-3`}>Usage &amp; statistics</div>
+                    {stats && epic ? (
+                      <UsageCard stats={stats} epic={epic} />
+                    ) : (
+                      <div className={`${card} p-5 text-muted`}>Loading usage…</div>
+                    )}
+                  </div>
+
+                  <div className="mb-8">
+                    {childTasks ? (
+                      <ChildTasksTable tasks={childTasks} totals={childTotals} onOpenTask={onOpenTask} />
+                    ) : (
+                      <p className="text-muted">Loading child tasks…</p>
+                    )}
+                  </div>
+                </>
               )}
+            </div>
+          </div>
+        </main>
+
+        <aside
+          aria-label="Epic facts, tasks and changed files"
+          className="flex w-[326px] shrink-0 flex-col border-l border-hairline bg-surface max-rail:w-auto max-rail:border-l-0 max-rail:border-t"
+        >
+          <div className="min-h-0 flex-1 overflow-y-auto max-rail:overflow-visible">
+            <EpicMeta epic={epic} stats={stats} />
+            <TasksNav
+              count={childTasks?.length ?? epic?.memberCount ?? null}
+              selected={!showChanges}
+              onSelect={() => onSelect(NO_SELECTION)}
+            />
+            <section className="px-3.5 py-3.5" aria-label="Changed files">
+              <ChangedFilesNav
+                files={diffFiles ?? []}
+                selectedFile={selectedFile}
+                onSelectFile={(path) => onSelect({ kind: 'file', path })}
+                onSelectChanges={() => onSelect({ kind: 'changes' })}
+                emptyCopy={diffFailed ? 'Couldn’t load changes.' : diffFiles === null ? 'Loading changes…' : 'No changed files.'}
+              />
             </section>
-            <section className="min-w-0">
-              <div className={`${sectionCaps} mb-3`}>Properties</div>
-              <div className={`${card} p-5`}>
-                {epic ? <Properties epic={epic} /> : <p className="text-muted">Loading…</p>}
-              </div>
-            </section>
           </div>
-
-          <div className="mb-6">
-            <div className={`${sectionCaps} mb-3`}>Usage &amp; statistics</div>
-            {stats && epic ? (
-              <UsageCard stats={stats} epic={epic} />
-            ) : (
-              <div className={`${card} p-5 text-muted`}>Loading usage…</div>
-            )}
-          </div>
-
-          <ChangesSection files={diffFiles} failed={diffFailed} />
-
-          <div className="mb-8">
-            {childTasks ? (
-              <ChildTasksTable tasks={childTasks} totals={childTotals} onOpenTask={onOpenTask} />
-            ) : (
-              <p className="text-muted">Loading child tasks…</p>
-            )}
-          </div>
-        </div>
+        </aside>
       </div>
     </div>
   );
