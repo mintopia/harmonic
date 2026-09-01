@@ -3,6 +3,12 @@
   "compilerOptions": {
     "rootDir": ".",
     "noEmit": true,
+    // The web app is built without exactOptionalPropertyTypes (web/tsconfig.json),
+    // so frontend code is never held to it. A component test pulls its whole
+    // web import graph into this project, which inherits the flag from the root
+    // (server) config — checking web code to a stricter standard than the web
+    // build. Match the web build here so tests can import components freely.
+    "exactOptionalPropertyTypes": false,
     "types": ["node"],
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "jsx": "react-jsx",
