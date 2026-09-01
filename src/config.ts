@@ -376,12 +376,24 @@ export const appConfigSchema = z.object({
    * default (20 minutes) is deliberately generous, well above any legitimate
    * slow build/test, so it only fires on a tool that is truly stuck.
    * Global-only: there is no per-Workspace override column for it yet.
+   *
+   * `promptInactivityTimeoutMinutes` (issue #426) bounds a single ACP prompt
+   * turn by inactivity, so a completed turn whose `session/prompt` response is
+   * never delivered (harness idle / a wrapper that lingers past the inner
+   * process) ends the turn instead of blocking the drive loop until the 60m
+   * wall-clock guardrail. It is inactivity-based and suspended while any tool
+   * call is outstanding (reusing the driver's outstanding-tool tracking), so a
+   * legitimately long tool is never cut off — only true silence trips it. Unlike
+   * the progress/tool-timeout guardrails it is always on (not gated on
+   * `progress`): it is a transport-liveness bound, not a stall heuristic. The
+   * default (15 minutes) sits well below the wall-clock budget.
    */
   guardrails: z
     .object({
       budget: budgetGuardrailSchema.prefault({}),
       progress: z.boolean().default(false),
       toolTimeoutMinutes: z.number().positive().default(20),
+      promptInactivityTimeoutMinutes: z.number().positive().default(15),
     })
     .prefault({}),
 }).superRefine((config, ctx) => {
@@ -525,6 +537,7 @@ export function defaultConfig(): AppConfig {
       budget: { wallClockMinutes: 60, tokens: null, costUsd: null },
       progress: false,
       toolTimeoutMinutes: 20,
+      promptInactivityTimeoutMinutes: 15,
     },
   };
 }

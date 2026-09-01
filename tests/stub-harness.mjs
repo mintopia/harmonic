@@ -11,7 +11,7 @@
 //   "echoSessionNew": true,             // emit the session/new params received
 //   "stopReason": "end_turn",
 //   "usage":    { "inputTokens": 1, "outputTokens": 2 },
-//   "exit":     "clean" | "crash-before-response" | "hang"
+//   "exit":     "clean" | "crash-before-response" | "hang" | "close-stdout"
 // }
 //
 // A non-JSON prompt runs a two-chunk "hello" scenario.
@@ -328,6 +328,14 @@ async function handlePrompt(msg) {
   const exit = scenario.exit ?? 'clean';
   if (exit === 'crash-before-response') process.exit(1);
   if (exit === 'hang') return; // never respond; must be killed
+  if (exit === 'close-stdout') {
+    // The inner process closes stdout (EOF on the client's readline) without
+    // ever sending the response, but stays alive — the stdin readline keeps the
+    // event loop busy. Emulates an outer wrapper that lingers past the inner
+    // process (issue #426), so the client sees EOF with no child `exit`.
+    process.stdout.end();
+    return;
+  }
   promptInFlight = false;
   send({
     jsonrpc: '2.0',

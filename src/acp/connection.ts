@@ -19,6 +19,24 @@ interface Pending {
 }
 
 /**
+ * Every in-flight ACP request is rejected with this when the harness's stdout
+ * reaches EOF (readline `close`) before their responses arrive — the transport
+ * is gone, so no response can ever come (issue #426). Typed distinctly from a
+ * child-death `fail()` so a caller (the drive loop) can tell "connection gone,
+ * cannot re-prompt" from a plain protocol error, and route the turn end by
+ * finish/continue rather than hanging at `await driver.prompt()` until the
+ * wall-clock guardrail. The trigger is the readline `close`, not child exit:
+ * the inner harness can close stdout while an outer `npx` wrapper lingers, so
+ * the child `exit` the driver watches never fires.
+ */
+export class AcpConnectionClosedError extends Error {
+  constructor(message = 'ACP connection closed (stdout EOF)') {
+    super(message);
+    this.name = 'AcpConnectionClosedError';
+  }
+}
+
+/**
  * A JSON-RPC 2.0 connection over newline-delimited JSON, as ACP speaks it
  * on a harness's stdio. Non-JSON lines are tolerated (some adapters leak
  * log noise onto stdout — see the issue-01 spike).
@@ -36,6 +54,18 @@ export class AcpConnection {
   ) {
     this.rl = createInterface({ input: stdout });
     this.rl.on('line', (line) => this.onLine(line));
+    // stdout EOF (issue #426): readline emits `close` once its input stream
+    // ends. A completed turn whose `session/prompt` response was never
+    // delivered — or an inner process that closed stdout while an outer
+    // wrapper lingers — otherwise leaves the pending request hanging forever
+    // (the child `exit` the driver watches never fires). Reject every pending
+    // request with a typed error so the caller ends the turn instead. Guarded
+    // on `closed` so a deliberate `dispose()`/`fail()` (which sets it first)
+    // does not re-reject.
+    this.rl.on('close', () => {
+      if (this.closed) return;
+      this.fail(new AcpConnectionClosedError());
+    });
     // A write can race the harness's death (e.g. answering a permission as
     // the process is killed) and emit EPIPE asynchronously; in-flight
     // requests already fail via `fail()`, so swallow the pipe error.
@@ -43,7 +73,12 @@ export class AcpConnection {
   }
 
   request(method: string, params: unknown): Promise<any> {
-    if (this.closed) return Promise.reject(new Error('ACP connection closed'));
+    // Once closed, the only way we got here mid-drive is a prior stdout EOF
+    // (run-end dispose/fail issues no further requests). Reject with the typed
+    // error so a request issued *after* an EOF observed between turns routes
+    // through the same turn-end handling as one in flight when it closed
+    // (issue #426), rather than escaping as a generic driver error.
+    if (this.closed) return Promise.reject(new AcpConnectionClosedError());
     const id = this.nextId++;
     this.write({ jsonrpc: '2.0', id, method, params });
     return new Promise((resolve, reject) => this.pending.set(id, { resolve, reject }));
