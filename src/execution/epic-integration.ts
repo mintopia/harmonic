@@ -1,6 +1,6 @@
 import type { TaskRow } from '../db/schema.js';
 import type { TaskService } from '../domain/tasks.js';
-import { deriveEpics } from '../domain/epic-derivation.js';
+import { deriveLeafEpics } from '../domain/epic-derivation.js';
 import type { MemberMergeState } from '../domain/epic-integrate.js';
 import type { Ticket } from '../tracker/adapter.js';
 import { persistedTickets } from '../tracker/persisted.js';
@@ -170,7 +170,7 @@ export class EpicIntegrationCoordinator {
     const tickets = this.latestTickets.length > 0
       ? this.latestTickets
       : await persistedTickets(await this.tasks.list(), await this.tasks.listTrackerContainers());
-    await this.refreshDriftedEpics(defaultBranch, deriveEpics(tickets));
+    await this.refreshDriftedEpics(defaultBranch, deriveLeafEpics(tickets));
   }
 
   /**
@@ -207,7 +207,7 @@ export class EpicIntegrationCoordinator {
         readinessByRef.set(task.trackerRef, { agentWorkable: task.agentWorkable });
       }
     }
-    const epics = deriveEpics(tickets, readinessByRef);
+    const epics = deriveLeafEpics(tickets, readinessByRef);
     this.leafEpicRefs = new Set(epics.map((epic) => epic.ref));
     const readyRefs = new Set<number>();
     for (const epic of epics) for (const ref of epic.ready) readyRefs.add(ref);
@@ -404,7 +404,7 @@ export class EpicIntegrationCoordinator {
       await this.tasks.list(listArg),
       await this.tasks.listTrackerContainers(workspaceId ?? undefined),
     );
-    this.leafEpicRefs = new Set(deriveEpics(tickets).map((epic) => epic.ref));
+    this.leafEpicRefs = new Set(deriveLeafEpics(tickets).map((epic) => epic.ref));
     return this.leafEpicRefs.has(epicRef);
   }
 

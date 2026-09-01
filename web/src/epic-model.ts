@@ -219,8 +219,17 @@ export function integrateOutcomeBanner(o: EpicIntegrateOutcome): IntegrateOutcom
 
 /** One pip per member in the Epic surface's top-right status summary
  * (ADR-0011). Trouble sorts to the front so an escalated or blocked member is
- * never masked by a merged/running sibling. */
-export type MemberPipStatus = 'escalated' | 'blocked' | 'merged' | 'cancelled' | 'running' | 'waiting';
+ * never masked by a merged/running sibling. `merged` is emerald and `ready` is
+ * teal (design register): a done/merged member never collapses to the same hue
+ * as a ready-frontier one. */
+export type MemberPipStatus =
+  | 'escalated'
+  | 'blocked'
+  | 'merged'
+  | 'cancelled'
+  | 'running'
+  | 'ready'
+  | 'waiting';
 
 export function memberPipStatus(m: EpicMember): MemberPipStatus {
   if (m.escalated) return 'escalated';
@@ -228,6 +237,7 @@ export function memberPipStatus(m: EpicMember): MemberPipStatus {
   if (m.mergeStatus === 'completed') return 'merged';
   if (m.state === 'cancelled') return 'cancelled';
   if (m.state === 'working' || m.state === 'running') return 'running';
+  if (m.ready) return 'ready';
   return 'waiting';
 }
 

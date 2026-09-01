@@ -236,6 +236,40 @@ export const epicTask = {
 // roster: two members folded, one still running (would read "healing" once an
 // integrate is in flight), one blocked, and a held escalation on the Merge step
 // so the integration bar's escalated state is exercised too.
+// Board EpicBoard/EpicBand fixture (issue #430): one member per pip status so
+// the uniform rounded-rect pips and the merged-vs-ready colour split are both
+// visible, plus closed (merged/done/cancelled) members for the full-card rail.
+const boardMember = (o: any) => ({
+  title: `Member ${o.ref}`,
+  taskId: null,
+  state: null,
+  escalated: false,
+  mergeStatus: 'pending',
+  ready: false,
+  ...o,
+});
+export const boardEpic = {
+  ref: 421,
+  title: 'Parallel Epic — board band demo',
+  kind: 'spec',
+  members: [
+    boardMember({ ref: 431, title: 'Wire the ready frontier', ready: true }), // ready → teal pip + Frontier card
+    boardMember({ ref: 432, title: 'Waiting on a sibling' }), // waiting → neutral pip
+    boardMember({ ref: 433, title: 'Escalated to the operator', escalated: true }), // escalated → indigo pip
+    boardMember({ ref: 434, title: 'Blocked on a failed dep', mergeStatus: 'blocked' }), // blocked → rose pip
+    boardMember({ ref: 435, title: 'Running right now', state: 'running' }), // running → amber pip
+    boardMember({ ref: 436, title: 'Wire the read endpoint', mergeStatus: 'completed' }), // merged → emerald
+    boardMember({ ref: 437, title: 'Render the epic band', state: 'done', mergeStatus: 'completed' }), // done → emerald
+    boardMember({ ref: 438, title: 'Retire the legacy peek', state: 'cancelled' }), // cancelled → faint
+  ],
+  ready: [431],
+  integration: { branch: 'epic/421', exists: true, tip: 'a1b2c3d' },
+  verification: { status: 'pending' },
+  integrate: { inFlight: false, held: null },
+  foldedCount: 2,
+  memberCount: 8,
+} as any;
+
 export const epic = {
   ref: 166,
   title: 'Consolidate guardrail-ceiling defaults',

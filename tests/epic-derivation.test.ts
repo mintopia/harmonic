@@ -4,7 +4,7 @@
  * no I/O, no fixtures beyond the `ticket()` builder below.
  */
 import { describe, expect, it } from 'vitest';
-import { deriveEpics } from '../src/domain/epic-derivation.js';
+import { deriveEpics, deriveLeafEpics } from '../src/domain/epic-derivation.js';
 import { type Ticket } from '../src/tracker/adapter.js';
 
 const ticket = (over: Partial<Ticket>): Ticket => ({
@@ -89,16 +89,17 @@ describe('deriveEpics', () => {
     expect(result[0]?.ready).toEqual([11, 12]);
   });
 
-  it('6. leaf-most selection over a spine: only the leaf-most Epic is derived', () => {
+  it('6. top-level selection over a spine: the top-level container is the Epic, sub-container leaves roll up', () => {
     const tickets = [
-      ticket({ number: 106, title: 'Spine parent' }),
-      ticket({ number: 156, title: 'Leaf-most Epic', parent: 106 }),
+      ticket({ number: 106, title: 'Top-level Epic' }),
+      ticket({ number: 156, title: 'Sub-container', parent: 106 }),
       ticket({ number: 157, parent: 156 }),
       ticket({ number: 158, parent: 156 }),
     ];
     const result = derive(tickets);
     expect(result).toHaveLength(1);
-    expect(result[0]?.ref).toBe(156);
+    expect(result[0]?.ref).toBe(106);
+    // #156 is a nested sub-container (has a parent); its leaves roll up to #106.
     expect(result[0]?.members).toEqual([157, 158]);
   });
 
@@ -124,7 +125,7 @@ describe('deriveEpics', () => {
     expect(derive(tickets)).toEqual([]);
   });
 
-  it('10. multiple leaf-most Epics in one scan, sorted by ref ascending', () => {
+  it('10. multiple top-level Epics in one scan, sorted by ref ascending', () => {
     const tickets = [
       ticket({ number: 20, title: 'Second Epic' }),
       ticket({ number: 21, parent: 20 }),
@@ -149,19 +150,20 @@ describe('deriveEpics', () => {
     expect(derive(unblocked)[0]?.ready).toEqual([12]);
   });
 
-  it('12. a node with one Epic child is a spine parent — the whole node is suppressed', () => {
-    // #10 mixes a leaf Task (#12) with a sub-Epic (#11 → #99); the strict
-    // leaf-most rule suppresses #10 entirely, so #12 is orphaned this pass and
-    // only the genuinely leaf-most #11 is derived.
+  it('12. a top-level node mixing a leaf Task with a sub-container rolls every leaf up to itself', () => {
+    // #10 mixes a leaf Task (#12) with a sub-container (#11 → #99). Under the
+    // top-level rule #10 is the sole Epic and both leaves — the direct #12 and
+    // the nested #99 — roll up to it; #11 (a sub-container) is not surfaced and
+    // #12 is no longer orphaned.
     const tickets = [
-      ticket({ number: 10, title: 'Spine' }),
+      ticket({ number: 10, title: 'Top-level Epic' }),
       ticket({ number: 11, parent: 10 }),
       ticket({ number: 12, parent: 10 }),
       ticket({ number: 99, parent: 11 }),
     ];
     const result = derive(tickets);
-    expect(result.map((e) => e.ref)).toEqual([11]);
-    expect(result[0]?.members).toEqual([99]);
+    expect(result.map((e) => e.ref)).toEqual([10]);
+    expect(result[0]?.members).toEqual([12, 99]);
   });
 
   it('13. closed Epic is not derived, but still counts as containment for members', () => {
@@ -195,7 +197,22 @@ describe('deriveEpics', () => {
     expect(result[0]?.ready).toEqual([11]);
   });
 
-  it('15. includeClosed opt-in surfaces a closed Epic for the detail read path', () => {
+  it('15. ADR-0016: only the top-level container is an Epic; a sub-parent (parent WITH a parent) is not', () => {
+    // #1 (top) → #2 (sub-container) → #3 (sub-container) → #4 (leaf). Only #1 is
+    // an Epic; #2 and #3 both have a parent, so neither is surfaced, and the one
+    // leaf #4 rolls all the way up to #1.
+    const tickets = [
+      ticket({ number: 1, title: 'Top-level Epic' }),
+      ticket({ number: 2, parent: 1 }),
+      ticket({ number: 3, parent: 2 }),
+      ticket({ number: 4, parent: 3 }),
+    ];
+    const result = derive(tickets);
+    expect(result.map((e) => e.ref)).toEqual([1]);
+    expect(result[0]?.members).toEqual([4]);
+  });
+
+  it('16. includeClosed opt-in surfaces a closed Epic for the detail read path', () => {
     const tickets = [
       // #10 is a closed, finished Epic with a child.
       ticket({ number: 10, title: 'Closed Spec', state: 'closed', closedAt: '2026-08-10T00:00:00Z' }),
@@ -207,5 +224,50 @@ describe('deriveEpics', () => {
     const result = derive(tickets, [], { includeClosed: true });
     expect(result.map((e) => e.ref)).toEqual([10, 20]);
     expect(result.find((e) => e.ref === 10)?.members).toEqual([11]);
+  });
+});
+
+/**
+ * The integration-branch view: `deriveLeafEpics` selects the immediate-parent
+ * container (leaf-most), not the top-level Epic — a distinct concern the
+ * Epic-integration coordinator reads (issue #159/#334).
+ */
+describe('deriveLeafEpics', () => {
+  const deriveLeaf = (tickets: Ticket[], unworkable: number[] = []) => {
+    const unworkableRefs = new Set(unworkable);
+    return deriveLeafEpics(
+      tickets,
+      new Map(tickets.map((t) => [t.number, { agentWorkable: !unworkableRefs.has(t.number) }])),
+    );
+  };
+
+  it('selects the leaf-most container over a spine, with its direct children as members', () => {
+    // #106 (top) → #156 (leaf-most) → #157, #158. The leaf-most #156 is derived,
+    // not the top-level #106; members are #156's direct children.
+    const tickets = [
+      ticket({ number: 106, title: 'Top-level' }),
+      ticket({ number: 156, title: 'Leaf-most', parent: 106 }),
+      ticket({ number: 157, parent: 156 }),
+      ticket({ number: 158, parent: 156 }),
+    ];
+    const result = deriveLeaf(tickets);
+    expect(result).toHaveLength(1);
+    expect(result[0]?.ref).toBe(156);
+    expect(result[0]?.members).toEqual([157, 158]);
+  });
+
+  it('suppresses a mixed spine parent (a leaf child beside a sub-container)', () => {
+    // #10 mixes a leaf (#12) with a sub-container (#11 → #99): a spine parent,
+    // suppressed. Only the genuinely leaf-most #11 is derived, so #12 is orphaned
+    // this pass — the pre-ADR-0016 behavior the coordinator still relies on.
+    const tickets = [
+      ticket({ number: 10, title: 'Spine' }),
+      ticket({ number: 11, parent: 10 }),
+      ticket({ number: 12, parent: 10 }),
+      ticket({ number: 99, parent: 11 }),
+    ];
+    const result = deriveLeaf(tickets);
+    expect(result.map((e) => e.ref)).toEqual([11]);
+    expect(result[0]?.members).toEqual([99]);
   });
 });

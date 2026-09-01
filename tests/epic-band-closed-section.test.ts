@@ -26,4 +26,13 @@ describe('EpicBand collapsible closed-tasks section (issue #423)', () => {
     expect(board).toContain('<Chevron open={open} />');
     expect(board).toContain('aria-expanded={open}');
   });
+
+  it('renders each closed member as a full multi-row card, not a short row (issue #430)', () => {
+    // Same width/shape as an open member card (PendingCard is w-[300px]); the
+    // retired short-row form was a w-[240px] single-line flex row.
+    expect(board).toContain('w-[300px] shrink-0 rounded-lg border border-hairline bg-surface p-2.5');
+    expect(board).not.toContain('w-[240px]');
+    // The title sits on its own row below the id/state header — multi-row.
+    expect(board).toContain('mt-1 truncate text-small font-medium text-muted');
+  });
 });
