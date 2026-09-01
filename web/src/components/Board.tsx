@@ -502,9 +502,27 @@ function BlockerColumns({
   );
 }
 
+/** A working Epic member shown inside its band: amber pulsing dot, id, title and
+ * the live run readout, above the band's pending columns. */
+function RunningMemberRow({ task, onOpenTask }: { task: Task; onOpenTask: (taskId: number) => void }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onOpenTask(task.id)}
+      className="flex w-full items-center gap-2.5 px-4 py-2 text-left transition-colors duration-150 motion-reduce:transition-none hover:bg-raised focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent"
+    >
+      <span role="img" aria-label="working" className="size-2 shrink-0 rounded-full bg-running-dot motion-safe:animate-pulse" />
+      <span className="shrink-0 font-data text-small text-faint">{rowId(task)}</span>
+      <span className="min-w-0 flex-1 truncate text-small font-medium text-ink">{cardTitle(task.summary)}</span>
+      {task.runStartedAt != null && <RunningReadoutLine task={task} />}
+    </button>
+  );
+}
+
 function EpicBand({
   epic,
   columns,
+  tasks,
   defaultOpen = false,
   onOpenTask,
   onChanged,
@@ -512,6 +530,7 @@ function EpicBand({
 }: {
   epic: Epic;
   columns: BlockerColumn[];
+  tasks: Task[];
   defaultOpen?: boolean;
   onOpenTask: (taskId: number) => void;
   onChanged: () => void;
@@ -520,6 +539,9 @@ function EpicBand({
   onOpenEpic?: (epic: Epic) => void;
 }) {
   const attention = epic.members.filter((m) => m.escalated);
+  // In-progress members surface inside the band too (in the board's processing
+  // order), not only in the global Running section — reuse the shared model.
+  const { running } = epicMemberSections(epic, tasks);
   const hasColumns = columns.length > 0;
   // A band with pending members opens by default; one whose members are all
   // merged or promoted to the top sections has nothing to expand.
@@ -542,6 +564,7 @@ function EpicBand({
           <span className={`${chip} shrink-0 bg-await-tint text-await`}>{attention.length} in attention</span>
         )}
         <MergeTrain epic={epic} />
+        <StatusPips epic={epic} />
         {hasColumns && (
           <button
             type="button"
@@ -554,6 +577,14 @@ function EpicBand({
           </button>
         )}
       </div>
+
+      {running.length > 0 && (
+        <div className="border-t border-hairline py-1">
+          {running.map((task) => (
+            <RunningMemberRow key={task.id} task={task} onOpenTask={onOpenTask} />
+          ))}
+        </div>
+      )}
 
       {open && hasColumns && (
         <div className="border-t border-hairline">
@@ -973,6 +1004,7 @@ export function Board({
                   key={`epic:${group.epic.ref}`}
                   epic={group.epic}
                   columns={group.columns}
+                  tasks={tasks}
                   onOpenTask={onOpenTask}
                   onChanged={onChanged}
                   onOpenEpic={onOpenEpic}
