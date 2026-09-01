@@ -162,6 +162,87 @@ describe('boot crash-recovery', () => {
     },
   );
 
+  it(
+    'settles a merged Task whose settle died after the Attempt passed but before the Task reached done — done, not re-picked, no double-merge (#427)',
+    async () => {
+      server = await startServer({ ...stubHarness(), defaults: { isolationMode: 'worktree' }, maxAttempts: 1 });
+      const wsId = (await server.app.ctx.workspaces.list())[0]!.id;
+      const repo = makeRepo();
+      await server.app.ctx.workspaces.update(wsId, { workingDir: repo, verificationCommand: [passingVerifier()] });
+
+      const created = await server.api('POST', '/api/tasks', { prompt: JSON.stringify({ writeFiles: { 'impl.txt': 'implementation\n' } }) });
+      const taskId: number = created.body.id;
+      const started = await server.api('POST', `/api/tasks/${taskId}/run`);
+      const attemptId: number = started.body.id;
+      await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'done');
+      const dataDir = server.dataDir;
+      const mainTipAfterMerge = git(repo, 'rev-parse', 'main');
+
+      // Simulate the sub-window crash inside settle: the merge landed AND the
+      // Attempt was already flipped `passed`, but the process died before the
+      // Task's own `done` write — so pass A (which only scans `running`) can't
+      // see it, and only the generic `working`→`ready` sweep would otherwise
+      // touch it, re-picking a Task whose work already merged.
+      await server.app.close();
+      const sqlite = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
+      await sqlite.execute({ sql: "UPDATE tasks SET state = 'working' WHERE id = ?", args: [taskId] });
+      sqlite.close();
+
+      server = await startServer({ ...stubHarness(), defaults: { isolationMode: 'worktree' }, maxAttempts: 1 }, { dataDir });
+
+      // Settled `done` (not re-queued `ready`), its Attempt untouched, and the
+      // base exactly where the single merge left it — no second Attempt, no
+      // duplicate commit.
+      const task = await server.api('GET', `/api/tasks/${taskId}`);
+      expect(task.body.state).toBe('done');
+      const run = await server.api('GET', `/api/attempts/${attemptId}`);
+      expect(run.body.state).toBe('completed');
+      expect(git(repo, 'rev-parse', 'main')).toBe(mainTipAfterMerge);
+
+      const check = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
+      const rows = await check.execute({ sql: 'SELECT id FROM attempts WHERE task_id = ?', args: [taskId] });
+      check.close();
+      expect(rows.rows).toHaveLength(1); // no re-pick spawned a second Attempt
+    },
+  );
+
+  it(
+    'settles an accepted-then-merged Task whose settle died with the Attempt passed but the Task still escalated — done, not left a silent orphan (#427)',
+    async () => {
+      server = await startServer({ ...stubHarness(), defaults: { isolationMode: 'worktree' }, maxAttempts: 1 });
+      const wsId = (await server.app.ctx.workspaces.list())[0]!.id;
+      const repo = makeRepo();
+      await server.app.ctx.workspaces.update(wsId, { workingDir: repo, verificationCommand: [passingVerifier()] });
+
+      const created = await server.api('POST', '/api/tasks', { prompt: JSON.stringify({ writeFiles: { 'impl.txt': 'implementation\n' } }) });
+      const taskId: number = created.body.id;
+      const started = await server.api('POST', `/api/tasks/${taskId}/run`);
+      const attemptId: number = started.body.id;
+      await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'done');
+      const dataDir = server.dataDir;
+      const mainTipAfterMerge = git(repo, 'rev-parse', 'main');
+
+      // The operator-Accept-on-an-escalated-ticket settle (EscalationService.
+      // accept) is the same two-write, non-atomic transition: it flips the
+      // Attempt `passed` (a merge) then writes the Task `done`. A crash between
+      // leaves the Task `escalated` with a `passed` latest Attempt — no
+      // double-merge (escalated Tasks aren't picked), but a silent orphan the
+      // generic `working`-only sweep never touches.
+      await server.app.close();
+      const sqlite = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
+      await sqlite.execute({ sql: "UPDATE tasks SET state = 'escalated' WHERE id = ?", args: [taskId] });
+      sqlite.close();
+
+      server = await startServer({ ...stubHarness(), defaults: { isolationMode: 'worktree' }, maxAttempts: 1 }, { dataDir });
+
+      const task = await server.api('GET', `/api/tasks/${taskId}`);
+      expect(task.body.state).toBe('done'); // the merge is owed a `done`, not left escalated
+      const run = await server.api('GET', `/api/attempts/${attemptId}`);
+      expect(run.body.state).toBe('completed');
+      expect(git(repo, 'rev-parse', 'main')).toBe(mainTipAfterMerge);
+    },
+  );
+
   afterEach(() => {
     for (const d of tmpDirs.splice(0)) rmSync(d, { recursive: true, force: true });
   });

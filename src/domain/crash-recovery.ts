@@ -31,15 +31,23 @@ import { startOperation } from '../telemetry/operations.js';
  *      is left alone — it falls through to pass B as an ordinary interrupted
  *      orphan, and the scheduler's next pick simply re-attempts the merge via
  *      the normal path.
+ *   A2. Merged-but-unsettled Tasks (#427): a `working` or `escalated` Task whose
+ *      latest Attempt already settled `passed` — its merge landed, but settle
+ *      died after flipping the Attempt out of `running` (so pass A skips it) and
+ *      before the Task reached `done`. Its `done` write is completed here, so
+ *      the pass-B caller's generic `working`→`ready` sweep can't resurrect a
+ *      merged Task into a second, double-merging Attempt, and an accepted-then-
+ *      merged `escalated` Task isn't left a silent orphan.
  *   B. The generic orphan sweep (`RunStore.markInterrupted`): whatever is
  *      still `running` after pass A — never blindly failed there — is failed
  *      `interrupted`, and its Task returns to `ready` (the caller's job; see
  *      `app.ts`'s boot sequence).
  *
- * Idempotent by construction: pass A only selects `running` Runs, and both
- * settling (via {@link AttemptSettleCoordinator.settle}) and `markInterrupted`
- * move a Run out of `running`, so a second boot's queries simply don't
- * re-select anything this boot already resolved.
+ * Idempotent by construction: pass A only selects `running` Runs, pass A2 only
+ * a `passed` latest Attempt whose Task is not yet `done`, and both settling
+ * (via {@link AttemptSettleCoordinator.settle}) and `markInterrupted` move a Run
+ * out of `running` — so a second boot's queries simply don't re-select anything
+ * this boot already resolved.
  */
 export class CrashRecoveryCoordinator {
   constructor(
@@ -76,9 +84,14 @@ export class CrashRecoveryCoordinator {
 
   private async reconcileInterrupted(): Promise<void> {
     // Pass A first, so nothing later blind-fails a Run whose merge already
-    // landed. Pass B (the generic orphan sweep) re-reads `running` after —
-    // whatever pass A settled is no longer in that set.
+    // landed. Pass A2 then settles any Task whose merge landed but whose settle
+    // died mid-write (Attempt already `passed`, Task still `working`/
+    // `escalated`), before the generic `working`→`ready` boot sweep can
+    // resurrect it (#427). Pass B
+    // (the generic orphan sweep) re-reads `running` after — whatever pass A
+    // settled is no longer in that set.
     await this.reconcileMergeOrphans();
+    await this.reconcileMergedButUnsettled();
     await this.attempts.markInterrupted();
   }
 
@@ -120,5 +133,28 @@ export class CrashRecoveryCoordinator {
       },
       this.deps.yieldOptions,
     );
+  }
+
+  /** Pass A2 (#427): a Task left non-terminal whose latest Attempt already
+   * settled `passed` — its verified branch merged (ADR-0001) and, on the afk
+   * auto-merge path, its ticket closed — but the process died inside
+   * {@link AttemptSettleCoordinator.settle} after the Attempt flipped out of
+   * `running` (so pass A, which only scans `running`, can't see it) and before
+   * the Task's own `done` write landed. A `passed` Attempt is only ever a merged
+   * one, so the merge is done and idempotent; only the Task transition is owed —
+   * `working` for the afk auto-merge, `escalated` for the operator Accept that
+   * merges an escalated ticket (`EscalationService.accept`, same two-write
+   * settle, same window). Complete it here — before the generic `working`→
+   * `ready` boot sweep (`app.ts`) — so a merged `working` Task is never
+   * resurrected into a second Attempt that double-merges into the base, and a
+   * merged `escalated` Task is never left a silent orphan whose dependents
+   * never unblock. */
+  private async reconcileMergedButUnsettled(): Promise<void> {
+    for (const state of ['working', 'escalated'] as const) {
+      for (const task of await this.taskService.list({ state })) {
+        const latest = (await this.attempts.listForTask(task.id)).at(-1);
+        if (latest?.state === 'passed') await this.taskService.setState(task.id, 'done');
+      }
+    }
   }
 }
