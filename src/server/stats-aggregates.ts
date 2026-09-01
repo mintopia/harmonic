@@ -4,7 +4,7 @@
  * is null-sticky (a floor, never a fabricated zero), and no aggregate ever
  * reports a single combined token scalar.
  */
-import { sumCosts, type Cost } from '../execution/pricing.js';
+import { sumCosts, type Cost } from '../domain/pricing.js';
 import { mergeUsage, type AttemptUsage } from '../execution/usage.js';
 import { isExecutionFailure } from '../domain/attempt-failure.js';
 import type {

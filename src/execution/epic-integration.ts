@@ -1,12 +1,14 @@
 import type { TaskRow } from '../db/schema.js';
 import type { TaskService } from '../domain/tasks.js';
 import { deriveLeafEpics } from '../domain/epic-derivation.js';
-import type { MemberMergeState } from '../domain/epic-integrate-decision.js';
+import { reduceMemberState, type MemberMergeState } from '../domain/epic-integrate-decision.js';
 import type { Ticket } from '../tracker/adapter.js';
 import { persistedTickets } from '../tracker/persisted.js';
 import { Git } from './git.js';
 import { logger } from '../logger.js';
 import { EpicOperations } from './epic-operations.js';
+
+export { reduceMemberState };
 
 /**
  * The integration branch Harmonic cuts for an Epic (ADR-0024): `epic/<ref>`,
@@ -68,20 +70,6 @@ export interface EpicIntegrateTrigger {
  * is allowed to request a refresh. */
 export interface EpicRefreshTrigger {
   refresh(target: { ref: number; repoDir: string; defaultBranch: string }): Promise<unknown>;
-}
-
-/**
- * Reduce a member's mirrored Task to its merge state for the whole-Epic integrate
- * decision (issue #161): `completed` once it has merged onto the integration
- * branch (Task state `done`); `blocked` when it cannot merge (escalated to a
- * human, or `failed`/`cancelled`) and so holds the whole Epic back; `pending`
- * otherwise (still in progress, awaiting review, not yet started, or not mirrored).
- */
-export function reduceMemberState(task: TaskRow | undefined): MemberMergeState {
-  if (!task) return 'pending';
-  if (task.state === 'done') return 'completed';
-  if (task.state === 'escalated' || task.state === 'cancelled') return 'blocked';
-  return 'pending';
 }
 
 /**

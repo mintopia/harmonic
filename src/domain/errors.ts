@@ -21,3 +21,16 @@ export class DomainError extends Error {
     return HTTP_STATUS[this.code];
   }
 }
+
+/** Thrown by the git primitive (`execution/git.ts`); lives here, not in
+ * execution, so domain policy (e.g. `worktree-reconciler`) can `instanceof`-check
+ * it without importing up into the execution layer. */
+export class GitError extends Error {
+  constructor(
+    message: string,
+    public readonly stderr: string,
+  ) {
+    super(message);
+    this.name = 'GitError';
+  }
+}

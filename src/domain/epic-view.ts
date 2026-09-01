@@ -12,8 +12,7 @@
  */
 import type { TaskRow } from '../db/schema.js';
 import type { DerivedEpic, EpicKind } from './epic-derivation.js';
-import type { MemberMergeState } from './epic-integrate-decision.js';
-import { reduceMemberState } from '../execution/epic-integration.js';
+import { reduceMemberState, type MemberMergeState } from './epic-integrate-decision.js';
 
 /** A member's merge status in the Epic DTO — the same enum `reduceMemberState` returns. */
 export type MemberMergeStatus = MemberMergeState;

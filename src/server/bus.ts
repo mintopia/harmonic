@@ -7,7 +7,7 @@ import type { PendingPermissionBroadcast } from '../execution/conversation-drive
 import type { AttemptUsageSnapshot } from '../execution/usage.js';
 import type { ScheduledJobSnapshot } from '../scheduler/scheduler.js';
 import type { OperationEvent } from '../telemetry/operations.js';
-import type { FlaggedWorktree } from '../domain/flagged-worktrees.js';
+import type { FlaggedWorktree, FlaggedWorktreeEmitter } from '../domain/flagged-worktrees.js';
 
 export interface BusEvents {
   operations: (event: OperationEvent) => void;
@@ -30,7 +30,7 @@ export interface BusEvents {
 }
 
 /** In-process pub/sub feeding the WebSocket stream (and later, notifications). */
-export class EventBus {
+export class EventBus implements FlaggedWorktreeEmitter {
   private emitter = new EventEmitter();
   private readonly attemptLogEvents = new Map<number, LiveAttemptEvent[]>();
   private static readonly maxRunLogEvents = 2_048;

@@ -168,7 +168,7 @@ export const attemptUsageSchema = z
   })
   .meta({ id: 'AttemptUsage' });
 
-/** The dollar value of Usage, derived on read from the live price table (execution/pricing.ts `Cost`). */
+/** The dollar value of Usage, derived on read from the live price table (domain/pricing.ts `Cost`). */
 export const costSchema = z
   .object({
     /** Sum over priced models; null when nothing could be priced. */

@@ -2,7 +2,8 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Git, GitError } from './git.js';
+import { Git } from './git.js';
+import { GitError } from '../domain/errors.js';
 import { classifyGitFailure, type GitCircuitBreaker } from './git-failure.js';
 import { adapterFor, adapterVersion, wholeFileReader, type SessionTailReader } from './harness/adapter.js';
 import { collectUsage, collectUsageWithRetry, observedModelMismatch, activityLine, agentsFromTree, toolCallName, totalTokensOf, type AttemptUsage, type AttemptUsageSnapshot, type ParsedSession } from './usage.js';
@@ -55,7 +56,7 @@ import {
 import { runCommandVerifier, commandAttemptToInput } from '../verification/command-verifier.js';
 import { createAcpCriticDrive, runCritic, criticAttemptToInput, type CriticHarnessDrive } from '../verification/critic.js';
 import { combineVerdicts, type VerificationDecision, type VerifierVerdict } from '../verification/combine.js';
-import { resolvePrices, costOfUsages, type PriceTable } from './pricing.js';
+import { resolvePrices, costOfUsages, type PriceTable } from '../domain/pricing.js';
 import { isForeignKeyViolation } from '../db/errors.js';
 import { logger } from '../logger.js';
 import type { PostMergeHook } from './branch-merge.js';

@@ -1,21 +1,11 @@
 import type { HarnessId } from '../../config.js';
+import type { ModelUsage } from '../../domain/usage.js';
 import type { ParsedSession } from '../usage.js';
 import { claudeAdapter } from './claude.js';
 import { codexAdapter } from './codex.js';
 import { copilotAdapter } from './copilot.js';
 
-export interface ModelUsage {
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens: number;
-  cacheWriteTokens: number;
-  /**
-   * Harness-native spend units for this model's calls (Copilot AI Units,
-   * CONTEXT.md) — actual spend shown alongside Cost, never folded into it
-   * (decision Q4). Absent when the harness has none; never a fake zero.
-   */
-  aiUnits?: number;
-}
+export type { ModelUsage };
 
 /** The per-run inputs a harness may need to build its spawn environment. */
 export interface SpawnInput {

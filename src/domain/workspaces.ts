@@ -14,7 +14,6 @@ import {
   type WorkspaceRow,
   type WorkspaceIdentityRow,
 } from '../db/schema.js';
-import type { SettingsStore } from '../server/settings-store.js';
 import { DomainError } from './errors.js';
 import { deleteAttemptsAndChildrenAsync } from './attempt-cascade.js';
 import {
@@ -95,6 +94,47 @@ export const workspaceOverridesSchema = z.object({
 });
 export type WorkspaceOverrides = z.infer<typeof workspaceOverridesSchema>;
 
+/** Every per-Workspace setting override key (ADR-0009) — the full set that
+ * moved off `workspaces` columns and into the YAML settings file's sparse
+ * per-Workspace entries. */
+export const OVERRIDE_KEYS = [
+  'harness',
+  'model',
+  'chatHarness',
+  'chatModel',
+  'isolationMode',
+  'priority',
+  'conflictResolveTurns',
+  'maxConcurrentAttempts',
+  'autoRunnerEnabled',
+  'maxAttempts',
+  'contextReuseTokenLimit',
+  'verificationCommand',
+  'reviewEnabled',
+  'reviewPrompt',
+  'reviewModel',
+  'reviewHarness',
+  'guardrailBudget',
+  'guardrailProgress',
+  'toolTimeoutMinutes',
+  'drivePrompt',
+  'driveUnattendedReminder',
+  'driveContinuePrompt',
+  'driveMergeFate',
+  'driveContinueAttempts',
+  'taskPrompt',
+] as const;
+
+/** A fully-populated overrides object: every key present, `null` meaning
+ * *inherit* the global default — what `SettingsStore.getOverrides` returns. */
+export type ResolvedOverrides = { [K in (typeof OVERRIDE_KEYS)[number]]: NonNullable<WorkspaceOverrides[K]> | null };
+
+export interface WorkspaceSettingsStore {
+  getOverrides(workspaceId: number): ResolvedOverrides;
+  setOverrides(workspaceId: number, patch: WorkspaceOverrides): Promise<void>;
+  deleteOverrides(workspaceId: number): Promise<void>;
+}
+
 export const updateWorkspaceInputSchema = createWorkspaceInputSchema
   .partial()
   .extend(workspaceOverridesSchema.shape);
@@ -127,10 +167,10 @@ export function resolveWorkspace(list: WorkspaceRow[], id?: number): WorkspaceRo
 export class WorkspaceService {
   constructor(
     private readonly db: AsyncDbHandle,
-    private readonly settings: SettingsStore,
+    private readonly settings: WorkspaceSettingsStore,
   ) {}
 
-  /** Overlays this Workspace's setting overrides (`SettingsStore`, ADR-0009)
+  /** Overlays this Workspace's setting overrides (`WorkspaceSettingsStore`, ADR-0009)
    * onto its identity row — the sole place a `WorkspaceRow` is produced, so
    * every existing `.harness`/`.verificationCommand`/… reader keeps working
    * unchanged. `verificationCommand`/`guardrailBudget` are re-stringified to

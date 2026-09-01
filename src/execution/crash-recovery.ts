@@ -1,11 +1,11 @@
 import type { AttemptRow, TaskRow } from '../db/schema.js';
-import type { AttemptStore } from './attempts.js';
-import type { TaskService } from './tasks.js';
-import type { AttemptSettleCoordinator } from './attempt-settle.js';
-import { Git } from '../execution/git.js';
-import { withBaseCheckoutLock, withRepoLock } from '../execution/repo-lock.js';
-import type { PostMergeCheckResult } from '../execution/merge-policy.js';
-import type { PostMergeHook } from '../execution/branch-merge.js';
+import type { AttemptStore } from '../domain/attempts.js';
+import type { TaskService } from '../domain/tasks.js';
+import type { AttemptSettleCoordinator } from '../domain/attempt-settle.js';
+import { Git } from './git.js';
+import { withBaseCheckoutLock, withRepoLock } from './repo-lock.js';
+import type { PostMergeCheckResult } from './merge-policy.js';
+import type { PostMergeHook } from './branch-merge.js';
 import { forEachYielding, type YieldOptions } from '../reliability/yield.js';
 import { startOperation } from '../telemetry/operations.js';
 

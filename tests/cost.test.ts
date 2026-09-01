@@ -6,7 +6,7 @@ import { eq } from 'drizzle-orm';
 import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
 import { attempts } from '../src/db/schema.js';
 import type { DeepPartial, AppConfig } from '../src/config.js';
-import { costOfUsages, DEFAULT_PRICES, resolvePrices } from '../src/execution/pricing.js';
+import { costOfUsages, DEFAULT_PRICES, resolvePrices } from '../src/domain/pricing.js';
 import type { ModelUsage, AttemptUsage } from '../src/execution/usage.js';
 
 const mu = (tokens: number): ModelUsage => ({

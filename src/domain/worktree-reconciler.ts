@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { GitError } from '../execution/git.js';
+import { GitError } from './errors.js';
 import { forEachYielding } from '../reliability/yield.js';
 import { startOperation } from '../telemetry/operations.js';
 import type { FlaggedWorktree } from './flagged-worktrees.js';

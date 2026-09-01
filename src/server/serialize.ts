@@ -5,7 +5,7 @@ import { and, desc, eq } from 'drizzle-orm';
 import type { TaskWithDeps } from '../domain/tasks.js';
 import { resolveVerifiers } from '../domain/setting-override.js';
 import { verifierStatuses, type VerifierStatus } from '../domain/verifier-status.js';
-import { costOfUsages, resolveContextWindow, resolvePrices } from '../execution/pricing.js';
+import { costOfUsages, resolveContextWindow, resolvePrices } from '../domain/pricing.js';
 import type { AttemptUsageSnapshot } from '../execution/usage.js';
 import { Git } from '../execution/git.js';
 import { forEachYielding } from '../reliability/yield.js';
