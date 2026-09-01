@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { App } from '../app.js';
-import { createTaskInputSchema, updateTaskInputSchema, taskListQuerySchema } from '../../domain/tasks.js';
+import { createTaskInputSchema, updateTaskInputSchema, taskListQuerySchema, compareListRows } from '../../domain/tasks.js';
 import { previewHumanRejectContinuation } from '../../domain/session-continuation.js';
 import {
   TASK_STATES,
@@ -18,7 +18,8 @@ import { Git } from '../../execution/git.js';
 import { DomainError } from '../../domain/errors.js';
 import { mergeUsage, type AttemptUsage } from '../../execution/usage.js';
 import { readTranscriptLog, withOperatorMessages, type OperatorMessage } from '../../execution/transcript-log.js';
-import { attemptTimelineToApi, atRestWorkspaceId, costOfAttempts, attemptToApi, taskToApi, tasksToApi, ticketTimelineToApi, verifierStatusesToApi } from '../serialize.js';
+import { attemptTimelineToApi, atRestWorkspaceId, costOfAttempts, attemptToApi, epicToListRow, taskToApi, tasksToApi, ticketTimelineToApi, verifierStatusesToApi } from '../serialize.js';
+import type { ApiTaskListRow } from '../serialize.js';
 import { attemptTimelineResponseSchema, errorResponse, idParamsSchema, costSchema, attemptUsageSchema, okResponseSchema, verifierStatusSchema } from '../schemas.js';
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
 
@@ -427,6 +428,25 @@ async function liveWorktreeDiff(
   return { worktree, baseOid };
 }
 
+/** A task-attribute filter that constrains nothing: absent, or an empty
+ * multi-select. The `open` state shortcut is a real filter, so a bare string
+ * (state `'open'`) counts as non-empty. */
+const filterEmpty = (value: string | readonly unknown[] | undefined): boolean =>
+  value === undefined || (Array.isArray(value) && value.length === 0);
+
+/** Order the merged task + epic list rows by the requested key. Cost is derived
+ * from runs, so it can only be sorted here, post-serialization; every other key
+ * reuses the shared {@link compareListRows}. No `sortBy` leaves the rows in
+ * their as-listed order (tasks then epics). */
+function sortListRows(rows: ApiTaskListRow[], sortBy: string | undefined, order: string | undefined): ApiTaskListRow[] {
+  if (!sortBy) return rows;
+  const dir = order === 'desc' ? -1 : 1;
+  return rows.sort((a, b) => {
+    const cmp = sortBy === 'cost' ? (a.cost?.totalUsd ?? -1) - (b.cost?.totalUsd ?? -1) : compareListRows(sortBy, a, b);
+    return cmp * dir;
+  });
+}
+
 export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
   const { ctx } = fastify as App;
   const app = fastify.withTypeProvider<ZodTypeProvider>();
@@ -459,26 +479,33 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       schema: {
         tags: ['Tasks'],
         description:
-          'List tasks: filtered (`state`, `harness`, `priority`, `parent` — an Epic ref, returning its child tasks), searched (`q`, server-side substring over prompt + title), sorted, and paginated (`limit`/`offset`, with a `total` count). An omitted `limit` returns every match. Reachable with an attempt-scoped Attempt Key.',
-        querystring: taskListQuerySchema.extend(paginationQuerySchema.shape),
+          'List tasks: filtered (`state`, `harness`, `priority`, `parent` — an Epic ref, returning its child tasks), searched (`q`, server-side substring over prompt + title), sorted, and paginated (`limit`/`offset`, with a `total` count). An omitted `limit` returns every match. With `epics=true` and a `workspaceId`, the derived-epic model (ADR-0016) contributes epic-format rows to the unfiltered list. Reachable with an attempt-scoped Attempt Key.',
+        querystring: taskListQuerySchema
+          .extend(paginationQuerySchema.shape)
+          .extend({ epics: z.enum(['true', 'false']).optional().meta({ example: 'true' }) }),
         response: { 200: tasksListResponseSchema.describe('One page of tasks matching the filters, in the requested order, plus the full match `total`.') },
       },
     },
     async (req) => {
-      const { sortBy, limit, offset, ...query } = req.query;
-      // Cost is not a task column — it is derived from runs — so the cost
-      // sort happens here, after serialization; unknown cost sorts lowest.
-      const tasks = await tasksToApi(
-        ctx,
-        await ctx.tasks.listWithDeps(sortBy === 'cost' ? query : { ...query, ...(sortBy ? { sortBy } : {}) }),
-      );
-      if (sortBy === 'cost') {
-        const dir = query.order === 'desc' ? -1 : 1;
-        tasks.sort((a, b) => ((a.cost?.totalUsd ?? -1) - (b.cost?.totalUsd ?? -1)) * dir);
-      }
-      // Paginate last, over the fully filtered + sorted list, so `total` is the
-      // whole-Workspace match count and the page is stable under the cost sort.
-      const { items, total } = paginate(tasks, { limit, offset });
+      const { sortBy, order, limit, offset, epics, ...query } = req.query;
+      const taskRows = await tasksToApi(ctx, await ctx.tasks.listWithDeps(query));
+      // ADR-0016: epics are a derived container model, surfaced here as
+      // epic-format rows rather than mirrored `isEpic` task rows. Only the
+      // unfiltered view surfaces them — a container has no harness/priority/state,
+      // so any task-attribute filter narrows it out; a title search still applies.
+      const needle = query.q?.trim().toLowerCase();
+      const wantEpics =
+        epics === 'true' && query.workspaceId != null && filterEmpty(query.state) && filterEmpty(query.harness) && filterEmpty(query.priority);
+      const epicRows = wantEpics
+        ? (await ctx.trackerManager.listEpicTickets(query.workspaceId!))
+            .filter((ticket) => !needle || ticket.title.toLowerCase().includes(needle))
+            .map((ticket) => epicToListRow(ticket, query.workspaceId!))
+        : [];
+      // Sort the merged rows in one pass (cost is derived from runs, not a task
+      // column, so it can only be sorted after serialization) and paginate last,
+      // so `total` counts the whole merged match set and the page stays stable.
+      const rows = sortListRows([...taskRows, ...epicRows], sortBy, order);
+      const { items, total } = paginate(rows, { limit, offset });
       return { tasks: items, total };
     },
   );

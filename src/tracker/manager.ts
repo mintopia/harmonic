@@ -286,6 +286,18 @@ export class TrackerPollerManager {
     return Promise.all(derivedEpics.map((derived) => this.composeOne(entry, derived, tickets, mirrored)));
   }
 
+  /** The container ticket for each top-level Epic (ADR-0016), so the Tasks list
+   * can source epic rows from the same derived model the Board reads — no git or
+   * coordinator facts, just the raw ticket the list-row projection needs. */
+  async listEpicTickets(workspaceId: number): Promise<Ticket[]> {
+    const mirrored = (await this.tasks.listWithDeps({ workspaceId })).filter((task) => task.origin === 'mirrored');
+    const tickets = await persistedTickets(mirrored, await this.tasks.listTrackerContainers(workspaceId));
+    const byRef = new Map(tickets.map((ticket) => [ticket.number, ticket]));
+    return deriveEpics(tickets, this.readinessByRef(mirrored))
+      .map((epic) => byRef.get(epic.ref))
+      .filter((ticket): ticket is Ticket => ticket !== undefined);
+  }
+
   /** One Epic derived by ref from this Workspace's persisted tracker facts. */
   async epicDetail(workspaceId: number, epicRef: number): Promise<Epic | null> {
     const entry = this.entries.get(workspaceId);

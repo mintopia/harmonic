@@ -38,6 +38,10 @@ describe('tasksQuery', () => {
     expect(params.get('offset')).toBe('100');
   });
 
+  it('opts into derived-epic rows (ADR-0016) so the list can merge them server-side', () => {
+    expect(new URLSearchParams(tasksQuery(baseQuery)).get('epics')).toBe('true');
+  });
+
   it('omits state, harness, priority, and a blank search', () => {
     const params = new URLSearchParams(tasksQuery({ ...baseQuery, q: '   ' }));
     expect(params.has('state')).toBe(false);
