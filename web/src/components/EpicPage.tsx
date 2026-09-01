@@ -6,7 +6,7 @@ import { epicLifecycleSteps } from '../epic-model';
 import type { Stats } from '../stats-model';
 import { epicUsageSummary, tokenBarSegments, tokenBarEmpty, rowCost } from '../epic-summary-model';
 import { formatCost } from '../cost';
-import { issueRef, taskKey } from '../id-format.js';
+import { issueRef, ticketRowId } from '../id-format.js';
 import { toastError } from '../toast';
 import { cardTitle } from '../board-sections-model';
 import { card, panel, chip, stateChip, stateDot, PHASE_NODE_STYLES, type PhaseNodeVisual } from '../ui';
@@ -216,7 +216,7 @@ function ChildRow({
       <div role="cell" className="flex items-center justify-end gap-1.5 whitespace-nowrap tabular-nums text-muted">
         <span aria-hidden="true" className={stateDot(child.state)} />
         <span className="sr-only">Id: </span>
-        {taskKey(child.id)}
+        {ticketRowId(child.id, child.trackerRef)}
       </div>
       <div role="cell" className="min-w-0 pr-2">
         <span title={child.summary} className="block truncate text-ink">
