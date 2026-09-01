@@ -1605,7 +1605,7 @@ export function TicketPage({
 
       {/* two-pane shell */}
       <div className="flex min-h-0 flex-1 overflow-hidden max-rail:flex-col max-rail:overflow-visible">
-        <div
+        <main
           id="main-content"
           ref={scrollRef}
           tabIndex={-1}
@@ -1725,10 +1725,13 @@ export function TicketPage({
               )}
             </div>
           </div>
-        </div>
+        </main>
 
         {/* right navigation sidebar */}
-        <aside className="flex w-[326px] shrink-0 flex-col border-l border-hairline bg-surface max-rail:w-auto max-rail:border-l-0 max-rail:border-t">
+        <aside
+          aria-label="Attempts, timeline and changed files"
+          className="flex w-[326px] shrink-0 flex-col border-l border-hairline bg-surface max-rail:w-auto max-rail:border-l-0 max-rail:border-t"
+        >
           <div className="min-h-0 flex-1 overflow-y-auto max-rail:overflow-visible">
             <AttemptsNav
               attempts={attempts}
@@ -1747,6 +1750,7 @@ export function TicketPage({
               selectedFile={selectedFile}
               onSelectFile={(path) => setSelection({ kind: 'file', path })}
               onSelectChanges={() => setSelection({ kind: 'file', path: '' })}
+              taskState={task.state}
             />
           </div>
           {/* Review Actions, pinned at the bottom with no section title — the

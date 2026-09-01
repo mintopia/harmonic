@@ -27,8 +27,9 @@
      Retired with Deck: the cobalt one-accent framing, the panelled-list Deck
      home, and every Deck token below. The shipped Paper implementation and this
      file are the design reference.
-     Accessibility decisions from the 2026-08-21 audit are recorded inline in § 2;
-     the running-amber sub-AA exception is ADR-0011. -->
+     Accessibility decisions from the 2026-08-21 audit are recorded inline in § 2.
+     The running-amber sub-AA exception (formerly ADR-0011) was retired by issue
+     #458: the amber now clears AA in both themes like every other state colour. -->
 
 ---
 name: Harmonic
@@ -180,11 +181,11 @@ Paper keeps rejecting PRODUCT.md's anti-references: **CI/CD console gloom** (str
 - Matte, low-chroma, quiet: near-neutral grounds, quiet real elevation, generous but disciplined density.
 - **Two deliberate voices** — teal for actions/tooling, indigo for the review state — over a semantic state-signal family (§ 2). No third accent.
 - Monospace is reserved for **code** — file paths, branch refs, commit oids, shell commands, tool targets, session ids, inline code. Everything read as language or as a figure is sans with `tabular-nums`.
-- True dual theme + Soft/Bold density, **WCAG 2.1 AA** floor in both themes (one documented amber exception, § 2 / ADR-0011).
+- True dual theme + Soft/Bold density, **WCAG 2.1 AA** floor in both themes — no exceptions (the running-amber carve-out was retired by issue #458, § 2).
 
 ## 2. Colours
 
-Two voices — a **teal action accent** and an **indigo review hue** — over a low-chroma near-neutral ground and a semantic state-signal family. Every informational pairing holds WCAG AA against its documented background in its theme: text-on-tint state pills and metadata at ≥4.5:1, non-text affordances (dividers, seams, the switch off-track) at ≥3:1, in **both** themes. The one deliberate exception is the running amber (below). `web/src/index.css` + `tests/contrast.test.ts` are the implementation gate when Paper ships in the app; this file is the intent, and the mockup's in-browser WCAG sampler is the current source of truth (0 non-exception failures across Light/Dark × Soft/Bold, 2026-08-21).
+Two voices — a **teal action accent** and an **indigo review hue** — over a low-chroma near-neutral ground and a semantic state-signal family. Every informational pairing holds WCAG AA against its documented background in its theme: text-on-tint state pills and metadata at ≥4.5:1, non-text affordances (dividers, seams, the switch off-track) at ≥3:1, in **both** themes — with no exceptions (the former running-amber carve-out was retired by issue #458; see below). `web/src/index.css` + `tests/contrast.test.ts` are the implementation gate when Paper ships in the app; this file is the intent, and the mockup's in-browser WCAG sampler is the current source of truth (0 failures across Light/Dark × Soft/Bold, 2026-08-21).
 
 ### The two voices
 - **Teal Accent** (`#0D7271` light / `#33BDB4` dark): the interface's action/tooling voice — primary actions, active nav, current selection, focus rings, the *ready* frontier and `Run now`, tooling/branch/epic refs, and the escalation `Accept` button. Filled buttons pair it with white in light / near-black (`#0E1413`) in dark. Hover: `#0B6360` light, `#4CD0C7` dark. **Accent Tint** (`#E0F0EF` / `#123330`): fill under active nav, the `Run now` ghost, tooling badges.
@@ -215,7 +216,7 @@ Each state is a text colour + a dot colour + a tint fill, per theme, rendered as
 ### Named accessibility rules (2026-08-21 audit)
 **The Ink-Flip Rule.** The white-on-solid *await* and *merged* fills fail AA in the dark theme (white on the bright periwinkle/emerald measures ~2.7 / ~2.2:1). Do **not** darken the fills — that mutes the colour. Instead the glyph ink flips per theme via `--on-await` / `--on-done`: white in light, dark ink (`#15161A` / `#0E1413`) on the bright fills in dark. Any new white-on-state-fill pairing follows this.
 
-**The Amber Exception (ADR-0011).** The running amber measures **3.1–3.7:1** at the ~10px sizes where it appears as text — below AA. It is an *accepted, bounded* exception because running state is **never carried by colour alone**: a pulsing dot, a text label, and structural position always accompany it. The amber stays vivid; we do not chase 4.5:1 at 10px. The constraint: if amber ever becomes the *sole* carrier of a state (no dot, label, or position), that usage must meet AA independently.
+**The Amber Rule (formerly the Amber Exception; retired by issue #458).** The running amber once measured **3.1–3.7:1** at the ~10px sizes where it appears as text — below AA — and was kept as an accepted, bounded exception because running state is never carried by colour alone (a pulsing dot, a text label, and structural position always accompany it). Issue #458 retired that carve-out: the light amber was darkened (`--hm-running`/`--hm-running-dot`) until the Working chip and its count/figure text clear 4.5:1 in both themes, and the Blocked slate (`--hm-blocked`) was nudged the same way. The dot, label, and position stay — colour is now simply never the *weakest* carrier either. The rule that remains: any new state-colour-as-text pairing must clear AA in both themes, gated by `tests/contrast.test.ts`.
 
 **The Cool-Neutral-ish Rule.** Neutrals stay low-chroma in both themes; the little warmth in the paper ground is deliberate and quiet — all real hue comes from the two voices and the state family.
 

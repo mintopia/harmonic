@@ -205,6 +205,7 @@ export function TaskForm({
             inherited={workspace?.conflictResolveTurns ?? config.defaults.conflictResolveTurns}
             inheritedFrom={inheritSource(workspace?.conflictResolveTurns)}
             onChange={(conflictResolveTurns) => set('conflictResolveTurns', conflictResolveTurns)}
+            description="How many agentic turns may attempt to resolve a merge conflict before the Run escalates."
           >
             {({ id, value, onChange }) => (
               <input

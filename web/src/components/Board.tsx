@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Task, TaskState } from '../types';
 import type { Epic, EpicMember, MemberPipStatus } from '../epic-model';
-import { closedMembers, isEpicIntegrating, memberPipStatus } from '../epic-model';
+import { closedMembers, isEpicIntegrating, memberPipLabel, memberPipStatus } from '../epic-model';
 import {
   boardSections,
   cardTitle,
@@ -19,6 +19,7 @@ import { EpicIntegrationBar } from './EpicIntegrationBar';
 import { formatModelLabel, providerLabel } from './TaskIdentity';
 import {
   blockerBadge,
+  blockerCountPip,
   boardSectionTitle,
   btnPrimary,
   chip,
@@ -126,10 +127,22 @@ function WhoLine({ harness, model }: { harness: string; model: string }) {
   );
 }
 
+/** "Blocked" is the primary label (issue #458: one word for dependency-unmet
+ * across Board/Epic); the count is a secondary pip, not the headline. */
 function BlockerBadge({ count, blockedOnFailed }: { count: number; blockedOnFailed: boolean }) {
   return (
-    <span className={blockerBadge(blockedOnFailed)} title={blockedOnFailed ? 'A blocker is escalated or cancelled' : undefined}>
-      {count === 1 ? '1 blocker' : `${count} blockers`}
+    <span
+      role="img"
+      aria-label={count === 1 ? '1 blocker' : `${count} blockers`}
+      className="inline-flex items-center gap-1"
+      title={blockedOnFailed ? 'A blocker is escalated or cancelled' : undefined}
+    >
+      <span aria-hidden="true" className={blockerBadge(blockedOnFailed)}>
+        Blocked
+      </span>
+      <span aria-hidden="true" className={blockerCountPip(blockedOnFailed)}>
+        {count}
+      </span>
     </span>
   );
 }
@@ -626,7 +639,7 @@ function StatusPips({ epic }: { epic: Epic }) {
     >
       {epic.members.map((m) => {
         const status = memberPipStatus(m);
-        return <span key={m.ref} title={`#${m.ref} · ${status}`} className={`h-2 w-3 rounded-[3px] ${PIP_FILL[status]}`} />;
+        return <span key={m.ref} title={`#${m.ref} · ${memberPipLabel(status)}`} className={`h-2 w-3 rounded-[3px] ${PIP_FILL[status]}`} />;
       })}
     </span>
   );
