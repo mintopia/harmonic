@@ -685,10 +685,13 @@ const PIP_FILL: Record<MemberPipStatus, string> = {
   merged: 'bg-merged-dot',
   cancelled: 'bg-faint',
   running: 'bg-running-dot',
+  ready: 'bg-ready-dot',
   waiting: 'bg-edge',
 };
 
-/** ADR-0011: one colour-status pip per member, top-right of the Epic surface. */
+/** ADR-0011: one colour-status pip per member, top-right of the Epic surface.
+ * Every pip is the same rounded-rectangle — state is carried by colour alone,
+ * never by shape (merged is emerald, ready teal, and they never collapse). */
 function StatusPips({ epic }: { epic: Epic }) {
   return (
     <span
@@ -698,7 +701,7 @@ function StatusPips({ epic }: { epic: Epic }) {
     >
       {epic.members.map((m) => {
         const status = memberPipStatus(m);
-        return <span key={m.ref} title={`#${m.ref} · ${status}`} className={`size-2 rounded-full ${PIP_FILL[status]}`} />;
+        return <span key={m.ref} title={`#${m.ref} · ${status}`} className={`h-2 w-3 rounded-[3px] ${PIP_FILL[status]}`} />;
       })}
     </span>
   );
@@ -736,26 +739,32 @@ function ClosedRail({
       {open && (
       <div className="flex flex-wrap gap-2">
         {members.map((m) => {
-          const merged = m.mergeStatus === 'completed';
+          // A merged or done member folded into the integration branch reads
+          // emerald; a cancelled one is neutral faint. Closed-ness is a state,
+          // not a reason to shrink the card — it takes the same full multi-row
+          // shape as an open member (PendingCard), only quietened.
+          const merged = m.mergeStatus === 'completed' || m.state === 'done';
           const label = merged ? 'merged' : 'cancelled';
           const inner = (
             <>
-              <span aria-hidden="true" className={`size-2 shrink-0 rounded-full ${merged ? 'bg-merged-dot' : 'bg-faint'}`} />
-              <span className="shrink-0 font-data text-small text-faint">#{m.ref}</span>
-              <span className="min-w-0 flex-1 truncate text-small text-muted">{m.title || '—'}</span>
-              <span className="shrink-0 text-label uppercase tracking-[0.08em] text-faint">{label}</span>
+              <div className="flex items-center gap-2">
+                <span aria-hidden="true" className={`size-2 shrink-0 rounded-full ${merged ? 'bg-merged-dot' : 'bg-faint'}`} />
+                <span className="font-data text-small text-faint">#{m.ref}</span>
+                <span className="ml-auto shrink-0 text-label uppercase tracking-[0.08em] text-faint">{label}</span>
+              </div>
+              <div className="mt-1 truncate text-small font-medium text-muted">{m.title || '—'}</div>
             </>
           );
           return m.taskId == null ? (
-            <span key={m.ref} className="flex w-[240px] items-center gap-2 rounded-md bg-raised px-2.5 py-1.5">
+            <div key={m.ref} className="w-[300px] shrink-0 rounded-lg border border-hairline bg-surface p-2.5">
               {inner}
-            </span>
+            </div>
           ) : (
             <button
               key={m.ref}
               type="button"
               onClick={() => onOpenTask(m.taskId!)}
-              className="flex w-[240px] items-center gap-2 rounded-md bg-raised px-2.5 py-1.5 text-left transition-colors duration-150 hover:bg-surface hover:ring-1 hover:ring-edge"
+              className="w-[300px] shrink-0 cursor-pointer rounded-lg border border-hairline bg-surface p-2.5 text-left transition duration-150 motion-reduce:transition-none hover:-translate-y-0.5 hover:border-edge hover:shadow-float focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent"
             >
               {inner}
             </button>

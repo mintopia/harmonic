@@ -280,7 +280,22 @@ describe('memberPipStatus', () => {
     expect(memberPipStatus(m)).toBe('running');
   });
 
-  it('maps state null, mergeStatus pending to waiting', () => {
+  it('maps a ready-frontier member (pending, not running) to ready', () => {
+    const m = member({ ref: 1, state: null, mergeStatus: 'pending', ready: true });
+    expect(memberPipStatus(m)).toBe('ready');
+  });
+
+  it('running outranks ready', () => {
+    const m = member({ ref: 1, state: 'running', ready: true });
+    expect(memberPipStatus(m)).toBe('running');
+  });
+
+  it('merged outranks ready (a completed member is never a ready pip)', () => {
+    const m = member({ ref: 1, mergeStatus: 'completed', ready: true });
+    expect(memberPipStatus(m)).toBe('merged');
+  });
+
+  it('maps state null, mergeStatus pending, not ready to waiting', () => {
     const m = member({ ref: 1, state: null, mergeStatus: 'pending' });
     expect(memberPipStatus(m)).toBe('waiting');
   });
