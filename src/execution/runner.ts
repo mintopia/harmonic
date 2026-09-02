@@ -6,6 +6,7 @@ import { Git } from './git.js';
 import { GitError } from '../domain/errors.js';
 import { classifyGitFailure, type GitCircuitBreaker } from './git-failure.js';
 import { adapterFor, adapterVersion } from './harness/adapter.js';
+import { readProcStartToken } from './process-reaper.js';
 import { collectUsage, observedModelMismatch, activityLine, toolCallName, type AttemptUsage, type AttemptUsageSnapshot } from './usage.js';
 import { LiveUsageTailer, type TailerCadence } from './live-usage-tailer.js';
 import { UsageSampler } from './usage-sampler.js';
@@ -762,7 +763,12 @@ export class Runner {
       ...adapterFor(task.harness).spawnEnv({ model: task.model, cwd, sessionLogDir: harness.sessionLogDir }),
       ...extraEnv,
     };
-    return spawn(harness.command, harness.args, { cwd, env: env as NodeJS.ProcessEnv, stdio: ['pipe', 'pipe', 'pipe'] });
+    return spawn(harness.command, harness.args, {
+      cwd,
+      env: env as NodeJS.ProcessEnv,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      detached: true,
+    });
   }
 
   private async resolveBaseBranch(task: TaskRow): Promise<string> {
@@ -1526,6 +1532,9 @@ export class Runner {
       }
       if (this.shuttingDown) return { kind: 'terminal' };
       child = this.spawnHarness(task, harness, workspace.cwd, workspace.env);
+      if (child.pid !== undefined) {
+        await this.attempts.update(run.id, { pid: child.pid, pgid: child.pid, procStartToken: readProcStartToken(child.pid) });
+      }
       const stderr = child.stderr;
       if (stderr) {
         stderr.setEncoding('utf8');
@@ -2187,7 +2196,19 @@ export class Runner {
 
   private kill(active: ActiveRun): void {
     try {
-      if (active.child.exitCode === null && !active.child.killed) active.child.kill('SIGKILL');
+      if (active.child.exitCode === null && !active.child.killed) {
+        const pid = active.child.pid;
+        // Detached children may have spawned grandchildren; signal the whole group, not just the leader.
+        if (pid !== undefined) {
+          try {
+            process.kill(-pid, 'SIGKILL');
+          } catch {
+            active.child.kill('SIGKILL');
+          }
+        } else {
+          active.child.kill('SIGKILL');
+        }
+      }
     } catch {
     }
   }
