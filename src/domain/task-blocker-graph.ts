@@ -117,8 +117,11 @@ export class TaskBlockerGraph {
     }
   }
 
-  async rederiveBlockers(taskIds: readonly number[]): Promise<void> {
-    for (const taskId of taskIds) await this.rederiveBlocked(taskId);
+  async rederiveAndEmitBlockers(taskIds: readonly number[]): Promise<void> {
+    for (const taskId of taskIds) {
+      await this.rederiveBlocked(taskId);
+      this.options.onChanged(await this.options.get(taskId));
+    }
   }
 
   async reaches(from: number, to: number): Promise<boolean> {

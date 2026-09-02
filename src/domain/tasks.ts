@@ -966,7 +966,7 @@ export class TaskService {
         }
       }
     });
-    await this.blockerGraph.rederiveBlockers(formerDependents);
+    await this.blockerGraph.rederiveAndEmitBlockers(formerDependents);
     this.onRemoved(id);
   }
 

@@ -712,7 +712,7 @@ not resolved yet.`;
     return reply.status(500).send({ error: { code: 'internal', message: 'internal server error' } });
   });
 
-  await app.register(taskRoutes, { prefix: '/api' });
+  await app.register((fastify) => taskRoutes(fastify, ctx), { prefix: '/api' });
   await app.register((fastify) => mapRoutes(fastify, contexts.tracking), { prefix: '/api' });
   await app.register((fastify) => workspaceRoutes(fastify, contexts.tracking), { prefix: '/api' });
   await app.register(conversationRoutes, { prefix: '/api' });
@@ -720,7 +720,7 @@ not resolved yet.`;
   await app.register((fastify) => configRoutes(fastify, contexts.execution), { prefix: '/api' });
   await app.register((fastify) => authRoutes(fastify, contexts.persistence), { prefix: '/api' });
   await app.register((fastify) => statsRoutes(fastify, contexts.persistence), { prefix: '/api' });
-  await app.register(activityRoutes, { prefix: '/api' });
+  await app.register((fastify) => activityRoutes(fastify, ctx), { prefix: '/api' });
   await app.register(operationRoutes, { prefix: '/api' });
   await app.register((fastify) => scheduledJobRoutes(fastify, contexts.tracking), { prefix: '/api' });
   await app.register((fastify) => flaggedWorktreeRoutes(fastify, contexts.execution), { prefix: '/api' });
@@ -757,7 +757,7 @@ not resolved yet.`;
     await trackerManager.sync();
     loopMonitor?.start();
   });
-  await app.register(wsRoutes, { prefix: '/api' });
+  await app.register((fastify) => wsRoutes(fastify, ctx), { prefix: '/api' });
 
   const webRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'dist', 'web');
   if (existsSync(webRoot)) {
