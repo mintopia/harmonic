@@ -64,6 +64,10 @@ const LIFECYCLE_SETTLE_GRACE_MS = 15_000;
 
 const LIVE_RUN_LOG_EVENT_ID_OFFSET = 1_000_000_000;
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object';
+}
+
 export interface RunnerEvents {
   /** Fired after every run event is persisted (live streaming hook). */
   onAttemptEvent?: (event: PersistedAttemptEvent) => void;
@@ -216,6 +220,111 @@ interface PersistSessionContext {
   attemptAtStart: AttemptRow;
   getSessionInit: () => AcpInitializeResult | undefined;
   setSessionRowId: (id: number) => void;
+}
+
+/** State owned by one drive, released when that drive ends. */
+export class TurnState {
+  sessionInit: AcpInitializeResult | undefined;
+  sessionRowId: number | undefined;
+  toolCallFlushTimer: ReturnType<typeof setInterval> | undefined;
+
+  constructor(
+    readonly attemptAtStart: AttemptRow,
+    readonly toolCalls: Map<string, number>,
+    readonly progressEvents: ProgressEvent[],
+  ) {}
+
+  clearTimer(): void {
+    if (this.toolCallFlushTimer) clearInterval(this.toolCallFlushTimer);
+    this.toolCallFlushTimer = undefined;
+  }
+}
+
+interface TurnListenerRuntime {
+  active: ActiveRun;
+  driver: AcpDriver;
+  guardrails: GuardrailSupervisor;
+}
+
+/** ACP callbacks for a single drive. Runner owns the reconnect-visible maps. */
+export class TurnListeners {
+  private runtime: TurnListenerRuntime | undefined;
+  stoppedShort: string | null = null;
+
+  constructor(
+    private readonly input: {
+      task: TaskRow;
+      run: AttemptRow;
+      state: TurnState;
+      autoDriven: boolean;
+      events: RunnerEvents;
+      record: (type: 'permission_request' | 'lifecycle', payload: unknown) => void;
+      nextProgressSequence: () => number;
+      outstandingAction: (event: ProgressEvent) => void;
+      completeOutstandingAction: (event: ProgressEvent) => void;
+    },
+  ) {}
+
+  setRuntime(runtime: TurnListenerRuntime): void {
+    this.runtime = runtime;
+  }
+
+  onInitialize = (result: AcpInitializeResult): void => {
+    this.input.state.sessionInit = result;
+  };
+
+  onSessionUpdate = (update: { sessionUpdate: string; [key: string]: unknown }, replay: boolean): void => {
+    if (replay) return;
+    const runtime = this.runtime;
+    const { task, run, state } = this.input;
+    const seq = this.input.nextProgressSequence();
+    this.input.events.onAttemptLogEvent?.({
+      id: LIVE_RUN_LOG_EVENT_ID_OFFSET + seq,
+      attemptId: run.id,
+      seq,
+      ts: Date.now(),
+      type: 'session_update',
+      payload: update,
+    });
+    const progress = toProgressEvents([{ seq, type: 'session_update', payload: update }]);
+    if (progress.length > 0) {
+      const event = progress[0]!;
+      if (event.kind === 'action') this.input.outstandingAction(event);
+      else if (event.kind === 'result' || event.kind === 'error') this.input.completeOutstandingAction(event);
+      state.progressEvents.push(event);
+      if (state.progressEvents.length > 64) state.progressEvents.shift();
+    }
+    const line = activityLine(update);
+    if (line && runtime) runtime.active.activity = line;
+    if (update.sessionUpdate === 'tool_call') {
+      const name = toolCallName(update, (payload) => adapterFor(task.harness).usage?.toolName(payload) ?? null);
+      state.toolCalls.set(name, (state.toolCalls.get(name) ?? 0) + 1);
+    }
+    runtime?.guardrails.observeTool(update);
+  };
+
+  onRequest = async (method: string, params: unknown): Promise<unknown> => {
+    if (method !== 'session/request_permission') return null;
+    const request = isRecord(params) ? params : {};
+    const options = Array.isArray(request.options)
+      ? request.options.filter(isRecord)
+      : [];
+    const grant = () => {
+      const pick = options.find((option) => option.kind === 'allow_always') ?? options.find((option) => option.kind === 'allow_once') ?? options[0];
+      const optionId = typeof pick?.optionId === 'string' ? pick.optionId : undefined;
+      const outcome = optionId ? { outcome: 'selected', optionId } : { outcome: 'cancelled' };
+      this.input.record('permission_request', { request: params, outcome });
+      return { outcome };
+    };
+    if (!this.input.autoDriven) return grant();
+    const toolCall = isRecord(request.toolCall) ? request.toolCall : {};
+    const title = typeof toolCall.title === 'string' ? toolCall.title : 'permission request';
+    this.stoppedShort = `permission request declined (no human on this turn): ${title}`;
+    const outcome = { outcome: 'cancelled' };
+    this.input.record('permission_request', { request: params, outcome });
+    this.runtime?.driver.cancel();
+    return { outcome };
+  };
 }
 
 export class Runner {
@@ -1469,6 +1578,17 @@ export class Runner {
     healCtx?: HealContext,
     attemptNumber = run.number,
   ): Promise<TurnOutcome> {
+    return this.runTurn(task, run, harness, parent, healCtx, attemptNumber);
+  }
+
+  private async runTurn(
+    task: TaskRow,
+    run: AttemptRow,
+    harness: HarnessConfig,
+    parent: SpanContext,
+    healCtx?: HealContext,
+    attemptNumber = run.number,
+  ): Promise<TurnOutcome> {
     const record = (type: 'permission_request' | 'lifecycle', payload: unknown) => {
       this.recordRunEvent(task, run, type, payload);
     };
@@ -1477,12 +1597,12 @@ export class Runner {
     this.toolCallTotals.set(run.id, toolCalls);
     const progressEvents = this.progressEvents.get(run.id) ?? [];
     this.progressEvents.set(run.id, progressEvents);
+    const turn = new TurnState(attemptAtStart, toolCalls, progressEvents);
     const flushToolCalls = async () => {
-      await this.attempts.replaceToolCalls(attemptAtStart.id, toolCalls);
+      await this.attempts.replaceToolCalls(turn.attemptAtStart.id, turn.toolCalls);
     };
-    let toolCallFlushTimer: ReturnType<typeof setInterval> | undefined;
 
-    const opensAttempt = (await this.attempts.listSteps(attemptAtStart.id)).length === 0;
+    const opensAttempt = (await this.attempts.listSteps(turn.attemptAtStart.id)).length === 0;
 
     const advanceTask = async (to: 'verifying' | 'merging') => {
       const attempt = await this.attempts.ensureForRun(task.id, attemptNumber, run.startedAt);
@@ -1494,14 +1614,11 @@ export class Runner {
     };
 
     let escalating: string | null = null;
-    let stoppedShort: string | null = null;
     const autoDriven = this.autoDrive?.handles(task) ?? false;
 
     let child: ChildProcess;
     let workspace: Workspace;
     let mcpServers: unknown[] = [];
-    let sessionInit: AcpInitializeResult | undefined;
-    let sessionRowId: number | undefined;
     // codex-acp can exit non-zero mid-handshake with no ACP error; the cause is
     // only on stderr. Draining the pipe also prevents backpressure.
     let stderrTail = '';
@@ -1518,9 +1635,9 @@ export class Runner {
           record('lifecycle', { event: 'rebase-conflict', baseBranch });
         }
       }
-      const steps = await this.attempts.listSteps(attemptAtStart.id);
+      const steps = await this.attempts.listSteps(turn.attemptAtStart.id);
       if (!steps.some((row) => row.type === 'implementation' && row.state === 'running')) {
-        const implementation = await this.attempts.createStep(attemptAtStart.id, { type: 'implementation', logLocator: 'session:pending' });
+        const implementation = await this.attempts.createStep(turn.attemptAtStart.id, { type: 'implementation', logLocator: 'session:pending' });
         await this.attempts.updateStep(implementation.id, { state: 'running', startedAt: Date.now() });
       }
       this.gitBreaker?.recordSuccess(repoKey(task.workingDir));
@@ -1578,7 +1695,7 @@ export class Runner {
       if (finalized) return;
       finalized = true;
       await this.tailer.stop(run.id);
-      if (toolCallFlushTimer) clearInterval(toolCallFlushTimer);
+      turn.clearTimer();
       await flushToolCalls().catch(() => {});
       this.usage.dropReader(run.id);
       this.kill(active);
@@ -1589,67 +1706,27 @@ export class Runner {
       await this.finalizeWorkspace(task, run, attemptNumber, workspace).catch(() => {});
     };
 
-    const driver = new AcpDriver(child, {
-      onSessionUpdate: (update, replay) => {
-        if (replay) return;
+    const listeners = new TurnListeners({
+      task,
+      run,
+      state: turn,
+      autoDriven,
+      events: this.events,
+      record,
+      nextProgressSequence: () => {
         const seq = (this.progressSequences.get(run.id) ?? 0) + 1;
         this.progressSequences.set(run.id, seq);
-        this.events.onAttemptLogEvent?.({
-          id: LIVE_RUN_LOG_EVENT_ID_OFFSET + seq,
-          attemptId: run.id,
-          seq,
-          ts: Date.now(),
-          type: 'session_update',
-          payload: update,
-        });
-        const progress = toProgressEvents([{ seq, type: 'session_update', payload: update }]);
-        if (progress.length > 0) {
-          const event = progress[0]!;
-          if (event.kind === 'action') {
-            this.outstandingProgressActions.set(run.id, event);
-          } else if (event.kind === 'result' || event.kind === 'error') {
-            const outstanding = this.outstandingProgressActions.get(run.id);
-            if (outstanding && (event.ref === undefined || outstanding.ref === undefined || event.ref === outstanding.ref)) {
-              this.outstandingProgressActions.delete(run.id);
-            }
-          }
-          progressEvents.push(event);
-          if (progressEvents.length > 64) progressEvents.shift();
-        }
-        const line = activityLine(update);
-        if (line) active.activity = line;
-        if (update.sessionUpdate === 'tool_call') {
-          const name = toolCallName(update, (payload) => adapterFor(task.harness).usage?.toolName(payload) ?? null);
-          toolCalls.set(name, (toolCalls.get(name) ?? 0) + 1);
-        }
-        guardrails.observeTool(update);
+        return seq;
       },
-      onRequest: async (method, params) => {
-        if (method === 'session/request_permission') {
-          const options = (params as any)?.options ?? [];
-          const grant = () => {
-            const pick =
-              options.find((o: any) => o.kind === 'allow_always') ??
-              options.find((o: any) => o.kind === 'allow_once') ??
-              options[0];
-            const outcome = pick ? { outcome: 'selected', optionId: pick.optionId } : { outcome: 'cancelled' };
-            record('permission_request', { request: params, outcome });
-            return { outcome };
-          };
-          if (autoDriven) {
-            stoppedShort = `permission request declined (no human on this turn): ${(params as any)?.toolCall?.title ?? 'permission request'}`;
-            const outcome = { outcome: 'cancelled' };
-            record('permission_request', { request: params, outcome });
-            driver.cancel();
-            return { outcome };
-          }
-          return grant();
+      outstandingAction: (event) => this.outstandingProgressActions.set(run.id, event),
+      completeOutstandingAction: (event) => {
+        const outstanding = this.outstandingProgressActions.get(run.id);
+        if (outstanding && (event.ref === undefined || outstanding.ref === undefined || event.ref === outstanding.ref)) {
+          this.outstandingProgressActions.delete(run.id);
         }
-        return null;
       },
-    },
-      this.getConfig().guardrails.promptInactivityTimeoutMinutes * 60_000,
-    );
+    });
+    const driver = new AcpDriver(child, listeners, this.getConfig().guardrails.promptInactivityTimeoutMinutes * 60_000);
 
     const active: ActiveRun = {
       attemptId: run.id,
@@ -1669,8 +1746,8 @@ export class Runner {
       verifyAbort: new AbortController(),
     };
     this.active.set(run.id, active);
-    toolCallFlushTimer = setInterval(() => void flushToolCalls().catch(() => {}), 10_000);
-    toolCallFlushTimer.unref?.();
+    turn.toolCallFlushTimer = setInterval(() => void flushToolCalls().catch(() => {}), 10_000);
+    turn.toolCallFlushTimer.unref?.();
 
     const guardrails = new GuardrailSupervisor(
       {
@@ -1686,7 +1763,7 @@ export class Runner {
         workspaceId: task.workspaceId,
         attemptId: run.id,
         attemptNumber,
-        progressTrace: progressEvents,
+        progressTrace: turn.progressEvents,
         attemptForTrip: () => this.latestAttemptFor(task),
         outstandingAction: () => this.outstandingProgressActions.get(run.id),
         record: (payload) => record('lifecycle', payload),
@@ -1704,6 +1781,7 @@ export class Runner {
         pushSteer: (text) => active.steerQueue.push(text),
       },
     );
+    listeners.setRuntime({ active, driver, guardrails });
 
     try {
       const modelId = adapterFor(task.harness).sessionModelId?.(task.model);
@@ -1713,14 +1791,11 @@ export class Runner {
         harness,
         workspace,
         mcpServers,
-        attemptAtStart,
-        getSessionInit: () => sessionInit,
+        attemptAtStart: turn.attemptAtStart,
+        getSessionInit: () => turn.sessionInit,
         setSessionRowId: (id) => {
-          sessionRowId = id;
+          turn.sessionRowId = id;
         },
-      };
-      const onInitialize = (result: AcpInitializeResult) => {
-        sessionInit = result;
       };
       // Indexed BEFORE the handshake: the multi-second index would otherwise
       // push the harness's transcript past `captureTranscriptPath`'s resolve window.
@@ -1734,17 +1809,17 @@ export class Runner {
           cwd: workspace.cwd,
           mcpServers,
           modelId,
-          onInitialize,
+          onInitialize: listeners.onInitialize,
         });
         if (outcome.loaded) {
           record('lifecycle', { event: 'session-reloaded', sessionId: continueSessionId });
           await this.persistSession(continueSessionId, persistCtx);
         } else {
           record('lifecycle', { event: 'session-reload-declined', reason: outcome.reason, detail: outcome.detail });
-          await driver.handshake({ cwd: workspace.cwd, mcpServers, modelId, onInitialize, onSessionCreated: (sid) => this.persistSession(sid, persistCtx) });
+          await driver.handshake({ cwd: workspace.cwd, mcpServers, modelId, onInitialize: listeners.onInitialize, onSessionCreated: (sid) => this.persistSession(sid, persistCtx) });
         }
       } else {
-        await driver.handshake({ cwd: workspace.cwd, mcpServers, modelId, onInitialize, onSessionCreated: (sid) => this.persistSession(sid, persistCtx) });
+        await driver.handshake({ cwd: workspace.cwd, mcpServers, modelId, onInitialize: listeners.onInitialize, onSessionCreated: (sid) => this.persistSession(sid, persistCtx) });
       }
 
       this.tailer.start(run.id);
@@ -1765,9 +1840,9 @@ export class Runner {
         } else {
           await driver.setMode(mode);
           record('lifecycle', { event: 'mode_set', mode });
-          if (sessionRowId !== undefined) {
+          if (turn.sessionRowId !== undefined) {
             try {
-              await this.sessionStore.setPermissionMode(sessionRowId, mode, Date.now());
+              await this.sessionStore.setPermissionMode(turn.sessionRowId, mode, Date.now());
             } catch {
             }
           }
@@ -1810,7 +1885,7 @@ export class Runner {
       connectionGone ||= first.connectionGone;
       let result: PromptResult = first.result ?? {};
       active.idle = true;
-      for (let attempt = 1; !escalating && !stoppedShort && !connectionGone; ) {
+      for (let attempt = 1; !escalating && !listeners.stoppedShort && !connectionGone; ) {
         if (active.externallySettled) break;
         if (active.escalateReason) {
           escalating = `the agent asked for a human: ${active.escalateReason}`;
@@ -1843,7 +1918,7 @@ export class Runner {
       }
       active.idle = false;
       active.steerable = false;
-      while (!connectionGone && !active.externallySettled && !escalating && !stoppedShort && active.steerQueue.length > 0) {
+      while (!connectionGone && !active.externallySettled && !escalating && !listeners.stoppedShort && active.steerQueue.length > 0) {
         const steer = active.steerQueue.shift()!;
         record('lifecycle', { event: 'steer_delivered', text: steer });
         const turn = await this.promptTurn(driver, steer, record);
@@ -1857,11 +1932,11 @@ export class Runner {
       }
 
       record('lifecycle', { event: 'finished', stopReason: result.stopReason ?? null });
-      const afkUnresolved = autoDriven && !escalating && !stoppedShort && !active.agentFinished;
+      const afkUnresolved = autoDriven && !escalating && !listeners.stoppedShort && !active.agentFinished;
       if (afkUnresolved) record('lifecycle', { event: 'unresolved', reason: 'no finish_task signal; verifying anyway' });
       let implementationHead: string | null = null;
       let noChangeFinishHead: string | null = null;
-      if (!escalating && !stoppedShort) {
+      if (!escalating && !listeners.stoppedShort) {
         if (!connectionGone && !workspace.startDirty && (await Git.isDirty(workspace.cwd).catch(() => false))) {
           const nudge = 'Your implementation left uncommitted changes. Commit the completed work now, then finish.';
           record('lifecycle', { event: 'commit-nudge' });
@@ -1897,9 +1972,9 @@ export class Runner {
       if (escalating) {
         record('lifecycle', { event: 'escalated', reason: escalating });
         await this.settleEscalated(task, run, escalating, patch);
-      } else if (stoppedShort) {
-        record('lifecycle', { event: 'stopped-short', reason: stoppedShort });
-        return { kind: 'actionable-fail', reason: stoppedShort, output: '' };
+      } else if (listeners.stoppedShort) {
+        record('lifecycle', { event: 'stopped-short', reason: listeners.stoppedShort });
+        return { kind: 'actionable-fail', reason: listeners.stoppedShort, output: '' };
       } else {
         await advanceTask('verifying');
         let noChange = false;
