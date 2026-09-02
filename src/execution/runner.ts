@@ -222,6 +222,16 @@ interface PersistSessionContext {
   setSessionRowId: (id: number) => void;
 }
 
+type RunEventRecorder = (type: 'permission_request' | 'lifecycle', payload: unknown) => void;
+
+interface TurnRuntime {
+  active: ActiveRun;
+  driver: AcpDriver;
+  guardrails: GuardrailSupervisor;
+  listeners: TurnListeners;
+  finalize: () => Promise<void>;
+}
+
 /** State owned by one drive, released when that drive ends. */
 export class TurnState {
   sessionInit: AcpInitializeResult | undefined;
@@ -1578,17 +1588,6 @@ export class Runner {
     healCtx?: HealContext,
     attemptNumber = run.number,
   ): Promise<TurnOutcome> {
-    return this.runTurn(task, run, harness, parent, healCtx, attemptNumber);
-  }
-
-  private async runTurn(
-    task: TaskRow,
-    run: AttemptRow,
-    harness: HarnessConfig,
-    parent: SpanContext,
-    healCtx?: HealContext,
-    attemptNumber = run.number,
-  ): Promise<TurnOutcome> {
     const record = (type: 'permission_request' | 'lifecycle', payload: unknown) => {
       this.recordRunEvent(task, run, type, payload);
     };
@@ -1690,386 +1689,57 @@ export class Runner {
       return { kind: 'terminal' };
     }
 
-    let finalized = false;
-    const finalize = async () => {
-      if (finalized) return;
-      finalized = true;
-      await this.tailer.stop(run.id);
-      turn.clearTimer();
-      await flushToolCalls().catch(() => {});
-      this.usage.dropReader(run.id);
-      this.kill(active);
-      try {
-        void Promise.resolve(this.keys?.revoke(run.id)).catch(() => {});
-      } catch {
-      }
-      await this.finalizeWorkspace(task, run, attemptNumber, workspace).catch(() => {});
-    };
-
-    const listeners = new TurnListeners({
+    const { active, driver, guardrails, listeners, finalize } = this.createTurnRuntime({
       task,
       run,
-      state: turn,
-      autoDriven,
-      events: this.events,
-      record,
-      nextProgressSequence: () => {
-        const seq = (this.progressSequences.get(run.id) ?? 0) + 1;
-        this.progressSequences.set(run.id, seq);
-        return seq;
-      },
-      outstandingAction: (event) => this.outstandingProgressActions.set(run.id, event),
-      completeOutstandingAction: (event) => {
-        const outstanding = this.outstandingProgressActions.get(run.id);
-        if (outstanding && (event.ref === undefined || outstanding.ref === undefined || event.ref === outstanding.ref)) {
-          this.outstandingProgressActions.delete(run.id);
-        }
-      },
-    });
-    const driver = new AcpDriver(child, listeners, this.getConfig().guardrails.promptInactivityTimeoutMinutes * 60_000);
-
-    const active: ActiveRun = {
-      attemptId: run.id,
-      taskId: task.id,
-      child,
-      driver,
-      harnessId: task.harness,
       harness,
-      cwd: workspace.cwd,
-      activity: null,
-      agentFinished: false,
-      escalateReason: null,
-      steerQueue: [],
-      idle: false,
-      externallySettled: false,
-      steerable: false,
-      verifyAbort: new AbortController(),
-    };
-    this.active.set(run.id, active);
-    turn.toolCallFlushTimer = setInterval(() => void flushToolCalls().catch(() => {}), 10_000);
-    turn.toolCallFlushTimer.unref?.();
-
-    const guardrails = new GuardrailSupervisor(
-      {
-        attempts: this.attempts,
-        guardrailEvents: this.guardrailEvents,
-        getWorkspace: this.getWorkspace,
-        sampleSnapshot: (attemptId) => this.usage.sampleSnapshot(attemptId),
-        spendPollMs: this.spendPollMs,
-        spendGraceMs: this.spendGraceMs,
-      },
-      {
-        taskId: task.id,
-        workspaceId: task.workspaceId,
-        attemptId: run.id,
-        attemptNumber,
-        progressTrace: turn.progressEvents,
-        attemptForTrip: () => this.latestAttemptFor(task),
-        outstandingAction: () => this.outstandingProgressActions.get(run.id),
-        record: (payload) => record('lifecycle', payload),
-        settle: async (now, reason) => {
-          // Claim the settle so the drive loop's own settle path (unwinding from
-          // the killed harness) no-ops instead of finishing the Attempt twice.
-          active.externallySettled = true;
-          await this.coordinateSettle(task, now, 'guardrail-trip', { runState: 'failed', taskAction: 'escalate', reason }, {});
-        },
-        abort: () => active.verifyAbort.abort(),
-        kill: () => this.kill(active),
-        isSettled: () => active.externallySettled,
-        isFinishing: () => active.agentFinished || active.escalateReason != null,
-        hasPendingSteer: () => active.steerQueue.length > 0,
-        pushSteer: (text) => active.steerQueue.push(text),
-      },
-    );
-    listeners.setRuntime({ active, driver, guardrails });
+      workspace,
+      turn,
+      autoDriven,
+      attemptNumber,
+      record,
+      flushToolCalls,
+      child,
+    });
 
     try {
-      const modelId = adapterFor(task.harness).sessionModelId?.(task.model);
-      const persistCtx: PersistSessionContext = {
+      const promptText = await this.initializeTurn({
         task,
         run,
         harness,
         workspace,
         mcpServers,
-        attemptAtStart: turn.attemptAtStart,
-        getSessionInit: () => turn.sessionInit,
-        setSessionRowId: (id) => {
-          turn.sessionRowId = id;
-        },
-      };
-      // Indexed BEFORE the handshake: the multi-second index would otherwise
-      // push the harness's transcript past `captureTranscriptPath`'s resolve window.
-      const codeIndexRepoId = workspace.cwd !== task.workingDir ? await indexWorktree(workspace.cwd) : null;
-      const continueSessionId = healCtx === undefined || healCtx.continuation.path === 'continued-session'
-        ? run.sessionId
-        : null;
-      if (continueSessionId) {
-        const outcome = await driver.load({
-          sessionId: continueSessionId,
-          cwd: workspace.cwd,
-          mcpServers,
-          modelId,
-          onInitialize: listeners.onInitialize,
-        });
-        if (outcome.loaded) {
-          record('lifecycle', { event: 'session-reloaded', sessionId: continueSessionId });
-          await this.persistSession(continueSessionId, persistCtx);
-        } else {
-          record('lifecycle', { event: 'session-reload-declined', reason: outcome.reason, detail: outcome.detail });
-          await driver.handshake({ cwd: workspace.cwd, mcpServers, modelId, onInitialize: listeners.onInitialize, onSessionCreated: (sid) => this.persistSession(sid, persistCtx) });
-        }
-      } else {
-        await driver.handshake({ cwd: workspace.cwd, mcpServers, modelId, onInitialize: listeners.onInitialize, onSessionCreated: (sid) => this.persistSession(sid, persistCtx) });
-      }
-
-      this.tailer.start(run.id);
-      await guardrails.prime();
-      guardrails.armWallClock();
-      guardrails.armToolTimeout();
-      guardrails.armSpend();
-
-      if (autoDriven) {
-        const mode = afkSessionMode(task.harness, driver.availableModes);
-        if (!mode) {
-          if (!afkRequestGated(task.harness)) {
-            throw new Error(
-              `harness '${task.harness}' offers no unattended permission mode ` +
-                `(need one of ${AFK_PERMISSION_MODES.join('/')}; available: ${driver.availableModes.join(', ') || 'none'})`,
-            );
-          }
-        } else {
-          await driver.setMode(mode);
-          record('lifecycle', { event: 'mode_set', mode });
-          if (turn.sessionRowId !== undefined) {
-            try {
-              await this.sessionStore.setPermissionMode(turn.sessionRowId, mode, Date.now());
-            } catch {
-            }
-          }
-        }
-      }
-
-      let promptText = autoDriven
-        ? await this.autoDrive!.prompt(task)
-        : promptForTask(
-            { ...task, workingDir: workspace.cwd },
-            resolveTaskPrompt(await this.getWorkspace?.(task.workspaceId), this.getConfig()),
-          );
-      const operatorSeed = this.pendingOperatorSeed.get(task.id);
-      if (operatorSeed !== undefined) this.pendingOperatorSeed.delete(task.id);
-      let condensed: string | null = null;
-      if (operatorSeed !== undefined && !healCtx) {
-        promptText = `## Operator message\n\n${operatorSeed}`;
-      } else if (healCtx) {
-        promptText =
-          `${promptText}\n\n## Previous attempt failed — fix required (self-heal ${healCtx.attempt})\n` +
-          `Your previous attempt did not pass:\n${healCtx.reason}\n\n${healCtx.output}\n\n` +
-          `Fix the cause so the full verification suite passes, then finish.`;
-        condensed = healCtx.condensedContext ?? null;
-      } else if (task.continuationChoice === 'condensed') {
-        const src = await this.resolveContinuationSource(task);
-        condensed = src ? await this.condensedContext(src.prior) : null;
-      }
-      if (rebaseConflict) {
-        promptText =
-          `${promptText}\n\n## Rebase conflict — resolve first\n` +
-          `Harmonic rebased your branch onto its base and the rebase stopped with conflicts left in progress in this checkout. ` +
-          `Inspect the conflicted files (\`git status\`), resolve them, stage them, and run \`git rebase --continue\` before doing anything else.`;
-      }
-      if (condensed) promptText = `${promptText}\n\n${condensed}`;
-      if (codeIndexRepoId) promptText = `${promptText}${codeIndexRepoGuidance(codeIndexRepoId)}`;
-      await this.attempts.update(run.id, { prompt: promptText });
-      active.steerable = true;
-      let connectionGone = false;
-      const first = await this.promptTurn(driver, promptText, record);
-      connectionGone ||= first.connectionGone;
-      let result: PromptResult = first.result ?? {};
-      active.idle = true;
-      for (let attempt = 1; !escalating && !listeners.stoppedShort && !connectionGone; ) {
-        if (active.externallySettled) break;
-        if (active.escalateReason) {
-          escalating = `the agent asked for a human: ${active.escalateReason}`;
-          break;
-        }
-        if (await guardrails.checkProgressAtBoundary()) break;
-        const steer = active.steerQueue.shift();
-        if (steer !== undefined) {
-          record('lifecycle', { event: 'steer_delivered', text: steer });
-          active.idle = false;
-          const turn = await this.promptTurn(driver, steer, record);
-          connectionGone ||= turn.connectionGone;
-          if (turn.result) result = turn.result;
-          active.idle = true;
-          if (connectionGone) break;
-          continue;
-        }
-        if (!autoDriven) break;
-        if (active.agentFinished) break;
-        if (attempt > (await this.autoDrive!.continueAttempts(task))) break;
-        record('lifecycle', { event: 'continue', attempt });
-        promptText = await this.autoDrive!.continuePrompt(task);
-        active.idle = false;
-        const turn = await this.promptTurn(driver, promptText, record);
-        connectionGone ||= turn.connectionGone;
-        if (turn.result) result = turn.result;
-        active.idle = true;
-        if (connectionGone) break;
-        attempt++;
-      }
-      active.idle = false;
-      active.steerable = false;
-      while (!connectionGone && !active.externallySettled && !escalating && !listeners.stoppedShort && active.steerQueue.length > 0) {
-        const steer = active.steerQueue.shift()!;
-        record('lifecycle', { event: 'steer_delivered', text: steer });
-        const turn = await this.promptTurn(driver, steer, record);
-        connectionGone ||= turn.connectionGone;
-        if (turn.result) result = turn.result;
-        if (connectionGone) break;
-      }
+        turn,
+        driver,
+        listeners,
+        guardrails,
+        autoDriven,
+        healCtx,
+        rebaseConflict,
+        record,
+      });
+      const driven = await this.drivePromptCycle({ task, driver, active, guardrails, listeners, autoDriven, promptText, record });
+      escalating = driven.escalating;
       if (active.externallySettled) {
         await finalize();
         return { kind: 'terminal' };
       }
 
-      record('lifecycle', { event: 'finished', stopReason: result.stopReason ?? null });
-      const afkUnresolved = autoDriven && !escalating && !listeners.stoppedShort && !active.agentFinished;
-      if (afkUnresolved) record('lifecycle', { event: 'unresolved', reason: 'no finish_task signal; verifying anyway' });
-      let implementationHead: string | null = null;
-      let noChangeFinishHead: string | null = null;
-      if (!escalating && !listeners.stoppedShort) {
-        if (!connectionGone && !workspace.startDirty && (await Git.isDirty(workspace.cwd).catch(() => false))) {
-          const nudge = 'Your implementation left uncommitted changes. Commit the completed work now, then finish.';
-          record('lifecycle', { event: 'commit-nudge' });
-          active.idle = false;
-          const turn = await this.promptTurn(driver, nudge, record);
-          connectionGone ||= turn.connectionGone;
-          if (turn.result) result = turn.result;
-          active.idle = true;
-        }
-        if (workspace.worktree && !workspace.startDirty && (await Git.isDirty(workspace.cwd).catch(() => false))) {
-          await Git.commitAll(workspace.cwd, `harmonic: task ${task.id} attempt ${attemptNumber}`).catch(() => {});
-        }
-        const [head, base] = await Promise.all([
-          Git.revParse(workspace.cwd, 'HEAD').catch(() => null),
-          workspace.baseRev ? Git.revParse(workspace.cwd, workspace.baseRev).catch(() => null) : Promise.resolve(null),
-        ]);
-        if (head && head !== base) {
-          implementationHead = head;
-          await this.attempts.update(run.id, { verifiedHeadOid: head });
-        } else if (run.verifiedHeadOid) {
-          implementationHead = run.verifiedHeadOid;
-        } else if (active.agentFinished && head) {
-          noChangeFinishHead = head;
-        }
-      }
-      await finalize();
-      const usage = await this.usage.collectUsageSafe({ harnessId: task.harness, harness, cwd: workspace.cwd, attemptId: run.id, promptResult: result });
-      // The parsed tree's last-turn footprint, NOT the ACP aggregate: ACP
-      // `usage` sums a turn's round-trips and over-counts the window fill.
-      if (usage?.contextTokens != null) this.lastTurnContextTokens.set(run.id, usage.contextTokens);
-      this.noteModelMismatch(task, usage, record);
-      const patch = { stopReason: result.stopReason ?? null, usage: usage ? JSON.stringify(usage) : null };
-      if (escalating) {
-        record('lifecycle', { event: 'escalated', reason: escalating });
-        await this.settleEscalated(task, run, escalating, patch);
-      } else if (listeners.stoppedShort) {
-        record('lifecycle', { event: 'stopped-short', reason: listeners.stoppedShort });
-        return { kind: 'actionable-fail', reason: listeners.stoppedShort, output: '' };
-      } else {
-        await advanceTask('verifying');
-        let noChange = false;
-        if (noChangeFinishHead) {
-          if (!(await this.criticEnabledFor(task))) {
-            const reason =
-              'the agent finished without changing any files and no critic is configured to judge whether that is correct';
-            record('lifecycle', { event: 'escalated', reason });
-            await this.settleEscalated(task, run, reason, patch);
-            return { kind: 'terminal' };
-          }
-          implementationHead = noChangeFinishHead;
-          noChange = true;
-        }
-        const { decision, ran: verifierRan } = await this.runVerification(
-          task,
-          run,
-          implementationHead,
-          active.verifyAbort.signal,
-          record,
-          parent,
-        );
-        if (this.shuttingDown) return { kind: 'terminal' };
-        if (active.externallySettled) {
-          await finalize();
-          return { kind: 'terminal' };
-        }
-        if (decision.outcome === 'block') {
-          return await this.verificationFailTurn(task, decision, record);
-        } else if (decision.outcome !== 'proceed') {
-          if ((await this.attempts.get(run.id)).verifiedHeadOid == null) {
-            const reason = `verification ${decision.outcome}: ${decision.reason}`;
-            record('lifecycle', { event: 'escalated', reason });
-            await this.settleEscalated(task, run, reason, patch);
-            return { kind: 'terminal' };
-          }
-          return await this.verificationFailTurn(task, decision, record);
-        } else {
-          if (afkUnresolved && (!verifierRan || (await this.attempts.get(run.id)).verifiedHeadOid == null)) {
-            record('lifecycle', { event: 'unresolved', reason: 'no finish_task signal and no verifier vouched for the work' });
-            return { kind: 'actionable-fail', reason: 'attempt ended without an execution-complete (finish_task) signal', output: '' };
-          }
-          const diff = await this.diffSnapshotFor(task, run.id);
-          const current = await this.attempts.get(run.id);
-          const worktreeMerge = task.isolationMode === 'worktree';
-          const deps = this.mergePolicyDeps(task, run, record, active.verifyAbort.signal, patch);
-          const mergeWorktreeBranch = async (): Promise<boolean> => {
-            await this.taskService.setMergeStatus(task.id, 'merging');
-            const outcome = await runMergePolicy(
-              {
-                baseDir: task.workingDir,
-                baseBranch: current.baseBranch!,
-                taskBranch: current.branch!,
-                conflictResolveTurns: task.conflictResolveTurns,
-                postMergeCheck: this.getConfig().merge.postMergeCheck,
-              },
-              deps,
-            );
-            if (outcome.kind === 'escalated') {
-              record('lifecycle', { event: 'escalated', reason: outcome.message, gate: outcome.reason });
-              if (outcome.reason === 'conflict') await this.taskService.setMergeStatus(task.id, 'resolving-conflicts');
-              return false;
-            }
-            record('lifecycle', { event: 'merged', oid: outcome.mergeOid, baseBranch: current.baseBranch });
-            await this.postMerge?.({ repoDir: task.workingDir, baseBranch: current.baseBranch! });
-            return true;
-          };
-
-          if (!autoDriven) {
-            if (!noChange && worktreeMerge && !(await mergeWorktreeBranch())) return { kind: 'terminal' };
-            await advanceTask('merging');
-            await this.settleAutoCompleted(task, run, { ...patch, ...diff });
-            return { kind: 'terminal' };
-          }
-
-          const mergeFate = await this.autoDrive!.mergeFateFor(task);
-          if (!noChange && worktreeMerge && mergeFate === 'auto-merge' && !(await mergeWorktreeBranch())) {
-            return { kind: 'terminal' };
-          }
-
-          const outcome = noChange
-            ? (await this.autoDrive!.closeCompleted(task))
-              ? 'completed'
-              : 'escalate'
-            : await this.autoDrive!.onCompleted(task, await this.attempts.get(run.id));
-          if (outcome === 'escalate') {
-            record('lifecycle', { event: 'escalated', reason: 'merge fate could not be applied' });
-            await this.settleEscalated(task, run, 'merge fate could not be applied', patch);
-          } else {
-            await advanceTask('merging');
-            await this.settleAutoCompleted(task, run, { ...patch, ...diff });
-          }
-        }
-      }
-      return { kind: 'terminal' };
+      return await this.finishDrivenTurn({
+        task,
+        run,
+        harness,
+        parent,
+        workspace,
+        active,
+        listeners,
+        autoDriven,
+        attemptNumber,
+        driven,
+        record,
+        finalize,
+        advanceTask,
+      });
     } catch (err) {
       const base = err instanceof Error ? err.message : String(err);
       await Promise.race([stderrFlushed, new Promise((r) => setTimeout(r, 500))]);
@@ -2099,6 +1769,494 @@ export class Runner {
       this.active.delete(run.id);
       await finalize();
     }
+  }
+
+  private createTurnRuntime(input: {
+    task: TaskRow;
+    run: AttemptRow;
+    harness: HarnessConfig;
+    workspace: Workspace;
+    turn: TurnState;
+    autoDriven: boolean;
+    attemptNumber: number;
+    record: RunEventRecorder;
+    flushToolCalls: () => Promise<void>;
+    child: ChildProcess;
+  }): TurnRuntime {
+    const {
+      task,
+      run,
+      harness,
+      workspace,
+      turn,
+      autoDriven,
+      attemptNumber,
+      record,
+      flushToolCalls,
+      child,
+    } = input;
+    const listeners = new TurnListeners({
+      task,
+      run,
+      state: turn,
+      autoDriven,
+      events: this.events,
+      record,
+      nextProgressSequence: () => {
+        const seq = (this.progressSequences.get(run.id) ?? 0) + 1;
+        this.progressSequences.set(run.id, seq);
+        return seq;
+      },
+      outstandingAction: (event) => this.outstandingProgressActions.set(run.id, event),
+      completeOutstandingAction: (event) => {
+        const outstanding = this.outstandingProgressActions.get(run.id);
+        if (outstanding && (event.ref === undefined || outstanding.ref === undefined || event.ref === outstanding.ref)) {
+          this.outstandingProgressActions.delete(run.id);
+        }
+      },
+    });
+    const driver = new AcpDriver(
+      child,
+      listeners,
+      this.getConfig().guardrails.promptInactivityTimeoutMinutes * 60_000,
+    );
+    const active: ActiveRun = {
+      attemptId: run.id,
+      taskId: task.id,
+      child,
+      driver,
+      harnessId: task.harness,
+      harness,
+      cwd: workspace.cwd,
+      activity: null,
+      agentFinished: false,
+      escalateReason: null,
+      steerQueue: [],
+      idle: false,
+      externallySettled: false,
+      steerable: false,
+      verifyAbort: new AbortController(),
+    };
+    this.active.set(run.id, active);
+    turn.toolCallFlushTimer = setInterval(() => void flushToolCalls().catch(() => {}), 10_000);
+    turn.toolCallFlushTimer.unref?.();
+    const guardrails = new GuardrailSupervisor(
+      {
+        attempts: this.attempts,
+        guardrailEvents: this.guardrailEvents,
+        getWorkspace: this.getWorkspace,
+        sampleSnapshot: (attemptId) => this.usage.sampleSnapshot(attemptId),
+        spendPollMs: this.spendPollMs,
+        spendGraceMs: this.spendGraceMs,
+      },
+      {
+        taskId: task.id,
+        workspaceId: task.workspaceId,
+        attemptId: run.id,
+        attemptNumber,
+        progressTrace: turn.progressEvents,
+        attemptForTrip: () => this.latestAttemptFor(task),
+        outstandingAction: () => this.outstandingProgressActions.get(run.id),
+        record: (payload) => record('lifecycle', payload),
+        settle: async (now, reason) => {
+          active.externallySettled = true;
+          await this.coordinateSettle(task, now, 'guardrail-trip', { runState: 'failed', taskAction: 'escalate', reason }, {});
+        },
+        abort: () => active.verifyAbort.abort(),
+        kill: () => this.kill(active),
+        isSettled: () => active.externallySettled,
+        isFinishing: () => active.agentFinished || active.escalateReason != null,
+        hasPendingSteer: () => active.steerQueue.length > 0,
+        pushSteer: (text) => active.steerQueue.push(text),
+      },
+    );
+    listeners.setRuntime({ active, driver, guardrails });
+    let finalized = false;
+    const finalize = async (): Promise<void> => {
+      if (finalized) return;
+      finalized = true;
+      await this.tailer.stop(run.id);
+      turn.clearTimer();
+      await flushToolCalls().catch(() => {});
+      this.usage.dropReader(run.id);
+      this.kill(active);
+      try {
+        void Promise.resolve(this.keys?.revoke(run.id)).catch(() => {});
+      } catch {
+      }
+      await this.finalizeWorkspace(task, run, attemptNumber, workspace).catch(() => {});
+    };
+    return { active, driver, guardrails, listeners, finalize };
+  }
+
+  private async initializeTurn(input: {
+    task: TaskRow;
+    run: AttemptRow;
+    harness: HarnessConfig;
+    workspace: Workspace;
+    mcpServers: unknown[];
+    turn: TurnState;
+    driver: AcpDriver;
+    listeners: TurnListeners;
+    guardrails: GuardrailSupervisor;
+    autoDriven: boolean;
+    healCtx: HealContext | undefined;
+    rebaseConflict: boolean;
+    record: RunEventRecorder;
+  }): Promise<string> {
+    const {
+      task,
+      run,
+      harness,
+      workspace,
+      mcpServers,
+      turn,
+      driver,
+      listeners,
+      guardrails,
+      autoDriven,
+      healCtx,
+      rebaseConflict,
+      record,
+    } = input;
+    const modelId = adapterFor(task.harness).sessionModelId?.(task.model);
+    const persistCtx: PersistSessionContext = {
+      task,
+      run,
+      harness,
+      workspace,
+      mcpServers,
+      attemptAtStart: turn.attemptAtStart,
+      getSessionInit: () => turn.sessionInit,
+      setSessionRowId: (id) => {
+        turn.sessionRowId = id;
+      },
+    };
+    const codeIndexRepoId = workspace.cwd !== task.workingDir ? await indexWorktree(workspace.cwd) : null;
+    const continueSessionId =
+      healCtx === undefined || healCtx.continuation.path === 'continued-session' ? run.sessionId : null;
+    if (continueSessionId) {
+      const outcome = await driver.load({
+        sessionId: continueSessionId,
+        cwd: workspace.cwd,
+        mcpServers,
+        modelId,
+        onInitialize: listeners.onInitialize,
+      });
+      if (outcome.loaded) {
+        record('lifecycle', { event: 'session-reloaded', sessionId: continueSessionId });
+        await this.persistSession(continueSessionId, persistCtx);
+      } else {
+        record('lifecycle', { event: 'session-reload-declined', reason: outcome.reason, detail: outcome.detail });
+        await driver.handshake({
+          cwd: workspace.cwd,
+          mcpServers,
+          modelId,
+          onInitialize: listeners.onInitialize,
+          onSessionCreated: (sid) => this.persistSession(sid, persistCtx),
+        });
+      }
+    } else {
+      await driver.handshake({
+        cwd: workspace.cwd,
+        mcpServers,
+        modelId,
+        onInitialize: listeners.onInitialize,
+        onSessionCreated: (sid) => this.persistSession(sid, persistCtx),
+      });
+    }
+    this.tailer.start(run.id);
+    await guardrails.prime();
+    guardrails.armWallClock();
+    guardrails.armToolTimeout();
+    guardrails.armSpend();
+    if (autoDriven) {
+      const mode = afkSessionMode(task.harness, driver.availableModes);
+      if (!mode && !afkRequestGated(task.harness)) {
+        throw new Error(
+          `harness '${task.harness}' offers no unattended permission mode ` +
+            `(need one of ${AFK_PERMISSION_MODES.join('/')}; available: ${driver.availableModes.join(', ') || 'none'})`,
+        );
+      }
+      if (mode) {
+        await driver.setMode(mode);
+        record('lifecycle', { event: 'mode_set', mode });
+        if (turn.sessionRowId !== undefined) {
+          try {
+            await this.sessionStore.setPermissionMode(turn.sessionRowId, mode, Date.now());
+          } catch {
+          }
+        }
+      }
+    }
+    let promptText = autoDriven
+      ? await this.autoDrive!.prompt(task)
+      : promptForTask(
+          { ...task, workingDir: workspace.cwd },
+          resolveTaskPrompt(await this.getWorkspace?.(task.workspaceId), this.getConfig()),
+        );
+    const operatorSeed = this.pendingOperatorSeed.get(task.id);
+    if (operatorSeed !== undefined) this.pendingOperatorSeed.delete(task.id);
+    let condensed: string | null = null;
+    if (operatorSeed !== undefined && !healCtx) {
+      promptText = `## Operator message\n\n${operatorSeed}`;
+    } else if (healCtx) {
+      promptText = `${promptText}\n\n## Previous attempt failed — fix required (self-heal ${healCtx.attempt})\n` +
+        `Your previous attempt did not pass:\n${healCtx.reason}\n\n${healCtx.output}\n\nFix the cause so the full verification suite passes, then finish.`;
+      condensed = healCtx.condensedContext ?? null;
+    } else if (task.continuationChoice === 'condensed') {
+      const src = await this.resolveContinuationSource(task);
+      condensed = src ? await this.condensedContext(src.prior) : null;
+    }
+    if (rebaseConflict) {
+      promptText =
+        `${promptText}\n\n## Rebase conflict — resolve first\n` +
+        `Harmonic rebased your branch onto its base and the rebase stopped with conflicts left in progress in this checkout. ` +
+        `Inspect the conflicted files (\`git status\`), resolve them, stage them, and run \`git rebase --continue\` before doing anything else.`;
+    }
+    if (condensed) promptText = `${promptText}\n\n${condensed}`;
+    if (codeIndexRepoId) promptText = `${promptText}${codeIndexRepoGuidance(codeIndexRepoId)}`;
+    await this.attempts.update(run.id, { prompt: promptText });
+    return promptText;
+  }
+
+  private async drivePromptCycle(input: {
+    task: TaskRow;
+    driver: AcpDriver;
+    active: ActiveRun;
+    guardrails: GuardrailSupervisor;
+    listeners: TurnListeners;
+    autoDriven: boolean;
+    promptText: string;
+    record: RunEventRecorder;
+  }): Promise<{ result: PromptResult; connectionGone: boolean; escalating: string | null }> {
+    const { task, driver, active, guardrails, listeners, autoDriven, record } = input;
+    let promptText = input.promptText;
+    let escalating: string | null = null;
+    active.steerable = true;
+    let connectionGone = false;
+    const first = await this.promptTurn(driver, promptText, record);
+    connectionGone ||= first.connectionGone;
+    let result: PromptResult = first.result ?? {};
+    active.idle = true;
+    for (let attempt = 1; !escalating && !listeners.stoppedShort && !connectionGone; ) {
+      if (active.externallySettled) break;
+      if (active.escalateReason) {
+        escalating = `the agent asked for a human: ${active.escalateReason}`;
+        break;
+      }
+      if (await guardrails.checkProgressAtBoundary()) break;
+      const steer = active.steerQueue.shift();
+      if (steer !== undefined) {
+        record('lifecycle', { event: 'steer_delivered', text: steer });
+        active.idle = false;
+        const turn = await this.promptTurn(driver, steer, record);
+        connectionGone ||= turn.connectionGone;
+        if (turn.result) result = turn.result;
+        active.idle = true;
+        if (connectionGone) break;
+        continue;
+      }
+      if (!autoDriven || active.agentFinished || attempt > (await this.autoDrive!.continueAttempts(task))) {
+        break;
+      }
+      record('lifecycle', { event: 'continue', attempt });
+      promptText = await this.autoDrive!.continuePrompt(task);
+      active.idle = false;
+      const turn = await this.promptTurn(driver, promptText, record);
+      connectionGone ||= turn.connectionGone;
+      if (turn.result) result = turn.result;
+      active.idle = true;
+      if (connectionGone) break;
+      attempt++;
+    }
+    active.idle = false;
+    active.steerable = false;
+    while (!connectionGone && !active.externallySettled && !escalating && !listeners.stoppedShort && active.steerQueue.length > 0) {
+      const steer = active.steerQueue.shift()!;
+      record('lifecycle', { event: 'steer_delivered', text: steer });
+      const turn = await this.promptTurn(driver, steer, record);
+      connectionGone ||= turn.connectionGone;
+      if (turn.result) result = turn.result;
+    }
+    return { result, connectionGone, escalating };
+  }
+
+  private async finishDrivenTurn(input: {
+    task: TaskRow;
+    run: AttemptRow;
+    harness: HarnessConfig;
+    parent: SpanContext;
+    workspace: Workspace;
+    active: ActiveRun;
+    listeners: TurnListeners;
+    autoDriven: boolean;
+    attemptNumber: number;
+    driven: { result: PromptResult; connectionGone: boolean; escalating: string | null };
+    record: RunEventRecorder;
+    finalize: () => Promise<void>;
+    advanceTask: (to: 'verifying' | 'merging') => Promise<void>;
+  }): Promise<TurnOutcome> {
+    const {
+      task,
+      run,
+      harness,
+      parent,
+      workspace,
+      active,
+      listeners,
+      autoDriven,
+      attemptNumber,
+      record,
+      finalize,
+      advanceTask,
+    } = input;
+    let { result, connectionGone, escalating } = input.driven;
+    record('lifecycle', { event: 'finished', stopReason: result.stopReason ?? null });
+    const afkUnresolved = autoDriven && !escalating && !listeners.stoppedShort && !active.agentFinished;
+    if (afkUnresolved) record('lifecycle', { event: 'unresolved', reason: 'no finish_task signal; verifying anyway' });
+    let implementationHead: string | null = null;
+    let noChangeFinishHead: string | null = null;
+    if (!escalating && !listeners.stoppedShort) {
+      if (!connectionGone && !workspace.startDirty && (await Git.isDirty(workspace.cwd).catch(() => false))) {
+        const nudge = 'Your implementation left uncommitted changes. Commit the completed work now, then finish.';
+        record('lifecycle', { event: 'commit-nudge' });
+        active.idle = false;
+        const turn = await this.promptTurn(active.driver, nudge, record);
+        connectionGone ||= turn.connectionGone;
+        if (turn.result) result = turn.result;
+        active.idle = true;
+      }
+      if (workspace.worktree && !workspace.startDirty && (await Git.isDirty(workspace.cwd).catch(() => false))) {
+        await Git.commitAll(workspace.cwd, `harmonic: task ${task.id} attempt ${attemptNumber}`).catch(() => {});
+      }
+      const [head, base] = await Promise.all([
+        Git.revParse(workspace.cwd, 'HEAD').catch(() => null),
+        workspace.baseRev ? Git.revParse(workspace.cwd, workspace.baseRev).catch(() => null) : Promise.resolve(null),
+      ]);
+      if (head && head !== base) {
+        implementationHead = head;
+        await this.attempts.update(run.id, { verifiedHeadOid: head });
+      } else if (run.verifiedHeadOid) {
+        implementationHead = run.verifiedHeadOid;
+      } else if (active.agentFinished && head) {
+        noChangeFinishHead = head;
+      }
+    }
+    await finalize();
+    const usage = await this.usage.collectUsageSafe({
+      harnessId: task.harness,
+      harness,
+      cwd: workspace.cwd,
+      attemptId: run.id,
+      promptResult: result,
+    });
+    if (usage?.contextTokens != null) this.lastTurnContextTokens.set(run.id, usage.contextTokens);
+    this.noteModelMismatch(task, usage, record);
+    const patch = {
+      stopReason: result.stopReason ?? null,
+      usage: usage ? JSON.stringify(usage) : null,
+    };
+    if (escalating) {
+      record('lifecycle', { event: 'escalated', reason: escalating });
+      await this.settleEscalated(task, run, escalating, patch);
+      return { kind: 'terminal' };
+    }
+    if (listeners.stoppedShort) {
+      record('lifecycle', { event: 'stopped-short', reason: listeners.stoppedShort });
+      return { kind: 'actionable-fail', reason: listeners.stoppedShort, output: '' };
+    }
+    await advanceTask('verifying');
+    let noChange = false;
+    if (noChangeFinishHead) {
+      if (!(await this.criticEnabledFor(task))) {
+        const reason = 'the agent finished without changing any files and no critic is configured to judge whether that is correct';
+        record('lifecycle', { event: 'escalated', reason });
+        await this.settleEscalated(task, run, reason, patch);
+        return { kind: 'terminal' };
+      }
+      implementationHead = noChangeFinishHead;
+      noChange = true;
+    }
+    const { decision, ran: verifierRan } = await this.runVerification(
+      task,
+      run,
+      implementationHead,
+      active.verifyAbort.signal,
+      record,
+      parent,
+    );
+    if (this.shuttingDown) return { kind: 'terminal' };
+    if (active.externallySettled) {
+      await finalize();
+      return { kind: 'terminal' };
+    }
+    if (decision.outcome === 'block') {
+      return await this.verificationFailTurn(task, decision, record);
+    }
+    if (decision.outcome !== 'proceed') {
+      if ((await this.attempts.get(run.id)).verifiedHeadOid == null) {
+        const reason = `verification ${decision.outcome}: ${decision.reason}`;
+        record('lifecycle', { event: 'escalated', reason });
+        await this.settleEscalated(task, run, reason, patch);
+        return { kind: 'terminal' };
+      }
+      return await this.verificationFailTurn(task, decision, record);
+    }
+    if (afkUnresolved && (!verifierRan || (await this.attempts.get(run.id)).verifiedHeadOid == null)) {
+      record('lifecycle', { event: 'unresolved', reason: 'no finish_task signal and no verifier vouched for the work' });
+      return { kind: 'actionable-fail', reason: 'attempt ended without an execution-complete (finish_task) signal', output: '' };
+    }
+    const diff = await this.diffSnapshotFor(task, run.id);
+    const current = await this.attempts.get(run.id);
+    const worktreeMerge = task.isolationMode === 'worktree';
+    const deps = this.mergePolicyDeps(task, run, record, active.verifyAbort.signal, patch);
+    const mergeWorktreeBranch = async (): Promise<boolean> => {
+      await this.taskService.setMergeStatus(task.id, 'merging');
+      const outcome = await runMergePolicy(
+        {
+          baseDir: task.workingDir,
+          baseBranch: current.baseBranch!,
+          taskBranch: current.branch!,
+          conflictResolveTurns: task.conflictResolveTurns,
+          postMergeCheck: this.getConfig().merge.postMergeCheck,
+        },
+        deps,
+      );
+      if (outcome.kind === 'escalated') {
+        record('lifecycle', { event: 'escalated', reason: outcome.message, gate: outcome.reason });
+        if (outcome.reason === 'conflict') await this.taskService.setMergeStatus(task.id, 'resolving-conflicts');
+        return false;
+      }
+      record('lifecycle', { event: 'merged', oid: outcome.mergeOid, baseBranch: current.baseBranch });
+      await this.postMerge?.({ repoDir: task.workingDir, baseBranch: current.baseBranch! });
+      return true;
+    };
+    if (!autoDriven) {
+      if (!noChange && worktreeMerge && !(await mergeWorktreeBranch())) {
+        return { kind: 'terminal' };
+      }
+      await advanceTask('merging');
+      await this.settleAutoCompleted(task, run, { ...patch, ...diff });
+      return { kind: 'terminal' };
+    }
+    const mergeFate = await this.autoDrive!.mergeFateFor(task);
+    if (!noChange && worktreeMerge && mergeFate === 'auto-merge' && !(await mergeWorktreeBranch())) {
+      return { kind: 'terminal' };
+    }
+    const outcome = noChange
+      ? (await this.autoDrive!.closeCompleted(task))
+        ? 'completed'
+        : 'escalate'
+      : await this.autoDrive!.onCompleted(task, await this.attempts.get(run.id));
+    if (outcome === 'escalate') {
+      record('lifecycle', { event: 'escalated', reason: 'merge fate could not be applied' });
+      await this.settleEscalated(task, run, 'merge fate could not be applied', patch);
+    } else {
+      await advanceTask('merging');
+      await this.settleAutoCompleted(task, run, { ...patch, ...diff });
+    }
+    return { kind: 'terminal' };
   }
 
   private async promptTurn(
