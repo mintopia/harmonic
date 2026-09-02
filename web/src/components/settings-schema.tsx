@@ -78,8 +78,8 @@ function pick<T>(value: PerSurface<T>, surface: Surface): T {
 
 
 function harnessOptions(config: AppConfig, current: string | null | undefined): FieldOption[] {
-  const options = toOptions(Object.entries(config.harnesses).flatMap(([id, harness]) => (harness.defaultModel ? [id] : [])));
-  if (current && !options.some((option) => option.value === current)) return [...options, { value: current, label: `${current} (not configured)` }];
+  const options = toOptions(Object.keys(config.harnesses));
+  if (current && !config.harnesses[current]) return [...options, { value: current, label: `${current} (not configured)` }];
   return options;
 }
 
@@ -286,11 +286,10 @@ const chatHarness = scalar(
     id: 'settings-chat-harness',
     errorKey: 'chat.harness',
     get: (c) => c.chat.harness,
-    options: (c) => harnessOptions(c, c.chat.harness),
+    options: (c) => toOptions(Object.keys(c.harnesses)),
     set: (c, raw) => {
       const h = String(raw);
-      const model = c.harnesses[h]?.defaultModel;
-      return model ? { ...c, chat: { harness: h, model } } : c;
+      return { ...c, chat: { harness: h, model: c.harnesses[h]?.defaultModel ?? c.chat.model } };
     },
   }),
   {
@@ -299,17 +298,7 @@ const chatHarness = scalar(
     errorKey: 'chatHarness',
     label: 'Harness',
     get: (w) => w.chatHarness,
-    set: (w, v, c) => {
-      if (v === null) return { ...w, chatHarness: null, chatModel: null };
-      const harness = String(v);
-      const model = c.harnesses[harness]?.defaultModel;
-      if (!model) return w;
-      return {
-        ...w,
-        chatHarness: harness,
-        chatModel: model,
-      };
-    },
+    set: (w, v) => ({ ...w, chatHarness: v as string | null }),
     inherited: (c) => c.chat.harness,
     options: (c, w) => harnessOptions(c, w.chatHarness),
   },
@@ -341,28 +330,15 @@ const taskHarness = scalar(
     id: 'settings-harness',
     errorKey: 'defaults.harness',
     get: (c) => c.defaults.harness,
-    options: (c) => harnessOptions(c, c.defaults.harness),
-    set: (c, raw) => {
-      const harness = String(raw);
-      return c.harnesses[harness]?.defaultModel ? { ...c, defaults: { ...c.defaults, harness } } : c;
-    },
+    options: (c) => toOptions(Object.keys(c.harnesses)),
+    set: (c, raw) => ({ ...c, defaults: { ...c.defaults, harness: String(raw) } }),
   }),
   {
     key: 'harness',
     id: 'workspace-harness',
     errorKey: 'harness',
     get: (w) => w.harness,
-    set: (w, v, c) => {
-      if (v === null) return { ...w, harness: null, model: null };
-      const harness = String(v);
-      const model = c.harnesses[harness]?.defaultModel;
-      if (!model) return w;
-      return {
-        ...w,
-        harness,
-        model,
-      };
-    },
+    set: (w, v) => ({ ...w, harness: v as string | null }),
     inherited: (c) => c.defaults.harness,
     options: (c, w) => harnessOptions(c, w.harness),
   },
