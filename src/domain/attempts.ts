@@ -162,7 +162,7 @@ export class AttemptStore {
   }
 
   /** Backfill Cost onto finished Attempts that have Usage but no stored Cost. */
-  async backfillCosts(fallbackPrices: PriceTable): Promise<void> {
+  async backfillCosts(pricesForAttempt: (attempt: AttemptRow) => Promise<PriceTable>): Promise<void> {
     const candidates = await this.db.read((db) =>
       db
         .select()
@@ -171,7 +171,7 @@ export class AttemptStore {
         .all(),
     );
     await forEachYielding(candidates, async (attempt) => {
-      const cost = frozenCost(attempt.usage, JSON.stringify(fallbackPrices));
+      const cost = frozenCost(attempt.usage, JSON.stringify(await pricesForAttempt(attempt)));
       if (cost === null) return;
       await this.db.write((db) => db.update(attempts).set({ cost }).where(and(eq(attempts.id, attempt.id), isNull(attempts.cost))).run());
     });

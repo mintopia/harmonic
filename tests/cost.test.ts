@@ -7,7 +7,7 @@ import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js
 import { attempts } from '../src/db/schema.js';
 import { verificationCommandSchema } from '../src/config.js';
 import type { DeepPartial, AppConfig } from '../src/config.js';
-import { costOfUsages, DEFAULT_PRICES, resolvePrices } from '../src/domain/pricing.js';
+import { costOfUsages, pricesForHarness } from '../src/domain/pricing.js';
 import type { ModelUsage, AttemptUsage } from '../src/execution/usage.js';
 
 const mu = (tokens: number): ModelUsage => ({
@@ -28,20 +28,22 @@ const PRICES = { m1: { input: 1, output: 2, cacheRead: 3, cacheWrite: 4 } };
 
 describe('pricing math', () => {
   it('ships a price for every model in the default harness configs — Cost is never incomplete out of the box', async () => {
-    const { defaultConfig } = await import('../src/config.js');
-    for (const harness of Object.values(defaultConfig().harnesses)) {
-      for (const model of new Set([harness.defaultModel, ...harness.models])) {
+    const { baselineConfig } = await import('../src/config.js');
+    for (const harness of Object.values(baselineConfig().harnesses)) {
+      for (const model of new Set([harness.defaultModel, ...harness.models.map(({ id }) => id)])) {
         if (model === 'auto') continue;
-        const cost = costOfUsages([usageOf({ [model]: mu(1000) })], resolvePrices({}));
-        expect(cost?.incomplete, `no DEFAULT_PRICES entry for ${model}`).toBe(false);
+        const cost = costOfUsages([usageOf({ [model]: mu(1000) })], pricesForHarness(harness));
+        expect(cost?.incomplete, `no catalog price for ${model}`).toBe(false);
       }
     }
   });
 
-  it("prices the serving models copilot's auto router was observed to pick", () => {
+  it("prices the serving models copilot's auto router was observed to pick", async () => {
+    const { baselineConfig } = await import('../src/config.js');
+    const prices = pricesForHarness(baselineConfig().harnesses.copilot);
     for (const model of ['claude-haiku-4.5', 'gpt-5-mini']) {
-      const cost = costOfUsages([usageOf({ [model]: mu(1000) })], resolvePrices({}));
-      expect(cost?.incomplete, `no DEFAULT_PRICES entry for ${model}`).toBe(false);
+      const cost = costOfUsages([usageOf({ [model]: mu(1000) })], prices);
+      expect(cost?.incomplete, `no catalog price for ${model}`).toBe(false);
     }
   });
 
@@ -83,21 +85,20 @@ describe('pricing math', () => {
     expect(costOfUsages([acpOnly], PRICES)).toEqual({ totalUsd: null, byModel: {}, incomplete: true });
   });
 
-  it('matches date-suffixed model ids to their base price entry', () => {
+  it('matches date-suffixed model ids to their base price entry', async () => {
+    const { baselineConfig } = await import('../src/config.js');
     const cost = costOfUsages(
       [usageOf({ 'claude-haiku-4-5-20251001': mu(0) })],
-      resolvePrices({}),
+      pricesForHarness(baselineConfig().harnesses.claude),
     );
     expect(cost?.incomplete).toBe(false);
   });
 
-  it('ships defaults for the models the supported harnesses use; overrides win', () => {
-    for (const model of ['claude-sonnet-5', 'claude-opus-4-8', 'claude-haiku-4-5', 'gpt-5.2-codex']) {
-      expect(DEFAULT_PRICES[model], model).toBeDefined();
-    }
-    const resolved = resolvePrices({ 'claude-sonnet-5': { input: 99, output: 99, cacheRead: 99, cacheWrite: 99 } });
-    expect(resolved['claude-sonnet-5']!.input).toBe(99);
-    expect(resolved['claude-opus-4-8']).toEqual(DEFAULT_PRICES['claude-opus-4-8']);
+  it('keeps prices in each harness catalog', async () => {
+    const { baselineConfig } = await import('../src/config.js');
+    const prices = pricesForHarness(baselineConfig().harnesses.claude);
+    expect(prices['claude-sonnet-5']!.input).toBe(3);
+    expect(prices['claude-opus-4-8']!.input).toBe(5);
   });
 });
 
@@ -115,11 +116,12 @@ describe('cost surfaces (API)', () => {
     const logRoot = mkdtempSync(join(tmpdir(), 'harmonic-cost-logs-'));
     const overrides = stubHarness() as DeepPartial<AppConfig> & {
       harnesses: { claude: Record<string, unknown> };
-      prices?: unknown;
     };
     overrides.harnesses.claude.sessionLogDir = logRoot;
     overrides.harnesses.claude.env = { STUB_SESSION_ID: 'fixed-session' };
-    overrides.prices = prices;
+    overrides.harnesses.claude.models = Object.entries(prices).map(([id, price]) => ({ id, price }));
+    overrides.harnesses.claude.defaultModel = Object.keys(prices)[0];
+    overrides.chat = { harness: 'claude', model: Object.keys(prices)[0]! };
 
     for (const [workDir, models] of Object.entries(workDirModels)) {
       const slug = workDir.replace(/[^a-zA-Z0-9]/g, '-');
@@ -159,7 +161,7 @@ describe('cost surfaces (API)', () => {
     const run = (await server.api('GET', `/api/attempts/${attemptId}`)).body;
     expect(run.cost).toEqual({ totalUsd: 2, byModel: { modelA: 2 }, incomplete: false });
 
-    await server.api('PATCH', '/api/config', { prices: { modelA: flatPrice(4) } });
+    await server.api('PATCH', '/api/config', { harnesses: { claude: { models: [{ id: 'modelA', price: flatPrice(4) }] } } });
     const repriced = (await server.api('GET', `/api/attempts/${attemptId}`)).body;
     expect(repriced.cost).toEqual({ totalUsd: 2, byModel: { modelA: 2 }, incomplete: false });
     expect((await server.api('GET', `/api/tasks/${taskId}`)).body.cost.totalUsd).toBe(2);
@@ -178,10 +180,14 @@ describe('cost surfaces (API)', () => {
     );
     const dataDir = server.dataDir;
     await server.app.close();
-    server = await startServer({ ...stubHarness(), prices: overrides }, { dataDir });
+    server = await startServer({
+      ...stubHarness(),
+      harnesses: { claude: { models: [{ id: 'modelA', price: overrides.modelA }], defaultModel: 'modelA' } },
+      chat: { harness: 'claude', model: 'modelA' },
+    }, { dataDir });
 
     expect((await server.api('GET', `/api/attempts/${attemptId}`)).body.cost.totalUsd).toBe(2);
-    await server.api('PATCH', '/api/config', { prices: { modelA: flatPrice(4) } });
+    await server.api('PATCH', '/api/config', { harnesses: { claude: { models: [{ id: 'modelA', price: flatPrice(4) }] } } });
     expect((await server.api('GET', `/api/attempts/${attemptId}`)).body.cost.totalUsd).toBe(2);
   });
 

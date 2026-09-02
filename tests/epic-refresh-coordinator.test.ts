@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { EpicRefresh, type EpicRefreshOutcome } from '../src/execution/epic-coordinator.js';
 import type { MergeIntoBaseOutcome } from '../src/execution/branch-merge.js';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
-import { defaultConfig } from '../src/config.js';
+import { baselineConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { Runner } from '../src/execution/runner.js';
 import type { CriticDriveRequest } from '../src/verification/critic.js';
@@ -163,7 +163,7 @@ describe('epic refresh corrective turn (issue #315)', () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-epic-refresh-'));
     asyncDb = await openAsyncDb(dir);
     settingsStore = await makeSettingsStore(dir);
-    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
+    tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
     repo = join(dir, 'repo');
     execFileSync('git', ['init', '-b', 'develop', repo], { encoding: 'utf8' });
     git(repo, 'config', 'user.name', 'Test');
@@ -186,7 +186,7 @@ describe('epic refresh corrective turn (issue #315)', () => {
   });
 
   function makeRunner(drive: (req: CriticDriveRequest) => Promise<void>): Runner {
-    return new Runner(tasks, asyncDb, () => defaultConfig(), {
+    return new Runner(tasks, asyncDb, () => baselineConfig(), {
       worktreesDir: join(dir, 'worktrees'),
       criticDrive: {
         run: async (req) => {
@@ -318,7 +318,7 @@ describe('epic refresh corrective turn (issue #315)', () => {
     await waitFor(async () => retryOutcomes.length === 1);
     expect(retryOutcomes[0]).toMatchObject({ status: 'refreshed' });
     expect(escalations).toEqual([]);
-    const cfg = defaultConfig();
+    const cfg = baselineConfig();
     expect(driveCalls).toHaveLength(1);
     expect(driveCalls[0]!.harnessId).toBe(cfg.defaults.harness);
     expect(driveCalls[0]!.model).toBe(cfg.harnesses[cfg.defaults.harness]!.defaultModel);

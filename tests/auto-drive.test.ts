@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
-import { defaultConfig, UNATTENDED_REMINDER, type AppConfig } from '../src/config.js';
+import { baselineConfig, UNATTENDED_REMINDER, type AppConfig } from '../src/config.js';
 import { TaskService, type MirrorInput } from '../src/domain/tasks.js';
 import { AttemptStore } from '../src/domain/attempts.js';
 import { Runner } from '../src/execution/runner.js';
@@ -105,8 +105,8 @@ describe('Drive Prompt fill (issue #33)', () => {
 
   it('AutoDrive.prompt uses the global template, the ticket url, and the workflow skill', async () => {
     const config: AppConfig = {
-      ...defaultConfig(),
-      drive: { ...defaultConfig().drive, prompt: '{skill} {ref} {url}\n\n{title}::{body}' },
+      ...baselineConfig(),
+      drive: { ...baselineConfig().drive, prompt: '{skill} {ref} {url}\n\n{title}::{body}' },
     };
     const research = worktreeTask({ trackerRef: 9, wayfinderType: 'research', prompt: 'Investigate X\n\nwhy' });
     const drive = new AutoDrive(() => config, (task) => (task.trackerRef === 9 ? 'https://x/9' : null));
@@ -115,8 +115,8 @@ describe('Drive Prompt fill (issue #33)', () => {
 
   it('drives a Map-Epic child with /wayfinder against the map ref, not its own ticket (issue #440)', async () => {
     const config: AppConfig = {
-      ...defaultConfig(),
-      drive: { ...defaultConfig().drive, prompt: '{skill} {ref} {url}\n\n{title}::{body}' },
+      ...baselineConfig(),
+      drive: { ...baselineConfig().drive, prompt: '{skill} {ref} {url}\n\n{title}::{body}' },
     };
     const child = worktreeTask({ trackerRef: 7, mapRef: 100, workspaceId: 1, prompt: 'Chart it\n\nwhy' });
     const drive = new AutoDrive(
@@ -141,8 +141,8 @@ describe('Drive Prompt fill (issue #33)', () => {
 
   it('appends a re-queued mirrored Task’s feedback so the afk retry sees it', async () => {
     const config: AppConfig = {
-      ...defaultConfig(),
-      drive: { ...defaultConfig().drive, prompt: '{skill} {ref}\n\n{title}::{body}' },
+      ...baselineConfig(),
+      drive: { ...baselineConfig().drive, prompt: '{skill} {ref}\n\n{title}::{body}' },
     };
     const drive = new AutoDrive(() => config, () => null);
     const withFeedback = worktreeTask({ trackerRef: 9, prompt: 'Fix it\n\ndetails', feedback: '  tests are red  ' });
@@ -154,7 +154,7 @@ describe('Drive Prompt fill (issue #33)', () => {
   });
 
   it('the unattended reminder names both signal tools and this Task’s id', async () => {
-    const config: AppConfig = { ...defaultConfig(), drive: { ...defaultConfig().drive, prompt: '{skill}' } };
+    const config: AppConfig = { ...baselineConfig(), drive: { ...baselineConfig().drive, prompt: '{skill}' } };
     const drive = new AutoDrive(() => config, () => null);
     const text = await drive.prompt(worktreeTask({ id: 42 }));
     expect(text).toContain('finish_task');
@@ -164,7 +164,7 @@ describe('Drive Prompt fill (issue #33)', () => {
   });
 
   it('continuePrompt nudges the agent to resume and carries the reminder', async () => {
-    const config: AppConfig = { ...defaultConfig(), drive: { ...defaultConfig().drive, continueAttempts: 3 } };
+    const config: AppConfig = { ...baselineConfig(), drive: { ...baselineConfig().drive, continueAttempts: 3 } };
     const drive = new AutoDrive(() => config, () => null);
     const text = await drive.continuePrompt(worktreeTask({ id: 7 }));
     expect(text).toMatch(/isn't finished/i);
@@ -175,8 +175,8 @@ describe('Drive Prompt fill (issue #33)', () => {
 
   it('resolves every drive.* field per-Workspace via the injected resolver (#339)', async () => {
     const config: AppConfig = {
-      ...defaultConfig(),
-      drive: { ...defaultConfig().drive, prompt: 'GLOBAL {ref}', continueAttempts: 1, mergeFate: 'auto-merge' },
+      ...baselineConfig(),
+      drive: { ...baselineConfig().drive, prompt: 'GLOBAL {ref}', continueAttempts: 1, mergeFate: 'auto-merge' },
     };
     const wsOverride = {
       drivePrompt: 'WS {ref}',
@@ -199,12 +199,12 @@ describe('Drive Prompt fill (issue #33)', () => {
 
   it('closeTicket is idempotent and carries the caller\'s comment (the operator Close)', async () => {
     const open = fakeAdapter('open');
-    const drive = new AutoDrive(() => defaultConfig(), () => null, async () => open.adapter);
+    const drive = new AutoDrive(() => baselineConfig(), () => null, async () => open.adapter);
     expect(await drive.closeTicket(worktreeTask(), 'Closed by a Harmonic operator without merging (task 1).')).toBe(true);
     expect(open.calls.close).toEqual([7]);
 
     const closed = fakeAdapter('closed');
-    const idempotent = new AutoDrive(() => defaultConfig(), () => null, async () => closed.adapter);
+    const idempotent = new AutoDrive(() => baselineConfig(), () => null, async () => closed.adapter);
     expect(await idempotent.closeTicket(worktreeTask())).toBe(true);
     expect(closed.calls.close).toEqual([]);
 
@@ -234,20 +234,20 @@ describe('Drive Prompt fill (issue #33)', () => {
       claim: async () => {},
       release: async () => {},
     };
-    const drive = new AutoDrive(() => defaultConfig(), () => null, async () => inboundOnly);
+    const drive = new AutoDrive(() => baselineConfig(), () => null, async () => inboundOnly);
     expect(await drive.closeCompleted(worktreeTask())).toBe(true);
   });
 
   it('closeCompleted closes an open mirrored ticket via the adapter (issue #139)', async () => {
     const { adapter, calls } = fakeAdapter('open');
-    const drive = new AutoDrive(() => defaultConfig(), () => null, async () => adapter);
+    const drive = new AutoDrive(() => baselineConfig(), () => null, async () => adapter);
     expect(await drive.closeCompleted(worktreeTask())).toBe(true);
     expect(calls.close).toEqual([7]);
   });
 
   it('closeCompleted is idempotent — an already-closed ticket is not re-closed', async () => {
     const { adapter, calls } = fakeAdapter('closed');
-    const drive = new AutoDrive(() => defaultConfig(), () => null, async () => adapter);
+    const drive = new AutoDrive(() => baselineConfig(), () => null, async () => adapter);
     expect(await drive.closeCompleted(worktreeTask())).toBe(true);
     expect(calls.close).toEqual([]);
   });
@@ -255,8 +255,8 @@ describe('Drive Prompt fill (issue #33)', () => {
 
 describe('AutoDrive.onCompleted — Merge Fate close-after-verify (issue #139)', () => {
   const cfg = (mergeFate: AppConfig['drive']['mergeFate']): AppConfig => ({
-    ...defaultConfig(),
-    drive: { ...defaultConfig().drive, prompt: '', mergeFate },
+    ...baselineConfig(),
+    drive: { ...baselineConfig().drive, prompt: '', mergeFate },
   });
 
   it('auto-merge: the Runner has merged the verified tip, so Harmonic closes the ticket', async () => {
@@ -336,14 +336,21 @@ describe('Runner auto-drive settle (issue #33)', () => {
   let attempts: AttemptStore;
   let runner: Runner;
 
-  const config = (over: Partial<AppConfig['drive']> = {}, maxAttempts = defaultConfig().maxAttempts): AppConfig => ({
-    ...defaultConfig(),
+  const config = (over: Partial<AppConfig['drive']> = {}, maxAttempts = baselineConfig().maxAttempts): AppConfig => ({
+    ...baselineConfig(),
     maxAttempts,
     harnesses: {
-      ...defaultConfig().harnesses,
-      claude: { command: process.execPath, args: [STUB], env: {}, models: ['stub'], defaultModel: 'stub' },
+      ...baselineConfig().harnesses,
+      claude: {
+        command: process.execPath,
+        args: [STUB],
+        env: {},
+        models: [{ id: 'stub' }],
+        defaultModel: 'stub',
+        cacheWarmSeconds: 300,
+      },
     },
-    drive: { ...defaultConfig().drive, prompt: '{skill} #{ref}', ...over },
+    drive: { ...baselineConfig().drive, prompt: '{skill} #{ref}', ...over },
   });
 
   const startMirrored = async (id: number) => {

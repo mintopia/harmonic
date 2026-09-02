@@ -217,7 +217,7 @@ describe('task authoring', () => {
     const { status, body } = await server.api('GET', '/api/config');
     expect(status).toBe(200);
     expect(body.defaults.harness).toBe('claude');
-    expect(body.harnesses.claude.models).toContain('claude-sonnet-5');
+    expect(body.harnesses.claude.models).toContainEqual(expect.objectContaining({ id: 'claude-sonnet-5' }));
     expect(body.harnesses.claude.defaultModel).toBe('claude-sonnet-5');
   });
 });

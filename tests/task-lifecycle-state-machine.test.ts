@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
-import { defaultConfig } from '../src/config.js';
+import { baselineConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { AttemptStore } from '../src/domain/attempts.js';
 import { AttemptSettleCoordinator } from '../src/domain/attempt-settle.js';
@@ -44,7 +44,7 @@ describe('Task lifecycle state machine (ADR-0020)', () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-lifecycle-'));
     asyncDb = await openAsyncDb(dir);
     settingsStore = await makeSettingsStore(dir);
-    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
+    tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
   });
   afterEach(async () => {
     await asyncDb.close();

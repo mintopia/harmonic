@@ -1,9 +1,9 @@
 import { existsSync } from 'node:fs';
-import type { HarnessConfig } from '../config.js';
+import { AUTO_MODEL_SENTINEL, type HarnessConfig } from '../config.js';
 import type { PersistedAttemptEvent } from '../domain/attempts.js';
 import { isReplay } from '../domain/replay-quarantine.js';
 import type { ModelUsage, AttemptUsage, ToolTokenUsage } from '../domain/usage.js';
-import { DEFAULT_PRICES, turnCost, type PriceTable } from '../domain/pricing.js';
+import { turnCost, type PriceTable } from '../domain/pricing.js';
 import { adapterFor } from './harness/registry.js';
 
 export type { ModelUsage, AttemptUsage, ToolTokenUsage };
@@ -183,7 +183,7 @@ export function collectUsage(input: CollectUsageInput): AttemptUsage | null {
  */
 export function attributeTurnTokens(
   turns: UsageTurn[],
-  prices: PriceTable = DEFAULT_PRICES,
+  prices: PriceTable = {},
 ): Pick<AttemptUsage, 'toolTokens' | 'reasoning'> {
   const toolTokens: Record<string, ToolTokenUsage> = {};
   let reasoning: ToolTokenUsage | undefined;
@@ -419,7 +419,7 @@ export async function collectUsageWithRetry(
  * (Copilot's router): whatever served is the answer, not a contradiction.
  */
 export function observedModelMismatch(expected: string, models: Record<string, ModelUsage>): string[] | null {
-  if (expected === 'auto') return null;
+  if (expected === AUTO_MODEL_SENTINEL) return null;
   const base = (id: string) => id.replace(/\[[^\]]+\]$/, '').replace(/-\d{8}$/, '');
   const observed = Object.keys(models);
   if (observed.length === 0) return null;

@@ -136,27 +136,27 @@ describe('lastConversationTurnAt', () => {
 });
 
 describe('isColdCache / formatColdCacheMessage', () => {
-  const base = { lastTurnAt: 1_000_000, cacheTtlSeconds: 300 };
+  const base = { lastTurnAt: 1_000_000, cacheWarmSeconds: 300 };
 
-  it('never warns when the TTL is unconfigured, however idle', () => {
-    expect(isColdCache({ lastTurnAt: 0, cacheTtlSeconds: null, now: Date.now() })).toBe(false);
-    expect(formatColdCacheMessage({ lastTurnAt: 0, cacheTtlSeconds: null, now: Date.now() })).toBeNull();
+  it('never warns when the warm window is unconfigured, however idle', () => {
+    expect(isColdCache({ lastTurnAt: 0, cacheWarmSeconds: null, now: Date.now() })).toBe(false);
+    expect(formatColdCacheMessage({ lastTurnAt: 0, cacheWarmSeconds: null, now: Date.now() })).toBeNull();
   });
 
-  it('is false while idle time is within the TTL', () => {
+  it('is false while idle time is within the warm window', () => {
     const now = base.lastTurnAt + 100_000;
     expect(isColdCache({ ...base, now })).toBe(false);
     expect(formatColdCacheMessage({ ...base, now })).toBeNull();
   });
 
-  it('is true once idle time exceeds the TTL, worded as an estimate', () => {
+  it('is true once idle time exceeds the warm window, worded as an estimate', () => {
     const now = base.lastTurnAt + 400_000;
     expect(isColdCache({ ...base, now })).toBe(true);
-    expect(formatColdCacheMessage({ ...base, now })).toBe('Cache likely cold — idle 6m, TTL 5m (estimate)');
+    expect(formatColdCacheMessage({ ...base, now })).toBe('Cache likely cold — idle 6m, warm window 5m (estimate)');
   });
 
-  it('is exactly false at the TTL boundary (idle must exceed, not just reach, the TTL)', () => {
-    const now = base.lastTurnAt + base.cacheTtlSeconds * 1000;
+  it('is exactly false at the warm-window boundary', () => {
+    const now = base.lastTurnAt + base.cacheWarmSeconds * 1000;
     expect(isColdCache({ ...base, now })).toBe(false);
   });
 });

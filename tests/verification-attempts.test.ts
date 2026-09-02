@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createClient } from '@libsql/client';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
-import { defaultConfig } from '../src/config.js';
+import { baselineConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { AttemptStore } from '../src/domain/attempts.js';
 import { VerificationAttemptStore } from '../src/domain/verification-attempts.js';
@@ -21,7 +21,7 @@ describe('VerificationAttemptStore (issue #136)', () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-verification-attempts-'));
     asyncDb = await openAsyncDb(dir);
     const settingsStore = await makeSettingsStore(dir);
-    const tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
+    const tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
     const attemptStore = new AttemptStore(asyncDb);
     attempts = new VerificationAttemptStore(asyncDb);
 

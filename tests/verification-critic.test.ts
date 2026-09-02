@@ -344,7 +344,13 @@ describe('agent critic end-to-end (issue #164)', () => {
     criticResult = { verdict: 'pass', summary: 'looks correct' };
     await server.app.ctx.settingsStore.updateGlobal({
       harnesses: {
-        codex: { command: process.execPath, args: [], models: ['stub-model'], defaultModel: 'stub-model' },
+        codex: {
+          command: process.execPath,
+          args: [],
+          models: [{ id: 'stub-model' }],
+          defaultModel: 'stub-model',
+          cacheWarmSeconds: 300,
+        },
       },
     });
     await server.app.ctx.workspaces.update(workspaceId, criticWithHarness('codex'));

@@ -160,7 +160,6 @@ CREATE TABLE `sessions` (
 	`adapter_version` text,
 	`status` text DEFAULT 'active' NOT NULL,
 	`last_active_at` integer NOT NULL,
-	`estimated_warm_until` integer,
 	`worktree_path` text,
 	`worktree_repo_dir` text,
 	`retire_reason` text,

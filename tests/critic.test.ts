@@ -13,7 +13,7 @@ import {
   type CriticHarnessDrive,
   type CriticDriveRequest,
 } from '../src/verification/critic.js';
-import { defaultConfig, type HarnessConfig } from '../src/config.js';
+import { baselineConfig, type HarnessConfig } from '../src/config.js';
 import type { DriveFields } from '../src/execution/prompt-template.js';
 import { combineVerdicts } from '../src/verification/combine.js';
 import type { VerifierVerdict } from '../src/verification/combine.js';
@@ -50,8 +50,9 @@ const FAKE_HARNESS: HarnessConfig = {
   command: 'unused-in-fake-drive-tests',
   args: [],
   env: {},
-  models: ['stub-model'],
+  models: [{ id: 'stub-model' }],
   defaultModel: 'stub-model',
+  cacheWarmSeconds: 300,
 };
 
 const FIELDS: DriveFields = {
@@ -368,7 +369,7 @@ describe('runCritic (issue #136)', () => {
     tmpDirs.push(dbDir);
     const asyncDb = await openAsyncDb(dbDir);
     const settingsStore = await makeSettingsStore(dbDir);
-    const tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
+    const tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
     const attempts = new AttemptStore(asyncDb);
     const store = new VerificationAttemptStore(asyncDb);
     const task = await tasks.create({ prompt: 'verify me', state: 'ready' });
@@ -408,8 +409,9 @@ describe('createAcpCriticDrive (issue #136): the real ACP drive has builder-equi
     command: process.execPath,
     args: [STUB_HARNESS],
     env: { HARMONIC_API_KEY: 'leaked-key', HARMONIC_MCP_URL: 'http://leaked' },
-    models: ['stub-model'],
+    models: [{ id: 'stub-model' }],
     defaultModel: 'stub-model',
+    cacheWarmSeconds: 300,
   };
 
   it('registers no MCP servers, strips tracker credentials from the spawned env, and grants tool permission requests', async () => {

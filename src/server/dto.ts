@@ -576,8 +576,8 @@ export type ApiConversation = Omit<ConversationRow, 'usage' | 'workspaceId'> & {
   contextTokens: number | null;
   /** The model's configured context window; null when unconfigured (percentage suppressed). */
   contextWindow: number | null;
-  /** The model's configured cache TTL in seconds; null when unconfigured (cold-cache banner suppressed). */
-  cacheTtlSeconds: number | null;
+  /** The harness cache's warm duration in seconds, derived from current configuration. */
+  cacheWarmSeconds: number | null;
 };
 
 const DERIVED_TITLE_MAX = 80;
@@ -601,7 +601,7 @@ export function conversationToApiDto(
     title: string | null;
     cost: Cost | null;
     contextWindow: number | null;
-    cacheTtlSeconds: number | null;
+    cacheWarmSeconds: number | null;
   },
 ): ApiConversation {
   const { usage: rawUsage, ...rest } = conversation;
@@ -613,6 +613,6 @@ export function conversationToApiDto(
     cost: resolved.cost,
     contextTokens: conversation.contextTokens,
     contextWindow: resolved.contextWindow,
-    cacheTtlSeconds: resolved.cacheTtlSeconds,
+    cacheWarmSeconds: resolved.cacheWarmSeconds,
   };
 }

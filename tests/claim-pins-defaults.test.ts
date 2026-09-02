@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { tasks, type RawTaskRow } from '../src/db/schema.js';
-import { defaultConfig, type AppConfig } from '../src/config.js';
+import { baselineConfig, type AppConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { allWorkspaces, makeSettingsStore } from './helpers.js';
@@ -21,7 +21,7 @@ describe('claimReady pins resolved defaults onto the row (issue #480)', () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-claim-pins-'));
     asyncDb = await openAsyncDb(dir);
     settingsStore = await makeSettingsStore(dir);
-    config = defaultConfig();
+    config = baselineConfig();
     taskService = new TaskService(asyncDb, () => config, allWorkspaces(asyncDb, settingsStore));
   });
 

@@ -32,7 +32,16 @@ describe('Codex afk permission model', () => {
   beforeAll(async () => {
     server = await startServer({
       ...stubHarness('codex'),
-      harnesses: { codex: { command: process.execPath, args: [STUB_HARNESS], env: { STUB_MODES: 'default,read-only,agent' }, models: ['stub-model'], defaultModel: 'stub-model' } },
+      harnesses: {
+        codex: {
+          command: process.execPath,
+          args: [STUB_HARNESS],
+          env: { STUB_MODES: 'default,read-only,agent' },
+          models: [{ id: 'stub-model' }],
+          defaultModel: 'stub-model',
+          cacheWarmSeconds: 300,
+        },
+      },
       defaults: { harness: 'codex' },
       maxAttempts: 1,
       drive: { continueAttempts: 0 },
@@ -92,8 +101,9 @@ describe('Codex afk full-access mode', () => {
           command: process.execPath,
           args: [STUB_HARNESS],
           env: { STUB_MODES: 'read-only,agent,agent-full-access' },
-          models: ['stub-model'],
+          models: [{ id: 'stub-model' }],
           defaultModel: 'stub-model',
+          cacheWarmSeconds: 300,
         },
       },
       defaults: { harness: 'codex' },

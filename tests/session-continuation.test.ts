@@ -15,10 +15,10 @@ import type { AttemptRow, SessionRow } from '../src/db/schema.js';
 
 describe('decideAttemptContinuation (issue #311)', () => {
   const now = 10 * 60 * 60 * 1000;
-  const input = { harness: 'claude', contextTokens: 190_000, contextReuseTokenLimit: 200_000, lastActiveAt: now - 59 * 60 * 1000, now };
+  const input = { cacheWarmSeconds: 300, contextTokens: 190_000, contextReuseTokenLimit: 200_000, lastActiveAt: now - 4 * 60 * 1000, now };
 
-  it('continues only below the token limit and inside the fixed harness window', () => {
-    expect(decideAttemptContinuation(input)).toMatchObject({ path: 'continued-session', contextTokens: 190_000, warmWindowMs: 60 * 60 * 1000 });
+  it('continues only below the token limit and inside the configured warm window', () => {
+    expect(decideAttemptContinuation(input)).toMatchObject({ path: 'continued-session', contextTokens: 190_000, warmWindowMs: 5 * 60 * 1000 });
   });
 
   it('starts a condensed Session at the context token-limit boundary', () => {
@@ -26,16 +26,13 @@ describe('decideAttemptContinuation (issue #311)', () => {
   });
 
   it('starts a condensed Session at the warm-window boundary', () => {
-    expect(decideAttemptContinuation({ ...input, lastActiveAt: now - 60 * 60 * 1000 })).toMatchObject({ path: 'new-session-condensed', reason: 'session-cold' });
+    expect(decideAttemptContinuation({ ...input, lastActiveAt: now - 5 * 60 * 1000 })).toMatchObject({ path: 'new-session-condensed', reason: 'session-cold' });
   });
 
   it('starts condensed when context tokens are unavailable', () => {
     expect(decideAttemptContinuation({ ...input, contextTokens: null })).toMatchObject({ path: 'new-session-condensed', reason: 'missing-context-tokens' });
   });
 
-  it('starts condensed when the harness has no fixed warm window', () => {
-    expect(decideAttemptContinuation({ ...input, harness: 'unknown' })).toMatchObject({ path: 'new-session-condensed', reason: 'missing-warm-window' });
-  });
 });
 
 describe('planSessionContinuation (issue #147)', () => {
@@ -161,7 +158,7 @@ describe('estimateContinuationCost (issue #147 AC4)', () => {
     expect(est.note).toContain('cannot be estimated');
   });
 
-  it('reads warmth straight off a SessionRow (structurally assignable to SessionWarmthFacts)', () => {
+  it('derives warmth from a SessionRow and configured cache duration', () => {
     const row = {
       id: 7,
       harness: 'claude',
@@ -177,7 +174,6 @@ describe('estimateContinuationCost (issue #147 AC4)', () => {
       adapterVersion: 'claude@1',
       status: 'active',
       lastActiveAt: now - 60_000,
-      estimatedWarmUntil: now + HOUR,
       worktreePath: null,
       worktreeRepoDir: null,
       retireReason: null,
@@ -188,7 +184,7 @@ describe('estimateContinuationCost (issue #147 AC4)', () => {
       createdAt: 0,
       updatedAt: 0,
     } satisfies SessionRow;
-    expect(estimateContinuationCost(row, now).band).toBe('warm');
+    expect(estimateContinuationCost(sessionWarmthFacts(row, 3600), now).band).toBe('warm');
   });
 
   it('sessionWarmthFacts projects a SessionRow to exactly the two warmth fields', () => {
@@ -207,7 +203,6 @@ describe('estimateContinuationCost (issue #147 AC4)', () => {
       adapterVersion: 'claude@1',
       status: 'active',
       lastActiveAt: 123,
-      estimatedWarmUntil: 456,
       worktreePath: null,
       worktreeRepoDir: null,
       retireReason: null,
@@ -218,14 +213,14 @@ describe('estimateContinuationCost (issue #147 AC4)', () => {
       createdAt: 0,
       updatedAt: 0,
     } satisfies SessionRow;
-    expect(sessionWarmthFacts(row)).toEqual({ estimatedWarmUntil: 456, lastActiveAt: 123 });
+    expect(sessionWarmthFacts(row, 1)).toEqual({ estimatedWarmUntil: 1123, lastActiveAt: 123 });
   });
 });
 
 describe('previewHumanRejectContinuation (issue #170)', () => {
   const HOUR = 60 * 60 * 1000;
   const now = 10 * HOUR;
-  const session = (id: number, warmUntil: number | null): SessionRow =>
+  const session = (id: number, warmUntil: number): SessionRow =>
     ({
       id,
       harness: 'claude',
@@ -240,8 +235,7 @@ describe('previewHumanRejectContinuation (issue #170)', () => {
       supportsLoadSession: true,
       adapterVersion: 'claude@1',
       status: 'active',
-      lastActiveAt: now - 60_000,
-      estimatedWarmUntil: warmUntil,
+      lastActiveAt: warmUntil - HOUR,
       worktreePath: null,
       worktreeRepoDir: null,
       retireReason: null,
@@ -256,13 +250,13 @@ describe('previewHumanRejectContinuation (issue #170)', () => {
 
   it('returns the offer-choice plan projected against the newest Session-bound Run', () => {
     const store = new Map([[5, session(5, now + HOUR)]]);
-    const plan = previewHumanRejectContinuation([run(null), run(5)], (id) => store.get(id) ?? null, now);
+    const plan = previewHumanRejectContinuation([run(null), run(5)], (id) => store.get(id) ?? null, HOUR / 1000, now);
     expect(plan?.mode).toBe('offer-choice');
     expect(plan?.continueFull.estimate.band).toBe('warm');
     expect(plan?.startCondensed).toEqual({
       session: 'new',
       conversation: 'condensed',
-      estimate: estimateCondensedContinuationCost(session(5, now + HOUR), now),
+      estimate: estimateCondensedContinuationCost(sessionWarmthFacts(session(5, now + HOUR), HOUR / 1000), now),
     });
   });
 
@@ -271,21 +265,21 @@ describe('previewHumanRejectContinuation (issue #170)', () => {
       [1, session(1, now + HOUR)],
       [2, session(2, now - HOUR)],
     ]);
-    const plan = previewHumanRejectContinuation([run(1), run(2)], (id) => store.get(id) ?? null, now);
+    const plan = previewHumanRejectContinuation([run(1), run(2)], (id) => store.get(id) ?? null, HOUR / 1000, now);
     expect(plan?.continueFull.estimate.band).toBe('cold');
   });
 
   it('returns null when no Run ever bound a Session', () => {
-    expect(previewHumanRejectContinuation([run(null), run(null)], () => null, now)).toBeNull();
+    expect(previewHumanRejectContinuation([run(null), run(null)], () => null, HOUR / 1000, now)).toBeNull();
   });
 
   it('returns null when the newest Session was retired and swept (lookup misses)', () => {
-    expect(previewHumanRejectContinuation([run(9)], () => null, now)).toBeNull();
+    expect(previewHumanRejectContinuation([run(9)], () => null, HOUR / 1000, now)).toBeNull();
   });
 
   it('skips a swept newer Session and falls back to an older live one', () => {
     const store = new Map([[3, session(3, now + HOUR)]]);
-    const plan = previewHumanRejectContinuation([run(3), run(8)], (id) => store.get(id) ?? null, now);
+    const plan = previewHumanRejectContinuation([run(3), run(8)], (id) => store.get(id) ?? null, HOUR / 1000, now);
     expect(plan?.continueFull.estimate.band).toBe('warm');
   });
 });

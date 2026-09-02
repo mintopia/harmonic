@@ -14,7 +14,7 @@ async function renderForm(props: { task: Task | null; workspace: Workspace | nul
   host = await mountComponent(
     createElement(TaskForm, {
       config: makeConfig({
-        harnesses: { claude: { command: 'claude', args: [], env: {}, models: ['claude-sonnet-4-6', 'claude-opus-4-1'], defaultModel: 'claude-sonnet-4-6' } },
+        harnesses: { claude: { command: 'claude', args: [], env: {}, models: [{ id: 'claude-sonnet-4-6' }, { id: 'claude-opus-4-1' }], defaultModel: 'claude-sonnet-4-6', cacheWarmSeconds: 300 } },
       }),
       task: props.task,
       workspace: props.workspace,

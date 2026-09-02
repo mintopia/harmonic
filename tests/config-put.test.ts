@@ -23,6 +23,24 @@ describe('PUT /api/config', () => {
     expect(after.body.defaults.workingDir).toBe('/tmp/elsewhere');
   });
 
+  it('exposes the distributed baseline separately from the effective global config', async () => {
+    await server.api('PATCH', '/api/config', { maxAttempts: 7 });
+
+    const layers = await server.api('GET', '/api/config/layers');
+    expect(layers.status).toBe(200);
+    expect(layers.body.baseline.maxAttempts).toBe(2);
+    expect(layers.body.global.maxAttempts).toBe(7);
+  });
+
+  it('reverts every global override to the distributed baseline', async () => {
+    await server.api('PATCH', '/api/config', { maxAttempts: 7 });
+
+    const reverted = await server.api('DELETE', '/api/config/overrides');
+    expect(reverted.status).toBe(200);
+    expect(reverted.body.maxAttempts).toBe(2);
+    expect((await server.api('GET', '/api/config/layers')).body.global.maxAttempts).toBe(2);
+  });
+
   it('rejects an invalid config atomically: 400, and a prior GET is unaffected', async () => {
     const current = (await server.api('GET', '/api/config')).body;
     const invalid = { ...current, autoRunner: { ...current.autoRunner, maxConcurrentAttempts: 0 } };
@@ -33,25 +51,6 @@ describe('PUT /api/config', () => {
 
     const after = await server.api('GET', '/api/config');
     expect(after.body).toEqual(current);
-  });
-
-  it('full-replace deletes a record key that a PATCH cannot remove', async () => {
-    const patched = await server.api('PATCH', '/api/config', {
-      prices: { 'gpt-4': { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 } },
-    });
-    expect(patched.body.prices['gpt-4']).toBeTruthy();
-
-    const noopPatch = await server.api('PATCH', '/api/config', { prices: {} });
-    expect(noopPatch.body.prices['gpt-4']).toBeTruthy();
-
-    const current = (await server.api('GET', '/api/config')).body;
-    const { 'gpt-4': _dropped, ...pricesWithoutGpt4 } = current.prices;
-    const put = await server.api('PUT', '/api/config', { ...current, prices: pricesWithoutGpt4 });
-    expect(put.status).toBe(200);
-    expect(put.body.prices['gpt-4']).toBeUndefined();
-
-    const after = await server.api('GET', '/api/config');
-    expect(after.body.prices['gpt-4']).toBeUndefined();
   });
 
   it('full-replace deletes a harness env var that a PATCH cannot remove', async () => {

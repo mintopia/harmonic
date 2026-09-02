@@ -563,10 +563,8 @@ export interface Conversation {
    * telemetry strip shows raw tokens instead of a fabricated percentage
    *. */
   contextWindow: number | null;
-  /** The model's configured cache TTL, in seconds; null when unconfigured —
-   * the telemetry strip never shows the cold-cache estimate in that case
-   *. */
-  cacheTtlSeconds: number | null;
+  /** The configured harness cache warm period, in seconds. */
+  cacheWarmSeconds: number | null;
 }
 
 /**
@@ -629,9 +627,16 @@ export interface HarnessConfig {
   command: string;
   args: string[];
   env: Record<string, string>;
-  models: string[];
+  models: ModelCatalogEntry[];
   defaultModel: string;
+  cacheWarmSeconds: number;
   sessionLogDir?: string;
+}
+
+export interface ModelCatalogEntry {
+  id: string;
+  price?: ModelPrice;
+  contextWindow?: number;
 }
 
 export interface ModelPrice {
@@ -751,7 +756,6 @@ export interface AppConfig {
   /** Operator display name for this instance; empty string means unnamed (UI falls back to "Harmonic"). */
   name: string;
   harnesses: Record<string, HarnessConfig>;
-  prices: Record<string, ModelPrice>;
   defaults: {
     harness: string;
     workingDir: string;
@@ -795,4 +799,9 @@ export interface AppConfig {
   contextReuseTokenLimit: number;
   /** The Task Prompt template for native Attempts, with {prompt}/{id}/{workingDir}/{harness}/{model} placeholders. */
   taskPrompt: string;
+}
+
+export interface ConfigLayers {
+  baseline: AppConfig;
+  global: AppConfig;
 }

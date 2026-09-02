@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { context, propagation, trace } from '@opentelemetry/api';
 import { InMemorySpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base';
 import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
-import { defaultConfig, verificationCommandSchema } from '../src/config.js';
+import { baselineConfig, verificationCommandSchema } from '../src/config.js';
 import { execFileSync } from 'node:child_process';
 import { openAsyncDb } from '../src/db/async.js';
 import { TaskService } from '../src/domain/tasks.js';
@@ -151,7 +151,7 @@ describe('Auto-Runner operations (issue #289)', () => {
     const { exporter, registry } = installOperations();
     const server = await startServer({
       ...stubHarness(),
-      defaults: { ...defaultConfig().defaults, isolationMode: 'worktree' },
+      defaults: { ...baselineConfig().defaults, isolationMode: 'worktree' },
       autoRunner: { enabled: true, maxConcurrentAttempts: 1 },
     });
 
@@ -191,7 +191,7 @@ describe('Auto-Runner operations (issue #289)', () => {
     const db = await openAsyncDb(directory);
     const settingsStore = await makeSettingsStore(directory);
     const { exporter, registry } = installOperations();
-    const config = { ...defaultConfig(), autoRunner: { enabled: true, maxConcurrentAttempts: 1 } };
+    const config = { ...baselineConfig(), autoRunner: { enabled: true, maxConcurrentAttempts: 1 } };
     const tasks = new TaskService(db, () => config, allWorkspaces(db, settingsStore));
     const task = await tasks.create({ prompt: 'fail a scheduled start', isolationMode: 'worktree' });
     let launchAttempts = 0;
@@ -233,7 +233,7 @@ describe('Auto-Runner operations (issue #289)', () => {
     const db = await openAsyncDb(directory);
     const settingsStore = await makeSettingsStore(directory);
     const { exporter, registry } = installOperations();
-    const config = { ...defaultConfig(), autoRunner: { enabled: true, maxConcurrentAttempts: 1 } };
+    const config = { ...baselineConfig(), autoRunner: { enabled: true, maxConcurrentAttempts: 1 } };
     const tasks = new TaskService(db, () => config, allWorkspaces(db, settingsStore));
     let launchAttempts = 0;
     const autoRunner = new AutoRunner(

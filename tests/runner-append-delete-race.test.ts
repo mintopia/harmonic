@@ -3,9 +3,10 @@ import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
-import { defaultConfig } from '../src/config.js';
+import { baselineConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { AttemptStore, type AttemptGuardrailSnapshot } from '../src/domain/attempts.js';
+import { pricesForHarness } from '../src/domain/pricing.js';
 import { Runner } from '../src/execution/runner.js';
 import type { TaskRow, AttemptRow } from '../src/db/schema.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
@@ -26,9 +27,9 @@ describe('Runner.recordRunEvent — task deleted mid-append (issue #371)', () =>
     mkdirSync(repoDir);
     asyncDb = await openAsyncDb(dir);
     settingsStore = await makeSettingsStore(dir);
-    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
+    tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
     runs = new AttemptStore(asyncDb);
-    runner = new Runner(tasks, asyncDb, () => defaultConfig());
+    runner = new Runner(tasks, asyncDb, () => baselineConfig());
   });
 
   afterEach(async () => {
@@ -41,8 +42,8 @@ describe('Runner.recordRunEvent — task deleted mid-append (issue #371)', () =>
   it('swallows the FK rejection when the run row is gone, so the append never crashes the process', async () => {
     const task = await tasks.create({ prompt: 'delete me mid-append', isolationMode: 'direct', workingDir: repoDir });
     const snapshot: AttemptGuardrailSnapshot = {
-      guardrailConfig: defaultConfig().guardrails,
-      priceTable: defaultConfig().prices,
+      guardrailConfig: baselineConfig().guardrails,
+      priceTable: pricesForHarness(baselineConfig().harnesses.claude),
     };
     const run = await runs.create(task.id, snapshot);
 

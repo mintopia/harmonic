@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import * as schema from './schema.js';
 import { syncSchema } from './schema-sync.js';
 import { conversations, settings, tasks, workspaces } from './schema.js';
-import { defaultConfig } from '../config.js';
+import { baselineConfig } from '../config.js';
 
 /** The libsql-backed Drizzle database; every `.get/.all/.run` is a Promise. */
 export type AsyncDb = LibSQLDatabase<typeof schema>;
@@ -126,7 +126,7 @@ async function backfillDefaultWorkspaceAsync(handle: AsyncDbHandle): Promise<voi
 
     let defaultWorkspace = await db.select().from(workspaces).orderBy(workspaces.id).get();
     if (!defaultWorkspace) {
-      const workingDir = storedConfig?.defaults?.workingDir ?? defaultConfig().defaults.workingDir;
+      const workingDir = storedConfig?.defaults?.workingDir ?? baselineConfig().defaults.workingDir;
       const now = Date.now();
       defaultWorkspace = await db
         .insert(workspaces)

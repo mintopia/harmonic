@@ -4,7 +4,7 @@ import { AcpDriver } from '../acp/driver.js';
 import { parsePermissionRequest, type PermissionRequest } from '../acp/permission-request.js';
 import { adapterFor } from './harness/registry.js';
 import { accumulateUsage, collectUsageWithRetry, type AttemptUsage } from './usage.js';
-import { resolvePrices } from '../domain/pricing.js';
+import { pricesForHarness } from '../domain/pricing.js';
 import { DomainError } from '../domain/errors.js';
 import type { AppConfig } from '../config.js';
 import type { ConversationStore, PersistedConversationEvent } from '../domain/conversations.js';
@@ -373,7 +373,7 @@ export class ConversationDriver {
           cwd: convo.workingDir,
           sessionId: convo.sessionId,
           promptResult: result,
-          prices: resolvePrices(this.getConfig().prices),
+          prices: pricesForHarness(harness),
           events: (await this.store.listEvents(conversationId)) as unknown as Parameters<typeof collectUsageWithRetry>[0]['events'],
         });
       }

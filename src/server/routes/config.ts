@@ -8,6 +8,7 @@ import {
   MERGE_FATES,
   PRIORITIES,
   appConfigSchema,
+  modelCatalogEntrySchema,
   verificationCommandSchema,
   verificationReviewSchema,
   type AppConfig,
@@ -29,26 +30,21 @@ const configPatchBodySchema = z
           args: z.array(z.string()).meta({ example: ['--yes', '@agentclientprotocol/claude-agent-acp'] }),
           /** Extra environment for the spawned process; deep-merged, so vars absent here are left alone. */
           env: z.record(z.string(), z.string()).meta({ example: { NODE_OPTIONS: '--max-old-space-size=4096' } }),
-          models: z.array(z.string()).meta({ example: ['sonnet-5', 'opus-4-8'] }),
+          models: z.union([
+            z.array(modelCatalogEntrySchema),
+            z.record(z.string(), z.union([
+              modelCatalogEntrySchema.partial(),
+              z.null(),
+            ])),
+          ]).meta({ example: { 'sonnet-5': { contextWindow: 200000 }, 'retired-model': null } }),
           /** Must be one of `models` when any are listed — enforced by the config schema on write. */
           defaultModel: z.string().meta({ example: 'sonnet-5' }),
+          cacheWarmSeconds: z.number().int().positive().meta({ example: 300 }),
           /** Root of the harness's native session logs; empty string disables the usage fallback. */
           sessionLogDir: z.string().meta({ example: '/home/dev/.claude/projects' }),
         }).partial(),
       )
       .meta({ example: { claude: { defaultModel: 'sonnet-5' } } })
-      .optional(),
-    prices: z
-      .record(
-        z.string(),
-        z.object({
-          input: z.number().nonnegative().meta({ example: 3 }),
-          output: z.number().nonnegative().meta({ example: 15 }),
-          cacheRead: z.number().nonnegative().meta({ example: 0.3 }),
-          cacheWrite: z.number().nonnegative().meta({ example: 3.75 }),
-        }).partial(),
-      )
-      .meta({ example: { 'sonnet-5': { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 } } })
       .optional(),
     defaults: z
       .object({
@@ -112,12 +108,25 @@ export async function configRoutes(fastify: FastifyInstance, ctx: Pick<Execution
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         response: {
           200: appConfigSchema.describe(
-            'The stored configuration in full: harnesses, price overrides, defaults, auto-runner settings, and flags.',
+            'The stored configuration in full: harnesses and their model catalogs, defaults, auto-runner settings, and flags.',
           ),
         },
       },
     },
     async () => ctx.settingsStore.getGlobal(),
+  );
+
+  app.get(
+    '/config/layers',
+    {
+      schema: {
+        tags: ['Config'],
+        description: 'Get the distributed baseline and effective global configuration for settings inheritance controls.',
+        security: [{ bearerAuth: [] }, { sessionCookie: [] }],
+        response: { 200: z.object({ baseline: appConfigSchema, global: appConfigSchema }) },
+      },
+    },
+    async () => ({ baseline: ctx.settingsStore.getBaseline(), global: ctx.settingsStore.getGlobal() }),
   );
 
   app.patch(
@@ -147,18 +156,35 @@ export async function configRoutes(fastify: FastifyInstance, ctx: Pick<Execution
       schema: {
         tags: ['Config'],
         description:
-          "Full-replace the stored configuration. Unlike PATCH's deep-merge, a record key omitted here (a harness env var, a price override) is deleted, not left alone — the settings UI loads the whole config, edits locally, and saves the complete object so it can delete as well as add. Validated atomically against the config schema: an invalid body is rejected with no partial write. Operator only; not reachable with an attempt-scoped Attempt Key.",
+          "Full-replace the stored configuration. Unlike PATCH's deep-merge, a record key omitted here (a harness environment variable, a catalog entry) is deleted, not left alone. The settings UI loads the whole config, edits locally, and saves the complete object so it can delete as well as add. The config schema validates the request atomically, so an invalid body makes no partial write. Operator only; not reachable with an attempt-scoped Attempt Key.",
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         body: appConfigSchema,
         response: {
           200: appConfigSchema.describe(
-            "The whole configuration as stored after the replace, with omitted optional fields filled from the schema's defaults.",
+            'The whole configuration as stored after the replace.',
           ),
         },
       },
     },
     async (req) => {
       const updated = await ctx.settingsStore.replaceGlobal(req.body as AppConfig);
+      ctx.autoRunner.poke();
+      return updated;
+    },
+  );
+
+  app.delete(
+    '/config/overrides',
+    {
+      schema: {
+        tags: ['Config'],
+        description: 'Clear every global override and return to the distributed baseline.',
+        security: [{ bearerAuth: [] }, { sessionCookie: [] }],
+        response: { 200: appConfigSchema },
+      },
+    },
+    async () => {
+      const updated = await ctx.settingsStore.revertGlobal();
       ctx.autoRunner.poke();
       return updated;
     },

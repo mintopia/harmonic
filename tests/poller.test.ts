@@ -6,7 +6,7 @@ import { trace } from '@opentelemetry/api';
 import { InMemorySpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base';
 import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
-import { defaultConfig } from '../src/config.js';
+import { baselineConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { TrackerPoller } from '../src/tracker/poller.js';
 import type { Ticket, TrackerAdapter } from '../src/tracker/adapter.js';
@@ -70,7 +70,7 @@ describe('TrackerPoller.poll', () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-poller-'));
     asyncDb = await openAsyncDb(dir);
     settingsStore = await makeSettingsStore(dir);
-    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
+    tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
     wsId = (await allWorkspaces(asyncDb, settingsStore)())[0]!.id;
   });
   afterEach(async () => {

@@ -4,7 +4,7 @@ import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
-import { defaultConfig } from '../src/config.js';
+import { baselineConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { AttemptStore } from '../src/domain/attempts.js';
 import { AttemptSettleCoordinator } from '../src/domain/attempt-settle.js';
@@ -49,7 +49,7 @@ describe('CrashRecoveryCoordinator (ADR-0001)', () => {
     repo = makeRepo();
     asyncDb = await openAsyncDb(dir);
     settingsStore = await makeSettingsStore(dir);
-    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
+    tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
     attempts = new AttemptStore(asyncDb);
     settle = new AttemptSettleCoordinator(tasks, attempts);
   });

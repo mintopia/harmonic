@@ -26,7 +26,6 @@ import {
   planSessionContinuation,
   sessionWarmthFacts,
   decideAttemptContinuation,
-  HARNESS_SESSION_WARM_WINDOWS_MS,
   type ContinuationTrigger,
   type DeterministicContinuation,
 } from '../domain/session-continuation.js';
@@ -37,6 +36,10 @@ import { AttemptSettleCoordinator, type SettleProjection, type DispositionKind }
 import type { SessionRetirementHook } from '../domain/session-retirement-coordinator.js';
 import type { TaskService } from '../domain/tasks.js';
 import { resolveGuardrails, resolveVerifiers, resolveScoped, resolveTaskPrompt } from '../domain/setting-override.js';
+
+function configuredCacheWarmSeconds(config: AppConfig, harness: string): number | undefined {
+  return Object.entries(config.harnesses).find(([id]) => id === harness)?.[1].cacheWarmSeconds;
+}
 import { VerificationAttemptStore } from '../domain/verification-attempts.js';
 import { GuardrailEventStore } from '../domain/guardrail-events.js';
 import { toProgressEvents } from '../domain/guardrail-progress.js';
@@ -44,7 +47,7 @@ import type { ProgressEvent } from '../domain/stall-detector.js';
 import { runCommandVerifier, commandAttemptToInput } from '../verification/command-verifier.js';
 import { createAcpCriticDrive, runCritic, criticAttemptToInput, type CriticHarnessDrive } from '../verification/critic.js';
 import { combineVerdicts, type VerificationDecision, type VerifierVerdict } from '../verification/combine.js';
-import { resolvePrices } from '../domain/pricing.js';
+import { pricesForHarness } from '../domain/pricing.js';
 import { isForeignKeyViolation } from '../db/errors.js';
 import { logger } from '../logger.js';
 import type { PostMergeHook } from './branch-merge.js';
@@ -591,7 +594,7 @@ export class Runner {
     const ws = (await this.getWorkspace?.(task.workspaceId)) ?? { guardrailBudget: null, guardrailProgress: null, toolTimeoutMinutes: null };
     const snapshot: AttemptGuardrailSnapshot = {
       guardrailConfig: resolveGuardrails(ws, config),
-      priceTable: resolvePrices(config.prices),
+      priceTable: pricesForHarness(harness),
     };
     const created = await this.attempts.create(task.id, snapshot);
     const pendingContinuation = this.pendingContinuation.get(task.id);
@@ -668,7 +671,9 @@ export class Runner {
       if (!src) return run;
       if (!this.resumeEligibilityFor(task, src.session).eligible) return run;
 
-      const plan = planSessionContinuation(src.trigger, sessionWarmthFacts(src.session), Date.now());
+      const cacheWarmSeconds = configuredCacheWarmSeconds(this.getConfig(), task.harness);
+      if (cacheWarmSeconds === undefined) return run;
+      const plan = planSessionContinuation(src.trigger, sessionWarmthFacts(src.session, cacheWarmSeconds), Date.now());
 
       if (plan.mode === 'offer-choice' && task.continuationChoice === 'condensed') {
         return run;
@@ -832,8 +837,8 @@ export class Runner {
     const src = await this.resolveContinuationSource(task);
     if (!src) return false;
     if (!this.resumeEligibilityFor(task, src.session).eligible) return false;
-    const warmWindowMs = HARNESS_SESSION_WARM_WINDOWS_MS[src.session.harness];
-    if (warmWindowMs === undefined || Date.now() - src.session.lastActiveAt >= warmWindowMs) return false;
+    const cacheWarmSeconds = configuredCacheWarmSeconds(this.getConfig(), task.harness);
+    if (cacheWarmSeconds === undefined || Date.now() - src.session.lastActiveAt >= cacheWarmSeconds * 1000) return false;
     this.pendingOperatorSeed.set(taskId, text);
     try {
       await this.taskService.requeue(taskId, undefined, 'full');
@@ -1242,7 +1247,7 @@ export class Runner {
     const persisted = run.usage ? (JSON.parse(run.usage) as AttemptUsage).contextTokens ?? null : null;
     const contextTokens = (await this.usage.latestSnapshot(run.id))?.contextTokens ?? this.lastTurnContextTokens.get(run.id) ?? persisted;
     return decideAttemptContinuation({
-      harness: task.harness,
+      cacheWarmSeconds: configuredCacheWarmSeconds(this.getConfig(), task.harness) ?? 0,
       contextTokens,
       lastActiveAt: session?.lastActiveAt ?? now,
       contextReuseTokenLimit: resolveScoped('contextReuseTokenLimit', workspace?.contextReuseTokenLimit, this.getConfig().contextReuseTokenLimit),
@@ -2357,7 +2362,10 @@ export class Runner {
       } catch {
       }
     }
-    await this.attempts.backfillCosts(resolvePrices(config.prices));
+    await this.attempts.backfillCosts(async (attempt) => {
+      const task = await this.taskService.get(attempt.taskId);
+      return pricesForHarness(config.harnesses[task.harness as keyof typeof config.harnesses] ?? config.harnesses.claude);
+    });
   }
 
   private async diffSnapshotFor(

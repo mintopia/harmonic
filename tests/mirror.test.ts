@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { tasks as tasksTable } from '../src/db/schema.js';
-import { defaultConfig } from '../src/config.js';
+import { baselineConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { deriveRole, mirrorScan, deriveMaps, toMirrorInput } from '../src/tracker/mirror.js';
 import { mirroredAgentEligible } from '../src/domain/agent-workable.js';
@@ -79,7 +79,7 @@ describe('mirrorScan upsert', () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-mirror-'));
     asyncDb = await openAsyncDb(dir);
     settingsStore = await makeSettingsStore(dir);
-    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
+    tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
     wsId = (await allWorkspaces(asyncDb, settingsStore)())[0]!.id;
   });
   afterEach(async () => {
@@ -395,7 +395,7 @@ describe('durable tracker facts (issue #233)', () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-facts-'));
     asyncDb = await openAsyncDb(dir);
     settingsStore = await makeSettingsStore(dir);
-    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
+    tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
     wsId = (await allWorkspaces(asyncDb, settingsStore)())[0]!.id;
   });
   afterEach(async () => {
@@ -439,7 +439,7 @@ describe('durable tracker facts (issue #233)', () => {
 
   it('an unchanged re-poll neither writes nor emits — the JSON facts compare by value, not reference', async () => {
     const changed: number[] = [];
-    const spied = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore), (t) =>
+    const spied = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore), (t) =>
       changed.push(t.id),
     );
     const first = (await mirrorScan(spied, [rich], wsId))[0]!;
@@ -497,7 +497,7 @@ describe('deriveMaps (query-time rollup)', () => {
     const dir = mkdtempSync(join(tmpdir(), 'harmonic-maps-'));
     const asyncDb = await openAsyncDb(dir);
     const settingsStore = await makeSettingsStore(dir);
-    const tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
+    const tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
     const wsId = (await allWorkspaces(asyncDb, settingsStore)())[0]!.id;
     const scan = [
       ticket({ number: 19, isMap: true, title: 'Wayfinder', labels: ['wayfinder:map'] }),

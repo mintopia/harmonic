@@ -1,5 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { baselineConfig } from '../src/config.js';
 import { startServer, stubHarness, type TestServer } from './helpers.js';
+
+describe('baseline model catalog', () => {
+  it('keeps Claude sessions warm for one hour', () => {
+    expect(baselineConfig().harnesses.claude.cacheWarmSeconds).toBe(3600);
+  });
+});
 
 describe('PATCH /api/config verification', () => {
   let server: TestServer;
@@ -90,5 +97,48 @@ describe('PATCH /api/config verification', () => {
     const patched = await server.api('PATCH', '/api/config', { contextReuseTokenLimit: 150_000 });
     expect(patched.status).toBe(200);
     expect(patched.body.contextReuseTokenLimit).toBe(150_000);
+  });
+
+  it('accepts a per-harness model catalog and cache warm duration', async () => {
+    const patched = await server.api('PATCH', '/api/config', {
+      harnesses: {
+        claude: {
+          models: [{ id: 'custom-model', price: { input: 1, output: 2, cacheRead: 0.1, cacheWrite: 1.25 }, contextWindow: 128_000 }],
+          defaultModel: 'custom-model',
+          cacheWarmSeconds: 600,
+        },
+      },
+      chat: { model: 'custom-model' },
+    });
+
+    expect(patched.status).toBe(200);
+    expect(patched.body.harnesses.claude.models).toEqual([
+      { id: 'custom-model', price: { input: 1, output: 2, cacheRead: 0.1, cacheWrite: 1.25 }, contextWindow: 128_000 },
+    ]);
+    expect(patched.body.harnesses.claude.cacheWarmSeconds).toBe(600);
+  });
+
+  it('accepts an id-keyed model catalog patch without replacing untouched models', async () => {
+    const patched = await server.api('PATCH', '/api/config', {
+      harnesses: { claude: { models: { 'claude-opus-5': { contextWindow: 123_456 } } } },
+    });
+
+    expect(patched.status).toBe(200);
+    expect(patched.body.harnesses.claude.models).toContainEqual(expect.objectContaining({ id: 'claude-opus-5', contextWindow: 123_456 }));
+    expect(patched.body.harnesses.claude.models).toContainEqual(expect.objectContaining({ id: 'stub-model' }));
+  });
+
+  it('rejects duplicate ids within a harness catalog', async () => {
+    const patched = await server.api('PATCH', '/api/config', {
+      harnesses: {
+        claude: {
+          models: [{ id: 'custom-model' }, { id: 'custom-model' }],
+          defaultModel: 'custom-model',
+          cacheWarmSeconds: 600,
+        },
+      },
+    });
+
+    expect(patched.status).toBe(400);
   });
 });

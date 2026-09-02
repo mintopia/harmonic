@@ -1,6 +1,7 @@
 import type {
   Attempt,
   AppConfig,
+  ConfigLayers,
   AttemptUsage,
   BudgetGuardrail,
   Channel,
@@ -53,8 +54,10 @@ export async function request<T>(method: string, path: string, body?: unknown): 
 
 export const api = {
   config: () => request<AppConfig>('GET', '/api/config'),
+  configLayers: () => request<ConfigLayers>('GET', '/api/config/layers'),
   updateConfig: (patch: object) => request<AppConfig>('PATCH', '/api/config', patch),
   replaceConfig: (config: AppConfig) => request<AppConfig>('PUT', '/api/config', config),
+  revertConfig: () => request<AppConfig>('DELETE', '/api/config/overrides'),
   /** `open` is an explicit board optimization. Omit it for full task history.
    * The response is the shared paginated envelope: the page under
    * `tasks` plus the filtered `total`. Pass `limit`/`offset` to page through it;

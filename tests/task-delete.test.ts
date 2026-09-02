@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
-import { defaultConfig } from '../src/config.js';
+import { baselineConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { attempts, attemptEvents, sessions, taskDependencies, trackerDismissals, tasks } from '../src/db/schema.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
@@ -24,7 +24,7 @@ describe('TaskService.delete (issue #162)', () => {
     removedIds = [];
     tasksSvc = new TaskService(
       asyncDb,
-      () => defaultConfig(),
+      () => baselineConfig(),
       allWorkspaces(asyncDb, settingsStore),
       () => {},
       () => {},

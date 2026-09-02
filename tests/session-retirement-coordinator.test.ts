@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
-import { defaultConfig } from '../src/config.js';
+import { baselineConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { AttemptStore } from '../src/domain/attempts.js';
 import { SessionStore, type DispatchSessionInput } from '../src/domain/sessions.js';
@@ -50,7 +50,7 @@ describe('Session retirement (issue #148)', () => {
     settingsStore = await makeSettingsStore(dir);
     sessions = new SessionStore(asyncDb);
     runs = new AttemptStore(asyncDb);
-    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
+    tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
     workspaceId = (await allWorkspaces(asyncDb, settingsStore)())[0]!.id;
   });
   afterEach(async () => {
