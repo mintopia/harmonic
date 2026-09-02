@@ -39,12 +39,15 @@ export function useConversationDetail(
     setConversation(null);
     setEvents([]);
     setPending({});
-    api.conversation(id).then((c) => {
-      if (!live) return;
-      setConversation(c);
-      upsertConversationInList(c);
-    }, toastError);
-    api.conversationEvents(id).then(({ events }) => live && setEvents(events), toastError);
+    const load = () => {
+      api.conversation(id).then((c) => {
+        if (!live) return;
+        setConversation(c);
+        upsertConversationInList(c);
+      }, toastError);
+      api.conversationEvents(id).then(({ events }) => live && setEvents(events), toastError);
+    };
+    load();
     const unsubscribe = subscribe((msg) => {
       if (msg.type === 'conversation_event' && msg.event.conversationId === id) {
         setEvents((current) =>
@@ -60,7 +63,7 @@ export function useConversationDetail(
         upsertConversationInList(msg.conversation);
         if (msg.conversation.state === 'ended') setPending({});
       }
-    });
+    }, load);
     return () => {
       live = false;
       unsubscribe();

@@ -256,6 +256,9 @@ export function App() {
           navigate({ ...routeRef.current, task: null, panel: NO_SELECTION }, { replace: true });
         }
       }
+    }, () => {
+      refresh();
+      refreshEpics();
     });
     const timer = setInterval(() => {
       refresh();

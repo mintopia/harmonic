@@ -29,7 +29,7 @@ export function useAttemptVerification(attemptId: number | null): {
     load();
     const unsubscribe = subscribe((msg) => {
       if (msg.type === 'attempt_changed' && msg.run.id === attemptId) load();
-    });
+    }, load);
     return () => {
       unsubscribe();
     };

@@ -608,13 +608,15 @@ export function ConversationLauncher({
   useEffect(() => {
     if (workspaceId === null) return;
     setConversations([]);
-    api.conversations(workspaceId).then(({ conversations }) => setConversations(conversations), toastError);
+    const load = () =>
+      api.conversations(workspaceId).then(({ conversations }) => setConversations(conversations), toastError);
+    load();
     const unsubscribe = subscribe((msg) => {
       setAttention((current) => applyAttentionMessage(current, msg, focusedRef.current));
       if (msg.type === 'conversation_changed' && msg.conversation.workspaceId === workspaceId) {
         setConversations((current) => upsertConversation(current, msg.conversation));
       }
-    });
+    }, load);
     return unsubscribe;
   }, [workspaceId]);
 

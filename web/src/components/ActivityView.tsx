@@ -362,7 +362,7 @@ export function ActivityView({ config }: { config: AppConfig | null }) {
       } else if (msg.type === 'conversation_event') {
         setPending((current) => resolvePendingPermissionFromEvent(current, msg.event));
       }
-    });
+    }, load);
     return () => {
       cancelled = true;
       clearInterval(poll);

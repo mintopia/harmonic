@@ -51,22 +51,27 @@ export function FlaggedWorktreesView() {
   useEffect(() => {
     let active = true;
     let snapshotLoaded = false;
-    const pending: FlaggedWorktree[][] = [];
+    let pending: FlaggedWorktree[][] = [];
     const apply = (next: FlaggedWorktree[]) => setWorktrees((current) => mergeFlaggedWorktrees(current ?? [], next));
-    const unsubscribe = subscribe((message) => {
-      if (message.type !== 'flagged-worktrees') return;
-      if (snapshotLoaded) apply(message.flags);
-      else pending.push(message.flags);
-    });
     const installSnapshot = (snapshot: FlaggedWorktree[]) => {
       if (!active) return;
       snapshotLoaded = true;
       setWorktrees(pending.reduce(mergeFlaggedWorktrees, snapshot));
     };
-    fetch('/api/flagged-worktrees')
-      .then((response) => (response.ok ? response.json() : { worktrees: [] }))
-      .then((snapshot: unknown) => installSnapshot(isFlaggedWorktreesSnapshot(snapshot) ? snapshot.worktrees : []))
-      .catch(() => installSnapshot([]));
+    const load = () => {
+      snapshotLoaded = false;
+      pending = [];
+      fetch('/api/flagged-worktrees')
+        .then((response) => (response.ok ? response.json() : { worktrees: [] }))
+        .then((snapshot: unknown) => installSnapshot(isFlaggedWorktreesSnapshot(snapshot) ? snapshot.worktrees : []))
+        .catch(() => installSnapshot([]));
+    };
+    const unsubscribe = subscribe((message) => {
+      if (message.type !== 'flagged-worktrees') return;
+      if (snapshotLoaded) apply(message.flags);
+      else pending.push(message.flags);
+    }, load);
+    load();
     return () => {
       active = false;
       unsubscribe();

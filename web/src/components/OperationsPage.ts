@@ -63,22 +63,27 @@ function OperationsReadout() {
   useEffect(() => {
     let active = true;
     let snapshotLoaded = false;
-    const pending: OperationEvent[] = [];
+    let pending: OperationEvent[] = [];
     const apply = (event: OperationEvent) => setForest((current) => operationForest(current ?? EMPTY_FOREST, event));
-    const unsubscribe = subscribe((message) => {
-      if (message.type !== 'operations') return;
-      if (snapshotLoaded) apply(message.event);
-      else pending.push(message.event);
-    });
     const installSnapshot = (snapshot: OperationForest | null) => {
       if (!active) return;
       snapshotLoaded = true;
       setForest(pending.reduce(operationForest, snapshot ?? EMPTY_FOREST));
     };
-    fetch('/api/operations')
-      .then((response) => (response.ok ? response.json() : null))
-      .then((snapshot: OperationForest | null) => installSnapshot(snapshot))
-      .catch(() => installSnapshot(null));
+    const load = () => {
+      snapshotLoaded = false;
+      pending = [];
+      fetch('/api/operations')
+        .then((response) => (response.ok ? response.json() : null))
+        .then((snapshot: OperationForest | null) => installSnapshot(snapshot))
+        .catch(() => installSnapshot(null));
+    };
+    const unsubscribe = subscribe((message) => {
+      if (message.type !== 'operations') return;
+      if (snapshotLoaded) apply(message.event);
+      else pending.push(message.event);
+    }, load);
+    load();
     const timer = setInterval(() => setNow(Date.now()), 1_000);
     return () => {
       active = false;
