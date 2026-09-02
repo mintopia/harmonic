@@ -58,7 +58,6 @@ describe('EpicBand whole-Epic integration progress (issue #424)', () => {
   });
 
   it('drives the bar off the server-authoritative read model, never re-derived from child states', () => {
-    // Identical members in both renders — only the read-model verification differs.
     const merged: EpicMember[] = [
       { ref: 1, title: 'a', taskId: 1, state: 'done', escalated: false, mergeStatus: 'completed', ready: false },
       { ref: 2, title: 'b', taskId: 2, state: 'done', escalated: false, mergeStatus: 'completed', ready: false },
