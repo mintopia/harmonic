@@ -30,7 +30,13 @@ const configPatchBodySchema = z
           args: z.array(z.string()).meta({ example: ['--yes', '@agentclientprotocol/claude-agent-acp'] }),
           /** Extra environment for the spawned process; deep-merged, so vars absent here are left alone. */
           env: z.record(z.string(), z.string()).meta({ example: { NODE_OPTIONS: '--max-old-space-size=4096' } }),
-          models: z.array(modelCatalogEntrySchema).meta({ example: [{ id: 'sonnet-5' }, { id: 'opus-4-8' }] }),
+          models: z.union([
+            z.array(modelCatalogEntrySchema),
+            z.record(z.string(), z.union([
+              modelCatalogEntrySchema.partial(),
+              z.null(),
+            ])),
+          ]).meta({ example: { 'sonnet-5': { contextWindow: 200000 }, 'retired-model': null } }),
           /** Must be one of `models` when any are listed — enforced by the config schema on write. */
           defaultModel: z.string().meta({ example: 'sonnet-5' }),
           cacheWarmSeconds: z.number().int().positive().meta({ example: 300 }),

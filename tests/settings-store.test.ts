@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parse, stringify } from 'yaml';
 import { SettingsStore } from '../src/server/settings-store.js';
-import { appConfigSchema, baselineConfig, loadBaselineConfig, verificationCommandSchema, budgetGuardrailSchema } from '../src/config.js';
+import { appConfigSchema, baselineConfig, loadBaselineConfig, mergeConfig, verificationCommandSchema, budgetGuardrailSchema } from '../src/config.js';
 
 describe('SettingsStore (issue #391)', () => {
   let dir: string;
@@ -55,19 +55,17 @@ describe('SettingsStore (issue #391)', () => {
       price: { input: 9, output: 18, cacheRead: 0.9, cacheWrite: 1.8 },
       contextWindow: 123_456,
     });
-    expect(parse(readFileSync(path, 'utf8')).global).toEqual({
-      harnesses: {
-        claude: {
-          models: store.getGlobal().harnesses.claude.models,
-        },
-        codex: {
-          models: store.getGlobal().harnesses.codex.models,
-        },
-        copilot: {
-          models: store.getGlobal().harnesses.copilot.models,
-        },
-      },
+    const persisted = parse(readFileSync(path, 'utf8')).global;
+    expect(persisted.harnesses.claude.models).toEqual({
+      'claude-opus-5': { price: { input: 9, output: 18, cacheRead: 0.9, cacheWrite: 1.8 }, contextWindow: 123_456 },
+      'custom-legacy-model': { id: 'custom-legacy-model', contextWindow: 65_536 },
     });
+    for (const id of ['codex', 'copilot']) {
+      expect(persisted.harnesses[id].models).toEqual({
+        'claude-opus-5': { id: 'claude-opus-5', price: { input: 9, output: 18, cacheRead: 0.9, cacheWrite: 1.8 }, contextWindow: 123_456 },
+        'custom-legacy-model': { id: 'custom-legacy-model', contextWindow: 65_536 },
+      });
+    }
     for (const harness of Object.values(store.getGlobal().harnesses)) {
       expect(harness.models).toContainEqual({ id: 'custom-legacy-model', contextWindow: 65_536 });
     }
@@ -80,6 +78,80 @@ describe('SettingsStore (issue #391)', () => {
     expect(parse(readFileSync(join(dir, 'settings.yaml'), 'utf8')).global).toEqual({
       verify: { commands: [{ command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }] },
     });
+  });
+
+  it('persists model catalog changes by id while untouched models track the baseline', async () => {
+    const store = await SettingsStore.create(dir);
+    const baseline = baselineConfig();
+    const [edited, removed] = baseline.harnesses.claude.models;
+    if (!edited || !removed) throw new Error('Claude baseline requires two models');
+
+    await store.replaceGlobal({
+      ...baseline,
+      harnesses: {
+        ...baseline.harnesses,
+        claude: {
+          ...baseline.harnesses.claude,
+          models: [
+            { ...edited, contextWindow: 123_456 },
+            ...baseline.harnesses.claude.models.slice(2),
+            { id: 'operator-model', contextWindow: 65_536 },
+          ],
+        },
+      },
+    });
+
+    expect(parse(readFileSync(join(dir, 'settings.yaml'), 'utf8')).global).toEqual({
+      harnesses: {
+        claude: {
+          models: {
+            [edited.id]: { contextWindow: 123_456 },
+            [removed.id]: null,
+            'operator-model': { id: 'operator-model', contextWindow: 65_536 },
+          },
+        },
+      },
+    });
+
+    const evolvedBaseline = {
+      ...baseline,
+      harnesses: {
+        ...baseline.harnesses,
+        claude: {
+          ...baseline.harnesses.claude,
+          models: [...baseline.harnesses.claude.models, { id: 'shipped-later-model', contextWindow: 200_000 }],
+        },
+      },
+    };
+    const patch = parse(readFileSync(join(dir, 'settings.yaml'), 'utf8')).global;
+    const resolved = mergeConfig(evolvedBaseline, patch);
+
+    expect(resolved.harnesses.claude.models).toContainEqual({ ...edited, contextWindow: 123_456 });
+    expect(resolved.harnesses.claude.models).not.toContainEqual(removed);
+    expect(resolved.harnesses.claude.models).toContainEqual({ id: 'operator-model', contextWindow: 65_536 });
+    expect(resolved.harnesses.claude.models).toContainEqual({ id: 'shipped-later-model', contextWindow: 200_000 });
+  });
+
+  it('persists clearing an optional model field as a keyed field tombstone', async () => {
+    const store = await SettingsStore.create(dir);
+    const baseline = baselineConfig();
+    const [model] = baseline.harnesses.claude.models;
+    if (!model) throw new Error('Claude baseline requires a model');
+    const { contextWindow: _contextWindow, ...withoutContextWindow } = model;
+
+    await store.replaceGlobal({
+      ...baseline,
+      harnesses: {
+        ...baseline.harnesses,
+        claude: { ...baseline.harnesses.claude, models: [withoutContextWindow, ...baseline.harnesses.claude.models.slice(1)] },
+      },
+    });
+
+    expect(parse(readFileSync(join(dir, 'settings.yaml'), 'utf8')).global.harnesses.claude.models).toEqual({
+      [model.id]: { contextWindow: null },
+    });
+    const reopened = await SettingsStore.create(dir);
+    expect(reopened.getGlobal().harnesses.claude.models.find((entry) => entry.id === model.id)?.contextWindow).toBeUndefined();
   });
 
   it('names the baseline file when it is incomplete', () => {

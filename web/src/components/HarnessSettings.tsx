@@ -52,25 +52,44 @@ function ListEditor({ items, onChange, ariaLabel }: { items: string[]; onChange:
   );
 }
 
-function CatalogEditor({ items, onChange }: { items: ModelCatalogEntry[]; onChange: (items: ModelCatalogEntry[]) => void }) {
-  const [priceDrafts, setPriceDrafts] = useState<Record<number, NonNullable<ModelCatalogEntry['price']>>>({});
+function CatalogEditor({ items, baseline, onChange }: { items: ModelCatalogEntry[]; baseline: ModelCatalogEntry[]; onChange: (items: ModelCatalogEntry[]) => void }) {
+  const [priceDrafts, setPriceDrafts] = useState<Record<string, NonNullable<ModelCatalogEntry['price']>>>({});
   const update = (i: number, entry: ModelCatalogEntry) => onChange(items.map((item, index) => (index === i ? entry : item)));
   const updatePrice = (i: number, key: keyof NonNullable<ModelCatalogEntry['price']>, value: string) => {
     const item = items[i];
     if (!item) return;
-    const draft = priceDrafts[i] ?? item.price ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
-    setPriceDrafts((drafts) => ({ ...drafts, [i]: draft }));
+    const draft = priceDrafts[item.id] ?? item.price ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+    setPriceDrafts((drafts) => ({ ...drafts, [item.id]: draft }));
     if (value === '') return update(i, { ...item, price: undefined });
     const price = { ...draft, [key]: Number(value) };
-    setPriceDrafts((drafts) => ({ ...drafts, [i]: price }));
+    setPriceDrafts((drafts) => ({ ...drafts, [item.id]: price }));
     update(i, { ...item, price });
   };
+  const baselineById = new Map(baseline.map((item) => [item.id, item]));
+  const removed = baseline.filter((item) => !items.some((current) => current.id === item.id));
   return <div className="space-y-2.5">
-    {items.map((item, i) => <div key={i} className="grid gap-2 sm:grid-cols-7">
-      <input aria-label="Model id" className={`${field} font-data`} value={item.id} onChange={(e) => update(i, { ...item, id: e.target.value })} />
-      {PRICE_FIELDS.map((key) => <input key={key} aria-label={PRICE_LABELS[key]} type="number" min={0} step="any" className={field} value={item.price?.[key] ?? ''} onChange={(e) => updatePrice(i, key, e.target.value)} />)}
-      <input aria-label="Context window" type="number" min={1} className={field} value={item.contextWindow ?? ''} onChange={(e) => update(i, { ...item, contextWindow: e.target.value === '' ? undefined : Number(e.target.value) })} />
-      <button type="button" aria-label="Remove model" onClick={() => onChange(items.filter((_, index) => index !== i))} className={`${touchTarget} ${btnQuiet}`}>✕</button>
+    {items.map((item, i) => {
+      const inherited = baselineById.get(item.id);
+      const modified = inherited === undefined || JSON.stringify(item) !== JSON.stringify(inherited);
+      return <div key={item.id || i} className={modified ? undefined : 'opacity-60'}>
+        <div className="mb-1 flex items-center gap-2">
+          <span className="text-small text-muted">{modified ? 'Modified' : 'Distributed'}</span>
+          {modified && <button type="button" className={`ml-auto ${btnQuiet} text-label`} onClick={() => onChange(inherited === undefined ? items.filter((_, index) => index !== i) : items.map((current, index) => index === i ? inherited : current))}>Revert</button>}
+        </div>
+        <div className="grid gap-2 sm:grid-cols-7">
+          <input aria-label="Model id" className={`${field} font-data`} value={item.id} onChange={(e) => update(i, { ...item, id: e.target.value })} />
+          {PRICE_FIELDS.map((key) => <input key={key} aria-label={PRICE_LABELS[key]} type="number" min={0} step="any" className={field} value={item.price?.[key] ?? ''} onChange={(e) => updatePrice(i, key, e.target.value)} />)}
+          <input aria-label="Context window" type="number" min={1} className={field} value={item.contextWindow ?? ''} onChange={(e) => update(i, { ...item, contextWindow: e.target.value === '' ? undefined : Number(e.target.value) })} />
+          <button type="button" aria-label={`Remove ${item.id || 'model'}`} onClick={() => onChange(items.filter((_, index) => index !== i))} className={`${touchTarget} ${btnQuiet}`}>✕</button>
+        </div>
+      </div>;
+    })}
+    {removed.map((item) => <div key={item.id} className="opacity-60">
+      <div className="flex items-center gap-2">
+        <span className="font-data text-data line-through">{item.id}</span>
+        <span className="text-small text-fail">Removed</span>
+        <button type="button" className={`ml-auto ${btnQuiet} text-label`} onClick={() => onChange([...items, item])}>Restore</button>
+      </div>
     </div>)}
     <button type="button" onClick={() => onChange([...items, { id: '' }])} className={btnGhost}>+ Add model</button>
   </div>;
@@ -135,11 +154,13 @@ function EnvEditor({ env, onChange }: { env: Record<string, string>; onChange: (
 function HarnessCard({
   id,
   harness,
+  baseline,
   fieldErrors,
   onChange,
 }: {
   id: string;
   harness: HarnessConfig;
+  baseline: HarnessConfig;
   fieldErrors: Record<string, string>;
   onChange: (harness: HarnessConfig) => void;
 }) {
@@ -199,7 +220,7 @@ function HarnessCard({
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
           <div>
             <label className={fieldLabel}>Model catalog</label>
-            <CatalogEditor items={harness.models} onChange={(models) => set('models', models)} />
+            <CatalogEditor items={harness.models} baseline={baseline.models} onChange={(models) => set('models', models)} />
             <FieldError message={fieldErrors[`${prefix}.models`]} />
           </div>
           <div>
@@ -234,10 +255,12 @@ function HarnessCard({
 
 export function HarnessesSection({
   config,
+  baseline,
   fieldErrors,
   onChange,
 }: {
   config: AppConfig;
+  baseline: AppConfig;
   fieldErrors: Record<string, string>;
   onChange: (harnesses: AppConfig['harnesses']) => void;
 }) {
@@ -248,6 +271,7 @@ export function HarnessesSection({
           key={id}
           id={id}
           harness={harness}
+          baseline={baseline.harnesses[id] ?? harness}
           fieldErrors={fieldErrors}
           onChange={(next) => onChange({ ...config.harnesses, [id]: next })}
         />
