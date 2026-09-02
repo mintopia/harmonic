@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startServer, stubHarness, waitFor, writeCopilotUsageDb, type TestServer } from './helpers.js';
 import type { DeepPartial, AppConfig } from '../src/config.js';
+import { verificationCommandSchema } from '../src/config.js';
 import { collectUsage, totalTokensOf } from '../src/execution/usage.js';
 import type { ModelUsage, AttemptUsage } from '../src/execution/usage.js';
 import type { PersistedAttemptEvent } from '../src/domain/attempts.js';
@@ -609,13 +610,31 @@ describe('usage collection and statistics', () => {
   });
 
   it('aggregates usage per task across runs, including retries', async () => {
-    server = await sharedServer();
-    const usageScenario = JSON.stringify({
-      usage: { inputTokens: 10, outputTokens: 20, totalTokens: 30 },
-      exit: 'clean',
+    // A legal 2-attempt Task (issue #459 / ADR-0020: `done` is terminal, so
+    // this can no longer be faked with a `done -> ready` setState). A
+    // verifier configured with no committed head makes attempt 1's verdict
+    // "inconclusive", which escalates immediately — with its usage already
+    // persisted — rather than looping. The one legal reopen edge is
+    // `escalated -> ready` (`tasks.requeue`); clearing the verifier before
+    // attempt 2 lets it complete normally to `done`, reporting the same
+    // usage again. Runs on a dedicated server since it mutates the default
+    // workspace's verificationCommand.
+    server = await startServer(stubHarness());
+    const ws = (await server.app.ctx.workspaces.list())[0]!;
+    await server.app.ctx.workspaces.update(ws.id, {
+      verificationCommand: [
+        verificationCommandSchema.parse({ command: process.execPath, args: ['-e', 'process.exit(0)'], timeoutSeconds: 30 }),
+      ],
     });
-    const { taskId } = await runTask({ prompt: usageScenario });
-    await server.app.ctx.tasks.setState(taskId, 'ready');
+
+    const usageScenario = JSON.stringify({ usage: { inputTokens: 10, outputTokens: 20, totalTokens: 30 } });
+    const created = await server.api('POST', '/api/tasks', { prompt: usageScenario });
+    const taskId = created.body.id as number;
+    await server.api('POST', `/api/tasks/${taskId}/run`);
+    await waitFor(async () => ((await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'escalated' ? true : undefined));
+
+    await server.app.ctx.workspaces.update(ws.id, { verificationCommand: null });
+    await server.app.ctx.tasks.requeue(taskId);
     await server.api('POST', `/api/tasks/${taskId}/run`);
     await waitFor(async () => {
       const { body } = await server.api('GET', `/api/tasks/${taskId}`);

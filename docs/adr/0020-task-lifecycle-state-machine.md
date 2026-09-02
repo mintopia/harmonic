@@ -47,6 +47,12 @@ single table and throw `invalid_state` on an illegal edge. Terminal states
 (`ready → done` is the reconcile-only edge for a merge that settled its Attempt
 before the Task reached `done`; every other edge already has a caller.)
 
+The one exception is the mirrored-Task tracker reopen (`upsertMirrored`): a
+re-opened tracker issue flips `done → ready` by a direct column write, outside
+`setState` and the per-Task lock, because the tracker — not the operator — owns
+a mirrored Task's open/closed axis. This is not a lifecycle transition and is
+deliberately not in the table.
+
 **2. Task-mutating operations serialize per Task.** A per-Task in-process mutex
 — a keyed variable, the same pattern ADR-0001 blesses for the merge (a variable,
 not a table) — wraps each mutating operation (accept, requeue, cancel, complete,

@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
 import { attempts } from '../src/db/schema.js';
+import { verificationCommandSchema } from '../src/config.js';
 import type { DeepPartial, AppConfig } from '../src/config.js';
 import { costOfUsages, DEFAULT_PRICES, resolvePrices } from '../src/domain/pricing.js';
 import type { ModelUsage, AttemptUsage } from '../src/execution/usage.js';
@@ -190,8 +191,27 @@ describe('cost surfaces (API)', () => {
       { [workDir]: { modelA: 1_000_000 } },
       { modelA: flatPrice(2) },
     );
-    const { taskId } = await runToDone(workDir);
-    await server.app.ctx.tasks.setState(taskId, 'ready');
+
+    // A legal 2-attempt Task (issue #459 / ADR-0020: `done` is terminal, so
+    // this can no longer be faked with a `done -> ready` setState). A
+    // verifier configured with no committed head makes attempt 1's verdict
+    // "inconclusive", which escalates immediately — with its usage/cost
+    // already persisted — rather than looping. The one legal reopen edge is
+    // `escalated -> ready` (`tasks.requeue`); clearing the verifier before
+    // attempt 2 lets it complete normally to `done`.
+    const ws = (await server.app.ctx.workspaces.list())[0]!;
+    await server.app.ctx.workspaces.update(ws.id, {
+      verificationCommand: [
+        verificationCommandSchema.parse({ command: process.execPath, args: ['-e', 'process.exit(0)'], timeoutSeconds: 30 }),
+      ],
+    });
+    const created = await server.api('POST', '/api/tasks', { prompt: JSON.stringify({}), workingDir: workDir });
+    const taskId = created.body.id as number;
+    await server.api('POST', `/api/tasks/${taskId}/run`);
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'escalated');
+
+    await server.app.ctx.workspaces.update(ws.id, { verificationCommand: null });
+    await server.app.ctx.tasks.requeue(taskId);
     await server.api('POST', `/api/tasks/${taskId}/run`);
     await waitFor(async () => {
       const { body } = await server.api('GET', `/api/tasks/${taskId}`);
