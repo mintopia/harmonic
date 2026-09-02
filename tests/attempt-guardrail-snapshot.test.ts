@@ -7,7 +7,7 @@ import { baselineConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { AttemptStore } from '../src/domain/attempts.js';
 import { resolveGuardrails } from '../src/domain/setting-override.js';
-import { resolvePrices } from '../src/domain/pricing.js';
+import { pricesForHarness } from '../src/domain/pricing.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { allWorkspaces, makeSettingsStore } from './helpers.js';
 
@@ -35,7 +35,7 @@ describe('AttemptStore.create Guardrail snapshot (issue #126, ADR-0019)', () => 
     const config = baselineConfig();
     const snapshot = {
       guardrailConfig: resolveGuardrails({ guardrailBudget: null, guardrailProgress: null, toolTimeoutMinutes: null }, config),
-      priceTable: resolvePrices(config.prices),
+      priceTable: pricesForHarness(config.harnesses.claude),
     };
 
     const run = await runStore.create(task.id, snapshot);
@@ -49,17 +49,17 @@ describe('AttemptStore.create Guardrail snapshot (issue #126, ADR-0019)', () => 
     const config = baselineConfig();
     const originalSnapshot = {
       guardrailConfig: resolveGuardrails({ guardrailBudget: null, guardrailProgress: null, toolTimeoutMinutes: null }, config),
-      priceTable: resolvePrices(config.prices),
+      priceTable: pricesForHarness(config.harnesses.claude),
     };
 
     const run = await runStore.create(task.id, originalSnapshot);
     const originalPriceTable = run.priceTable;
 
-    const laterPrices = resolvePrices({ 'claude-sonnet-5': { input: 999, output: 999, cacheRead: 999, cacheWrite: 999 } });
-    expect(laterPrices['claude-sonnet-5']).not.toEqual(resolvePrices(config.prices)['claude-sonnet-5']);
+    const laterPrices = { 'claude-sonnet-5': { input: 999, output: 999, cacheRead: 999, cacheWrite: 999 } };
+    expect(laterPrices['claude-sonnet-5']).not.toEqual(pricesForHarness(config.harnesses.claude)['claude-sonnet-5']);
 
     const refetched = await runStore.get(run.id);
     expect(refetched.priceTable).toBe(originalPriceTable);
-    expect(JSON.parse(refetched.priceTable!)['claude-sonnet-5']).toEqual(resolvePrices(config.prices)['claude-sonnet-5']);
+    expect(JSON.parse(refetched.priceTable!)['claude-sonnet-5']).toEqual(pricesForHarness(config.harnesses.claude)['claude-sonnet-5']);
   });
 });

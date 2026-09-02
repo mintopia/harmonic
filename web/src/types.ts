@@ -566,7 +566,7 @@ export interface Conversation {
   /** The model's configured cache TTL, in seconds; null when unconfigured —
    * the telemetry strip never shows the cold-cache estimate in that case
    *. */
-  cacheTtlSeconds: number | null;
+  cacheWarmSeconds: number | null;
 }
 
 /**
@@ -629,9 +629,16 @@ export interface HarnessConfig {
   command: string;
   args: string[];
   env: Record<string, string>;
-  models: string[];
+  models: ModelCatalogEntry[];
   defaultModel: string;
+  cacheWarmSeconds: number;
   sessionLogDir?: string;
+}
+
+export interface ModelCatalogEntry {
+  id: string;
+  price?: ModelPrice;
+  contextWindow?: number;
 }
 
 export interface ModelPrice {
@@ -751,7 +758,6 @@ export interface AppConfig {
   /** Operator display name for this instance; empty string means unnamed (UI falls back to "Harmonic"). */
   name: string;
   harnesses: Record<string, HarnessConfig>;
-  prices: Record<string, ModelPrice>;
   defaults: {
     harness: string;
     workingDir: string;

@@ -73,20 +73,29 @@ describe('conversation telemetry (issue 12)', () => {
     expect(after.cost.totalUsd).toBeNull();
   });
 
-  it('suppresses the window and TTL when unconfigured (honest degradation)', async () => {
+  it('uses the harness cache warmth when no model context window is configured', async () => {
     server = await startServer(stubHarness());
     const { body: convo } = await server.api('POST', '/api/conversations', {});
     expect(convo.contextWindow).toBeNull();
-    expect(convo.cacheTtlSeconds).toBeNull();
+    expect(convo.cacheWarmSeconds).toBe(300);
   });
 
-  it('exposes contextWindow and cacheTtlSeconds when configured per model', async () => {
+  it('exposes a model context window and harness cache warmth', async () => {
     server = await startServer({
-      ...stubHarness(),
-      modelInfo: { 'stub-model': { contextWindow: 1000, cacheTtlSeconds: 60 } },
+      harnesses: {
+        claude: {
+          command: process.execPath,
+          args: [],
+          env: {},
+          models: [{ id: 'stub-model', contextWindow: 1000 }],
+          defaultModel: 'stub-model',
+          cacheWarmSeconds: 60,
+        },
+      },
+      chat: { harness: 'claude', model: 'stub-model' },
     });
     const { body: convo } = await server.api('POST', '/api/conversations', {});
     expect(convo.contextWindow).toBe(1000);
-    expect(convo.cacheTtlSeconds).toBe(60);
+    expect(convo.cacheWarmSeconds).toBe(60);
   });
 });

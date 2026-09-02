@@ -59,7 +59,7 @@ export function TaskForm({
 
   const effHarness = ov.harness ?? workspace?.harness ?? config.defaults.harness;
   const inheritedModel = workspace?.model ?? config.harnesses[effHarness]?.defaultModel ?? '';
-  const models = config.harnesses[effHarness]?.models ?? [];
+  const models = (config.harnesses[effHarness]?.models ?? []).map((model) => model.id);
 
   const showWorkingDir = !!task || workspaceId === null;
 

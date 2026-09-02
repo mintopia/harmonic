@@ -183,7 +183,7 @@ export function collectUsage(input: CollectUsageInput): AttemptUsage | null {
  */
 export function attributeTurnTokens(
   turns: UsageTurn[],
-  prices: PriceTable = DEFAULT_PRICES,
+  prices: PriceTable = {},
 ): Pick<AttemptUsage, 'toolTokens' | 'reasoning'> {
   const toolTokens: Record<string, ToolTokenUsage> = {};
   let reasoning: ToolTokenUsage | undefined;

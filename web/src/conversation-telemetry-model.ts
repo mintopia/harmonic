@@ -90,7 +90,9 @@ export function lastConversationTurnAt(events: ConversationEvent[]): number | nu
 export interface ColdCacheInput {
   /** The timestamp of the last Turn (see `lastConversationTurnAt`) — the point the cache was last touched. */
   lastTurnAt: number;
-  cacheTtlSeconds: number | null;
+  cacheWarmSeconds?: number | null;
+  /** Compatibility for historical API payloads while they drain. */
+  cacheTtlSeconds?: number | null;
   now: number;
 }
 
@@ -101,9 +103,10 @@ export interface ColdCacheInput {
  * than a bare claim. `cacheTtlSeconds === null` (no configured TTL) never
  * warns — an unconfigured TTL is not evidence of a cold cache.
  */
-export function isColdCache({ lastTurnAt, cacheTtlSeconds, now }: ColdCacheInput): boolean {
-  if (cacheTtlSeconds === null) return false;
-  return now - lastTurnAt > cacheTtlSeconds * 1000;
+export function isColdCache({ lastTurnAt, cacheWarmSeconds, cacheTtlSeconds, now }: ColdCacheInput): boolean {
+  const warmSeconds = cacheWarmSeconds ?? cacheTtlSeconds ?? null;
+  if (warmSeconds === null) return false;
+  return now - lastTurnAt > warmSeconds * 1000;
 }
 
 const minutes = (ms: number) => Math.floor(ms / 60_000);
@@ -114,6 +117,6 @@ const minutes = (ms: number) => Math.floor(ms / 60_000);
 export function formatColdCacheMessage(input: ColdCacheInput): string | null {
   if (!isColdCache(input)) return null;
   const idleMinutes = minutes(input.now - input.lastTurnAt);
-  const ttlMinutes = Math.round((input.cacheTtlSeconds as number) / 60);
+  const ttlMinutes = Math.round(((input.cacheWarmSeconds ?? input.cacheTtlSeconds) as number) / 60);
   return `Cache likely cold — idle ${idleMinutes}m, TTL ${ttlMinutes}m (estimate)`;
 }

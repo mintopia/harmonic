@@ -5,7 +5,7 @@ import { and, desc, eq } from 'drizzle-orm';
 import type { TaskWithDeps } from '../domain/tasks.js';
 import { resolveVerifiers } from '../domain/setting-override.js';
 import { verifierStatuses, type VerifierStatus } from '../domain/verifier-status.js';
-import { costOfUsages, resolveContextWindow, resolvePrices } from '../domain/pricing.js';
+import { costOfUsages, pricesForHarness, resolveContextWindowForHarness } from '../domain/pricing.js';
 import type { AttemptUsageSnapshot } from '../execution/usage.js';
 import { Git } from '../execution/git.js';
 import { forEachYielding } from '../reliability/yield.js';
@@ -32,7 +32,10 @@ import {
   type ApiConversation,
 } from './dto.js';
 
-const pricesOf = (ctx: AppContext) => resolvePrices(ctx.settingsStore.getGlobal().prices);
+const pricesOf = (ctx: AppContext, harness = 'claude') => {
+  const config = ctx.settingsStore.getGlobal();
+  return pricesForHarness(config.harnesses[harness as keyof typeof config.harnesses] ?? config.harnesses.claude);
+};
 
 /** One DTO builder for REST hydration and live timeline updates. */
 export async function attemptTimelineToApi(ctx: AppContext, taskId: number): Promise<ApiAttemptTimeline> {
@@ -142,11 +145,13 @@ export async function attemptToApi(ctx: AppContext, run: AttemptRow): Promise<Ap
   const [toolTotals, task] = await Promise.all([ctx.attempts.listToolCalls(run.id), ctx.tasks.get(run.taskId)]);
   let toolCalls = 0;
   for (const total of toolTotals.values()) toolCalls += total;
-  return attemptToApiSummary(run, toolCalls, contextWindowOf(ctx, task.model));
+  return attemptToApiSummary(run, toolCalls, contextWindowOf(ctx, task.model, task.harness));
 }
 
-export function attemptUsageToApi(ctx: AppContext, snapshot: AttemptUsageSnapshot): ApiAttemptUsage {
-  return { ...snapshot, cost: costOfUsages([snapshot.usage], pricesOf(ctx)) };
+export async function attemptUsageToApi(ctx: AppContext, attemptId: number, snapshot: AttemptUsageSnapshot): Promise<ApiAttemptUsage> {
+  const attempt = await ctx.attempts.get(attemptId);
+  const task = attempt ? await ctx.tasks.get(attempt.taskId) : null;
+  return { ...snapshot, cost: costOfUsages([snapshot.usage], pricesOf(ctx, task?.harness)) };
 }
 
 /** A task's Cost sums ALL its Attempts — retries and failed ones included. */
@@ -211,7 +216,7 @@ function taskToApiWithRuns(
     url: ctx.trackerManager.urlFor(task.workspaceId, task.trackerRef),
     mapTitle: ctx.trackerManager.titleForMap(task.workspaceId, task.mapRef),
     skipReason: ctx.autoRunner.skipReasonFor(task.id) ?? null,
-    contextWindow: contextWindowOf(ctx, task.model),
+    contextWindow: contextWindowOf(ctx, task.model, task.harness),
   });
 }
 
@@ -226,7 +231,6 @@ async function runningToolCount(ctx: AppContext, run: AttemptRow): Promise<numbe
 
 /** Every live process across Workspaces; `includeChats` is false for a Read Key. */
 export async function activitySnapshot(ctx: AppContext, includeChats: boolean): Promise<ApiActivityProcess[]> {
-  const prices = pricesOf(ctx);
   const snapshots = new Map((await ctx.runner.activeSnapshots()).map((snapshot) => [snapshot.attemptId, snapshot.snapshot]));
   const runs: ApiActivityProcess[] = await Promise.all((await ctx.attempts.listRunning()).map(async (run) => {
     const task = await ctx.tasks.get(run.taskId);
@@ -237,8 +241,8 @@ export async function activitySnapshot(ctx: AppContext, includeChats: boolean): 
       snapshot,
       workspaceName: await workspaceNameOf(ctx, task.workspaceId),
       trackerUrl: ctx.trackerManager.urlFor(task.workspaceId, task.trackerRef),
-      contextWindow: contextWindowOf(ctx, task.model),
-      cost: snapshot ? costOfUsages([snapshot.usage], prices) : null,
+      contextWindow: contextWindowOf(ctx, task.model, task.harness),
+      cost: snapshot ? costOfUsages([snapshot.usage], pricesOf(ctx, task.harness)) : null,
     });
   }));
   if (!includeChats) return runs;
@@ -249,8 +253,8 @@ export async function activitySnapshot(ctx: AppContext, includeChats: boolean): 
       conversation: convo,
       title: convo.title ?? firstLineTitle(await ctx.conversations.firstTurnText(id)) ?? `Conversation #${id}`,
       workspaceName: await workspaceNameOf(ctx, convo.workspaceId),
-      contextWindow: contextWindowOf(ctx, convo.model),
-      cost: costOfUsages([usage], prices),
+      contextWindow: contextWindowOf(ctx, convo.model, convo.harness),
+      cost: costOfUsages([usage], pricesOf(ctx, convo.harness)),
     });
   }));
   return [...runs, ...chats];
@@ -260,19 +264,20 @@ async function workspaceNameOf(ctx: AppContext, workspaceId: number | null): Pro
   return (await ctx.workspaces.get(atRestWorkspaceId(workspaceId))).name;
 }
 
-function contextWindowOf(ctx: AppContext, model: string): number | null {
-  return resolveContextWindow(model, ctx.settingsStore.getGlobal().modelInfo);
+function contextWindowOf(ctx: AppContext, model: string, harness = 'claude'): number | null {
+  const config = ctx.settingsStore.getGlobal();
+  return resolveContextWindowForHarness(model, config.harnesses[harness as keyof typeof config.harnesses] ?? config.harnesses.claude);
 }
 
 /** A Conversation as the REST API and firehose both serve it. */
 export async function conversationToApi(ctx: AppContext, conversation: ConversationRow): Promise<ApiConversation> {
   const config = ctx.settingsStore.getGlobal();
-  const modelInfo = config.modelInfo[conversation.model] ?? config.modelInfo[conversation.model.replace(/-\d{8}$/, '')];
+  const harness = config.harnesses[conversation.harness as keyof typeof config.harnesses] ?? config.harnesses.claude;
   const usage = parseUsage(conversation.usage);
   return conversationToApiDto(conversation, {
     title: conversation.title ?? deriveConversationTitle(await ctx.conversations.firstTurnText(conversation.id)),
-    cost: costOfUsages([usage], pricesOf(ctx)),
-    contextWindow: modelInfo?.contextWindow ?? null,
-    cacheTtlSeconds: modelInfo?.cacheTtlSeconds ?? null,
+    cost: costOfUsages([usage], pricesForHarness(harness)),
+    contextWindow: resolveContextWindowForHarness(conversation.model, harness),
+    cacheWarmSeconds: harness.cacheWarmSeconds,
   });
 }

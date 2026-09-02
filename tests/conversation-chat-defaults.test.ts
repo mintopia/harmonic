@@ -4,8 +4,20 @@ import type { DeepPartial, AppConfig } from '../src/config.js';
 
 const twoHarnessConfig: DeepPartial<AppConfig> = {
   harnesses: {
-    claude: { command: 'noop', args: [], models: ['claude-a', 'claude-b'], defaultModel: 'claude-a' },
-    codex: { command: 'noop', args: [], models: ['codex-a', 'codex-b'], defaultModel: 'codex-a' },
+    claude: {
+      command: 'noop',
+      args: [],
+      models: [{ id: 'claude-a' }, { id: 'claude-b' }],
+      defaultModel: 'claude-a',
+      cacheWarmSeconds: 300,
+    },
+    codex: {
+      command: 'noop',
+      args: [],
+      models: [{ id: 'codex-a' }, { id: 'codex-b' }],
+      defaultModel: 'codex-a',
+      cacheWarmSeconds: 300,
+    },
   },
   defaults: { harness: 'claude' },
   chat: { harness: 'codex', model: 'codex-b' },

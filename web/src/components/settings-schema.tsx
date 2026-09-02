@@ -27,7 +27,7 @@ import { CommandListEditor } from './CommandListEditor';
 import { ConfigField, registryField, toOptions, withCurrent, type FieldOption, type ScalarDescriptor } from './settings-fields';
 import { OverrideField, type OverridableDescriptor } from './settings-override-fields';
 import { InheritField } from './InheritField';
-import { HarnessesSection, PriceOverridesSection } from './HarnessSettings';
+import { HarnessesSection } from './HarnessSettings';
 import { ChannelsSection } from './Channels';
 import { PermissionRules } from './PermissionRules';
 import { SecuritySection } from './SecuritySection';
@@ -303,7 +303,7 @@ const chatModel = scalar(
     errorKey: 'chat.model',
     disabled: (c) => !c.harnesses[c.chat.harness],
     get: (c) => c.chat.model,
-    options: (c) => withCurrent(toOptions(c.harnesses[c.chat.harness]?.models ?? []), c.chat.model),
+    options: (c) => withCurrent(toOptions((c.harnesses[c.chat.harness]?.models ?? []).map((model) => model.id)), c.chat.model),
     set: (c, raw) => ({ ...c, chat: { ...c.chat, model: String(raw) } }),
   }),
   {
@@ -314,7 +314,7 @@ const chatModel = scalar(
     get: (w) => w.chatModel,
     set: (w, v) => ({ ...w, chatModel: v as string | null }),
     inherited: (c) => c.chat.model,
-    options: (c, w) => withCurrent(toOptions(c.harnesses[w.chatHarness ?? c.chat.harness]?.models ?? []), w.chatModel ?? ''),
+    options: (c, w) => withCurrent(toOptions((c.harnesses[w.chatHarness ?? c.chat.harness]?.models ?? []).map((model) => model.id)), w.chatModel ?? ''),
   },
 );
 
@@ -344,7 +344,7 @@ const taskModel = scalar(
     disabled: (c) => !c.harnesses[c.defaults.harness],
     get: (c) => c.harnesses[c.defaults.harness]?.defaultModel ?? '',
     options: (c) =>
-      withCurrent(toOptions(c.harnesses[c.defaults.harness]?.models ?? []), c.harnesses[c.defaults.harness]?.defaultModel ?? ''),
+      withCurrent(toOptions((c.harnesses[c.defaults.harness]?.models ?? []).map((model) => model.id)), c.harnesses[c.defaults.harness]?.defaultModel ?? ''),
     set: (c, raw) => {
       const h = c.defaults.harness;
       const current = c.harnesses[h];
@@ -359,7 +359,7 @@ const taskModel = scalar(
     get: (w) => w.model,
     set: (w, v) => ({ ...w, model: v as string | null }),
     inherited: (c, w) => c.harnesses[w.harness ?? c.defaults.harness]?.defaultModel ?? '',
-    options: (c, w) => withCurrent(toOptions(c.harnesses[w.harness ?? c.defaults.harness]?.models ?? []), w.model ?? ''),
+    options: (c, w) => withCurrent(toOptions((c.harnesses[w.harness ?? c.defaults.harness]?.models ?? []).map((model) => model.id)), w.model ?? ''),
   },
 );
 
@@ -710,7 +710,7 @@ function GlobalVerification({ ctx }: { ctx: GlobalRenderCtx }) {
                 id="settings-critic-model"
                 value={reviewCritic.model}
                 onChange={(m) => setCritic(setCriticField(reviewCritic, 'model', m))}
-                options={reviewCritic.harness ? (config.harnesses[reviewCritic.harness]?.models ?? []) : []}
+                options={reviewCritic.harness ? (config.harnesses[reviewCritic.harness]?.models ?? []).map((model) => model.id) : []}
               />
               <FieldError message={fieldErrors['verify.review.model']} />
             </div>
@@ -768,7 +768,7 @@ const reviewScalarFields: OverridableDescriptor[] = [
           id={id}
           value={String(value)}
           onChange={onChange}
-          options={reviewHarnessEff ? (config.harnesses[reviewHarnessEff]?.models ?? []) : []}
+          options={reviewHarnessEff ? (config.harnesses[reviewHarnessEff]?.models ?? []).map((model) => model.id) : []}
         />
       );
     },
@@ -1274,16 +1274,6 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
     body: (ctx) =>
       ctx.surface === 'global' ? (
         <HarnessesSection config={ctx.config} fieldErrors={ctx.errors} onChange={(harnesses) => ctx.setConfig({ ...ctx.config, harnesses })} />
-      ) : null,
-  },
-  {
-    tab: 'integrations',
-    surfaces: ['global'],
-    title: 'Price overrides',
-    description: '$ per Mtok. Overrides or extends the shipped price table used for cost.',
-    body: (ctx) =>
-      ctx.surface === 'global' ? (
-        <PriceOverridesSection config={ctx.config} fieldErrors={ctx.errors} onChange={(prices) => ctx.setConfig({ ...ctx.config, prices })} />
       ) : null,
   },
   {

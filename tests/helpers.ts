@@ -84,8 +84,9 @@ export function stubHarness(harnessId: 'claude' | 'codex' | 'copilot' = 'claude'
       [harnessId]: {
         command: process.execPath,
         args: [STUB_HARNESS],
-        models: ['stub-model'],
+        models: [{ id: 'stub-model' }],
         defaultModel: 'stub-model',
+        cacheWarmSeconds: 300,
       },
     },
     // Point the chat default at the stub too, so its model stays one of the

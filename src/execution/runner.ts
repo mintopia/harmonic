@@ -44,7 +44,7 @@ import type { ProgressEvent } from '../domain/stall-detector.js';
 import { runCommandVerifier, commandAttemptToInput } from '../verification/command-verifier.js';
 import { createAcpCriticDrive, runCritic, criticAttemptToInput, type CriticHarnessDrive } from '../verification/critic.js';
 import { combineVerdicts, type VerificationDecision, type VerifierVerdict } from '../verification/combine.js';
-import { resolvePrices } from '../domain/pricing.js';
+import { pricesForHarness } from '../domain/pricing.js';
 import { isForeignKeyViolation } from '../db/errors.js';
 import { logger } from '../logger.js';
 import type { PostMergeHook } from './branch-merge.js';
@@ -591,7 +591,7 @@ export class Runner {
     const ws = (await this.getWorkspace?.(task.workspaceId)) ?? { guardrailBudget: null, guardrailProgress: null, toolTimeoutMinutes: null };
     const snapshot: AttemptGuardrailSnapshot = {
       guardrailConfig: resolveGuardrails(ws, config),
-      priceTable: resolvePrices(config.prices),
+      priceTable: pricesForHarness(harness),
     };
     const created = await this.attempts.create(task.id, snapshot);
     const pendingContinuation = this.pendingContinuation.get(task.id);
@@ -2357,7 +2357,10 @@ export class Runner {
       } catch {
       }
     }
-    await this.attempts.backfillCosts(resolvePrices(config.prices));
+    await this.attempts.backfillCosts(async (attempt) => {
+      const task = await this.taskService.get(attempt.taskId);
+      return pricesForHarness(config.harnesses[task.harness as keyof typeof config.harnesses] ?? config.harnesses.claude);
+    });
   }
 
   private async diffSnapshotFor(

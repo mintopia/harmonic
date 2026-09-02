@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse } from 'yaml';
 import { z } from 'zod';
-import { resolvePrices, isModelPriced } from './domain/pricing.js';
+import { isModelPriced, pricesForHarness } from './domain/pricing.js';
 
 export const HARNESS_IDS = ['claude', 'codex', 'copilot'] as const;
 export type HarnessId = (typeof HARNESS_IDS)[number];
@@ -18,6 +18,19 @@ export type Priority = (typeof PRIORITIES)[number];
 export const MERGE_FATES = ['auto-merge', 'open-PR', 'artifact'] as const;
 export type MergeFate = (typeof MERGE_FATES)[number];
 
+export const modelPriceSchema = z.object({
+  input: z.number().nonnegative().meta({ example: 3 }),
+  output: z.number().nonnegative().meta({ example: 15 }),
+  cacheRead: z.number().nonnegative().meta({ example: 0.3 }),
+  cacheWrite: z.number().nonnegative().meta({ example: 3.75 }),
+});
+
+export const modelCatalogEntrySchema = z.object({
+  id: z.string().min(1).meta({ example: 'sonnet-5' }),
+  price: modelPriceSchema.optional(),
+  contextWindow: z.number().int().positive().optional().meta({ example: 200000 }),
+});
+
 export const harnessConfigSchema = z.object({
   /** Command + args spawned to speak ACP on stdio. */
   command: z.string().meta({ example: 'npx' }),
@@ -26,8 +39,9 @@ export const harnessConfigSchema = z.object({
   env: z
     .record(z.string(), z.string())
     .meta({ example: { ANTHROPIC_API_KEY: '<your-api-key>' } }),
-  models: z.array(z.string()).meta({ example: ['sonnet-5', 'opus-4.8'] }),
+  models: z.array(modelCatalogEntrySchema).meta({ example: [{ id: 'sonnet-5' }, { id: 'opus-4.8' }] }),
   defaultModel: z.string().meta({ example: 'sonnet-5' }),
+  cacheWarmSeconds: z.number().int().positive().meta({ example: 300 }),
   /**
    * Root of the harness's native session logs, for the per-model usage
    * fallback (Claude Code: ~/.claude/projects). Empty string disables.
@@ -35,21 +49,6 @@ export const harnessConfigSchema = z.object({
   sessionLogDir: z.string().optional().meta({ example: '~/.claude/projects' }),
 });
 
-/** Per-model API rates in $/Mtok; must match `ModelPrice` in domain/pricing.ts. */
-export const modelPriceSchema = z.object({
-  input: z.number().nonnegative().meta({ example: 3 }),
-  output: z.number().nonnegative().meta({ example: 15 }),
-  cacheRead: z.number().nonnegative().meta({ example: 0.3 }),
-  cacheWrite: z.number().nonnegative().meta({ example: 3.75 }),
-});
-
-/** Optional per-model facts for Conversation telemetry; without a window, context usage degrades to raw token counts, and without a TTL the cold-cache warning is suppressed. */
-export const modelInfoSchema = z.object({
-  /** Total context window in tokens, for the context-usage percentage. */
-  contextWindow: z.number().int().positive().optional().meta({ example: 200000 }),
-  /** Prompt-cache TTL in seconds, for the idle cold-cache warning. */
-  cacheTtlSeconds: z.number().int().positive().optional().meta({ example: 300 }),
-});
 
 /**
  * A command verifier: an argv-based check (a Workspace's test/lint) run against
@@ -114,17 +113,20 @@ export type BudgetGuardrail = z.infer<typeof budgetGuardrailSchema>;
 /** The configured models a cost cap can't measure: a cost cap with no token fallback needs every model priced. Empty when the cap is measurable. */
 export function unpricedModelsForCostCap(
   budget: Pick<BudgetGuardrail, 'costUsd' | 'tokens'>,
-  config: Pick<AppConfig, 'harnesses' | 'prices' | 'verify'>,
+  config: Pick<AppConfig, 'harnesses' | 'verify' | 'defaults'>,
 ): string[] {
   if (budget.costUsd == null || budget.tokens != null) return [];
-  const prices = resolvePrices(config.prices);
   const configured = new Set<string>();
-  for (const harness of Object.values(config.harnesses)) {
-    for (const m of harness.models) configured.add(m);
-    configured.add(harness.defaultModel);
+  for (const [harnessId, harness] of Object.entries(config.harnesses)) {
+    const prices = pricesForHarness(harness);
+    for (const m of harness.models) if (!isModelPriced(m.id, prices)) configured.add(`${harnessId}/${m.id}`);
+    if (!isModelPriced(harness.defaultModel, prices)) configured.add(`${harnessId}/${harness.defaultModel}`);
   }
-  if (config.verify.review.enabled && config.verify.review.model) configured.add(config.verify.review.model);
-  return [...configured].filter((m) => !isModelPriced(m, prices));
+  if (config.verify.review.enabled && config.verify.review.model) {
+    const harness = config.harnesses[config.verify.review.harness ?? config.defaults.harness];
+    if (harness && !isModelPriced(config.verify.review.model, pricesForHarness(harness))) configured.add(`${config.verify.review.harness ?? config.defaults.harness}/${config.verify.review.model}`);
+  }
+  return [...configured];
 }
 
 /** Must stay free of `'; '`: the API error handler and the settings form's `parseFieldErrors` split `path: message` pairs on it. */
@@ -146,22 +148,12 @@ export const appConfigSchema = z.object({
         command: 'npx',
         args: ['@zed-industries/claude-code-acp'],
         env: {},
-        models: ['sonnet-5', 'opus-4.8'],
+        models: [{ id: 'sonnet-5' }, { id: 'opus-4.8' }],
         defaultModel: 'sonnet-5',
+        cacheWarmSeconds: 300,
       },
     },
   }),
-  /**
-   * Price-table overrides for Cost: entries here override or extend the
-   * shipped `DEFAULT_PRICES` (domain/pricing.ts).
-   */
-  prices: z
-    .record(z.string(), modelPriceSchema)
-    .meta({ example: { 'sonnet-5': { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 } } }),
-  /** Optional per-model context-window / cache-TTL facts for Conversation telemetry. */
-  modelInfo: z
-    .record(z.string(), modelInfoSchema)
-    .meta({ example: { 'sonnet-5': { contextWindow: 200000, cacheTtlSeconds: 300 } } }),
   defaults: z.object({
     harness: z.enum(HARNESS_IDS).meta({ example: 'claude' }),
     workingDir: z.string().meta({ example: '/home/dev/harmonic' }),
@@ -225,7 +217,7 @@ export const appConfigSchema = z.object({
   }),
 }).superRefine((config, ctx) => {
   for (const [id, harness] of Object.entries(config.harnesses)) {
-    if (harness.models.length > 0 && !harness.models.includes(harness.defaultModel)) {
+    if (harness.models.length > 0 && !harness.models.some((model) => model.id === harness.defaultModel)) {
       ctx.addIssue({
         code: 'custom',
         path: ['harnesses', id, 'defaultModel'],
@@ -234,7 +226,7 @@ export const appConfigSchema = z.object({
     }
   }
   const chatHarness = config.harnesses[config.chat.harness];
-  if (chatHarness && chatHarness.models.length > 0 && !chatHarness.models.includes(config.chat.model)) {
+  if (chatHarness && chatHarness.models.length > 0 && !chatHarness.models.some((model) => model.id === config.chat.model)) {
     ctx.addIssue({
       code: 'custom',
       path: ['chat', 'model'],
