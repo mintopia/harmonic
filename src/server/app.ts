@@ -51,6 +51,7 @@ import { singleFlight } from '../reliability/single-flight.js';
 import { Scheduler, type ScheduledJobRegistration } from '../scheduler/scheduler.js';
 import { AutoDrive } from '../execution/auto-drive.js';
 import { TrackerPollerManager } from '../tracker/manager.js';
+import { TrackerEpicService, type EpicService } from '../tracker/epic-service.js';
 import type { MirrorClaim } from '../execution/auto-runner.js';
 import { DomainError } from '../domain/errors.js';
 import { taskRoutes } from './routes/tasks.js';
@@ -155,6 +156,7 @@ export interface AppContext {
   guardrailEvents: GuardrailEventStore;
   verificationAttempts: VerificationAttemptStore;
   trackerManager: TrackerPollerManager;
+  epicService: EpicService;
   scheduler: Scheduler;
   auth: AuthService;
   channels: ChannelService;
@@ -200,10 +202,7 @@ export type ExecutionContext = Pick<
   | 'flaggedWorktrees'
 >;
 
-export type TrackingContext = Pick<
-  AppContext,
-  'tasks' | 'workspaces' | 'settingsStore' | 'trackerManager' | 'scheduler' | 'channels' | 'notifier' | 'bus'
->;
+export type TrackingContext = Pick<AppContext, 'tasks' | 'workspaces' | 'settingsStore' | 'trackerManager' | 'epicService' | 'scheduler' | 'channels' | 'notifier' | 'bus'>;
 
 export interface AppContexts {
   persistence: PersistenceContext;
@@ -222,8 +221,8 @@ export function createExecutionContext(ctx: AppContext): ExecutionContext {
 }
 
 export function createTrackingContext(ctx: AppContext): TrackingContext {
-  const { tasks, workspaces, settingsStore, trackerManager, scheduler, channels, notifier, bus } = ctx;
-  return { tasks, workspaces, settingsStore, trackerManager, scheduler, channels, notifier, bus };
+  const { tasks, workspaces, settingsStore, trackerManager, epicService, scheduler, channels, notifier, bus } = ctx;
+  return { tasks, workspaces, settingsStore, trackerManager, epicService, scheduler, channels, notifier, bus };
 }
 
 export function createAppContexts(ctx: AppContext): AppContexts {
@@ -321,6 +320,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   const drainRetirement = singleFlight(() => sessionRetirement.drain());
   let runnerRef: Runner | undefined;
   let trackerManagerRef: TrackerPollerManager | undefined;
+  let epicServiceRef: EpicService | undefined;
   const pendingPostMerge: Parameters<PostMergeHook>[0][] = [];
   const postMerge: PostMergeHook = defaultBranchPostMerge(
     async (repoDir, defaultBranch) => {
@@ -329,7 +329,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
         pendingPostMerge.push({ repoDir, baseBranch: defaultBranch });
         return;
       }
-      await trackerManagerRef.refreshAfterDefaultBranchAdvance(repoDir, defaultBranch);
+      await epicServiceRef?.refreshAfterDefaultBranchAdvance(repoDir, defaultBranch);
       } catch (err) {
         logger.error(`post-merge Epic refresh failed: ${String(err)}`);
       }
@@ -442,7 +442,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
       onAttemptUsage: (payload) => bus.emit('attempt_usage', payload),
     },
     gitBreaker,
-    epicBaseNotReady: (task) => trackerManagerRef?.epicBaseNotReady(task) ?? false,
+    epicBaseNotReady: (task) => epicServiceRef?.epicBaseNotReady(task) ?? false,
     postMerge,
     worktreesDir,
     spendGuardrail: opts.runnerTuning?.spendGuardrail,
@@ -493,22 +493,22 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     () => workspaces.list(),
     {
       mirror,
-      epicBaseNotReady: (task) => trackerManagerRef?.epicBaseNotReady(task) ?? false,
+      epicBaseNotReady: (task) => epicServiceRef?.epicBaseNotReady(task) ?? false,
       gitBreaker,
     },
   );
-  const trackerManager = new TrackerPollerManager(
+  const epicService = new TrackerEpicService(
     tasks,
     () => workspaces.list(),
     undefined,
     undefined,
     () => settingsStore.getGlobal(),
     epicOperations,
-    scheduler,
-    undefined,
     (input) => runnerRef!.mergeEpicIntegration(input),
     (target, detail, escalate, retry) => runnerRef!.enqueueEpicRefreshResolution(target, detail, escalate, retry),
   );
+  epicServiceRef = epicService;
+  const trackerManager = new TrackerPollerManager(tasks, () => workspaces.list(), epicService, undefined, undefined, scheduler);
   trackerManagerRef = trackerManager;
   for (const merged of pendingPostMerge.splice(0)) await postMerge(merged);
   scheduler.register({
@@ -528,7 +528,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     })().catch(() => {});
   });
 
-  const ctx: AppContext = { asyncDb, statsReader, settingsStore, workspaces, tasks, attempts, sessions: sessionStore, runner, conversations, conversationDriver, permissionRules, escalation, autoRunner, guardrailEvents, verificationAttempts, trackerManager, scheduler, auth, channels, notifier, bus, flaggedWorktrees };
+  const ctx: AppContext = { asyncDb, statsReader, settingsStore, workspaces, tasks, attempts, sessions: sessionStore, runner, conversations, conversationDriver, permissionRules, escalation, autoRunner, guardrailEvents, verificationAttempts, trackerManager, epicService, scheduler, auth, channels, notifier, bus, flaggedWorktrees };
   const contexts = createAppContexts(ctx);
 
   const app = Fastify({ logger: false }) as unknown as App;
