@@ -26,7 +26,7 @@ export interface OverridableDescriptor {
   /** The Workspace column value: `null`/`undefined` means inherit. */
   get: (w: Workspace) => Scalar | null | undefined;
   /** Fold an override write (or `null` to clear) back into the Workspace. */
-  set: (w: Workspace, value: Scalar | null) => Workspace;
+  set: (w: Workspace, value: Scalar | null, config: AppConfig) => Workspace;
   /** The global default this field inherits when not overridden. The current
    * Workspace is passed too because some inherited values track the effective
    * override of another field (e.g. the model default follows the harness). */
@@ -72,8 +72,8 @@ export function OverrideField({
         value={d.get(workspace) ?? d.inherited(config, workspace)}
         inheritedValue={d.inherited(config, workspace)}
         inherited={d.get(workspace) === null || d.get(workspace) === undefined}
-        onChange={(next) => onWorkspace(d.set(workspace, next))}
-        onRevert={() => onWorkspace(d.set(workspace, null))}
+        onChange={(next) => onWorkspace(d.set(workspace, next, config))}
+        onRevert={() => onWorkspace(d.set(workspace, null, config))}
       >
         {({ id, value, onChange }) =>
           d.renderControl ? (
