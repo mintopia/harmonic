@@ -23,6 +23,8 @@ describe('TurnListeners', () => {
     listeners.onSessionUpdate({ sessionUpdate: 'tool_call', title: 'Read', kind: 'read' }, false);
     listeners.onSessionUpdate({ sessionUpdate: 'tool_call', title: 'Write', kind: 'write' }, true);
     const response = await listeners.onRequest('session/request_permission', {
+      sessionId: 'session-1',
+      toolCall: { toolCallId: 'tool-1', title: 'Read' },
       options: [
         { kind: 'allow_once', optionId: 'once' },
         { kind: 'allow_always', optionId: 'always' },
@@ -36,6 +38,8 @@ describe('TurnListeners', () => {
     expect(records).toEqual([
       {
         request: {
+          sessionId: 'session-1',
+          toolCall: { toolCallId: 'tool-1', title: 'Read' },
           options: [
             { kind: 'allow_once', optionId: 'once' },
             { kind: 'allow_always', optionId: 'always' },

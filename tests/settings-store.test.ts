@@ -36,6 +36,43 @@ describe('SettingsStore (issue #391)', () => {
     expect(parse(readFileSync(path, 'utf8'))).toEqual({ global: { maxAttempts: 7 }, workspaces: {} });
   });
 
+  it('migrates legacy top-level price and context data without harness overrides', async () => {
+    const path = join(dir, 'settings.yaml');
+    writeFileSync(path, stringify({
+      global: {
+        prices: { 'claude-opus-5': { input: 9, output: 18, cacheRead: 0.9, cacheWrite: 1.8 } },
+        modelInfo: {
+          'claude-opus-5': { contextWindow: 123_456 },
+          'custom-legacy-model': { contextWindow: 65_536 },
+        },
+      },
+      workspaces: {},
+    }));
+
+    const store = await SettingsStore.create(dir);
+    expect(store.getGlobal().harnesses.claude.models.find((model) => model.id === 'claude-opus-5')).toEqual({
+      id: 'claude-opus-5',
+      price: { input: 9, output: 18, cacheRead: 0.9, cacheWrite: 1.8 },
+      contextWindow: 123_456,
+    });
+    expect(parse(readFileSync(path, 'utf8')).global).toEqual({
+      harnesses: {
+        claude: {
+          models: store.getGlobal().harnesses.claude.models,
+        },
+        codex: {
+          models: store.getGlobal().harnesses.codex.models,
+        },
+        copilot: {
+          models: store.getGlobal().harnesses.copilot.models,
+        },
+      },
+    });
+    for (const harness of Object.values(store.getGlobal().harnesses)) {
+      expect(harness.models).toContainEqual({ id: 'custom-legacy-model', contextWindow: 65_536 });
+    }
+  });
+
   it('writes changed arrays as whole sparse-patch values', async () => {
     const store = await SettingsStore.create(dir);
     await store.updateGlobal({ verify: { commands: [{ command: 'npm', args: ['test'] }] } });

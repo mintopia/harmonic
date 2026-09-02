@@ -1,4 +1,5 @@
 import type { AppContext } from './app.js';
+import type { AppConfig, HarnessConfig } from '../config.js';
 import type { AttemptRow, VerificationAttemptRow, StepType, ConversationRow } from '../db/schema.js';
 import { attempts, steps, guardrailEvents, attemptEvents, verificationAttempts } from '../db/schema.js';
 import { and, desc, eq } from 'drizzle-orm';
@@ -6,6 +7,7 @@ import type { TaskWithDeps } from '../domain/tasks.js';
 import { resolveVerifiers } from '../domain/setting-override.js';
 import { verifierStatuses, type VerifierStatus } from '../domain/verifier-status.js';
 import { costOfUsages, pricesForHarness, resolveContextWindowForHarness } from '../domain/pricing.js';
+import { DomainError } from '../domain/errors.js';
 import type { AttemptUsageSnapshot } from '../execution/usage.js';
 import { Git } from '../execution/git.js';
 import { forEachYielding } from '../reliability/yield.js';
@@ -32,9 +34,13 @@ import {
   type ApiConversation,
 } from './dto.js';
 
+function harnessFor(config: AppConfig, id: string): HarnessConfig {
+  return Object.entries(config.harnesses).find(([harnessId]) => harnessId === id)?.[1] ?? config.harnesses.claude;
+}
+
 const pricesOf = (ctx: AppContext, harness = 'claude') => {
   const config = ctx.settingsStore.getGlobal();
-  return pricesForHarness(config.harnesses[harness as keyof typeof config.harnesses] ?? config.harnesses.claude);
+  return pricesForHarness(harnessFor(config, harness));
 };
 
 /** One DTO builder for REST hydration and live timeline updates. */
@@ -149,9 +155,13 @@ export async function attemptToApi(ctx: AppContext, run: AttemptRow): Promise<Ap
 }
 
 export async function attemptUsageToApi(ctx: AppContext, attemptId: number, snapshot: AttemptUsageSnapshot): Promise<ApiAttemptUsage> {
-  const attempt = await ctx.attempts.get(attemptId);
-  const task = attempt ? await ctx.tasks.get(attempt.taskId) : null;
-  return { ...snapshot, cost: costOfUsages([snapshot.usage], pricesOf(ctx, task?.harness)) };
+  let harness: string | undefined;
+  try {
+    harness = (await ctx.tasks.get((await ctx.attempts.get(attemptId)).taskId)).harness;
+  } catch (err) {
+    if (!(err instanceof DomainError) || err.code !== 'not_found') throw err;
+  }
+  return { ...snapshot, cost: costOfUsages([snapshot.usage], pricesOf(ctx, harness)) };
 }
 
 /** A task's Cost sums ALL its Attempts — retries and failed ones included. */
@@ -266,13 +276,13 @@ async function workspaceNameOf(ctx: AppContext, workspaceId: number | null): Pro
 
 function contextWindowOf(ctx: AppContext, model: string, harness = 'claude'): number | null {
   const config = ctx.settingsStore.getGlobal();
-  return resolveContextWindowForHarness(model, config.harnesses[harness as keyof typeof config.harnesses] ?? config.harnesses.claude);
+  return resolveContextWindowForHarness(model, harnessFor(config, harness));
 }
 
 /** A Conversation as the REST API and firehose both serve it. */
 export async function conversationToApi(ctx: AppContext, conversation: ConversationRow): Promise<ApiConversation> {
   const config = ctx.settingsStore.getGlobal();
-  const harness = config.harnesses[conversation.harness as keyof typeof config.harnesses] ?? config.harnesses.claude;
+  const harness = harnessFor(config, conversation.harness);
   const usage = parseUsage(conversation.usage);
   return conversationToApiDto(conversation, {
     title: conversation.title ?? deriveConversationTitle(await ctx.conversations.firstTurnText(conversation.id)),

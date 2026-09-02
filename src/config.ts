@@ -39,7 +39,15 @@ export const harnessConfigSchema = z.object({
   env: z
     .record(z.string(), z.string())
     .meta({ example: { ANTHROPIC_API_KEY: '<your-api-key>' } }),
-  models: z.array(modelCatalogEntrySchema).meta({ example: [{ id: 'sonnet-5' }, { id: 'opus-4.8' }] }),
+  models: z.array(modelCatalogEntrySchema).superRefine((models, ctx) => {
+    const seen = new Set<string>();
+    for (const [index, model] of models.entries()) {
+      if (seen.has(model.id)) {
+        ctx.addIssue({ code: 'custom', path: [index, 'id'], message: 'model ids must be unique within a harness' });
+      }
+      seen.add(model.id);
+    }
+  }).meta({ example: [{ id: 'sonnet-5' }, { id: 'opus-4.8' }] }),
   defaultModel: z.string().meta({ example: 'sonnet-5' }),
   cacheWarmSeconds: z.number().int().positive().meta({ example: 300 }),
   /**
@@ -303,25 +311,49 @@ export function baselineConfig(): AppConfig {
   return structuredClone(baseline);
 }
 
-function migrateLegacyModelCatalogs(overrides: unknown): unknown {
-  if (!isRecord(overrides) || !isRecord(overrides.harnesses)) return overrides;
+function migrateLegacyModelCatalogs(base: AppConfig, overrides: unknown): unknown {
+  if (!isRecord(overrides)) return overrides;
   const migrated = structuredClone(overrides);
   const prices = isRecord(migrated.prices) ? migrated.prices : {};
   const modelInfo = isRecord(migrated.modelInfo) ? migrated.modelInfo : {};
-  const harnesses = migrated.harnesses;
-  if (!isRecord(harnesses)) return migrated;
-  for (const harness of Object.values(harnesses)) {
-    if (!isRecord(harness) || !Array.isArray(harness.models)) continue;
-    harness.models = harness.models.map((model) => {
-      if (typeof model !== 'string') return model;
-      const info = isRecord(modelInfo[model]) ? modelInfo[model] : {};
+  const legacyModelIds = new Set([...Object.keys(prices), ...Object.keys(modelInfo)]);
+  const hasLegacyCatalogData = legacyModelIds.size > 0;
+  const harnesses = isRecord(migrated.harnesses) ? migrated.harnesses : {};
+
+  for (const [id, baseHarness] of Object.entries(base.harnesses)) {
+    const override = harnesses[id];
+    if (override !== undefined && !isRecord(override)) continue;
+    const overrideModels: unknown[] | undefined = Array.isArray(override?.models) ? override.models : undefined;
+    const hasOverrideModels = overrideModels !== undefined;
+    const models: readonly unknown[] = overrideModels ?? baseHarness.models;
+    const catalog = models.map((model) => {
+      const entry = typeof model === 'string' ? { id: model } : model;
+      if (!isRecord(entry) || typeof entry.id !== 'string') return entry;
+      const modelInfoEntry = modelInfo[entry.id];
+      const info = isRecord(modelInfoEntry) ? modelInfoEntry : {};
       return {
-        id: model,
-        ...(isRecord(prices[model]) ? { price: prices[model] } : {}),
-        ...(typeof info.contextWindow === 'number' ? { contextWindow: info.contextWindow } : {}),
+        ...entry,
+        ...((!hasOverrideModels || entry.price === undefined) && isRecord(prices[entry.id]) ? { price: prices[entry.id] } : {}),
+        ...((!hasOverrideModels || entry.contextWindow === undefined) && typeof info.contextWindow === 'number' ? { contextWindow: info.contextWindow } : {}),
       };
     });
+    if (hasLegacyCatalogData) {
+      for (const modelId of legacyModelIds) {
+        if (catalog.some((entry) => isRecord(entry) && entry.id === modelId)) continue;
+        const modelInfoEntry = modelInfo[modelId];
+        const info = isRecord(modelInfoEntry) ? modelInfoEntry : {};
+        catalog.push({
+          id: modelId,
+          ...(isRecord(prices[modelId]) ? { price: prices[modelId] } : {}),
+          ...(typeof info.contextWindow === 'number' ? { contextWindow: info.contextWindow } : {}),
+        });
+      }
+    }
+    const needsMigration = models.some((model) => typeof model === 'string')
+      || (hasLegacyCatalogData && catalog.some((model, index) => model !== models[index]));
+    if (needsMigration) harnesses[id] = { ...override, models: catalog };
   }
+  if (Object.keys(harnesses).length > 0) migrated.harnesses = harnesses;
   delete migrated.prices;
   delete migrated.modelInfo;
   return migrated;
@@ -337,7 +369,7 @@ export function mergeConfig(base: AppConfig, overrides?: DeepPartial<AppConfig>)
     for (const key of Object.keys(b)) out[key] = merge(a[key], b[key]);
     return out;
   };
-  return appConfigSchema.parse(merge(base, migrateLegacyModelCatalogs(overrides)));
+  return appConfigSchema.parse(merge(base, migrateLegacyModelCatalogs(base, overrides)));
 }
 
 export function defaultDataDir(): string {

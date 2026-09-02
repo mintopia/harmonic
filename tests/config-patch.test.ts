@@ -110,4 +110,18 @@ describe('PATCH /api/config verification', () => {
     ]);
     expect(patched.body.harnesses.claude.cacheWarmSeconds).toBe(600);
   });
+
+  it('rejects duplicate ids within a harness catalog', async () => {
+    const patched = await server.api('PATCH', '/api/config', {
+      harnesses: {
+        claude: {
+          models: [{ id: 'custom-model' }, { id: 'custom-model' }],
+          defaultModel: 'custom-model',
+          cacheWarmSeconds: 600,
+        },
+      },
+    });
+
+    expect(patched.status).toBe(400);
+  });
 });

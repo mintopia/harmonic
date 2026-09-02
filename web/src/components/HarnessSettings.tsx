@@ -66,7 +66,7 @@ function CatalogEditor({ items, onChange }: { items: ModelCatalogEntry[]; onChan
     update(i, { ...item, price });
   };
   return <div className="space-y-2.5">
-    {items.map((item, i) => <div key={`${item.id}-${i}`} className="grid gap-2 sm:grid-cols-7">
+    {items.map((item, i) => <div key={i} className="grid gap-2 sm:grid-cols-7">
       <input aria-label="Model id" className={`${field} font-data`} value={item.id} onChange={(e) => update(i, { ...item, id: e.target.value })} />
       {PRICE_FIELDS.map((key) => <input key={key} aria-label={PRICE_LABELS[key]} type="number" min={0} step="any" className={field} value={item.price?.[key] ?? ''} onChange={(e) => updatePrice(i, key, e.target.value)} />)}
       <input aria-label="Context window" type="number" min={1} className={field} value={item.contextWindow ?? ''} onChange={(e) => update(i, { ...item, contextWindow: e.target.value === '' ? undefined : Number(e.target.value) })} />
