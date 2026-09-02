@@ -7,6 +7,7 @@ import { persistedTickets } from '../tracker/persisted.js';
 import { Git } from './git.js';
 import { logger } from '../logger.js';
 import { EpicOperations } from './epic-operations.js';
+import type { EpicRefreshOutcome } from './epic-refresh-coordinator.js';
 
 export { reduceMemberState };
 
@@ -46,9 +47,9 @@ export interface EpicIntegrateTrigger {
   submit(target: { ref: number; members: MemberMergeState[]; memberRefs?: number[] }, opts?: { force?: boolean }): Promise<unknown>;
 }
 
-/** Edge-triggered default-branch refresh hook. */
+/** Default-branch refresh hook: merge the advanced default branch into `epic/<ref>`. */
 export interface EpicRefreshTrigger {
-  refresh(target: { ref: number; repoDir: string; defaultBranch: string }): Promise<unknown>;
+  refresh(target: { ref: number; repoDir: string; defaultBranch: string }): Promise<EpicRefreshOutcome>;
 }
 
 /**
@@ -99,7 +100,11 @@ export class EpicIntegrationCoordinator {
       if (!(await this.git.branchExists(this.workingDir, branch))) continue;
       if (await this.git.isAncestor(this.workingDir, defaultBranch, branch)) continue;
       try {
-        await this.epicRefresh.refresh({ ref: epic.ref, repoDir: this.workingDir, defaultBranch });
+        const outcome = await this.epicRefresh.refresh({ ref: epic.ref, repoDir: this.workingDir, defaultBranch });
+        if (outcome.status !== 'refreshed') {
+          const why = 'reason' in outcome ? outcome.reason : outcome.detail;
+          logger.warn(`epic ${epic.ref} still behind ${defaultBranch} after refresh: ${outcome.status} (${why})`);
+        }
       } catch (err) {
         this.onError(`epic ${epic.ref} integration refresh failed: ${String(err)}`);
       }
