@@ -15,6 +15,9 @@ export interface VerificationAttemptInput {
   verdict: Verdict;
   summary: string;
   output: string;
+  /** The exact prompt sent to the critic (`buildCriticPrompt`); null for the
+   * command verifier, which sends no prompt. */
+  prompt?: string | null;
   /** Locator for the critic's native transcript + the harness that wrote it.
    * Both null for the command verifier and where no transcript was resolved. */
   transcriptPath?: string | null;
@@ -51,6 +54,7 @@ export class VerificationAttemptStore {
           verdict: attempt.verdict,
           summary: attempt.summary,
           output: attempt.output,
+          prompt: attempt.prompt ?? null,
           transcriptPath: attempt.transcriptPath ?? null,
           harness: attempt.harness ?? null,
         })

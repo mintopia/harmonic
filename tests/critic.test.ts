@@ -105,6 +105,7 @@ describe('runCritic (issue #136)', () => {
       verdict: value.verdict,
       summary: value.summary,
       output,
+      prompt: expect.stringContaining('Review the diff.'),
       inputOid: oid,
       transcriptPath: null,
       harness: 'claude',

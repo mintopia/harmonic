@@ -432,6 +432,10 @@ export const verificationAttempts = sqliteTable('verification_attempts', {
   summary: text('summary').notNull(),
   /** Raw verifier output (the critic's agent text), capped by the caller. */
   output: text('output').notNull(),
+  /** The exact prompt sent to the critic for this attempt (`buildCriticPrompt`);
+   * null for the command verifier and pre-feature rows. Persisted so Task
+   * detail's Review tab shows what actually went to the reviewer. */
+  prompt: text('prompt'),
   /** Locator for the critic's native harness transcript; null for the command verifier or a harness with no native JSONL. Server-only. */
   transcriptPath: text('transcript_path'),
   /** The critic harness id that produced {@link transcriptPath}; may differ from the builder's. */

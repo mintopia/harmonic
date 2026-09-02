@@ -81,6 +81,32 @@ function Description({ prompt }: { prompt: string }) {
   );
 }
 
+/** The exact prompt a Step's work was driven by — the implementation prompt sent
+ * to the harness, or the review prompt sent to the critic — verbatim and
+ * monospaced, clamped when long. Distinct from {@link Description} (the ticket's
+ * own body): this is what actually went to the agent. */
+function PromptSent({ prompt, label = 'Prompt sent' }: { prompt: string; label?: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const clampable = prompt.length > 320;
+  return (
+    <div className="mt-4 rounded-lg border border-hairline bg-surface p-4 shadow-card">
+      <div className={`mb-2 ${sectionCaps}`}>{label}</div>
+      <pre className={`overflow-x-auto whitespace-pre-wrap break-words font-data text-[12.5px] leading-[1.55] text-muted ${clampable && !expanded ? 'line-clamp-[8]' : ''}`}>
+        {prompt}
+      </pre>
+      {clampable && (
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="mt-2 text-[12.5px] font-semibold text-accent transition-colors hover:text-ink"
+        >
+          {expanded ? 'Show less' : 'Show more'}
+        </button>
+      )}
+    </div>
+  );
+}
+
 
 function fmtDur(ms: number): string {
   const s = Math.floor(ms / 1000);
@@ -1150,6 +1176,9 @@ function AttemptPanel({
       stepLabel="Implementation"
     />
   );
+  // The prompt the critic was actually driven with — the latest critic attempt's,
+  // since re-verify turns share the operator prompt but differ by candidate OID.
+  const reviewPrompt = verificationAttempts.filter((a) => a.mechanism === 'critic' && a.prompt).at(-1)?.prompt ?? null;
   const tabContent =
     activeTab && active ? (
       activeTab.pending ? (
@@ -1159,6 +1188,7 @@ function AttemptPanel({
       ) : active === 'implementation' ? (
         <>
           <GuardrailAlert events={guardrailEvents} />
+          {run.prompt && <PromptSent prompt={run.prompt} />}
           {chat}
         </>
       ) : active === 'verification' ? (
@@ -1167,6 +1197,7 @@ function AttemptPanel({
         </div>
       ) : (
         <div className="mt-4">
+          {reviewPrompt && <PromptSent prompt={reviewPrompt} label="Review prompt sent" />}
           <Verification attempts={verificationAttempts} statuses={verifierStatuses} run={run} only="critic" steps={steps} liveOutput={verificationOutputTail(events, 'critic')} />
           <CriticSessions attempts={verificationAttempts} run={run} />
         </div>

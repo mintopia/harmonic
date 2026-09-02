@@ -159,6 +159,9 @@ export interface CriticAttempt {
   summary: string;
   /** The critic's raw agent output — the un-parsed text `parseCriticOutput` read. */
   output: string;
+  /** The exact prompt sent to the critic (`buildCriticPrompt`), persisted so the
+   * Review tab can show what the reviewer was actually asked. */
+  prompt: string;
   /** The candidate OID this attempt verified. */
   inputOid: string;
   /** The critic's native transcript locator and the harness that wrote it; both null when unresolved. */
@@ -243,6 +246,7 @@ async function runCriticUnchecked(args: RunCriticArgs): Promise<CriticAttempt> {
     verdict,
     summary,
     output,
+    prompt,
     inputOid: args.verifiedHeadOid,
     transcriptPath,
     harness: args.harnessId,
@@ -258,6 +262,7 @@ export function criticAttemptToInput(attempt: CriticAttempt): VerificationAttemp
     verdict: attempt.verdict,
     summary: attempt.summary,
     output: attempt.output,
+    prompt: attempt.prompt,
     transcriptPath: attempt.transcriptPath,
     harness: attempt.harness,
   };

@@ -278,6 +278,7 @@ CREATE TABLE `verification_attempts` (
 	`verdict` text NOT NULL,
 	`summary` text NOT NULL,
 	`output` text NOT NULL,
+	`prompt` text,
 	`transcript_path` text,
 	`harness` text,
 	FOREIGN KEY (`attempt_id`) REFERENCES `attempts`(`id`) ON UPDATE no action ON DELETE no action

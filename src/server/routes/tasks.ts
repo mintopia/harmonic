@@ -281,6 +281,8 @@ const verificationAttemptSchema = z.object({
   summary: z.string().meta({ example: 'all checks passed' }),
   /** Raw verifier output, caller-capped. */
   output: z.string().meta({ example: '' }),
+  /** The exact prompt sent to the critic; null for a command verifier. */
+  prompt: z.string().nullable().meta({ example: null }),
   /** Whether a critic transcript is available; fetch the parsed log from `GET /api/verification-attempts/:id/log`. */
   hasTranscript: z.boolean().meta({ example: false }),
 });

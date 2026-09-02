@@ -106,6 +106,9 @@ export interface VerificationAttempt {
   verdict: Verdict;
   summary: string;
   output: string;
+  /** The exact prompt sent to the critic for this attempt; null for a command
+   * verifier (which sends no prompt) and pre-feature rows. */
+  prompt: string | null;
   /** Whether a critic-session transcript can be read for this attempt
    * — fetch it with `api.criticLog(id)`. */
   hasTranscript: boolean;
