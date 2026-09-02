@@ -27,7 +27,8 @@ export function isTurnRunning(events: ConversationEvent[]): boolean {
 
   for (let i = latestUserTurnIndex + 1; i < events.length; i++) {
     const event = events[i]!;
-    if (event.type === 'lifecycle' && (event.payload?.event === 'finished' || event.payload?.event === 'error')) {
+    const payload = event.payload as { event?: string } | null | undefined;
+    if (event.type === 'lifecycle' && (payload?.event === 'finished' || payload?.event === 'error')) {
       return false;
     }
   }

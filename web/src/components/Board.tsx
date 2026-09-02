@@ -230,7 +230,7 @@ function EpicKindBadge({ epic }: { epic: Epic }) {
   );
 }
 
-function EpicAttentionCard({ epic, onOpenEpic }: { epic: Epic; onOpenEpic?: (epic: Epic) => void }) {
+export function EpicAttentionCard({ epic, onOpenEpic }: { epic: Epic; onOpenEpic?: (epic: Epic) => void }) {
   const open = () => onOpenEpic?.(epic);
   return (
     <article data-epic-ref={epic.ref} className="group bold-wash escalated relative flex w-[26.25rem] shrink-0 cursor-pointer flex-col overflow-hidden rounded-lg bg-surface shadow-card transition-shadow duration-150 motion-reduce:transition-none hover:shadow-float">
@@ -467,7 +467,7 @@ function BlockerColumns({
   );
 }
 
-function EpicBand({
+export function EpicBand({
   epic,
   columns,
   defaultOpen = false,
@@ -636,7 +636,7 @@ function StatusPips({ epic }: { epic: Epic }) {
   );
 }
 
-function ClosedRail({
+export function ClosedRail({
   members,
   onOpenTask,
   collapsible = false,

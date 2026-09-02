@@ -68,7 +68,7 @@ export function resolvePendingPermissionFromEvent(
   event: Pick<ConversationEvent, 'type' | 'payload'>,
 ): PendingPermissions {
   if (event.type !== 'permission_request') return pending;
-  const reqId = event.payload?.reqId;
+  const reqId = (event.payload as { reqId?: string } | null | undefined)?.reqId;
   if (typeof reqId !== 'string') return pending;
   return removePendingPermission(pending, reqId);
 }

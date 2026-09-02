@@ -506,7 +506,7 @@ export interface AttemptEvent {
   seq: number;
   ts: number;
   type: 'session_update' | 'permission_request' | 'lifecycle';
-  payload: any;
+  payload: unknown;
 }
 
 /** A renderer-compatible event parsed from a native harness transcript. */
@@ -580,7 +580,7 @@ export interface ConversationEvent {
   seq: number;
   ts: number;
   type: 'session_update' | 'permission_request' | 'lifecycle' | 'user_turn';
-  payload: any;
+  payload: unknown;
 }
 
 /**
