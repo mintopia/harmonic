@@ -93,7 +93,7 @@ function cssVarsOf(cls: string): string[] {
 }
 
 describe('ui.ts primitives (issue #180)', () => {
-  it('reserves the indigo await tokens for escalated — the one state that needs the operator (ADR-0041)', () => {
+  it('reserves the indigo await tokens for escalated — the one state that needs the operator', () => {
     expect(ui.STATE_CHIP_STYLES.escalated).toBe('bg-await-tint text-await');
     expect(ui.laneBorder('escalated')).toBe('border-await');
     expect(ui.laneDot('escalated')).toBe('bg-await-dot');

@@ -168,7 +168,7 @@ describe('Workspace CRUD (ADR-0008, issue #41)', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it('rejects a review override that resolves to enabled-without-a-model (ADR-0044 §F, issue #340)', async () => {
+  it('rejects a review override that resolves to enabled-without-a-model (issue #340)', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'harmonic-workspace-review-unrunnable-'));
     const created = await server.api('POST', '/api/workspaces', { name: 'Unrunnable review', workingDir: dir });
     expect(created.status).toBe(201);

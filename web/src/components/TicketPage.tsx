@@ -581,8 +581,8 @@ function SteerBox({ taskId }: { taskId: number }) {
               void send();
             }
           }}
-          placeholder="Steer this run — send guidance to the live session…"
-          aria-label="Steer this run"
+          placeholder="Steer this attempt — send guidance to the live session…"
+          aria-label="Steer this attempt"
           className="min-w-0 flex-1 bg-transparent text-ink outline-none placeholder:text-faint"
         />
         <button
@@ -596,7 +596,7 @@ function SteerBox({ taskId }: { taskId: number }) {
         </button>
       </div>
       <div className="mt-2 text-[11.5px] text-faint">
-        Session is warm — a message resumes this run and continues from here.
+        Session is warm — a message resumes this attempt and continues from here.
       </div>
     </div>
   );
@@ -747,7 +747,7 @@ function ChangesPane({
 
 function NoRunsYet() {
   return (
-    <EmptyState title="No runs yet" className="py-8">
+    <EmptyState title="No attempts yet" className="py-8">
       This task hasn't run yet.
     </EmptyState>
   );

@@ -71,8 +71,8 @@ export function verifierStatuses({
       const state = pending ? 'planned' : 'skipped';
       const reason =
         state === 'planned'
-          ? 'Configured to run — the run has not reached verification yet.'
-          : `No ${mechanism} verification attempt was recorded for this run.`;
+          ? 'Configured to run — the attempt has not reached verification yet.'
+          : `No ${mechanism} verification attempt was recorded for this attempt.`;
       return withCommands({ mechanism, state, reason });
     }
     if (mechanism === 'critic' && verifiers.review.requested) {

@@ -13,7 +13,7 @@ export async function scheduledJobRoutes(fastify: FastifyInstance): Promise<void
   app.get('/scheduled-jobs', {
     schema: {
       tags: ['Scheduled Jobs'],
-      description: 'Read-only registry of recurring Harmonic Scheduled Jobs (ADR-0038), including durable last-run facts and computed next run.',
+      description: 'Read-only registry of recurring Harmonic Scheduled Jobs, including durable last-run facts and computed next run.',
       security: [{ bearerAuth: [] }, { sessionCookie: [] }],
       querystring: paginationQuerySchema,
       response: { 200: scheduledJobsResponseSchema.describe('The current Scheduled Job registry snapshot.') },

@@ -59,12 +59,12 @@ describe('Settings registry (issue #336) — single authority for scope', () => 
     }
   });
 
-  it('declares toolTimeoutMinutes overridable (reclassified from global-only, ADR-0044/#339)', () => {
+  it('declares toolTimeoutMinutes overridable (reclassified from global-only, #339)', () => {
     expect(settingSpec('toolTimeoutMinutes').scope).toBe('overridable');
     expect(isOverridable('toolTimeoutMinutes')).toBe(true);
   });
 
-  it('declares every reclassified drive/task-prompt field overridable (ADR-0044/#339)', () => {
+  it('declares every reclassified drive/task-prompt field overridable (#339)', () => {
     for (const key of [
       'drivePrompt',
       'driveUnattendedReminder',
@@ -87,7 +87,7 @@ describe('Settings registry (issue #336) — single authority for scope', () => 
   });
 });
 
-describe('tab taxonomy (ADR-0044) — settings group into Settings UI tabs', () => {
+describe('tab taxonomy — settings group into Settings UI tabs', () => {
   const VALID_TAB_IDS: Set<SettingTab> = new Set(SETTING_TABS.map((t) => t.id));
 
   it('gives every setting a tab that is one of the declared SETTING_TABS', () => {
@@ -127,7 +127,7 @@ describe('tab taxonomy (ADR-0044) — settings group into Settings UI tabs', () 
     expect(execution).not.toContain('chatHarness');
   });
 
-  it('settingsForTab("prompts") returns the drive + task prompt fields (ADR-0044/#339)', () => {
+  it('settingsForTab("prompts") returns the drive + task prompt fields (#339)', () => {
     expect(settingsForTab('prompts')).toEqual([
       'drivePrompt',
       'driveUnattendedReminder',
@@ -149,7 +149,7 @@ describe('tab taxonomy (ADR-0044) — settings group into Settings UI tabs', () 
     }
   });
 
-  it('workspaceTabs drops the tabs with no overridable field (ADR-0044 Decision G)', () => {
+  it('workspaceTabs drops the tabs with no overridable field', () => {
     expect(workspaceTabs().map((t) => t.id)).toEqual(['general', 'execution', 'verification', 'prompts']);
   });
 

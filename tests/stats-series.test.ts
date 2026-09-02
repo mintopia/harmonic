@@ -87,7 +87,7 @@ describe('buildDaySeries', () => {
     expect(buildDaySeries([], perRunDollar)).toEqual([]);
   });
 
-  it('counts failed-only runs per day, excluding cancelled/completed (ADR-0028)', () => {
+  it('counts failed-only runs per day, excluding cancelled/completed', () => {
     const series = buildDaySeries(
       [
         outcome(at(2026, 0, 10, 8), 'failed'),

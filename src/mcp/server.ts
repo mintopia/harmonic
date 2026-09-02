@@ -136,7 +136,7 @@ export function buildMcpServer(ctx: AppContext, opts: { operator?: boolean } = {
     'delete_task',
     {
       description:
-        'Permanently delete a Task and its Runs, Usage, and Dependency edges (a mirrored Task is also dismissed so a re-poll will not re-create it). Distinct from cancel_task, which keeps the record. Rejected while the Task is running.',
+        'Permanently delete a Task and its Attempts, Usage, and Dependency edges (a mirrored Task is also dismissed so a re-poll will not re-create it). Distinct from cancel_task, which keeps the record. Rejected while the Task is running.',
       inputSchema: { ...taskId },
     },
     wrapAsync(async ({ taskId }) => {
@@ -189,7 +189,7 @@ export function buildMcpServer(ctx: AppContext, opts: { operator?: boolean } = {
         'Signal that this Task is finished (the execution-complete signal) so Harmonic stops re-prompting ' +
         'you to continue. Call only when the work is genuinely complete. Do NOT close the tracker ticket ' +
         'yourself — Harmonic verifies the work, merges it, and then closes the ticket itself. Ending your ' +
-        'turn without this leaves the run looking parked, and Harmonic will prompt you to continue.',
+        'turn without this leaves the Attempt looking parked, and Harmonic will prompt you to continue.',
       inputSchema: { ...taskId, summary: z.string().optional().describe('Optional note on what was finished') },
     },
     wrapAsync(async ({ taskId }) => {

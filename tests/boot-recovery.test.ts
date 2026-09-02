@@ -70,7 +70,7 @@ describe('boot crash-recovery', () => {
     expect(run.body.state).toBe('completed');
   });
 
-  it('leaves an escalated ticket untouched across a restart — no sweep moves a human decision (ADR-0041)', async () => {
+  it('leaves an escalated ticket untouched across a restart — no sweep moves a human decision', async () => {
     server = await startServer({ ...stubHarness(), maxAttempts: 1 });
     const created = await server.api('POST', '/api/tasks', { prompt: JSON.stringify({ exit: 'crash-before-response' }) });
     const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);

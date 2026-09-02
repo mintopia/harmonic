@@ -36,13 +36,13 @@ describe('verifierStatuses', () => {
         {
           mechanism: 'command',
           state: 'planned',
-          reason: 'Configured to run — the run has not reached verification yet.',
+          reason: 'Configured to run — the attempt has not reached verification yet.',
           commands: ['npm test'],
         },
         {
           mechanism: 'critic',
           state: 'planned',
-          reason: 'Configured to run — the run has not reached verification yet.',
+          reason: 'Configured to run — the attempt has not reached verification yet.',
         },
       ]);
     }
@@ -55,7 +55,7 @@ describe('verifierStatuses', () => {
     };
     expect(verifierStatuses({ verifiers, attempts: [], stepType: 'verification' })).toEqual([
       { mechanism: 'command', state: 'running', reason: 'Running the command checks now.', commands: ['npm test'] },
-      { mechanism: 'critic', state: 'planned', reason: 'Configured to run — the run has not reached verification yet.' },
+      { mechanism: 'critic', state: 'planned', reason: 'Configured to run — the attempt has not reached verification yet.' },
     ]);
     expect(verifierStatuses({ verifiers, attempts: [{ mechanism: 'command', seq: 1, verdict: 'pass' }], stepType: 'review' })).toEqual([
       { mechanism: 'command', state: 'passed', reason: null, commands: ['npm test'] },
@@ -74,7 +74,7 @@ describe('verifierStatuses', () => {
         stepType: 'review',
       }),
     ).toEqual([
-      { mechanism: 'command', state: 'skipped', reason: 'No command verification attempt was recorded for this run.', commands: ['npm test'] },
+      { mechanism: 'command', state: 'skipped', reason: 'No command verification attempt was recorded for this attempt.', commands: ['npm test'] },
       { mechanism: 'critic', state: 'running', reason: 'The critic is reviewing the candidate now.' },
     ]);
   });
@@ -84,13 +84,13 @@ describe('verifierStatuses', () => {
       {
         mechanism: 'command',
         state: 'planned',
-        reason: 'Configured to run — the run has not reached verification yet.',
+        reason: 'Configured to run — the attempt has not reached verification yet.',
         commands: ['npm test'],
       },
       {
         mechanism: 'critic',
         state: 'planned',
-        reason: 'Configured to run — the run has not reached verification yet.',
+        reason: 'Configured to run — the attempt has not reached verification yet.',
       },
     ];
     const verifiers = {
@@ -142,7 +142,7 @@ describe('verifierStatuses', () => {
     ]);
   });
 
-  it('shows an enabled-but-unrunnable critic distinctly from disabled (ADR-0044 §F, issue #340)', () => {
+  it('shows an enabled-but-unrunnable critic distinctly from disabled (issue #340)', () => {
     expect(
       verifierStatuses({
         verifiers: {

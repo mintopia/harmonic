@@ -309,7 +309,7 @@ export class Runner {
 
   /**
    * A verifier's live output, batched onto the Attempt's transient log stream
-   * (the same channel the builder's ACP updates ride, ADR-0031) as
+   * (the same channel the builder's ACP updates ride) as
    * `verification_output` updates, so the Verify/Review tab can tail a check
    * while it runs. Batched per ~400ms or 8 KiB so a chatty test runner doesn't
    * fan out one WebSocket frame per stdout write.
@@ -1042,7 +1042,7 @@ export class Runner {
   private async finalizeWorkspace(task: TaskRow, run: AttemptRow, attemptNumber: number, workspace: Workspace): Promise<void> {
     if (!workspace.worktree) return;
     const { repoDir, path } = workspace.worktree;
-    await Git.commitAll(path, `harmonic: task ${task.id} run ${attemptNumber}`).catch(() => {});
+    await Git.commitAll(path, `harmonic: task ${task.id} attempt ${attemptNumber}`).catch(() => {});
     const sessionRowId = (await this.attempts.get(run.id)).sessionRowId;
     let retained = false;
     if (sessionRowId != null) {
@@ -1138,7 +1138,7 @@ export class Runner {
       'This attempt starts a fresh Session under the deterministic continuation rule.',
       `Prior Session: ${session.harness} / ${session.model} / ${session.harnessSessionId}`,
       `Verified head: ${current.verifiedHeadOid ?? '(none produced)'}`,
-      `Run events: ${events.length}.`,
+      `Attempt events: ${events.length}.`,
     ].join('\n');
   }
 
@@ -1446,11 +1446,11 @@ export class Runner {
       this.events.onAttemptEvent?.(event);
     })().catch((err: unknown) => {
       if (isForeignKeyViolation(err)) {
-        logger.debug(`task ${task.id} run ${run.id}: dropped ${type} event — attempt row gone (racing delete)`);
+        logger.debug(`task ${task.id} attempt ${run.id}: dropped ${type} event — attempt row gone (racing delete)`);
         return;
       }
       logger.error(
-        `task ${task.id} run ${run.id}: ${type} event append failed: ${err instanceof Error ? err.message : String(err)}`,
+        `task ${task.id} attempt ${run.id}: ${type} event append failed: ${err instanceof Error ? err.message : String(err)}`,
       );
     });
   }
@@ -1863,7 +1863,7 @@ export class Runner {
           active.idle = true;
         }
         if (workspace.worktree && !workspace.startDirty && (await Git.isDirty(workspace.cwd).catch(() => false))) {
-          await Git.commitAll(workspace.cwd, `harmonic: task ${task.id} run ${attemptNumber}`).catch(() => {});
+          await Git.commitAll(workspace.cwd, `harmonic: task ${task.id} attempt ${attemptNumber}`).catch(() => {});
         }
         const [head, base] = await Promise.all([
           Git.revParse(workspace.cwd, 'HEAD').catch(() => null),
@@ -1931,7 +1931,7 @@ export class Runner {
         } else {
           if (afkUnresolved && (!verifierRan || (await this.attempts.get(run.id)).verifiedHeadOid == null)) {
             record('lifecycle', { event: 'unresolved', reason: 'no finish_task signal and no verifier vouched for the work' });
-            return { kind: 'actionable-fail', reason: 'run ended without an execution-complete (finish_task) signal', output: '' };
+            return { kind: 'actionable-fail', reason: 'attempt ended without an execution-complete (finish_task) signal', output: '' };
           }
           const diff = await this.diffSnapshotFor(task, run.id);
           const current = await this.attempts.get(run.id);
@@ -2134,7 +2134,7 @@ export class Runner {
       ]);
       return { stat, diffBaseOid, diffHeadOid };
     } catch (err) {
-      logger.warn('diff snapshot failed; review diff will be blank for this run', {
+      logger.warn('diff snapshot failed; review diff will be blank for this attempt', {
         attemptId,
         branch: run.branch,
         baseBranch: run.baseBranch,

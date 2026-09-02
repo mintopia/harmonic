@@ -120,16 +120,6 @@ export interface IntegrateOutcomeBanner {
 }
 
 /**
- * The force-integrate consequence sentence: shown as small muted
- * helper text next to every armed force-integrate control — the Table band
- * header, the Board focus header, and the Epic peek header — so the
- * operator sees the same consequence framing regardless of which surface
- * they arm the control from.
- */
-export const FORCE_INTEGRATE_CONSEQUENCE =
-  'merges the members already on the integration branch; a stuck sibling stays behind; Verification still gates';
-
-/**
  * A member Task id → its owning Epic, for a board/table card's Epic chip
  * lookup. A taskId absent from
  * every Epic's member list — the common case, most Tasks aren't Epic members

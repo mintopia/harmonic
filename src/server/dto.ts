@@ -231,7 +231,7 @@ function apiAttemptState(state: AttemptState): ApiAttemptSummary['state'] {
 }
 
 /** An `AttemptRow` projected onto its public wire summary, given the Attempt's
- * already summed tool-call total (its native ADR-0031 aggregate). */
+ * already summed tool-call total (its native aggregate). */
 export function attemptToApiSummary(run: AttemptRow, toolCalls: number, contextWindow: number | null = null): ApiAttemptSummary {
   return {
     id: run.id,

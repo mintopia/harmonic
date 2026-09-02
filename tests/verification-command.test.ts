@@ -94,7 +94,7 @@ describe('command verifier end-to-end (issue #135)', () => {
     ]);
   });
 
-  it('a direct Run works in place: its verified commit is the base branch tip, with no private ref and no run branch (ADR-0046)', async () => {
+  it('a direct Run works in place: its verified commit is the base branch tip, with no private ref and no run branch', async () => {
     await server.app.ctx.workspaces.update(workspaceId, {
       isolationMode: 'direct',
       verificationCommand: [exitCommand(0)],
@@ -117,7 +117,7 @@ describe('command verifier end-to-end (issue #135)', () => {
     expect(run.verifiedRef).toBeNull();
   });
 
-  it('a pre-existing dirty tree does not fail a direct Run; its candidate is the agent\'s own commit (ADR-0046)', async () => {
+  it('a pre-existing dirty tree does not fail a direct Run; its candidate is the agent\'s own commit', async () => {
     await server.app.ctx.workspaces.update(workspaceId, {
       isolationMode: 'direct',
       verificationCommand: [exitCommand(0)],
@@ -305,7 +305,7 @@ describe('command verifier end-to-end (issue #135)', () => {
   });
 });
 
-describe('native merging (issue #138, ADR-0021, ADR-0041)', () => {
+describe('native merging (issue #138, ADR-0021)', () => {
   let server: TestServer;
   let repoDir: string;
   let workspaceId: number;
@@ -339,7 +339,7 @@ describe('native merging (issue #138, ADR-0021, ADR-0041)', () => {
     return (await Promise.all(taskAttempts.map((a) => store.list(a.id)))).flat();
   };
 
-  it('a passing verification merges directly — there is no review gate to park at (ADR-0041)', async () => {
+  it('a passing verification merges directly — there is no review gate to park at', async () => {
     await server.app.ctx.workspaces.update(workspaceId, {
       verificationCommand: [exitCommand(0)],
     });
@@ -398,7 +398,7 @@ describe('native merging (issue #138, ADR-0021, ADR-0041)', () => {
     expect(task.escalationReason).toMatch(/failed/);
   });
 
-  it('with NO verifier configured a run still merges — nothing to verify means nothing blocks (ADR-0041)', async () => {
+  it('with NO verifier configured a run still merges — nothing to verify means nothing blocks', async () => {
     await server.app.ctx.workspaces.update(workspaceId, {
       verificationCommand: null,
     });

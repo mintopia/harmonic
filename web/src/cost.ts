@@ -25,9 +25,3 @@ export function formatAvgCostPerRun(cost: Cost | null | undefined, attemptCount:
   return cost.incomplete ? `≥ ${usd(avg)}` : usd(avg);
 }
 
-/** Per-model split, priced models only; unpriced ones render as "no price". */
-export function formatCostByModel(cost: Cost): string {
-  return Object.entries(cost.byModel)
-    .map(([model, v]) => `${model}: ${v === null ? 'no price' : usd(v)}`)
-    .join(' · ');
-}

@@ -291,7 +291,6 @@ export const boardSectionTitle = 'text-[11px] font-bold uppercase tracking-[0.11
  * section register, distinct from `labelType`'s 600 field-label weight). The
  * 'Needs you' section is the one whose label is accent, not faint (§ 6). */
 export const sectionLabel = 'text-label font-bold uppercase text-faint';
-export const sectionLabelAttn = 'text-label font-bold uppercase text-await';
 
 /** The rail's cobalt "Needs you" count badge (DESIGN.md §5): a count pill in
  * the accent, right-aligned in its nav row. This is the one sanctioned cobalt
@@ -329,14 +328,6 @@ export const runDotFill: Record<AttemptDot, string> = {
   neutral: 'bg-edge',
 };
 
-/** Run chip (DESIGN.md § 6): one attempt in the Ticket's run rail — a state dot
- * + `Run N` and a `state · cost · duration` subline. Selected chip = Accent Tint
- * + a 1.5px cobalt ring; the rail wraps to scale to many retries. */
-export const runChip =
-  'flex min-w-[132px] flex-col gap-1 rounded-lg border border-edge bg-surface px-3 py-2 text-left transition-colors duration-150 hover:border-faint';
-export const runChipActive =
-  'flex min-w-[132px] flex-col gap-1 rounded-lg border border-transparent bg-await-tint px-3 py-2 text-left shadow-[0_0_0_1.5px_var(--hm-await)]';
-
 /** Phase-stepper node (DESIGN.md § 6): the Run's executing → validating →
  * verifying → review → merging machine. A done step is an emerald ✓ node, the
  * current step a cobalt node, a pending step a hollow Edge node, a failed step a
@@ -358,4 +349,3 @@ export const VERIFICATION_OUTCOME_COLORS = {
   fail: 'text-fail',
   'not-reached': 'text-faint',
 } as const;
-export type VerificationOutcomeVisual = keyof typeof VERIFICATION_OUTCOME_COLORS;

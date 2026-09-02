@@ -105,7 +105,7 @@ describe('Setting Override resolution (ADR-0012, issue #59)', () => {
       expect(resolved.commands).toEqual([globalCommand]);
     });
 
-    it('resolves no auto-accept at all — a passing verification merges, there is no gate to skip (ADR-0041)', () => {
+    it('resolves no auto-accept at all — a passing verification merges, there is no gate to skip', () => {
       const config = { verify: { commands: [], review: { enabled: false } } };
       const resolved = resolveVerifiers(
         { verificationCommand: null, reviewEnabled: null, reviewPrompt: null, reviewModel: null, reviewHarness: null },
@@ -114,7 +114,7 @@ describe('Setting Override resolution (ADR-0012, issue #59)', () => {
       expect(resolved).not.toHaveProperty('autoAccept');
     });
 
-    describe('list-grain command override (issue #338) + decomposed review scalars (issue #337), ADR-0044 §C/§D', () => {
+    describe('list-grain command override (issue #338) + decomposed review scalars (issue #337)', () => {
       it('resolves commands to empty when the Workspace column holds an explicit empty array (off), even with a configured global default', () => {
         const globalCommand = { command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 };
         const config = { verify: { commands: [globalCommand], review: { enabled: false } } };
@@ -249,7 +249,7 @@ describe('Setting Override resolution (ADR-0012, issue #59)', () => {
       expect(resolved.critic).toBeNull();
     });
 
-    it('surfaces enabled-but-unrunnable distinctly: reviewEnabled=true with no model anywhere (ADR-0044 §F, issue #340)', () => {
+    it('surfaces enabled-but-unrunnable distinctly: reviewEnabled=true with no model anywhere (issue #340)', () => {
       const config = { verify: { commands: [], review: { enabled: false } } };
       const resolved = resolveVerifiers(
         {
@@ -306,7 +306,7 @@ describe('Setting Override resolution (ADR-0012, issue #59)', () => {
       expect(resolved.budget).toEqual(config.guardrails.budget);
     });
 
-    it('resolves toolTimeoutMinutes per-Workspace now (ADR-0044/#339): value wins, null inherits', () => {
+    it('resolves toolTimeoutMinutes per-Workspace now (#339): value wins, null inherits', () => {
       const cfg = { guardrails: { ...config.guardrails, toolTimeoutMinutes: 20 } };
       expect(
         resolveGuardrails({ guardrailBudget: null, guardrailProgress: null, toolTimeoutMinutes: 45 }, cfg as any).toolTimeoutMinutes,
@@ -317,7 +317,7 @@ describe('Setting Override resolution (ADR-0012, issue #59)', () => {
     });
   });
 
-  describe('resolveDrive (ADR-0044, issue #339) — five independently-inheritable fields', () => {
+  describe('resolveDrive (issue #339) — five independently-inheritable fields', () => {
     const config = {
       drive: {
         prompt: 'GLOBAL PROMPT',
@@ -375,7 +375,7 @@ describe('Setting Override resolution (ADR-0012, issue #59)', () => {
     });
   });
 
-  describe('resolveTaskPrompt (ADR-0044, issue #339) — native Task framing overridable per-Workspace', () => {
+  describe('resolveTaskPrompt (issue #339) — native Task framing overridable per-Workspace', () => {
     const config = { taskPrompt: 'GLOBAL {prompt}' };
 
     it('inherits the global Task Prompt when the Workspace column is null', () => {

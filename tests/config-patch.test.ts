@@ -11,20 +11,7 @@ describe('PATCH /api/config verification', () => {
     await server.close();
   });
 
-  it('drops a legacy verification.autoAccept patch — the review gate it toggled is gone (ADR-0041)', async () => {
-    const current = (await server.api('GET', '/api/config')).body;
-    expect(current.verify).not.toHaveProperty('autoAccept');
-
-    const patched = await server.api('PATCH', '/api/config', { verification: { autoAccept: true } });
-    expect(patched.status).toBe(200);
-    expect(patched.body.verify).not.toHaveProperty('autoAccept');
-    expect(patched.body.verify.commands).toEqual([]);
-
-    const after = await server.api('GET', '/api/config');
-    expect(after.body.verify).not.toHaveProperty('autoAccept');
-  });
-
-  it('accepts a drive.continueAttempts patch and round-trips it (ADR-0044/#339 — parity with appConfig)', async () => {
+  it('accepts a drive.continueAttempts patch and round-trips it (#339 — parity with appConfig)', async () => {
     const patched = await server.api('PATCH', '/api/config', { drive: { continueAttempts: 4, mergeFate: 'open-PR' } });
     expect(patched.status).toBe(200);
     expect(patched.body.drive.continueAttempts).toBe(4);

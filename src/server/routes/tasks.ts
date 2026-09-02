@@ -459,7 +459,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       schema: {
         tags: ['Tasks'],
         description:
-          'Permanently delete a Task and its Runs, Usage, and Dependency edges. A mirrored Task is also dismissed so a re-poll will not re-create it. Distinct from Cancel, which keeps the record.',
+          'Permanently delete a Task and its Attempts, Usage, and Dependency edges. A mirrored Task is also dismissed so a re-poll will not re-create it. Distinct from Cancel, which keeps the record.',
         params: idParamsSchema,
         response: {
           200: z.object({ id: z.number().int() }).meta({ example: { id: 4821 } }).describe('The id of the deleted Task.'),
@@ -503,19 +503,19 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       schema: {
         tags: ['Tasks'],
         description:
-          "Steer a running task: send an operator message to its active run. When the harness supports ACP mid-turn steering, the message is injected into the running turn immediately — pre-empting the current generation without cancelling it. Otherwise, or when the agent is parked between turns, the message is queued and delivered as a fresh prompt turn at the next turn boundary. When no run is active but the task's last run left a still-warm, resumable session (an escalated task that ended without closure), the message continues that session in a fresh run — a follow-up in the same conversation. Use it to redirect an agent that has gone off-track, nudge one that ended its turn and parked, or continue one whose run just ended while its session is still warm. Operator only.",
+          "Steer a running task: send an operator message to its active Attempt. When the harness supports ACP mid-turn steering, the message is injected into the running turn immediately — pre-empting the current generation without cancelling it. Otherwise, or when the agent is parked between turns, the message is queued and delivered as a fresh prompt turn at the next turn boundary. When no Attempt is active but the task's last Attempt left a still-warm, resumable session (an escalated task that ended without closure), the message continues that session in a fresh Attempt — a follow-up in the same conversation. Use it to redirect an agent that has gone off-track, nudge one that ended its turn and parked, or continue one whose Attempt just ended while its session is still warm. Operator only.",
         params: idParamsSchema,
         body: steerInputSchema,
         response: {
-          200: okResponseSchema.describe("The message was injected into the running turn or queued at the next boundary of the task's active run, or continued its last run's still-warm session in a fresh run."),
-          409: errorResponse('The task has no active run to steer and no warm, resumable session to continue.'),
+          200: okResponseSchema.describe("The message was injected into the running turn or queued at the next boundary of the task's active Attempt, or continued its last Attempt's still-warm session in a fresh Attempt."),
+          409: errorResponse('The task has no active Attempt to steer and no warm, resumable session to continue.'),
         },
       },
     },
     async (req) => {
       await ctx.tasks.assertExists(req.params.id);
       if (!(await ctx.runner.steer(req.params.id, req.body.text)) && !(await ctx.runner.steerSettled(req.params.id, req.body.text))) {
-        throw new DomainError('invalid_state', `task ${req.params.id} has no active run to steer and no warm session to continue`);
+        throw new DomainError('invalid_state', `task ${req.params.id} has no active Attempt to steer and no warm session to continue`);
       }
       return { ok: true } as const;
     },
@@ -580,7 +580,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       schema: {
         tags: ['Tasks'],
         description:
-          "Accept an escalated ticket (ADR-0041, amended by issue #429): verifies the ticket's candidate first — a pass merges it as-is and continues the success path (merge, close the tracker issue, clean up, moving it to done); a non-pass re-enters the Attempt loop with the verifier's reason as feedback, exactly like Reject, and the ticket stays escalated-turned-working. Force-Accept (`{ force: true }`) skips verification and merges the candidate as-is. Human-only.",
+          "Accept an escalated ticket: verifies the ticket's candidate first — a pass merges it as-is and continues the success path (merge, close the tracker issue, clean up, moving it to done); a non-pass re-enters the Attempt loop with the verifier's reason as feedback, exactly like Reject, and the ticket stays escalated-turned-working. Force-Accept (`{ force: true }`) skips verification and merges the candidate as-is. Human-only.",
         params: idParamsSchema,
         body: acceptInputSchema,
         response: {
@@ -598,7 +598,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       schema: {
         tags: ['Tasks'],
         description:
-          'Reject an escalated ticket with guidance (ADR-0041, amended by ADR-0048): the guidance becomes feedback for the next Attempt and the attempt budget resets. The ticket requeues to `ready` — the Auto-Runner starts the next Attempt when capacity frees; it is not force-started here unless `start: true` (the warm-Session "start now" override, which bypasses the capacity ceiling). The escalated Run\'s branch is retained as evidence until its Session retires. Human-only.',
+          'Reject an escalated ticket with guidance: the guidance becomes feedback for the next Attempt and the attempt budget resets. The ticket requeues to `ready` — the Auto-Runner starts the next Attempt when capacity frees; it is not force-started here unless `start: true` (the warm-Session "start now" override, which bypasses the capacity ceiling). The escalated Attempt\'s branch is retained as evidence until its Session retires. Human-only.',
         params: idParamsSchema,
         body: rejectInputSchema,
         response: {
@@ -617,7 +617,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       schema: {
         tags: ['Tasks'],
         description:
-          'Close an escalated ticket (ADR-0041): cancel it and clean up — remove its branch and worktree, close the tracker issue. Human-only.',
+          'Close an escalated ticket: cancel it and clean up — remove its branch and worktree, close the tracker issue. Human-only.',
         params: idParamsSchema,
         response: {
           200: taskSchema.describe('The task, cancelled.'),
@@ -918,7 +918,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       schema: {
         tags: ['Attempts'],
         description:
-          "Read a critic verification attempt's native harness transcript (ADR-0040) — what the critic itself read, ran, and reasoned. Missing or unreadable transcripts are explicitly unavailable.",
+          "Read a critic verification attempt's native harness transcript — what the critic itself read, ran, and reasoned. Missing or unreadable transcripts are explicitly unavailable.",
         params: idParamsSchema,
         response: {
           200: attemptLogResponseSchema.describe('The critic session transcript events, or an explicit unavailable state.'),

@@ -167,7 +167,7 @@ export function buildResumeFallbackSummary(input: FallbackSummaryInput): string 
   );
 
   lines.push('');
-  lines.push('## Activity digest (run events)');
+  lines.push('## Activity digest (attempt events)');
   if (events.length === 0) {
     lines.push('- (no events recorded)');
   } else {

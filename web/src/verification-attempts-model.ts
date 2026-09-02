@@ -1,5 +1,5 @@
-import { combineVerdicts } from './verification-model.js';
-import type { VerifierVerdict, VerificationDecision } from './verification-model.js';
+import { combineVerdicts } from '../../src/verification/combine.js';
+import type { VerifierVerdict, VerificationDecision } from '../../src/verification/combine.js';
 import type { VerificationAttempt, VerificationMechanism, VerifierStatus } from './types.js';
 
 /**

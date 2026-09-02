@@ -65,7 +65,7 @@ describe('attemptDisplay', () => {
     });
   });
 
-  it('never reads a running run as anything but live work — there is no parked human gate (ADR-0041)', () => {
+  it('never reads a running run as anything but live work — there is no parked human gate', () => {
     for (const type of ['rebase', 'implementation', 'verification', 'review'] as const) {
       const steps = [step({ type, state: 'running' })];
       expect(attemptDisplay(run({ state: 'running' }), steps).pulse).toBe(true);

@@ -123,7 +123,7 @@ describe('coalesceEvents', () => {
   });
 });
 
-describe('moving-base folding (ADR-0046, #368)', () => {
+describe('moving-base folding (#368)', () => {
   const retry = (id: number, attempt: number, of: number): AttemptEvent =>
     evt(id, 'lifecycle', { event: 'moving-base', attempt, of });
 
@@ -140,7 +140,7 @@ describe('moving-base folding (ADR-0046, #368)', () => {
   });
 });
 
-describe('movingBaseView (ADR-0046, #368)', () => {
+describe('movingBaseView (#368)', () => {
   it('is null for any non-moving-base payload', () => {
     expect(movingBaseView({ event: 'progress-nudge', pattern: 'monologue' })).toBeNull();
     expect(movingBaseView(null)).toBeNull();

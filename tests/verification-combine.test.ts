@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { combineVerdicts } from '../web/src/verification-model.js';
-import type { Verdict, VerifierVerdict } from '../web/src/verification-model.js';
+import { combineVerdicts } from '../src/verification/combine.js';
+import type { VerifierVerdict } from '../src/verification/combine.js';
+import type { Verdict } from '../src/verification/critic-schema.js';
 
 const v = (verifier: string, verdict: Verdict): VerifierVerdict => ({ verifier, verdict });
 
-describe('combineVerdicts', () => {
+describe('combineVerdicts (src/verification/combine.ts)', () => {
   it('proceeds on the empty set, naming "no verifiers configured"', () => {
     expect(combineVerdicts([])).toEqual({ outcome: 'proceed', reason: 'no verifiers configured' });
   });

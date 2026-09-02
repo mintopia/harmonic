@@ -139,7 +139,7 @@ describe('VerificationAttemptStore (issue #136)', () => {
     raw.close();
   });
 
-  it('round-trips the critic transcript locator, defaulting both columns to null (ADR-0040)', async () => {
+  it('round-trips the critic transcript locator, defaulting both columns to null', async () => {
     const withLocator = await attempts.append(attemptId, {
       mechanism: 'critic',
       inputOid: 'a'.repeat(40),

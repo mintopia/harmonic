@@ -600,7 +600,7 @@ export function App() {
                       </button>
                     }
                   >
-                    A workspace points Harmonic at a project directory — its tasks, runs, and cost all
+                    A workspace points Harmonic at a project directory — its tasks, attempts, and cost all
                     scope to it. Open one to get started.
                   </EmptyState>
                 ) : (

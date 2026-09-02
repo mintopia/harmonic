@@ -60,7 +60,7 @@ describe('GET /api/stats — failedAttempts + durationMs', () => {
     expect(body.durationMs).toEqual({ p50: 52000, p95: 94300 });
   });
 
-  it('no longer reports a review-rejected slice (the review gate is gone, ADR-0041)', async () => {
+  it('no longer reports a review-rejected slice (the review gate is gone)', async () => {
     const { body } = await server.api('GET', '/api/stats?from=0');
     expect(body).not.toHaveProperty('rejectedRuns');
     expect(body.failedAttempts).toBe(1);
