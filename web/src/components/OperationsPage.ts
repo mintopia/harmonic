@@ -1,9 +1,10 @@
-import { createElement, useEffect, useState, type ReactNode } from 'react';
+import { createElement, useState, type ReactNode } from 'react';
 import { operationForest, visibleOperationForest, type Operation, type OperationForest } from '../operations-model.js';
 import { card, displayTitle, labelType, sectionTitle } from '../ui.js';
 import { subscribe, type OperationEvent } from '../ws.js';
 import { ScheduledJobsView } from './ScheduledJobsView.js';
 import { FlaggedWorktreesView } from './FlaggedWorktreesView.js';
+import { useLiveEffect } from '../useLiveEffect.js';
 
 export interface OperationsPageProps {
   scheduledJobs?: ReactNode;
@@ -60,13 +61,12 @@ function OperationsReadout() {
   const [forest, setForest] = useState<OperationForest | null>(null);
   const [now, setNow] = useState(() => Date.now());
 
-  useEffect(() => {
-    let active = true;
+  useLiveEffect((live) => {
     let snapshotLoaded = false;
     let pending: OperationEvent[] = [];
     const apply = (event: OperationEvent) => setForest((current) => operationForest(current ?? EMPTY_FOREST, event));
     const installSnapshot = (snapshot: OperationForest | null) => {
-      if (!active) return;
+      if (!live()) return;
       snapshotLoaded = true;
       setForest(pending.reduce(operationForest, snapshot ?? EMPTY_FOREST));
     };
@@ -86,7 +86,6 @@ function OperationsReadout() {
     load();
     const timer = setInterval(() => setNow(Date.now()), 1_000);
     return () => {
-      active = false;
       clearInterval(timer);
       unsubscribe();
     };

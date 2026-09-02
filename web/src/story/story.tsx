@@ -20,7 +20,6 @@ function Story() {
           epics={[boardEpic, doneEpic]}
           onOpen={() => {}}
           onOpenTask={() => {}}
-          onChanged={() => {}}
           onNewTask={() => {}}
           onOpenEpic={() => {}}
         />

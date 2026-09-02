@@ -44,4 +44,17 @@ describe('Paper accessibility contract (issue #266)', () => {
     expect(epicPage).toContain('aria-expanded={expanded}');
     expect(taskIdentity).not.toMatch(/bg-tool\/\d/);
   });
+
+  it('shares app refresh with Board actions and detail-page facts', () => {
+    const app = source('web/src/App.tsx');
+    const board = source('web/src/components/Board.tsx');
+    const ticket = source('web/src/components/TicketPage.tsx');
+    const epic = source('web/src/components/EpicPage.tsx');
+
+    expect(app).toContain('<AppContextProvider value={{ config, workspace: activeWorkspace, refresh }}>');
+    expect(board).toContain("import { useAppContext } from '../app-context';");
+    expect(board).not.toContain('onChanged: () => void;');
+    expect(ticket).toContain("import { Fact } from './Fact';");
+    expect(epic).toContain("import { Fact } from './Fact';");
+  });
 });

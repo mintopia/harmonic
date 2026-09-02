@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { api } from '../api';
 import { subscribe } from '../ws';
 import type { Conversation, ConversationEvent } from '../types';
@@ -10,6 +10,7 @@ import {
   type PendingPermissions,
 } from '../conversation-permissions-model';
 import { toastError } from '../toast';
+import { useLiveEffect } from '../useLiveEffect';
 
 export function useConversationDetail(
   focusedId: number | null,
@@ -27,7 +28,7 @@ export function useConversationDetail(
   const [events, setEvents] = useState<ConversationEvent[]>([]);
   const [pending, setPending] = useState<PendingPermissions>({});
 
-  useEffect(() => {
+  useLiveEffect((live) => {
     if (focusedId === null) {
       setConversation(null);
       setEvents([]);
@@ -35,17 +36,16 @@ export function useConversationDetail(
       return;
     }
     const id = focusedId;
-    let live = true;
     setConversation(null);
     setEvents([]);
     setPending({});
     const load = () => {
       api.conversation(id).then((c) => {
-        if (!live) return;
+        if (!live()) return;
         setConversation(c);
         upsertConversationInList(c);
       }, toastError);
-      api.conversationEvents(id).then(({ events }) => live && setEvents(events), toastError);
+      api.conversationEvents(id).then(({ events }) => live() && setEvents(events), toastError);
     };
     load();
     const unsubscribe = subscribe((msg) => {
@@ -65,7 +65,6 @@ export function useConversationDetail(
       }
     }, load);
     return () => {
-      live = false;
       unsubscribe();
     };
   }, [focusedId, upsertConversationInList]);
