@@ -4,7 +4,7 @@ import { mkdirSync, openSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { buildApp } from './server/app.js';
-import { defaultDataDir } from './config.js';
+import { defaultDataDir, verifyChannelsUnconfigured } from './config.js';
 import { acquireLock, daemonStatus, logFilePath, releaseLock, stopDaemon, writeDaemon } from './daemon.js';
 import { initializeTelemetry, resolveTelemetryOptions } from './telemetry.js';
 import { logger } from './logger.js';
@@ -154,12 +154,18 @@ async function main(): Promise<void> {
     releaseLock(dataDir);
     throw error;
   }
-  if (!app.ctx.auth.hasPassword()) {
+  if (!(await app.ctx.auth.hasPassword())) {
     const loopback = host === '127.0.0.1' || host === '::1' || host === 'localhost';
     logger.warn(
       `No operator password set — Harmonic is running ungated${loopback ? '' : ` and reachable on ${host}`}.\n` +
         (loopback ? '' : '  Anyone who can reach this address has full access. Bind to 127.0.0.1 or set a password.\n') +
         '  Set one any time: harmonic serve --password <password>   (or HARMONIC_PASSWORD)',
+    );
+  }
+  const { verify } = app.ctx.settingsStore.getGlobal();
+  if (verifyChannelsUnconfigured(verify)) {
+    logger.warn(
+      'No command verifier and no critic review are configured — merges will proceed with no verification at all. Configure one in Settings → Verification, or add commands/enable review for a workspace.',
     );
   }
   await app.listen({ port, host });

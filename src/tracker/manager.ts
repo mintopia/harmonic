@@ -239,7 +239,8 @@ export class TrackerPollerManager {
     const rowByRef = new Map(rows.map((r) => [r.trackerRef, r] as const));
     const derived = this.surfacedEpics(rows, tickets, mirrored, { includeHistorical: false });
     const baseBranch = await this.epicBaseBranch(workspaceId);
-    return Promise.all(derived.map((one) => this.composeOne(entry, one, tickets, mirrored, baseBranch, rowByRef)));
+    const configured = await this.verificationConfigured(workspaceId);
+    return Promise.all(derived.map((one) => this.composeOne(entry, one, tickets, mirrored, baseBranch, rowByRef, configured)));
   }
 
   /** The ticket for each surfaced Epic: the live container ticket, or a snapshot-backed placeholder for a historical Epic. */
@@ -287,7 +288,8 @@ export class TrackerPollerManager {
       ? this.storedEpicToDerived(row, tickets, mirrored)
       : this.liveEpicsByRef(tickets, mirrored).get(epicRef);
     if (!derived) return null;
-    return this.composeOne(entry, derived, tickets, mirrored, await this.epicBaseBranch(workspaceId), rowByRef);
+    const configured = await this.verificationConfigured(workspaceId);
+    return this.composeOne(entry, derived, tickets, mirrored, await this.epicBaseBranch(workspaceId), rowByRef, configured);
   }
 
   private isHistoricalEpic(row: EpicRow): boolean {
@@ -322,13 +324,14 @@ export class TrackerPollerManager {
     mirrored: TaskRow[],
     baseBranch: string | null,
     rowByRef: ReadonlyMap<number, EpicRow>,
+    configured: boolean,
   ): Promise<Epic> {
     const titleByRef = new Map(tickets.map((t) => [t.number, t.title]));
     const taskByRef = new Map<number, TaskRow>();
     for (const task of mirrored) {
       if (task.trackerRef != null) taskByRef.set(task.trackerRef, task);
     }
-    const facts = await this.epicFacts(entry, derived.ref);
+    const facts = await this.epicFacts(entry, derived.ref, configured);
     const ticket = tickets.find((t) => t.number === derived.ref);
     const meta: EpicMeta = {
       description: ticket?.body ?? '',
@@ -364,18 +367,26 @@ export class TrackerPollerManager {
     }
   }
 
-  private async epicFacts(entry: Entry | undefined, epicRef: number): Promise<EpicFacts> {
+  private async epicFacts(entry: Entry | undefined, epicRef: number, configured: boolean): Promise<EpicFacts> {
     const branch = integrationBranchName(epicRef);
     const epicIntegrate = entry?.epicIntegrate;
     const integration = epicIntegrate ? await epicIntegrate.integrationFacts(epicRef) : { exists: false, tip: null };
     return {
       integration: { branch, ...integration },
-      verification: { status: epicIntegrate?.verificationStatus(epicRef) ?? null },
+      verification: { status: epicIntegrate?.verificationStatus(epicRef) ?? null, configured },
       integrate: {
         inFlight: epicIntegrate?.isInFlight(epicRef) ?? false,
         held: epicIntegrate?.heldReason(epicRef) ?? null,
       },
     };
+  }
+
+  private async verificationConfigured(workspaceId: number): Promise<boolean> {
+    const getConfig = this.getConfig;
+    if (!getConfig) return false;
+    const ws = (await this.getWorkspaces()).find((w) => w.id === workspaceId);
+    if (!ws) return false;
+    return resolveVerifiers(ws, getConfig()).commands.length > 0;
   }
 
   /** The last-resolved tracker for a Workspace, or null when tracking is off / not yet resolved. */

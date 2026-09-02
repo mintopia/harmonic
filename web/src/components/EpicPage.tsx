@@ -482,8 +482,8 @@ function EpicStepper({ epic }: { epic: Epic }) {
       aria-label={`Epic lifecycle — ${current ? current.label : 'complete'}${epic.integrate.held != null ? ' (escalated)' : ''}`}
     >
       {steps.map((step, i) => {
-        const leftDone = i > 0 && steps[i - 1]!.state === 'done';
-        const rightDone = step.state === 'done';
+        const leftDone = i > 0 && steps[i - 1]!.state === 'done' && !steps[i - 1]!.disabled;
+        const rightDone = step.state === 'done' && !step.disabled;
         return (
           <li
             key={step.key}
@@ -493,13 +493,13 @@ function EpicStepper({ epic }: { epic: Epic }) {
             <div className="flex w-full items-center">
               <span className={`h-0.5 flex-1 rounded ${i === 0 ? 'invisible' : leftDone ? 'bg-merged' : 'bg-edge'}`} />
               <span
-                className={`flex size-6 shrink-0 items-center justify-center rounded-full border text-[11px] font-bold tabular-nums ${PHASE_NODE_STYLES[STEP_NODE[step.state]]}`}
+                className={`flex size-6 shrink-0 items-center justify-center rounded-full border text-[11px] font-bold tabular-nums ${PHASE_NODE_STYLES[step.disabled ? 'pending' : STEP_NODE[step.state]]}`}
               >
-                {step.state === 'done' ? <Icon name="check" className="size-3.5" /> : i + 1}
+                {!step.disabled && step.state === 'done' ? <Icon name="check" className="size-3.5" /> : i + 1}
               </span>
               <span className={`h-0.5 flex-1 rounded ${i === steps.length - 1 ? 'invisible' : rightDone ? 'bg-merged' : 'bg-edge'}`} />
             </div>
-            <span className={`text-[12px] font-semibold leading-tight ${STEP_LABEL_TONE[step.state]}`}>{step.label}</span>
+            <span className={`text-[12px] font-semibold leading-tight ${step.disabled ? 'text-faint' : STEP_LABEL_TONE[step.state]}`}>{step.label}</span>
             <span className="max-w-[10rem] truncate text-[10.5px] leading-tight text-faint" title={step.sublabel}>
               {step.sublabel}
             </span>

@@ -52,7 +52,7 @@ const epicIntegrationSchema = z
   .meta({ id: 'EpicIntegration' });
 
 const epicVerificationSchema = z
-  .object({ status: z.enum(['pass', 'fail', 'pending']).nullable() })
+  .object({ status: z.enum(['pass', 'fail', 'pending']).nullable(), configured: z.boolean() })
   .meta({ id: 'EpicVerification' });
 
 const epicIntegrateStateSchema = z

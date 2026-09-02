@@ -237,7 +237,7 @@ const STEP_STATUS_LABEL: Record<LifecycleStepStatus, string> = {
   failed: 'failed',
 };
 
-function stepCaption(key: LifecycleStepKey, status: LifecycleStepStatus, task: Task, attemptCount: number): string | null {
+function stepCaption(key: LifecycleStepKey, status: LifecycleStepStatus, task: Task, attemptCount: number, disabled: boolean): string | null {
   switch (key) {
     case 'worktree':
       return task.branch ? splitPathTail(task.branch).tail : null;
@@ -246,7 +246,7 @@ function stepCaption(key: LifecycleStepKey, status: LifecycleStepStatus, task: T
     case 'merge':
       return status === 'awaiting' ? 'awaiting review' : null;
     case 'postMergeCheck':
-      return 'revert on red';
+      return disabled ? 'not configured' : 'revert on red';
     case 'closeIssue':
       return task.trackerRef != null ? `#${task.trackerRef}` : null;
     case 'retire':
@@ -254,16 +254,16 @@ function stepCaption(key: LifecycleStepKey, status: LifecycleStepStatus, task: T
   }
 }
 
-function TaskProgressBar({ task, attempts }: { task: Task; attempts: AttemptSummary[] }) {
-  const { steps } = taskLifecycle(task.state, attempts);
+function TaskProgressBar({ task, attempts, commandConfigured }: { task: Task; attempts: AttemptSummary[]; commandConfigured: boolean }) {
+  const { steps } = taskLifecycle(task.state, attempts, commandConfigured);
   return (
     <div className="mb-6 mt-1">
       <div className={`mb-3 ${sectionCaps}`}>Task progress</div>
       <ol className={`${card} flex items-start px-[22px] py-5`} aria-label="Task progress">
         {steps.map((step, i) => {
-          const leftDone = i > 0 && steps[i - 1]?.status === 'done';
-          const rightDone = step.status === 'done';
-          const caption = stepCaption(step.key, step.status, task, attempts.length);
+          const leftDone = i > 0 && steps[i - 1]?.status === 'done' && !steps[i - 1]?.disabled;
+          const rightDone = step.status === 'done' && !step.disabled;
+          const caption = stepCaption(step.key, step.status, task, attempts.length, !!step.disabled);
           return (
             <li
               key={step.key}
@@ -273,15 +273,15 @@ function TaskProgressBar({ task, attempts }: { task: Task; attempts: AttemptSumm
               <div className="flex w-full items-center">
                 <span className={`h-0.5 flex-1 rounded ${i === 0 ? 'invisible' : leftDone ? 'bg-merged' : 'bg-edge'}`} />
                 <span
-                  className={`flex size-6 shrink-0 items-center justify-center rounded-full border text-[11px] font-bold tabular-nums ${PHASE_NODE_STYLES[step.status]}`}
+                  className={`flex size-6 shrink-0 items-center justify-center rounded-full border text-[11px] font-bold tabular-nums ${PHASE_NODE_STYLES[step.status]} ${step.disabled ? 'opacity-60' : ''}`}
                 >
                   {stepGlyph(step.status, i)}
                 </span>
                 <span className={`h-0.5 flex-1 rounded ${i === steps.length - 1 ? 'invisible' : rightDone ? 'bg-merged' : 'bg-edge'}`} />
               </div>
-              <span className={`text-[12px] font-semibold leading-tight ${STEP_LABEL_TONE[step.status]}`}>
+              <span className={`text-[12px] font-semibold leading-tight ${step.disabled ? 'text-faint' : STEP_LABEL_TONE[step.status]}`}>
                 {step.label}
-                <span className="sr-only"> — {STEP_STATUS_LABEL[step.status]}</span>
+                <span className="sr-only"> — {step.disabled ? 'not configured' : STEP_STATUS_LABEL[step.status]}</span>
               </span>
               {caption && <span className="text-[10.5px] leading-tight text-faint">{caption}</span>}
             </li>
@@ -1250,6 +1250,7 @@ export function TicketPage({
   const liveUsage = useLiveUsage();
   const [maxAttempts, setMaxAttempts] = useState<number | null>(null);
   const [workspaceName, setWorkspaceName] = useState<string | null>(null);
+  const [commandConfigured, setCommandConfigured] = useState(true);
   const [guardrailEvents, setGuardrailEvents] = useState<GuardrailEvent[]>([]);
   const [timelineEvents, setTimelineEvents] = useState<TicketTimelineEvent[]>([]);
   const [allTasks, setAllTasks] = useState<Task[]>([]);
@@ -1302,6 +1303,7 @@ export function TicketPage({
       const workspace = workspaces.find((workspace) => workspace.id === task.workspaceId);
       setMaxAttempts(workspace?.maxAttempts ?? config.maxAttempts);
       setWorkspaceName(workspace?.name ?? null);
+      setCommandConfigured((workspace?.verificationCommand ?? config.verify.commands).length > 0);
     }, toastError);
   }, [task.workspaceId]);
 
@@ -1457,7 +1459,7 @@ export function TicketPage({
               </div>
             </div>
 
-            <TaskProgressBar task={task} attempts={runs} />
+            <TaskProgressBar task={task} attempts={runs} commandConfigured={commandConfigured} />
 
             {task.skipReason && (
               <div className="mb-4 text-small text-muted">

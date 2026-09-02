@@ -72,6 +72,8 @@ export interface LifecycleStep {
   key: LifecycleStepKey;
   label: string;
   status: LifecycleStepStatus;
+  /** The post-merge check with no command verifier configured — a vacuous gate the UI renders muted. */
+  disabled?: boolean;
 }
 
 /** The Task-progress bar's view-model: the six nodes in lifecycle order plus the
@@ -127,16 +129,22 @@ function lifecyclePosition(
  * with exactly one highlighted `current` phase. Nodes before the active one are
  * `done`, nodes after are `pending`; the active node is `current`, or `failed`
  * when the Task halted there (escalated or cancelled). A `done` Task settles
- * every node.
+ * every node — except `implementation`, which stays `pending` without an
+ * Attempt to back it: a `done` Task can reach that state with zero Attempts,
+ * and `done` must never claim implementation happened when none ran.
+ * `commandConfigured` flags the post-merge check `disabled` when no command
+ * verifier is configured (global or workspace), since the check is vacuous
+ * without one.
  */
 export function taskLifecycle(
   state: TaskState,
   attempts: readonly Pick<AttemptSummary, 'state'>[],
+  commandConfigured = true,
 ): TaskLifecycle {
   const { current, halted, allDone, awaiting } = lifecyclePosition(state, attempts);
   const currentIndex = LIFECYCLE_STEPS.findIndex((s) => s.key === current);
   const steps = LIFECYCLE_STEPS.map(({ key, label }, i): LifecycleStep => {
-    const status: LifecycleStepStatus = allDone
+    let status: LifecycleStepStatus = allDone
       ? 'done'
       : i < currentIndex
         ? 'done'
@@ -147,7 +155,9 @@ export function taskLifecycle(
             : awaiting
               ? 'awaiting'
               : 'current';
-    return { key, label, status };
+    if (key === 'implementation' && status === 'done' && attempts.length === 0) status = 'pending';
+    const disabled = key === 'postMergeCheck' && !commandConfigured ? true : undefined;
+    return { key, label, status, ...(disabled ? { disabled } : {}) };
   });
   return { steps, current };
 }
