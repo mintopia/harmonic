@@ -112,6 +112,8 @@ function readSubagents(eventsFile: string): Map<string, SubagentInfo> {
 }
 
 export const copilotAdapter: HarnessAdapter = {
+  commandPrefix: '/',
+  transcript: null,
   // Copilot ignores --model and COPILOT_MODEL in --acp mode, and --model
   // falsifies session/new's reported currentModelId without changing the
   // session. The CLI also updates itself mid-run unless told not to.

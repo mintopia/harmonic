@@ -9,17 +9,19 @@ import { MirrorCoordinator } from './coordinator.js';
 import { TrackerPoller } from './poller.js';
 import { deriveMaps, type DerivedMap } from './mirror.js';
 import { recordAndCloseIntegratedEpic } from './epic-close.js';
-import { EpicIntegrationCoordinator, integrationBranchName } from '../execution/epic-integration.js';
-import { EpicIntegrateCoordinator, type EpicIntegrateOutcome } from '../execution/epic-integrate-git.js';
+import {
+  EpicCoordinator,
+  EpicLifecycle,
+  EpicRefresh,
+  integrationBranchName,
+  type EpicIntegrateOutcome,
+  type EpicRefreshResolveDispatchOutcome,
+  type EpicRefreshTarget,
+} from '../execution/epic-coordinator.js';
 import { verifyEpicIntegration } from '../execution/epic-verification.js';
 import { EpicOperations } from '../execution/epic-operations.js';
 import { resolveRepositoryDefaultBranch } from '../execution/branch-merge.js';
 import { Git } from '../execution/git.js';
-import {
-  EpicRefreshCoordinator,
-  type EpicRefreshResolveDispatchOutcome,
-  type EpicRefreshTarget,
-} from '../execution/epic-refresh-coordinator.js';
 import type { MergePolicyOutcome, PostMergeCheckResult } from '../execution/merge-policy.js';
 
 /** Integrate an Epic's `epic/<ref>` branch into the default branch under the one merge policy; `runPostMergeCheck` re-runs the Workspace's whole-Epic verifiers on the merged tip. */
@@ -40,8 +42,8 @@ import type { Scheduler } from '../scheduler/scheduler.js';
 interface Entry {
   poller: TrackerPoller;
   mirror: MirrorCoordinator;
-  epics: EpicIntegrationCoordinator;
-  epicIntegrate?: EpicIntegrateCoordinator;
+  epics: EpicLifecycle;
+  epicIntegrate?: EpicCoordinator;
   sig: string;
   unregister: () => void;
 }
@@ -120,9 +122,9 @@ export class TrackerPollerManager {
 
   private startLoop(ws: WorkspaceRow): void {
     const mirror = new MirrorCoordinator(this.tasks, ws.id);
-    const epics = new EpicIntegrationCoordinator(this.tasks, ws.workingDir);
+    const epics = new EpicLifecycle(this.tasks, ws.workingDir);
     epics.attachOperations(this.epicOperations);
-    let epicIntegrate: EpicIntegrateCoordinator | undefined;
+    let epicIntegrate: EpicCoordinator | undefined;
     const getConfig = this.getConfig;
     const mergeEpicIntegration = this.mergeEpicIntegration;
     if (getConfig && mergeEpicIntegration) {
@@ -130,7 +132,7 @@ export class TrackerPollerManager {
         const live = (await this.getWorkspaces()).find((w) => w.id === ws.id) ?? ws;
         return resolveVerifiers(live, getConfig());
       };
-      epicIntegrate = new EpicIntegrateCoordinator({
+      epicIntegrate = new EpicCoordinator({
         repoDir: ws.workingDir,
         verify: async ({ repoDir, verifiedHeadOid }) =>
           verifyEpicIntegration({ repoDir, verifiedHeadOid, verifiers: await resolveWorkspaceVerifiers() }),
@@ -167,7 +169,7 @@ export class TrackerPollerManager {
         if (epicIntegrate) epicIntegrate.recordRefreshBehind(ref, reason);
         else logger.debug(`epic ${ref} integration refresh behind develop (retrying): ${reason}`);
       };
-      const refresh: EpicRefreshCoordinator = new EpicRefreshCoordinator({
+      const refresh: EpicRefresh = new EpicRefresh({
         dispatchResolve: (target, detail) =>
           this.dispatchEpicRefreshResolution(target, detail, noteRefreshBehind, () => refresh.refresh(target)),
         escalate: noteRefreshBehind,

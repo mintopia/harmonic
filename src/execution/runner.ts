@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { Git } from './git.js';
 import { GitError } from '../domain/errors.js';
 import { classifyGitFailure, type GitCircuitBreaker } from './git-failure.js';
-import { adapterFor, adapterVersion } from './harness/adapter.js';
+import { adapterFor, adapterVersion } from './harness/registry.js';
 import { readProcStartToken } from './process-reaper.js';
 import { collectUsage, observedModelMismatch, activityLine, toolCallName, type AttemptUsage, type AttemptUsageSnapshot } from './usage.js';
 import { LiveUsageTailer, type TailerCadence } from './live-usage-tailer.js';
@@ -49,11 +49,11 @@ import { isForeignKeyViolation } from '../db/errors.js';
 import { logger } from '../logger.js';
 import type { PostMergeHook } from './branch-merge.js';
 import { runMergePolicy, type MergePolicyDeps, type MergePolicyOutcome, type PostMergeCheckResult } from './merge-policy.js';
-import { integrationBranchName, parseIntegrationBranch } from './epic-integration.js';
-import type {
-  EpicRefreshResolveDispatchOutcome,
-  EpicRefreshTarget,
-} from './epic-refresh-coordinator.js';
+import {
+  integrationBranchName,
+  parseIntegrationBranch,
+} from './epic-coordinator.js';
+import type { EpicRefreshResolveDispatchOutcome, EpicRefreshTarget } from './epic-coordinator.js';
 import type { AsyncDbHandle } from '../db/async.js';
 import type { SpanContext } from '@opentelemetry/api';
 import { startOperation, type Operation } from '../telemetry/operations.js';

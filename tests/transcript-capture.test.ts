@@ -6,7 +6,7 @@ import type { AppConfig } from '../src/config.js';
 
 const { resolveTranscriptPath } = vi.hoisted(() => ({ resolveTranscriptPath: vi.fn() }));
 
-vi.mock('../src/execution/harness/adapter.js', () => ({
+vi.mock('../src/execution/harness/registry.js', () => ({
   adapterFor: (harnessId: string) => (harnessId === 'no-resolver' ? { usage: {} } : { usage: { resolveTranscriptPath } }),
 }));
 

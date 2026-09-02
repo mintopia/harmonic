@@ -5,6 +5,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { dominantModel, foldModels, usageFromModels, type ParsedSession, type ProcessNode, type UsageTurn } from '../usage.js';
 import type { HarnessAdapter, ModelUsage, SessionTailReader } from './adapter.js';
 import { LineCursor, type LineAccumulator } from './incremental-log.js';
+import { asRecord, timestamp, withTarget, type TranscriptLogEvent } from './transcript.js';
 
 const num = (v: unknown): number => (typeof v === 'number' ? v : 0);
 
@@ -301,7 +302,66 @@ class ClaudeSessionTailReader implements SessionTailReader {
   }
 }
 
+function transcriptEvents(entry: unknown, firstId: number, parentToolUseId?: string): TranscriptLogEvent[] {
+  const record = asRecord(entry);
+  const message = asRecord(record?.message);
+  const content = message?.content;
+  if (record?.type !== 'assistant' || !Array.isArray(content)) return [];
+  const ts = timestamp(record.timestamp);
+  const lane = parentToolUseId ? { parentToolUseId } : {};
+  const events: TranscriptLogEvent[] = [];
+  for (const block of content) {
+    const value = asRecord(block);
+    if (!value) continue;
+    const id = firstId + events.length;
+    if (value.type === 'text' && typeof value.text === 'string') {
+      events.push({ id, seq: id, ts, type: 'session_update', payload: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: value.text }, ...(parentToolUseId ? { _meta: { claudeCode: lane } } : {}) } });
+    } else if (value.type === 'thinking' && typeof value.thinking === 'string') {
+      events.push({ id, seq: id, ts, type: 'session_update', payload: { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: value.thinking }, ...(parentToolUseId ? { _meta: { claudeCode: lane } } : {}) } });
+    } else if (value.type === 'tool_use' && typeof value.id === 'string') {
+      const name = typeof value.name === 'string' ? value.name : 'Tool call';
+      events.push({ id, seq: id, ts, type: 'session_update', payload: { sessionUpdate: 'tool_call', toolCallId: value.id, title: withTarget(name, value.input), status: 'completed', _meta: { claudeCode: { toolName: name, ...lane } } } });
+    }
+  }
+  return events;
+}
+
+async function transcriptSubagents(rootPath: string): Promise<Array<{ path: string; parentToolUseId: string }>> {
+  const dir = join(dirname(rootPath), basename(rootPath, '.jsonl'), 'subagents');
+  let names: string[];
+  try {
+    names = await readdir(dir, { recursive: true });
+  } catch {
+    return [];
+  }
+  const found = new Map<string, { jsonl?: string; meta?: string }>();
+  for (const rel of names) {
+    const match = /^agent-(.+)\.(jsonl|meta\.json)$/.exec(basename(rel));
+    if (!match) continue;
+    const entry = found.get(match[1]!) ?? {};
+    if (match[2] === 'jsonl') entry.jsonl = join(dir, rel);
+    else entry.meta = join(dir, rel);
+    found.set(match[1]!, entry);
+  }
+  const subagents: Array<{ path: string; parentToolUseId: string }> = [];
+  for (const [id, { jsonl, meta }] of found) {
+    if (!jsonl) continue;
+    let parentToolUseId = id;
+    if (meta) {
+      try {
+        const parsed = asRecord(JSON.parse(await readFile(meta, 'utf8')));
+        if (typeof parsed?.toolUseId === 'string') parentToolUseId = parsed.toolUseId;
+      } catch {
+      }
+    }
+    subagents.push({ path: jsonl, parentToolUseId });
+  }
+  return subagents;
+}
+
 export const claudeAdapter: HarnessAdapter = {
+  commandPrefix: '/',
+  transcript: { events: transcriptEvents, subagents: transcriptSubagents },
   spawnEnv: ({ model }) => ({
     // Claude Code refuses to start nested inside another Claude Code session;
     // Harmonic itself may have been launched from one.

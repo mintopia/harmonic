@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { AcpDriver } from '../acp/driver.js';
 import { parsePermissionRequest, type PermissionRequest } from '../acp/permission-request.js';
-import { adapterFor } from './harness/adapter.js';
+import { adapterFor } from './harness/registry.js';
 import { accumulateUsage, collectUsageWithRetry, type AttemptUsage } from './usage.js';
 import { resolvePrices } from '../domain/pricing.js';
 import { DomainError } from '../domain/errors.js';

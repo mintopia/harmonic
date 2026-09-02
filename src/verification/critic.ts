@@ -3,7 +3,7 @@ import type { Attributes, SpanContext } from '@opentelemetry/api';
 import type { HarnessConfig, VerificationCritic } from '../config.js';
 import { AcpDriver } from '../acp/driver.js';
 import { parsePermissionRequest, type PermissionRequest } from '../acp/permission-request.js';
-import { adapterFor } from '../execution/harness/adapter.js';
+import { adapterFor } from '../execution/harness/registry.js';
 import type { DriveFields } from '../execution/prompt-template.js';
 import { buildCriticPrompt } from './critic-prompt.js';
 import { parseCriticOutput, type Verdict } from './critic-schema.js';

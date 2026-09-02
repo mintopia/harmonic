@@ -4,7 +4,7 @@ import type { PersistedAttemptEvent } from '../domain/attempts.js';
 import { isReplay } from '../domain/replay-quarantine.js';
 import type { ModelUsage, AttemptUsage, ToolTokenUsage } from '../domain/usage.js';
 import { DEFAULT_PRICES, turnCost, type PriceTable } from '../domain/pricing.js';
-import { adapterFor } from './harness/adapter.js';
+import { adapterFor } from './harness/registry.js';
 
 export type { ModelUsage, AttemptUsage, ToolTokenUsage };
 

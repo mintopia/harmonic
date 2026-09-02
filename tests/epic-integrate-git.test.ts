@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { EpicIntegrateCoordinator, type EpicIntegrate, type EpicIntegrateGit } from '../src/execution/epic-integrate-git.js';
+import { EpicCoordinator, type EpicIntegrate, type EpicGit } from '../src/execution/epic-coordinator.js';
 import type { MergePolicyOutcome } from '../src/execution/merge-policy.js';
 import type { VerificationDecision } from '../src/verification/combine.js';
 import type { MemberMergeState } from '../src/domain/epic-integrate-decision.js';
@@ -8,7 +8,7 @@ const proceed: VerificationDecision = { outcome: 'proceed', reason: 'all 1 verif
 const block: VerificationDecision = { outcome: 'block', reason: 'verifier command failed' };
 const inconclusive: VerificationDecision = { outcome: 'escalate', reason: 'verifier inconclusive' };
 
-class FakeGit implements EpicIntegrateGit {
+class FakeGit implements Pick<EpicGit, 'branchExists' | 'revParse' | 'symbolicBranch' | 'isAncestor' | 'isContentContained'> {
   readonly contained: Set<string> = new Set();
   readonly contentContained: Set<string> = new Set();
   constructor(
@@ -61,7 +61,7 @@ const build = (opts: {
   const recordIntegration = vi.fn(async (_input: { epicRef: number; mergeCommit: string | null; memberRefs: number[] }) => {});
   const onError = vi.fn<(msg: string) => void>();
   let t = 0;
-  const coord = new EpicIntegrateCoordinator({
+  const coord = new EpicCoordinator({
     repoDir: '/repo',
     git,
     verify,
@@ -78,7 +78,7 @@ const build = (opts: {
 
 const members = (...m: MemberMergeState[]): MemberMergeState[] => m;
 
-describe('EpicIntegrateCoordinator', () => {
+describe('EpicCoordinator', () => {
   it('is a noop when the integration branch is gone (already integrated/retired)', async () => {
     const { coord, verify, integrate } = build({ git: new FakeGit(new Set()) });
     const out = await coord.submit({ ref: 42, members: members('completed') });
@@ -200,7 +200,7 @@ describe('EpicIntegrateCoordinator', () => {
 
   it('stays integrated when retire fails after a successful integrate (non-fatal, logged)', async () => {
     const onError = vi.fn<(msg: string) => void>();
-    const coordWithBadRetire = new EpicIntegrateCoordinator({
+    const coordWithBadRetire = new EpicCoordinator({
       repoDir: '/repo',
       git: new FakeGit(),
       verify: async () => proceed,
@@ -232,7 +232,7 @@ describe('EpicIntegrateCoordinator', () => {
       const git = new FakeGit();
       git.setContained('epic/42');
       const onError = vi.fn<(msg: string) => void>();
-      const coord = new EpicIntegrateCoordinator({
+    const coord = new EpicCoordinator({
         repoDir: '/repo',
         git,
         verify: async () => proceed,
@@ -280,7 +280,7 @@ describe('EpicIntegrateCoordinator', () => {
         throw new Error('branch -d failed');
       });
       const onError = vi.fn<(msg: string) => void>();
-      const coord = new EpicIntegrateCoordinator({
+    const coord = new EpicCoordinator({
         repoDir: '/repo',
         git,
         verify: async () => proceed,
