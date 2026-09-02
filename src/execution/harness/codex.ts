@@ -367,6 +367,8 @@ export const codexAdapter: HarnessAdapter = {
       headers: [{ name: 'Authorization', value: `Bearer ${token}` }],
     },
   ],
+  unattendedPermissionMode: (available) => (available.includes('agent-full-access') ? 'agent-full-access' : undefined),
+  requiresUnattendedPermissionMode: false,
 
   usage: {
     resolveTranscriptPath({ sessionLogDir, sessionId }) {

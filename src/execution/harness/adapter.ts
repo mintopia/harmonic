@@ -98,6 +98,10 @@ export interface HarnessAdapter {
    * env-var mechanism (HARMONIC_MCP_URL / HARMONIC_API_KEY).
    */
   mcpServers(input: { url: string; token: string }): unknown[];
+  /** Selects this harness's unattended ACP permission mode, if it advertises one. */
+  unattendedPermissionMode(available: readonly string[]): string | undefined;
+  /** Whether a missing unattended mode must stop an autonomous turn. */
+  requiresUnattendedPermissionMode: boolean;
   /** The harness's Usage Collector; null while it has none (ACP totals only). */
   usage: UsageCollector | null;
 }
@@ -105,6 +109,8 @@ export interface HarnessAdapter {
 const unknownAdapter: HarnessAdapter = {
   spawnEnv: () => ({}),
   mcpServers: () => [],
+  unattendedPermissionMode: () => undefined,
+  requiresUnattendedPermissionMode: false,
   usage: null,
 };
 

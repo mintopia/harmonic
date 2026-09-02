@@ -14,12 +14,12 @@ import { TranscriptCapture } from './transcript-capture.js';
 import { GuardrailSupervisor } from './guardrail-supervisor.js';
 import { codeIndexRepoGuidance, driveFields, promptForTask } from './prompt-template.js';
 import { indexWorktree, dropIndexForPath } from './code-index.js';
-import { AFK_PERMISSION_MODES, afkRequestGated, afkSessionMode } from './afk-permissions.js';
 import type { AutoDrive } from './auto-drive.js';
 import type { AppConfig, HarnessConfig } from '../config.js';
 import type { TaskRow, AttemptRow, WorkspaceRow, SessionRow } from '../db/schema.js';
 import { AcpDriver, AcpPromptTimeoutError, type AcpInitializeResult, type PromptResult } from '../acp/driver.js';
 import { AcpConnectionClosedError } from '../acp/connection.js';
+import { parsePermissionRequest } from '../acp/permission-request.js';
 import { SessionStore } from '../domain/sessions.js';
 import { assessResumeEligibility, sessionFacts, type ResumeEnvironment } from '../domain/session-resume.js';
 import {
@@ -1626,20 +1626,25 @@ export class Runner {
       },
       onRequest: async (method, params) => {
         if (method === 'session/request_permission') {
-          const options = (params as any)?.options ?? [];
+          const request = parsePermissionRequest(params);
+          if (!request) {
+            logger.warn('acp: rejected malformed permission request', { attemptId: run.id });
+            return { outcome: 'cancelled' };
+          }
+          const options = request.options;
           const grant = () => {
             const pick =
-              options.find((o: any) => o.kind === 'allow_always') ??
-              options.find((o: any) => o.kind === 'allow_once') ??
+              options.find((o) => o.kind === 'allow_always') ??
+              options.find((o) => o.kind === 'allow_once') ??
               options[0];
             const outcome = pick ? { outcome: 'selected', optionId: pick.optionId } : { outcome: 'cancelled' };
-            record('permission_request', { request: params, outcome });
+            record('permission_request', { request, outcome });
             return { outcome };
           };
           if (autoDriven) {
-            stoppedShort = `permission request declined (no human on this turn): ${(params as any)?.toolCall?.title ?? 'permission request'}`;
+            stoppedShort = `permission request declined (no human on this turn): ${request.toolCall.title ?? 'permission request'}`;
             const outcome = { outcome: 'cancelled' };
-            record('permission_request', { request: params, outcome });
+            record('permission_request', { request, outcome });
             driver.cancel();
             return { outcome };
           }
@@ -1754,12 +1759,13 @@ export class Runner {
       guardrails.armSpend();
 
       if (autoDriven) {
-        const mode = afkSessionMode(task.harness, driver.availableModes);
+        const adapter = adapterFor(task.harness);
+        const mode = adapter.unattendedPermissionMode(driver.availableModes);
         if (!mode) {
-          if (!afkRequestGated(task.harness)) {
+          if (adapter.requiresUnattendedPermissionMode) {
             throw new Error(
               `harness '${task.harness}' offers no unattended permission mode ` +
-                `(need one of ${AFK_PERMISSION_MODES.join('/')}; available: ${driver.availableModes.join(', ') || 'none'})`,
+                `(available: ${driver.availableModes.join(', ') || 'none'})`,
             );
           }
         } else {

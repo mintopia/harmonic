@@ -320,6 +320,8 @@ export const claudeAdapter: HarnessAdapter = {
       headers: [{ name: 'Authorization', value: `Bearer ${token}` }],
     },
   ],
+  unattendedPermissionMode: (available) => ['auto', 'bypassPermissions'].find((mode) => available.includes(mode)),
+  requiresUnattendedPermissionMode: true,
 
   usage: {
     resolveTranscriptPath({ sessionLogDir, sessionId }) {

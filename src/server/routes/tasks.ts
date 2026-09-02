@@ -15,7 +15,6 @@ import {
   VERIFICATION_MECHANISMS,
   STEP_TYPES,
 } from '../../db/schema.js';
-import { Git } from '../../execution/git.js';
 import { DomainError } from '../../domain/errors.js';
 import { mergeUsage, type AttemptUsage } from '../../execution/usage.js';
 import { readTranscriptLog, withOperatorMessages, type OperatorMessage } from '../../execution/transcript-log.js';
@@ -25,8 +24,7 @@ import type { ApiTaskListRow } from '../dto.js';
 import { attemptTimelineResponseSchema, errorResponse, idParamsSchema, costSchema, attemptUsageSchema, okResponseSchema, verifierStatusSchema } from '../schemas.js';
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
 import { diffFilesResponseSchema } from './diff.js';
-import { parseUnifiedDiff, type DiffFile } from '../../domain/unified-diff.js';
-import { liveWorktreeDiff } from '../../execution/worktree-diff.js';
+import { attemptDiffFiles, attemptDiffStat } from '../../execution/worktree-diff.js';
 
 /** The operator's guidance on an escalated ticket: becomes the next Attempt's feedback. */
 const guidanceExample = 'The limiter is per-process; it needs to be shared across workers.';
@@ -979,17 +977,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       const run = await ctx.attempts.get(req.params.id);
       if (!run.branch || !run.baseBranch) return { branch: null, baseBranch: null, stat: null };
       const task = await ctx.tasks.get(run.taskId);
-      let stat = run.stat;
-      if (stat === null) {
-        try {
-          const live = await liveWorktreeDiff(task.workingDir, run.branch, run.baseBranch);
-          stat = live
-            ? await Git.worktreeDiffStat(live.worktree, live.baseOid)
-            : await Git.diffStat(task.workingDir, run.baseBranch, run.branch);
-        } catch {
-          stat = null;
-        }
-      }
+      const stat = await attemptDiffStat(task.workingDir, run).catch(() => null);
       return { branch: run.branch, baseBranch: run.baseBranch, stat };
     },
   );
@@ -1010,23 +998,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       const run = await ctx.attempts.get(req.params.id);
       const task = await ctx.tasks.get(run.taskId);
       const { limit, offset } = req.query;
-      let files: DiffFile[];
-      try {
-        let raw: string;
-        if (run.diffBaseOid && run.diffHeadOid) {
-          raw = await Git.diffRange(task.workingDir, run.diffBaseOid, run.diffHeadOid);
-        } else {
-          const live = await liveWorktreeDiff(task.workingDir, run.branch, run.baseBranch);
-          raw = live
-            ? await Git.worktreeDiffUnified(live.worktree, live.baseOid)
-            : run.branch && run.baseBranch
-              ? await Git.diffUnified(task.workingDir, run.baseBranch, run.branch)
-              : '';
-        }
-        files = parseUnifiedDiff(raw);
-      } catch {
-        files = [];
-      }
+      const files = await attemptDiffFiles(task.workingDir, run).catch(() => []);
       const { items, total } = paginate(files, { limit, offset });
       return { files: items, total };
     },
