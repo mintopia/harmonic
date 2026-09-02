@@ -18,22 +18,6 @@ export type Priority = (typeof PRIORITIES)[number];
 export const MERGE_FATES = ['auto-merge', 'open-PR', 'artifact'] as const;
 export type MergeFate = (typeof MERGE_FATES)[number];
 
-/** The default Drive Prompt template. Placeholders: `{skill}`, `{ref}`, `{url}`; `{title}`/`{body}` are also supported. */
-export const DEFAULT_DRIVE_PROMPT = `{skill}
-
-Resolve tracker issue #{ref} ({url}) autonomously, end to end — read the issue yourself for the details. Work only on the branch you start on; Harmonic owns branching and closes the ticket once it verifies your work, so don't create branches or close the ticket yourself. When the work is done, comment a summary on the issue and call \`finish_task\`.`;
-
-/** The default Unattended Reminder, appended to every auto-driven prompt; `{taskId}` is filled per Task. */
-export const UNATTENDED_REMINDER = `## Running unattended
-
-You are Harmonic Task {taskId} — no human is watching this turn. Ending a turn is a checkpoint, not a handoff, and Harmonic re-prompts you only a limited number of times, so don't idle-wait on background work (CI, watchers) or input. Keep working until the task is genuinely done, then call \`finish_task\` (taskId={taskId}). If you're blocked on a decision only a human can make, call \`escalate_task\` (taskId={taskId}) with a reason instead of guessing or waiting.`;
-
-/** The default Continue Prompt, sent when an auto-driven Attempt ends its turn without a finish/escalate signal; `{taskId}` is filled per Task. */
-export const DEFAULT_CONTINUE_PROMPT = `Your last turn ended but Task {taskId} isn't finished — you haven't called \`finish_task\`. Pick the work back up and drive it to completion now; don't idle-wait, then call \`finish_task\` when it's done.`;
-
-/** The default Task Prompt template for a native Attempt. Placeholders: `{prompt}`, `{id}`, `{workingDir}`, `{harness}`, `{model}`. */
-export const DEFAULT_TASK_PROMPT = `{prompt}`;
-
 export const harnessConfigSchema = z.object({
   /** Command + args spawned to speak ACP on stdio. */
   command: z.string().meta({ example: 'npx' }),
@@ -204,14 +188,14 @@ export const appConfigSchema = z.object({
    * is verified as-is (0 = single turn).
    */
   drive: z.object({
-    prompt: z.string().meta({ example: DEFAULT_DRIVE_PROMPT }),
-    unattendedReminder: z.string().meta({ example: UNATTENDED_REMINDER }),
-    continuePrompt: z.string().meta({ example: DEFAULT_CONTINUE_PROMPT }),
+    prompt: z.string().meta({ example: 'Resolve tracker issue #{ref} ({url}).' }),
+    unattendedReminder: z.string().meta({ example: 'Task {taskId} is running unattended.' }),
+    continuePrompt: z.string().meta({ example: 'Continue Task {taskId}.' }),
     mergeFate: z.enum(MERGE_FATES).meta({ example: 'auto-merge' }),
     continueAttempts: z.number().int().min(0).meta({ example: 10 }),
   }),
   /** Operator-editable wrapper around a native Task's prompt (`{prompt}`, `{id}`, `{workingDir}`, `{harness}`, `{model}`); defaults to bare `{prompt}`. */
-  taskPrompt: z.string().meta({ example: DEFAULT_TASK_PROMPT }),
+  taskPrompt: z.string().meta({ example: 'Work on {prompt}.' }),
   /** End a Conversation with no Turn for this many minutes; 0 disables. Fractional values are allowed. */
   conversationIdleTimeoutMinutes: z.number().nonnegative().meta({ example: 30 }),
   /** Ordered verification contract. Commands fail fast; review runs last. */
@@ -313,6 +297,10 @@ export function loadBaselineConfig(path: string = baselinePath): AppConfig {
 const baseline = loadBaselineConfig();
 
 export const AUTO_MODEL_SENTINEL = baseline.harnesses.copilot.defaultModel;
+export const DEFAULT_DRIVE_PROMPT = baseline.drive.prompt;
+export const UNATTENDED_REMINDER = baseline.drive.unattendedReminder;
+export const DEFAULT_CONTINUE_PROMPT = baseline.drive.continuePrompt;
+export const DEFAULT_TASK_PROMPT = baseline.taskPrompt;
 
 export function baselineConfig(): AppConfig {
   return structuredClone(baseline);

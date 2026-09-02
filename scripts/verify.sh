@@ -19,8 +19,8 @@ run() {
   echo
 }
 
-run "lint"      npm run --silent lint
-run "typecheck" npm run --silent typecheck
+run "lint"      npm run lint
+run "typecheck" npm run typecheck
 
 if [ "$status" -eq 0 ]; then
   echo "verify: all checks passed"
