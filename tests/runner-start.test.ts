@@ -6,6 +6,7 @@ import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { baselineConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { AttemptStore, type AttemptGuardrailSnapshot } from '../src/domain/attempts.js';
+import { pricesForHarness } from '../src/domain/pricing.js';
 import { Runner } from '../src/execution/runner.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { allWorkspaces, makeSettingsStore } from './helpers.js';
@@ -59,7 +60,7 @@ describe('Runner.start (issue #272)', () => {
         await release.promise;
         const snapshot: AttemptGuardrailSnapshot = {
           guardrailConfig: baselineConfig().guardrails,
-          priceTable: baselineConfig().prices,
+          priceTable: pricesForHarness(baselineConfig().harnesses.claude),
         };
         return await runs.create(taskArg.id, snapshot);
       });

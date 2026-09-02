@@ -12,9 +12,8 @@ function makeConfig(): AppConfig {
   return {
     name: '',
     harnesses: {
-      claude: { command: 'claude', args: [], env: {}, models: ['claude-sonnet-4-6'], defaultModel: 'claude-sonnet-4-6' },
+      claude: { command: 'claude', args: [], env: {}, models: [{ id: 'claude-sonnet-4-6' }], defaultModel: 'claude-sonnet-4-6', cacheWarmSeconds: 300 },
     },
-    prices: {},
     defaults: { harness: 'claude', workingDir: '/tmp', isolationMode: 'direct', priority: 'normal', conflictResolveTurns: 2 },
     chat: { harness: 'claude', model: 'claude-sonnet-4-6' },
     autoRunner: { enabled: false, maxConcurrentAttempts: 2 },

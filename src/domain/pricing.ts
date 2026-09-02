@@ -1,4 +1,5 @@
 import type { ModelUsage, AttemptUsage } from './usage.js';
+import type { HarnessConfig } from '../config.js';
 
 /** Per-model API rates in $/Mtok — the four counters `AttemptUsage.models` stores. */
 export interface ModelPrice {
@@ -25,95 +26,16 @@ export interface Cost {
   incomplete: boolean;
 }
 
-/**
- * Shipped defaults for the models the supported Harnesses actually use
- * (see `baselineConfig()`), at published API rates. Config `prices`
- * entries override or extend these — see `resolvePrices`.
- */
-export const DEFAULT_PRICES: PriceTable = {
-  // Anthropic first-party API rates (claude-api reference, cached 2026-06-24):
-  // input/output as published; cacheRead = 0.1× input, cacheWrite = 1.25× input.
-  'claude-fable-5': { input: 10, output: 50, cacheRead: 1, cacheWrite: 12.5 },
-  'claude-mythos-5': { input: 10, output: 50, cacheRead: 1, cacheWrite: 12.5 },
-  'claude-opus-5': { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
-  'claude-sonnet-5': { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
-  'claude-opus-4-8': { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
-  'claude-opus-4-7': { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
-  'claude-opus-4-6': { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
-  'claude-sonnet-4-6': { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
-  'claude-haiku-4-5': { input: 1, output: 5, cacheRead: 0.1, cacheWrite: 1.25 },
-  // OpenAI rates as published 2026-07 (developers.openai.com/api/docs/pricing).
-  // Only the gpt-5.6 family bills explicit cache writes (1.25× input).
-  'gpt-5.6-sol': { input: 5, output: 30, cacheRead: 0.5, cacheWrite: 6.25 },
-  'gpt-5.6-terra': { input: 2.5, output: 15, cacheRead: 0.25, cacheWrite: 3.125 },
-  'gpt-5.6-luna': { input: 1, output: 6, cacheRead: 0.1, cacheWrite: 1.25 },
-  'gpt-5.5': { input: 5, output: 30, cacheRead: 0.5, cacheWrite: 0 },
-  'gpt-5.4': { input: 2.5, output: 15, cacheRead: 0.25, cacheWrite: 0 },
-  'gpt-5.4-mini': { input: 0.75, output: 4.5, cacheRead: 0.075, cacheWrite: 0 },
-  'gpt-5.2': { input: 1.25, output: 10, cacheRead: 0.125, cacheWrite: 0 },
-  'gpt-5.2-codex': { input: 1.25, output: 10, cacheRead: 0.125, cacheWrite: 0 },
-  'gpt-5.2-codex-mini': { input: 0.25, output: 2, cacheRead: 0.025, cacheWrite: 0 },
-  // Copilot serves models under its own dotted ids; Anthropic rates match the
-  // dashed entries above per family.
-  'claude-sonnet-4.6': { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
-  'claude-sonnet-4.5': { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
-  'claude-haiku-4.5': { input: 1, output: 5, cacheRead: 0.1, cacheWrite: 1.25 },
-  'claude-opus-4.8': { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
-  'claude-opus-4.7': { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
-  'claude-opus-4.6': { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
-  'claude-opus-4.5': { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
-  'gpt-5-mini': { input: 0.25, output: 2, cacheRead: 0.025, cacheWrite: 0 },
-  'gpt-5.3-codex': { input: 1.25, output: 10, cacheRead: 0.125, cacheWrite: 0 },
-};
-
-/** Effective price table: shipped defaults with config overrides on top. */
-export function resolvePrices(overrides: PriceTable): PriceTable {
-  return { ...DEFAULT_PRICES, ...overrides };
+/** The selected harness owns the model catalog, so identical ids may price differently. */
+export function pricesForHarness(harness: Pick<HarnessConfig, 'models'>): PriceTable {
+  return Object.fromEntries(harness.models.flatMap((model) => (model.price ? [[model.id, model.price]] : [])));
 }
 
-/**
- * Shipped default context-window sizes (tokens) for the models the supported
- * Harnesses use — mirrors DEFAULT_PRICES so a board/activity card can show a
- * real `ctx %` out of the box. Config `modelInfo.<model>.contextWindow`
- * overrides these; a model with neither shows raw tokens, never a fabricated %.
- */
-export const DEFAULT_CONTEXT_WINDOWS: Record<string, number> = {
-  // Anthropic Claude — current-generation (Opus 4.6+, Sonnet 4.6, the 5 family)
-  // ships 1M context under standard pricing, no beta header.
-  'claude-fable-5': 1_000_000, 'claude-mythos-5': 1_000_000, 'claude-opus-5': 1_000_000,
-  'claude-sonnet-5': 1_000_000, 'claude-opus-4-8': 1_000_000, 'claude-opus-4-7': 1_000_000,
-  'claude-opus-4-6': 1_000_000, 'claude-sonnet-4-6': 1_000_000,
-  'claude-sonnet-4.6': 1_000_000, 'claude-opus-4.8': 1_000_000, 'claude-opus-4.7': 1_000_000, 'claude-opus-4.6': 1_000_000,
-  // Older Claude capped at 200k: Haiku 4.5 has no 1M tier; Sonnet 4.5's 1M is a
-  // beta (context-1m-2025-08-07) retiring 2026-04-30; Opus 4.5 has no 1M option.
-  'claude-haiku-4-5': 200_000, 'claude-haiku-4.5': 200_000,
-  'claude-sonnet-4-5': 200_000, 'claude-sonnet-4.5': 200_000,
-  'claude-opus-4-5': 200_000, 'claude-opus-4.5': 200_000,
-  'gpt-5.6-sol': 400_000, 'gpt-5.6-terra': 400_000, 'gpt-5.6-luna': 400_000,
-  'gpt-5.5': 1_050_000, 'gpt-5.4': 1_050_000, 'gpt-5.4-mini': 400_000, 'gpt-5.2': 400_000,
-  'gpt-5.2-codex': 400_000, 'gpt-5.2-codex-mini': 400_000, 'gpt-5.3-codex': 400_000,
-  'gpt-5-mini': 400_000, 'gpt-5-codex': 400_000,
-  'gpt-4.1': 1_047_576,
-  'gemini-3-pro': 1_000_000, 'gemini-3-flash': 1_000_000,
-  'gemini-2.5-pro': 1_048_576, 'gemini-2.5-flash': 1_048_576,
-  // Bare family aliases some Harnesses report.
-  opus: 1_000_000, sonnet: 1_000_000, haiku: 200_000,
-};
-
-/** Effective context window (tokens): config override, then shipped default,
- * dated-suffix aware like `priceFor`; null when neither knows the model. */
-export function resolveContextWindow(
-  model: string,
-  overrides: Record<string, { contextWindow?: number | undefined }>,
-): number | null {
+export function resolveContextWindowForHarness(model: string, harness: Pick<HarnessConfig, 'models'>): number | null {
   const base = model.replace(/-\d{8}$/, '');
-  return (
-    overrides[model]?.contextWindow ??
-    overrides[base]?.contextWindow ??
-    DEFAULT_CONTEXT_WINDOWS[model] ??
-    DEFAULT_CONTEXT_WINDOWS[base] ??
-    null
-  );
+  return harness.models.find((entry) => entry.id === model)?.contextWindow
+    ?? harness.models.find((entry) => entry.id === base)?.contextWindow
+    ?? null;
 }
 
 /** Session logs use dated ids (claude-haiku-4-5-20251001); fall back to the base id. */

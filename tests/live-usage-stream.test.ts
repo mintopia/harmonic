@@ -31,7 +31,10 @@ describe('live attempt_usage firehose (ADR 0010)', () => {
         claude: {
           command: process.execPath,
           args: [join(import.meta.dirname, 'stub-harness.mjs')],
-          models: ['stub-model'],
+          models: [
+            { id: 'stub-model' },
+            { id: 'claude-opus-4-8', price: { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 } },
+          ],
           defaultModel: 'stub-model',
           sessionLogDir: logDir,
           env: { STUB_SESSION_ID: sessionId },

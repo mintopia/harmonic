@@ -6,6 +6,7 @@ import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { baselineConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { AttemptStore, type AttemptGuardrailSnapshot } from '../src/domain/attempts.js';
+import { pricesForHarness } from '../src/domain/pricing.js';
 import { isForeignKeyViolation } from '../src/db/errors.js';
 import { Runner } from '../src/execution/runner.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
@@ -60,7 +61,7 @@ describe('Runner.cancelForTask — run row deleted mid-settle', () => {
     const task = await tasks.create({ prompt: 'cancel me', isolationMode: 'direct', workingDir: repoDir });
     const snapshot: AttemptGuardrailSnapshot = {
       guardrailConfig: baselineConfig().guardrails,
-      priceTable: baselineConfig().prices,
+      priceTable: pricesForHarness(baselineConfig().harnesses.claude),
     };
     await runs.create(task.id, snapshot);
 

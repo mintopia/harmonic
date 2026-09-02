@@ -4,22 +4,51 @@ harnesses:
     command: npx
     args: [--yes, "@agentclientprotocol/claude-agent-acp"]
     env: {}
-    models: [claude-opus-5, claude-fable-5, claude-sonnet-5, claude-opus-4-8, claude-haiku-4-5]
+    models:
+      - { id: claude-opus-5, price: { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 }, contextWindow: 1000000 }
+      - { id: claude-fable-5, price: { input: 10, output: 50, cacheRead: 1, cacheWrite: 12.5 }, contextWindow: 1000000 }
+      - { id: claude-sonnet-5, price: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 }, contextWindow: 1000000 }
+      - { id: claude-opus-4-8, price: { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 }, contextWindow: 1000000 }
+      - { id: claude-haiku-4-5, price: { input: 1, output: 5, cacheRead: 0.1, cacheWrite: 1.25 }, contextWindow: 200000 }
     defaultModel: claude-sonnet-5
+    cacheWarmSeconds: 3600
   codex:
     command: npx
     args: [--yes, "@agentclientprotocol/codex-acp"]
     env: {}
-    models: [gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna, gpt-5.5, gpt-5.4, gpt-5.4-mini]
+    models:
+      - { id: gpt-5.6-sol, price: { input: 5, output: 30, cacheRead: 0.5, cacheWrite: 6.25 }, contextWindow: 400000 }
+      - { id: gpt-5.6-terra, price: { input: 2.5, output: 15, cacheRead: 0.25, cacheWrite: 3.125 }, contextWindow: 400000 }
+      - { id: gpt-5.6-luna, price: { input: 1, output: 6, cacheRead: 0.1, cacheWrite: 1.25 }, contextWindow: 400000 }
+      - { id: gpt-5.5, price: { input: 5, output: 30, cacheRead: 0.5, cacheWrite: 0 }, contextWindow: 1050000 }
+      - { id: gpt-5.4, price: { input: 2.5, output: 15, cacheRead: 0.25, cacheWrite: 0 }, contextWindow: 1050000 }
+      - { id: gpt-5.4-mini, price: { input: 0.75, output: 4.5, cacheRead: 0.075, cacheWrite: 0 }, contextWindow: 400000 }
+      - { id: gpt-5-mini, price: { input: 0.25, output: 2, cacheRead: 0.025, cacheWrite: 0 }, contextWindow: 400000 }
     defaultModel: gpt-5.6-sol
+    cacheWarmSeconds: 300
   copilot:
     command: copilot
     args: [--acp, --disable-builtin-mcps]
     env: {}
-    models: [auto, claude-sonnet-5, claude-sonnet-4.6, claude-sonnet-4.5, claude-haiku-4.5, claude-opus-4.8, claude-opus-4.7, claude-opus-4.6, claude-opus-4.5, gpt-5.5, gpt-5.4, gpt-5.3-codex, gpt-5.4-mini, gpt-5.6-luna, gpt-5.6-terra]
+    models:
+      - { id: auto }
+      - { id: claude-sonnet-5, price: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 }, contextWindow: 1000000 }
+      - { id: claude-sonnet-4.6, price: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 }, contextWindow: 1000000 }
+      - { id: claude-sonnet-4.5, price: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 }, contextWindow: 200000 }
+      - { id: claude-haiku-4.5, price: { input: 1, output: 5, cacheRead: 0.1, cacheWrite: 1.25 }, contextWindow: 200000 }
+      - { id: claude-opus-4.8, price: { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 }, contextWindow: 1000000 }
+      - { id: claude-opus-4.7, price: { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 }, contextWindow: 1000000 }
+      - { id: claude-opus-4.6, price: { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 }, contextWindow: 1000000 }
+      - { id: claude-opus-4.5, price: { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 }, contextWindow: 200000 }
+      - { id: gpt-5.5, price: { input: 5, output: 30, cacheRead: 0.5, cacheWrite: 0 }, contextWindow: 1050000 }
+      - { id: gpt-5.4, price: { input: 2.5, output: 15, cacheRead: 0.25, cacheWrite: 0 }, contextWindow: 1050000 }
+      - { id: gpt-5.3-codex, price: { input: 1.25, output: 10, cacheRead: 0.125, cacheWrite: 0 }, contextWindow: 400000 }
+      - { id: gpt-5.4-mini, price: { input: 0.75, output: 4.5, cacheRead: 0.075, cacheWrite: 0 }, contextWindow: 400000 }
+      - { id: gpt-5-mini, price: { input: 0.25, output: 2, cacheRead: 0.025, cacheWrite: 0 }, contextWindow: 400000 }
+      - { id: gpt-5.6-luna, price: { input: 1, output: 6, cacheRead: 0.1, cacheWrite: 1.25 }, contextWindow: 400000 }
+      - { id: gpt-5.6-terra, price: { input: 2.5, output: 15, cacheRead: 0.25, cacheWrite: 3.125 }, contextWindow: 400000 }
     defaultModel: auto
-prices: {}
-modelInfo: {}
+    cacheWarmSeconds: 300
 defaults:
   harness: claude
   workingDir: $CWD

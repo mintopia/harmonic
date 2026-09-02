@@ -68,22 +68,6 @@ export function readLoadSessionCapability(result: AcpInitializeResult | undefine
   return result?.agentCapabilities?.loadSession === true;
 }
 
-// Claude keeps a subscription prompt cache ~1h (`ENABLE_PROMPT_CACHING_1H`);
-// the other harnesses have no documented window.
-const WARM_WINDOW_MS: Record<string, number> = {
-  claude: 60 * 60 * 1000,
-};
-
-/**
- * Estimated epoch-ms at which `harness`'s prompt cache goes cold, from `now`.
- * `null` when the harness has no known warm window — the absence of an estimate,
- * not a claim that it is instantly cold.
- */
-export function estimateWarmUntil(harness: string, now: number): number | null {
-  const window = WARM_WINDOW_MS[harness];
-  return window === undefined ? null : now + window;
-}
-
 /** Everything {@link SessionStore.recordDispatch} needs to persist a Session on
  * dispatch. `capabilities` is the raw `initialize` result; `mcpTemplates` is
  * the credentialed `session/new` mcpServers list — the store strips secrets
@@ -121,7 +105,6 @@ export class SessionStore {
     const capabilitySnapshot = JSON.stringify(input.capabilities ?? {});
     const supportsLoadSession = readLoadSessionCapability(input.capabilities);
     const mcpTemplates = JSON.stringify(stripMcpCredentials(input.mcpTemplates));
-    const estimatedWarmUntil = estimateWarmUntil(input.harness, input.now);
     const operation = startOperation({ type: 'session.create', attributes: { 'session.harness': input.harness } });
     try {
       const session = await operation.run(() =>
@@ -144,7 +127,6 @@ export class SessionStore {
                 capabilitySnapshot,
                 supportsLoadSession,
                 adapterVersion: input.adapterVersion,
-                estimatedWarmUntil,
                 status: 'active',
                 lastActiveAt: input.now,
                 updatedAt: input.now,
@@ -169,7 +151,6 @@ export class SessionStore {
               adapterVersion: input.adapterVersion,
               status: 'active',
               lastActiveAt: input.now,
-              estimatedWarmUntil,
               createdAt: input.now,
               updatedAt: input.now,
             })

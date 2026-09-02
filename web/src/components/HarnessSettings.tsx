@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { AppConfig, HarnessConfig, ModelPrice } from '../types';
+import type { AppConfig, HarnessConfig, ModelCatalogEntry } from '../types';
 import { btnGhost, btnQuiet, field, selectField, touchTarget, touchTargetInline } from '../ui';
 import { FieldError, fieldLabel } from './SettingsSection';
 import { Icon } from './Icon';
@@ -50,6 +50,30 @@ function ListEditor({ items, onChange, ariaLabel }: { items: string[]; onChange:
       </button>
     </div>
   );
+}
+
+function CatalogEditor({ items, onChange }: { items: ModelCatalogEntry[]; onChange: (items: ModelCatalogEntry[]) => void }) {
+  const [priceDrafts, setPriceDrafts] = useState<Record<number, NonNullable<ModelCatalogEntry['price']>>>({});
+  const update = (i: number, entry: ModelCatalogEntry) => onChange(items.map((item, index) => (index === i ? entry : item)));
+  const updatePrice = (i: number, key: keyof NonNullable<ModelCatalogEntry['price']>, value: string) => {
+    const item = items[i];
+    if (!item) return;
+    const draft = priceDrafts[i] ?? item.price ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+    setPriceDrafts((drafts) => ({ ...drafts, [i]: draft }));
+    if (value === '') return update(i, { ...item, price: undefined });
+    const price = { ...draft, [key]: Number(value) };
+    setPriceDrafts((drafts) => ({ ...drafts, [i]: price }));
+    update(i, { ...item, price });
+  };
+  return <div className="space-y-2.5">
+    {items.map((item, i) => <div key={i} className="grid gap-2 sm:grid-cols-7">
+      <input aria-label="Model id" className={`${field} font-data`} value={item.id} onChange={(e) => update(i, { ...item, id: e.target.value })} />
+      {PRICE_FIELDS.map((key) => <input key={key} aria-label={PRICE_LABELS[key]} type="number" min={0} step="any" className={field} value={item.price?.[key] ?? ''} onChange={(e) => updatePrice(i, key, e.target.value)} />)}
+      <input aria-label="Context window" type="number" min={1} className={field} value={item.contextWindow ?? ''} onChange={(e) => update(i, { ...item, contextWindow: e.target.value === '' ? undefined : Number(e.target.value) })} />
+      <button type="button" aria-label="Remove model" onClick={() => onChange(items.filter((_, index) => index !== i))} className={`${touchTarget} ${btnQuiet}`}>✕</button>
+    </div>)}
+    <button type="button" onClick={() => onChange([...items, { id: '' }])} className={btnGhost}>+ Add model</button>
+  </div>;
 }
 
 function EnvEditor({ env, onChange }: { env: Record<string, string>; onChange: (env: Record<string, string>) => void }) {
@@ -174,8 +198,8 @@ function HarnessCard({
 
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
           <div>
-            <label className={fieldLabel}>Models</label>
-            <ListEditor items={harness.models} onChange={(models) => set('models', models)} ariaLabel="Model" />
+            <label className={fieldLabel}>Model catalog</label>
+            <CatalogEditor items={harness.models} onChange={(models) => set('models', models)} />
             <FieldError message={fieldErrors[`${prefix}.models`]} />
           </div>
           <div>
@@ -187,15 +211,20 @@ function HarnessCard({
               onChange={(e) => set('defaultModel', e.target.value)}
             >
               {harness.models.map((m) => (
-                <option key={m} value={m}>
-                  {m}
+                <option key={m.id} value={m.id}>
+                  {m.id}
                 </option>
               ))}
-              {harness.defaultModel && !harness.models.includes(harness.defaultModel) && (
+              {harness.defaultModel && !harness.models.some((model) => model.id === harness.defaultModel) && (
                 <option value={harness.defaultModel}>{harness.defaultModel} (not in models list)</option>
               )}
             </select>
             <FieldError message={fieldErrors[`${prefix}.defaultModel`]} />
+          </div>
+          <div>
+            <label className={fieldLabel} htmlFor={`harness-${id}-cache-warm-seconds`}>Cache warm seconds</label>
+            <input id={`harness-${id}-cache-warm-seconds`} type="number" min={1} className={field} value={harness.cacheWarmSeconds} onChange={(e) => set('cacheWarmSeconds', Number(e.target.value))} />
+            <FieldError message={fieldErrors[`${prefix}.cacheWarmSeconds`]} />
           </div>
         </div>
       </div>
@@ -234,87 +263,3 @@ const PRICE_LABELS: Record<(typeof PRICE_FIELDS)[number], string> = {
   cacheRead: 'Cache Read',
   cacheWrite: 'Cache Write',
 };
-
-export function PriceOverridesSection({
-  config,
-  fieldErrors,
-  onChange,
-}: {
-  config: AppConfig;
-  fieldErrors: Record<string, string>;
-  onChange: (prices: AppConfig['prices']) => void;
-}) {
-  const rename = useKeyRename(config.prices, onChange);
-  const entries = Object.entries(config.prices);
-
-  const setPrice = (model: string, price: ModelPrice) => onChange({ ...config.prices, [model]: price });
-  const remove = (model: string) => {
-    const { [model]: _dropped, ...rest } = config.prices;
-    onChange(rest);
-  };
-  const add = () => {
-    let model = 'new-model';
-    let i = 1;
-    while (model in config.prices) model = `new-model-${i++}`;
-    onChange({ ...config.prices, [model]: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } });
-  };
-
-  return (
-    <div>
-      {entries.length > 0 && (
-        <div className="mb-1 hidden gap-2.5 sm:grid sm:grid-cols-[2fr_1fr_1fr_1fr_1fr_auto]">
-          <span className={fieldLabel}>Model</span>
-          {PRICE_FIELDS.map((k) => (
-            <span key={k} className={fieldLabel}>
-              {PRICE_LABELS[k]}
-            </span>
-          ))}
-          <span />
-        </div>
-      )}
-
-      <div className="space-y-2.5">
-        {entries.map(([model, price]) => (
-          <div key={model}>
-            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-[2fr_1fr_1fr_1fr_1fr_auto] sm:items-center">
-              <input
-                aria-label="Model id"
-                className={`${field} font-data`}
-                value={rename.nameFor(model)}
-                onChange={(e) => rename.setName(model, e.target.value)}
-                onBlur={() => rename.commit(model)}
-              />
-              {PRICE_FIELDS.map((k) => (
-                <input
-                  key={k}
-                  type="number"
-                  min={0}
-                  step="any"
-                  aria-label={PRICE_LABELS[k]}
-                  className={`${field} tabular-nums`}
-                  value={price[k]}
-                  onChange={(e) => setPrice(model, { ...price, [k]: Number(e.target.value) })}
-                />
-              ))}
-              <button type="button" aria-label="Remove price override" onClick={() => remove(model)} className={`${touchTarget} ${btnQuiet}`}>
-                ✕
-              </button>
-            </div>
-            <FieldError
-              message={
-                fieldErrors[`prices.${model}.input`] ??
-                fieldErrors[`prices.${model}.output`] ??
-                fieldErrors[`prices.${model}.cacheRead`] ??
-                fieldErrors[`prices.${model}.cacheWrite`]
-              }
-            />
-          </div>
-        ))}
-      </div>
-      {entries.length === 0 && <p className="text-body text-muted">No price overrides configured.</p>}
-      <button type="button" onClick={add} className={`${btnGhost} mt-3`}>
-        + Add price override
-      </button>
-    </div>
-  );
-}

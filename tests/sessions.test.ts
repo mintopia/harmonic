@@ -10,7 +10,6 @@ import {
   SessionStore,
   stripMcpCredentials,
   readLoadSessionCapability,
-  estimateWarmUntil,
   type DispatchSessionInput,
 } from '../src/domain/sessions.js';
 import { allWorkspaces, makeSettingsStore } from './helpers.js';
@@ -97,20 +96,6 @@ describe('Sessions (issue #141)', () => {
     });
   });
 
-  describe('estimateWarmUntil', () => {
-    it("claude's warm window is now + 1h", () => {
-      expect(estimateWarmUntil('claude', 1000)).toBe(1000 + 3_600_000);
-    });
-
-    it('codex has no known warm window: null', () => {
-      expect(estimateWarmUntil('codex', 1000)).toBeNull();
-    });
-
-    it('an unknown harness: null', () => {
-      expect(estimateWarmUntil('some-future-harness', 1000)).toBeNull();
-    });
-  });
-
   describe('SessionStore', () => {
     let dir: string;
     let asyncDb: AsyncDbHandle;
@@ -190,16 +175,6 @@ describe('Sessions (issue #141)', () => {
         );
         expect(row.mcpTemplates).not.toContain('SECRET');
         expect(JSON.parse(row.mcpTemplates)).toEqual([{ name: 'harmonic', type: 'http', url: 'http://x' }]);
-      });
-
-      it("estimatedWarmUntil: now + 1h for claude, null for codex", async () => {
-        const claudeRow = await store.recordDispatch(
-          baseInput({ harness: 'claude', harnessSessionId: 'sess-claude' }),
-        );
-        expect(claudeRow.estimatedWarmUntil).toBe(now + 3_600_000);
-
-        const codexRow = await store.recordDispatch(baseInput({ harness: 'codex', harnessSessionId: 'sess-codex' }));
-        expect(codexRow.estimatedWarmUntil).toBeNull();
       });
 
       it('permissionMode: null when omitted, echoed when passed', async () => {

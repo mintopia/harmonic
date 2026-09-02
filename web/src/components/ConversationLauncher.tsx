@@ -68,7 +68,7 @@ function TelemetryStrip({ conversation, events }: { conversation: Conversation; 
   const context = formatContextUsage(computeContextUsage(conversation));
   const coldCache = formatColdCacheMessage({
     lastTurnAt: lastConversationTurnAt(events) ?? conversation.updatedAt,
-    cacheTtlSeconds: conversation.cacheTtlSeconds,
+    cacheWarmSeconds: conversation.cacheWarmSeconds,
     now,
   });
 
@@ -288,7 +288,7 @@ function Composer({
   const locked = conversation !== null;
   const ended = conversation?.state === 'ended';
   const running = conversation?.state === 'active' && isTurnRunning(events);
-  const models = config.harnesses[harness]?.models ?? [];
+  const models = (config.harnesses[harness]?.models ?? []).map((model) => model.id);
 
   const pickHarness = (h: string) => {
     setHarness(h);

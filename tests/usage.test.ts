@@ -13,7 +13,7 @@ import { currentTurnEvents } from '../src/domain/replay-quarantine.js';
 describe('usage collection retry (log-flush race)', () => {
   const input = (logRoot: string, cwd: string) => ({
     harnessId: 'claude',
-    harness: { command: 'x', args: [], env: {}, models: [], defaultModel: 'x', sessionLogDir: logRoot },
+    harness: { command: 'x', args: [], env: {}, models: [], defaultModel: 'x', cacheWarmSeconds: 300, sessionLogDir: logRoot },
     cwd,
     sessionId: 'race-session',
     promptResult: { usage: { inputTokens: 1, outputTokens: 2, totalTokens: 3 } },
@@ -70,7 +70,7 @@ describe('collectUsage rolls Subagent models + per-agent breakdown into the pers
 
     const usage = collectUsage({
       harnessId: 'claude',
-      harness: { command: 'x', args: [], env: {}, models: [], defaultModel: 'x', sessionLogDir: logRoot },
+      harness: { command: 'x', args: [], env: {}, models: [], defaultModel: 'x', cacheWarmSeconds: 300, sessionLogDir: logRoot },
       cwd,
       sessionId: S,
       events: [],
@@ -113,7 +113,7 @@ describe('collectUsage rolls Subagent models + per-agent breakdown into the pers
 
     const usage = collectUsage({
       harnessId: 'codex',
-      harness: { command: 'x', args: [], env: {}, models: [], defaultModel: 'x', sessionLogDir: logRoot },
+      harness: { command: 'x', args: [], env: {}, models: [], defaultModel: 'x', cacheWarmSeconds: 300, sessionLogDir: logRoot },
       cwd: '/w',
       sessionId: 'root',
       promptResult: { usage: { inputTokens: 100, outputTokens: 10, totalTokens: 110 } },
@@ -132,7 +132,7 @@ describe('collectUsage rolls Subagent models + per-agent breakdown into the pers
 describe('replay quarantine (issue #144)', () => {
   const input = (logRoot: string, cwd: string, events: PersistedAttemptEvent[]): Parameters<typeof collectUsage>[0] => ({
     harnessId: 'claude',
-    harness: { command: 'x', args: [], env: {}, models: [], defaultModel: 'x', sessionLogDir: logRoot },
+    harness: { command: 'x', args: [], env: {}, models: [], defaultModel: 'x', cacheWarmSeconds: 300, sessionLogDir: logRoot },
     cwd,
     sessionId: 'x',
     promptResult: { usage: { inputTokens: 1, outputTokens: 2, totalTokens: 3 } },
@@ -276,11 +276,14 @@ describe('usage aggregation with AI Units', () => {
 describe('per-tool output-token attribution (issue #195)', () => {
   it('splits each turn across parallel calls, collapses repeated tools, and sends no-tool output to reasoning', async () => {
     const { attributeTurnTokens } = await import('../src/execution/usage.js');
+    const { pricesForHarness } = await import('../src/domain/pricing.js');
+    const { baselineConfig } = await import('../src/config.js');
+    const prices = pricesForHarness(baselineConfig().harnesses.claude);
 
     const attributed = attributeTurnTokens([
       { model: 'claude-sonnet-5', usage: { inputTokens: 0, outputTokens: 11, cacheReadTokens: 0, cacheWriteTokens: 0 }, tools: ['Read', 'Write', 'Read'] },
       { model: 'claude-sonnet-5', usage: { inputTokens: 0, outputTokens: 5, cacheReadTokens: 0, cacheWriteTokens: 0 }, tools: [] },
-    ]);
+    ], prices);
 
     expect(attributed).toEqual({
       toolTokens: {
@@ -329,10 +332,15 @@ describe('per-tool output attribution', () => {
 
     const usage = collectUsage({
       harnessId: 'claude',
-      harness: { command: 'x', args: [], env: {}, models: [], defaultModel: 'x', sessionLogDir: logRoot },
+      harness: {
+        command: 'x', args: [], env: {},
+        models: [{ id: 'claude-sonnet-5', price: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 } }],
+        defaultModel: 'claude-sonnet-5', cacheWarmSeconds: 300, sessionLogDir: logRoot,
+      },
       cwd,
       sessionId,
       events: [],
+      prices: { 'claude-sonnet-5': { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 } },
     })!;
 
     expect(usage.toolTokens).toEqual({
@@ -406,7 +414,9 @@ describe('Process Tree roll-up (T1)', () => {
 
   it('prices a rolled-up Usage; an unpriced node in the tree flags incomplete', async () => {
     const { rollUpUsage } = await import('../src/execution/usage.js');
-    const { costOfUsages, DEFAULT_PRICES } = await import('../src/domain/pricing.js');
+    const { costOfUsages, pricesForHarness } = await import('../src/domain/pricing.js');
+    const { baselineConfig } = await import('../src/config.js');
+    const prices = pricesForHarness(baselineConfig().harnesses.claude);
 
     const priced = rollUpUsage(
       node({
@@ -416,7 +426,7 @@ describe('Process Tree roll-up (T1)', () => {
         children: [node({ id: 'a', depth: 1, model: 'claude-haiku-4-5', usage: mu(10, 20) })],
       }),
     );
-    const cost = costOfUsages([priced], DEFAULT_PRICES)!;
+    const cost = costOfUsages([priced], prices)!;
     expect(cost.incomplete).toBe(false);
     expect(cost.totalUsd).toBeGreaterThan(0);
 
@@ -428,7 +438,7 @@ describe('Process Tree roll-up (T1)', () => {
         children: [node({ id: 'a', depth: 1, model: 'no-such-model', usage: mu(10, 20) })],
       }),
     );
-    const partial = costOfUsages([withUnpriced], DEFAULT_PRICES)!;
+    const partial = costOfUsages([withUnpriced], prices)!;
     expect(partial.incomplete).toBe(true);
     expect(partial.byModel['no-such-model']).toBeNull();
     expect(partial.totalUsd).toBeGreaterThan(0);
@@ -554,6 +564,10 @@ describe('usage collection and statistics', () => {
     };
     overrides.harnesses.copilot.sessionLogDir = copilotHome;
     overrides.harnesses.copilot.env = { STUB_SESSION_ID: 'copilot-e2e-session' };
+    const { baselineConfig } = await import('../src/config.js');
+    overrides.harnesses.copilot.models = baselineConfig().harnesses.copilot.models;
+    overrides.harnesses.copilot.defaultModel = 'auto';
+    overrides.chat = { harness: 'copilot', model: 'auto' };
 
     // Native store: <sessionLogDir>/session-store.db, rows keyed by the ACP
     // sessionId. input_tokens is TOTAL input; cache columns omit-when-zero.

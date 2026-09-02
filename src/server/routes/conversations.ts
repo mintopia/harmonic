@@ -68,8 +68,8 @@ const conversationSchema = z
     contextTokens: z.number().nullable().meta({ example: 46200 }),
     /** The model's configured context window; null when unconfigured (percentage suppressed). */
     contextWindow: z.number().nullable().meta({ example: 200000 }),
-    /** The model's configured cache TTL in seconds; null when unconfigured (cold-cache banner suppressed). */
-    cacheTtlSeconds: z.number().nullable().meta({ example: 300 }),
+    /** The harness cache's warm duration in seconds. */
+    cacheWarmSeconds: z.number().nullable().meta({ example: 300 }),
     createdAt: z.number().meta({ example: 1784030400000 }),
     updatedAt: z.number().meta({ example: 1784032260000 }),
     /** Set when the Conversation ends; null while active. */

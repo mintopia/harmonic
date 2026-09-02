@@ -640,7 +640,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       },
     },
     async (req) => {
-      await ctx.tasks.assertExists(req.params.id);
+      const task = await ctx.tasks.get(req.params.id);
       const runsForTask = await ctx.attempts.listForTask(req.params.id);
       const sessions = new Map<number, Awaited<ReturnType<typeof ctx.sessions.get>> | null>();
       for (const run of runsForTask) {
@@ -654,6 +654,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       const plan = previewHumanRejectContinuation(
         runsForTask,
         (sessionRowId) => sessions.get(sessionRowId) ?? null,
+        Object.entries(ctx.settingsStore.getGlobal().harnesses).find(([id]) => id === task.harness)?.[1].cacheWarmSeconds ?? 0,
         Date.now(),
       );
       if (!plan) return { available: false as const };

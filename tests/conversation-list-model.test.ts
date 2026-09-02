@@ -19,7 +19,7 @@ function conv(over: Partial<Conversation> & { id: number }): Conversation {
     cost: null,
     contextTokens: null,
     contextWindow: null,
-    cacheTtlSeconds: null,
+    cacheWarmSeconds: null,
     createdAt: 1,
     updatedAt: 1,
     endedAt: null,

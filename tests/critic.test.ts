@@ -50,8 +50,9 @@ const FAKE_HARNESS: HarnessConfig = {
   command: 'unused-in-fake-drive-tests',
   args: [],
   env: {},
-  models: ['stub-model'],
+  models: [{ id: 'stub-model' }],
   defaultModel: 'stub-model',
+  cacheWarmSeconds: 300,
 };
 
 const FIELDS: DriveFields = {
@@ -408,8 +409,9 @@ describe('createAcpCriticDrive (issue #136): the real ACP drive has builder-equi
     command: process.execPath,
     args: [STUB_HARNESS],
     env: { HARMONIC_API_KEY: 'leaked-key', HARMONIC_MCP_URL: 'http://leaked' },
-    models: ['stub-model'],
+    models: [{ id: 'stub-model' }],
     defaultModel: 'stub-model',
+    cacheWarmSeconds: 300,
   };
 
   it('registers no MCP servers, strips tracker credentials from the spawned env, and grants tool permission requests', async () => {

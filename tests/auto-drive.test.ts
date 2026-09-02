@@ -341,7 +341,14 @@ describe('Runner auto-drive settle (issue #33)', () => {
     maxAttempts,
     harnesses: {
       ...baselineConfig().harnesses,
-      claude: { command: process.execPath, args: [STUB], env: {}, models: ['stub'], defaultModel: 'stub' },
+      claude: {
+        command: process.execPath,
+        args: [STUB],
+        env: {},
+        models: [{ id: 'stub' }],
+        defaultModel: 'stub',
+        cacheWarmSeconds: 300,
+      },
     },
     drive: { ...baselineConfig().drive, prompt: '{skill} #{ref}', ...over },
   });
