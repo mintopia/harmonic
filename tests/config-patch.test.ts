@@ -1,5 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { baselineConfig } from '../src/config.js';
 import { startServer, stubHarness, type TestServer } from './helpers.js';
+
+describe('baseline model catalog', () => {
+  it('keeps Claude sessions warm for one hour', () => {
+    expect(baselineConfig().harnesses.claude.cacheWarmSeconds).toBe(3600);
+  });
+});
 
 describe('PATCH /api/config verification', () => {
   let server: TestServer;

@@ -11,7 +11,7 @@ harnesses:
       - { id: claude-opus-4-8, price: { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 }, contextWindow: 1000000 }
       - { id: claude-haiku-4-5, price: { input: 1, output: 5, cacheRead: 0.1, cacheWrite: 1.25 }, contextWindow: 200000 }
     defaultModel: claude-sonnet-5
-    cacheWarmSeconds: 300
+    cacheWarmSeconds: 3600
   codex:
     command: npx
     args: [--yes, "@agentclientprotocol/codex-acp"]
