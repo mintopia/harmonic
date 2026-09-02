@@ -766,7 +766,7 @@ export class TaskService {
       );
       const task = await this.changed(row!);
       this.onNotify('task.escalated', task);
-      await this.emitDependents(id);
+      await this.blockerGraph.emitDependents(id);
       return task;
     });
   }
@@ -818,7 +818,7 @@ export class TaskService {
       this.onChanged(task);
       const notification = STATE_NOTIFICATIONS[state];
       if (notification) this.onNotify(notification, task);
-      if (state === 'done' || state === 'cancelled') await this.emitDependents(id);
+      if (state === 'done' || state === 'cancelled') await this.blockerGraph.emitDependents(id);
       return task;
     });
   }
@@ -829,12 +829,6 @@ export class TaskService {
       db.update(tasks).set({ mergeStatus, updatedAt: Date.now() }).where(eq(tasks.id, id)).returning().get(),
     );
     return await this.changed(row!);
-  }
-
-  private async emitDependents(id: number): Promise<void> {
-    for (const dependentId of await this.blockerGraph.dependents(id)) {
-      this.onChanged(await this.get(dependentId));
-    }
   }
 
   /**
@@ -972,10 +966,7 @@ export class TaskService {
         }
       }
     });
-    for (const depId of formerDependents) {
-      await this.blockerGraph.rederiveBlocked(depId);
-      this.onChanged(await this.get(depId));
-    }
+    await this.blockerGraph.rederiveBlockers(formerDependents);
     this.onRemoved(id);
   }
 

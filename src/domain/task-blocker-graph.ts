@@ -111,6 +111,16 @@ export class TaskBlockerGraph {
     return cancelled;
   }
 
+  async emitDependents(taskId: number): Promise<void> {
+    for (const dependentId of await this.dependents(taskId)) {
+      this.options.onChanged(await this.options.get(dependentId));
+    }
+  }
+
+  async rederiveBlockers(taskIds: readonly number[]): Promise<void> {
+    for (const taskId of taskIds) await this.rederiveBlocked(taskId);
+  }
+
   async reaches(from: number, to: number): Promise<boolean> {
     const queue = [from];
     const seen = new Set(queue);

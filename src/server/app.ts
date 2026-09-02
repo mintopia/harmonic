@@ -183,6 +183,8 @@ export type PersistenceContext = Pick<
 export type ExecutionContext = Pick<
   AppContext,
   | 'tasks'
+  | 'settingsStore'
+  | 'workspaces'
   | 'attempts'
   | 'sessions'
   | 'runner'
@@ -215,8 +217,8 @@ export function createPersistenceContext(ctx: AppContext): PersistenceContext {
 }
 
 export function createExecutionContext(ctx: AppContext): ExecutionContext {
-  const { tasks, attempts, sessions, runner, conversations, conversationDriver, escalation, autoRunner, guardrailEvents, verificationAttempts, auth, notifier, bus, flaggedWorktrees } = ctx;
-  return { tasks, attempts, sessions, runner, conversations, conversationDriver, escalation, autoRunner, guardrailEvents, verificationAttempts, auth, notifier, bus, flaggedWorktrees };
+  const { tasks, settingsStore, workspaces, attempts, sessions, runner, conversations, conversationDriver, escalation, autoRunner, guardrailEvents, verificationAttempts, auth, notifier, bus, flaggedWorktrees } = ctx;
+  return { tasks, settingsStore, workspaces, attempts, sessions, runner, conversations, conversationDriver, escalation, autoRunner, guardrailEvents, verificationAttempts, auth, notifier, bus, flaggedWorktrees };
 }
 
 export function createTrackingContext(ctx: AppContext): TrackingContext {
@@ -714,17 +716,17 @@ not resolved yet.`;
   await app.register((fastify) => mapRoutes(fastify, contexts.tracking), { prefix: '/api' });
   await app.register((fastify) => workspaceRoutes(fastify, contexts.tracking), { prefix: '/api' });
   await app.register(conversationRoutes, { prefix: '/api' });
-  await app.register(permissionRuleRoutes, { prefix: '/api' });
-  await app.register(configRoutes, { prefix: '/api' });
-  await app.register(authRoutes, { prefix: '/api' });
-  await app.register(statsRoutes, { prefix: '/api' });
+  await app.register((fastify) => permissionRuleRoutes(fastify, contexts.persistence), { prefix: '/api' });
+  await app.register((fastify) => configRoutes(fastify, contexts.execution), { prefix: '/api' });
+  await app.register((fastify) => authRoutes(fastify, contexts.persistence), { prefix: '/api' });
+  await app.register((fastify) => statsRoutes(fastify, contexts.persistence), { prefix: '/api' });
   await app.register(activityRoutes, { prefix: '/api' });
   await app.register(operationRoutes, { prefix: '/api' });
-  await app.register(scheduledJobRoutes, { prefix: '/api' });
-  await app.register(flaggedWorktreeRoutes, { prefix: '/api' });
-  await app.register(channelRoutes, { prefix: '/api' });
+  await app.register((fastify) => scheduledJobRoutes(fastify, contexts.tracking), { prefix: '/api' });
+  await app.register((fastify) => flaggedWorktreeRoutes(fastify, contexts.execution), { prefix: '/api' });
+  await app.register((fastify) => channelRoutes(fastify, contexts.persistence), { prefix: '/api' });
   await app.register(fsRoutes, { prefix: '/api' });
-  await app.register(epicRoutes, { prefix: '/api' });
+  await app.register((fastify) => epicRoutes(fastify, contexts.tracking), { prefix: '/api' });
   await app.register(openapiRoutes, { prefix: '/api' });
 
   app.post('/mcp', { schema: { hide: true } }, async (req, reply) => {
