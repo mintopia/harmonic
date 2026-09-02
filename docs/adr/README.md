@@ -35,6 +35,10 @@ not-yet-torn-down machinery is marked `legacy until ADR-1 epic`.
 | 0015 | [Epic summary page](0015-epic-summary-page.md) |
 | 0016 | [Epics are label-driven containers, not work tasks](0016-epics-are-containers.md) |
 | 0017 | [The Epic summary page replaces the board's epic-focus surface](0017-epic-summary-page-replaces-board-focus.md) |
+| 0018 | [Epics are first-class stored resources](0018-epics-are-first-class-stored-resources.md) |
+| 0019 | [Code & architecture review remediation](0019-code-and-architecture-review-remediation.md) |
+| 0020 | [Task lifecycle state machine](0020-task-lifecycle-state-machine.md) |
+| 0021 | [Second code, architecture & product review remediation](0021-second-review-remediation.md) |
 
 ## Where every pre-reset ADR went
 
