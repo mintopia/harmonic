@@ -78,9 +78,10 @@ export function formatContextUsage(usage: ContextUsage): { value: string; note: 
 export function lastConversationTurnAt(events: ConversationEvent[]): number | null {
   let ts: number | null = null;
   for (const event of events) {
+    const payload = event.payload as { event?: string } | null | undefined;
     const isTurnBoundary =
       event.type === 'user_turn' ||
-      (event.type === 'lifecycle' && ['finished', 'error', 'idle_timeout'].includes(event.payload?.event));
+      (event.type === 'lifecycle' && !!payload?.event && ['finished', 'error', 'idle_timeout'].includes(payload.event));
     if (isTurnBoundary && (ts === null || event.ts > ts)) ts = event.ts;
   }
   return ts;

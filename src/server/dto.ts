@@ -9,6 +9,7 @@ import type {
   TaskRow,
 } from '../db/schema.js';
 import type { TaskWithDeps } from '../domain/tasks.js';
+import type { IsolationMode, Priority } from '../config.js';
 import type { Ticket } from '../tracker/adapter.js';
 import type { ScheduledJobSnapshot } from '../scheduler/scheduler.js';
 import type { FlaggedWorktree } from '../domain/flagged-worktrees.js';
@@ -285,8 +286,16 @@ type TrackerFactColumns =
   | 'trackerUrl'
   | 'trackerCreatedAt';
 
-export type ApiTask = Omit<TaskWithDeps, 'workspaceId' | TrackerFactColumns> & {
+export type ApiTask = Omit<TaskWithDeps, 'workspaceId' | 'isolationMode' | 'priority' | 'overrides' | TrackerFactColumns> & {
   workspaceId: number;
+  /** Resolved effective value; always one of `ISOLATION_MODES` (`config.ts`) at rest. */
+  isolationMode: IsolationMode;
+  /** Resolved effective value; always one of `PRIORITIES` (`config.ts`) at rest. */
+  priority: Priority;
+  overrides: Omit<TaskWithDeps['overrides'], 'isolationMode' | 'priority'> & {
+    isolationMode: IsolationMode | null;
+    priority: Priority | null;
+  };
   /** The prompt's first line, bounded; the full `prompt` is item-GET-only. */
   summary: string;
   cost: Cost | null;
@@ -417,6 +426,14 @@ export function taskToApiDto(
   const running = runs.find((r) => r.state === 'running');
   return {
     ...stripTrackerFactCols(task),
+    // Resolved from `config.ts`'s ISOLATION_MODES/PRIORITIES at every write site; TaskRow widens them to `string`.
+    isolationMode: task.isolationMode as IsolationMode,
+    priority: task.priority as Priority,
+    overrides: {
+      ...task.overrides,
+      isolationMode: task.overrides.isolationMode as IsolationMode | null,
+      priority: task.overrides.priority as Priority | null,
+    },
     workspaceId: atRestWorkspaceId(task.workspaceId),
     summary: summarize(task.prompt),
     cost: sumCosts(runs.map((run) => parseCost(run.cost))),

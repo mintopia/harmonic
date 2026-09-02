@@ -473,7 +473,7 @@ const STEP_LABEL_TONE: Record<IntegrationStepState, string> = {
   pending: 'text-faint',
 };
 
-function EpicStepper({ epic }: { epic: Epic }) {
+export function EpicStepper({ epic }: { epic: Epic }) {
   const steps = epicLifecycleSteps(epic);
   const current = steps.find((s) => s.state === 'current' || s.state === 'held');
   return (

@@ -112,7 +112,7 @@ function Transcript({ events }: { events: ConversationEvent[] }) {
           {turn.userTurn && (
             <div className="mb-1.5 flex justify-end">
               <p className="max-w-[85%] whitespace-pre-wrap rounded-lg bg-accent-tint px-3 py-2 text-ink">
-                {turn.userTurn.payload.text}
+                {(turn.userTurn.payload as { text?: string } | null | undefined)?.text}
               </p>
             </div>
           )}
