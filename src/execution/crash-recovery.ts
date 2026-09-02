@@ -86,7 +86,13 @@ export class CrashRecoveryCoordinator {
   }
 
   private async reconcileMergedButUnsettled(): Promise<void> {
-    for (const state of ['working', 'escalated'] as const) {
+    // `ready` included: an accepted Attempt (`passed`) whose Task reads `ready`
+    // is the accept-merge racing the verify/requeue loop — the loop requeued the
+    // Task after its merge settled the Attempt but before the Task reached
+    // `done`, leaving a merged branch behind an open ticket. An Attempt only
+    // reaches `passed` once its merge-effects succeed, so `passed` already proves
+    // the merge; completing the Task is the truthful reconciliation.
+    for (const state of ['working', 'escalated', 'ready'] as const) {
       for (const task of await this.taskService.list({ state })) {
         const latest = (await this.attempts.listForTask(task.id)).at(-1);
         if (latest?.state === 'passed') await this.taskService.setState(task.id, 'done');

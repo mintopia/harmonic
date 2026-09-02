@@ -206,6 +206,39 @@ describe('boot crash-recovery', () => {
     },
   );
 
+  it(
+    'settles a merged Task requeued to `ready` while its accept-merge was still in flight — the merge, not the stale `ready`, wins',
+    async () => {
+      server = await startServer({ ...stubHarness(), defaults: { isolationMode: 'worktree' }, maxAttempts: 1 });
+      const wsId = (await server.app.ctx.workspaces.list())[0]!.id;
+      const repo = makeRepo();
+      await server.app.ctx.workspaces.update(wsId, { workingDir: repo, verificationCommand: [passingVerifier()] });
+
+      const created = await server.api('POST', '/api/tasks', { prompt: JSON.stringify({ writeFiles: { 'impl.txt': 'implementation\n' } }) });
+      const taskId: number = created.body.id;
+      const started = await server.api('POST', `/api/tasks/${taskId}/run`);
+      const attemptId: number = started.body.id;
+      await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'done');
+      const dataDir = server.dataDir;
+      const mainTipAfterMerge = git(repo, 'rev-parse', 'main');
+
+      await server.app.close();
+      // Reproduce the race's end-state: the branch is merged and the Attempt
+      // passed, but the verify/requeue loop moved the Task back to `ready`.
+      const sqlite = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
+      await sqlite.execute({ sql: "UPDATE tasks SET state = 'ready' WHERE id = ?", args: [taskId] });
+      sqlite.close();
+
+      server = await startServer({ ...stubHarness(), defaults: { isolationMode: 'worktree' }, maxAttempts: 1 }, { dataDir });
+
+      const task = await server.api('GET', `/api/tasks/${taskId}`);
+      expect(task.body.state).toBe('done');
+      const run = await server.api('GET', `/api/attempts/${attemptId}`);
+      expect(run.body.state).toBe('completed');
+      expect(git(repo, 'rev-parse', 'main')).toBe(mainTipAfterMerge);
+    },
+  );
+
   afterEach(() => {
     for (const d of tmpDirs.splice(0)) rmSync(d, { recursive: true, force: true });
   });
