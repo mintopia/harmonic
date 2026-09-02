@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { AppConfig, HarnessConfig, ModelCatalogEntry } from '../types';
-import { btnGhost, btnQuiet, field, selectField, touchTarget, touchTargetInline } from '../ui';
+import { btnGhost, btnQuiet, field, selectField, tableHead, touchTarget, touchTargetInline } from '../ui';
 import { FieldError, fieldLabel } from './SettingsSection';
 import { Icon } from './Icon';
 import { renameRecordKey } from './settings-rename';
@@ -52,6 +52,9 @@ function ListEditor({ items, onChange, ariaLabel }: { items: string[]; onChange:
   );
 }
 
+const catalogCols = 'grid-cols-[minmax(200px,340px)_repeat(4,minmax(0,88px))_minmax(0,104px)_auto]';
+const numField = `${field} px-2 text-right tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`;
+
 function CatalogEditor({ items, baseline, onChange }: { items: ModelCatalogEntry[]; baseline: ModelCatalogEntry[]; onChange: (items: ModelCatalogEntry[]) => void }) {
   const [priceDrafts, setPriceDrafts] = useState<Record<string, NonNullable<ModelCatalogEntry['price']>>>({});
   const update = (i: number, entry: ModelCatalogEntry) => onChange(items.map((item, index) => (index === i ? entry : item)));
@@ -67,31 +70,39 @@ function CatalogEditor({ items, baseline, onChange }: { items: ModelCatalogEntry
   };
   const baselineById = new Map(baseline.map((item) => [item.id, item]));
   const removed = baseline.filter((item) => !items.some((current) => current.id === item.id));
-  return <div className="space-y-2.5">
-    {items.map((item, i) => {
-      const inherited = baselineById.get(item.id);
-      const modified = inherited === undefined || JSON.stringify(item) !== JSON.stringify(inherited);
-      return <div key={item.id || i} className={modified ? undefined : 'opacity-60'}>
-        <div className="mb-1 flex items-center gap-2">
-          <span className="text-small text-muted">{modified ? 'Modified' : 'Distributed'}</span>
-          {modified && <button type="button" className={`ml-auto ${btnQuiet} text-label`} onClick={() => onChange(inherited === undefined ? items.filter((_, index) => index !== i) : items.map((current, index) => index === i ? inherited : current))}>Revert</button>}
-        </div>
-        <div className="grid gap-2 sm:grid-cols-7">
-          <input aria-label="Model id" className={`${field} font-data`} value={item.id} onChange={(e) => update(i, { ...item, id: e.target.value })} />
-          {PRICE_FIELDS.map((key) => <input key={key} aria-label={PRICE_LABELS[key]} type="number" min={0} step="any" className={field} value={item.price?.[key] ?? ''} onChange={(e) => updatePrice(i, key, e.target.value)} />)}
-          <input aria-label="Context window" type="number" min={1} className={field} value={item.contextWindow ?? ''} onChange={(e) => update(i, { ...item, contextWindow: e.target.value === '' ? undefined : Number(e.target.value) })} />
-          <button type="button" aria-label={`Remove ${item.id || 'model'}`} onClick={() => onChange(items.filter((_, index) => index !== i))} className={`${touchTarget} ${btnQuiet}`}>✕</button>
-        </div>
-      </div>;
-    })}
-    {removed.map((item) => <div key={item.id} className="opacity-60">
-      <div className="flex items-center gap-2">
+  return <div>
+    <div className="overflow-x-auto">
+      <div className="w-fit min-w-[560px]">
+        {items.length > 0 && <div className={`grid ${catalogCols} items-end gap-x-2 border-b border-hairline pb-1.5 ${tableHead}`}>
+          <span>Model</span>
+          {PRICE_FIELDS.map((key) => <span key={key} className="text-right leading-tight">{PRICE_LABELS[key]}</span>)}
+          <span className="text-right leading-tight">Context</span>
+          <span aria-hidden="true" />
+        </div>}
+        {items.map((item, i) => {
+          const inherited = baselineById.get(item.id);
+          const modified = inherited === undefined || JSON.stringify(item) !== JSON.stringify(inherited);
+          return <div key={i} className={`grid ${catalogCols} items-center gap-x-2 border-b border-hairline py-1.5 ${modified ? '' : 'opacity-55'}`}>
+            <input aria-label="Model id" className={`${field} font-data`} value={item.id} onChange={(e) => update(i, { ...item, id: e.target.value })} />
+            {PRICE_FIELDS.map((key) => <input key={key} aria-label={PRICE_LABELS[key]} type="number" min={0} step="any" placeholder={inherited?.price?.[key] != null ? String(inherited.price[key]) : undefined} className={numField} value={item.price?.[key] ?? ''} onChange={(e) => updatePrice(i, key, e.target.value)} />)}
+            <input aria-label="Context window" type="number" min={1} placeholder={inherited?.contextWindow != null ? String(inherited.contextWindow) : undefined} className={numField} value={item.contextWindow ?? ''} onChange={(e) => update(i, { ...item, contextWindow: e.target.value === '' ? undefined : Number(e.target.value) })} />
+            <div className="flex items-center justify-end gap-0.5">
+              {modified && <button type="button" className={`${touchTargetInline} ${btnQuiet} px-1.5 text-label`} onClick={() => onChange(inherited === undefined ? items.filter((_, index) => index !== i) : items.map((current, index) => index === i ? inherited : current))}>Revert</button>}
+              <button type="button" aria-label={`Remove ${item.id || 'model'}`} onClick={() => onChange(items.filter((_, index) => index !== i))} className={`${touchTarget} ${btnQuiet}`}>✕</button>
+            </div>
+          </div>;
+        })}
+        {items.length === 0 && <p className="py-1.5 text-body text-muted">No models in this harness.</p>}
+      </div>
+    </div>
+    {removed.length > 0 && <div className="mt-2 space-y-1.5">
+      {removed.map((item) => <div key={item.id} className="flex items-center gap-2 opacity-60">
         <span className="font-data text-data line-through">{item.id}</span>
         <span className="text-small text-fail">Removed</span>
-        <button type="button" className={`ml-auto ${btnQuiet} text-label`} onClick={() => onChange([...items, item])}>Restore</button>
-      </div>
-    </div>)}
-    <button type="button" onClick={() => onChange([...items, { id: '' }])} className={btnGhost}>+ Add model</button>
+        <button type="button" className={`ml-auto ${touchTargetInline} ${btnQuiet} text-label`} onClick={() => onChange([...items, item])}>Restore</button>
+      </div>)}
+    </div>}
+    <button type="button" onClick={() => onChange([...items, { id: '' }])} className={`mt-3 ${btnGhost}`}>+ Add model</button>
   </div>;
 }
 
@@ -182,7 +193,7 @@ function HarnessCard({
       </summary>
 
       <div className="px-1.5 pb-3 pt-1">
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid max-w-3xl gap-3 sm:grid-cols-2">
           <div>
             <label className={fieldLabel} htmlFor={`harness-${id}-command`}>Command</label>
             <input
@@ -205,24 +216,24 @@ function HarnessCard({
           </div>
         </div>
 
-        <div className="mt-3">
+        <div className="mt-3 max-w-3xl">
           <label className={fieldLabel}>Args</label>
           <ListEditor items={harness.args} onChange={(args) => set('args', args)} ariaLabel="Argument" />
           <FieldError message={fieldErrors[`${prefix}.args`]} />
         </div>
 
-        <div className="mt-3">
+        <div className="mt-3 max-w-3xl">
           <label className={fieldLabel}>Environment</label>
           <EnvEditor env={harness.env} onChange={(env) => set('env', env)} />
           <FieldError message={fieldErrors[`${prefix}.env`]} />
         </div>
 
-        <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          <div>
-            <label className={fieldLabel}>Model catalog</label>
-            <CatalogEditor items={harness.models} baseline={baseline.models} onChange={(models) => set('models', models)} />
-            <FieldError message={fieldErrors[`${prefix}.models`]} />
-          </div>
+        <div className="mt-3">
+          <CatalogEditor items={harness.models} baseline={baseline.models} onChange={(models) => set('models', models)} />
+          <FieldError message={fieldErrors[`${prefix}.models`]} />
+        </div>
+
+        <div className="mt-3 grid max-w-3xl gap-3 sm:grid-cols-2">
           <div>
             <label className={fieldLabel} htmlFor={`harness-${id}-default-model`}>Default Model</label>
             <select

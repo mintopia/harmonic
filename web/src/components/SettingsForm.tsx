@@ -70,7 +70,12 @@ export function SettingsForm({
         {sections.map((section) => {
           const { title: sectionTitle, description, body } = renderSection(section, ctx);
           return (
-            <SettingsSection key={`${section.tab}:${sectionTitle}`} title={sectionTitle} description={description}>
+            <SettingsSection
+              key={`${section.tab}:${sectionTitle}`}
+              title={sectionTitle}
+              description={description}
+              className={section.wide ? 'xl:col-span-2' : undefined}
+            >
               {body}
             </SettingsSection>
           );

@@ -1114,6 +1114,8 @@ interface SectionNode {
   title: PerSurface<string>;
   description: PerSurface<string>;
   body: (ctx: RenderCtx) => ReactNode;
+  /** Span both columns of the settings grid — for wide, table-shaped bodies. */
+  wide?: boolean;
 }
 
 const BOTH: Surface[] = ['global', 'workspace'];
@@ -1278,6 +1280,7 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
     surfaces: ['global'],
     title: 'Harnesses',
     description: 'The agent CLIs Harmonic drives over ACP — command, environment, and models.',
+    wide: true,
     body: (ctx) =>
       ctx.surface === 'global' ? (
         <HarnessesSection config={ctx.config} baseline={ctx.baseline} fieldErrors={ctx.errors} onChange={(harnesses) => ctx.setConfig({ ...ctx.config, harnesses })} />
