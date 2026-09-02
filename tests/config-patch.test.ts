@@ -91,4 +91,23 @@ describe('PATCH /api/config verification', () => {
     expect(patched.status).toBe(200);
     expect(patched.body.contextReuseTokenLimit).toBe(150_000);
   });
+
+  it('accepts a per-harness model catalog and cache warm duration', async () => {
+    const patched = await server.api('PATCH', '/api/config', {
+      harnesses: {
+        claude: {
+          models: [{ id: 'custom-model', price: { input: 1, output: 2, cacheRead: 0.1, cacheWrite: 1.25 }, contextWindow: 128_000 }],
+          defaultModel: 'custom-model',
+          cacheWarmSeconds: 600,
+        },
+      },
+      chat: { model: 'custom-model' },
+    });
+
+    expect(patched.status).toBe(200);
+    expect(patched.body.harnesses.claude.models).toEqual([
+      { id: 'custom-model', price: { input: 1, output: 2, cacheRead: 0.1, cacheWrite: 1.25 }, contextWindow: 128_000 },
+    ]);
+    expect(patched.body.harnesses.claude.cacheWarmSeconds).toBe(600);
+  });
 });

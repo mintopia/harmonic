@@ -18,4 +18,10 @@ describe('per-harness model catalog', () => {
     expect(costOfUsages([usage('custom')], pricesForHarness(claude))).toMatchObject({ totalUsd: null, byModel: { custom: null }, incomplete: true });
     expect(resolveContextWindowForHarness('shared-20260902', copilot)).toBe(20);
   });
+
+  it('prefers an exact context-window entry over its dated-id fallback', () => {
+    const harness = { models: [{ id: 'shared', contextWindow: 10 }, { id: 'shared-20260902', contextWindow: 20 }] };
+
+    expect(resolveContextWindowForHarness('shared-20260902', harness)).toBe(20);
+  });
 });

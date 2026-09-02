@@ -33,7 +33,9 @@ export function pricesForHarness(harness: Pick<HarnessConfig, 'models'>): PriceT
 
 export function resolveContextWindowForHarness(model: string, harness: Pick<HarnessConfig, 'models'>): number | null {
   const base = model.replace(/-\d{8}$/, '');
-  return harness.models.find((entry) => entry.id === model || entry.id === base)?.contextWindow ?? null;
+  return harness.models.find((entry) => entry.id === model)?.contextWindow
+    ?? harness.models.find((entry) => entry.id === base)?.contextWindow
+    ?? null;
 }
 
 /** Session logs use dated ids (claude-haiku-4-5-20251001); fall back to the base id. */

@@ -563,9 +563,7 @@ export interface Conversation {
    * telemetry strip shows raw tokens instead of a fabricated percentage
    *. */
   contextWindow: number | null;
-  /** The model's configured cache TTL, in seconds; null when unconfigured —
-   * the telemetry strip never shows the cold-cache estimate in that case
-   *. */
+  /** The configured harness cache warm period, in seconds. */
   cacheWarmSeconds: number | null;
 }
 
