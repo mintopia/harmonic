@@ -56,6 +56,9 @@ CREATE TABLE `attempts` (
 	`guardrail_config` text,
 	`price_table` text,
 	`detail` text,
+	`pid` integer,
+	`pgid` integer,
+	`proc_start_token` text,
 	FOREIGN KEY (`task_id`) REFERENCES `tasks`(`id`) ON UPDATE no action ON DELETE no action,
 	FOREIGN KEY (`session_row_id`) REFERENCES `sessions`(`id`) ON UPDATE no action ON DELETE no action
 );

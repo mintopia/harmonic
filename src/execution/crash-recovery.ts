@@ -8,6 +8,8 @@ import type { PostMergeCheckResult } from './merge-policy.js';
 import type { PostMergeHook } from './branch-merge.js';
 import { forEachYielding, type YieldOptions } from '../reliability/yield.js';
 import { startOperation } from '../telemetry/operations.js';
+import { ProcGroupReaper, type ProcessReaper } from './process-reaper.js';
+import { logger } from '../logger.js';
 
 /**
  * Boot-time crash recovery, run once before anything can execute. A
@@ -30,8 +32,13 @@ export class CrashRecoveryCoordinator {
       /** Best-effort notification after a recovered merge is confirmed green. */
       postMerge?: PostMergeHook;
       yieldOptions?: YieldOptions;
+      reaper?: ProcessReaper;
     },
-  ) {}
+  ) {
+    this.reaper = deps.reaper ?? new ProcGroupReaper();
+  }
+
+  private readonly reaper: ProcessReaper;
 
   async reconcile(): Promise<void> {
     const operation = startOperation({ type: 'startup.crash-reconcile', attributes: {} });
@@ -47,7 +54,16 @@ export class CrashRecoveryCoordinator {
   private async reconcileInterrupted(): Promise<void> {
     await this.reconcileMergeOrphans();
     await this.reconcileMergedButUnsettled();
+    await this.reapOrphanProcesses();
     await this.attempts.markInterrupted();
+  }
+
+  private async reapOrphanProcesses(): Promise<void> {
+    for (const attempt of await this.attempts.listAllRunning()) {
+      if (attempt.pid === null || attempt.pgid === null || attempt.procStartToken === null) continue;
+      const outcome = await this.reaper.reap({ pid: attempt.pid, pgid: attempt.pgid, startToken: attempt.procStartToken });
+      logger.info('crash-recovery: reaping orphan harness group', { attemptId: attempt.id, pid: attempt.pid, pgid: attempt.pgid, outcome });
+    }
   }
 
   private async reconcileMergeOrphans(): Promise<void> {

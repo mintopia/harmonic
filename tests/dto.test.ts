@@ -47,6 +47,9 @@ const attemptRow = (over: Partial<AttemptRow> = {}): AttemptRow => ({
   guardrailConfig: null,
   priceTable: null,
   detail: null,
+  pid: null,
+  pgid: null,
+  procStartToken: null,
   ...over,
 });
 
