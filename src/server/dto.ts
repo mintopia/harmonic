@@ -426,7 +426,6 @@ export function taskToApiDto(
   const running = runs.find((r) => r.state === 'running');
   return {
     ...stripTrackerFactCols(task),
-    // Resolved from `config.ts`'s ISOLATION_MODES/PRIORITIES at every write site; TaskRow widens them to `string`.
     isolationMode: task.isolationMode as IsolationMode,
     priority: task.priority as Priority,
     overrides: {
