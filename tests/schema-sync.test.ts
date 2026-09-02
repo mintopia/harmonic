@@ -1,10 +1,11 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createClient } from '@libsql/client';
 import { openAsyncDb } from '../src/db/async.js';
-import { parseBaseline } from '../src/db/schema-sync.js';
+import { parseBaseline, syncSchema } from '../src/db/schema-sync.js';
+import { logger } from '../src/logger.js';
 
 const BASELINE = join(import.meta.dirname, '..', 'drizzle', '0000_baseline.sql');
 
@@ -44,5 +45,62 @@ describe('schema convergence onto the baseline (ADR-0007)', () => {
     expect((await sqlite.execute("select count(*) as c from workspaces where name = 'keep'")).rows[0]?.c).toBe(1);
     sqlite.close();
     rmSync(dataDir, { recursive: true, force: true });
+  });
+
+  describe('rollback and clean-break fallback', () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it('rolls back the failed incremental convergence and clean-break recreates instead of leaving a half-converged DB', async () => {
+      const dataDir = mkdtempSync(join(tmpdir(), 'harmonic-sync-rollback-'));
+      const dbPath = join(dataDir, 'harmonic.db');
+      const client = createClient({ url: `file:${dbPath}` });
+      await client.execute('CREATE TABLE `foo` (`id` integer, `old_col` text)');
+      await client.execute("INSERT INTO `foo` (`id`, `old_col`) VALUES (1, 'x')");
+      await client.execute('CREATE TABLE `bar` (`id` integer)');
+
+      const baseline = [
+        'CREATE TABLE `foo` (',
+        '\t`id` integer,',
+        '\t`new_col` text NOT NULL',
+        ');',
+        '--> statement-breakpoint',
+        'CREATE UNIQUE INDEX `foo_id_idx` ON `foo` (`id`);',
+      ].join('\n');
+
+      const infoSpy = vi.spyOn(logger, 'info');
+      const warnSpy = vi.spyOn(logger, 'warn');
+
+      await syncSchema(client, baseline);
+
+      const tables = (await client.execute("select name from sqlite_master where type = 'table'")).rows.map((r) =>
+        String(r.name),
+      );
+      expect(tables).toContain('foo');
+      expect(tables).not.toContain('bar');
+
+      const fooColumns = (await client.execute('pragma table_info(`foo`)')).rows.map((r) => String(r.name));
+      expect(fooColumns).toContain('id');
+      expect(fooColumns).toContain('new_col');
+      expect(fooColumns).not.toContain('old_col');
+
+      // The NOT NULL add fails once `foo` still has rows, so the clean-break
+      // recreate wipes it — proving the incremental half-drop never survives.
+      expect((await client.execute('select count(*) as c from `foo`')).rows[0]?.c).toBe(0);
+
+      const indexes = (await client.execute("select name from sqlite_master where type = 'index'")).rows.map((r) =>
+        String(r.name),
+      );
+      expect(indexes).toContain('foo_id_idx');
+
+      const infoCalls = infoSpy.mock.calls;
+      expect(infoCalls.some((call) => JSON.stringify(call).includes('bar'))).toBe(true);
+      expect(infoCalls.some((call) => JSON.stringify(call).includes('old_col'))).toBe(true);
+      expect(warnSpy).toHaveBeenCalled();
+
+      client.close();
+      rmSync(dataDir, { recursive: true, force: true });
+    });
   });
 });

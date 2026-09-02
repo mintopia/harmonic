@@ -57,7 +57,7 @@ export class AutoDrive {
   }
 
   /**
-   * Re-prompt for a Run that ended its turn without finishing or escalating.
+   * Re-prompt for an Attempt that ended its turn without finishing or escalating.
    * Nudges the agent to resume rather than idle-wait, and re-states the
    * unattended reminder (working memory is short across turns).
    */
@@ -67,7 +67,7 @@ export class AutoDrive {
     return `${nudge}\n\n${this.reminderFrom(drive, task)}`;
   }
 
-  /** How many times to re-prompt an unfinished Run before treating it as unresolved. */
+  /** How many times to re-prompt an unfinished Attempt before treating it as unresolved. */
   async continueAttempts(task: TaskRow): Promise<number> {
     return (await this.resolvedDrive(task)).continueAttempts;
   }
@@ -82,7 +82,7 @@ export class AutoDrive {
   }
 
   /**
-   * Merge a passing afk Run's work per its Merge Fate. Harmonic owns the close,
+   * Merge a passing afk Attempt's work per its Merge Fate. Harmonic owns the close,
    * only after verify + merge:
    *
    * - **auto-merge** — the Runner has already merged the verified branch, so

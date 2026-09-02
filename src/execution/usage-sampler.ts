@@ -1,4 +1,5 @@
-import { adapterFor, wholeFileReader, type SessionTailReader } from './harness/adapter.js';
+import { wholeFileReader, type SessionTailReader } from './harness/adapter.js';
+import { adapterFor } from './harness/registry.js';
 import {
   agentsFromTree,
   collectUsageWithRetry,
@@ -22,7 +23,7 @@ export interface ActiveAttemptView {
  * Attempt, advanced by the tailer tick, plus the decoration (tool tally,
  * per-agent breakdown, activity line) that turns a raw parse into an
  * {@link AttemptUsageSnapshot}. Also collects the settle-time Usage. Every path
- * here is best-effort and never fails the Run.
+ * here is best-effort and never fails the Attempt.
  */
 export class UsageSampler {
   private readonly readers = new Map<number, SessionTailReader>();
@@ -30,7 +31,7 @@ export class UsageSampler {
   constructor(
     private readonly attempts: Pick<AttemptStore, 'get' | 'listToolCalls'>,
     private readonly getActive: (attemptId: number) => ActiveAttemptView | undefined,
-    /** Bounded per-Run ACP tool-call rollups, owned by the drive loop. */
+    /** Bounded per-Attempt ACP tool-call rollups, owned by the drive loop. */
     private readonly toolCallTotals: ReadonlyMap<number, Map<string, number>>,
   ) {}
 

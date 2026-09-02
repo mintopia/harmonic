@@ -53,7 +53,7 @@ export function ProviderChip({
     { className: `${toolChip} inline-flex items-center ${modeClass} ${className}`.trim(), title: label },
     el(
       'span',
-      { 'aria-hidden': 'true', className: `${chip} bg-tool/12 px-1.5 py-0 text-[10px] text-tool` },
+      { 'aria-hidden': 'true', className: `${chip} px-1.5 py-0 text-[10px] text-tool` },
       mark,
     ),
     el('span', { className: compact ? 'hidden sm:inline' : '' }, label),

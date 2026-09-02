@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { seedLocalMarkdownTicket, startServer, waitFor, type TestServer } from './helpers.js';
 
-describe('Scheduled Job registry (ADR-0038)', () => {
+describe('Scheduled Job registry', () => {
   let server: TestServer | undefined;
 
   afterEach(async () => {

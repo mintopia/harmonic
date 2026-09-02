@@ -1,4 +1,4 @@
-import { createElement, useEffect, useState } from 'react';
+import { createElement, useState } from 'react';
 import {
   formatScheduledJobDuration,
   formatScheduledJobLastRun,
@@ -10,6 +10,7 @@ import {
 } from '../scheduled-jobs-model.js';
 import { subscribe } from '../ws.js';
 import { card, chip, tableHead } from '../ui.js';
+import { useLiveEffect } from '../useLiveEffect.js';
 
 const GRID = 'grid grid-cols-[minmax(10rem,1.5fr)_7rem_6rem_7rem_7rem_minmax(10rem,1fr)_7rem_6rem_7rem] gap-x-4 px-4';
 
@@ -82,28 +83,31 @@ export function ScheduledJobsView() {
   const [jobs, setJobs] = useState<ScheduledJob[] | null>(null);
   const [now, setNow] = useState(() => Date.now());
 
-  useEffect(() => {
-    let active = true;
+  useLiveEffect((live) => {
     let snapshotLoaded = false;
-    const pending: ScheduledJob[][] = [];
+    let pending: ScheduledJob[][] = [];
     const apply = (next: ScheduledJob[]) => setJobs((current) => mergeScheduledJobs(current ?? [], next));
+    const installSnapshot = (snapshot: ScheduledJob[]) => {
+      if (!live()) return;
+      snapshotLoaded = true;
+      setJobs(pending.reduce(mergeScheduledJobs, snapshot));
+    };
+    const load = () => {
+      snapshotLoaded = false;
+      pending = [];
+      fetch('/api/scheduled-jobs')
+        .then((response) => (response.ok ? response.json() : { jobs: [] }))
+        .then((snapshot: unknown) => installSnapshot(isScheduledJobsSnapshot(snapshot) ? snapshot.jobs : []))
+        .catch(() => installSnapshot([]));
+    };
     const unsubscribe = subscribe((message) => {
       if (message.type !== 'scheduled-jobs') return;
       if (snapshotLoaded) apply(message.jobs);
       else pending.push(message.jobs);
-    });
-    const installSnapshot = (snapshot: ScheduledJob[]) => {
-      if (!active) return;
-      snapshotLoaded = true;
-      setJobs(pending.reduce(mergeScheduledJobs, snapshot));
-    };
-    fetch('/api/scheduled-jobs')
-      .then((response) => (response.ok ? response.json() : { jobs: [] }))
-      .then((snapshot: unknown) => installSnapshot(isScheduledJobsSnapshot(snapshot) ? snapshot.jobs : []))
-      .catch(() => installSnapshot([]));
+    }, load);
+    load();
     const timer = setInterval(() => setNow(Date.now()), 1_000);
     return () => {
-      active = false;
       clearInterval(timer);
       unsubscribe();
     };

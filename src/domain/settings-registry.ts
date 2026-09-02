@@ -49,7 +49,7 @@ export const settingsRegistry = {
     control: 'select',
     tab: 'execution',
     label: 'Isolation mode',
-    help: 'How a Run isolates its working tree (worktree vs direct).',
+    help: 'How an Attempt isolates its working tree (worktree vs direct).',
   },
   priority: {
     scope: 'overridable',
@@ -91,7 +91,7 @@ export const settingsRegistry = {
     control: 'number',
     tab: 'execution',
     label: 'Conflict resolve turns',
-    help: 'How many agentic turns may attempt to resolve a merge conflict before the Run escalates.',
+    help: 'How many agentic turns may attempt to resolve a merge conflict before the Attempt escalates.',
   },
   verificationCommand: {
     scope: 'overridable',
@@ -133,7 +133,7 @@ export const settingsRegistry = {
     control: 'json',
     tab: 'execution',
     label: 'Budget guardrail',
-    help: 'Budget bounds snapshotted onto a Run at start.',
+    help: 'Budget bounds snapshotted onto an Attempt at start.',
   },
   guardrailProgress: {
     scope: 'overridable',
@@ -147,7 +147,7 @@ export const settingsRegistry = {
     control: 'number',
     tab: 'execution',
     label: 'Tool timeout (minutes)',
-    help: 'Hard per-tool-call timeout; overridable per Workspace (ADR-0044) — repos differ in tolerance for slow tools.',
+    help: 'Hard per-tool-call timeout; overridable per Workspace — repos differ in tolerance for slow tools.',
   },
   drivePrompt: {
     scope: 'overridable',
@@ -168,21 +168,21 @@ export const settingsRegistry = {
     control: 'text',
     tab: 'prompts',
     label: 'Continue prompt',
-    help: 'Re-prompt nudge for an auto-driven Run that ended its turn without finishing; inherits the global default when unset.',
+    help: 'Re-prompt nudge for an auto-driven Attempt that ended its turn without finishing; inherits the global default when unset.',
   },
   driveMergeFate: {
     scope: 'overridable',
     control: 'select',
     tab: 'execution',
     label: 'Merge fate',
-    help: 'What becomes of a completed auto-driven Run — auto-merge, open a PR, or leave an artifact; inherits the global default when unset.',
+    help: 'What becomes of a completed auto-driven Attempt — auto-merge, open a PR, or leave an artifact; inherits the global default when unset.',
   },
   driveContinueAttempts: {
     scope: 'overridable',
     control: 'number',
     tab: 'execution',
     label: 'Continue attempts',
-    help: 'How many times an unfinished auto-driven Run is re-prompted before it is treated as unresolved; inherits the global default when unset.',
+    help: 'How many times an unfinished auto-driven Attempt is re-prompted before it is treated as unresolved; inherits the global default when unset.',
   },
   taskPrompt: {
     scope: 'overridable',

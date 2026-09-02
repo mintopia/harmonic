@@ -1,3 +1,5 @@
+import { adapterFor } from './harness/registry.js';
+
 /** The five interpolation tokens a Drive-style prompt fills. */
 export type DriveFields = {
   skill: string;
@@ -32,9 +34,8 @@ export function codeIndexRepoGuidance(repoId: string): string {
 
 /** Map-Epic child→`wayfinder`; research→`research`; everything else→`implement`. */
 export function skillFor(task: Pick<DriveTask, 'wayfinderType' | 'harness' | 'epicKind'>): string {
-  const prefix = task.harness === 'codex' ? '$' : '/';
   const skill = task.epicKind === 'map' ? 'wayfinder' : task.wayfinderType === 'research' ? 'research' : 'implement';
-  return `${prefix}${skill}`;
+  return `${adapterFor(task.harness).commandPrefix}${skill}`;
 }
 
 /** A mirrored Task's prompt is `title\n\nbody`; recover the two for the Drive Prompt. */

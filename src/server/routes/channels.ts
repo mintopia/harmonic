@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import type { App } from '../app.js';
+import type { PersistenceContext } from '../app.js';
 import { createChannelSchema, updateChannelSchema, NOTIFICATION_EVENTS } from '../../notifications/channels.js';
 import { CHANNEL_TYPES } from '../../db/schema.js';
 import { idParamsSchema, okResponseSchema, errorResponse } from '../schemas.js';
@@ -37,8 +37,7 @@ const channelsListResponseSchema = listResponse('channels', channelSchema);
 const channelIdsResponseSchema = z.object({ channelIds: z.array(z.number()).meta({ example: [3702] }) });
 const channelIdsListResponseSchema = listResponse('channelIds', z.number());
 
-export async function channelRoutes(fastify: FastifyInstance): Promise<void> {
-  const { ctx } = fastify as App;
+export async function channelRoutes(fastify: FastifyInstance, ctx: Pick<PersistenceContext, 'channels' | 'tasks'>): Promise<void> {
   const app = fastify.withTypeProvider<ZodTypeProvider>();
 
   app.post(

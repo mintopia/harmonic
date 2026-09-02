@@ -13,6 +13,7 @@ import { EpicPage } from './components/EpicPage';
 import { subscribe } from './ws';
 import { debounce } from './debounce';
 import { useLiveEffect } from './useLiveEffect';
+import { AppContextProvider } from './app-context';
 import { Login } from './components/Login';
 import { ApiPage } from './components/ApiPage';
 import { StatsPage } from './components/StatsPage';
@@ -190,14 +191,15 @@ export function App() {
     applyTheme(document.documentElement, theme);
   }, [theme]);
 
-  useEffect(() => {
+  useLiveEffect((live) => {
     fetch('/api/auth/me')
       .then((r) => r.json())
       .then((me: { authenticated: boolean; passwordConfigured: boolean }) => {
+        if (!live()) return;
         setPasswordSet(me.passwordConfigured);
         setAuthed(me.authenticated || !me.passwordConfigured);
       })
-      .catch(() => setAuthed(false));
+      .catch(() => live() && setAuthed(false));
   }, []);
 
   const failStreak = useRef(0);
@@ -222,23 +224,25 @@ export function App() {
     }
   }, [activeWorkspaceId]);
 
-  useEffect(() => {
+  useLiveEffect((live) => {
     if (!authed) return;
-    api.config().then(setConfig).catch(() => {});
+    api.config().then((next) => live() && setConfig(next)).catch(() => {});
     api.workspaces().then(({ workspaces }) => {
+      if (!live()) return;
       setWorkspaces(workspaces);
       setWorkspacesLoaded(true);
       const active = resolveActiveWorkspace(workspaces, loadActiveWorkspaceId(localStorage));
       if (active) setActiveWorkspaceId(active.id);
-    }, toastError);
+    }, (error) => live() && toastError(error));
   }, [authed]);
 
-  useEffect(() => {
+  useLiveEffect((live) => {
     if (!authed || activeWorkspaceId === null) return;
     refresh();
     refreshEpics();
     const debouncedRefreshEpics = debounce(refreshEpics, 250);
     const unsubscribe = subscribe((msg) => {
+      if (!live()) return;
       if (msg.type === 'task_changed' && msg.task.workspaceId === activeWorkspaceId) {
         setTasks((current) => {
           const rest = (current ?? []).filter((t) => t.id !== msg.task.id);
@@ -256,6 +260,9 @@ export function App() {
           navigate({ ...routeRef.current, task: null, panel: NO_SELECTION }, { replace: true });
         }
       }
+    }, () => {
+      refresh();
+      refreshEpics();
     });
     const timer = setInterval(() => {
       refresh();
@@ -421,6 +428,7 @@ export function App() {
   };
 
   return (
+    <AppContextProvider value={{ config, workspace: activeWorkspace, refresh }}>
     <div className="flex h-screen flex-col overflow-hidden rail:flex-row">
       <ReviewLiveRegions polite={politeReviewAnnouncement} assertive={assertiveMergeAnnouncement} />
       <a
@@ -600,7 +608,7 @@ export function App() {
                       </button>
                     }
                   >
-                    A workspace points Harmonic at a project directory — its tasks, runs, and cost all
+                    A workspace points Harmonic at a project directory — its tasks, attempts, and cost all
                     scope to it. Open one to get started.
                   </EmptyState>
                 ) : (
@@ -612,7 +620,6 @@ export function App() {
                         epics={epics}
                         onOpen={openRow}
                         onOpenTask={openTaskById}
-                        onChanged={refresh}
                         onNewTask={() => setEditing('new')}
                         onOpenEpic={(epic) => openEpicByRef(epic.ref)}
                       />
@@ -685,5 +692,6 @@ export function App() {
         />
       )}
     </div>
+    </AppContextProvider>
   );
 }

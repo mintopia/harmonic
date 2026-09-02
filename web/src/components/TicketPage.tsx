@@ -1,13 +1,12 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { api } from '../api';
-import { formatCost, usd } from '../cost';
+import { formatCost } from '../cost';
 import type { Attempt, Step, StepType, GuardrailEvent, AttemptSummary, AttemptLogEvent, AttemptUsageEvent, Task, TicketTimelineEvent, VerificationAttempt, VerifierStatus } from '../types';
 import { EmptyState } from './EmptyState';
 import { DiffViewer } from './DiffViewer';
 import type { DiffFile } from '../types';
 import { describeGuardrailTrip } from '../guardrail-trip-model';
 import { parseSkipReasonTaskRef } from '../skip-reason-model';
-import { overallDecision, verificationRows, criticUnavailableReason } from '../verification-attempts-model';
 import { changedFilesFromNumstat } from '../attempt-rail-model';
 import { sumCosts } from '../activity-model';
 import { Markdown } from './Markdown';
@@ -20,11 +19,9 @@ import { Gate } from './ticket/Gate';
 import { CrumbBar } from './CrumbBar';
 import { LifecycleTimeline } from './ticket/LifecycleTimeline';
 import { attemptTone, runFailureBannerLabel, runForAttempt, stateTone, type TimelineTone } from '../attempt-timeline-model';
-import { attemptStepTabs, contentPanel, defaultSelection, defaultStepTab, taskLifecycle, modelTotal, taskStats, verificationOutputTail, type ContentSelection, type LifecycleStepKey, type LifecycleStepStatus, type StatsAttempt, type StepTab, type TaskModelStats, type TaskStats } from '../task-detail-model';
+import { attemptStepTabs, contentPanel, defaultSelection, defaultStepTab, taskLifecycle, taskStats, verificationOutputTail, type ContentSelection, type LifecycleStepKey, type LifecycleStepStatus, type StepTab, type TaskStats } from '../task-detail-model';
 import { isAtLiveEdge } from '../follow-tail-model';
 import { ChatTranscript } from './ticket/ChatTranscript';
-import { Donut, type DonutSegment } from './Donut';
-import { BarChart, type Bar } from './BarChart';
 import { card, labelType, railSectionHead, railSectionCount, railNavButton, railNavSelected, railNavIdle, PHASE_NODE_STYLES, statePill, mergeStatusPill } from '../ui';
 import { toastError } from '../toast';
 import { ticketIdentity } from '../id-format.js';
@@ -35,6 +32,9 @@ import { useTicketAttempts } from './useTicketAttempts';
 import { useAttemptLogStream } from './useAttemptLogStream';
 import { useAttemptVerification } from './useAttemptVerification';
 import { useLiveUsage } from './useLiveUsage';
+import { AttemptStats, AttemptSummaryCard, StatsPanel, statsAttemptsOf } from './ticket/StatsPanel';
+import { CriticSessions, Verification } from './ticket/Verification';
+import { Fact } from './Fact';
 
 
 const sectionCaps = 'text-label font-bold uppercase tracking-[0.1em] text-faint';
@@ -171,15 +171,6 @@ function Metrics({
 }
 
 
-function Fact({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="min-w-0">
-      <dt className="mb-[3px] text-[10px] font-bold uppercase tracking-[0.07em] text-faint">{label}</dt>
-      <dd className="min-w-0 text-[12.5px] text-ink">{children}</dd>
-    </div>
-  );
-}
-
 function DependsOn({ task, allTasks }: { task: Task; allTasks: Task[] }) {
   if (task.dependsOn.length === 0) return <span className="text-faint">—</span>;
   return (
@@ -237,7 +228,7 @@ const STEP_STATUS_LABEL: Record<LifecycleStepStatus, string> = {
   failed: 'failed',
 };
 
-function stepCaption(key: LifecycleStepKey, status: LifecycleStepStatus, task: Task, attemptCount: number): string | null {
+function stepCaption(key: LifecycleStepKey, status: LifecycleStepStatus, task: Task, attemptCount: number, disabled: boolean): string | null {
   switch (key) {
     case 'worktree':
       return task.branch ? splitPathTail(task.branch).tail : null;
@@ -246,7 +237,7 @@ function stepCaption(key: LifecycleStepKey, status: LifecycleStepStatus, task: T
     case 'merge':
       return status === 'awaiting' ? 'awaiting review' : null;
     case 'postMergeCheck':
-      return 'revert on red';
+      return disabled ? 'not configured' : 'revert on red';
     case 'closeIssue':
       return task.trackerRef != null ? `#${task.trackerRef}` : null;
     case 'retire':
@@ -254,16 +245,16 @@ function stepCaption(key: LifecycleStepKey, status: LifecycleStepStatus, task: T
   }
 }
 
-function TaskProgressBar({ task, attempts }: { task: Task; attempts: AttemptSummary[] }) {
-  const { steps } = taskLifecycle(task.state, attempts);
+function TaskProgressBar({ task, attempts, commandConfigured }: { task: Task; attempts: AttemptSummary[]; commandConfigured: boolean }) {
+  const { steps } = taskLifecycle(task.state, attempts, commandConfigured);
   return (
     <div className="mb-6 mt-1">
       <div className={`mb-3 ${sectionCaps}`}>Task progress</div>
       <ol className={`${card} flex items-start px-[22px] py-5`} aria-label="Task progress">
         {steps.map((step, i) => {
-          const leftDone = i > 0 && steps[i - 1]?.status === 'done';
-          const rightDone = step.status === 'done';
-          const caption = stepCaption(step.key, step.status, task, attempts.length);
+          const leftDone = i > 0 && steps[i - 1]?.status === 'done' && !steps[i - 1]?.disabled;
+          const rightDone = step.status === 'done' && !step.disabled;
+          const caption = stepCaption(step.key, step.status, task, attempts.length, !!step.disabled);
           return (
             <li
               key={step.key}
@@ -273,15 +264,15 @@ function TaskProgressBar({ task, attempts }: { task: Task; attempts: AttemptSumm
               <div className="flex w-full items-center">
                 <span className={`h-0.5 flex-1 rounded ${i === 0 ? 'invisible' : leftDone ? 'bg-merged' : 'bg-edge'}`} />
                 <span
-                  className={`flex size-6 shrink-0 items-center justify-center rounded-full border text-[11px] font-bold tabular-nums ${PHASE_NODE_STYLES[step.status]}`}
+                  className={`flex size-6 shrink-0 items-center justify-center rounded-full border text-[11px] font-bold tabular-nums ${PHASE_NODE_STYLES[step.status]} ${step.disabled ? 'opacity-60' : ''}`}
                 >
                   {stepGlyph(step.status, i)}
                 </span>
                 <span className={`h-0.5 flex-1 rounded ${i === steps.length - 1 ? 'invisible' : rightDone ? 'bg-merged' : 'bg-edge'}`} />
               </div>
-              <span className={`text-[12px] font-semibold leading-tight ${STEP_LABEL_TONE[step.status]}`}>
+              <span className={`text-[12px] font-semibold leading-tight ${step.disabled ? 'text-faint' : STEP_LABEL_TONE[step.status]}`}>
                 {step.label}
-                <span className="sr-only"> — {STEP_STATUS_LABEL[step.status]}</span>
+                <span className="sr-only"> — {step.disabled ? 'not configured' : STEP_STATUS_LABEL[step.status]}</span>
               </span>
               {caption && <span className="text-[10.5px] leading-tight text-faint">{caption}</span>}
             </li>
@@ -292,265 +283,6 @@ function TaskProgressBar({ task, attempts }: { task: Task; attempts: AttemptSumm
   );
 }
 
-
-const OUTCOME_TONE: Record<string, string> = {
-  proceed: 'text-merged',
-  block: 'text-fail',
-  escalate: 'text-running',
-};
-const VERDICT_TONE: Record<string, string> = {
-  pass: 'text-merged',
-  fail: 'text-fail',
-  inconclusive: 'text-running',
-};
-
-function criticModel(run: AttemptSummary): string | null {
-  const key = Object.keys(run.usage?.models ?? {}).find((k) => /critic/i.test(k));
-  return key?.split('·')[1]?.trim() ?? null;
-}
-
-function mechanismName(mechanism: string, run: AttemptSummary): string {
-  if (mechanism === 'critic') {
-    const model = criticModel(run);
-    return model ? `Critic · ${model}` : 'Critic';
-  }
-  return mechanism.charAt(0).toUpperCase() + mechanism.slice(1);
-}
-
-function CriticSession({ attemptId, label, model }: { attemptId: number; label: string; model: string }) {
-  const [state, setState] = useState<'loading' | 'ready' | 'unavailable'>('loading');
-  const [events, setEvents] = useState<AttemptLogEvent[]>([]);
-
-  useLiveEffect((live) => {
-    setState('loading');
-    api.criticLog(attemptId).then(
-      (log) => {
-        if (!live()) return;
-        if (log.status === 'available' && log.events.length > 0) {
-          setEvents(log.events);
-          setState('ready');
-        } else {
-          setState('unavailable');
-        }
-      },
-      () => live() && setState('unavailable'),
-    );
-  }, [attemptId]);
-
-  if (state === 'loading') return <p className="mt-3 text-[12px] text-muted">Loading critic session…</p>;
-  if (state === 'unavailable') return <p className="mt-3 text-[12px] text-muted">Critic session log could not be loaded.</p>;
-  return <ChatTranscript events={events} unavailable={false} model={model} stepLabel={label} />;
-}
-
-function CriticSessions({ attempts, run }: { attempts: VerificationAttempt[]; run: AttemptSummary }) {
-  const sessions = attempts.filter((a) => a.mechanism === 'critic' && a.hasTranscript);
-  if (sessions.length === 0) return null;
-  const model = criticModel(run) ?? 'critic';
-  return (
-    <div className="flex flex-col gap-2">
-      {sessions.map((c, i) => (
-        <CriticSession
-          key={c.id}
-          attemptId={c.id}
-          model={model}
-          label={sessions.length > 1 ? `Critic ${i + 1} of ${sessions.length} · ${c.verdict}` : 'Critic'}
-        />
-      ))}
-    </div>
-  );
-}
-
-/** A verifier in flight: how long it has been running, and the live tail of
- * what it has printed so far (pinned to the bottom as it grows). */
-function RunningVerifier({ step, output }: { step: Step | undefined; output: string | null }) {
-  const tailRef = useRef<HTMLPreElement>(null);
-  useEffect(() => {
-    const el = tailRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [output]);
-  // eslint-disable-next-line react/purity -- one-shot elapsed read; the parent re-renders on every live update
-  const elapsed = step?.startedAt ? Date.now() - step.startedAt : null;
-  return (
-    <div className="mt-2">
-      <p className="text-[12px] text-running">{elapsed !== null && elapsed > 0 ? `Running for ${fmtDur(elapsed)}` : 'Starting…'}</p>
-      {output ? (
-        <pre ref={tailRef} className="mt-2 max-h-72 overflow-auto rounded-md border border-hairline bg-sunken px-3 py-2 font-data text-[11.5px] leading-[1.55] text-muted">
-          {output}
-        </pre>
-      ) : (
-        <p className="mt-1 text-[12px] text-faint">Waiting for output…</p>
-      )}
-    </div>
-  );
-}
-
-/** `only` narrows the block to a single mechanism — the Attempt panel's Verify
- * tab passes `'command'` and its Review tab `'critic'`, so each Step tab shows
- * just its own checks; unset renders the whole verification block (its header
- * and gate caption included). */
-function Verification({
-  attempts,
-  statuses,
-  run,
-  only,
-  steps = [],
-  liveOutput = null,
-}: {
-  attempts: VerificationAttempt[];
-  statuses: VerifierStatus[];
-  run: AttemptSummary;
-  only?: 'command' | 'critic';
-  /** The Attempt's Steps — a running verifier's elapsed time reads off its Step. */
-  steps?: readonly Step[];
-  /** The tail of a running verifier's streamed output. */
-  liveOutput?: string | null;
-}) {
-  const decision = overallDecision(attempts);
-  const rows = verificationRows(statuses, attempts).filter(({ status }) => !only || status.mechanism === only);
-  const criticSessions = attempts.filter((a) => a.mechanism === 'critic' && a.hasTranscript);
-  const hasPlanned = statuses.some((status) => status.state === 'planned');
-  const commandRow = rows.find(({ status }) => status.mechanism === 'command');
-  const commandCount = commandRow?.status.commands?.length ?? 0;
-  const reviewRow = rows.find(({ status }) => status.mechanism === 'critic');
-  const reviewInPlan = reviewRow ? reviewRow.status.state !== 'disabled' : false;
-  const gateCaption =
-    reviewInPlan && commandCount >= 1
-      ? 'Runs top to bottom — review gates on all commands passing.'
-      : commandCount + (reviewInPlan ? 1 : 0) >= 2
-        ? 'Runs top to bottom.'
-        : null;
-  return (
-    <div className="mt-2">
-      {!only && (
-        <div className="flex items-center">
-          <span className={sectionCaps}>Verification</span>
-          <span className={`ml-auto inline-flex items-center gap-1.5 text-[12.5px] font-semibold ${attempts.length > 0 ? OUTCOME_TONE[decision.outcome] ?? 'text-muted' : 'text-muted'}`}>
-            <span className="size-2 rounded-full bg-current" />
-            {attempts.length > 0 ? decision.outcome : hasPlanned ? 'planned' : 'not run'}
-          </span>
-        </div>
-      )}
-      {!only && gateCaption && <p className="mt-1 text-[12px] text-muted">{gateCaption}</p>}
-      <div className="mt-3 flex flex-col gap-3">
-        {rows.map(({ status, attempt }) => {
-          const criticReason =
-            status.mechanism === 'critic' && criticSessions.length === 0
-              ? criticUnavailableReason(status.state, !!attempt, false)
-              : null;
-          return (
-          <div key={status.mechanism} className="flex items-start gap-3">
-            <span
-              className={`mt-px grid size-[18px] shrink-0 place-items-center rounded-md ${
-                status.state === 'failed' || status.state === 'unrunnable'
-                  ? 'bg-fail-tint text-fail'
-                  : status.state === 'passed'
-                    ? 'bg-merged-tint text-merged'
-                    : status.state === 'running'
-                      ? 'bg-running-tint text-running'
-                      : 'bg-raised text-muted'
-              }`}
-            >
-              {status.state === 'running' ? (
-                <span className="size-2 animate-pulse rounded-full bg-current motion-reduce:animate-none" />
-              ) : status.state === 'failed' ? (
-                <span className="text-[11px] leading-none">✕</span>
-              ) : status.state === 'unrunnable' ? (
-                <span className="text-[11px] leading-none font-bold">!</span>
-              ) : status.state === 'passed' ? (
-                <Icon name="check" className="size-3" />
-              ) : status.state === 'planned' ? (
-                <span className="size-2 rounded-full border border-current" />
-              ) : (
-                <span className="text-[11px] leading-none">–</span>
-              )}
-            </span>
-            <div className="min-w-0 flex-1">
-              <div className={`text-[13px] font-semibold ${status.state === 'disabled' ? 'text-muted' : 'text-ink'}`}>{mechanismName(status.mechanism, run)}</div>
-              <div
-                className="mt-1 text-[13px] leading-[1.55] text-muted [&_code]:rounded-[5px] [&_code]:bg-raised [&_code]:px-[5px] [&_code]:py-px [&_code]:font-data [&_code]:text-[12px]"
-              >
-                {attempt ? (attempt.mechanism === 'critic' ? <Markdown source={attempt.summary} className="text-muted" /> : attempt.summary) : status.reason}
-              </div>
-              {status.commands && status.commands.length > 0 && (
-                <ol className="mt-1 flex flex-col gap-0.5">
-                  {status.commands.map((cmd, i) => (
-                    <li key={i} className="text-[12px] text-muted">
-                      <span className="mr-1.5 tabular-nums text-edge">{i + 1}.</span>
-                      <code className="rounded-[5px] bg-raised px-[5px] py-px font-data text-[12px]">{cmd}</code>
-                    </li>
-                  ))}
-                </ol>
-              )}
-              {criticReason && <p className="mt-2 text-[12px] text-muted">{criticReason}</p>}
-              {status.state === 'running' && <RunningVerifier step={steps.find((s) => s.type === (status.mechanism === 'command' ? 'verification' : 'review') && s.state === 'running')} output={liveOutput} />}
-            </div>
-            <span
-              className={`shrink-0 text-[10px] font-bold uppercase tracking-[0.04em] ${attempt ? VERDICT_TONE[attempt.verdict] ?? 'text-muted' : status.state === 'running' ? 'text-running' : 'text-muted'}`}
-            >
-              {status.state}
-            </span>
-          </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-
-function AttemptSummaryCard({
-  run,
-  snapshot,
-  model,
-  toolCalls,
-}: {
-  run: AttemptSummary;
-  snapshot: AttemptUsageEvent | undefined;
-  model: string;
-  toolCalls: number;
-}) {
-  const runCost = run.state === 'running' ? snapshot?.cost ?? run.cost : run.cost;
-  const durMs = run.finishedAt
-    ? Math.max(0, run.finishedAt - run.startedAt)
-    : run.state === 'running'
-      ? // eslint-disable-next-line react/purity -- one-shot elapsed snapshot for a running attempt; this card does not tick
-        Math.max(0, Date.now() - run.startedAt)
-      : 0;
-  const contextTokens = run.state === 'running' ? (snapshot?.contextTokens ?? run.contextTokens ?? null) : (run.contextTokens ?? null);
-  const contextWindow = run.contextWindow ?? null;
-  const items: Array<[string, ReactNode]> = [
-    ['Model', <span key="model" className="font-data">{model}</span>],
-    ['Cost', formatCost(runCost) ?? '—'],
-    ['Duration', durMs > 0 ? fmtDur(durMs) : '—'],
-    ['Tool calls', toolCalls > 0 ? toolCalls.toLocaleString() : '—'],
-    [
-      'Context',
-      contextTokens === null ? (
-        '—'
-      ) : (
-        <span key="context">
-          {contextTokens.toLocaleString()}
-          {contextWindow !== null && (
-            <span className="ml-1 font-medium text-muted">
-              / {contextWindow.toLocaleString()} · {Math.round((contextTokens / contextWindow) * 100)}%
-            </span>
-          )}
-        </span>
-      ),
-    ],
-    ['Session', run.sessionId ? <span key="session" className="font-data text-[12.5px]">{run.sessionId}</span> : 'cold start'],
-  ];
-  return (
-    <section className={`${card} mt-4 flex flex-wrap gap-x-9 gap-y-3 p-4`}>
-      {items.map(([k, v]) => (
-        <div key={k} className="min-w-0">
-          <div className="mb-[5px] text-[10px] font-bold uppercase tracking-[0.07em] text-faint">{k}</div>
-          <div className="text-[14px] font-bold leading-none text-ink tabular-nums">{v}</div>
-        </div>
-      ))}
-    </section>
-  );
-}
 
 
 function SteerBox({ taskId }: { taskId: number }) {
@@ -581,8 +313,8 @@ function SteerBox({ taskId }: { taskId: number }) {
               void send();
             }
           }}
-          placeholder="Steer this run — send guidance to the live session…"
-          aria-label="Steer this run"
+          placeholder="Steer this attempt — send guidance to the live session…"
+          aria-label="Steer this attempt"
           className="min-w-0 flex-1 bg-transparent text-ink outline-none placeholder:text-faint"
         />
         <button
@@ -596,7 +328,7 @@ function SteerBox({ taskId }: { taskId: number }) {
         </button>
       </div>
       <div className="mt-2 text-[11.5px] text-faint">
-        Session is warm — a message resumes this run and continues from here.
+        Session is warm — a message resumes this attempt and continues from here.
       </div>
     </div>
   );
@@ -747,7 +479,7 @@ function ChangesPane({
 
 function NoRunsYet() {
   return (
-    <EmptyState title="No runs yet" className="py-8">
+    <EmptyState title="No attempts yet" className="py-8">
       This task hasn't run yet.
     </EmptyState>
   );
@@ -851,220 +583,6 @@ function PanelNav({ selected, onSelect }: { selected: 'stats' | 'timeline' | nul
       ))}
     </section>
   );
-}
-
-const TOKEN_SEGMENTS = [
-  { key: 'input' as const, label: 'input', fill: 'bg-token-input' },
-  { key: 'output' as const, label: 'output', fill: 'bg-token-output' },
-  { key: 'cachedIn' as const, label: 'cached in', fill: 'bg-token-cache-read' },
-  { key: 'cachedOut' as const, label: 'cached out', fill: 'bg-token-cache-write' },
-];
-
-const COST_DONUT_COLORS = [
-  'var(--hm-accent)',
-  'var(--hm-ink)',
-  'var(--hm-muted)',
-  'var(--hm-faint)',
-  'var(--hm-edge-strong)',
-];
-
-const compactTokens = new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 });
-
-function ModelTokenBar({ model, maxTotal }: { model: TaskModelStats; maxTotal: number }) {
-  const total = modelTotal(model);
-  const widthPct = maxTotal > 0 ? (total / maxTotal) * 100 : 0;
-  const seg = (v: number) => (total > 0 ? (v / total) * 100 : 0);
-  return (
-    <div className="grid gap-1.5">
-      <div className="flex items-baseline justify-between gap-3">
-        <span className="truncate font-data text-data font-semibold text-ink" title={model.model}>
-          {model.model}
-        </span>
-        <span className="shrink-0 tabular-nums text-data text-muted">{compactTokens.format(total)}</span>
-      </div>
-      <div
-        className="flex h-2.5 overflow-hidden rounded-full bg-raised"
-        style={{ width: `${Math.max(4, widthPct)}%` }}
-        aria-hidden="true"
-      >
-        {TOKEN_SEGMENTS.map((s) => (
-          <span key={s.key} className={`h-full ${s.fill}`} style={{ width: `${seg(model[s.key])}%` }} />
-        ))}
-      </div>
-      <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-label tabular-nums text-faint">
-        {TOKEN_SEGMENTS.map((s) => (
-          <span key={s.key}>
-            {s.label} {compactTokens.format(model[s.key])}
-          </span>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function TokenLegend() {
-  return (
-    <div className="flex flex-wrap gap-x-3 gap-y-1 text-label text-faint">
-      {TOKEN_SEGMENTS.map((s) => (
-        <span key={s.key} className="inline-flex items-center gap-1.5">
-          <span className={`size-2 rounded-[2px] ${s.fill}`} aria-hidden="true" />
-          {s.label}
-        </span>
-      ))}
-    </div>
-  );
-}
-
-function TokenBreakdownCard({ byModel }: { byModel: TaskModelStats[] }) {
-  const maxTotal = Math.max(...byModel.map(modelTotal), 1);
-  return (
-    <section className={`${card} p-5`}>
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-        <h3 className={sectionCaps}>Token breakdown by model</h3>
-        <TokenLegend />
-      </div>
-      <div className="flex flex-col gap-4">
-        {byModel.map((m) => (
-          <ModelTokenBar key={m.model} model={m} maxTotal={maxTotal} />
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function AgentDonutCard({ stats }: { stats: TaskStats }) {
-  const { agentTokens, subagentTokens } = stats.agentVsSubagent;
-  const total = agentTokens + subagentTokens;
-  const pct = (v: number) => (total > 0 ? `${Math.round((v / total) * 100)}%` : '0%');
-  const subLabel = `${stats.subagents} subagent${stats.subagents === 1 ? '' : 's'}`;
-  const segments: DonutSegment[] = [
-    { key: 'agent', label: 'Primary agent', value: agentTokens, valueLabel: pct(agentTokens), color: 'var(--hm-accent)' },
-    { key: 'subagent', label: subLabel, value: subagentTokens, valueLabel: pct(subagentTokens), color: 'var(--hm-muted)' },
-  ];
-  return (
-    <section className={`${card} p-5`}>
-      <div className="mb-4 flex items-baseline gap-1.5">
-        <h3 className={sectionCaps}>Agent vs subagent</h3>
-        <span className="text-label text-faint">· share of tokens</span>
-      </div>
-      {total > 0 ? (
-        <Donut
-          segments={segments}
-          total={total}
-          hideCenter
-          percent={false}
-          ariaLabel="Agent versus subagent token share"
-        />
-      ) : (
-        <p className="text-muted">No per-agent breakdown for this Task.</p>
-      )}
-    </section>
-  );
-}
-
-function CostDonutCard({ stats }: { stats: TaskStats }) {
-  const segments: DonutSegment[] = stats.costByModel.map((m, i) => ({
-    key: m.model,
-    label: m.model,
-    value: m.cost,
-    valueLabel: usd(m.cost),
-    color: COST_DONUT_COLORS[i % COST_DONUT_COLORS.length]!,
-  }));
-  return (
-    <section className={`${card} p-5`}>
-      <h3 className={`${sectionCaps} mb-4`}>Cost by model</h3>
-      {segments.length > 0 ? (
-        <Donut
-          segments={segments}
-          total={stats.cost}
-          totalDisplay={usd(stats.cost)}
-          totalLabel="TOTAL"
-          percent={false}
-          ariaLabel="Cost by model"
-        />
-      ) : (
-        <p className="text-muted">No priced usage yet.</p>
-      )}
-    </section>
-  );
-}
-
-function StatsSummaryCard({ stats }: { stats: TaskStats }) {
-  const items: Array<[string, ReactNode]> = [
-    ['Cost', usd(stats.cost)],
-    ['Agents', <>{stats.agents} <span className="ml-0.5 text-[11px] font-normal text-muted">primary</span></>],
-    ['Subagents', `${stats.subagents}`],
-    ['Tool calls', stats.toolCalls.toLocaleString()],
-  ];
-  return (
-    <section className={`${card} flex flex-wrap gap-x-10 gap-y-4 p-5`}>
-      {items.map(([k, v]) => (
-        <div key={k} className="min-w-0">
-          <div className="mb-[5px] text-[10px] font-bold uppercase tracking-[0.07em] text-faint">{k}</div>
-          <div className="text-[17px] font-bold leading-none text-ink tabular-nums">{v}</div>
-        </div>
-      ))}
-    </section>
-  );
-}
-
-function StatsPanel({ stats }: { stats: TaskStats }) {
-  if (stats.byModel.length === 0) {
-    return (
-      <EmptyState title="Stats" className="py-12">
-        The Task's AI-usage breakdown will appear here once an Attempt has run.
-      </EmptyState>
-    );
-  }
-  return (
-    <div className="flex flex-col gap-4 py-5">
-      <h2 className="text-title font-semibold text-ink">Stats</h2>
-      <StatsSummaryCard stats={stats} />
-      <TokenBreakdownCard byModel={stats.byModel} />
-      <div className="grid gap-4 md:grid-cols-2">
-        <AgentDonutCard stats={stats} />
-        <CostDonutCard stats={stats} />
-      </div>
-    </div>
-  );
-}
-
-function ToolTokenCard({ tools }: { tools: TaskStats['toolTokens'] }) {
-  const bars: Bar[] = tools.map((t) => ({
-    key: t.key,
-    label: t.label,
-    value: t.outputTokens,
-    valueLabel:
-      t.cost === undefined
-        ? compactTokens.format(t.outputTokens)
-        : `${compactTokens.format(t.outputTokens)} · ${usd(t.cost)}`,
-  }));
-  return (
-    <section className={`${card} p-5`}>
-      <h3 className={`${sectionCaps} mb-4`}>Output tokens by tool</h3>
-      <BarChart bars={bars} ariaLabel="Output tokens and cost by tool" />
-    </section>
-  );
-}
-
-function AttemptStats({ stats }: { stats: TaskStats }) {
-  if (stats.byModel.length === 0) return null;
-  return (
-    <div className="flex flex-col gap-4 py-5">
-      <div className="grid gap-4 md:grid-cols-2">
-        <TokenBreakdownCard byModel={stats.byModel} />
-        <AgentDonutCard stats={stats} />
-      </div>
-      {stats.toolTokens.length > 0 && <ToolTokenCard tools={stats.toolTokens} />}
-    </div>
-  );
-}
-
-function statsAttemptsOf(runs: AttemptSummary[], live: Map<number, AttemptUsageEvent>): StatsAttempt[] {
-  return runs.map((r) => {
-    const snapshot = r.state === 'running' ? live.get(r.id) : undefined;
-    return { usage: snapshot?.usage ?? r.usage, cost: snapshot?.cost ?? r.cost, toolCalls: r.toolCalls };
-  });
 }
 
 
@@ -1250,6 +768,7 @@ export function TicketPage({
   const liveUsage = useLiveUsage();
   const [maxAttempts, setMaxAttempts] = useState<number | null>(null);
   const [workspaceName, setWorkspaceName] = useState<string | null>(null);
+  const [commandConfigured, setCommandConfigured] = useState(true);
   const [guardrailEvents, setGuardrailEvents] = useState<GuardrailEvent[]>([]);
   const [timelineEvents, setTimelineEvents] = useState<TicketTimelineEvent[]>([]);
   const [allTasks, setAllTasks] = useState<Task[]>([]);
@@ -1290,7 +809,7 @@ export function TicketPage({
       if ((msg.type === 'attempt_timeline_changed' && msg.taskId === task.id) || (msg.type === 'attempt_changed' && msg.run.taskId === task.id)) load();
       // The full Task rides `task_changed`; apply it so state/escalationReason/mergeStatus update live without a refetch.
       if (msg.type === 'task_changed' && msg.task.id === task.id) setDetail(msg.task);
-    });
+    }, load);
     return () => {
       unsubscribe();
     };
@@ -1302,6 +821,7 @@ export function TicketPage({
       const workspace = workspaces.find((workspace) => workspace.id === task.workspaceId);
       setMaxAttempts(workspace?.maxAttempts ?? config.maxAttempts);
       setWorkspaceName(workspace?.name ?? null);
+      setCommandConfigured((workspace?.verificationCommand ?? config.verify.commands).length > 0);
     }, toastError);
   }, [task.workspaceId]);
 
@@ -1340,7 +860,7 @@ export function TicketPage({
     load();
     const unsubscribe = subscribe((msg) => {
       if (msg.type === 'attempt_changed' && msg.run.id === selectedRunId) load();
-    });
+    }, load);
     return () => {
       unsubscribe();
     };
@@ -1457,7 +977,7 @@ export function TicketPage({
               </div>
             </div>
 
-            <TaskProgressBar task={task} attempts={runs} />
+            <TaskProgressBar task={task} attempts={runs} commandConfigured={commandConfigured} />
 
             {task.skipReason && (
               <div className="mb-4 text-small text-muted">

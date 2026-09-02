@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import type { App } from '../app.js';
+import type { TrackingContext } from '../app.js';
 import { DomainError } from '../../domain/errors.js';
 import { errorResponse } from '../schemas.js';
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
@@ -52,7 +52,7 @@ const epicIntegrationSchema = z
   .meta({ id: 'EpicIntegration' });
 
 const epicVerificationSchema = z
-  .object({ status: z.enum(['pass', 'fail', 'pending']).nullable() })
+  .object({ status: z.enum(['pass', 'fail', 'pending']).nullable(), configured: z.boolean() })
   .meta({ id: 'EpicVerification' });
 
 const epicIntegrateStateSchema = z
@@ -103,8 +103,7 @@ const epicIntegrateOutcomeSchema = z
 
 const epicToApi = (epic: Epic): Epic => epic;
 
-export async function epicRoutes(fastify: FastifyInstance): Promise<void> {
-  const { ctx } = fastify as App;
+export async function epicRoutes(fastify: FastifyInstance, ctx: Pick<TrackingContext, 'trackerManager' | 'workspaces'>): Promise<void> {
   const app = fastify.withTypeProvider<ZodTypeProvider>();
 
   app.get(
@@ -142,7 +141,7 @@ export async function epicRoutes(fastify: FastifyInstance): Promise<void> {
       schema: {
         tags: ['Epics'],
         description:
-          "One derived Epic by its tracker ref, from the Workspace's last poll scan (issue #167, ADR-0026). " +
+          "One derived Epic by its tracker ref, from the Workspace's last poll scan (issue #167). " +
           '404s when the scan derives no leaf-most Epic with that ref. Operator only.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         params: epicParamsSchema,

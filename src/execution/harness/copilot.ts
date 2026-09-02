@@ -112,10 +112,14 @@ function readSubagents(eventsFile: string): Map<string, SubagentInfo> {
 }
 
 export const copilotAdapter: HarnessAdapter = {
+  commandPrefix: '/',
+  transcript: null,
   // Copilot ignores --model and COPILOT_MODEL in --acp mode, and --model
   // falsifies session/new's reported currentModelId without changing the
   // session. The CLI also updates itself mid-run unless told not to.
   spawnEnv: () => ({ COPILOT_AUTO_UPDATE: 'false' }),
+  unattendedPermissionMode: (available) => ['auto', 'bypassPermissions'].find((mode) => available.includes(mode)),
+  requiresUnattendedPermissionMode: true,
 
   // Sent for every run, 'auto' included: an unpinned Copilot ACP session
   // inherits the operator's persisted settings.json model, not auto.

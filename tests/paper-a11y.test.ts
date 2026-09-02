@@ -35,4 +35,26 @@ describe('Paper accessibility contract (issue #266)', () => {
     expect(css).toContain('.animate-dot-pulse');
     expect(css).toContain('animation: none;');
   });
+
+  it('names the Epic token bar, exposes the description toggle state, and keeps the harness chip a single tint', () => {
+    const epicPage = source('web/src/components/EpicPage.tsx');
+    const taskIdentity = source('web/src/components/TaskIdentity.ts');
+
+    expect(epicPage).toMatch(/role="img"[^>]*aria-label=\{title\}/);
+    expect(epicPage).toContain('aria-expanded={expanded}');
+    expect(taskIdentity).not.toMatch(/bg-tool\/\d/);
+  });
+
+  it('shares app refresh with Board actions and detail-page facts', () => {
+    const app = source('web/src/App.tsx');
+    const board = source('web/src/components/Board.tsx');
+    const ticket = source('web/src/components/TicketPage.tsx');
+    const epic = source('web/src/components/EpicPage.tsx');
+
+    expect(app).toContain('<AppContextProvider value={{ config, workspace: activeWorkspace, refresh }}>');
+    expect(board).toContain("import { useAppContext } from '../app-context';");
+    expect(board).not.toContain('onChanged: () => void;');
+    expect(ticket).toContain("import { Fact } from './Fact';");
+    expect(epic).toContain("import { Fact } from './Fact';");
+  });
 });

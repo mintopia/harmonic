@@ -30,6 +30,8 @@ export interface EpicIntegration {
 export interface EpicVerification {
   /** Whole-Epic verification result; null if unknown/not-run. */
   status: 'pass' | 'fail' | 'pending' | null;
+  /** True iff the whole-Epic command verifier has ≥1 command configured; false means the gate is vacuous. */
+  configured: boolean;
 }
 
 export interface EpicIntegrateState {
@@ -118,16 +120,6 @@ export interface IntegrateOutcomeBanner {
   tone: IntegrateOutcomeBannerTone;
   text: string;
 }
-
-/**
- * The force-integrate consequence sentence: shown as small muted
- * helper text next to every armed force-integrate control — the Table band
- * header, the Board focus header, and the Epic peek header — so the
- * operator sees the same consequence framing regardless of which surface
- * they arm the control from.
- */
-export const FORCE_INTEGRATE_CONSEQUENCE =
-  'merges the members already on the integration branch; a stuck sibling stays behind; Verification still gates';
 
 /**
  * A member Task id → its owning Epic, for a board/table card's Epic chip
@@ -241,6 +233,8 @@ export interface IntegrationStep {
   key: IntegrationStepKey;
   label: string;
   state: IntegrationStepState;
+  /** An unconfigured, vacuous verify gate — rendered muted, not a real pass. */
+  disabled?: boolean;
 }
 
 const INTEGRATION_STEP_LABELS: Record<IntegrationStepKey, string> = {
@@ -270,13 +264,16 @@ export function integrationSteps(epic: Epic): IntegrationStep[] {
   if (epic.state === 'integrated') {
     return INTEGRATION_STEP_ORDER.map((key) => ({ key, label: INTEGRATION_STEP_LABELS[key], state: 'done' }));
   }
-  const verified = epic.verification.status === 'pass';
+  const configured = epic.verification.configured;
+  const verified = epic.verification.status === 'pass' || !configured;
   const currentIndex = INTEGRATION_STEP_ORDER.indexOf(verified ? 'merge' : 'verify');
   return INTEGRATION_STEP_ORDER.map((key, i): IntegrationStep => {
     const label = INTEGRATION_STEP_LABELS[key];
-    if (i < currentIndex) return { key, label, state: 'done' };
-    if (i > currentIndex) return { key, label, state: 'pending' };
-    return { key, label, state: epic.integrate.held != null ? 'held' : 'current' };
+    const disabled = key === 'verify' && !configured;
+    const base = disabled ? { key, label, disabled } : { key, label };
+    if (i < currentIndex) return { ...base, state: 'done' };
+    if (i > currentIndex) return { ...base, state: 'pending' };
+    return { ...base, state: epic.integrate.held != null ? 'held' : 'current' };
   });
 }
 
@@ -294,14 +291,17 @@ export interface EpicStage {
   /** The small line under the step label in the mockup (e.g. "into develop"). */
   sublabel: string;
   state: IntegrationStepState;
+  /** An unconfigured, vacuous verify gate — rendered muted, not a real pass. */
+  disabled?: boolean;
 }
 
 export function epicLifecycleSteps(epic: Epic): EpicStage[] {
   const finished = epic.state === 'integrated';
   const allFolded = finished || (epic.memberCount > 0 && epic.foldedCount === epic.memberCount);
   const held = epic.integrate.held;
+  const configured = epic.verification.configured;
   const verification = epic.verification.status;
-  const verified = verification === 'pass';
+  const verified = verification === 'pass' || !configured;
 
   const build: EpicStage = {
     key: 'build',
@@ -313,13 +313,16 @@ export function epicLifecycleSteps(epic: Epic): EpicStage[] {
   const gate: EpicStage[] = INTEGRATION_STEP_ORDER.map((key): EpicStage => {
     const label = INTEGRATION_STEP_LABELS[key];
     if (finished) return { key, label, sublabel: FINISHED_SUBLABELS[key], state: 'done' };
+    const disabled = key === 'verify' && !configured;
     const sublabel =
       key === 'verify'
-        ? verified
-          ? 'passed'
-          : verification === 'fail'
-            ? 'failed'
-            : 'whole-epic critic'
+        ? !configured
+          ? 'not configured'
+          : verified
+            ? 'passed'
+            : verification === 'fail'
+              ? 'failed'
+              : 'whole-epic checks'
         : key === 'merge'
           ? held != null
             ? `held — ${held}`
@@ -327,12 +330,13 @@ export function epicLifecycleSteps(epic: Epic): EpicStage[] {
           : key === 'check'
             ? 'revert on red'
             : 'cleanup';
-    if (!allFolded) return { key, label, sublabel, state: 'pending' };
+    const base = disabled ? { key, label, sublabel, disabled } : { key, label, sublabel };
+    if (!allFolded) return { ...base, state: 'pending' };
     const currentKey: IntegrationStepKey = verified ? 'merge' : 'verify';
-    if (key === currentKey) return { key, label, sublabel, state: held != null ? 'held' : 'current' };
+    if (key === currentKey) return { ...base, state: held != null ? 'held' : 'current' };
     const order = INTEGRATION_STEP_ORDER.indexOf(key);
     const currentOrder = INTEGRATION_STEP_ORDER.indexOf(currentKey);
-    return { key, label, sublabel, state: order < currentOrder ? 'done' : 'pending' };
+    return { ...base, state: order < currentOrder ? 'done' : 'pending' };
   });
 
   return [build, ...gate];

@@ -84,7 +84,7 @@ describe('worktree isolation mode', () => {
     expect(git(repo, 'show', 'main:feature.txt')).toBe('uncommitted work');
   });
 
-  it('a worktree run whose base branch advances externally mid-turn still verifies and merges normally (ADR-0046)', async () => {
+  it('a worktree run whose base branch advances externally mid-turn still verifies and merges normally', async () => {
     const repo = makeRepo();
     const mainBefore = git(repo, 'rev-parse', 'main');
 
@@ -118,7 +118,7 @@ describe('worktree isolation mode', () => {
     expect(git(repo, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('main');
   });
 
-  it('a Task with an explicit baseBranch (issue #157, ADR-0024) forks from it, not the current branch, and merges back onto it', async () => {
+  it('a Task with an explicit baseBranch (issue #157) forks from it, not the current branch, and merges back onto it', async () => {
     const repo = makeRepo();
     git(repo, 'branch', 'feature-base');
     git(repo, 'checkout', 'feature-base');
@@ -369,7 +369,7 @@ describe('worktree isolation mode', () => {
   });
 });
 
-describe('worktree isolation — afk no-candidate fail-closed (ADR-0046)', () => {
+describe('worktree isolation — afk no-candidate fail-closed', () => {
   let server: TestServer;
   let ref = 4630;
 

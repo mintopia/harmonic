@@ -38,7 +38,7 @@ export function DeleteTaskDialog({
       <div className="p-5">
         <h2 className={`${panelTitle} mb-2 pr-6`}>Delete {taskLabel(task.id)}</h2>
         <p className="text-muted">
-          Delete this task permanently? Its runs and history will be removed. This cannot be undone.
+          Delete this task permanently? Its attempts and history will be removed. This cannot be undone.
         </p>
         {mirrored && (
           <p className="mt-2 text-muted">

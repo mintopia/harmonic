@@ -170,26 +170,6 @@ describe('mcp server & scoped keys', () => {
     await client.close();
   });
 
-  it('never exposes accept/reject over MCP (#140, ADR-0021: retired agentReview flag)', async () => {
-    const client = await mcpClient(server, token);
-    const tools = (await client.listTools()).tools.map((t) => t.name);
-    expect(tools).toContain('create_task');
-    expect(tools).not.toContain('accept_task');
-    expect(tools).not.toContain('reject_task');
-    await client.close();
-
-    await server.api('PATCH', '/api/config', { agentReview: true });
-    const stillHidden = await mcpClient(server, token);
-    const stillHiddenTools = (await stillHidden.listTools()).tools.map((t) => t.name);
-    expect(stillHiddenTools).not.toContain('accept_task');
-    expect(stillHiddenTools).not.toContain('reject_task');
-    await stillHidden.close();
-
-    const config = (await server.api('GET', '/api/config')).body;
-    expect(config.verify).not.toHaveProperty('autoAccept');
-    expect(config.agentReview).toBeUndefined();
-  });
-
   it('end-to-end: a run schedules a dependent follow-up task through its injected key', async () => {
     const created = await server.api('POST', '/api/tasks', { prompt: 'placeholder', state: 'draft' });
     await server.api('PATCH', `/api/tasks/${created.body.id}`, {

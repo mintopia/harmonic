@@ -441,7 +441,7 @@ describe('task list parent filter — Epic children (ADR-0011, #411)', () => {
   });
 });
 
-describe('task list pagination, search, and summary (ADR-0045, #347)', () => {
+describe('task list pagination, search, and summary (#347)', () => {
   let server: TestServer;
 
   beforeAll(async () => {

@@ -180,7 +180,7 @@ export function ChatTranscript({
       </div>
       {unavailable || rows.length === 0 ? (
         <p className="rounded-lg border border-hairline bg-surface px-4 py-6 text-center text-small text-muted shadow-card">
-          No session transcript recorded for this run.
+          No session transcript recorded for this attempt.
         </p>
       ) : (
         <div className="flex flex-col gap-4">

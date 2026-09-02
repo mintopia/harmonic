@@ -206,6 +206,11 @@ export const attempts = sqliteTable('attempts', {
   priceTable: text('price_table'),
   /** Free-text detail behind {@link reason}; null while running or when the kind needs none. */
   detail: text('detail'),
+  /** OS pid of the harness child; null until spawned. Session/group leader (spawned detached), so pgid === pid. */
+  pid: integer('pid'),
+  pgid: integer('pgid'),
+  /** /proc/<pid>/stat field 22 (starttime); pins pid identity against reuse for crash-recovery reap. */
+  procStartToken: text('proc_start_token'),
 }, (t) => [uniqueIndex('attempts_task_number_unique').on(t.taskId, t.number)]);
 export type AttemptRow = typeof attempts.$inferSelect;
 

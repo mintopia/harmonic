@@ -163,7 +163,7 @@ export const api = {
   rejectTask: (id: number, guidance: string, start = false) =>
     request<Task>('POST', `/api/tasks/${id}/reject`, { guidance, start }),
   closeTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/close`),
-  // Hard-delete: cascades the Task's Runs/history and
+  // Hard-delete: cascades the Task's Attempts/history and
   // vanishes it from the board/graph via the `task_removed` WS broadcast
   // (App.tsx). 409 if the Task is running (stop it first); 404 if it's
   // already gone.

@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { renderMarkdown } from '../markdown';
+import { useLiveEffect } from '../useLiveEffect';
 
 /**
  * `renderMarkdown` dynamically imports `marked`, so the render resolves a tick
@@ -8,15 +9,11 @@ import { renderMarkdown } from '../markdown';
 export function Markdown({ source, className = '' }: { source: string; className?: string }) {
   const [html, setHtml] = useState<string | null>(null);
 
-  useEffect(() => {
-    let alive = true;
+  useLiveEffect((live) => {
     setHtml(null);
     renderMarkdown(source).then((rendered) => {
-      if (alive) setHtml(rendered);
+      if (live()) setHtml(rendered);
     });
-    return () => {
-      alive = false;
-    };
   }, [source]);
 
   if (html === null) return <div className={`markdown ${className}`}>{source}</div>;

@@ -9,7 +9,7 @@ import {
   criticUnavailableReason,
 } from '../web/src/verification-attempts-model.js';
 import type { VerificationAttempt, VerificationMechanism, VerifierStatus } from '../web/src/types.js';
-import type { Verdict } from '../web/src/verification-model.js';
+import type { Verdict } from '../src/verification/critic-schema.js';
 
 const attempt = (
   seq: number,
@@ -62,7 +62,7 @@ describe('latestAttempts', () => {
 describe('verificationRows', () => {
   it('joins each status to its latest recorded attempt without dropping skipped or disabled rows', () => {
     const statuses: VerifierStatus[] = [
-      { mechanism: 'command', state: 'skipped', reason: 'No command verification attempt was recorded for this run.' },
+      { mechanism: 'command', state: 'skipped', reason: 'No command verification attempt was recorded for this attempt.' },
       { mechanism: 'critic', state: 'passed', reason: null },
     ];
 

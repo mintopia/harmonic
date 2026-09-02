@@ -15,8 +15,8 @@ import {
 } from '../src/verification/critic.js';
 import { defaultConfig, type HarnessConfig } from '../src/config.js';
 import type { DriveFields } from '../src/execution/prompt-template.js';
-import { combineVerdicts } from '../web/src/verification-model.js';
-import type { VerifierVerdict } from '../web/src/verification-model.js';
+import { combineVerdicts } from '../src/verification/combine.js';
+import type { VerifierVerdict } from '../src/verification/combine.js';
 import { openAsyncDb } from '../src/db/async.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { AttemptStore } from '../src/domain/attempts.js';

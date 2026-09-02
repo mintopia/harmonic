@@ -137,7 +137,7 @@ export async function ticketTimelineToApi(ctx: AppContext, taskId: number): Prom
 }
 
 export async function attemptToApi(ctx: AppContext, run: AttemptRow): Promise<ApiAttemptSummary> {
-  // The per-Attempt tool-call total from its native aggregate (ADR-0031) — one
+  // The per-Attempt tool-call total from its native aggregate — one
   // bounded read per Attempt (attempts-per-Task is small), no event replay.
   const [toolTotals, task] = await Promise.all([ctx.attempts.listToolCalls(run.id), ctx.tasks.get(run.taskId)]);
   let toolCalls = 0;

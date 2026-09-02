@@ -51,7 +51,7 @@ export interface AttentionCandidate {
   event?: {
     type?: string;
     conversationId?: number;
-    payload?: Record<string, unknown> & { event?: string };
+    payload?: unknown;
   };
 }
 
@@ -70,7 +70,7 @@ export function attentionTarget(msg: AttentionCandidate): number | null {
   if (
     msg.type === 'conversation_event' &&
     msg.event?.type === 'lifecycle' &&
-    msg.event.payload?.event === 'finished' &&
+    (msg.event.payload as { event?: string } | null | undefined)?.event === 'finished' &&
     typeof msg.event.conversationId === 'number'
   ) {
     return msg.event.conversationId;

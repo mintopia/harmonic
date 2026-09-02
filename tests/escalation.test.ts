@@ -100,7 +100,7 @@ describe('escalation: the three actions (direct mode)', () => {
     expect(runs[1].prompt).toContain('crash-before-response');
   });
 
-  it('Reject without start requeues to ready and records the guidance, but does not force-start (ADR-0048)', async () => {
+  it('Reject without start requeues to ready and records the guidance, but does not force-start', async () => {
     const taskId = await runToEscalated();
     const rejected = await server.api('POST', `/api/tasks/${taskId}/reject`, {
       guidance: 'Do not crash; write the CSV header first.',

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { startServer, stubHarness, cancelRunningTasks, type TestServer } from './helpers.js';
 
-describe('direct-context multi-worker attach (ADR-0046)', () => {
+describe('direct-context multi-worker attach', () => {
   let server: TestServer;
   const ctx = () => server.app.ctx;
 

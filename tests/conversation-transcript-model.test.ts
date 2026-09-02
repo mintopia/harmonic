@@ -34,7 +34,7 @@ describe('segmentTranscript', () => {
       userTurn(3, 'second'),
       agentChunk(4, 'reply two'),
     ]);
-    expect(turns.map((t) => t.userTurn?.payload.text)).toEqual(['first', 'second']);
+    expect(turns.map((t) => (t.userTurn?.payload as { text?: string } | undefined)?.text)).toEqual(['first', 'second']);
     expect(turns[0]!.agentEvents).toEqual([agentChunk(2, 'reply one')]);
     expect(turns[1]!.agentEvents).toEqual([agentChunk(4, 'reply two')]);
   });

@@ -11,7 +11,7 @@ const task = (
   summary = `Task ${id}`,
 ): ReviewAnnouncementTask => ({ id, summary, state });
 
-describe('attention announcements (ADR-0041)', () => {
+describe('attention announcements', () => {
   it('seeds the loaded board without replaying its backlog', () => {
     const result = advanceReviewAnnouncements([task(1, 'escalated')], 1, EMPTY_REVIEW_ANNOUNCEMENT_CURSOR);
 

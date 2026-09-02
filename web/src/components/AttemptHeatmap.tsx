@@ -1,8 +1,9 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { api } from '../api';
 import { card } from '../ui';
 import type { DayCost } from './costChart-model';
 import { buildHeatmap, HEATMAP_WEEKS, type Heatmap } from './heatmap-model';
+import { useLiveEffect } from '../useLiveEffect';
 
 const DAY_MS = 24 * 3600_000;
 const CELL = 11;
@@ -37,23 +38,19 @@ export function AttemptHeatmap({ workspaceId, aside }: { workspaceId: number | n
   const [loaded, setLoaded] = useState<{ series: DayCost[]; now: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  useLiveEffect((live) => {
     if (workspaceId === null) return;
     const now = Date.now();
     const from = now - (HEATMAP_WEEKS + 1) * 7 * DAY_MS;
-    let cancelled = false;
     setError(null);
     api
       .stats(from, now, workspaceId)
-      .then((s) => !cancelled && setLoaded({ series: s.series, now }))
+      .then((s) => live() && setLoaded({ series: s.series, now }))
       .catch((e) => {
-        if (cancelled) return;
+        if (!live()) return;
         setLoaded(null);
         setError(e instanceof Error ? e.message : String(e));
       });
-    return () => {
-      cancelled = true;
-    };
   }, [workspaceId]);
 
   const hm = loaded ? buildHeatmap(loaded.series, loaded.now) : null;

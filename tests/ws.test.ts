@@ -57,6 +57,7 @@ async function loadSubscribeRunLog() {
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
   FakeWebSocket.instances = [];
 });
 
@@ -125,6 +126,90 @@ describe('subscribe', () => {
 
     vi.advanceTimersByTime(1_500);
     expect(FakeWebSocket.instances).toHaveLength(2);
+  });
+
+  it('runs each subscriber onReopen exactly once per reconnect, never on the first open', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    vi.stubGlobal('WebSocket', FakeWebSocket);
+    const subscribe = await loadSubscribe();
+
+    let reloadsA = 0;
+    let reloadsB = 0;
+    const unsubscribeA = subscribe(
+      () => {},
+      () => {
+        reloadsA += 1;
+      },
+    );
+    const unsubscribeB = subscribe(
+      () => {},
+      () => {
+        reloadsB += 1;
+      },
+    );
+
+    expect(reloadsA).toBe(0);
+    expect(reloadsB).toBe(0);
+    expect(FakeWebSocket.instances).toHaveLength(1);
+
+    for (let reconnect = 1; reconnect <= 3; reconnect += 1) {
+      FakeWebSocket.instances[FakeWebSocket.instances.length - 1]!.serverClose();
+      vi.advanceTimersByTime(1);
+      FakeWebSocket.instances[FakeWebSocket.instances.length - 1]!.onopen?.();
+      expect(reloadsA).toBe(reconnect);
+      expect(reloadsB).toBe(reconnect);
+    }
+
+    unsubscribeA();
+    unsubscribeB();
+  });
+
+  it('backs off with a full-jitter exponential schedule, caps at 30s, and resets on open', async () => {
+    vi.useFakeTimers();
+    const r = 0.5;
+    vi.spyOn(Math, 'random').mockReturnValue(r);
+    vi.stubGlobal('WebSocket', FakeWebSocket);
+    const subscribe = await loadSubscribe();
+
+    const oracle = (attempt: number) => r * Math.min(30_000, 1_000 * 2 ** attempt);
+    const unsubscribe = subscribe(() => {});
+
+    let live = 0;
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      FakeWebSocket.instances[live]!.serverClose();
+      const delay = oracle(attempt);
+      vi.advanceTimersByTime(delay - 1);
+      expect(FakeWebSocket.instances).toHaveLength(live + 1);
+      vi.advanceTimersByTime(1);
+      expect(FakeWebSocket.instances).toHaveLength(live + 2);
+      live += 1;
+    }
+
+    FakeWebSocket.instances[live]!.onopen?.();
+    FakeWebSocket.instances[live]!.serverClose();
+    vi.advanceTimersByTime(oracle(0) - 1);
+    expect(FakeWebSocket.instances).toHaveLength(live + 1);
+    vi.advanceTimersByTime(1);
+    expect(FakeWebSocket.instances).toHaveLength(live + 2);
+
+    unsubscribe();
+  });
+
+  it('cancels the reconnect timer on final unsubscribe (no leak)', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('WebSocket', FakeWebSocket);
+    const subscribe = await loadSubscribe();
+
+    const unsubscribe = subscribe(() => {});
+    FakeWebSocket.instances[0]!.serverClose();
+    expect(vi.getTimerCount()).toBe(1);
+
+    unsubscribe();
+    expect(vi.getTimerCount()).toBe(0);
+
+    vi.advanceTimersByTime(60_000);
+    expect(FakeWebSocket.instances).toHaveLength(1);
   });
 });
 

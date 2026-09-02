@@ -1,6 +1,5 @@
 import { useSyncExternalStore } from 'react';
 import { Icon } from './components/Icon';
-import { integrateOutcomeBanner, type EpicIntegrateOutcome } from './epic-model';
 
 type ToastKind = 'error' | 'success';
 type Toast = { id: number; message: string; kind: ToastKind };
@@ -37,15 +36,6 @@ export function toastError(e: unknown) {
  * or irreversible action never merges silently. Auto-dismisses after 6s. */
 export function toastSuccess(message: string) {
   push(message, 'success');
-}
-
-/** Surface a force-merge outcome: maps the outcome's
- * banner tone to a toast kind — `ok` acknowledges success, everything else
- * (`warn`/`bad`/`info`) reads as a rejection so the operator notices it. */
-export function toastIntegrateOutcome(outcome: EpicIntegrateOutcome): void {
-  const banner = integrateOutcomeBanner(outcome);
-  if (banner.tone === 'ok') toastSuccess(banner.text);
-  else toastError(banner.text);
 }
 
 export function Toaster() {
@@ -94,13 +84,3 @@ export function Toaster() {
   );
 }
 
-/** Collapse consecutive toasts carrying the same message into one. */
-export function dedupeToasts<T extends { message: string }>(toasts: readonly T[]): T[] {
-  const out: T[] = [];
-  for (const t of toasts) {
-    const last = out[out.length - 1];
-    if (last && last.message === t.message) continue;
-    out.push(t);
-  }
-  return out;
-}

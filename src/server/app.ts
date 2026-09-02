@@ -51,6 +51,7 @@ import { singleFlight } from '../reliability/single-flight.js';
 import { Scheduler, type ScheduledJobRegistration } from '../scheduler/scheduler.js';
 import { AutoDrive } from '../execution/auto-drive.js';
 import { TrackerPollerManager } from '../tracker/manager.js';
+import { TrackerEpicService, type EpicService } from '../tracker/epic-service.js';
 import type { MirrorClaim } from '../execution/auto-runner.js';
 import { DomainError } from '../domain/errors.js';
 import { taskRoutes } from './routes/tasks.js';
@@ -155,12 +156,81 @@ export interface AppContext {
   guardrailEvents: GuardrailEventStore;
   verificationAttempts: VerificationAttemptStore;
   trackerManager: TrackerPollerManager;
+  epicService: EpicService;
   scheduler: Scheduler;
   auth: AuthService;
   channels: ChannelService;
   notifier: Notifier;
   bus: EventBus;
   flaggedWorktrees: FlaggedWorktreeRegistry;
+}
+
+export type PersistenceContext = Pick<
+  AppContext,
+  | 'asyncDb'
+  | 'statsReader'
+  | 'settingsStore'
+  | 'workspaces'
+  | 'tasks'
+  | 'attempts'
+  | 'sessions'
+  | 'conversations'
+  | 'permissionRules'
+  | 'guardrailEvents'
+  | 'verificationAttempts'
+  | 'auth'
+  | 'channels'
+>;
+
+export type ExecutionContext = Pick<
+  AppContext,
+  | 'tasks'
+  | 'settingsStore'
+  | 'workspaces'
+  | 'attempts'
+  | 'sessions'
+  | 'runner'
+  | 'conversations'
+  | 'conversationDriver'
+  | 'escalation'
+  | 'autoRunner'
+  | 'guardrailEvents'
+  | 'verificationAttempts'
+  | 'auth'
+  | 'notifier'
+  | 'bus'
+  | 'flaggedWorktrees'
+>;
+
+export type TrackingContext = Pick<AppContext, 'tasks' | 'workspaces' | 'settingsStore' | 'trackerManager' | 'epicService' | 'scheduler' | 'channels' | 'notifier' | 'bus'>;
+
+export interface AppContexts {
+  persistence: PersistenceContext;
+  execution: ExecutionContext;
+  tracking: TrackingContext;
+}
+
+export function createPersistenceContext(ctx: AppContext): PersistenceContext {
+  const { asyncDb, statsReader, settingsStore, workspaces, tasks, attempts, sessions, conversations, permissionRules, guardrailEvents, verificationAttempts, auth, channels } = ctx;
+  return { asyncDb, statsReader, settingsStore, workspaces, tasks, attempts, sessions, conversations, permissionRules, guardrailEvents, verificationAttempts, auth, channels };
+}
+
+export function createExecutionContext(ctx: AppContext): ExecutionContext {
+  const { tasks, settingsStore, workspaces, attempts, sessions, runner, conversations, conversationDriver, escalation, autoRunner, guardrailEvents, verificationAttempts, auth, notifier, bus, flaggedWorktrees } = ctx;
+  return { tasks, settingsStore, workspaces, attempts, sessions, runner, conversations, conversationDriver, escalation, autoRunner, guardrailEvents, verificationAttempts, auth, notifier, bus, flaggedWorktrees };
+}
+
+export function createTrackingContext(ctx: AppContext): TrackingContext {
+  const { tasks, workspaces, settingsStore, trackerManager, epicService, scheduler, channels, notifier, bus } = ctx;
+  return { tasks, workspaces, settingsStore, trackerManager, epicService, scheduler, channels, notifier, bus };
+}
+
+export function createAppContexts(ctx: AppContext): AppContexts {
+  return {
+    persistence: createPersistenceContext(ctx),
+    execution: createExecutionContext(ctx),
+    tracking: createTrackingContext(ctx),
+  };
 }
 
 /** One Fastify route registration, as captured by the `onRoute` hook below. */
@@ -250,6 +320,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   const drainRetirement = singleFlight(() => sessionRetirement.drain());
   let runnerRef: Runner | undefined;
   let trackerManagerRef: TrackerPollerManager | undefined;
+  let epicServiceRef: EpicService | undefined;
   const pendingPostMerge: Parameters<PostMergeHook>[0][] = [];
   const postMerge: PostMergeHook = defaultBranchPostMerge(
     async (repoDir, defaultBranch) => {
@@ -258,7 +329,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
         pendingPostMerge.push({ repoDir, baseBranch: defaultBranch });
         return;
       }
-      await trackerManagerRef.refreshAfterDefaultBranchAdvance(repoDir, defaultBranch);
+      await epicServiceRef?.refreshAfterDefaultBranchAdvance(repoDir, defaultBranch);
       } catch (err) {
         logger.error(`post-merge Epic refresh failed: ${String(err)}`);
       }
@@ -371,7 +442,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
       onAttemptUsage: (payload) => bus.emit('attempt_usage', payload),
     },
     gitBreaker,
-    epicBaseNotReady: (task) => trackerManagerRef?.epicBaseNotReady(task) ?? false,
+    epicBaseNotReady: (task) => epicServiceRef?.epicBaseNotReady(task) ?? false,
     postMerge,
     worktreesDir,
     spendGuardrail: opts.runnerTuning?.spendGuardrail,
@@ -422,22 +493,22 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     () => workspaces.list(),
     {
       mirror,
-      epicBaseNotReady: (task) => trackerManagerRef?.epicBaseNotReady(task) ?? false,
+      epicBaseNotReady: (task) => epicServiceRef?.epicBaseNotReady(task) ?? false,
       gitBreaker,
     },
   );
-  const trackerManager = new TrackerPollerManager(
+  const epicService = new TrackerEpicService(
     tasks,
     () => workspaces.list(),
     undefined,
     undefined,
     () => settingsStore.getGlobal(),
     epicOperations,
-    scheduler,
-    undefined,
     (input) => runnerRef!.mergeEpicIntegration(input),
     (target, detail, escalate, retry) => runnerRef!.enqueueEpicRefreshResolution(target, detail, escalate, retry),
   );
+  epicServiceRef = epicService;
+  const trackerManager = new TrackerPollerManager(tasks, () => workspaces.list(), epicService, undefined, undefined, scheduler);
   trackerManagerRef = trackerManager;
   for (const merged of pendingPostMerge.splice(0)) await postMerge(merged);
   scheduler.register({
@@ -457,7 +528,8 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     })().catch(() => {});
   });
 
-  const ctx: AppContext = { asyncDb, statsReader, settingsStore, workspaces, tasks, attempts, sessions: sessionStore, runner, conversations, conversationDriver, permissionRules, escalation, autoRunner, guardrailEvents, verificationAttempts, trackerManager, scheduler, auth, channels, notifier, bus, flaggedWorktrees };
+  const ctx: AppContext = { asyncDb, statsReader, settingsStore, workspaces, tasks, attempts, sessions: sessionStore, runner, conversations, conversationDriver, permissionRules, escalation, autoRunner, guardrailEvents, verificationAttempts, trackerManager, epicService, scheduler, auth, channels, notifier, bus, flaggedWorktrees };
+  const contexts = createAppContexts(ctx);
 
   const app = Fastify({ logger: false }) as unknown as App;
   app.decorate('ctx', ctx);
@@ -506,29 +578,29 @@ endpoint, so it has no entry in this spec's paths). It authenticates the
 same way as the REST API — a bearer token, either an operator API key or
 the Attempt Key Harmonic injects into a spawned harness — and exposes the
 agent task surface as MCP tools (task CRUD, dependencies, queue/cancel,
-runs and events). Accept/Reject are human-only and are never exposed as
-MCP tools — a verifier's pass is the accept (#140, ADR-0021). A attempt-scoped
+attempts and events). Accept/Reject are human-only and are never exposed as
+MCP tools — a verifier's pass is the accept (#140, ADR-0021). An attempt-scoped
 Attempt Key may call \`/mcp\` regardless of the REST restrictions noted per
 endpoint below. \`force_integrate_epic\` is an operator-only tool, the same
-footing as Accept/Reject: a Attempt Key can call \`/mcp\` but gets a \`forbidden\`
+footing as Accept/Reject: an Attempt Key can call \`/mcp\` but gets a \`forbidden\`
 error from it specifically — only an operator API key (\`scope: 'full'\`) or
 an authenticated session may call it.
 
 ## WebSocket
 
 \`GET /api/ws\` is a single firehose WebSocket (also outside this spec's
-paths): every run event, run state change, task state change/removal, and
+paths): every attempt event, attempt state change, task state change/removal, and
 Conversation event/change is broadcast to every connected client as JSON
 messages of the form \`{ type: 'attempt_event' | 'attempt_changed' | 'attempt_usage' |
 'task_changed' | 'task_removed' | 'conversation_event' | 'conversation_changed' |
-'permission_request' | 'scheduled-jobs' | 'operations', ... }\`, using the same Task/Run/Conversation/Scheduled Job/Operation shapes
-served over REST. \`attempt_usage\` is a live-usage snapshot for a running Run
+'permission_request' | 'scheduled-jobs' | 'operations', ... }\`, using the same Task/Attempt/Conversation/Scheduled Job/Operation shapes
+served over REST. \`attempt_usage\` is a live-usage snapshot for a running Attempt
 (tokens, context fill, derived Cost, current-activity line, and Process
-Tree), pushed about once a second while the Run tails its native log.
+Tree), pushed about once a second while the Attempt tails its native log.
 \`task_removed\` (issue #162) announces a hard-deleted Task's id (\`{ type:
 'task_removed', id }\`) — the row is gone, not another state change.
 \`scheduled-jobs\` announces the full Scheduled Job registry snapshot, matching
-\`GET /api/scheduled-jobs\` (ADR-0038).
+\`GET /api/scheduled-jobs\`.
 \`operations\` announces an Operation lifecycle event, matching the operation shape
 served by \`GET /api/operations\`.
 \`permission_request\` announces a Harness blocked on an
@@ -543,8 +615,8 @@ Authorization header). A \`read\`-scoped key gets a filtered firehose — only
 
 A \`read\`-scoped API key (created via \`POST /api/keys\` with
 \`{ "scope": "read" }\`) is a viz-client credential: it may \`GET\` tasks,
-runs, maps, Operations (\`/api/operations\`), and the instance-wide Activity snapshot (\`/api/activity\`,
-filtered to Runs only for a read key), and open the WebSocket (filtered as
+attempts, maps, Operations (\`/api/operations\`), and the instance-wide Activity snapshot (\`/api/activity\`,
+filtered to Attempts only for a read key), and open the WebSocket (filtered as
 above). Every mutation and the whole operator surface (keys, config,
 channels, Conversations) is blocked. There is no \`map_changed\` event — a
 client re-fetches \`/maps\` on reconnect or when it sees a \`mapRef\` it has
@@ -583,7 +655,7 @@ not resolved yet.`;
     const forbidden = () =>
       reply
         .status(403)
-        .send({ error: { code: 'forbidden', message: 'this key is scoped to its run and cannot access this endpoint' } });
+        .send({ error: { code: 'forbidden', message: 'this key is scoped to its attempt and cannot access this endpoint' } });
 
     const scopeAllows = (scope: string): boolean =>
       scope === 'full' ||
@@ -640,21 +712,21 @@ not resolved yet.`;
     return reply.status(500).send({ error: { code: 'internal', message: 'internal server error' } });
   });
 
-  await app.register(taskRoutes, { prefix: '/api' });
-  await app.register(mapRoutes, { prefix: '/api' });
-  await app.register(workspaceRoutes, { prefix: '/api' });
+  await app.register((fastify) => taskRoutes(fastify, ctx), { prefix: '/api' });
+  await app.register((fastify) => mapRoutes(fastify, contexts.tracking), { prefix: '/api' });
+  await app.register((fastify) => workspaceRoutes(fastify, contexts.tracking), { prefix: '/api' });
   await app.register(conversationRoutes, { prefix: '/api' });
-  await app.register(permissionRuleRoutes, { prefix: '/api' });
-  await app.register(configRoutes, { prefix: '/api' });
-  await app.register(authRoutes, { prefix: '/api' });
-  await app.register(statsRoutes, { prefix: '/api' });
-  await app.register(activityRoutes, { prefix: '/api' });
+  await app.register((fastify) => permissionRuleRoutes(fastify, contexts.persistence), { prefix: '/api' });
+  await app.register((fastify) => configRoutes(fastify, contexts.execution), { prefix: '/api' });
+  await app.register((fastify) => authRoutes(fastify, contexts.persistence), { prefix: '/api' });
+  await app.register((fastify) => statsRoutes(fastify, contexts.persistence), { prefix: '/api' });
+  await app.register((fastify) => activityRoutes(fastify, ctx), { prefix: '/api' });
   await app.register(operationRoutes, { prefix: '/api' });
-  await app.register(scheduledJobRoutes, { prefix: '/api' });
-  await app.register(flaggedWorktreeRoutes, { prefix: '/api' });
-  await app.register(channelRoutes, { prefix: '/api' });
+  await app.register((fastify) => scheduledJobRoutes(fastify, contexts.tracking), { prefix: '/api' });
+  await app.register((fastify) => flaggedWorktreeRoutes(fastify, contexts.execution), { prefix: '/api' });
+  await app.register((fastify) => channelRoutes(fastify, contexts.persistence), { prefix: '/api' });
   await app.register(fsRoutes, { prefix: '/api' });
-  await app.register(epicRoutes, { prefix: '/api' });
+  await app.register((fastify) => epicRoutes(fastify, contexts.tracking), { prefix: '/api' });
   await app.register(openapiRoutes, { prefix: '/api' });
 
   app.post('/mcp', { schema: { hide: true } }, async (req, reply) => {
@@ -685,7 +757,7 @@ not resolved yet.`;
     await trackerManager.sync();
     loopMonitor?.start();
   });
-  await app.register(wsRoutes, { prefix: '/api' });
+  await app.register((fastify) => wsRoutes(fastify, ctx), { prefix: '/api' });
 
   const webRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'dist', 'web');
   if (existsSync(webRoot)) {
