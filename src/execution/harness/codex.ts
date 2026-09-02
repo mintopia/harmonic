@@ -5,6 +5,7 @@ import { dominantModel, foldModels, usageFromModels, type ParsedSession, type Pr
 import { forEachYielding } from '../../reliability/yield.js';
 import type { HarnessAdapter, ModelUsage, SessionTailReader } from './adapter.js';
 import { LineCursor, type LineAccumulator } from './incremental-log.js';
+import { asRecord, contentText, timestamp, withTarget, type TranscriptLogEvent } from './transcript.js';
 
 const num = (v: unknown): number => (typeof v === 'number' ? v : 0);
 
@@ -346,7 +347,55 @@ function splitModelId(model: string): { base: string; effort: string | null } {
   return match ? { base: match[1]!, effort: match[2]! } : { base: model, effort: null };
 }
 
+const eventMessage = (entry: unknown): string | null => {
+  const record = asRecord(entry);
+  const payload = asRecord(record?.payload);
+  return record?.type === 'event_msg' && payload?.type === 'agent_message' ? contentText(payload.message) : null;
+};
+
+const responseMessage = (entry: unknown): string | null => {
+  const record = asRecord(entry);
+  const payload = asRecord(record?.payload);
+  return record?.type === 'response_item' && payload?.type === 'message' && payload.role === 'assistant' ? contentText(payload.content) : null;
+};
+
+function transcriptEvents(entry: unknown, firstId: number): TranscriptLogEvent[] {
+  const record = asRecord(entry);
+  const payload = asRecord(record?.payload);
+  if (!record || !payload) return [];
+  const ts = timestamp(record.timestamp);
+  const events: TranscriptLogEvent[] = [];
+  const push = (update: Record<string, unknown>) => {
+    const id = firstId + events.length;
+    events.push({ id, seq: id, ts, type: 'session_update', payload: update });
+  };
+  const message = responseMessage(entry) ?? eventMessage(entry);
+  if (message !== null) push({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: message } });
+  if (record.type === 'response_item' && payload.type === 'reasoning' && Array.isArray(payload.summary)) {
+    for (const part of payload.summary) {
+      const block = asRecord(part);
+      const text = block && (block.type === 'summary_text' || block.type === 'text') ? block.text : null;
+      if (typeof text === 'string' && text) push({ sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text } });
+    }
+  }
+  if (record.type === 'response_item' && (payload.type === 'custom_tool_call' || payload.type === 'function_call')) {
+    const name = typeof payload.name === 'string' ? payload.name : 'Tool call';
+    const qualified = typeof payload.namespace === 'string' && payload.namespace ? `${payload.namespace}.${name}` : name;
+    const callId = typeof payload.call_id === 'string' ? payload.call_id : typeof payload.id === 'string' ? payload.id : qualified;
+    push({ sessionUpdate: 'tool_call', toolCallId: callId, title: withTarget(qualified, payload.input ?? payload.arguments), status: 'completed' });
+  }
+  return events;
+}
+
 export const codexAdapter: HarnessAdapter = {
+  commandPrefix: '$',
+  transcript: {
+    events: transcriptEvents,
+    isDuplicateMessage: (entry, previousEntry) => {
+      const message = responseMessage(entry);
+      return message !== null && message === eventMessage(previousEntry);
+    },
+  },
   // CODEX_CONFIG is a JSON object merged into the Codex session config.
   spawnEnv: ({ model }) => {
     const { base, effort } = splitModelId(model);
@@ -367,6 +416,8 @@ export const codexAdapter: HarnessAdapter = {
       headers: [{ name: 'Authorization', value: `Bearer ${token}` }],
     },
   ],
+  unattendedPermissionMode: (available) => (available.includes('agent-full-access') ? 'agent-full-access' : undefined),
+  requiresUnattendedPermissionMode: false,
 
   usage: {
     resolveTranscriptPath({ sessionLogDir, sessionId }) {

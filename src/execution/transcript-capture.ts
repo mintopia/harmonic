@@ -1,4 +1,4 @@
-import { adapterFor } from './harness/adapter.js';
+import { adapterFor } from './harness/registry.js';
 import type { AppConfig } from '../config.js';
 import type { SessionStore } from '../domain/sessions.js';
 import type { VerificationAttemptStore } from '../domain/verification-attempts.js';

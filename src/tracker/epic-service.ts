@@ -5,10 +5,16 @@ import { deriveLeafEpics, type DerivedEpic } from '../domain/epic-derivation.js'
 import { composeEpicView, type Epic, type EpicFacts, type EpicMeta } from '../domain/epic-view.js';
 import { resolveVerifiers } from '../domain/setting-override.js';
 import { resolveRepositoryDefaultBranch } from '../execution/branch-merge.js';
-import { EpicIntegrateCoordinator, type EpicIntegrateOutcome } from '../execution/epic-integrate-git.js';
-import { EpicIntegrationCoordinator, integrationBranchName } from '../execution/epic-integration.js';
 import { EpicOperations } from '../execution/epic-operations.js';
-import { EpicRefreshCoordinator, type EpicRefreshResolveDispatchOutcome, type EpicRefreshTarget } from '../execution/epic-refresh-coordinator.js';
+import {
+  EpicCoordinator,
+  EpicLifecycle,
+  EpicRefresh,
+  integrationBranchName,
+  type EpicIntegrateOutcome,
+  type EpicRefreshResolveDispatchOutcome,
+  type EpicRefreshTarget,
+} from '../execution/epic-coordinator.js';
 import { verifyEpicIntegration } from '../execution/epic-verification.js';
 import { Git } from '../execution/git.js';
 import type { MergePolicyOutcome, PostMergeCheckResult } from '../execution/merge-policy.js';
@@ -41,7 +47,7 @@ export interface EpicService {
   epicDiff(workspaceId: number, epicRef: number): Promise<string>;
 }
 
-interface WorkspaceEpicEntry { epics: EpicIntegrationCoordinator; epicIntegrate?: EpicIntegrateCoordinator }
+interface WorkspaceEpicEntry { epics: EpicLifecycle; epicIntegrate?: EpicCoordinator }
 
 export class TrackerEpicService implements EpicService {
   private readonly entries = new Map<number, WorkspaceEpicEntry>();
@@ -63,7 +69,7 @@ export class TrackerEpicService implements EpicService {
   ) {}
 
   startWorkspace(workspace: WorkspaceRow): EpicIntegrationSync {
-    const epics = new EpicIntegrationCoordinator(this.tasks, workspace.workingDir);
+    const epics = new EpicLifecycle(this.tasks, workspace.workingDir);
     epics.attachOperations(this.operations);
     const entry: WorkspaceEpicEntry = { epics };
     const getConfig = this.getConfig;
@@ -73,7 +79,7 @@ export class TrackerEpicService implements EpicService {
         const live = (await this.getWorkspaces()).find((candidate) => candidate.id === workspace.id) ?? workspace;
         return resolveVerifiers(live, getConfig());
       };
-      const epicIntegrate = new EpicIntegrateCoordinator({
+      const epicIntegrate = new EpicCoordinator({
         repoDir: workspace.workingDir,
         verify: async ({ repoDir, verifiedHeadOid }) => verifyEpicIntegration({ repoDir, verifiedHeadOid, verifiers: await resolveWorkspaceVerifiers() }),
         integrate: ({ repoDir, epicRef, defaultBranch, integrationBranch }) => mergeEpicIntegration({
@@ -100,7 +106,7 @@ export class TrackerEpicService implements EpicService {
       if (entry.epicIntegrate) entry.epicIntegrate.recordRefreshBehind(ref, reason);
       else logger.debug(`epic ${ref} integration refresh behind develop (retrying): ${reason}`);
     };
-    const refresh = new EpicRefreshCoordinator({
+    const refresh = new EpicRefresh({
       dispatchResolve: (target, detail) => this.dispatchRefreshResolution(target, detail, noteRefreshBehind, () => refresh.refresh(target)),
       escalate: noteRefreshBehind,
     });

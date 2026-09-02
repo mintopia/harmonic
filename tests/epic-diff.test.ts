@@ -8,7 +8,7 @@ import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { WorkspaceService } from '../src/domain/workspaces.js';
 import { TrackerPollerManager } from '../src/tracker/manager.js';
-import { integrationBranchName } from '../src/execution/epic-integration.js';
+import { integrationBranchName } from '../src/execution/epic-coordinator.js';
 import { allWorkspaces, makeSettingsStore } from './helpers.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 

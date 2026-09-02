@@ -2,16 +2,17 @@ import { spawn } from 'node:child_process';
 import type { Attributes, SpanContext } from '@opentelemetry/api';
 import type { HarnessConfig, VerificationCritic } from '../config.js';
 import { AcpDriver } from '../acp/driver.js';
-import { adapterFor } from '../execution/harness/adapter.js';
-import { afkSessionMode } from '../execution/afk-permissions.js';
+import { parsePermissionRequest, type PermissionRequest } from '../acp/permission-request.js';
+import { adapterFor } from '../execution/harness/registry.js';
 import type { DriveFields } from '../execution/prompt-template.js';
 import { buildCriticPrompt } from './critic-prompt.js';
 import { parseCriticOutput, type Verdict } from './critic-schema.js';
 import type { VerificationAttemptInput } from '../domain/verification-attempts.js';
 import { startOperation } from '../telemetry/operations.js';
+import { logger } from '../logger.js';
 
-function grantOptionId(request: unknown): string | null {
-  const options = ((request as { options?: unknown } | null)?.options ?? []) as { kind?: string; optionId?: string }[];
+function grantOptionId(request: PermissionRequest): string | null {
+  const options = request.options;
   const pick =
     options.find((o) => o.kind === 'allow_always') ?? options.find((o) => o.kind === 'allow_once') ?? options[0];
   return pick?.optionId ?? null;
@@ -22,7 +23,7 @@ export interface CriticDriveResult {
   /** Every `agent_message_chunk` text piece, concatenated in arrival order. */
   output: string;
   /** Every `session/request_permission` the harness asked during the turn, verbatim. */
-  permissionRequests: unknown[];
+  permissionRequests: PermissionRequest[];
   /** The harness's own `sessionId` for this turn; absent/null if the handshake never yielded one. */
   sessionId?: string | null;
 }
@@ -73,7 +74,7 @@ export function createAcpCriticDrive(): CriticHarnessDrive {
       });
 
       let output = '';
-      const permissionRequests: unknown[] = [];
+      const permissionRequests: PermissionRequest[] = [];
 
       const driver = new AcpDriver(child, {
         onSessionUpdate: (update) => {
@@ -87,8 +88,13 @@ export function createAcpCriticDrive(): CriticHarnessDrive {
         },
         onRequest: async (method, params) => {
           if (method === 'session/request_permission') {
-            permissionRequests.push(params);
-            const optionId = grantOptionId(params);
+            const request = parsePermissionRequest(params);
+            if (!request) {
+              logger.warn('acp: rejected malformed permission request', { harness: req.harnessId, critic: true });
+              return { outcome: 'cancelled' };
+            }
+            permissionRequests.push(request);
+            const optionId = grantOptionId(request);
             return optionId ? { outcome: 'selected', optionId } : { outcome: 'cancelled' };
           }
           return null;
@@ -115,7 +121,7 @@ export function createAcpCriticDrive(): CriticHarnessDrive {
         const modelId = adapterFor(req.harnessId).sessionModelId?.(req.model);
         const sessionId = await Promise.race([driver.handshake({ cwd: req.cwd, mcpServers: [], modelId }), timeout]);
 
-        const mode = afkSessionMode(req.harnessId, driver.availableModes);
+        const mode = adapterFor(req.harnessId).unattendedPermissionMode(driver.availableModes);
         if (mode) {
           await Promise.race([driver.setMode(mode), timeout]);
         }

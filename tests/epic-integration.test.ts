@@ -8,16 +8,16 @@ import { TaskService } from '../src/domain/tasks.js';
 import { mirrorScan } from '../src/tracker/mirror.js';
 import { EPIC_LABEL, type Ticket } from '../src/tracker/adapter.js';
 import {
-  EpicIntegrationCoordinator,
+  EpicLifecycle,
   integrationBranchName,
   parseIntegrationBranch,
   reduceMemberState,
   type EpicGit,
   type EpicIntegrateTrigger,
   type EpicRefreshTrigger,
-} from '../src/execution/epic-integration.js';
+} from '../src/execution/epic-coordinator.js';
 import type { MemberMergeState } from '../src/domain/epic-integrate-decision.js';
-import type { EpicRefreshOutcome } from '../src/execution/epic-refresh-coordinator.js';
+import type { EpicRefreshOutcome } from '../src/execution/epic-coordinator.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { allWorkspaces, makeSettingsStore } from './helpers.js';
 
@@ -39,7 +39,7 @@ const ticket = (over: Partial<Ticket>): Ticket => ({
   ...over,
 });
 
-class FakeGit implements EpicGit {
+class FakeGit implements Pick<EpicGit, 'symbolicBranch' | 'branchExists' | 'createBranch' | 'deleteBranch' | 'branchCheckedOutAt' | 'isAncestor'> {
   readonly branches: Set<string>;
   readonly created: string[] = [];
   readonly deleted: string[] = [];
@@ -120,7 +120,7 @@ describe('parseIntegrationBranch (issue #163)', () => {
   });
 });
 
-describe('EpicIntegrationCoordinator.reconcile (issue #159)', () => {
+describe('EpicLifecycle.reconcile (issue #159)', () => {
   let dir: string;
   let asyncDb: AsyncDbHandle;
   let settingsStore: SettingsStore;
@@ -151,7 +151,7 @@ describe('EpicIntegrationCoordinator.reconcile (issue #159)', () => {
     const tickets = epicTickets();
     const mirrored = await mscan(tickets);
     const git = new FakeGit([], 'develop');
-    const coord = new EpicIntegrationCoordinator(tasks, dir, git);
+    const coord = new EpicLifecycle(tasks, dir, git);
 
     await coord.reconcile(tickets, mirrored);
 
@@ -171,7 +171,7 @@ describe('EpicIntegrationCoordinator.reconcile (issue #159)', () => {
       ticket({ number: 31, parent: 30, labels: ['ready-for-agent'] }),
     ];
     const git = new FakeGit([], 'develop');
-    const coord = new EpicIntegrationCoordinator(tasks, dir, git);
+    const coord = new EpicLifecycle(tasks, dir, git);
 
     await coord.reconcile(tickets, await mscan(tickets));
 
@@ -181,7 +181,7 @@ describe('EpicIntegrationCoordinator.reconcile (issue #159)', () => {
   it('is idempotent across polls: reuses the existing branch, never re-creates', async () => {
     const tickets = epicTickets();
     const git = new FakeGit([], 'develop');
-    const coord = new EpicIntegrationCoordinator(tasks, dir, git);
+    const coord = new EpicLifecycle(tasks, dir, git);
 
     await coord.reconcile(tickets, await mscan(tickets));
     await coord.reconcile(tickets, await mscan(tickets));
@@ -193,7 +193,7 @@ describe('EpicIntegrationCoordinator.reconcile (issue #159)', () => {
   it('creates no branch and sets no base branch when no Epic is derivable', async () => {
     const flat = [ticket({ number: 99, parent: null, labels: ['ready-for-agent'] })];
     const git = new FakeGit([], 'develop');
-    const coord = new EpicIntegrationCoordinator(tasks, dir, git);
+    const coord = new EpicLifecycle(tasks, dir, git);
 
     await coord.reconcile(flat, await mscan(flat));
 
@@ -214,7 +214,7 @@ describe('EpicIntegrationCoordinator.reconcile (issue #159)', () => {
       }),
     ];
     const git = new FakeGit([], 'develop');
-    const coord = new EpicIntegrationCoordinator(tasks, dir, git);
+    const coord = new EpicLifecycle(tasks, dir, git);
 
     await coord.reconcile(tickets, await mscan(tickets));
 
@@ -230,7 +230,7 @@ describe('EpicIntegrationCoordinator.reconcile (issue #159)', () => {
     await tasks.setState(m11.id, 'working');
     const mirrored = await tasks.list();
     const git = new FakeGit([], 'develop');
-    const coord = new EpicIntegrationCoordinator(tasks, dir, git);
+    const coord = new EpicLifecycle(tasks, dir, git);
 
     await coord.reconcile(tickets, mirrored);
 
@@ -245,7 +245,7 @@ describe('EpicIntegrationCoordinator.reconcile (issue #159)', () => {
       ticket({ number: 11, parent: 10, state: 'closed', closedAt: '2026-08-08T00:00:00Z' }),
     ];
     const git = new FakeGit([], 'develop');
-    const coord = new EpicIntegrationCoordinator(tasks, dir, git);
+    const coord = new EpicLifecycle(tasks, dir, git);
 
     await coord.reconcile(tickets, await mscan(tickets));
 
@@ -261,7 +261,7 @@ describe('EpicIntegrationCoordinator.reconcile (issue #159)', () => {
       ticket({ number: 21, parent: 20, labels: ['ready-for-agent'] }),
     ];
     const git = new FakeGit([], 'develop');
-    const coord = new EpicIntegrationCoordinator(tasks, dir, git);
+    const coord = new EpicLifecycle(tasks, dir, git);
 
     await coord.reconcile(tickets, await mscan(tickets));
 
@@ -274,7 +274,7 @@ describe('EpicIntegrationCoordinator.reconcile (issue #159)', () => {
     const tickets = epicTickets();
     const mirrored = await mscan(tickets);
     const git = new FakeGit([], null);
-    const coord = new EpicIntegrationCoordinator(tasks, dir, git);
+    const coord = new EpicLifecycle(tasks, dir, git);
 
     await coord.reconcile(tickets, mirrored);
 
@@ -291,7 +291,7 @@ describe('EpicIntegrationCoordinator.reconcile (issue #159)', () => {
     ];
     const mirrored = await mscan(tickets);
     const git = new FakeGit([], 'develop');
-    const coord = new EpicIntegrationCoordinator(tasks, dir, git);
+    const coord = new EpicLifecycle(tasks, dir, git);
 
     await coord.reconcile(tickets, mirrored);
 
@@ -310,7 +310,7 @@ describe('EpicIntegrationCoordinator.reconcile (issue #159)', () => {
       ticket({ number: 99, parent: null, labels: ['ready-for-agent'] }),
     ];
     const git = new FakeGit([], 'develop');
-    const coord = new EpicIntegrationCoordinator(tasks, dir, git);
+    const coord = new EpicLifecycle(tasks, dir, git);
 
     await coord.reconcile(tickets, await mscan(tickets));
 
@@ -323,11 +323,11 @@ describe('EpicIntegrationCoordinator.reconcile (issue #159)', () => {
     expect(await coord.memberBaseNotReady(native)).toBe(false);
 
     const detached = new FakeGit(['epic/10'], null);
-    const coordDetached = new EpicIntegrationCoordinator(tasks, dir, detached);
+    const coordDetached = new EpicLifecycle(tasks, dir, detached);
     await coordDetached.reconcile(tickets, await mscan(tickets));
     expect(await coordDetached.memberBaseNotReady(await m11())).toBe(false);
 
-    const gone = new EpicIntegrationCoordinator(tasks, dir, new FakeGit([], 'develop'));
+    const gone = new EpicLifecycle(tasks, dir, new FakeGit([], 'develop'));
     expect(await gone.memberBaseNotReady(await m11())).toBe(true);
   });
 
@@ -338,7 +338,7 @@ describe('EpicIntegrationCoordinator.reconcile (issue #159)', () => {
     expect(m11.mapRef).toBe(10);
     expect(m11.baseBranch).toBeNull();
 
-    const coord = new EpicIntegrationCoordinator(tasks, dir, new FakeGit(['epic/10'], 'develop'));
+    const coord = new EpicLifecycle(tasks, dir, new FakeGit(['epic/10'], 'develop'));
     expect(coord.awaitsBase(m11)).toBe(false);
     expect(await coord.memberBaseNotReady(m11)).toBe(true);
   });
@@ -356,7 +356,7 @@ describe('EpicIntegrationCoordinator.reconcile (issue #159)', () => {
     expect(m11.mapRef).toBe(10);
     expect(m5.mapRef).toBe(1);
 
-    const coord = new EpicIntegrationCoordinator(tasks, dir, new FakeGit([], 'develop'));
+    const coord = new EpicLifecycle(tasks, dir, new FakeGit([], 'develop'));
     expect(coord.awaitsBase(m11)).toBe(false);
     expect(await coord.memberBaseNotReady(m11)).toBe(true);
     expect(await coord.memberBaseNotReady(m5)).toBe(false);
@@ -365,14 +365,14 @@ describe('EpicIntegrationCoordinator.reconcile (issue #159)', () => {
   it('a continuation/retry never regresses an Epic member to develop: a base flipped to develop/null re-gates on membership (#334/#330-331)', async () => {
     const tickets = epicTickets();
     const mirrored = await mscan(tickets);
-    const coord = new EpicIntegrationCoordinator(tasks, dir, new FakeGit([], 'develop'));
+    const coord = new EpicLifecycle(tasks, dir, new FakeGit([], 'develop'));
     await coord.reconcile(tickets, mirrored);
 
     const m11Id = mirrored.find((t) => t.trackerRef === 11)!.id;
     expect((await tasks.get(m11Id)).baseBranch).toBe('epic/10');
     expect(await coord.memberBaseNotReady(await tasks.get(m11Id))).toBe(false);
 
-    const retryCoord = new EpicIntegrationCoordinator(tasks, dir, new FakeGit(['epic/10'], 'develop'));
+    const retryCoord = new EpicLifecycle(tasks, dir, new FakeGit(['epic/10'], 'develop'));
     for (const regressed of ['develop', null] as const) {
       await tasks.setBaseBranch(m11Id, regressed);
       const task = await tasks.get(m11Id);
@@ -386,10 +386,10 @@ describe('EpicIntegrationCoordinator.reconcile (issue #159)', () => {
     const mirrored = await mscan(tickets);
     const m11Id = mirrored.find((t) => t.trackerRef === 11)!.id;
     await tasks.setBaseBranch(m11Id, 'epic/10');
-    const present = new EpicIntegrationCoordinator(tasks, dir, new FakeGit(['epic/10'], 'develop'));
+    const present = new EpicLifecycle(tasks, dir, new FakeGit(['epic/10'], 'develop'));
     expect(await present.memberBaseNotReady(await tasks.get(m11Id))).toBe(false);
 
-    const missing = new EpicIntegrationCoordinator(tasks, dir, new FakeGit([], 'develop'));
+    const missing = new EpicLifecycle(tasks, dir, new FakeGit([], 'develop'));
     expect(await missing.memberBaseNotReady(await tasks.get(m11Id))).toBe(true);
   });
 
@@ -399,7 +399,7 @@ describe('EpicIntegrationCoordinator.reconcile (issue #159)', () => {
     const git = new FakeGit(['epic/10'], 'develop');
     git.contained.delete('epic/10');
     const refresh = new FakeRefresh();
-    const coord = new EpicIntegrationCoordinator(tasks, dir, git);
+    const coord = new EpicLifecycle(tasks, dir, git);
     coord.attachRefreshTrigger(refresh);
 
     await coord.reconcile(tickets, mirrored);
@@ -419,7 +419,7 @@ describe('EpicIntegrationCoordinator.reconcile (issue #159)', () => {
     const git = new FakeGit(['epic/10'], 'develop');
     git.contained.delete('epic/10');
     const refresh = new FakeRefresh();
-    const coord = new EpicIntegrationCoordinator(tasks, dir, git);
+    const coord = new EpicLifecycle(tasks, dir, git);
     coord.attachRefreshTrigger(refresh);
 
     await coord.reconcile(tickets, await mscan(tickets));
@@ -430,7 +430,7 @@ describe('EpicIntegrationCoordinator.reconcile (issue #159)', () => {
     const tickets = epicTickets();
     const noBranch = new FakeGit([], 'develop');
     const r1 = new FakeRefresh();
-    const c1 = new EpicIntegrationCoordinator(tasks, dir, noBranch);
+    const c1 = new EpicLifecycle(tasks, dir, noBranch);
     c1.attachRefreshTrigger(r1);
     await c1.reconcile(tickets, await mscan(tickets));
     expect(r1.calls).toEqual([]);
@@ -438,7 +438,7 @@ describe('EpicIntegrationCoordinator.reconcile (issue #159)', () => {
     const detached = new FakeGit(['epic/10'], null);
     detached.contained.delete('epic/10');
     const r2 = new FakeRefresh();
-    const c2 = new EpicIntegrationCoordinator(tasks, dir, detached);
+    const c2 = new EpicLifecycle(tasks, dir, detached);
     c2.attachRefreshTrigger(r2);
     await c2.reconcile(tickets, await mscan(tickets));
     expect(r2.calls).toEqual([]);
@@ -461,7 +461,7 @@ describe('reduceMemberState (issue #161)', () => {
   });
 });
 
-describe('EpicIntegrationCoordinator whole-Epic integrate trigger (issue #161)', () => {
+describe('EpicLifecycle whole-Epic integrate trigger (issue #161)', () => {
   let dir: string;
   let asyncDb: AsyncDbHandle;
   let settingsStore: SettingsStore;
@@ -501,7 +501,7 @@ describe('EpicIntegrationCoordinator whole-Epic integrate trigger (issue #161)',
     const mirrored = await mscan(tickets);
     const git = new FakeGit(['epic/10'], 'develop');
     const trigger = new FakeIntegrate();
-    const coord = new EpicIntegrationCoordinator(tasks, dir, git);
+    const coord = new EpicLifecycle(tasks, dir, git);
     coord.attachIntegrateTrigger(trigger);
     await tasks.setState(await memberTaskId(11), 'done');
     await tasks.setState(await memberTaskId(12), 'done');
@@ -516,7 +516,7 @@ describe('EpicIntegrationCoordinator whole-Epic integrate trigger (issue #161)',
     const mirrored = await mscan(tickets);
     const git = new FakeGit(['epic/10'], 'develop');
     const trigger = new FakeIntegrate();
-    const coord = new EpicIntegrationCoordinator(tasks, dir, git);
+    const coord = new EpicLifecycle(tasks, dir, git);
     coord.attachIntegrateTrigger(trigger);
     await tasks.setState(await memberTaskId(11), 'done');
     await tasks.escalate(await memberTaskId(12), 'escalated to human: attempt 2 of 2 failed');
@@ -532,7 +532,7 @@ describe('EpicIntegrationCoordinator whole-Epic integrate trigger (issue #161)',
     const mirrored = await mscan(tickets);
     const git = new FakeGit(['epic/10'], 'develop');
     const trigger = new FakeIntegrate();
-    const coord = new EpicIntegrationCoordinator(tasks, dir, git);
+    const coord = new EpicLifecycle(tasks, dir, git);
     coord.attachIntegrateTrigger(trigger);
     await tasks.setState(await memberTaskId(11), 'done');
     await tasks.setState(await memberTaskId(12), 'done');
@@ -542,7 +542,7 @@ describe('EpicIntegrationCoordinator whole-Epic integrate trigger (issue #161)',
   });
 });
 
-describe('EpicIntegrationCoordinator.retireIntegrationBranch (issue #159)', () => {
+describe('EpicLifecycle.retireIntegrationBranch (issue #159)', () => {
   let dir: string;
   let asyncDb: AsyncDbHandle;
   let settingsStore: SettingsStore;
@@ -561,7 +561,7 @@ describe('EpicIntegrationCoordinator.retireIntegrationBranch (issue #159)', () =
 
   it('deletes the branch when it exists and is idempotent when it is already gone', async () => {
     const git = new FakeGit(['epic/10']);
-    const coord = new EpicIntegrationCoordinator(tasks, dir, git);
+    const coord = new EpicLifecycle(tasks, dir, git);
 
     await coord.retireIntegrationBranch(10);
     expect(git.deleted).toEqual(['epic/10']);
@@ -573,7 +573,7 @@ describe('EpicIntegrationCoordinator.retireIntegrationBranch (issue #159)', () =
   it('keeps an uncontained or checked-out integration branch', async () => {
     const git = new FakeGit(['epic/10']);
     git.contained.delete('epic/10');
-    const coord = new EpicIntegrationCoordinator(tasks, dir, git);
+    const coord = new EpicLifecycle(tasks, dir, git);
 
     await coord.retireIntegrationBranch(10);
     expect(git.deleted).toEqual([]);

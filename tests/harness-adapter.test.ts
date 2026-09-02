@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { mkdirSync, mkdtempSync, writeFileSync, appendFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { adapterFor } from '../src/execution/harness/adapter.js';
+import { adapterFor } from '../src/execution/harness/registry.js';
 import { writeCopilotUsageDb } from './helpers.js';
 
 const spawnInput = (model: string, extra: { cwd?: string; sessionLogDir?: string } = {}) => ({

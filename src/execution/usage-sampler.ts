@@ -1,4 +1,5 @@
-import { adapterFor, wholeFileReader, type SessionTailReader } from './harness/adapter.js';
+import { wholeFileReader, type SessionTailReader } from './harness/adapter.js';
+import { adapterFor } from './harness/registry.js';
 import {
   agentsFromTree,
   collectUsageWithRetry,
