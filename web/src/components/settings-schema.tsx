@@ -434,7 +434,7 @@ const autoRunnerEnabled = scalar(
 
 const machineCeiling = scalar(
   {
-    id: 'settings-max-attempts',
+    id: 'settings-max-concurrent-attempts',
     control: 'number',
     label: 'Machine Ceiling',
     errorKey: 'autoRunner.maxConcurrentAttempts',
@@ -448,7 +448,7 @@ const machineCeiling = scalar(
 
 const concurrencyCap = scalar(null, {
   key: 'maxConcurrentAttempts',
-  id: 'workspace-max-attempts',
+  id: 'workspace-max-concurrent-attempts',
   errorKey: 'maxConcurrentAttempts',
   label: 'Concurrency cap',
   get: (w) => w.maxConcurrentAttempts,

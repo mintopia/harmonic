@@ -63,6 +63,7 @@ const TEXT_ON_TINT: ReadonlyArray<readonly [string, string, string]> = [
   ['working chip', 'running', 'running-tint'],
   ['blocked slate badge', 'blocked', 'blocked-tint'],
   ['tool', 'tool', 'tool-tint'],
+  ['harness chip mark', 'tool', 'tool-tint'],
   ['accent', 'accent', 'accent-tint'],
   ['selection', 'ink', 'accent-tint'],
   ['permission-band headline', 'ink', 'running-tint'],
