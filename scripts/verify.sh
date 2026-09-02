@@ -15,7 +15,7 @@ if [ ! -e node_modules ] && [ ! -L node_modules ]; then
   if [ -n "$main_nm" ] && [ -d "$main_nm" ]; then
     ln -s "$main_nm" node_modules
   else
-    npm ci --prefer-offline --no-audit --no-fund --silent
+    npm ci --prefer-offline --no-audit --no-fund 
   fi
 fi
 
