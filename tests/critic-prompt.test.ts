@@ -112,4 +112,22 @@ describe('buildCriticPrompt (issue #136; 2026-08 containment amendment)', () => 
       }
     });
   });
+
+  describe('native (board-authored) Task — no mirrored ticket', () => {
+    const NATIVE_FIELDS: DriveFields = { skill: '/implement', ref: '', url: '', title: 'Add a flag', body: 'Wire it through.' };
+
+    it('does not tell the critic to read a ticket that does not exist', () => {
+      for (const baseOid of [BASE, CANDIDATE, undefined]) {
+        const prompt = buildCriticPrompt({ operatorPrompt: 'Review it.', fields: NATIVE_FIELDS, verifiedHeadOid: CANDIDATE, ...(baseOid ? { baseOid } : {}) });
+        expect(prompt).not.toMatch(/First read the referenced ticket/i);
+        expect(prompt).toMatch(/Judge the candidate against the review instructions above/i);
+      }
+    });
+
+    it('judges against the instructions, not a ticket, on the no-change branch', () => {
+      const prompt = buildCriticPrompt({ operatorPrompt: 'Review it.', fields: NATIVE_FIELDS, verifiedHeadOid: CANDIDATE, baseOid: CANDIDATE });
+      expect(prompt).toMatch(/when the review instructions above required none/i);
+      expect(prompt).not.toMatch(/Decide from the ticket/i);
+    });
+  });
 });

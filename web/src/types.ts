@@ -4,6 +4,9 @@ import type { Verdict } from './verification-model.js';
 export const TASK_STATES = ['draft', 'ready', 'working', 'escalated', 'done', 'cancelled'] as const;
 export type TaskState = (typeof TASK_STATES)[number];
 
+export const MERGE_STATUSES = ['merging', 'resolving-conflicts'] as const;
+export type MergeStatus = (typeof MERGE_STATUSES)[number];
+
 export type AttemptState = 'running' | 'passed' | 'failed' | 'escalated' | 'cancelled';
 export type StepType = 'rebase' | 'implementation' | 'verification' | 'review';
 export type StepState = 'pending' | 'running' | 'passed' | 'failed' | 'skipped' | 'cancelled';
@@ -316,6 +319,8 @@ export interface Task {
   state: TaskState;
   /** Why the ticket is `escalated` — the trigger's recorded reason; null in every other state. */
   escalationReason: string | null;
+  /** Live merge indicator, orthogonal to `state`: 'merging' while the candidate merges onto base, 'resolving-conflicts' once that merge conflicts a human must settle; null at rest. */
+  mergeStatus: MergeStatus | null;
   /** Feedback held for the next same-ticket Attempt, if any. */
   feedback: string | null;
   createdAt: number;

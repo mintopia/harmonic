@@ -349,6 +349,7 @@ export function epicToListRow(ticket: Ticket, workspaceId: number): ApiTaskListR
     conflictResolveTurns: 0,
     state: 'ready',
     escalationReason: null,
+    mergeStatus: null,
     feedback: null,
     continuationChoice: null,
     origin: 'mirrored',

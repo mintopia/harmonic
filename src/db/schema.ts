@@ -26,6 +26,10 @@ export interface TrackerFacts {
 export const TASK_STATES = ['draft', 'ready', 'working', 'escalated', 'done', 'cancelled'] as const;
 export type TaskState = (typeof TASK_STATES)[number];
 
+/** Transient merge indicator, orthogonal to `state`: `merging` while the candidate is being merged onto its base, `resolving-conflicts` once that merge hit conflicts a human must settle. Null at rest. */
+export const MERGE_STATUSES = ['merging', 'resolving-conflicts'] as const;
+export type MergeStatus = (typeof MERGE_STATUSES)[number];
+
 /** A named Working Directory, unique by absolute path. Its setting overrides live in the YAML settings file, not here. */
 export const workspaces = sqliteTable('workspaces', {
   id: integer('id').primaryKey({ autoIncrement: true }),
@@ -90,6 +94,8 @@ export const tasks = sqliteTable('tasks', {
   wayfinderType: text('wayfinder_type').$type<WayfinderType>(),
   /** Why the Ticket is `escalated`; null otherwise. */
   escalationReason: text('escalation_reason'),
+  /** Live merge indicator, orthogonal to `state`; null at rest. */
+  mergeStatus: text('merge_status').$type<MergeStatus>(),
   /** The parent Map issue's number, for the query-time Map rollup. Not a Dependency edge. */
   mapRef: integer('map_ref'),
   /** Null ⇒ resolved at spawn to the working dir's current branch. */

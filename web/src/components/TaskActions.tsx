@@ -38,28 +38,30 @@ function CompleteButton({ className, onConfirm }: { className: string; onConfirm
   );
 }
 
-function AcceptButton({ className, label, onConfirm }: { className: string; label: string; onConfirm: () => void }) {
+function AcceptButton({ className, label, onConfirm, busy }: { className: string; label: string; onConfirm: () => void; busy?: boolean }) {
   const { armed, trigger, ref } = useArmedConfirm(onConfirm);
   return (
     <button
       ref={ref}
+      disabled={busy}
       className={armed ? 'font-semibold text-fail transition-colors duration-150' : className}
       onClick={trigger}
     >
-      {armed ? 'Critic flagged — accept anyway?' : label}
+      {busy ? 'Accepting…' : armed ? 'Critic flagged — accept anyway?' : label}
     </button>
   );
 }
 
-function ForceAcceptButton({ className, onConfirm }: { className: string; onConfirm: () => void }) {
+function ForceAcceptButton({ className, onConfirm, busy }: { className: string; onConfirm: () => void; busy?: boolean }) {
   const { armed, trigger, ref } = useArmedConfirm(onConfirm);
   return (
     <button
       ref={ref}
+      disabled={busy}
       className={armed ? 'font-semibold text-fail transition-colors duration-150' : className}
       onClick={trigger}
     >
-      {armed ? 'Skip verification and merge?' : 'Force accept'}
+      {busy ? 'Accepting…' : armed ? 'Skip verification and merge?' : 'Force accept'}
     </button>
   );
 }
@@ -92,6 +94,9 @@ export function TaskActions({
 }) {
   const [rejecting, setRejecting] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  // Accept runs verification + merge synchronously in the request; without an
+  // immediate pending state the click looks inert until it resolves.
+  const [accepting, setAccepting] = useState(false);
 
   const actions = taskActions(task.state);
   const escalation = escalationActions(task);
@@ -111,11 +116,15 @@ export function TaskActions({
   const button = (action: TaskAction) => {
     switch (action) {
       case 'accept': {
-        const onConfirm = actDone(() => api.acceptTask(task.id), `${taskLabel(task.id)} accepted — merging`);
-        const onForceConfirm = actDone(
-          () => api.acceptTask(task.id, { force: true }),
-          `${taskLabel(task.id)} force-accepted — merging`,
-        );
+        const acceptWith = (opts?: { force?: boolean }, done?: string) => () => {
+          setAccepting(true);
+          api.acceptTask(task.id, opts).then(() => {
+            toastSuccess(done!);
+            onChanged();
+          }, toastError).finally(() => setAccepting(false));
+        };
+        const onConfirm = acceptWith(undefined, `${taskLabel(task.id)} accepted — merging`);
+        const onForceConfirm = acceptWith({ force: true }, `${taskLabel(task.id)} force-accepted — merging`);
         const label = variant === 'footer' ? 'Accept & merge' : 'Accept';
         if (escalation && !escalation.accept) {
           return (
@@ -127,13 +136,13 @@ export function TaskActions({
         return (
           <Fragment key={action}>
             {decision && decision.outcome !== 'proceed' ? (
-              <AcceptButton className={btnAccept} label={label} onConfirm={onConfirm} />
+              <AcceptButton className={btnAccept} label={label} onConfirm={onConfirm} busy={accepting} />
             ) : (
-              <button className={btnAccept} onClick={onConfirm}>
-                {label}
+              <button className={btnAccept} onClick={onConfirm} disabled={accepting}>
+                {accepting ? 'Accepting…' : label}
               </button>
             )}
-            <ForceAcceptButton className={secondary} onConfirm={onForceConfirm} />
+            <ForceAcceptButton className={secondary} onConfirm={onForceConfirm} busy={accepting} />
           </Fragment>
         );
       }

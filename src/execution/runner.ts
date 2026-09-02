@@ -1938,6 +1938,7 @@ export class Runner {
           const worktreeMerge = task.isolationMode === 'worktree';
           const deps = this.mergePolicyDeps(task, run, record, active.verifyAbort.signal, patch);
           const mergeWorktreeBranch = async (): Promise<boolean> => {
+            await this.taskService.setMergeStatus(task.id, 'merging');
             const outcome = await runMergePolicy(
               {
                 baseDir: task.workingDir,
@@ -1950,6 +1951,7 @@ export class Runner {
             );
             if (outcome.kind === 'escalated') {
               record('lifecycle', { event: 'escalated', reason: outcome.message, gate: outcome.reason });
+              if (outcome.reason === 'conflict') await this.taskService.setMergeStatus(task.id, 'resolving-conflicts');
               return false;
             }
             record('lifecycle', { event: 'merged', oid: outcome.mergeOid, baseBranch: current.baseBranch });

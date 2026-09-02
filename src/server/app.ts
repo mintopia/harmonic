@@ -354,7 +354,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
         expected: { baseBranch, branch },
         apply: async () => {
           const outcome = await runnerRef!.mergeAcceptedBranch(task, run);
-          if (outcome.kind === 'escalated') return { ok: false, detail: outcome.message };
+          if (outcome.kind === 'escalated') return { ok: false, detail: outcome.message, observed: { reason: outcome.reason } };
           return { ok: true, observed: { baseBranch, branch, oid: outcome.mergeOid } };
         },
       },

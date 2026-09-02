@@ -78,7 +78,7 @@ describe('operator Accept merge (ADR-0001, issue #383)', () => {
 
     const accepted = await server.api('POST', `/api/tasks/${taskId}/accept`, { force: true });
     expect(accepted.status).toBe(200);
-    expect(accepted.body).toMatchObject({ state: 'done', escalationReason: null });
+    expect(accepted.body).toMatchObject({ state: 'done', escalationReason: null, mergeStatus: null });
 
     expect(git(repo, 'rev-parse', 'main')).not.toBe(mainTip);
     expect(git(repo, 'show', 'main:other.txt')).toBe('someone else merged');
@@ -116,7 +116,7 @@ describe('operator Accept merge (ADR-0001, issue #383)', () => {
 
     const accepted = await server.api('POST', `/api/tasks/${taskId}/accept`);
     expect(accepted.status).toBe(200);
-    expect(accepted.body).toMatchObject({ state: 'done', escalationReason: null });
+    expect(accepted.body).toMatchObject({ state: 'done', escalationReason: null, mergeStatus: null });
     expect(git(repo, 'show', 'main:impl-native.txt')).toBe('implementation');
 
     await server.close();
@@ -149,7 +149,9 @@ describe('operator Accept merge (ADR-0001, issue #383)', () => {
 
     const accepted = await server.api('POST', `/api/tasks/${taskId}/accept`, { force: true });
     expect(accepted.status).toBe(409);
-    expect((await server.app.ctx.tasks.get(taskId)).state).toBe('escalated');
+    const stillEscalated = await server.app.ctx.tasks.get(taskId);
+    expect(stillEscalated.state).toBe('escalated');
+    expect(stillEscalated.mergeStatus).toBe('resolving-conflicts');
     expect(git(repo, 'rev-parse', 'main')).toBe(mainTip);
 
     await server.close();

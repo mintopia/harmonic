@@ -75,9 +75,15 @@ export class EscalationService {
     }
     await this.attempts.update(run.id, { verifiedHeadOid: head });
     const merged = await this.attempts.get(run.id);
+    await this.taskService.setMergeStatus(task.id, 'merging');
     for (const effect of this.mergeEffects(task, merged)) {
       const result = await effect.apply();
-      if (!result.ok) throw new DomainError('conflict', result.detail ?? `${effect.effect} failed on accept`);
+      if (!result.ok) {
+        // Only a real merge conflict surfaces the resolving-conflicts indicator; a
+        // post-merge-red or ticket-close failure leaves the ticket plainly escalated.
+        await this.taskService.setMergeStatus(task.id, result.observed?.reason === 'conflict' ? 'resolving-conflicts' : null);
+        throw new DomainError('conflict', result.detail ?? `${effect.effect} failed on accept`);
+      }
     }
     await this.settle.settle(task, merged, 'operator-accept', { runState: 'completed', taskAction: 'done', reason: null });
     return await this.taskService.get(taskId);

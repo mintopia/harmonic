@@ -30,6 +30,7 @@ const task = (id: number, origin: Task['origin'], trackerRef: number | null = nu
   workflow: null,
   wayfinderType: null,
   escalationReason: null,
+  mergeStatus: null,
   openBlockerCount: 0,
   agentWorkable: true,
   humanOnly: false,

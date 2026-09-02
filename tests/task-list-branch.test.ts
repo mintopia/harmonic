@@ -49,7 +49,7 @@ describe('task list payload: latest run branch', () => {
 
     const task = list.body.tasks.find((t: any) => t.id === created.body.id);
     expect(task.branch).toBe(`harmonic/task-${created.body.id}`);
-    expect(task.stat).toContain('insertion');
+    expect(task.stat).toMatch(/^\d+\t\d+\tfeature\.txt/m);
     const runs = await server.api('GET', `/api/tasks/${created.body.id}/attempts`);
     const diff = await server.api('GET', `/api/attempts/${runs.body.attempts.at(-1).id}/diff`);
     expect(diff.body.stat).toBe(task.stat);

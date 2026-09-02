@@ -38,6 +38,7 @@ const PILL_STATES = [...STATES, ...ATTEMPT_TONES];
 const HELPERS: Record<string, () => readonly string[]> = {
   stateChip: () => STATES.map(ui.stateChip),
   statePill: () => [...PILL_STATES.map(ui.statePill), ui.statePill('implementation')],
+  mergeStatusPill: () => (['merging', 'resolving-conflicts'] as const).map(ui.mergeStatusPill),
   blockerBadge: () => [ui.blockerBadge(false), ui.blockerBadge(true)],
   blockerCountPip: () => [ui.blockerCountPip(false), ui.blockerCountPip(true)],
   stateDot: () => STATES.map(ui.stateDot),

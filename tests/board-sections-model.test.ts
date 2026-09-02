@@ -41,6 +41,7 @@ const task = (id: number, state: TaskState, extra: Partial<Task> = {}): Task => 
   workflow: null,
   wayfinderType: null,
   escalationReason: null,
+  mergeStatus: null,
   openBlockerCount: 0,
   agentWorkable: true,
   humanOnly: false,

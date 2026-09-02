@@ -6,6 +6,7 @@ import { createTaskInputSchema, updateTaskInputSchema, taskListQuerySchema, comp
 import { previewHumanRejectContinuation } from '../../domain/session-continuation.js';
 import {
   TASK_STATES,
+  MERGE_STATUSES,
   TASK_ORIGINS,
   WORKFLOWS,
   WAYFINDER_TYPES,
@@ -97,6 +98,8 @@ const taskWithDepsSchema = z
     state: z.enum(TASK_STATES).meta({ example: 'working' }),
     /** Why the ticket is `escalated` — the trigger's recorded reason; null in every other state. */
     escalationReason: z.string().nullable().meta({ example: null }),
+    /** Live merge indicator, orthogonal to `state`: 'merging' while the candidate merges onto base, 'resolving-conflicts' once that merge conflicts; null at rest. */
+    mergeStatus: z.enum(MERGE_STATUSES).nullable().meta({ example: null }),
     feedback: z.string().nullable().meta({ example: null }),
     /** 'full' resumes the same Session, 'condensed' starts fresh; null before any continuation (⇒ full). */
     continuationChoice: z.enum(['full', 'condensed']).nullable().meta({ example: null }),

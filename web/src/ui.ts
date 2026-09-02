@@ -1,4 +1,4 @@
-import type { Conversation, PermissionAcpRequest, TaskState } from './types.js';
+import type { Conversation, PermissionAcpRequest, TaskState, MergeStatus } from './types.js';
 import type { AttemptDot } from './attempt-rail-model.js';
 
 /** The pill buttons carry the ≥44px touch-target floor by construction:
@@ -187,6 +187,11 @@ export const statePillShape =
 
 export function statePill(state: string): string {
   return `${statePillShape} ${STATE_CHIP_STYLES[state as StateTone] ?? 'bg-raised text-muted'}`;
+}
+
+/** The transient merge indicator's pill: running hue while merging, the operator-await indigo once a human must resolve conflicts. Kept out of {@link STATE_CHIP_STYLES}, which is exactly the Task states plus attempt tones (issue #454). */
+export function mergeStatusPill(status: MergeStatus): string {
+  return `${statePillShape} ${status === 'resolving-conflicts' ? 'bg-await-tint text-await' : 'bg-running-tint text-running'}`;
 }
 
 /** The Board card's primary "Blocked" chip.

@@ -226,6 +226,7 @@ CREATE TABLE `tasks` (
 	`workflow` text,
 	`wayfinder_type` text,
 	`escalation_reason` text,
+	`merge_status` text,
 	`map_ref` integer,
 	`base_branch` text,
 	`tracker_state` text,

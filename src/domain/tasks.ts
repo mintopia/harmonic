@@ -15,6 +15,7 @@ import {
   type TaskRow,
   type RawTaskRow,
   type TaskState,
+  type MergeStatus,
   type Workflow,
   type WayfinderType,
   type WorkspaceRow,
@@ -758,6 +759,7 @@ export class TaskService {
     const patch: Partial<TaskRow> = {
       state: 'ready',
       escalationReason: null,
+      mergeStatus: null,
       updatedAt: Date.now(),
       feedback: null,
       continuationChoice: continuation ?? null,
@@ -789,7 +791,7 @@ export class TaskService {
     const row = await this.db.write((db) =>
       db
         .update(tasks)
-        .set({ state: 'escalated', escalationReason: reason, updatedAt: Date.now() })
+        .set({ state: 'escalated', escalationReason: reason, mergeStatus: null, updatedAt: Date.now() })
         .where(eq(tasks.id, id))
         .returning()
         .get(),
@@ -840,7 +842,7 @@ export class TaskService {
     const row = await this.db.write((db) =>
       db
         .update(tasks)
-        .set({ state, updatedAt: Date.now(), ...(state === 'escalated' ? {} : { escalationReason: null }) })
+        .set({ state, mergeStatus: null, updatedAt: Date.now(), ...(state === 'escalated' ? {} : { escalationReason: null }) })
         .where(eq(tasks.id, id))
         .returning()
         .get(),
@@ -851,6 +853,14 @@ export class TaskService {
     if (notification) this.onNotify(notification, task);
     if (state === 'done' || state === 'cancelled') await this.emitDependents(id);
     return task;
+  }
+
+  /** Set the live merge indicator (`merging` / `resolving-conflicts`, or null at rest) and broadcast it. Orthogonal to `state`; every `setState`/`escalate`/`requeue` clears it. */
+  async setMergeStatus(id: number, mergeStatus: MergeStatus | null): Promise<TaskRow> {
+    const row = await this.db.write((db) =>
+      db.update(tasks).set({ mergeStatus, updatedAt: Date.now() }).where(eq(tasks.id, id)).returning().get(),
+    );
+    return await this.changed(row!);
   }
 
   private async emitDependents(id: number): Promise<void> {

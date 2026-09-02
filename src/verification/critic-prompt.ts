@@ -19,15 +19,21 @@ export function buildCriticPrompt({
   baseOid,
 }: BuildCriticPromptArgs): string {
   const interpolated = fillTemplate(operatorPrompt, fields);
-  const ticketFirst =
-    'First read the referenced ticket (named in the review instructions above) to understand the outcome it requires, and judge the candidate against that outcome.';
+  // A native (board-authored) Task has no mirrored issue: `ref`/`url` are empty,
+  // so the critic must judge against the instructions themselves, not a ticket
+  // that does not exist.
+  const hasTicket = fields.ref.trim() !== '' || fields.url.trim() !== '';
+  const spec = hasTicket ? 'the referenced ticket' : 'the review instructions above';
+  const ticketFirst = hasTicket
+    ? 'First read the referenced ticket (named in the review instructions above) to understand the outcome it requires, and judge the candidate against that outcome.'
+    : 'Judge the candidate against the review instructions above — they are the whole specification; there is no external ticket to consult.';
   const revisionBlock =
     baseOid && baseOid === verifiedHeadOid
       ? `${ticketFirst} The candidate revision ${verifiedHeadOid} is IDENTICAL to the base revision it
 integrates with — the builder made no code change. A no-change result is correct
-when the ticket required none (the work was already done, the right answer was to
+when ${spec} required none (the work was already done, the right answer was to
 change nothing, or it asked you to assess rather than edit) and wrong when it
-asked for a change that is now missing. Decide from the ticket; do NOT fail merely
+asked for a change that is now missing. Decide from ${spec}; do NOT fail merely
 because there is no diff.`
       : baseOid
         ? `${ticketFirst} Then review the candidate revision ${verifiedHeadOid}, which branched from the

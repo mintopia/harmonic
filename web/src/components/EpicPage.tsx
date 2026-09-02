@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { api } from '../api';
+import { subscribe } from '../ws';
 import { useLiveEffect } from '../useLiveEffect';
 import { useScrollToPanel } from '../useScrollToPanel';
 import type { DiffFile, Task, ModelUsage } from '../types';
@@ -531,19 +532,24 @@ export function EpicPage({
   const [childTotals, setChildTotals] = useState<Map<number, ModelUsage | null>>(() => new Map());
   const [diffFiles, setDiffFiles] = useState<DiffFile[] | null>(null);
   const [diffFailed, setDiffFailed] = useState(false);
+  // Bumped by the WS subscription below to re-run the epic/stats/children fetches
+  // when a member Task changes, so the page updates live without a manual refresh.
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useLiveEffect((live) => {
     api.epic(workspaceId, epicRef).then((e) => live() && setEpic(e), toastError);
-  }, [workspaceId, epicRef]);
+  }, [workspaceId, epicRef, refreshKey]);
 
   useLiveEffect((live) => {
     api.epicStats(epicRef, workspaceId).then((s) => live() && setStats(s), toastError);
-  }, [epicRef, workspaceId]);
+  }, [epicRef, workspaceId, refreshKey]);
 
+  const childIdsRef = useRef<Set<number>>(new Set());
   useLiveEffect((live) => {
     api.tasks({ workspaceId, parent: epicRef }).then(({ tasks }) => {
       if (!live()) return;
       setChildTasks(tasks);
+      childIdsRef.current = new Set(tasks.map((t) => t.id));
       Promise.all(
         tasks.map((t) =>
           api.taskUsage(t.id).then(
@@ -555,7 +561,15 @@ export function EpicPage({
         if (live()) setChildTotals(new Map(pairs));
       });
     }, toastError);
-  }, [epicRef, workspaceId]);
+  }, [epicRef, workspaceId, refreshKey]);
+
+  useEffect(() => {
+    const unsubscribe = subscribe((msg) => {
+      if (msg.type === 'task_changed' && childIdsRef.current.has(msg.task.id)) setRefreshKey((k) => k + 1);
+      else if (msg.type === 'task_removed' && childIdsRef.current.has(msg.id)) setRefreshKey((k) => k + 1);
+    });
+    return unsubscribe;
+  }, []);
 
   useEffect(() => {
     let live = true;

@@ -25,7 +25,7 @@ import { isAtLiveEdge } from '../follow-tail-model';
 import { ChatTranscript } from './ticket/ChatTranscript';
 import { Donut, type DonutSegment } from './Donut';
 import { BarChart, type Bar } from './BarChart';
-import { card, labelType, railSectionHead, railSectionCount, railNavButton, railNavSelected, railNavIdle, PHASE_NODE_STYLES, statePill } from '../ui';
+import { card, labelType, railSectionHead, railSectionCount, railNavButton, railNavSelected, railNavIdle, PHASE_NODE_STYLES, statePill, mergeStatusPill } from '../ui';
 import { toastError } from '../toast';
 import { ticketIdentity } from '../id-format.js';
 import { splitPathTail } from '../path';
@@ -1257,6 +1257,8 @@ export function TicketPage({
     load();
     const unsubscribe = subscribe((msg) => {
       if ((msg.type === 'attempt_timeline_changed' && msg.taskId === task.id) || (msg.type === 'attempt_changed' && msg.run.taskId === task.id)) load();
+      // The full Task rides `task_changed`; apply it so state/escalationReason/mergeStatus update live without a refetch.
+      if (msg.type === 'task_changed' && msg.task.id === task.id) setDetail(msg.task);
     });
     return () => {
       unsubscribe();
@@ -1404,8 +1406,11 @@ export function TicketPage({
               <h1 className="max-w-[680px] text-[26px] font-extrabold leading-[1.15] tracking-[-0.03em]">
                 {cardTitle(task.summary)}
               </h1>
-              <span className="mt-2.5">
+              <span className="mt-2.5 flex items-center gap-1.5">
                 <StatePill state={task.state} />
+                {task.mergeStatus && (
+                  <span className={mergeStatusPill(task.mergeStatus)}>{task.mergeStatus.replace(/-/g, ' ')}</span>
+                )}
               </span>
             </div>
 
@@ -1455,7 +1460,7 @@ export function TicketPage({
               <div className="mb-4 rounded-md bg-await-tint px-3 py-2 text-small">
                 <span className="inline-flex items-center gap-1.5 font-semibold text-await">
                   <Icon name="alert-triangle" className="size-3.5" />
-                  Escalated
+                  {task.mergeStatus === 'resolving-conflicts' ? 'Resolving merge conflicts' : 'Escalated'}
                 </span>
                 {escalationReason && (
                   <div className="mt-0.5 whitespace-pre-wrap break-words text-ink">{escalationReason}</div>
