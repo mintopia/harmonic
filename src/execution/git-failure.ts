@@ -84,7 +84,7 @@ export function breakerStep(
 /**
  * A thin, mutable per-context holder over the pure {@link breakerStep} reducer,
  * keyed by an opaque string (the Runner keys it on the base-repo identity, so
- * concurrent worktree/direct Runs colliding on the same repo share one breaker).
+ * concurrent worktree/direct Attempts colliding on the same repo share one breaker).
  * The clock is injected for tests.
  */
 export class GitCircuitBreaker {

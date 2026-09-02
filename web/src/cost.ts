@@ -14,9 +14,9 @@ export function formatCost(cost: Cost | null | undefined): string | null {
 }
 
 /**
- * Average Cost per Run as text: total Cost ÷ Run count. null — the
+ * Average Cost per Attempt as text: total Cost ÷ Attempt count. null — the
  * caller shows "—" — when there is nothing honest to divide (no priceable Cost,
- * or no Runs), never a fabricated $0. An incomplete aggregate is a floor, shown
+ * or no Attempts), never a fabricated $0. An incomplete aggregate is a floor, shown
  * as "≥", mirroring `formatCost`.
  */
 export function formatAvgCostPerRun(cost: Cost | null | undefined, attemptCount: number): string | null {

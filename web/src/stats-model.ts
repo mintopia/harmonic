@@ -30,7 +30,7 @@ export interface Stats {
   to: number;
   attemptCount: number;
   attemptsByState: Record<string, number>;
-  /** Failed-only Run count (cancelled excluded); the honest failure-rate numerator. */
+  /** Failed-only Attempt count (cancelled excluded); the honest failure-rate numerator. */
   failedAttempts: number;
   /** Execution failures bucketed by winning terminal disposition; empty when nothing failed. */
   failuresByReason: Record<string, number>;
@@ -157,8 +157,8 @@ export function cacheHitRate(totals: TokenCounts | null | undefined): number | n
 
 /**
  * Failure rate (0..1): `failedAttempts / total`, failed-only — the
- * backend's honest numerator (cancelled Runs excluded).
- * null when there are no Runs — the caller shows "—", never a fabricated 0%.
+ * backend's honest numerator (cancelled Attempts excluded).
+ * null when there are no Attempts — the caller shows "—", never a fabricated 0%.
  */
 export function failureRate(failedAttempts: number, total: number): number | null {
   if (total <= 0) return null;

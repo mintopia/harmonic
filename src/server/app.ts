@@ -507,10 +507,10 @@ same way as the REST API — a bearer token, either an operator API key or
 the Attempt Key Harmonic injects into a spawned harness — and exposes the
 agent task surface as MCP tools (task CRUD, dependencies, queue/cancel,
 attempts and events). Accept/Reject are human-only and are never exposed as
-MCP tools — a verifier's pass is the accept (#140, ADR-0021). A attempt-scoped
+MCP tools — a verifier's pass is the accept (#140, ADR-0021). An attempt-scoped
 Attempt Key may call \`/mcp\` regardless of the REST restrictions noted per
 endpoint below. \`force_integrate_epic\` is an operator-only tool, the same
-footing as Accept/Reject: a Attempt Key can call \`/mcp\` but gets a \`forbidden\`
+footing as Accept/Reject: an Attempt Key can call \`/mcp\` but gets a \`forbidden\`
 error from it specifically — only an operator API key (\`scope: 'full'\`) or
 an authenticated session may call it.
 

@@ -4,7 +4,7 @@ import type { VerificationAttempt, VerificationMechanism, VerifierStatus } from 
 
 /**
  * The latest attempt per `mechanism` — the attempt set that currently governs
- * the Run's Verification outcome. "Latest" is the highest `seq`; the input is
+ * the Attempt's Verification outcome. "Latest" is the highest `seq`; the input is
  * expected to already arrive seq-ordered (the server serves it that way), but
  * this picks by max `seq` per mechanism rather than by array position, so it
  * stays correct even if that ever isn't true. Order in the result follows each
@@ -56,7 +56,7 @@ export function criticUnavailableReason(
 
 /**
  * The latest attempt per `mechanism`, mapped to a {@link VerifierVerdict} —
- * the verdict set that currently governs the Run's Verification outcome. A
+ * the verdict set that currently governs the Attempt's Verification outcome. A
  * thin projection of {@link latestAttempts}. Pure.
  */
 export function latestVerdicts(attempts: VerificationAttempt[]): VerifierVerdict[] {
@@ -67,18 +67,18 @@ export function latestVerdicts(attempts: VerificationAttempt[]): VerifierVerdict
 }
 
 /**
- * The Run's overall Verification outcome right now: {@link combineVerdicts}
+ * The Attempt's overall Verification outcome right now: {@link combineVerdicts}
  * folded over {@link latestVerdicts} — the current per-verifier verdicts, not
  * the full attempt history (an earlier failed attempt that a later retry
- * fixed no longer counts against the Run). Pure.
+ * fixed no longer counts against the Attempt). Pure.
  */
 export function overallDecision(attempts: VerificationAttempt[]): VerificationDecision {
   return combineVerdicts(latestVerdicts(attempts));
 }
 
 /**
- * The `summary` of the latest `critic` attempt, or `null` when the Run has no
- * critic attempt yet (no critic configured, or the Run hasn't reached
+ * The `summary` of the latest `critic` attempt, or `null` when the Attempt has no
+ * critic attempt yet (no critic configured, or the Attempt hasn't reached
  * Verification). Pure.
  */
 export function latestCriticSummary(attempts: VerificationAttempt[]): string | null {
@@ -102,7 +102,7 @@ export interface AttemptGroup {
 }
 
 /**
- * Groups a Run's attempt log by `mechanism` so a self-heal
+ * Groups an Attempt's attempt log by `mechanism` so a self-heal
  * retry renders under its mechanism as "attempt N of M", not as an
  * unrelated row in a flat seq-ordered list — the log carries no
  * attempt-number or heal flag of its own (self-heal retries are just

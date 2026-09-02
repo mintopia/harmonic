@@ -34,7 +34,7 @@ export type ServerMessage =
   | { type: 'attempt_changed'; run: AttemptSummary }
   | { type: 'task_changed'; task: Task }
   | { type: 'attempt_timeline_changed'; taskId: number; attempts: Attempt[]; budgetBase: number }
-  // Hard-delete: the Task is gone server-side (Runs/history
+  // Hard-delete: the Task is gone server-side (Attempts/history
   // cascaded); drop it from local state so the board/graph lose it too.
   | { type: 'task_removed'; id: number }
   // Live AttemptSummary usage: the Activity view merges these deltas into its

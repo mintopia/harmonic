@@ -18,7 +18,7 @@ export interface ProcessSafetyNetOptions {
   target?: RejectionEmitter;
 }
 
-/** Pull Run/Task ids off a rejected value when it carries them. */
+/** Pull Attempt/Task ids off a rejected value when it carries them. */
 export function rejectionContext(reason: unknown): RejectionContext {
   if (typeof reason !== 'object' || reason === null) return {};
   const { taskId, attemptId } = reason as { taskId?: unknown; attemptId?: unknown };

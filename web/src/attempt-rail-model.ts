@@ -80,7 +80,7 @@ export function changedFilesFromNumstat(numstat: string | null): ChangedFile[] {
 }
 
 /** The current run's id: the highest attempt. `null` for a task with no runs.
- * Runs need not arrive sorted — picked by max `attempt`, not array position. */
+ * Attempts need not arrive sorted — picked by max `attempt`, not array position. */
 export function currentAttemptId(runs: AttemptSummary[]): number | null {
   let current: AttemptSummary | null = null;
   for (const run of runs) {

@@ -154,7 +154,7 @@ export function taskLifecycle(
 
 /** The `usage` + `cost` an Attempt contributes to the Stats breakdown — the
  * only fields the aggregation reads, so the whole-Task view and the single-
- * Attempt panel can both feed it (a live Run substitutes its firehose snapshot
+ * Attempt panel can both feed it (a live Attempt substitutes its firehose snapshot
  * for the not-yet-settled row). */
 export type StatsAttempt = Pick<AttemptSummary, 'usage' | 'cost'> & {
   /** How many tool calls this Attempt's session made — summed for the Stats

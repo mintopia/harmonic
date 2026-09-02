@@ -155,7 +155,7 @@ export function permissionOptionButtonClass(kind: PermissionAcpRequest['options'
  * you" hue DESIGN.md § 2 reserves for the one state that needs the operator;
  * working/running is Running amber, done is
  * Merged emerald (solid — the Task is complete), passed a Merged tint, failed
- * an Attempt/Run rose. This is the one superset both `stateChip` (Task states)
+ * an Attempt rose. This is the one superset both `stateChip` (Task states)
  * and `statePill` (Attempt states too) read from, so a state can't render two
  * greens by forking a private map.
  * `stateChip` stays typed to `TaskState`, so the attempt-only
@@ -328,10 +328,10 @@ export const runDotFill: Record<AttemptDot, string> = {
   neutral: 'bg-edge',
 };
 
-/** Phase-stepper node (DESIGN.md § 6): the Run's executing → validating →
+/** Phase-stepper node (DESIGN.md § 6): the Attempt's executing → validating →
  * verifying → review → merging machine. A done step is an emerald ✓ node, the
  * current step a cobalt node, a pending step a hollow Edge node, a failed step a
- * rose ✗ node (a failed Run stops there). */
+ * rose ✗ node (a failed Attempt stops there). */
 export const PHASE_NODE_STYLES = {
   done: 'border-transparent bg-merged-tint text-merged',
   current: 'border-transparent bg-accent text-on-accent',
