@@ -35,4 +35,13 @@ describe('Paper accessibility contract (issue #266)', () => {
     expect(css).toContain('.animate-dot-pulse');
     expect(css).toContain('animation: none;');
   });
+
+  it('names the Epic token bar, exposes the description toggle state, and keeps the harness chip a single tint', () => {
+    const epicPage = source('web/src/components/EpicPage.tsx');
+    const taskIdentity = source('web/src/components/TaskIdentity.ts');
+
+    expect(epicPage).toMatch(/role="img"[^>]*aria-label=\{title\}/);
+    expect(epicPage).toContain('aria-expanded={expanded}');
+    expect(taskIdentity).not.toMatch(/bg-tool\/\d/);
+  });
 });

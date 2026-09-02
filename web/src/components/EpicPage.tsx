@@ -75,6 +75,7 @@ function Description({ text }: { text: string }) {
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
+        aria-expanded={expanded}
         className="mt-1.5 text-[12.5px] font-semibold text-accent transition-colors hover:text-ink"
       >
         {expanded ? 'Show less' : 'Show more'}
@@ -316,7 +317,7 @@ function ChildTokenBar({ totals }: { totals: ModelUsage | null | undefined }) {
   if (tokenBarEmpty(segments)) return <span className="text-faint">—</span>;
   const title = segments.map((s) => `${s.label} ${s.value.toLocaleString()}`).join(' · ');
   return (
-    <div className="flex h-2 w-full overflow-hidden rounded-full bg-raised" title={title} aria-label={title}>
+    <div role="img" className="flex h-2 w-full overflow-hidden rounded-full bg-raised" title={title} aria-label={title}>
       {segments.map((s) => (
         <span key={s.key} className={`h-full ${s.fill}`} style={{ width: `${s.pct}%` }} />
       ))}
