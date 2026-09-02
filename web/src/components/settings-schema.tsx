@@ -97,7 +97,7 @@ interface GlobalPrompt {
   get: (c: AppConfig) => string;
   set: (c: AppConfig, value: string) => AppConfig;
   placeholders: [string, string][];
-  compile: (text: string) => string | LabeledPreview[];
+  compile: (text: string, config: AppConfig) => string | LabeledPreview[];
   rows?: number;
   textareaClass?: string;
 }
@@ -112,7 +112,7 @@ interface OverridablePrompt {
   set: (w: Workspace, value: string | null) => Workspace;
   inherited: (c: AppConfig) => string;
   placeholders: [string, string][];
-  compile: (text: string) => string | LabeledPreview[];
+  compile: (text: string, config: AppConfig) => string | LabeledPreview[];
   rows?: number;
   textareaClass?: string;
 }
@@ -127,7 +127,7 @@ function renderGlobalPrompt(d: GlobalPrompt, ctx: GlobalRenderCtx): ReactNode {
       value={value}
       onChange={(next) => ctx.setConfig(d.set(ctx.config, next))}
       placeholders={d.placeholders}
-      preview={d.compile(value)}
+      preview={d.compile(value, ctx.config)}
       error={ctx.errors[d.errorKey]}
       rows={d.rows}
       textareaClass={d.textareaClass}
@@ -166,7 +166,7 @@ function OverridePrompt({
           value={value}
           onChange={onChange}
           placeholders={d.placeholders}
-          preview={d.compile(value)}
+          preview={d.compile(value, config)}
           error={errors[d.errorKey]}
           rows={d.rows}
           textareaClass={d.textareaClass}

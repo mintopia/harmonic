@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
-import { defaultConfig } from '../src/config.js';
+import { baselineConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { WorkspaceService } from '../src/domain/workspaces.js';
 import { mirrorScan } from '../src/tracker/mirror.js';
@@ -45,7 +45,7 @@ describe('stored Epic spine (ADR-0018, #437)', () => {
     repo = mkdtempSync(join(tmpdir(), 'harmonic-epics-repo-'));
     asyncDb = await openAsyncDb(dataDir);
     settingsStore = await makeSettingsStore(dataDir);
-    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
+    tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
     workspaces = new WorkspaceService(asyncDb, settingsStore);
     wsId = (await workspaces.create({ name: 'WS', workingDir: repo, trackerEnabled: true })).id;
   });

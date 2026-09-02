@@ -1,0 +1,58 @@
+name: ""
+harnesses:
+  claude:
+    command: npx
+    args: [--yes, "@agentclientprotocol/claude-agent-acp"]
+    env: {}
+    models: [claude-opus-5, claude-fable-5, claude-sonnet-5, claude-opus-4-8, claude-haiku-4-5]
+    defaultModel: claude-sonnet-5
+  codex:
+    command: npx
+    args: [--yes, "@agentclientprotocol/codex-acp"]
+    env: {}
+    models: [gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna, gpt-5.5, gpt-5.4, gpt-5.4-mini]
+    defaultModel: gpt-5.6-sol
+  copilot:
+    command: copilot
+    args: [--acp, --disable-builtin-mcps]
+    env: {}
+    models: [auto, claude-sonnet-5, claude-sonnet-4.6, claude-sonnet-4.5, claude-haiku-4.5, claude-opus-4.8, claude-opus-4.7, claude-opus-4.6, claude-opus-4.5, gpt-5.5, gpt-5.4, gpt-5.3-codex, gpt-5.4-mini, gpt-5.6-luna, gpt-5.6-terra]
+    defaultModel: auto
+prices: {}
+modelInfo: {}
+defaults:
+  harness: claude
+  workingDir: $CWD
+  isolationMode: direct
+  priority: normal
+  conflictResolveTurns: 2
+chat:
+  harness: claude
+  model: claude-sonnet-5
+autoRunner:
+  enabled: false
+  maxConcurrentAttempts: 1
+maxAttempts: 2
+contextReuseTokenLimit: 200000
+drive:
+  prompt: "{skill}\n\nResolve tracker issue #{ref} ({url}) autonomously, end to end — read the issue yourself for the details. Work only on the branch you start on; Harmonic owns branching and closes the ticket once it verifies your work, so don't create branches or close the ticket yourself. When the work is done, comment a summary on the issue and call `finish_task`."
+  unattendedReminder: "## Running unattended\n\nYou are Harmonic Task {taskId} — no human is watching this turn. Ending a turn is a checkpoint, not a handoff, and Harmonic re-prompts you only a limited number of times, so don't idle-wait on background work (CI, watchers) or input. Keep working until the task is genuinely done, then call `finish_task` (taskId={taskId}). If you're blocked on a decision only a human can make, call `escalate_task` (taskId={taskId}) with a reason instead of guessing or waiting."
+  continuePrompt: "Your last turn ended but Task {taskId} isn't finished — you haven't called `finish_task`. Pick the work back up and drive it to completion now; don't idle-wait, then call `finish_task` when it's done."
+  mergeFate: auto-merge
+  continueAttempts: 10
+taskPrompt: "{prompt}"
+conversationIdleTimeoutMinutes: 30
+verify:
+  commands: []
+  review:
+    enabled: false
+merge:
+  postMergeCheck: true
+guardrails:
+  budget:
+    wallClockMinutes: 60
+    tokens: null
+    costUsd: null
+  progress: false
+  toolTimeoutMinutes: 20
+  promptInactivityTimeoutMinutes: 15

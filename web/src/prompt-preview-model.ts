@@ -1,5 +1,6 @@
 import { fillTemplate, type DriveFields } from '../../src/execution/prompt-template.js';
 import { buildCriticPrompt } from '../../src/verification/critic-prompt.js';
+import type { AppConfig } from './types';
 
 /** Illustrative values for the `{skill}/{ref}/{url}/{title}/{body}` tokens. */
 export const SAMPLE_DRIVE_FIELDS: DriveFields = {
@@ -58,13 +59,16 @@ export function compileDrivePreview(template: string): string {
 }
 
 /** Fill the five Task-prompt tokens with sample values. */
-export function compileTaskPreview(template: string): string {
+export function compileTaskPreview(template: string, config: Pick<AppConfig, 'defaults' | 'harnesses'>): string {
+  const harness = config.defaults.harness;
+  const selectedHarness = config.harnesses[harness];
+  if (!selectedHarness) throw new Error(`Missing configured harness: ${harness}`);
   return fillTemplate(template, {
     prompt: 'Example task prompt.',
     id: 123,
     workingDir: '/repo',
-    harness: 'claude',
-    model: 'claude-opus-5',
+    harness,
+    model: selectedHarness.defaultModel,
   });
 }
 

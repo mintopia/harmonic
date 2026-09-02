@@ -1,11 +1,12 @@
 import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 import { parse, stringify } from 'yaml';
 import { workspaceOverridesSchema, OVERRIDE_KEYS } from '../domain/workspaces.js';
 import type { WorkspaceOverrides, ResolvedOverrides, WorkspaceSettingsStore } from '../domain/workspaces.js';
 import {
   appConfigSchema,
-  defaultConfig,
+  baselineConfig,
   mergeConfig,
   migrateLegacyConfig,
   type AppConfig,
@@ -22,6 +23,7 @@ function blankOverrides(): ResolvedOverrides {
 }
 
 interface SettingsFile {
+  globalPatch: unknown;
   global: AppConfig;
   /** Sparse per-Workspace override entries keyed by Workspace id (string) —
    * only non-null (i.e. actually overridden) keys are present. */
@@ -33,7 +35,26 @@ interface RawSettingsFile {
   workspaces?: Record<string, unknown>;
 }
 
-function loadFromDisk(path: string): SettingsFile {
+function deepDiff(base: unknown, value: unknown): unknown {
+  if (isDeepStrictEqual(base, value)) return undefined;
+  if (Array.isArray(base) || Array.isArray(value) || !isRecord(base) || !isRecord(value)) return value;
+  const patch: Record<string, unknown> = {};
+  for (const key of Object.keys(value)) {
+    const difference = deepDiff(base[key], value[key]);
+    if (difference !== undefined) patch[key] = difference;
+  }
+  return Object.keys(patch).length === 0 ? undefined : patch;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isFlattenedGlobal(global: unknown): boolean {
+  return appConfigSchema.safeParse(global).success;
+}
+
+function loadFromDisk(path: string, baseline: AppConfig): SettingsFile {
   let raw: RawSettingsFile;
   try {
     raw = parse(readFileSync(path, 'utf8')) as RawSettingsFile;
@@ -41,14 +62,14 @@ function loadFromDisk(path: string): SettingsFile {
     throw new Error(`Invalid Harmonic settings file at ${path}: ${err instanceof Error ? err.message : String(err)}`);
   }
   try {
-    const global = appConfigSchema.parse(
-      mergeConfig(defaultConfig(), migrateLegacyConfig((raw.global ?? {}) as LegacyConfig)),
-    );
+    const storedGlobal = migrateLegacyConfig((raw.global ?? {}) as LegacyConfig);
+    const global = mergeConfig(baseline, storedGlobal);
+    const globalPatch = isFlattenedGlobal(raw.global) ? (deepDiff(baseline, global) ?? {}) : storedGlobal;
     const workspaces: Record<string, WorkspaceOverrides> = {};
     for (const [id, entry] of Object.entries(raw.workspaces ?? {})) {
       workspaces[id] = workspaceOverridesSchema.parse(entry);
     }
-    return { global, workspaces };
+    return { globalPatch, global, workspaces };
   } catch (err) {
     throw new Error(`Invalid Harmonic settings file at ${path}: ${err instanceof Error ? err.message : String(err)}`);
   }
@@ -61,6 +82,7 @@ function loadFromDisk(path: string): SettingsFile {
  */
 export class SettingsStore implements WorkspaceSettingsStore {
   private global: AppConfig;
+  private globalPatch: unknown;
   private workspaces: Record<string, WorkspaceOverrides>;
   private loadedMtimeMs = 0;
   private lastCheckMs = 0;
@@ -71,6 +93,7 @@ export class SettingsStore implements WorkspaceSettingsStore {
     private readonly clock: () => number,
   ) {
     this.global = file.global;
+    this.globalPatch = file.globalPatch;
     this.workspaces = file.workspaces;
   }
 
@@ -84,16 +107,17 @@ export class SettingsStore implements WorkspaceSettingsStore {
     let file: SettingsFile;
     try {
       statSync(path);
-      file = loadFromDisk(path);
+      file = loadFromDisk(path, baselineConfig());
     } catch (err) {
       if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') {
-        file = { global: mergeConfig(defaultConfig()), workspaces: {} };
+        file = { globalPatch: {}, global: baselineConfig(), workspaces: {} };
       } else {
         throw err;
       }
     }
     const store = new SettingsStore(path, file, clock);
     store.global = mergeConfig(store.global, overrides);
+    store.globalPatch = deepDiff(baselineConfig(), store.global) ?? {};
     store.persist();
     return store;
   }
@@ -106,6 +130,7 @@ export class SettingsStore implements WorkspaceSettingsStore {
   async updateGlobal(patch: LegacyConfig): Promise<AppConfig> {
     this.reloadIfChanged();
     this.global = mergeConfig(this.global, migrateLegacyConfig(patch));
+    this.globalPatch = deepDiff(baselineConfig(), this.global) ?? {};
     this.persist();
     return this.global;
   }
@@ -113,6 +138,7 @@ export class SettingsStore implements WorkspaceSettingsStore {
   async replaceGlobal(config: AppConfig): Promise<AppConfig> {
     this.reloadIfChanged();
     this.global = appConfigSchema.parse(config);
+    this.globalPatch = deepDiff(baselineConfig(), this.global) ?? {};
     this.persist();
     return this.global;
   }
@@ -169,8 +195,9 @@ export class SettingsStore implements WorkspaceSettingsStore {
       return;
     }
     if (stat.mtimeMs === this.loadedMtimeMs) return;
-    const file = loadFromDisk(this.path);
+    const file = loadFromDisk(this.path, baselineConfig());
     this.global = file.global;
+    this.globalPatch = file.globalPatch;
     this.workspaces = file.workspaces;
     this.loadedMtimeMs = stat.mtimeMs;
   }
@@ -180,7 +207,7 @@ export class SettingsStore implements WorkspaceSettingsStore {
     for (const [id, entry] of Object.entries(this.workspaces)) {
       if (Object.keys(entry).length > 0) workspaces[id] = entry;
     }
-    writeFileSync(this.path, stringify({ global: this.global, workspaces }));
+    writeFileSync(this.path, stringify({ global: this.globalPatch, workspaces }));
     this.loadedMtimeMs = statSync(this.path).mtimeMs;
   }
 }

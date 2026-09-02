@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
-import { defaultConfig } from '../src/config.js';
+import { baselineConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { allWorkspaces, makeSettingsStore } from './helpers.js';
@@ -19,7 +19,7 @@ describe('TaskService.orderedEligibleWork', () => {
     directory = mkdtempSync(join(tmpdir(), 'harmonic-ordered-work-'));
     db = await openAsyncDb(directory);
     settingsStore = await makeSettingsStore(directory);
-    taskService = new TaskService(db, () => defaultConfig(), allWorkspaces(db, settingsStore));
+    taskService = new TaskService(db, () => baselineConfig(), allWorkspaces(db, settingsStore));
     workspaceId = (await allWorkspaces(db, settingsStore)())[0]!.id;
   });
 

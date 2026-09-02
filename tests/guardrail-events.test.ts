@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
-import { defaultConfig } from '../src/config.js';
+import { baselineConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { AttemptStore } from '../src/domain/attempts.js';
 import { GuardrailEventStore } from '../src/domain/guardrail-events.js';
@@ -20,7 +20,7 @@ describe('GuardrailEventStore (issue #127)', () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-guardrail-events-'));
     asyncDb = await openAsyncDb(dir);
     const settingsStore = await makeSettingsStore(dir);
-    const tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
+    const tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
     const attempts = new AttemptStore(asyncDb);
     events = new GuardrailEventStore(asyncDb);
 

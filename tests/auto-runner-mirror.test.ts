@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
-import { defaultConfig, type AppConfig } from '../src/config.js';
+import { baselineConfig, type AppConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { AutoRunner, type MirrorClaim } from '../src/execution/auto-runner.js';
 import { GitCircuitBreaker } from '../src/execution/git-failure.js';
@@ -51,7 +51,7 @@ describe('AutoRunner — mirrored afk pick predicate + flip→claim ordering (is
     settingsStore = await makeSettingsStore(dir);
     tasks = new TaskService(
       asyncDb,
-      () => ({ ...defaultConfig(), defaults: { ...defaultConfig().defaults, isolationMode: 'worktree' } }),
+      () => ({ ...baselineConfig(), defaults: { ...baselineConfig().defaults, isolationMode: 'worktree' } }),
       allWorkspaces(asyncDb, settingsStore),
     );
   });
@@ -91,7 +91,7 @@ describe('AutoRunner — mirrored afk pick predicate + flip→claim ordering (is
       countRunning: () => started.length,
       countRunningByWorkspace: () => new Map<number, number>(),
     } as unknown as AttemptStore;
-    const config: AppConfig = { ...defaultConfig(), autoRunner: { enabled: true, maxConcurrentAttempts: 10 } };
+    const config: AppConfig = { ...baselineConfig(), autoRunner: { enabled: true, maxConcurrentAttempts: 10 } };
 
     const runner$ = new AutoRunner(tasks, runStore, runner, () => config, allWorkspaces(asyncDb, settingsStore), { mirror });
     runner$.poke();
@@ -121,7 +121,7 @@ describe('AutoRunner — self-scheduling from DB (issue #236)', () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-arun-scheduler-'));
     asyncDb = await openAsyncDb(dir);
     settingsStore = await makeSettingsStore(dir);
-    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
+    tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
   });
   afterEach(async () => {
     autoRunner?.stop();
@@ -141,7 +141,7 @@ describe('AutoRunner — self-scheduling from DB (issue #236)', () => {
       countRunning: async () => started.length,
       countRunningByWorkspace: async () => new Map<number, number>(),
     };
-    const config: AppConfig = { ...defaultConfig(), autoRunner: { enabled: true, maxConcurrentAttempts: 1 } };
+    const config: AppConfig = { ...baselineConfig(), autoRunner: { enabled: true, maxConcurrentAttempts: 1 } };
     autoRunner = new AutoRunner(tasks, runStore, runner, () => config, allWorkspaces(asyncDb, settingsStore), { intervalMs: 10 });
 
     autoRunner.start();
@@ -153,7 +153,7 @@ describe('AutoRunner — self-scheduling from DB (issue #236)', () => {
   it('allows only one independent DB handle to claim a ready task', async () => {
     const task = await tasks.create({ prompt: 'cross-handle claim', isolationMode: 'worktree' });
     const secondDb = await openAsyncDb(dir);
-    const secondTasks = new TaskService(secondDb, () => defaultConfig(), allWorkspaces(secondDb, settingsStore));
+    const secondTasks = new TaskService(secondDb, () => baselineConfig(), allWorkspaces(secondDb, settingsStore));
 
     try {
       const claims = await Promise.all([tasks.claimReady(task.id), secondTasks.claimReady(task.id)]);
@@ -177,7 +177,7 @@ describe('AutoRunner — parallel-Epic base pick gate (issue #159)', () => {
     settingsStore = await makeSettingsStore(dir);
     tasks = new TaskService(
       asyncDb,
-      () => ({ ...defaultConfig(), defaults: { ...defaultConfig().defaults, isolationMode: 'worktree' } }),
+      () => ({ ...baselineConfig(), defaults: { ...baselineConfig().defaults, isolationMode: 'worktree' } }),
       allWorkspaces(asyncDb, settingsStore),
     );
   });
@@ -200,7 +200,7 @@ describe('AutoRunner — parallel-Epic base pick gate (issue #159)', () => {
       countRunning: () => started.length,
       countRunningByWorkspace: () => new Map<number, number>(),
     } as unknown as AttemptStore;
-    const config: AppConfig = { ...defaultConfig(), autoRunner: { enabled: true, maxConcurrentAttempts: 10 } };
+    const config: AppConfig = { ...baselineConfig(), autoRunner: { enabled: true, maxConcurrentAttempts: 10 } };
     const ar = new AutoRunner(tasks, runStore, runner, () => config, allWorkspaces(asyncDb, settingsStore), {
       epicBaseNotReady: (t) => awaitsEpicBase(t),
     });
@@ -237,7 +237,7 @@ describe('AutoRunner — skip reasons and unresolvable integration bases (issue 
     settingsStore = await makeSettingsStore(dir);
     tasks = new TaskService(
       asyncDb,
-      () => ({ ...defaultConfig(), defaults: { ...defaultConfig().defaults, isolationMode: 'worktree' } }),
+      () => ({ ...baselineConfig(), defaults: { ...baselineConfig().defaults, isolationMode: 'worktree' } }),
       allWorkspaces(asyncDb, settingsStore),
     );
   });
@@ -264,7 +264,7 @@ describe('AutoRunner — skip reasons and unresolvable integration bases (issue 
       countRunning: async () => running,
       countRunningByWorkspace: async () => new Map<number, number>(),
     };
-    const config: AppConfig = { ...defaultConfig(), autoRunner: { enabled: true, maxConcurrentAttempts: 1 } };
+    const config: AppConfig = { ...baselineConfig(), autoRunner: { enabled: true, maxConcurrentAttempts: 1 } };
     const autoRunner = new AutoRunner(tasks, runStore, runner, () => config, allWorkspaces(asyncDb, settingsStore), { gitBreaker: breaker });
 
     autoRunner.poke();
@@ -291,7 +291,7 @@ describe('AutoRunner — skip reasons and unresolvable integration bases (issue 
       countRunning: async () => started.length,
       countRunningByWorkspace: async () => new Map<number, number>(),
     };
-    const config: AppConfig = { ...defaultConfig(), autoRunner: { enabled: true, maxConcurrentAttempts: 1 } };
+    const config: AppConfig = { ...baselineConfig(), autoRunner: { enabled: true, maxConcurrentAttempts: 1 } };
     let now = 0;
     const autoRunner = new AutoRunner(tasks, runStore, runner, () => config, allWorkspaces(asyncDb, settingsStore), {
       epicBaseNotReady: (candidate) => candidate.baseBranch === 'epic/208',
@@ -329,7 +329,7 @@ describe('AutoRunner — skip reasons and unresolvable integration bases (issue 
       countRunning: async () => started.length,
       countRunningByWorkspace: async () => new Map<number, number>(),
     };
-    const config: AppConfig = { ...defaultConfig(), autoRunner: { enabled: true, maxConcurrentAttempts: 1 } };
+    const config: AppConfig = { ...baselineConfig(), autoRunner: { enabled: true, maxConcurrentAttempts: 1 } };
     const autoRunner = new AutoRunner(tasks, runStore, runner, () => config, allWorkspaces(asyncDb, settingsStore), {
       epicBaseNotReady: (candidate) => missing && candidate.baseBranch === 'epic/209',
       missingEpicBaseGraceMs: 100,
@@ -358,7 +358,7 @@ describe('AutoRunner — Work Context House Rule pick predicate (ADR-0001)', () 
     dir = mkdtempSync(join(tmpdir(), 'harmonic-arun-hr-'));
     asyncDb = await openAsyncDb(dir);
     settingsStore = await makeSettingsStore(dir);
-    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
+    tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
   });
   afterEach(async () => {
     await asyncDb.close();
@@ -379,7 +379,7 @@ describe('AutoRunner — Work Context House Rule pick predicate (ADR-0001)', () 
       countRunning: () => started.length,
       countRunningByWorkspace: () => new Map<number, number>(),
     } as unknown as AttemptStore;
-    const config: AppConfig = { ...defaultConfig(), autoRunner: { enabled: true, maxConcurrentAttempts: 10 } };
+    const config: AppConfig = { ...baselineConfig(), autoRunner: { enabled: true, maxConcurrentAttempts: 10 } };
     const ar = new AutoRunner(tasks, runStore, runner, () => config, allWorkspaces(asyncDb, settingsStore), undefined);
     return { ar, started };
   };

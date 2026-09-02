@@ -7,6 +7,7 @@ import {
   compileTaskIdPreview,
   compileTaskPreview,
 } from '../web/src/prompt-preview-model.js';
+import { baselineConfig } from '../src/config.js';
 
 describe('prompt-preview-model (settings compiled preview)', () => {
   it('compileDrivePreview fills the five Drive tokens with sample values', () => {
@@ -22,8 +23,11 @@ describe('prompt-preview-model (settings compiled preview)', () => {
   });
 
   it('compileTaskPreview fills the task-prompt tokens', () => {
-    const out = compileTaskPreview('{prompt} [{id}/{harness}/{model}] in {workingDir}');
-    expect(out).toBe('Example task prompt. [123/claude/claude-opus-5] in /repo');
+    const config = baselineConfig();
+    const out = compileTaskPreview('{prompt} [{id}/{harness}/{model}] in {workingDir}', config);
+    expect(out).toBe(
+      `Example task prompt. [123/${config.defaults.harness}/${config.harnesses[config.defaults.harness].defaultModel}] in /repo`,
+    );
   });
 
   it('compileCriticPreview shows both Task-kind variants, each with the read-only + verdict scaffolding', () => {

@@ -174,7 +174,7 @@ export async function configRoutes(fastify: FastifyInstance): Promise<void> {
         body: appConfigSchema,
         response: {
           200: appConfigSchema.describe(
-            "The whole configuration as stored after the replace, with omitted optional fields filled from the schema's defaults.",
+            'The whole configuration as stored after the replace.',
           ),
         },
       },

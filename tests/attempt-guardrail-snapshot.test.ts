@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
-import { defaultConfig } from '../src/config.js';
+import { baselineConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { AttemptStore } from '../src/domain/attempts.js';
 import { resolveGuardrails } from '../src/domain/setting-override.js';
@@ -22,7 +22,7 @@ describe('AttemptStore.create Guardrail snapshot (issue #126, ADR-0019)', () => 
     dir = mkdtempSync(join(tmpdir(), 'harmonic-grs-'));
     asyncDb = await openAsyncDb(dir);
     settingsStore = await makeSettingsStore(dir);
-    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
+    tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
     runStore = new AttemptStore(asyncDb);
   });
   afterEach(async () => {
@@ -32,7 +32,7 @@ describe('AttemptStore.create Guardrail snapshot (issue #126, ADR-0019)', () => 
 
   it('captures the effective Guardrail config + price table onto the Run at start', async () => {
     const task = await tasks.create({ prompt: 'snapshot me', state: 'ready' });
-    const config = defaultConfig();
+    const config = baselineConfig();
     const snapshot = {
       guardrailConfig: resolveGuardrails({ guardrailBudget: null, guardrailProgress: null, toolTimeoutMinutes: null }, config),
       priceTable: resolvePrices(config.prices),
@@ -46,7 +46,7 @@ describe('AttemptStore.create Guardrail snapshot (issue #126, ADR-0019)', () => 
 
   it('is frozen: a later config change does not retroactively alter the stored snapshot', async () => {
     const task = await tasks.create({ prompt: 'frozen snapshot', state: 'ready' });
-    const config = defaultConfig();
+    const config = baselineConfig();
     const originalSnapshot = {
       guardrailConfig: resolveGuardrails({ guardrailBudget: null, guardrailProgress: null, toolTimeoutMinutes: null }, config),
       priceTable: resolvePrices(config.prices),

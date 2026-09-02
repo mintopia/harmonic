@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
-import { defaultConfig } from '../src/config.js';
+import { baselineConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { AttemptStore, type AttemptGuardrailSnapshot } from '../src/domain/attempts.js';
 import { isForeignKeyViolation } from '../src/db/errors.js';
@@ -44,9 +44,9 @@ describe('Runner.cancelForTask — run row deleted mid-settle', () => {
     mkdirSync(repoDir);
     asyncDb = await openAsyncDb(dir);
     settingsStore = await makeSettingsStore(dir);
-    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
+    tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
     runs = new AttemptStore(asyncDb);
-    runner = new Runner(tasks, asyncDb, () => defaultConfig());
+    runner = new Runner(tasks, asyncDb, () => baselineConfig());
   });
 
   afterEach(async () => {
@@ -59,8 +59,8 @@ describe('Runner.cancelForTask — run row deleted mid-settle', () => {
   it('resolves as a no-op (no crash, nothing logged) when the run vanishes between read and settle', async () => {
     const task = await tasks.create({ prompt: 'cancel me', isolationMode: 'direct', workingDir: repoDir });
     const snapshot: AttemptGuardrailSnapshot = {
-      guardrailConfig: defaultConfig().guardrails,
-      priceTable: defaultConfig().prices,
+      guardrailConfig: baselineConfig().guardrails,
+      priceTable: baselineConfig().prices,
     };
     await runs.create(task.id, snapshot);
 

@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
-import { defaultConfig } from '../src/config.js';
+import { baselineConfig } from '../src/config.js';
 import { TaskService, type MirrorInput } from '../src/domain/tasks.js';
 import { AttemptStore } from '../src/domain/attempts.js';
 import { mirrorScan } from '../src/tracker/mirror.js';
@@ -74,7 +74,7 @@ describe('a mirrored ticket closed while its Task is working', () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-closed-working-'));
     asyncDb = await openAsyncDb(dir);
     settingsStore = await makeSettingsStore(dir);
-    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
+    tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
     runs = new AttemptStore(asyncDb);
     wsId = (await allWorkspaces(asyncDb, settingsStore)())[0]!.id;
   });

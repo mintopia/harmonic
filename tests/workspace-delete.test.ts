@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { trackerDismissals, attempts, guardrailEvents } from '../src/db/schema.js';
 import { eq } from 'drizzle-orm';
-import { defaultConfig } from '../src/config.js';
+import { baselineConfig } from '../src/config.js';
 import { WorkspaceService } from '../src/domain/workspaces.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { allWorkspaces, makeSettingsStore } from './helpers.js';
@@ -21,7 +21,7 @@ describe('WorkspaceService.delete guards (issue #61)', () => {
     asyncDb = await openAsyncDb(dataDir);
     const settingsStore = await makeSettingsStore(dataDir);
     workspaces = new WorkspaceService(asyncDb, settingsStore);
-    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
+    tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
   });
   afterEach(async () => {
     await asyncDb.close();

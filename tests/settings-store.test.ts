@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parse, stringify } from 'yaml';
 import { SettingsStore } from '../src/server/settings-store.js';
-import { defaultConfig, verificationCommandSchema, budgetGuardrailSchema } from '../src/config.js';
+import { appConfigSchema, baselineConfig, loadBaselineConfig, verificationCommandSchema, budgetGuardrailSchema } from '../src/config.js';
 
 describe('SettingsStore (issue #391)', () => {
   let dir: string;
@@ -18,12 +18,51 @@ describe('SettingsStore (issue #391)', () => {
 
   it('a missing file yields defaults and writes settings.yaml', async () => {
     const store = await SettingsStore.create(dir);
-    expect(store.getGlobal()).toEqual(defaultConfig());
+    expect(store.getGlobal()).toEqual(baselineConfig());
 
     const path = join(dir, 'settings.yaml');
     const raw = parse(readFileSync(path, 'utf8'));
-    expect(raw.global).toBeDefined();
+    expect(raw.global).toEqual({});
     expect(raw.workspaces).toEqual({});
+  });
+
+  it('converges a flattened global config to a sparse patch without changing its resolved values', async () => {
+    const flattened = { ...baselineConfig(), maxAttempts: 7 };
+    const path = join(dir, 'settings.yaml');
+    writeFileSync(path, stringify({ global: flattened, workspaces: {} }));
+
+    const store = await SettingsStore.create(dir);
+    expect(store.getGlobal()).toEqual(flattened);
+    expect(parse(readFileSync(path, 'utf8'))).toEqual({ global: { maxAttempts: 7 }, workspaces: {} });
+  });
+
+  it('writes changed arrays as whole sparse-patch values', async () => {
+    const store = await SettingsStore.create(dir);
+    await store.updateGlobal({ verify: { commands: [{ command: 'npm', args: ['test'] }] } });
+
+    expect(parse(readFileSync(join(dir, 'settings.yaml'), 'utf8')).global).toEqual({
+      verify: { commands: [{ command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }] },
+    });
+  });
+
+  it('names the baseline file when it is incomplete', () => {
+    const path = join(dir, 'baseline.yaml');
+    writeFileSync(path, 'maxAttempts: 3\n');
+
+    expect(() => loadBaselineConfig(path)).toThrow(path);
+  });
+
+  it('does not apply shipped defaults outside the baseline', () => {
+    const { maxAttempts: _maxAttempts, ...withoutMaxAttempts } = baselineConfig();
+
+    expect(appConfigSchema.safeParse(withoutMaxAttempts).success).toBe(false);
+  });
+
+  it('names the baseline file when its YAML is invalid', () => {
+    const path = join(dir, 'baseline.yaml');
+    writeFileSync(path, '{ not: valid: yaml: [');
+
+    expect(() => loadBaselineConfig(path)).toThrow(path);
   });
 
   it('global round-trip: updateGlobal/replaceGlobal persist, and a fresh store on the same dir reflects them', async () => {
@@ -34,7 +73,7 @@ describe('SettingsStore (issue #391)', () => {
     const reopened1 = await SettingsStore.create(dir);
     expect(reopened1.getGlobal().maxAttempts).toBe(7);
 
-    const replaced = { ...defaultConfig(), maxAttempts: 3 };
+    const replaced = { ...baselineConfig(), maxAttempts: 3 };
     await store.replaceGlobal(replaced);
     expect(store.getGlobal().maxAttempts).toBe(3);
 
@@ -103,7 +142,7 @@ describe('SettingsStore (issue #391)', () => {
 
   it('fails loud, never silently defaulting, on a schema-invalid stored global value', async () => {
     const path = join(dir, 'settings.yaml');
-    const bad = { ...defaultConfig(), defaults: { ...defaultConfig().defaults, isolationMode: 'not-a-real-mode' } };
+    const bad = { ...baselineConfig(), defaults: { ...baselineConfig().defaults, isolationMode: 'not-a-real-mode' } };
     writeFileSync(path, stringify({ global: bad, workspaces: {} }));
 
     await expect(SettingsStore.create(dir)).rejects.toThrow(path);
@@ -112,7 +151,7 @@ describe('SettingsStore (issue #391)', () => {
   it('reloads on an external change to settings.yaml once the throttle window passes', async () => {
     let now = 1_000_000;
     const store = await SettingsStore.create(dir, undefined, () => now);
-    expect(store.getGlobal().maxAttempts).toBe(defaultConfig().maxAttempts);
+    expect(store.getGlobal().maxAttempts).toBe(baselineConfig().maxAttempts);
 
     const path = join(dir, 'settings.yaml');
     const parsed = parse(readFileSync(path, 'utf8'));
@@ -125,7 +164,7 @@ describe('SettingsStore (issue #391)', () => {
     utimesSync(path, bumped, bumped);
 
     now += 500;
-    expect(store.getGlobal().maxAttempts).toBe(defaultConfig().maxAttempts);
+    expect(store.getGlobal().maxAttempts).toBe(baselineConfig().maxAttempts);
 
     now += 600;
     expect(store.getGlobal().maxAttempts).toBe(9);

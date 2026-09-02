@@ -13,7 +13,7 @@ import {
   type CriticHarnessDrive,
   type CriticDriveRequest,
 } from '../src/verification/critic.js';
-import { defaultConfig, type HarnessConfig } from '../src/config.js';
+import { baselineConfig, type HarnessConfig } from '../src/config.js';
 import type { DriveFields } from '../src/execution/prompt-template.js';
 import { combineVerdicts } from '../web/src/verification-model.js';
 import type { VerifierVerdict } from '../web/src/verification-model.js';
@@ -368,7 +368,7 @@ describe('runCritic (issue #136)', () => {
     tmpDirs.push(dbDir);
     const asyncDb = await openAsyncDb(dbDir);
     const settingsStore = await makeSettingsStore(dbDir);
-    const tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
+    const tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
     const attempts = new AttemptStore(asyncDb);
     const store = new VerificationAttemptStore(asyncDb);
     const task = await tasks.create({ prompt: 'verify me', state: 'ready' });

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { appConfigSchema, defaultConfig, mergeConfig, migrateLegacyConfig } from '../src/config.js';
+import { appConfigSchema, baselineConfig, mergeConfig, migrateLegacyConfig } from '../src/config.js';
 
 describe('migrateLegacyConfig (#140, ADR-0021)', () => {
   it('drops agentReview without inventing any verify key (the review gate it described is gone, ADR-0041)', () => {
@@ -32,8 +32,8 @@ describe('migrateLegacyConfig (#140, ADR-0021)', () => {
     const migrated = migrateLegacyConfig({
       autoRunner: { enabled: true, maxConcurrentRuns: 7 } as { enabled: boolean },
     });
-    const parsed = appConfigSchema.parse(mergeConfig(defaultConfig(), migrated));
+    const parsed = appConfigSchema.parse(mergeConfig(baselineConfig(), migrated));
     expect(parsed.autoRunner).not.toHaveProperty('maxConcurrentRuns');
-    expect(parsed.autoRunner.maxConcurrentAttempts).toBe(defaultConfig().autoRunner.maxConcurrentAttempts);
+    expect(parsed.autoRunner.maxConcurrentAttempts).toBe(baselineConfig().autoRunner.maxConcurrentAttempts);
   });
 });
