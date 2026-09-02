@@ -25,10 +25,10 @@ interface Tail {
 }
 
 /**
- * Tails each active Run's native log. On a ~1s interval it re-samples the
+ * Tails each active Attempt's native log. On a ~1s interval it re-samples the
  * snapshot and pushes it — sampling at a fixed cadence *is* the coalescing, so
  * a chatty log can never saturate the socket. It persists on a coarser ~10s
- * cadence, and flushes (emit + persist) once more on stop, so a Run always
+ * cadence, and flushes (emit + persist) once more on stop, so an Attempt always
  * ends with its final snapshot on the row.
  */
 export class LiveUsageTailer {

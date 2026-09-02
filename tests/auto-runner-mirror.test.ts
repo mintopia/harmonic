@@ -419,7 +419,7 @@ describe('AutoRunner — Work Context House Rule pick predicate (ADR-0001)', () 
     await vi.waitFor(() => expect(ar.skipReasonFor(dependent.id)).toBe(`blocked-by #${openBlocker.id}`));
   });
 
-  it('an escalated occupant no longer holds the context — its Run settled and the branch is evidence, not live work (ADR-0041)', async () => {
+  it('an escalated occupant no longer holds the context — its Run settled and the branch is evidence, not live work', async () => {
     const busy = freshDir();
     const escalated = await directTask(busy, 'escalated');
     await tasks.escalate(escalated.id, 'escalated to human: attempt 2 of 2 failed');

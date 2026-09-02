@@ -209,7 +209,7 @@ export class EpicIntegrationCoordinator {
   }
 
   /**
-   * Whether a member is not yet safe to spawn a worktree Run for: its base is
+   * Whether a member is not yet safe to spawn a worktree Attempt for: its base is
    * still unresolved ({@link awaitsBase}), or its base is an `epic/<ref>`
    * integration branch that does not currently exist in git. A non-mirrored
    * Task, or a member on an ordinary (non-Epic) branch, is never gated. On a

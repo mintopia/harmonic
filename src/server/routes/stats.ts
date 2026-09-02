@@ -262,7 +262,7 @@ async function computeStats(statsReader: StatsWorkerClient, range: StatsRange) {
 
   const elapsedMs = Date.now() - startedAtMs;
   if (elapsedMs >= SLOW_STATS_MS) {
-    logger.warn(`[stats] slow aggregation: ${elapsedMs}ms over ${rows.length} runs — consider narrowing the range`);
+    logger.warn(`[stats] slow aggregation: ${elapsedMs}ms over ${rows.length} attempts — consider narrowing the range`);
   }
 
   return {

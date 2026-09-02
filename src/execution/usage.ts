@@ -23,7 +23,7 @@ export const ROOT_AGENT = 'root';
 export type ProcessStatus = 'active' | 'inactive' | 'hidden';
 
 /**
- * One process in a Process Tree: the root Run/Conversation session or a
+ * One process in a Process Tree: the root Attempt/Conversation session or a
  * recursive Subagent. `usage` is the node's *own* tokens; roll-ups
  * (`rollUpUsage`) sum the whole subtree.
  */
@@ -387,7 +387,7 @@ export function totalTokensOf(usage: AttemptUsage): number | null {
 }
 
 /**
- * Run-end collection races the harness's final session-log flush: the
+ * Attempt-end collection races the harness's final session-log flush: the
  * log file exists from session start, but the last assistant usage
  * lines can merge milliseconds after the prompt result. When the file
  * exists and yields no per-model split yet, re-read briefly before

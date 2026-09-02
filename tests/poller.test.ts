@@ -228,7 +228,7 @@ describe('TrackerPoller.poll', () => {
     return { taskId: task.id };
   }
 
-  it('a working Task whose ticket closed is left alone — tracker state is never a control path (ADR-0041)', async () => {
+  it('a working Task whose ticket closed is left alone — tracker state is never a control path', async () => {
     const { taskId } = await pollThenReWorking('closed');
     expect((await tasks.get(taskId)).state).toBe('working');
   });

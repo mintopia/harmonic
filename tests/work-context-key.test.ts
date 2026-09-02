@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { workContextKey } from '../src/domain/work-context-key.js';
 import { DomainError } from '../src/domain/errors.js';
 
-describe('workContextKey (issue #118, ADR-0022)', () => {
+describe('workContextKey (issue #118)', () => {
   it('direct mode: two calls with the same workingDir but different branch produce the same key', () => {
     const a = workContextKey({ isolationMode: 'direct', workingDir: '/tmp/some-repo', branch: 'feature/a' });
     const b = workContextKey({ isolationMode: 'direct', workingDir: '/tmp/some-repo', branch: 'feature/b' });

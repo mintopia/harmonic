@@ -43,7 +43,7 @@ describe('deriveRole (labels → workflow/wayfinderType)', () => {
   });
 });
 
-describe('mirroredAgentEligible (labels → agent-workable, ADR-0041; the label half of the derived flag)', () => {
+describe('mirroredAgentEligible (labels → agent-workable; the label half of the derived flag)', () => {
   it('grilling/prototype/bare-task are human-only even with ready-for-agent', () => {
     expect(mirroredAgentEligible(['ready-for-agent'], 'grilling', false)).toBe(false);
     expect(mirroredAgentEligible(['ready-for-agent'], 'prototype', false)).toBe(false);
@@ -261,7 +261,7 @@ describe('mirrorScan upsert', () => {
     expect(results.map((t) => t.state)).toEqual(['done', 'ready']);
   });
 
-  it('a working Task whose own ticket closes stays working — never mirror-completed (issue #139, ADR-0041)', async () => {
+  it('a working Task whose own ticket closes stays working — never mirror-completed (issue #139)', async () => {
     const [task] = await mscan([ticket({ number: 8, labels: ['ready-for-agent'] })]);
     await tasks.setState(task!.id, 'working');
     const [after] = await mscan([ticket({ number: 8, state: 'closed', closedAt: '2026-08-07T01:00:00Z' })]);
@@ -377,7 +377,7 @@ describe('mirrorScan upsert', () => {
   });
 });
 
-describe('durable tracker facts (issue #233, ADR-0030 expand)', () => {
+describe('durable tracker facts (issue #233)', () => {
   let dir: string;
   let asyncDb: AsyncDbHandle;
   let settingsStore: SettingsStore;

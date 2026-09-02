@@ -110,7 +110,7 @@ const attentionIds = (sections: ReturnType<typeof boardSections>) =>
 const layout = (columns: ReturnType<typeof blockerColumns>) =>
   columns.map((column) => [column.label, column.items.map((item) => item.label)]);
 
-describe('boardSections — Attention / Running / Pending (ADR-0041)', () => {
+describe('boardSections — Attention / Running / Pending', () => {
   it('puts every escalated ticket in Attention (priority, then id) and every working ticket in Running, Epic members included', () => {
     const sections = boardSections(
       [
@@ -334,7 +334,7 @@ describe('blocker columns', () => {
     ]);
   });
 
-  it('reads satisfied from openBlockerCount when the done blocker is off the lean page (ADR-0045)', () => {
+  it('reads satisfied from openBlockerCount when the done blocker is off the lean page', () => {
     const cleared = task(9, 'ready', { dependsOn: [1, 2], openBlockerCount: 0 });
     expect(resolveBlockers(cleared, new Map())).toEqual([
       { taskId: 1, label: 'Task 1', satisfied: true },

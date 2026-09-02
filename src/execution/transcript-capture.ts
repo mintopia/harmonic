@@ -8,7 +8,7 @@ import type { VerificationAttemptStore } from '../domain/verification-attempts.j
  * paths for Sessions and critic verification attempts. A harness may not have
  * flushed the file by the time a dispatch or a critic turn ends, so every capture
  * here retries a few times off the hot path (or resolves lazily on read) and is
- * strictly best-effort: a missing transcript never fails a Run.
+ * strictly best-effort: a missing transcript never fails an Attempt.
  */
 export class TranscriptCapture {
   constructor(
@@ -18,7 +18,7 @@ export class TranscriptCapture {
   ) {}
 
   /** Claude can create its JSONL just after `session/new`; retry a few times
-   * without holding up the Run, then leave the Session transcript-less. */
+   * without holding up the Attempt, then leave the Session transcript-less. */
   async captureSessionTranscript(input: {
     sessionId: string;
     sessionRowId: number;

@@ -26,7 +26,7 @@ function wedge(a0: number, a1: number): string {
 export function Donut({
   segments,
   total,
-  totalLabel = total === 1 ? 'RUN' : 'RUNS',
+  totalLabel = total === 1 ? 'ATTEMPT' : 'ATTEMPTS',
   totalDisplay,
   ariaLabel,
   percent = true,

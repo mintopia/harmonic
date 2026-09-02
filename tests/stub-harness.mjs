@@ -91,9 +91,9 @@ async function handlePrompt(msg) {
   // unattended" reminder, a self-heal turn's "## Previous attempt failed"
   // corrective feedback (issue #137), a bounded agent re-merge turn's "## Branch
   // consolidation required" corrective feedback (issue #155), an Attempt's
-  // "## Rebase conflict" hand-off (ADR-0041), and a fresh Session's trailing
+  // "## Rebase conflict" hand-off, and a fresh Session's trailing
   // "## Prior session (condensed)" seed (issue #311), and the operator's
-  // "## Feedback from the previous attempt" guidance (ADR-0041 Reject). These
+  // "## Feedback from the previous attempt" guidance. These
   // are stripped specifically (not any "## " header) so any other non-JSON
   // prompt keeps the echo-scenario fallback.
   const jsonText = rawText
@@ -240,7 +240,7 @@ async function handlePrompt(msg) {
       sessionId: msg.params.sessionId,
       update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: JSON.stringify(values) } },
     });
-    // ACP session updates are no longer persisted (ADR-0031), so a test that
+    // ACP session updates are no longer persisted, so a test that
     // needs the injected value reads it from this file instead of run_events.
     if (scenario.echoEnvFile) {
       mkdirSync(dirname(scenario.echoEnvFile), { recursive: true });

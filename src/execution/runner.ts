@@ -74,7 +74,7 @@ export interface RunnerEvents {
   onAttemptUsage?: (payload: { attemptId: number; snapshot: AttemptUsageSnapshot }) => void;
 }
 
-/** A live ACP update, with a Run-local monotonic id for reconnect de-duplication. */
+/** A live ACP update, with an Attempt-local monotonic id for reconnect de-duplication. */
 export interface LiveAttemptEvent {
   id: number;
   attemptId: number;
@@ -134,7 +134,7 @@ export interface RunnerOptions {
   gitBreaker?: GitCircuitBreaker;
   /** Start-funnel gate for parallel-Epic members: true while a Task's
    * integration base isn't ready to fork from. {@link Runner.beginRun} refuses
-   * to spawn such a Run (a `DomainError`). Absent → not gated. */
+   * to spawn such an Attempt (a `DomainError`). Absent → not gated. */
   epicBaseNotReady?: (task: TaskRow) => boolean | Promise<boolean>;
   postMerge?: PostMergeHook;
 }
@@ -175,7 +175,7 @@ interface HealContext {
 }
 
 /**
- * Thrown by {@link Runner.resolveBaseBranch} when a worktree Run's base branch
+ * Thrown by {@link Runner.resolveBaseBranch} when a worktree Attempt's base branch
  * cannot be resolved to a real branch name: the base repo is on a detached HEAD
  * and the Task carries no explicit `baseBranch`. `reason` tells the operator how
  * to fix it: reattach the base repo to a branch, or set the Task's base.
@@ -188,7 +188,7 @@ export class BaseBranchUnresolved extends Error {
 }
 
 /**
- * Thrown inside {@link Runner.prepareWorkspace} when a worktree Run's resolved
+ * Thrown inside {@link Runner.prepareWorkspace} when a worktree Attempt's resolved
  * base is an Epic integration branch (`epic/<ref>`) that does NOT currently
  * exist. A transient condition: the Runner settles the Run back to `ready` to
  * be re-picked rather than escalating.
@@ -309,7 +309,7 @@ export class Runner {
 
   /**
    * A verifier's live output, batched onto the Attempt's transient log stream
-   * (the same channel the builder's ACP updates ride, ADR-0031) as
+   * (the same channel the builder's ACP updates ride) as
    * `verification_output` updates, so the Verify/Review tab can tail a check
    * while it runs. Batched per ~400ms or 8 KiB so a chatty test runner doesn't
    * fan out one WebSocket frame per stdout write.
@@ -358,7 +358,7 @@ export class Runner {
     return attempt;
   }
 
-  /** Every active Run's ids plus its freshest live-usage snapshot. */
+  /** Every active Attempt's ids plus its freshest live-usage snapshot. */
   async activeSnapshots(): Promise<{ attemptId: number; taskId: number; snapshot: AttemptUsageSnapshot | null }[]> {
     return Promise.all(
       [...this.active.values()].map(async (a) => ({
@@ -387,7 +387,7 @@ export class Runner {
   /**
    * Reject with guidance: the operator's guidance becomes the feedback of the
    * escalated Attempt and of the next one, the attempt budget restarts, and the
-   * loop resumes on the same ticket. The next Run reuses the Task's existing
+   * loop resumes on the same ticket. The next Attempt reuses the Task's existing
    * worktree and branch.
    */
   async resumeWithGuidance(task: TaskRow, guidance: string, startNow = false): Promise<void> {
@@ -607,7 +607,7 @@ export class Runner {
 
   /**
    * Stop a task's active run because an operator force-completed it (the task is
-   * already `done`). Mirrors {@link cancelForTask} but settles the Run
+   * already `done`). Mirrors {@link cancelForTask} but settles the Attempt
    * `completed`.
    */
   async completeForTask(taskId: number): Promise<void> {
@@ -643,8 +643,8 @@ export class Runner {
 
   /**
    * The agent-driven finish signal (`finish_task` MCP tool): mark this task's
-   * active Run so the auto-drive continue loop stops re-prompting it. Returns
-   * whether an active Run was found.
+   * active Attempt so the auto-drive continue loop stops re-prompting it. Returns
+   * whether an active Attempt was found.
    */
   markAgentFinished(taskId: number): boolean {
     return this.forActiveTask(taskId, (active) => {
@@ -655,7 +655,7 @@ export class Runner {
 
   /**
    * The agent-driven escalation signal (`escalate_task` MCP tool): hands the
-   * ticket to a human, superseding the retry budget. Returns whether a Run
+   * ticket to a human, superseding the retry budget. Returns whether an Attempt
    * matched.
    */
   markEscalate(taskId: number, reason: string): boolean {
@@ -666,12 +666,12 @@ export class Runner {
   }
 
   /**
-   * Steer a task's active Run. When a turn is in flight and the harness
+   * Steer a task's active Attempt. When a turn is in flight and the harness
    * supports ACP `_session/steering`, the message is injected into the RUNNING
    * turn; otherwise it is queued and delivered as a fresh prompt turn at the
    * next turn boundary. Records a `steer_injected` or `steer_queued` lifecycle
    * event either way. Returns false (⇒ 409) when the task isn't running here or
-   * its Run is no longer steerable.
+   * its Attempt is no longer steerable.
    */
   async steer(taskId: number, text: string): Promise<boolean> {
     const active = [...this.active.values()].find((a) => a.taskId === taskId);
@@ -702,9 +702,9 @@ export class Runner {
 
   /**
    * Continue a settled (escalated) Task's warm Session with an operator
-   * message: when no Run is active but the Task's last Session-bound Run left a
+   * message: when no Attempt is active but the Task's last Session-bound Attempt left a
    * Session that is BOTH resumable and still inside its harness warm window,
-   * spawn a fresh Run bound to that Session whose FIRST turn is the operator's
+   * spawn a fresh Attempt bound to that Session whose FIRST turn is the operator's
    * message. Returns false (→ 409) when there is nothing warm to continue.
    */
   async steerSettled(taskId: number, text: string): Promise<boolean> {
@@ -1042,7 +1042,7 @@ export class Runner {
   private async finalizeWorkspace(task: TaskRow, run: AttemptRow, attemptNumber: number, workspace: Workspace): Promise<void> {
     if (!workspace.worktree) return;
     const { repoDir, path } = workspace.worktree;
-    await Git.commitAll(path, `harmonic: task ${task.id} run ${attemptNumber}`).catch(() => {});
+    await Git.commitAll(path, `harmonic: task ${task.id} attempt ${attemptNumber}`).catch(() => {});
     const sessionRowId = (await this.attempts.get(run.id)).sessionRowId;
     let retained = false;
     if (sessionRowId != null) {
@@ -1138,7 +1138,7 @@ export class Runner {
       'This attempt starts a fresh Session under the deterministic continuation rule.',
       `Prior Session: ${session.harness} / ${session.model} / ${session.harnessSessionId}`,
       `Verified head: ${current.verifiedHeadOid ?? '(none produced)'}`,
-      `Run events: ${events.length}.`,
+      `Attempt events: ${events.length}.`,
     ].join('\n');
   }
 
@@ -1373,7 +1373,7 @@ export class Runner {
 
   /**
    * Operator Accept runs the identical one merge policy the automated path
-   * does. The escalated Run is already terminal, so escalation is returned to
+   * does. The escalated Attempt is already terminal, so escalation is returned to
    * the caller rather than settled here.
    */
   async mergeAcceptedBranch(task: TaskRow, run: AttemptRow): Promise<MergePolicyOutcome> {
@@ -1408,8 +1408,8 @@ export class Runner {
   }
 
   /**
-   * The candidate commit an operator Accept would merge: a worktree Run's
-   * branch tip once it has commits ahead of its base, or a direct Run's
+   * The candidate commit an operator Accept would merge: a worktree Attempt's
+   * branch tip once it has commits ahead of its base, or a direct Attempt's
    * captured `verifiedHeadOid`. Null means there is nothing to accept.
    */
   async candidateHead(task: TaskRow, run: AttemptRow): Promise<string | null> {
@@ -1446,11 +1446,11 @@ export class Runner {
       this.events.onAttemptEvent?.(event);
     })().catch((err: unknown) => {
       if (isForeignKeyViolation(err)) {
-        logger.debug(`task ${task.id} run ${run.id}: dropped ${type} event — attempt row gone (racing delete)`);
+        logger.debug(`task ${task.id} attempt ${run.id}: dropped ${type} event — attempt row gone (racing delete)`);
         return;
       }
       logger.error(
-        `task ${task.id} run ${run.id}: ${type} event append failed: ${err instanceof Error ? err.message : String(err)}`,
+        `task ${task.id} attempt ${run.id}: ${type} event append failed: ${err instanceof Error ? err.message : String(err)}`,
       );
     });
   }
@@ -1683,7 +1683,7 @@ export class Runner {
         record: (payload) => record('lifecycle', payload),
         settle: async (now, reason) => {
           // Claim the settle so the drive loop's own settle path (unwinding from
-          // the killed harness) no-ops instead of finishing the Run twice.
+          // the killed harness) no-ops instead of finishing the Attempt twice.
           active.externallySettled = true;
           await this.coordinateSettle(task, now, 'guardrail-trip', { runState: 'failed', taskAction: 'escalate', reason }, {});
         },
@@ -1863,7 +1863,7 @@ export class Runner {
           active.idle = true;
         }
         if (workspace.worktree && !workspace.startDirty && (await Git.isDirty(workspace.cwd).catch(() => false))) {
-          await Git.commitAll(workspace.cwd, `harmonic: task ${task.id} run ${attemptNumber}`).catch(() => {});
+          await Git.commitAll(workspace.cwd, `harmonic: task ${task.id} attempt ${attemptNumber}`).catch(() => {});
         }
         const [head, base] = await Promise.all([
           Git.revParse(workspace.cwd, 'HEAD').catch(() => null),
@@ -1931,7 +1931,7 @@ export class Runner {
         } else {
           if (afkUnresolved && (!verifierRan || (await this.attempts.get(run.id)).verifiedHeadOid == null)) {
             record('lifecycle', { event: 'unresolved', reason: 'no finish_task signal and no verifier vouched for the work' });
-            return { kind: 'actionable-fail', reason: 'run ended without an execution-complete (finish_task) signal', output: '' };
+            return { kind: 'actionable-fail', reason: 'attempt ended without an execution-complete (finish_task) signal', output: '' };
           }
           const diff = await this.diffSnapshotFor(task, run.id);
           const current = await this.attempts.get(run.id);
@@ -2134,7 +2134,7 @@ export class Runner {
       ]);
       return { stat, diffBaseOid, diffHeadOid };
     } catch (err) {
-      logger.warn('diff snapshot failed; review diff will be blank for this run', {
+      logger.warn('diff snapshot failed; review diff will be blank for this attempt', {
         attemptId,
         branch: run.branch,
         baseBranch: run.baseBranch,

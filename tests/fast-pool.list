@@ -26,7 +26,6 @@ tests/attempts.test.ts
 tests/auto-drive.test.ts
 tests/board-sections-model.test.ts
 tests/branch-retirement.test.ts
-tests/config-migration.test.ts
 tests/config-store.test.ts
 tests/contrast.test.ts
 tests/conversation-attention-model.test.ts
@@ -113,8 +112,7 @@ tests/transcript-log.test.ts
 tests/ui-primitives.test.ts
 tests/verification-attempts-model.test.ts
 tests/verification-attempts.test.ts
-tests/verification-combine-parity.test.ts
-tests/verification-model.test.ts
+tests/verification-combine.test.ts
 tests/verification-override-model.test.ts
 tests/work-context-key.test.ts
 tests/work-ordering.test.ts

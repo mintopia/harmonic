@@ -142,7 +142,7 @@ export async function epicRoutes(fastify: FastifyInstance): Promise<void> {
       schema: {
         tags: ['Epics'],
         description:
-          "One derived Epic by its tracker ref, from the Workspace's last poll scan (issue #167, ADR-0026). " +
+          "One derived Epic by its tracker ref, from the Workspace's last poll scan (issue #167). " +
           '404s when the scan derives no leaf-most Epic with that ref. Operator only.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         params: epicParamsSchema,

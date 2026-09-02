@@ -8,7 +8,7 @@ import type { ActivityProcess, Cost, AttemptUsage, AttemptUsageEvent } from './t
  * should look at first — the view holds no state of its own (CONTEXT.md:
  * Activity), so the ranking is a pure function of the snapshot + live deltas.
  *
- * - **Needs you**: an afk Run that escalated to a human, or any
+ * - **Needs you**: an afk Attempt that escalated to a human, or any
  *   process past its context window (degrading — a human should intervene).
  *   These are the only rows that genuinely block on the operator.
  * - **High load**: a process running hot — context fill at or above
@@ -75,7 +75,7 @@ export function rankActivity(processes: ActivityProcess[]): ActivityProcess[] {
   });
 }
 
-/** The Activity toolbar's type segments: the fleet, just Runs, or just Chats. */
+/** The Activity toolbar's type segments: the fleet, just Attempts, or just Chats. */
 export const ACTIVITY_TYPE_FILTERS = ['all', 'attempts', 'chats'] as const;
 export type ActivityTypeFilter = (typeof ACTIVITY_TYPE_FILTERS)[number];
 
@@ -291,7 +291,7 @@ export function sumCosts(costs: (Cost | null | undefined)[]): Cost | null {
 }
 
 /**
- * Merge a live `attempt_usage` delta into the matching Run row (by `attemptId`),
+ * Merge a live `attempt_usage` delta into the matching Attempt row (by `attemptId`),
  * refreshing its Usage, context fill, activity line, Process Tree, and Cost.
  * Returns the same array reference when nothing matches — a Conversation is
  * never touched (it has no `attemptId`), and a no-op skips a needless re-render.
@@ -314,7 +314,7 @@ export function mergeRunUsage(processes: ActivityProcess[], event: AttemptUsageE
 
 /** The summary strip's figures: the one-glance fleet readout above the rows. */
 export interface ActivitySummary {
-  /** In-flight Runs (afk work) — the machine-ceiling numerator. */
+  /** In-flight Attempts (afk work) — the machine-ceiling numerator. */
   runningCount: number;
   /** Rows in the "Needs you" tier — the count that should pull the eye. */
   needsYouCount: number;
@@ -322,7 +322,7 @@ export interface ActivitySummary {
   cost: Cost | null;
   /** Summed average token throughput across the fleet. */
   tokensPerSecond: number;
-  /** Runs in flight against the Machine Ceiling (the global concurrent-Run cap). */
+  /** Attempts in flight against the Machine Ceiling (the global concurrent-Attempt cap). */
   ceiling: { running: number; max: number };
 }
 

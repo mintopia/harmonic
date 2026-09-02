@@ -7,10 +7,8 @@ import {
   appConfigSchema,
   defaultConfig,
   mergeConfig,
-  migrateLegacyConfig,
   type AppConfig,
   type DeepPartial,
-  type LegacyConfig,
 } from '../config.js';
 
 export type { WorkspaceOverrides };
@@ -42,7 +40,7 @@ function loadFromDisk(path: string): SettingsFile {
   }
   try {
     const global = appConfigSchema.parse(
-      mergeConfig(defaultConfig(), migrateLegacyConfig((raw.global ?? {}) as LegacyConfig)),
+      mergeConfig(defaultConfig(), (raw.global ?? {}) as DeepPartial<AppConfig>),
     );
     const workspaces: Record<string, WorkspaceOverrides> = {};
     for (const [id, entry] of Object.entries(raw.workspaces ?? {})) {
@@ -103,9 +101,9 @@ export class SettingsStore implements WorkspaceSettingsStore {
     return this.global;
   }
 
-  async updateGlobal(patch: LegacyConfig): Promise<AppConfig> {
+  async updateGlobal(patch: DeepPartial<AppConfig>): Promise<AppConfig> {
     this.reloadIfChanged();
-    this.global = mergeConfig(this.global, migrateLegacyConfig(patch));
+    this.global = mergeConfig(this.global, patch);
     this.persist();
     return this.global;
   }

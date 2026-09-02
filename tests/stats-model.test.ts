@@ -62,7 +62,7 @@ describe('subagentShare', () => {
 });
 
 describe('cacheHitRate', () => {
-  it('is cache-read over all input-side tokens, cache-write included (ADR-0028)', () => {
+  it('is cache-read over all input-side tokens, cache-write included', () => {
     expect(cacheHitRate(u(10, 5, 30, 10))).toBeCloseTo(0.6, 10);
   });
 
@@ -159,7 +159,7 @@ describe('reliabilityStates', () => {
     expect(segments).toEqual([{ state: 'completed', count: 2 }]);
   });
 
-  it('never invents a rejected slice — a reject is a resumed Attempt, not a run outcome (ADR-0041)', () => {
+  it('never invents a rejected slice — a reject is a resumed Attempt, not a run outcome', () => {
     const segments = reliabilityStates({ completed: 2, failed: 1 }, 1);
     expect(segments.map((s) => s.state)).toEqual(['completed', 'failed']);
   });

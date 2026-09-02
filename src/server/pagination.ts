@@ -1,8 +1,5 @@
 import { z } from 'zod';
 
-/** The page size a client should request when it has no reason to pick another.
- * Not enforced as a server default: an omitted `limit` returns the whole filtered list. */
-export const DEFAULT_LIMIT = 50;
 /** The hard cap on an explicit `limit`. */
 export const MAX_LIMIT = 200;
 

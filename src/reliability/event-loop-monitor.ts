@@ -72,11 +72,6 @@ export class EventLoopMonitor {
     return this.lastLag;
   }
 
-  /** True when the last probe saw a stall — a hint for cooperative shedding. */
-  get underPressure(): boolean {
-    return this.lastLag >= this.stallMs;
-  }
-
   /** Begin probing. Idempotent. */
   start(): void {
     if (this.running) return;

@@ -378,33 +378,6 @@ export function mergeConfig(base: AppConfig, overrides?: DeepPartial<AppConfig>)
   return appConfigSchema.parse(merge(base, overrides));
 }
 
-/** A stored/patched config that may still carry the retired `agentReview` flag. */
-export type LegacyConfig = DeepPartial<AppConfig> & {
-  agentReview?: boolean;
-  verification?: { command?: VerificationCommand | null; critic?: VerificationCritic | null; autoAccept?: boolean; maxSelfHeals?: number };
-  /** The retired context-reuse fraction; dropped, not converted. */
-  contextReuseThreshold?: number;
-};
-
-/**
- * Fold retired verification input into `verify`. Legacy keys are accepted only at
- * this boundary and are never returned or persisted. An explicit `verify` value
- * always wins, including an empty command list or a disabled review.
- */
-export function migrateLegacyConfig(raw: LegacyConfig): DeepPartial<AppConfig> {
-  const { agentReview, verification: legacyVerification, contextReuseThreshold: _retiredReuseFraction, ...rest } = raw;
-  const verify: DeepPartial<AppConfig['verify']> = { ...rest.verify };
-  if (legacyVerification) {
-    if (verify.commands === undefined && 'command' in legacyVerification) {
-      verify.commands = legacyVerification.command === null ? [] : [legacyVerification.command!];
-    }
-    if (verify.review === undefined && 'critic' in legacyVerification) {
-      verify.review = legacyVerification.critic === null ? { enabled: false } : { enabled: true, ...legacyVerification.critic! };
-    }
-  }
-  return Object.keys(verify).length === 0 ? rest : { ...rest, verify };
-}
-
 export function defaultDataDir(): string {
   return process.env.HARMONIC_DATA_DIR ?? join(homedir(), '.harmonic');
 }
