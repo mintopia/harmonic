@@ -276,11 +276,14 @@ describe('usage aggregation with AI Units', () => {
 describe('per-tool output-token attribution (issue #195)', () => {
   it('splits each turn across parallel calls, collapses repeated tools, and sends no-tool output to reasoning', async () => {
     const { attributeTurnTokens } = await import('../src/execution/usage.js');
+    const { pricesForHarness } = await import('../src/domain/pricing.js');
+    const { baselineConfig } = await import('../src/config.js');
+    const prices = pricesForHarness(baselineConfig().harnesses.claude);
 
     const attributed = attributeTurnTokens([
       { model: 'claude-sonnet-5', usage: { inputTokens: 0, outputTokens: 11, cacheReadTokens: 0, cacheWriteTokens: 0 }, tools: ['Read', 'Write', 'Read'] },
       { model: 'claude-sonnet-5', usage: { inputTokens: 0, outputTokens: 5, cacheReadTokens: 0, cacheWriteTokens: 0 }, tools: [] },
-    ]);
+    ], prices);
 
     expect(attributed).toEqual({
       toolTokens: {
@@ -329,10 +332,15 @@ describe('per-tool output attribution', () => {
 
     const usage = collectUsage({
       harnessId: 'claude',
-      harness: { command: 'x', args: [], env: {}, models: [], defaultModel: 'x', cacheWarmSeconds: 300, sessionLogDir: logRoot },
+      harness: {
+        command: 'x', args: [], env: {},
+        models: [{ id: 'claude-sonnet-5', price: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 } }],
+        defaultModel: 'claude-sonnet-5', cacheWarmSeconds: 300, sessionLogDir: logRoot,
+      },
       cwd,
       sessionId,
       events: [],
+      prices: { 'claude-sonnet-5': { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 } },
     })!;
 
     expect(usage.toolTokens).toEqual({
@@ -556,6 +564,10 @@ describe('usage collection and statistics', () => {
     };
     overrides.harnesses.copilot.sessionLogDir = copilotHome;
     overrides.harnesses.copilot.env = { STUB_SESSION_ID: 'copilot-e2e-session' };
+    const { baselineConfig } = await import('../src/config.js');
+    overrides.harnesses.copilot.models = baselineConfig().harnesses.copilot.models;
+    overrides.harnesses.copilot.defaultModel = 'auto';
+    overrides.chat = { harness: 'copilot', model: 'auto' };
 
     // Native store: <sessionLogDir>/session-store.db, rows keyed by the ACP
     // sessionId. input_tokens is TOTAL input; cache columns omit-when-zero.

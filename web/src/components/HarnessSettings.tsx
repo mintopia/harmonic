@@ -53,15 +53,22 @@ function ListEditor({ items, onChange, ariaLabel }: { items: string[]; onChange:
 }
 
 function CatalogEditor({ items, onChange }: { items: ModelCatalogEntry[]; onChange: (items: ModelCatalogEntry[]) => void }) {
+  const [priceDrafts, setPriceDrafts] = useState<Record<number, NonNullable<ModelCatalogEntry['price']>>>({});
   const update = (i: number, entry: ModelCatalogEntry) => onChange(items.map((item, index) => (index === i ? entry : item)));
+  const updatePrice = (i: number, key: keyof NonNullable<ModelCatalogEntry['price']>, value: string) => {
+    const item = items[i];
+    if (!item) return;
+    const draft = priceDrafts[i] ?? item.price ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+    setPriceDrafts((drafts) => ({ ...drafts, [i]: draft }));
+    if (value === '') return update(i, { ...item, price: undefined });
+    const price = { ...draft, [key]: Number(value) };
+    setPriceDrafts((drafts) => ({ ...drafts, [i]: price }));
+    update(i, { ...item, price });
+  };
   return <div className="space-y-2.5">
-    {items.map((item, i) => <div key={`${item.id}-${i}`} className="grid gap-2 sm:grid-cols-6">
+    {items.map((item, i) => <div key={`${item.id}-${i}`} className="grid gap-2 sm:grid-cols-7">
       <input aria-label="Model id" className={`${field} font-data`} value={item.id} onChange={(e) => update(i, { ...item, id: e.target.value })} />
-      {PRICE_FIELDS.map((key) => <input key={key} aria-label={PRICE_LABELS[key]} type="number" min={0} step="any" className={field} value={item.price?.[key] ?? ''} onChange={(e) => {
-        if (e.target.value === '') return update(i, { ...item, price: undefined });
-        const price = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, ...item.price, [key]: Number(e.target.value) };
-        update(i, { ...item, price });
-      }} />)}
+      {PRICE_FIELDS.map((key) => <input key={key} aria-label={PRICE_LABELS[key]} type="number" min={0} step="any" className={field} value={item.price?.[key] ?? ''} onChange={(e) => updatePrice(i, key, e.target.value)} />)}
       <input aria-label="Context window" type="number" min={1} className={field} value={item.contextWindow ?? ''} onChange={(e) => update(i, { ...item, contextWindow: e.target.value === '' ? undefined : Number(e.target.value) })} />
       <button type="button" aria-label="Remove model" onClick={() => onChange(items.filter((_, index) => index !== i))} className={`${touchTarget} ${btnQuiet}`}>✕</button>
     </div>)}

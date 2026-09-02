@@ -3,7 +3,7 @@
   "info": {
     "title": "@mintopia/harmonic",
     "version": "2.0.0",
-    "description": "Queue, run, and review autonomous coding-agent tasks over ACP\n\n## MCP\n\n`POST /mcp` is a stateless streamable-HTTP MCP server (not a REST\nendpoint, so it has no entry in this spec's paths). It authenticates the\nsame way as the REST API — a bearer token, either an operator API key or\nthe Attempt Key Harmonic injects into a spawned harness — and exposes the\nagent task surface as MCP tools (task CRUD, dependencies, queue/cancel,\nruns and events). Accept/Reject are human-only and are never exposed as\nMCP tools — a verifier's pass is the accept (#140, ADR-0021). A attempt-scoped\nAttempt Key may call `/mcp` regardless of the REST restrictions noted per\nendpoint below. `force_integrate_epic` is an operator-only tool, the same\nfooting as Accept/Reject: a Attempt Key can call `/mcp` but gets a `forbidden`\nerror from it specifically — only an operator API key (`scope: 'full'`) or\nan authenticated session may call it.\n\n## WebSocket\n\n`GET /api/ws` is a single firehose WebSocket (also outside this spec's\npaths): every run event, run state change, task state change/removal, and\nConversation event/change is broadcast to every connected client as JSON\nmessages of the form `{ type: 'attempt_event' | 'attempt_changed' | 'attempt_usage' |\n'task_changed' | 'task_removed' | 'conversation_event' | 'conversation_changed' |\n'permission_request' | 'scheduled-jobs' | 'operations', ... }`, using the same Task/Run/Conversation/Scheduled Job/Operation shapes\nserved over REST. `attempt_usage` is a live-usage snapshot for a running Run\n(tokens, context fill, derived Cost, current-activity line, and Process\nTree), pushed about once a second while the Run tails its native log.\n`task_removed` (issue #162) announces a hard-deleted Task's id (`{ type:\n'task_removed', id }`) — the row is gone, not another state change.\n`scheduled-jobs` announces the full Scheduled Job registry snapshot, matching\n`GET /api/scheduled-jobs` (ADR-0038).\n`operations` announces an Operation lifecycle event, matching the operation shape\nserved by `GET /api/operations`.\n`permission_request` announces a Harness blocked on an\noperator permission decision in a Conversation (ADR-0007), answered via\n`POST /conversations/:id/permissions/:reqId`. Authenticate by passing the\nsession token or an API key as `?token=` (WebSocket clients cannot set an\nAuthorization header). A `read`-scoped key gets a filtered firehose — only\n`task_changed`, `task_removed`, `attempt_changed`, `attempt_event`, `attempt_usage`, and\n`operations` — with the Conversation and permission traffic dropped.\n\n## Read scope\n\nA `read`-scoped API key (created via `POST /api/keys` with\n`{ \"scope\": \"read\" }`) is a viz-client credential: it may `GET` tasks,\nruns, maps, Operations (`/api/operations`), and the instance-wide Activity snapshot (`/api/activity`,\nfiltered to Runs only for a read key), and open the WebSocket (filtered as\nabove). Every mutation and the whole operator surface (keys, config,\nchannels, Conversations) is blocked. There is no `map_changed` event — a\nclient re-fetches `/maps` on reconnect or when it sees a `mapRef` it has\nnot resolved yet."
+    "description": "Queue, run, and review autonomous coding-agent tasks over ACP\n\n## MCP\n\n`POST /mcp` is a stateless streamable-HTTP MCP server (not a REST\nendpoint, so it has no entry in this spec's paths). It authenticates the\nsame way as the REST API — a bearer token, either an operator API key or\nthe Attempt Key Harmonic injects into a spawned harness — and exposes the\nagent task surface as MCP tools (task CRUD, dependencies, queue/cancel,\nattempts and events). Accept/Reject are human-only and are never exposed as\nMCP tools — a verifier's pass is the accept (#140, ADR-0021). An attempt-scoped\nAttempt Key may call `/mcp` regardless of the REST restrictions noted per\nendpoint below. `force_integrate_epic` is an operator-only tool, the same\nfooting as Accept/Reject: an Attempt Key can call `/mcp` but gets a `forbidden`\nerror from it specifically — only an operator API key (`scope: 'full'`) or\nan authenticated session may call it.\n\n## WebSocket\n\n`GET /api/ws` is a single firehose WebSocket (also outside this spec's\npaths): every attempt event, attempt state change, task state change/removal, and\nConversation event/change is broadcast to every connected client as JSON\nmessages of the form `{ type: 'attempt_event' | 'attempt_changed' | 'attempt_usage' |\n'task_changed' | 'task_removed' | 'conversation_event' | 'conversation_changed' |\n'permission_request' | 'scheduled-jobs' | 'operations', ... }`, using the same Task/Attempt/Conversation/Scheduled Job/Operation shapes\nserved over REST. `attempt_usage` is a live-usage snapshot for a running Attempt\n(tokens, context fill, derived Cost, current-activity line, and Process\nTree), pushed about once a second while the Attempt tails its native log.\n`task_removed` (issue #162) announces a hard-deleted Task's id (`{ type:\n'task_removed', id }`) — the row is gone, not another state change.\n`scheduled-jobs` announces the full Scheduled Job registry snapshot, matching\n`GET /api/scheduled-jobs`.\n`operations` announces an Operation lifecycle event, matching the operation shape\nserved by `GET /api/operations`.\n`permission_request` announces a Harness blocked on an\noperator permission decision in a Conversation (ADR-0007), answered via\n`POST /conversations/:id/permissions/:reqId`. Authenticate by passing the\nsession token or an API key as `?token=` (WebSocket clients cannot set an\nAuthorization header). A `read`-scoped key gets a filtered firehose — only\n`task_changed`, `task_removed`, `attempt_changed`, `attempt_event`, `attempt_usage`, and\n`operations` — with the Conversation and permission traffic dropped.\n\n## Read scope\n\nA `read`-scoped API key (created via `POST /api/keys` with\n`{ \"scope\": \"read\" }`) is a viz-client credential: it may `GET` tasks,\nattempts, maps, Operations (`/api/operations`), and the instance-wide Activity snapshot (`/api/activity`,\nfiltered to Attempts only for a read key), and open the WebSocket (filtered as\nabove). Every mutation and the whole operator surface (keys, config,\nchannels, Conversations) is blocked. There is no `map_changed` event — a\nclient re-fetches `/maps` on reconnect or when it sees a `mapRef` it has\nnot resolved yet."
   },
   "components": {
     "securitySchemes": {
@@ -188,7 +188,8 @@
               "skipped",
               "disabled",
               "unrunnable",
-              "planned"
+              "planned",
+              "running"
             ],
             "example": "passed"
           },
@@ -1278,6 +1279,21 @@
             ],
             "example": null
           },
+          "mergeStatus": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "merging",
+                  "resolving-conflicts"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "feedback": {
             "anyOf": [
               {
@@ -1410,6 +1426,10 @@
             "type": "boolean",
             "example": false
           },
+          "isEpic": {
+            "type": "boolean",
+            "example": false
+          },
           "overrides": {
             "type": "object",
             "properties": {
@@ -1500,6 +1520,7 @@
           "conflictResolveTurns",
           "state",
           "escalationReason",
+          "mergeStatus",
           "feedback",
           "continuationChoice",
           "origin",
@@ -1515,6 +1536,7 @@
           "openBlockerCount",
           "agentWorkable",
           "humanOnly",
+          "isEpic",
           "overrides"
         ]
       },
@@ -1593,6 +1615,21 @@
             ],
             "example": null
           },
+          "mergeStatus": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "merging",
+                  "resolving-conflicts"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "feedback": {
             "anyOf": [
               {
@@ -1722,6 +1759,10 @@
             "example": false
           },
           "humanOnly": {
+            "type": "boolean",
+            "example": false
+          },
+          "isEpic": {
             "type": "boolean",
             "example": false
           },
@@ -1857,7 +1898,7 @@
                 "type": "null"
               }
             ],
-            "example": " src/server/rate-limit.ts | 96 ++++++++++++++\n 1 file changed, 96 insertions(+)"
+            "example": "96\t0\tsrc/server/rate-limit.ts"
           },
           "runStartedAt": {
             "anyOf": [
@@ -1952,6 +1993,10 @@
               }
             ],
             "example": "refs/harmonic/direct/attempt-9137"
+          },
+          "hasCandidate": {
+            "type": "boolean",
+            "example": true
           }
         },
         "required": [
@@ -1967,6 +2012,7 @@
           "conflictResolveTurns",
           "state",
           "escalationReason",
+          "mergeStatus",
           "feedback",
           "continuationChoice",
           "origin",
@@ -1982,6 +2028,7 @@
           "openBlockerCount",
           "agentWorkable",
           "humanOnly",
+          "isEpic",
           "overrides",
           "summary",
           "cost",
@@ -1996,7 +2043,8 @@
           "contextTokens",
           "contextWindow",
           "skipReason",
-          "verifiedRef"
+          "verifiedRef",
+          "hasCandidate"
         ]
       },
       "TaskListRowInput": {
@@ -2070,6 +2118,21 @@
             ],
             "example": null
           },
+          "mergeStatus": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "merging",
+                  "resolving-conflicts"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "feedback": {
             "anyOf": [
               {
@@ -2199,6 +2262,10 @@
             "example": false
           },
           "humanOnly": {
+            "type": "boolean",
+            "example": false
+          },
+          "isEpic": {
             "type": "boolean",
             "example": false
           },
@@ -2334,7 +2401,7 @@
                 "type": "null"
               }
             ],
-            "example": " src/server/rate-limit.ts | 96 ++++++++++++++\n 1 file changed, 96 insertions(+)"
+            "example": "96\t0\tsrc/server/rate-limit.ts"
           },
           "runStartedAt": {
             "anyOf": [
@@ -2429,6 +2496,10 @@
               }
             ],
             "example": "refs/harmonic/direct/attempt-9137"
+          },
+          "hasCandidate": {
+            "type": "boolean",
+            "example": true
           }
         },
         "required": [
@@ -2443,6 +2514,7 @@
           "conflictResolveTurns",
           "state",
           "escalationReason",
+          "mergeStatus",
           "feedback",
           "continuationChoice",
           "origin",
@@ -2458,6 +2530,7 @@
           "openBlockerCount",
           "agentWorkable",
           "humanOnly",
+          "isEpic",
           "overrides",
           "summary",
           "cost",
@@ -2472,7 +2545,8 @@
           "contextTokens",
           "contextWindow",
           "skipReason",
-          "verifiedRef"
+          "verifiedRef",
+          "hasCandidate"
         ]
       },
       "AttemptSummaryInput": {
@@ -2617,6 +2691,28 @@
             "type": "number",
             "example": 1784032020000
           },
+          "contextTokens": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 48210
+          },
+          "contextWindow": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 200000
+          },
           "finishedAt": {
             "anyOf": [
               {
@@ -2656,6 +2752,8 @@
           "usage",
           "toolCalls",
           "startedAt",
+          "contextTokens",
+          "contextWindow",
           "finishedAt",
           "cost"
         ]
@@ -2768,10 +2866,14 @@
                 "type": "null"
               }
             ]
+          },
+          "configured": {
+            "type": "boolean"
           }
         },
         "required": [
-          "status"
+          "status",
+          "configured"
         ]
       },
       "EpicIntegrateStateInput": {
@@ -2817,6 +2919,55 @@
               "spec"
             ]
           },
+          "state": {
+            "type": "string",
+            "enum": [
+              "open",
+              "integrated"
+            ]
+          },
+          "description": {
+            "type": "string",
+            "example": "Build the parallel-Epic operator UI …"
+          },
+          "createdAt": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "example": 1756000000000
+          },
+          "updatedAt": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 1756100000000
+          },
+          "baseBranch": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "develop"
+          },
+          "dependsOn": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          },
           "members": {
             "type": "array",
             "items": {
@@ -2855,6 +3006,12 @@
           "ref",
           "title",
           "kind",
+          "state",
+          "description",
+          "createdAt",
+          "updatedAt",
+          "baseBranch",
+          "dependsOn",
           "members",
           "ready",
           "integration",
@@ -3593,7 +3750,7 @@
             ],
             "example": 200000
           },
-          "cacheTtlSeconds": {
+          "cacheWarmSeconds": {
             "anyOf": [
               {
                 "type": "number"
@@ -3637,7 +3794,7 @@
           "cost",
           "contextTokens",
           "contextWindow",
-          "cacheTtlSeconds",
+          "cacheWarmSeconds",
           "createdAt",
           "updatedAt",
           "endedAt"
@@ -3897,122 +4054,6 @@
                 "maximum": 9007199254740991,
                 "example": 1
               }
-            }
-          },
-          "agentReview": {
-            "example": false,
-            "description": "Deprecated (#140): folded into verification.autoAccept; retained so a pre-upgrade client PATCHing it still merges non-exposing behaviour.",
-            "type": "boolean"
-          },
-          "verification": {
-            "type": "object",
-            "properties": {
-              "command": {
-                "anyOf": [
-                  {
-                    "type": "object",
-                    "properties": {
-                      "command": {
-                        "type": "string",
-                        "minLength": 1,
-                        "example": "npm"
-                      },
-                      "args": {
-                        "default": [],
-                        "example": [
-                          "test"
-                        ],
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        }
-                      },
-                      "cwd": {
-                        "example": "packages/api",
-                        "type": "string"
-                      },
-                      "env": {
-                        "default": {},
-                        "example": {
-                          "CI": "1"
-                        },
-                        "type": "object",
-                        "propertyNames": {
-                          "type": "string"
-                        },
-                        "additionalProperties": {
-                          "type": "string"
-                        }
-                      },
-                      "timeoutSeconds": {
-                        "default": 600,
-                        "example": 600,
-                        "type": "integer",
-                        "exclusiveMinimum": 0,
-                        "maximum": 9007199254740991
-                      }
-                    },
-                    "required": [
-                      "command"
-                    ]
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "example": {
-                  "command": "npm",
-                  "args": [
-                    "test"
-                  ]
-                }
-              },
-              "critic": {
-                "anyOf": [
-                  {
-                    "type": "object",
-                    "properties": {
-                      "prompt": {
-                        "type": "string",
-                        "minLength": 1,
-                        "example": "Review the change against issue {ref}: {title}. Read the code and the issue to decide."
-                      },
-                      "model": {
-                        "type": "string",
-                        "minLength": 1,
-                        "example": "claude-opus-5"
-                      },
-                      "harness": {
-                        "example": "claude",
-                        "type": "string",
-                        "enum": [
-                          "claude",
-                          "codex",
-                          "copilot"
-                        ]
-                      }
-                    },
-                    "required": [
-                      "prompt",
-                      "model"
-                    ]
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "example": {
-                  "prompt": "Review the diff for correctness.",
-                  "model": "claude-opus-5"
-                }
-              },
-              "autoAccept": {
-                "type": "boolean",
-                "example": true
-              }
-            },
-            "example": {
-              "critic": null
             }
           },
           "verify": {
@@ -4378,7 +4419,8 @@
               "skipped",
               "disabled",
               "unrunnable",
-              "planned"
+              "planned",
+              "running"
             ],
             "example": "passed"
           },
@@ -5484,6 +5526,21 @@
             ],
             "example": null
           },
+          "mergeStatus": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "merging",
+                  "resolving-conflicts"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "feedback": {
             "anyOf": [
               {
@@ -5616,6 +5673,10 @@
             "type": "boolean",
             "example": false
           },
+          "isEpic": {
+            "type": "boolean",
+            "example": false
+          },
           "overrides": {
             "type": "object",
             "properties": {
@@ -5707,6 +5768,7 @@
           "conflictResolveTurns",
           "state",
           "escalationReason",
+          "mergeStatus",
           "feedback",
           "continuationChoice",
           "origin",
@@ -5722,6 +5784,7 @@
           "openBlockerCount",
           "agentWorkable",
           "humanOnly",
+          "isEpic",
           "overrides"
         ],
         "additionalProperties": false
@@ -5801,6 +5864,21 @@
             ],
             "example": null
           },
+          "mergeStatus": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "merging",
+                  "resolving-conflicts"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "feedback": {
             "anyOf": [
               {
@@ -5930,6 +6008,10 @@
             "example": false
           },
           "humanOnly": {
+            "type": "boolean",
+            "example": false
+          },
+          "isEpic": {
             "type": "boolean",
             "example": false
           },
@@ -6066,7 +6148,7 @@
                 "type": "null"
               }
             ],
-            "example": " src/server/rate-limit.ts | 96 ++++++++++++++\n 1 file changed, 96 insertions(+)"
+            "example": "96\t0\tsrc/server/rate-limit.ts"
           },
           "runStartedAt": {
             "anyOf": [
@@ -6161,6 +6243,10 @@
               }
             ],
             "example": "refs/harmonic/direct/attempt-9137"
+          },
+          "hasCandidate": {
+            "type": "boolean",
+            "example": true
           }
         },
         "required": [
@@ -6176,6 +6262,7 @@
           "conflictResolveTurns",
           "state",
           "escalationReason",
+          "mergeStatus",
           "feedback",
           "continuationChoice",
           "origin",
@@ -6191,6 +6278,7 @@
           "openBlockerCount",
           "agentWorkable",
           "humanOnly",
+          "isEpic",
           "overrides",
           "summary",
           "cost",
@@ -6205,7 +6293,8 @@
           "contextTokens",
           "contextWindow",
           "skipReason",
-          "verifiedRef"
+          "verifiedRef",
+          "hasCandidate"
         ],
         "additionalProperties": false
       },
@@ -6280,6 +6369,21 @@
             ],
             "example": null
           },
+          "mergeStatus": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "merging",
+                  "resolving-conflicts"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "feedback": {
             "anyOf": [
               {
@@ -6409,6 +6513,10 @@
             "example": false
           },
           "humanOnly": {
+            "type": "boolean",
+            "example": false
+          },
+          "isEpic": {
             "type": "boolean",
             "example": false
           },
@@ -6545,7 +6653,7 @@
                 "type": "null"
               }
             ],
-            "example": " src/server/rate-limit.ts | 96 ++++++++++++++\n 1 file changed, 96 insertions(+)"
+            "example": "96\t0\tsrc/server/rate-limit.ts"
           },
           "runStartedAt": {
             "anyOf": [
@@ -6640,6 +6748,10 @@
               }
             ],
             "example": "refs/harmonic/direct/attempt-9137"
+          },
+          "hasCandidate": {
+            "type": "boolean",
+            "example": true
           }
         },
         "required": [
@@ -6654,6 +6766,7 @@
           "conflictResolveTurns",
           "state",
           "escalationReason",
+          "mergeStatus",
           "feedback",
           "continuationChoice",
           "origin",
@@ -6669,6 +6782,7 @@
           "openBlockerCount",
           "agentWorkable",
           "humanOnly",
+          "isEpic",
           "overrides",
           "summary",
           "cost",
@@ -6683,7 +6797,8 @@
           "contextTokens",
           "contextWindow",
           "skipReason",
-          "verifiedRef"
+          "verifiedRef",
+          "hasCandidate"
         ],
         "additionalProperties": false
       },
@@ -6829,6 +6944,28 @@
             "type": "number",
             "example": 1784032020000
           },
+          "contextTokens": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 48210
+          },
+          "contextWindow": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 200000
+          },
           "finishedAt": {
             "anyOf": [
               {
@@ -6868,6 +7005,8 @@
           "usage",
           "toolCalls",
           "startedAt",
+          "contextTokens",
+          "contextWindow",
           "finishedAt",
           "cost"
         ],
@@ -6983,10 +7122,14 @@
                 "type": "null"
               }
             ]
+          },
+          "configured": {
+            "type": "boolean"
           }
         },
         "required": [
-          "status"
+          "status",
+          "configured"
         ],
         "additionalProperties": false
       },
@@ -7034,6 +7177,55 @@
               "spec"
             ]
           },
+          "state": {
+            "type": "string",
+            "enum": [
+              "open",
+              "integrated"
+            ]
+          },
+          "description": {
+            "type": "string",
+            "example": "Build the parallel-Epic operator UI …"
+          },
+          "createdAt": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "example": 1756000000000
+          },
+          "updatedAt": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 1756100000000
+          },
+          "baseBranch": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "develop"
+          },
+          "dependsOn": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          },
           "members": {
             "type": "array",
             "items": {
@@ -7072,6 +7264,12 @@
           "ref",
           "title",
           "kind",
+          "state",
+          "description",
+          "createdAt",
+          "updatedAt",
+          "baseBranch",
+          "dependsOn",
           "members",
           "ready",
           "integration",
@@ -7830,7 +8028,7 @@
             ],
             "example": 200000
           },
-          "cacheTtlSeconds": {
+          "cacheWarmSeconds": {
             "anyOf": [
               {
                 "type": "number"
@@ -7874,7 +8072,7 @@
           "cost",
           "contextTokens",
           "contextWindow",
-          "cacheTtlSeconds",
+          "cacheWarmSeconds",
           "createdAt",
           "updatedAt",
           "endedAt"
@@ -8143,128 +8341,6 @@
               }
             },
             "additionalProperties": false
-          },
-          "agentReview": {
-            "example": false,
-            "description": "Deprecated (#140): folded into verification.autoAccept; retained so a pre-upgrade client PATCHing it still merges non-exposing behaviour.",
-            "type": "boolean"
-          },
-          "verification": {
-            "type": "object",
-            "properties": {
-              "command": {
-                "anyOf": [
-                  {
-                    "type": "object",
-                    "properties": {
-                      "command": {
-                        "type": "string",
-                        "minLength": 1,
-                        "example": "npm"
-                      },
-                      "args": {
-                        "default": [],
-                        "example": [
-                          "test"
-                        ],
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        }
-                      },
-                      "cwd": {
-                        "example": "packages/api",
-                        "type": "string"
-                      },
-                      "env": {
-                        "default": {},
-                        "example": {
-                          "CI": "1"
-                        },
-                        "type": "object",
-                        "propertyNames": {
-                          "type": "string"
-                        },
-                        "additionalProperties": {
-                          "type": "string"
-                        }
-                      },
-                      "timeoutSeconds": {
-                        "default": 600,
-                        "example": 600,
-                        "type": "integer",
-                        "exclusiveMinimum": 0,
-                        "maximum": 9007199254740991
-                      }
-                    },
-                    "required": [
-                      "command",
-                      "args",
-                      "env",
-                      "timeoutSeconds"
-                    ],
-                    "additionalProperties": false
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "example": {
-                  "command": "npm",
-                  "args": [
-                    "test"
-                  ]
-                }
-              },
-              "critic": {
-                "anyOf": [
-                  {
-                    "type": "object",
-                    "properties": {
-                      "prompt": {
-                        "type": "string",
-                        "minLength": 1,
-                        "example": "Review the change against issue {ref}: {title}. Read the code and the issue to decide."
-                      },
-                      "model": {
-                        "type": "string",
-                        "minLength": 1,
-                        "example": "claude-opus-5"
-                      },
-                      "harness": {
-                        "example": "claude",
-                        "type": "string",
-                        "enum": [
-                          "claude",
-                          "codex",
-                          "copilot"
-                        ]
-                      }
-                    },
-                    "required": [
-                      "prompt",
-                      "model"
-                    ],
-                    "additionalProperties": false
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "example": {
-                  "prompt": "Review the diff for correctness.",
-                  "model": "claude-opus-5"
-                }
-              },
-              "autoAccept": {
-                "type": "boolean",
-                "example": true
-              }
-            },
-            "additionalProperties": false,
-            "example": {
-              "critic": null
-            }
           },
           "verify": {
             "type": "object",
@@ -8598,7 +8674,7 @@
         "tags": [
           "Tasks"
         ],
-        "description": "List tasks: filtered (`state`, `harness`, `priority`), searched (`q`, server-side substring over prompt + title), sorted, and paginated (`limit`/`offset`, with a `total` count). An omitted `limit` returns every match. Reachable with an attempt-scoped Attempt Key.",
+        "description": "List tasks: filtered (`state`, `harness`, `priority`, `parent` — an Epic ref, returning its child tasks), searched (`q`, server-side substring over prompt + title), sorted, and paginated (`limit`/`offset`, with a `total` count). An omitted `limit` returns every match. With `epics=true` and a `workspaceId`, the derived-epic model (ADR-0016) contributes epic-format rows to the unfiltered list. Reachable with an attempt-scoped Attempt Key.",
         "parameters": [
           {
             "schema": {
@@ -8613,26 +8689,8 @@
           },
           {
             "schema": {
-              "example": "working",
-              "anyOf": [
-                {
-                  "type": "string",
-                  "enum": [
-                    "draft",
-                    "ready",
-                    "working",
-                    "escalated",
-                    "done",
-                    "cancelled"
-                  ]
-                },
-                {
-                  "type": "string",
-                  "enum": [
-                    "open"
-                  ]
-                }
-              ]
+              "type": "string",
+              "example": "working"
             },
             "in": "query",
             "name": "state",
@@ -8640,13 +8698,8 @@
           },
           {
             "schema": {
-              "example": "claude",
               "type": "string",
-              "enum": [
-                "claude",
-                "codex",
-                "copilot"
-              ]
+              "example": "claude"
             },
             "in": "query",
             "name": "harness",
@@ -8654,16 +8707,22 @@
           },
           {
             "schema": {
-              "example": "high",
               "type": "string",
-              "enum": [
-                "high",
-                "normal",
-                "low"
-              ]
+              "example": "high"
             },
             "in": "query",
             "name": "priority",
+            "required": false
+          },
+          {
+            "schema": {
+              "example": 42,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "in": "query",
+            "name": "parent",
             "required": false
           },
           {
@@ -8681,6 +8740,7 @@
               "type": "string",
               "enum": [
                 "createdAt",
+                "updatedAt",
                 "priority",
                 "cost"
               ]
@@ -8722,6 +8782,19 @@
             },
             "in": "query",
             "name": "offset",
+            "required": false
+          },
+          {
+            "schema": {
+              "example": "true",
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            },
+            "in": "query",
+            "name": "epics",
             "required": false
           }
         ],
@@ -8962,7 +9035,7 @@
         "tags": [
           "Tasks"
         ],
-        "description": "Permanently delete a Task and its Runs, Usage, and Dependency edges. A mirrored Task is also dismissed so a re-poll will not re-create it. Distinct from Cancel, which keeps the record.",
+        "description": "Permanently delete a Task and its Attempts, Usage, and Dependency edges. A mirrored Task is also dismissed so a re-poll will not re-create it. Distinct from Cancel, which keeps the record.",
         "parameters": [
           {
             "schema": {
@@ -9182,7 +9255,7 @@
         "tags": [
           "Tasks"
         ],
-        "description": "Steer a running task: send an operator message to its active run. When the harness supports ACP mid-turn steering, the message is injected into the running turn immediately — pre-empting the current generation without cancelling it. Otherwise, or when the agent is parked between turns, the message is queued and delivered as a fresh prompt turn at the next turn boundary. When no run is active but the task's last run left a still-warm, resumable session (an escalated task that ended without closure), the message continues that session in a fresh run — a follow-up in the same conversation. Use it to redirect an agent that has gone off-track, nudge one that ended its turn and parked, or continue one whose run just ended while its session is still warm. Operator only.",
+        "description": "Steer a running task: send an operator message to its active Attempt. When the harness supports ACP mid-turn steering, the message is injected into the running turn immediately — pre-empting the current generation without cancelling it. Otherwise, or when the agent is parked between turns, the message is queued and delivered as a fresh prompt turn at the next turn boundary. When no Attempt is active but the task's last Attempt left a still-warm, resumable session (an escalated task that ended without closure), the message continues that session in a fresh Attempt — a follow-up in the same conversation. Use it to redirect an agent that has gone off-track, nudge one that ended its turn and parked, or continue one whose Attempt just ended while its session is still warm. Operator only.",
         "requestBody": {
           "required": true,
           "content": {
@@ -9218,7 +9291,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The message was injected into the running turn or queued at the next boundary of the task's active run, or continued its last run's still-warm session in a fresh run.",
+            "description": "The message was injected into the running turn or queued at the next boundary of the task's active Attempt, or continued its last Attempt's still-warm session in a fresh Attempt.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9228,7 +9301,7 @@
             }
           },
           "409": {
-            "description": "The task has no active run to steer and no warm, resumable session to continue.",
+            "description": "The task has no active Attempt to steer and no warm, resumable session to continue.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9396,7 +9469,30 @@
         "tags": [
           "Tasks"
         ],
-        "description": "Accept an escalated ticket (ADR-0041): merge its verified branch head as-is and continue the success path — merge (worktree mode), close the tracker issue, clean up — moving it to done. Human-only.",
+        "description": "Accept an escalated ticket: verifies the ticket's candidate first — a pass merges it as-is and continues the success path (merge, close the tracker issue, clean up, moving it to done); a non-pass re-enters the Attempt loop with the verifier's reason as feedback, exactly like Reject, and the ticket stays escalated-turned-working. Force-Accept (`{ force: true }`) skips verification and merges the candidate as-is. Human-only.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "force": {
+                        "example": false,
+                        "type": "boolean"
+                      }
+                    }
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        },
         "parameters": [
           {
             "schema": {
@@ -9412,7 +9508,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The task, done.",
+            "description": "The task, done (a passing or forced Accept) or back in the Attempt loop (a non-pass verify).",
             "content": {
               "application/json": {
                 "schema": {
@@ -9422,7 +9518,7 @@
             }
           },
           "409": {
-            "description": "The task is not escalated, has no verified branch head to merge, or the merging failed (the detail says why); it stays escalated.",
+            "description": "The task is not escalated, has no candidate to accept (the branch has no commits ahead of its base), or the merging failed (the detail says why); it stays escalated.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9439,7 +9535,7 @@
         "tags": [
           "Tasks"
         ],
-        "description": "Reject an escalated ticket with guidance (ADR-0041, amended by ADR-0048): the guidance becomes feedback for the next Attempt and the attempt budget resets. The ticket requeues to `ready` — the Auto-Runner starts the next Attempt when capacity frees; it is not force-started here unless `start: true` (the warm-Session \"start now\" override, which bypasses the capacity ceiling). The escalated Run's branch is retained as evidence until its Session retires. Human-only.",
+        "description": "Reject an escalated ticket with guidance: the guidance becomes feedback for the next Attempt and the attempt budget resets. The ticket requeues to `ready` — the Auto-Runner starts the next Attempt when capacity frees; it is not force-started here unless `start: true` (the warm-Session \"start now\" override, which bypasses the capacity ceiling). The escalated Attempt's branch is retained as evidence until its Session retires. Human-only.",
         "requestBody": {
           "required": true,
           "content": {
@@ -9516,7 +9612,7 @@
         "tags": [
           "Tasks"
         ],
-        "description": "Close an escalated ticket (ADR-0041): cancel it and clean up — remove its branch and worktree, close the tracker issue. Human-only.",
+        "description": "Close an escalated ticket: cancel it and clean up — remove its branch and worktree, close the tracker issue. Human-only.",
         "parameters": [
           {
             "schema": {
@@ -10596,6 +10692,17 @@
                             "type": "string",
                             "example": ""
                           },
+                          "prompt": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "example": null
+                          },
                           "hasTranscript": {
                             "type": "boolean",
                             "example": false
@@ -10611,6 +10718,7 @@
                           "verdict",
                           "summary",
                           "output",
+                          "prompt",
                           "hasTranscript"
                         ],
                         "additionalProperties": false
@@ -10709,7 +10817,7 @@
         "tags": [
           "Attempts"
         ],
-        "description": "Read a critic verification attempt's native harness transcript (ADR-0040) — what the critic itself read, ran, and reasoned. Missing or unreadable transcripts are explicitly unavailable.",
+        "description": "Read a critic verification attempt's native harness transcript — what the critic itself read, ran, and reasoned. Missing or unreadable transcripts are explicitly unavailable.",
         "parameters": [
           {
             "schema": {
@@ -11093,7 +11201,7 @@
                           "type": "null"
                         }
                       ],
-                      "example": " src/server/rate-limit.ts | 96 ++++++++++++++\n src/server/app.ts       |  8 +-\n 2 files changed, 100 insertions(+), 4 deletions(-)"
+                      "example": "96\t0\tsrc/server/rate-limit.ts\n5\t3\tsrc/server/app.ts"
                     }
                   },
                   "required": [
@@ -13188,9 +13296,8 @@
                   "type": "object",
                   "properties": {
                     "name": {
-                      "default": "",
-                      "example": "Production",
-                      "type": "string"
+                      "type": "string",
+                      "example": "Production"
                     },
                     "harnesses": {
                       "type": "object",
@@ -13210,42 +13317,98 @@
                             "example": "npx"
                           },
                           "args": {
-                            "default": [],
-                            "example": [
-                              "@zed-industries/claude-code-acp"
-                            ],
                             "type": "array",
                             "items": {
                               "type": "string"
-                            }
+                            },
+                            "example": [
+                              "@zed-industries/claude-code-acp"
+                            ]
                           },
                           "env": {
-                            "default": {},
-                            "example": {
-                              "ANTHROPIC_API_KEY": "<your-api-key>"
-                            },
                             "type": "object",
                             "propertyNames": {
                               "type": "string"
                             },
                             "additionalProperties": {
                               "type": "string"
+                            },
+                            "example": {
+                              "ANTHROPIC_API_KEY": "<your-api-key>"
                             }
                           },
                           "models": {
-                            "default": [],
-                            "example": [
-                              "sonnet-5",
-                              "opus-4.8"
-                            ],
                             "type": "array",
                             "items": {
-                              "type": "string"
-                            }
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "example": "sonnet-5"
+                                },
+                                "price": {
+                                  "type": "object",
+                                  "properties": {
+                                    "input": {
+                                      "type": "number",
+                                      "minimum": 0,
+                                      "example": 3
+                                    },
+                                    "output": {
+                                      "type": "number",
+                                      "minimum": 0,
+                                      "example": 15
+                                    },
+                                    "cacheRead": {
+                                      "type": "number",
+                                      "minimum": 0,
+                                      "example": 0.3
+                                    },
+                                    "cacheWrite": {
+                                      "type": "number",
+                                      "minimum": 0,
+                                      "example": 3.75
+                                    }
+                                  },
+                                  "required": [
+                                    "input",
+                                    "output",
+                                    "cacheRead",
+                                    "cacheWrite"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                "contextWindow": {
+                                  "example": 200000,
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0,
+                                  "maximum": 9007199254740991
+                                }
+                              },
+                              "required": [
+                                "id"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "example": [
+                              {
+                                "id": "sonnet-5"
+                              },
+                              {
+                                "id": "opus-4.8"
+                              }
+                            ]
                           },
                           "defaultModel": {
                             "type": "string",
                             "example": "sonnet-5"
+                          },
+                          "cacheWarmSeconds": {
+                            "type": "integer",
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "example": 300
                           },
                           "sessionLogDir": {
                             "example": "~/.claude/projects",
@@ -13257,7 +13420,8 @@
                           "args",
                           "env",
                           "models",
-                          "defaultModel"
+                          "defaultModel",
+                          "cacheWarmSeconds"
                         ],
                         "additionalProperties": false
                       },
@@ -13274,89 +13438,16 @@
                           ],
                           "env": {},
                           "models": [
-                            "sonnet-5",
-                            "opus-4.8"
+                            {
+                              "id": "sonnet-5"
+                            },
+                            {
+                              "id": "opus-4.8"
+                            }
                           ],
-                          "defaultModel": "sonnet-5"
+                          "defaultModel": "sonnet-5",
+                          "cacheWarmSeconds": 300
                         }
-                      }
-                    },
-                    "prices": {
-                      "default": {},
-                      "example": {
-                        "sonnet-5": {
-                          "input": 3,
-                          "output": 15,
-                          "cacheRead": 0.3,
-                          "cacheWrite": 3.75
-                        }
-                      },
-                      "type": "object",
-                      "propertyNames": {
-                        "type": "string"
-                      },
-                      "additionalProperties": {
-                        "type": "object",
-                        "properties": {
-                          "input": {
-                            "type": "number",
-                            "minimum": 0,
-                            "example": 3
-                          },
-                          "output": {
-                            "type": "number",
-                            "minimum": 0,
-                            "example": 15
-                          },
-                          "cacheRead": {
-                            "type": "number",
-                            "minimum": 0,
-                            "example": 0.3
-                          },
-                          "cacheWrite": {
-                            "type": "number",
-                            "minimum": 0,
-                            "example": 3.75
-                          }
-                        },
-                        "required": [
-                          "input",
-                          "output",
-                          "cacheRead",
-                          "cacheWrite"
-                        ],
-                        "additionalProperties": false
-                      }
-                    },
-                    "modelInfo": {
-                      "default": {},
-                      "example": {
-                        "sonnet-5": {
-                          "contextWindow": 200000,
-                          "cacheTtlSeconds": 300
-                        }
-                      },
-                      "type": "object",
-                      "propertyNames": {
-                        "type": "string"
-                      },
-                      "additionalProperties": {
-                        "type": "object",
-                        "properties": {
-                          "contextWindow": {
-                            "example": 200000,
-                            "type": "integer",
-                            "exclusiveMinimum": 0,
-                            "maximum": 9007199254740991
-                          },
-                          "cacheTtlSeconds": {
-                            "example": 300,
-                            "type": "integer",
-                            "exclusiveMinimum": 0,
-                            "maximum": 9007199254740991
-                          }
-                        },
-                        "additionalProperties": false
                       }
                     },
                     "defaults": {
@@ -13452,53 +13543,46 @@
                       "additionalProperties": false
                     },
                     "maxAttempts": {
-                      "default": 2,
-                      "example": 2,
                       "type": "integer",
                       "minimum": 1,
-                      "maximum": 9007199254740991
+                      "maximum": 9007199254740991,
+                      "example": 2
                     },
                     "contextReuseTokenLimit": {
-                      "default": 200000,
-                      "example": 200000,
                       "type": "integer",
                       "minimum": 0,
-                      "maximum": 9007199254740991
+                      "maximum": 9007199254740991,
+                      "example": 200000
                     },
                     "drive": {
                       "type": "object",
                       "properties": {
                         "prompt": {
-                          "default": "{skill}\n\nResolve tracker issue #{ref} ({url}) autonomously, end to end — read the issue yourself for the details. Work only on the branch you start on; Harmonic owns branching and closes the ticket once it verifies your work, so don't create branches or close the ticket yourself. When the work is done, comment a summary on the issue and call `finish_task`.",
-                          "example": "{skill}\n\nResolve tracker issue #{ref} ({url}) autonomously, end to end — read the issue yourself for the details. Work only on the branch you start on; Harmonic owns branching and closes the ticket once it verifies your work, so don't create branches or close the ticket yourself. When the work is done, comment a summary on the issue and call `finish_task`.",
-                          "type": "string"
+                          "type": "string",
+                          "example": "Resolve tracker issue #{ref} ({url})."
                         },
                         "unattendedReminder": {
-                          "default": "## Running unattended\n\nYou are Harmonic Task {taskId} — no human is watching this turn. Ending a turn is a checkpoint, not a handoff, and Harmonic re-prompts you only a limited number of times, so don't idle-wait on background work (CI, watchers) or input. Keep working until the task is genuinely done, then call `finish_task` (taskId={taskId}). If you're blocked on a decision only a human can make, call `escalate_task` (taskId={taskId}) with a reason instead of guessing or waiting.",
-                          "example": "## Running unattended\n\nYou are Harmonic Task {taskId} — no human is watching this turn. Ending a turn is a checkpoint, not a handoff, and Harmonic re-prompts you only a limited number of times, so don't idle-wait on background work (CI, watchers) or input. Keep working until the task is genuinely done, then call `finish_task` (taskId={taskId}). If you're blocked on a decision only a human can make, call `escalate_task` (taskId={taskId}) with a reason instead of guessing or waiting.",
-                          "type": "string"
+                          "type": "string",
+                          "example": "Task {taskId} is running unattended."
                         },
                         "continuePrompt": {
-                          "default": "Your last turn ended but Task {taskId} isn't finished — you haven't called `finish_task`. Pick the work back up and drive it to completion now; don't idle-wait, then call `finish_task` when it's done.",
-                          "example": "Your last turn ended but Task {taskId} isn't finished — you haven't called `finish_task`. Pick the work back up and drive it to completion now; don't idle-wait, then call `finish_task` when it's done.",
-                          "type": "string"
+                          "type": "string",
+                          "example": "Continue Task {taskId}."
                         },
                         "mergeFate": {
-                          "default": "auto-merge",
-                          "example": "auto-merge",
                           "type": "string",
                           "enum": [
                             "auto-merge",
                             "open-PR",
                             "artifact"
-                          ]
+                          ],
+                          "example": "auto-merge"
                         },
                         "continueAttempts": {
-                          "default": 10,
-                          "example": 10,
                           "type": "integer",
                           "minimum": 0,
-                          "maximum": 9007199254740991
+                          "maximum": 9007199254740991,
+                          "example": 10
                         }
                       },
                       "required": [
@@ -13511,21 +13595,18 @@
                       "additionalProperties": false
                     },
                     "taskPrompt": {
-                      "default": "{prompt}",
-                      "example": "{prompt}",
-                      "type": "string"
+                      "type": "string",
+                      "example": "Work on {prompt}."
                     },
                     "conversationIdleTimeoutMinutes": {
-                      "default": 30,
-                      "example": 30,
                       "type": "number",
-                      "minimum": 0
+                      "minimum": 0,
+                      "example": 30
                     },
                     "verify": {
                       "type": "object",
                       "properties": {
                         "commands": {
-                          "default": [],
                           "type": "array",
                           "items": {
                             "type": "object",
@@ -13619,7 +13700,6 @@
                       "type": "object",
                       "properties": {
                         "postMergeCheck": {
-                          "default": true,
                           "type": "boolean"
                         }
                       },
@@ -13676,11 +13756,13 @@
                           "additionalProperties": false
                         },
                         "progress": {
-                          "default": false,
                           "type": "boolean"
                         },
                         "toolTimeoutMinutes": {
-                          "default": 20,
+                          "type": "number",
+                          "exclusiveMinimum": 0
+                        },
+                        "promptInactivityTimeoutMinutes": {
                           "type": "number",
                           "exclusiveMinimum": 0
                         }
@@ -13688,7 +13770,8 @@
                       "required": [
                         "budget",
                         "progress",
-                        "toolTimeoutMinutes"
+                        "toolTimeoutMinutes",
+                        "promptInactivityTimeoutMinutes"
                       ],
                       "additionalProperties": false
                     }
@@ -13696,8 +13779,6 @@
                   "required": [
                     "name",
                     "harnesses",
-                    "prices",
-                    "modelInfo",
                     "defaults",
                     "chat",
                     "autoRunner",
@@ -13750,9 +13831,8 @@
                   "type": "object",
                   "properties": {
                     "name": {
-                      "default": "",
-                      "example": "Production",
-                      "type": "string"
+                      "type": "string",
+                      "example": "Production"
                     },
                     "harnesses": {
                       "type": "object",
@@ -13772,42 +13852,98 @@
                             "example": "npx"
                           },
                           "args": {
-                            "default": [],
-                            "example": [
-                              "@zed-industries/claude-code-acp"
-                            ],
                             "type": "array",
                             "items": {
                               "type": "string"
-                            }
+                            },
+                            "example": [
+                              "@zed-industries/claude-code-acp"
+                            ]
                           },
                           "env": {
-                            "default": {},
-                            "example": {
-                              "ANTHROPIC_API_KEY": "<your-api-key>"
-                            },
                             "type": "object",
                             "propertyNames": {
                               "type": "string"
                             },
                             "additionalProperties": {
                               "type": "string"
+                            },
+                            "example": {
+                              "ANTHROPIC_API_KEY": "<your-api-key>"
                             }
                           },
                           "models": {
-                            "default": [],
-                            "example": [
-                              "sonnet-5",
-                              "opus-4.8"
-                            ],
                             "type": "array",
                             "items": {
-                              "type": "string"
-                            }
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "example": "sonnet-5"
+                                },
+                                "price": {
+                                  "type": "object",
+                                  "properties": {
+                                    "input": {
+                                      "type": "number",
+                                      "minimum": 0,
+                                      "example": 3
+                                    },
+                                    "output": {
+                                      "type": "number",
+                                      "minimum": 0,
+                                      "example": 15
+                                    },
+                                    "cacheRead": {
+                                      "type": "number",
+                                      "minimum": 0,
+                                      "example": 0.3
+                                    },
+                                    "cacheWrite": {
+                                      "type": "number",
+                                      "minimum": 0,
+                                      "example": 3.75
+                                    }
+                                  },
+                                  "required": [
+                                    "input",
+                                    "output",
+                                    "cacheRead",
+                                    "cacheWrite"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                "contextWindow": {
+                                  "example": 200000,
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0,
+                                  "maximum": 9007199254740991
+                                }
+                              },
+                              "required": [
+                                "id"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "example": [
+                              {
+                                "id": "sonnet-5"
+                              },
+                              {
+                                "id": "opus-4.8"
+                              }
+                            ]
                           },
                           "defaultModel": {
                             "type": "string",
                             "example": "sonnet-5"
+                          },
+                          "cacheWarmSeconds": {
+                            "type": "integer",
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "example": 300
                           },
                           "sessionLogDir": {
                             "example": "~/.claude/projects",
@@ -13819,7 +13955,8 @@
                           "args",
                           "env",
                           "models",
-                          "defaultModel"
+                          "defaultModel",
+                          "cacheWarmSeconds"
                         ],
                         "additionalProperties": false
                       },
@@ -13836,89 +13973,16 @@
                           ],
                           "env": {},
                           "models": [
-                            "sonnet-5",
-                            "opus-4.8"
+                            {
+                              "id": "sonnet-5"
+                            },
+                            {
+                              "id": "opus-4.8"
+                            }
                           ],
-                          "defaultModel": "sonnet-5"
+                          "defaultModel": "sonnet-5",
+                          "cacheWarmSeconds": 300
                         }
-                      }
-                    },
-                    "prices": {
-                      "default": {},
-                      "example": {
-                        "sonnet-5": {
-                          "input": 3,
-                          "output": 15,
-                          "cacheRead": 0.3,
-                          "cacheWrite": 3.75
-                        }
-                      },
-                      "type": "object",
-                      "propertyNames": {
-                        "type": "string"
-                      },
-                      "additionalProperties": {
-                        "type": "object",
-                        "properties": {
-                          "input": {
-                            "type": "number",
-                            "minimum": 0,
-                            "example": 3
-                          },
-                          "output": {
-                            "type": "number",
-                            "minimum": 0,
-                            "example": 15
-                          },
-                          "cacheRead": {
-                            "type": "number",
-                            "minimum": 0,
-                            "example": 0.3
-                          },
-                          "cacheWrite": {
-                            "type": "number",
-                            "minimum": 0,
-                            "example": 3.75
-                          }
-                        },
-                        "required": [
-                          "input",
-                          "output",
-                          "cacheRead",
-                          "cacheWrite"
-                        ],
-                        "additionalProperties": false
-                      }
-                    },
-                    "modelInfo": {
-                      "default": {},
-                      "example": {
-                        "sonnet-5": {
-                          "contextWindow": 200000,
-                          "cacheTtlSeconds": 300
-                        }
-                      },
-                      "type": "object",
-                      "propertyNames": {
-                        "type": "string"
-                      },
-                      "additionalProperties": {
-                        "type": "object",
-                        "properties": {
-                          "contextWindow": {
-                            "example": 200000,
-                            "type": "integer",
-                            "exclusiveMinimum": 0,
-                            "maximum": 9007199254740991
-                          },
-                          "cacheTtlSeconds": {
-                            "example": 300,
-                            "type": "integer",
-                            "exclusiveMinimum": 0,
-                            "maximum": 9007199254740991
-                          }
-                        },
-                        "additionalProperties": false
                       }
                     },
                     "defaults": {
@@ -14014,53 +14078,46 @@
                       "additionalProperties": false
                     },
                     "maxAttempts": {
-                      "default": 2,
-                      "example": 2,
                       "type": "integer",
                       "minimum": 1,
-                      "maximum": 9007199254740991
+                      "maximum": 9007199254740991,
+                      "example": 2
                     },
                     "contextReuseTokenLimit": {
-                      "default": 200000,
-                      "example": 200000,
                       "type": "integer",
                       "minimum": 0,
-                      "maximum": 9007199254740991
+                      "maximum": 9007199254740991,
+                      "example": 200000
                     },
                     "drive": {
                       "type": "object",
                       "properties": {
                         "prompt": {
-                          "default": "{skill}\n\nResolve tracker issue #{ref} ({url}) autonomously, end to end — read the issue yourself for the details. Work only on the branch you start on; Harmonic owns branching and closes the ticket once it verifies your work, so don't create branches or close the ticket yourself. When the work is done, comment a summary on the issue and call `finish_task`.",
-                          "example": "{skill}\n\nResolve tracker issue #{ref} ({url}) autonomously, end to end — read the issue yourself for the details. Work only on the branch you start on; Harmonic owns branching and closes the ticket once it verifies your work, so don't create branches or close the ticket yourself. When the work is done, comment a summary on the issue and call `finish_task`.",
-                          "type": "string"
+                          "type": "string",
+                          "example": "Resolve tracker issue #{ref} ({url})."
                         },
                         "unattendedReminder": {
-                          "default": "## Running unattended\n\nYou are Harmonic Task {taskId} — no human is watching this turn. Ending a turn is a checkpoint, not a handoff, and Harmonic re-prompts you only a limited number of times, so don't idle-wait on background work (CI, watchers) or input. Keep working until the task is genuinely done, then call `finish_task` (taskId={taskId}). If you're blocked on a decision only a human can make, call `escalate_task` (taskId={taskId}) with a reason instead of guessing or waiting.",
-                          "example": "## Running unattended\n\nYou are Harmonic Task {taskId} — no human is watching this turn. Ending a turn is a checkpoint, not a handoff, and Harmonic re-prompts you only a limited number of times, so don't idle-wait on background work (CI, watchers) or input. Keep working until the task is genuinely done, then call `finish_task` (taskId={taskId}). If you're blocked on a decision only a human can make, call `escalate_task` (taskId={taskId}) with a reason instead of guessing or waiting.",
-                          "type": "string"
+                          "type": "string",
+                          "example": "Task {taskId} is running unattended."
                         },
                         "continuePrompt": {
-                          "default": "Your last turn ended but Task {taskId} isn't finished — you haven't called `finish_task`. Pick the work back up and drive it to completion now; don't idle-wait, then call `finish_task` when it's done.",
-                          "example": "Your last turn ended but Task {taskId} isn't finished — you haven't called `finish_task`. Pick the work back up and drive it to completion now; don't idle-wait, then call `finish_task` when it's done.",
-                          "type": "string"
+                          "type": "string",
+                          "example": "Continue Task {taskId}."
                         },
                         "mergeFate": {
-                          "default": "auto-merge",
-                          "example": "auto-merge",
                           "type": "string",
                           "enum": [
                             "auto-merge",
                             "open-PR",
                             "artifact"
-                          ]
+                          ],
+                          "example": "auto-merge"
                         },
                         "continueAttempts": {
-                          "default": 10,
-                          "example": 10,
                           "type": "integer",
                           "minimum": 0,
-                          "maximum": 9007199254740991
+                          "maximum": 9007199254740991,
+                          "example": 10
                         }
                       },
                       "required": [
@@ -14073,21 +14130,18 @@
                       "additionalProperties": false
                     },
                     "taskPrompt": {
-                      "default": "{prompt}",
-                      "example": "{prompt}",
-                      "type": "string"
+                      "type": "string",
+                      "example": "Work on {prompt}."
                     },
                     "conversationIdleTimeoutMinutes": {
-                      "default": 30,
-                      "example": 30,
                       "type": "number",
-                      "minimum": 0
+                      "minimum": 0,
+                      "example": 30
                     },
                     "verify": {
                       "type": "object",
                       "properties": {
                         "commands": {
-                          "default": [],
                           "type": "array",
                           "items": {
                             "type": "object",
@@ -14181,7 +14235,6 @@
                       "type": "object",
                       "properties": {
                         "postMergeCheck": {
-                          "default": true,
                           "type": "boolean"
                         }
                       },
@@ -14238,11 +14291,13 @@
                           "additionalProperties": false
                         },
                         "progress": {
-                          "default": false,
                           "type": "boolean"
                         },
                         "toolTimeoutMinutes": {
-                          "default": 20,
+                          "type": "number",
+                          "exclusiveMinimum": 0
+                        },
+                        "promptInactivityTimeoutMinutes": {
                           "type": "number",
                           "exclusiveMinimum": 0
                         }
@@ -14250,7 +14305,8 @@
                       "required": [
                         "budget",
                         "progress",
-                        "toolTimeoutMinutes"
+                        "toolTimeoutMinutes",
+                        "promptInactivityTimeoutMinutes"
                       ],
                       "additionalProperties": false
                     }
@@ -14258,8 +14314,6 @@
                   "required": [
                     "name",
                     "harnesses",
-                    "prices",
-                    "modelInfo",
                     "defaults",
                     "chat",
                     "autoRunner",
@@ -14293,9 +14347,8 @@
                 "type": "object",
                 "properties": {
                   "name": {
-                    "default": "",
-                    "example": "Production",
-                    "type": "string"
+                    "type": "string",
+                    "example": "Production"
                   },
                   "harnesses": {
                     "type": "object",
@@ -14315,42 +14368,96 @@
                           "example": "npx"
                         },
                         "args": {
-                          "default": [],
-                          "example": [
-                            "@zed-industries/claude-code-acp"
-                          ],
                           "type": "array",
                           "items": {
                             "type": "string"
-                          }
+                          },
+                          "example": [
+                            "@zed-industries/claude-code-acp"
+                          ]
                         },
                         "env": {
-                          "default": {},
-                          "example": {
-                            "ANTHROPIC_API_KEY": "<your-api-key>"
-                          },
                           "type": "object",
                           "propertyNames": {
                             "type": "string"
                           },
                           "additionalProperties": {
                             "type": "string"
+                          },
+                          "example": {
+                            "ANTHROPIC_API_KEY": "<your-api-key>"
                           }
                         },
                         "models": {
-                          "default": [],
-                          "example": [
-                            "sonnet-5",
-                            "opus-4.8"
-                          ],
                           "type": "array",
                           "items": {
-                            "type": "string"
-                          }
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "minLength": 1,
+                                "example": "sonnet-5"
+                              },
+                              "price": {
+                                "type": "object",
+                                "properties": {
+                                  "input": {
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "example": 3
+                                  },
+                                  "output": {
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "example": 15
+                                  },
+                                  "cacheRead": {
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "example": 0.3
+                                  },
+                                  "cacheWrite": {
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "example": 3.75
+                                  }
+                                },
+                                "required": [
+                                  "input",
+                                  "output",
+                                  "cacheRead",
+                                  "cacheWrite"
+                                ]
+                              },
+                              "contextWindow": {
+                                "example": 200000,
+                                "type": "integer",
+                                "exclusiveMinimum": 0,
+                                "maximum": 9007199254740991
+                              }
+                            },
+                            "required": [
+                              "id"
+                            ]
+                          },
+                          "example": [
+                            {
+                              "id": "sonnet-5"
+                            },
+                            {
+                              "id": "opus-4.8"
+                            }
+                          ]
                         },
                         "defaultModel": {
                           "type": "string",
                           "example": "sonnet-5"
+                        },
+                        "cacheWarmSeconds": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991,
+                          "example": 300
                         },
                         "sessionLogDir": {
                           "example": "~/.claude/projects",
@@ -14359,7 +14466,11 @@
                       },
                       "required": [
                         "command",
-                        "defaultModel"
+                        "args",
+                        "env",
+                        "models",
+                        "defaultModel",
+                        "cacheWarmSeconds"
                       ]
                     },
                     "required": [
@@ -14375,86 +14486,15 @@
                         ],
                         "env": {},
                         "models": [
-                          "sonnet-5",
-                          "opus-4.8"
+                          {
+                            "id": "sonnet-5"
+                          },
+                          {
+                            "id": "opus-4.8"
+                          }
                         ],
-                        "defaultModel": "sonnet-5"
-                      }
-                    }
-                  },
-                  "prices": {
-                    "default": {},
-                    "example": {
-                      "sonnet-5": {
-                        "input": 3,
-                        "output": 15,
-                        "cacheRead": 0.3,
-                        "cacheWrite": 3.75
-                      }
-                    },
-                    "type": "object",
-                    "propertyNames": {
-                      "type": "string"
-                    },
-                    "additionalProperties": {
-                      "type": "object",
-                      "properties": {
-                        "input": {
-                          "type": "number",
-                          "minimum": 0,
-                          "example": 3
-                        },
-                        "output": {
-                          "type": "number",
-                          "minimum": 0,
-                          "example": 15
-                        },
-                        "cacheRead": {
-                          "type": "number",
-                          "minimum": 0,
-                          "example": 0.3
-                        },
-                        "cacheWrite": {
-                          "type": "number",
-                          "minimum": 0,
-                          "example": 3.75
-                        }
-                      },
-                      "required": [
-                        "input",
-                        "output",
-                        "cacheRead",
-                        "cacheWrite"
-                      ]
-                    }
-                  },
-                  "modelInfo": {
-                    "default": {},
-                    "example": {
-                      "sonnet-5": {
-                        "contextWindow": 200000,
-                        "cacheTtlSeconds": 300
-                      }
-                    },
-                    "type": "object",
-                    "propertyNames": {
-                      "type": "string"
-                    },
-                    "additionalProperties": {
-                      "type": "object",
-                      "properties": {
-                        "contextWindow": {
-                          "example": 200000,
-                          "type": "integer",
-                          "exclusiveMinimum": 0,
-                          "maximum": 9007199254740991
-                        },
-                        "cacheTtlSeconds": {
-                          "example": 300,
-                          "type": "integer",
-                          "exclusiveMinimum": 0,
-                          "maximum": 9007199254740991
-                        }
+                        "defaultModel": "sonnet-5",
+                        "cacheWarmSeconds": 300
                       }
                     }
                   },
@@ -14548,74 +14588,69 @@
                     ]
                   },
                   "maxAttempts": {
-                    "default": 2,
-                    "example": 2,
                     "type": "integer",
                     "minimum": 1,
-                    "maximum": 9007199254740991
+                    "maximum": 9007199254740991,
+                    "example": 2
                   },
                   "contextReuseTokenLimit": {
-                    "default": 200000,
-                    "example": 200000,
                     "type": "integer",
                     "minimum": 0,
-                    "maximum": 9007199254740991
+                    "maximum": 9007199254740991,
+                    "example": 200000
                   },
                   "drive": {
-                    "default": {},
                     "type": "object",
                     "properties": {
                       "prompt": {
-                        "default": "{skill}\n\nResolve tracker issue #{ref} ({url}) autonomously, end to end — read the issue yourself for the details. Work only on the branch you start on; Harmonic owns branching and closes the ticket once it verifies your work, so don't create branches or close the ticket yourself. When the work is done, comment a summary on the issue and call `finish_task`.",
-                        "example": "{skill}\n\nResolve tracker issue #{ref} ({url}) autonomously, end to end — read the issue yourself for the details. Work only on the branch you start on; Harmonic owns branching and closes the ticket once it verifies your work, so don't create branches or close the ticket yourself. When the work is done, comment a summary on the issue and call `finish_task`.",
-                        "type": "string"
+                        "type": "string",
+                        "example": "Resolve tracker issue #{ref} ({url})."
                       },
                       "unattendedReminder": {
-                        "default": "## Running unattended\n\nYou are Harmonic Task {taskId} — no human is watching this turn. Ending a turn is a checkpoint, not a handoff, and Harmonic re-prompts you only a limited number of times, so don't idle-wait on background work (CI, watchers) or input. Keep working until the task is genuinely done, then call `finish_task` (taskId={taskId}). If you're blocked on a decision only a human can make, call `escalate_task` (taskId={taskId}) with a reason instead of guessing or waiting.",
-                        "example": "## Running unattended\n\nYou are Harmonic Task {taskId} — no human is watching this turn. Ending a turn is a checkpoint, not a handoff, and Harmonic re-prompts you only a limited number of times, so don't idle-wait on background work (CI, watchers) or input. Keep working until the task is genuinely done, then call `finish_task` (taskId={taskId}). If you're blocked on a decision only a human can make, call `escalate_task` (taskId={taskId}) with a reason instead of guessing or waiting.",
-                        "type": "string"
+                        "type": "string",
+                        "example": "Task {taskId} is running unattended."
                       },
                       "continuePrompt": {
-                        "default": "Your last turn ended but Task {taskId} isn't finished — you haven't called `finish_task`. Pick the work back up and drive it to completion now; don't idle-wait, then call `finish_task` when it's done.",
-                        "example": "Your last turn ended but Task {taskId} isn't finished — you haven't called `finish_task`. Pick the work back up and drive it to completion now; don't idle-wait, then call `finish_task` when it's done.",
-                        "type": "string"
+                        "type": "string",
+                        "example": "Continue Task {taskId}."
                       },
                       "mergeFate": {
-                        "default": "auto-merge",
-                        "example": "auto-merge",
                         "type": "string",
                         "enum": [
                           "auto-merge",
                           "open-PR",
                           "artifact"
-                        ]
+                        ],
+                        "example": "auto-merge"
                       },
                       "continueAttempts": {
-                        "default": 10,
-                        "example": 10,
                         "type": "integer",
                         "minimum": 0,
-                        "maximum": 9007199254740991
+                        "maximum": 9007199254740991,
+                        "example": 10
                       }
-                    }
+                    },
+                    "required": [
+                      "prompt",
+                      "unattendedReminder",
+                      "continuePrompt",
+                      "mergeFate",
+                      "continueAttempts"
+                    ]
                   },
                   "taskPrompt": {
-                    "default": "{prompt}",
-                    "example": "{prompt}",
-                    "type": "string"
+                    "type": "string",
+                    "example": "Work on {prompt}."
                   },
                   "conversationIdleTimeoutMinutes": {
-                    "default": 30,
-                    "example": 30,
                     "type": "number",
-                    "minimum": 0
+                    "minimum": 0,
+                    "example": 30
                   },
                   "verify": {
-                    "default": {},
                     "type": "object",
                     "properties": {
                       "commands": {
-                        "default": [],
                         "type": "array",
                         "items": {
                           "type": "object",
@@ -14666,7 +14701,6 @@
                         }
                       },
                       "review": {
-                        "default": {},
                         "type": "object",
                         "properties": {
                           "enabled": {
@@ -14691,24 +14725,27 @@
                           }
                         }
                       }
-                    }
+                    },
+                    "required": [
+                      "commands",
+                      "review"
+                    ]
                   },
                   "merge": {
-                    "default": {},
                     "type": "object",
                     "properties": {
                       "postMergeCheck": {
-                        "default": true,
                         "type": "boolean"
                       }
-                    }
+                    },
+                    "required": [
+                      "postMergeCheck"
+                    ]
                   },
                   "guardrails": {
-                    "default": {},
                     "type": "object",
                     "properties": {
                       "budget": {
-                        "default": {},
                         "type": "object",
                         "properties": {
                           "wallClockMinutes": {
@@ -14747,22 +14784,39 @@
                         }
                       },
                       "progress": {
-                        "default": false,
                         "type": "boolean"
                       },
                       "toolTimeoutMinutes": {
-                        "default": 20,
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      "promptInactivityTimeoutMinutes": {
                         "type": "number",
                         "exclusiveMinimum": 0
                       }
-                    }
+                    },
+                    "required": [
+                      "budget",
+                      "progress",
+                      "toolTimeoutMinutes",
+                      "promptInactivityTimeoutMinutes"
+                    ]
                   }
                 },
                 "required": [
+                  "name",
                   "harnesses",
                   "defaults",
                   "chat",
-                  "autoRunner"
+                  "autoRunner",
+                  "maxAttempts",
+                  "contextReuseTokenLimit",
+                  "drive",
+                  "taskPrompt",
+                  "conversationIdleTimeoutMinutes",
+                  "verify",
+                  "merge",
+                  "guardrails"
                 ]
               }
             }
@@ -14778,16 +14832,15 @@
         ],
         "responses": {
           "200": {
-            "description": "The whole configuration as stored after the replace, with omitted optional fields filled from the schema's defaults.",
+            "description": "The whole configuration as stored after the replace.",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
                     "name": {
-                      "default": "",
-                      "example": "Production",
-                      "type": "string"
+                      "type": "string",
+                      "example": "Production"
                     },
                     "harnesses": {
                       "type": "object",
@@ -14807,42 +14860,98 @@
                             "example": "npx"
                           },
                           "args": {
-                            "default": [],
-                            "example": [
-                              "@zed-industries/claude-code-acp"
-                            ],
                             "type": "array",
                             "items": {
                               "type": "string"
-                            }
+                            },
+                            "example": [
+                              "@zed-industries/claude-code-acp"
+                            ]
                           },
                           "env": {
-                            "default": {},
-                            "example": {
-                              "ANTHROPIC_API_KEY": "<your-api-key>"
-                            },
                             "type": "object",
                             "propertyNames": {
                               "type": "string"
                             },
                             "additionalProperties": {
                               "type": "string"
+                            },
+                            "example": {
+                              "ANTHROPIC_API_KEY": "<your-api-key>"
                             }
                           },
                           "models": {
-                            "default": [],
-                            "example": [
-                              "sonnet-5",
-                              "opus-4.8"
-                            ],
                             "type": "array",
                             "items": {
-                              "type": "string"
-                            }
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "example": "sonnet-5"
+                                },
+                                "price": {
+                                  "type": "object",
+                                  "properties": {
+                                    "input": {
+                                      "type": "number",
+                                      "minimum": 0,
+                                      "example": 3
+                                    },
+                                    "output": {
+                                      "type": "number",
+                                      "minimum": 0,
+                                      "example": 15
+                                    },
+                                    "cacheRead": {
+                                      "type": "number",
+                                      "minimum": 0,
+                                      "example": 0.3
+                                    },
+                                    "cacheWrite": {
+                                      "type": "number",
+                                      "minimum": 0,
+                                      "example": 3.75
+                                    }
+                                  },
+                                  "required": [
+                                    "input",
+                                    "output",
+                                    "cacheRead",
+                                    "cacheWrite"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                "contextWindow": {
+                                  "example": 200000,
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0,
+                                  "maximum": 9007199254740991
+                                }
+                              },
+                              "required": [
+                                "id"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "example": [
+                              {
+                                "id": "sonnet-5"
+                              },
+                              {
+                                "id": "opus-4.8"
+                              }
+                            ]
                           },
                           "defaultModel": {
                             "type": "string",
                             "example": "sonnet-5"
+                          },
+                          "cacheWarmSeconds": {
+                            "type": "integer",
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "example": 300
                           },
                           "sessionLogDir": {
                             "example": "~/.claude/projects",
@@ -14854,7 +14963,8 @@
                           "args",
                           "env",
                           "models",
-                          "defaultModel"
+                          "defaultModel",
+                          "cacheWarmSeconds"
                         ],
                         "additionalProperties": false
                       },
@@ -14871,89 +14981,16 @@
                           ],
                           "env": {},
                           "models": [
-                            "sonnet-5",
-                            "opus-4.8"
+                            {
+                              "id": "sonnet-5"
+                            },
+                            {
+                              "id": "opus-4.8"
+                            }
                           ],
-                          "defaultModel": "sonnet-5"
+                          "defaultModel": "sonnet-5",
+                          "cacheWarmSeconds": 300
                         }
-                      }
-                    },
-                    "prices": {
-                      "default": {},
-                      "example": {
-                        "sonnet-5": {
-                          "input": 3,
-                          "output": 15,
-                          "cacheRead": 0.3,
-                          "cacheWrite": 3.75
-                        }
-                      },
-                      "type": "object",
-                      "propertyNames": {
-                        "type": "string"
-                      },
-                      "additionalProperties": {
-                        "type": "object",
-                        "properties": {
-                          "input": {
-                            "type": "number",
-                            "minimum": 0,
-                            "example": 3
-                          },
-                          "output": {
-                            "type": "number",
-                            "minimum": 0,
-                            "example": 15
-                          },
-                          "cacheRead": {
-                            "type": "number",
-                            "minimum": 0,
-                            "example": 0.3
-                          },
-                          "cacheWrite": {
-                            "type": "number",
-                            "minimum": 0,
-                            "example": 3.75
-                          }
-                        },
-                        "required": [
-                          "input",
-                          "output",
-                          "cacheRead",
-                          "cacheWrite"
-                        ],
-                        "additionalProperties": false
-                      }
-                    },
-                    "modelInfo": {
-                      "default": {},
-                      "example": {
-                        "sonnet-5": {
-                          "contextWindow": 200000,
-                          "cacheTtlSeconds": 300
-                        }
-                      },
-                      "type": "object",
-                      "propertyNames": {
-                        "type": "string"
-                      },
-                      "additionalProperties": {
-                        "type": "object",
-                        "properties": {
-                          "contextWindow": {
-                            "example": 200000,
-                            "type": "integer",
-                            "exclusiveMinimum": 0,
-                            "maximum": 9007199254740991
-                          },
-                          "cacheTtlSeconds": {
-                            "example": 300,
-                            "type": "integer",
-                            "exclusiveMinimum": 0,
-                            "maximum": 9007199254740991
-                          }
-                        },
-                        "additionalProperties": false
                       }
                     },
                     "defaults": {
@@ -15049,53 +15086,46 @@
                       "additionalProperties": false
                     },
                     "maxAttempts": {
-                      "default": 2,
-                      "example": 2,
                       "type": "integer",
                       "minimum": 1,
-                      "maximum": 9007199254740991
+                      "maximum": 9007199254740991,
+                      "example": 2
                     },
                     "contextReuseTokenLimit": {
-                      "default": 200000,
-                      "example": 200000,
                       "type": "integer",
                       "minimum": 0,
-                      "maximum": 9007199254740991
+                      "maximum": 9007199254740991,
+                      "example": 200000
                     },
                     "drive": {
                       "type": "object",
                       "properties": {
                         "prompt": {
-                          "default": "{skill}\n\nResolve tracker issue #{ref} ({url}) autonomously, end to end — read the issue yourself for the details. Work only on the branch you start on; Harmonic owns branching and closes the ticket once it verifies your work, so don't create branches or close the ticket yourself. When the work is done, comment a summary on the issue and call `finish_task`.",
-                          "example": "{skill}\n\nResolve tracker issue #{ref} ({url}) autonomously, end to end — read the issue yourself for the details. Work only on the branch you start on; Harmonic owns branching and closes the ticket once it verifies your work, so don't create branches or close the ticket yourself. When the work is done, comment a summary on the issue and call `finish_task`.",
-                          "type": "string"
+                          "type": "string",
+                          "example": "Resolve tracker issue #{ref} ({url})."
                         },
                         "unattendedReminder": {
-                          "default": "## Running unattended\n\nYou are Harmonic Task {taskId} — no human is watching this turn. Ending a turn is a checkpoint, not a handoff, and Harmonic re-prompts you only a limited number of times, so don't idle-wait on background work (CI, watchers) or input. Keep working until the task is genuinely done, then call `finish_task` (taskId={taskId}). If you're blocked on a decision only a human can make, call `escalate_task` (taskId={taskId}) with a reason instead of guessing or waiting.",
-                          "example": "## Running unattended\n\nYou are Harmonic Task {taskId} — no human is watching this turn. Ending a turn is a checkpoint, not a handoff, and Harmonic re-prompts you only a limited number of times, so don't idle-wait on background work (CI, watchers) or input. Keep working until the task is genuinely done, then call `finish_task` (taskId={taskId}). If you're blocked on a decision only a human can make, call `escalate_task` (taskId={taskId}) with a reason instead of guessing or waiting.",
-                          "type": "string"
+                          "type": "string",
+                          "example": "Task {taskId} is running unattended."
                         },
                         "continuePrompt": {
-                          "default": "Your last turn ended but Task {taskId} isn't finished — you haven't called `finish_task`. Pick the work back up and drive it to completion now; don't idle-wait, then call `finish_task` when it's done.",
-                          "example": "Your last turn ended but Task {taskId} isn't finished — you haven't called `finish_task`. Pick the work back up and drive it to completion now; don't idle-wait, then call `finish_task` when it's done.",
-                          "type": "string"
+                          "type": "string",
+                          "example": "Continue Task {taskId}."
                         },
                         "mergeFate": {
-                          "default": "auto-merge",
-                          "example": "auto-merge",
                           "type": "string",
                           "enum": [
                             "auto-merge",
                             "open-PR",
                             "artifact"
-                          ]
+                          ],
+                          "example": "auto-merge"
                         },
                         "continueAttempts": {
-                          "default": 10,
-                          "example": 10,
                           "type": "integer",
                           "minimum": 0,
-                          "maximum": 9007199254740991
+                          "maximum": 9007199254740991,
+                          "example": 10
                         }
                       },
                       "required": [
@@ -15108,21 +15138,18 @@
                       "additionalProperties": false
                     },
                     "taskPrompt": {
-                      "default": "{prompt}",
-                      "example": "{prompt}",
-                      "type": "string"
+                      "type": "string",
+                      "example": "Work on {prompt}."
                     },
                     "conversationIdleTimeoutMinutes": {
-                      "default": 30,
-                      "example": 30,
                       "type": "number",
-                      "minimum": 0
+                      "minimum": 0,
+                      "example": 30
                     },
                     "verify": {
                       "type": "object",
                       "properties": {
                         "commands": {
-                          "default": [],
                           "type": "array",
                           "items": {
                             "type": "object",
@@ -15216,7 +15243,6 @@
                       "type": "object",
                       "properties": {
                         "postMergeCheck": {
-                          "default": true,
                           "type": "boolean"
                         }
                       },
@@ -15273,11 +15299,13 @@
                           "additionalProperties": false
                         },
                         "progress": {
-                          "default": false,
                           "type": "boolean"
                         },
                         "toolTimeoutMinutes": {
-                          "default": 20,
+                          "type": "number",
+                          "exclusiveMinimum": 0
+                        },
+                        "promptInactivityTimeoutMinutes": {
                           "type": "number",
                           "exclusiveMinimum": 0
                         }
@@ -15285,7 +15313,8 @@
                       "required": [
                         "budget",
                         "progress",
-                        "toolTimeoutMinutes"
+                        "toolTimeoutMinutes",
+                        "promptInactivityTimeoutMinutes"
                       ],
                       "additionalProperties": false
                     }
@@ -15293,8 +15322,6 @@
                   "required": [
                     "name",
                     "harnesses",
-                    "prices",
-                    "modelInfo",
                     "defaults",
                     "chat",
                     "autoRunner",
@@ -15308,7 +15335,7 @@
                     "guardrails"
                   ],
                   "additionalProperties": false,
-                  "description": "The whole configuration as stored after the replace, with omitted optional fields filled from the schema's defaults."
+                  "description": "The whole configuration as stored after the replace."
                 }
               }
             }
@@ -16514,12 +16541,681 @@
         }
       }
     },
+    "/api/epics/{ref}/stats": {
+      "get": {
+        "tags": [
+          "Stats"
+        ],
+        "description": "Usage, Cost, and attempt-state counts scoped to one Epic's child Tasks (ADR-0014), over a time range by attempt start time. Same shape as the fleet Stats surface. Operator only; not reachable with an attempt-scoped Attempt Key.",
+        "parameters": [
+          {
+            "schema": {
+              "default": 0,
+              "example": 1783382400000,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "in": "query",
+            "name": "from",
+            "required": false
+          },
+          {
+            "schema": {
+              "example": 1784032260000,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "in": "query",
+            "name": "to",
+            "required": false
+          },
+          {
+            "schema": {
+              "example": 1,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "in": "query",
+            "name": "workspaceId",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991,
+              "example": 410
+            },
+            "in": "path",
+            "name": "ref",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Usage, Cost, and attempt-state counts over the Epic's attempts started in the range; totals and Cost count only what the attempts actually reported and could be priced, so they are floors wherever `incomplete` is true.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "from": {
+                      "type": "number",
+                      "example": 1783382400000
+                    },
+                    "to": {
+                      "type": "number",
+                      "example": 1784032260000
+                    },
+                    "attemptCount": {
+                      "type": "number",
+                      "example": 3
+                    },
+                    "attemptsByState": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {
+                        "type": "number"
+                      },
+                      "example": {
+                        "completed": 2,
+                        "failed": 1
+                      }
+                    },
+                    "failedAttempts": {
+                      "type": "number",
+                      "example": 1
+                    },
+                    "failuresByReason": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {
+                        "type": "number"
+                      },
+                      "example": {
+                        "failed": 4,
+                        "escalate": 1,
+                        "process-death": 1
+                      }
+                    },
+                    "durationMs": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "p50": {
+                              "type": "number"
+                            },
+                            "p95": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "p50",
+                            "p95"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "example": {
+                        "p50": 142000,
+                        "p95": 512000
+                      }
+                    },
+                    "totals": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "inputTokens": {
+                              "type": "number",
+                              "example": 18240
+                            },
+                            "outputTokens": {
+                              "type": "number",
+                              "example": 3610
+                            },
+                            "cacheReadTokens": {
+                              "type": "number",
+                              "example": 26400
+                            },
+                            "cacheWriteTokens": {
+                              "type": "number",
+                              "example": 1200
+                            },
+                            "aiUnits": {
+                              "example": 12,
+                              "type": "number"
+                            },
+                            "totalTokens": {
+                              "anyOf": [
+                                {
+                                  "type": "number",
+                                  "example": 49450
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "inputTokens",
+                            "outputTokens",
+                            "cacheReadTokens",
+                            "cacheWriteTokens",
+                            "totalTokens"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "models": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {
+                        "$ref": "#/components/schemas/ModelUsage"
+                      },
+                      "example": {
+                        "sonnet-5": {
+                          "inputTokens": 18240,
+                          "outputTokens": 3610,
+                          "cacheReadTokens": 26400,
+                          "cacheWriteTokens": 1200
+                        }
+                      }
+                    },
+                    "agents": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {
+                        "$ref": "#/components/schemas/ModelUsage"
+                      },
+                      "example": {
+                        "root": {
+                          "inputTokens": 40120,
+                          "outputTokens": 5200,
+                          "cacheReadTokens": 60300,
+                          "cacheWriteTokens": 2400
+                        },
+                        "code-reviewer": {
+                          "inputTokens": 8100,
+                          "outputTokens": 1400,
+                          "cacheReadTokens": 12000,
+                          "cacheWriteTokens": 600
+                        }
+                      }
+                    },
+                    "toolTokens": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {
+                        "type": "object",
+                        "properties": {
+                          "outputTokens": {
+                            "type": "number",
+                            "example": 3610
+                          },
+                          "cost": {
+                            "example": 0.05415,
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "outputTokens"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "reasoning": {
+                      "type": "object",
+                      "properties": {
+                        "outputTokens": {
+                          "type": "number",
+                          "example": 3610
+                        },
+                        "cost": {
+                          "example": 0.05415,
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "outputTokens"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "toolCalls": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {
+                        "type": "number"
+                      },
+                      "example": {
+                        "read": 14,
+                        "edit": 6,
+                        "bash": 3
+                      }
+                    },
+                    "cost": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/Cost"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "series": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "day": {
+                            "type": "number",
+                            "example": 1783987200000
+                          },
+                          "totalUsd": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "example": 0.52
+                          },
+                          "incomplete": {
+                            "type": "boolean",
+                            "example": false
+                          },
+                          "tokens": {
+                            "type": "number",
+                            "example": 21850
+                          },
+                          "attempts": {
+                            "type": "number",
+                            "example": 3
+                          },
+                          "fails": {
+                            "type": "number",
+                            "example": 1
+                          }
+                        },
+                        "required": [
+                          "day",
+                          "totalUsd",
+                          "incomplete",
+                          "tokens",
+                          "attempts",
+                          "fails"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "tasksMergedByDay": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "day": {
+                            "type": "number",
+                            "example": 1783987200000
+                          },
+                          "count": {
+                            "type": "number",
+                            "example": 4
+                          }
+                        },
+                        "required": [
+                          "day",
+                          "count"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "example": [
+                        {
+                          "day": 1783987200000,
+                          "count": 4
+                        }
+                      ]
+                    },
+                    "attemptsPerTask": {
+                      "type": "object",
+                      "properties": {
+                        "1": {
+                          "type": "number"
+                        },
+                        "2": {
+                          "type": "number"
+                        },
+                        "3": {
+                          "type": "number"
+                        },
+                        "4+": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "1",
+                        "2",
+                        "3",
+                        "4+"
+                      ],
+                      "additionalProperties": false,
+                      "example": {
+                        "1": 18,
+                        "2": 5,
+                        "3": 2,
+                        "4+": 1
+                      }
+                    },
+                    "costPerMergedTask": {
+                      "type": "object",
+                      "properties": {
+                        "mergedTasks": {
+                          "type": "number",
+                          "example": 26
+                        },
+                        "mergedCost": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/components/schemas/Cost"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "wastedCost": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/components/schemas/Cost"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "mergedTasks",
+                        "mergedCost",
+                        "wastedCost"
+                      ],
+                      "additionalProperties": false,
+                      "example": {
+                        "mergedTasks": 26,
+                        "mergedCost": {
+                          "totalUsd": 41.2,
+                          "byModel": {
+                            "sonnet-5": 41.2
+                          },
+                          "incomplete": false
+                        },
+                        "wastedCost": {
+                          "totalUsd": 6.4,
+                          "byModel": {
+                            "sonnet-5": 6.4
+                          },
+                          "incomplete": false
+                        }
+                      }
+                    },
+                    "verdicts": {
+                      "type": "object",
+                      "properties": {
+                        "critic": {
+                          "type": "object",
+                          "properties": {
+                            "pass": {
+                              "type": "number",
+                              "example": 12
+                            },
+                            "block": {
+                              "type": "number",
+                              "example": 3
+                            },
+                            "inconclusive": {
+                              "type": "number",
+                              "example": 1
+                            }
+                          },
+                          "required": [
+                            "pass",
+                            "block",
+                            "inconclusive"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "command": {
+                          "type": "object",
+                          "properties": {
+                            "pass": {
+                              "type": "number",
+                              "example": 12
+                            },
+                            "block": {
+                              "type": "number",
+                              "example": 3
+                            },
+                            "inconclusive": {
+                              "type": "number",
+                              "example": 1
+                            }
+                          },
+                          "required": [
+                            "pass",
+                            "block",
+                            "inconclusive"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "critic",
+                        "command"
+                      ],
+                      "additionalProperties": false,
+                      "example": {
+                        "critic": {
+                          "pass": 24,
+                          "block": 5,
+                          "inconclusive": 2
+                        },
+                        "command": {
+                          "pass": 30,
+                          "block": 1,
+                          "inconclusive": 0
+                        }
+                      }
+                    },
+                    "gateOutcomes": {
+                      "type": "object",
+                      "properties": {
+                        "autoMerged": {
+                          "type": "number",
+                          "example": 26
+                        },
+                        "escalated": {
+                          "type": "number",
+                          "example": 4
+                        },
+                        "revertedOnRed": {
+                          "type": "number",
+                          "example": 1
+                        }
+                      },
+                      "required": [
+                        "autoMerged",
+                        "escalated",
+                        "revertedOnRed"
+                      ],
+                      "additionalProperties": false,
+                      "example": {
+                        "autoMerged": 26,
+                        "escalated": 4,
+                        "revertedOnRed": 1
+                      }
+                    },
+                    "guardrailTrips": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {
+                        "type": "number"
+                      },
+                      "example": {
+                        "wall-clock": 3,
+                        "tokens": 1,
+                        "tool-timeout": 2
+                      }
+                    },
+                    "byWorkspace": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "workspaceId": {
+                            "type": "number",
+                            "example": 1
+                          },
+                          "name": {
+                            "type": "string",
+                            "example": "harmonic"
+                          },
+                          "cost": {
+                            "anyOf": [
+                              {
+                                "$ref": "#/components/schemas/Cost"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "inputTokens": {
+                            "type": "number",
+                            "example": 18240
+                          },
+                          "outputTokens": {
+                            "type": "number",
+                            "example": 3610
+                          },
+                          "tasks": {
+                            "type": "number",
+                            "example": 12
+                          },
+                          "failureRate": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "example": 0.08
+                          }
+                        },
+                        "required": [
+                          "workspaceId",
+                          "name",
+                          "cost",
+                          "inputTokens",
+                          "outputTokens",
+                          "tasks",
+                          "failureRate"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "example": [
+                        {
+                          "workspaceId": 1,
+                          "name": "harmonic",
+                          "cost": {
+                            "totalUsd": 41.2,
+                            "byModel": {
+                              "sonnet-5": 41.2
+                            },
+                            "incomplete": false
+                          },
+                          "inputTokens": 18240,
+                          "outputTokens": 3610,
+                          "tasks": 12,
+                          "failureRate": 0.08
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "from",
+                    "to",
+                    "attemptCount",
+                    "attemptsByState",
+                    "failedAttempts",
+                    "failuresByReason",
+                    "durationMs",
+                    "totals",
+                    "models",
+                    "agents",
+                    "toolCalls",
+                    "cost",
+                    "series",
+                    "tasksMergedByDay",
+                    "attemptsPerTask",
+                    "costPerMergedTask",
+                    "verdicts",
+                    "gateOutcomes",
+                    "guardrailTrips",
+                    "byWorkspace"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Usage, Cost, and attempt-state counts over the Epic's attempts started in the range; totals and Cost count only what the attempts actually reported and could be priced, so they are floors wherever `incomplete` is true."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/activity": {
       "get": {
         "tags": [
           "Activity"
         ],
-        "description": "Instance-wide snapshot of every capacity-consuming Run and warm Conversation across Workspaces (ADR 0010). Runs come from persisted state and join their latest live Usage, context fill, derived Cost, current-activity line, and Process Tree when available. The Activity view loads this once on page-load, then follows the live `attempt_usage` firehose. A Read Key (a read-scoped API key) sees Runs only — Conversations are excluded, matching the firehose filter.",
+        "description": "Instance-wide snapshot of every capacity-consuming Attempt and warm Conversation across Workspaces (ADR 0010). Attempts come from persisted state and join their latest live Usage, context fill, derived Cost, current-activity line, and Process Tree when available. The Activity view loads this once on page-load, then follows the live `attempt_usage` firehose. A Read Key (a read-scoped API key) sees Attempts only — Conversations are excluded, matching the firehose filter.",
         "parameters": [
           {
             "schema": {
@@ -16562,7 +17258,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Every live process across Workspaces (Runs then Conversations); an empty array when nothing is running. Unordered beyond that — the Activity view applies its own attention ranking.",
+            "description": "Every live process across Workspaces (Attempts then Conversations); an empty array when nothing is running. Unordered beyond that — the Activity view applies its own attention ranking.",
             "content": {
               "application/json": {
                 "schema": {
@@ -16586,7 +17282,7 @@
                     "total"
                   ],
                   "additionalProperties": false,
-                  "description": "Every live process across Workspaces (Runs then Conversations); an empty array when nothing is running. Unordered beyond that — the Activity view applies its own attention ranking."
+                  "description": "Every live process across Workspaces (Attempts then Conversations); an empty array when nothing is running. Unordered beyond that — the Activity view applies its own attention ranking."
                 }
               }
             }
@@ -16678,7 +17374,7 @@
         "tags": [
           "Scheduled Jobs"
         ],
-        "description": "Read-only registry of recurring Harmonic Scheduled Jobs (ADR-0038), including durable last-run facts and computed next run.",
+        "description": "Read-only registry of recurring Harmonic Scheduled Jobs, including durable last-run facts and computed next run.",
         "parameters": [
           {
             "schema": {
@@ -17477,7 +18173,7 @@
         "tags": [
           "Epics"
         ],
-        "description": "Every derived Epic for a Workspace's last tracker poll scan (issue #167, ADR-0026), each folded with its member merge state, integration-branch tip, and whole-Epic integrate/verification state. Searched (`q`, case-insensitive substring over the Epic title) and paginated (`limit`/`offset`, with a `total`). Operator only.",
+        "description": "Every open Epic for a Workspace (issue #167, ADR-0018) — an integrated Epic leaves this list and resolves by ref only — each folded with its member merge state, integration-branch tip, and whole-Epic integrate/verification state. Searched (`q`, case-insensitive substring over the Epic title) and paginated (`limit`/`offset`, with a `total`). Operator only.",
         "parameters": [
           {
             "schema": {
@@ -17579,7 +18275,7 @@
         "tags": [
           "Epics"
         ],
-        "description": "One derived Epic by its tracker ref, from the Workspace's last poll scan (issue #167, ADR-0026). 404s when the scan derives no leaf-most Epic with that ref. Operator only.",
+        "description": "One derived Epic by its tracker ref, from the Workspace's last poll scan (issue #167). 404s when the scan derives no leaf-most Epic with that ref. Operator only.",
         "parameters": [
           {
             "schema": {
@@ -17697,6 +18393,187 @@
           },
           "409": {
             "description": "No active whole-Epic integrate coordinator for this Workspace (tracking is off or the loop has not started).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workspaces/{workspaceId}/epics/{epicRef}/diff/files": {
+      "get": {
+        "tags": [
+          "Epics"
+        ],
+        "description": "Per-file unified-diff hunks for the whole-Epic diff panel (ADR-0018): what `epic/<ref>` changes over base while open, the frozen merge-commit diff once integrated (survives branch retirement). Paginated. Empty `files` for a branchless/no-op Epic. Operator only.",
+        "parameters": [
+          {
+            "schema": {
+              "example": 50,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 200
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "example": 0,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "in": "query",
+            "name": "offset",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991,
+              "example": 1
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991,
+              "example": 42
+            },
+            "in": "path",
+            "name": "epicRef",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The Epic's changed files with parsed +/- hunks; empty for a branchless/no-op Epic.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "files": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "type": "string",
+                            "example": "src/server/rate-limit.ts"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "M",
+                              "A",
+                              "D"
+                            ]
+                          },
+                          "additions": {
+                            "type": "number",
+                            "example": 96
+                          },
+                          "deletions": {
+                            "type": "number",
+                            "example": 4
+                          },
+                          "lines": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "add",
+                                    "del",
+                                    "context",
+                                    "hunk"
+                                  ]
+                                },
+                                "oldLn": {
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "newLn": {
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "text": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "oldLn",
+                                "newLn",
+                                "text"
+                              ],
+                              "additionalProperties": false
+                            }
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "status",
+                          "additions",
+                          "deletions",
+                          "lines"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "example": 340
+                    }
+                  },
+                  "required": [
+                    "files",
+                    "total"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The Epic's changed files with parsed +/- hunks; empty for a branchless/no-op Epic."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No Workspace has that id.",
             "content": {
               "application/json": {
                 "schema": {

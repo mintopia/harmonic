@@ -90,33 +90,28 @@ export function lastConversationTurnAt(events: ConversationEvent[]): number | nu
 export interface ColdCacheInput {
   /** The timestamp of the last Turn (see `lastConversationTurnAt`) — the point the cache was last touched. */
   lastTurnAt: number;
-  cacheWarmSeconds?: number | null;
-  /** Compatibility for historical API payloads while they drain. */
-  cacheTtlSeconds?: number | null;
+  cacheWarmSeconds: number | null;
   now: number;
 }
 
 /**
- * True once idle time since the last Turn exceeds the model's configured
- * cache TTL — an estimate the harness's provider hasn't confirmed, hence
+ * True once idle time since the last Turn exceeds the harness's configured
+ * cache warm window, an estimate the provider hasn't confirmed, hence
  * the "(estimate)" wording carried through `formatColdCacheMessage` rather
- * than a bare claim. `cacheTtlSeconds === null` (no configured TTL) never
- * warns — an unconfigured TTL is not evidence of a cold cache.
+ * than a bare claim. A null cache warm window never warns.
  */
-export function isColdCache({ lastTurnAt, cacheWarmSeconds, cacheTtlSeconds, now }: ColdCacheInput): boolean {
-  const warmSeconds = cacheWarmSeconds ?? cacheTtlSeconds ?? null;
-  if (warmSeconds === null) return false;
-  return now - lastTurnAt > warmSeconds * 1000;
+export function isColdCache({ lastTurnAt, cacheWarmSeconds, now }: ColdCacheInput): boolean {
+  if (cacheWarmSeconds === null) return false;
+  return now - lastTurnAt > cacheWarmSeconds * 1000;
 }
 
 const minutes = (ms: number) => Math.floor(ms / 60_000);
 
-/** The cold-cache banner's copy, or null when it shouldn't show (not cold,
- * or no configured TTL to judge it against). Both idle time and TTL render
- * in minutes so the estimate reads at a glance. */
+/** The cold-cache banner's copy, or null when it should not show. Both idle
+ * time and warm window render in minutes so the estimate reads at a glance. */
 export function formatColdCacheMessage(input: ColdCacheInput): string | null {
-  if (!isColdCache(input)) return null;
+  if (input.cacheWarmSeconds === null || !isColdCache(input)) return null;
   const idleMinutes = minutes(input.now - input.lastTurnAt);
-  const ttlMinutes = Math.round(((input.cacheWarmSeconds ?? input.cacheTtlSeconds) as number) / 60);
-  return `Cache likely cold — idle ${idleMinutes}m, TTL ${ttlMinutes}m (estimate)`;
+  const warmMinutes = Math.round(input.cacheWarmSeconds / 60);
+  return `Cache likely cold — idle ${idleMinutes}m, warm window ${warmMinutes}m (estimate)`;
 }
