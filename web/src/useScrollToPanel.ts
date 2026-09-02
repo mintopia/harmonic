@@ -1,4 +1,4 @@
-import { useEffect, type RefObject } from 'react';
+import { useEffect, useRef, type RefObject } from 'react';
 
 /**
  * Re-home a detail page's scroll when its rail selection changes: with a panel
@@ -13,11 +13,15 @@ export function useScrollToPanel(
   picked: boolean,
   key: unknown,
 ): void {
+  const pickedRef = useRef(picked);
+  useEffect(() => {
+    pickedRef.current = picked;
+  });
   useEffect(() => {
     const scroller = scrollRef.current;
     const target = contentRef.current;
     if (!scroller || !target) return;
-    if (!picked) {
+    if (!pickedRef.current) {
       scroller.scrollTop = 0;
       return;
     }
@@ -38,5 +42,5 @@ export function useScrollToPanel(
       window.clearTimeout(stop);
       observer.disconnect();
     };
-  }, [key]);
+  }, [key, scrollRef, contentRef]);
 }

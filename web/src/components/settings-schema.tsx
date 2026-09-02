@@ -10,6 +10,7 @@ import {
   compileDrivePreview,
   compileTaskIdPreview,
   compileTaskPreview,
+  type LabeledPreview,
 } from '../prompt-preview-model';
 import { ModelCombobox } from './ModelCombobox';
 import { Switch } from './Switch';
@@ -96,7 +97,7 @@ interface GlobalPrompt {
   get: (c: AppConfig) => string;
   set: (c: AppConfig, value: string) => AppConfig;
   placeholders: [string, string][];
-  compile: (text: string) => string;
+  compile: (text: string) => string | LabeledPreview[];
   rows?: number;
   textareaClass?: string;
 }
@@ -111,7 +112,7 @@ interface OverridablePrompt {
   set: (w: Workspace, value: string | null) => Workspace;
   inherited: (c: AppConfig) => string;
   placeholders: [string, string][];
-  compile: (text: string) => string;
+  compile: (text: string) => string | LabeledPreview[];
   rows?: number;
   textareaClass?: string;
 }

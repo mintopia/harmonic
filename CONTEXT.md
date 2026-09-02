@@ -21,15 +21,32 @@ The global cap on total concurrent Attempts across all Workspaces — the machin
 safety limit that a Workspace's own concurrency cap can never breach.
 
 **Setting Override**:
-An overridable setting — Task defaults (Harness, model, Isolation Mode,
-Priority) and a Workspace's concurrency cap — resolves as `Workspace value ??
-global default`: a Workspace stores *inherit* (tracking the global default as
-it changes) until it sets an explicit value, which a *reset to default*
-clears back to inherit. Global-only settings (Harnesses, prices, Notification
-Channels, Permission Rules, API Keys, the Drive Prompt, the Machine Ceiling)
-have no Workspace form; Workspace-only settings (name, Working Directory,
-Tracker enable/interval, Auto-Runner enable) have no global form.
+An overridable setting resolves through three layers — **Baseline** (shipped
+defaults) → **Global** (the operator's sparse patch over baseline) →
+**Workspace** (a sparse patch over the resolved global): `Workspace value ??
+merge(Baseline, Global patch)` at read time. Each layer stores only what it
+changes; an untouched field renders **muted** and *tracks the layer beneath it*
+as that layer ships new defaults, while an overriding value renders unmuted with
+a *modified* mark and a *revert* control — per-field, plus a top-level revert to
+distributed. Global-only settings (Harnesses and their Model catalogs,
+Notification Channels, Permission Rules, API Keys, the Drive Prompt, the Machine
+Ceiling) have no Workspace form; Workspace-only settings (name, Working
+Directory, Tracker enable/interval, Auto-Runner enable) have no global form. The
+baseline is a shipped `baseline.yaml`; the operator + Workspace patches live in
+`settings.yaml` (ADR-0009, ADR-0022).
 _Avoid_: setting, config value
+
+**Baseline** (adjective: **distributed**):
+The bottom configuration layer — the defaults Harmonic *ships*, held in an
+in-repo `baseline.yaml` validated at boot, the single source of every default
+(so a default with no baseline home — a **magic string** — is a defect). The
+Global layer is a sparse patch merged onto it; **revert to distributed** drops
+that patch, and a field is **Modified** exactly when it differs from the layer
+beneath it. Collections in the patch (a Harness's Model catalog, price/context
+overrides) **merge by id** — add, per-field override, or *tombstone* an entry —
+so untouched entries keep tracking baseline additions. (ADR-0022.)
+_Avoid_: default config, factory settings, seed (it is the shipped baseline, not
+a one-time seed)
 
 ### Tickets
 
@@ -387,8 +404,23 @@ _Avoid_: accept, merge gate, land (banned)
 
 **Harness**:
 An agent CLI that Harmonic drives to execute Attempts — Claude (Claude Code),
-Codex, or Copilot — exclusively over ACP.
+Codex, or Copilot — exclusively over ACP. A **closed set of three**: each needs
+a code Adapter, so operators tune a Harness's config (command, args, env, its
+Model catalog) but cannot add a Harness. Each Harness owns a **Model catalog**
+and a single **`cacheWarmSeconds`** — the warm-window estimate that seeds a
+Session's derived warm-until.
 _Avoid_: agent (ambiguous), backend, provider
+
+**Model**:
+A first-class entry in a Harness's **Model catalog** —
+`{ id, price, contextWindow }` — the unit a Task, Conversation, or Subagent
+pins. Owned by its Harness, so the same id may carry a *different* price under a
+different Harness (Copilot). The catalog is **open**: a custom id is a valid
+entry with no price / context window, so its Cost is flagged *incomplete*, never
+a fake zero. Selecting a different Harness **resets** the Model to that Harness's
+default rather than carrying a stale value. Cache warmth is a Harness property
+(`cacheWarmSeconds`), not the Model's. (ADR-0022.)
+_Avoid_: model string, model name (a Model is a catalog entry, not a bare id)
 
 **Session**:
 One ACP conversation with a Harness — 1:1 with the harness's own session
@@ -399,8 +431,9 @@ Session — reloaded into a fresh harness process via `session/load` (supported 
 all three harnesses) as a **new Attempt and new prompt turn**, never by
 reattaching a dead process. Reuse is always valid; the provider prompt-cache being warm only
 makes the resumed turn **cheaper** — it is a cost signal, not a correctness gate.
-The warm window is a per-Harness **cost estimate** (Claude ~1 h on a subscription
-via `ENABLE_PROMPT_CACHING_1H`; others shorter), never a promise: Harmonic
+The warm window is a per-Harness **cost estimate** — the Harness's
+`cacheWarmSeconds` (Claude ~1 h on a subscription via `ENABLE_PROMPT_CACHING_1H`;
+others shorter), never a promise: Harmonic
 records `lastActiveAt` and an estimated warm-until, and frames reuse as
 full-context vs a condensed new Session by cost, not a hard TTL cutoff.
 A Session moves `active → idle → retiring → retired`. Builder-worktree removal

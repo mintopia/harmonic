@@ -1,6 +1,7 @@
 import type { TaskRow, AttemptRow, AttemptState } from '../db/schema.js';
 import type { TaskService } from './tasks.js';
 import type { AttemptStore } from './attempts.js';
+import { withTaskLock } from './task-lock.js';
 import type { SessionRetirementHook } from './session-retirement-coordinator.js';
 import type { RetirementCause } from './session-retirement.js';
 
@@ -74,29 +75,35 @@ export class AttemptSettleCoordinator {
     projection: SettleProjection,
     patch: Partial<AttemptRow> = {},
   ): Promise<void> {
-    const isOperatorOverride = type === 'operator-cancel' || type === 'operator-accept';
-    const before = await this.attempts.get(attempt.id);
-    const movable = before.state === 'running' || (before.state === 'escalated' && isOperatorOverride);
-    if (!movable) return;
+    // Hold the Task across the whole read-decide-write span (ADR-0020), so a
+    // racing Accept or requeue on the same Task cannot interleave between the
+    // Attempt write and the Task action. Reentrant when an Accept already holds
+    // this Task's lock.
+    return withTaskLock(task.id, async () => {
+      const isOperatorOverride = type === 'operator-cancel' || type === 'operator-accept';
+      const before = await this.attempts.get(attempt.id);
+      const movable = before.state === 'running' || (before.state === 'escalated' && isOperatorOverride);
+      if (!movable) return;
 
-    const finished = await this.attempts.updateWithFrozenCost(attempt.id, {
-      ...patch,
-      state: attemptTerminalState(type, projection),
-      reason: type,
-      detail: projection.reason,
-      endedAt: before.endedAt ?? Date.now(),
+      const finished = await this.attempts.updateWithFrozenCost(attempt.id, {
+        ...patch,
+        state: attemptTerminalState(type, projection),
+        reason: type,
+        detail: projection.reason,
+        endedAt: before.endedAt ?? Date.now(),
+      });
+
+      try {
+        await this.sessionRetirement?.onAttemptSettled(finished, this.retirementCause(type, projection));
+      } catch {
+      }
+      try {
+        await this.branchRetirement?.onAttemptSettled(task, finished);
+      } catch {
+      }
+      await this.applySettleTaskAction(task.id, projection);
+      this.onAttemptFinished?.(finished);
     });
-
-    try {
-      await this.sessionRetirement?.onAttemptSettled(finished, this.retirementCause(type, projection));
-    } catch {
-    }
-    try {
-      await this.branchRetirement?.onAttemptSettled(task, finished);
-    } catch {
-    }
-    await this.applySettleTaskAction(task.id, projection);
-    this.onAttemptFinished?.(finished);
   }
 
   private retirementCause(type: DispositionKind, projection: SettleProjection): RetirementCause {

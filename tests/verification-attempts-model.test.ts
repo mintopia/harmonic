@@ -27,6 +27,7 @@ const attempt = (
   summary: `${mechanism} attempt ${seq}`,
   output: '',
   hasTranscript: false,
+  prompt: null,
   ...overrides,
 });
 
