@@ -4,6 +4,15 @@ Status: accepted
 Date: 2026-08-28
 Part of the 2026-08-28 ADR reset (see README.md).
 
+**Amended by ADR-0022** (config layering), by explicit owner override, on three
+clauses: (1) "sole home of configuration / no out-of-band seed" — a shipped
+`baseline.yaml` is now the seed and the global block becomes a sparse patch over
+it; (2) "harnesses, model prices, `modelInfo` stay global" as separate keys —
+`prices` and `modelInfo.contextWindow` fold into per-harness model entries and
+`modelInfo.cacheTtlSeconds` becomes harness `cacheWarmSeconds`; (3) the "source
+inline" display becomes the muted / modified / revert visual across a third
+(baseline) layer. Everything else here stands.
+
 ## One instance, many Workspaces
 
 A **Workspace** is a named Working Directory (a repo root, unique by absolute
