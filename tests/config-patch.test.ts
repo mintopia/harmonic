@@ -118,6 +118,16 @@ describe('PATCH /api/config verification', () => {
     expect(patched.body.harnesses.claude.cacheWarmSeconds).toBe(600);
   });
 
+  it('accepts an id-keyed model catalog patch without replacing untouched models', async () => {
+    const patched = await server.api('PATCH', '/api/config', {
+      harnesses: { claude: { models: { 'claude-opus-5': { contextWindow: 123_456 } } } },
+    });
+
+    expect(patched.status).toBe(200);
+    expect(patched.body.harnesses.claude.models).toContainEqual(expect.objectContaining({ id: 'claude-opus-5', contextWindow: 123_456 }));
+    expect(patched.body.harnesses.claude.models).toContainEqual(expect.objectContaining({ id: 'stub-model' }));
+  });
+
   it('rejects duplicate ids within a harness catalog', async () => {
     const patched = await server.api('PATCH', '/api/config', {
       harnesses: {

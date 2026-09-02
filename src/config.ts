@@ -361,15 +361,57 @@ function migrateLegacyModelCatalogs(base: AppConfig, overrides: unknown): unknow
 
 export function mergeConfig(base: AppConfig, overrides?: DeepPartial<AppConfig>): AppConfig {
   if (!overrides) return base;
-  const merge = (a: any, b: any): any => {
+  const merge = (a: any, b: any, path: readonly string[] = []): any => {
     if (b === undefined) return a;
+    if (isModelCatalogPath(path) && Array.isArray(a) && isRecord(b)) {
+      return mergeModelCatalog(a, b);
+    }
     if (b === null || typeof b !== 'object' || Array.isArray(b)) return b;
     if (a === null || typeof a !== 'object' || Array.isArray(a)) return b;
     const out: any = { ...a };
-    for (const key of Object.keys(b)) out[key] = merge(a[key], b[key]);
+    for (const key of Object.keys(b)) out[key] = merge(a[key], b[key], [...path, key]);
     return out;
   };
   return appConfigSchema.parse(merge(base, migrateLegacyModelCatalogs(base, overrides)));
+}
+
+function isModelCatalogPath(path: readonly string[]): boolean {
+  return path[0] === 'harnesses' && path[2] === 'models';
+}
+
+/** Apply the id-keyed patch that persists a harness model catalog. */
+function mergeModelCatalog(base: unknown[], patch: Record<string, unknown>): unknown[] {
+  const baseline = new Map(
+    base.flatMap((model) => isRecord(model) && typeof model.id === 'string' ? [[model.id, model] as const] : []),
+  );
+  const merged = base.flatMap((model) => {
+    if (!isRecord(model) || typeof model.id !== 'string') return [model];
+    const change = patch[model.id];
+    if (change === null) return [];
+    return [isRecord(change) ? mergeModelEntry(model, change, model.id) : model];
+  });
+  for (const [id, change] of Object.entries(patch)) {
+    if (baseline.has(id) || change === null || !isRecord(change)) continue;
+    merged.push(mergeModelEntry({}, change, id));
+  }
+  return merged;
+}
+
+function mergeModelEntry(base: Record<string, unknown>, patch: Record<string, unknown>, id: string): Record<string, unknown> {
+  const merged: Record<string, unknown> = { ...base, id };
+  for (const [key, value] of Object.entries(patch)) {
+    if (key === 'id') continue;
+    if (value === null) {
+      delete merged[key];
+    } else if (isRecord(value) && isRecord(merged[key])) {
+      const nested = mergeModelEntry(merged[key], value, '');
+      delete nested.id;
+      merged[key] = nested;
+    } else {
+      merged[key] = value;
+    }
+  }
+  return merged;
 }
 
 export function defaultDataDir(): string {

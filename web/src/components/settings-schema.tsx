@@ -1280,7 +1280,7 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
     description: 'The agent CLIs Harmonic drives over ACP — command, environment, and models.',
     body: (ctx) =>
       ctx.surface === 'global' ? (
-        <HarnessesSection config={ctx.config} fieldErrors={ctx.errors} onChange={(harnesses) => ctx.setConfig({ ...ctx.config, harnesses })} />
+        <HarnessesSection config={ctx.config} baseline={ctx.baseline} fieldErrors={ctx.errors} onChange={(harnesses) => ctx.setConfig({ ...ctx.config, harnesses })} />
       ) : null,
   },
   {

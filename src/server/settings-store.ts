@@ -33,15 +33,46 @@ interface RawSettingsFile {
   workspaces?: Record<string, unknown>;
 }
 
-function deepDiff(base: unknown, value: unknown): unknown {
+function deepDiff(base: unknown, value: unknown, path: readonly string[] = []): unknown {
   if (isDeepStrictEqual(base, value)) return undefined;
+  if (isModelCatalogPath(path) && Array.isArray(base) && Array.isArray(value)) {
+    return modelCatalogDiff(base, value);
+  }
   if (Array.isArray(base) || Array.isArray(value) || !isRecord(base) || !isRecord(value)) return value;
   const patch: Record<string, unknown> = {};
   for (const key of Object.keys(value)) {
-    const difference = deepDiff(base[key], value[key]);
+    const difference = deepDiff(base[key], value[key], [...path, key]);
     if (difference !== undefined) patch[key] = difference;
   }
   return Object.keys(patch).length === 0 ? undefined : patch;
+}
+
+function isModelCatalogPath(path: readonly string[]): boolean {
+  return path[0] === 'harnesses' && path[2] === 'models';
+}
+
+function modelCatalogDiff(base: unknown[], value: unknown[]): Record<string, unknown> | undefined {
+  const baseline = new Map(base.flatMap((model) => isRecord(model) && typeof model.id === 'string' ? [[model.id, model] as const] : []));
+  const resolved = new Map(value.flatMap((model) => isRecord(model) && typeof model.id === 'string' ? [[model.id, model] as const] : []));
+  const patch: Record<string, unknown> = {};
+  for (const [id, model] of baseline) {
+    const next = resolved.get(id);
+    if (next === undefined) {
+      patch[id] = null;
+      continue;
+    }
+    const difference = deepDiff(model, next);
+    const entryPatch = isRecord(difference) ? difference : {};
+    {
+      delete entryPatch.id;
+      for (const key of Object.keys(model)) {
+        if (key !== 'id' && !(key in next)) entryPatch[key] = null;
+      }
+      if (Object.keys(entryPatch).length > 0) patch[id] = entryPatch;
+    }
+  }
+  for (const [id, model] of resolved) if (!baseline.has(id)) patch[id] = model;
+  return Object.keys(patch).length > 0 ? patch : undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
