@@ -17,6 +17,7 @@ import {
   type EpicRefreshTrigger,
 } from '../src/execution/epic-integration.js';
 import type { MemberMergeState } from '../src/domain/epic-integrate-decision.js';
+import type { EpicRefreshOutcome } from '../src/execution/epic-refresh-coordinator.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { allWorkspaces, makeSettingsStore } from './helpers.js';
 
@@ -80,7 +81,7 @@ class FakeGit implements EpicGit {
 
 class FakeRefresh implements EpicRefreshTrigger {
   readonly calls: number[] = [];
-  async refresh(target: { ref: number; repoDir: string; defaultBranch: string }): Promise<unknown> {
+  async refresh(target: { ref: number; repoDir: string; defaultBranch: string }): Promise<EpicRefreshOutcome> {
     this.calls.push(target.ref);
     return { status: 'refreshed' as const, oid: 'deadbeef' };
   }
