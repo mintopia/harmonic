@@ -296,9 +296,9 @@ export const attempts = sqliteTable('attempts', {
    * attempt branch, which merging or cleanup can advance or delete. */
   diffBaseOid: text('diff_base_oid'),
   diffHeadOid: text('diff_head_oid'),
-  /** `git diff --stat` snapshot taken when the attempt settles; null in direct
-   * mode or before settle. The card and Task detail both read this so they
-   * can never disagree (issue #36). */
+  /** `git diff --numstat` snapshot (additions⇥deletions⇥path per line) taken
+   * when the attempt settles; null in direct mode or before settle. The card and
+   * Task detail both read this so they can never disagree (issue #36). */
   stat: text('stat'),
   /**
    * The committed implementation head an Attempt is verified against (issue

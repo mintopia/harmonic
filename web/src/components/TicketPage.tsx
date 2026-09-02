@@ -8,7 +8,7 @@ import type { DiffFile } from '../types';
 import { describeGuardrailTrip } from '../guardrail-trip-model';
 import { parseSkipReasonTaskRef } from '../skip-reason-model';
 import { overallDecision, verificationRows, criticUnavailableReason } from '../verification-attempts-model';
-import { changedFilesFromStat } from '../attempt-rail-model';
+import { changedFilesFromNumstat } from '../attempt-rail-model';
 import { sumCosts } from '../activity-model';
 import { Markdown } from './Markdown';
 import { Icon } from './Icon';
@@ -121,7 +121,7 @@ function Metrics({
           : 0),
     0,
   );
-  const files = changedFilesFromStat(task.stat);
+  const files = changedFilesFromNumstat(task.stat);
   const add = files.reduce((s, f) => s + f.additions, 0);
   const del = files.reduce((s, f) => s + f.deletions, 0);
   const diff =

@@ -460,9 +460,11 @@ export const Git = {
     await git(worktreePath, ...IDENTITY, 'commit', '-m', message);
   },
 
-  /** Diffstat of what the run's branch adds over the merge base. */
+  /** Per-file `additions<TAB>deletions<TAB>path` of what the run's branch adds
+   * over the merge base. `--numstat` reports exact line counts, unlike `--stat`,
+   * whose `+`/`-` graph is a width-capped histogram, not a count. */
   diffStat: (dir: string, baseBranch: string, branch: string) =>
-    git(dir, 'diff', '--stat', `${baseBranch}...${branch}`),
+    git(dir, 'diff', '--numstat', `${baseBranch}...${branch}`),
 
   /** The shared ancestor Git uses for a three-dot diff range. */
   mergeBase: (dir: string, base: string, head: string) => git(dir, 'merge-base', base, head),
@@ -492,16 +494,18 @@ export const Git = {
   diffMergeCommit: (dir: string, mergeOid: string) => git(dir, 'diff', `${mergeOid}^1`, `${mergeOid}^2`),
 
   /**
-   * Diffstat of a live worktree's current state — committed AND uncommitted
-   * tracked changes — against `baseOid` (the fork point). For a running Run whose
-   * work is not yet snapshotted or committed, `base...branch` in the canonical
-   * checkout shows nothing; this shows what the agent has actually done so far.
+   * Per-file `additions<TAB>deletions<TAB>path` of a live worktree's current
+   * state — committed AND uncommitted tracked changes — against `baseOid` (the
+   * fork point). For a running Run whose work is not yet snapshotted or committed,
+   * `base...branch` in the canonical checkout shows nothing; this shows what the
+   * agent has actually done so far. `--numstat` gives exact line counts (the
+   * `--stat` graph is a width-capped histogram, not a count).
    * `--no-optional-locks` so a read never contends with the agent's index writes;
    * read-only — never touches the worktree's index or HEAD. Untracked (never-added)
    * files are not included, exactly as `git diff <commit>` omits them.
    */
   worktreeDiffStat: (worktreeDir: string, baseOid: string) =>
-    git(worktreeDir, '--no-optional-locks', 'diff', '--stat', baseOid),
+    git(worktreeDir, '--no-optional-locks', 'diff', '--numstat', baseOid),
 
   /** Full unified diff of a live worktree's current state (committed + uncommitted
    * tracked changes) against `baseOid`. The hunk-level companion to

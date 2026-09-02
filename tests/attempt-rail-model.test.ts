@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { changedFilesFromStat, currentAttemptId, attemptDisplay } from '../web/src/attempt-rail-model.js';
+import { changedFilesFromNumstat, currentAttemptId, attemptDisplay } from '../web/src/attempt-rail-model.js';
 import type { AttemptSummary, Step } from '../web/src/types.js';
 
 function run(over: Partial<AttemptSummary> = {}): AttemptSummary {
@@ -116,20 +116,24 @@ describe('currentAttemptId', () => {
   });
 });
 
-describe('changedFilesFromStat', () => {
-  it('turns git diff --stat entries into selectable changed-file rows', () => {
+describe('changedFilesFromNumstat', () => {
+  it('turns git diff --numstat entries into selectable changed-file rows with exact counts', () => {
     expect(
-      changedFilesFromStat(
-        ' src/server/rate-limit.ts | 96 ++++++++++++++\n src/server/app.ts        |  8 +---\n 2 files changed, 101 insertions(+), 3 deletions(-)',
-      ),
+      changedFilesFromNumstat('96\t0\tsrc/server/rate-limit.ts\n5\t3\tsrc/server/app.ts'),
     ).toEqual([
-      { path: 'src/server/rate-limit.ts', kind: 'M', additions: 14, deletions: 0 },
-      { path: 'src/server/app.ts', kind: 'M', additions: 1, deletions: 3 },
+      { path: 'src/server/rate-limit.ts', kind: 'M', additions: 96, deletions: 0 },
+      { path: 'src/server/app.ts', kind: 'M', additions: 5, deletions: 3 },
     ]);
   });
 
-  it('does not treat the git summary or an unavailable stat as a file', () => {
-    expect(changedFilesFromStat(null)).toEqual([]);
-    expect(changedFilesFromStat(' 2 files changed, 101 insertions(+), 3 deletions(-)')).toEqual([]);
+  it('reads a binary file (- / -) as zero changed lines', () => {
+    expect(changedFilesFromNumstat('-\t-\tassets/logo.png')).toEqual([
+      { path: 'assets/logo.png', kind: 'M', additions: 0, deletions: 0 },
+    ]);
+  });
+
+  it('treats an unavailable numstat as no files', () => {
+    expect(changedFilesFromNumstat(null)).toEqual([]);
+    expect(changedFilesFromNumstat('')).toEqual([]);
   });
 });

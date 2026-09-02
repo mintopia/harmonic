@@ -55,7 +55,7 @@ export function attemptDisplay(run: AttemptSummary, steps: readonly Step[] = [])
 
 /** A changed file the rail can link into the worktree-wide Changes view.
  *
- * `git diff --stat` does not include Git's add/modify status, so the current
+ * `git diff --numstat` does not include Git's add/modify status, so the current
  * endpoint can only truthfully render the neutral `M` badge. Keeping that
  * limitation in this view model makes the eventual richer diff response a
  * single-boundary upgrade rather than an inference in the component.
@@ -68,25 +68,27 @@ export interface ChangedFile {
 }
 
 /**
- * Parse the per-file lines from `git diff --stat`. The final summary line has
- * no pipe and is intentionally ignored. Git's graph comprises `+` / `-`
- * characters, which give the compact per-file addition/deletion counts the
- * rail needs without presenting the aggregate summary as a selectable file.
+ * Parse the per-file lines from `git diff --numstat`, each
+ * `additions<TAB>deletions<TAB>path`. Counts are exact line totals — unlike the
+ * `--stat` graph, whose `+`/`-` bar is a width-capped histogram that collapses
+ * to a `+1`/`-1` fiction on small diffs. A binary file reports `-` for both
+ * counts, which reads as 0 changed lines.
  */
-export function changedFilesFromStat(stat: string | null): ChangedFile[] {
-  if (!stat) return [];
+export function changedFilesFromNumstat(numstat: string | null): ChangedFile[] {
+  if (!numstat) return [];
   const files: ChangedFile[] = [];
-  for (const line of stat.split('\n')) {
-    const match = /^\s*(.+?)\s+\|\s+\d+\s+([+-]+)\s*$/.exec(line);
+  for (const line of numstat.split('\n')) {
+    const match = /^(-|\d+)\t(-|\d+)\t(.+)$/.exec(line);
     if (!match) continue;
-    const path = match[1];
-    const graph = match[2];
-    if (path === undefined || graph === undefined) continue;
+    const additions = match[1];
+    const deletions = match[2];
+    const path = match[3];
+    if (additions === undefined || deletions === undefined || path === undefined) continue;
     files.push({
       path,
       kind: 'M',
-      additions: [...graph].filter((mark) => mark === '+').length,
-      deletions: [...graph].filter((mark) => mark === '-').length,
+      additions: additions === '-' ? 0 : Number(additions),
+      deletions: deletions === '-' ? 0 : Number(deletions),
     });
   }
   return files;

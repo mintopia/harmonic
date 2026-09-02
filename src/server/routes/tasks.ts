@@ -166,8 +166,9 @@ const taskSchema = taskWithDepsSchema
     mapTitle: z.string().nullable().meta({ example: 'Wayfinder' }),
     /** The latest run's branch (worktree mode only); null in direct mode or before any run. */
     branch: z.string().nullable().meta({ example: 'agent/4821-rate-limiting' }),
-    /** The latest run's diffstat, snapshotted at merging; null before then or in direct mode. */
-    stat: z.string().nullable().meta({ example: ' src/server/rate-limit.ts | 96 ++++++++++++++\n 1 file changed, 96 insertions(+)' }),
+    /** The latest run's `git diff --numstat` (additions⇥deletions⇥path per line),
+     * snapshotted at merging; null before then or in direct mode. */
+    stat: z.string().nullable().meta({ example: '96\t0\tsrc/server/rate-limit.ts' }),
     /** The running run's `startedAt`; null unless the Task is running (issue #100). */
     runStartedAt: z.number().nullable().meta({ example: 1784032020000 }),
     /** Total tool-call count of the running run; null unless the Task is running (issue #100). */
@@ -337,9 +338,10 @@ const usageResponseSchema = attemptUsageSchema.extend({
 const diffResponseSchema = z.object({
   branch: z.string().nullable().meta({ example: 'agent/4821-rate-limiting' }),
   baseBranch: z.string().nullable().meta({ example: 'main' }),
-  /** `git diff --stat` between baseBranch and branch; null outside worktree mode. */
+  /** `git diff --numstat` (additions⇥deletions⇥path per line) between baseBranch
+   * and branch; null outside worktree mode. */
   stat: z.string().nullable().meta({
-    example: ' src/server/rate-limit.ts | 96 ++++++++++++++\n src/server/app.ts       |  8 +-\n 2 files changed, 100 insertions(+), 4 deletions(-)',
+    example: '96\t0\tsrc/server/rate-limit.ts\n5\t3\tsrc/server/app.ts',
   }),
 });
 

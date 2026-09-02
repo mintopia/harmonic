@@ -1,4 +1,4 @@
-import { changedFilesFromStat } from '../../attempt-rail-model';
+import { changedFilesFromNumstat } from '../../attempt-rail-model';
 import { railSectionHead } from '../../ui';
 import { Icon } from '../Icon';
 import type { TaskState } from '../../types';
@@ -22,7 +22,7 @@ export function AttemptRail({
   onSelectChanges: () => void;
   taskState?: TaskState;
 }) {
-  const files = changedFilesFromStat(worktree.stat);
+  const files = changedFilesFromNumstat(worktree.stat);
   const hasWorktree = worktree.isolationMode === 'worktree';
   const merged = taskState === 'done';
 
