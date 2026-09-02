@@ -38,5 +38,8 @@ export function useScrollToPanel(
       window.clearTimeout(stop);
       observer.disconnect();
     };
+    // Re-home only when the rail selection (key) changes; refs are stable and
+    // `picked` is read but must not re-trigger the scroll.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
 }
