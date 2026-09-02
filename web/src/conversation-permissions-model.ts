@@ -4,7 +4,7 @@ import type { ConversationEvent, PermissionAcpRequest } from './types.js';
 
 /**
  * A pending ACP permission request the panel is showing for its currently
- * open conversation (issue #11's LOCKED contract). Keyed by `reqId` in a
+ * open conversation. Keyed by `reqId` in a
  * record so the panel can hold — and render — more than one at once, even
  * though in practice the Harness blocks on a single outstanding request.
  */
@@ -42,8 +42,8 @@ export function removePendingPermission(pending: PendingPermissions, reqId: stri
 }
 
 /** Drops every prompt belonging to a Conversation that ended or crashed — it
- * can no longer be answered (issue #55's Activity view watches all Conversations
- * at once, so it clears by conversation, not just reqId). Returns the same
+ * can no longer be answered.
+ * Returns the same
  * reference when nothing belonged to it, so callers can skip a re-render. */
 export function removePendingForConversation(
   pending: PendingPermissions,
@@ -55,7 +55,7 @@ export function removePendingForConversation(
 }
 
 /**
- * Clears a pending prompt when its resolution arrives: the LOCKED contract
+ * Clears a pending prompt when its resolution arrives: the contract
  * says the server appends a normal `conversation_event` of
  * `type: 'permission_request'` whose `payload` is `{ request, outcome,
  * reqId }` once a prompt is answered (or auto-cleared on end/crash). This
@@ -73,11 +73,6 @@ export function resolvePendingPermissionFromEvent(
   return removePendingPermission(pending, reqId);
 }
 
-/** allow_once -> "Allow once" / allow_always -> "Allow for this
- * conversation" / reject_once & reject_always -> "Reject" — rendered
- * per-option, so if an ACP request offers both reject kinds it renders two
- * Reject buttons; that mirrors the request rather than second-guessing it
- * (issue #11 explicitly renders exactly the options given, no more). */
 const PERMISSION_OPTION_LABELS: Record<PermissionAcpRequest['options'][number]['kind'], string> = {
   allow_once: 'Allow once',
   allow_always: 'Allow for this conversation',
@@ -91,7 +86,7 @@ export function permissionOptionLabel(kind: PermissionAcpRequest['options'][numb
 
 /**
  * Picks the optionId an "Always allow {kind} in {dir}" click resolves the
- * request with (issue #13): remembering a Permission Rule is orthogonal to
+ * request with: remembering a Permission Rule is orthogonal to
  * *this* answer, so the click still needs a real optionId from the request
  * itself. Prefers `allow_once` (the least-surprising one-time grant to pair
  * with a new persistent rule); falls back to any other `allow_*` option;
@@ -108,8 +103,8 @@ export function chooseAlwaysAllowOptionId(
 }
 
 /**
- * The optionId a bare "Deny" click resolves the request with (issue #55's
- * Activity row Grant/Deny). Mirrors {@link chooseAlwaysAllowOptionId}: the
+ * The optionId a bare "Deny" click resolves the request with.
+ * Mirrors {@link chooseAlwaysAllowOptionId}: the
  * Activity row collapses the ACP request's full option list into two verbs,
  * so it needs one canonical reject option. Prefers `reject_once` (the
  * least-surprising one-off deny); falls back to any other `reject_*`; returns

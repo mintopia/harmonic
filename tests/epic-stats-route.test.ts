@@ -4,13 +4,6 @@ import { startServer, type TestServer } from './helpers.js';
 import { attempts, tasks, workspaces, type AttemptState } from '../src/db/schema.js';
 import type { AttemptUsage } from '../src/execution/usage.js';
 
-/**
- * The Epic-scoped Stats surface (issue #410, ADR-0014): same aggregation as
- * `GET /api/stats`, scoped to one Epic's child Tasks via `tasks.mapRef`. Seeds
- * Tasks/Attempts directly against the Task's row (the same style as
- * `stats-route.test.ts` and `tool-call-aggregates.test.ts`'s mapRef seeding),
- * so the route's param parsing and scope composition are exercised end to end.
- */
 describe('GET /api/epics/:ref/stats', () => {
   let server: TestServer;
   let nextAttemptNumber = 1;
@@ -34,8 +27,6 @@ describe('GET /api/epics/:ref/stats', () => {
       ...usage,
     } satisfies AttemptUsage);
 
-  /** Create a native Task (default Workspace) and set its `mapRef` — the derived
-   * Epic rollup key the scoped route filters on. */
   const seedEpicChildTask = async (mapRef: number, prompt = `epic ${mapRef} child`): Promise<number> => {
     const created = await server.api('POST', '/api/tasks', { prompt });
     const taskId = created.body.id as number;
@@ -43,9 +34,6 @@ describe('GET /api/epics/:ref/stats', () => {
     return taskId;
   };
 
-  /** Insert a Task directly into a given (non-default) Workspace, with `mapRef` set —
-   * `POST /api/tasks` only creates in the default Workspace, so a second-Workspace
-   * fixture needs a direct insert (mirrors `tool-call-aggregates.test.ts`). */
   const seedEpicChildTaskInWorkspace = async (workspaceId: number, mapRef: number): Promise<number> => {
     const now = Date.now();
     const row = await server.app.ctx.asyncDb.write((d) =>
@@ -96,7 +84,6 @@ describe('GET /api/epics/:ref/stats', () => {
       epic100TaskId = await seedEpicChildTask(100);
       epic200TaskId = await seedEpicChildTask(200);
 
-      // Epic 100: two attempts, cost 2.00 + 3.00 = 5.00, 300 input / 150 output tokens.
       await seedAttempt(epic100TaskId, {
         state: 'passed',
         startedAt: 1_000,
@@ -116,7 +103,6 @@ describe('GET /api/epics/:ref/stats', () => {
         }),
       });
 
-      // Epic 200: one attempt, deliberately large cost/tokens — must never leak into epic 100's figures.
       await seedAttempt(epic200TaskId, {
         state: 'passed',
         startedAt: 1_000,

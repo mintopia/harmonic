@@ -38,17 +38,9 @@ describe('decideAttemptContinuation (issue #311)', () => {
   });
 });
 
-/**
- * The pure retry/reject continuation decision (issue #147, reliability-design
- * Unit C): `(trigger, Session warmth, now) → silent-continue | offer-choice`,
- * tested in isolation (no db/clock/harness). Automated triggers reuse the warm
- * Session silently; a human rejection surfaces a cost-gated choice — and warmth
- * is only ever a cost signal, never a gate. Same seam shape as session-resume.ts.
- */
 describe('planSessionContinuation (issue #147)', () => {
   const HOUR = 60 * 60 * 1000;
   const now = 10 * HOUR;
-  // A comfortably-warm Session: cache lapses an hour from now.
   const warm: SessionWarmthFacts = { estimatedWarmUntil: now + HOUR, lastActiveAt: now - 5 * 60 * 1000 };
 
   describe('automated triggers reuse the warm Session silently', () => {
@@ -72,9 +64,6 @@ describe('planSessionContinuation (issue #147)', () => {
       expect(plan.continueFull.conversation).toBe('full');
       expect(plan.startCondensed.session).toBe('new');
       expect(plan.startCondensed.conversation).toBe('condensed');
-      // Each option carries its own estimate: the full option reads the source
-      // Session's cache warmth; the condensed option a band computed relative to
-      // it. On a warm Session, full is the cache hit so condensed is the pricier.
       expect(plan.continueFull.estimate).toEqual(estimateContinuationCost(warm, now));
       expect(plan.startCondensed.estimate).toEqual(estimateCondensedContinuationCost(warm, now));
       expect(plan.startCondensed.estimate.band).toBe('cold');
@@ -84,11 +73,9 @@ describe('planSessionContinuation (issue #147)', () => {
       const cold: SessionWarmthFacts = { estimatedWarmUntil: now - HOUR, lastActiveAt: now - 3 * HOUR };
       const plan = planSessionContinuation('human-reject', cold, now);
       if (plan.mode !== 'offer-choice') throw new Error('expected offer-choice');
-      // The full-continuation option is still present, just with a cold-cost estimate.
       expect(plan.continueFull.estimate.band).toBe('cold');
       expect(plan.continueFull.session).toBe('same');
       expect(plan.startCondensed.session).toBe('new');
-      // The paths trade places: on a cold Session, condensed is the cheaper one.
       expect(plan.startCondensed.estimate.band).toBe('warm');
     });
 
@@ -99,8 +86,6 @@ describe('planSessionContinuation (issue #147)', () => {
       expect(plan.continueFull.estimate.band).toBe('unknown');
       expect(plan.continueFull.session).toBe('same');
       expect(plan.startCondensed.session).toBe('new');
-      // No warm window ⇒ condensed's saving is pure token count, so it is still
-      // the cheaper/steadier path (warm), never itself 'unknown'.
       expect(plan.startCondensed.estimate.band).toBe('warm');
     });
   });
@@ -123,7 +108,6 @@ describe('planSessionContinuation (issue #147)', () => {
     it('is the cheaper path (warm), never unknown, when the source has no known warm window', () => {
       const unknownWarmth: SessionWarmthFacts = { estimatedWarmUntil: null, lastActiveAt: now - HOUR };
       const est = estimateCondensedContinuationCost(unknownWarmth, now);
-      // The uncertainty attaches to the FULL path; condensed stays estimable.
       expect(est.band).toBe('warm');
       expect(estimateContinuationCost(unknownWarmth, now).band).toBe('unknown');
     });
@@ -238,12 +222,6 @@ describe('estimateContinuationCost (issue #147 AC4)', () => {
   });
 });
 
-/**
- * The reject-dialog preview (issue #170): before the operator rejects, look at
- * the Task's newest Session-bound Run and project the `human-reject` offer so the
- * dialog can show "continue full (est. cost)" vs "start condensed". Pure — Runs +
- * a `getSession` lookup + `now` in, a plan (or null) out.
- */
 describe('previewHumanRejectContinuation (issue #170)', () => {
   const HOUR = 60 * 60 * 1000;
   const now = 10 * HOUR;
@@ -274,8 +252,6 @@ describe('previewHumanRejectContinuation (issue #170)', () => {
       createdAt: 0,
       updatedAt: 0,
     }) satisfies SessionRow;
-  // The preview reads only `sessionRowId` off each Run; a localized cast keeps
-  // the fixture to the one field under test.
   const run = (sessionRowId: number | null): AttemptRow => ({ sessionRowId }) as AttemptRow;
 
   it('returns the offer-choice plan projected against the newest Session-bound Run', () => {
@@ -283,7 +259,6 @@ describe('previewHumanRejectContinuation (issue #170)', () => {
     const plan = previewHumanRejectContinuation([run(null), run(5)], (id) => store.get(id) ?? null, now);
     expect(plan?.mode).toBe('offer-choice');
     expect(plan?.continueFull.estimate.band).toBe('warm');
-    // Warm source ⇒ full is the cache hit, so the condensed path is the pricier.
     expect(plan?.startCondensed).toEqual({
       session: 'new',
       conversation: 'condensed',
@@ -297,7 +272,6 @@ describe('previewHumanRejectContinuation (issue #170)', () => {
       [2, session(2, now - HOUR)],
     ]);
     const plan = previewHumanRejectContinuation([run(1), run(2)], (id) => store.get(id) ?? null, now);
-    // The second (newer) Run's cold Session is the one previewed, not the first.
     expect(plan?.continueFull.estimate.band).toBe('cold');
   });
 
@@ -306,12 +280,11 @@ describe('previewHumanRejectContinuation (issue #170)', () => {
   });
 
   it('returns null when the newest Session was retired and swept (lookup misses)', () => {
-    // Run points at a Session id, but getSession returns null (row gone).
     expect(previewHumanRejectContinuation([run(9)], () => null, now)).toBeNull();
   });
 
   it('skips a swept newer Session and falls back to an older live one', () => {
-    const store = new Map([[3, session(3, now + HOUR)]]); // id 8 absent (swept)
+    const store = new Map([[3, session(3, now + HOUR)]]);
     const plan = previewHumanRejectContinuation([run(3), run(8)], (id) => store.get(id) ?? null, now);
     expect(plan?.continueFull.estimate.band).toBe('warm');
   });

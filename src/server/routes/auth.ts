@@ -7,14 +7,6 @@ import { listResponse, paginate, paginationQuerySchema } from '../pagination.js'
 
 export const SESSION_COOKIE = 'harmonic_session';
 
-/**
- * Examples on this file's schemas follow schemas.ts's convention, with one
- * exception: no field that carries a credential gets a plausible-looking
- * value. Passwords and the once-returned key token use angle-bracket
- * placeholders instead, so nothing in the published spec can be mistaken for
- * a working secret or copied out of the docs page as one.
- */
-
 const loginBodySchema = z.object({
   password: z.string().meta({ example: '<your-operator-password>' }),
 });
@@ -35,7 +27,7 @@ const removePasswordBodySchema = z.object({
 
 const createKeyBodySchema = z.object({
   name: z.string().min(1).meta({ example: 'ci-pipeline' }),
-  /** 'full' (default) drives the whole fleet; 'read' is a viz-client key — GET tasks/attempts/maps + WS, no mutations (issue #35). */
+  /** 'full' (default) drives the whole fleet; 'read' is a viz-client key — GET tasks/attempts/maps + WS, no mutations. */
   scope: z.enum(['full', 'read']).optional().meta({ example: 'read' }),
 });
 
@@ -47,7 +39,7 @@ const keySchema = z.object({
   name: z.string().meta({ example: 'ci-pipeline' }),
   /** First characters of the token, for display — too short to authenticate with. */
   prefix: z.string().meta({ example: 'adk_1f3c9e02' }),
-  /** 'full' or 'read' (issue #35); 'attempt'/'conversation' keys are internal and never listed. */
+  /** 'full' or 'read'; 'attempt'/'conversation' keys are internal and never listed. */
   scope: z.string().meta({ example: 'full' }),
   /** Set only on attempt-scoped keys, so null on every key this API returns. */
   attemptId: z.number().nullable().meta({ example: null }),

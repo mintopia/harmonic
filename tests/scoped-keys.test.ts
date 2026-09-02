@@ -9,18 +9,11 @@ describe('attempt-scoped key restrictions', () => {
   let scopedToken: string;
 
   beforeAll(async () => {
-    // This describe deliberately keeps a hung Run alive for the scoped key AND
-    // separately escalates a Task (the escalation-gate test); the harness is
-    // arbitrary (these tests are harness-agnostic).
     server = await startServer({ ...stubHarness('copilot'), defaults: { harness: 'copilot' } });
-    // Capture a scoped key from a hanging run, kept alive so the key stays valid
-    // while we probe with it.
     const { env } = await captureRunEnv(server, ['HARMONIC_API_KEY'], { exit: 'hang' });
     scopedToken = env.HARMONIC_API_KEY as string;
   });
   afterAll(async () => {
-    // Cancel this describe's still-running (hung) Runs before teardown; a plain
-    // server.close() would leave them `running` with a leaked harness process.
     await cancelRunningTasks(server);
     await server.close();
   });
@@ -49,16 +42,10 @@ describe('attempt-scoped key restrictions', () => {
     expect(await asAgent('PATCH', '/api/config', { autoRunner: { enabled: true } })).toBe(403);
     expect(await asAgent('PUT', '/api/config', {})).toBe(403);
     expect(await asAgent('GET', '/api/channels')).toBe(403);
-    // Force-complete is an operator override, not part of the agent surface
-    // (gate fires before the handler, so the id need not exist).
     expect(await asAgent('POST', '/api/tasks/1/complete')).toBe(403);
   });
 
   it('keeps the escalation actions human-only, always (ADR-0041; #140 retired the agentReview flag)', async () => {
-    // An escalated task, on its own workingDir — the beforeAll's scoped-key
-    // run hangs forever on the default one, holding its Work Context lease
-    // (issue #119) for the whole describe block. The gate fires before the
-    // handler, so escalating through the service is enough.
     const done = await server.api('POST', '/api/tasks', {
       prompt: 'escalation target',
       workingDir: mkdtempSync(join(tmpdir(), 'harmonic-scoped-')),
@@ -69,8 +56,6 @@ describe('attempt-scoped key restrictions', () => {
     expect(await asAgent('POST', `/api/tasks/${done.body.id}/reject`, { guidance: 'x' })).toBe(403);
     expect(await asAgent('POST', `/api/tasks/${done.body.id}/close`)).toBe(403);
 
-    // Even a legacy PATCH still carrying the retired flag doesn't reopen the
-    // scoped-key surface — it is dropped, and has no bearing on the gate.
     await server.api('PATCH', '/api/config', { agentReview: true });
     expect(await asAgent('POST', `/api/tasks/${done.body.id}/accept`)).toBe(403);
   });
@@ -87,8 +72,6 @@ describe('read-scoped key (issue #35)', () => {
     readToken = body.token;
   });
   afterAll(async () => {
-    // Cancel this describe's still-running (hung) Runs before teardown; a plain
-    // server.close() would leave them `running` with a leaked harness process.
     await cancelRunningTasks(server);
     await server.close();
   });
@@ -110,7 +93,7 @@ describe('read-scoped key (issue #35)', () => {
     expect(await asRead('GET', '/api/tasks')).toBe(200);
     expect(await asRead('GET', '/api/tasks/1')).toBe(200);
     expect(await asRead('GET', '/api/tasks/1/attempts')).toBe(200);
-    expect(await asRead('GET', '/api/maps')).toBe(200); // empty (tracker off), but reachable
+    expect(await asRead('GET', '/api/maps')).toBe(200);
   });
 
   it('blocks every mutation and the operator surface', async () => {
@@ -120,7 +103,7 @@ describe('read-scoped key (issue #35)', () => {
     expect(await asRead('POST', '/api/keys', { name: 'escalate' })).toBe(403);
     expect(await asRead('PATCH', '/api/config', { autoRunner: { enabled: true } })).toBe(403);
     expect(await asRead('GET', '/api/channels')).toBe(403);
-    expect(await asRead('GET', '/api/tasks/1/channels')).toBe(403); // per-task channels are operator config
+    expect(await asRead('GET', '/api/tasks/1/channels')).toBe(403);
   });
 
   it('serves /maps as a JSON rollup array', async () => {
@@ -142,8 +125,6 @@ describe('read-scoped key (issue #35)', () => {
     const readWs = await connect(readToken);
     const opWs = await connect(server.sessionToken);
 
-    // Synthetic bus events: attempt_event and attempt_usage are in the read set (Run
-    // traffic), conversation_event is not.
     server.app.ctx.bus.emit('attempt_event', { id: 1, attemptId: 1, seq: 1, ts: 0, type: 'lifecycle', payload: {} } as any);
     server.app.ctx.bus.emit('attempt_usage', {
       attemptId: 1,
@@ -156,10 +137,8 @@ describe('read-scoped key (issue #35)', () => {
     } as any);
     server.app.ctx.bus.emit('conversation_event', { id: 1, conversationId: 1, seq: 1, ts: 0, type: 'lifecycle', payload: {} } as any);
 
-    // Operator sees all; use conversation_event's arrival as the barrier.
     await waitFor(async () => opWs.messages.some((m) => m.type === 'conversation_event'));
     await waitFor(async () => readWs.messages.some((m) => m.type === 'attempt_event'));
-    // The read key sees live Run usage (ADR 0010), with Cost derived on read.
     const usageMsg = readWs.messages.find((m) => m.type === 'attempt_usage');
     expect(usageMsg).toMatchObject({ attemptId: 1, contextTokens: 1234, activity: 'Editing src/foo.ts' });
     expect(usageMsg.cost).not.toBeUndefined();

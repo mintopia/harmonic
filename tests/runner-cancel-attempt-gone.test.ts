@@ -64,12 +64,6 @@ describe('Runner.cancelForTask — run row deleted mid-settle', () => {
     };
     await runs.create(task.id, snapshot);
 
-    // Reproduce the production TOCTOU: settleTaskRun's parked branch lists the
-    // still-running row, then reads it via runStore.get — but a racing delete
-    // (e.g. a task-delete cascade) removes the row before the coordinator's own
-    // re-read inside settle(). Delete on read to force that window; the second
-    // read then throws `not_found` (ADR-0001 #388 S-E's settle is a guarded
-    // UPDATE, not an INSERT with an FK to fail).
     const realGet = runs.get.bind(runs);
     vi.spyOn(runs, 'get').mockImplementation(async (id: number) => {
       const row = await realGet(id);
@@ -77,11 +71,6 @@ describe('Runner.cancelForTask — run row deleted mid-settle', () => {
       return row;
     });
 
-    // The guard swallows the run-gone `not_found` as an expected no-op, so
-    // cancelForTask's own containment catch (which logs) is never reached: no
-    // error is logged. Without the guard the error would propagate to that
-    // catch (a logged error) — asserting console.error stays quiet is what
-    // proves the root-cause guard, not just the containment layer.
     const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
     await expect(runner.cancelForTask(task.id)).resolves.toBeUndefined();
     expect(logged).not.toHaveBeenCalled();

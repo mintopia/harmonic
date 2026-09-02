@@ -5,63 +5,22 @@ import { type Ticket, type TicketRef, type TicketState, type WritableTrackerAdap
 
 /** A `**Status:**` word that means the ticket is done. */
 const CLOSED_STATUS = /\b(done|closed|complete|completed|merged|shipped)\b/i;
-/**
- * A `**Status:**` word that explicitly means the ticket is *open* — the lifecycle
- * marker {@link WritableTrackerAdapter.reopen} writes (`open`; `reopened` for
- * symmetry). This is authoritative over the ticked-boxes heuristic: a human who
- * reopens a ticket whose acceptance boxes are all still ticked must see it parse
- * `open`, else reopen is a no-op and the premature-close→reopen path churns
- * (#237). Work-queue states like `ready-for-agent` are deliberately NOT open
- * markers — for those, all boxes ticked still closes the ticket.
- */
+/** A `**Status:**` word that explicitly means open; authoritative over the ticked-boxes heuristic so `reopen` is never silently overridden. Work-queue states like `ready-for-agent` are not open markers. */
 const OPEN_STATUS = /\b(open|reopened)\b/i;
 const STATUS_FIELD = /^\s*\*\*Status:\*\*\s*.*$/im;
 
 /** The reserved local id for a feature's `spec.md` Map. Issue filenames start at `01`, so `0` never collides. */
 const SPEC_ID = 0;
 
-/**
- * Per-feature id namespace, so tickets stay unique across coexisting feature
- * specs. A feature's ids are `base + <local NN>`, base a distinct multiple of
- * STRIDE. A feature is capped at STRIDE-1 tickets. The single-feature case keeps
- * base 0 (bare `NN`, spec `0`). For coexisting features the base is derived from
- * the feature dir's **name**, not its sorted position ({@link assignBases}) —
- * position is unstable: adding an earlier-sorting feature would otherwise
- * renumber existing features *and* hand the new one the freed low refs, which a
- * consumer keying on the ticket `number` reads as already-seen work. A
- * name-derived base is stable under any sibling insertion.
- */
+/** Per-feature id namespace: ids are `base + <local NN>`, base a distinct multiple of STRIDE derived from the feature dir's name, not its sorted position. */
 const STRIDE = 10000;
 
-/**
- * Resolves a feature slug to its stable id **index** (0, 1, 2, …); its base is
- * `index * STRIDE`. Harmonic injects a DB-backed, assign-once (first-seen)
- * implementation so a feature's index never shifts when a sibling is added —
- * see `TaskService.mdFeatureIndex`. Absent (standalone reads), the adapter
- * falls back to sorted position.
- */
+/** Resolves a feature slug to its stable id index; its base is `index * STRIDE`. Absent, the adapter falls back to sorted position. */
 export type FeatureIndex = (slug: string) => Promise<number>;
 
-/**
- * Each feature scope's id base — a distinct multiple of STRIDE. The single-feature
- * layout keeps base 0 (bare `NN`, spec `0`). For coexisting features the base is
- * `index(slug) * STRIDE`. That index must be **stable per feature name across
- * scans**: the mirror keys a ticket by its `number` for dedup, so a base that
- * shifts when a sibling dir is added would recycle old refs onto new work (or
- * hide new work as already-seen). Harmonic supplies a persistent `featureIndex`;
- * standalone falls back to sorted position — deterministic for a one-shot read,
- * but not stable across insertions (no store to remember prior assignments).
- */
 async function assignBases(scopes: Scope[], featureIndex?: FeatureIndex): Promise<number[]> {
-  // The unnamed single-feature layout (issues/ or root directly) → clean base 0.
-  // A *named* feature always goes through featureIndex even when it's currently
-  // the only one, so its index is recorded now and survives a later sibling —
-  // otherwise the sibling (sorted first) would claim index 0 and renumber it.
   if (scopes.length === 1 && scopes[0]!.slug === '') return [0];
   const bases: number[] = [];
-  // Sequential (not Promise.all): each first-seen slug's index is assigned by
-  // reading the prior count, so the persistent featureIndex must observe earlier
-  // siblings' assignments before numbering the next.
   for (let i = 0; i < scopes.length; i++) {
     bases.push((featureIndex ? await featureIndex(scopes[i]!.slug) : i) * STRIDE);
   }
@@ -115,17 +74,12 @@ export function localMarkdownAdapter(
       return found;
     },
 
-    // The format has no assignee field. Harmonic still tracks reservations in
-    // its own DB, while lifecycle changes persist through Status.
     async claim() {},
     async release() {},
     async close(ticket) {
       await writeStatus(dir, ticket.number, 'closed', opts.featureIndex);
     },
     async reopen(ticket) {
-      // Reopening changes lifecycle only. `open` deliberately does not opt the
-      // ticket back into AFK work: a human must explicitly restore
-      // `ready-for-agent` when they want Harmonic to pick it again.
       await writeStatus(dir, ticket.number, 'open', opts.featureIndex);
     },
 
@@ -169,12 +123,6 @@ interface Scope {
   specDir: string;
 }
 
-/**
- * The feature scopes under `root` — see the layout note on {@link localMarkdownAdapter}.
- * A repo can hold several feature specs at once (`.scratch/<slug-a>/`,
- * `.scratch/<slug-b>/`); each becomes its own scope so the board shows every
- * spec's Map with its tickets, no `Path:` needed. Deterministic order (sorted).
- */
 async function resolveScopes(root: string): Promise<Scope[]> {
   const nested = join(root, 'issues');
   if ((await ticketNames(nested)).length) return [{ slug: '', issuesDir: nested, specDir: root }];
@@ -184,7 +132,7 @@ async function resolveScopes(root: string): Promise<Scope[]> {
   try {
     entries = await readdir(root);
   } catch {
-    return []; // missing root → empty scan
+    return [];
   }
   const scopes: Scope[] = [];
   for (const e of entries.sort()) {
@@ -244,19 +192,11 @@ function headingTitle(raw: string, path: string): { heading: string; title: stri
 const stripHeading = (raw: string, heading: string): string =>
   (heading ? raw.slice(raw.indexOf(heading) + heading.length) : raw).trim();
 
-/** `**Status:**` / `**Blocked by:**` are the skills' literal field markers; a body reusing them mis-parses. Adapter-owned format, so we control it. */
+/** `**Status:**` / `**Blocked by:**` are the skills' literal field markers; a body reusing them mis-parses. */
 function parse(raw: string, id: number, path: string, mtime: string, parent: number | null, base: number): Parsed {
   const { heading, title } = headingTitle(raw, path);
 
   const status = raw.match(/^\s*\*\*Status:\*\*\s*(.+?)\s*$/im)?.[1]?.trim() ?? '';
-  // Closed-state precedence, explicit Status authoritative over the heuristic:
-  //   1. an explicit done-ish `**Status:**` (done/closed/…) → closed;
-  //   2. else an explicit open `**Status:**` (open/reopened) → open, even when
-  //      every box is ticked — so `reopen` (which writes `**Status:** open`) is
-  //      not silently overridden by ticked acceptance boxes (#237);
-  //   3. else the fallback heuristic: every acceptance checkbox ticked → closed.
-  // A ticket with a neutral/absent Status (e.g. `ready-for-agent`) rests entirely
-  // on its boxes; no boxes + neutral Status → open.
   const boxes = [...raw.matchAll(/^[ \t]*[-*]\s+\[([ xX])\]/gm)];
   const allChecked = boxes.length > 0 && boxes.every((m) => m[1] !== ' ');
   const state: TicketState = CLOSED_STATUS.test(status)
@@ -267,7 +207,6 @@ function parse(raw: string, id: number, path: string, mtime: string, parent: num
         ? 'closed'
         : 'open';
 
-  // "Blocked by" ids are feature-local; offset them into this feature's namespace.
   const blockedLine = raw.match(/^\s*\*\*Blocked by:\*\*\s*(.+?)\s*$/im)?.[1] ?? '';
   const blockedBy = /\bnone\b/i.test(blockedLine)
     ? []
@@ -320,7 +259,6 @@ function synthesise(files: Parsed[]): Ticket[] {
     const f = byId.get(id);
     return f ? { number: f.id, title: f.title, state: f.state } : null;
   };
-  // A declared blockedBy implies the target blocks us; dangling refs are dropped.
   const blockedBy = new Map<number, Set<number>>(
     files.map((f) => [f.id, new Set(f.blockedBy.filter((b) => byId.has(b)))]),
   );

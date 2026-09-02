@@ -1,28 +1,16 @@
-/**
- * Active-execution duration (CONTEXT.md / ADR-0028): how long a Run's agent
- * actually worked, measured from the Run's start to the `agent-finish` run_fact
- * timestamp — deliberately excluding the review-park and merging wait that
- * follow. It falls back to wall-clock `finished − started` only when a Run has
- * no agent-finish fact (it errored, or predates run_facts).
- *
- * A pure seam: the Stats KPI band consumes it now (p50), and the reliability
- * section reuses it (p50 / p95) later. It takes plain timestamps, not a Run row,
- * so it stays trivially testable and free of the DB.
- */
-
 export interface RunTimings {
-  /** Run start (epoch ms). */
+  /** Attempt start (epoch ms). */
   startedAt: number;
-  /** Run finish (epoch ms), or null while it has not settled. */
+  /** Attempt finish (epoch ms), or null while it has not settled. */
   finishedAt: number | null;
-  /** The `agent-finish/unresolved` run_fact timestamp (epoch ms), or null when the Run recorded none. */
+  /** The `agent-finish/unresolved` timestamp (epoch ms), or null when the Attempt recorded none. */
   agentFinishTs: number | null;
 }
 
 /**
- * The Run's active-execution duration in ms, or null when it can't be measured
- * honestly — no agent-finish fact and no finish time, or timestamps that would
- * yield a negative span (clock skew / out-of-order data). Never a fabricated 0.
+ * The Attempt's active-execution duration in ms — start to `agent-finish`,
+ * falling back to `finished − started` — or null when it can't be measured
+ * (no end timestamp, or a negative span). Never a fabricated 0.
  */
 export function activeExecutionDurationMs({ startedAt, finishedAt, agentFinishTs }: RunTimings): number | null {
   const end = agentFinishTs ?? finishedAt;

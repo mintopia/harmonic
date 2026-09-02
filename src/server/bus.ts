@@ -14,22 +14,21 @@ export interface BusEvents {
   attempt_event: (event: PersistedAttemptEvent) => void;
   attempt_log_event: (event: LiveAttemptEvent) => void;
   attempt_changed: (run: AttemptRow) => void;
-  /** Live-usage snapshot pushed ~1s while a run tails its native log (ADR 0010). */
+  /** Live-usage snapshot pushed ~1s while an Attempt tails its native log. */
   attempt_usage: (payload: { attemptId: number; snapshot: AttemptUsageSnapshot }) => void;
   task_changed: (task: TaskRow) => void;
-  /** A Task's row was hard-deleted (issue #162, ADR-0025); a live board drops
-   * it immediately rather than waiting on the next full list. */
+  /** A Task's row was hard-deleted; a live board drops it immediately. */
   task_removed: (payload: { id: number }) => void;
   conversation_event: (event: PersistedConversationEvent) => void;
   conversation_changed: (conversation: ConversationRow) => void;
   permission_request: (pending: PendingPermissionBroadcast) => void;
-  /** Full Scheduled Jobs registry snapshot (ADR-0038). */
+  /** Full Scheduled Jobs registry snapshot. */
   scheduled_jobs: (jobs: ScheduledJobSnapshot[]) => void;
-  /** Full flagged-worktree disposition registry snapshot (ADR-0010, issue #386). */
+  /** Full flagged-worktree disposition registry snapshot. */
   flagged_worktrees: (flags: readonly FlaggedWorktree[]) => void;
 }
 
-/** In-process pub/sub feeding the WebSocket stream (and later, notifications). */
+/** In-process pub/sub feeding the WebSocket stream. */
 export class EventBus implements FlaggedWorktreeEmitter {
   private emitter = new EventEmitter();
   private readonly attemptLogEvents = new Map<number, LiveAttemptEvent[]>();
@@ -43,7 +42,7 @@ export class EventBus implements FlaggedWorktreeEmitter {
     this.emitter.emit(event, ...args);
   }
 
-  /** Add a transient ACP update to the active Run's reconnect buffer. */
+  /** Add a transient ACP update to the active Attempt's reconnect buffer. */
   emitAttemptLog(event: LiveAttemptEvent): void {
     const events = this.attemptLogEvents.get(event.attemptId) ?? [];
     events.push(event);

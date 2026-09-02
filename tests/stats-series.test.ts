@@ -3,17 +3,13 @@ import { buildDaySeries, type DaySeriesRun } from '../src/server/stats-series.js
 import type { AttemptUsage } from '../src/execution/usage.js';
 import type { Cost } from '../src/domain/pricing.js';
 
-// Local midnight of a day, matching how buildDaySeries floors start times.
 const midnight = (y: number, m: number, d: number) => {
   const t = new Date(y, m, d);
   t.setHours(0, 0, 0, 0);
   return t.getTime();
 };
-// A start time at a given local hour of a day.
 const at = (y: number, m: number, d: number, h = 12) => new Date(y, m, d, h).getTime();
 
-// A run's serialized usage: totals are left null so mergeUsage recomputes them
-// from `models` (matches how the real usage pipeline stores it).
 const usageJson = (input: number, output: number, cacheRead = 0, cacheWrite = 0): string =>
   JSON.stringify({
     models: {
@@ -25,15 +21,12 @@ const usageJson = (input: number, output: number, cacheRead = 0, cacheWrite = 0)
   } satisfies AttemptUsage);
 
 const run = (startedAt: number, usage: string | null): DaySeriesRun => ({ startedAt, usage });
-// A run carrying its terminal state, for the per-day fails count.
 const outcome = (startedAt: number, state: string): DaySeriesRun => ({
   startedAt,
   usage: null,
   state,
 });
 
-// A pricing stub that just tallies $1 per run in the bucket — enough to prove
-// the injected pricer is called once per day with that day's rows.
 const perRunDollar = (dayRows: DaySeriesRun[]): Cost => ({
   totalUsd: dayRows.length,
   byModel: {},
@@ -63,7 +56,6 @@ describe('buildDaySeries', () => {
       perRunDollar,
     );
     expect(series).toHaveLength(1);
-    // (100+10) + (40+4) = 154; the 500/20/999/999 cache tokens never count.
     expect(series[0]?.tokens).toBe(154);
     expect(series[0]?.attempts).toBe(2);
   });
@@ -88,7 +80,6 @@ describe('buildDaySeries', () => {
     const series = buildDaySeries([run(at(2026, 0, 10, 8), usageJson(10, 1))], () => null);
     expect(series[0]?.totalUsd).toBeNull();
     expect(series[0]?.incomplete).toBe(false);
-    // Tokens are still counted even when nothing could be priced.
     expect(series[0]?.tokens).toBe(11);
   });
 
@@ -100,7 +91,7 @@ describe('buildDaySeries', () => {
     const series = buildDaySeries(
       [
         outcome(at(2026, 0, 10, 8), 'failed'),
-        outcome(at(2026, 0, 10, 10), 'cancelled'), // operator cancel — not a fail
+        outcome(at(2026, 0, 10, 10), 'cancelled'),
         outcome(at(2026, 0, 10, 11), 'completed'),
         outcome(at(2026, 0, 11, 8), 'failed'),
         outcome(at(2026, 0, 11, 9), 'failed'),
@@ -109,7 +100,6 @@ describe('buildDaySeries', () => {
     );
     expect(series.map((s) => s.day)).toEqual([midnight(2026, 0, 10), midnight(2026, 0, 11)]);
     expect(series.map((s) => s.fails)).toEqual([1, 2]);
-    // Every day still counts every run for the run total, whatever its state.
     expect(series.map((s) => s.attempts)).toEqual([3, 2]);
   });
 

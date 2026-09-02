@@ -5,10 +5,7 @@ import { MAP_LABEL, type Ticket, type TicketRef, type TicketState, type Writable
 
 const execFileAsync = promisify(execFile);
 
-// `gh issue list` pages internally (GraphQL cursors) to satisfy whatever `--limit`
-// asks for, so raising this is what turns "one page" into "the whole tracker".
-// It's still a ceiling, not true unbounded pagination, so a repo that somehow
-// exceeds it gets a loud warning instead of a silent truncation.
+// `gh issue list` pages internally to satisfy `--limit`, so this ceiling is what turns one page into the whole tracker.
 const SCAN_SAFETY_VALVE = 10_000;
 
 /** The `gh` fields that normalise straight onto a `Ticket` — one bulk read covers relationships. */
@@ -37,7 +34,6 @@ const defaultGh: GhRunner = async (args, cwd) => {
   }
 };
 
-// gh's raw JSON, only the bits we read. Everything else is discarded on normalise.
 interface RawRef {
   number: number;
   title: string;
@@ -63,18 +59,9 @@ const state = (s: string): TicketState => (s.toUpperCase() === 'CLOSED' ? 'close
 const ref = (r: RawRef): TicketRef => ({ number: r.number, title: r.title, state: state(r.state) });
 
 /**
- * Body-line dependency fallback. GitHub's native `blockedBy` is empty unless the
- * repo enabled the dependency preview *and* the edges were filed in the UI, so
- * also read the wayfinder body convention: any line mentioning "Blocked by" or
- * "Depends on" contributes every `#n` that follows the keyword on that line
- * (numbers *before* it — e.g. a "Part of #<map>" prefix — are ignored). Merged
- * with, and deduped against, the native edges in `normalise`.
- *
- * The tail scan stops before a "Blocks"/"Blocking" clause on the same line: the
- * common one-liner "Depends on: #a. Blocks: #b" declares both directions at
- * once, and letting the `Blocks` refs leak into `blockedBy` would wire reverse
- * edges — the two ends then depend on each other and both mirror as blocked
- * forever (the `blocking` side is meant to "never wire", see mirror.ts).
+ * GitHub's native `blockedBy` is empty unless the repo enabled the dependency preview and the edges were
+ * filed in the UI, so also read the "Blocked by" / "Depends on" body convention. The scan stops before a
+ * "Blocks" clause on the same line so reverse edges never leak into `blockedBy`.
  */
 function parseBodyBlockers(body: string): number[] {
   const out = new Set<number>();
@@ -119,12 +106,7 @@ function normalise(raw: RawIssue): Ticket {
   };
 }
 
-/**
- * The GitHub Tracker Adapter (D1, issue #22). Reads via `gh issue list/view`
- * — `gh` exposes native sub-issue `parent` and directional dependency edges
- * (`blockedBy`/`blocking`) as JSON fields, so one bulk read normalises whole.
- * Writes only `claim` and `close`, over ambient `gh` auth.
- */
+/** The GitHub Tracker Adapter via `gh issue list/view`; `gh` exposes native `parent`/`blockedBy`/`blocking` as JSON fields. Writes over ambient `gh` auth. */
 export function githubAdapter(repoRoot: string, run: GhRunner = defaultGh): WritableTrackerAdapter {
   const json = async <T>(args: string[]): Promise<T> => JSON.parse(await run(args, repoRoot));
 

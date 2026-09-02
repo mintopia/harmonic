@@ -1,13 +1,5 @@
 import type { BudgetGuardrail } from '../types.js';
 
-/**
- * Budget-Guardrail override editing (ADR-0019, issue #166). The Workspace budget
- * override is a whole object behind one inheritance toggle (unlike the scalar
- * overrides), so these pure helpers fold a text-input edit into the object and
- * summarise it for the inheriting read-only line — kept here so the shaping is
- * testable without a DOM.
- */
-
 /** A budget dimension the operator edits. Wall-clock is mandatory; the caps opt in. */
 export type BudgetField = 'wallClockMinutes' | 'tokens' | 'costUsd';
 

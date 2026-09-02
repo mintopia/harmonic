@@ -3,19 +3,6 @@ import type { VerifierVerdict, VerificationDecision } from './verification-model
 import type { VerificationAttempt, VerificationMechanism, VerifierStatus } from './types.js';
 
 /**
- * Pure model helpers over a Run's Verification-attempt log (issue #169, part
- * of #109). The log is append-only and `seq`-ordered — a Run's self-heal
- * retries append further attempts for the same `mechanism` rather than
- * replacing the earlier one, so "the current per-verifier verdict set" is a
- * derived view (the latest attempt per mechanism), not the raw list; grouping
- * the full log by `mechanism` for display (self-heal retries numbered under
- * their mechanism, issue #174) is a second derived view of the same log.
- * These helpers keep that derivation in one place so `VerificationCard` only
- * maps and renders (cf. `guardrail-trip-model.ts`'s pure-formatter house
- * style).
- */
-
-/**
  * The latest attempt per `mechanism` — the attempt set that currently governs
  * the Run's Verification outcome. "Latest" is the highest `seq`; the input is
  * expected to already arrive seq-ordered (the server serves it that way), but
@@ -49,8 +36,8 @@ export function verificationRows(
 }
 
 /**
- * Why a critic's native session transcript (ADR-0040) isn't showing, driven by
- * the #327 verifier status — not a bare "unavailable". `null` when a transcript
+ * Why a critic's native session transcript isn't showing, driven by
+ * the verifier status — not a bare "unavailable". `null` when a transcript
  * is present (nothing to explain). Distinguishes: the verifier is disabled for
  * this workspace; the critic never ran (skipped / no attempt); or it ran but
  * its log wasn't captured. Pure — testable without a DOM.
@@ -115,7 +102,7 @@ export interface AttemptGroup {
 }
 
 /**
- * Groups a Run's attempt log by `mechanism` (issue #174) so a self-heal
+ * Groups a Run's attempt log by `mechanism` so a self-heal
  * retry renders under its mechanism as "attempt N of M", not as an
  * unrelated row in a flat seq-ordered list — the log carries no
  * attempt-number or heal flag of its own (self-heal retries are just

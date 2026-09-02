@@ -6,9 +6,9 @@ import { buildHeatmap, HEATMAP_WEEKS, type Heatmap } from './heatmap-model';
 
 const DAY_MS = 24 * 3600_000;
 const CELL = 11;
-const STEP = 14; // cell + gap
-const LEFT = 26; // gutter for weekday labels
-const TOP = 16; // gutter for month labels
+const CELL_PITCH_PX = 14;
+const WEEKDAY_GUTTER_PX = 26;
+const MONTH_GUTTER_PX = 16;
 const RADIUS = 2;
 const WEEKDAY_LABELS = ['', 'Mon', '', 'Wed', '', 'Fri', ''];
 
@@ -18,7 +18,6 @@ const monthLabel = (ms: number) => new Date(ms).toLocaleDateString(undefined, { 
 const rangeLabel = (from: number, to: number) =>
   `${new Date(from).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} – ${new Date(to).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
 
-/** Month labels along the top: one per column where the month first appears. */
 function monthTicks(hm: Heatmap): { x: number; label: string }[] {
   const ticks: { x: number; label: string }[] = [];
   let prev = -1;
@@ -27,7 +26,7 @@ function monthTicks(hm: Heatmap): { x: number; label: string }[] {
     if (!anchor) return;
     const month = new Date(anchor.day).getMonth();
     if (month !== prev) {
-      ticks.push({ x: LEFT + w * STEP, label: monthLabel(anchor.day) });
+      ticks.push({ x: WEEKDAY_GUTTER_PX + w * CELL_PITCH_PX, label: monthLabel(anchor.day) });
       prev = month;
     }
   });
@@ -35,16 +34,11 @@ function monthTicks(hm: Heatmap): { x: number; label: string }[] {
 }
 
 export function AttemptHeatmap({ workspaceId, aside }: { workspaceId: number | null; aside?: ReactNode }) {
-  // Capture `now` at fetch time so the grid's "today" stays stable across
-  // re-renders (a bare Date.now() in render is impure and drifts the anchor).
   const [loaded, setLoaded] = useState<{ series: DayCost[]; now: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (workspaceId === null) return;
-    // Fixed trailing window, deliberately independent of the KPI range toggle —
-    // fetch a hair wider than the grid so the Sunday-anchored window is fully
-    // covered, then buildHeatmap trims and gap-fills. Same /stats reader path.
     const now = Date.now();
     const from = now - (HEATMAP_WEEKS + 1) * 7 * DAY_MS;
     let cancelled = false;
@@ -64,8 +58,8 @@ export function AttemptHeatmap({ workspaceId, aside }: { workspaceId: number | n
 
   const hm = loaded ? buildHeatmap(loaded.series, loaded.now) : null;
   const cols = HEATMAP_WEEKS;
-  const width = LEFT + cols * STEP;
-  const height = TOP + 7 * STEP;
+  const width = WEEKDAY_GUTTER_PX + cols * CELL_PITCH_PX;
+  const height = MONTH_GUTTER_PX + 7 * CELL_PITCH_PX;
 
   return (
     <section className={`${card} mb-4 p-5`}>
@@ -96,7 +90,7 @@ export function AttemptHeatmap({ workspaceId, aside }: { workspaceId: number | n
               ))}
               {WEEKDAY_LABELS.map((label, row) =>
                 label ? (
-                  <text key={row} x={0} y={TOP + row * STEP + CELL - 1} className="fill-muted" fontSize="9">
+                  <text key={row} x={0} y={MONTH_GUTTER_PX + row * CELL_PITCH_PX + CELL - 1} className="fill-muted" fontSize="9">
                     {label}
                   </text>
                 ) : null,
@@ -106,8 +100,8 @@ export function AttemptHeatmap({ workspaceId, aside }: { workspaceId: number | n
                   cell ? (
                     <rect
                       key={cell.day}
-                      x={LEFT + w * STEP}
-                      y={TOP + row * STEP}
+                      x={WEEKDAY_GUTTER_PX + w * CELL_PITCH_PX}
+                      y={MONTH_GUTTER_PX + row * CELL_PITCH_PX}
                       width={CELL}
                       height={CELL}
                       rx={RADIUS}

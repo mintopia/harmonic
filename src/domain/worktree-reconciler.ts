@@ -56,13 +56,10 @@ function parseTaskId(name: string): number | null {
 }
 
 /**
- * Task-owned boot/periodic worktree reconciliation (ADR-0010). A live Task's
- * worktree is recreated when missing; a terminal Task's CLEAN worktree is
- * removed; anything dirty, unreadable, or unrecognized is left on disk and
- * surfaced through `flagStore` for an operator to dispose of by hand — a
- * crash must never cost uncommitted work. Only paths under the managed
- * worktree root are ever touched, so the primary checkout and operator-created
- * worktrees stay out of scope even when a Workspace points at the same repo.
+ * Boot/periodic worktree reconciliation. A live Task's worktree is recreated
+ * when missing; a terminal Task's clean worktree is removed; anything dirty,
+ * unreadable, or unrecognized is left on disk and surfaced through `flagStore`
+ * for an operator. Only paths under the managed worktree root are ever touched.
  */
 export class WorktreeReconciler {
   private readonly managedRoot: string;
@@ -73,10 +70,7 @@ export class WorktreeReconciler {
     private readonly git: WorktreeRepository,
     worktreesDir: string,
     private readonly flagStore: FlaggedWorktreeStore,
-    /** Reap the removed worktree's jCodeMunch index (`code-index.ts`), injected
-     * so this module stays free of the CLI wrapper and is unit-testable with a
-     * spy. Defaults to a no-op; a no-op is also the runtime behaviour when the
-     * code-index CLI is absent. */
+    /** Reap the removed worktree's jCodeMunch index; defaults to a no-op. */
     private readonly reapIndex: (absPath: string) => Promise<void> = async () => {},
   ) {
     this.managedRoot = resolve(worktreesDir);
@@ -128,8 +122,6 @@ export class WorktreeReconciler {
         try {
           worktrees = await this.git.listWorktrees(workspace.workingDir);
         } catch (error) {
-          // A Workspace may intentionally point at a non-Git directory. That is
-          // outside this job's remit.
           if (error instanceof GitError && /not a git repository/i.test(`${error.message}\n${error.stderr}`)) return;
           throw error;
         }
@@ -142,9 +134,6 @@ export class WorktreeReconciler {
         removed += outcome.removed;
         flags.push(...outcome.flags);
       } catch (error) {
-        // One Workspace's Git failure must not blank the disposition surface for
-        // the others, nor abort the pass. Remember the first error so the Job
-        // still records a failure, but keep surfacing what the pass could reach.
         firstError ??= error;
       }
     });
@@ -154,14 +143,6 @@ export class WorktreeReconciler {
     return { removed, recreated, flagged: flags.length };
   }
 
-  /** Reconcile the worktree of every active Task whose expected path is not a
-   * valid, live worktree. A path that is genuinely absent is recreated from the
-   * Task's branch (never fabricated — if the branch is gone too, the runner cuts
-   * a fresh one on the next attempt). A path that is present but unreadable may
-   * still hold uncommitted work, so a passive sweep must NOT discard it: it is
-   * flagged for operator disposition instead. (The runner self-heals its own
-   * worktree at attempt-start, where rebuilding from the branch is a deliberate,
-   * in-context choice this background job is not entitled to make.) */
   private async recreateMissing(
     workspace: ManagedWorkspace,
     active: readonly ActiveTask[],
@@ -183,8 +164,6 @@ export class WorktreeReconciler {
     return { recreated, flags };
   }
 
-  /** Every managed, registered worktree not claimed by an active Task: removed
-   * when clean, otherwise flagged for operator disposition — never deleted. */
   private async removeOrFlag(
     workspace: ManagedWorkspace,
     worktrees: readonly WorktreeRecord[],
@@ -194,13 +173,13 @@ export class WorktreeReconciler {
     const flags: FlaggedWorktree[] = [];
     await forEachYielding(worktrees, async (worktree) => {
       const path = resolve(worktree.path);
-      if (!isInside(this.managedRoot, path)) return; // primary checkout / operator worktree — never touched
+      if (!isInside(this.managedRoot, path)) return;
       const taskId = parseTaskId(basename(path));
       if (taskId === null) {
         flags.push({ path, repoDir: workspace.workingDir, workspaceId: workspace.id, taskId: null, branch: worktree.branch, reason: 'unrecognized' });
         return;
       }
-      if (activeIds.has(taskId)) return; // a live Task's worktree — handled by the recreate pass
+      if (activeIds.has(taskId)) return;
 
       if (!(await this.git.isValidWorktree(workspace.workingDir, path))) {
         flags.push({ path, repoDir: workspace.workingDir, workspaceId: workspace.id, taskId, branch: worktree.branch, reason: 'unreadable' });
@@ -211,8 +190,6 @@ export class WorktreeReconciler {
         return;
       }
       const didRemove = await this.git.removeWorktreeAndDeleteBranch(workspace.workingDir, path, worktree.branch, async () => {
-        // Re-check under the repository lock: the Task may have become active,
-        // or the worktree dirtied, in the time between the scan above and now.
         const stillActive = (await this.activeTasks()).some((task) => task.id === taskId);
         return !stillActive && !(await this.git.isDirty(path));
       });

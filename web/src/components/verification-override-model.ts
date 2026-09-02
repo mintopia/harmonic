@@ -1,29 +1,6 @@
 import type { VerificationCommand, VerificationCritic } from '../types.js';
 
 /**
- * Verification-override editing (ADR-0021, issues #165/#338). The Workspace
- * agent critic is a whole object behind one inheritance toggle (like the
- * budget override, #166); the command verifier is list-grain (ADR-0044 §D),
- * exactly mirroring the global editor: `null` inherits `config.verify.commands`,
- * an empty array is off (no commands run in this Workspace), and a non-empty
- * array overrides the whole ordered list — there is no per-command inheritance.
- * These pure helpers fold a text-input edit into a command/critic object, or
- * summarise one (or a whole command list) for the inheriting read-only line —
- * kept here so the shaping is testable without a DOM.
- *
- * Unlike the budget, the global-default command/critic are *nullable* (unset by
- * default). InheritField needs a non-null value to seed a freshly toggled-on
- * override and to render the inheriting line, so these empty seeds stand in when
- * the global default is null (for the command list, an empty array `[]` is
- * itself that non-null seed — it needs no separate constant). An empty
- * `command`/`prompt`/`model` fails the server's `min(1)` on save (surfaced as a
- * field error), nudging the operator to fill it in; {@link summarizeCommand}/
- * {@link summarizeCritic} read an empty seed back as "not configured" so an
- * inheriting Workspace with no global default reads honestly rather than as a
- * blank verifier.
- */
-
-/**
  * The already-resolved review inputs the settings surface needs to judge
  * runnability: the raw on/off toggle plus whatever model/prompt resolved from any
  * layer. `requested` mirrors `resolveReview`'s raw toggle (src/domain/
@@ -39,7 +16,7 @@ export interface ResolvedReviewInputs {
 /**
  * A review is enabled-but-unrunnable when it is toggled on yet has no resolved
  * model or prompt from any layer — so it can never run and Harmonic would
- * silently skip it (ADR-0044 §F, issue #340). The settings surface flags this
+ * silently skip it. The settings surface flags this
  * loudly instead. Mirrors `resolveReview`'s `requested && !(prompt && model)`
  * fold on already-resolved values so the global and workspace verification
  * sections judge runnability identically.
@@ -98,7 +75,7 @@ export function summarizeCommand(cmd: VerificationCommand): string {
 
 /**
  * One-line summary of a whole command list for the inheriting read-only
- * display (issue #338, ADR-0044 §D): an empty list reads as "No commands"
+ * display: an empty list reads as "No commands"
  * (this Workspace would run nothing were it inheriting), otherwise each
  * command's {@link summarizeCommand} is joined for a compact overview.
  */
@@ -107,7 +84,7 @@ export function summarizeCommands(commands: VerificationCommand[]): string {
   return commands.map(summarizeCommand).join(' · ');
 }
 
-/** An editable dimension of the agent critic. `harness` is a select, not free text (issue #174). */
+/** An editable dimension of the agent critic. `harness` is a select, not free text. */
 export type CriticField = 'prompt' | 'model' | 'harness';
 
 /**

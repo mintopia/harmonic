@@ -17,8 +17,6 @@ describe('run execution over ACP (direct mode)', () => {
     server = await startServer(stubHarness());
   });
   afterEach(async () => {
-    // Cancel any hung Run this describe leaves behind so it doesn't linger into
-    // later tests in the same file (leaked harness process, consumed run slot).
     await cancelRunningTasks(server);
   });
   afterAll(async () => {
@@ -48,7 +46,6 @@ describe('run execution over ACP (direct mode)', () => {
     ];
     const { taskId, attemptId } = await createAndRun({ updates, stopReason: 'end_turn' });
 
-    // Task passes through working to done — no human gate (ADR-0041).
     const task = await waitFor(async () => {
       const { body } = await server.api('GET', `/api/tasks/${taskId}`);
       return body.state === 'done' ? body : undefined;
@@ -59,8 +56,6 @@ describe('run execution over ACP (direct mode)', () => {
     expect(run.status).toBe(200);
     expect(run.body).toMatchObject({ taskId, number: 1, state: 'completed', stopReason: 'end_turn' });
     expect(run.body.finishedAt).toBeGreaterThan(0);
-    // Agent-finish took the Attempt through its Implementation Step to a
-    // passed finish, never leaving a Step stuck mid-flight (ADR-0001 Vocabulary).
     const attempt1 = (await server.api('GET', `/api/tasks/${taskId}/attempts/timeline`)).body.attempts.find((a: any) => a.number === 1);
     expect(attempt1.state).toBe('passed');
     expect(attempt1.steps.map((s: any) => s.type)).toEqual(['implementation']);
@@ -73,7 +68,6 @@ describe('run execution over ACP (direct mode)', () => {
       db.select().from(attemptToolCalls).where(eq(attemptToolCalls.attemptId, attemptId)).all(),
     );
     expect(toolCalls).toEqual([{ attemptId, toolName: 'Write file', count: 1 }]);
-    // seq is a stable per-run ordering
     expect(events.body.events.map((e: any) => e.seq)).toEqual(
       [...events.body.events.map((e: any) => e.seq)].sort((a: number, b: number) => a - b),
     );
@@ -89,16 +83,10 @@ describe('run execution over ACP (direct mode)', () => {
       });
     const scenarioObj = { updates: [{ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'ok' } }], stopReason: 'end_turn' };
 
-    // Baseline: no override → the native Run inherits the global Task Prompt
-    // (`{prompt}`), so the text it sends is the Task's own prompt verbatim.
     const inherit = await createAndRun(scenarioObj);
     await settle(inherit.taskId);
     const inheritPrompt = await promptOf(inherit.attemptId);
 
-    // Override: the Workspace pins its own Task Prompt template. The next native
-    // Run must resolve `workspace ?? global` and actually send the overridden
-    // framing — the wiring the critic flagged as missing. `finally` resets the
-    // shared server's override so a failure can never leak it to later tests.
     let overridePrompt: string | null;
     try {
       expect((await server.api('PATCH', `/api/workspaces/${wsId}`, { taskPrompt: 'WS-TASKPROMPT::{prompt}' })).status).toBe(200);
@@ -126,14 +114,10 @@ describe('run execution over ACP (direct mode)', () => {
     expect(merged.state).toBe('completed');
     expect(merged.finishedAt).toBeGreaterThan(0);
 
-    // The full Step sequence is reconstructable from the Attempt's timeline:
-    // the Implementation Step passed and the Attempt itself finished passed —
-    // never stuck mid-flight (ADR-0001 Vocabulary; Run/Phase are deleted concepts).
     const attempt1 = (await server.api('GET', `/api/tasks/${taskId}/attempts/timeline`)).body.attempts.find((a: any) => a.number === 1);
     expect(attempt1.state).toBe('passed');
     expect(attempt1.steps.map((s: any) => s.type)).toEqual(['implementation']);
     expect(attempt1.steps.every((s: any) => s.state === 'passed')).toBe(true);
-    // Done is terminal: the human surface does not apply, and nothing re-merges.
     expect((await server.api('POST', `/api/tasks/${taskId}/accept`)).status).toBe(409);
     expect((await server.api('POST', `/api/tasks/${taskId}/reject`, { guidance: 'nope' })).status).toBe(409);
     expect((await server.api('POST', `/api/tasks/${taskId}/close`)).status).toBe(409);
@@ -157,11 +141,6 @@ describe('run execution over ACP (direct mode)', () => {
     const { taskId, attemptId } = await createAndRun({ exit: 'crash-before-response' });
     await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'escalated');
 
-    // Attempt is the single execution ledger now (ADR-0001 #388 S-G): every
-    // loop this first budget cycle burned through — including any self-heal
-    // retry, not just a human-triggered reject — is its own real,
-    // API-visible run row. There is no invisible internal retry counter to
-    // hide behind, so the first escalation may already span more than one row.
     const beforeReject = (await server.api('GET', `/api/tasks/${taskId}/attempts`)).body.attempts;
     expect(beforeReject[0]!.id).toBe(attemptId);
     const lastAttemptBeforeReject = beforeReject.at(-1)!.number;
@@ -169,17 +148,11 @@ describe('run execution over ACP (direct mode)', () => {
     const rejected = await server.api('POST', `/api/tasks/${taskId}/reject`, { guidance: 'try again', start: true });
     expect(rejected.status).toBe(200);
 
-    // The reset budget's own attempts crash out too, so the task escalates again.
     await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'escalated');
 
     const afterReject = (await server.api('GET', `/api/tasks/${taskId}/attempts`)).body.attempts;
-    // History survives the Reject: nothing from the first budget cycle is dropped.
     expect(afterReject.slice(0, beforeReject.length)).toEqual(beforeReject);
-    // The reset budget picks up brand-new, distinct run rows.
     expect(afterReject.length).toBeGreaterThan(beforeReject.length);
-    // Every resumed loop across the whole history — self-heal and reject alike
-    // — gets its own distinct, strictly increasing attempt number; numbering
-    // never restarts at 1 across the reset budget (ADR-0041).
     const attemptNumbers = afterReject.map((r: { number: number }) => r.number);
     expect(attemptNumbers).toEqual([...attemptNumbers].sort((a, b) => a - b));
     expect(new Set(attemptNumbers).size).toBe(attemptNumbers.length);
@@ -227,7 +200,6 @@ describe('run execution over ACP (direct mode)', () => {
     });
     expect(run.state).toBe('completed');
 
-    // Terminal: a second complete refuses.
     expect((await server.api('POST', `/api/tasks/${taskId}/complete`)).status).toBe(409);
   });
 
@@ -245,9 +217,6 @@ describe('run execution over ACP (direct mode)', () => {
   });
 
   it('an unauthenticated codex spawn fails the run with a legible reason', async () => {
-    // Spike (issue 22): codex-acp starts fine unauthenticated; session/new
-    // then fails with JSON-RPC {"code":-32000,"message":"Authentication
-    // required"}. The operator must see that message, not a bare exit code.
     const overrides = stubHarness('codex') as any;
     overrides.harnesses.codex.env = {
       STUB_SESSION_NEW_ERROR: JSON.stringify({ code: -32000, message: 'Authentication required' }),
@@ -267,10 +236,6 @@ describe('run execution over ACP (direct mode)', () => {
   });
 
   it('surfaces the harness stderr when it exits non-zero without a clean ACP error', async () => {
-    // The user-reported failure mode: the harness process exits code 1 during
-    // the handshake and prints its real reason only to stderr (no JSON-RPC
-    // error). Harmonic must carry that reason onto the run — a bare "exited
-    // (code 1)" is undebuggable.
     const detail = 'stream error: unknown model "gpt-5.2-codex-mini"';
     const overrides = stubHarness('codex') as any;
     overrides.harnesses.codex.env = { STUB_STARTUP_STDERR: detail };
@@ -315,12 +280,10 @@ describe('run execution over ACP (direct mode)', () => {
         return events.body.events.find((e: any) => e.payload?.event === 'model_mismatch');
       };
 
-      // The harness ran a different model than the task pinned: surfaced.
       const mismatch = await runWith('gpt-5.4-mini[low]', 'gpt-5.5');
       expect(mismatch).toBeTruthy();
       expect(mismatch.payload).toMatchObject({ expected: 'gpt-5.4-mini[low]', observed: ['gpt-5.5'] });
 
-      // Observed model matching the pin's base (effort stripped): no noise.
       expect(await runWith('gpt-5.4-mini[low]', 'gpt-5.4-mini')).toBeUndefined();
     } finally {
       await codexServer.close();
@@ -345,7 +308,6 @@ describe('run execution over ACP (direct mode)', () => {
     try {
       expect(await setModelEcho(copilotServer, 'copilot', 'claude-haiku-4.5')).toBeNull();
       expect(await setModelEcho(copilotServer, 'copilot', 'auto')).toBeNull();
-      // Session-update echoes are intentionally not persisted for any harness.
       expect(await setModelEcho(server, 'claude', 'claude-sonnet-5')).toBeNull();
     } finally {
       await copilotServer.close();
@@ -353,9 +315,6 @@ describe('run execution over ACP (direct mode)', () => {
   });
 
   it('an unauthenticated copilot spawn fails the run with a legible reason', async () => {
-    // Spike (issue 25, capture 6c): session/new fails with JSON-RPC
-    // {"code":-32000,"message":"Authentication required"} — byte-identical
-    // to codex. The operator must see that message.
     const overrides = stubHarness('copilot') as any;
     overrides.harnesses.copilot.env = {
       STUB_SESSION_NEW_ERROR: JSON.stringify({ code: -32000, message: 'Authentication required' }),
@@ -390,8 +349,6 @@ describe('direct Work Context occupancy (ADR-0001, ADR-0046)', () => {
     server = await startServer(stubHarness());
   });
   afterEach(async () => {
-    // Cancel any hung Run this describe leaves behind so it doesn't linger into
-    // later tests in the same file (leaked harness process, consumed run slot).
     await cancelRunningTasks(server);
   });
   afterAll(async () => {
@@ -409,12 +366,6 @@ describe('direct Work Context occupancy (ADR-0001, ADR-0046)', () => {
     expect(startedA.status).toBe(201);
     await waitFor(async () => (await server.api('GET', `/api/tasks/${taskAId}`)).body.state === 'working');
 
-    // Task B collides on the exact same workingDir (direct-mode keys ignore
-    // branch, so the two are contending for the same physical occupancy). The
-    // scheduler's pick predicate (Auto-Runner's `occupiedDirectContexts`) is the
-    // only enforcement (ADR-0001), and it does not gate a hand-started run
-    // (REST `/run`, bypassing pickNext): direct isolation does not block the
-    // second worker (ADR-0046), the attach is the operator's accepted risk.
     const createdB = await server.api('POST', '/api/tasks', {
       prompt: scenario({ exit: 'hang' }),
       workingDir: workingDirA,
@@ -424,7 +375,6 @@ describe('direct Work Context occupancy (ADR-0001, ADR-0046)', () => {
     const startedB = await server.api('POST', `/api/tasks/${taskBId}/run`);
     expect(startedB.status).toBe(201);
 
-    // B's Run row is created and it proceeds — not rolled back, not left ready.
     const runsB = await server.api('GET', `/api/tasks/${taskBId}/attempts`);
     expect(runsB.body.attempts).toHaveLength(1);
   });
@@ -438,7 +388,6 @@ describe('direct Work Context occupancy (ADR-0001, ADR-0046)', () => {
     const startedC = await server.api('POST', `/api/tasks/${createdC.body.id}/run`);
     expect(startedC.status).toBe(201);
     await waitFor(async () => (await server.api('GET', `/api/tasks/${createdC.body.id}`)).body.state === 'working');
-    // Left running; the harness process dies with the server on afterAll.
   });
 });
 
@@ -449,11 +398,9 @@ describe('crash recovery', () => {
     const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
     await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'working');
 
-    // Simulate a workspace reboot: close the app but keep the data dir.
     await server.app.close();
     const reopened = await startServer(stubHarness(), { dataDir: server.dataDir });
 
-    // An interruption is not a failed Attempt: the ticket is back in the queue.
     const task = await reopened.api('GET', `/api/tasks/${created.body.id}`);
     expect(task.body.state).toBe('ready');
     const run = await reopened.api('GET', `/api/attempts/${started.body.id}`);
@@ -466,14 +413,9 @@ describe('crash recovery', () => {
 
 describe('wall-clock guardrail (issue #127)', () => {
   it('trips an over-budget run to Escalation via the coordinator, with a budget reason derived from a guardrail_events row', async () => {
-    // A tiny mandatory wall-clock budget plus a harness that never ends its
-    // turn: the Step-scoped execution clock runs out mid-Implementation Step
-    // and the watchdog trips the Run to Escalation (afk→hitl, ticket flagged) through
-    // the terminal-disposition coordinator — never a direct settle, never a new
-    // terminal state (reliability-design §0.3 / Unit A, ADR-0019).
     const server = await startServer({
       ...stubHarness(),
-      guardrails: { budget: { wallClockMinutes: 0.01 } }, // 600ms execution budget
+      guardrails: { budget: { wallClockMinutes: 0.01 } },
     });
     try {
       const created = await server.api('POST', '/api/tasks', { prompt: scenario({ exit: 'hang' }) });
@@ -483,20 +425,16 @@ describe('wall-clock guardrail (issue #127)', () => {
       const taskId = created.body.id;
       const attemptId = started.body.id;
 
-      // The trip Escalates: the Task is flagged and handed back to a human.
       const task = await waitFor(async () => {
         const { body } = await server.api('GET', `/api/tasks/${taskId}`);
         return body.state === 'escalated' ? body : undefined;
       });
       expect(task.state).toBe('escalated');
 
-      // The Run settled to a terminal disposition (never a new state) with the
-      // budget reason on the card — the reason derives from the trip evidence.
       const run = (await server.api('GET', `/api/attempts/${attemptId}`)).body;
       expect(run.state).toBe('failed');
       expect(run.reason).toMatch(/^budget:/);
 
-      // The trip is recorded on the timeline for observability.
       const events = (await server.api('GET', `/api/attempts/${attemptId}/events`)).body.events;
       const trip = events.find(
         (e: any) => e.type === 'lifecycle' && e.payload.event === 'guardrail-tripped',
@@ -504,8 +442,6 @@ describe('wall-clock guardrail (issue #127)', () => {
       expect(trip).toBeTruthy();
       expect(trip.payload.dimension).toBe('wall-clock');
 
-      // The structured guardrail_events row the card reason derives from is
-      // persisted, with observed ≥ the configured limit.
       const rows = await server.app.ctx.asyncDb.read((d) =>
         d.select().from(guardrailEvents).where(eq(guardrailEvents.attemptId, attemptId)).all(),
       );
@@ -521,8 +457,6 @@ describe('wall-clock guardrail (issue #127)', () => {
   it('does not kill an over-budget run after its attempt tasks enter merging', async () => {
     const server = await startServer({
       ...stubHarness(),
-      // 600ms budget: enough headroom for the stub spawn + attempt waitFors
-      // below, small enough that the 800ms sleep proves the timer fired.
       guardrails: { budget: { wallClockMinutes: 0.01 } },
     });
     try {
@@ -532,17 +466,7 @@ describe('wall-clock guardrail (issue #127)', () => {
       const attempt = await waitFor(async () => (await attempts.listForTask(created.body.id))[0]);
       const implementation = await waitFor(async () => (await attempts.listSteps(attempt.id))[0]);
 
-      // Only the Step moves to `passed` here — simulating "past the last Step,
-      // now merging" — never the Attempt itself: Attempt is the single
-      // execution ledger now (ADR-0001 #388 S-G), so forcing it `passed`
-      // directly (the old dual-model trick, closing only the Attempt-timeline
-      // half while a separate `runs.state` stayed `running`) would settle the
-      // one state this test polls via `/api/attempts/:id`. The guardrail's own
-      // "is a Step currently running" check reads Steps, not `attempts.state`,
-      // so leaving the Attempt `running` still exercises the real gate.
       await attempts.updateStep(implementation.id, { state: 'passed', verdict: 'pass', endedAt: Date.now() });
-      // Past the 600ms wall-clock budget (the guardrail arms an exact timer for
-      // the remaining budget, so a ~200ms margin suffices).
       await new Promise((resolve) => setTimeout(resolve, 800));
 
       expect((await server.api('GET', `/api/attempts/${started.body.id}`)).body.state).toBe('running');
@@ -558,12 +482,6 @@ describe('wall-clock guardrail (issue #127)', () => {
 });
 
 describe('token/cost budget guardrail (issue #128)', () => {
-  /**
-   * Boot a server whose stub harness "logs" the given per-model token usage
-   * (`serverWithLoggedUsage`'s recipe, tests/cost.test.ts) under a Run
-   * configured with a token/cost budget and a fast spend-guardrail poll —
-   * the Runner-seam integration harness for the live spend-guard poll.
-   */
   const serverWithSpendGuardrail = async (opts: {
     workDir: string;
     models: Record<string, number>;
@@ -602,7 +520,6 @@ describe('token/cost budget guardrail (issue #128)', () => {
     });
   };
 
-  /** Run a hanging afk-less scenario to Escalation and return the settled Task/Run. */
   const runToEscalation = async (server: TestServer, workDir: string) => {
     const created = await server.api('POST', '/api/tasks', {
       prompt: scenario({ exit: 'hang' }),
@@ -628,7 +545,7 @@ describe('token/cost budget guardrail (issue #128)', () => {
     const workDir = mkdtempSync(join(tmpdir(), 'harmonic-spend-work-'));
     const server = await serverWithSpendGuardrail({
       workDir,
-      models: { 'stub-model': 10_000 }, // well over the 1,000-token cap below
+      models: { 'stub-model': 10_000 },
       guardrails: { budget: { tokens: 1_000 } },
     });
     try {
@@ -652,16 +569,10 @@ describe('token/cost budget guardrail (issue #128)', () => {
 
   it('trips an over-cap cost budget (priced model) to Escalation, with dimension "cost" on the guardrail_events row', async () => {
     const workDir = mkdtempSync(join(tmpdir(), 'harmonic-spend-work-'));
-    // $1/Mtok input-only price: 2,000,000 input tokens -> $2 observed, over a $1 cap.
     const server = await serverWithSpendGuardrail({
       workDir,
       models: { 'stub-model': 2_000_000 },
       guardrails: { budget: { costUsd: 1 } },
-      // A cost cap with no token fallback requires every harness-configured
-      // model to be priced (config validation, ADR-0019) — including the
-      // default config's other harnesses, whose only unpriced entry is
-      // copilot's 'auto' router. Price it too so the config accepts a pure
-      // cost cap; it's never actually used by this test's stub Run.
       prices: {
         'stub-model': { input: 1, output: 0, cacheRead: 0, cacheWrite: 0 },
         auto: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
@@ -680,7 +591,6 @@ describe('token/cost budget guardrail (issue #128)', () => {
       const rows = await server.app.ctx.asyncDb.read((d) => d.select().from(guardrailEvents).where(eq(guardrailEvents.attemptId, attemptId)).all());
       expect(rows).toHaveLength(1);
       expect(rows[0]).toMatchObject({ dimension: 'cost', configSource: 'default' });
-      // Stored in micro-dollars (integer columns): $2 observed >= $1 limit.
       expect(rows[0]!.observedValue).toBeGreaterThanOrEqual(rows[0]!.limitValue);
       expect(rows[0]!.limitValue).toBe(1_000_000);
     } finally {
@@ -690,11 +600,9 @@ describe('token/cost budget guardrail (issue #128)', () => {
 
   it('falls back to enforcing the token cap when the cost cap is on an unpriced model — not a silent no-op', async () => {
     const workDir = mkdtempSync(join(tmpdir(), 'harmonic-spend-work-'));
-    // 'stub-model' is left unpriced (no `prices` override): the cost cap can
-    // never be measured for it, so `spendTrip` falls back to the token cap.
     const server = await serverWithSpendGuardrail({
       workDir,
-      models: { 'stub-model': 10_000 }, // well over the 1,000-token fallback cap
+      models: { 'stub-model': 10_000 },
       guardrails: { budget: { costUsd: 5, tokens: 1_000 } },
     });
     try {
@@ -716,10 +624,6 @@ describe('token/cost budget guardrail (issue #128)', () => {
   });
 
   it('Escalates a configured spend cap that stays unmeasurable past the grace window', async () => {
-    // No session log is ever written for this Run's session id, so the live
-    // snapshot never yields token telemetry — the configured token cap can
-    // never be measured, and the grace window (300ms) elapses while the
-    // harness hangs, so the guard Escalates rather than silently no-op'ing.
     const server = await startServer(
       { ...stubHarness(), guardrails: { budget: { wallClockMinutes: 60, tokens: 1_000 } } },
       { runnerTuning: { spendGuardrail: { pollMs: 50, graceMs: 300 } } },
@@ -762,12 +666,6 @@ describe('progress guardrail (issue #131)', () => {
   const chunk = (text: string) => ({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text } });
 
   it('nudges once through the steer channel, then trips a still-stalled run to Escalation', async () => {
-    // The progress detector sees a monologue (three consecutive assistant
-    // messages, no tool progress). At the first turn boundary it delivers ONE
-    // nudge through the steer channel (not a continue turn — ADR-0018); the
-    // nudge turn still makes no progress, so the second boundary trips → the Run
-    // Escalates through the same run_fact + coordinator + guardrail_events
-    // machinery as the wall-clock Guardrail (ADR-0019, reliability-design Unit A).
     const server = await startServer({
       ...stubHarness(),
       guardrails: { progress: true },
@@ -793,12 +691,9 @@ describe('progress guardrail (issue #131)', () => {
       expect(run.reason).toMatch(/^stalled:/);
 
       const events = (await server.api('GET', `/api/attempts/${attemptId}/events`)).body.events;
-      // Exactly one nudge was delivered (never spends the continue budget).
       const nudges = events.filter((e: any) => e.type === 'lifecycle' && e.payload.event === 'progress-nudge');
       expect(nudges).toHaveLength(1);
-      // …delivered through the steer channel, at a turn boundary.
       expect(events.some((e: any) => e.type === 'lifecycle' && e.payload.event === 'steer_delivered')).toBe(true);
-      // …and the trip is recorded on the timeline.
       const trip = events.find((e: any) => e.type === 'lifecycle' && e.payload.event === 'guardrail-tripped');
       expect(trip.payload.dimension).toBe('progress');
 
@@ -811,12 +706,6 @@ describe('progress guardrail (issue #131)', () => {
   });
 
   it('does not false-trip while a tool call is outstanding (the suspend rule)', async () => {
-    // The same monologue that would trip above, but the turn ends with an
-    // unpaired tool_call still in flight. Idle detection SUSPENDS while a tool
-    // call is outstanding (a slow build is indistinguishable from a stuck
-    // agent), so the detector returns null: no nudge, no trip — the Run
-    // completes normally to done. Tool-timeout is left at its
-    // generous default, so it never fires inside the test window.
     const server = await startServer({
       ...stubHarness(),
       guardrails: { progress: true },
@@ -851,13 +740,9 @@ describe('progress guardrail (issue #131)', () => {
   });
 
   it('a hard tool-timeout backstops a hung tool call: emits a run_fact and Escalates', async () => {
-    // A tool call opens and never completes (the turn hangs). The stall detector
-    // stays suspended, but the hard tool-timeout watchdog bounds it: past the
-    // generous configured limit it emits a `tool-timeout` guardrail_events row +
-    // a guardrail-trip run_fact and Escalates (reliability-design Unit A).
     const server = await startServer({
       ...stubHarness(),
-      guardrails: { progress: true, toolTimeoutMinutes: 0.01 }, // 600ms tool-timeout
+      guardrails: { progress: true, toolTimeoutMinutes: 0.01 },
     });
     try {
       const created = await server.api('POST', '/api/tasks', {
@@ -892,7 +777,6 @@ describe('progress guardrail (issue #131)', () => {
   });
 });
 
-/** POST /run returns the created Run; assert 201 and hand back its id. */
 function startedId(res: { status: number; body: { id: number } }): number {
   expect(res.status).toBe(201);
   return res.body.id;

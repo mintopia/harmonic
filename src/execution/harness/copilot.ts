@@ -8,11 +8,9 @@ import type { HarnessAdapter, ModelUsage } from './adapter.js';
 const num = (v: unknown): number => (typeof v === 'number' ? v : 0);
 
 /**
- * Copilot's Usage lives in its native store `<home>/session-store.db`
- * (ADR 0009): the `assistant_usage_events` table carries per-turn tokens,
- * AI Units (`total_nano_aiu`), and Subagent attribution
- * (`agent_id`/`parent_tool_call_id`). Default home is `~/.copilot`;
- * operator override via `harnesses.copilot.sessionLogDir`.
+ * Copilot's Usage lives in its native store `<home>/session-store.db`: the
+ * `assistant_usage_events` table carries per-turn tokens, AI Units
+ * (`total_nano_aiu`), and Subagent attribution (`parent_tool_call_id`).
  */
 function copilotHome(sessionLogDir: string | undefined): string {
   return sessionLogDir ?? join(homedir(), '.copilot');
@@ -28,7 +26,6 @@ interface UsageRow {
   total_nano_aiu: number | null;
 }
 
-/** A session's usage rows, oldest first; [] when the DB is missing/unreadable. */
 function readUsageRows(dbPath: string, sessionId: string): UsageRow[] {
   try {
     const db = new DatabaseSync(dbPath, { readOnly: true });
@@ -44,15 +41,13 @@ function readUsageRows(dbPath: string, sessionId: string): UsageRow[] {
       db.close();
     }
   } catch {
-    // Usage degrades to unavailable — never a fake zero, never a crash.
     return [];
   }
 }
 
 /**
- * Group rows into a per-model breakdown. DB `input_tokens` is TOTAL input;
- * the omit-when-zero cache columns are subtracted to keep the uncached-input
- * convention Claude and Codex use. `total_nano_aiu` sums to per-model AI Units.
+ * Copilot's `input_tokens` column is TOTAL input; the cache columns are
+ * subtracted to keep ModelUsage's uncached-input convention.
  */
 function rowsToModels(rows: UsageRow[]): Record<string, ModelUsage> {
   const models: Record<string, ModelUsage> = {};
@@ -117,20 +112,15 @@ function readSubagents(eventsFile: string): Map<string, SubagentInfo> {
 }
 
 export const copilotAdapter: HarnessAdapter = {
-  // No model env: --model and COPILOT_MODEL are ignored in --acp mode, and
-  // --model falsifies session/new's reported currentModelId without changing
-  // the session (spike capture 13). The pin goes through sessionModelId. The
-  // CLI updated itself between two spike runs, so pin auto-update off.
+  // Copilot ignores --model and COPILOT_MODEL in --acp mode, and --model
+  // falsifies session/new's reported currentModelId without changing the
+  // session. The CLI also updates itself mid-run unless told not to.
   spawnEnv: () => ({ COPILOT_AUTO_UPDATE: 'false' }),
 
-  // Sent for every run, 'auto' included: an unpinned ACP session inherits
-  // the operator's persisted settings.json model, not auto (capture 13).
-  // Auto-only plans accept and silently ignore the pin — which is exactly
-  // what the model_mismatch check surfaces.
+  // Sent for every run, 'auto' included: an unpinned Copilot ACP session
+  // inherits the operator's persisted settings.json model, not auto.
   sessionModelId: (model) => model,
 
-  // Verified end-to-end in the spike (capture 5): every MCP request
-  // arrived with the bearer header, so the Attempt Key needs zero setup.
   mcpServers: ({ url, token }) => [
     {
       name: 'harmonic',
@@ -142,12 +132,9 @@ export const copilotAdapter: HarnessAdapter = {
 
   usage: {
     /**
-     * Parse the native store into rolled-up Usage + the Process Tree (ADR
-     * 0009). Root node = the main agent's rows (`parent_tool_call_id`
-     * null); each Subagent = the rows sharing a spawning tool-call id,
-     * named and status-flagged from `events.jsonl`. The flat `usage` sums
-     * the whole tree — the undercount fix (Subagent tokens count toward
-     * the Run). Returns null when no store/events exist yet.
+     * Root node = the main agent's rows (`parent_tool_call_id` null); each
+     * Subagent = the rows sharing a spawning tool-call id, named and
+     * status-flagged from `events.jsonl`.
      *
      * ponytail: single-model-per-node — Copilot's `auto` router serves
      * several models within one node, folded here under the node's
@@ -197,15 +184,11 @@ export const copilotAdapter: HarnessAdapter = {
           contextTokens: rs.length ? num(rs[rs.length - 1]!.input_tokens) : null,
           status: info?.status ?? 'active',
           depth,
-          // A Copilot Subagent's node id *is* its spawning tool-call id (it
-          // joins the store rows) — so that doubles as the drill-in frame key.
           toolUseId: depth === 0 ? null : id,
           children: [],
         };
       };
 
-      // A Subagent shows up in the DB, in events, or both (started but no
-      // tokens yet). Union the keys so a just-started Subagent is visible.
       const childIds = new Set<string>([...byParent.keys(), ...subagents.keys()]);
       const children = [...childIds].map((id) =>
         node(id, subagents.get(id)?.name ?? 'subagent', byParent.get(id) ?? [], 1, subagents.get(id)),
@@ -216,20 +199,16 @@ export const copilotAdapter: HarnessAdapter = {
       return { usage: usageFromModels(rowsToModels(rows)), tree: root } satisfies ParsedSession;
     },
 
-    /** The native store; sessionId keys the rows, so none means nothing to read. */
     sessionLogFile({ sessionLogDir, sessionId }) {
       if (!sessionId) return null;
       return join(copilotHome(sessionLogDir), 'session-store.db');
     },
 
-    /** Whole-session per-model breakdown (root + Subagent rows) from the store. */
     modelsFromSessionLog(file, sessionId) {
       if (!sessionId) return {};
       return rowsToModels(readUsageRows(file, sessionId));
     },
 
-    // No `_meta.<harness>.toolName` equivalent exists (spike finding);
-    // the generic `title`/`kind` fallback is the right source.
     toolName() {
       return null;
     },

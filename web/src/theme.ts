@@ -1,10 +1,3 @@
-/**
- * Theme preference (DESIGN.md § Colors): both themes are first-class.
- * `system` follows prefers-color-scheme; an explicit choice stamps
- * data-theme on <html>, which the token layer lets win in both
- * directions. Storage is injected so the node-side test project can
- * exercise the logic; the app passes window.localStorage.
- */
 type StorageLike = Pick<Storage, 'getItem' | 'setItem'>;
 
 export const THEME_KEY = 'harmonic.theme';
@@ -25,7 +18,6 @@ export function storeTheme(storage: StorageLike, pref: ThemePref): void {
   try {
     storage.setItem(THEME_KEY, pref);
   } catch {
-    // best-effort: losing persistence must not break the toggle
   }
 }
 

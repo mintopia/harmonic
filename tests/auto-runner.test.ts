@@ -33,12 +33,7 @@ describe('auto-runner', () => {
   });
 
   it('starts ready tasks in priority-then-FIFO order, one at a time by default', async () => {
-    // Distinct workingDirs: these Tasks each merge to done and sit
-    // there unaccepted, so a shared direct-mode Work Context would keep the
-    // House Rule (issue #120) holding the context and block every Task after the
-    // first — this test exercises priority/FIFO *ordering*, not context contention.
     const dir = () => mkdtempSync(join(tmpdir(), 'harmonic-ar-ord-'));
-    // Created in this order; priorities chosen so creation order alone is wrong.
     const low = await server.api('POST', '/api/tasks', { prompt: slowScenario(80), priority: 'low', workingDir: dir() });
     const high = await server.api('POST', '/api/tasks', { prompt: slowScenario(80), priority: 'high', workingDir: dir() });
     const normal1 = await server.api('POST', '/api/tasks', { prompt: slowScenario(80), priority: 'normal', workingDir: dir() });
@@ -50,7 +45,6 @@ describe('auto-runner', () => {
       await waitFor(async () => (await state(task.body.id)) === 'done');
     }
 
-    // Run ids are allocated at start: they encode the actual start order.
     const runIdOf = async (taskId: number) =>
       (await server.api('GET', `/api/tasks/${taskId}/attempts`)).body.attempts[0].id;
     const order = [
@@ -64,10 +58,6 @@ describe('auto-runner', () => {
 
   it('never exceeds maxConcurrentAttempts and pulls the next task when a slot frees', async () => {
     await server.api('PATCH', '/api/config', { autoRunner: { maxConcurrentAttempts: 2 } });
-    // Distinct workingDirs: direct-mode Tasks sharing one physical checkout
-    // contend for the same Work Context (the scheduler pick predicate, ADR-0001)
-    // and would serialize below what this test is exercising (the slot ceiling,
-    // not directory contention).
     const t1 = await server.api('POST', '/api/tasks', {
       prompt: slowScenario(150),
       workingDir: mkdtempSync(join(tmpdir(), 'harmonic-ar-')),
@@ -83,11 +73,9 @@ describe('auto-runner', () => {
 
     await server.api('PATCH', '/api/config', { autoRunner: { enabled: true } });
 
-    // Two start immediately, the third waits.
     await waitFor(async () => (await state(t1.body.id)) === 'working' && (await state(t2.body.id)) === 'working');
     expect(await state(t3.body.id)).toBe('ready');
 
-    // A slot frees → the third starts; still never more than two at once.
     await waitFor(async () => (await state(t3.body.id)) === 'working');
     const states = await Promise.all([t1, t2, t3].map((t) => state(t.body.id)));
     expect(states.filter((s) => s === 'working').length).toBeLessThanOrEqual(2);
@@ -108,8 +96,6 @@ describe('auto-runner', () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(await state(task.body.id)).toBe('ready');
 
-    // `attempt_changed` is the capacity-free wake-up path. It schedules a fill even
-    // with no timer running, so this cannot pass through interval polling.
     server.app.ctx.bus.emit('attempt_changed', (await server.app.ctx.attempts.listForTask(finishedTask.body.id))[0]!);
     await waitFor(async () => (await state(task.body.id)) === 'done');
   });
@@ -124,20 +110,12 @@ describe('auto-runner', () => {
   });
 
   it('holds the Work Context House Rule: a second Task waits on a busy direct context while it is working, then starts once it merges (issue #120)', async () => {
-    // Ceiling 2 so the slot cap has room — what holds the second Task back is the
-    // House Rule, not the Machine Ceiling.
     await server.api('PATCH', '/api/config', { autoRunner: { maxConcurrentAttempts: 2 } });
-    // Both omit workingDir ⇒ they share the default Workspace checkout, i.e. one
-    // direct-mode Work Context (and a real git repo, so accept can merge).
     const first = await server.api('POST', '/api/tasks', { prompt: slowScenario(120) });
     const second = await server.api('POST', '/api/tasks', { prompt: slowScenario(120) });
 
     await server.api('PATCH', '/api/config', { autoRunner: { enabled: true } });
 
-    // First (lower id) wins the pick; the second is held ready while the context
-    // works. Wait for the scheduler to record its House-Rule skip of the second —
-    // deterministic proof a pass ran and declined, instead of a fixed sleep
-    // window (the pre-fff48cb idiom that flaked under CPU contention).
     await waitFor(async () => (await state(first.body.id)) === 'working');
     await waitFor(
       async () =>
@@ -146,8 +124,6 @@ describe('auto-runner', () => {
     );
     expect(await state(second.body.id)).toBe('ready');
 
-    // The first merges → done, its Work Context frees, and the settle's
-    // attempt_changed pokes the scheduler: the second is admitted and merges too.
     await waitFor(async () => (await state(first.body.id)) === 'done');
     await waitFor(async () => (await state(second.body.id)) === 'done');
   });
@@ -160,21 +136,13 @@ describe('auto-runner', () => {
       dependsOn: [dep.body.id],
     });
 
-    // The dependent is held while its blocker works…
     await waitFor(async () => (await state(dep.body.id)) === 'working');
     expect(await state(dependent.body.id)).toBe('ready');
-    // …and the blocker merging (done) is what unblocks it: auto-started → done, hands-free.
     await waitFor(async () => (await state(dep.body.id)) === 'done');
     await waitFor(async () => (await state(dependent.body.id)) === 'done');
   });
 });
 
-/**
- * Two-level Auto-Runner cap + master gate (ADR-0012, issue #60). The global
- * Machine Ceiling caps total concurrency across all Workspaces; each Workspace
- * has its own cap clamped to the ceiling; and a Task runs only if the master
- * switch AND its Workspace's (resolved) enable are both on.
- */
 describe('auto-runner — two-level cap + master gate (issue #60)', () => {
   let server: TestServer;
   let secondDir: string;
@@ -191,11 +159,6 @@ describe('auto-runner — two-level cap + master gate (issue #60)', () => {
   const defaultWorkspaceId = async () => (await server.api('GET', '/api/workspaces')).body.workspaces[0].id;
   const createWorkspace = async (name: string) =>
     (await server.api('POST', '/api/workspaces', { name, workingDir: secondDir })).body.id;
-  // Each Task gets its own workingDir: direct mode's Work Context (the
-  // scheduler pick predicate, ADR-0001) serializes Tasks sharing one physical
-  // checkout, and these tests exercise the concurrency *slot* ceiling/cap, not
-  // directory contention — sharing a workspace's default dir would silently
-  // cap concurrency at 1 regardless of maxConcurrentAttempts.
   const makeTask = (workspaceId: number, ms: number) =>
     server.api('POST', '/api/tasks', {
       prompt: slowScenario(ms),
@@ -203,12 +166,6 @@ describe('auto-runner — two-level cap + master gate (issue #60)', () => {
       workingDir: mkdtempSync(join(tmpdir(), 'harmonic-ar2-')),
     });
 
-  /**
-   * Sample running Tasks until `done()` (all Tasks settled), returning peak
-   * total and peak-per-Workspace. Sampling across the whole run lifecycle — not
-   * a fixed window — means the concurrency peak is always observed, so the peak
-   * assertions stay deterministic on a slow runner.
-   */
   const samplePeaksUntil = async (done: () => Promise<boolean>) => {
     let maxTotal = 0;
     const maxByWorkspace = new Map<number, number>();
@@ -244,9 +201,7 @@ describe('auto-runner — two-level cap + master gate (issue #60)', () => {
     await server.api('PATCH', '/api/config', { autoRunner: { enabled: true } });
     const { maxTotal, maxByWorkspace } = await samplePeaksUntil(allSettled(ids));
 
-    // The ceiling holds even though the caps sum to 6.
     expect(maxTotal).toBeLessThanOrEqual(4);
-    // …and the ceiling is actually reached (not trivially capped low).
     expect(maxTotal).toBe(4);
     for (const [, n] of maxByWorkspace) expect(n).toBeLessThanOrEqual(3);
   });
@@ -276,7 +231,6 @@ describe('auto-runner — two-level cap + master gate (issue #60)', () => {
 
     await server.api('PATCH', '/api/config', { autoRunner: { enabled: true } });
 
-    // The enabled Workspace's Task runs to completion; the disabled one never leaves ready.
     await waitFor(async () => (await state(enabled.body.id)) === 'done');
     expect(await state(disabled.body.id)).toBe('ready');
   });
@@ -286,11 +240,9 @@ describe('auto-runner — two-level cap + master gate (issue #60)', () => {
     await server.api('PATCH', `/api/workspaces/${ws1}`, { autoRunnerEnabled: true });
 
     const task = await makeTask(ws1, 80);
-    // Master stays off (default). Give the scheduler a chance to (not) act.
     await new Promise((r) => setTimeout(r, 100));
     expect(await state(task.body.id)).toBe('ready');
 
-    // Flip the master on → it starts.
     await server.api('PATCH', '/api/config', { autoRunner: { enabled: true } });
     await waitFor(async () => (await state(task.body.id)) === 'done');
   });

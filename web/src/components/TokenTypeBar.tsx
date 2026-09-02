@@ -1,10 +1,6 @@
 import type { ModelUsage } from '../stats-model';
 import { totalTokens } from '../stats-model';
 
-// Warm categorical token classes — input gold, output orange, cache-read coral,
-// cache-write magenta — the ADR-0014 exception to the monochrome rule: the class
-// split is load-bearing, so it earns colour, and the four hues sit clear of the
-// status palette so a class can't pre-read as a running/merged/fail state.
 const TOKEN_SEGMENTS = [
   { key: 'inputTokens', label: 'input', fill: 'bg-token-input' },
   { key: 'outputTokens', label: 'output', fill: 'bg-token-output' },

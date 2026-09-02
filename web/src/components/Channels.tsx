@@ -7,7 +7,7 @@ import { EmptyState } from './EmptyState';
 const EVENTS = ['task.created', 'run.started', 'task.escalated', 'task.done', 'queue.idle'] as const;
 
 /**
- * Event subscriptions buffer through the settings save bar (ADR-0044 G): a
+ * Event subscriptions buffer through the settings save bar: a
  * checkbox edits the parent's staged channel list and persists on Save.
  * Provisioning or removing a channel is an immediate side-effect action, so
  * create/delete still hit the REST resource directly and sync the parent lists.

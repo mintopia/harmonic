@@ -57,8 +57,6 @@ export function mergedDaySeries(days: MergedDay[], from: number, to: number): Me
   const end = dayKey(Math.min(to, Date.now()));
   const span = Math.round((end - start) / DAY) + 1;
   if (span < 2 || span > 62) return days;
-  // Re-key onto the client's local-midnight grid (see dayKey) so a non-UTC
-  // viewer's sparkline finds each day's merge count instead of flattening to 0.
   const byDay = new Map(days.map((d) => [dayKey(d.day), d]));
   const out: MergedDay[] = [];
   for (let i = 0; i < span; i++) {

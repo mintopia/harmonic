@@ -10,8 +10,6 @@ import { taskLabel } from '../id-format.js';
 
 const label = `mb-1 block ${labelType} text-muted`;
 
-/** The inheritable Task defaults as the form holds them: `null` ⇒ inherit
- * (track the Workspace/global default), a value ⇒ pin to this Task (ADR-0012). */
 type Overrides = Task['overrides'];
 
 export function TaskForm({
@@ -27,16 +25,12 @@ export function TaskForm({
   /** The active Workspace, for the inherited (effective) default each field
    * shows while inheriting; null when there's no Workspace yet. */
   workspace: Workspace | null;
-  /** The active Workspace (ADR-0008) a new task binds to; ignored when editing. */
+  /** The active Workspace a new task binds to; ignored when editing. */
   workspaceId: number | null;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const [prompt, setPrompt] = useState(task?.prompt ?? '');
-  // A lean list row carries no full prompt (ADR-0045, issue #350); when editing
-  // from one, fetch the item GET so the textarea seeds with the real prompt
-  // instead of blank. A store row freshly filled by a WS `task_changed` already
-  // has it, so we only fetch when it is missing.
   useEffect(() => {
     if (!task || task.prompt !== undefined) return;
     let cancelled = false;
@@ -66,9 +60,6 @@ export function TaskForm({
   const set = <K extends keyof Overrides>(key: K, value: Overrides[K]) =>
     setOv((current) => ({ ...current, [key]: value }));
 
-  // The value each field shows while inheriting: the Workspace override, else
-  // the global default — mirroring the server's read-time resolution so the
-  // form's "Inherited" line matches what the Task will actually run with.
   const effHarness = ov.harness ?? workspace?.harness ?? config.defaults.harness;
   const inheritedModel = workspace?.model ?? config.harnesses[effHarness]?.defaultModel ?? '';
   const models = config.harnesses[effHarness]?.models ?? [];
@@ -80,12 +71,8 @@ export function TaskForm({
     setError(null);
     try {
       if (task) {
-        // Edit: send the overrides verbatim — a `null` clears that field back
-        // to inherit, a value pins it.
         await api.updateTask(task.id, { ...ov, prompt, workingDir });
       } else {
-        // Create: omit inherited (null) fields — the create endpoint reads an
-        // absent default as inherit (and rejects a null harness/priority enum).
         const pinned = Object.fromEntries(Object.entries(ov).filter(([, v]) => v !== null));
         await api.createTask({
           prompt,

@@ -5,9 +5,7 @@ import { MAP_LABEL, type Ticket, type TicketRef, type TicketState, type Writable
 
 const execFileAsync = promisify(execFile);
 
-// Bounds the page loop against a runaway tracker; hitting it warns loudly rather
-// than truncating silently, matching the GitHub adapter's safety valve.
-const SCAN_SAFETY_VALVE_PAGES = 100; // 100 * per_page(100) = 10,000 issues
+const SCAN_SAFETY_VALVE_PAGES = 100;
 
 /** GitLab connection: the project (`group/repo` or numeric id) and the repo whose `glab` auth/host to use. */
 export interface GitlabConfig {
@@ -37,7 +35,6 @@ const defaultGlab: GlabRunner = async (args, cwd) => {
   }
 };
 
-// GitLab's REST v4 JSON (via `glab api`), only the fields we read.
 interface RawIssue {
   iid: number;
   title: string;
@@ -60,7 +57,7 @@ interface RawUser {
   username: string;
 }
 
-/** opened / reopened → open; only `closed` is closed (the R2 `opened`-state divergence). */
+/** GitLab reports opened / reopened / closed; only `closed` is closed. */
 const state = (s: string): TicketState => (s === 'closed' ? 'closed' : 'open');
 
 function normaliseBase(raw: RawIssue): Omit<Ticket, 'parent' | 'blockedBy' | 'blocking' | 'comments'> {
@@ -123,13 +120,8 @@ function assigneeQuery(ids: Set<number>): string {
 }
 
 /**
- * The GitLab Tracker Adapter (R2/D1, issue #36). Reads through the `glab` CLI's
- * REST passthrough (`glab api`), so it rides `glab`'s ambient auth and host — no
- * PAT or host config of our own (the sibling of the GitHub adapter's `gh`).
- * Swallows the R2 divergences: the `opened` state, the project `iid` (used as
- * the portable `number`) vs the global `id`, and the lack of free-tier native
- * relationships — `parent`/`blockedBy` come from the body-line wayfinder
- * conventions and `blocking` is reverse-synthesised, so no capability flags leak.
+ * The GitLab Tracker Adapter, via `glab api`: rides `glab`'s ambient auth and host. The project `iid`
+ * is the portable `number`; `parent`/`blockedBy` come from the body-line conventions.
  *
  * ponytail: native Epics/work-items and `blocks`/`is_blocked_by` issue links are
  * Premium+ and unused — body-line is the free-tier path and keeps `scan` to one
@@ -179,7 +171,6 @@ export function gitlabAdapter(config: GitlabConfig, run: GlabRunner = defaultGla
     scan: scanAll,
 
     async readTicket(ref: TicketRef) {
-      // Fresh full scan for correct relationship synthesis + current assignees, then attach comments.
       const found = (await scanAll()).find((t) => t.number === ref.number);
       if (!found) throw new Error(`GitLab: no issue #${ref.number} in ${config.project}`);
       const notes = await api<RawNote[]>(`${proj}/issues/${ref.number}/notes?per_page=100&sort=asc`);

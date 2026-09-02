@@ -7,13 +7,6 @@ import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js
 import { attempts, sessions } from '../src/db/schema.js';
 import type { AppConfig, DeepPartial } from '../src/config.js';
 
-/**
- * The eager transcript capture at dispatch races the harness writing its
- * `${sessionId}.jsonl` and gives up after a short window, so a Session can be left
- * with a null `transcriptPath` even though the log merges moments later. This
- * proves the read-path fallback (`Runner.ensureSessionTranscript`) resolves and
- * persists it on demand — removing the dependence on that startup race.
- */
 describe('on-demand transcript resolution (Runner.ensureSessionTranscript)', () => {
   let server: TestServer;
   let logDir: string;
@@ -45,12 +38,9 @@ describe('on-demand transcript resolution (Runner.ensureSessionTranscript)', () 
     const asyncDb = server.app.ctx.asyncDb;
     const runRow = (await asyncDb.read((d) => d.select().from(attempts).where(eq(attempts.id, attemptId)).get()))!;
     const sessionId = runRow.sessionRowId!;
-    // The stub writes no native JSONL, so the eager capture recorded nothing.
     const before = (await asyncDb.read((d) => d.select().from(sessions).where(eq(sessions.id, sessionId)).get()))!;
     expect(before.transcriptPath).toBeNull();
 
-    // The harness's log merges after dispatch: drop it where the claude resolver
-    // looks (a project subdir of the configured sessionLogDir).
     const projectDir = join(logDir, 'some-project');
     mkdirSync(projectDir, { recursive: true });
     const jsonlPath = join(projectDir, `${before.harnessSessionId}.jsonl`);
@@ -60,7 +50,6 @@ describe('on-demand transcript resolution (Runner.ensureSessionTranscript)', () 
     const resolved = await server.app.ctx.runner.ensureSessionTranscript(sessionId);
     expect(resolved).toBe(jsonl);
 
-    // Persisted, so subsequent reads are cheap and the row self-healed.
     const after = (await asyncDb.read((d) => d.select().from(sessions).where(eq(sessions.id, sessionId)).get()))!;
     expect(after.transcriptPath).toBe(jsonl);
   });

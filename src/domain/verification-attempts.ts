@@ -15,37 +15,21 @@ export interface VerificationAttemptInput {
   verdict: Verdict;
   summary: string;
   output: string;
-  /** Locator for the critic's native transcript + the harness that wrote it
-   * (ADR-0040). Both null for the command verifier and where no transcript was
-   * resolved; the pair is what the attempt-log endpoint parses on demand. */
+  /** Locator for the critic's native transcript + the harness that wrote it.
+   * Both null for the command verifier and where no transcript was resolved. */
   transcriptPath?: string | null;
   harness?: string | null;
 }
 
 /**
- * The Verification attempt log store (issue #136, ADR-0021, reliability-design
- * Unit B): persists every verifier invocation — today only the agent critic
- * (`verification/critic.ts`'s `runCritic`) — against a Run's frozen candidate
- * OID, as an immutable row with a per-Run monotonic `seq`. Mirrors
- * `GuardrailEventStore` (`domain/guardrail-events.ts`) exactly, down to the `seq`-assignment
- * recipe and its rationale: the store class itself is pure persistence
- * substrate — it decides nothing and combines no verdicts. Attempts are only
- * ever appended and read; there is no update or delete path, by design.
+ * The Verification attempt log store: every verifier invocation against an
+ * Attempt's frozen candidate OID, as an immutable row with a per-Attempt
+ * monotonic `seq`. Append and read only.
  */
 export class VerificationAttemptStore {
   constructor(private readonly db: AsyncDbHandle) {}
 
-  /**
-   * Append a Verification attempt to `attemptId`'s log, assigning the next
-   * monotonic `seq` as `max(seq)+1` (1-based) — same recipe, and the same
-   * cross-process integrity backstop (the `(attempt_id, seq)` unique index
-   * rejects a racing duplicate `seq` with a raw UNIQUE violation rather than
-   * corrupting the log's total order), as `GuardrailEventStore.append`. The read of
-   * `max(seq)` and the insert run as a single `this.db.write()` unit (ADR-0029
-   * §3): the async single-writer queue now stands in for better-sqlite3's
-   * synchrony, so no concurrent append can interleave between them and steal
-   * the `seq`.
-   */
+  /** Append a Verification attempt to `attemptId`'s log, assigning the next monotonic `seq` (1-based). */
   append(attemptId: number, attempt: VerificationAttemptInput, now: number = Date.now()): Promise<VerificationAttemptRow> {
     return this.db.write(async (db) => {
       const seq =
@@ -75,18 +59,15 @@ export class VerificationAttemptStore {
     });
   }
 
-  /** Fill in a critic attempt's transcript locator after the fact (ADR-0040).
-   * The harness often has not flushed its `${sessionId}.jsonl` at the
-   * session-end boundary, so `append` stores a null path; the runner's
-   * deferred, non-blocking poll resolves it later and writes it here. */
+  /** Fill in a critic attempt's transcript locator after the fact: the harness
+   * often has not flushed its `${sessionId}.jsonl` at the session-end boundary. */
   setTranscriptPath(id: number, transcriptPath: string): Promise<void> {
     return this.db.write(async (db) => {
       await db.update(verificationAttempts).set({ transcriptPath }).where(eq(verificationAttempts.id, id)).run();
     });
   }
 
-  /** One attempt by id, or undefined — backs the attempt-log endpoint, which
-   * reads back the row's `transcriptPath`/`harness` to parse its critic log. */
+  /** One attempt by id, or undefined. */
   get(id: number): Promise<VerificationAttemptRow | undefined> {
     return this.db.read((db) => db.select().from(verificationAttempts).where(eq(verificationAttempts.id, id)).get());
   }

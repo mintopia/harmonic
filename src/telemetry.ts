@@ -42,7 +42,7 @@ export interface TelemetryOverrides {
 
 export interface TelemetryController {
   shutdown(): Promise<void>;
-  /** Reports every operation type with pending completions since the last flush (ADR-0010's "Metrics summary" reader). Idempotent while a flush is already in flight. */
+  /** Reports every operation type with pending completions since the last flush. Idempotent while a flush is already in flight. */
   flushMetricSummary(): Promise<void>;
 }
 
@@ -50,10 +50,7 @@ export interface InitializeTelemetryOptions {
   extraSpanProcessors?: readonly SpanProcessor[] | undefined;
   /**
    * Whether telemetry runs its own periodic timer for the metrics-summary
-   * flush. Default true. The `serve` boot path sets this false and instead
-   * registers the flush as a Scheduler Job (ADR-0010, issue #386), so the
-   * read has a registry row/API surface instead of an invisible `setInterval`
-   * — `flushMetricSummary` on the returned controller is what the Job calls.
+   * flush. Default true; false when a Scheduler Job calls `flushMetricSummary`.
    * Shutdown always performs one final flush regardless of this setting.
    */
   ownsMetricSummaryInterval?: boolean;

@@ -9,25 +9,14 @@ export interface StatsRange {
   from: number;
   to: number;
   workspaceId?: number;
-  /**
-   * Scope to one Epic's child Tasks (issue #410, ADR-0014): the Attempts of the
-   * Tasks whose derived Epic rollup key (`tasks.mapRef`) is this ref. `mapRef`
-   * is the canonical Epic/Map rollup key across the domain — for a mirrored
-   * child it holds the parent Epic ref (equal to the raw `trackerParent`), and
-   * it is the same key the per-Epic tool-call rollup already groups on. Composes
-   * with `workspaceId`; omitted means no Epic scope.
-   */
+  /** Scope to one Epic's child Tasks (those whose `mapRef` is this ref); composes with `workspaceId`. */
   epicRef?: number;
 }
 
-/** The merge-policy escalation reason (merge-policy.ts `MergePolicyOutcome`): a
- * closed set, so the reverted-on-red compare is a typo-proof literal. */
+/** The merge-policy escalation reason (merge-policy.ts `MergePolicyOutcome`). */
 export type GateReason = 'conflict' | 'post-merge-red';
 
-/** A settling lifecycle fact (ADR-0014): one `merged`/`escalated` event a Task's
- * Attempt recorded, carrying the merge day and — for an escalation — the merge
- * gate that produced it, so `reverted-on-red` is a first-class number, not a
- * message substring. */
+/** One `merged`/`escalated` settling event, carrying the merge gate that produced an escalation. */
 export interface SettleEventRow {
   taskId: number;
   ts: number;
@@ -54,8 +43,7 @@ export interface SettledTaskAttempt {
   cost: string | null;
 }
 
-/** One verification-attempt-grain verdict: mechanism (`critic`/`command`) and
- * verdict (`pass`/`fail`/`inconclusive`), counted separately per ADR-0014. */
+/** One verification-attempt-grain verdict. */
 export interface VerificationRow {
   mechanism: string;
   verdict: string;
@@ -69,23 +57,19 @@ export interface GuardrailTripRow {
 
 export interface StatsReadResult {
   rows: AttemptRow[];
-  /** Failed-only Attempts' disposition (ADR-0001): `attempts.reason` keyed
-   * by the Attempt's id. */
+  /** Failed-only Attempts' `attempts.reason`, keyed by Attempt id. */
   attemptReasons: Array<{ attemptId: number; reason: string | null }>;
   toolTotals: ToolCallTotals;
   workspaces: WorkspaceNameRow[];
   /** The owning Workspace of every Task referenced by an in-range Attempt row. */
   taskWorkspaces: TaskWorkspaceRow[];
-  /** Merge/escalation settling events whose ts falls in range (ADR-0014). */
+  /** Merge/escalation settling events whose ts falls in range. */
   settleEvents: SettleEventRow[];
-  /** Every Attempt of a Task that settled in range — covers Attempts started
-   * before the range, so a self-heal Task's full cost-to-settle and
-   * Attempt-count are honest. */
+  /** Every Attempt of a Task that settled in range, including Attempts started before the range. */
   settledTaskAttempts: SettledTaskAttempt[];
-  /** Verification-attempt-grain verdicts in range, critic and command apart. */
+  /** Verification-attempt-grain verdicts in range. */
   verifications: VerificationRow[];
-  /** Distinct (Attempt, dimension) Guardrail trips in range — one row per Attempt
-   * per dimension, so an Attempt tripping two dimensions counts in both. */
+  /** Distinct (Attempt, dimension) Guardrail trips in range. */
   guardrailTrips: GuardrailTripRow[];
 }
 

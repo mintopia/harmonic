@@ -5,7 +5,7 @@ import type { App } from '../app.js';
 import { idParamsSchema, okResponseSchema, errorResponse } from '../schemas.js';
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
 
-/** A persistent Permission Rule as the API serves it (ADR-0007). */
+/** A persistent Permission Rule as the API serves it. */
 const permissionRuleSchema = z
   .object({
     id: z.number().meta({ example: 1150 }),

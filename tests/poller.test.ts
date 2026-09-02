@@ -42,7 +42,6 @@ const ticket = (over: Partial<Ticket>): Ticket => ({
   ...over,
 });
 
-/** A stub adapter that records scan() calls and returns canned tickets. */
 function stubAdapter(tickets: Ticket[]) {
   let scans = 0;
   const adapter: TrackerAdapter = {
@@ -133,7 +132,6 @@ describe('TrackerPoller.poll', () => {
   });
 
   it('single-flights overlapping polls so the timer and a manual pollNow never scan concurrently (issue #219)', async () => {
-    // A scan we can hold open, tracking how many run at once — the flood signal.
     let scans = 0;
     let inScan = 0;
     let maxConcurrent = 0;
@@ -162,7 +160,6 @@ describe('TrackerPoller.poll', () => {
     release?.();
     await Promise.all([first, second]);
 
-    // The overlap collapsed to pass #1 plus one trailing rerun, run serially.
     expect(maxConcurrent).toBe(1);
     expect(scans).toBe(2);
   });
@@ -219,7 +216,6 @@ describe('TrackerPoller.poll', () => {
     expect(poller.titleForMap(null)).toBeNull();
   });
 
-  /** Poll #42, flip it working, then re-poll it with a new state — the board-refresh path. */
   async function pollThenReWorking(finalState: 'open' | 'closed') {
     const first = ticket({ number: 42, labels: ['ready-for-agent'] });
     let current = first;
@@ -234,8 +230,6 @@ describe('TrackerPoller.poll', () => {
 
   it('a working Task whose ticket closed is left alone — tracker state is never a control path (ADR-0041)', async () => {
     const { taskId } = await pollThenReWorking('closed');
-    // The poll never moves a Task off working; the Run's own merging closes
-    // the ticket idempotently when it gets there.
     expect((await tasks.get(taskId)).state).toBe('working');
   });
 
@@ -328,7 +322,7 @@ describe('TrackerPoller.poll', () => {
     expect(calls).toHaveLength(1);
     expect(calls[0]!.tickets).toContain(42);
     expect(calls[0]!.mirrored).toContain(42);
-    expect(persistedAssignees).toEqual([]); // reconstructed DB facts, not the assigned live-scan object (#234)
+    expect(persistedAssignees).toEqual([]);
     const spans = exporter.getFinishedSpans();
     const poll = spans.find((span) => span.name === 'harmonic.poll');
     const reconcile = spans.find((span) => span.name === 'harmonic.epic.reconcile');

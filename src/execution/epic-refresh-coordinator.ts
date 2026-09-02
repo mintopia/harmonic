@@ -21,14 +21,10 @@ export type EpicRefreshResolveDispatchOutcome =
   | { status: 'escalated'; reason: string };
 
 /**
- * Merges a newly advanced default branch into live Epic integration branches.
- *
- * The merge runs under the base repo's {@link withBaseCheckoutLock} (ADR-0001,
- * issue #455), so a refresh and a member's `runMergePolicy` merge onto the same
- * repo serialize on one lock — a refresh must never race a member merge's
- * in-progress conflicted working tree. A merge conflict is allowed one agent turn; a second conflict
- * escalates the Epic, never one of its members. Per ADR-0046 a base that moved
- * under the refresh is normal: it is recorded and retried, never an operator hold.
+ * Merges a newly advanced default branch into live Epic integration branches,
+ * under the base repo's {@link withBaseCheckoutLock}. A merge conflict is
+ * allowed one agent turn; a second conflict escalates the Epic, never one of
+ * its members. A base that moved under the refresh is deferred and retried.
  */
 export class EpicRefreshCoordinator {
   private readonly resolving = new Set<number>();
@@ -46,10 +42,6 @@ export class EpicRefreshCoordinator {
 
   refresh(target: EpicRefreshTarget): Promise<EpicRefreshOutcome> {
     const branch = integrationBranchName(target.ref);
-    // The base-checkout lock (issue #455) serialises this refresh against an
-    // in-progress member merge, whose conflicted working tree it must not race;
-    // the inner metadata lock over `mergeIntoBase` keeps its `mutexHeld: true`
-    // ff-only reentrancy intact.
     return withBaseCheckoutLock(target.repoDir, async () => {
       const expectedOid = await (this.deps.git ?? Git).revParse(target.repoDir, target.defaultBranch);
       const outcome = await withRepoLock(target.repoDir, () =>

@@ -4,22 +4,6 @@ import { TERMINAL_STATES } from './task-state-model.js';
 import { VIEWS, type View } from './rail-model.js';
 import { TASK_STATES, type TaskState } from './types.js';
 
-/**
- * Client routing (issue #103, #181): the active view and its per-view filter/sort/peek
- * state live in the URL's query string, so a side-monitor view is bookmarkable,
- * a refresh restores where the operator was, and the browser Back button steps
- * between views instead of leaving the app. This module is the pure, testable
- * seam — parse a pathname + query string into a {@link Route}, serialize a Route
- * back to a relative URL — with the React history glue kept in App.tsx.
- *
- * The URL is the source of truth for the app's location. The pathname carries the
- * focused Ticket (`/task/:id`, the Deck's "Deck" redesign): a `Route` carries every
- * view's state at once (board peek + table filters) in the query string, so a Ticket
- * URL still remembers which underlying view/filters to return to. Unknown or
- * malformed params fall back to defaults rather than throwing: a hand-edited or
- * stale link merges somewhere sane, never on a blank screen.
- */
-
 /** Table sort keys. TableView imports `SortKey` from here as its single source. */
 export const SORT_KEYS = ['createdAt', 'updatedAt', 'priority', 'cost'] as const;
 export type SortKey = (typeof SORT_KEYS)[number];
@@ -30,13 +14,13 @@ export const TABLE_HARNESSES = ['claude', 'codex', 'copilot'] as const;
 export const TABLE_PRIORITIES = ['high', 'normal', 'low'] as const;
 
 /** The Table view's filter + sort selection. Each filter is multi-select
- * (issue: multi-select filters): an empty array means "all"; a non-empty array
+ *: an empty array means "all"; a non-empty array
  * matches any of its values. */
 export interface TableFilters {
   state: string[];
   harness: string[];
   priority: string[];
-  /** Free-text search over prompt text (issue #104). Empty means "no search". */
+  /** Free-text search over prompt text. Empty means "no search". */
   search: string;
   sortBy: SortKey;
   order: 'asc' | 'desc';
@@ -72,14 +56,14 @@ export const NO_SELECTION: RailSelection = { kind: 'none' };
 export interface Route {
   view: View;
   /**
-   * The focused Ticket (issue #181): `null` when on a view, or the Task id when
+   * The focused Ticket: `null` when on a view, or the Task id when
    * the pathname is `/task/:id`. Lives in the pathname, not the query, but the
    * Route still carries the underlying `view`/`table`/`peeked` so returning
    * restores exactly where the operator was.
    */
   task: number | null;
   /**
-   * The focused Epic (ADR-0017): `null` when on a view, or the Epic ref when the
+   * The focused Epic: `null` when on a view, or the Epic ref when the
    * pathname is `/epic/:ref`. Opens the Epic summary page; mutually exclusive
    * with `task` (both live in the pathname, one path at a time).
    */
@@ -100,8 +84,6 @@ export const DEFAULT_ROUTE: Route = {
   panel: NO_SELECTION,
 };
 
-/** Query param keys — one flat namespace; only one view is active at a time so
- * the board's `peek` and the table's filters never contend for a name. */
 const PARAM = {
   view: 'view',
   peek: 'peek',
@@ -140,8 +122,6 @@ function serializePanel(panel: RailSelection): string | null {
 }
 
 const isView = (v: string | null): v is View => v !== null && (VIEWS as readonly string[]).includes(v);
-/** Parse a comma-separated filter param into a validated, deduped, order-preserving
- * list, dropping any value outside `allowed` (a stale/hand-edited link merges sane). */
 const csvValues = (raw: string, allowed: readonly string[]): string[] => {
   const out: string[] = [];
   for (const part of raw.split(',')) {
@@ -150,18 +130,12 @@ const csvValues = (raw: string, allowed: readonly string[]): string[] => {
   }
   return out;
 };
-// Only terminal columns are peekable (Board.tsx), so a non-terminal `peek`
-// param is meaningless — reject it so a stale value can't ride along in the URL.
 const isPeekable = (v: string): v is TaskState => (TERMINAL_STATES as readonly string[]).includes(v);
 const isSortKey = (v: string | null): v is SortKey => v !== null && (SORT_KEYS as readonly string[]).includes(v);
 
-/** Matches the Ticket path `/task/:id` (optional trailing slash). */
 const TASK_PATH = /^\/task\/(\d+)\/?$/;
-/** Matches the Epic summary path `/epic/:ref` (optional trailing slash). */
 const EPIC_PATH = /^\/epic\/(\d+)\/?$/;
 
-/** Accept a full URL, a `?a=b` search string, or a bare `a=b`; return just the
- * query portion for URLSearchParams. */
 function queryOf(input: string): string {
   const q = input.indexOf('?');
   return q >= 0 ? input.slice(q + 1) : input;
@@ -178,17 +152,14 @@ export function parseRoute(pathname: string, search: string): Route {
   const rawView = params.get(PARAM.view);
   const view: View = isView(rawView) ? rawView : 'board';
 
-  // The Ticket path: a bare positive integer Task id, else no Ticket open.
   const taskMatch = TASK_PATH.exec(pathname);
   const taskId = taskMatch ? Number(taskMatch[1]) : NaN;
   const task = taskMatch && Number.isSafeInteger(taskId) && taskId > 0 ? taskId : null;
 
-  // The Epic summary path: a bare positive integer Epic ref, else no Epic open.
   const epicMatch = EPIC_PATH.exec(pathname);
   const epicRef = epicMatch ? Number(epicMatch[1]) : NaN;
   const epic = epicMatch && Number.isSafeInteger(epicRef) && epicRef > 0 ? epicRef : null;
 
-  // Dedupe while preserving order; drop anything that isn't a peekable column.
   const peeked: TaskState[] = [];
   for (const raw of (params.get(PARAM.peek) ?? '').split(',')) {
     const s = raw.trim();
@@ -240,9 +211,6 @@ export function serializeRoute(route: Route): string {
   if (panel !== null) params.set(PARAM.panel, panel);
 
   const query = params.toString();
-  // The pathname carries at most one focused entity; a focused Ticket wins over
-  // a focused Epic if both are somehow set (they never are — navigation clears
-  // the sibling), so the order here is only a defensive tiebreak.
   const base = route.task !== null ? `/task/${route.task}` : route.epic !== null ? `/epic/${route.epic}` : '/';
   return query ? `${base}?${query}` : base;
 }

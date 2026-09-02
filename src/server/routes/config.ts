@@ -15,22 +15,13 @@ import {
   type LegacyConfig,
 } from '../../config.js';
 
-/**
- * A deep-partial patch of `AppConfig` (config.ts). Every field is optional
- * at every level so an operator can send just the branch they're changing;
- * `settingsStore.updateGlobal` deep-merges it onto the stored config and re-parses
- * the result through `appConfigSchema`, which is the actual source of
- * truth for validity — this schema exists for documentation and to reject
- * non-object junk, not to duplicate that validation.
- */
+/** A deep-partial patch of `AppConfig`; `appConfigSchema` re-validates the merged result. */
 const configPatchBodySchema = z
   .object({
     /** Operator display name for this instance; feeds the sidebar heading and browser title. */
     name: z.string().meta({ example: 'Production' }),
     harnesses: z
-      // partialRecord, not record: a record keyed by an enum requires every
-      // enum key present (zod v4), but a config patch may touch only one
-      // harness.
+      // zod v4: a record keyed by an enum requires every key; partialRecord lets a patch touch one harness.
       .partialRecord(
         z.enum(HARNESS_IDS),
         z.object({
@@ -46,9 +37,6 @@ const configPatchBodySchema = z
           sessionLogDir: z.string().meta({ example: '/home/dev/.claude/projects' }),
         }).partial(),
       )
-      // A record declares no shape, so the docs print its JSON Schema unless
-      // the record itself carries an example — the inner fields' examples
-      // never surface on their own.
       .meta({ example: { claude: { defaultModel: 'sonnet-5' } } })
       .optional(),
     prices: z
@@ -109,15 +97,14 @@ const configPatchBodySchema = z
       .describe(
         'Deprecated (#140): folded into verification.autoAccept; retained so a pre-upgrade client PATCHing it still merges non-exposing behaviour.',
       ),
-    /** Migration-only input for clients saved before #312. It is converted to
-     * `verify` before storage and never appears in the response. */
+    /** Migration-only input; converted to `verify` before storage and never returned. */
     verification: z
       .object({
         /** The command verifier; null clears it. Send the whole object to set one (deep-merged, then re-parsed). */
         command: verificationCommandSchema.nullable().meta({ example: { command: 'npm', args: ['test'] } }),
         /** The agent critic; null clears it. Send the whole object to set one. */
         critic: verificationCriticSchema.nullable().meta({ example: { prompt: 'Review the diff for correctness.', model: 'claude-opus-5' } }),
-        /** Accepted and dropped: auto-accept described the review gate ADR-0041 removed. */
+        /** Accepted and dropped. */
         autoAccept: z.boolean().meta({ example: true }),
       })
       .partial()

@@ -21,14 +21,13 @@ const epicListParamsSchema = z.object({
 });
 
 /** The `GET …/epics` querystring: the shared pagination fragment plus a
- * case-insensitive substring search over the Epic title (ADR-0045). */
+ * case-insensitive substring search over the Epic title. */
 const epicListQuerySchema = paginationQuerySchema.extend({
   q: z.string().optional().meta({ example: 'operator UI' }),
 });
 
 /**
- * `Epic` (`src/domain/epic-view.ts`) as the API serves it (issue #167, ADR-0026
- * — the frozen contract in `.notes/issue-167-dto-contract.md`). Server and web
+ * `Epic` (`src/domain/epic-view.ts`) as the API serves it. Server and web
  * (`web/src/epic-model.ts`/`web/src/types.ts`) implement this shape
  * identically; there is no codegen between them, so keep the two in lockstep.
  */

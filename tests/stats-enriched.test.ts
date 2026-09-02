@@ -10,12 +10,6 @@ import {
   type AttemptState,
 } from '../src/db/schema.js';
 
-/**
- * ADR-0014: the task-grain, verification, guardrail & per-Workspace aggregates,
- * exercised end to end through the off-event-loop Stats worker (issue #200) so
- * the new reads (attempt_events / verification_attempts / guardrail_events, the
- * task→workspace join) are proven against a real WAL, not just in unit isolation.
- */
 describe('Enriched /stats aggregates (ADR-0014)', () => {
   let server: TestServer | undefined;
 
@@ -64,7 +58,6 @@ describe('Enriched /stats aggregates (ADR-0014)', () => {
           .get(),
       );
 
-    // A self-healed merged Task in the default workspace: escalate, escalate, merge.
     const healed = await makeTask(ws.id);
     const a1 = await makeAttempt(healed.id, 1, 'failed', 1);
     await makeAttempt(healed.id, 2, 'failed', 1);
@@ -78,7 +71,6 @@ describe('Enriched /stats aggregates (ADR-0014)', () => {
         ])
         .run(),
     );
-    // Verdicts: two critic passes + a critic fail (→ block), one command pass.
     await ctx.asyncDb.write((d) =>
       d
         .insert(verificationAttempts)
@@ -89,7 +81,6 @@ describe('Enriched /stats aggregates (ADR-0014)', () => {
         ])
         .run(),
     );
-    // Attempt a1 tripped two guardrail dimensions; the tokens dimension twice.
     await ctx.asyncDb.write((d) =>
       d
         .insert(guardrailEvents)
@@ -101,7 +92,6 @@ describe('Enriched /stats aggregates (ADR-0014)', () => {
         .run(),
     );
 
-    // A reverted-on-red Task in the other workspace.
     const reverted = await makeTask(other.id);
     const r1 = await makeAttempt(reverted.id, 1, 'escalated', 5);
     await ctx.asyncDb.write((d) =>
@@ -115,20 +105,17 @@ describe('Enriched /stats aggregates (ADR-0014)', () => {
     expect(res.status).toBe(200);
     const body = res.body;
 
-    // Task-grain: the self-healed Task counts once, as a 3× merge.
     expect(body.tasksMergedByDay.reduce((sum: number, d: { count: number }) => sum + d.count, 0)).toBe(1);
     expect(body.attemptsPerTask).toEqual({ '1': 0, '2': 0, '3': 1, '4+': 0 });
     expect(body.costPerMergedTask.mergedTasks).toBe(1);
     expect(body.costPerMergedTask.mergedCost.totalUsd).toBeCloseTo(4);
     expect(body.costPerMergedTask.wastedCost.totalUsd).toBeCloseTo(5);
 
-    // Verification & gate & guardrails.
     expect(body.verdicts.critic).toEqual({ pass: 1, block: 1, inconclusive: 0 });
     expect(body.verdicts.command).toEqual({ pass: 1, block: 0, inconclusive: 0 });
     expect(body.gateOutcomes).toEqual({ autoMerged: 1, escalated: 0, revertedOnRed: 1 });
     expect(body.guardrailTrips).toEqual({ tokens: 1, 'wall-clock': 1 });
 
-    // Per-workspace: two rows, ordered by cost (other = 5 outranks default = 4).
     expect(body.byWorkspace).toHaveLength(2);
     expect(body.byWorkspace[0].workspaceId).toBe(other.id);
     expect(body.byWorkspace[0].cost.totalUsd).toBeCloseTo(5);

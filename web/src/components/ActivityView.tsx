@@ -116,7 +116,7 @@ function ContextCell({ process }: { process: ActivityProcess }) {
       {fill !== null && (
         // Decorative echo of the number above (aria-hidden). Perf: the fill rides
         // a compositor-only `scaleX` off a full-width bar — never an animated
-        // `width`, which would relayout every row on each live tick (issue #56).
+        // `width`, which would relayout every row on each live tick.
         <div aria-hidden="true" className="mt-1 h-1 overflow-hidden rounded-full bg-raised">
           <div
             className={`h-full w-full origin-left rounded-full ${barTone}`}
@@ -344,7 +344,7 @@ export function ActivityView({ config }: { config: AppConfig | null }) {
         .then((body: { processes: ActivityProcess[] } | null) => {
           if (!cancelled && body) setProcesses(body.processes);
         })
-        .catch(() => {}); // read-only readout; a blip must never blank the view
+        .catch(() => {});
     load();
     const poll = setInterval(load, 5_000);
 
@@ -391,8 +391,6 @@ export function ActivityView({ config }: { config: AppConfig | null }) {
   const ceiling = config?.autoRunner.maxConcurrentAttempts ?? Math.max(processes.filter((p) => p.type === 'attempt').length, 1);
   const summary = activitySummary(processes, ceiling, now);
   const workspaces = activityWorkspaces(processes);
-  // Heal a Workspace filter whose Workspace has drained out — otherwise the
-  // reset control (hidden below two Workspaces) can strand the table empty.
   const activeFilter = resolveActivityFilter(filter, workspaces);
   const filtered = filterActivity(processes, activeFilter);
   const sections = activitySections(filtered, sort, now);

@@ -1,11 +1,3 @@
-/**
- * The stored-Epic spine (ADR-0018, issue #437): the scan lazy-upserts a durable
- * `epics` row per leaf-most epic-type container, re-deriving `kind` each scan.
- * The row coexists with the wipe-and-replace `tracker_containers` cache, survives
- * the container wipe and the tracker issue closing, and is removed only on
- * Dismiss. Most assertions here read the table directly; the drive path reads a
- * single row's `kind` through {@link TaskService.epicKind} (issue #440).
- */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -87,7 +79,6 @@ describe('stored Epic spine (ADR-0018, #437)', () => {
       ticket({ number: 20, parent: 19 }),
     ], wsId);
     expect(await tasks.epicKind(wsId, 19)).toBe('map');
-    // A ref with no spine row (a member, or an unknown ref) resolves to null.
     expect(await tasks.epicKind(wsId, 20)).toBeNull();
     expect(await tasks.epicKind(wsId, 999)).toBeNull();
   });
@@ -107,7 +98,6 @@ describe('stored Epic spine (ADR-0018, #437)', () => {
     ], wsId);
     expect((await readEpics())[0]?.kind).toBe('spec');
 
-    // Body emptied on a later scan: the same Epic re-derives to a plain Epic.
     await mirrorScan(tasks, [
       ticket({ number: 10, title: 'Spec', labels: [EPIC_LABEL], body: '' }),
       ticket({ number: 11, parent: 10 }),
@@ -125,8 +115,6 @@ describe('stored Epic spine (ADR-0018, #437)', () => {
     expect(await readEpics()).toHaveLength(1);
     expect(await tasks.listTrackerContainers(wsId)).toHaveLength(1);
 
-    // An empty scan wipes the container cache (wipe-and-replace) but must leave
-    // the durable Epic row in place.
     await mirrorScan(tasks, [], wsId);
     expect(await tasks.listTrackerContainers(wsId)).toHaveLength(0);
     expect(await readEpics()).toEqual([
@@ -141,8 +129,6 @@ describe('stored Epic spine (ADR-0018, #437)', () => {
     ], wsId);
     expect(await readEpics()).toHaveLength(1);
 
-    // The Epic issue closes: a closed epic-type container is not re-upserted, but
-    // the durable row is never removed by the scan.
     await mirrorScan(tasks, [
       ticket({ number: 10, title: 'Spec', state: 'closed', labels: [EPIC_LABEL], body: 'a spec' }),
       ticket({ number: 11, parent: 10, state: 'closed' }),
@@ -152,8 +138,6 @@ describe('stored Epic spine (ADR-0018, #437)', () => {
   });
 
   it('Dismiss removes the row', async () => {
-    // Seed a durable Epic row, and a mirrored Task sharing its ref so an operator
-    // delete writes the (workspace, ref) dismissal tombstone the removal keys on.
     await tasks.syncEpics(wsId, [{ ref: 10, kind: 'spec' }]);
     const mirrored = await tasks.upsertMirrored(
       { trackerRef: 10, prompt: 'x', workflow: 'implement', wayfinderType: null, mapRef: null, closed: false },
@@ -185,8 +169,6 @@ describe('stored Epic spine (ADR-0018, #437)', () => {
     it('is a once-only transition: a later null-hash re-settle never clobbers the stored merge-commit', async () => {
       await tasks.syncEpics(wsId, [{ ref: 10, kind: 'spec' }]);
       await tasks.markEpicIntegrated(wsId, 10, { mergeCommit: 'real-merge', memberRefs: [11] });
-      // A repeated poll re-offering the already-contained branch would settle a null
-      // hash; the state='open' guard must make that a no-op, not an overwrite.
       await tasks.markEpicIntegrated(wsId, 10, { mergeCommit: null, memberRefs: [] });
       expect((await readEpics())[0]).toMatchObject({ state: 'integrated', mergeCommit: 'real-merge', memberRefs: [11] });
     });
@@ -199,7 +181,6 @@ describe('stored Epic spine (ADR-0018, #437)', () => {
     it('a re-scan after integration refreshes kind but never reverts the lifecycle', async () => {
       await tasks.syncEpics(wsId, [{ ref: 10, kind: 'spec' }]);
       await tasks.markEpicIntegrated(wsId, 10, { mergeCommit: 'abc123', memberRefs: [11] });
-      // The scan re-upserts `open`; onConflict must leave state/mergeCommit/memberRefs.
       await tasks.syncEpics(wsId, [{ ref: 10, kind: 'epic' }]);
       expect((await readEpics())[0]).toMatchObject({
         kind: 'epic',

@@ -2,8 +2,8 @@ import type { TaskState } from './types.js';
 
 export interface ReviewAnnouncementTask {
   readonly id: number;
-  /** The card title (ADR-0045 summary) spoken in the live region — list rows
-   * carry no full prompt (issue #350). */
+  /** The card title spoken in the live region — list rows
+   * carry no full prompt. */
   readonly summary: string;
   readonly state: TaskState;
 }
@@ -33,7 +33,7 @@ function assertiveMergeAnnouncement(previous: TaskState, task: ReviewAnnouncemen
 
 /**
  * Advance the screen-reader cursor for the board's attention surface
- * (ADR-0041). Only the transitions that matter to the operator are spoken —
+ *. Only the transitions that matter to the operator are spoken —
  * a ticket entering or leaving escalation, and a merge — so ordinary execution
  * churn, already visible, never makes the live region noisy. Merge outcomes are
  * returned separately so the caller can give them assertive semantics.

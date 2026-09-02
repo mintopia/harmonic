@@ -2,11 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-// Source-contract tests (same approach as paper-a11y.test.ts): the JSX surfaces
-// can't be imported into the node test project, so assert the held-merge
-// surfacing against their source — the Attention card in Board.tsx and the
-// force-merge control on the Epic summary page (EpicPage.tsx, ADR-0017). The
-// Attention-section promotion itself is proven in board-sections-model.test.ts.
+// The JSX surfaces can't be imported into the node test project.
 const source = (path: string) => readFileSync(join(process.cwd(), path), 'utf8');
 
 describe('Epic integrate.held surfacing', () => {

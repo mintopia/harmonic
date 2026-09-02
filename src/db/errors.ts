@@ -1,17 +1,7 @@
-/** Matches the SQLite message for a violated UNIQUE constraint, as a fallback
- * when the driver's `.code` isn't populated (e.g. wrapped errors). */
+/** SQLite's message for a violated UNIQUE constraint; the fallback when a wrapped error's `.code` isn't populated. */
 const UNIQUE_VIOLATION_MESSAGE = /UNIQUE constraint failed/;
 
-/**
- * Detect a UNIQUE-constraint violation across both DB drivers (ADR-0029).
- * better-sqlite3 throws a `SqliteError` whose top-level `.code` is
- * `SQLITE_CONSTRAINT_UNIQUE`; drizzle-libsql wraps the driver error in a
- * `DrizzleQueryError` whose `.message` is `"Failed query: …"` (no
- * "UNIQUE constraint failed") and whose `.code` is undefined — the real code
- * (`.code === 'SQLITE_CONSTRAINT'`, `.extendedCode === 'SQLITE_CONSTRAINT_UNIQUE'`)
- * and message live on `.cause`. So walk the cause chain and check `.code`,
- * `.extendedCode`, and the message at every level.
- */
+/** Detect a UNIQUE-constraint violation. drizzle-libsql wraps the driver error in a `DrizzleQueryError` with no `.code`; the real `.code`/`.extendedCode` and message live on `.cause`, so walk the chain. */
 export function isUniqueViolation(err: unknown): boolean {
   for (let e: unknown = err; e instanceof Error; e = (e as { cause?: unknown }).cause) {
     const { code, extendedCode } = e as { code?: string; extendedCode?: string };
@@ -23,17 +13,10 @@ export function isUniqueViolation(err: unknown): boolean {
   return false;
 }
 
-/** Matches the SQLite message for a violated FOREIGN KEY constraint, as a
- * fallback when a wrapped error's `.code` isn't populated. */
+/** SQLite's message for a violated FOREIGN KEY constraint; the fallback when a wrapped error's `.code` isn't populated. */
 const FOREIGN_KEY_VIOLATION_MESSAGE = /FOREIGN KEY constraint failed/;
 
-/**
- * Detect a FOREIGN-KEY-constraint violation across both DB drivers, mirroring
- * {@link isUniqueViolation}'s cause-chain walk (ADR-0029): drizzle-libsql wraps
- * the driver error so the real `.code`/`.extendedCode`
- * (`SQLITE_CONSTRAINT`/`SQLITE_CONSTRAINT_FOREIGNKEY`) and the message live on
- * `.cause`, not the top-level `DrizzleQueryError`.
- */
+/** Detect a FOREIGN-KEY-constraint violation, walking the cause chain like {@link isUniqueViolation}. */
 export function isForeignKeyViolation(err: unknown): boolean {
   for (let e: unknown = err; e instanceof Error; e = (e as { cause?: unknown }).cause) {
     const { code, extendedCode } = e as { code?: string; extendedCode?: string };

@@ -9,7 +9,7 @@ import {
 import { DomainError } from './errors.js';
 
 export interface ConversationEventInput {
-  /** 'user_turn' is the operator's own message; the rest mirror run events. */
+  /** 'user_turn' is the operator's own message; the rest mirror Attempt events. */
   type: 'session_update' | 'permission_request' | 'lifecycle' | 'user_turn';
   payload: unknown;
 }
@@ -24,7 +24,7 @@ export interface PersistedConversationEvent {
 }
 
 export interface CreateConversationInput {
-  /** The owning Workspace (ADR-0008); resolved by the route before this call. */
+  /** The owning Workspace; resolved by the route before this call. */
   workspaceId: number;
   harness: string;
   model: string;
@@ -32,10 +32,8 @@ export interface CreateConversationInput {
 }
 
 /**
- * Persistence for Conversations and their event streams — the sibling of
- * RunStore (ADR-0006). Event append/list mirror RunStore exactly so the
- * same renderer serves both by shape. `onChanged` feeds the firehose's
- * `conversation_changed`; events feed `conversation_event` via the driver.
+ * Persistence for Conversations and their event streams. `onChanged` feeds
+ * the firehose's `conversation_changed`.
  */
 export class ConversationStore {
   constructor(
@@ -77,8 +75,7 @@ export class ConversationStore {
     await this.get(id);
   }
 
-  /** Reverse-chronological: newest first, both active and ended (issue 15's list).
-   * Scoped to `workspaceId` when given (ADR-0008); omitted means every Workspace. */
+  /** Newest first, both active and ended. Scoped to `workspaceId` when given. */
   async list(workspaceId?: number): Promise<ConversationRow[]> {
     return this.db.read((db) =>
       db
@@ -135,9 +132,9 @@ export class ConversationStore {
   }
 
   /**
-   * Boot recovery (issue 15): any Conversation still 'active' was orphaned by
-   * a restart — its warm harness is gone, so it cannot resume. Mark it ended;
-   * the transcript survives read-only.
+   * Boot recovery: any Conversation still 'active' was orphaned by a restart —
+   * its warm harness is gone, so it cannot resume. Mark it ended; the
+   * transcript survives read-only.
    */
   async markActiveEnded(): Promise<void> {
     const now = Date.now();
@@ -176,7 +173,7 @@ export class ConversationStore {
   }
 
   async listEvents(conversationId: number): Promise<PersistedConversationEvent[]> {
-    await this.get(conversationId); // 404 on unknown conversation
+    await this.get(conversationId);
     return (
       await this.db.read((db) =>
         db
@@ -189,10 +186,7 @@ export class ConversationStore {
     ).map(deserializeConversationEvent);
   }
 
-  /**
-   * The text of the first operator Turn, for the derived title when a
-   * Conversation has no operator-set one (issue 15). null before any Turn.
-   */
+  /** The text of the first operator Turn, for the derived title when a Conversation has no operator-set one. null before any Turn. */
   async firstTurnText(conversationId: number): Promise<string | null> {
     const row = await this.db.read((db) =>
       db

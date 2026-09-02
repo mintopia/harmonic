@@ -12,8 +12,6 @@ const DOT_LABEL: Record<AttemptDot, string> = {
   neutral: 'neutral',
 };
 
-// Extra bottom clearance so the action buttons are never covered by the
-// collapsed Conversation launcher tab that floats in the bottom-right corner.
 const WRAP = 'sticky bottom-0 z-[5] flex flex-col gap-2.5 border-t border-hairline bg-surface px-3.5 pt-3.5 pb-12 shadow-float';
 
 export function Gate({
@@ -31,10 +29,6 @@ export function Gate({
   onChanged: () => void;
   onGoToCurrent: (attemptId: number) => void;
 }) {
-  // No run (an uncancelled/ready Task that hasn't run yet): a run-less Task
-  // would otherwise have NO state actions on its detail page — no way to cancel,
-  // delete, run, or edit it. Surface those here. TaskActions (footer) self-hides
-  // when the state has none, so guard the wrap on that.
   if (model.kind === 'none') {
     if (taskActions(task.state).length === 0) return null;
     return (

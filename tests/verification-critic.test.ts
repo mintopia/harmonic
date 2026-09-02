@@ -10,11 +10,6 @@ import { resetCodeIndexAvailabilityForTest } from '../src/execution/code-index.j
 import type { CriticHarnessDrive } from '../src/verification/critic.js';
 import type { Verdict } from '../src/verification/critic-schema.js';
 
-/** A fake jCodeMunch CLI (as `tests/code-index.test.ts` uses) that appends every
- * invocation to FAKE_CLI_LOG, so a test can assert WHICH worktree paths the
- * Runner (re-)indexed and how many times. `list-repos` returns none, so
- * `indexWorktree` still runs its `index` call (what we assert on) but resolves no
- * repo id — the builder prompt is therefore unchanged for the other tests. */
 const FAKE_CODE_INDEX_CLI = `#!/usr/bin/env node
 const fs = require('node:fs');
 const args = process.argv.slice(2);
@@ -26,7 +21,6 @@ process.exit(0);
 const git = (dir: string, ...args: string[]) =>
   execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
 
-/** A throwaway git repo on branch main with one committed file. */
 function makeRepo(): string {
   const dir = mkdtempSync(join(tmpdir(), 'harmonic-critic-e2e-'));
   execFileSync('git', ['init', '-b', 'main', dir], { encoding: 'utf8' });
@@ -38,15 +32,10 @@ function makeRepo(): string {
   return dir;
 }
 
-/** The decomposed review-override fields (issue #337) for a configured critic;
- * the fake drive supplies the verdict, so the model is just a placeholder. */
 const critic = () => ({ reviewEnabled: true, reviewPrompt: 'Review the diff for correctness.', reviewModel: 'stub-model' });
 
-/** Same, pinned to a specific reviewer harness (issue #174 FIX 2) rather than
- * "Same as task". */
 const criticWithHarness = (harness: HarnessId) => ({ ...critic(), reviewHarness: harness });
 
-/** A `VerificationCommand` running an inline node script with the given exit code. */
 const exitCommand = (code: number): VerificationCommand =>
   verificationCommandSchema.parse({
     command: process.execPath,
@@ -54,34 +43,13 @@ const exitCommand = (code: number): VerificationCommand =>
     timeoutSeconds: 30,
   });
 
-/**
- * End-to-end agent critic at the Runner drive-loop seam (issue #164): a native
- * Run over the stub harness against a real git Workspace, with a critic
- * configured. The wired `runVerification` invokes `runCritic` at the frozen
- * candidate OID, feeds its verdict into `combineVerdicts`, and a fail /
- * inconclusive critic blocks/escalates the Run so broken work never merges.
- *
- * The critic's ACP turn is faked via the injectable `criticDrive` seam (the
- * same seam `tests/critic.test.ts` uses at the unit level) so a verdict can be
- * scripted without spawning a real reviewer harness; everything else — the
- * builder turn, the candidate snapshot, the disposable read-only worktree
- * checkout, the settle/merge path — is the real Runner.
- */
 describe('agent critic end-to-end (issue #164)', () => {
   let server: TestServer;
   let repoDir: string;
   let workspaceId: number;
-  /** Mutable per-test verdict the injected fake critic drive returns. */
   let criticResult: { verdict: Verdict; summary: string };
-  /** The `harnessId` the most recent critic drive call was invoked with (issue
-   * #174) — lets a test assert `runCritic` was resolved against the critic's
-   * own configured harness rather than always the builder task's. */
   let lastCriticHarnessId: string | undefined;
-  /** The in-place directory the most recent critic drive was pointed at — the
-   * Task's worktree for a branch Run — used to assert that path's index was
-   * refreshed to the candidate head before the review (issue #428). */
   let lastCriticCwd: string | undefined;
-  /** Fake-code-index scratch: the CLI script + the log of its invocations. */
   let codeIndexDir: string;
   let codeIndexLog: string;
   const prevCodeIndexCli = process.env.HARMONIC_CODE_INDEX_CLI;
@@ -94,7 +62,6 @@ describe('agent critic end-to-end (issue #164)', () => {
     },
   };
 
-  /** How many times the Runner ran `index <path>` on `absPath` in the log. */
   const indexCountFor = (absPath: string): number =>
     readFileSync(codeIndexLog, 'utf8')
       .split('\n')
@@ -103,9 +70,6 @@ describe('agent critic end-to-end (issue #164)', () => {
 
   beforeAll(async () => {
     repoDir = makeRepo();
-    // Swap the no-op test CLI (tests/setup-env.ts) for a logging fake so the
-    // Runner's worktree (re-)indexing is observable; reset the process-wide
-    // availability probe so it re-detects the fake as usable.
     codeIndexDir = mkdtempSync(join(tmpdir(), 'harmonic-critic-idx-'));
     const cliPath = join(codeIndexDir, 'fake-code-index.cjs');
     writeFileSync(cliPath, FAKE_CODE_INDEX_CLI);
@@ -116,15 +80,9 @@ describe('agent critic end-to-end (issue #164)', () => {
     process.env.FAKE_CLI_LOG = codeIndexLog;
     resetCodeIndexAvailabilityForTest();
     server = await startServer(stubHarness(), { criticDrive });
-    // Point the default Workspace at a real git repo so `validating` freezes a
-    // candidate for the critic to review (the helper's default workdir is a
-    // non-git temp dir).
     const ws = (await server.app.ctx.workspaces.list())[0]!;
     workspaceId = ws.id;
     await server.app.ctx.workspaces.update(workspaceId, { workingDir: repoDir });
-    // Keep Session and Run ids intentionally out of step so the Attempt
-    // timeline proves its implementation locator uses the durable Session row,
-    // not the legacy Run id (issue #309).
     await server.app.ctx.sessions.recordDispatch({
       harness: 'claude',
       harnessSessionId: 'issue-309-locator-offset',
@@ -136,8 +94,6 @@ describe('agent critic end-to-end (issue #164)', () => {
       adapterVersion: 'stub@1',
       now: Date.now(),
     });
-    // A failed verifier now creates a corrective Attempt on the same ticket.
-    // Keep the cap fixed so escalation scenarios cover both attempts.
     await server.app.ctx.settingsStore.updateGlobal({ maxAttempts: 2 });
   });
   afterAll(async () => {
@@ -162,9 +118,6 @@ describe('agent critic end-to-end (issue #164)', () => {
     });
   });
 
-  // A merged run merges its file into main, so a repeated identical write would
-  // leave the next stub agent nothing to commit. A unique file per run keeps
-  // every run's commit real.
   let implSeq = 0;
   async function createAndRun(): Promise<{ taskId: number; attemptId: number }> {
     const created = await server.api('POST', '/api/tasks', {
@@ -178,10 +131,6 @@ describe('agent critic end-to-end (issue #164)', () => {
     return { taskId: created.body.id, attemptId: started.body.id };
   }
 
-  // `verification_attempts` is keyed off `attempt_id`, not `run_id`
-  // (ADR-0001 #388 S-F): a self-heal loop's failed attempts share one Run row
-  // but each get their own Attempt row, so "this Run's verification
-  // attempts" now folds the log across every Attempt of the Run's Task.
   const attempts = async (taskId: number) => {
     const store = new VerificationAttemptStore(server.app.ctx.asyncDb);
     const taskAttempts = await server.app.ctx.attempts.listForTask(taskId);
@@ -207,7 +156,6 @@ describe('agent critic end-to-end (issue #164)', () => {
     expect(run).toMatchObject({ state: 'completed' });
     expect(run.verifiedHeadOid).toMatch(/^[0-9a-f]{40}$/);
 
-    // AC2: a critic attempt persisted during a real Run, at the verified branch head.
     const rows = await attempts(taskId);
     expect(rows).toHaveLength(1);
     expect(rows[0]!).toMatchObject({ mechanism: 'critic', verdict: 'pass', summary: 'looks correct' });
@@ -246,7 +194,6 @@ describe('agent critic end-to-end (issue #164)', () => {
     ]);
     expect(timeline.body.attempts[0].feedback).toContain('the change breaks the contract');
 
-    // The base branch never moved — nothing merged.
     expect(git(repoDir, 'rev-parse', 'main')).toBe(baseOidBefore);
   });
 
@@ -283,8 +230,6 @@ describe('agent critic end-to-end (issue #164)', () => {
     const task = (await server.api('GET', `/api/tasks/${taskId}`)).body;
     expect(task.state).toBe('escalated');
 
-    // Both verifiers run on each attempt. The critic failure is carried into
-    // attempt 2, then the cap escalates without creating another ticket.
     const rows = await attempts(taskId);
     expect(rows).toHaveLength(4);
     expect(rows.map((r) => `${r.mechanism}:${r.verdict}`).sort()).toEqual([
@@ -312,11 +257,6 @@ describe('agent critic end-to-end (issue #164)', () => {
     const run = (await server.api('GET', `/api/tasks/${taskId}/attempts/current`)).body;
     expect(run).toMatchObject({ state: 'completed' });
 
-    // The one merge policy (ADR-0001, #381) runs a deterministic post-merge
-    // check on the merged tip after the worktree merge lands — a second
-    // `command` attempt, never the critic (it already reviewed this diff on
-    // the candidate). So a worktree merge with a real command verifier now
-    // persists three attempts, not two.
     const rows = await attempts(taskId);
     expect(rows).toHaveLength(3);
     expect(rows.map((r) => `${r.mechanism}:${r.verdict}`).sort()).toEqual(['command:pass', 'command:pass', 'critic:pass']);
@@ -402,9 +342,6 @@ describe('agent critic end-to-end (issue #164)', () => {
 
   it('issue #174 FIX 2: a critic with its own harness resolves that harness, not the builder task\'s', async () => {
     criticResult = { verdict: 'pass', summary: 'looks correct' };
-    // A second configured harness so the critic can be pointed independently
-    // of the builder's — native Runs default to task.harness 'claude'
-    // (defaultConfig), so pinning the critic at 'codex' proves the override.
     await server.app.ctx.settingsStore.updateGlobal({
       harnesses: {
         codex: { command: process.execPath, args: [], models: ['stub-model'], defaultModel: 'stub-model' },
@@ -431,12 +368,7 @@ describe('agent critic end-to-end (issue #164)', () => {
       return body.state === 'done' ? true : undefined;
     });
 
-    // The worktree the critic reviewed in place was indexed twice: once at
-    // Attempt start (pre-implementation) and again here, refreshed to the
-    // candidate head before the review. Without the refresh it is indexed once
-    // and the critic reads the pre-implementation tree.
     expect(lastCriticCwd).toBeTruthy();
-    // The worktree — not the canonical checkout — was what the critic reviewed.
     expect(lastCriticCwd).not.toBe(repoDir);
     expect(indexCountFor(lastCriticCwd!)).toBe(2);
   });
@@ -453,10 +385,6 @@ describe('agent critic end-to-end (issue #164)', () => {
     const task = (await server.api('GET', `/api/tasks/${taskId}`)).body;
     expect(task.state).toBe('escalated');
 
-    // maxAttempts=2, so the reused per-Task worktree (ADR-0046) is indexed by
-    // both Attempts: each does the Attempt-start index plus the pre-critic
-    // refresh — four in total — so the corrective Attempt's critic reviews the
-    // re-implemented candidate, not the base it rebased onto.
     expect(lastCriticCwd).toBeTruthy();
     expect(indexCountFor(lastCriticCwd!)).toBe(4);
   });

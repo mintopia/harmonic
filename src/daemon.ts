@@ -40,21 +40,12 @@ export function daemonStatus(dataDir: string): { running: boolean; info: DaemonI
   return { running: isAlive(info.pid), info };
 }
 
-/**
- * Claim the data-dir lock for this (serve) process. Returns the live holder's
- * info if another running process already owns the pidfile — the caller must
- * refuse to boot rather than run crash recovery and stomp the other instance.
- * A lock from a dead process, or one we already own (the pid `start` wrote for
- * us), is reclaimed; on success returns null and the pidfile names us.
- */
+/** Claim the data-dir lock; returns the live holder's info if another running process owns the pidfile, else null. A dead or self-owned lock is reclaimed. */
 export function acquireLock(dataDir: string, self: { port: number; host: string }): DaemonInfo | null {
   mkdirSync(dataDir, { recursive: true });
   const path = pidFilePath(dataDir);
   const info: DaemonInfo = { pid: process.pid, port: self.port, host: self.host, startedAt: Date.now() };
-  // O_EXCL makes the create itself the exclusivity check: with a fresh dir, only
-  // one of two racing `serve`s can win it. A losing create means someone got
-  // there first — read what they left and only clear it (stale pid, or ours
-  // from the `start` parent) before retrying, never blind-overwrite.
+  // 'wx' (O_EXCL) makes the create itself the exclusivity check; a losing create only clears a stale or self-owned pid before retrying.
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       const fd = openSync(path, 'wx');
@@ -69,7 +60,6 @@ export function acquireLock(dataDir: string, self: { port: number; host: string 
     try {
       unlinkSync(path);
     } catch {
-      // Another reclaimer beat us to the unlink; loop and re-check.
     }
   }
   return readDaemon(dataDir);
@@ -87,8 +77,7 @@ export async function stopDaemon(dataDir: string): Promise<boolean> {
   if (!info) return false;
   if (running) {
     process.kill(info.pid, 'SIGTERM');
-    // Give shutdown handlers enough time to flush OTLP batches before the
-    // SIGKILL fallback. The telemetry exporters default to a 30-second timeout.
+    // OTLP exporters default to a 30-second flush timeout; wait that out before the SIGKILL fallback.
     for (let i = 0; i < 400 && isAlive(info.pid); i++) {
       await new Promise((resolve) => setTimeout(resolve, 100));
     }

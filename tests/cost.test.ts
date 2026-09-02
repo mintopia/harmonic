@@ -23,7 +23,6 @@ const usageOf = (models: Record<string, ModelUsage>): AttemptUsage => ({
   source: 'session-log',
 });
 
-// $/Mtok rates chosen so 1M tokens of each class sum to a round number.
 const PRICES = { m1: { input: 1, output: 2, cacheRead: 3, cacheWrite: 4 } };
 
 describe('pricing math', () => {
@@ -31,8 +30,6 @@ describe('pricing math', () => {
     const { defaultConfig } = await import('../src/config.js');
     for (const harness of Object.values(defaultConfig().harnesses)) {
       for (const model of new Set([harness.defaultModel, ...harness.models])) {
-        // 'auto' is copilot's router, not a model: Usage only ever
-        // attributes tokens to the concrete serving models (priced below).
         if (model === 'auto') continue;
         const cost = costOfUsages([usageOf({ [model]: mu(1000) })], resolvePrices({}));
         expect(cost?.incomplete, `no DEFAULT_PRICES entry for ${model}`).toBe(false);
@@ -41,9 +38,6 @@ describe('pricing math', () => {
   });
 
   it("prices the serving models copilot's auto router was observed to pick", () => {
-    // Spike (issue 25): the auto-only plan routed to these two. Cost is
-    // API-equivalent per observed serving model (decision Q4); AI Units
-    // live on Usage and never feed this figure.
     for (const model of ['claude-haiku-4.5', 'gpt-5-mini']) {
       const cost = costOfUsages([usageOf({ [model]: mu(1000) })], resolvePrices({}));
       expect(cost?.incomplete, `no DEFAULT_PRICES entry for ${model}`).toBe(false);
@@ -113,7 +107,6 @@ describe('cost surfaces (API)', () => {
     await server?.close();
   });
 
-  /** Boot a server whose stub harness "logs" the given per-model token usage. */
   const serverWithLoggedUsage = async (
     workDirModels: Record<string, Record<string, number>>,
     prices: Record<string, { input: number; output: number; cacheRead: number; cacheWrite: number }>,
@@ -165,8 +158,6 @@ describe('cost surfaces (API)', () => {
     const run = (await server.api('GET', `/api/attempts/${attemptId}`)).body;
     expect(run.cost).toEqual({ totalUsd: 2, byModel: { modelA: 2 }, incomplete: false });
 
-    // A price change only applies to future Runs. This finished Run keeps the
-    // price table captured when it settled.
     await server.api('PATCH', '/api/config', { prices: { modelA: flatPrice(4) } });
     const repriced = (await server.api('GET', `/api/attempts/${attemptId}`)).body;
     expect(repriced.cost).toEqual({ totalUsd: 2, byModel: { modelA: 2 }, incomplete: false });
@@ -200,8 +191,6 @@ describe('cost surfaces (API)', () => {
       { modelA: flatPrice(2) },
     );
     const { taskId } = await runToDone(workDir);
-    // A second Run on the same ticket (re-queued directly: an operator Reject
-    // would bake guidance into the prompt the stub parses as its scenario).
     await server.app.ctx.tasks.setState(taskId, 'ready');
     await server.api('POST', `/api/tasks/${taskId}/run`);
     await waitFor(async () => {
@@ -247,7 +236,6 @@ describe('cost surfaces (API)', () => {
     overrides.harnesses.claude.env = { STUB_SESSION_ID: 'fixed-session' };
     overrides.prices = { modelA: flatPrice(2) };
 
-    // No log file yet: the run stores ACP totals with an empty model split.
     server = await startServer(overrides);
     const created = await server.api('POST', '/api/tasks', {
       prompt: JSON.stringify({ usage: { inputTokens: 1, outputTokens: 2, totalTokens: 3 } }),
@@ -259,7 +247,6 @@ describe('cost surfaces (API)', () => {
     expect(before.usage.models).toEqual({});
     expect(before.cost).toEqual({ totalUsd: null, byModel: {}, incomplete: true });
 
-    // The harness's log turns up late — after the run finished.
     const slug = workDir.replace(/[^a-zA-Z0-9]/g, '-');
     mkdirSync(join(logRoot, slug), { recursive: true });
     writeFileSync(

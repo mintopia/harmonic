@@ -26,7 +26,7 @@ import {
 export const createWorkspaceInputSchema = z.object({
   name: z.string().min(1, 'name is required').meta({ example: 'Harmonic' }),
   workingDir: z.string().min(1, 'workingDir is required').meta({ example: '/home/dev/harmonic' }),
-  /** Tracker mirroring for this Workspace (issue #45); off by default. */
+  /** Tracker mirroring for this Workspace; off by default. */
   trackerEnabled: z.boolean().optional().meta({ example: false }),
   /** How often this Workspace's poll loop scans its repo, in seconds. */
   trackerPollIntervalSeconds: z.number().int().min(5).optional().meta({ example: 60 }),
@@ -34,11 +34,9 @@ export const createWorkspaceInputSchema = z.object({
 export type CreateWorkspaceInput = z.infer<typeof createWorkspaceInputSchema>;
 
 /**
- * Per-workspace setting overrides (ADR-0012, issues #59/#64). Each is nullable:
- * `null` clears the override back to *inherit* the global default, an explicit
- * value overrides it, and an omitted (`undefined`) field is left untouched. The
- * Workspace settings page (#64) writes these through PATCH; the values are
- * consumed at read time (#60) — this schema only carries them.
+ * Per-workspace setting overrides. Each is nullable: `null` clears the override
+ * back to inherit the global default, an explicit value overrides it, and an
+ * omitted (`undefined`) field is left untouched.
  */
 export const workspaceOverridesSchema = z.object({
   harness: z.string().min(1).nullable().optional().meta({ example: 'codex' }),
@@ -49,36 +47,32 @@ export const workspaceOverridesSchema = z.object({
   chatModel: z.string().min(1).nullable().optional().meta({ example: 'gpt-5.6-sol' }),
   isolationMode: z.enum(['direct', 'worktree']).nullable().optional().meta({ example: 'worktree' }),
   priority: z.enum(['high', 'normal', 'low']).nullable().optional().meta({ example: 'high' }),
-  /** Conflict-resolve-turn bound (ADR-0046) override; null inherits `config.defaults.conflictResolveTurns`. */
+  /** Conflict-resolve-turn bound override; null inherits `config.defaults.conflictResolveTurns`. */
   conflictResolveTurns: z.number().int().min(0).nullable().optional().meta({ example: 2 }),
   maxConcurrentAttempts: z.number().int().min(1).nullable().optional().meta({ example: 2 }),
   autoRunnerEnabled: z.boolean().nullable().optional().meta({ example: true }),
   maxAttempts: z.number().int().min(1).nullable().optional().meta({ example: 2 }),
   contextReuseTokenLimit: z.number().int().min(0).nullable().optional().meta({ example: 200_000 }),
   /**
-   * Command-verifier override (issue #132), list-grain (ADR-0044 §D, issue #338):
-   * null/absent inherits `config.verify.commands`, a non-empty array overrides the
-   * whole list, and an explicit empty array `[]` runs no commands here (off). No
-   * per-command inheritance, no `{ off: true }` sentinel.
+   * Command-verifier override, list-grain: null/absent inherits
+   * `config.verify.commands`, a non-empty array overrides the whole list, and an
+   * explicit empty array `[]` runs no commands here.
    */
   verificationCommand: verificationCommandOverrideSchema.nullable().optional(),
   /**
-   * Critic-review override (issue #337, ADR-0044 §C), decomposed into four
-   * independently-inheritable scalars: null/absent inherits the matching global
-   * `config.verify.review.*`, a value overrides it. "Off" is `reviewEnabled:false`.
+   * Critic-review override, decomposed into four independently-inheritable
+   * scalars: null/absent inherits the matching global `config.verify.review.*`.
    */
   reviewEnabled: z.boolean().nullable().optional().meta({ example: true }),
   reviewPrompt: z.string().min(1).nullable().optional().meta({ example: 'Review the diff for correctness.' }),
   reviewModel: z.string().min(1).nullable().optional().meta({ example: 'claude-opus-5' }),
   reviewHarness: z.enum(HARNESS_IDS).nullable().optional().meta({ example: 'claude' }),
-  /** Budget-Guardrail override (issue #126); null inherits `config.guardrails.budget`. */
+  /** Budget-Guardrail override; null inherits `config.guardrails.budget`. */
   guardrailBudget: budgetGuardrailSchema.nullable().optional(),
-  /** Progress-detector toggle override (issue #126); null inherits `config.guardrails.progress`. */
+  /** Progress-detector toggle override; null inherits `config.guardrails.progress`. */
   guardrailProgress: z.boolean().nullable().optional(),
-  /** Tool-timeout bound override (ADR-0044); null inherits `config.guardrails.toolTimeoutMinutes`. */
+  /** Tool-timeout bound override; null inherits `config.guardrails.toolTimeoutMinutes`. */
   toolTimeoutMinutes: z.number().positive().nullable().optional().meta({ example: 20 }),
-  // Drive.* overrides (ADR-0044): five independently-inheritable fields. Each is
-  // nullable — null clears back to inherit the matching `config.drive.*` default.
   /** Drive Prompt override; null inherits `config.drive.prompt`. */
   drivePrompt: z.string().min(1).nullable().optional(),
   /** Unattended-reminder override; null inherits `config.drive.unattendedReminder`. */
@@ -94,9 +88,7 @@ export const workspaceOverridesSchema = z.object({
 });
 export type WorkspaceOverrides = z.infer<typeof workspaceOverridesSchema>;
 
-/** Every per-Workspace setting override key (ADR-0009) — the full set that
- * moved off `workspaces` columns and into the YAML settings file's sparse
- * per-Workspace entries. */
+/** Every per-Workspace setting override key. */
 export const OVERRIDE_KEYS = [
   'harness',
   'model',
@@ -140,13 +132,7 @@ export const updateWorkspaceInputSchema = createWorkspaceInputSchema
   .extend(workspaceOverridesSchema.shape);
 export type UpdateWorkspaceInput = z.infer<typeof updateWorkspaceInputSchema>;
 
-/**
- * The given Workspace, or the earliest-created one when `id` is omitted —
- * the shared "default Workspace" fallback (ADR-0008) that keeps callers who
- * predate Workspaces (MCP, older API clients) working unchanged. Shared by
- * `WorkspaceService.resolve` and `TaskService` (which only holds a
- * `getWorkspaces` closure, not the service itself) so the rule lives once.
- */
+/** The given Workspace, or the earliest-created one when `id` is omitted — the default-Workspace fallback. */
 export function resolveWorkspace(list: WorkspaceRow[], id?: number): WorkspaceRow {
   if (id === undefined) {
     const first = list[0];
@@ -159,10 +145,9 @@ export function resolveWorkspace(list: WorkspaceRow[], id?: number): WorkspaceRo
 }
 
 /**
- * A Workspace (ADR-0008): a named Working Directory, unique by absolute
- * path, with its own tracker mirroring settings (issue #45). Full CRUD;
- * {@link delete} cascades its board and is guarded against removing the last
- * Workspace or one with a running Task.
+ * A Workspace: a named Working Directory, unique by absolute path, with its
+ * own tracker mirroring settings. Full CRUD; {@link delete} cascades its board
+ * and is guarded against removing one with a running Task.
  */
 export class WorkspaceService {
   constructor(
@@ -170,11 +155,6 @@ export class WorkspaceService {
     private readonly settings: WorkspaceSettingsStore,
   ) {}
 
-  /** Overlays this Workspace's setting overrides (`WorkspaceSettingsStore`, ADR-0009)
-   * onto its identity row — the sole place a `WorkspaceRow` is produced, so
-   * every existing `.harness`/`.verificationCommand`/… reader keeps working
-   * unchanged. `verificationCommand`/`guardrailBudget` are re-stringified to
-   * preserve the JSON-text shape those fields have always had on `WorkspaceRow`. */
   private compose(row: WorkspaceIdentityRow): WorkspaceRow {
     const o = this.settings.getOverrides(row.id);
     return {
@@ -222,7 +202,7 @@ export class WorkspaceService {
     await this.get(id);
   }
 
-  /** {@link resolveWorkspace} over the current list — see its doc comment. */
+  /** {@link resolveWorkspace} over the current list. */
   async resolve(id?: number): Promise<WorkspaceRow> {
     return resolveWorkspace(await this.list(), id);
   }
@@ -266,26 +246,19 @@ export class WorkspaceService {
         .returning()
         .get(),
     );
-    // Everything but the four identity fields above is an override, three-state
-    // merged onto the stored overrides by `SettingsStore.setOverrides` (undefined
-    // = keep, null = clear to inherit, a value = override).
     const { name: _name, workingDir: _workingDir, trackerEnabled: _trackerEnabled, trackerPollIntervalSeconds: _trackerPollIntervalSeconds, ...overridesPatch } = input;
     await this.settings.setOverrides(id, overridesPatch);
     return this.compose(identityRow!);
   }
 
   /**
-   * Delete a Workspace and everything on its board (issue #45 needs deletion to
-   * tear down its poll loop). Refuses any Workspace with a running Task (the
-   * mid-run guard #42 deferred deletion for). Deleting the last Workspace is
-   * allowed (issue #61): the app merges in the empty state (#68), and the
-   * default-Workspace fallback (ADR-0008) resolves the next one created.
-   * Cascades in a transaction: its Tasks (+ their Attempts, Attempt events, Dependency
-   * edges, Channel links) and Conversations (+ their events) go first, since no
-   * FK declares ON DELETE CASCADE.
+   * Delete a Workspace and everything on its board. Refuses any Workspace with
+   * a running Task. Deleting the last Workspace is allowed. Cascades in a
+   * transaction: its Tasks (+ Attempts, Attempt events, Dependency edges,
+   * Channel links) and Conversations (+ events) go first.
    */
   async delete(id: number): Promise<void> {
-    await this.get(id); // 404 if missing
+    await this.get(id);
     const running = await this.db.read((db) =>
       db
         .select({ id: tasks.id })
@@ -304,9 +277,6 @@ export class WorkspaceService {
     ).map((r) => r.id);
     await this.db.transaction(async (tx) => {
       if (taskIds.length > 0) {
-        // Purge the whole Attempt tree (every FK-to-attempts child), not just
-        // attempt_events — shared with TaskService.delete so the
-        // Attempt-child set is enumerated once (issue #162).
         await deleteAttemptsAndChildrenAsync(tx, taskIds);
         await tx.delete(taskChannels).where(inArray(taskChannels.taskId, taskIds)).run();
         await tx
@@ -319,15 +289,12 @@ export class WorkspaceService {
         await tx.delete(conversationEvents).where(inArray(conversationEvents.conversationId, convIds)).run();
         await tx.delete(conversations).where(inArray(conversations.id, convIds)).run();
       }
-      // Dismissal tombstones (issue #162) are FK-bound to the Workspace, so they
-      // must go before the row they reference or foreign_keys=ON rejects the delete.
       await tx.delete(trackerDismissals).where(eq(trackerDismissals.workspaceId, id)).run();
       await tx.delete(workspaces).where(eq(workspaces.id, id)).run();
     });
     await this.settings.deleteOverrides(id);
   }
 
-  /** Resolves to an absolute path and rejects one that isn't a real, existing directory. */
   private assertUsableDir(workingDir: string): string {
     const resolved = resolve(workingDir);
     if (!existsSync(resolved) || !statSync(resolved).isDirectory()) {

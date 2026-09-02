@@ -1,15 +1,3 @@
-// elkjs layered layout for the Dependency Graph view (issue #85, ADR 0015).
-// This module is the browser-only elk adapter: it builds the elk graph, calls
-// elk for node/group *positions* (layer assignment + crossing minimisation — the
-// hard part), and hands the raw result to the pure `flattenElkLayout`
-// (graph-model.ts) for the parent-relative→absolute coordinate maths. Keeping
-// elk isolated here is what lets the flatten be unit-tested without pulling elkjs
-// into the node test project.
-//
-// Map grouping is expressed the elk-native way: same `mapRef` → a group node
-// whose children are the members. elk positions the members together; the view
-// then draws the group as nothing but a quiet floating label + per-node badge,
-// never a container box (ADR 0015 / prototype #84).
 import ELK, { type ElkNode } from 'elkjs/lib/elk.bundled.js';
 import type { Task } from './types';
 import { flattenElkLayout, type GraphEdge, type Layout, type LayoutOpts } from './graph-model';

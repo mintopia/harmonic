@@ -17,8 +17,6 @@ function makeRepo(): string {
   git(dir, 'config', 'user.name', 'Test');
   git(dir, 'config', 'user.email', 'test@example.com');
   writeFileSync(join(dir, 'README.md'), '# repo\n');
-  // Declare the local-markdown tracker so the auto-merge close resolves an
-  // adapter (resolveTrackerAdapter reads docs/agents/issue-tracker.md).
   mkdirSync(join(dir, 'docs/agents'), { recursive: true });
   writeFileSync(join(dir, 'docs/agents/issue-tracker.md'), '# Issue tracker: local-markdown\nPath: tickets\n');
   git(dir, 'add', '-A');
@@ -28,14 +26,6 @@ function makeRepo(): string {
 
 const critic = () => ({ reviewEnabled: true, reviewPrompt: 'Review the change for correctness.', reviewModel: 'stub-model' });
 
-/**
- * A finish_task with no file changes: the branch head equals the base it
- * integrates with, so there is no diff. A configured critic judges whether "no
- * change" resolves the ticket (pass → done and the ticket closes, inconclusive →
- * escalate); with no critic there is nothing to make that call, so it escalates
- * rather than silently completing. Mirrored tickets, so the Drive Prompt carries
- * the taskId the stub's `finish_task` MCP call needs.
- */
 describe('a finish_task that changed nothing', () => {
   let server: TestServer;
   let repoDir: string;
@@ -54,8 +44,6 @@ describe('a finish_task that changed nothing', () => {
     await server.app.ctx.workspaces.update(workspaceId, { workingDir: repoDir });
     await server.app.ctx.settingsStore.updateGlobal({
       maxAttempts: 2,
-      // The Drive Prompt is the stub scenario: finish_task with no writeFiles —
-      // a deliberate no-change finish.
       drive: { prompt: JSON.stringify({ mcpFinish: true }) },
     });
   });
@@ -76,9 +64,6 @@ describe('a finish_task that changed nothing', () => {
 
   async function runNoChangeFinish(): Promise<{ taskId: number; ref: number }> {
     const ref = ++trackerRef;
-    // A local-markdown ticket so the close resolves against a real adapter;
-    // seeded already-closed (idempotent close) as the auto-merge tests do, and
-    // committed so the worktree starts clean.
     seedLocalMarkdownTicket(repoDir, ref, 'closed');
     git(repoDir, 'add', '-A');
     git(repoDir, 'commit', '-q', '-m', `ticket ${ref}`);
@@ -104,7 +89,6 @@ describe('a finish_task that changed nothing', () => {
     const { taskId } = await runNoChangeFinish();
     const task = await waitState(taskId, 'done');
     expect(task.state).toBe('done');
-    // One attempt, passed, and no candidate was produced (nothing to merge).
     const rows = await attemptsOf(taskId);
     expect(rows.map((a) => a.state)).toEqual(['passed']);
     expect(rows[0]!.verifiedHeadOid).toBeNull();

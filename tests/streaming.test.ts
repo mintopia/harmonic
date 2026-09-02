@@ -106,8 +106,6 @@ describe('live structured run event streaming and replay', () => {
     );
     const msg = ws.messages.find((m) => m.type === 'task_changed' && m.task.id === created.body.id);
 
-    // The board renders dependsOn/blockedOnFailed straight off WS payloads;
-    // a bare row here blank-pages the SPA (issue 15).
     expect(msg.task.dependsOn).toEqual([dep.body.id]);
     expect(msg.task.dependents).toEqual([]);
     expect(msg.task.blockedOnFailed).toBe(false);

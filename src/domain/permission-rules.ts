@@ -10,22 +10,14 @@ export interface CreatePermissionRuleInput {
 }
 
 /**
- * Persistent Permission Rules (ADR-0007): the opt-in tier that auto-answers
- * a Harness's permission request when the tool kind and Working Directory
- * match — across the same and new Conversations. Operator-visible and
- * revocable in Settings.
+ * Persistent Permission Rules: the opt-in tier that auto-answers a Harness's
+ * permission request when the tool kind and Working Directory match — across
+ * the same and new Conversations. Operator-visible and revocable in Settings.
  */
 export class PermissionRuleStore {
   constructor(private readonly db: AsyncDbHandle) {}
 
-  /**
-   * Idempotent: a rule for the same (kind, dir) is returned rather than
-   * duplicated. The match read and the insert run as a single
-   * `this.db.write()` unit (ADR-0029 §3): the async single-writer queue
-   * stands in for better-sqlite3's synchrony, so no concurrent `create` can
-   * interleave between the match check and the insert and produce a
-   * duplicate row.
-   */
+  /** Idempotent: a rule for the same (kind, dir) is returned rather than duplicated. */
   create(input: CreatePermissionRuleInput): Promise<PermissionRuleRow> {
     return this.db.write(async (db) => {
       const existing = await db
@@ -52,7 +44,6 @@ export class PermissionRuleStore {
     return row;
   }
 
-  /** 404-checks and deletes as a single `this.db.write()` unit (ADR-0029 §3). */
   delete(id: number): Promise<void> {
     return this.db.write(async (db) => {
       const row = await db.select().from(permissionRules).where(eq(permissionRules.id, id)).get();

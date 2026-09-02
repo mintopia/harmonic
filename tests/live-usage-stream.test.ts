@@ -7,13 +7,6 @@ import { startServer, waitFor, type TestServer } from './helpers.js';
 import { attempts } from '../src/db/schema.js';
 import type { DeepPartial, AppConfig } from '../src/config.js';
 
-/**
- * End-to-end: a running Claude harness tails its native session log and the
- * server streams a `attempt_usage` firehose event carrying the live snapshot
- * (ADR 0010). The log is pre-written so `parse()` has something to read; the
- * tailer's final flush on stop guarantees at least one event even for a quick
- * run.
- */
 describe('live attempt_usage firehose (ADR 0010)', () => {
   let server: TestServer;
   const workDir = mkdtempSync(join(tmpdir(), 'harmonic-live-work-'));
@@ -21,7 +14,6 @@ describe('live attempt_usage firehose (ADR 0010)', () => {
   const sessionId = 'live-session-1';
 
   beforeAll(async () => {
-    // A Claude transcript at the path the collector derives (slug(cwd)/<id>.jsonl).
     const slug = workDir.replace(/[^a-zA-Z0-9]/g, '-');
     mkdirSync(join(logDir, slug), { recursive: true });
     writeFileSync(
@@ -34,8 +26,6 @@ describe('live attempt_usage firehose (ADR 0010)', () => {
 
     const config: DeepPartial<AppConfig> = {
       defaults: { workingDir: workDir, isolationMode: 'direct' },
-      // Chat default tracks the stub harness so its model stays valid (config
-      // schema enforces chat.model ∈ the harness's models).
       chat: { harness: 'claude', model: 'stub-model' },
       harnesses: {
         claude: {
@@ -76,17 +66,10 @@ describe('live attempt_usage firehose (ADR 0010)', () => {
     expect(msg.contextTokens).toBe(105);
     expect(msg.tree).toMatchObject({ id: sessionId, depth: 0 });
     expect(msg.cost.totalUsd).toBeGreaterThan(0);
-    // The tool call drove the current-activity line.
     expect(msg.activity).toBe('Read');
-    // The live snapshot carries the running tool tally (issue #100): the Board
-    // ticks "· N tools" off this, so an empty map would freeze the count at
-    // zero. `parse()` alone yields no tally — it is folded in from the events.
     expect(msg.usage.toolCalls).toEqual({ Read: 1 });
-    // Per-agent breakdown rides the snapshot too: this run is root-only.
     expect(msg.usage.agents.root).toMatchObject({ inputTokens: 100, outputTokens: 10, cacheReadTokens: 5 });
 
-    // Always persisted on finish (ADR 0010): the row's snapshot survives a
-    // restart. Guards the finalize→stop flush ordering the reviewer flagged.
     const persisted = await waitFor(async () => {
       const row = await server.app.ctx.asyncDb.read((d) =>
         d.select({ live: attempts.liveUsage }).from(attempts).where(eq(attempts.id, attemptId)).get(),

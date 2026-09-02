@@ -56,10 +56,6 @@ describe('code-index CLI wrapper (best-effort — a missing CLI degrades to a sk
     await expect(dropIndexForPath('/tmp/whatever')).resolves.toBeUndefined();
   });
 
-  // Regression guard for Task 343: a critic worktree path (`critic-<attemptId>`) is
-  // reused across a Run's reviews, so indexWorktree must invalidate the path's
-  // cached index before re-indexing — otherwise the second review reads the first
-  // review's stale tree and fails work that is present.
   it('drops the path index before re-indexing so a reused worktree path cannot serve a stale tree', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'ci-idx-'));
     cleanup = () => rmSync(dir, { recursive: true, force: true });

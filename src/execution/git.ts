@@ -12,36 +12,19 @@ import { GitError } from '../domain/errors.js';
 
 const execFileAsync = promisify(execFile);
 
-/** Wall-clock ceiling for a single git invocation (issue #199): a hung child is
- * SIGKILLed and reaped rather than lingering as a zombie during an event-loop
- * starvation episode. Two minutes is far beyond any workspace-prep op's real
- * runtime, so a healthy command never hits it. */
 const GIT_TIMEOUT_MS = 120_000;
 
-/** Wall-clock ceiling for a `git clone` — far more generous than a
- * workspace-prep op (a large repo over the network is legitimately slow), but a
- * genuinely hung clone is still killed and reaped (issue #199). */
 const CLONE_TIMEOUT_MS = 600_000;
 
 async function git(cwd: string, ...args: string[]): Promise<string> {
   return gitEnv(cwd, {}, ...args);
 }
 
-/**
- * Like `git`, but with extra environment variables — the one primitive that
- * needs this is a private `GIT_INDEX_FILE`, so a `read-tree`/`add`/`write-tree`
- * snapshot stages into a throwaway index instead of the workspace's real one
- * (the agent's staging and the operator's checkout are never touched).
- */
 async function gitEnv(cwd: string, env: Record<string, string>, ...args: string[]): Promise<string> {
   try {
     const { stdout } = await execFileAsync('git', ['-C', cwd, ...args], {
       maxBuffer: 10 * 1024 * 1024,
       env: { ...process.env, ...env },
-      // A git child that hangs (e.g. blocked on a lock) is SIGKILLed rather than
-      // lingering — so it is reaped deterministically instead of relying on an
-      // unblocked event loop to process its exit (issue #199). Well above any
-      // real op's turnaround, so a normal command never trips it.
       timeout: GIT_TIMEOUT_MS,
       killSignal: 'SIGKILL',
     });
@@ -61,9 +44,6 @@ function isGitFailure(result: unknown): result is { ok: false; detail?: unknown 
   return typeof result === 'object' && result !== null && 'ok' in result && result.ok === false;
 }
 
-/** Run a high-level git action as a child Operation when a Harmonic Operation
- * is active. Direct callers stay uninstrumented: Git is also used by probes
- * and recovery paths that do not have a meaningful operation parent. */
 async function withGitOperation<T>(
   type: string,
   attributes: Attributes,
@@ -90,15 +70,11 @@ async function withGitOperation<T>(
   }
 }
 
-// Commits made by Harmonic itself (snapshotting a run's work) carry a
-// fixed identity so they work without operator git config.
+// git refuses to commit without user.name/user.email configured.
 const IDENTITY = ['-c', 'user.name=Harmonic', '-c', 'user.email=harmonic@localhost'];
 
-// `merge-tree --write-tree` (git ≥ 2.38) backs the tier-2 containment check
-// (issue #218). On an older git the flag is unknown and the call errors on
-// *every* invocation, so the check silently degrades to a no-op. Surface that
-// exactly once — a real merge conflict (the expected non-contained result) must
-// stay quiet, so only an unsupported-flag/usage error trips the warning.
+// `merge-tree --write-tree` needs git >= 2.38; on an older git the flag is
+// unknown and every call errors, which would look like a merge conflict.
 let warnedMergeTreeUnsupported = false;
 function warnOnceIfMergeTreeUnsupported(err: unknown): void {
   if (warnedMergeTreeUnsupported) return;
@@ -119,6 +95,11 @@ export const Git = {
   /** Resolve a revision to its object id (e.g. a branch tip, `HEAD`). */
   revParse: (dir: string, rev: string) => git(dir, 'rev-parse', rev),
 
+  /** Rejects with the git error when `dir` is not a repository with a resolvable `HEAD`. */
+  assertRepo: async (dir: string): Promise<void> => {
+    await git(dir, 'rev-parse', 'HEAD');
+  },
+
   /** Whether the working tree at `dir` has uncommitted changes (tracked,
    * staged, or untracked). Empty `git status --porcelain` output → clean. */
   async isDirty(dir: string): Promise<boolean> {
@@ -128,8 +109,7 @@ export const Git = {
   /**
    * The symbolic branch HEAD points at, or `null` on a detached HEAD. Unlike
    * {@link currentBranch} (`--abbrev-ref`, which returns the literal `HEAD` when
-   * detached), this never mis-reports a detached HEAD as a branch named "HEAD"
-   * — issue #149 requires `HEAD` never be recorded as an ordinary branch.
+   * detached), this never mis-reports a detached HEAD as a branch named "HEAD".
    * `symbolic-ref -q` exits non-zero (→ GitError) when HEAD is detached.
    */
   async symbolicBranch(dir: string): Promise<string | null> {
@@ -157,17 +137,14 @@ export const Git = {
   /**
    * A stable fingerprint of the working tree's dirty state — the sha256 of the
    * porcelain status. A clean tree yields a fixed constant; any tracked, staged,
-   * or untracked change moves it. Recorded at admission (issue #149) as the
-   * clean baseline a later branch-contract check compares against.
+   * or untracked change moves it.
    */
   async statusFingerprint(dir: string): Promise<string> {
     const status = await git(dir, 'status', '--porcelain');
     return createHash('sha256').update(status).digest('hex');
   },
 
-  /** The absolute repo root (`--show-toplevel`) — the canonical identity of the
-   * repo a direct Run runs against (issue #149). Throws when `dir` is not a git
-   * repo, so the caller can treat a non-git context as having no start-state. */
+  /** The absolute repo root (`--show-toplevel`). Throws when `dir` is not a git repo. */
   toplevel: (dir: string) => git(dir, 'rev-parse', '--show-toplevel'),
 
   /** The `origin` remote URL, or null when no origin is configured. */
@@ -181,9 +158,7 @@ export const Git = {
 
   /**
    * Whether the repo at `dir` declares git submodules — either a tracked gitlink
-   * (mode `160000` in the index) or a `.gitmodules` file. Either makes the
-   * working tree carry recursive git state Harmonic does not track or attribute
-   * (issue #149), so an afk direct Run on such a context is rejected.
+   * (mode `160000` in the index) or a `.gitmodules` file.
    */
   async hasSubmodules(dir: string): Promise<boolean> {
     const staged = await git(dir, 'ls-files', '--stage');
@@ -196,13 +171,12 @@ export const Git = {
    * independent repo checked out inside the tree (not a submodule). git does not
    * recurse into it, so it appears to the outer repo as a single untracked
    * directory whose own `.git` is the tell. Bounded to fully-untracked top-level
-   * directory entries (`--directory` collapses them), so this stays cheap on a
-   * large tree (issue #149).
+   * directory entries (`--directory` collapses them).
    */
   async hasNestedRepos(dir: string): Promise<boolean> {
     const untracked = await git(dir, 'ls-files', '--others', '--exclude-standard', '--directory');
     for (const entry of untracked.split('\n')) {
-      if (!entry.endsWith('/')) continue; // only a directory can hide a repo
+      if (!entry.endsWith('/')) continue;
       if (existsSync(join(dir, entry, '.git'))) return true;
     }
     return false;
@@ -216,19 +190,11 @@ export const Git = {
 
   /**
    * Create `ref` pointing at `oid`, failing if it already exists — the CAS
-   * from empty (`''` old-value = "must not exist"). This is how a candidate is
-   * pinned to a private Harmonic ref without ever moving, or racing, the live
-   * target branch.
+   * from empty (`''` old-value = "must not exist").
    */
   createRef: (dir: string, ref: string, oid: string) => git(dir, 'update-ref', ref, oid, ''),
 
-  /**
-   * Set `ref` to `oid` unconditionally (no old-value CAS). Used to overwrite a
-   * Run's candidate ref when a self-heal turn re-snapshots (issue #137): the
-   * ref already exists from the first turn, so the create-only {@link createRef}
-   * would fail — the candidate must move to the healed tree the re-verify runs
-   * against, or the heal would verify the stale, still-failing candidate.
-   */
+  /** Set `ref` to `oid` unconditionally (no old-value CAS). */
   setRef: (dir: string, ref: string, oid: string) => git(dir, 'update-ref', ref, oid),
 
   /** Add a disposable worktree with a DETACHED HEAD at `oid` — no branch is
@@ -238,60 +204,41 @@ export const Git = {
 
   /**
    * Detach HEAD at `oid` in `dir`'s own working tree, force-discarding any
-   * working-tree changes (`-f`). This **parks the branch** HEAD was on: while
-   * detached, an agent `git commit` / `reset` / `checkout -B` moves only HEAD,
-   * so the live target branch ref cannot advance and expose unverified work on
-   * the live branch (reliability-design Unit D, issue #152). Unlike
-   * {@link addDetachedWorktree}, this operates on the direct-mode checkout itself,
-   * not a disposable worktree, so it takes no base-repo lock —
-   * the scheduler predicate already limits this to one active execution per Work
-   * Context, giving the Run exclusive use of the checkout.
+   * working-tree changes (`-f`). While detached, an agent `git commit` /
+   * `reset` / `checkout -B` moves only HEAD, so the branch HEAD was on cannot
+   * advance. Takes no base-repo lock.
    */
   checkoutDetach: (dir: string, oid: string) => git(dir, 'checkout', '-f', '--detach', oid),
 
   /**
    * Re-attach HEAD to `branch` and reset the tracked working tree/index to it,
-   * force-discarding tracked changes (`-f`). Used to restore the live target
-   * checkout coherently at settle (issue #152): the branch never moved while the
-   * Run executed detached, so re-checking it out returns HEAD to the live target
-   * at its recorded start OID. Untracked files are removed separately via
-   * {@link cleanUntracked}.
+   * force-discarding tracked changes (`-f`). Untracked files are removed
+   * separately via {@link cleanUntracked}.
    */
   checkoutForce: (dir: string, branch: string) => git(dir, 'checkout', '-f', branch),
 
   /**
    * Check `branch` out at `dir` WITHOUT `-f`: git refuses (throws) rather than
-   * overwrite uncommitted local changes. The safe way to point a shared base
-   * repo at a task's base branch before an in-place merge (ADR-0001) — a dirty
-   * or otherwise unmovable checkout fails loudly instead of destroying work.
+   * overwrite uncommitted local changes.
    */
   checkout: (dir: string, branch: string) =>
     withGitOperation('git.checkout', { 'git.branch': branch }, async () => git(dir, 'checkout', branch)),
 
   /**
    * Re-point HEAD at `branch` with a metadata-only `symbolic-ref` — no checkout,
-   * no index or working-tree write. Unlike {@link checkoutForce} this moves NO
-   * data, so it is coherent ONLY when the working tree already matches `branch`'s
-   * tip (the caller's responsibility). Because it never touches the index it
-   * succeeds where a contended `checkout -f` fails — the reattach used to lift a
-   * base repo off a bare detached HEAD when HEAD already sits on the branch tip
-   * (issue #198).
+   * no index or working-tree write. Coherent ONLY when the working tree already
+   * matches `branch`'s tip (the caller's responsibility). Because it never
+   * touches the index it succeeds where a contended `checkout -f` fails.
    */
   reattachHead: (dir: string, branch: string) => git(dir, 'symbolic-ref', 'HEAD', `refs/heads/${branch}`),
 
   /**
    * Remove untracked files and directories (`clean -fd`), leaving ignored files
-   * (no `-x`) untouched. A coherent restore (issue #152) must match the **clean**
-   * context admission (#149) recorded at Run start, so agent-created untracked
-   * files are swept — they were already captured hermetically in the candidate.
-   * Ignored artifacts (build output, `node_modules`) are deliberately preserved.
+   * (no `-x`) untouched.
    */
   cleanUntracked: (dir: string) => git(dir, 'clean', '-fd'),
 
   clone: async (repo: string, dest: string): Promise<void> => {
-    // A clone can legitimately run for minutes (a large repo over the network),
-    // so it gets a far more generous ceiling than a workspace-prep op — but a
-    // hung clone is still SIGKILLed and reaped rather than lingering (issue #199).
     await execFileAsync('git', ['clone', repo, dest], {
       maxBuffer: 10 * 1024 * 1024,
       timeout: CLONE_TIMEOUT_MS,
@@ -302,10 +249,8 @@ export const Git = {
   pull: (dir: string) => git(dir, 'pull', '--ff-only'),
 
   /**
-   * Whether local branch `name` exists (issue #159). Never throws:
-   * `show-ref --verify --quiet` exits non-zero when the ref is absent, which is
-   * a legitimate "no such branch" answer, not an error — so an Epic integration
-   * branch's create/reuse decision reads as a plain boolean.
+   * Whether local branch `name` exists. Never throws: `show-ref --verify
+   * --quiet` exits non-zero when the ref is absent.
    */
   async branchExists(dir: string, name: string): Promise<boolean> {
     try {
@@ -317,35 +262,25 @@ export const Git = {
   },
 
   /**
-   * Create local branch `name` at `startPoint` WITHOUT checking it out — a bare
-   * ref in the shared base repo (issue #159: the Harmonic-owned Epic integration
-   * branch, ADR-0023/0024). Member worktrees then fork from it via
-   * {@link addWorktree}'s `startPoint`. Fails if the branch already exists;
-   * callers guard with {@link branchExists} for idempotent create/reuse. Takes
-   * the base-repo lock like the other base-repo mutations below.
+   * Create local branch `name` at `startPoint` WITHOUT checking it out. Fails
+   * if the branch already exists; callers guard with {@link branchExists}.
+   * Takes the base-repo lock.
    */
   createBranch: (dir: string, name: string, startPoint: string) =>
     withGitOperation('git.branch-cut', { 'git.branch': name, 'git.ref': startPoint }, () =>
       withRepoLock(dir, () => git(dir, 'branch', name, startPoint)),
     ),
 
-  /**
-   * Delete local branch `name` (`-D`, force) — retiring an Epic integration
-   * branch once its Epic has merged (issue #159, the retire half of the
-   * Harmonic-owned lifecycle). Under the base-repo lock.
-   */
+  /** Delete local branch `name` (`-D`, force). Under the base-repo lock. */
   deleteBranch: (dir: string, name: string) =>
     withRepoLock(dir, () => git(dir, 'branch', '-D', name)),
 
-  // worktree create/remove and merge (below) mutate the shared base repo;
-  // each runs under a short base-repo lock so concurrent worktree Runs can't
-  // corrupt it mid-mutation (issue #121). The lock is scoped to `dir` (the
-  // base repo), so Runs on distinct checkouts still parallelise.
-  // `startPoint` (a commit-ish — usually the resolved base branch, issue #157)
-  // is where `newBranch` forks from. Omitted, git forks from the base repo's
-  // current HEAD, preserving today's behaviour. Passing an explicit base branch
-  // that is *not* checked out is fine: git reads it as a start-point and never
-  // moves or checks out the base repo's own HEAD.
+  /**
+   * Add a worktree on new branch `newBranch`, under the base-repo lock (scoped
+   * to `dir`). `startPoint` is where `newBranch` forks from; omitted, git forks
+   * from the base repo's current HEAD. A start-point that is not checked out is
+   * fine: git never moves the base repo's own HEAD.
+   */
   addWorktree: (dir: string, worktreePath: string, newBranch: string, startPoint?: string) =>
     withGitOperation('git.branch-cut', { 'git.branch': newBranch, 'git.ref': startPoint ?? 'HEAD' }, () =>
       withRepoLock(dir, () =>
@@ -354,11 +289,8 @@ export const Git = {
     ),
 
   /**
-   * Add a worktree that checks out an EXISTING branch (no `-b`). Used to resume
-   * work on the Task's `harmonic/task-<id>` branch when its worktree was
-   * reclaimed but the branch survives (a self-heal turn, issue #137, or a later
-   * Attempt reusing the retained branch, ADR-0046) — {@link addWorktree}'s
-   * create-only `-b` form would fail on an existing branch.
+   * Add a worktree that checks out an EXISTING branch (no `-b`);
+   * {@link addWorktree}'s create-only `-b` form would fail on an existing branch.
    */
   addWorktreeCheckout: (dir: string, worktreePath: string, branch: string) =>
     withRepoLock(dir, () => git(dir, 'worktree', 'add', worktreePath, branch)),
@@ -366,10 +298,8 @@ export const Git = {
   removeWorktree: (dir: string, worktreePath: string) =>
     withRepoLock(dir, async () => {
       await git(dir, 'worktree', 'remove', '--force', worktreePath);
-      // `worktree remove` normally deletes the directory, but a worktree whose
-      // registration git considers broken can be dropped while its directory is
-      // left behind — an orphan a later reuse would run git inside (Task 340).
-      // Force-remove any residue so removal never leaves a stray directory.
+      // `git worktree remove` drops a worktree whose registration git considers
+      // broken while leaving its directory behind.
       rmSync(worktreePath, { recursive: true, force: true });
     }),
 
@@ -378,9 +308,7 @@ export const Git = {
    * at `dir`. True requires BOTH that git resolves a work tree rooted *at* the
    * path — not a parent repository it walked up into — AND that the path is in
    * the base repo's `worktree list`. A directory that exists on disk but was
-   * deregistered (its `.git` gitlink or backing admin dir gone) is false, so a
-   * reuse path can heal it (Task 340) instead of running git inside a
-   * non-repository, which walks up to the mount boundary and fails.
+   * deregistered (its `.git` gitlink or backing admin dir gone) is false.
    */
   async isValidWorktree(dir: string, worktreePath: string): Promise<boolean> {
     if (!existsSync(worktreePath)) return false;
@@ -397,11 +325,10 @@ export const Git = {
   },
 
   /**
-   * Clear a per-task worktree directory that is no longer a live git worktree —
-   * present on disk but deregistered (Task 340) — so the path is free for a
-   * fresh {@link addWorktree}. Removes the stray directory and prunes any
-   * dangling registration under the base-repo lock. `worktree remove` can't do
-   * this: git refuses to act on a path it no longer tracks.
+   * Clear a worktree directory that is no longer a live git worktree — present
+   * on disk but deregistered — so the path is free for a fresh
+   * {@link addWorktree}. `worktree remove` can't do this: git refuses to act on
+   * a path it no longer tracks.
    */
   discardOrphanWorktree: (dir: string, worktreePath: string) =>
     withRepoLock(dir, async () => {
@@ -423,17 +350,13 @@ export const Git = {
     withRepoLock(dir, async () => {
       if (!(await beforeRemove())) return false;
       await git(dir, 'worktree', 'remove', '--force', worktreePath);
-      // Harmonic owns only its namespace. A manually-created worktree could
-      // have been placed under the managed directory, but its branch is not
-      // ours to delete.
       if (branch?.startsWith('harmonic/')) await git(dir, 'branch', '-D', branch);
       return true;
     }),
 
   /**
    * List Git's registered worktrees and their checked-out local branches.
-   * Detached worktrees deliberately carry `branch: null` and therefore have no
-   * branch to prune after cleanup.
+   * Detached worktrees carry `branch: null`.
    */
   async listWorktrees(dir: string): Promise<Array<{ path: string; branch: string | null }>> {
     return withRepoLock(dir, async () => {
@@ -476,30 +399,27 @@ export const Git = {
     git(dir, 'diff', `${baseBranch}...${branch}`),
 
   /**
-   * The full unified diff `oid` adds over `base` — the untrusted content a
-   * Verification unit (issue #136, ADR-0021) hands to a command or the agent
-   * critic. Computed straight from the object store (`base..oid`, not the
-   * three-dot merge-base form `diffStat` uses): the critic reviews a frozen
-   * candidate against the exact commit it was built on, not a symmetric
-   * comparison, so a `base` that has since moved doesn't change what the
-   * candidate is judged against. Works against any two revisions reachable
-   * in `dir`'s object store — no checkout required.
+   * The full unified diff `oid` adds over `base`, computed straight from the
+   * object store (`base..oid`, not the three-dot merge-base form `diffStat`
+   * uses), so a `base` that has since moved doesn't change the result. Works
+   * against any two revisions reachable in `dir`'s object store — no checkout
+   * required.
    */
   diffRange: (dir: string, base: string, oid: string) => git(dir, 'diff', `${base}..${oid}`),
 
-  /** The frozen whole-Epic diff from an integration merge commit (ADR-0018):
+  /** The frozen whole-Epic diff from an integration merge commit:
    * `git diff <M>^1 <M>^2` — first parent (base-before) against second (epic-tip).
-   * Survives the epic branch's retirement, since it reads the merge commit's own
-   * parents straight from the object store — no branch or checkout required. */
+   * Reads the merge commit's own parents straight from the object store — no
+   * branch or checkout required. */
   diffMergeCommit: (dir: string, mergeOid: string) => git(dir, 'diff', `${mergeOid}^1`, `${mergeOid}^2`),
 
   /**
    * Per-file `additions<TAB>deletions<TAB>path` of a live worktree's current
    * state — committed AND uncommitted tracked changes — against `baseOid` (the
-   * fork point). For a running Run whose work is not yet snapshotted or committed,
-   * `base...branch` in the canonical checkout shows nothing; this shows what the
-   * agent has actually done so far. `--numstat` gives exact line counts (the
-   * `--stat` graph is a width-capped histogram, not a count).
+   * fork point). For a running attempt whose work is not yet snapshotted or
+   * committed, `base...branch` in the canonical checkout shows nothing; this
+   * shows what the agent has actually done so far. `--numstat` gives exact line
+   * counts (the `--stat` graph is a width-capped histogram, not a count).
    * `--no-optional-locks` so a read never contends with the agent's index writes;
    * read-only — never touches the worktree's index or HEAD. Untracked (never-added)
    * files are not included, exactly as `git diff <commit>` omits them.
@@ -515,11 +435,8 @@ export const Git = {
 
   /**
    * Whether `branch` is already merged into `baseBranch` — i.e. `git
-   * merge-base --is-ancestor <branch> <baseBranch>` exits 0. Used by
-   * crash-recovery (issue #117) to ask the world "is this merging's branch
-   * already merged into its base?" without re-running the merge. Never
-   * throws: any non-zero exit (including "not an ancestor") resolves
-   * `false`.
+   * merge-base --is-ancestor <branch> <baseBranch>` exits 0. Never throws: any
+   * non-zero exit (including "not an ancestor") resolves `false`.
    */
   async isAncestor(dir: string, baseBranch: string, branch: string): Promise<boolean> {
     try {
@@ -532,10 +449,8 @@ export const Git = {
 
   /**
    * Count of commits on `tip` that are not on `base` (`git rev-list --count
-   * <base>..<tip>`) — the candidate check (issue #429): a positive count means
-   * `tip` has committed work an Accept could merge. Never throws: an unknown
-   * ref or any other git failure resolves 0 rather than propagating — a failed
-   * lookup must read as "no evidence of a candidate", not crash the caller.
+   * <base>..<tip>`). Never throws: an unknown ref or any other git failure
+   * resolves 0.
    */
   async commitsAhead(dir: string, base: string, tip: string): Promise<number> {
     try {
@@ -550,31 +465,22 @@ export const Git = {
   /**
    * Whether merging `branch` into `baseBranch` would introduce **no net
    * content** — `branch`'s work is already present in `baseBranch` even when its
-   * commits were **squashed or rebased** so the tip is *not* a literal ancestor
-   * (issue #218). Where {@link isAncestor} only catches a fast-forwardable /
-   * merge-merged branch, this catches a squash-merged one: a real 3-way merge
-   * via `merge-tree --write-tree` yields the merged tree, and the work is
-   * contained iff that tree equals `baseBranch`'s own tree (the merge adds
-   * nothing). A merge **conflict** (divergent edits) makes `merge-tree` exit
-   * non-zero — treated as not-contained (`false`), so the caller falls through
-   * to a real merge rather than wrongly retiring. Requires git ≥ 2.38
-   * (`--write-tree`); no checkout or worktree needed. Never throws.
+   * commits were **squashed or rebased** so the tip is *not* a literal ancestor.
+   * A real 3-way merge via `merge-tree --write-tree` yields the merged tree,
+   * and the work is contained iff that tree equals `baseBranch`'s own tree. A
+   * merge **conflict** makes `merge-tree` exit non-zero — treated as
+   * not-contained (`false`). Requires git ≥ 2.38 (`--write-tree`); no checkout
+   * or worktree needed. Never throws.
    */
   async isContentContained(dir: string, baseBranch: string, branch: string): Promise<boolean> {
     try {
       const baseTree = (await git(dir, 'rev-parse', `${baseBranch}^{tree}`)).trim();
-      // On a clean merge `merge-tree --write-tree` prints just the merged tree
-      // OID on the first line and exits 0; on conflict it exits non-zero (→ the
-      // catch below). Compare the merged tree to the base tree.
+      // On a clean merge `merge-tree --write-tree` prints the merged tree OID
+      // on the first line and exits 0; on conflict it exits non-zero.
       const out = await git(dir, 'merge-tree', '--write-tree', baseBranch, branch);
       const mergedTree = out.split('\n', 1)[0]?.trim() ?? '';
       return mergedTree !== '' && mergedTree === baseTree;
     } catch (err) {
-      // A conflict (the common, expected outcome) is not-contained → false.
-      // But a git older than 2.38 lacks `--write-tree`, so *every* call merges
-      // here and the tier-2 storm protection silently no-ops forever. Distinguish
-      // that once so a mis-provisioned host is visible in logs rather than
-      // degrading in silence (issue #218). Behaviour is unchanged either way.
       warnOnceIfMergeTreeUnsupported(err);
       return false;
     }
@@ -582,14 +488,8 @@ export const Git = {
 
   /**
    * The absolute path of the worktree that currently has `branch` checked out,
-   * or `null` when no worktree does (issue #153). Merging must never update a
-   * target ref out from under a live index/worktree via a plumbing `update-ref`
-   * (reliability-design Unit D): this is how a merging tells "the target is
-   * checked out — merge coherently in place under a lease" from "nobody has it
-   * out — a CAS ref-update is safe". Parses `worktree list --porcelain`, whose
-   * per-worktree records pair a `worktree <path>` line with a `branch
-   * refs/heads/<name>` line (absent on a detached worktree, which is why an
-   * admin/verification worktree is never mistaken for the live target).
+   * or `null` when no worktree does. A detached worktree has no `branch
+   * refs/heads/<name>` line in `worktree list --porcelain`, so it never matches.
    */
   async branchCheckedOutAt(dir: string, branch: string): Promise<string | null> {
     const out = await git(dir, 'worktree', 'list', '--porcelain');
@@ -603,12 +503,9 @@ export const Git = {
 
   /**
    * Compare-and-swap the branch ref `refs/heads/<branch>` from `expectedOld` to
-   * `newOid` (issue #153) — git's own `update-ref <ref> <new> <old>` atomic CAS,
-   * the reliability-design Unit D "expected-old-OID CAS". Returns `{ ok:false }`
-   * (never throws) when the ref no longer points at `expectedOld` — a hand-merge
-   * or another merging that advanced the target in between is rejected instead
-   * of being silently overwritten. Only ever touches the ref, never a checkout,
-   * so it is used exclusively on a target that no worktree has checked out.
+   * `newOid` (git's own `update-ref <ref> <new> <old>` atomic CAS). Returns
+   * `{ ok:false }` (never throws) when the ref no longer points at
+   * `expectedOld`. Only ever touches the ref, never a checkout.
    */
   async casUpdateRef(dir: string, branch: string, newOid: string, expectedOld: string): Promise<{ ok: boolean; detail?: string }> {
     try {
@@ -622,12 +519,9 @@ export const Git = {
   /**
    * Merge `branch` into the worktree at `worktreeDir`'s currently checked-out
    * (or detached) HEAD, returning `{ ok:false }` with git's output on conflict
-   * after aborting (issue #153). Unlike {@link merge} this neither takes the
-   * base-repo lock nor checks out a base branch — the caller has already placed
-   * a **dedicated admin worktree** at the expected base OID, so this only writes
-   * objects + that admin worktree's own index. `--no-edit` matches {@link merge}
-   * / ADR-0002; a fast-forward-able branch fast-forwards, otherwise a merge
-   * commit is created — either way HEAD ends at a descendant of the base.
+   * after aborting. Takes no base-repo lock. A fast-forward-able branch
+   * fast-forwards, otherwise a merge commit is created — either way HEAD ends
+   * at a descendant of the base.
    */
   async mergeNoEdit(worktreeDir: string, branch: string): Promise<{ ok: boolean; detail?: string }> {
     return withGitOperation(
@@ -642,7 +536,6 @@ export const Git = {
           try {
             await git(worktreeDir, 'merge', '--abort');
           } catch {
-            // No merge in progress (e.g. it failed before starting).
           }
           return { ok: false, detail };
         }
@@ -653,11 +546,8 @@ export const Git = {
   /**
    * Merge `branch` into the worktree at `worktreeDir`'s checked-out HEAD,
    * LEAVING a conflicted merge in progress (conflict markers + `MERGE_HEAD`)
-   * instead of aborting — unlike {@link mergeNoEdit}, whose abort-on-conflict
-   * contract suits a merge that must leave its admin worktree pristine. This is
-   * the reproduction step for an integration-refresh corrective turn (issue
-   * #315): the agent resolves the markers in place and completes the merge. A
-   * clean merge commits immediately (`--no-edit`) and returns `{ ok: true }`.
+   * instead of aborting, unlike {@link mergeNoEdit}. A clean merge commits
+   * immediately (`--no-edit`) and returns `{ ok: true }`.
    */
   async mergeLeavingConflict(worktreeDir: string, branch: string): Promise<{ ok: boolean; detail?: string }> {
     return withGitOperation(
@@ -676,13 +566,11 @@ export const Git = {
 
   /**
    * Rebase the branch checked out at `worktreeDir` onto `ontoOid` (linear replay).
-   * A conflict (`conflict: true`) is left IN PROGRESS (markers, `REBASE_HEAD`) —
-   * resolving it is the agent's work in the Attempt's implementation turn
-   * (ADR-0041) — and returned rather than thrown; any other failure (a missing
-   * worktree, a dirty tree) is `conflict: false`, nothing in progress. A rebase
-   * an earlier conflict left in progress is aborted first: it is superseded,
-   * never resumed. On success the worktree HEAD is the rebased tip (a descendant
-   * of `ontoOid`).
+   * A conflict (`conflict: true`) is left IN PROGRESS (markers, `REBASE_HEAD`)
+   * and returned rather than thrown; any other failure (a missing worktree, a
+   * dirty tree) is `conflict: false`, nothing in progress. A rebase an earlier
+   * conflict left in progress is aborted first, never resumed. On success the
+   * worktree HEAD is the rebased tip (a descendant of `ontoOid`).
    */
   async rebaseOnto(
     worktreeDir: string,
@@ -707,14 +595,10 @@ export const Git = {
 
   /**
    * Fast-forward the checkout at `dir` to `oid` (`merge --ff-only`), under the
-   * base-repo lock (issue #153) — the **coherent checkout/reset** a checked-out
-   * target merges through (reliability-design Unit D), advancing the branch ref
-   * and the working tree together rather than a desyncing plumbing ref-update.
+   * base-repo lock, advancing the branch ref and the working tree together.
    * `--ff-only` is itself a compare-and-swap: it refuses (→ `{ ok:false }`,
-   * never throws) unless the current tip is an ancestor of `oid`, so a target
-   * that moved since the admin-worktree merge was computed fails safely instead
-   * of being force-reset over. No merge state is left behind on refusal, so no
-   * abort is needed.
+   * never throws) unless the current tip is an ancestor of `oid`. No merge
+   * state is left behind on refusal, so no abort is needed.
    */
   async ffOnly(dir: string, oid: string): Promise<{ ok: boolean; detail?: string }> {
     return withGitOperation('git.ff-only', { 'git.ref': oid }, () =>
@@ -731,13 +615,10 @@ export const Git = {
 
   /**
    * Merge `branch` into `worktreeDir`'s checked-out HEAD, ALWAYS creating a
-   * merge commit (`--no-ff`) — step 2 of the one merge policy (ADR-0001,
-   * "One merge policy, everywhere"): base movement since verification is
-   * irrelevant and is never resolved away by a fast-forward. On a textual
-   * conflict the conflicted merge is LEFT IN PROGRESS (markers + `MERGE_HEAD`)
-   * for the caller's bounded resolve turns, mirroring {@link mergeLeavingConflict}'s
-   * contract; any other failure (e.g. a dirty tree, nothing to merge) aborts
-   * cleanly instead.
+   * merge commit (`--no-ff`). On a textual conflict the conflicted merge is
+   * LEFT IN PROGRESS (markers + `MERGE_HEAD`), mirroring
+   * {@link mergeLeavingConflict}'s contract; any other failure (e.g. a dirty
+   * tree, nothing to merge) aborts cleanly instead.
    */
   async mergeNoFf(
     worktreeDir: string,
@@ -760,7 +641,6 @@ export const Git = {
             try {
               await git(worktreeDir, 'merge', '--abort');
             } catch {
-              // No merge in progress (e.g. it failed before starting).
             }
           }
           return { ok: false, conflict, detail };
@@ -770,10 +650,9 @@ export const Git = {
   },
 
   /**
-   * Distinct paths git considers unmerged in `worktreeDir` (ADR-0001's bounded
-   * conflict-resolve turn needs the file list, not the raw conflict dump).
-   * `ls-files -u` prints one line per stage per conflicted path; deduped down
-   * to the paths themselves. Empty once nothing is conflicted.
+   * Distinct paths git considers unmerged in `worktreeDir`. `ls-files -u`
+   * prints one line per stage per conflicted path; deduped down to the paths
+   * themselves. Empty once nothing is conflicted.
    */
   async unmergedPaths(worktreeDir: string): Promise<string[]> {
     const out = await git(worktreeDir, 'ls-files', '-u');
@@ -788,9 +667,8 @@ export const Git = {
 
   /**
    * Finalise an in-progress merge once conflicts are resolved and staged
-   * (ADR-0001): `git commit --no-edit` under the Harmonic identity. Fails
-   * (never throws) when unmerged paths remain, so the caller can tell "still
-   * conflicted" from "committed" without inspecting the tree itself.
+   * (`git commit --no-edit` under the Harmonic identity). Fails (never throws)
+   * when unmerged paths remain.
    */
   async completeMerge(worktreeDir: string): Promise<{ ok: true; mergeOid: string } | { ok: false; detail: string }> {
     return withGitOperation('git.merge-complete', { 'git.ref': 'HEAD' }, async () => {
@@ -803,26 +681,20 @@ export const Git = {
     });
   },
 
-  /** Abort an in-progress merge, best-effort — there may be none in progress
-   * (ADR-0001's escalation path aborts before composing its plain-language
-   * message, whether or not one was actually left open). */
+  /** Abort an in-progress merge, best-effort — there may be none in progress. */
   async abortMerge(worktreeDir: string): Promise<void> {
     return withGitOperation('git.merge-abort', { 'git.ref': 'HEAD' }, async () => {
       logger.debug('git: aborting in-progress merge', { 'git.dir': worktreeDir });
       try {
         await git(worktreeDir, 'merge', '--abort');
       } catch {
-        // No merge in progress.
       }
     });
   },
 
   /**
-   * Revert merge commit `mergeOid` relative to its first parent (`-m 1`) —
-   * the one merge policy's response to a red post-merge check (ADR-0001): the
-   * base is never left red, and reverting a merge commit costs seconds versus
-   * the pre-merge serialisability this ADR removes. Lets a `GitError`
-   * propagate; there is no fallback if the revert itself fails.
+   * Revert merge commit `mergeOid` relative to its first parent (`-m 1`). Lets
+   * a `GitError` propagate; there is no fallback if the revert itself fails.
    */
   async revertMergeCommit(worktreeDir: string, mergeOid: string): Promise<string> {
     return withGitOperation('git.revert', { 'git.ref': mergeOid }, async () => {

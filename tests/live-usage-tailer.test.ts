@@ -25,12 +25,10 @@ describe('LiveUsageTailer cadence (ADR 0010)', () => {
     );
     tailer.start(1);
 
-    // Nine 1s ticks with no change: one emit (first), the rest deduped; no persist yet.
     await vi.advanceTimersByTimeAsync(9_000);
     expect(emit).toHaveBeenCalledTimes(1);
     expect(persist).not.toHaveBeenCalled();
 
-    // A change re-emits; the 10th tick also crosses the persist threshold.
     current = snap('two');
     await vi.advanceTimersByTimeAsync(1_000);
     expect(emit).toHaveBeenCalledTimes(2);
@@ -46,7 +44,6 @@ describe('LiveUsageTailer cadence (ADR 0010)', () => {
     await tailer.stop(1);
     expect(emit).toHaveBeenCalledTimes(1);
     expect(persist).toHaveBeenCalledTimes(1);
-    // The interval is cleared — further time advances nothing.
     await vi.advanceTimersByTimeAsync(60_000);
     expect(emit).toHaveBeenCalledTimes(1);
   });
@@ -73,10 +70,8 @@ describe('LiveUsageTailer cadence (ADR 0010)', () => {
     });
     const tailer = new LiveUsageTailer({ sample, emit: vi.fn(), persist: vi.fn() }, { pushMs: 1000, persistMs: 10_000 });
     tailer.start(1);
-    // Three fires while the first sample is still pending: only one sample runs.
     await vi.advanceTimersByTimeAsync(3_000);
     expect(calls).toBe(1);
-    // Let it finish; the next fire is free to sample again.
     resolve(snap('one'));
     await vi.advanceTimersByTimeAsync(1_000);
     expect(calls).toBe(2);
@@ -119,7 +114,6 @@ describe('replay quarantine at the live-usage boundary (issue #144)', () => {
   });
 
   it('currentTurnEvents keeps only live events in order, so activityLine on the last one shows only current-turn activity', () => {
-    // Replayed tail with nothing live: the current-turn activity is empty.
     const replayedTail: QuarantinableEvent[] = [
       update({ title: 'Edit', replay: true }),
       update({ title: 'Write', replay: true }),
@@ -127,8 +121,6 @@ describe('replay quarantine at the live-usage boundary (issue #144)', () => {
     const noLive = currentTurnEvents(replayedTail);
     expect(noLive).toEqual([]);
 
-    // A live update present: currentTurnEvents keeps it (in order), and the
-    // activity line a tailer would show comes from it — never the replayed tail.
     const mixed: QuarantinableEvent[] = [
       update({ title: 'Edit', replay: true }),
       update({ title: 'Write', replay: true }),
@@ -140,14 +132,8 @@ describe('replay quarantine at the live-usage boundary (issue #144)', () => {
     expect(activityLine(lastLive.payload)).toBe('Bash');
   });
 
-  // AC5, at the live-usage-tailer seam: a tailer whose sampler quarantines
-  // replay (as the runner's does — building activity/usage from currentTurnEvents
-  // only) emits a snapshot with zero replay-derived activity/usage, even when the
-  // whole event log is load-time replay.
   it('the tailer emits a quarantined snapshot: zero current-turn usage/activity from an all-replay log', async () => {
     vi.useFakeTimers();
-    // A sampler mirroring the runner: derive the snapshot from current-turn
-    // events only, so replayed history contributes nothing.
     const sampleFromLog = (log: QuarantinableEvent[]): AttemptUsageSnapshot => {
       const current = currentTurnEvents(log);
       const lastActivity = [...current].reverse().map((e) => activityLine(e.payload)).find((l) => l !== null) ?? null;

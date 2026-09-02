@@ -3,7 +3,7 @@
 import type { Task } from './types.js';
 import { request } from './api.js';
 
-/** Rows the table requests per page (ADR-0045): the server slices the page and
+/** Rows the table requests per page: the server slices the page and
  * reports the full match `total`, so the DOM stays bounded on a large history
  * without pulling the whole corpus into the browser. */
 export const TABLE_PAGE_SIZE = 50;
@@ -16,7 +16,7 @@ export type TableQuery = {
   state: string[];
   harness: string[];
   priority: string[];
-  /** Server-side substring search over prompt + tracker title (ADR-0045); blank ⇒ no search. */
+  /** Server-side substring search over prompt + tracker title; blank ⇒ no search. */
   q: string;
   sortBy: string;
   order: string;
@@ -38,16 +38,14 @@ export function tasksQuery(q: TableQuery): string {
   params.set('order', q.order);
   params.set('limit', String(q.limit));
   params.set('offset', String(q.offset));
-  // Epics are a derived source merged server-side (ADR-0016); always opt in
-  // and let the server decide whether the current filters admit them.
   params.set('epics', 'true');
   return params.toString();
 }
 
 /** Fetch one page of tasks for the table through the shared api transport, so a
- * non-OK response throws with the server's real message (issue #91) — the same
+ * non-OK response throws with the server's real message — the same
  * error path every other call in `api.ts` takes. Returns the page plus the
- * server's filtered `total` (ADR-0045), which drives the pager. */
+ * server's filtered `total`, which drives the pager. */
 export async function fetchTasks(q: TableQuery): Promise<{ tasks: Task[]; total: number }> {
   return request<{ tasks: Task[]; total: number }>('GET', `/api/tasks?${tasksQuery(q)}`);
 }

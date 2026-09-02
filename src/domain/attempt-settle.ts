@@ -33,13 +33,7 @@ export interface SettleProjection {
   reason: string | null;
 }
 
-/**
- * Every ending-signal kind `settle` can be called with — the disposition's
- * audit value persisted verbatim to `attempts.reason` (ADR-0001: the whole
- * coordination spine is `state` + `reason`, nothing replayed from a log).
- * Open for extension in spirit (a caller may pass any string), but these are
- * every kind a live emitter produces today.
- */
+/** Every ending-signal kind `settle` can be called with — persisted verbatim to `attempts.reason`. */
 export const DISPOSITION_KINDS = [
   'operator-cancel',
   'operator-accept',
@@ -52,28 +46,12 @@ export const DISPOSITION_KINDS = [
 export type DispositionKind = (typeof DISPOSITION_KINDS)[number];
 
 /**
- * The single terminal-disposition coordinator (ADR-0001 "The loop" / "One
- * merge policy": "failure is an Attempt-level fact; a Task loops or
- * escalates"). Every way a Run reaches a terminal disposition funnels through
- * {@link AttemptSettleCoordinator.settle}: a **guarded state transition**, not a
- * fact-log replay — the single-process/single-writer model (ADR-0007) has no
- * concurrent-writer coordination to reconcile, so the caller-supplied
- * disposition is applied directly under the same "only leave `running`"
- * discipline `RunStore.finish`/`markInterrupted` already use.
- *
- * The one exception to first-writer-wins is the operator's own surface
- * (ADR-0001 "Guardrails and escalation" / ADR-0041's one human surface):
- * `operator-cancel` / `operator-accept` may act on an Attempt/Run that already
- * settled `escalated`/`failed` — Accept merging an escalated ticket, or Close
- * cancelling one. Every other disposition is first-writer-wins: a second
- * racing settle on an already-terminal Attempt/Run is a no-op.
- *
- * #113 kept this logic private to the Runner because the Runner was the only
- * settle authority. A **second** authority — the operator Accept on an
- * escalated ticket (`EscalationService.accept`) — settles a Run long after
- * its harness is gone. The coordinator is a shared, dependency-injected class
- * so both drive it with identical race-safety, instead of the operator path
- * racing the Runner around the Run row.
+ * The single terminal-disposition coordinator: every way an Attempt reaches a
+ * terminal disposition funnels through {@link AttemptSettleCoordinator.settle},
+ * a guarded state transition. `operator-cancel` / `operator-accept` may act on
+ * an Attempt that already settled `escalated`; every other disposition is
+ * first-writer-wins — a second racing settle on an already-terminal Attempt is
+ * a no-op.
  */
 export class AttemptSettleCoordinator {
   constructor(
@@ -86,12 +64,8 @@ export class AttemptSettleCoordinator {
 
   /**
    * Settle `attempt` to `projection`'s terminal disposition under `type`'s
-   * guard. No-ops when the Attempt is already at (or past) that disposition
-   * and `type` is not an operator override — the idempotent "settle exactly
-   * once" contract a racing straggler (a post-SIGKILL harness-exit fact after
-   * an operator cancel, a second guardrail trip) relies on. `patch`
-   * (usage/stat/stopReason/…) rides with the write — the Attempt is the
-   * single execution ledger (ADR-0001), so one write closes it out.
+   * guard. No-ops when the Attempt is already settled and `type` is not an
+   * operator override. `patch` rides with the write.
    */
   async settle(
     task: TaskRow,
@@ -103,61 +77,34 @@ export class AttemptSettleCoordinator {
     const isOperatorOverride = type === 'operator-cancel' || type === 'operator-accept';
     const before = await this.attempts.get(attempt.id);
     const movable = before.state === 'running' || (before.state === 'escalated' && isOperatorOverride);
-    if (!movable) return; // already settled at (or past) this disposition; a straggler no-ops
+    if (!movable) return;
 
     const finished = await this.attempts.updateWithFrozenCost(attempt.id, {
       ...patch,
       state: attemptTerminalState(type, projection),
       reason: type,
-      // The free-text detail behind `reason` (a git/harness error, a
-      // guardrail's `budget: …` summary, "escalated to human: …") — its own
-      // column so it survives alongside the structured `reason`.
       detail: projection.reason,
       endedAt: before.endedAt ?? Date.now(),
     });
 
-    // Session retirement (issue #148, reliability-design Unit C): record the
-    // intent for this Attempt's Session — retire now (a merge/abandon/cancel) or
-    // retain under a deadline (a reject / other ending). Awaited but
-    // best-effort: it only marks the Session's status; the async worktree
-    // removal is a separate drain, and a hiccup must never crash settle.
     try {
       await this.sessionRetirement?.onAttemptSettled(finished, this.retirementCause(type, projection));
     } catch {
-      // best-effort; the boot/periodic drain reconciles from the Session row
     }
     try {
       await this.branchRetirement?.onAttemptSettled(task, finished);
     } catch {
-      // Best-effort. A later boot reconciliation retries branch retirement.
     }
     await this.applySettleTaskAction(task.id, projection);
     this.onAttemptFinished?.(finished);
   }
 
-  /**
-   * Map the settling disposition to the retirement cause a Session needs
-   * (issue #148): an operator cancel retires immediately; any `completed` Run
-   * merged (a Run only completes via merging); every other ending (generic
-   * fail, escalate, guardrail-trip, process-death) retains the Task's worktree
-   * until its terminal disposition (no deadline by default; a configured TTL
-   * can still sweep it).
-   */
   private retirementCause(type: DispositionKind, projection: SettleProjection): RetirementCause {
     if (type === 'operator-cancel') return 'operator-cancel';
     if (projection.runState === 'completed') return 'merged';
     return 'other';
   }
 
-  /**
-   * Apply the disposition's Task transition. `none` leaves the Task to its
-   * caller (operator cancel/complete already moved it). Every other action
-   * moves only a Task that is still `working` — or `escalated`, for the
-   * operator Accept that merges an escalated ticket (`done`). A Task already
-   * in a terminal state (a racing cancel that moved it) makes the action a
-   * no-op, so the Run row still settles while the Task keeps the disposition
-   * the race already gave it.
-   */
   private async applySettleTaskAction(taskId: number, projection: SettleProjection): Promise<void> {
     if (projection.taskAction === 'none') return;
     const state = (await this.taskService.get(taskId)).state;
@@ -176,14 +123,6 @@ export class AttemptSettleCoordinator {
   }
 }
 
-/**
- * The Attempt's terminal state for a settling disposition. `operator-cancel`
- * and `operator-accept` map directly (an operator's own action, whatever the
- * Run/Task projection says); every other kind follows the projection exactly
- * as the prior fact-replay coordinator did: an escalating disposition closes
- * the Attempt `escalated`, else `passed` on a completed Run and `failed`
- * otherwise.
- */
 function attemptTerminalState(type: DispositionKind, projection: SettleProjection): Exclude<AttemptState, 'running'> {
   if (type === 'operator-cancel') return 'cancelled';
   if (type === 'operator-accept') return 'passed';

@@ -4,10 +4,6 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startServer, type TestServer } from './helpers.js';
 
-// These assert the embedded-SPA serving contract, which only exists once
-// `dist/web` has been built next to the server code. When it hasn't (e.g. a
-// server-only CI shard), the static handler isn't registered, so skip rather
-// than assert against a build that isn't there.
 const webRoot = fileURLToPath(new URL('../dist/web', import.meta.url));
 const built = existsSync(join(webRoot, 'index.html'));
 
@@ -34,10 +30,6 @@ describe.skipIf(!built)('embedded SPA static serving', () => {
     expect(res.headers.get('content-type')).toMatch(/text\/html/);
   });
 
-  // The regression: a stale index.html requests an asset hash we've already
-  // deleted. That must 404 cleanly, NOT return the HTML shell with 200 — which
-  // the browser would try to execute as JS and blank the page until a
-  // cache-disabled hard reload.
   it('returns a real 404 (not the HTML shell) for a missing hashed asset', async () => {
     const res = await fetch(`${server.baseUrl}/assets/index-DEADBEEF.js`);
     expect(res.status).toBe(404);

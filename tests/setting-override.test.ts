@@ -83,7 +83,6 @@ describe('Setting Override resolution (ADR-0012, issue #59)', () => {
       );
       expect(resolved.commands).toEqual([override]);
       expect(resolved.command).toEqual(override);
-      // Review still inherits its own global default.
       expect(resolved.critic).toEqual({ prompt: 'global review', model: 'claude-opus-5' });
     });
 
@@ -235,10 +234,6 @@ describe('Setting Override resolution (ADR-0012, issue #59)', () => {
     });
 
     it('resolves review to not-runnable when reviewEnabled is on but no prompt/model resolves from any layer (issue #337)', () => {
-      // The four fields inherit independently, so reviewEnabled can be on while
-      // prompt/model are unset everywhere. That is not a runnable review: enabled
-      // resolves false so the Runner and the ADR-0042 status classification agree
-      // the critic will not run.
       const config = { verify: { commands: [], review: { enabled: false } } };
       const resolved = resolveVerifiers(
         {

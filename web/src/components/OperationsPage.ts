@@ -40,8 +40,6 @@ function OperationRow({ operation, now, depth }: { operation: Operation; now: nu
   return createElement(
     'li',
     {
-      // Anchor target for links onto this Operation's own span (ADR-0010),
-      // e.g. the Scheduled jobs table's "Operation" column.
       id: `operation-${operation.spanId}`,
       className: 'border-t border-hairline py-2.5 first:border-t-0',
       style: { paddingLeft: `${depth * 1.25}rem` },

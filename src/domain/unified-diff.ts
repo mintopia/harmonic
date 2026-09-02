@@ -38,8 +38,6 @@ export function parseUnifiedDiff(raw: string): DiffFile[] {
     }
     if (!current) continue;
     if (!inHunk) {
-      // Header lines precede the first hunk; a body `+++ `/`--- ` line can only
-      // appear once inHunk, so header detection is safe from that ambiguity.
       if (line.startsWith('new file')) current.status = 'A';
       else if (line.startsWith('deleted file')) current.status = 'D';
       else if (line.startsWith('--- ')) {
@@ -72,7 +70,6 @@ export function parseUnifiedDiff(raw: string): DiffFile[] {
       oldLn++;
       newLn++;
     }
-    // `\ No newline at end of file` and blank trailing lines fall through, ignored.
   }
   return files;
 }

@@ -29,18 +29,15 @@ export const fsListingSchema = z
 export type FsListing = z.infer<typeof fsListingSchema>;
 
 /**
- * List the immediate child directories of `inputPath`, one level deep — the
- * data behind the workspace directory picker (issue #62). An empty or omitted
- * path starts at the server user's home. Files and hidden (dot) directories are
- * excluded; entries are sorted by name. Symlinks that point at a directory are
- * followed and listed (a symlinked project dir is a normal thing to pick);
- * dangling ones are skipped. There is deliberately no root restriction (a
- * sysadmin concern, per the map decision): any directory the running user can
- * read is browsable.
+ * List the immediate child directories of `inputPath`, one level deep. An
+ * empty or omitted path starts at the server user's home. Files and hidden
+ * (dot) directories are excluded; entries are sorted by name. Symlinks that
+ * point at a directory are followed and listed; dangling ones are skipped.
+ * There is no root restriction: any directory the running user can read is
+ * browsable.
  *
- * Throws a `DomainError` the route turns into a status: `not_found` (404) for a
- * missing path, `validation` (400) for a non-directory or a permission-denied
- * path.
+ * Throws a `DomainError`: `not_found` for a missing path, `validation` for a
+ * non-directory or a permission-denied path.
  */
 export async function browseDirectory(inputPath?: string): Promise<FsListing> {
   const target = inputPath && inputPath.length > 0 ? resolve(inputPath) : homedir();
@@ -64,13 +61,11 @@ export async function browseDirectory(inputPath?: string): Promise<FsListing> {
         const path = join(target, d.name);
         if (d.isDirectory()) return { name: d.name, path };
         // A symlink's Dirent reports isSymbolicLink(), not isDirectory(); stat
-        // follows the link so a symlinked directory still shows up. A dangling
-        // link throws (ENOENT) and is dropped.
+        // follows the link. A dangling link throws ENOENT.
         if (d.isSymbolicLink()) {
           try {
             if ((await stat(path)).isDirectory()) return { name: d.name, path };
           } catch {
-            /* broken symlink — skip */
           }
         }
         return null;

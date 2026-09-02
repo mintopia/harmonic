@@ -25,9 +25,6 @@ describe('fillSeries', () => {
   });
 
   it('matches a server day key that sits off the client midnight grid', () => {
-    // A UTC server key seen by a BST/EDT browser is offset from that browser's
-    // midnight; the day must still find its bucket rather than zero-filling to
-    // $0 — the regression behind the live cost-per-day chart reading all zeros.
     const d1 = day(2026, 0, 10);
     const d2 = day(2026, 0, 11);
     const offGrid = d2 + 3 * 3600_000;

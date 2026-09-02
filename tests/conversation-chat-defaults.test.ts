@@ -2,20 +2,11 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { startServer, type TestServer } from './helpers.js';
 import type { DeepPartial, AppConfig } from '../src/config.js';
 
-/**
- * The chat default (ADR-0012): a new Conversation starts with its own default
- * Harness and model — separate from the Task defaults, resolved like every
- * other overridable setting (request value → Workspace override → global
- * chat default). Creation never spawns a harness, so these configs point at
- * placeholder commands: only the resolution matters here.
- */
 const twoHarnessConfig: DeepPartial<AppConfig> = {
   harnesses: {
     claude: { command: 'noop', args: [], models: ['claude-a', 'claude-b'], defaultModel: 'claude-a' },
     codex: { command: 'noop', args: [], models: ['codex-a', 'codex-b'], defaultModel: 'codex-a' },
   },
-  // Tasks default to claude; chat deliberately points elsewhere to prove the
-  // two are independent.
   defaults: { harness: 'claude' },
   chat: { harness: 'codex', model: 'codex-b' },
 };
@@ -56,8 +47,6 @@ describe('Conversation chat defaults (ADR-0012)', () => {
   });
 
   it('rejects when the resolved chat harness is not configured on this instance', async () => {
-    // A Workspace chat override is free text, so it can name a harness this
-    // instance doesn't configure — the handler guards it at create time.
     const ws = await server.app.ctx.workspaces.resolve();
     await server.app.ctx.workspaces.update(ws.id, { chatHarness: 'ghost' });
 

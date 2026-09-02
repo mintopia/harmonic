@@ -8,15 +8,8 @@ const proceed: VerificationDecision = { outcome: 'proceed', reason: 'all 1 verif
 const block: VerificationDecision = { outcome: 'block', reason: 'verifier command failed' };
 const inconclusive: VerificationDecision = { outcome: 'escalate', reason: 'verifier inconclusive' };
 
-/** In-memory {@link EpicIntegrateGit}: branch existence, tip OIDs, and the default
- * (symbolic) branch, plus a call record — the fake-the-injected-slice idiom the
- * merge-train coordinator test uses. */
 class FakeGit implements EpicIntegrateGit {
-  /** Branch names already contained in (an ancestor of) the default branch —
-   * the tier-1 containment fast-path (#218). Empty by default: nothing pre-merged. */
   readonly contained: Set<string> = new Set();
-  /** Branch names whose *content* is already in the default branch even though
-   * the tip is not an ancestor (a squash/rebase merge) — the tier-2 fast-path (#218). */
   readonly contentContained: Set<string> = new Set();
   constructor(
     readonly branches: Set<string> = new Set(['epic/42']),
@@ -67,9 +60,6 @@ const build = (opts: {
   const escalate = vi.fn<(epicRef: number, reason: string) => void>();
   const recordIntegration = vi.fn(async (_input: { epicRef: number; mergeCommit: string | null; memberRefs: number[] }) => {});
   const onError = vi.fn<(msg: string) => void>();
-  // Default clock steps 10min per read so the hard backoff (#218, default 60s)
-  // never blocks the many tests that re-submit rapidly; backoff tests inject
-  // their own controlled clock.
   let t = 0;
   const coord = new EpicIntegrateCoordinator({
     repoDir: '/repo',
@@ -137,7 +127,6 @@ describe('EpicIntegrateCoordinator', () => {
     const { coord, integrate, recordIntegration } = build({ git });
     const out = await coord.submit({ ref: 42, members: members('completed'), memberRefs: [7] });
     expect(out).toEqual({ status: 'integrated', oid: 'oid-epic-42' });
-    // Already contained ⇒ no merge ran, so the snapshot's merge-commit is null.
     expect(integrate).not.toHaveBeenCalled();
     expect(recordIntegration).toHaveBeenCalledWith({ epicRef: 42, mergeCommit: null, memberRefs: [7] });
   });
@@ -147,9 +136,7 @@ describe('EpicIntegrateCoordinator', () => {
     const { coord, retire, recordIntegration, onError } = build({ git });
     recordIntegration.mockRejectedValueOnce(new Error('db down'));
     const out = await coord.submit({ ref: 42, members: members('completed'), memberRefs: [11] });
-    // The merge still succeeded (base advanced), so the outcome is integrated…
     expect(out).toEqual({ status: 'integrated', oid: 'integrated-oid' });
-    // …but the branch is NOT retired: it is what re-triggers the settle next poll.
     expect(retire).not.toHaveBeenCalled();
     expect(onError).toHaveBeenCalledWith(expect.stringContaining('integration snapshot record failed'));
   });
@@ -285,9 +272,6 @@ describe('EpicIntegrateCoordinator', () => {
     });
 
     it('keeps the backoff when a contained-branch retire fails, so tier 2 does not re-run every poll (#218)', async () => {
-      // Regression: a content-contained branch whose retire keeps failing must
-      // stay throttled. If retireContained cleared the backoff, the heavy tier-2
-      // merge would re-run every poll — the storm class #218 targets.
       let clock = 0;
       const git = new FakeGit();
       git.setContentContained('epic/42');
@@ -322,9 +306,6 @@ describe('EpicIntegrateCoordinator', () => {
     it('retains the last verification verdict on the containment fast-path (read-model consistency, #218)', async () => {
       const git = new FakeGit();
       const { coord } = build({ git });
-      // A normal merge records verificationStatus='pass' (the default fake retire
-      // is a no-op, so the branch lingers). Marking it contained then exercises
-      // the fast-path, which must NOT clobber that verdict to null.
       await coord.submit({ ref: 42, members: members('completed') });
       expect(coord.verificationStatus(42)).toBe('pass');
       git.setContained('epic/42');
@@ -336,12 +317,9 @@ describe('EpicIntegrateCoordinator', () => {
     it('auto-retires an already-contained branch even if it was previously escalated (clears the sticky hold)', async () => {
       const git = new FakeGit();
       const { coord, verify, retire } = build({ git, verify: async () => block });
-      // First poll escalates and sticks.
       const first = await coord.submit({ ref: 42, members: members('completed') });
       expect(first.status).toBe('escalated');
       expect(retire).not.toHaveBeenCalled();
-      // The work then merges by hand: the branch becomes contained. The next poll
-      // retires it rather than staying held forever.
       git.setContained('epic/42');
       const out = await coord.submit({ ref: 42, members: members('completed') });
       expect(out).toEqual({ status: 'integrated', oid: 'oid-epic-42' });
@@ -351,9 +329,6 @@ describe('EpicIntegrateCoordinator', () => {
   });
 
   describe('hard verify+integrate backoff (#218)', () => {
-    // A churning member signature (completed → completed,completed) makes the
-    // per-signature sticky-escalation hold miss, so only the ref-keyed backoff
-    // stops the second verify+integrate from re-burning inside the window.
     it('defers a repeat verify+integrate within the backoff window (no re-burn)', async () => {
       let clock = 0;
       const { coord, verify } = build({ verify: async () => inconclusive, now: () => clock, verifyBackoffMs: 60_000 });
@@ -377,8 +352,6 @@ describe('EpicIntegrateCoordinator', () => {
     it('an operator force-integrate bypasses the backoff', async () => {
       let clock = 0;
       const { coord, verify } = build({
-        // First (auto) attempt escalates and records the attempt time; the forced
-        // retry inside the window still runs, proving force bypasses the backoff.
         verify: vi.fn<VerifyFn>().mockResolvedValueOnce(inconclusive).mockResolvedValue(proceed),
         now: () => clock,
         verifyBackoffMs: 60_000,
@@ -423,7 +396,6 @@ describe('EpicIntegrateCoordinator', () => {
       const target = { ref: 42, members: members('completed', 'completed') };
       const first = await coord.submit(target);
       expect(first.status).toBe('escalated');
-      // Two more polls with the same member state: no repeated CI burn / escalation.
       const second = await coord.submit(target);
       const third = await coord.submit(target);
       expect(second.status).toBe('escalated');
@@ -436,7 +408,6 @@ describe('EpicIntegrateCoordinator', () => {
       const { coord, verify } = build({ verify: async () => block });
       await coord.submit({ ref: 42, members: members('completed', 'completed') });
       expect(verify).toHaveBeenCalledTimes(1);
-      // A third member completes: a fresh signature ⇒ Verification runs again.
       await coord.submit({ ref: 42, members: members('completed', 'completed', 'completed') });
       expect(verify).toHaveBeenCalledTimes(2);
     });
@@ -446,7 +417,6 @@ describe('EpicIntegrateCoordinator', () => {
       const { coord, verify } = build({ git, verify: async () => block });
       await coord.submit({ ref: 42, members: members('completed') });
       expect(verify).toHaveBeenCalledTimes(1);
-      // Branch retired/hand-merged away → the sticky hold clears (a re-cut Epic reusing the ref is not wrongly held).
       git.branches.delete('epic/42');
       const gone = await coord.submit({ ref: 42, members: members('completed') });
       expect(gone.status).toBe('noop');
@@ -459,8 +429,8 @@ describe('EpicIntegrateCoordinator', () => {
       const { coord, verify, integrate } = build({
         verify: vi
           .fn<VerifyFn>()
-          .mockResolvedValueOnce(block) // auto attempt escalates and sticks
-          .mockResolvedValue(proceed), // the forced retry passes
+          .mockResolvedValueOnce(block)
+          .mockResolvedValue(proceed),
       });
       await coord.submit({ ref: 42, members: members('completed') });
       const forced = await coord.submit({ ref: 42, members: members('completed') }, { force: true });
@@ -514,9 +484,6 @@ describe('EpicIntegrateCoordinator', () => {
         },
       });
       const submitted = coord.submit({ ref: 42, members: members('completed') });
-      // Let the pre-verify awaits (branchExists/symbolicBranch/revParse) settle so
-      // `attempt` reaches the synchronous `lastVerification.set(..., 'pending')`
-      // just before the (still-gated) verify call.
       await new Promise((r) => setTimeout(r, 0));
       expect(coord.verificationStatus(42)).toBe('pending');
       release();
@@ -545,7 +512,6 @@ describe('EpicIntegrateCoordinator', () => {
       },
     });
     const first = coord.submit({ ref: 42, members: members('completed') });
-    // A second submit while the first is mid-verification must not start a redundant attempt.
     const second = await coord.submit({ ref: 42, members: members('completed') });
     expect(second).toEqual({ status: 'busy' });
     release();

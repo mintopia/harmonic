@@ -2,21 +2,6 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-/**
- * WCAG 2.1 AA contrast floor for the Paper palette (issue #260).
- *
- * DESIGN.md § 2 claims every informational pairing holds AA "in both themes".
- * This test computes the actual contrast ratio of every documented token
- * pairing straight from the source of truth — the `--hm-*` custom properties in
- * `web/src/index.css` — and fails the build if any drops below its floor, so a
- * token nudge can never silently regress light *or* dark again.
- *
- * Floors (WCAG 2.1): 4.5:1 for normal-size text (1.4.3); 3:1 for UI components
- * and graphical objects (1.4.11) — the Switch off-track and the neutral lane
- * rules. The knob is Tailwind `bg-white` (Switch.tsx) and the card behind a
- * Switch is `--hm-surface`; the neutral lane rule sits on `--hm-canvas`.
- */
-
 const CSS = readFileSync(fileURLToPath(new URL('../web/src/index.css', import.meta.url)), 'utf8');
 
 const WHITE = '#ffffff'; // the Switch knob (`bg-white`, web/src/components/Switch.tsx)
@@ -40,17 +25,11 @@ function contrast(a: string, b: string): number {
   return (hi + 0.05) / (lo + 0.05);
 }
 
-/**
- * Pull one CSS rule's `--hm-*` declarations into a name→value map. `selector`
- * matches the rule's selector up to and including its opening brace (a regex, so
- * whitespace/formatting can vary); we then brace-count so the nested media rule
- * doesn't confuse the scan.
- */
 function tokensIn(css: string, selector: RegExp): Record<string, string> {
   const m = selector.exec(css);
   if (!m) throw new Error(`token block not found: ${selector}`);
   let depth = 0;
-  let i = m.index + m[0].length - 1; // sits on the opening `{`
+  let i = m.index + m[0].length - 1;
   const bodyStart = i + 1;
   for (; i < css.length; i++) {
     if (css[i] === '{') depth++;
@@ -64,46 +43,28 @@ function tokensIn(css: string, selector: RegExp): Record<string, string> {
   return out;
 }
 
-const light = tokensIn(CSS, /:root\s*\{/); // first `:root{` in the file is the light block
+const light = tokensIn(CSS, /:root\s*\{/);
 const darkExplicit = tokensIn(CSS, /:root\[data-theme='dark'\]\s*\{/);
 const darkSystem = tokensIn(CSS, /:root:not\(\[data-theme='light'\]\)\s*\{/);
 const themes = { light, dark: darkExplicit } as const;
 
-/** Resolve a token to its hex, failing loudly if the pass ever drops one. */
 function hex(tokens: Record<string, string>, name: string): string {
   const value = tokens[name];
   if (value === undefined) throw new Error(`missing token: --hm-${name}`);
   return value;
 }
 
-/** Documented text-on-tint state pairings (DESIGN.md § 2; ui.ts STATE_CHIP_STYLES). */
 const TEXT_ON_TINT: ReadonlyArray<readonly [string, string, string]> = [
   ['ready', 'ready', 'ready-tint'],
   ['await', 'await', 'await-tint'],
   ['merged', 'merged', 'merged-tint'],
   ['failed', 'fail', 'fail-tint'],
   ['blocked', 'muted', 'blocked-tint'],
-  // #458 retired the running-amber sub-AA exception: the Working state chip
-  // (running text on its tint) and the blocker-count slate badge (blocked text
-  // on its tint) are now held to the text floor in both themes, like every
-  // other state pill — no more colour-carries-alone carve-out.
   ['working chip', 'running', 'running-tint'],
   ['blocked slate badge', 'blocked', 'blocked-tint'],
   ['tool', 'tool', 'tool-tint'],
-  // Active navigation renders teal accent text on the accent tint.
   ['accent', 'accent', 'accent-tint'],
-  // Themed text selection (index.css `::selection`, issue #187): the Accent Tint
-  // ground carries whatever text was selected, recoloured to Ink — a new tint
-  // pairing Paper uses, so DESIGN.md § 2 requires it clear the
-  // text floor in both themes before it ships.
   ['selection', 'ink', 'accent-tint'],
-  // The permission band (issue #97) takes the Running amber tint as its ground
-  // — the harness is blocked, "work in flight, now yours" — and carries its
-  // copy in the neutral text roles on top of it: the prominent "Waiting for
-  // your decision" headline in ink, the tool metadata + paused note in muted
-  // (the informational floor). Both must hold AA on the amber tint so a future
-  // tint nudge can't silently drown the one prompt that means the operator is
-  // being asked to act.
   ['permission-band headline', 'ink', 'running-tint'],
   ['permission-band meta', 'muted', 'running-tint'],
 ];
@@ -112,14 +73,10 @@ const TEXT_FLOOR = 4.5;
 const UI_FLOOR = 3;
 const PAPER_TOKENS = ['await', 'await-dot', 'await-tint', 'on-await', 'on-done', 'sunken', 'edge-strong'] as const;
 
-// The warm categorical token-class ramp (ADR-0014): input, output, cache-read,
-// cache-write. Colour is load-bearing here, so each fill is gated below.
 const TOKEN_CLASS_TOKENS = ['token-input', 'token-output', 'token-cache-read', 'token-cache-write'] as const;
 
 describe('Paper palette meets WCAG AA in both themes (issue #260)', () => {
   it('defines the same dark tokens via data-theme and prefers-color-scheme', () => {
-    // Dark values live twice (explicit toggle + system media query); they must
-    // stay byte-identical or one path silently drifts below the floor.
     expect(darkSystem).toEqual(darkExplicit);
   });
 
@@ -160,11 +117,6 @@ describe('Paper palette meets WCAG AA in both themes (issue #260)', () => {
         });
       }
 
-      // #458 retired the running-amber sub-AA exception (DESIGN.md §2, ADR-0011):
-      // the Running amber and the Blocked slate both render as count/figure text
-      // straight on a neutral panel (STATE_COUNT_COLORS in ui.ts), so both must
-      // now clear the text floor on every neutral, in BOTH themes — no light-only
-      // carve-out.
       for (const role of ['running', 'blocked'] as const) {
         for (const bg of ['surface', 'canvas', 'raised'] as const) {
           it(`${role} count/figure on ${bg} ≥ ${TEXT_FLOOR}:1`, () => {
@@ -173,8 +125,6 @@ describe('Paper palette meets WCAG AA in both themes (issue #260)', () => {
         }
       }
 
-      // Bright solid await and merged fills need theme-specific ink: white in
-      // light, dark ink in dark. DESIGN.md §2 calls this the Ink-Flip Rule.
       for (const [label, fg, bg] of [
         ['await', 'on-await', 'await'],
         ['merged', 'on-done', 'merged'],
@@ -184,12 +134,6 @@ describe('Paper palette meets WCAG AA in both themes (issue #260)', () => {
         });
       }
 
-      // The three text roles must read on every neutral panel background the
-      // Paper palette uses Surface, Canvas, Raised, and the Sunken well (the
-      // hardest, its luminance nearest the mid-tone roles). Ink is primary text;
-      // Muted is the informational floor; Faint (branch names, ids, metadata,
-      // zero counts, the dialog close ✕) must still clear the text floor even at
-      // its quietest. All three are guarded across every Paper neutral.
       for (const role of ['ink', 'muted', 'faint'] as const) {
         for (const bg of ['surface', 'canvas', 'raised', 'sunken'] as const) {
           it(`${role} on ${bg} ≥ ${TEXT_FLOOR}:1`, () => {
@@ -198,16 +142,10 @@ describe('Paper palette meets WCAG AA in both themes (issue #260)', () => {
         }
       }
 
-      // The solid-fail destructive button (btnDestructive — workspace delete
-      // confirm, issue #98) carries its label on the fail fill; it must clear
-      // the text floor in both themes.
       it(`on-fail label on the fail fill ≥ ${TEXT_FLOOR}:1`, () => {
         expect(contrast(hex(t, 'on-fail'), hex(t, 'fail'))).toBeGreaterThanOrEqual(TEXT_FLOOR);
       });
 
-      // The token-breakdown bars (ADR-0014) render each warm class fill on the
-      // raised bar track; every fill must clear the 3:1 graphical-object floor
-      // (WCAG 1.4.11) against that track so the class split reads in both themes.
       for (const token of TOKEN_CLASS_TOKENS) {
         it(`token class ${token} vs bar track ≥ ${UI_FLOOR}:1`, () => {
           expect(contrast(hex(t, token), hex(t, 'raised'))).toBeGreaterThanOrEqual(UI_FLOOR);
@@ -221,27 +159,10 @@ describe('Paper palette meets WCAG AA in both themes (issue #260)', () => {
         expect(contrast(hex(t, 'switch-off'), hex(t, 'surface'))).toBeGreaterThanOrEqual(UI_FLOOR);
       });
 
-      // Draft/Cancelled lanes take the Faint neutral rule (ui.ts LANE_BORDER);
-      // it must be a visible divider on the canvas, not the old hairline.
       it(`neutral lane rule vs canvas ≥ ${UI_FLOOR}:1`, () => {
         expect(contrast(hex(t, 'faint'), hex(t, 'canvas'))).toBeGreaterThanOrEqual(UI_FLOOR);
       });
 
-      // The two retuned subtle seams — Hairline (a panel's inset row-separators,
-      // and the dark-theme "hairline ring standing in for the shadow", DESIGN.md
-      // §4) and Edge (interactive borders: fields, ghost buttons, run chips) —
-      // are deliberately BELOW the 3:1 affordance floor. The operator-relied-on
-      // ≥3:1 non-text element is the Switch off-track — the one neutral DESIGN.md
-      // §2 gives an explicit "held at ≥3:1" callout — not these; a seam that read
-      // at 3:1 would be a rule, which Paper avoids (§4: "grouping is the
-      // panel, not the rule"). They must still be a *visible* seam (never collapse
-      // into the fill they sit on), but claiming the text/affordance floors here
-      // would misread the design. Locking the band makes the exclusion a decision
-      // rather than an omission for "every retuned pairing" (issue #180): a future
-      // nudge that darkens Edge into a real 3:1 border, or lightens either seam
-      // into invisibility, trips this and forces the design call. (Edge's border-
-      // as-sole-affordance case — a ghost button is bg-surface on a Surface panel
-      // — is the one pairing plausibly owed 3:1; flagged to design on the ticket.)
       for (const seam of ['hairline', 'edge'] as const) {
         it(`${seam} is a visible sub-floor seam on surface (1:1 < r < ${UI_FLOOR}:1)`, () => {
           const r = contrast(hex(t, seam), hex(t, 'surface'));
@@ -253,13 +174,6 @@ describe('Paper palette meets WCAG AA in both themes (issue #260)', () => {
   }
 });
 
-/**
- * Attempt-activity heatmap ramp (issue #405). The five `--hm-heat-*` tokens are
- * a graphical encoding, not text, so the WCAG text floors don't apply — but the
- * ramp only reads as an intensity scale if it stays monotonic and its steps stay
- * distinguishable. This gate locks both from the source of truth so a token nudge
- * can't flatten the ramp or collapse the empty tile into level 1 in either theme.
- */
 describe('Attempt-activity heatmap ramp reads as an intensity scale (issue #405)', () => {
   const STEPS = ['heat-1', 'heat-2', 'heat-3', 'heat-4'] as const;
 

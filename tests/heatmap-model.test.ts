@@ -38,7 +38,6 @@ describe('heatLevel', () => {
 });
 
 describe('buildHeatmap', () => {
-  // 2026-08-31 is a Monday (getDay 1).
   const now = new Date('2026-08-31T12:00:00').getTime();
 
   it('produces a fixed weeks × 7 grid', () => {
@@ -55,7 +54,6 @@ describe('buildHeatmap', () => {
 
   it('places a day at its correct week column and weekday row', () => {
     const hm = buildHeatmap([cell('2026-08-31', 4)], now);
-    // Today (Monday) sits in the last column, row 1 (Monday).
     const last = hm.weeks[HEATMAP_WEEKS - 1]!;
     expect(last[1]).toMatchObject({ attempts: 4, level: 4 });
     expect(last[0]).toMatchObject({ attempts: 0, level: 0 });
@@ -64,7 +62,6 @@ describe('buildHeatmap', () => {
   it('fills quiet days as empty cells rather than omitting them', () => {
     const hm = buildHeatmap([cell('2026-08-31', 4)], now);
     const filled = hm.weeks.flat().filter((c) => c !== null);
-    // Every past day in the window is present; none are dropped for being quiet.
     expect(filled.every((c) => c!.attempts >= 0)).toBe(true);
     expect(filled.some((c) => c!.attempts === 0 && c!.level === 0)).toBe(true);
   });
@@ -72,15 +69,10 @@ describe('buildHeatmap', () => {
   it('leaves days after today null in the trailing week', () => {
     const hm = buildHeatmap([], now);
     const last = hm.weeks[HEATMAP_WEEKS - 1]!;
-    // Monday is today; Tue–Sat are the future and must be gaps, not empty cells.
     expect(last.slice(2)).toEqual([null, null, null, null, null]);
   });
 
   it('re-keys server day keys that fall off the client midnight grid', () => {
-    // The /stats series carries day keys at the *server's* local midnight; a
-    // viewer in another timezone (UTC server, a BST/EDT browser) sees each key
-    // offset from its own midnight. The count must still land in that calendar
-    // day, not vanish — the regression behind the blank live-instance heatmap.
     const offGrid: DayCost = { ...cell('2026-08-31', 4), day: day('2026-08-31') + 3 * 3600_000 };
     const hm = buildHeatmap([offGrid], now);
     expect(hm.total).toBe(4);

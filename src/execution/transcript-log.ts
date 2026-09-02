@@ -15,9 +15,8 @@ export interface TranscriptLogEvent {
 
 export type TranscriptLog = { status: 'available'; events: TranscriptLogEvent[] } | { status: 'unavailable' };
 
-/** An operator steer message (Harmonic's own `steer_injected`/`steer_queued`
- * run-event, ADR-0031's "small structured fact") to interleave into a parsed
- * transcript so the operator's redirections show alongside the agent's turns. */
+/** An operator steer message to interleave into a parsed transcript so the
+ * operator's redirections show alongside the agent's turns. */
 export interface OperatorMessage {
   ts: number;
   text: string;
@@ -27,10 +26,8 @@ export interface OperatorMessage {
 
 /**
  * Merge operator steer messages into a parsed transcript, stable-sorted with
- * the harness events by timestamp and re-sequenced. The harness JSONL only
- * records the agent's side; the operator's messages live in Harmonic's run-event
- * log, so this is where the two rejoin for the transcript view. A steer renders
- * as its own `operator_message` row (see `web/event-stream-model.ts`).
+ * the harness events by timestamp and re-sequenced. A steer renders as its own
+ * `operator_message` row.
  */
 export function withOperatorMessages(events: TranscriptLogEvent[], operator: OperatorMessage[]): TranscriptLogEvent[] {
   if (operator.length === 0) return events;
@@ -44,8 +41,6 @@ export function withOperatorMessages(events: TranscriptLogEvent[], operator: Ope
       payload: { sessionUpdate: 'operator_message', queued: m.queued, content: { type: 'text', text: m.text } },
     })),
   ]
-    // Stable sort by ts: agent events keep their file order (their timestamps are
-    // monotonic), and each steer slots in at the moment it was sent.
     .sort((a, b) => a.ts - b.ts);
   return merged.map((e, i) => ({ ...e, id: i + 1, seq: i + 1 }));
 }
@@ -244,10 +239,6 @@ function codexEvents(entry: unknown, firstId: number): TranscriptLogEvent[] {
   return events;
 }
 
-/** The transcript row shows a tool as `<verb> <target>` (event-stream-model
- * splits the title on the first space), so fold the tool's own argument — the
- * shell command it runs, the file it touches — into the title. Without it an
- * `exec` row is a bare verb with no hint of what actually ran. */
 function withTarget(name: string, rawInput: unknown): string {
   const target = toolTarget(name, rawInput);
   return target ? `${name} ${target}` : name;

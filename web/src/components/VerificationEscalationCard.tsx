@@ -12,9 +12,6 @@ import {
 import { guardrailDimensionLabel } from '../guardrail-trip-model';
 import { Donut, type DonutSegment } from './Donut';
 
-// The three panels ARE status here (a verdict, a gate exit, a guardrail), so
-// they take the status tones directly — unlike the token-class bars, whose
-// colours are a categorical key, not a state.
 const VERDICT_COLOR: Record<string, string> = {
   pass: 'var(--hm-merged-dot)',
   block: 'var(--hm-fail-dot)',
@@ -42,9 +39,6 @@ function PanelLabel({ children }: { children: string }) {
   return <div className={`${labelType} mb-3 text-muted`}>{children}</div>;
 }
 
-/** One labelled bar: label, a filled track, and the count. `share` is the fill
- * fraction (0..1) — the gate normalises to the settled total so its bars
- * reconcile, guardrails normalise to the widest so the ranking reads. */
 function BarRow({ label, count, share, color }: { label: string; count: number; share: number; color: string }) {
   return (
     <div className="grid grid-cols-[minmax(6rem,9rem)_1fr_auto] items-center gap-3">

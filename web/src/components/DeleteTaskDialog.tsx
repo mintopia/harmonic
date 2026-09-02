@@ -40,10 +40,6 @@ export function DeleteTaskDialog({
         <p className="text-muted">
           Delete this task permanently? Its runs and history will be removed. This cannot be undone.
         </p>
-        {/* A mirrored Task's row would otherwise resurrect on the next tracker
-            poll (it's just re-reading the still-open ticket) — the delete's
-            tombstone (ADR-0025) is what actually prevents that, but the
-            operator should know the tracker side of it too. */}
         {mirrored && (
           <p className="mt-2 text-muted">
             This task is mirrored from a tracker issue — it will also be dismissed there, so the next poll won't

@@ -11,15 +11,14 @@ export interface ToolCallRange {
   from: number;
   to: number;
   workspaceId?: number;
-  /** Scope to one Epic's child Tasks by their rollup key (`tasks.mapRef`, issue #410). */
+  /** Scope to one Epic's child Tasks by their rollup key (`tasks.mapRef`). */
   epicRef?: number;
 }
 
 /**
- * Read-only rollups over the per-Attempt tool-call snapshot (ADR-0031).
- * Epic is derived from the
- * mirrored Task's parent tracker ref (`mapRef`); native and unparented Tasks
- * therefore contribute only to their Task total.
+ * Read-only rollups over the per-Attempt tool-call snapshot. Epic is derived
+ * from the mirrored Task's parent tracker ref (`mapRef`); native and
+ * unparented Tasks contribute only to their Task total.
  */
 export class ToolCallAggregateStore {
   constructor(private readonly db: AsyncDbHandle) {}
@@ -50,15 +49,9 @@ export class ToolCallAggregateStore {
   }
 }
 
-/**
- * Read a Stats range from the native tool-call aggregate. This accepts an
- * already-open database so the Stats route can include it in its one
- * concurrent-read snapshot (ADR-0029 §5).
- */
+/** Read a Stats range from the tool-call aggregate; accepts an already-open database so the Stats route can batch its reads. */
 export async function totalsForRange(db: AsyncDb, range: ToolCallRange): Promise<ToolCallTotals> {
   const { from, to, workspaceId, epicRef } = range;
-  // Optional Workspace/Epic predicates both reach `tasks` via the same join;
-  // `and()` drops any `undefined`, so an unscoped read carries neither.
   const rows = await db
     .select({
       taskId: tasks.id,

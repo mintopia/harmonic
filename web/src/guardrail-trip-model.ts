@@ -1,8 +1,6 @@
 import { usd } from './cost.js';
 import type { GuardrailEvent, GuardrailDimension } from './types.js';
 
-/** Human-readable label per dimension (issue #171); an unrecognised
- * dimension falls back to the raw string rather than throwing. */
 const DIMENSION_LABELS: Record<GuardrailDimension, string> = {
   'wall-clock': 'Wall clock',
   tokens: 'Tokens',
@@ -11,7 +9,7 @@ const DIMENSION_LABELS: Record<GuardrailDimension, string> = {
   'tool-timeout': 'Tool timeout',
 };
 
-/** The dimension label alone (issue #176): EventStream's `guardrail-tripped`
+/** The dimension label alone: EventStream's `guardrail-tripped`
  * lifecycle line reuses this so the raw wire token ("wall-clock") reads as
  * the same human word the header banner already uses, instead of forking its
  * own vocabulary. Same fallback as `describeGuardrailTrip` — an unrecognised
@@ -22,8 +20,6 @@ export function guardrailDimensionLabel(dimension: string): string {
 
 const msToMinutes = (ms: number): number => Math.round(ms / 60_000);
 
-/** wall-clock and tool-timeout share the same ms-limit shape and read the
- * same way: "N min limit, ran N min". */
 const minutesEvidence = (e: GuardrailEvent): string =>
   `${msToMinutes(e.limitValue)} min limit, ran ${msToMinutes(e.observedValue)} min`;
 
@@ -35,11 +31,7 @@ const EVIDENCE_FORMATTERS: Record<GuardrailDimension, (e: GuardrailEvent) => str
     return `${minutesEvidence(e)}${target}`;
   },
   tokens: (e) => `${e.limitValue.toLocaleString()} token limit, used ${e.observedValue.toLocaleString()}`,
-  // limitValue/observedValue are dollars already (not cents) — the same USD
-  // convention as Cost elsewhere, so this reuses cost.ts's `usd` formatter.
   cost: (e) => `${usd(e.limitValue)} limit, spent ${usd(e.observedValue)}`,
-  // Progress has no scalar bound — its limitValue is a "no limit" sentinel
-  // (0) and the real evidence rides in payload.pattern (issue #171 spec).
   progress: (e) => {
     const payload = e.payload as { pattern?: string } | null | undefined;
     return payload?.pattern ? `no progress — ${payload.pattern}` : 'no progress detected';
@@ -47,7 +39,7 @@ const EVIDENCE_FORMATTERS: Record<GuardrailDimension, (e: GuardrailEvent) => str
 };
 
 /**
- * A Guardrail-trip event (issue #171) as operator-facing prose: a short
+ * A Guardrail-trip event as operator-facing prose: a short
  * dimension label plus an evidence string comparing the configured limit to
  * what was observed, in the dimension's own unit. Pure and total — an
  * unrecognised `dimension` (a future addition the client hasn't shipped a

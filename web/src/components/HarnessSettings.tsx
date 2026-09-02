@@ -52,8 +52,6 @@ function ListEditor({ items, onChange, ariaLabel }: { items: string[]; onChange:
   );
 }
 
-/** Values are masked (password-style) by default since they commonly hold API
- * keys, with a per-row reveal toggle. */
 function EnvEditor({ env, onChange }: { env: Record<string, string>; onChange: (env: Record<string, string>) => void }) {
   const [revealed, setRevealed] = useState<Record<string, boolean>>({});
   const rename = useKeyRename(env, onChange);

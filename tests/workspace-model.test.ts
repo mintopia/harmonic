@@ -8,7 +8,6 @@ import {
 } from '../web/src/workspace-model.js';
 import type { Workspace } from '../web/src/types.js';
 
-/** Minimal Storage stand-in — node tests have no localStorage. */
 const memoryStorage = (initial: Record<string, string> = {}) => {
   const data = new Map(Object.entries(initial));
   return {

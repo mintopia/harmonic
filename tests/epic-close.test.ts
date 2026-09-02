@@ -1,10 +1,3 @@
-/**
- * Close the Epic's tracker issue on completion (#442). The whole-Epic integrate
- * (both a real merge and a no-op/empty-diff finish) funnels through one
- * `recordIntegration` callback in the tracker manager, which — after settling the
- * stored Epic — calls {@link closeIntegratedEpic}. ADR-0004 keeps closure input-only
- * for Tasks; this is the deliberate Epic carve-out, since a container runs no agent.
- */
 import { describe, it, expect, vi } from 'vitest';
 import { closeIntegratedEpic, recordAndCloseIntegratedEpic } from '../src/tracker/epic-close.js';
 import type { Ticket, TicketRef, TrackerAdapter } from '../src/tracker/adapter.js';
@@ -26,7 +19,6 @@ const ticket = (over: Partial<Ticket> & Pick<Ticket, 'number'>): Ticket => ({
   ...over,
 });
 
-/** A writable stub with recording spies for the two calls the close makes. */
 const writable = (state: Ticket['state'] = 'open') => {
   const readTicket = vi.fn(async (r: TicketRef) => ticket({ number: r.number, state }));
   const close = vi.fn(async (_r: TicketRef, _comment: string) => {});
@@ -53,7 +45,6 @@ describe('closeIntegratedEpic (#442)', () => {
     const readTicket = vi.fn(async (r: TicketRef) => ticket({ number: r.number }));
     const adapter = { name: 'freeform', readTicket } as unknown as TrackerAdapter;
     await expect(closeIntegratedEpic(adapter, 42)).resolves.toBeUndefined();
-    // No `close` means nothing to write, and no wasted read to decide that.
     expect(readTicket).not.toHaveBeenCalled();
   });
 });
@@ -87,7 +78,7 @@ describe('recordAndCloseIntegratedEpic (#442) — the recordIntegration effect',
         onError,
       }),
     ).resolves.toBeUndefined();
-    expect(settle).toHaveBeenCalledTimes(1); // the record stands
+    expect(settle).toHaveBeenCalledTimes(1);
     expect(onError).toHaveBeenCalledWith(expect.stringContaining('42'));
   });
 

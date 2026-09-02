@@ -12,13 +12,6 @@ import type { PostMergeHook } from '../src/execution/branch-merge.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { allWorkspaces, makeSettingsStore } from './helpers.js';
 
-/**
- * Epic → develop integration on the one merge policy (ADR-0001, #382). Exercised
- * through the REAL `Runner.mergeEpicIntegration` against a throwaway git repo: a
- * `git merge --no-ff` of `epic/<ref>` into develop under the base repo mutex, the
- * injected post-merge check, and a `git revert -m 1` on red — the identical policy
- * the automated task path runs, no ff-only / lease / freshness gate.
- */
 describe('Runner.mergeEpicIntegration (epic → develop, ADR-0001 #382)', () => {
   const git = (dir: string, ...args: string[]) =>
     execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
@@ -34,8 +27,6 @@ describe('Runner.mergeEpicIntegration (epic → develop, ADR-0001 #382)', () => 
     asyncDb = await openAsyncDb(dir);
     settingsStore = await makeSettingsStore(dir);
     tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
-    // develop with epic/5 cut off it, each side touching a DIFFERENT file so the
-    // epic → develop merge is clean (a real merge commit, base moved meanwhile).
     repo = join(dir, 'repo');
     execFileSync('git', ['init', '-b', 'develop', repo], { encoding: 'utf8' });
     git(repo, 'config', 'user.name', 'Test');
@@ -44,7 +35,6 @@ describe('Runner.mergeEpicIntegration (epic → develop, ADR-0001 #382)', () => 
     git(repo, 'add', '-A');
     git(repo, 'commit', '-m', 'init');
     git(repo, 'branch', 'epic/5');
-    // develop advances after the epic branched — the merge commit must reconcile it.
     writeFileSync(join(repo, 'develop.txt'), 'develop advance\n');
     git(repo, 'add', '-A');
     git(repo, 'commit', '-m', 'develop side');
@@ -63,8 +53,6 @@ describe('Runner.mergeEpicIntegration (epic → develop, ADR-0001 #382)', () => 
   const makeRunner = (postMerge?: PostMergeHook): Runner =>
     new Runner(tasks, asyncDb, () => defaultConfig(), {
       worktreesDir: join(dir, 'worktrees'),
-      // A no-op resolve drive: the conflict test's turns achieve nothing, so the
-      // policy exhausts its bounded turns and escalates plainly (no real harness).
       criticDrive: { run: async () => ({ output: '', permissionRequests: [] }) },
       ...(postMerge ? { postMerge } : {}),
     });
@@ -86,11 +74,9 @@ describe('Runner.mergeEpicIntegration (epic → develop, ADR-0001 #382)', () => 
     });
 
     expect(outcome.kind).toBe('merged');
-    // develop now contains the epic's work AND its own advance — reconciled by the merge commit.
     expect(() => git(repo, 'merge-base', '--is-ancestor', 'epic/5', 'develop')).not.toThrow();
     expect(() => git(repo, 'cat-file', '-e', 'develop:epic.txt')).not.toThrow();
     expect(() => git(repo, 'cat-file', '-e', 'develop:develop.txt')).not.toThrow();
-    // The success-only post-merge hook fired for develop (refreshes other live Epics).
     expect(refreshed).toEqual(['develop']);
   });
 
@@ -107,17 +93,11 @@ describe('Runner.mergeEpicIntegration (epic → develop, ADR-0001 #382)', () => 
     });
 
     expect(outcome).toMatchObject({ kind: 'escalated', reason: 'post-merge-red' });
-    // The merge landed then was reverted, so develop's tree is back to its pre-merge state:
-    // the epic's file is NOT present on the working develop tree.
     expect(() => git(repo, 'cat-file', '-e', 'develop:epic.txt')).toThrow();
-    // A merge + a revert were recorded (the base is not left red), so the tip advanced past `before`.
     expect(git(repo, 'rev-parse', 'develop')).not.toBe(before);
   });
 
   it('escalates (conflict) when the epic and develop conflict and resolution is disabled', async () => {
-    // Both sides edit the SAME file → a textual conflict; defaultConfig sets
-    // conflictResolveTurns=2, but with no criticDrive wired the resolve turns
-    // achieve nothing and the policy escalates plainly.
     const conflictRepo = join(dir, 'conflict-repo');
     execFileSync('git', ['init', '-b', 'develop', conflictRepo], { encoding: 'utf8' });
     git(conflictRepo, 'config', 'user.name', 'Test');
@@ -144,15 +124,9 @@ describe('Runner.mergeEpicIntegration (epic → develop, ADR-0001 #382)', () => 
     });
 
     expect(outcome).toMatchObject({ kind: 'escalated', reason: 'conflict' });
-    // develop is left clean (the aborted merge did not desync the checkout).
     expect(git(conflictRepo, 'status', '--porcelain')).toBe('');
   });
 
-  // A member merging onto `epic/<ref>` is an ordinary `runMergePolicy` call with a
-  // NON-default base branch. The primitive checks that base out in the shared base
-  // repo to merge in place, so it must restore the parked default branch afterwards
-  // — otherwise the base repo is left on `epic/<ref>` and the whole-Epic integrate's
-  // `symbolic-ref HEAD` read would mistake it for the default branch (#382).
   describe('base-repo restore after a non-default base merge (member → epic/<ref>)', () => {
     const noopDeps: MergePolicyDeps = {
       resolveConflictTurn: async () => {},
@@ -161,7 +135,6 @@ describe('Runner.mergeEpicIntegration (epic → develop, ADR-0001 #382)', () => 
     };
 
     it('restores the parked default branch after merging a member onto epic/<ref>', async () => {
-      // A member branch cut off epic/5 with its own commit.
       const memberWt = join(dir, 'member-seed');
       git(repo, 'worktree', 'add', memberWt, '-b', 'harmonic/task-77', 'epic/5');
       writeFileSync(join(memberWt, 'member.txt'), 'member work\n');
@@ -177,9 +150,7 @@ describe('Runner.mergeEpicIntegration (epic → develop, ADR-0001 #382)', () => 
       );
 
       expect(outcome.kind).toBe('merged');
-      // The base repo is back on develop, NOT left parked on epic/5.
       expect(git(repo, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('develop');
-      // epic/5 actually advanced (the member's work is on it).
       expect(git(repo, 'rev-parse', 'epic/5')).not.toBe(epicBefore);
       expect(() => git(repo, 'merge-base', '--is-ancestor', 'harmonic/task-77', 'epic/5')).not.toThrow();
     });
@@ -198,7 +169,6 @@ describe('Runner.mergeEpicIntegration (epic → develop, ADR-0001 #382)', () => 
       );
 
       expect(outcome).toMatchObject({ kind: 'escalated', reason: 'post-merge-red' });
-      // Even on the revert path, the base repo is restored to develop.
       expect(git(repo, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('develop');
     });
   });

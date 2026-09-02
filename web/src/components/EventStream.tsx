@@ -140,14 +140,7 @@ function renderEventLine(event: StreamEvent): ReactNode {
 }
 
 export function EventStream<E extends StreamEvent>({ events }: { events: E[] }) {
-  // Coalescing is O(n) over its input, so recomputing it on every render — a
-  // parent re-renders on each task_changed, not just on a new event — is the
-  // O(n²) the operator feels as the panel stiffening late in a long turn.
-  // Memoizing on the `events` array (a fresh reference only when one is
-  // appended) plus capping the input to a bounded tail keeps it flat.
   const { items, hidden } = useMemo(() => coalesceTail(events), [events]);
-  // The rendered nodes are memoized on `items`, so an unrelated parent
-  // re-render reuses them and React skips the whole transcript subtree.
   const rendered = useMemo(
     () =>
       items.map((item) => {

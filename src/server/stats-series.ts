@@ -14,8 +14,7 @@ export interface DaySeriesEntry {
   tokens: number;
   /** Count of attempts started that day, whatever their state. */
   attempts: number;
-  /** Execution failures started that day (failed-only, ADR-0028): the reliability
-   *  section's fails/day trend. Cancelled and review-rejected Runs are excluded. */
+  /** Execution failures started that day (failed-only); cancelled Attempts are excluded. */
   fails: number;
 }
 
@@ -29,16 +28,7 @@ export interface DaySeriesRun {
   state?: string;
 }
 
-/**
- * Bucket attempts by local-midnight day (by start time) and aggregate, per day:
- * cost, input+output tokens (cache excluded), and run count — ordered by day.
- *
- * Pricing is injected (`priceRuns`) rather than reached for so this stays a
- * pure, testable seam: the route passes `costOfAttempts`,
- * preserving the honest-numbers floor (`incomplete`) exactly as the range total
- * computes it. Tokens are a straight sum of what each run reported, so a day
- * whose attempts logged no usage reads as 0 tokens (an honest count, not a price).
- */
+/** Bucket attempts by local-midnight start day and aggregate cost, input+output tokens (cache excluded), and counts, ordered by day. Pricing is injected via `priceRuns`. */
 export function buildDaySeries<T extends DaySeriesRun>(
   rows: T[],
   priceRuns: (dayRows: T[]) => Cost | null,
@@ -75,12 +65,6 @@ export function buildDaySeries<T extends DaySeriesRun>(
     });
 }
 
-/**
- * Input + output tokens of a merged usage, cache excluded. Prefers the reported
- * aggregate `totals` (authoritative, and what the range headline uses — an ACP
- * run may report totals with no per-model split); falls back to summing the
- * per-model buckets when no aggregate was reported (the session-log path).
- */
 function inputPlusOutput(merged: AttemptUsage | null): number {
   if (!merged) return 0;
   if (merged.totals) return merged.totals.inputTokens + merged.totals.outputTokens;

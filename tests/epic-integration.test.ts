@@ -38,7 +38,6 @@ const ticket = (over: Partial<Ticket>): Ticket => ({
   ...over,
 });
 
-/** An in-memory {@link EpicGit} recording create/delete and answering existence from a set. */
 class FakeGit implements EpicGit {
   readonly branches: Set<string>;
   readonly created: string[] = [];
@@ -48,7 +47,6 @@ class FakeGit implements EpicGit {
   symbolicBranchCalls = 0;
   constructor(
     existing: string[] = [],
-    /** null ⇒ detached HEAD. */
     private readonly defaultBranch: string | null = 'develop',
   ) {
     this.branches = new Set(existing);
@@ -80,7 +78,6 @@ class FakeGit implements EpicGit {
   }
 }
 
-/** Records which Epic refs the coordinator asks to merge develop forward into. */
 class FakeRefresh implements EpicRefreshTrigger {
   readonly calls: number[] = [];
   async refresh(target: { ref: number; repoDir: string; defaultBranch: string }): Promise<unknown> {
@@ -112,7 +109,7 @@ describe('parseIntegrationBranch (issue #163)', () => {
     expect(parseIntegrationBranch('epic/1.5')).toBeNull();
     expect(parseIntegrationBranch('feature/epic/1')).toBeNull();
     expect(parseIntegrationBranch('epic/1/')).toBeNull();
-    expect(parseIntegrationBranch('Epic/1')).toBeNull(); // case-sensitive
+    expect(parseIntegrationBranch('Epic/1')).toBeNull();
   });
 
   it('treats null/undefined/empty as "not an integration branch", never throwing', () => {
@@ -143,7 +140,6 @@ describe('EpicIntegrationCoordinator.reconcile (issue #159)', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  /** An Epic ref 10 (a Spec) with two ready-for-agent member children 11, 12. */
   const epicTickets = (): Ticket[] => [
     ticket({ number: 10, title: 'Epic' }),
     ticket({ number: 11, parent: 10, labels: ['ready-for-agent'] }),
@@ -161,19 +157,15 @@ describe('EpicIntegrationCoordinator.reconcile (issue #159)', () => {
     expect(git.created).toEqual(['epic/10']);
     expect(await baseOf(11)).toBe('epic/10');
     expect(await baseOf(12)).toBe('epic/10');
-    // The Epic ticket's own mirrored Task is never retargeted.
     expect(await baseOf(10)).toBeNull();
   });
 
   it('cuts an epic/<ref> branch for every kind — map, spec, and plain (ADR-0018, #438)', async () => {
     const tickets = [
-      // Spec: an epic-labelled container carrying a spec body.
       ticket({ number: 10, title: 'Spec', labels: [EPIC_LABEL], body: '## What to build\n\nspec' }),
       ticket({ number: 11, parent: 10, labels: ['ready-for-agent'] }),
-      // Map: a wayfinder map container.
       ticket({ number: 20, title: 'Map', isMap: true, labels: ['wayfinder:map'] }),
       ticket({ number: 21, parent: 20, labels: ['ready-for-agent'] }),
-      // Plain: children only — no spec body, no map label.
       ticket({ number: 30, title: 'Plain' }),
       ticket({ number: 31, parent: 30, labels: ['ready-for-agent'] }),
     ];
@@ -210,7 +202,6 @@ describe('EpicIntegrationCoordinator.reconcile (issue #159)', () => {
   });
 
   it('retargets only the ready frontier, not blocked members', async () => {
-    // 12 is blocked by open ticket 11, so it is not in the ready frontier.
     const tickets = [
       ticket({ number: 10, title: 'Epic' }),
       ticket({ number: 11, parent: 10, labels: ['ready-for-agent'] }),
@@ -236,15 +227,12 @@ describe('EpicIntegrationCoordinator.reconcile (issue #159)', () => {
     await mscan(tickets);
     const m11 = (await tasks.list()).find((t) => t.trackerRef === 11)!;
     await tasks.setState(m11.id, 'working');
-    // A fresh post-mirror snapshot carries the live 'running' state, as the poll
-    // passes it (upsertMirrored keeps an already-spawned member running).
     const mirrored = await tasks.list();
     const git = new FakeGit([], 'develop');
     const coord = new EpicIntegrationCoordinator(tasks, dir, git);
 
     await coord.reconcile(tickets, mirrored);
 
-    // Branch still ensured (12 is ready), but the running member's base is frozen.
     expect(git.created).toEqual(['epic/10']);
     expect(await baseOf(11)).toBeNull();
     expect(await baseOf(12)).toBe('epic/10');
@@ -284,16 +272,13 @@ describe('EpicIntegrationCoordinator.reconcile (issue #159)', () => {
   it('defers (no branch, members stay gated) when HEAD is detached', async () => {
     const tickets = epicTickets();
     const mirrored = await mscan(tickets);
-    const git = new FakeGit([], null); // detached HEAD ⇒ symbolicBranch null
+    const git = new FakeGit([], null);
     const coord = new EpicIntegrationCoordinator(tasks, dir, git);
 
     await coord.reconcile(tickets, mirrored);
 
-    // No durable Epic branch anchored on a transient detached OID.
     expect(git.created).toEqual([]);
     expect(await baseOf(11)).toBeNull();
-    // The member is still recognised as base-pending, so the pick gate holds it
-    // rather than letting it fork from the wrong base.
     const m11 = (await tasks.list()).find((t) => t.trackerRef === 11)!;
     expect(coord.awaitsBase(m11)).toBe(true);
   });
@@ -331,35 +316,21 @@ describe('EpicIntegrationCoordinator.reconcile (issue #159)', () => {
     const m11 = async () => (await tasks.list()).find((t) => t.trackerRef === 11)!;
     const nonMember = (await tasks.list()).find((t) => t.trackerRef === 99)!;
     const native = await tasks.create({ prompt: 'native task' });
-    // Base set to epic/10 and the branch exists in git ⇒ open.
     expect((await m11()).baseBranch).toBe('epic/10');
     expect(await coord.memberBaseNotReady(await m11())).toBe(false);
     expect(await coord.memberBaseNotReady(nonMember)).toBe(false);
     expect(await coord.memberBaseNotReady(native)).toBe(false);
 
-    // A detached working dir (a concurrent afk-direct Run) no longer gates a
-    // member whose integration branch still exists: the gate reads branch
-    // existence straight from git, not from a per-poll set a detach empties.
     const detached = new FakeGit(['epic/10'], null);
     const coordDetached = new EpicIntegrationCoordinator(tasks, dir, detached);
     await coordDetached.reconcile(tickets, await mscan(tickets));
     expect(await coordDetached.memberBaseNotReady(await m11())).toBe(false);
 
-    // But once the branch is actually gone (retired, or lost to a restart before
-    // the reconcile re-cuts it), the member is gated — deferred (transient), so a
-    // later poll re-cuts epic/10 and the gate opens again.
     const gone = new EpicIntegrationCoordinator(tasks, dir, new FakeGit([], 'develop'));
     expect(await gone.memberBaseNotReady(await m11())).toBe(true);
   });
 
   it('gates a recognised Epic member under an existing integration branch, even before any reconcile publishes the ready frontier (#334/#332)', async () => {
-    // The poke race behind #332: the mirror insert makes the member `ready` and
-    // pokes the Auto-Runner in the SAME poll, BEFORE the reconcile retargets its
-    // base. A fresh coordinator has never reconciled, so its ready-frontier set is
-    // empty and `awaitsBase` is false — yet the member is a recognised Epic member
-    // (durable `mapRef`, set at mirror time) with a null base, under an Epic whose
-    // integration branch already exists (as epic/326 did for #332's siblings). It
-    // MUST be gated, not forked off develop.
     const tickets = epicTickets();
     const mirrored = await mscan(tickets);
     const m11 = mirrored.find((t) => t.trackerRef === 11)!;
@@ -367,18 +338,11 @@ describe('EpicIntegrationCoordinator.reconcile (issue #159)', () => {
     expect(m11.baseBranch).toBeNull();
 
     const coord = new EpicIntegrationCoordinator(tasks, dir, new FakeGit(['epic/10'], 'develop'));
-    // No reconcile has run: the ready-frontier arm cannot recognise it…
     expect(coord.awaitsBase(m11)).toBe(false);
-    // …but the durable-membership arm gates it, so it never forks off develop.
     expect(await coord.memberBaseNotReady(m11)).toBe(true);
   });
 
   it('gates a leaf-Epic member before its integration branch is even cut, but never a spine parent’s child (pre-cut race, #334)', async () => {
-    // The residual pre-cut window: a member mirrored and picked before the very
-    // first reconcile cuts its Epic branch. `epic/10` does not exist yet and no
-    // reconcile has run, so neither the frontier arm nor a branch-existence check
-    // can recognise it — the gate falls back to structural membership derived from
-    // the persisted tickets the mirror already wrote.
     const spine = [
       ticket({ number: 1, title: 'Spine', isMap: true }),
       ticket({ number: 10, title: 'Leaf Epic', parent: 1 }),
@@ -391,35 +355,22 @@ describe('EpicIntegrationCoordinator.reconcile (issue #159)', () => {
     expect(m11.mapRef).toBe(10);
     expect(m5.mapRef).toBe(1);
 
-    // Fresh coordinator: never reconciled, and no epic/* branch cut.
     const coord = new EpicIntegrationCoordinator(tasks, dir, new FakeGit([], 'develop'));
-    // The genuine member of leaf Epic 10 is held before epic/10 is cut…
     expect(coord.awaitsBase(m11)).toBe(false);
     expect(await coord.memberBaseNotReady(m11)).toBe(true);
-    // …but the spine parent's plain child (parent 1 is NOT a leaf Epic, so epic/1
-    // is never cut) is left to run normally — not bricked into a gate loop.
     expect(await coord.memberBaseNotReady(m5)).toBe(false);
   });
 
   it('a continuation/retry never regresses an Epic member to develop: a base flipped to develop/null re-gates on membership (#334/#330-331)', async () => {
-    // #330/#331: a member's run base flip-flopped develop↔epic/326 across attempts
-    // — an attempt re-resolved its base and dropped back to develop. Whatever a
-    // re-resolution leaves in the base column (develop, or null), the member's
-    // `mapRef` under a live integration branch still gates it (transient) until
-    // the reconcile re-points it at epic/10 — it can never spawn off develop.
     const tickets = epicTickets();
     const mirrored = await mscan(tickets);
     const coord = new EpicIntegrationCoordinator(tasks, dir, new FakeGit([], 'develop'));
     await coord.reconcile(tickets, mirrored);
 
     const m11Id = mirrored.find((t) => t.trackerRef === 11)!.id;
-    // Attempt 1's base was set to the live integration branch, and it is spawnable.
     expect((await tasks.get(m11Id)).baseBranch).toBe('epic/10');
     expect(await coord.memberBaseNotReady(await tasks.get(m11Id))).toBe(false);
 
-    // A retry poll whose ready frontier is empty (the prior attempt emptied it):
-    // the ready-frontier arm is blind, but membership + the live branch still gate
-    // — for a base regressed to develop AND a base cleared to null alike.
     const retryCoord = new EpicIntegrationCoordinator(tasks, dir, new FakeGit(['epic/10'], 'develop'));
     for (const regressed of ['develop', null] as const) {
       await tasks.setBaseBranch(m11Id, regressed);
@@ -432,16 +383,11 @@ describe('EpicIntegrationCoordinator.reconcile (issue #159)', () => {
   it('a member whose epic branch exists is spawnable even when the ready frontier is empty; a missing branch is deferred (#231)', async () => {
     const tickets = epicTickets();
     const mirrored = await mscan(tickets);
-    // Point member 11 at epic/10 as a durable base (as a prior reconcile would),
-    // then never run a reconcile that would repopulate a ready-frontier-derived
-    // liveness set. The ready frontier is empty for this coordinator, yet git is
-    // the ground truth: the branch exists, so the member is spawnable.
     const m11Id = mirrored.find((t) => t.trackerRef === 11)!.id;
     await tasks.setBaseBranch(m11Id, 'epic/10');
     const present = new EpicIntegrationCoordinator(tasks, dir, new FakeGit(['epic/10'], 'develop'));
     expect(await present.memberBaseNotReady(await tasks.get(m11Id))).toBe(false);
 
-    // The same member with the branch absent is deferred (gated), not escalated.
     const missing = new EpicIntegrationCoordinator(tasks, dir, new FakeGit([], 'develop'));
     expect(await missing.memberBaseNotReady(await tasks.get(m11Id))).toBe(true);
   });
@@ -449,10 +395,8 @@ describe('EpicIntegrationCoordinator.reconcile (issue #159)', () => {
   it('level-triggered currency: a poll refreshes a behind epic/<ref> (develop advanced by a non-merge path) and skips a current one', async () => {
     const tickets = epicTickets();
     const mirrored = await mscan(tickets);
-    // epic/10 exists but does NOT contain develop — develop advanced via a direct
-    // commit / revert / external push, no Harmonic merge, so no edge refresh fired.
     const git = new FakeGit(['epic/10'], 'develop');
-    git.contained.delete('epic/10'); // develop is not an ancestor ⇒ behind
+    git.contained.delete('epic/10');
     const refresh = new FakeRefresh();
     const coord = new EpicIntegrationCoordinator(tasks, dir, git);
     coord.attachRefreshTrigger(refresh);
@@ -460,7 +404,6 @@ describe('EpicIntegrationCoordinator.reconcile (issue #159)', () => {
     await coord.reconcile(tickets, mirrored);
     expect(refresh.calls).toEqual([10]);
 
-    // Once develop is contained again, the next poll is a no-op — no FIFO churn.
     git.contained.add('epic/10');
     refresh.calls.length = 0;
     await coord.reconcile(tickets, await mscan(tickets));
@@ -468,9 +411,6 @@ describe('EpicIntegrationCoordinator.reconcile (issue #159)', () => {
   });
 
   it('refreshes a behind epic even with an empty ready frontier (currency is not gated by the ready-frontier early return)', async () => {
-    // Epic 10's only member is closed ⇒ empty ready frontier and no integrate trigger,
-    // which in the edge-triggered design short-circuited before any refresh. The
-    // live epic/10 has still fallen behind develop and must be caught up.
     const tickets = [
       ticket({ number: 10, title: 'Epic' }),
       ticket({ number: 11, parent: 10, state: 'closed', closedAt: '2026-08-08T00:00:00Z' }),
@@ -487,7 +427,6 @@ describe('EpicIntegrationCoordinator.reconcile (issue #159)', () => {
 
   it('never refreshes an epic whose integration branch does not exist, and skips currency on a detached HEAD', async () => {
     const tickets = epicTickets();
-    // No epic/10 branch yet ⇒ nothing to keep current.
     const noBranch = new FakeGit([], 'develop');
     const r1 = new FakeRefresh();
     const c1 = new EpicIntegrationCoordinator(tasks, dir, noBranch);
@@ -495,7 +434,6 @@ describe('EpicIntegrationCoordinator.reconcile (issue #159)', () => {
     await c1.reconcile(tickets, await mscan(tickets));
     expect(r1.calls).toEqual([]);
 
-    // Detached working dir ⇒ no default branch to merge forward, defer.
     const detached = new FakeGit(['epic/10'], null);
     detached.contained.delete('epic/10');
     const r2 = new FakeRefresh();
@@ -564,7 +502,6 @@ describe('EpicIntegrationCoordinator whole-Epic integrate trigger (issue #161)',
     const trigger = new FakeIntegrate();
     const coord = new EpicIntegrationCoordinator(tasks, dir, git);
     coord.attachIntegrateTrigger(trigger);
-    // Both members have merged onto the integration branch (Task state completed).
     await tasks.setState(await memberTaskId(11), 'done');
     await tasks.setState(await memberTaskId(12), 'done');
 
@@ -600,7 +537,7 @@ describe('EpicIntegrationCoordinator whole-Epic integrate trigger (issue #161)',
     await tasks.setState(await memberTaskId(12), 'done');
 
     await coord.reconcile(tickets, mirrored);
-    expect(trigger.calls).toHaveLength(1); // the empty-ready early return no longer fires with a trigger attached
+    expect(trigger.calls).toHaveLength(1);
   });
 });
 
@@ -671,13 +608,11 @@ describe('TaskService.setBaseBranch (issue #159)', () => {
     const set = await tasks.setBaseBranch(t.id, 'epic/7');
     expect(set.baseBranch).toBe('epic/7');
 
-    // Unchanged ⇒ updatedAt is not churned.
     const before = (await tasks.get(t.id)).updatedAt;
     const again = await tasks.setBaseBranch(t.id, 'epic/7');
     expect(again.baseBranch).toBe('epic/7');
     expect(again.updatedAt).toBe(before);
 
-    // Clearing back to inherit is a first-class edit.
     expect((await tasks.setBaseBranch(t.id, null)).baseBranch).toBeNull();
   });
 });

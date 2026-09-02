@@ -47,8 +47,6 @@ describe('WorkspaceService.delete guards (issue #61)', () => {
 
   it('deletes a Workspace that has a dismissal tombstone (issue #162 FK)', async () => {
     const ws = (await workspaces.list())[0]!;
-    // A Dismissed mirrored Task leaves a tombstone FK-bound to the Workspace;
-    // deleting the Workspace must purge it first or foreign_keys=ON rejects it.
     await asyncDb.write((d) =>
       d.insert(trackerDismissals).values({ workspaceId: ws.id, trackerRef: 42, dismissedAt: Date.now() }).run(),
     );
@@ -63,8 +61,6 @@ describe('WorkspaceService.delete guards (issue #61)', () => {
     const attemptId = (await asyncDb.write((d) =>
       d.insert(attempts).values({ taskId: task.id, number: 1, state: 'passed', startedAt: Date.now() }).returning({ id: attempts.id }).get(),
     ))!.id;
-    // Before #162 the Workspace cascade only deleted attempt_events, so a
-    // sibling child row would FK-reject the attempts delete under foreign_keys=ON.
     await asyncDb.write((d) =>
       d.insert(guardrailEvents).values({
         attemptId, seq: 1, ts: Date.now(), dimension: 'wall-clock', limitValue: 1, observedValue: 1, configSource: 'default',

@@ -2,7 +2,7 @@ import { STEP_TYPES, type StepType, type VerificationMechanism } from '../db/sch
 import type { ResolvedVerifiers } from './setting-override.js';
 import type { Verdict } from '../verification/critic-schema.js';
 
-/** The operator-facing state of one verifier category for a Run. */
+/** The operator-facing state of one verifier category for an Attempt. */
 export type VerifierStatusState = 'passed' | 'failed' | 'inconclusive' | 'skipped' | 'disabled' | 'unrunnable' | 'planned' | 'running';
 
 /** A read-time reconciliation of configured verifiers and their recorded attempts. */
@@ -26,14 +26,11 @@ const verdictStates: Record<Verdict, Extract<VerifierStatusState, 'passed' | 'fa
 };
 
 /**
- * Build the always-visible verification read model (ADR-0042, issue #327).
- *
- * Verification attempts persist their mechanism but not a configured command
- * identity, so commands deliberately reconcile as one category even when more
- * than one command is configured. This is read-time best effort: current
- * Workspace settings decide whether a missing category is skipped or disabled.
- * Before the Attempt reaches its Verification Step a configured-but-unattempted
- * verifier reconciles as `planned` rather than `skipped` (ADR-0044, issue #345).
+ * Build the always-visible verification read model. Commands reconcile as one
+ * category even when more than one is configured (attempts persist only the
+ * mechanism). Current Workspace settings decide whether a missing category is
+ * skipped or disabled; before the Attempt reaches its Verification Step a
+ * configured-but-unattempted verifier is `planned` rather than `skipped`.
  */
 export function verifierStatuses({
   verifiers,
@@ -42,8 +39,7 @@ export function verifierStatuses({
 }: {
   verifiers: Pick<ResolvedVerifiers, 'commands' | 'review'>;
   attempts: readonly RecordedAttempt[];
-  /** The Attempt's currently-running Step, or the most recent one; `null`
-   * when no Step has started yet, or none is running (ADR-0001 Vocabulary). */
+  /** The Attempt's currently-running Step, or the most recent one; `null` when none has started or is running. */
   stepType?: StepType | null;
 }): VerifierStatus[] {
   const latestByMechanism = new Map<VerificationMechanism, RecordedAttempt>();
@@ -55,9 +51,6 @@ export function verifierStatuses({
   const commandLabels = verifiers.commands.map((c) => [c.command, ...c.args].join(' ').trim());
 
   return mechanisms.map((mechanism) => {
-    // The ordered command plan rides only on the `command` row, and only when
-    // some command is configured — the invariant both non-disabled command
-    // branches below share.
     const withCommands = (base: VerifierStatus): VerifierStatus =>
       mechanism === 'command' && commandLabels.length > 0 ? { ...base, commands: commandLabels } : base;
 
@@ -82,10 +75,6 @@ export function verifierStatuses({
           : `No ${mechanism} verification attempt was recorded for this run.`;
       return withCommands({ mechanism, state, reason });
     }
-    // The critic has a third case commands don't: toggled on but unrunnable —
-    // `reviewEnabled` resolved true yet no prompt/model resolved, so it was never
-    // going to run (ADR-0044 §F, issue #340). Distinct from plain 'disabled' so the
-    // operator sees the stuck toggle instead of a silent no-op.
     if (mechanism === 'critic' && verifiers.review.requested) {
       return {
         mechanism,

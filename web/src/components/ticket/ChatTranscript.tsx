@@ -25,8 +25,6 @@ function clockTime(at: number): string {
   return new Date(at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
 }
 
-/** The chat's two speakers as avatar chips — Claude in the teal action voice, the
- * operator in the indigo needs-you voice — no photos (the Paper register). */
 function Avatar({ operator }: { operator: boolean }) {
   return operator ? (
     <span className="grid size-7 shrink-0 place-items-center rounded-md bg-await-tint text-await">
@@ -37,9 +35,6 @@ function Avatar({ operator }: { operator: boolean }) {
   );
 }
 
-/** One turn: the speaker avatar, an author · model · time header, then the text.
- * The operator's steer turns fold in where they were sent — left-aligned like
- * the agent, tagged "You · steered", not walled off in a separate box. */
 function MessageRow({ row, model }: { row: Extract<ChatRow, { kind: 'message' }>; model: string }) {
   const operator = row.author === 'operator';
   return (
@@ -62,9 +57,6 @@ function MessageRow({ row, model }: { row: Extract<ChatRow, { kind: 'message' }>
   );
 }
 
-/** A tool call as a compact bordered card — a status dot, the verb, the target
- * it touched, a passed/failed badge, and its output folded beneath — indented to
- * sit under the message text it belongs to. */
 function ToolCard({ row }: { row: Extract<ChatRow, { kind: 'tool' }> }) {
   const badge = row.status === 'pending' ? null : TOOL_BADGE[row.status];
   return (

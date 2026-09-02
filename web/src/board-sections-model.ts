@@ -4,44 +4,22 @@ import type { Task, TaskState } from './types.js';
 import type { Epic, EpicMember } from './epic-model.js';
 import { issueRef, ticketRowId } from './id-format.js';
 
-/**
- * The Board's attention-ordered sections (ADR-0041 Visibility, DESIGN.md § 5):
- * `Attention → Running → Pending`. State is never a column — it is carried by
- * colour on the card — and blocked-ness is the API's derived `openBlockerCount`,
- * which lays Pending out in columns.
- *
- * **Attention is promoted above the band.** A working Epic member surfaces in
- * Running and an escalated one in Attention; the Epic's Pending band shows only
- * members that are neither in progress, escalated, nor merged. A member of an
- * already-merged Epic falls back to standalone treatment.
- */
-
 const PRIORITY_RANK: Record<Task['priority'], number> = { high: 0, normal: 1, low: 2 };
 
-// Queue order mirrors the server's priority-then-createdAt scheduler sort
-// (src/domain/tasks.ts): highest priority first, then the longest-waiting
-// (oldest createdAt) of a priority, id ascending as the stable tiebreak.
 function byQueueOrder(a: Task, b: Task): number {
   return PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority] || a.createdAt - b.createdAt || a.id - b.id;
 }
 
-// In-flight / Attention are processing, not a waiting queue: priority then a
-// lowest-id stable tiebreak.
 function byProcessingOrder(a: Task, b: Task): number {
   return PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority] || a.id - b.id;
 }
 
-// Pending reads in the scheduler's reach order: ready work before draft work.
 const PENDING_RANK: Partial<Record<TaskState, number>> = { ready: 0, draft: 1 };
 
 function isPending(task: Task): boolean {
   return PENDING_RANK[task.state] !== undefined;
 }
 
-// An Epic band is self-contained (ADR-0017): its columns hold every open member —
-// escalated and working included, not just the ready/draft frontier — so the band
-// shows all of an Epic's live work at once. Attention-first within a column: an
-// escalated member reads before a running one, then the ready frontier, then draft.
 const OPEN_MEMBER_RANK: Partial<Record<TaskState, number>> = { escalated: 0, working: 1, ready: 2, draft: 3 };
 
 function isOpenMember(task: Task): boolean {
@@ -93,7 +71,7 @@ export interface PendingGroup {
 }
 
 export interface BoardSections {
-  /** Escalated Tasks, then escalated Epics — ADR-0041's one human surface, always first. */
+  /** Escalated Tasks, then escalated Epics — the one human surface, always first. */
   attention: AttentionEntry[];
   /** Working Tasks, standalone and Epic members alike. */
   running: Task[];
@@ -127,7 +105,7 @@ function itemLabel(task: Task | undefined, taskId: number): string {
 
 /**
  * A Task's `dependsOn` edges resolved to display labels; satisfied ⇔ the blocker
- * is done. The Board now fetches a lean, open-only page (ADR-0045), so a done
+ * is done. The Board now fetches a lean, open-only page, so a done
  * blocker is no longer in the array to look up — satisfaction is read from the
  * server's derived `openBlockerCount` (0 ⇒ every edge is cleared) instead. A
  * still-visible blocker that reads `done` (a full-list caller like the Graph, or
@@ -199,7 +177,7 @@ function byPendingOrder(a: Task, b: Task): number {
 }
 
 /**
- * An Epic band's columns (ADR-0017): every open member — ready, blocked,
+ * An Epic band's columns: every open member — ready, blocked,
  * working, and escalated — by open-blocker count, so the band shows all of the
  * Epic's live work at once. Working and escalated members appear here **and** in
  * the global Running / Attention sections (deliberate duplication). A merged
@@ -225,9 +203,6 @@ export function epicPendingColumns(epic: Epic, tasks: Task[]): BlockerColumn[] {
 export function boardSections(tasks: Task[], epics: Epic[]): BoardSections {
   const tasksById = new Map(tasks.map((task) => [task.id, task]));
   const activeEpics = epics.filter(isActiveEpic).sort((a, b) => a.ref - b.ref);
-  // An Epic's own driver ticket (the parent issue the members hang off) is never
-  // a card — the band represents it. Its mirrored Task carries the Epic's ref as
-  // `trackerRef`.
   const epicRefs = new Set(epics.map((e) => e.ref));
   const isDriver = (t: Task): boolean => t.trackerRef != null && epicRefs.has(t.trackerRef);
   const activeMemberIds = new Set<number>();
@@ -243,10 +218,6 @@ export function boardSections(tasks: Task[], epics: Epic[]): BoardSections {
 
   const running = tasks.filter((t) => t.state === 'working' && !isDriver(t)).sort(byProcessingOrder);
 
-  // Every active Epic gets a band (ADR-0017): the board shows all non-complete
-  // Epics at once, each with its own columns of open members, integration
-  // progress, and closed rail — never a one-Epic focus. A fully-merged/retired
-  // Epic is already off the board (isActiveEpic).
   const pending: PendingGroup[] = activeEpics.map((epic) => ({ epic, columns: epicPendingColumns(epic, tasks) }));
   const standalone = tasks
     .filter((t) => isPending(t) && !activeMemberIds.has(t.id) && !isDriver(t))

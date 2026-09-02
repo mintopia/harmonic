@@ -1,18 +1,10 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
 
-/**
- * Issue #310 replaced linked re-attempt Tasks with corrective Attempts on the
- * original ticket; ADR-0041 (#314) made "Reject with guidance" on an escalated
- * ticket the only human way back into that loop. These cover the old reattempt
- * entry points at their real replacement: the escalation Reject and the removed
- * route.
- */
 describe('unified corrective attempts', () => {
   let server: TestServer;
 
   beforeAll(async () => {
-    // One attempt per budget: the scripted crash escalates on the first failure.
     server = await startServer({ ...stubHarness(), maxAttempts: 1 });
   });
   afterAll(async () => {
@@ -60,7 +52,6 @@ describe('unified corrective attempts', () => {
     const after = await server.api('GET', `/api/tasks/${ticket.id}`);
     expect(after.body.id).toBe(ticket.id);
     expect(after.body.baseBranch).toBe('integration/x');
-    // The stub replays the crash: the reset budget is exhausted again.
     await waitFor(async () => ((await server.api('GET', `/api/tasks/${ticket.id}`)).body.state === 'escalated' && (await timeline(ticket.id)).length === 2 ? true : undefined));
     expect((await timeline(ticket.id)).map((attempt) => attempt.state)).toEqual(['escalated', 'escalated']);
   });
@@ -93,8 +84,6 @@ describe('unified corrective attempts', () => {
     });
 
     const after = await server.api('GET', `/api/tasks/${mirrored.id}`);
-    // A mirrored ticket's prompt is re-derived from its issue each poll, so the
-    // guidance rides the feedback column instead of the prompt.
     expect(after.body).toMatchObject({ id: mirrored.id, origin: 'mirrored', trackerRef: 55502, mapRef: 77, feedback: 'Keep the tracker link.' });
     expect((await timeline(mirrored.id))[0]!.feedback).toContain('Keep the tracker link.');
     const all = (await server.api('GET', '/api/tasks')).body.tasks as { trackerRef: number | null }[];

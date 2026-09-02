@@ -41,10 +41,8 @@ const sectionCaps = 'text-label font-bold uppercase tracking-[0.1em] text-faint'
 const fmtTime = (ms: number) =>
   new Date(ms).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
-/** "Created: Aug 27" register — date only, no time. */
 const fmtDate = (ms: number) => new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 
-/** "2h ago" relative register for Last activity. */
 function fmtRelative(ms: number): string {
   const s = Math.max(0, Math.floor((Date.now() - ms) / 1000));
   if (s < 60) return 'just now';
@@ -54,9 +52,6 @@ function fmtRelative(ms: number): string {
   if (h < 24) return `${h}h ago`;
   return `${Math.floor(h / 24)}d ago`;
 }
-
-// Deliberately re-implemented, not imported from TicketPage's private helpers
-// of the same name.
 
 function Fact({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -149,7 +144,6 @@ function TasksNav({ count, selected, onSelect }: { count: number | null; selecte
 interface Metric {
   label: string;
   value: ReactNode;
-  /** Optional swatch before the value (the mockup's Tokens in/out token-class dots). */
   dot?: string;
 }
 
@@ -169,8 +163,6 @@ function MetricGrid({ items }: { items: Metric[] }) {
   );
 }
 
-/** Per-model cost tag for a token bar — `$X.XX` from the ADR-0008 cost breakdown,
- * or undefined when that model had no priceable cost. */
 function modelCostTag(cost: Stats['cost'], key: string): string | undefined {
   const usd = cost?.byModel[key];
   return usd == null ? undefined : (formatCost({ totalUsd: usd, byModel: {}, incomplete: false }) ?? undefined);
@@ -315,8 +307,6 @@ function ChangesPanel({
   );
 }
 
-// Column tracks mirror TableView's Tasks-list GRID (ADR-0015: same columns, no
-// bespoke row shape) plus a trailing Tokens track; keep the two in sync.
 const GRID =
   'grid grid-cols-[7.5rem_minmax(0,1fr)_8rem] md:grid-cols-[7.5rem_minmax(0,1fr)_8rem_5rem_5.5rem] lg:grid-cols-[7.5rem_minmax(0,1fr)_8rem_6rem_9rem_5rem_5.5rem_8rem_8rem] items-center gap-x-3 px-4';
 
@@ -456,9 +446,6 @@ const PHASE_WORD: Record<EpicStage['key'], string> = {
   retire: 'retiring',
 };
 
-/** The Epic's current lifecycle phase as a lowercase status chip (ADR-0017),
- * read from the server model via {@link epicLifecycleSteps}: the held step wins,
- * else the current step's word, else `finished` once every stage is done. */
 function EpicLifecycleChip({ epic }: { epic: Epic }) {
   const steps = epicLifecycleSteps(epic);
   const held = steps.find((s) => s.state === 'held');
@@ -471,9 +458,6 @@ function EpicLifecycleChip({ epic }: { epic: Epic }) {
   return <span className={`${chip} ${tint}`}>{label}</span>;
 }
 
-// The stepper reuses the Task-progress bar's node/label vocabulary (TicketPage's
-// PHASE_NODE_STYLES + STEP_LABEL_TONE) so the two lifecycle bars read identically:
-// `held` maps to the Task bar's `awaiting` (both mean "waiting on the operator").
 const STEP_NODE: Record<IntegrationStepState, PhaseNodeVisual> = {
   done: 'done',
   current: 'current',
@@ -487,12 +471,6 @@ const STEP_LABEL_TONE: Record<IntegrationStepState, string> = {
   pending: 'text-faint',
 };
 
-/** The Epic summary page's lifecycle stepper (ADR-0017): overall progress across
- * every stage — the parallel member Build, then the whole-Epic gate (verify →
- * merge → post-merge check → retire) — numbered, with a sub-label per step and
- * the current/held state legible. Read from the server model, never re-derived
- * from child states. Mirrors the Task-progress bar; the board band keeps its own
- * compact integration bar. */
 function EpicStepper({ epic }: { epic: Epic }) {
   const steps = epicLifecycleSteps(epic);
   const current = steps.find((s) => s.state === 'current' || s.state === 'held');
@@ -566,8 +544,6 @@ export function EpicPage({
     api.tasks({ workspaceId, parent: epicRef }).then(({ tasks }) => {
       if (!live()) return;
       setChildTasks(tasks);
-      // Bounded by the Epic's own member count; tolerate individual failures
-      // (a row simply shows no token bar) rather than failing the whole page.
       Promise.all(
         tasks.map((t) =>
           api.taskUsage(t.id).then(

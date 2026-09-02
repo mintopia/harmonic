@@ -75,9 +75,6 @@ function makeWorkspace(overrides: Partial<Workspace> = {}): Workspace {
   };
 }
 
-/** A tolerant router: App mounts its whole child tree on first render, and
- * children fire their own requests the fixtures below don't all care about —
- * any unmatched path gets an empty envelope rather than a thrown error. */
 function stubFetch(opts: { authenticated: boolean; passwordConfigured: boolean; workspaces?: Workspace[] }) {
   const workspaces = opts.workspaces ?? [];
   vi.stubGlobal('fetch', async (input: string | URL | Request) => {
@@ -115,8 +112,6 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-/** Flushes the fetch .then chains App's mount effects fire in sequence
- * (auth -> config/workspaces -> active-workspace-scoped refresh). */
 async function flush() {
   await act(async () => {
     await new Promise((r) => setTimeout(r, 0));

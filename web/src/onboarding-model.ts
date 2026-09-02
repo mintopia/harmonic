@@ -1,18 +1,10 @@
 import type { Task } from './types.js';
 
-/**
- * First-run onboarding logic, kept pure so it can be exercised without a DOM
- * (mirrors path.ts / rail-model.ts). Storage is injected; the app passes
- * window.localStorage.
- */
 type StorageLike = Pick<Storage, 'getItem' | 'setItem'>;
 
 export const RUN_HINT_DISMISSED_KEY = 'harmonic.onboarding.run-hint';
 export const ESCALATION_HINT_DISMISSED_KEY = 'harmonic.onboarding.escalation-hint';
 
-/** States a task can only be in once a run has actually started. Seeing any of
- * them means the operator has already reached the aha — "first agent run
- * visible" — so the cold-start run hint has done its job and retires. */
 const PAST_FIRST_RUN: ReadonlySet<Task['state']> = new Set(['working', 'escalated', 'done', 'cancelled']);
 
 type AttemptEvidenceTask = Pick<
@@ -58,14 +50,14 @@ export function shouldShowRunHint(
   dismissed: boolean,
 ): boolean {
   if (dismissed) return false;
-  if (autoRunner.enabled) return false; // ready tasks will start on their own
-  if (tasks.some(hasAttemptEvidence)) return false; // aha already reached
+  if (autoRunner.enabled) return false;
+  if (tasks.some(hasAttemptEvidence)) return false;
   return tasks.some((t) => t.state === 'ready');
 }
 
 /**
  * The next thing to teach after the first run: the one human surface
- * (ADR-0041). When a ticket first escalates the operator has to take the one
+ *. When a ticket first escalates the operator has to take the one
  * decision an agent can't take for itself — Accept, Reject with guidance, or
  * Close. Point at it while anything is escalated; retire on dismiss. This hands
  * off cleanly from the run hint, which hides the moment a task starts working.
@@ -79,7 +71,7 @@ export function loadDismissed(storage: StorageLike, key: string): boolean {
   try {
     return storage.getItem(key) === '1';
   } catch {
-    return false; // private browsing etc. — default to showing the hint
+    return false;
   }
 }
 
@@ -87,6 +79,5 @@ export function storeDismissed(storage: StorageLike, key: string): void {
   try {
     storage.setItem(key, '1');
   } catch {
-    // best-effort: losing persistence must not break the dismiss
   }
 }

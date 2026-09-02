@@ -32,8 +32,6 @@ function makeRepo(): string {
   return dir;
 }
 
-/** Cut `branchName` off `main` in a scratch worktree, mutate + commit there.
- * The base repo (`repoDir`) is left untouched — its HEAD stays on `main`. */
 async function makeTaskBranch(repoDir: string, branchName: string, mutate: (worktreeDir: string) => void): Promise<void> {
   const wtRoot = mkdtempSync(join(tmpdir(), 'harmonic-merge-policy-wt-'));
   tmpDirs.push(wtRoot);
@@ -70,16 +68,11 @@ describe('runMergePolicy (ADR-0001, "One merge policy, everywhere")', () => {
 
     expect(outcome.kind).toBe('merged');
     expect(deps.escalate).not.toHaveBeenCalled();
-    // A real merge commit: HEAD has a second parent, and history now contains a merge.
     expect(git(repo, 'rev-parse', 'HEAD^2')).toBeTruthy();
     expect(Number(git(repo, 'rev-list', '--count', '--merges', 'HEAD'))).toBeGreaterThanOrEqual(1);
   });
 
   it('checks the base branch out to merge a different base, then restores the parked branch', async () => {
-    // The shared base repo is parked on an unrelated branch. The policy must land
-    // the merge on `main` regardless, then restore the base repo to the branch it
-    // was parked on — merging a non-default base (an epic/<ref> member, #382) must
-    // never leave the shared checkout switched off the default branch.
     const repo = makeRepo();
     const mainTip = git(repo, 'rev-parse', 'main');
     git(repo, 'checkout', '-b', 'parked');
@@ -102,10 +95,7 @@ describe('runMergePolicy (ADR-0001, "One merge policy, everywhere")', () => {
     );
 
     expect(outcome.kind).toBe('merged');
-    // The base repo is restored to the parked branch, not left on `main`.
     expect(git(repo, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('parked');
-    // `main` still advanced past its old tip with a merge commit; the parked
-    // checkout's own work is untouched.
     expect(git(repo, 'rev-parse', 'main')).not.toBe(mainTip);
     expect(git(repo, 'rev-parse', 'main^2')).toBeTruthy();
     expect(() => git(repo, 'show', 'main:feature.txt')).not.toThrow();
@@ -113,10 +103,6 @@ describe('runMergePolicy (ADR-0001, "One merge policy, everywhere")', () => {
   });
 
   it('runs a post-merge check that adds a worktree on the same repo without deadlocking', async () => {
-    // The runner's real post-merge check runs the command verifier, which adds
-    // a detached worktree (a repo-locked op) on the base repo — while the policy
-    // still holds that repo's merge lock. This guards that the lock is reentrant
-    // so the ADR-0001 "check under the mutex" wiring cannot self-deadlock.
     const repo = makeRepo();
     await makeTaskBranch(repo, 'task-postmerge', (wt) => {
       writeFileSync(join(wt, 'feature.txt'), 'feature\n');
@@ -150,7 +136,6 @@ describe('runMergePolicy (ADR-0001, "One merge policy, everywhere")', () => {
     await makeTaskBranch(repo, 'task-resolvable', (wt) => {
       writeFileSync(join(wt, 'base.txt'), 'task version\n');
     });
-    // Base moves on the same line after the task branch forked, so merging conflicts.
     writeFileSync(join(repo, 'base.txt'), 'main version\n');
     git(repo, 'commit', '-am', 'main edits base.txt');
 
@@ -187,7 +172,6 @@ describe('runMergePolicy (ADR-0001, "One merge policy, everywhere")', () => {
     const originalHead = git(repo, 'rev-parse', 'HEAD');
 
     const resolveConflictTurn = vi.fn(async () => {
-      // Never resolves the conflict — files are left untouched.
     });
     const deps: MergePolicyDeps = {
       resolveConflictTurn,
@@ -208,7 +192,6 @@ describe('runMergePolicy (ADR-0001, "One merge policy, everywhere")', () => {
     expect(deps.escalate).toHaveBeenCalledTimes(1);
     expect(deps.escalate).toHaveBeenCalledWith(outcome.message);
 
-    // No merge left in progress, and the base tip never moved.
     await expect(Git.revParse(repo, 'MERGE_HEAD')).rejects.toThrow();
     expect(git(repo, 'rev-parse', 'HEAD')).toBe(originalHead);
   });
@@ -237,7 +220,6 @@ describe('runMergePolicy (ADR-0001, "One merge policy, everywhere")', () => {
     expect(deps.escalate).toHaveBeenCalledTimes(1);
     expect(deps.escalate).toHaveBeenCalledWith(expect.stringContaining('BOOM tests failed'));
 
-    // The revert undid the merge: the task's file is gone from the base tip.
     expect(() => git(repo, 'show', 'HEAD:feature.txt')).toThrow();
   });
 
@@ -376,11 +358,6 @@ describe('runMergePolicy (ADR-0001, "One merge policy, everywhere")', () => {
   });
 
   it('drops the metadata repo lock around each agentic turn so sibling worktree ops proceed (issue #455)', async () => {
-    // While a merge is stuck in a slow conflict-resolution turn, a sibling task
-    // starting/finishing must still be able to add/remove a worktree on the
-    // shared base repo. If the merge held `withRepoLock` across the turn, the
-    // sibling worktree op below would block until the turn ended — so this test
-    // deadlocks/times out under the old behaviour and passes under the new.
     const repo = makeRepo();
     await makeTaskBranch(repo, 'task-during-turn', (wt) => {
       writeFileSync(join(wt, 'base.txt'), 'task version\n');
@@ -400,7 +377,7 @@ describe('runMergePolicy (ADR-0001, "One merge policy, everywhere")', () => {
 
     const resolveConflictTurn = vi.fn(async (ctx) => {
       turnStarted();
-      await turnGate; // hold the merge inside the turn while the sibling op runs
+      await turnGate;
       writeFileSync(join(ctx.baseDir, 'base.txt'), 'resolved\n');
       git(ctx.baseDir, 'add', 'base.txt');
     });
@@ -415,9 +392,7 @@ describe('runMergePolicy (ADR-0001, "One merge policy, everywhere")', () => {
       deps,
     );
 
-    await turnInProgress; // the merge is now parked inside the resolve turn
-    // A real sibling worktree lifecycle op (each self-locks `withRepoLock`)
-    // completes without waiting for the turn to finish.
+    await turnInProgress;
     const wtRoot = mkdtempSync(join(tmpdir(), 'harmonic-sibling-wt-'));
     tmpDirs.push(wtRoot);
     const checkout = join(wtRoot, 'check');
@@ -431,10 +406,6 @@ describe('runMergePolicy (ADR-0001, "One merge policy, everywhere")', () => {
   });
 
   it('holds the base-checkout lock across the turn so a sibling merge waits (issue #455)', async () => {
-    // The conflicted base checkout is real working-tree state (MERGE_HEAD +
-    // markers), so a sibling merge onto the same shared checkout must NOT run
-    // concurrently with the resolve turn — it serialises on the base-checkout
-    // lock and only proceeds once the first merge has released it.
     const repo = makeRepo();
     await makeTaskBranch(repo, 'task-conflict', (wt) => {
       writeFileSync(join(wt, 'base.txt'), 'task version\n');
@@ -469,7 +440,7 @@ describe('runMergePolicy (ADR-0001, "One merge policy, everywhere")', () => {
     const siblingDeps: MergePolicyDeps = {
       resolveConflictTurn: neverCalled('resolveConflictTurn'),
       runPostMergeCheck: vi.fn(async () => {
-        siblingMergeEntered = true; // only reached once inside the critical section
+        siblingMergeEntered = true;
         return { pass: true, output: '' };
       }),
       escalate: vi.fn(async () => {}),
@@ -480,14 +451,12 @@ describe('runMergePolicy (ADR-0001, "One merge policy, everywhere")', () => {
       conflictDeps,
     );
 
-    await turnInProgress; // first merge is parked inside its resolve turn
+    await turnInProgress;
     const siblingMerge = runMergePolicy(
       { baseDir: repo, baseBranch: 'main', taskBranch: 'task-clean-sibling', conflictResolveTurns: 0, postMergeCheck: true },
       siblingDeps,
     );
 
-    // Give the sibling merge a chance to run; it must be blocked on the
-    // base-checkout lock and never reach its post-merge check yet.
     await new Promise((r) => setTimeout(r, 50));
     expect(siblingMergeEntered).toBe(false);
 
@@ -495,7 +464,7 @@ describe('runMergePolicy (ADR-0001, "One merge policy, everywhere")', () => {
     const [conflictOutcome, siblingOutcome] = await Promise.all([conflictMerge, siblingMerge]);
     expect(conflictOutcome.kind).toBe('merged');
     expect(siblingOutcome.kind).toBe('merged');
-    expect(siblingMergeEntered).toBe(true); // ran only after the first merge released the lock
+    expect(siblingMergeEntered).toBe(true);
   });
 });
 

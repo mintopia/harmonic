@@ -14,7 +14,6 @@ interface Captured {
   body: string;
 }
 
-/** Local HTTP listener capturing webhook deliveries. */
 function listen(): Promise<{ url: string; requests: Captured[]; close: () => void }> {
   const requests: Captured[] = [];
   return new Promise((resolve) => {
@@ -33,7 +32,6 @@ function listen(): Promise<{ url: string; requests: Captured[]; close: () => voi
   });
 }
 
-/** Dev SMTP sink capturing raw messages. */
 function smtpSink(): Promise<{ port: number; mails: { from: string; to: string[]; data: string }[]; close: () => void }> {
   const mails: { from: string; to: string[]; data: string }[] = [];
   return new Promise((resolve) => {
@@ -106,8 +104,6 @@ describe('notification channels', () => {
       type: 'webhook',
       config: { url: 'http://127.0.0.1:1/unused' },
     });
-    // The existence guard is `await ctx.tasks.get(id)` (async since ADR-0029);
-    // an un-awaited guard would silently pass and 200 on a missing task.
     expect(
       (await server.api('POST', '/api/tasks/999999/channels', { channelId: channel.body.id })).status,
     ).toBe(404);
@@ -120,7 +116,6 @@ describe('notification channels', () => {
       name: 'sig',
       type: 'webhook',
       config: { url: `${sink.url}/hook`, secret: 'shh' },
-      // default events: escalated
     });
 
     const taskId = await runToState(JSON.stringify({ exit: 'crash-before-response' }), 'escalated');
@@ -136,8 +131,6 @@ describe('notification channels', () => {
     expect(delivery.headers['x-harmonic-signature']).toBe(expected);
     expect(delivery.headers['x-harmonic-event']).toBe('task.escalated');
 
-    // task.created is not subscribed: creating another task sends nothing new
-    // for it (the accept below proves deliveries still flow afterwards).
     await server.api('POST', '/api/tasks', { prompt: 'silent', state: 'draft' });
     await server.api('POST', `/api/tasks/${taskId}/accept`);
     await new Promise((r) => setTimeout(r, 100));
@@ -178,7 +171,6 @@ describe('notification channels', () => {
 
   it('routes a specific task to a specific channel via per-task override', async () => {
     const sink = await listen();
-    // Subscribed to nothing: only override traffic should arrive.
     const channel = await server.api('POST', '/api/channels', {
       name: 'override-only',
       type: 'webhook',
@@ -186,9 +178,6 @@ describe('notification channels', () => {
       events: [],
     });
 
-    // Distinct workingDirs: run both Tasks concurrently without one blocking
-    // the other on the direct-mode Work Context lease (issue #119) — the
-    // default (shared) workingDir would serialize them here.
     const task = await server.api('POST', '/api/tasks', {
       prompt: 'special',
       workingDir: mkdtempSync(join(tmpdir(), 'harmonic-notify-')),

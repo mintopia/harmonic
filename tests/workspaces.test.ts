@@ -85,7 +85,6 @@ describe('Workspace CRUD (ADR-0008, issue #41)', () => {
     const created = await server.api('POST', '/api/workspaces', { name: 'Tracked', workingDir: dir });
     expect(created.status).toBe(201);
     expect(created.body).toMatchObject({ trackerEnabled: false, trackerPollIntervalSeconds: 60 });
-    // Tracking off ⇒ nothing to resolve.
     expect(created.body.resolvedTracker).toBeNull();
 
     const on = await server.api('PATCH', `/api/workspaces/${created.body.id}`, {
@@ -98,7 +97,6 @@ describe('Workspace CRUD (ADR-0008, issue #41)', () => {
   });
 
   it('surfaces the Resolved Tracker: a reason when unresolvable, the label when resolved (issue #83)', async () => {
-    // A repo with no issue-tracker.md: enabling tracking surfaces the reason, no poll loop.
     const bare = mkdtempSync(join(tmpdir(), 'harmonic-workspace-bare-'));
     const undeclared = await server.api('POST', '/api/workspaces', {
       name: 'Undeclared',
@@ -108,7 +106,6 @@ describe('Workspace CRUD (ADR-0008, issue #41)', () => {
     expect(undeclared.status).toBe(201);
     expect(undeclared.body.resolvedTracker).toMatchObject({ ok: false, code: 'no-declaration' });
 
-    // A repo that declares GitHub resolves to the "GitHub" label.
     const repo = mkdtempSync(join(tmpdir(), 'harmonic-workspace-gh-'));
     mkdirSync(join(repo, 'docs/agents'), { recursive: true });
     writeFileSync(join(repo, 'docs/agents/issue-tracker.md'), '# Issue tracker: GitHub\n');
@@ -131,7 +128,6 @@ describe('Workspace CRUD (ADR-0008, issue #41)', () => {
     const dir = mkdtempSync(join(tmpdir(), 'harmonic-workspace-verify-'));
     const created = await server.api('POST', '/api/workspaces', { name: 'Verified', workingDir: dir });
     expect(created.status).toBe(201);
-    // A fresh Workspace inherits every verifier (null), not write-only holes.
     expect(created.body.verificationCommand).toBeNull();
     expect(created.body.reviewEnabled).toBeNull();
     expect(created.body.reviewPrompt).toBeNull();
@@ -145,10 +141,7 @@ describe('Workspace CRUD (ADR-0008, issue #41)', () => {
       reviewModel: 'claude-opus-5',
     });
     expect(set.status).toBe(200);
-    // The command override reads back as the same shape it was PATCHed as (zod
-    // fills the command's defaults), not the raw JSON string and not dropped.
     expect(set.body.verificationCommand).toMatchObject([{ command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }]);
-    // The review fields are plain scalars, so they round-trip exactly as PATCHed.
     expect(set.body.reviewEnabled).toBe(true);
     expect(set.body.reviewPrompt).toBe('review the diff');
     expect(set.body.reviewModel).toBe('claude-opus-5');
@@ -156,8 +149,6 @@ describe('Workspace CRUD (ADR-0008, issue #41)', () => {
     const fetched = await server.api('GET', `/api/workspaces/${created.body.id}`);
     expect(fetched.body.verificationCommand).toMatchObject([{ command: 'npm', args: ['test'] }]);
 
-    // Each review scalar is independently inheritable: flipping reviewEnabled to
-    // false leaves reviewPrompt/reviewModel untouched (no sentinel to swallow them).
     const disabled = await server.api('PATCH', `/api/workspaces/${created.body.id}`, {
       reviewEnabled: false,
     });
@@ -165,10 +156,8 @@ describe('Workspace CRUD (ADR-0008, issue #41)', () => {
     expect(disabled.body.reviewEnabled).toBe(false);
     expect(disabled.body.reviewPrompt).toBe('review the diff');
     expect(disabled.body.reviewModel).toBe('claude-opus-5');
-    // Restore the enabled override the rest of the test asserts against.
     await server.api('PATCH', `/api/workspaces/${created.body.id}`, { reviewEnabled: true });
 
-    // null clears back to inherit.
     const cleared = await server.api('PATCH', `/api/workspaces/${created.body.id}`, {
       verificationCommand: null,
     });
@@ -184,15 +173,11 @@ describe('Workspace CRUD (ADR-0008, issue #41)', () => {
     const created = await server.api('POST', '/api/workspaces', { name: 'Unrunnable review', workingDir: dir });
     expect(created.status).toBe(201);
 
-    // The global review is disabled with no model (test default), so toggling
-    // reviewEnabled alone resolves to enabled-but-unrunnable — blocked, not saved.
     const rejected = await server.api('PATCH', `/api/workspaces/${created.body.id}`, { reviewEnabled: true });
     expect(rejected.status).toBe(400);
     expect(rejected.body.error.message).toContain('reviewModel');
-    // The rejected write didn't clobber the prior state.
     expect((await server.api('GET', `/api/workspaces/${created.body.id}`)).body.reviewEnabled).toBeNull();
 
-    // Setting a resolvable prompt/model alongside the toggle succeeds.
     const accepted = await server.api('PATCH', `/api/workspaces/${created.body.id}`, {
       reviewEnabled: true,
       reviewModel: 'claude-opus-5',
@@ -208,26 +193,21 @@ describe('Workspace CRUD (ADR-0008, issue #41)', () => {
     const dir = mkdtempSync(join(tmpdir(), 'harmonic-workspace-guardrail-'));
     const created = await server.api('POST', '/api/workspaces', { name: 'Guarded', workingDir: dir });
     expect(created.status).toBe(201);
-    // A fresh Workspace inherits both guardrails (null), not write-only holes.
     expect(created.body.guardrailBudget).toBeNull();
     expect(created.body.guardrailProgress).toBeNull();
 
-    // A budget with a token fallback is measurable on any model, so it's accepted.
     const override = { wallClockMinutes: 30, tokens: 500000, costUsd: 5 };
     const set = await server.api('PATCH', `/api/workspaces/${created.body.id}`, {
       guardrailBudget: override,
       guardrailProgress: false,
     });
     expect(set.status).toBe(200);
-    // Reads back as the same object shape it was PATCHed as, not the raw JSON string.
     expect(set.body.guardrailBudget).toEqual(override);
     expect(set.body.guardrailProgress).toBe(false);
 
     const fetched = await server.api('GET', `/api/workspaces/${created.body.id}`);
     expect(fetched.body.guardrailBudget).toEqual(override);
 
-    // The resolved override is what a subsequent Run enforces (ADR-0019): the
-    // stored budget wins over the global default, progress's explicit false too.
     const resolved = resolveGuardrails(
       {
         guardrailBudget: JSON.stringify(fetched.body.guardrailBudget),
@@ -239,9 +219,6 @@ describe('Workspace CRUD (ADR-0008, issue #41)', () => {
     expect(resolved.budget).toEqual(override);
     expect(resolved.progress).toBe(false);
 
-    // A cost cap with no token fallback is rejected when a configured model is
-    // unpriced (the stub harness's model is), with a field-pathed message the
-    // settings form maps to the cost field.
     const rejected = await server.api('PATCH', `/api/workspaces/${created.body.id}`, {
       guardrailBudget: { wallClockMinutes: 60, tokens: null, costUsd: 10 },
     });
@@ -249,13 +226,10 @@ describe('Workspace CRUD (ADR-0008, issue #41)', () => {
     expect(rejected.body.error.message).toContain('guardrailBudget.costUsd');
     expect(rejected.body.error.message).toContain('unpriced:');
     // The settings form's parseFieldErrors splits `path: message` pairs on '; ',
-    // so the message body must carry none — else the unpriced list is sliced off
-    // into a bogus field and the operator never sees which model is unpriced (#166).
+    // so the message body must carry none.
     expect(rejected.body.error.message).not.toContain('; ');
-    // The rejected write didn't clobber the prior valid override.
     expect((await server.api('GET', `/api/workspaces/${created.body.id}`)).body.guardrailBudget).toEqual(override);
 
-    // null clears both back to inherit.
     const cleared = await server.api('PATCH', `/api/workspaces/${created.body.id}`, {
       guardrailBudget: null,
       guardrailProgress: null,
@@ -349,8 +323,6 @@ describe('Task/Conversation binding + scoping (issue #41)', () => {
   it('/api/stats?workspaceId= scopes run/cost totals to that Workspace', async () => {
     const scoped = await server.api('GET', `/api/stats?workspaceId=${workspaceA}`);
     expect(scoped.status).toBe(200);
-    // Nothing has run yet in either Workspace — the point is the endpoint
-    // accepts and echoes the filter without erroring, not the count.
     expect(scoped.body.attemptCount).toBe(0);
   });
 

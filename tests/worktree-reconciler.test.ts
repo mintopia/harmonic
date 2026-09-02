@@ -19,10 +19,6 @@ afterEach(() => {
   for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-/** A fake satisfying {@link WorktreeRepository} that fails loudly on any method
- * a test did not expect to be exercised — narrower than a full vi mock, but
- * catches an unintended extra call (e.g. `isDirty` short-circuited past by an
- * earlier `isValidWorktree: false`). */
 function fakeGit(overrides: Partial<WorktreeRepository>): WorktreeRepository {
   const unexpected = (name: string) => async () => {
     throw new Error(`unexpected call to ${name}`);
@@ -156,9 +152,6 @@ describe('worktree reconciler (issue #386, ADR-0010)', () => {
   });
 
   it('flags a live task worktree that is present but unreadable, never discarding it', async () => {
-    // A live Task whose expected path exists on disk but git no longer resolves
-    // as a live worktree may still hold uncommitted work. The passive sweep must
-    // surface it, not force-delete it (ADR-0010: a crash must not cost work).
     const managedRoot = tempDir('harmonic-reconcile-unreadable-');
     const path = join(managedRoot, 'task-7');
     mkdirSync(path);
@@ -269,7 +262,6 @@ describe('worktree reconciler (issue #386, ADR-0010)', () => {
     const managedRoot = tempDir('harmonic-reconcile-worktrees-');
     const dirty = join(managedRoot, 'task-2');
     git(repo, 'worktree', 'add', '-b', 'harmonic/task-2', dirty);
-    // Uncommitted work in the worktree — a crash must not cost this.
     writeFileSync(join(dirty, 'WIP.md'), 'not yet committed\n');
     const { store, snapshot } = flagStore();
 

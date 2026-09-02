@@ -49,8 +49,6 @@ export type StreamItem<E extends StreamEvent = StreamEvent> =
 const TEXT_VARIANT: Record<string, 'message' | 'thought' | 'operator'> = {
   agent_message_chunk: 'message',
   agent_thought_chunk: 'thought',
-  // An operator steer message folded into the transcript (server merges these
-  // from Harmonic's own run-events); rendered as its own "Operator" row.
   operator_message: 'operator',
 };
 
@@ -65,8 +63,6 @@ export function isInterrupted(payload: unknown): boolean {
   return p?.event === 'finished' && p.stopReason === 'cancelled';
 }
 
-/** Join the text carried by an ACP tool call's content blocks — a command's
- * stdout or a file read — into one output string; null when it produced none. */
 function toolContentOutput(content: unknown): string | null {
   if (!Array.isArray(content)) return null;
   const texts: string[] = [];
@@ -100,9 +96,6 @@ function toolCallView(payload: unknown): ToolCallView {
   };
 }
 
-/** A later update wins where it carries a value, otherwise the call's own
- * value stands — so a `tool_call_update` that only advances `status` never
- * blanks out the title/kind the initial `tool_call` established. */
 function mergeToolView(prev: ToolCallView, next: ToolCallView): ToolCallView {
   return {
     toolCallId: next.toolCallId ?? prev.toolCallId,
@@ -142,7 +135,7 @@ export function coalesceTail<E extends StreamEvent>(
 }
 
 /**
- * The single calm line a folded moving-base row renders as (ADR-0046, #368): a
+ * The single calm line a folded moving-base row renders as: a
  * base that moves under running work is normal, so the default is a quiet
  * "Reconciling with the latest base…" with no number. Prominence rises only as
  * the retries near the configured bound — within one of it — where the
@@ -166,12 +159,7 @@ export function movingBaseView(
 
 export function coalesceEvents<E extends StreamEvent>(events: E[]): StreamItem<E>[] {
   const items: StreamItem<E>[] = [];
-  // toolCallId → index in `items`, so an update folds into its call's row.
   const toolIndex = new Map<string, number>();
-  // Index of the single moving-base row (ADR-0046, #368). Every rebase/CAS
-  // re-entry folds into this one line — kept at its first-seen position with a
-  // stable key — so a churning base reads as one quiet status that ticks its
-  // attempt index up, never a stack of near-identical alarms.
   let movingBaseIndex: number | undefined;
 
   for (const event of events) {
@@ -198,8 +186,6 @@ export function coalesceEvents<E extends StreamEvent>(events: E[]): StreamItem<E
       const existingIdx = view.toolCallId !== undefined ? toolIndex.get(view.toolCallId) : undefined;
       const existing = existingIdx !== undefined ? items[existingIdx] : undefined;
       if (existing?.kind === 'tool') {
-        // Keep the first event's id as the React key so the row is stable as
-        // its status advances (pending → completed) — no remount mid-turn.
         items[existingIdx as number] = { ...existing, tool: mergeToolView(existing.tool, view) };
       } else {
         if (view.toolCallId !== undefined) toolIndex.set(view.toolCallId, items.length);
@@ -210,8 +196,6 @@ export function coalesceEvents<E extends StreamEvent>(events: E[]): StreamItem<E
 
     if (event.type === 'lifecycle' && payload?.event === 'moving-base') {
       if (movingBaseIndex !== undefined) {
-        // Advance in place to the latest attempt payload, keeping the first
-        // event's id as the React key so the row never remounts as it ticks.
         const key = items[movingBaseIndex]!.key;
         items[movingBaseIndex] = { kind: 'event', event, key };
       } else {

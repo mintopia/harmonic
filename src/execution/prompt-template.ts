@@ -1,10 +1,3 @@
-/**
- * Pure prompt-template primitives (issue #33) with **zero** server/browser
- * dependencies, so both the server (the critic) and the web
- * settings preview can import them without dragging in `TaskRow`/drizzle or any
- * node built-in. Keep this module dependency-free.
- */
-
 /** The five interpolation tokens a Drive-style prompt fills. */
 export type DriveFields = {
   skill: string;
@@ -20,13 +13,6 @@ type DriveTask = {
   prompt: string;
   trackerRef: number | null;
   mapRef: number | null;
-  /**
-   * The stored `kind` of this Task's parent Epic (its `mapRef`), resolved by the
-   * caller from the Epic spine (ADR-0018, issue #437). `'map'` routes the drive to
-   * the wayfinder skill against the map ref (issue #440); absent/`null` keeps the
-   * child's own research/implement command. Typed `string` to keep this module
-   * dependency-free — the enum lives in the schema.
-   */
   epicKind?: string | null;
 };
 
@@ -37,18 +23,14 @@ export function fillTemplate(template: string, fields: Record<string, string | n
 
 /**
  * Guidance appended to an agent turn whose worktree Harmonic has indexed as its
- * own jCodeMunch repo (`code-index.ts`). Without it the harness's code-index MCP
- * resolves `.` to the canonical checkout on another branch and reads stale code;
- * with the explicit repo id it queries THIS worktree. Pure and dependency-free so
- * the web settings preview compiles the same text. Empty id ⇒ nothing rendered
- * (CLI absent or indexing failed — the agent falls back to reading files).
+ * own jCodeMunch repo. Empty id ⇒ nothing rendered.
  */
 export function codeIndexRepoGuidance(repoId: string): string {
   if (!repoId) return '';
   return `\n\nCODE INDEX: this worktree is indexed as jCodeMunch repo \`${repoId}\`. If you use a code-index / jCodeMunch tool, pass \`${repoId}\` as the repo for every query. Do NOT resolve the repo by \`.\` or index path — that points at a different checkout of this repository, on another branch, WITHOUT the changes in this worktree, so it would show you stale code.`;
 }
 
-/** Map-Epic child→`wayfinder`; research→`research`; everything else→`implement` (issue #33, #440). */
+/** Map-Epic child→`wayfinder`; research→`research`; everything else→`implement`. */
 export function skillFor(task: Pick<DriveTask, 'wayfinderType' | 'harness' | 'epicKind'>): string {
   const prefix = task.harness === 'codex' ? '$' : '/';
   const skill = task.epicKind === 'map' ? 'wayfinder' : task.wayfinderType === 'research' ? 'research' : 'implement';
@@ -64,9 +46,6 @@ export function splitTitleBody(prompt: string): { title: string; body: string } 
 /** Derive the fields used by the Drive and critic prompt templates. */
 export function driveFields<T extends DriveTask>(task: T, urlFor: (task: T) => string | null): DriveFields {
   const { title, body } = splitTitleBody(task.prompt);
-  // A Map-Epic child drives the wayfinder skill against the map ref, not its own
-  // ticket (issue #440); ref and url both point at the map so the prompt stays
-  // self-consistent. Every other child stays on its own ref.
   const isMapChild = task.epicKind === 'map';
   const ref = isMapChild ? task.mapRef : task.trackerRef;
   return {

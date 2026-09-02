@@ -15,9 +15,6 @@ import { attempts, guardrailEvents, tasks, workspaces } from '../src/db/schema.j
 
 const delay = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
-/** Seed a task + attempt on the async DB so guardrail_events inserts satisfy
- * their FK (`attempt_id`, ADR-0001 #388 S-F/S-G — attempts is the single
- * execution ledger, was `run_id` against a separate `runs` row before). */
 async function seedRunAsync(h: AsyncDbHandle): Promise<number> {
   const now = Date.now();
   const ws = (await h.db.select().from(workspaces).get())!;
@@ -135,9 +132,6 @@ describe('read/write queue facade (ADR-0029 §2)', () => {
   });
 
   it('read() is not queued behind a pending write (facade keeps reads off the write queue)', async () => {
-    // Proves the facade contract: a read issued while a write is in flight
-    // resolves without waiting for the write queue to drain. (True reader/writer
-    // concurrency under load is WAL's job in the driver, not this facade's.)
     let writeSettled = false;
     const slowWrite = h
       .write(async () => {
@@ -263,13 +257,11 @@ describe('per-query wall-clock timeouts (ADR-0029 §5, #212)', () => {
   });
 
   it('a per-call timeoutMs overrides the handle default', async () => {
-    // Handle default is generous; a tight per-call override still fires.
     await expect(
       h.read(async () => {
         await delay(60);
       }, { timeoutMs: 10 }),
     ).rejects.toBeInstanceOf(QueryTimeoutError);
-    // And a generous per-call override lets a slow op through.
     await expect(
       h.read(async () => {
         await delay(20);
@@ -303,25 +295,17 @@ describe('per-query wall-clock timeouts (ADR-0029 §5, #212)', () => {
   });
 
   it('bounds a caller queued behind an in-flight write (queue-wait is charged)', async () => {
-    // A holds the single writer for 60ms. B is submitted immediately behind A with
-    // a 20ms budget. Because the timeout bounds the caller's *total* wait from
-    // submission, B's caller is freed at 20ms while still queued behind A, rather
-    // than hanging for A's full (uncancellable) duration.
     const a = h.write(async () => {
       await delay(60);
     });
     await expect(
       h.write(async () => {
-        /* would only run after A settles, well past B's deadline */
       }, { timeoutMs: 20 }),
     ).rejects.toBeInstanceOf(QueryTimeoutError);
     await a;
   });
 
   it('a caller timeout does not break single-writer serialisation', async () => {
-    // A's caller times out at 10ms, but A's real work runs for 40ms and cannot be
-    // cancelled on the local libsql client. B must still wait for A's real work to
-    // finish before it starts — the single-writer invariant survives the timeout.
     const events: string[] = [];
     const a = h.write(async () => {
       events.push('a-start');
@@ -329,7 +313,6 @@ describe('per-query wall-clock timeouts (ADR-0029 §5, #212)', () => {
       events.push('a-end');
     }, { timeoutMs: 10 });
     await expect(a).rejects.toBeInstanceOf(QueryTimeoutError);
-    // Submitted after A's caller rejected, while A's real work is still in flight.
     await h.write(async () => {
       events.push('b');
     });
@@ -366,7 +349,6 @@ describe('unique-index CAS behaviour unchanged under libsql (ADR-0029 §3)', () 
 
   it('guardrail_events seq stays monotonic when appends route through the single-writer queue', async () => {
     const attemptId = await seedRunAsync(h);
-    // Mirrors GuardrailEventStore.append: read max(seq)+1 then insert, as one write unit.
     const append = () =>
       h.write(async (db) => {
         const seq =

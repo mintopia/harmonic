@@ -32,13 +32,6 @@ import {
   type ApiConversation,
 } from './dto.js';
 
-/**
- * Read-model builders for the API shapes of attempts, tasks, and conversations,
- * used by both the REST routes and the WebSocket broadcasts so the SPA sees one
- * format (issue 15). Each builder does the multi-store query orchestration and
- * then hands the fetched rows to a pure row->DTO mapper in `dto.ts`.
- */
-
 const pricesOf = (ctx: AppContext) => resolvePrices(ctx.settingsStore.getGlobal().prices);
 
 /** One DTO builder for REST hydration and live timeline updates. */
@@ -62,7 +55,7 @@ export async function attemptTimelineToApi(ctx: AppContext, taskId: number): Pro
   };
 }
 
-/** The configured-or-recorded verifier rows for one Run's always-visible read model. */
+/** The configured-or-recorded verifier rows for one Attempt's always-visible read model. */
 export async function verifierStatusesToApi(
   ctx: AppContext,
   run: Pick<AttemptRow, 'id' | 'taskId' | 'number'>,
@@ -84,11 +77,6 @@ export async function verifierStatusesToApi(
 
 type PendingTicketTimelineEvent = ApiTicketTimelineEvent & { order: number };
 
-/**
- * Ticket-wide event projection for issue #328. Each persisted source is read
- * once for the ticket, then folded in memory. The fixed query count avoids a
- * per-Attempt and per-event read pattern that would starve the shared event loop.
- */
 const TICKET_TIMELINE_SOURCE_LIMIT = 1_000;
 
 export async function ticketTimelineToApi(ctx: AppContext, taskId: number): Promise<{ events: ApiTicketTimelineEvent[] }> {
@@ -139,8 +127,6 @@ export async function ticketTimelineToApi(ctx: AppContext, taskId: number): Prom
   });
   await forEachYielding(guardrails, async ({ event }) => { add({ attemptId: event.attemptId, ts: event.ts, kind: 'guardrail', data: { dimension: event.dimension, limitValue: event.limitValue, observedValue: event.observedValue, configSource: event.configSource, payload: JSON.parse(event.payload) } }, 2); });
 
-  // The Task's own creation — the head of the lifecycle, before any Attempt.
-  // `order: -1` seats it first even against an Attempt started at the same ms.
   add({ attemptId: null, ts: task.createdAt, kind: 'fact', data: { type: 'task-created', trackerRef: task.trackerRef != null ? String(task.trackerRef) : null, workspace: workspace?.name ?? null } }, -1);
 
   return {
@@ -163,7 +149,7 @@ export function attemptUsageToApi(ctx: AppContext, snapshot: AttemptUsageSnapsho
   return { ...snapshot, cost: costOfUsages([snapshot.usage], pricesOf(ctx)) };
 }
 
-/** A task's Cost sums ALL its runs — retries and failed attempts included. */
+/** A task's Cost sums ALL its Attempts — retries and failed ones included. */
 export async function taskToApi(ctx: AppContext, task: TaskWithDeps): Promise<ApiTask> {
   const runs = await ctx.attempts.listForTask(task.id);
   const running = task.state === 'working' ? runs.find((r) => r.state === 'running') : undefined;
@@ -172,9 +158,7 @@ export async function taskToApi(ctx: AppContext, task: TaskWithDeps): Promise<Ap
   return taskToApiWithRuns(ctx, task, runs, running ? await runningToolCount(ctx, running) : null, currentStep, hasCandidate);
 }
 
-/** Serialize a task list from its already-batched Runs (issue #258). The rows
- * are lean (ADR-0045, issue #350): the full `prompt` is dropped in favour of
- * `summary`, so no list surface carries the whole prompt. */
+/** Serialize a task list from its batched Attempts as lean rows (no `prompt`). */
 export async function tasksToApi(ctx: AppContext, tasks: TaskWithDeps[]): Promise<ApiTaskListRow[]> {
   if (tasks.length === 0) return [];
   const runsByTask = new Map(tasks.map((task) => [task.id, [] as AttemptRow[]]));
@@ -183,10 +167,6 @@ export async function tasksToApi(ctx: AppContext, tasks: TaskWithDeps[]): Promis
     const run = task.state === 'working' ? runsByTask.get(task.id)?.find((candidate) => candidate.state === 'running') : undefined;
     return run ? [run] : [];
   });
-  // `attempt_tool_calls` is keyed off `attempt_id`: resolve each running
-  // Task's current Attempt id first, then batch the tool-call totals by
-  // Attempt — `toolCountByTask` re-keys the result back onto the Task id every
-  // list-row render already has to hand.
   const attemptIdByTask = await ctx.attempts.idsFor(running.map((run) => ({ taskId: run.taskId, number: run.number })));
   const [toolCountsByAttempt, currentSteps, hasCandidates] = await Promise.all([
     ctx.attempts.toolCallCounts([...attemptIdByTask.values()]),
@@ -208,12 +188,6 @@ export async function tasksToApi(ctx: AppContext, tasks: TaskWithDeps[]): Promis
   });
 }
 
-/** Whether an Accept has a candidate to merge (issue #429): true once
- * `latestVerifiedRef` is set (the common, already-verified case), or — for an
- * escalated worktree Task that never reached verification (a guardrail/infra
- * escalation, e.g. tasks 410/411) — once its branch actually has commits
- * ahead of its base. That git call is scoped to escalated worktree Tasks only
- * (cheap: escalated Tasks are few) so every other Task resolves with no I/O. */
 async function hasCandidateFor(task: TaskWithDeps, lastRun: AttemptRow | undefined): Promise<boolean> {
   let hasCandidate = latestVerifiedRef(lastRun) !== null;
   if (!hasCandidate && task.state === 'escalated' && task.isolationMode === 'worktree' && lastRun?.branch && lastRun?.baseBranch) {
@@ -241,7 +215,6 @@ function taskToApiWithRuns(
   });
 }
 
-/** Total tool calls of a running Attempt from its native aggregate (ADR-0031). */
 async function runningToolCount(ctx: AppContext, run: AttemptRow): Promise<number> {
   const attempt = await ctx.attempts.getForTaskNumber(run.taskId, run.number);
   if (!attempt) return 0;
@@ -251,14 +224,7 @@ async function runningToolCount(ctx: AppContext, run: AttemptRow): Promise<numbe
   return count;
 }
 
-/**
- * The instance-wide Activity snapshot (issue #51, ADR 0010): every live
- * process across Workspaces. Runs come from the persisted capacity set, then
- * join a Runner snapshot when one is live, so a wedged Run remains visible even
- * after it has left the in-memory registry. `includeChats` is false for a Read
- * Key (a read-scoped viz client): Runs only, mirroring the firehose filter that
- * hides Conversation traffic from Read Keys.
- */
+/** Every live process across Workspaces; `includeChats` is false for a Read Key. */
 export async function activitySnapshot(ctx: AppContext, includeChats: boolean): Promise<ApiActivityProcess[]> {
   const prices = pricesOf(ctx);
   const snapshots = new Map((await ctx.runner.activeSnapshots()).map((snapshot) => [snapshot.attemptId, snapshot.snapshot]));
@@ -290,25 +256,15 @@ export async function activitySnapshot(ctx: AppContext, includeChats: boolean): 
   return [...runs, ...chats];
 }
 
-/** The Workspace's name for an at-rest workspaceId — every live process names its own Workspace (issue #52). */
 async function workspaceNameOf(ctx: AppContext, workspaceId: number | null): Promise<string> {
   return (await ctx.workspaces.get(atRestWorkspaceId(workspaceId))).name;
 }
 
-/** A model's effective context window: config override, then the shipped
- * default (`DEFAULT_CONTEXT_WINDOWS`); null when neither knows the model — the
- * gauge then shows raw tokens, never a fabricated percentage (issue #52). */
 function contextWindowOf(ctx: AppContext, model: string): number | null {
   return resolveContextWindow(model, ctx.settingsStore.getGlobal().modelInfo);
 }
 
-/**
- * A Conversation as the REST API and firehose both serve it — one format for
- * the SPA. Running Usage/Cost are derived on read (issue 12), the title falls
- * back to one derived from the first Turn (issue 15), and the context-window
- * / cache-TTL facts come from optional per-model config; honest degradation
- * when unconfigured (null, never a fake percentage).
- */
+/** A Conversation as the REST API and firehose both serve it. */
 export async function conversationToApi(ctx: AppContext, conversation: ConversationRow): Promise<ApiConversation> {
   const config = ctx.settingsStore.getGlobal();
   const modelInfo = config.modelInfo[conversation.model] ?? config.modelInfo[conversation.model.replace(/-\d{8}$/, '')];

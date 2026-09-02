@@ -32,17 +32,6 @@ import { PermissionRules } from './PermissionRules';
 import { SecuritySection } from './SecuritySection';
 import { settingsRegistry, type SettingKey, type SettingTab } from '../../../src/domain/settings-registry.js';
 
-/**
- * The unified settings schema and its render helpers (ADR-0044 Decision G). Both
- * the global and per-Workspace surfaces render from *this one* declaration: each
- * setting is declared once with its global binding (read/write against
- * `AppConfig`) and, when overridable, its workspace binding (the override column
- * plus the global default it inherits). {@link SettingsForm} walks this schema
- * for a surface and tab; the workspace surface is the same schema with the
- * inherit layer on and `global-only` sections filtered out — parity by
- * construction, not by keeping two hand-built forms in sync.
- */
-
 export type Surface = 'global' | 'workspace';
 
 /** The render context for the global surface: the whole-config buffer plus the
@@ -76,7 +65,6 @@ export interface WorkspaceRenderCtx {
 
 export type RenderCtx = GlobalRenderCtx | WorkspaceRenderCtx;
 
-/** A value that may be the same on both surfaces or differ per surface. */
 type PerSurface<T> = T | { global: T; workspace: T };
 
 function pick<T>(value: PerSurface<T>, surface: Surface): T {
@@ -86,17 +74,12 @@ function pick<T>(value: PerSurface<T>, surface: Surface): T {
 }
 
 
-/** All harnesses as options, keeping a Workspace's pinned-but-unconfigured
- * harness visible/selectable rather than snapping to another (mirrors the
- * global model field's `withCurrent` affordance). */
 function harnessOptions(config: AppConfig, current: string | null | undefined): FieldOption[] {
   const options = toOptions(Object.keys(config.harnesses));
   if (current && !config.harnesses[current]) return [...options, { value: current, label: `${current} (not configured)` }];
   return options;
 }
 
-/** One-line summary of a possibly-multi-line prompt for the inheriting read-only
- * line: its first line, truncated, or "Not configured" when empty. */
 function summarizePrompt(prompt: string): string {
   const trimmed = prompt.trim();
   if (trimmed === '') return 'Not configured';
@@ -105,9 +88,6 @@ function summarizePrompt(prompt: string): string {
 }
 
 
-/** A prompt-template field bound to the global `AppConfig` — the global twin of
- * {@link OverridablePrompt}. Renders the shared {@link PromptField} directly (no
- * inherit wrapper). */
 interface GlobalPrompt {
   id: string;
   label?: string;
@@ -121,9 +101,6 @@ interface GlobalPrompt {
   textareaClass?: string;
 }
 
-/** An overridable prompt-template field: the shared {@link InheritField} +
- * {@link PromptField}, mirroring the scalar {@link OverridableDescriptor} for the
- * textarea-with-preview controls (drive/task/review prompts). */
 interface OverridablePrompt {
   key: SettingKey;
   id: string;
@@ -202,9 +179,7 @@ function OverridePrompt({
 interface ScalarFieldNode {
   kind: 'scalar';
   id: string;
-  /** Global binding, or `null` when the setting has no global-surface field. */
   global: ScalarDescriptor | null;
-  /** Workspace binding, or `null` when the setting has no workspace-surface field. */
   workspace: OverridableDescriptor | null;
 }
 
@@ -258,15 +233,10 @@ function renderField(node: FieldNode, ctx: RenderCtx): ReactNode {
   ) : null;
 }
 
-/** A grid of fields — every field on both surfaces flows through here, so no
- * field's control markup is ever written per-page. */
 function grid(className: string, nodes: FieldNode[], ctx: RenderCtx): ReactNode {
   return <div className={className}>{nodes.map((node) => renderField(node, ctx))}</div>;
 }
 
-/** Render a bare {@link OverridableDescriptor} list on the workspace surface (for
- * the bespoke Verification/Guardrails sections that mix overrides with custom
- * controls). */
 function overrideGrid(
   fields: OverridableDescriptor[],
   className: string,
@@ -340,8 +310,6 @@ const chatModel = scalar(
     id: 'workspace-chat-model',
     errorKey: 'chatModel',
     label: 'Model',
-    // Chat inherits the standalone global chat model (not the harness default),
-    // but its option list still tracks the effective chat harness (ADR-0012).
     get: (w) => w.chatModel,
     set: (w, v) => ({ ...w, chatModel: v as string | null }),
     inherited: (c) => c.chat.model,
@@ -389,9 +357,6 @@ const taskModel = scalar(
     errorKey: 'model',
     get: (w) => w.model,
     set: (w, v) => ({ ...w, model: v as string | null }),
-    // The model default follows the *effective* harness (mirrors
-    // TaskService.resolveExecution): overriding the harness repoints the
-    // inherited model and the option list to that harness.
     inherited: (c, w) => c.harnesses[w.harness ?? c.defaults.harness]?.defaultModel ?? '',
     options: (c, w) => withCurrent(toOptions(c.harnesses[w.harness ?? c.defaults.harness]?.models ?? []), w.model ?? ''),
   },
@@ -466,9 +431,6 @@ const autoRunnerEnabled = scalar(
   },
 );
 
-// The global instance-wide ceiling (`autoRunner.maxConcurrentAttempts`) is
-// global-only — distinct from the per-Workspace `maxConcurrentAttempts` cap that
-// inherits it and only appears on the Workspace surface.
 const machineCeiling = scalar(
   {
     id: 'settings-max-attempts',
@@ -492,8 +454,6 @@ const concurrencyCap = scalar(null, {
   set: (w, v) => ({ ...w, maxConcurrentAttempts: v as number | null }),
   inherited: (c) => c.autoRunner.maxConcurrentAttempts,
   min: 1,
-  // The Machine Ceiling is the hard limit an override can't breach (ADR-0012);
-  // clamping is read-time (#60), so this input `max` just guides.
   max: (c) => c.autoRunner.maxConcurrentAttempts,
 });
 
@@ -683,10 +643,6 @@ const continuePromptField = prompt(
 );
 
 
-/** A loud, visible flag for an enabled-but-unrunnable review — toggled on yet
- * resolving to no model or prompt, so it can never run (ADR-0044 §F, issue #340).
- * Shared by both verification sections so the global and workspace surfaces flag
- * the same resolved state identically, rather than saving a silent no-op. */
 function ReviewUnrunnableNote({ review }: { review: ResolvedReviewInputs }) {
   if (!reviewUnrunnable(review)) return null;
   const missing = missingReviewInput(review);
@@ -698,8 +654,6 @@ function ReviewUnrunnableNote({ review }: { review: ResolvedReviewInputs }) {
   );
 }
 
-/** The global Verification section: the command list plus a review toggle whose
- * harness/model/prompt reveal when enabled. */
 function GlobalVerification({ ctx }: { ctx: GlobalRenderCtx }) {
   const config = ctx.config;
   const fieldErrors = ctx.errors;
@@ -806,8 +760,6 @@ const reviewScalarFields: OverridableDescriptor[] = [
     set: (w, v) => ({ ...w, reviewModel: v as string | null }),
     inherited: (c) => c.verify.review.model ?? '',
     format: (m) => (m ? String(m) : 'Not configured'),
-    // The review model's option list tracks the effective review harness
-    // (mirrors the Task/chat harness→model pairing).
     renderControl: ({ id, value, onChange }, { config, workspace }) => {
       const reviewHarnessEff = (workspace.reviewHarness ?? config.verify.review.harness) || undefined;
       return (
@@ -834,14 +786,8 @@ const reviewPromptField: OverridablePrompt = {
   rows: 3,
 };
 
-/** The workspace Verification section: the list-grain command override, the
- * decomposed review scalars, and the review prompt — with a loud banner when the
- * resolved review would be enabled but unrunnable (ADR-0044 §F). */
 function WorkspaceVerification({ ctx }: { ctx: WorkspaceRenderCtx }) {
   const { config, workspace, errors } = ctx;
-  // A review that resolves to enabled-without-a-prompt/model here can never run
-  // (ADR-0044 §F, issue #340): resolve the review (workspace ?? global) and flag
-  // it loudly, rather than letting the operator save a silent no-op.
   const resolvedReview: ResolvedReviewInputs = {
     requested: Boolean(workspace.reviewEnabled ?? config.verify.review.enabled),
     model: workspace.reviewModel ?? config.verify.review.model,
@@ -899,10 +845,6 @@ const guardrailScalarFields: OverridableDescriptor[] = [
   },
 ];
 
-/** The global Run-guardrails defaults (ADR-0019): the budget bounds, progress
- * detector, and tool timeout every Workspace inherits until it overrides them.
- * The global twin of {@link WorkspaceGuardrails} — no inherit layer, writing
- * `config.guardrails.*` directly. */
 function GlobalGuardrails({ ctx }: { ctx: GlobalRenderCtx }) {
   const { config, errors } = ctx;
   const g = config.guardrails;
@@ -956,8 +898,6 @@ function GlobalGuardrails({ ctx }: { ctx: GlobalRenderCtx }) {
               value={g.budget.costUsd ?? ''}
               onChange={(e) => setBudget(setBudgetField(g.budget, 'costUsd', e.target.value))}
             />
-            {/* A cost cap with no token fallback is rejected server-side when a
-                configured model is unpriced (ADR-0019, #166). */}
             <FieldError message={errors['guardrails.budget.costUsd']} />
           </div>
         </div>
@@ -988,8 +928,6 @@ function GlobalGuardrails({ ctx }: { ctx: GlobalRenderCtx }) {
   );
 }
 
-/** The workspace Run-guardrails section: the whole-object budget override plus
- * the progress + tool-timeout scalars. */
 function WorkspaceGuardrails({ ctx }: { ctx: WorkspaceRenderCtx }) {
   const { config, workspace, errors } = ctx;
   return (
@@ -1047,8 +985,6 @@ function WorkspaceGuardrails({ ctx }: { ctx: WorkspaceRenderCtx }) {
                   value={value.costUsd ?? ''}
                   onChange={(e) => onChange(setBudgetField(value, 'costUsd', e.target.value))}
                 />
-                {/* A cost cap with no token fallback is rejected server-side
-                    when a configured model is unpriced (ADR-0019, #166). */}
                 <FieldError message={errors['guardrailBudget.costUsd']} />
               </div>
             </div>
@@ -1086,8 +1022,6 @@ function ResolvedTrackerValue({ workspace }: { workspace: Workspace }) {
   );
 }
 
-/** The workspace Identity section: editable name and the read-only working
- * directory (Workspace identity, fixed at creation). */
 function WorkspaceIdentity({ ctx }: { ctx: WorkspaceRenderCtx }) {
   const { workspace, errors } = ctx;
   return (
@@ -1115,7 +1049,6 @@ function WorkspaceIdentity({ ctx }: { ctx: WorkspaceRenderCtx }) {
   );
 }
 
-/** The workspace Tracker-mirroring section. */
 function WorkspaceTracker({ ctx }: { ctx: WorkspaceRenderCtx }) {
   const { workspace, pristineWorkspace, errors } = ctx;
   return (
@@ -1151,7 +1084,6 @@ function WorkspaceTracker({ ctx }: { ctx: WorkspaceRenderCtx }) {
   );
 }
 
-/** The workspace Delete section: the confirm trigger and the running-task note. */
 function WorkspaceDelete({ ctx }: { ctx: WorkspaceRenderCtx }) {
   return (
     <>
@@ -1168,7 +1100,6 @@ function WorkspaceDelete({ ctx }: { ctx: WorkspaceRenderCtx }) {
 }
 
 
-/** One rendered card on a settings surface. */
 interface SectionNode {
   tab: SettingTab;
   surfaces: Surface[];
@@ -1179,7 +1110,6 @@ interface SectionNode {
 
 const BOTH: Surface[] = ['global', 'workspace'];
 
-/** Grid classes differ only in gap between the two surfaces. */
 function twoColGrid(surface: Surface): string {
   return surface === 'global' ? 'grid gap-3.5 sm:grid-cols-2' : 'grid gap-4 sm:grid-cols-2';
 }

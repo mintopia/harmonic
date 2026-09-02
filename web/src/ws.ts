@@ -34,10 +34,10 @@ export type ServerMessage =
   | { type: 'attempt_changed'; run: AttemptSummary }
   | { type: 'task_changed'; task: Task }
   | { type: 'attempt_timeline_changed'; taskId: number; attempts: Attempt[]; budgetBase: number }
-  // Hard-delete (issue #162): the Task is gone server-side (Runs/history
+  // Hard-delete: the Task is gone server-side (Runs/history
   // cascaded); drop it from local state so the board/graph lose it too.
   | { type: 'task_removed'; id: number }
-  // Live AttemptSummary usage (ADR 0010): the Activity view merges these deltas into its
+  // Live AttemptSummary usage: the Activity view merges these deltas into its
   // rows so tokens/context/cost tick live. Sent to read keys too.
   | ({ type: 'attempt_usage' } & AttemptUsageEvent)
   | { type: 'operations'; event: OperationEvent }
@@ -45,7 +45,7 @@ export type ServerMessage =
   | { type: 'flagged-worktrees'; flags: FlaggedWorktree[] }
   | { type: 'conversation_event'; event: ConversationEvent }
   | { type: 'conversation_changed'; conversation: Conversation }
-  // Issue #11: the Harness is blocked on this ACP permission request until
+  // The Harness is blocked on this ACP permission request until
   // the operator answers (POST .../permissions/:reqId) or the conversation
   // ends/crashes — the panel clears it on a matching resolved
   // `conversation_event` (payload.reqId) or on conversation end.
@@ -83,7 +83,6 @@ function connect(): void {
   };
 }
 
-/** Auto-reconnecting shared subscription to the server's event firehose. */
 function subscribeWithOpen(onMessage: (msg: ServerMessage) => void, onOpen?: (socket: WebSocket) => void): () => void {
   const listener = onOpen ? { onMessage, onOpen } : { onMessage };
   let subscribed = true;

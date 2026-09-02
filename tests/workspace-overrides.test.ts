@@ -9,13 +9,6 @@ import { resolveVerifiers, resolveDrive } from '../src/domain/setting-override.j
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { makeSettingsStore } from './helpers.js';
 
-/**
- * Per-workspace setting overrides on the Workspace API (ADR-0012, issue #64).
- * The data model (#59) added the nullable columns; here the service persists
- * and clears them. `null` means *inherit*, an explicit value overrides, and an
- * omitted (`undefined`) field is left untouched — the three states the settings
- * page needs to round-trip through PATCH.
- */
 describe('WorkspaceService override persistence (issue #64)', () => {
   let dataDir: string;
   let asyncDb: AsyncDbHandle;
@@ -24,7 +17,7 @@ describe('WorkspaceService override persistence (issue #64)', () => {
 
   beforeEach(async () => {
     dataDir = mkdtempSync(join(tmpdir(), 'harmonic-ws-over-'));
-    asyncDb = await openAsyncDb(dataDir); // backfills the single Default Workspace
+    asyncDb = await openAsyncDb(dataDir);
     settingsStore = await makeSettingsStore(dataDir);
     workspaces = new WorkspaceService(asyncDb, settingsStore);
   });
@@ -50,7 +43,6 @@ describe('WorkspaceService override persistence (issue #64)', () => {
     expect(ws.reviewHarness).toBeNull();
     expect(ws.guardrailBudget).toBeNull();
     expect(ws.guardrailProgress).toBeNull();
-    // Drive/taskPrompt/toolTimeout overrides (ADR-0044, issue #339) also inherit.
     expect(ws.drivePrompt).toBeNull();
     expect(ws.driveUnattendedReminder).toBeNull();
     expect(ws.driveContinuePrompt).toBeNull();
@@ -84,8 +76,6 @@ describe('WorkspaceService override persistence (issue #64)', () => {
 
   it('overrides the chat default independently of the Task default', async () => {
     const ws = (await workspaces.list())[0]!;
-    // Chat and Tasks are separate columns: pointing chat at a different agent
-    // leaves the Task default untouched.
     const updated = await workspaces.update(ws.id, { harness: 'codex', chatHarness: 'claude', chatModel: 'claude-opus-5' });
     expect(updated.harness).toBe('codex');
     expect(updated.chatHarness).toBe('claude');
@@ -127,15 +117,12 @@ describe('WorkspaceService override persistence (issue #64)', () => {
 
   it('sets explicit verifier overrides, command stored as JSON, review as plain scalars (issue #132, #337)', async () => {
     const ws = (await workspaces.list())[0]!;
-    // .parse fills in the schema's own defaults (env: {}, timeoutSeconds: 600) —
-    // the same shape the PATCH route hands the service after body validation.
     const updated = await workspaces.update(ws.id, {
       verificationCommand: [verificationCommandSchema.parse({ command: 'npm', args: ['test'] })],
       reviewEnabled: true,
       reviewPrompt: 'review',
       reviewModel: 'claude-opus-5',
     });
-    // The stored JSON is a superset of what was sent — toMatchObject, not toEqual.
     expect(JSON.parse(updated.verificationCommand!)).toMatchObject([{ command: 'npm', args: ['test'] }]);
     expect(updated.reviewEnabled).toBe(true);
     expect(updated.reviewPrompt).toBe('review');
@@ -165,9 +152,7 @@ describe('WorkspaceService override persistence (issue #64)', () => {
   it('patches reviewEnabled to false, round-trips it, and resolves the review/critic to off (issue #337)', async () => {
     const ws = (await workspaces.list())[0]!;
     const updated = await workspaces.update(ws.id, { reviewEnabled: false });
-    // Round-trips through the plain scalar column exactly as PATCHed.
     expect(updated.reviewEnabled).toBe(false);
-    // A configured global default is overridden by the explicit disable, not inherited.
     const resolved = resolveVerifiers(updated, {
       verify: {
         commands: [],
@@ -204,7 +189,6 @@ describe('WorkspaceService override persistence (issue #64)', () => {
       guardrailBudget: budgetGuardrailSchema.parse({ wallClockMinutes: 120 }),
       guardrailProgress: true,
     });
-    // The stored JSON is a superset of what was sent (schema defaults filled in) — toMatchObject, not toEqual.
     expect(JSON.parse(updated.guardrailBudget!)).toMatchObject({ wallClockMinutes: 120 });
     expect(updated.guardrailProgress).toBe(true);
   });
@@ -228,9 +212,6 @@ describe('WorkspaceService override persistence (issue #64)', () => {
     expect(untouched.guardrailProgress).toBe(false);
   });
 
-  // ADR-0044 / issue #339: drive.* decomposes into five independently-inheritable
-  // fields, plus taskPrompt and toolTimeoutMinutes, each round-tripping through
-  // PATCH as its own nullable override column.
   it('sets, clears, and independently patches the drive/taskPrompt/toolTimeout overrides (#339)', async () => {
     const ws = (await workspaces.list())[0]!;
     const set = await workspaces.update(ws.id, {
@@ -250,12 +231,10 @@ describe('WorkspaceService override persistence (issue #64)', () => {
     expect(set.taskPrompt).toBe('WS task prompt');
     expect(set.toolTimeoutMinutes).toBe(45);
 
-    // An omitted field is left untouched; only what is sent is patched.
     const renamed = await workspaces.update(ws.id, { name: 'Renamed' });
     expect(renamed.driveMergeFate).toBe('open-PR');
     expect(renamed.toolTimeoutMinutes).toBe(45);
 
-    // null clears one field back to inherit, leaving the others set.
     const cleared = await workspaces.update(ws.id, { driveMergeFate: null, toolTimeoutMinutes: null });
     expect(cleared.driveMergeFate).toBeNull();
     expect(cleared.toolTimeoutMinutes).toBeNull();
@@ -280,28 +259,17 @@ describe('WorkspaceService override persistence (issue #64)', () => {
     expect(resolved.mergeFate).toBe('auto-merge');
   });
 
-  // issue #391: overrides now persist through `SettingsStore`'s YAML file rather
-  // than nullable `workspaces` columns — proves `update` writes through the
-  // shared store, `list()`/`get()` compose it back (a fresh `WorkspaceService`
-  // over the SAME store instance sees it too), and `delete()` removes the
-  // store's entry outright (not just leaves it all-null).
   it('persists overrides to the YAML settings store; list()/get() compose them back; delete() removes the entry (issue #391)', async () => {
     const ws = (await workspaces.list())[0]!;
     await workspaces.update(ws.id, { harness: 'codex', maxConcurrentAttempts: 3 });
 
-    // The write is visible through `SettingsStore.getOverrides` directly, not
-    // just via `WorkspaceService` — proves it actually reached the store.
     expect(settingsStore.getOverrides(ws.id)).toMatchObject({ harness: 'codex', maxConcurrentAttempts: 3 });
 
-    // A second `WorkspaceService` over the SAME store instance composes the
-    // same overrides back on both `list()` and `get()`.
     const reopened = new WorkspaceService(asyncDb, settingsStore);
     expect((await reopened.list())[0]).toMatchObject({ harness: 'codex', maxConcurrentAttempts: 3 });
     expect(await reopened.get(ws.id)).toMatchObject({ harness: 'codex', maxConcurrentAttempts: 3 });
 
     await workspaces.delete(ws.id);
-    // `delete` removes the whole per-Workspace entry from the store (sparse),
-    // not merely clearing each field back to null.
     expect(settingsStore.getOverrides(ws.id)).toEqual({
       harness: null,
       model: null,

@@ -31,7 +31,6 @@ describe('usage collection retry (log-flush race)', () => {
     const slug = cwd.replace(/[^a-zA-Z0-9]/g, '-');
     const file = join(logRoot, slug, 'race-session.jsonl');
     mkdirSync(join(logRoot, slug), { recursive: true });
-    // The file exists (session started) but the usage lines merge late.
     writeFileSync(file, JSON.stringify({ type: 'user', text: 'hi' }));
     setTimeout(() => writeFileSync(file, assistantLine), 50);
 
@@ -64,13 +63,10 @@ describe('collectUsage rolls Subagent models + per-agent breakdown into the pers
     const subs = join(logRoot, slug, S, 'subagents');
     mkdirSync(subs, { recursive: true });
 
-    // Root runs Opus; a spawned Subagent runs Sonnet — the model the old
-    // parent-only collector dropped ("shows no Sonnet").
     writeFileSync(join(logRoot, slug, `${S}.jsonl`), assistant('claude-opus-4-8', { input_tokens: 100, output_tokens: 10 }));
     writeFileSync(join(subs, 'agent-a1.jsonl'), assistant('claude-sonnet-5', { input_tokens: 40, output_tokens: 4 }));
     writeFileSync(join(subs, 'agent-a1.meta.json'), JSON.stringify({ agentType: 'code-reviewer', toolUseId: 'toolu_1', spawnDepth: 1 }));
 
-    // No ACP prompt result → the per-model split (and totals) come from the log.
     const usage = collectUsage({
       harnessId: 'claude',
       harness: { command: 'x', args: [], env: {}, models: [], defaultModel: 'x', sessionLogDir: logRoot },
@@ -79,12 +75,9 @@ describe('collectUsage rolls Subagent models + per-agent breakdown into the pers
       events: [],
     })!;
 
-    // The Subagent's Sonnet now appears in the per-model breakdown.
     expect(usage.models['claude-opus-4-8']).toMatchObject({ inputTokens: 100, outputTokens: 10 });
     expect(usage.models['claude-sonnet-5']).toMatchObject({ inputTokens: 40, outputTokens: 4 });
-    // Totals roll the whole tree up (Subagent tokens count).
     expect(usage.totals).toMatchObject({ inputTokens: 140, outputTokens: 14 });
-    // Per-agent breakdown: the root bucket and the Subagent's agentType bucket.
     expect(usage.agents?.root).toMatchObject({ inputTokens: 100, outputTokens: 10 });
     expect(usage.agents?.['code-reviewer']).toMatchObject({ inputTokens: 40, outputTokens: 4 });
   });
@@ -233,13 +226,9 @@ describe('replay quarantine (issue #144)', () => {
 
 describe('model mismatch (Q7)', () => {
   it("treats a task pinned to 'auto' as matching any observed model", async () => {
-    // Copilot's auto router legitimately serves different models per turn
-    // (spike, issue 25); the observed models are information in Usage,
-    // not a broken pin.
     const { observedModelMismatch } = await import('../src/execution/usage.js');
     const mu = { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 };
     expect(observedModelMismatch('auto', { 'gpt-5-mini': mu, 'claude-haiku-4.5': mu })).toBeNull();
-    // A real pin that no observed model matches still surfaces.
     expect(observedModelMismatch('gpt-5.4', { 'claude-haiku-4.5': mu })).toEqual(['claude-haiku-4.5']);
   });
 });
@@ -262,7 +251,6 @@ describe('usage aggregation with AI Units', () => {
       usage({ 'claude-haiku-4.5': mu(10, 2.25) }),
     ])!;
     expect(merged.models['claude-haiku-4.5']).toMatchObject({ inputTokens: 20, aiUnits: 3.75 });
-    // No source ever reported AI Units for sonnet: the field stays absent.
     expect(merged.models['claude-sonnet-5']).not.toHaveProperty('aiUnits');
   });
 
@@ -278,11 +266,8 @@ describe('usage aggregation with AI Units', () => {
     });
     const usage = (t: object) => ({ models: {}, totals: t, toolCalls: {}, source: 'combined' }) as any;
 
-    // Observed spend must survive aggregation (PRODUCT.md: honest numbers).
     expect(mergeUsage([usage(totals(1.5)), usage(totals(2.25))])!.totals).toMatchObject({ aiUnits: 3.75 });
-    // A run without AI Units doesn't erase the others'…
     expect(mergeUsage([usage(totals(1.5)), usage(totals())])!.totals).toMatchObject({ aiUnits: 1.5 });
-    // …and no run reporting them leaves the field absent, never zero.
     expect(mergeUsage([usage(totals())])!.totals).not.toHaveProperty('aiUnits');
   });
 });
@@ -296,8 +281,6 @@ describe('per-tool output-token attribution (issue #195)', () => {
       { model: 'claude-sonnet-5', usage: { inputTokens: 0, outputTokens: 5, cacheReadTokens: 0, cacheWriteTokens: 0 }, tools: [] },
     ]);
 
-    // The final parallel call receives the integer remainder, so every turn
-    // reconciles exactly even when its output cannot divide evenly by calls.
     expect(attributed).toEqual({
       toolTokens: {
         Read: { outputTokens: 8, cost: 0.00010999999999999999 },
@@ -415,7 +398,6 @@ describe('Process Tree roll-up (T1)', () => {
     });
 
     const rolled = rollUpUsage(tree);
-    // Same model across parent + subagent sums into one bucket.
     expect(rolled.models['claude-sonnet-5']).toMatchObject({ inputTokens: 105, outputTokens: 207 });
     expect(rolled.models['claude-haiku-4-5']).toMatchObject({ inputTokens: 10, outputTokens: 20 });
     expect(rolled.totals).toMatchObject({ inputTokens: 115, outputTokens: 227 });
@@ -448,7 +430,6 @@ describe('Process Tree roll-up (T1)', () => {
     const partial = costOfUsages([withUnpriced], DEFAULT_PRICES)!;
     expect(partial.incomplete).toBe(true);
     expect(partial.byModel['no-such-model']).toBeNull();
-    // The priced model still contributes — a floor, never a fake zero.
     expect(partial.totalUsd).toBeGreaterThan(0);
   });
 });
@@ -456,11 +437,6 @@ describe('Process Tree roll-up (T1)', () => {
 describe('usage collection and statistics', () => {
   let server: TestServer;
 
-  // The tests below that boot a plain `stubHarness()` share one server (their
-  // assertions are all per-run/per-task, so accumulated DB state is inert) —
-  // each boot is a full Fastify + libsql + migration cycle. Tests with
-  // per-harness overrides, and the stats test (which asserts on whole-DB
-  // totals), keep their own boots.
   let shared: TestServer | undefined;
   const sharedServer = async () => (shared ??= await startServer(stubHarness()));
 
@@ -543,7 +519,6 @@ describe('usage collection and statistics', () => {
     overrides.harnesses.claude.sessionLogDir = logRoot;
     overrides.harnesses.claude.env = { STUB_SESSION_ID: 'fixed-session' };
 
-    // Claude Code convention: <logRoot>/<slugified-cwd>/<sessionId>.jsonl
     const slug = workDir.replace(/[^a-zA-Z0-9]/g, '-');
     mkdirSync(join(logRoot, slug), { recursive: true });
     const line = (id: string, model: string, usage: object) =>
@@ -594,7 +569,6 @@ describe('usage collection and statistics', () => {
     ]);
 
     server = await startServer(overrides);
-    // The real copilot prompt result is bare — no usage, no _meta (spike Q3).
     const { attemptId } = await runTask({
       harness: 'copilot',
       model: 'auto',
@@ -609,16 +583,11 @@ describe('usage collection and statistics', () => {
     });
     expect(run.usage.totals.aiUnits).toBeCloseTo(7.91965, 10);
     expect(run.usage.source).toBe('session-log');
-    // Both observed serving models are priced out of the box.
     expect(run.cost.incomplete).toBe(false);
     expect(run.cost.totalUsd).toBeGreaterThan(0);
-    // 'auto' delegated the choice: observed models are information, not a
-    // contradiction…
     const events = (await server.api('GET', `/api/attempts/${attemptId}/events`)).body.events;
     expect(events.find((e: any) => e.payload?.event === 'model_mismatch')).toBeUndefined();
 
-    // …but a real pin the plan silently ignored (auto-only plans accept
-    // set_model and route anyway, spike Q2) IS surfaced on the run.
     const pinned = await runTask({
       harness: 'copilot',
       model: 'gpt-5.4',
@@ -646,9 +615,6 @@ describe('usage collection and statistics', () => {
       exit: 'clean',
     });
     const { taskId } = await runTask({ prompt: usageScenario });
-    // A second Run on the same ticket with an identical prompt replays the same
-    // usage scenario (the ticket is re-queued directly: an operator Reject would
-    // bake guidance into the prompt, which the stub parses as its scenario).
     await server.app.ctx.tasks.setState(taskId, 'ready');
     await server.api('POST', `/api/tasks/${taskId}/run`);
     await waitFor(async () => {
@@ -686,8 +652,6 @@ describe('usage collection and statistics', () => {
     expect(all.body.totals.inputTokens).toBe(5);
     expect(all.body.toolCalls).toEqual({ Bash: 1 });
     expect(all.body.attemptCount).toBe(1);
-    // Per-day chart series: one bucket at today's local midnight, carrying
-    // cost, input+output tokens (cache excluded), and run count (issue #194).
     const midnight = new Date();
     midnight.setHours(0, 0, 0, 0);
     expect(all.body.series).toHaveLength(1);
@@ -704,8 +668,6 @@ describe('usage collection and statistics', () => {
   });
 });
 
-// The token count the live spend Guardrail (#128) reads each poll — pinned at
-// the usage seam so its telemetry-null-vs-zero distinction can't regress.
 describe('totalTokensOf (issue #128 spend-guard token reading)', () => {
   const mu = (n: number): ModelUsage => ({
     inputTokens: n,
@@ -729,14 +691,12 @@ describe('totalTokensOf (issue #128 spend-guard token reading)', () => {
   });
 
   it('sums the four token classes across the per-model split when no aggregate is reported', () => {
-    // two models × (10+10+10+10) = 80
     const u = usage({ models: { a: mu(10), b: mu(10) } });
     expect(totalTokensOf(u)).toBe(80);
   });
 
   it('is null when there is no telemetry at all — distinct from a real zero reading', () => {
     expect(totalTokensOf(usage({}))).toBeNull();
-    // A genuine all-zero model IS measurable (0), never null.
     expect(totalTokensOf(usage({ models: { a: mu(0) } }))).toBe(0);
   });
 });

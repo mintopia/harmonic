@@ -16,12 +16,7 @@ import { resolveVerifiers } from '../../domain/setting-override.js';
 import { idParamsSchema, errorResponse } from '../schemas.js';
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
 
-/**
- * The Resolved Tracker of a Workspace (issue #83), flattened for the API: a
- * display `label` when resolved, else a coded `reason` it can't. `null` when the
- * Workspace has tracking off (nothing to resolve). The `ok` flag discriminates
- * which of `label` / (`code`,`reason`) is populated.
- */
+/** The Resolved Tracker flattened for the API; `null` when tracking is off. `ok` discriminates `label` vs (`code`, `reason`). */
 const resolvedTrackerSchema = z
   .object({
     ok: z.boolean().meta({ example: true }),
@@ -32,8 +27,7 @@ const resolvedTrackerSchema = z
   .nullable()
   .meta({ description: 'The tracker this Workspace resolved (issue #83), or null when tracking is off.' });
 
-/** A Workspace (ADR-0008) as the API serves it — the `WorkspaceRow` plus the
- * `resolvedTracker` the route injects at serialize time (issue #83). */
+/** A Workspace as the API serves it: the `WorkspaceRow` plus its `resolvedTracker`. */
 const workspaceSchema = z
   .object({
     id: z.number().meta({ example: 1 }),
@@ -42,28 +36,21 @@ const workspaceSchema = z
     trackerEnabled: z.boolean().meta({ example: false }),
     trackerPollIntervalSeconds: z.number().meta({ example: 60 }),
     resolvedTracker: resolvedTrackerSchema,
-    // Per-workspace setting overrides (ADR-0012): null ⇒ inherit the global
-    // default, a value overrides it. Resolved at read time (issue #60).
+    // Setting overrides: null ⇒ inherit the global default.
     harness: z.string().nullable().meta({ example: null }),
     model: z.string().nullable().meta({ example: null }),
     chatHarness: z.string().nullable().meta({ example: null }),
     chatModel: z.string().nullable().meta({ example: null }),
     isolationMode: z.string().nullable().meta({ example: null }),
     priority: z.string().nullable().meta({ example: null }),
-    /** Conflict-resolve-turn bound (ADR-0046); null inherits `config.defaults.conflictResolveTurns`. */
+    /** Conflict-resolve-turn bound; null inherits `config.defaults.conflictResolveTurns`. */
     conflictResolveTurns: z.number().nullable().meta({ example: null }),
     maxConcurrentAttempts: z.number().nullable().meta({ example: null }),
     autoRunnerEnabled: z.boolean().nullable().meta({ example: null }),
     /** Per-workspace attempt cap; null inherits `config.maxAttempts`. */
     maxAttempts: z.number().nullable().meta({ example: null }),
     contextReuseTokenLimit: z.number().nullable().meta({ example: null }),
-    // Verification verifier overrides: the raw JSON columns parsed back into their
-    // shape, so a client reads a set override the same shape it PATCHes. The
-    // command is list-grain (ADR-0044 §D, issue #338): null ⇒ inherit
-    // `config.verify.commands`, a non-empty array overrides the whole list, `[]` ⇒
-    // off (run no commands here). The review is decomposed into four independently-
-    // inheritable scalars (issue #337, ADR-0044 §C): each null ⇒ inherit the
-    // matching `config.verify.review.*` field.
+    // `verificationCommand` is list-grain (null ⇒ inherit, `[]` ⇒ off); the four review scalars inherit independently.
     verificationCommand: verificationCommandOverrideSchema.nullable().meta({ example: null }),
     reviewEnabled: z.boolean().nullable().meta({ example: null }),
     reviewPrompt: z.string().nullable().meta({ example: null }),
@@ -71,15 +58,15 @@ const workspaceSchema = z
     reviewHarness: z.string().nullable().meta({ example: null }),
     guardrailBudget: budgetGuardrailSchema.nullable().meta({ example: null }),
     guardrailProgress: z.boolean().nullable().meta({ example: null }),
-    /** Tool-timeout bound override (ADR-0044); null inherits `config.guardrails.toolTimeoutMinutes`. */
+    /** Tool-timeout bound override; null inherits `config.guardrails.toolTimeoutMinutes`. */
     toolTimeoutMinutes: z.number().nullable().meta({ example: null }),
-    // Drive.* overrides (ADR-0044): each null ⇒ inherit the matching `config.drive.*`.
+    // Drive.* overrides: each null ⇒ inherit the matching `config.drive.*`.
     drivePrompt: z.string().nullable().meta({ example: null }),
     driveUnattendedReminder: z.string().nullable().meta({ example: null }),
     driveContinuePrompt: z.string().nullable().meta({ example: null }),
     driveMergeFate: z.string().nullable().meta({ example: null }),
     driveContinueAttempts: z.number().nullable().meta({ example: null }),
-    /** Task Prompt override (ADR-0044); null inherits `config.taskPrompt`. */
+    /** Task Prompt override; null inherits `config.taskPrompt`. */
     taskPrompt: z.string().nullable().meta({ example: null }),
     createdAt: z.number().meta({ example: 1784030400000 }),
     updatedAt: z.number().meta({ example: 1784032260000 }),
@@ -99,11 +86,7 @@ export async function workspaceRoutes(fastify: FastifyInstance): Promise<void> {
         ? { ok: true, label: r.label, code: null, reason: null }
         : { ok: false, label: null, code: r.code, reason: r.reason };
 
-  /** A Workspace row plus its live Resolved Tracker, as every workspace endpoint returns it.
-   * The verifier-list and budget overrides are stored as JSON text; parse them
-   * back so the response carries the same object shape a client PATCHes (issue
-   * #132). The four review-override columns are plain scalars and pass through
-   * via `...ws` unchanged. */
+  /** A Workspace row plus its live Resolved Tracker; JSON-text override columns parsed back to the shape a client PATCHes. */
   const serialize = (ws: WorkspaceRow) => ({
     ...ws,
     verificationCommand: ws.verificationCommand ? JSON.parse(ws.verificationCommand) : null,
@@ -188,20 +171,12 @@ export async function workspaceRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req) => {
-      // The budget-override shape is schema-validated, but a cost cap with no
-      // token fallback is only invalid relative to the *config's* models/prices
-      // (issue #166) — the same rule the global config enforces (ADR-0019). The
-      // field-pathed message lets the settings form surface it inline.
       if (req.body.guardrailBudget) {
         const unpriced = unpricedModelsForCostCap(req.body.guardrailBudget, ctx.settingsStore.getGlobal());
         if (unpriced.length > 0) {
           throw new DomainError('validation', `guardrailBudget.costUsd: ${costCapMessage(unpriced)}`);
         }
       }
-      // A review override that resolves to enabled-without-a-model can never run
-      // (ADR-0044 §F, issue #340): block the save instead of letting the critic be
-      // silently skipped. Validate the *resolved* review — the patched Workspace over
-      // the current global. Field-pathed so the settings form surfaces it inline.
       if (
         req.body.reviewEnabled !== undefined ||
         req.body.reviewPrompt !== undefined ||

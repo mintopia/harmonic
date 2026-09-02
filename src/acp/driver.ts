@@ -3,14 +3,10 @@ import { AcpConnection, AcpConnectionClosedError } from './connection.js';
 import { startOperation } from '../telemetry/operations.js';
 
 /**
- * A single prompt turn was cancelled because the harness fell silent — no
+ * A prompt turn was cancelled because the harness fell silent — no
  * `session/update` and no outstanding tool call — for longer than the
- * configured inactivity bound (issue #426). The turn's `session/prompt`
- * response was likely never coming (harness idle / lost response), so the
- * driver cancels the in-flight turn (ACP `session/cancel`) and surfaces this
- * rather than blocking forever. The drive loop treats it as a turn *end*, not
- * a failure: the connection is still alive, so it continues/finishes per the
- * turn-boundary rule.
+ * configured inactivity bound. The drive loop treats it as a turn end, not a
+ * failure: the connection is still alive.
  */
 export class AcpPromptTimeoutError extends Error {
   constructor(public readonly inactivityMs: number) {
@@ -22,31 +18,22 @@ export class AcpPromptTimeoutError extends Error {
 export interface AcpDriverHandlers {
   /**
    * ACP session/update notifications — the harness's streamed output. The
-   * second argument is the load-time replay flag (issue #144): `true` for a
-   * historical update re-emitted while a `session/load` reload is in flight
-   * ({@link AcpDriver.load}), `false` for current-turn output. Consumers
-   * quarantine replay from every current-turn measurement — activity, usage,
-   * `run_facts`, stall — via `domain/replay-quarantine.ts`; a handler that does
-   * not care about history may simply omit the parameter (a one-arg callback is
-   * assignable, so existing callers are unaffected).
+   * second argument is the replay flag: `true` for a historical update
+   * re-emitted while a `session/load` reload is in flight, `false` for
+   * current-turn output.
    */
   onSessionUpdate: (update: { sessionUpdate: string; [key: string]: unknown }, replay: boolean) => void;
   /**
    * Agent→client request handler (session/request_permission, fs/*, …).
-   * Returns the ACP result, or null to decline the capability. This is the
-   * one seam where the Runner and the ConversationDriver differ — the
-   * Runner auto-approves permissions, a Conversation asks the human.
+   * Returns the ACP result, or null to decline the capability.
    */
   onRequest: (method: string, params: unknown) => Promise<unknown>;
 }
 
 /**
- * The harness's ACP `initialize` result — its capability advertisement. The
- * fields Harmonic reads are optional and typed loosely because the set grows
- * with the ACP spec and differs per harness; unknown keys are preserved so the
- * whole object can be snapshotted (issue #141, reliability-design Unit C).
- * `agentCapabilities.loadSession` is the `session/load` support flag resume
- * eligibility keys on.
+ * The harness's ACP `initialize` result — its capability advertisement. Typed
+ * loosely because the set grows with the ACP spec and differs per harness;
+ * unknown keys are preserved so the whole object can be snapshotted.
  */
 export interface AcpInitializeResult {
   protocolVersion?: number;
@@ -61,19 +48,14 @@ export interface AcpHandshake {
   /** ACP modelId to pin via session/set_model right after session/new; skipped when undefined. */
   modelId?: string | undefined;
   /**
-   * Fired with the harness's `initialize` result — its advertised capabilities
-   * — before `session/new`, so a caller can snapshot what the harness supports
-   * (e.g. `session/load`) onto the durable Session (issue #141). Previously
-   * this result was discarded.
+   * Fired with the harness's `initialize` result before `session/new`, so a
+   * caller can snapshot what the harness supports onto the durable Session.
    */
   onInitialize?: (result: AcpInitializeResult) => void;
   /**
    * Fired with the new sessionId immediately after session/new, before the
-   * optional model pin — so a caller can persist the id even if the pin
-   * then fails (the Runner stores it for usage backfill). Awaited, so a caller
-   * whose persistence is async (ADR-0029) finishes before handshake returns —
-   * preserving the ordering the sync store gave for free (the Runner reads the
-   * Session row id it sets, right after the handshake).
+   * optional model pin, so a caller can persist the id even if the pin then
+   * fails. Awaited, so async persistence finishes before handshake returns.
    */
   onSessionCreated?: (sessionId: string) => void | Promise<void>;
 }
@@ -85,13 +67,10 @@ export interface PromptResult {
 }
 
 /**
- * Everything {@link AcpDriver.load} needs to reload a stored Session (issue
- * #143, reliability-design Unit C) into a brand-new harness process via ACP
- * `session/load`. `sessionId` is the stored resume handle — the harness's own
- * session id from the original dispatch (`sessions.harnessSessionId`), never a
- * Harmonic-generated one. Deliberately mirrors {@link AcpHandshake}'s shape
- * (same `cwd`/`mcpServers`/`modelId`/`onInitialize` fields) so a caller can
- * follow the same pattern for both a fresh dispatch and a resume.
+ * Everything {@link AcpDriver.load} needs to reload a stored Session into a
+ * brand-new harness process via ACP `session/load`. `sessionId` is the
+ * harness's own session id from the original dispatch, never a
+ * Harmonic-generated one.
  */
 export interface AcpLoadHandshake {
   /** The stored harness ACP session id to reload — the resume handle (sessions.harnessSessionId). */
@@ -111,10 +90,7 @@ export interface AcpLoadHandshake {
 /**
  * Why {@link AcpDriver.load} declined to send `session/load` (or declined the
  * mode it did) — a resume incompatibility a caller acts on by minting a fresh
- * Session (via {@link AcpDriver.handshake}) rather than a defect to fix.
- * `assessResumeEligibility` (session-resume.ts, issue #142) reasons about the
- * SAME set of incompatibilities ahead of a reload attempt; this is what the
- * live harness process can additionally discover only by actually asking it.
+ * Session rather than a defect to fix.
  */
 export type AcpLoadIncompatibility =
   | 'load-session-unsupported'
@@ -122,12 +98,9 @@ export type AcpLoadIncompatibility =
   | 'permission-mode-unestablishable';
 
 /**
- * `load()`'s result — a discriminated union, not a thrown error, because an
- * incompatibility here is an EXPECTED outcome (the live harness turns out not
- * to support what the stored Session needs) that a caller routes around by
- * falling back to a fresh dispatch. Only genuine transport failure — the
- * child dying mid-request, same as {@link AcpDriver.handshake} — still throws
- * (via `race`).
+ * `load()`'s result. An incompatibility is an expected outcome a caller routes
+ * around by falling back to a fresh dispatch, so it is a union member, not a
+ * thrown error. Only transport failure (the child dying mid-request) throws.
  */
 export type AcpLoadOutcome =
   | { loaded: true }
@@ -136,71 +109,35 @@ export type AcpLoadOutcome =
 /**
  * The shared ACP drive sequence over a spawned harness's stdio —
  * initialize → session/new → optional session/set_model, then one
- * session/prompt per turn. Extracted from the Runner (ADR-0006) so the
- * Runner and the ConversationDriver drive a harness identically; they
- * differ only in their handlers and in how long they keep the session
- * warm (the Runner disposes after one turn, a Conversation prompts many
- * times on one session).
+ * session/prompt per turn.
  *
- * {@link load} is the resume counterpart of {@link handshake} (issue #143,
- * reliability-design Unit C): it reloads a stored Session's ACP session id
- * into a BRAND-NEW harness process via `session/load` — there is no
- * reattaching to a still-running process, every resume starts a fresh spawn
- * and re-runs `initialize` on it. Cache warmth (`estimateWarmUntil` in
- * sessions.ts) is a COST signal about that fresh process's prompt cache, never
- * a correctness gate on whether load is attempted — a cold reload (the common
- * case: the prior process is long gone) works identically to a warm one, just
- * more expensively. `load()` re-verifies, against the LIVE harness's own
- * `initialize` advertisement, every capability the stored Session assumed
- * (`loadSession`, `additionalDirectories`, the permission mode) rather than
- * trusting the snapshot taken at the original dispatch — a harness can be
- * upgraded/downgraded between dispatch and resume, and the snapshot is a
- * point-in-time capability discovery, not a promise.
+ * {@link load} is the resume counterpart of {@link handshake}: it reloads a
+ * stored Session's ACP session id into a brand-new harness process via
+ * `session/load` — there is no reattaching to a still-running process.
+ * `load()` re-verifies every capability the stored Session assumed against the
+ * live harness's own `initialize` advertisement, since a harness can be
+ * upgraded/downgraded between dispatch and resume.
  */
 export class AcpDriver {
   private readonly connection: AcpConnection;
-  /** Rejects when the child dies, so every in-flight request loses the race. */
   private readonly exited: Promise<never>;
   sessionId = '';
   /** Session mode ids the harness offers, from session/new — e.g. Claude's permission modes (auto, bypassPermissions, …). */
   availableModes: string[] = [];
   /**
-   * True only while a `session/load` request is in flight (issue #144). ACP
-   * streams a reloaded Session's entire historical `session/update` stream as
-   * notifications BEFORE the `session/load` response returns, so any update
-   * observed in this window is replay, not current-turn output. {@link load}
-   * brackets the request with this flag; the connection handler tags each update
-   * with it, so a consumer can quarantine replayed history (see
-   * `domain/replay-quarantine.ts`).
+   * True while a `session/load` request is in flight: ACP streams the reloaded
+   * Session's history as `session/update` notifications BEFORE the response
+   * returns, so any update observed in this window is replay.
    */
   private loading = false;
-  /**
-   * The per-turn inactivity clock (issue #426): the timestamp of the most
-   * recent `session/update`, and the set of tool-call ids currently
-   * outstanding. {@link prompt} bounds a turn on inactivity — no update and no
-   * outstanding tool for `promptInactivityTimeoutMs` — reusing this same
-   * outstanding-tool tracking so a legitimately long tool suspends the bound
-   * instead of tripping it. 0 when no timeout is configured.
-   */
   private lastActivityAt = 0;
   private readonly outstandingTools = new Set<string>();
-  /**
-   * Set (with a short grace, ms) once the agent has signalled completion via
-   * `finish_task`/`escalate_task`: a lifecycle signal must settle promptly.
-   * While armed it overrides the inactivity bound — the turn ends after
-   * `graceMs` of silence REGARDLESS of any still-outstanding tool, so a finished
-   * agent whose `session/prompt` response is lost, or which left a background
-   * sub-agent tool outstanding, settles to verification/escalation within the
-   * grace instead of hanging until the wall-clock guardrail. Null (unarmed)
-   * keeps the normal "an outstanding tool suspends the bound" behaviour. Reset
-   * at each turn start so it never leaks across turns.
-   */
   private completionGraceMs: number | null = null;
 
   constructor(
     child: ChildProcess,
     handlers: AcpDriverHandlers,
-    /** Inactivity bound for a single prompt turn, ms (issue #426); undefined/0 disables it. */
+    /** Inactivity bound for a single prompt turn, ms; undefined/0 disables it. */
     private readonly promptInactivityTimeoutMs?: number,
   ) {
     this.connection = new AcpConnection(child.stdin!, child.stdout!, {
@@ -218,11 +155,6 @@ export class AcpDriver {
     });
   }
 
-  /**
-   * Send ACP `initialize` and hand the harness's capability advertisement to
-   * `onInitialize` — the first step of both {@link handshake} and {@link load},
-   * so the request params and the capture callback stay in one place.
-   */
   private async initialize(onInitialize?: (result: AcpInitializeResult) => void): Promise<AcpInitializeResult> {
     const result = (await this.race(
       this.connection.request('initialize', { protocolVersion: 1, clientCapabilities: {} }),
@@ -231,7 +163,6 @@ export class AcpDriver {
     return result;
   }
 
-  /** The mode ids a `session/new`/`session/load` response advertises, in order. */
   private static modeIdsOf(modes?: { availableModes?: { id: string }[] }): string[] {
     return (modes?.availableModes ?? []).map((mode) => mode.id);
   }
@@ -267,22 +198,12 @@ export class AcpDriver {
   /**
    * initialize → (capability check) → session/load → optional
    * session/set_mode → optional session/set_model. The resume counterpart of
-   * {@link handshake} (issue #143): reloads `opts.sessionId` — a stored
-   * Session's harness session id — into THIS driver's (already spawned,
-   * fresh) harness process. Returns an {@link AcpLoadOutcome}; an
-   * incompatibility is returned, not thrown — only child death/transport
-   * failure throws, via `race`, exactly like `handshake`. On EVERY incompatible
-   * outcome the driver adopts no session (`sessionId`/`availableModes` stay
-   * unset), so the caller disposes the fresh process uniformly: the two
-   * capability checks short-circuit before `session/load` is even sent, while
-   * `permission-mode-unestablishable` is only discoverable from the reload
-   * response (so `session/load` was sent) — but the loaded session is still
-   * abandoned rather than adopted, since it's disposed with the process anyway.
-   *
-   * The `session/load` request is bracketed by {@link loading} so the historical
-   * `session/update` stream the harness replays during it is tagged `replay` on
-   * `onSessionUpdate` (issue #144) — replayed history is quarantined from all
-   * current-turn measurement downstream.
+   * {@link handshake}: reloads `opts.sessionId` into this driver's fresh
+   * harness process. Returns an {@link AcpLoadOutcome}; an incompatibility is
+   * returned, not thrown — only child death/transport failure throws. On every
+   * incompatible outcome the driver adopts no session (`sessionId`/
+   * `availableModes` stay unset), so the caller disposes the fresh process
+   * uniformly.
    */
   async load(opts: AcpLoadHandshake): Promise<AcpLoadOutcome> {
     const operation = startOperation({ type: 'session.load', attributes: { 'session.id': opts.sessionId } });
@@ -300,8 +221,6 @@ export class AcpDriver {
   private async loadSession(opts: AcpLoadHandshake): Promise<AcpLoadOutcome> {
     const initResult = await this.initialize(opts.onInitialize);
 
-    // AC2: the LIVE harness — not the capability snapshot taken at the
-    // original dispatch — must still advertise session/load.
     if (initResult.agentCapabilities?.loadSession !== true) {
       return {
         loaded: false,
@@ -310,9 +229,6 @@ export class AcpDriver {
       };
     }
 
-    // AC3: additional roots are only meaningful — and only sent — when the
-    // Session actually needs them; a harness that doesn't advertise the
-    // capability is only an incompatibility when roots are actually requested.
     const needsRoots = (opts.additionalDirectories?.length ?? 0) > 0;
     if (needsRoots && initResult.agentCapabilities?.additionalDirectories !== true) {
       return {
@@ -322,11 +238,6 @@ export class AcpDriver {
       };
     }
 
-    // Bracket the request so every `session/update` the harness streams as it
-    // replays the reloaded Session's history is tagged `replay` (issue #144).
-    // ACP sends that whole historical stream before this response resolves, so
-    // the flag is set for exactly the replay window and cleared in `finally`
-    // even if the reload rejects (child death via `race`).
     this.loading = true;
     let loaded: { modes?: { availableModes?: { id: string }[] } };
     try {
@@ -342,10 +253,6 @@ export class AcpDriver {
       this.loading = false;
     }
 
-    // AC4: re-verify modes off the reload response — not what the original
-    // dispatch saw — and confirm the permission mode is still establishable
-    // BEFORE adopting the session, so an incompatible outcome leaves the driver
-    // holding no session state (matching the pre-`session/load` reasons above).
     const availableModes = AcpDriver.modeIdsOf(loaded.modes);
     if (opts.permissionMode !== undefined && !availableModes.includes(opts.permissionMode)) {
       return {
@@ -363,7 +270,6 @@ export class AcpDriver {
       );
     }
 
-    // AC4: model change is allowed on resume — it's a re-verify, not a block.
     if (opts.modelId !== undefined) {
       await this.race(
         this.connection.request('session/set_model', { sessionId: this.sessionId, modelId: opts.modelId }),
@@ -378,11 +284,6 @@ export class AcpDriver {
     await this.race(this.connection.request('session/set_mode', { sessionId: this.sessionId, modeId }));
   }
 
-  /**
-   * Feed the per-turn inactivity clock (issue #426): every `session/update` is
-   * activity, and `tool_call`/`tool_call_update` open and close the outstanding
-   * set so the inactivity bound suspends while a tool is running.
-   */
   private observeActivity(update: { sessionUpdate: string; [key: string]: unknown }): void {
     this.lastActivityAt = Date.now();
     const u = update as { sessionUpdate?: string; toolCallId?: unknown; status?: unknown };
@@ -395,7 +296,7 @@ export class AcpDriver {
 
   /**
    * One prompt turn on the current session; rejects if the harness dies first.
-   * When an inactivity bound is configured (issue #426) it also rejects with
+   * When an inactivity bound is configured it also rejects with
    * {@link AcpPromptTimeoutError} — after cancelling the in-flight turn — if the
    * harness falls silent (no `session/update`, no outstanding tool call) for
    * longer than the bound, so a lost `session/prompt` response ends the turn
@@ -407,14 +308,6 @@ export class AcpDriver {
     return this.race(this.withInactivityTimeout(request, this.promptInactivityTimeoutMs));
   }
 
-  /**
-   * Bound a request on inactivity: reject with {@link AcpPromptTimeoutError}
-   * once no activity has been seen for `timeoutMs` AND no tool call is
-   * outstanding, cancelling the in-flight turn first. A fresh turn resets the
-   * clock and the outstanding set (the agent is parked between turns, so any
-   * lingering id is stale). Polls at a fraction of the bound rather than one
-   * absolute timer so an outstanding tool keeps suspending it as it runs.
-   */
   private withInactivityTimeout<T>(request: Promise<T>, timeoutMs: number): Promise<T> {
     this.lastActivityAt = Date.now();
     this.outstandingTools.clear();
@@ -429,12 +322,8 @@ export class AcpDriver {
       };
       const period = Math.max(1_000, Math.min(timeoutMs, 5_000));
       const timer = setInterval(() => {
-        // Once the agent has signalled completion the turn is bounded on silence
-        // alone (a short grace) and outstanding tools no longer suspend it — a
-        // lost prompt response or a lingering background sub-agent must not
-        // strand the settle. Unarmed, a running tool suspends the bound as usual.
         const grace = this.completionGraceMs;
-        if (grace == null && this.outstandingTools.size > 0) return; // a tool is running — not silence
+        if (grace == null && this.outstandingTools.size > 0) return;
         const idleMs = Date.now() - this.lastActivityAt;
         if (idleMs < (grace ?? timeoutMs)) return;
         finish(() => {
@@ -457,12 +346,8 @@ export class AcpDriver {
 
   /**
    * The agent has signalled completion (`finish_task`/`escalate_task`): bound
-   * the in-flight turn to `graceMs` of silence, ignoring outstanding tools, so
-   * the settle can't be stranded by a lost `session/prompt` response or a
-   * lingering background sub-agent tool. The running {@link withInactivityTimeout}
-   * poll picks this up and ends the turn (cancelling it) once the agent's wrap-up
-   * goes quiet; it is cleared at the next turn start. No-op when no inactivity
-   * bound is configured — then the turn is awaited unbounded, nothing to shorten.
+   * the in-flight turn to `graceMs` of silence, ignoring outstanding tools.
+   * Cleared at the next turn start. No-op when no inactivity bound is configured.
    */
   expectCompletion(graceMs: number): void {
     if (!this.promptInactivityTimeoutMs) return;
@@ -488,16 +373,11 @@ export class AcpDriver {
   }
 
   /**
-   * Race any request against child death — and disambiguate a stdout-EOF
-   * rejection (issue #426). Killing the harness (guardrail, shutdown, an
-   * operator cancel) closes stdout too, so the connection's readline `close`
-   * can reject the in-flight request with {@link AcpConnectionClosedError}
-   * moments before (or after) the child `exit` this races against fires. That
-   * is child death, not the lingering-wrapper EOF the connection guard exists
-   * for: prefer the child-death error so the Runner's existing
-   * child-death/shutdown/cancel handling runs unchanged. A close with the child
-   * still alive (no exit within the grace) is the genuine EOF and surfaces as
-   * {@link AcpConnectionClosedError} for the caller to treat as a turn end.
+   * Race a request against child death. Killing the harness closes stdout too,
+   * so the connection's readline `close` can reject with
+   * {@link AcpConnectionClosedError} moments before the child `exit` fires;
+   * prefer the child-death error. A close with the child still alive is the
+   * genuine EOF and surfaces as {@link AcpConnectionClosedError}.
    */
   private async race<T>(p: Promise<T>): Promise<T> {
     try {
@@ -511,7 +391,6 @@ export class AcpDriver {
     }
   }
 
-  /** The child-death error if the child has exited (or exits within `ms`), else null. */
   private raceChildExit(ms: number): Promise<Error | null> {
     return Promise.race([
       this.exited.then(

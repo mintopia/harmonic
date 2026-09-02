@@ -1,4 +1,4 @@
-/** A managed worktree the reconciler (ADR-0010) will not delete until an
+/** A managed worktree the reconciler will not delete until an
  * operator disposes of it by hand. */
 export interface FlaggedWorktree {
   path: string;

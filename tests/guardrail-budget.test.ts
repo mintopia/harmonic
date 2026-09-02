@@ -24,8 +24,6 @@ describe('countsTowardExecutionBudget (issue #127)', () => {
     review: true,
   };
 
-  // Iterate STEP_TYPES so a new Step type added to the schema forces a
-  // conscious choice here rather than silently defaulting.
   for (const stepType of STEP_TYPES) {
     it(`${stepType} -> ${expected[stepType]}`, () => {
       expect(countsTowardExecutionBudget(stepType)).toBe(expected[stepType]);

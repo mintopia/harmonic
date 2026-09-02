@@ -1,17 +1,3 @@
-/**
- * The pure Epic read-model composer (issue #167, ADR-0026). The operator UI's
- * `GET …/epics` / `GET …/epics/:ref` surface a stored Epic (ADR-0018: the
- * `epics` record is the single enumeration source) whose live membership and
- * ready frontier are derived at read time (`deriveLeafEpics`), enriched with
- * per-member merge state (`reduceMemberState`, issue #161) and server-only
- * integration/verification/integrate-coordinator facts. This
- * module is the composition seam: it takes a {@link DerivedEpic} plus the
- * already-gathered member Task rows, member titles, and facts, and folds them
- * into the frozen `Epic` DTO (`.notes/issue-167-dto-contract.md`) — no
- * database, no git, no clock. `src/tracker/manager.ts` is the impure half that
- * gathers those facts (git branch/tip, coordinator in-flight/hold state) and
- * calls this function.
- */
 import type { TaskRow } from '../db/schema.js';
 import type { DerivedEpic } from './epic-derivation.js';
 import { reduceMemberState, type MemberMergeState } from './epic-integrate-decision.js';
@@ -58,9 +44,9 @@ export interface Epic {
   ref: number;
   title: string;
   kind: 'map' | 'spec';
-  /** Lifecycle from the stored record (ADR-0018): `integrated` once the whole-Epic gate finished. */
+  /** Lifecycle from the stored record: `integrated` once the whole-Epic gate finished. */
   state: 'open' | 'integrated';
-  /** The Epic container ticket's body — the summary page's description (ADR-0015/0017). */
+  /** The Epic container ticket's body — the summary page's description. */
   description: string;
   /** Epic container ticket creation time (ms). */
   createdAt: number;
@@ -83,9 +69,7 @@ export interface Epic {
   memberCount: number;
 }
 
-/** The Epic container ticket + Workspace facts the impure half resolves and
- * passes to {@link composeEpicView} (ADR-0017): the summary page's description
- * and properties come from the container ticket, not the derived member set. */
+/** The Epic container ticket + Workspace facts the impure half resolves and passes to {@link composeEpicView}. */
 export interface EpicMeta {
   description: string;
   createdAt: number;
@@ -105,11 +89,9 @@ export interface EpicFacts {
 }
 
 /**
- * Compose the `Epic` DTO for one derived Epic (issue #167). Pure and total:
- * every member ref in `derived.members` gets an `EpicMember` even when no
- * matching Task row exists (an unmirrored/never-picked-up member) — `taskId`/
- * `state` fall to `null`, `mergeStatus` to `reduceMemberState(undefined)` ⇒
- * `'pending'`, and `title` falls to `''` when `titleByRef` has no entry.
+ * Compose the `Epic` DTO for one derived Epic. Every member ref gets an
+ * `EpicMember` even when no matching Task row exists — `taskId`/`state` fall
+ * to `null`, `mergeStatus` to `'pending'`, `title` to `''`.
  */
 export function composeEpicView(
   derived: DerivedEpic,

@@ -1,35 +1,14 @@
 import type { ModelUsage, ProcessNode, ProcessStatus, ProcessTree } from './types.js';
 import type { StreamEvent } from './event-stream-model.js';
 
-/**
- * The pure model behind the Activity Process Tree drill-in (issue #53). It owns
- * two jobs the `ProcessTree` component only paints:
- *
- *  1. The **idle lifecycle** — a node is `active` while it writes, fades to
- *     `inactive` after `INACTIVE_AFTER_MS` of quiet, then `hidden` after
- *     `HIDDEN_AFTER_MS`, reactivating the instant a new write merges. The client
- *     ages nodes between the snapshot poll / `attempt_usage` deltas off a
- *     `NodeActivityMap` it keeps across ticks; the server's own status is a
- *     floor, so the client can only make a node *more* idle, never less (a
- *     completed Subagent the server calls `inactive` never flashes back to
- *     `active` just because we saw it for the first time).
- *  2. **Flattening** the recursive tree into rows with depth connectors, so the
- *     component stays a dumb renderer.
- *
- * Plus `frameEvents`, which frames the shared `EventStream` on one node's
- * transcript rather than the whole Task.
- */
-
 /** Quiet for this long → the node fades to `inactive`. */
 export const INACTIVE_AFTER_MS = 12_000;
 /** Quiet for this long → the node ages out to `hidden` (pruned unless it's a
  * spine to a still-visible descendant). */
 export const HIDDEN_AFTER_MS = 90_000;
 
-/** active < inactive < hidden — a node only ever moves *down* this ladder. */
 const RANK: Record<ProcessStatus, number> = { active: 0, inactive: 1, hidden: 2 };
 
-/** The idler of two statuses — the client never revives what the server retired. */
 function moreIdle(a: ProcessStatus, b: ProcessStatus): ProcessStatus {
   return RANK[a]! >= RANK[b]! ? a : b;
 }
@@ -54,16 +33,11 @@ export function nodeTokens(node: ProcessNode): number {
   return u.inputTokens + u.outputTokens + u.cacheReadTokens + u.cacheWriteTokens;
 }
 
-/** What we watch to decide a node "wrote": its token footprint and context fill.
- * Any change stamps a fresh `lastWrite`; an unchanged signature keeps the old
- * timestamp so the node keeps aging. */
 function writeSignature(node: ProcessNode): string {
   const u: ModelUsage = node.usage;
   return `${u.inputTokens}·${u.outputTokens}·${u.cacheReadTokens}·${u.cacheWriteTokens}·${node.contextTokens ?? ''}`;
 }
 
-/** One node's last-write bookkeeping — the timestamp we age from, plus the
- * signature we compare the next snapshot against. */
 interface NodeActivity {
   lastWrite: number;
   sig: string;
@@ -139,8 +113,6 @@ export function flattenTree(tree: ProcessTree, activity: NodeActivityMap, now: n
   const walk = (node: ProcessNode, guides: boolean[], isLast: boolean, posInSet: number, setSize: number) => {
     rows.push({ node, status: statusOf(node), depth: node.depth, guides, isLast, posInSet, setSize });
     const kids = node.children.filter(visible);
-    // The root draws no connector column of its own, so it contributes no guide;
-    // every deeper node hands its children an extra "do I continue?" spine flag.
     const childGuides = node.depth === 0 ? guides : [...guides, !isLast];
     kids.forEach((child, i) => walk(child, childGuides, i === kids.length - 1, i + 1, kids.length));
   };

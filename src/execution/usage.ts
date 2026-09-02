@@ -23,10 +23,9 @@ export const ROOT_AGENT = 'root';
 export type ProcessStatus = 'active' | 'inactive' | 'hidden';
 
 /**
- * One process in a Process Tree (CONTEXT.md): the root Run/Conversation
- * session or a recursive Subagent. `usage` is the node's *own* tokens;
- * roll-ups (`rollUpUsage`) sum the whole subtree. Derived per-Harness at
- * read time, never stored as a structure.
+ * One process in a Process Tree: the root Run/Conversation session or a
+ * recursive Subagent. `usage` is the node's *own* tokens; roll-ups
+ * (`rollUpUsage`) sum the whole subtree.
  */
 export interface ProcessNode {
   /** Harness session/subagent id (root: the run's sessionId). */
@@ -42,20 +41,18 @@ export interface ProcessNode {
   status: ProcessStatus;
   /** 0 for the root; +1 per Subagent nesting level. */
   depth: number;
-  /** For a Subagent, the spawning `Agent`/`Task` tool-use id — the key the
-   * Activity drill-in frames its transcript on (issue #53); null for the root. */
+  /** For a Subagent, the spawning `Agent`/`Task` tool-use id; null for the root. */
   toolUseId: string | null;
   children: ProcessNode[];
 }
 
-/** A root process and its recursive Subagents (CONTEXT.md: Process Tree). */
+/** A root process and its recursive Subagents. */
 export type ProcessTree = ProcessNode;
 
 /**
- * The live snapshot a session's tailer pushes (ADR 0010): rolled-up Usage,
- * the root's context-window fill, the current-activity line, and the whole
- * Process Tree. Cost is derived on read (never stored), so it isn't here —
- * the firehose adds it at serialize time.
+ * The live snapshot a session's tailer pushes: rolled-up Usage, the root's
+ * context-window fill, the current-activity line, and the whole Process
+ * Tree. Cost is derived on read (never stored), so it isn't here.
  */
 export interface AttemptUsageSnapshot {
   usage: AttemptUsage;
@@ -93,12 +90,7 @@ export function activityLine(update: unknown): string | null {
 
 /** A Usage Collector's parse of one session: rolled-up Usage + its Process Tree. */
 export interface ParsedSession {
-  /**
-   * Usage rolled up across the whole tree (parent + every Subagent).
-   * Collectors keep the true per-model split (`usageFromModels`) rather
-   * than `rollUpUsage`'s dominant-model-per-node collapse, so a
-   * multi-model node (Copilot's `auto` router) prices exactly.
-   */
+  /** Usage rolled up across the whole tree (parent + every Subagent). */
   usage: AttemptUsage;
   tree: ProcessTree;
   /** Present only for harnesses whose native transcript exposes turn boundaries
@@ -109,9 +101,8 @@ export interface ParsedSession {
 /**
  * Roll a Process Tree's per-node Usage up into one AttemptUsage, summing each
  * node's tokens into its model's bucket so a parent's total includes its
- * whole tree (CONTEXT.md → Usage). Keeping the per-model split means
- * `costOfUsages` prices the roll-up and flags `incomplete` for any
- * unpriced model in the tree — never a fake zero.
+ * whole tree. Keeping the per-model split means `costOfUsages` prices the
+ * roll-up and flags `incomplete` for any unpriced model in the tree.
  */
 export function rollUpUsage(tree: ProcessTree): AttemptUsage {
   const flatten = (node: ProcessNode): AttemptUsage[] => [
@@ -119,7 +110,6 @@ export function rollUpUsage(tree: ProcessTree): AttemptUsage {
     ...node.children.flatMap(flatten),
   ];
   const merged = mergeUsage(flatten(tree))!;
-  // Native logs are the source (ADR 0009); mergeUsage leaves source null.
   return { ...merged, totals: sumModels(merged.models), source: 'session-log' };
 }
 
@@ -139,28 +129,20 @@ export interface CollectUsageInput {
 }
 
 /**
- * Per-harness usage collection, per ADR-0001: ACP `usage` on the prompt
- * result first (aggregate, always cheap), the harness's Usage Collector
- * (harness/adapter.ts) for the per-model breakdown when available.
- * Returns null when no source reported any tokens — "unavailable",
- * never a fake zero.
+ * Per-harness usage collection: ACP `usage` on the prompt result first
+ * (aggregate, always cheap), the harness's Usage Collector for the per-model
+ * breakdown when available. Returns null when no source reported any tokens —
+ * "unavailable", never a fake zero.
  */
 export function collectUsage(input: CollectUsageInput): AttemptUsage | null {
   const collector = adapterFor(input.harnessId).usage;
   const acpTotals = totalsFromAcp(input.promptResult?.usage);
-  // The harness parser rolls Subagents into the per-model split (the
-  // undercount fix, #48) and yields the Process Tree the per-agent
-  // breakdown is folded from. Parsed once, reused for models and agents.
   const parsed = collector?.parse?.({
     sessionLogDir: input.harness.sessionLogDir,
     cwd: input.cwd,
     sessionId: input.sessionId,
   });
 
-  // Prompt-result breakdown first (codex); the parsed tree's rolled-up
-  // per-model split next (claude/copilot — this is where a Subagent's model,
-  // e.g. a Sonnet helper, now shows up instead of being dropped); the raw
-  // session-log reader (parent only) as the last resort.
   const hasSubagents = (parsed?.tree.children.length ?? 0) > 0;
   let models =
     !hasSubagents && input.promptResult && collector?.modelsFromPromptResult
@@ -179,12 +161,8 @@ export function collectUsage(input: CollectUsageInput): AttemptUsage | null {
   const toolCalls = tallyToolCalls(input.events ?? [], (payload) => collector?.toolName(payload) ?? null);
 
   if (!acpTotals && Object.keys(models).length === 0) return null;
-  // Context-window occupancy is the LAST turn's input-side footprint (the parsed
-  // tree's root, the same figure the live tailer shows), NOT the ACP prompt-result
-  // aggregate — that sums input+cache across every internal round-trip of an
-  // agentic turn, so a multi-tool Run over-counts into the millions and reads far
-  // past its window. Fall back to the ACP figure only when no tree was parsed
-  // (a stub/aggregate-only harness), where a single round-trip makes them equal.
+  // ACP's prompt-result `usage` sums input+cache across every internal round-trip
+  // of an agentic turn, so it over-counts window occupancy on multi-tool turns.
   const contextTokens = parsed?.tree.contextTokens ?? contextInputTokens(input.promptResult?.usage);
   return {
     models,
@@ -303,9 +281,6 @@ export function tallyToolCalls(
   const tally: Record<string, number> = {};
   for (const event of events) {
     if (event.type !== 'session_update') continue;
-    // Load-time replay (`session/load`) re-emits historical tool calls before
-    // the current turn; counting them would attribute a whole prior conversation
-    // to this turn (issue #144 AC2). Exclude replayed events from the tally.
     if (isReplay(event)) continue;
     const payload = event.payload;
     if (!isToolCall(payload)) continue;
@@ -320,9 +295,7 @@ function isToolCall(payload: unknown): payload is Record<string, unknown> {
 }
 
 // ACP puts unbounded per-call detail (the shell command, the file path, the
-// search query, the URL) in the tool-call title. Bucketing by title turns every
-// call into its own stats row, so map those kinds to a stable tool name. Kinds
-// whose title is already bounded (edit → "Editing files", think, other) keep it.
+// search query, the URL) in the tool-call title, so these kinds map to a stable name.
 const KIND_TOOL: Record<string, string> = {
   execute: 'Bash',
   read: 'Read',
@@ -344,7 +317,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
-/** Wrap a per-model breakdown as a session-log-sourced AttemptUsage (ADR 0009). */
+/** Wrap a per-model breakdown as a session-log-sourced AttemptUsage. */
 export function usageFromModels(models: Record<string, ModelUsage>): AttemptUsage {
   return { models, totals: sumModels(models), toolCalls: {}, source: 'session-log' };
 }
@@ -391,7 +364,6 @@ function sumModels(models: Record<string, ModelUsage>): AttemptUsage['totals'] {
     totals.outputTokens += usage.outputTokens;
     totals.cacheReadTokens += usage.cacheReadTokens;
     totals.cacheWriteTokens += usage.cacheWriteTokens;
-    // AI Units total only when some model reported them — never a fake zero.
     if (usage.aiUnits !== undefined) totals.aiUnits = (totals.aiUnits ?? 0) + usage.aiUnits;
   }
   return { ...totals, totalTokens: null };
@@ -399,10 +371,10 @@ function sumModels(models: Record<string, ModelUsage>): AttemptUsage['totals'] {
 
 /**
  * The cumulative token count for a run's Usage, the way a live spend guard
- * reads it (issue #128): the reported aggregate `totals.totalTokens` when a
- * source provided one, else the sum of the four token classes across the
- * per-model split, else `null` — no telemetry at all, which the spend
- * Guardrail treats as unmeasurable rather than as zero.
+ * reads it: the reported aggregate `totals.totalTokens` when a source
+ * provided one, else the sum of the four token classes across the per-model
+ * split, else `null` — no telemetry at all, which the spend Guardrail treats
+ * as unmeasurable rather than as zero.
  */
 export function totalTokensOf(usage: AttemptUsage): number | null {
   if (typeof usage.totals?.totalTokens === 'number') return usage.totals.totalTokens;
@@ -457,7 +429,7 @@ export function observedModelMismatch(expected: string, models: Record<string, M
 /**
  * The latest Turn's input-side token footprint — inputs plus cache reads and
  * writes — from an ACP prompt result, for a Conversation's context-window
- * fill (issue 12). null when the result reported no usage.
+ * fill. null when the result reported no usage.
  */
 export function contextInputTokens(usage: Record<string, unknown> | undefined): number | null {
   const totals = totalsFromAcp(usage);
@@ -466,15 +438,14 @@ export function contextInputTokens(usage: Record<string, unknown> | undefined): 
 }
 
 /**
- * Fold a Turn's freshly-collected Usage into a Conversation's running total
- * (issue 12). A per-model source (the harness session log) is *cumulative*
- * for the warm session, so it replaces; an ACP-aggregate-only Turn is
- * *per-Turn*, so its totals accumulate. Tool-call tallies are always taken
- * from the full event stream, so they replace.
+ * Fold a Turn's freshly-collected Usage into a Conversation's running total.
+ * A per-model source (the harness session log) is *cumulative* for the warm
+ * session, so it replaces; an ACP-aggregate-only Turn is *per-Turn*, so its
+ * totals accumulate. Tool-call tallies are always taken from the full event
+ * stream, so they replace.
  */
 export function accumulateUsage(stored: AttemptUsage | null, turn: AttemptUsage | null): AttemptUsage | null {
   if (!turn) return stored;
-  // Cumulative per-model source (session log): everything is session-to-date.
   if (Object.keys(turn.models).length > 0) return turn;
   if (!stored) return turn;
   return {

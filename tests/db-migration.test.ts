@@ -8,13 +8,6 @@ import * as schema from '../src/db/schema.js';
 
 const REPO_MIGRATIONS = join(import.meta.dirname, '..', 'drizzle');
 
-/**
- * The drizzle history is squashed to a single baseline (ADR-0001 #388, ADR-0007
- * clean-break): no data migration is kept, and a fresh DB boots from one file.
- * These tests verify the baseline's HEAD schema — the target-state tables exist,
- * the retired ledger/coordination tables are gone, and the boot backfill runs —
- * rather than any historical upgrade path, which no longer exists.
- */
 describe('drizzle single-baseline schema (ADR-0001 #388, ADR-0007)', () => {
   it('is exactly one migration file', () => {
     const sql = readdirSync(REPO_MIGRATIONS).filter((f) => f.endsWith('.sql'));
@@ -29,7 +22,6 @@ describe('drizzle single-baseline schema (ADR-0001 #388, ADR-0007)', () => {
       await sqlite.execute(`select name from sqlite_master where type = 'table'`)
     ).rows.map((row) => String(row.name));
 
-    // The ADR-0007 target ledger + satellites, all keyed on the Attempt.
     for (const present of [
       'tasks', 'attempts', 'steps', 'sessions', 'conversations', 'conversation_events',
       'task_dependencies', 'tracker_dismissals', 'verification_attempts', 'guardrail_events',
@@ -38,7 +30,6 @@ describe('drizzle single-baseline schema (ADR-0001 #388, ADR-0007)', () => {
     ]) {
       expect(tableNames, `expected table ${present}`).toContain(present);
     }
-    // The retired Run ledger and the frozen-tree coordination tables are gone.
     for (const absent of [
       'runs', 'run_facts', 'run_events', 'run_tool_calls', 'merge_journal', 'turn_queue',
       'execution_chains', 'work_context_leases', 'work_context_lease_dispositions',
@@ -63,7 +54,6 @@ describe('drizzle single-baseline schema (ADR-0001 #388, ADR-0007)', () => {
     }).returning().get());
     expect(attempt.reason).toBe('guardrail-trip');
 
-    // FK discipline, formerly on runs.taskId, now on attempts.taskId.
     let fkError: unknown;
     try {
       await db.write((d) => d.insert(schema.attempts).values({ taskId: 999999, number: 1, startedAt: Date.now() }).run());

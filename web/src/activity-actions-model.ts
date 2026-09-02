@@ -8,7 +8,7 @@ import {
 } from './conversation-permissions-model.js';
 
 /**
- * The Activity row's operator actions (issue #55). Every live row can be
+ * The Activity row's operator actions. Every live row can be
  * stopped, but a bare irreversible Stop is banned (DESIGN.md; the acceptance:
  * "no single misclick kills a run") — the component arms it as a two-step
  * confirm. A row that genuinely blocks on the operator surfaces its *resolving*
@@ -16,10 +16,10 @@ import {
  * process can be dealt with without leaving Activity:
  *
  * - **permission** — a warm Conversation blocked on a pending ACP permission
- *   (issue #11): Grant / Deny the request in place, wired to the same
+ *: Grant / Deny the request in place, wired to the same
  *   `answerPermission` the conversation panel uses. Grant/Deny collapse the
  *   request's full option list into two verbs (see `permissionGrantDeny`).
- * - **escalated** — the process's ticket is escalated (ADR-0041): the resolve
+ * - **escalated** — the process's ticket is escalated: the resolve
  *   is the ticket itself, where the three escalation actions live, so the row
  *   deep-links there (`Resolve →`).
  *
@@ -48,10 +48,10 @@ export interface ActivityRowActions {
 
 /**
  * The two verbs the Activity row collapses an ACP permission request into
- * (issue #55): one canonical Grant optionId and one canonical Deny optionId.
+ *: one canonical Grant optionId and one canonical Deny optionId.
  * Either is null when the request offers no way to allow (or reject) at all,
  * so the component renders only the buttons the request actually supports —
- * it never fabricates an option the Harness didn't send (issue #11's contract).
+ * it never fabricates an option the Harness didn't send.
  */
 export function permissionGrantDeny(pending: PendingPermission): {
   grantOptionId: string | null;

@@ -35,8 +35,6 @@ async function buildCandidate({ workspaceDir }: { workspaceDir: string }): Promi
   return git(workspaceDir, 'rev-parse', 'HEAD');
 }
 
-/** A throwaway git repo on branch main with one committed README (same
- * template as tests/candidate.test.ts). */
 function makeRepo(): string {
   const dir = mkdtempSync(join(tmpdir(), 'harmonic-critic-repo-'));
   execFileSync('git', ['init', '-b', 'main', dir], { encoding: 'utf8' });
@@ -48,7 +46,6 @@ function makeRepo(): string {
   return dir;
 }
 
-/** Unused by the fake-drive tests, but must satisfy `HarnessConfig`'s shape. */
 const FAKE_HARNESS: HarnessConfig = {
   command: 'unused-in-fake-drive-tests',
   args: [],
@@ -57,7 +54,6 @@ const FAKE_HARNESS: HarnessConfig = {
   defaultModel: 'stub-model',
 };
 
-/** Sample Drive-Prompt interpolation fields for the critic prompt. */
 const FIELDS: DriveFields = {
   skill: '/implement',
   ref: '77',
@@ -78,8 +74,6 @@ describe('runCritic (issue #136)', () => {
     await Promise.all(providers.splice(0).map((provider) => provider.shutdown()));
   });
 
-  /** Build a fresh candidate against a throwaway repo, returning both the
-   * repo and the candidate OID a test can hand to `runCritic`. */
   async function makeCandidate(ref: string): Promise<{ repo: string; oid: string }> {
     const repo = makeRepo();
     writeFileSync(join(repo, 'README.md'), `# repo (changed for ${ref})\n`);
@@ -112,7 +106,6 @@ describe('runCritic (issue #136)', () => {
       summary: value.summary,
       output,
       inputOid: oid,
-      // The fake drive reports no sessionId, so no transcript resolves (ADR-0040).
       transcriptPath: null,
       harness: 'claude',
       sessionId: null,
@@ -121,7 +114,6 @@ describe('runCritic (issue #136)', () => {
 
   it('given the base revision, drives the in-place cwd and names both revisions in the prompt', async () => {
     const { repo, oid } = await makeCandidate('refs/harmonic/direct/attempt-critic-two-rev');
-    // The candidate's parent is the fork point the critic gets as the base.
     const baseOid = git(repo, 'rev-parse', `${oid}~1`);
     let drivenCwd: string | null = null;
     let drivenPrompt: string | null = null;
@@ -145,17 +137,12 @@ describe('runCritic (issue #136)', () => {
     });
 
     expect(attempt.verdict).toBe('pass');
-    // No checkout is performed — the critic reviews the Task's own in-place cwd.
     expect(drivenCwd).toBe(repo);
     expect(drivenPrompt).toContain(oid);
     expect(drivenPrompt).toContain(baseOid);
   });
 
   it('resolves a critic transcript already flushed at the turn boundary, and returns the sessionId', async () => {
-    // runCritic resolves the transcript best-effort at the session-end boundary
-    // (single shot, no blocking retry). A log not yet flushed stays null and is
-    // filled by the runner's deferred poll — so this covers the flushed case and
-    // the sessionId that the deferred poll needs (#331, ADR-0040).
     const { repo, oid } = await makeCandidate('refs/harmonic/direct/attempt-critic-flushed-transcript');
     const sessionLogDir = mkdtempSync(join(tmpdir(), 'harmonic-critic-logs-'));
     tmpDirs.push(sessionLogDir);
@@ -286,12 +273,8 @@ describe('runCritic (issue #136)', () => {
     });
 
     expect(captured).toBeDefined();
-    // No tracker credential ever rides along on the harness config runCritic
-    // hands the drive — unlike a builder Run (Runner.drive), nothing here
-    // injects HARMONIC_API_KEY/HARMONIC_MCP_URL into it.
     expect(captured!.harness.env).not.toHaveProperty('HARMONIC_API_KEY');
     expect(captured!.harness.env).not.toHaveProperty('HARMONIC_MCP_URL');
-    // The operator note is interpolated with the Drive fields; no diff is injected.
     expect(captured!.prompt).toContain('Review issue 77: Sample ticket.');
     expect(captured!.prompt).not.toContain('HARMONIC_UNTRUSTED_DIFF');
     expect(captured!.prompt).not.toContain('diff --git');
@@ -304,10 +287,6 @@ describe('runCritic (issue #136)', () => {
 
     const drive: CriticHarnessDrive = {
       run: async (req) => {
-        // A critic tool writing a scratch file into its checkout doesn't
-        // affect the verdict — runCritic does no checkout of its own and
-        // never inspects the working tree after the turn; the reported
-        // verdict is trusted as-is.
         writeFileSync(join(req.cwd, 'critic-side-effect.txt'), 'scratch\n');
         return { output: '{"verdict":"pass","summary":"looks great, definitely no problems here"}', permissionRequests: [] };
       },
@@ -370,12 +349,6 @@ describe('runCritic (issue #136)', () => {
   });
 
   it('AC5 end-to-end: a runCritic attempt persists to the store and the read-back row feeds combineVerdicts', async () => {
-    // Proves the two halves of "Attempt persisted; verdict feeds the
-    // combination function" join up on a REAL runCritic result, not two
-    // isolated fixtures: runCritic -> criticAttemptToInput -> store.append ->
-    // list -> map row to a VerifierVerdict -> combineVerdicts. The glue under
-    // test is `criticAttemptToInput` mapping `verifier:'critic'` to the store's
-    // `mechanism` (the field the integration ticket will persist through).
     const { repo, oid } = await makeCandidate('refs/harmonic/direct/attempt-critic-persist');
     const drive: CriticHarnessDrive = {
       run: async () => ({ output: '{"verdict":"fail","summary":"the diff drops a null check"}', permissionRequests: [] }),
@@ -392,8 +365,6 @@ describe('runCritic (issue #136)', () => {
 
     const dbDir = mkdtempSync(join(tmpdir(), 'harmonic-critic-persist-db-'));
     tmpDirs.push(dbDir);
-    // A one-off local fixture (not the shared beforeEach pattern), so the
-    // connection is opened and closed inline within the test.
     const asyncDb = await openAsyncDb(dbDir);
     const settingsStore = await makeSettingsStore(dbDir);
     const tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
@@ -413,7 +384,6 @@ describe('runCritic (issue #136)', () => {
       inputOid: oid,
     });
 
-    // The persisted row — not the in-memory attempt — feeds the combiner.
     const verifierVerdict: VerifierVerdict = { verifier: row!.mechanism, verdict: row!.verdict as VerifierVerdict['verdict'] };
     expect(combineVerdicts([verifierVerdict])).toEqual({ outcome: 'block', reason: expect.any(String) });
 
@@ -433,10 +403,6 @@ describe('createAcpCriticDrive (issue #136): the real ACP drive has builder-equi
     for (const d of tmpDirs) rmSync(d, { recursive: true, force: true });
   });
 
-  // A leaked-looking credential sitting on the operator's own harness config
-  // — proves the real drive strips it even if a misconfigured operator env
-  // would otherwise carry it into the spawned process, per the module doc's
-  // belt-and-braces rationale in `verification/critic.ts`.
   const harness: HarnessConfig = {
     command: process.execPath,
     args: [STUB_HARNESS],
@@ -462,16 +428,9 @@ describe('createAcpCriticDrive (issue #136): the real ACP drive has builder-equi
       timeoutMs: 15_000,
     });
 
-    // mcpServers:[] reached session/new — no Harmonic MCP tools available, so
-    // the critic has no path to the tracker (`finish_task`/`accept_task`).
     expect(result.output).toContain('"mcpServers":[]');
-    // The credentials configured on harness.env never reached the child's
-    // actual process environment.
     expect(result.output).toContain('"HARMONIC_API_KEY":null');
     expect(result.output).toContain('"HARMONIC_MCP_URL":null');
-    // The critic has the builder's tool access — a permission request is
-    // GRANTED (allow_always → optionId 'always'), not declined. Read-only-ness
-    // is the prompt's job, not the handler's.
     expect(result.output).toContain('permission:{"outcome":"selected","optionId":"always"}');
     expect(result.permissionRequests).toHaveLength(1);
   }, 20_000);

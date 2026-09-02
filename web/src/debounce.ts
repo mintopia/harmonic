@@ -1,8 +1,7 @@
 /**
  * Trailing-edge debounce: a burst of calls within `delayMs` of each other
  * collapses to a single invocation, fired `delayMs` after the last call with
- * that last call's arguments. Used to fold a `task_changed` firehose into one
- * epics refetch rather than one network round trip per event.
+ * that last call's arguments.
  */
 export interface Debounced<A extends unknown[]> {
   (...args: A): void;

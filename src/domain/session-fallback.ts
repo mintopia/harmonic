@@ -1,47 +1,13 @@
 import type { AcpLoadIncompatibility } from '../acp/driver.js';
 import type { ResumeIncompatibilityReason } from './session-resume.js';
 
-/**
- * The deterministic summarized-Session fallback (issue #145, reliability-design
- * Unit C).
- *
- * When a resume can't reload the prior Session — a **classified** failure such
- * as an incompatible harness/adapter version, an unrestorable working directory,
- * or a capability the live harness no longer advertises — Harmonic falls back
- * **exactly once** to a brand-new Session seeded with a summary it builds
- * *itself*, deterministically, from what it already recorded: the Attempt's
- * persisted events, its terminal outcome, the verified-head OID/status, and the
- * Task's tracker links. It **never asks the dead Session to summarize
- * itself**, so the fallback is available even when the original harness
- * process is long gone — the whole point of resume being a fresh spawn, not a
- * reattach (see `AcpDriver.load`).
- *
- * Like its sibling seams (`session-resume.ts`, `session-retirement.ts`,
- * `task-deletion.ts`) this is a **pure decision + a pure builder**: no database,
- * no clock, no I/O. The caller reads the persisted events/outcome/verified head/
- * tracker rows and passes them in; recomputing over the same inputs always
- * yields the same summary and the same plan, so both halves are exhaustively
- * unit-testable in isolation.
- */
-
-/**
- * The two upstream reason unions a reload failure can arrive as: the ones
- * `assessResumeEligibility` decides *ahead* of a load attempt (#142) and the
- * ones `AcpDriver.load` can only discover by asking the live harness (#143).
- * They overlap (`load-session-unsupported`, `permission-mode-unestablishable`);
- * the fallback treats their union as one flat set of classified failures.
- */
 type UpstreamReloadFailure = ResumeIncompatibilityReason | AcpLoadIncompatibility;
 
 /**
- * Every classified reload failure that triggers the summarized-Session fallback,
- * as one flat set — the union of {@link ResumeIncompatibilityReason} (#142) and
- * {@link AcpLoadIncompatibility} (#143), deduped. This array is the single
- * source of truth for "what counts as a classified failure"; the `satisfies`
- * below proves every entry is a real upstream reason (no typos, no extras), and
- * {@link classifyReloadFailure}'s signature proves the set is *complete* (an axis
- * added upstream fails to compile until it is ranked here too), so the two stay
- * in lockstep by the compiler, not by hand.
+ * Every classified reload failure that triggers the summarized-Session
+ * fallback: the union of {@link ResumeIncompatibilityReason} and
+ * {@link AcpLoadIncompatibility}, deduped. {@link classifyReloadFailure}'s
+ * signature fails to compile if an upstream reason is missing here.
  */
 export const FALLBACK_TRIGGER_REASONS = [
   'harness-mismatch',
@@ -56,21 +22,12 @@ export type FallbackTriggerReason = (typeof FALLBACK_TRIGGER_REASONS)[number];
 
 const FALLBACK_TRIGGER_SET: ReadonlySet<string> = new Set(FALLBACK_TRIGGER_REASONS);
 
-/** Whether `reason` is one of the classified reload failures that triggers the
- * fallback — the runtime counterpart of the {@link FallbackTriggerReason} type,
- * for a caller narrowing a free string (e.g. a reason read back off a row). */
+/** Whether `reason` is one of the classified reload failures that triggers the fallback. */
 export function isFallbackTriggerReason(reason: string): reason is FallbackTriggerReason {
   return FALLBACK_TRIGGER_SET.has(reason);
 }
 
-/**
- * A classified reload failure ready to drive the fallback — an upstream
- * incompatibility reason plus its human-legible detail. `classifyReloadFailure`
- * is the identity map from a #142/#143 outcome into this shape; its typed
- * signature is also the **completeness guard** on {@link FALLBACK_TRIGGER_REASONS}
- * (assigning an {@link UpstreamReloadFailure} into a {@link FallbackTriggerReason}
- * fails to compile if the trigger set ever drifts behind an upstream union).
- */
+/** A classified reload failure ready to drive the fallback: the reason plus its human-legible detail. */
 export interface ReloadFailure {
   reason: FallbackTriggerReason;
   detail: string;
@@ -82,13 +39,11 @@ export function classifyReloadFailure(reason: UpstreamReloadFailure, detail: str
 
 /**
  * How a resume attempt proceeds once the reload's outcome is known.
- * - `reload`: no classified failure — adopt the loaded Session, no fallback.
- * - `summarized-fallback`: fire the **single** fallback — mint a fresh Session
- *   seeded with {@link buildResumeFallbackSummary}, and persist `trigger` on the
- *   dead Session.
- * - `abort`: the fallback was already spent on this resume attempt, so a second
- *   classified failure does **not** loop into another summarized fallback (AC4);
- *   the caller surfaces/escalates instead.
+ * - `reload`: no classified failure — adopt the loaded Session.
+ * - `summarized-fallback`: mint a fresh Session seeded with
+ *   {@link buildResumeFallbackSummary}, and persist `trigger` on the dead Session.
+ * - `abort`: the fallback was already spent on this resume attempt; the caller
+ *   surfaces/escalates instead.
  */
 export type ResumeFallbackPlan =
   | { action: 'reload' }
@@ -96,16 +51,10 @@ export type ResumeFallbackPlan =
   | { action: 'abort'; reason: 'fallback-exhausted'; trigger: FallbackTriggerReason; detail: string };
 
 /**
- * The at-most-once fallback gate (issue #145 AC1/AC4). Given the reload's
- * classified failure (or `null` when the reload is usable) and whether the
- * summarized fallback has *already* fired on this resume attempt, decide the
- * next step. Pure and total: the fallback fires on the first classified failure
- * and never again within the same attempt — a second failure aborts rather than
- * re-summarizing, so a repeatedly-incompatible environment can't spin.
- *
- * `state.fallbackUsed` is the caller's single bit of per-attempt memory (it
- * flips true the first time this returns `summarized-fallback`); keeping the
- * memory in the caller is what lets this decision stay pure.
+ * The at-most-once fallback gate. Given the reload's classified failure (or
+ * `null` when the reload is usable) and whether the fallback has already fired
+ * on this resume attempt, decide the next step. `state.fallbackUsed` is the
+ * caller's memory; it flips true the first time this returns `summarized-fallback`.
  */
 export function planResumeFallback(
   failure: ReloadFailure | null,
@@ -118,42 +67,27 @@ export function planResumeFallback(
   return { action: 'summarized-fallback', trigger: failure.reason, detail: failure.detail };
 }
 
-/**
- * The prior Attempt's terminal disposition (ADR-0001): its ending-kind
- * `reason` (`AttemptSettleCoordinator.settle`'s audit hedge), or `null` when
- * it never reached a terminal disposition.
- */
+/** The prior Attempt's terminal disposition; `reason` is null when it never reached one. */
 export interface FallbackSummaryOutcome {
   state: string;
   reason: string | null;
 }
 
-/**
- * The facet of an `attempt_event` the summary reads. A `PersistedAttemptEvent`
- * (`attempts.ts`, payload already parsed to `unknown`) and a raw `AttemptEventRow`
- * (payload still a JSON string) are both structurally assignable, so callers can
- * pass `AttemptStore.listEvents(attemptId)` directly.
- */
+/** The facet of an `attempt_event` the summary reads; a `PersistedAttemptEvent` is structurally assignable. */
 export interface FallbackSummaryEvent {
   seq: number;
   type: string;
   payload: unknown;
 }
 
-/** A tracker link the Task carries — the issue number plus, when known, its
- * title and state (see `tracker/adapter.ts` `TicketRef`). */
+/** A tracker link the Task carries — the issue number plus, when known, its title and state. */
 export interface FallbackTrackerLink {
   number: number;
   title?: string | null;
   state?: string | null;
 }
 
-/**
- * Everything {@link buildResumeFallbackSummary} needs — the persisted inputs
- * the design mandates (the Attempt's events + the terminal outcome + verified
- * head OID/status + tracker links) plus the dead Session's identity and the
- * classified trigger, so the summary can open by stating *why* it exists.
- */
+/** Everything {@link buildResumeFallbackSummary} needs. */
 export interface FallbackSummaryInput {
   /** The classified failure that forced the fallback. */
   trigger: FallbackTriggerReason;
@@ -182,12 +116,9 @@ function truncate(value: string, max = 80): string {
 }
 
 /**
- * Build the deterministic seed summary for the fallback Session (issue #145
- * AC2/AC3). A pure function of {@link FallbackSummaryInput}: it reads no clock
- * and no randomness, sorts every list by its stable `seq`/number key, and
- * renders bounded digests, so the **same inputs always produce byte-identical
- * output**. The result is Markdown seeded as the fresh Session's opening
- * context — a Harmonic-authored account of the prior work, never the dead
+ * Build the deterministic seed summary for the fallback Session: Markdown
+ * seeded as the fresh Session's opening context, byte-identical for the same
+ * inputs. A Harmonic-authored account of the prior work, never the dead
  * Session's own words.
  */
 export function buildResumeFallbackSummary(input: FallbackSummaryInput): string {

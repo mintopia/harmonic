@@ -17,13 +17,10 @@ export interface SpawnInput {
 }
 
 /**
- * A live, incremental reader of one run's native session log (issue #217).
- * `sample()` folds only the bytes appended since the previous call — off the
- * event loop — instead of the whole-file re-parse `parse()` does every tick,
- * which pinned a core on a long run. `latest()` returns that same folded
- * result with no I/O, for the on-demand readers (Activity snapshot, spend
- * guard) that piggy-back on the tailer's cadence rather than re-parsing
- * themselves. One reader per (run, session); concurrent `sample()`s serialize.
+ * A live, incremental reader of one run's native session log. `sample()`
+ * folds only the bytes appended since the previous call; `latest()` returns
+ * that same folded result with no I/O. One reader per (run, session);
+ * concurrent `sample()`s serialize.
  */
 export interface SessionTailReader {
   /** Advance over newly-appended bytes and return the freshest parse; null
@@ -35,10 +32,9 @@ export interface SessionTailReader {
 }
 
 /**
- * The per-Harness Usage source (CONTEXT.md: Usage Collector): how to read
- * a per-model breakdown, either straight off the ACP prompt result
- * (codex) or out of the native session log (claude). Aggregate totals
- * come from the generic ACP `usage` path in usage.ts.
+ * The per-Harness Usage source: how to read a per-model breakdown, either
+ * straight off the ACP prompt result (codex) or out of the native session
+ * log (claude). Aggregate totals come from the generic ACP `usage` path.
  */
 export interface UsageCollector {
   /** Discover the actual native transcript a Harness wrote for a Session.
@@ -46,22 +42,14 @@ export interface UsageCollector {
   resolveTranscriptPath?(input: { sessionLogDir?: string | undefined; sessionId: string }): Promise<string | null>;
   /**
    * Parse a session's native logs into rolled-up Usage plus its Process
-   * Tree (ADR 0009) — the source that replaces the ACP-result/OTel reads
-   * below. Optional here so the existing collectors compile unchanged;
-   * the per-Harness parsers merge in #48 (claude) / #49 (codex, copilot),
-   * which then make this the sole path and retire the methods below.
-   * Returns null when no log exists yet.
+   * Tree. Returns null when no log exists yet.
    */
   parse?(input: { sessionLogDir?: string | undefined; cwd: string; sessionId: string | null }): ParsedSession | null;
   /**
-   * An incremental, async tailer for this harness's live session log (#217):
-   * each tick folds only newly-appended bytes instead of re-reading the whole
-   * file synchronously on the event loop. Implemented by the line-log harnesses
-   * (claude transcripts, codex rollouts) via a `LineCursor`. Absent → the
-   * runner falls back to a whole-file `parse()` per tick (`wholeFileReader`);
-   * copilot stays there deliberately (its usage is a bounded, synchronous
-   * sqlite query, not an unbounded whole-file re-parse). `sessionId` is non-null
-   * here — the reader is created only once a session exists.
+   * An incremental, async tailer for this harness's live session log. Absent
+   * means the runner falls back to a whole-file `parse()` per tick
+   * (`wholeFileReader`). `sessionId` is non-null here: the reader is created
+   * only once a session exists.
    */
   createTailReader?(input: { sessionLogDir?: string | undefined; cwd: string; sessionId: string }): SessionTailReader;
   /**
@@ -90,11 +78,7 @@ export interface UsageCollector {
   toolName(payload: unknown): string | null;
 }
 
-/**
- * Per-harness knowledge, keyed by HarnessId (config.ts). Operator config
- * keeps only what is genuinely operator-tunable; harness facts live here,
- * versioned with the code that shares their assumptions.
- */
+/** Per-harness knowledge, keyed by HarnessId. */
 export interface HarnessAdapter {
   /**
    * Env overlay for the spawned harness process: model pinning and quirk
@@ -136,11 +120,8 @@ export function adapterFor(harnessId: string): HarnessAdapter {
 }
 
 /**
- * The fallback tail reader for a collector with no `createTailReader` (codex,
- * copilot): re-run the whole-file `parse()` each `sample()` and cache it for
- * `latest()`. No incremental win, but it keeps every harness on the same async
- * `sample()`/cached-`latest()` contract the runner drives (#217). `parse` here
- * is still synchronous CPU, acceptable for their small logs.
+ * The fallback tail reader for a collector with no `createTailReader`: re-run
+ * the whole-file `parse()` each `sample()` and cache it for `latest()`.
  */
 export function wholeFileReader(
   collector: UsageCollector,
@@ -159,11 +140,8 @@ export function wholeFileReader(
 /**
  * Monotonic version of the adapter layer's assumptions, bumped when a change to
  * how harnesses are spawned/driven would make a mid-flight Session unsafe to
- * resume. Recorded on every Session (issue #141) as the adapter half of the
- * resume compatibility key; a Session whose stored `adapterVersion` differs
- * from the current one is forced to a fresh Session rather than a `session/load`
- * when resume merges. One global counter (a claude-only change conservatively
- * invalidates all harnesses) — deliberately over-cautious for the foundation.
+ * resume. A Session whose stored `adapterVersion` differs from the current one
+ * is forced to a fresh Session rather than a `session/load`.
  */
 export const ADAPTER_VERSION = 1;
 

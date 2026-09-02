@@ -48,11 +48,7 @@ describe('orderEligibleWork', () => {
     expect(input).toEqual(snapshot);
   });
 
-  // The yielding merge sort is hand-rolled; small hand-written fixtures cannot
-  // catch an off-by-one in the merge that only shows up at larger widths. Fuzz
-  // both orderings against the same random inputs and require identical output.
   describe('orderEligibleWork vs orderEligibleWorkYielding (fuzz)', () => {
-    // Deterministic PRNG (mulberry32) so any failure is reproducible from SEED.
     const makeRng = (seed: number) => {
       let state = seed >>> 0;
       return () => {
@@ -63,20 +59,15 @@ describe('orderEligibleWork', () => {
       };
     };
 
-    // Priorities include the ranked ones plus unmapped strings to exercise the
-    // `PRIORITY_RANK[...] ?? 1` fallback (the "null-ish priority" path).
     const PRIORITIES = ['high', 'normal', 'low', 'urgent', '', 'unknown'];
 
     const randomInput = (rng: () => number): OrderableTask[] => {
       const size = Math.floor(rng() * 51);
-      // Unique ids drawn from a shuffled pool so ordering is fully determined
-      // by the comparator (id is the final tiebreak) yet id values vary.
       const pool = Array.from({ length: size }, () => Math.floor(rng() * 100000));
       const uniqueIds = Array.from(new Set(pool));
       return uniqueIds.map((id) => {
         const blockerCount = rng() < 0.5 ? 0 : 1 + Math.floor(rng() * 3);
         const blockedBy = Array.from({ length: blockerCount }, () =>
-          // Reference some id (often a real one, occasionally arbitrary) to vary unblock-counts.
           rng() < 0.8 && uniqueIds.length > 0
             ? uniqueIds[Math.floor(rng() * uniqueIds.length)]!
             : Math.floor(rng() * 100000),
@@ -84,7 +75,7 @@ describe('orderEligibleWork', () => {
         return {
           id,
           priority: PRIORITIES[Math.floor(rng() * PRIORITIES.length)]!,
-          createdAt: Math.floor(rng() * 20), // small range → many ties on age
+          createdAt: Math.floor(rng() * 20),
           blockedBy,
         };
       });

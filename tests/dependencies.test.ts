@@ -32,8 +32,6 @@ describe('dependencies', () => {
     expect(dependent.agentWorkable).toBe(false);
     expect(dependent.dependsOn).toEqual([dep.id]);
 
-    // The dependency merging (done) immediately changes the derived fields,
-    // without a stored flip — there is no human gate in between (ADR-0041).
     await runToDone(dep.id);
     expect((await getTask(dependent.id)).openBlockerCount).toBe(0);
     expect((await getTask(dependent.id)).agentWorkable).toBe(true);
@@ -83,16 +81,12 @@ describe('dependencies', () => {
     expect(blocked.openBlockerCount).toBe(1);
     expect(blocked.blockedOnFailed).toBe(true);
 
-    // The human resolves it: Accept has nothing to merge (the agent never
-    // committed), so the escalated dependency is Closed and the dependent stays
-    // blocked on a cancelled blocker — a decision, not a cascade.
     expect((await server.api('POST', `/api/tasks/${dep.id}/accept`)).status).toBe(409);
     expect((await server.api('POST', `/api/tasks/${dep.id}/close`)).status).toBe(200);
     const after = await getTask(dependent.id);
     expect(after.state).toBe('ready');
     expect(after.openBlockerCount).toBe(1);
     expect(after.blockedOnFailed).toBe(true);
-    // Uncancelling the blocker and merging it unblocks the dependent.
     await server.api('POST', `/api/tasks/${dep.id}/uncancel`);
     await server.api('PATCH', `/api/tasks/${dep.id}`, { prompt: JSON.stringify({}) });
     await runToDone(dep.id);
@@ -108,7 +102,6 @@ describe('dependencies', () => {
     expect((await server.api('POST', `/api/tasks/${b.id}/dependencies`, { dependsOnId: a.id })).status).toBe(200);
     expect((await server.api('POST', `/api/tasks/${c.id}/dependencies`, { dependsOnId: b.id })).status).toBe(200);
 
-    // a → b → c chain exists (c depends on b depends on a); adding a depends-on-c closes the loop.
     expect((await server.api('POST', `/api/tasks/${a.id}/dependencies`, { dependsOnId: c.id })).status).toBe(409);
     expect((await server.api('POST', `/api/tasks/${a.id}/dependencies`, { dependsOnId: a.id })).status).toBe(409);
   });
@@ -156,11 +149,6 @@ describe('dependencies', () => {
     await createTask({ dependsOn: [dep.id] });
     const last = await createTask({});
 
-    // `skipReason` mirrors the AutoRunner's per-pass in-memory diagnostics,
-    // and no scheduler pass may have covered these just-created tasks yet.
-    // Wait until one has (a pass that records `last` necessarily listed every
-    // older task too), so the list snapshot and the per-task GETs below read
-    // the same steady state instead of racing the pass's map swap.
     await waitFor(async () => (await getTask(last.id)).skipReason !== null);
 
     const listForTask = vi.spyOn(server.app.ctx.attempts, 'listForTask');
@@ -183,8 +171,6 @@ describe('dependencies', () => {
     vi.restoreAllMocks();
 
     for (const task of list.body.tasks) {
-      // The item GET is the lean list row plus the full `prompt`, which list
-      // rows drop (issue #350); everything else is byte-for-byte identical.
       const { prompt, ...rest } = (await server.api('GET', `/api/tasks/${task.id}`)).body;
       expect(typeof prompt).toBe('string');
       expect(rest).toEqual(task);

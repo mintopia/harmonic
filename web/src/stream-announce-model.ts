@@ -3,8 +3,8 @@
 import { isInterrupted, type StreamItem } from './event-stream-model.js';
 
 /**
- * What a polite live region should read out as a transcript streams — issue
- * #96. The operator (or their screen reader) doesn't need the prose re-read
+ * What a polite live region should read out as a transcript streams.
+ * The operator (or their screen reader) doesn't need the prose re-read
  * as it coalesces chunk by chunk; they need the *transitions*: a tool call
  * finishing, a fresh agent message beginning, a Turn ending. Deriving these
  * from the already-coalesced `StreamItem[]` (not the raw event firehose) is
@@ -31,18 +31,12 @@ export interface AnnounceCursor {
 
 export const EMPTY_ANNOUNCE_CURSOR: AnnounceCursor = { seen: new Set<string>() };
 
-// A tool row is worth an announcement only once it stops — a pending/running
-// tool is already conveyed by the live pulse and would just be noise.
 const TERMINAL_TOOL_STATUS = new Set(['completed', 'failed']);
 
-/** The one line worth speaking for a lifecycle event, or null for the
- * bookkeeping (mode_set, steer_*, continue, …) the transcript itself drops. */
 function lifecycleText(payload: unknown): string | null {
   const p = payload as { event?: string } | null | undefined;
   switch (p?.event) {
     case 'finished':
-      // A Stop/Interrupt is a `finished` carrying a cancelled stop reason —
-      // the shared carve-out EventStream's "Interrupted" line also makes.
       return isInterrupted(payload) ? 'Turn interrupted' : 'Turn finished';
     case 'error':
       return 'Turn ended with an error';
@@ -57,11 +51,7 @@ function transitionsFor(items: StreamItem[]): Transition[] {
   const out: Transition[] = [];
   for (const item of items) {
     if (item.kind === 'text') {
-      // Only agent messages — a thought is the agent's private reasoning, an
-      // aside the operator is shown but isn't "receiving", so it stays silent.
       if (item.variant === 'message') {
-        // The item's key is its first chunk's id and holds steady as later
-        // chunks fold in, so one growing message announces exactly once.
         out.push({ key: `msg:${item.key}`, text: 'New message' });
       }
       continue;
@@ -70,8 +60,6 @@ function transitionsFor(items: StreamItem[]): Transition[] {
       const status = item.tool.status;
       if (status && TERMINAL_TOOL_STATUS.has(status)) {
         const label = item.tool.title || 'Tool call';
-        // Keyed on toolCallId + status so a call announces once when it merges,
-        // and (defensively) once more only if it somehow flips terminal state.
         out.push({
           key: `tool:${item.tool.toolCallId ?? item.key}:${status}`,
           text: `${label} ${status === 'completed' ? 'completed' : 'failed'}`,
@@ -79,8 +67,6 @@ function transitionsFor(items: StreamItem[]): Transition[] {
       }
       continue;
     }
-    // kind === 'event': only a Turn actually ending is a transition; every
-    // other protocol/lifecycle event is the noise EventStream renders as null.
     if (item.event.type === 'lifecycle') {
       const text = lifecycleText(item.event.payload);
       if (text) out.push({ key: `life:${item.key}`, text });

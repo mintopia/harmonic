@@ -12,8 +12,6 @@ import type { Verdict } from '../src/verification/critic-schema.js';
 const git = (dir: string, ...args: string[]) =>
   execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
 
-/** A throwaway git repo on branch main with one committed file (same template
- * as tests/verification-critic.test.ts). */
 function makeRepo(): string {
   const dir = mkdtempSync(join(tmpdir(), 'harmonic-escalation-routes-'));
   execFileSync('git', ['init', '-b', 'main', dir], { encoding: 'utf8' });
@@ -25,16 +23,8 @@ function makeRepo(): string {
   return dir;
 }
 
-/** The decomposed review-override fields (issue #337) for a configured critic. */
 const critic = () => ({ reviewEnabled: true, reviewPrompt: 'Review the diff for correctness.', reviewModel: 'stub-model' });
 
-/**
- * ADR-0041's escalation surface on a worktree ticket the critic rejected twice:
- * Accept merges the verified head as-is (the critic's opinion is not a gate any
- * more once a human decides), Reject with guidance resumes the loop with the
- * budget reset, Close removes the branch and worktree. Replaces the retired
- * "Adopt & review" / "Note to critic" escape hatches (ADR-0027).
- */
 describe('escalation actions on a worktree ticket (ADR-0041)', () => {
   let server: TestServer;
   let repoDir: string;
@@ -66,9 +56,6 @@ describe('escalation actions on a worktree ticket (ADR-0041)', () => {
     });
   });
 
-  // An accepted run merges its file into main, so a repeated identical write
-  // would leave the next stub agent nothing to commit (and thus no verifiable
-  // head). A unique file per run keeps every run's commit real.
   let implSeq = 0;
   async function createAndRun(): Promise<{ taskId: number; attemptId: number; file: string }> {
     const file = `escalation-feature-${++implSeq}.txt`;
@@ -83,7 +70,6 @@ describe('escalation actions on a worktree ticket (ADR-0041)', () => {
     return { taskId: created.body.id, attemptId: started.body.id, file };
   }
 
-  /** Drive a fresh task+run to escalation via a failing critic on both attempts. */
   async function escalateViaCriticFail(): Promise<{ taskId: number; attemptId: number; file: string }> {
     const { taskId, attemptId, file } = await createAndRun();
     const task = await waitFor(async () => {
@@ -96,10 +82,6 @@ describe('escalation actions on a worktree ticket (ADR-0041)', () => {
   }
 
   const ticketAttempts = (taskId: number) => new AttemptStore(server.app.ctx.asyncDb).listForTask(taskId);
-  // `verification_attempts` is keyed off `attempt_id`, not `run_id`
-  // (ADR-0001 #388 S-F): a self-heal loop's failed attempts share one Run row
-  // but each get their own Attempt row, so "this ticket's verification
-  // attempts" now folds the log across every one of its Attempts.
   const verificationAttempts = async (taskId: number) => {
     const store = new VerificationAttemptStore(server.app.ctx.asyncDb);
     const taskAttemptRows = await ticketAttempts(taskId);
@@ -121,8 +103,6 @@ describe('escalation actions on a worktree ticket (ADR-0041)', () => {
     it('force: true merges the candidate as-is, overriding a still-failing critic — an operator override', async () => {
       const baseOidBefore = git(repoDir, 'rev-parse', 'main');
       const { taskId, file } = await escalateViaCriticFail();
-      // criticResult is still 'fail' from beforeEach: force skips the pre-merge
-      // verify (issue #429) and merges as-is regardless.
 
       const accepted = await server.api('POST', `/api/tasks/${taskId}/accept`, { force: true });
       expect(accepted.status).toBe(200);
@@ -131,12 +111,9 @@ describe('escalation actions on a worktree ticket (ADR-0041)', () => {
       const run = (await server.api('GET', `/api/tasks/${taskId}/attempts/current`)).body;
       expect(run).toMatchObject({ state: 'completed' });
 
-      // The operator's accept is the one disposition allowed to move an
-      // already-`escalated` Attempt (ADR-0001 #388 S-E's guarded transition).
       const attempts = await ticketAttempts(taskId);
       expect(attempts.at(-1)).toMatchObject({ state: 'passed', reason: 'operator-accept' });
 
-      // The merge actually happened: the base branch moved and carries the work.
       expect(git(repoDir, 'rev-parse', 'main')).not.toBe(baseOidBefore);
       expect(git(repoDir, 'show', `main:${file}`)).toBe('work');
     });
@@ -173,9 +150,6 @@ describe('escalation actions on a worktree ticket (ADR-0041)', () => {
     });
 
     it('409s conflict when the escalated ticket has no candidate to accept (the branch has no commits ahead of its base)', async () => {
-      // Direct mode + a dirty tree: no commit, so there is no candidate head at
-      // all — Accept 409s before it would even reach verification (mirrors
-      // verification-critic.test.ts).
       await server.app.ctx.workspaces.update(workspaceId, { isolationMode: 'direct' });
       writeFileSync(join(repoDir, 'uncommitted-escalation.txt'), 'dirty\n');
       try {
@@ -194,7 +168,6 @@ describe('escalation actions on a worktree ticket (ADR-0041)', () => {
         const res = await server.api('POST', `/api/tasks/${created.body.id}/accept`);
         expect(res.status).toBe(409);
         expect(res.body.error.code).toBe('conflict');
-        // Reject and Close still apply without a head.
         expect((await server.api('POST', `/api/tasks/${created.body.id}/close`)).status).toBe(200);
       } finally {
         rmSync(join(repoDir, 'uncommitted-escalation.txt'), { force: true });
@@ -215,7 +188,6 @@ describe('escalation actions on a worktree ticket (ADR-0041)', () => {
       expect(rejected.status).toBe(200);
       expect(rejected.body.escalationReason).toBeNull();
 
-      // Attempt 3 is the fresh budget: it runs, the critic now passes, it merges.
       const done = await waitFor(async () => {
         const { body } = await server.api('GET', `/api/tasks/${taskId}`);
         return body.state === 'done' ? body : undefined;
@@ -229,13 +201,6 @@ describe('escalation actions on a worktree ticket (ADR-0041)', () => {
       ]);
       expect(attempts[1]!.feedback).toBe('The timeout is intentional; see the linked ticket.');
 
-      // The same ticket, a fresh Attempt for the resumed loop — not a detached
-      // re-attempt task. Attempt is the single execution ledger now (ADR-0001
-      // #388 S-G): one row per turn, so all three Attempts list here (not just
-      // the pre-fold "one Run row per resume cycle"). The next Attempt reuses
-      // the Task's existing worktree and branch (ADR-0046): it resumes the
-      // prior candidate in the same working copy rather than cutting a fresh
-      // branch from the base.
       const runs = (await server.api('GET', `/api/tasks/${taskId}/attempts`)).body.attempts;
       expect(runs).toHaveLength(3);
       expect(runs[2].number).toBe(3);

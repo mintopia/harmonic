@@ -31,10 +31,6 @@ describe('openapi spec', () => {
     expect(Object.keys(doc.paths).length).toBeGreaterThan(0);
   });
 
-  // Regression: every `.meta({ id })` schema emits a `$ref` at each use site,
-  // but nothing wrote the targets into components.schemas until app.ts passed
-  // `transformObject`. The spec still served 200 and the UI still rendered —
-  // it just showed a literal {"$ref": …}, and codegen against it would break.
   it('resolves every $ref it emits — a dangling pointer is an invalid spec', async () => {
     const doc = (await server.anonApi('GET', '/api/openapi.json')).body;
     const defined = new Set(Object.keys(doc.components?.schemas ?? {}));
@@ -89,10 +85,7 @@ describe('openapi spec', () => {
 
   it('documents every registered /api route Fastify actually serves, against its own routing table', async () => {
     const doc = (await server.anonApi('GET', '/api/openapi.json')).body;
-    // Fastify's `:name` params become OpenAPI's `{name}` in the generated spec.
     const toSpecPath = (url: string) => url.replace(/:([A-Za-z]+)/g, '{$1}');
-    // Deliberately outside the spec's paths (ADR-0005): the spec-of-the-spec
-    // endpoints, and MCP/WebSocket, documented in info.description prose instead.
     const excluded = new Set(['/api/openapi.json', '/api/openapi.yaml', '/api/ws']);
 
     const apiRoutes = server.app.registeredRoutes.filter(
@@ -110,7 +103,6 @@ describe('openapi spec', () => {
       expect(Object.keys(operation.responses).length).toBeGreaterThan(0);
     }
 
-    // MCP and the WebSocket are documented, just not as paths.
     expect(doc.info.description).toContain('MCP');
     expect(doc.info.description).toContain('WebSocket');
     expect(doc.paths['/mcp']).toBeUndefined();
@@ -135,18 +127,15 @@ describe('openapi spec', () => {
   it('states Attempt Key reachability in each migrated endpoint description', async () => {
     const doc = (await server.anonApi('GET', '/api/openapi.json')).body;
 
-    // Reachable with an attempt-scoped Attempt Key: the agent task/run surface.
     expect(doc.paths['/api/tasks'].post.description).toContain('Reachable with an attempt-scoped Attempt Key');
     expect(doc.paths['/api/tasks/{id}/run'].post.description).toContain('Reachable with an attempt-scoped Attempt Key');
     expect(doc.paths['/api/attempts/{id}'].get.description).toContain('Reachable with an attempt-scoped Attempt Key');
 
-    // Accept/reject: human-only, always (#140, ADR-0021 retired the agentReview flag).
     expect(doc.paths['/api/tasks/{id}/accept'].post.description).toContain('Human-only');
     expect(doc.paths['/api/tasks/{id}/reject'].post.description).toContain('Human-only');
     expect(doc.paths['/api/tasks/{id}/accept'].post.description).not.toContain('agentReview');
     expect(doc.paths['/api/tasks/{id}/reject'].post.description).not.toContain('agentReview');
 
-    // Operator-only: config, channels (including the per-task channel overrides), stats, keys.
     expect(doc.paths['/api/config'].get.description).toContain('Operator only');
     expect(doc.paths['/api/config'].patch.description).toContain('Operator only');
     expect(doc.paths['/api/channels'].post.description).toContain('Operator only');

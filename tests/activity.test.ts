@@ -5,14 +5,6 @@ import { join } from 'node:path';
 import { startServer, waitFor, cancelRunningTasks, type TestServer } from './helpers.js';
 import type { DeepPartial, AppConfig } from '../src/config.js';
 
-/**
- * The instance-wide Activity snapshot (issue #51, ADR 0010): `GET /api/activity`
- * reads persisted capacity-consuming Runs and warm Conversations, joining a Run
- * with its latest live Usage / Process Tree when a Runner is registered. A
- * hanging stub run keeps a live Runner while we probe telemetry; a warm
- * Conversation keeps a chat process. A read (viz) key reaches the endpoint but
- * sees Runs only.
- */
 describe('GET /api/activity snapshot (issue #51)', () => {
   let server: TestServer;
   const workDir = mkdtempSync(join(tmpdir(), 'harmonic-activity-work-'));
@@ -20,8 +12,6 @@ describe('GET /api/activity snapshot (issue #51)', () => {
   const sessionId = 'activity-session-1';
 
   beforeAll(async () => {
-    // A Claude transcript at the path the collector derives (slug(cwd)/<id>.jsonl),
-    // so a live run's snapshot has a real Process Tree to parse.
     const slug = workDir.replace(/[^a-zA-Z0-9]/g, '-');
     mkdirSync(join(logDir, slug), { recursive: true });
     writeFileSync(
@@ -38,8 +28,6 @@ describe('GET /api/activity snapshot (issue #51)', () => {
 
     const config: DeepPartial<AppConfig> = {
       defaults: { workingDir: workDir, isolationMode: 'direct' },
-      // Chat default tracks the stub harness so its model stays valid (config
-      // schema enforces chat.model ∈ the harness's models).
       chat: { harness: 'claude', model: 'stub-model' },
       harnesses: {
         claude: {
@@ -55,22 +43,12 @@ describe('GET /api/activity snapshot (issue #51)', () => {
     server = await startServer(config);
   });
   afterEach(async () => {
-    // Cancel this file's hanging Runs so they don't linger (leaked harness
-    // process, consumed run slot) into the next test.
     await cancelRunningTasks(server);
   });
   afterAll(async () => {
     await server.close();
   });
 
-  /**
-   * Start a run that emits one tool call then hangs — stays in `Runner.active`
-   * (and never settles, so never releases its Work Context lease). Each call
-   * gets its own workingDir by default so independent tests' hanging runs
-   * don't contend for the same direct-mode lease (issue #119) — pass `dir`
-   * explicitly only when the test needs the pre-written transcript under
-   * `workDir`'s slug.
-   */
   async function startHangingRun(dir: string = mkdtempSync(join(tmpdir(), 'harmonic-activity-work-'))): Promise<{ taskId: number; attemptId: number }> {
     const scenario = JSON.stringify({
       updates: [{ sessionUpdate: 'tool_call', toolCallId: 't1', title: 'Read', kind: 'read', status: 'pending' }],
@@ -150,19 +128,16 @@ describe('GET /api/activity snapshot (issue #51)', () => {
   });
 
   it('includes a warm Conversation as a chat for an operator; a read key sees Runs only', async () => {
-    // A live run so the read-key result is non-empty (Runs are in the read set).
     const { attemptId } = await startHangingRun();
     await waitFor(async () => {
       const { body } = await server.api('GET', '/api/activity');
       return (body.processes as any[]).some((p) => p.type === 'attempt' && p.attemptId === attemptId) || undefined;
     });
 
-    // A warm Conversation stays in the active registry after its Turn finishes.
     const convo = (await server.api('POST', '/api/conversations', {})).body;
     await server.api('POST', `/api/conversations/${convo.id}/turns`, { text: JSON.stringify({ updates: [], delayMs: 5 }) });
     await waitFor(async () => server.app.ctx.conversationDriver.isWarm(convo.id) || undefined);
 
-    // Operator (cookie) sees both sources.
     const full = (await server.api('GET', '/api/activity')).body.processes as any[];
     const chat = full.find((p) => p.type === 'chat' && p.conversationId === convo.id);
     expect(chat).toBeTruthy();
@@ -178,7 +153,6 @@ describe('GET /api/activity snapshot (issue #51)', () => {
     expect(typeof chat.workspaceName).toBe('string');
     expect(full.some((p) => p.type === 'attempt')).toBe(true);
 
-    // A read (viz) key reaches the endpoint (not 403) but sees Runs only.
     const readToken = (await server.api('POST', '/api/keys', { name: 'viz', scope: 'read' })).body.token;
     const res = await fetch(`${server.baseUrl}/api/activity`, { headers: { authorization: `Bearer ${readToken}` } });
     expect(res.status).toBe(200);

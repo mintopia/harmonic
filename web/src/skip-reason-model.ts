@@ -1,5 +1,5 @@
 /**
- * Extract the holder Task id from a lease skip-reason string (issue #176),
+ * Extract the holder Task id from a lease skip-reason string,
  * e.g. "Work Context held by task 12 (running)" -> 12. The server format is
  * fixed at `src/execution/auto-runner.ts` (`skipReasonFor`); this just reads
  * the `task <id>` pattern back out so the caller can link it. Total: never

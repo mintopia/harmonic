@@ -24,8 +24,6 @@ export function SecuritySection() {
     setConfirmed(false);
     try {
       await fn();
-      // Setting or removing the password flips the whole app's gate; a reload
-      // re-reads /auth/me so the login screen and logout button resync.
       if (thenReload) location.reload();
       else {
         setCurrentPassword('');

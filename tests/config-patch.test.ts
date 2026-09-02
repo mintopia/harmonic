@@ -25,8 +25,6 @@ describe('PATCH /api/config verification', () => {
   });
 
   it('accepts a drive.continueAttempts patch and round-trips it (ADR-0044/#339 — parity with appConfig)', async () => {
-    // configPatchBodySchema.drive was missing continueAttempts, so a client could
-    // never PATCH it though appConfigSchema.drive declares it. It now round-trips.
     const patched = await server.api('PATCH', '/api/config', { drive: { continueAttempts: 4, mergeFate: 'open-PR' } });
     expect(patched.status).toBe(200);
     expect(patched.body.drive.continueAttempts).toBe(4);

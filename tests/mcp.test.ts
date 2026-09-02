@@ -65,7 +65,6 @@ describe('mcp server & scoped keys', () => {
     const cancelled = parse(await client.callTool({ name: 'cancel_task', arguments: { taskId: created.id } }));
     expect(cancelled.state).toBe('cancelled');
 
-    // Run the dep for real and read attempts + events over MCP.
     await server.api('POST', `/api/tasks/${dep.id}/run`);
     await waitFor(async () => (await server.api('GET', `/api/tasks/${dep.id}`)).body.state === 'done');
     const runs = parse(await client.callTool({ name: 'get_attempts', arguments: { taskId: dep.id } }));
@@ -103,18 +102,11 @@ describe('mcp server & scoped keys', () => {
   });
 
   it('falls back to the operator cookie credential when the Bearer is not an operator key (#276)', async () => {
-    // The cookie is the surviving fallback: #273 restricted query-token auth to
-    // websockets (a `?token=` in a URL leaks via logs/referrer), so a query
-    // token no longer authenticates `/mcp` — only the session cookie does.
     const runKey = await server.app.ctx.auth.createKey('run-1', { scope: 'attempt', attemptId: 1 });
     const readKey = await server.app.ctx.auth.createKey('read-1', { scope: 'read' });
 
     for (const bearer of ['adk_bogus', runKey.token, readKey.token, token]) {
       const cookieClient = await mcpClient(server, bearer, { headers: { cookie: `harmonic_session=${server.sessionToken}` } });
-      // force_integrate_epic is the one operator-only MCP tool left; a bogus
-      // workspaceId still proves the cookie resolved as operator — it clears
-      // requireOperator() (no "operator-only" error) and fails later, on the
-      // unknown Workspace lookup instead.
       const cookieResult: any = await cookieClient.callTool({
         name: 'force_integrate_epic',
         arguments: { workspaceId: 999_999_999, epicRef: 1 },
@@ -125,8 +117,6 @@ describe('mcp server & scoped keys', () => {
   });
 
   it('does not accept a query-token credential on /mcp — query tokens are websocket-only (#273)', async () => {
-    // Even a valid operator token in the query string must not authenticate an
-    // /mcp call that carries no other operator credential.
     await expect(mcpClient(server, 'adk_bogus', { queryToken: token })).rejects.toThrow();
   });
 
@@ -137,14 +127,11 @@ describe('mcp server & scoped keys', () => {
     const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
     await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'done');
 
-    // Attempt Keys are never listed, and the row is deleted once the run finished (issue 16).
     const keys = await server.api('GET', '/api/keys');
     expect(keys.body.keys.find((k: any) => k.attemptId === started.body.id)).toBeUndefined();
   });
 
   it('codex: registers the MCP server via session/new mcpServers with the Attempt Key as bearer (zero setup)', async () => {
-    // Spike (issue 22): codex-acp honors HTTP mcpServers with headers; env
-    // vars alone are not enough since nothing tells Codex to read them.
     const codexServer = await startServer(stubHarness('codex'));
     try {
       const created = await codexServer.api('POST', '/api/tasks', {
@@ -166,7 +153,7 @@ describe('mcp server & scoped keys', () => {
   it('exposes finish_task / escalate_task; acknowledges with running:false when the Task is not executing', async () => {
     const client = await mcpClient(server, token);
     const tools = (await client.listTools()).tools.map((t) => t.name);
-    expect(tools).toContain('finish_task'); // always available — a completion signal, not a merge gate
+    expect(tools).toContain('finish_task');
     expect(tools).toContain('escalate_task');
 
     const draft = parse(await client.callTool({ name: 'create_task', arguments: { prompt: 'idle', state: 'draft' } }));
@@ -178,7 +165,6 @@ describe('mcp server & scoped keys', () => {
       parse(await client.callTool({ name: 'escalate_task', arguments: { taskId: draft.id, reason: 'need input' } })),
     ).toEqual({ acknowledged: true, running: false });
 
-    // A bad id is a domain error, not a silent ack.
     const bad = await client.callTool({ name: 'finish_task', arguments: { taskId: 999999 } });
     expect(bad.isError).toBe(true);
     await client.close();
@@ -192,8 +178,6 @@ describe('mcp server & scoped keys', () => {
     expect(tools).not.toContain('reject_task');
     await client.close();
 
-    // A legacy PATCH still carrying the retired flag is dropped rather than
-    // re-exposing the MCP tools.
     await server.api('PATCH', '/api/config', { agentReview: true });
     const stillHidden = await mcpClient(server, token);
     const stillHiddenTools = (await stillHidden.listTools()).tools.map((t) => t.name);
@@ -218,12 +202,10 @@ describe('mcp server & scoped keys', () => {
     await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'done');
 
     const all = await server.api('GET', '/api/tasks');
-    // Lean list rows carry `summary`, not the full `prompt` (issue #350).
     const followUp = all.body.tasks.find((t: any) => t.summary === 'follow-up work');
     expect(followUp).toBeDefined();
     expect(followUp.state).toBe('ready');
     expect(followUp.dependsOn).toEqual([created.body.id]);
-    // The parent merging (done) is what unblocked the agent-scheduled follow-up.
     expect(followUp.openBlockerCount).toBe(0);
     expect(followUp.agentWorkable).toBe(true);
   });

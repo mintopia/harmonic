@@ -7,16 +7,6 @@ import { join } from 'node:path';
 import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
 import { verificationCommandSchema } from '../src/config.js';
 
-/**
- * Boot crash-recovery (ADR-0001, "Scope and design ceiling": crash recovery
- * relies on git's own idempotence and on rebuilding in-memory state from the
- * DB at boot — no journal, no queue): a fresh process executes nothing, so
- * any Task left `working`/`running` by the previous instance was orphaned by
- * the restart and must be reconciled — including a mirrored afk Task that
- * crashed between the ready→working flip (the lock) and its Run being
- * created, and a worktree-mode Run whose merge landed in git before the
- * process died but whose settle never ran.
- */
 const git = (dir: string, ...args: string[]) => execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
 
 const tmpDirs: string[] = [];
@@ -26,7 +16,6 @@ const tmpPath = (prefix: string) => {
   return p;
 };
 
-/** A throwaway git repo on branch main with one committed README. */
 function makeRepo(): string {
   const dir = tmpPath('harmonic-boot-recovery-repo-');
   execFileSync('git', ['init', '-b', 'main', dir], { encoding: 'utf8' });
@@ -55,8 +44,6 @@ describe('boot crash-recovery', () => {
     const id = created.body.id as number;
     const dataDir = server.dataDir;
 
-    // Simulate the crash: the auto-runner had flipped it to `working` but died
-    // before spawning a Run — so there is no `running` run for the run sweep.
     await server.app.close();
     const sqlite = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
     await sqlite.execute({ sql: 'UPDATE tasks SET state = ? WHERE id = ?', args: ['working', id] });
@@ -94,9 +81,6 @@ describe('boot crash-recovery', () => {
     const before = await server.api('GET', `/api/tasks/${created.body.id}`);
 
     await server.app.close();
-    // The escalated Attempt's disposition (ADR-0001 #388 S-E: `state` + the
-    // ending-kind `reason`, no more append-only fact log) is the thing a boot
-    // sweep must never move.
     const attemptSnapshot = async () => {
       const check = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
       const rows = await check.execute({ sql: 'SELECT id, state, reason FROM attempts WHERE task_id = ?', args: [taskId] });
@@ -133,10 +117,6 @@ describe('boot crash-recovery', () => {
       expect(runBefore.body.state).toBe('completed');
       const mainTipAfterMerge = git(repo, 'rev-parse', 'main');
 
-      // Simulate the crash: the merge landed in git (it really did — `main` now
-      // contains the task branch), but the process died before the Run/Task
-      // settled — exactly as a crash between `mergeIntoBase` and
-      // `AttemptSettleCoordinator.settle` would leave them.
       await server.app.close();
       const sqlite = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
       await sqlite.execute({ sql: "UPDATE attempts SET state = 'running', ended_at = NULL WHERE id = ?", args: [attemptId] });
@@ -145,15 +125,12 @@ describe('boot crash-recovery', () => {
 
       server = await startServer({ ...stubHarness(), defaults: { isolationMode: 'worktree' }, maxAttempts: 1 }, { dataDir });
 
-      // Reconciled without touching git again: `main` is exactly where the
-      // original merge left it (no re-merge, no duplicate commit).
       const run = await server.api('GET', `/api/attempts/${attemptId}`);
       expect(run.body.state).toBe('completed');
       const task = await server.api('GET', `/api/tasks/${taskId}`);
       expect(task.body.state).toBe('done');
       expect(git(repo, 'rev-parse', 'main')).toBe(mainTipAfterMerge);
 
-      // A second boot: the Run already left `running`, so nothing re-checks it.
       await server.app.close();
       server = await startServer({ ...stubHarness(), defaults: { isolationMode: 'worktree' }, maxAttempts: 1 }, { dataDir });
       const runAgain = await server.api('GET', `/api/attempts/${attemptId}`);
@@ -178,11 +155,6 @@ describe('boot crash-recovery', () => {
       const dataDir = server.dataDir;
       const mainTipAfterMerge = git(repo, 'rev-parse', 'main');
 
-      // Simulate the sub-window crash inside settle: the merge landed AND the
-      // Attempt was already flipped `passed`, but the process died before the
-      // Task's own `done` write — so pass A (which only scans `running`) can't
-      // see it, and only the generic `working`→`ready` sweep would otherwise
-      // touch it, re-picking a Task whose work already merged.
       await server.app.close();
       const sqlite = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
       await sqlite.execute({ sql: "UPDATE tasks SET state = 'working' WHERE id = ?", args: [taskId] });
@@ -190,9 +162,6 @@ describe('boot crash-recovery', () => {
 
       server = await startServer({ ...stubHarness(), defaults: { isolationMode: 'worktree' }, maxAttempts: 1 }, { dataDir });
 
-      // Settled `done` (not re-queued `ready`), its Attempt untouched, and the
-      // base exactly where the single merge left it — no second Attempt, no
-      // duplicate commit.
       const task = await server.api('GET', `/api/tasks/${taskId}`);
       expect(task.body.state).toBe('done');
       const run = await server.api('GET', `/api/attempts/${attemptId}`);
@@ -222,12 +191,6 @@ describe('boot crash-recovery', () => {
       const dataDir = server.dataDir;
       const mainTipAfterMerge = git(repo, 'rev-parse', 'main');
 
-      // The operator-Accept-on-an-escalated-ticket settle (EscalationService.
-      // accept) is the same two-write, non-atomic transition: it flips the
-      // Attempt `passed` (a merge) then writes the Task `done`. A crash between
-      // leaves the Task `escalated` with a `passed` latest Attempt — no
-      // double-merge (escalated Tasks aren't picked), but a silent orphan the
-      // generic `working`-only sweep never touches.
       await server.app.close();
       const sqlite = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
       await sqlite.execute({ sql: "UPDATE tasks SET state = 'escalated' WHERE id = ?", args: [taskId] });

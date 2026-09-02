@@ -19,8 +19,8 @@ import { costOfUsages, type PriceTable } from './pricing.js';
 import type { AttemptUsage } from './usage.js';
 import { forEachYielding } from '../reliability/yield.js';
 
-/** The Guardrail state an Attempt captures at start (issue #126): the effective
- * config and price table, frozen so a later change can't retroactively trip it. */
+/** The Guardrail state an Attempt captures at start: the effective config and
+ * price table, frozen so a later change can't retroactively trip it. */
 export interface AttemptGuardrailSnapshot {
   guardrailConfig: ResolvedGuardrails;
   priceTable: PriceTable;
@@ -35,7 +35,7 @@ export interface StepInput {
 /** What `appendEvent` needs to persist one Attempt event — everything on
  * `AttemptEventRow` except the store-assigned `id`/`attemptId`/`seq`/`ts`. */
 export interface AttemptEventInput {
-  /** ACP transcript updates are deliberately never durable. See ADR-0031. */
+  /** ACP transcript updates are never durable. */
   type: 'permission_request' | 'lifecycle';
   payload: unknown;
 }
@@ -47,10 +47,7 @@ export interface PersistedAttemptEvent {
   ts: number;
   type: string;
   payload: unknown;
-  /** True iff this event is load-time `session/load` replay history, flagged by
-   * the driver (issue #144). Every current-turn measurement — usage, stall,
-   * activity — excludes it via `domain/replay-quarantine.ts`'s `isReplay`. Absent
-   * on a current-turn event and on every event a pre-quarantine path recorded. */
+  /** True iff this event is load-time `session/load` replay history. Absent on a current-turn event. */
   replay?: boolean | undefined;
 }
 
@@ -58,29 +55,19 @@ function deserializeAttemptEvent(row: AttemptEventRow): PersistedAttemptEvent {
   return { ...row, payload: JSON.parse(row.payload) };
 }
 
-/** Durable ticket timeline.
- *
- * The single execution ledger (ADR-0001, ADR-0007): one row per pass
- * through a Ticket's implement -> verify loop, carrying both its timeline
- * identity (number/state/Steps) and the live execution facts (branch, usage,
- * cost, diff OIDs, …).
+/**
+ * The single execution ledger: one row per pass through a Ticket's
+ * implement -> verify loop, carrying both its timeline identity
+ * (number/state/Steps) and the live execution facts (branch, usage, cost,
+ * diff OIDs, …).
  */
 export class AttemptStore {
   constructor(private readonly db: AsyncDbHandle) {}
 
   /**
    * Allocate a fresh Attempt for `taskId`: its own next `number` and
-   * `startedAt` (ADR-0001 — the Runner's drive loop threads this ONE object
-   * from here on). Read-then-write as one write-queue unit so the number CAS
-   * can't race a concurrent create for the same Task (ADR-0029 §3).
-   *
-   * Upserts onto an existing `running` row rather than blindly inserting:
-   * `resumeWithGuidance` pre-creates the next Attempt's row (via
-   * {@link ensureForRun}, defaulting `running`) to hang feedback/continuation
-   * off it before a requeued Task is actually picked back up. A number-based
-   * lookup here would always miss (the placeholder's own number already
-   * counts toward "next"), so this looks for the Task's live placeholder
-   * directly and fills it in, only allocating a fresh number when none exists.
+   * `startedAt`. Fills in an existing `running` placeholder row (pre-created
+   * by {@link ensureForRun} on the resume path) rather than inserting beside it.
    */
   async create(taskId: number, snapshot?: AttemptGuardrailSnapshot): Promise<AttemptRow> {
     return this.db.write(async (db) => {
@@ -110,24 +97,14 @@ export class AttemptStore {
     });
   }
 
-  /**
-   * The single `running` Attempt for a Task, or `undefined` when none is
-   * (the Task never started, or its last Attempt already settled). The Runner's
-   * self-heal loop finishes one Attempt before creating the next (ADR-0001),
-   * so at most one row is ever `running` per Task — this is the DB-truth
-   * replacement for threading a mutable "current attempt number" cursor through
-   * every guardrail/verification closure: querying live state is crash-safe by
-   * construction, where a threaded cursor would need its own persistence.
-   */
+  /** The single `running` Attempt for a Task (at most one is ever `running` per Task), or `undefined`. */
   async getRunningForTask(taskId: number): Promise<AttemptRow | undefined> {
     return this.db.read((db) =>
       db.select().from(attempts).where(and(eq(attempts.taskId, taskId), eq(attempts.state, 'running'))).get(),
     );
   }
 
-  /** Get-or-create the Attempt for an explicit `(taskId, number)` — the reject/
-   * resume path, which computes the next attempt number itself from the
-   * escalated Attempt's history (`resumeWithGuidance`). */
+  /** Get-or-create the Attempt for an explicit `(taskId, number)` — the reject/resume path. */
   async ensureForRun(taskId: number, number: number, startedAt: number): Promise<AttemptRow> {
     return this.db.write(async (db) => {
       const existing = await db.select().from(attempts).where(and(eq(attempts.taskId, taskId), eq(attempts.number, number))).get();
@@ -155,33 +132,25 @@ export class AttemptStore {
     return this.db.read((db) => db.select().from(attempts).all());
   }
 
-  /** Every running Attempt. Its builder and disposable verification worktrees
-   * are live until the Attempt settles, even when no durable Session owns
-   * them. */
   listAllRunning(): Promise<AttemptRow[]> {
     return this.db.read((db) => db.select().from(attempts).where(eq(attempts.state, 'running')).all());
   }
 
-  /** Every Attempt bound to one durable Session (issue #148), oldest first —
-   * the Attempts that share the Session's builder worktree across a retry /
-   * reject continuation. Session retirement uses this to check no live
-   * Attempt of the Session is still active (`running`). */
+  /** Every Attempt bound to one durable Session, oldest first. */
   listForSession(sessionRowId: number): Promise<AttemptRow[]> {
     return this.db.read((db) =>
       db.select().from(attempts).where(eq(attempts.sessionRowId, sessionRowId)).orderBy(asc(attempts.number)).all(),
     );
   }
 
-  /** General patch write (branch/session/diff/usage bookkeeping that isn't a
-   * terminal transition). */
+  /** General patch write for bookkeeping that isn't a terminal transition. */
   update(id: number, patch: Partial<AttemptRow>): Promise<AttemptRow> {
     return this.db.write((db) =>
       db.update(attempts).set(patch).where(eq(attempts.id, id)).returning().get(),
     ) as Promise<AttemptRow>;
   }
 
-  /** Write a final Usage and its Cost atomically. Once present, Cost never
-   * changes. */
+  /** Write a final Usage and its Cost atomically. Once present, Cost never changes. */
   async updateWithFrozenCost(id: number, patch: Partial<AttemptRow>): Promise<AttemptRow> {
     return this.db.write(async (db) => {
       const current = await db.select().from(attempts).where(eq(attempts.id, id)).get();
@@ -192,7 +161,7 @@ export class AttemptStore {
     });
   }
 
-  /** One deliberate migration backfill for Attempts that predate stored Cost. */
+  /** Backfill Cost onto finished Attempts that have Usage but no stored Cost. */
   async backfillCosts(fallbackPrices: PriceTable): Promise<void> {
     const candidates = await this.db.read((db) =>
       db
@@ -202,33 +171,21 @@ export class AttemptStore {
         .all(),
     );
     await forEachYielding(candidates, async (attempt) => {
-      // Pre-ADR Attempts were priced from the live table on every read. The
-      // one deliberate backfill preserves that last visible value, rather
-      // than applying their old guardrail snapshot.
       const cost = frozenCost(attempt.usage, JSON.stringify(fallbackPrices));
       if (cost === null) return;
       await this.db.write((db) => db.update(attempts).set({ cost }).where(and(eq(attempts.id, attempt.id), isNull(attempts.cost))).run());
     });
   }
 
-  /** Remove an Attempt row (used to simulate/handle a row removed out from
-   * under the Runner mid-flight). */
   async delete(id: number): Promise<void> {
     await this.db.write((db) => db.delete(attempts).where(eq(attempts.id, id)).run());
   }
 
   /**
    * Crash recovery, run at boot: any Attempt still marked `running` was
-   * orphaned by a restart. Fail it (`reason: 'process-death'`, the same
-   * disposition vocabulary `attempts.reason` already carries — ADR-0001) and
-   * return it so the caller can fail its task (and notify) — never silently
-   * re-run on a possibly dirty working directory.
-   *
-   * Sole caller: `CrashRecoveryCoordinator.reconcile` (execution/crash-recovery.ts),
-   * always as its second pass — a worktree-mode Attempt whose merge already
-   * landed (per `git merge-base --is-ancestor`) is settled directly by that
-   * first pass and so is no longer `running` by the time this runs (ADR-0001:
-   * crash recovery relies on git's own idempotence, not a journal).
+   * orphaned by a restart. Fail it (`reason: 'process-death'`) and return it
+   * so the caller can fail its task — never silently re-run on a possibly
+   * dirty working directory.
    */
   async markInterrupted(): Promise<AttemptRow[]> {
     const orphans = await this.db.read((db) => db.select().from(attempts).where(eq(attempts.state, 'running')).all());
@@ -244,8 +201,7 @@ export class AttemptStore {
     return orphans;
   }
 
-  /** Actively-executing Attempt count, for the Auto-Runner's Machine-Ceiling
-   * concurrency cap (ADR-0012). */
+  /** Actively-executing Attempt count, for the Auto-Runner's Machine-Ceiling concurrency cap. */
   async countRunning(): Promise<number> {
     const row = await this.db.read((db) =>
       db
@@ -257,20 +213,15 @@ export class AttemptStore {
     return row?.n ?? 0;
   }
 
-  /** The Attempts that consume Machine-Ceiling capacity — the same predicate
-   * as {@link countRunning}, so Activity cannot silently diverge from
-   * scheduling. */
+  /** The Attempts that consume Machine-Ceiling capacity — the same predicate as {@link countRunning}. */
   async listRunning(): Promise<AttemptRow[]> {
     return this.db.read((db) => db.select().from(attempts).where(eq(attempts.state, 'running')).all());
   }
 
   /**
    * Running-Attempt count per owning Workspace, for the Auto-Runner's
-   * per-Workspace concurrency cap (ADR-0012, issue #60). Attempts carry no
-   * Workspace column, so the count joins through the Task; the same source as
-   * {@link countRunning}, so the per-Workspace tallies and the Machine-Ceiling
-   * total can never disagree. Workspaces with no running Attempt are absent
-   * (read as 0).
+   * per-Workspace concurrency cap. Workspaces with no running Attempt are
+   * absent (read as 0).
    */
   async countRunningByWorkspace(): Promise<Map<number, number>> {
     const rows = await this.db.read((db) =>
@@ -287,11 +238,7 @@ export class AttemptStore {
     return counts;
   }
 
-  /**
-   * Finished Attempts that never got a per-model usage split — their end
-   * collection raced the harness's session-log flush. Candidates for the
-   * boot-time backfill.
-   */
+  /** Finished Attempts that never got a per-model usage split; candidates for the boot-time backfill. */
   listUsageBackfillCandidates(): Promise<AttemptRow[]> {
     return this.db.read(async (db) => {
       const finished = await db
@@ -317,14 +264,7 @@ export class AttemptStore {
     return row;
   }
 
-  /**
-   * The Task's CURRENT (latest) Attempt — the follow-forward read a poller
-   * needs now that self-heal advances to a NEW Attempt row each turn
-   * (ADR-0001: one row per turn, not a stable row live-updated in
-   * place). Backs `GET /tasks/:id/attempts/current`, so a client that
-   * dispatched a Task keeps reflecting that execution's current state
-   * without tracking which Attempt is live.
-   */
+  /** The Task's latest Attempt. */
   async currentForTask(taskId: number): Promise<AttemptRow> {
     const latest = await this.db.read((db) =>
       db.select().from(attempts).where(eq(attempts.taskId, taskId)).orderBy(asc(attempts.number)).all(),
@@ -334,12 +274,7 @@ export class AttemptStore {
     return row;
   }
 
-  /**
-   * The batched form of {@link getForTaskNumber}'s `.id` projection, keyed by
-   * `taskId` — the bridge every attempt-keyed satellite table's batched
-   * reader uses to resolve a Task's CURRENT attempt id without one query per
-   * Task. Mirrors {@link currentStepTypes}'s query shape.
-   */
+  /** The batched form of {@link getForTaskNumber}'s `.id` projection, keyed by `taskId`. */
   async idsFor(taskAttempts: readonly { taskId: number; number: number }[]): Promise<Map<number, number>> {
     const result = new Map<number, number>();
     if (taskAttempts.length === 0) return result;
@@ -355,14 +290,7 @@ export class AttemptStore {
     return this.db.read((db) => db.select().from(steps).where(eq(steps.attemptId, attemptId)).orderBy(asc(steps.position)).all());
   }
 
-  /**
-   * The Step type currently `running` for one Task's Attempt, or `null` when
-   * none is (the gap between Steps, most notably the mechanical merge after
-   * the last Step passes, or before the Attempt's first Step starts). This is
-   * the single derivation every wall-clock/spend/tool-timeout Guardrail check
-   * shares (`guardrail-budget.ts`'s `countsTowardExecutionBudget`), so an
-   * Attempt's "what is it doing right now" reads the same way everywhere.
-   */
+  /** The Step type currently `running` for one Task's Attempt, or `null` when none is (the gap between Steps). */
   async currentStepType(taskId: number, number: number): Promise<StepType | null> {
     const attempt = await this.getForTaskNumber(taskId, number);
     if (!attempt) return null;
@@ -370,11 +298,7 @@ export class AttemptStore {
     return [...rows].reverse().find((row) => row.state === 'running')?.type ?? null;
   }
 
-  /**
-   * The batched form of {@link currentStepType}, keyed by `taskId` — one
-   * query for the Attempts, one for their Steps, regardless of how many Tasks
-   * are asked about (the Board's active-card badge, issue #100).
-   */
+  /** The batched form of {@link currentStepType}, keyed by `taskId`. */
   async currentStepTypes(taskAttempts: readonly { taskId: number; number: number }[]): Promise<Map<number, StepType | null>> {
     const result = new Map<number, StepType | null>();
     if (taskAttempts.length === 0) return result;
@@ -401,11 +325,9 @@ export class AttemptStore {
   }
 
   /**
-   * The attempt number the `maxAttempts` budget counts from (ADR-0041 "Reject
-   * with guidance: counter resets"): the latest escalated Attempt, or 0 when the
-   * ticket never escalated. Attempts keep their history numbering; only the
-   * budget restarts, so `attempt - budgetBase` is the attempts spent since the
-   * operator last resumed the loop.
+   * The attempt number the `maxAttempts` budget counts from: the latest
+   * escalated Attempt, or 0 when the ticket never escalated. Attempts keep
+   * their history numbering; only the budget restarts.
    */
   async budgetBase(taskId: number): Promise<number> {
     const row = await this.db.read((db) =>
@@ -435,13 +357,9 @@ export class AttemptStore {
   }
 
   /**
-   * Close an Attempt out: terminal `state` + `endedAt`, plus the disposition-
-   * kind audit hedge on `reason` (ADR-0001 — the whole coordination
-   * spine collapsed onto this column; see `AttemptSettleCoordinator.settle`).
-   * `feedback`/`reason` are omitted (not merely undefined) when the caller
-   * doesn't pass them, so a caller that already set one earlier (e.g. a failed
-   * verification's feedback) never gets clobbered by a later close that only
-   * knows the other.
+   * Close an Attempt out: terminal `state` + `endedAt`, plus `reason`.
+   * `feedback`/`reason` are left untouched when the caller doesn't pass them,
+   * so an earlier write is never clobbered by a later close.
    */
   finish(attemptId: number, state: Exclude<AttemptState, 'running'>, now = Date.now(), feedback?: string, reason?: string | null): Promise<AttemptRow> {
     return this.db.write((db) => db.update(attempts).set({
@@ -456,11 +374,7 @@ export class AttemptStore {
     return this.db.write((db) => db.update(attempts).set({ continuation: JSON.stringify(continuation) }).where(eq(attempts.id, attemptId)).returning().get()) as Promise<AttemptRow>;
   }
 
-  /**
-   * Append an Attempt event (lifecycle / permission_request — ADR-0007's "small
-   * structured facts"; the `session_update` firehose is never persisted),
-   * assigning the next monotonic `seq` as `max(seq)+1` (1-based).
-   */
+  /** Append an Attempt event, assigning the next monotonic `seq` (1-based). */
   async appendEvent(attemptId: number, event: AttemptEventInput): Promise<PersistedAttemptEvent> {
     const row = await this.db.write(async (db) => {
       const seq =
@@ -482,15 +396,14 @@ export class AttemptStore {
 
   /** An Attempt's persisted event log, in `seq` order. */
   async listEvents(attemptId: number): Promise<PersistedAttemptEvent[]> {
-    await this.get(attemptId); // 404 on unknown attempt
+    await this.get(attemptId);
     const rows = await this.db.read((db) =>
       db.select().from(attemptEvents).where(eq(attemptEvents.attemptId, attemptId)).orderBy(asc(attemptEvents.seq)).all(),
     );
     return rows.map(deserializeAttemptEvent);
   }
 
-  /** Per-Attempt tool-call snapshot, overwritten by the Runner's in-memory
-   * rollup on the ADR-0010 coarse cadence and when a turn finishes (ADR-0031). */
+  /** Per-Attempt tool-call snapshot, overwritten by the Runner's in-memory rollup. */
   async replaceToolCalls(attemptId: number, totals: ReadonlyMap<string, number>): Promise<void> {
     await this.db.write(async (db) => {
       await db.delete(attemptToolCalls).where(eq(attemptToolCalls.attemptId, attemptId)).run();
@@ -506,8 +419,7 @@ export class AttemptStore {
     return new Map(rows.map(({ toolName, count }) => [toolName, count]));
   }
 
-  /** Total persisted tool calls for each supplied Attempt, for board list
-   * serialization. */
+  /** Total persisted tool calls for each supplied Attempt. */
   async toolCallCounts(attemptIds: number[]): Promise<Map<number, number>> {
     if (attemptIds.length === 0) return new Map();
     const rows = await this.db.read((db) =>
@@ -529,8 +441,6 @@ function frozenCost(usage: string | null, rawPrices: string | null): string | nu
 
 /** The attempt/card API projection of one Attempt row. */
 export function serializeAttempt(attempt: AttemptRow): Record<string, unknown> {
-  // liveUsage is the Activity view's snapshot (streamed as `attempt_usage`), not
-  // part of the agent-facing attempt shape.
   const { liveUsage: _liveUsage, ...rest } = attempt;
   return {
     ...rest,

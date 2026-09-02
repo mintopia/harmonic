@@ -10,15 +10,6 @@ import {
   type FallbackSummaryInput,
 } from '../src/domain/session-fallback.js';
 
-/**
- * The issue #145 seam test: the deterministic summarized-Session fallback —
- * both halves, driven in isolation as pure functions (no db, no clock). Proves
- * the at-most-once gate (AC1/AC4), the deterministic summary built from the
- * persisted inputs (AC2/AC3), and that the summary is Harmonic-authored — built
- * from inputs alone, never by asking the dead Session (AC2). AC5 (persisting the
- * reason on the Session row) lives in `tests/sessions.test.ts`.
- */
-
 function baseInput(overrides: Partial<FallbackSummaryInput> = {}): FallbackSummaryInput {
   return {
     trigger: 'adapter-version-mismatch',
@@ -37,8 +28,6 @@ function baseInput(overrides: Partial<FallbackSummaryInput> = {}): FallbackSumma
 
 describe('FALLBACK_TRIGGER_REASONS / classification (issue #145 AC1)', () => {
   it('covers the union of the #142 and #143 reason sets, deduped', () => {
-    // The five #142 axes plus #143's additional-directories axis; the two shared
-    // reasons appear once.
     expect([...FALLBACK_TRIGGER_REASONS].sort()).toEqual(
       [
         'additional-directories-unsupported',
@@ -63,7 +52,6 @@ describe('FALLBACK_TRIGGER_REASONS / classification (issue #145 AC1)', () => {
       reason: 'load-session-unsupported',
       detail: 'no session/load',
     });
-    // A #143-only reason routes through the same seam.
     expect(classifyReloadFailure('additional-directories-unsupported', 'roots needed').reason).toBe(
       'additional-directories-unsupported',
     );
@@ -117,9 +105,7 @@ describe('buildResumeFallbackSummary — deterministic Harmonic-built summary (i
         { number: 200, title: 'later', state: 'open' },
       ],
     });
-    // Reversed events produce the same rendering (sorted by seq).
     expect(buildResumeFallbackSummary(shuffled)).toBe(buildResumeFallbackSummary(orderedWithTwoLinks));
-    // sanity: the two-link input is genuinely different from the base (which has one link).
     expect(buildResumeFallbackSummary(shuffled)).not.toBe(buildResumeFallbackSummary(ordered));
   });
 

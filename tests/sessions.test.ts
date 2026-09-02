@@ -323,9 +323,7 @@ describe('Sessions (issue #141)', () => {
     describe('the (harness, harnessSessionId) unique index', () => {
       it('rejects a raw duplicate insert — the DB backstops a racing double-record', async () => {
         await store.recordDispatch(baseInput());
-        // A second row with the SAME natural key, bypassing recordDispatch's
-        // read-then-upsert, must be rejected by the schema's unique index. The
-        // libsql async driver wraps the raw UNIQUE error onto `.cause` (ADR-0029),
+        // libsql async driver wraps the raw UNIQUE error onto `.cause`,
         // so detect it via isUniqueViolation walking the cause chain rather than a
         // message regex.
         let caught: unknown;

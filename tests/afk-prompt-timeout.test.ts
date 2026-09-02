@@ -6,15 +6,6 @@ import { join } from 'node:path';
 import { startServer, stubHarness, waitFor, seedLocalMarkdownTicket, type TestServer } from './helpers.js';
 import type { MirrorInput } from '../src/domain/tasks.js';
 
-/**
- * Issue #426 — the live incident (tasks 410/411): an afk agent called
- * finish_task and then its `session/prompt` response was never delivered, so
- * the drive loop blocked at `await driver.prompt()` and only the 60-minute
- * wall-clock guardrail escalated it. With the per-turn ACP inactivity bound the
- * silent turn ends, and — because finish_task was signalled — the run proceeds
- * to verification and merges, rather than hanging until the wall-clock trip.
- */
-
 const git = (dir: string, ...args: string[]) => execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
 const tmpDirs: string[] = [];
 const tmpPath = (prefix: string) => {
@@ -46,10 +37,6 @@ describe('afk drive loop — finish_task + lost prompt response → verify, not 
       ...stubHarness(),
       defaults: { isolationMode: 'worktree' },
       maxAttempts: 2,
-      // A short per-turn inactivity bound so the silent turn ends in seconds
-      // rather than waiting for the 60m wall-clock guardrail. The wall-clock
-      // budget stays at its 60m default: if the fix regressed, the test would
-      // time out at its own `waitFor` bound, never merge.
       guardrails: { promptInactivityTimeoutMinutes: 0.05 },
       drive: { continueAttempts: 0, mergeFate: 'auto-merge' },
     });
@@ -73,8 +60,6 @@ describe('afk drive loop — finish_task + lost prompt response → verify, not 
     const repo = makeRepo();
     await server.app.ctx.workspaces.update(wsId, { workingDir: repo });
     const trackerRef = ref++;
-    // The agent commits its work, signals finish_task, then its prompt response
-    // is never delivered (`exit: hang`) — the exact 410/411 shape.
     await server.app.ctx.settingsStore.updateGlobal({
       drive: {
         prompt: JSON.stringify({
@@ -107,8 +92,6 @@ describe('afk drive loop — finish_task + lost prompt response → verify, not 
     const events = (await server.api('GET', `/api/attempts/${attemptId}/events`)).body.events
       .filter((e: { type: string }) => e.type === 'lifecycle')
       .map((e: { payload: { event: string } }) => e.payload.event);
-    // The turn ended on the inactivity bound, and the wall-clock guardrail
-    // never tripped.
     expect(events).toContain('turn-timeout');
     expect(events).not.toContain('guardrail-tripped');
   }, 40_000);
@@ -117,9 +100,6 @@ describe('afk drive loop — finish_task + lost prompt response → verify, not 
     const repo = makeRepo();
     await server.app.ctx.workspaces.update(wsId, { workingDir: repo });
     const trackerRef = ref++;
-    // The agent commits, signals finish_task, then its inner process closes
-    // stdout (EOF) while an outer wrapper lingers — the connection is gone, so
-    // the turn cannot be re-prompted; the finished candidate is verified anyway.
     await server.app.ctx.settingsStore.updateGlobal({
       drive: {
         prompt: JSON.stringify({

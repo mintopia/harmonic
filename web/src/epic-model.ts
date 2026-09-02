@@ -1,16 +1,6 @@
 // Explicit .js extension: this module is shared with the node-side test
 // project, whose nodenext resolution requires it (Vite maps .js → .ts).
 
-/**
- * Parallel-Epic read model (issue #167, ADR-0024 "parallel Epic backend",
- * ADR-0026 "board-hosted bands + a rich Epic peek, over a derived read
- * endpoint"). These types mirror the FROZEN DTO contract in
- * `.notes/issue-167-dto-contract.md` **exactly** — there is no codegen
- * between the server's zod schemas and this module, so any drift here is a
- * runtime bug, not a type error caught at build time. Do not add, rename, or
- * reshape a field without updating that contract doc first.
- */
-
 /** Mirrors `reduceMemberState` server-side. */
 export type MemberMergeStatus = 'completed' | 'blocked' | 'pending';
 
@@ -53,9 +43,9 @@ export interface Epic {
   ref: number;
   title: string;
   kind: 'map' | 'spec';
-  /** Lifecycle from the stored record (ADR-0018): `integrated` once the whole-Epic gate finished. */
+  /** Lifecycle from the stored record: `integrated` once the whole-Epic gate finished. */
   state: 'open' | 'integrated';
-  /** The Epic container ticket's body — the summary page's description (ADR-0017). */
+  /** The Epic container ticket's body — the summary page's description. */
   description: string;
   /** Epic container ticket creation time (ms). */
   createdAt: number;
@@ -80,8 +70,7 @@ export interface Epic {
 
 /**
  * Force-integrate's six-state discriminated union (already exists server-side;
- * `POST …/epics/:ref/force-integrate`). See `.scratch/epic-force-integrate-explainer.html`
- * for the plain-language framing each variant maps to in `integrateOutcomeBanner`.
+ * `POST …/epics/:ref/force-integrate`).
  */
 export type EpicIntegrateOutcome =
   | { status: 'integrated'; oid: string }
@@ -97,7 +86,7 @@ const VERIFICATION_GLYPH: Record<'pass' | 'fail' | 'pending', string> = {
   pending: '—',
 };
 
-/** The peek's status line broken into its render parts (ADR-0026):
+/** The peek's status line broken into its render parts:
  * `epic/<ref> @ <tip|'—'> · verification ✓/✗/— · X/Y folded`. The caller sets
  * `ref` and `tip` in mono (branch ref + commit oid are code-identity tokens)
  * and everything else in sans with `tabular-nums` (Mono-Is-Code, DESIGN.md §3).
@@ -122,8 +111,7 @@ export function statusLineParts(epic: Epic): StatusLineParts {
   };
 }
 
-/** Transient banner tone (ADR-0026: "surfaced as a transient banner mapping
- * the six EpicIntegrateOutcome states to a plain sentence and a state tone"). */
+/** Transient banner tone */
 export type IntegrateOutcomeBannerTone = 'ok' | 'warn' | 'bad' | 'info';
 
 export interface IntegrateOutcomeBanner {
@@ -132,7 +120,7 @@ export interface IntegrateOutcomeBanner {
 }
 
 /**
- * The force-integrate consequence sentence (ADR-0026): shown as small muted
+ * The force-integrate consequence sentence: shown as small muted
  * helper text next to every armed force-integrate control — the Table band
  * header, the Board focus header, and the Epic peek header — so the
  * operator sees the same consequence framing regardless of which surface
@@ -143,7 +131,7 @@ export const FORCE_INTEGRATE_CONSEQUENCE =
 
 /**
  * A member Task id → its owning Epic, for a board/table card's Epic chip
- * lookup (ADR-0026: "the card needs to know its epic"). A taskId absent from
+ * lookup. A taskId absent from
  * every Epic's member list — the common case, most Tasks aren't Epic members
  * — simply has no entry; callers treat a miss as "not an Epic member".
  */
@@ -159,8 +147,7 @@ export function epicByTaskId(epics: Epic[]): Map<number, Epic> {
 
 /**
  * Maps a force-integrate result to a plain sentence and a tone for the transient
- * banner (ADR-0026). Wording follows the plain-language framing in
- * `.scratch/epic-force-integrate-explainer.html`'s six-outcome table.
+ * banner.
  *
  * - `integrated` → ok: it reached the default branch.
  * - `noop` → info: nothing to do, not a problem (no integration branch).
@@ -190,10 +177,8 @@ export function integrateOutcomeBanner(o: EpicIntegrateOutcome): IntegrateOutcom
   }
 }
 
-// ── Epic board surface (ADR-0011) ─────────────────────────────────────
-
 /** One pip per member in the Epic surface's top-right status summary
- * (ADR-0011). Trouble sorts to the front so an escalated or blocked member is
+ * Trouble sorts to the front so an escalated or blocked member is
  * never masked by a merged/running sibling. `merged` is emerald and `ready` is
  * teal (design register): a done/merged member never collapses to the same hue
  * as a ready-frontier one. */
@@ -216,12 +201,6 @@ export function memberPipStatus(m: EpicMember): MemberPipStatus {
   return 'waiting';
 }
 
-/** The pip's displayed word (issue #458): `waiting` (member not yet in the Epic's
- * ready frontier) is the same dependency-unmet concept as the Board's
- * `openBlockerCount`, so it reads "blocked". `mergeStatus === 'blocked'` (own task
- * cancelled/escalated) shares only the word — it keeps its distinct fail-tint
- * `PIP_FILL`. The integrate gate's own 'blocked'/'waiting' outcomes are a separate
- * concept, untouched. */
 const MEMBER_PIP_LABEL: Record<MemberPipStatus, string> = {
   escalated: 'escalated',
   blocked: 'blocked',
@@ -237,7 +216,7 @@ export function memberPipLabel(status: MemberPipStatus): string {
 }
 
 /** The Epic's finished members — merged into its integration branch, or closed
- * (cancelled/done) — for the rail below the columns (ADR-0011). Member order
+ * (cancelled/done) — for the rail below the columns. Member order
  * (ascending by ref) is preserved. */
 export function closedMembers(epic: Epic): EpicMember[] {
   return epic.members.filter(
@@ -245,7 +224,7 @@ export function closedMembers(epic: Epic): EpicMember[] {
   );
 }
 
-/** The Epic has reached the whole-Epic integration gate (ADR-0001): every member
+/** The Epic has reached the whole-Epic integration gate: every member
  * folded into the integration branch, or an integrate attempt already in flight
  * or held for the operator. Only then does the surface show the progress bar. */
 export function isEpicIntegrating(epic: Epic): boolean {
@@ -281,7 +260,7 @@ const FINISHED_SUBLABELS: Record<IntegrationStepKey, string> = {
 };
 
 /**
- * The whole-Epic integration pipeline (ADR-0001's gate: verify → merge into
+ * The whole-Epic integration pipeline (verify → merge into
  * develop → post-merge check → retire) projected onto the read DTO. The DTO
  * carries a positive signal only for the first two steps — `verification.status`
  * and `integrate.inFlight` — so `check`/`retire` stay `pending` until the Epic
@@ -301,8 +280,8 @@ export function integrationSteps(epic: Epic): IntegrationStep[] {
   });
 }
 
-/** The full Epic lifecycle for the summary-page stepper (ADR-0017): the parallel
- * member **Build** phase, then the whole-Epic integration gate (ADR-0001's
+/** The full Epic lifecycle for the summary-page stepper: the parallel
+ * member **Build** phase, then the whole-Epic integration gate (
  * verify → merge → post-merge check → retire). The board band's compact bar
  * (`integrationSteps`) only shows the gate — it appears once the Epic is
  * integrating — but the page shows overall progress from the first member on.
@@ -331,8 +310,6 @@ export function epicLifecycleSteps(epic: Epic): EpicStage[] {
     state: allFolded ? 'done' : 'current',
   };
 
-  // Before every member is folded the gate hasn't opened, so the four gate
-  // steps are all still ahead.
   const gate: EpicStage[] = INTEGRATION_STEP_ORDER.map((key): EpicStage => {
     const label = INTEGRATION_STEP_LABELS[key];
     if (finished) return { key, label, sublabel: FINISHED_SUBLABELS[key], state: 'done' };
@@ -351,7 +328,6 @@ export function epicLifecycleSteps(epic: Epic): EpicStage[] {
             ? 'revert on red'
             : 'cleanup';
     if (!allFolded) return { key, label, sublabel, state: 'pending' };
-    // Gate current step: Verify until it passes, then Merge (held if escalated).
     const currentKey: IntegrationStepKey = verified ? 'merge' : 'verify';
     if (key === currentKey) return { key, label, sublabel, state: held != null ? 'held' : 'current' };
     const order = INTEGRATION_STEP_ORDER.indexOf(key);

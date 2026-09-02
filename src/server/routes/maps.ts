@@ -7,9 +7,9 @@ import { errorResponse } from '../schemas.js';
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
 
 /**
- * A derived Map (D7, issue #35): a `wayfinder:map` issue paired with the
- * mirrored Tasks that share its mapRef, plus per-state counts. Not stored —
- * a query-time rollup over the last poll's scan (see TrackerPoller.maps).
+ * A derived Map: a `wayfinder:map` issue paired with the mirrored Tasks that
+ * share its mapRef, plus per-state counts. Not stored — a query-time rollup
+ * over the last poll's scan.
  */
 const mapSchema = z
   .object({
@@ -32,7 +32,7 @@ const workspaceQuerySchema = z.object({
 });
 
 /** The `GET /maps` querystring: the optional Workspace scope and shared pagination
- * fragment plus a case-insensitive substring search over the Map title (ADR-0045). */
+ * fragment plus a case-insensitive substring search over the Map title. */
 const mapsListQuerySchema = workspaceQuerySchema.extend(paginationQuerySchema.shape).extend({
   q: z.string().optional().meta({ example: 'Wayfinder' }),
 });

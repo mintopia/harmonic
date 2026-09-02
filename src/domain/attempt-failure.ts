@@ -1,23 +1,19 @@
 /**
- * The reliability slices of an Attempt, kept honest per ADR-0028: an Attempt
- * that ended `failed` (or `escalated`) is an *execution failure*; cancelled
- * Attempts are counted and shown as their own slice, never as failures.
+ * The reliability slices of an Attempt: an Attempt that ended `failed` (or
+ * `escalated`) is an execution failure; cancelled Attempts are their own
+ * slice, never failures.
  */
 export interface AttemptOutcome {
   /** The Attempt's terminal `state`. */
   state: string;
 }
 
-/** The failure-rate numerator's membership test (ADR-0028). `escalated` counts
- * too: it is the same failure bucket, distinguished only so the human hedge is
- * visible as its own state. */
+/** The failure-rate numerator's membership test; `escalated` counts too. */
 export function isExecutionFailure({ state }: AttemptOutcome): boolean {
   return state === 'failed' || state === 'escalated';
 }
 
-/** A failed Attempt's classification input (ADR-0001): its
- *  disposition-kind `reason` (the structured, low-cardinality category) and
- *  the free-text `detail` fallback for a row with no structured disposition. */
+/** A failed Attempt's classification input: its disposition-kind `reason` and the free-text `detail` fallback. */
 export interface FailedAttempt {
   /** `attempts.reason` — the structured disposition kind; null when none was recorded. */
   attemptReason: string | null;
@@ -26,15 +22,9 @@ export interface FailedAttempt {
 }
 
 /**
- * The reason bucket a single failed Attempt falls into. Prefers the
- * **disposition kind** (`failed`, `escalate`, `guardrail-trip`, `process-death`,
- * …) — the structured, low-cardinality category the settle coordinator wrote to
- * `attempts.reason`. The free-text detail is deliberately *not* the primary
- * key: it carries unique text (each escalation message differs), so bucketing
- * by it would explode into singletons. It is the fallback only when no
- * structured disposition was recorded: `'interrupted'` folds into
- * `process-death`, any other message into `failed`, and a bare failure into
- * `unknown` — never a fabricated category.
+ * The reason bucket a single failed Attempt falls into: the disposition kind
+ * when recorded; else `'interrupted'` folds into `process-death`, any other
+ * detail into `failed`, and a bare failure into `unknown`.
  */
 export function failureReasonKey({ attemptReason, detailReason }: FailedAttempt): string {
   if (attemptReason) return attemptReason;
@@ -42,12 +32,7 @@ export function failureReasonKey({ attemptReason, detailReason }: FailedAttempt)
   return detailReason ? 'failed' : 'unknown';
 }
 
-/**
- * Count failed Attempts by reason bucket. The caller passes only the execution
- * failures (see {@link isExecutionFailure}); cancelled Attempts never reach
- * here. Returns a plain map keyed by {@link failureReasonKey}; ordering is the
- * presenter's job.
- */
+/** Count failed Attempts by {@link failureReasonKey}. The caller passes only the execution failures. */
 export function failuresByReason(failures: FailedAttempt[]): Record<string, number> {
   const counts: Record<string, number> = {};
   for (const f of failures) {

@@ -4,14 +4,6 @@ import { attempts } from '../src/db/schema.js';
 import type { AttemptState } from '../src/db/schema.js';
 import type { AttemptUsage } from '../src/execution/usage.js';
 
-/**
- * The KPI-band ingredients the stats route now derives (issue #196, ADR-0028):
- * the failed-only failure numerator and the active-execution duration
- * percentiles. Seeds attempts directly (ADR-0001 #388 S-G: Attempt is the
- * single execution ledger — its own `reason` is the disposition-kind fact
- * the stats route reads, no separate Run row to join through) so the wiring
- * — not just the pure helpers — is exercised end to end.
- */
 describe('GET /api/stats — failedAttempts + durationMs', () => {
   let server: TestServer;
   let taskId: number;
@@ -21,7 +13,6 @@ describe('GET /api/stats — failedAttempts + durationMs', () => {
     state: AttemptState;
     startedAt: number;
     finishedAt: number | null;
-    /** The disposition-kind reason (`attempts.reason`); the by-reason breakdown key. */
     reason?: string | null;
   }) => {
     const attemptNumber = nextAttemptNumber++;
@@ -46,14 +37,9 @@ describe('GET /api/stats — failedAttempts + durationMs', () => {
     const task = await server.api('POST', '/api/tasks', { prompt: 'stats seed' });
     taskId = task.body.id;
 
-    // Two completed runs with measurable wall-clock durations.
     await seedRun({ state: 'passed', startedAt: 1000, finishedAt: 100000 });
     await seedRun({ state: 'passed', startedAt: 1000, finishedAt: 6000 });
-    // A genuine execution failure — counts toward the failure numerator and the
-    // by-reason breakdown (its disposition is 'failed').
     await seedRun({ state: 'failed', startedAt: 1000, finishedAt: null, reason: 'failed' });
-    // A cancelled Run is its own slice (ADR-0028): never in the failure
-    // numerator, never in the by-reason breakdown.
     await seedRun({ state: 'cancelled', startedAt: 1000, finishedAt: null, reason: 'operator-cancel' });
   });
   afterAll(async () => {
@@ -71,7 +57,6 @@ describe('GET /api/stats — failedAttempts + durationMs', () => {
 
   it('durationMs is p50/p95 of wall-clock active-execution durations', async () => {
     const { body } = await server.api('GET', '/api/stats?from=0');
-    // durations = [99000, 5000] → p50 52000, p95 94300.
     expect(body.durationMs).toEqual({ p50: 52000, p95: 94300 });
   });
 
@@ -83,7 +68,6 @@ describe('GET /api/stats — failedAttempts + durationMs', () => {
 
   it('buckets execution failures by their winning terminal disposition', async () => {
     const { body } = await server.api('GET', '/api/stats?from=0');
-    // Only the genuine failure (disposition 'failed') appears; the rejection does not.
     expect(body.failuresByReason).toEqual({ failed: 1 });
   });
 

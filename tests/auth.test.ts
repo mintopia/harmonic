@@ -22,7 +22,6 @@ describe('auth and api keys', () => {
     expect((await server.anonApi('GET', '/api/config')).status).toBe(401);
     expect((await server.anonApi('GET', '/api/keys')).status).toBe(401);
 
-    // WebSocket upgrades are gated too.
     const ws = new WebSocket(server.baseUrl.replace('http', 'ws') + '/api/ws');
     const failed = await new Promise<boolean>((resolve) => {
       ws.addEventListener('error', () => resolve(true));
@@ -38,7 +37,6 @@ describe('auth and api keys', () => {
       expect((await open.anonApi('GET', '/api/tasks')).status).toBe(200);
       expect((await open.anonApi('POST', '/api/tasks', { prompt: 'p' })).status).toBe(201);
       expect((await open.anonApi('GET', '/api/config')).status).toBe(200);
-      // The SPA reads this to skip its login screen.
       expect((await open.anonApi('GET', '/api/auth/me')).body).toMatchObject({ passwordConfigured: false });
     } finally {
       await open.close();
@@ -75,7 +73,6 @@ describe('auth and api keys', () => {
   it('removes the operator password, falling back to ungated', async () => {
     const s = await startServer();
     try {
-      // Wrong current password changes nothing.
       expect((await s.api('DELETE', '/api/auth/password', { currentPassword: 'nope' })).status).toBe(401);
       expect(await s.app.ctx.auth.hasPassword()).toBe(true);
 
@@ -94,7 +91,6 @@ describe('auth and api keys', () => {
       expect(await s.app.ctx.auth.hasPassword()).toBe(false);
       expect((await s.anonApi('POST', '/api/auth/change-password', { currentPassword: '', newPassword: 'hunter2' })).status).toBe(200);
       expect(await s.app.ctx.auth.hasPassword()).toBe(true);
-      // Gate is back on: unauthenticated is rejected, the new password logs in.
       expect((await s.anonApi('GET', '/api/tasks')).status).toBe(401);
       expect((await s.anonApi('POST', '/api/auth/login', { password: 'hunter2' })).status).toBe(200);
     } finally {
@@ -190,10 +186,6 @@ describe('auth and api keys', () => {
     expect(res.status).toBe(401);
   });
 
-  // Migrating routes to zod-declared schemas (ADR-0005) must not change the
-  // error contract callers already depend on: a malformed body is still a
-  // 400 with `{ error: { code: 'validation', message } }`, whether it's
-  // rejected by a route's declared schema or an ad-hoc `z.object().parse()`.
   it('a malformed body on a zod-schema route returns the standard validation error shape', async () => {
     const missingPassword = await server.anonApi('POST', '/api/auth/login', {});
     expect(missingPassword.status).toBe(400);

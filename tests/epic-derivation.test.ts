@@ -1,8 +1,3 @@
-/**
- * Pure Epic-derivation tests (issue #158 / ADR-0024, ADR-0018). Table-style:
- * one `it` per case, exercising `deriveLeafEpics`/`deriveStoredEpics` directly
- * — no I/O, no fixtures beyond the `ticket()` builder below.
- */
 import { describe, expect, it } from 'vitest';
 import { deriveLeafEpics, deriveStoredEpics } from '../src/domain/epic-derivation.js';
 import { EPIC_LABEL, type Ticket } from '../src/tracker/adapter.js';
@@ -25,11 +20,6 @@ const ticket = (over: Partial<Ticket>): Ticket => ({
   ...over,
 });
 
-/**
- * The integration-branch view: `deriveLeafEpics` selects the immediate-parent
- * container (leaf-most), not the top-level Epic — a distinct concern the
- * Epic-integration coordinator reads (issue #159/#334).
- */
 describe('deriveLeafEpics', () => {
   const deriveLeaf = (tickets: Ticket[], unworkable: number[] = [], opts: { includeClosed?: boolean } = {}) => {
     const unworkableRefs = new Set(unworkable);
@@ -41,8 +31,6 @@ describe('deriveLeafEpics', () => {
   };
 
   it('selects the leaf-most container over a spine, with its direct children as members', () => {
-    // #106 (top) → #156 (leaf-most) → #157, #158. The leaf-most #156 is derived,
-    // not the top-level #106; members are #156's direct children.
     const tickets = [
       ticket({ number: 106, title: 'Top-level' }),
       ticket({ number: 156, title: 'Leaf-most', parent: 106 }),
@@ -56,9 +44,6 @@ describe('deriveLeafEpics', () => {
   });
 
   it('suppresses a mixed spine parent (a leaf child beside a sub-container)', () => {
-    // #10 mixes a leaf (#12) with a sub-container (#11 → #99): a spine parent,
-    // suppressed. Only the genuinely leaf-most #11 is derived, so #12 is orphaned
-    // this pass — the pre-ADR-0016 behavior the coordinator still relies on.
     const tickets = [
       ticket({ number: 10, title: 'Spine' }),
       ticket({ number: 11, parent: 10 }),
@@ -114,11 +99,6 @@ describe('deriveLeafEpics', () => {
   });
 });
 
-/**
- * The stored-Epic spine view (ADR-0018, #437): leaf-most **epic-type** containers
- * (a Map or an `epic`-labelled container) with the three-way stored `kind`. A
- * bare parent of work Tasks is deliberately excluded — it is not an Epic.
- */
 describe('deriveStoredEpics', () => {
   it('Map: an isMap container is kind:"map"', () => {
     const tickets = [
@@ -146,7 +126,7 @@ describe('deriveStoredEpics', () => {
 
   it('a bare parent of work Tasks (no epic label, not a Map) is not a stored Epic', () => {
     const tickets = [
-      ticket({ number: 10, title: 'Task with subtasks' }), // default labels: ['ready-for-agent']
+      ticket({ number: 10, title: 'Task with subtasks' }),
       ticket({ number: 11, parent: 10 }),
       ticket({ number: 12, parent: 10 }),
     ];
@@ -154,8 +134,6 @@ describe('deriveStoredEpics', () => {
   });
 
   it('selects the leaf-most epic-type container over a spine', () => {
-    // #106 (epic) → #156 (epic, itself a container) → #157. #106 is a spine
-    // (has a container child) and is suppressed; the leaf-most #156 is stored.
     const tickets = [
       ticket({ number: 106, title: 'Spine', labels: [EPIC_LABEL], body: 'top' }),
       ticket({ number: 156, title: 'Leaf-most', parent: 106, labels: [EPIC_LABEL], body: 'leaf spec' }),

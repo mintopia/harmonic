@@ -5,13 +5,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Git } from '../src/execution/git.js';
 
-/**
- * `Git.rebaseOnto` (issue #160, ADR-0041): linear replay of a checked-out
- * branch onto an arbitrary OID. A conflict is returned rather than thrown and
- * left IN PROGRESS for the agent to resolve; a later rebase supersedes it.
- * Every case runs against a throwaway git repo — no server, no DB.
- */
-
 const git = (dir: string, ...args: string[]) => execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
 
 const tmpDirs: string[] = [];
@@ -21,7 +14,6 @@ const tmpPath = (prefix: string) => {
   return p;
 };
 
-/** A throwaway git repo on branch main with one committed file. */
 function makeRepo(): string {
   const dir = tmpPath('harmonic-rebase-repo-');
   execFileSync('git', ['init', '-b', 'main', dir], { encoding: 'utf8' });
@@ -33,7 +25,6 @@ function makeRepo(): string {
   return dir;
 }
 
-/** Add a disposable worktree checking out `branch` (created off `from`). */
 function addBranchWorktree(repo: string, branch: string, from = 'main'): string {
   const wt = join(tmpPath('harmonic-rebase-wt-'), 'wt');
   git(repo, 'worktree', 'add', '-b', branch, wt, from);
@@ -49,13 +40,11 @@ afterAll(() => {
 describe('Git.rebaseOnto (issue #160)', () => {
   it('clean rebase: replays the feature commit onto the moved base tip', async () => {
     const repo = makeRepo();
-    // feature forks from A and adds commit B.
     const featureWt = addBranchWorktree(repo, 'feature');
     writeFileSync(join(featureWt, 'feature.txt'), 'feature work\n');
     git(featureWt, 'add', '-A');
     git(featureWt, 'commit', '-m', 'B: add feature.txt');
 
-    // main advances independently with commit C (does not touch feature.txt).
     writeFileSync(join(repo, 'other.txt'), 'other\n');
     git(repo, 'add', '-A');
     git(repo, 'commit', '-m', 'C: add other.txt on main');
@@ -66,26 +55,21 @@ describe('Git.rebaseOnto (issue #160)', () => {
     expect(out).toMatchObject({ ok: true });
     if (!out.ok) throw new Error('expected ok:true');
     expect(out.rebasedTip).toBe(oid(featureWt, 'HEAD'));
-    // HEAD is now a descendant of the base tip it was rebased onto.
     expect(await Git.isAncestor(featureWt, out.rebasedTip, baseTip)).toBe(true);
-    // Both the base commit's and the feature commit's content are present.
     expect(git(featureWt, 'show', 'HEAD:other.txt')).toBe('other');
     expect(git(featureWt, 'show', 'HEAD:feature.txt')).toBe('feature work');
-    // Worktree is clean, no rebase left in progress.
     expect(git(featureWt, 'status', '--porcelain')).toBe('');
     expect(await Git.isDirty(featureWt)).toBe(false);
   });
 
   it('conflict rebase: returns the conflict signal and leaves the rebase in progress for the agent; the branch itself is untouched', async () => {
     const repo = makeRepo();
-    // feature forks from A and changes base.txt one way.
     const featureWt = addBranchWorktree(repo, 'feature');
     writeFileSync(join(featureWt, 'base.txt'), 'feature version\n');
     git(featureWt, 'add', '-A');
     git(featureWt, 'commit', '-m', 'B: change base.txt on feature');
     const featureTipBefore = oid(featureWt, 'HEAD');
 
-    // main changes the very same line a different way.
     writeFileSync(join(repo, 'base.txt'), 'main version\n');
     git(repo, 'commit', '-am', 'C: change base.txt on main');
     const baseTip = oid(repo, 'main');
@@ -94,13 +78,10 @@ describe('Git.rebaseOnto (issue #160)', () => {
 
     expect(out).toMatchObject({ ok: false, conflict: true });
     expect('detail' in out && out.detail).toMatch(/CONFLICT/);
-    // The branch ref is untouched; the conflict sits in the worktree, mid-rebase.
     expect(oid(repo, 'feature')).toBe(featureTipBefore);
     expect(oid(featureWt, 'REBASE_HEAD')).toBe(featureTipBefore);
     expect(git(featureWt, 'status', '--porcelain')).toMatch(/^UU base\.txt/m);
 
-    // A later rebase supersedes the in-progress one rather than failing on it:
-    // with main wound back to A, the same call is a clean no-op.
     git(repo, 'reset', '--hard', `${baseTip}~1`);
     const again = await Git.rebaseOnto(featureWt, oid(repo, 'main'));
     expect(again).toMatchObject({ ok: true, rebasedTip: featureTipBefore });

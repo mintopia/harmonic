@@ -11,12 +11,7 @@ export interface MirroredRole {
   wayfinderType: WayfinderType | null;
 }
 
-/**
- * Derive a mirrored issue's role from its labels (issue #30, per CONTEXT.md):
- * `workflow` = wayfinder when any `wayfinder:<type>` label is present, else
- * implement. Whether Harmonic may work the ticket is not stored — it derives
- * from the persisted labels at read time (`mirroredAgentEligible`, ADR-0041).
- */
+/** Derive a mirrored issue's role from its labels: `workflow` = wayfinder when any `wayfinder:<type>` label is present, else implement. */
 export function deriveRole(ticket: Ticket): MirroredRole {
   const labels = new Set(ticket.labels);
   const wayfinderType = WAYFINDER_TYPES.find((t) => labels.has(`wayfinder:${t}`)) ?? null;
@@ -44,30 +39,12 @@ export function toMirrorInput(ticket: Ticket, trackerCanClose = true): MirrorInp
     ...deriveRole(ticket),
     mapRef: ticket.parent,
     closed: ticket.state === 'closed',
-    // Whether the resolved adapter owns the close (issue #237): gates the
-    // done→ready reopen flip in upsertMirrored so an inbound-only tracker
-    // Harmonic can't close never re-runs a done Task forever. Defaults to
-    // capable, matching every shipped adapter.
     trackerCanClose,
-    // Persist the normalised facts verbatim so they survive a restart (issue
-    // #233, ADR-0030 "expand"). Derivation reads them after restart (#234).
     facts: trackerFacts(ticket),
   };
 }
 
-/**
- * Poll step: mirror every non-container ticket into a Task 1:1 (idempotent
- * across re-polls, keyed on trackerRef), then project each ticket's `blockedBy`
- * onto real Dependency edges so native + mirrored share one blocking model and
- * one blocked→ready derivation (issue #31). Containers (Maps and `epic`-labelled
- * spec Epics, ADR-0016) are persisted to tracker_containers, never mirrored.
- * `blocking` never wires (double-edge), `parent`→mapRef (never an edge). A
- * blocker referencing a ticket outside this scan (e.g. a container, or a
- * Dismissed ticket below) has no mirrored Task and is skipped. A ticket
- * whose ref was Dismissed (issue #162, ADR-0025 — an operator hard-deleted its
- * mirrored Task) is skipped outright: the tombstone means "stop mirroring this
- * issue here", so re-polling it here would defeat the delete.
- */
+/** Mirror every non-container ticket into a Task 1:1 (keyed on trackerRef), then project `blockedBy` onto Dependency edges. Containers are persisted to tracker_containers; Dismissed refs are skipped. */
 export async function mirrorScan(
   tasks: TaskService,
   tickets: Ticket[],
@@ -76,7 +53,7 @@ export async function mirrorScan(
     trackerCanClose = true,
     pollSpanContext,
   }: {
-    /** Whether the polling adapter can close a ticket (issue #237). */
+    /** Whether the polling adapter can close a ticket. */
     trackerCanClose?: boolean;
     /** The poll Operation that owns per-issue mirror children, when called from a poll. */
     pollSpanContext?: SpanContext;
@@ -85,36 +62,17 @@ export async function mirrorScan(
   const issues: Ticket[] = [];
   const containers: Array<{ trackerRef: number; facts: TrackerFacts }> = [];
   await forEachYielding(tickets, async (ticket) => {
-    // A container is a Map (`wayfinder:map`) or a spec Epic (the `epic` label,
-    // ADR-0016): persisted to tracker_containers, never mirrored as a work Task.
     if (isEpicTypeContainer(ticket)) {
       containers.push({ trackerRef: ticket.number, facts: trackerFacts(ticket) });
-      // ADR-0016 / #417: a ticket now recognised as a container may have been
-      // mirrored as a work Task on an earlier poll. Remove that row (and its
-      // Attempts) WITHOUT a dismissal tombstone, so it stays re-derivable as a
-      // container instead of being permanently skipped like an operator delete.
       await tasks.demoteMirroredToContainer(workspaceId, ticket.number);
     } else if (!(await tasks.isDismissed(workspaceId, ticket.number))) issues.push(ticket);
   });
   await tasks.syncTrackerContainers(workspaceId, containers);
-  // The durable Epic spine (ADR-0018, #437) lazy-upserts beside the wipe-and-
-  // replace container cache: one row per leaf-most epic-type container with ≥1
-  // member, `kind` re-derived from this scan's live facts. Unlike the container
-  // wipe it never deletes — a row persists through the issue closing and is
-  // removed only on Dismiss. Nothing reads it yet (the expand step).
   await tasks.syncEpics(workspaceId, deriveStoredEpics(tickets));
-  // An Epic is any ticket with children — a Map or a Spec — identified
-  // structurally as the parent of some ticket in this scan. Epics are containers:
-  // they never block their children (a `Blocked by: #<epic>` edge is never
-  // projected; a re-poll also removes any that pre-date this rule, since
-  // reconcileMirroredDeps deletes edges not in the desired set). That they are
-  // never worked derives from the same parent facts at read time (TaskService).
   const epicRefs = new Set<number>();
   await forEachYielding(tickets, (ticket) => {
     if (ticket.parent !== null) epicRefs.add(ticket.parent);
   });
-  // Sequential upsert: the writes serialize through the single-writer queue
-  // anyway, and the reconcile pass below reads `idByRef` built from every row.
   const rows: TaskRow[] = [];
   await forEachYielding(issues, async (t) => {
     const operation = pollSpanContext
@@ -145,7 +103,6 @@ export async function mirrorScan(
       .filter((id): id is number => id !== undefined);
     await tasks.reconcileMirroredDeps(rows[i]!.id, blockerIds);
   });
-  // Re-fetch: reconcile may have re-derived blocked⇄ready after the upsert snapshot.
   const refreshed: TaskRow[] = [];
   await forEachYielding(rows, async (row) => {
     refreshed.push(await tasks.get(row.id));
@@ -154,7 +111,7 @@ export async function mirrorScan(
 }
 
 export interface DerivedMap {
-  /** The owning Workspace (issue #45) — disambiguates Map refs that collide across repos. */
+  /** The owning Workspace; disambiguates Map refs that collide across repos. */
   workspaceId: number;
   ref: number;
   title: string;
@@ -163,12 +120,7 @@ export interface DerivedMap {
   counts: Record<string, number>;
 }
 
-/**
- * Query-time Map rollup (D2): each `wayfinder:map` ticket paired with the
- * mirrored Tasks that point at it via mapRef, stamped with the polling
- * Workspace. The caller may supply either a live scan or reconstructed
- * persisted facts; the rollup itself stays pure.
- */
+/** Query-time Map rollup: each `wayfinder:map` ticket paired with the mirrored Tasks whose mapRef points at it. */
 export function deriveMaps(tickets: Ticket[], mirrored: TaskRow[], workspaceId: number): DerivedMap[] {
   return tickets
     .filter((t) => t.isMap)

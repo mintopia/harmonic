@@ -17,7 +17,6 @@ import { yieldToEventLoop } from '../src/reliability/yield.js';
 
 const git = (dir: string, ...args: string[]) => execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
 
-/** A throwaway git repo on branch main with one committed README. */
 function makeRepo(): string {
   const dir = mkdtempSync(join(tmpdir(), 'harmonic-crash-recovery-repo-'));
   execFileSync('git', ['init', '-b', 'main', dir], { encoding: 'utf8' });
@@ -29,20 +28,12 @@ function makeRepo(): string {
   return dir;
 }
 
-/** Commit `content` to `path` on the currently checked-out branch. */
 function commit(dir: string, path: string, content: string, message: string): void {
   writeFileSync(join(dir, path), content);
   git(dir, 'add', '-A');
   git(dir, 'commit', '-m', message);
 }
 
-/**
- * Direct unit coverage for `CrashRecoveryCoordinator` under the ADR-0001
- * model: no `merge_journal`, no `turn_queue` — crash recovery relies on git's
- * own idempotence (a task branch either already landed in its base, checked
- * via `git merge-base --is-ancestor`, or it didn't) and on the generic
- * `running` orphan sweep for everything else.
- */
 describe('CrashRecoveryCoordinator (ADR-0001)', () => {
   let dir: string;
   let repo: string;
@@ -69,9 +60,6 @@ describe('CrashRecoveryCoordinator (ADR-0001)', () => {
     vi.restoreAllMocks();
   });
 
-  /** A worktree-mode Task + Run parked `running` exactly as a crash mid-merge
-   * would leave them, with `branch` already merged into `baseBranch` in the
-   * real repo (so `Git.isAncestor` says true without any injected seam). */
   async function seedAlreadyMergedOrphan(): Promise<{ task: TaskRow; run: AttemptRow; baseBranch: string; branch: string }> {
     const baseBranch = 'main';
     const branch = 'run-branch';
@@ -86,8 +74,6 @@ describe('CrashRecoveryCoordinator (ADR-0001)', () => {
     return { task: await tasks.get(created.id), run, baseBranch, branch };
   }
 
-  /** A worktree-mode Task + Run parked `running` whose branch was never
-   * merged into its base. */
   async function seedUnmergedOrphan(): Promise<{ task: TaskRow; run: AttemptRow }> {
     const baseBranch = 'main';
     const branch = 'never-merged-branch';
@@ -114,10 +100,8 @@ describe('CrashRecoveryCoordinator (ADR-0001)', () => {
     const settled = await attempts.get(run.id);
     expect(settled.state).toBe('passed');
     expect((await tasks.get(task.id)).state).toBe('done');
-    // The base tip is untouched (no revert): still the merge commit.
     expect(await Git.revParse(repo, baseBranch)).toBe(baseTip);
 
-    // Idempotent: a second reconcile finds nothing `running` for this Run.
     await coord.reconcile();
     expect(runPostMergeCheck).toHaveBeenCalledTimes(1);
     expect((await attempts.get(run.id)).state).toBe('passed');
@@ -139,15 +123,10 @@ describe('CrashRecoveryCoordinator (ADR-0001)', () => {
       escalationReason: expect.stringContaining('post-merge check failed after restart'),
     });
     expect((await tasks.get(task.id)).escalationReason).toContain('lint failed: feature.txt');
-    // The merge commit was reverted (`git revert -m 1`): the base moved past
-    // the merge tip to a new revert commit, and the file the merge introduced
-    // is gone from the working tree.
     const revertedTip = await Git.revParse(repo, baseBranch);
     expect(revertedTip).not.toBe(preRevertTip);
     expect(existsSync(join(repo, 'feature.txt'))).toBe(false);
 
-    // Idempotent: the Run already left `running`, so a second reconcile never
-    // re-checks or re-reverts.
     await coord.reconcile();
     expect(runPostMergeCheck).toHaveBeenCalledTimes(1);
     expect(await Git.revParse(repo, baseBranch)).toBe(revertedTip);
@@ -180,22 +159,19 @@ describe('CrashRecoveryCoordinator (ADR-0001)', () => {
   });
 
   it('uses the injected isMerged seam instead of spawning git when supplied', async () => {
-    const { run } = await seedUnmergedOrphan(); // really unmerged in git
-    const isMerged = vi.fn(async () => true); // but the seam claims merged
+    const { run } = await seedUnmergedOrphan();
+    const isMerged = vi.fn(async () => true);
     const runPostMergeCheck = vi.fn(async () => ({ pass: true, output: '' }));
     const coord = new CrashRecoveryCoordinator(attempts, tasks, settle, { runPostMergeCheck, isMerged });
 
     await coord.reconcile();
 
     expect(isMerged).toHaveBeenCalledWith(repo, 'main', 'never-merged-branch');
-    expect(runPostMergeCheck).toHaveBeenCalledTimes(1); // the seam, not git, decided
+    expect(runPostMergeCheck).toHaveBeenCalledTimes(1);
     expect((await attempts.get(run.id)).state).toBe('passed');
   });
 
   it('yields while reconciling a large backlog of running orphans', async () => {
-    // Worktree-mode with branch/baseBranch set, so each Run is a candidate
-    // pass A actually iterates (an unmerged branch, so each falls through
-    // fast to pass B without spawning a real merge).
     for (let i = 0; i < 25; i++) {
       const created = await tasks.create({ prompt: `orphan ${i}`, state: 'ready', workingDir: repo, isolationMode: 'worktree' });
       await tasks.setState(created.id, 'working');

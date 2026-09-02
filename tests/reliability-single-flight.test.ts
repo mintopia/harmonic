@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { singleFlight } from '../src/reliability/single-flight.js';
 
-/** A manually-resolved promise, so a test can hold a run "in flight" and release it deterministically. */
 function deferred<T>(): { promise: Promise<T>; resolve: (v: T) => void; reject: (e: unknown) => void } {
   let resolve!: (v: T) => void;
   let reject!: (e: unknown) => void;
@@ -41,7 +40,6 @@ describe('singleFlight', () => {
     expect(runs).toBe(1);
     gate.resolve();
     await Promise.all([first, second, third]);
-    // The three overlapping calls collapse to run #1 + exactly one rerun.
     expect(runs).toBe(2);
   });
 
@@ -56,7 +54,6 @@ describe('singleFlight', () => {
     const first = invoke();
     const second = invoke();
     gate.resolve();
-    // Both callers observe the last run's value (the rerun), not the stale first.
     expect(await first).toBe(2);
     expect(await second).toBe(2);
   });
@@ -76,7 +73,6 @@ describe('singleFlight', () => {
       return 'ok';
     });
     await expect(invoke()).rejects.toThrow('boom');
-    // The gate is clear again: a fresh call runs.
     expect(await invoke()).toBe('ok');
     expect(runs).toBe(2);
   });
@@ -97,7 +93,6 @@ describe('singleFlight', () => {
     gate.resolve();
     await expect(first).rejects.toThrow('first-failed');
     await expect(second).rejects.toThrow('first-failed');
-    // No phantom extra run leaked from the dropped rerun.
     expect(runs).toBe(1);
     expect(await invoke()).toBe(2);
   });

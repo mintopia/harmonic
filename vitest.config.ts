@@ -1,8 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { defineConfig, configDefaults } from 'vitest/config';
 
-// Files vetted to share a worker process (see the criteria in the list file).
-// Everything else gets the safe default: a fresh fork per file.
 const fastFiles = readFileSync(new URL('./tests/fast-pool.list', import.meta.url), 'utf8')
   .split('\n')
   .map((line) => line.trim())
@@ -12,8 +10,6 @@ const shared = {
   testTimeout: 20_000,
   hookTimeout: 20_000,
   pool: 'forks',
-  // Keep the suite hermetic: never shell out to the real jCodeMunch code-index
-  // CLI (`code-index.ts`). Tests that exercise it override the env themselves.
   setupFiles: ['./tests/setup-env.ts'],
 } as const;
 

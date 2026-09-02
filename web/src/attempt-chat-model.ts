@@ -26,8 +26,6 @@ function toolStatus(status: string | undefined): ChatToolStatus {
   return 'pending';
 }
 
-/** Split a tool title ("Read src/app.ts") into its verb and target; a bare
- * verb ("Bash") keeps a null target. */
 function splitTitle(title: string): { verb: string; target: string | null } {
   const trimmed = title.trim();
   const space = trimmed.indexOf(' ');
@@ -46,7 +44,6 @@ function eventRow(item: Extract<StreamItem<AttemptLogEvent>, { kind: 'event' }>)
   const payload = item.event.payload as { event?: unknown; text?: unknown } | null;
   const label = typeof payload?.event === 'string' ? payload.event : item.event.type;
   const text = typeof payload?.text === 'string' && payload.text.trim() ? payload.text : null;
-  // A bare lifecycle heartbeat with nothing to say is noise in a chat — drop it.
   if (!text && label === item.event.type) return null;
   return { kind: 'note', label, text, key: item.key };
 }

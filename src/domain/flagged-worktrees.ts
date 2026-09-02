@@ -2,9 +2,9 @@ export type FlaggedWorktreeReason = 'dirty' | 'unreadable' | 'unrecognized';
 
 /**
  * A managed worktree the reconciler will not delete until an operator
- * disposes of it by hand (ADR-0010): `dirty` holds uncommitted work,
- * `unreadable` is a directory git can't resolve as a live worktree, and
- * `unrecognized` doesn't even parse as a Task worktree's `task-<id>` name.
+ * disposes of it by hand: `dirty` holds uncommitted work, `unreadable` is a
+ * directory git can't resolve as a live worktree, and `unrecognized` doesn't
+ * parse as a Task worktree's `task-<id>` name.
  */
 export interface FlaggedWorktree {
   path: string;
@@ -20,11 +20,9 @@ export interface FlaggedWorktreeEmitter {
 }
 
 /**
- * In-memory operator-disposition registry (issue #386). A flagged worktree
- * persists on disk and is re-derived from scratch on every reconcile pass —
- * the filesystem is the source of truth — so `replace` is always a full
- * rebuild, never a merge, and no migration backs this: it holds no state a
- * restart needs to recover.
+ * In-memory operator-disposition registry. Flags are re-derived from scratch
+ * on every reconcile pass — the filesystem is the source of truth — so
+ * `replace` is always a full rebuild, never a merge.
  */
 export class FlaggedWorktreeRegistry {
   private current: readonly FlaggedWorktree[] = [];

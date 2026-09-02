@@ -21,7 +21,7 @@ function FlaggedWorktreeRow({ worktree }: { worktree: FlaggedWorktree }) {
   );
 }
 
-/** A read-only snapshot plus firehose view of worktrees the reconciler (ADR-0010)
+/** A read-only snapshot plus firehose view of worktrees the reconciler
  * is holding for operator disposition — surfacing only; disposing of one is a
  * manual, out-of-band action. */
 export function FlaggedWorktreesTable({ worktrees }: { worktrees: FlaggedWorktree[] }) {

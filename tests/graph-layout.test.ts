@@ -118,7 +118,6 @@ describe('flattenElkLayout', () => {
       width: 0,
       height: 0,
     });
-    // A node elk placed with no explicit x/y/size merges at the origin with 0 size.
     const layout = flattenElkLayout({ children: [{ id: 't1' }] }, new Map(), byId, []);
     expect(layout.nodes[0]).toEqual({ id: 1, task: byId.get(1), x: 0, y: 0, w: 0, h: 0 });
   });

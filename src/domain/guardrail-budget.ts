@@ -1,50 +1,14 @@
-/**
- * The budget Guardrail's wall-clock trip decision (issue #127, ADR-0019,
- * reliability-design Unit A).
- *
- * `config.ts`'s `budgetGuardrailSchema` (issue #108/#126) defines the
- * mandatory wall-clock bound (plus optional token/cost caps, out of scope
- * here) that every afk Run is snapshotted with at start. This module is the
- * brain that decides *whether* a given elapsed duration trips that bound —
- * as a pure function: no database, no clock, no I/O — the same seam as
- * `work-context-key.ts` and `run-disposition.ts`, so the trip contract can
- * be exhaustively unit-tested in isolation. This unit only has to get the
- * *decision* right.
- */
-
 import type { StepType } from '../db/schema.js';
 import type { BudgetGuardrail } from '../config.js';
 
 /**
- * The Step types the wall-clock execution budget counts against (ADR-0001
- * Vocabulary: Attempt's timeline is Steps — Implementation, Verification,
- * Review — Run/Phase/Candidate are deleted concepts).
- *
- * An Attempt's total wall-clock time includes one gap the budget
- * deliberately does NOT bound: the window between Steps — most notably the
- * short mechanical merge after the last Step passes, which has its own
- * timeout. Counting it against the execution budget would double-govern a
- * step that already has its own guard. So every Step type — `rebase`
- * (the Attempt's prep), `implementation`, `verification`, and `review` (the
- * critic) — counts: an agent harness (or a deterministic check) is actively
- * doing work for the duration of every one of them. Only the absence of a
- * running Step (`null`) is unguarded by this budget.
- *
- * This is the single source of truth for the scoping decision:
- * `countsTowardExecutionBudget` and `wallClockTrip` both derive from it, so
- * a future Step type is a conscious addition here rather than an implicit
- * default.
+ * The Step types the wall-clock execution budget counts against. The gap
+ * between Steps (notably the merge after the last Step passes, which has its
+ * own timeout) is not bounded by this budget.
  */
 export const EXECUTION_BUDGET_STEPS: ReadonlySet<StepType> = new Set(['rebase', 'implementation', 'verification', 'review']);
 
-/**
- * Whether `stepType` counts toward the wall-clock execution budget.
- *
- * `null` — no Step is currently running (the gap between the last Step
- * passing and the merge that follows it, or before the Attempt's first Step
- * starts) — does not count: nothing is actively executing, and the merge
- * that follows a passed Attempt has its own timeout.
- */
+/** Whether `stepType` counts toward the wall-clock execution budget; `null` (no Step running) never does. */
 export function countsTowardExecutionBudget(stepType: StepType | null): boolean {
   if (stepType === null) return false;
   return EXECUTION_BUDGET_STEPS.has(stepType);
@@ -55,12 +19,7 @@ export function wallClockBudgetMs(budget: Pick<BudgetGuardrail, 'wallClockMinute
   return budget.wallClockMinutes * 60_000;
 }
 
-/**
- * The evidence a wall-clock trip carries: the dimension it tripped on, the
- * configured limit, and the observed elapsed duration that crossed it — all
- * in milliseconds so the numbers are unambiguous without a caller needing to
- * know the guardrail's minutes-vs-milliseconds convention.
- */
+/** The evidence a wall-clock trip carries: the configured limit and the observed elapsed duration, both in milliseconds. */
 export interface WallClockTrip {
   dimension: 'wall-clock';
   limitMs: number;
@@ -69,23 +28,9 @@ export interface WallClockTrip {
 
 /**
  * Decide whether an elapsed duration trips the wall-clock guardrail, given
- * the Step type currently running.
- *
- * This is THE Step-scoping decision (issue #127 acceptance: the clock
- * advances only while a Step is actively running) expressed as a pure,
- * exhaustively unit-testable function. An Attempt mid-merge (no Step
- * running) can be arbitrarily far past `wallClockBudgetMs(budget)` in raw
- * elapsed time and this must still return `null` — the elapsed clock itself
- * is scoped to the counted Step types by `countsTowardExecutionBudget`, not
- * by the caller pre-filtering what it measures, so this function is the one
- * place that rule lives regardless of how `elapsedMs` was accumulated
- * upstream.
- *
- * Trips (returns non-null) iff `stepType` counts toward the execution budget
- * AND `elapsedMs >= wallClockBudgetMs(budget)` — the boundary itself trips
- * (>=, not >): a Run that has used exactly its full budget has no budget
- * left, not one instant of grace. Returns `null` in every other case: below
- * budget, or with no Step the budget scopes.
+ * the Step type currently running. Trips iff `stepType` counts toward the
+ * execution budget AND `elapsedMs >= wallClockBudgetMs(budget)` (the boundary
+ * itself trips). Returns `null` otherwise.
  */
 export function wallClockTrip(args: {
   elapsedMs: number;
@@ -98,25 +43,14 @@ export function wallClockTrip(args: {
   return { dimension: 'wall-clock', limitMs, observedMs: args.elapsedMs };
 }
 
-/**
- * Render a millisecond duration the way a human reads it, at whichever unit
- * keeps the number small: minutes once it's at least a minute, seconds once
- * it's at least a second, otherwise raw milliseconds. Exported (issue #131) so
- * `guardrail-tool-timeout.ts` can reuse the same rendering for its own
- * card reason rather than duplicating it.
- */
+/** Render a millisecond duration at whichever unit keeps the number small: minutes, seconds, or raw milliseconds. */
 export function humanizeMs(ms: number): string {
   if (ms >= 60_000) return `${Math.round(ms / 60_000)}m`;
   if (ms >= 1_000) return `${Math.round(ms / 1_000)}s`;
   return `${ms}ms`;
 }
 
-/**
- * The evidence a token-budget trip carries (issue #128): the configured
- * token cap and the cumulative token count that reached or crossed it. Mirrors
- * `WallClockTrip`'s shape so `formatBudgetReason` can dispatch on `dimension`
- * uniformly across all three budget dimensions.
- */
+/** The evidence a token-budget trip carries: the configured cap and the cumulative count that reached it. */
 export interface TokenTrip {
   dimension: 'tokens';
   limitTokens: number;
@@ -124,12 +58,9 @@ export interface TokenTrip {
 }
 
 /**
- * The evidence a cost-budget trip carries (issue #128): the configured USD
- * cap and the priced spend floor that reached or crossed it. "Floor" because
- * `observedUsd` is only ever a lower bound when some tokens went unpriced
- * (see `costIncomplete` on `spendTrip`) — a floor already over the cap is
- * still a definite trip, which is why `spendTrip` checks it before deciding
- * whether the cost figure can be trusted as complete.
+ * The evidence a cost-budget trip carries: the configured USD cap and the
+ * priced spend floor that reached it. `observedUsd` is a lower bound when
+ * some tokens went unpriced; a floor already over the cap is still a trip.
  */
 export interface CostTrip {
   dimension: 'cost';
@@ -138,33 +69,15 @@ export interface CostTrip {
 }
 
 /**
- * Result of evaluating the live token/cost spend guards this poll (issue
- * #128). Three outcomes, not two, because "the guard is configured but we
- * can't measure it" is a materially different situation from "the guard is
- * configured and satisfied" — a `null`/`ok`-only signature would collapse
- * "no telemetry" into "no trip", silently degrading a configured cap into a
- * no-op. Callers (the Runner's drive loop) are expected to treat sustained
- * `unmeasurable` as its own concern (issue #128's grace-period-then-Escalate
- * behaviour lives there, not in this pure decision layer).
+ * Result of evaluating the live token/cost spend guards this poll.
+ * `unmeasurable` means the guard is configured but telemetry is missing —
+ * distinct from `ok`, so a configured cap never silently degrades to a no-op.
  */
 export type SpendOutcome =
   | { kind: 'trip'; trip: TokenTrip | CostTrip }
   | { kind: 'unmeasurable'; dimension: 'tokens' | 'cost' }
   | { kind: 'ok' };
 
-/**
- * The token-cap decision shared by `spendTrip`'s direct token check and its
- * cost-cap-falls-back-to-tokens path (see `spendTrip` step 3b). Kept private
- * because both call sites need the identical boundary/telemetry rule and
- * duplicating it would risk the two copies drifting.
- *
- * `observedTokens === null` means no token telemetry is available at all
- * (distinct from `0`, which is a real, trustworthy reading) — that maps to
- * `unmeasurable`, not `ok`, so a configured cap with no usage feed doesn't
- * silently behave as if it were unset. The trip boundary is `>=`, matching
- * `wallClockTrip`: a Run that has used exactly its full budget has no budget
- * left, not one instant of grace.
- */
 function tokenOutcome(limitTokens: number, observedTokens: number | null): SpendOutcome {
   if (observedTokens === null) return { kind: 'unmeasurable', dimension: 'tokens' };
   if (observedTokens >= limitTokens) {
@@ -175,27 +88,11 @@ function tokenOutcome(limitTokens: number, observedTokens: number | null): Spend
 
 /**
  * Decide whether the live token/cost spend guards trip, given the Step type
- * currently running and this poll's observed usage (issue #128, extending
- * #127's wall-clock dimension to the other two `BudgetGuardrail` bounds).
- *
- * Step-scoped identically to `wallClockTrip`: only the counted Step types
- * (`countsTowardExecutionBudget`) are governed; `null` (no Step running)
- * never trips.
- *
- * The cost cap and token cap are not fully independent, because cost is
- * frequently *unknowable* in a way tokens are not (a provider that doesn't
- * price a given model, or a response still missing a pricing entry). Rather
- * than let a configured cost cap silently go unenforced whenever pricing is
- * incomplete, an unpriced (or partially-priced) cost cap falls back to
- * enforcing the token cap instead — "govern spend by tokens when you can't
- * govern it by dollars" is a strictly safer default than "don't govern it at
- * all". A priced floor that is *already* over the cap still trips on cost
- * even when `costIncomplete` is set: incompleteness only ever means the true
- * cost is >= the observed floor, so a floor over the cap is trustworthy
- * evidence of a trip regardless of what's still unpriced. Once cost is fully
- * priced and under the cap, the token cap (if configured) still applies
- * independently underneath it — the two caps are ANDed together, not an
- * either/or, once cost can be trusted.
+ * currently running and this poll's observed usage. Step-scoped like
+ * `wallClockTrip`. A priced floor already over the cost cap trips even when
+ * `costIncomplete`; an unpriced or partially-priced cost cap falls back to
+ * enforcing the token cap; once cost is fully priced and under the cap, the
+ * token cap (if configured) still applies independently.
  */
 export function spendTrip(args: {
   stepType: StepType | null;
@@ -218,7 +115,6 @@ export function spendTrip(args: {
       if (tokens !== null) return tokenOutcome(tokens, observedTokens);
       return { kind: 'unmeasurable', dimension: 'cost' };
     }
-    // Fully priced and under the cap: fall through to the independent token cap.
   }
 
   if (tokens !== null) return tokenOutcome(tokens, observedTokens);
@@ -226,17 +122,8 @@ export function spendTrip(args: {
 }
 
 /**
- * The human-readable card reason for a guardrail trip (issue #127, widened
- * for #128's token/cost dimensions): the reason string derives from the trip
- * evidence itself rather than being composed ad hoc at the call site, so
- * every guardrail-trip card reads the same regardless of which caller
- * produced the trip.
- *
- * Only takes `dimension` plus the *limit* field for that dimension (never
- * the observed value) because the card names the *bound that was
- * configured*, not the exact overshoot — matching ADR-0019's example
- * ("budget: 45m" for a 45-minute wall-clock guardrail), extended to
- * "budget: 2M tokens" and "budget: $10" for the other two dimensions.
+ * The human-readable card reason for a guardrail trip. Names the configured
+ * bound, never the overshoot: "budget: 45m", "budget: 2M tokens", "budget: $10".
  */
 export function formatBudgetReason(
   trip:
@@ -254,14 +141,7 @@ export function formatBudgetReason(
   }
 }
 
-/**
- * Render a token count the way a human reads it, at whichever unit keeps the
- * number small: millions once it's at least a million, thousands once it's
- * at least a thousand, otherwise the raw count. Mirrors `humanizeMs`'s
- * shrink-to-the-largest-sensible-unit approach for the token dimension.
- * Trimmed to at most one decimal place (`2_000_000` -> "2M", `1_500_000` ->
- * "1.5M") so the card stays short without inventing false precision.
- */
+/** Render a token count at whichever unit keeps the number small, to at most one decimal: `1_500_000` -> "1.5M". */
 export function humanizeCount(n: number): string {
   const trim = (x: number): number => Number(x.toFixed(1));
   if (n >= 1_000_000) return `${trim(n / 1_000_000)}M`;
@@ -269,38 +149,17 @@ export function humanizeCount(n: number): string {
   return `${n}`;
 }
 
-/**
- * Render a USD amount the way a human reads it: dollars rounded to at most
- * two decimal places, with trailing zeroes dropped (`10` -> "$10", `10.5` ->
- * "$10.5", not "$10.00"/"$10.50") so the card stays as short as
- * `humanizeMs`/`humanizeCount`'s renderings for the other two dimensions.
- */
+/** Render a USD amount rounded to at most two decimals with trailing zeroes dropped: `10.5` -> "$10.5". */
 export function formatUsd(usd: number): string {
   return `$${Number(usd.toFixed(2))}`;
 }
 
-/**
- * USD → micro-dollars (issue #128): the `guardrail_events` `limit_value` /
- * `observed_value` columns are integers (they hold milliseconds for
- * wall-clock, token counts for tokens), so a cost trip stores its dollars as
- * an integer number of micro-dollars (USD × 1e6) — lossless to the
- * micro-dollar, with the human USD floats carried alongside in the row's
- * `payload`. The single definition keeps every call site on the same scale;
- * a stray `1e3`-vs-`1e6` at one site would silently corrupt stored spend.
- */
+/** USD → micro-dollars: the integer scale the `guardrail_events` limit/observed columns store a cost trip in. */
 export function toMicroUsd(usd: number): number {
   return Math.round(usd * 1_000_000);
 }
 
-/**
- * The card reason when a configured spend guard cannot be measured (issue
- * #128): usage telemetry is missing (no token feed, or a cost cap with no
- * pricing at all and no token fallback), so this is surfaced distinctly from
- * both "ok" and "trip" rather than silently treated as either. The Runner's
- * drive loop is expected to tolerate this for a grace period and then
- * Escalate rather than let a configured budget silently degrade to
- * wall-clock-only enforcement for the life of the Run.
- */
+/** The card reason when a configured spend guard cannot be measured because usage telemetry is missing. */
 export function formatUnmeasurableReason(dimension: 'tokens' | 'cost'): string {
   return `budget: ${dimension} unmeasurable`;
 }
