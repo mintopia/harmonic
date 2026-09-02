@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 import type { AppConfig, Channel } from '../types';
+import { btnGhost } from '../ui';
 import { changedChannelEvents, channelsDirty, toggleChannelEvent } from '../channels-save-model';
 import { parseFieldErrors } from './SettingsSection';
 import { SettingsForm } from './SettingsForm';
@@ -15,6 +16,7 @@ import { SETTING_TABS, type SettingTab } from '../../../src/domain/settings-regi
  */
 export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void }) {
   const [pristine, setPristine] = useState<AppConfig | null>(null);
+  const [baseline, setBaseline] = useState<AppConfig | null>(null);
   const [local, setLocal] = useState<AppConfig | null>(null);
   const [pristineChannels, setPristineChannels] = useState<Channel[]>([]);
   const [localChannels, setLocalChannels] = useState<Channel[]>([]);
@@ -24,9 +26,10 @@ export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void
   const [tab, setTab] = useState<SettingTab>('general');
 
   useEffect(() => {
-    api.config().then((c) => {
-      setPristine(c);
-      setLocal(c);
+    api.configLayers().then(({ baseline, global }) => {
+      setBaseline(baseline);
+      setPristine(global);
+      setLocal(global);
     });
     api
       .channels()
@@ -37,7 +40,7 @@ export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void
       .catch(() => {});
   }, []);
 
-  if (!local || !pristine) return null;
+  if (!local || !pristine || !baseline) return null;
 
   const dirty =
     JSON.stringify(local) !== JSON.stringify(pristine) || channelsDirty(localChannels, pristineChannels);
@@ -73,9 +76,25 @@ export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void
     }
   };
 
+  const revertAll = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      const updated = await api.revertConfig();
+      setPristine(updated);
+      setLocal(updated);
+      onSaved(updated);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const ctx: GlobalRenderCtx = {
     surface: 'global',
     config: local,
+    baseline,
     setConfig: setLocal,
     errors: fieldErrors,
     channels: {
@@ -105,6 +124,11 @@ export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void
       error={error}
       onSave={save}
       onDiscard={discard}
+      headerActions={
+        <button type="button" className={btnGhost} disabled={saving} onClick={revertAll}>
+          Revert all to distributed
+        </button>
+      }
     />
   );
 }

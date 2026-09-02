@@ -800,3 +800,8 @@ export interface AppConfig {
   /** The Task Prompt template for native Attempts, with {prompt}/{id}/{workingDir}/{harness}/{model} placeholders. */
   taskPrompt: string;
 }
+
+export interface ConfigLayers {
+  baseline: AppConfig;
+  global: AppConfig;
+}

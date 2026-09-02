@@ -87,6 +87,7 @@ function fieldIdsForSurface(surface: Surface): string[] {
       ? {
           surface: 'global',
           config,
+          baseline: config,
           setConfig: () => {},
           errors: {},
           channels: { list: [], onToggleEvent: () => {}, onCreated: () => {}, onDeleted: () => {} },

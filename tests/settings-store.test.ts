@@ -118,6 +118,16 @@ describe('SettingsStore (issue #391)', () => {
     expect(reopened2.getGlobal().maxAttempts).toBe(3);
   });
 
+  it('revertGlobal clears the sparse global patch back to the distributed baseline', async () => {
+    const store = await SettingsStore.create(dir);
+    await store.updateGlobal({ maxAttempts: 7 });
+
+    await store.revertGlobal();
+
+    expect(store.getGlobal()).toEqual(baselineConfig());
+    expect(parse(readFileSync(join(dir, 'settings.yaml'), 'utf8'))).toEqual({ global: {}, workspaces: {} });
+  });
+
   it('override round-trip and three-state semantics: value sets, null clears (and removes from the file), omitted/{} keeps', async () => {
     const store = await SettingsStore.create(dir);
     const wsId = 1;

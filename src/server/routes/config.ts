@@ -110,6 +110,19 @@ export async function configRoutes(fastify: FastifyInstance, ctx: Pick<Execution
     async () => ctx.settingsStore.getGlobal(),
   );
 
+  app.get(
+    '/config/layers',
+    {
+      schema: {
+        tags: ['Config'],
+        description: 'Get the distributed baseline and effective global configuration for settings inheritance controls.',
+        security: [{ bearerAuth: [] }, { sessionCookie: [] }],
+        response: { 200: z.object({ baseline: appConfigSchema, global: appConfigSchema }) },
+      },
+    },
+    async () => ({ baseline: ctx.settingsStore.getBaseline(), global: ctx.settingsStore.getGlobal() }),
+  );
+
   app.patch(
     '/config',
     {
@@ -149,6 +162,23 @@ export async function configRoutes(fastify: FastifyInstance, ctx: Pick<Execution
     },
     async (req) => {
       const updated = await ctx.settingsStore.replaceGlobal(req.body as AppConfig);
+      ctx.autoRunner.poke();
+      return updated;
+    },
+  );
+
+  app.delete(
+    '/config/overrides',
+    {
+      schema: {
+        tags: ['Config'],
+        description: 'Clear every global override and return to the distributed baseline.',
+        security: [{ bearerAuth: [] }, { sessionCookie: [] }],
+        response: { 200: appConfigSchema },
+      },
+    },
+    async () => {
+      const updated = await ctx.settingsStore.revertGlobal();
       ctx.autoRunner.poke();
       return updated;
     },

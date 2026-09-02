@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { inheritSource, inheritState, toggleOverride } from '../web/src/components/inherit-field-model.js';
+import { inheritSource, inheritState, layerState, toggleOverride } from '../web/src/components/inherit-field-model.js';
 
 describe('inheritState', () => {
   it('reads null as inheriting, so the effective value is the global default', () => {
@@ -61,5 +61,23 @@ describe('toggleOverride', () => {
 
   it('seeds from a 0 default without mistaking it for inherit', () => {
     expect(toggleOverride(true, null, 0)).toBe(0);
+  });
+});
+
+describe('layerState', () => {
+  it('mutes a global value that comes from the distributed baseline', () => {
+    expect(layerState(2, 2, true)).toEqual({ effective: 2, inherited: true, modified: false });
+  });
+
+  it('marks a global value that differs from the distributed baseline as modified', () => {
+    expect(layerState(3, 2, false)).toEqual({ effective: 3, inherited: false, modified: true });
+  });
+
+  it('keeps an explicit workspace value modified even when it equals its inherited value', () => {
+    expect(layerState('claude', 'claude', false)).toEqual({
+      effective: 'claude',
+      inherited: false,
+      modified: true,
+    });
   });
 });

@@ -125,6 +125,10 @@ export class SettingsStore implements WorkspaceSettingsStore {
     return this.global;
   }
 
+  getBaseline(): AppConfig {
+    return baselineConfig();
+  }
+
   async updateGlobal(patch: DeepPartial<AppConfig>): Promise<AppConfig> {
     this.reloadIfChanged();
     this.global = mergeConfig(this.global, patch);
@@ -139,6 +143,10 @@ export class SettingsStore implements WorkspaceSettingsStore {
     this.globalPatch = deepDiff(baselineConfig(), this.global) ?? {};
     this.persist();
     return this.global;
+  }
+
+  async revertGlobal(): Promise<AppConfig> {
+    return this.replaceGlobal(baselineConfig());
   }
 
   getOverrides(workspaceId: number): ResolvedOverrides {
