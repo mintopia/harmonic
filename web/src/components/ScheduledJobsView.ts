@@ -85,22 +85,26 @@ export function ScheduledJobsView() {
   useEffect(() => {
     let active = true;
     let snapshotLoaded = false;
-    const pending: ScheduledJob[][] = [];
+    let pending: ScheduledJob[][] = [];
     const apply = (next: ScheduledJob[]) => setJobs((current) => mergeScheduledJobs(current ?? [], next));
-    const unsubscribe = subscribe((message) => {
-      if (message.type !== 'scheduled-jobs') return;
-      if (snapshotLoaded) apply(message.jobs);
-      else pending.push(message.jobs);
-    });
     const installSnapshot = (snapshot: ScheduledJob[]) => {
       if (!active) return;
       snapshotLoaded = true;
       setJobs(pending.reduce(mergeScheduledJobs, snapshot));
     };
-    fetch('/api/scheduled-jobs')
-      .then((response) => (response.ok ? response.json() : { jobs: [] }))
-      .then((snapshot: unknown) => installSnapshot(isScheduledJobsSnapshot(snapshot) ? snapshot.jobs : []))
-      .catch(() => installSnapshot([]));
+    const load = () => {
+      snapshotLoaded = false;
+      pending = [];
+      fetch('/api/scheduled-jobs')
+        .then((response) => (response.ok ? response.json() : { jobs: [] }))
+        .then((snapshot: unknown) => installSnapshot(isScheduledJobsSnapshot(snapshot) ? snapshot.jobs : []))
+        .catch(() => installSnapshot([]));
+    };
+    const unsubscribe = subscribe((message) => {
+      if (message.type !== 'scheduled-jobs') return;
+      if (snapshotLoaded) apply(message.jobs);
+      else pending.push(message.jobs);
+    }, load);
     const timer = setInterval(() => setNow(Date.now()), 1_000);
     return () => {
       active = false;

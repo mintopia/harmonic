@@ -19,22 +19,22 @@ export function useTicketAttempts(taskId: number): { runs: AttemptSummary[]; att
         if (!live()) return;
         setAttempts(next);
       }, toastError);
-    load();
     const unsubscribe = subscribe((msg) => {
       if (msg.type === 'attempt_timeline_changed' && msg.taskId === taskId) {
         setAttempts(msg.attempts);
       }
-    });
+    }, load);
     return () => {
       unsubscribe();
     };
   }, [taskId]);
 
   useLiveEffect((live) => {
-    api.taskAttempts(taskId).then(({ attempts: list }) => {
-      if (!live()) return;
-      setRuns(list);
-    });
+    const load = () =>
+      api.taskAttempts(taskId).then(({ attempts: list }) => {
+        if (!live()) return;
+        setRuns(list);
+      });
     const unsubscribe = subscribe((msg) => {
       if (msg.type === 'attempt_changed' && msg.run.taskId === taskId) {
         setRuns((current) => {
@@ -42,7 +42,7 @@ export function useTicketAttempts(taskId: number): { runs: AttemptSummary[]; att
           return [...rest, msg.run].sort((a, b) => a.number - b.number);
         });
       }
-    });
+    }, load);
     return () => {
       unsubscribe();
     };

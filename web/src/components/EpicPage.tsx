@@ -568,7 +568,7 @@ export function EpicPage({
     const unsubscribe = subscribe((msg) => {
       if (msg.type === 'task_changed' && childIdsRef.current.has(msg.task.id)) setRefreshKey((k) => k + 1);
       else if (msg.type === 'task_removed' && childIdsRef.current.has(msg.id)) setRefreshKey((k) => k + 1);
-    });
+    }, () => setRefreshKey((k) => k + 1));
     return unsubscribe;
   }, []);
 
