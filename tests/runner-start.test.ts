@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
-import { defaultConfig } from '../src/config.js';
+import { baselineConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { AttemptStore, type AttemptGuardrailSnapshot } from '../src/domain/attempts.js';
 import { Runner } from '../src/execution/runner.js';
@@ -33,9 +33,9 @@ describe('Runner.start (issue #272)', () => {
     mkdirSync(repoDir);
     asyncDb = await openAsyncDb(dir);
     settingsStore = await makeSettingsStore(dir);
-    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
+    tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
     runs = new AttemptStore(asyncDb);
-    runner = new Runner(tasks, asyncDb, () => defaultConfig());
+    runner = new Runner(tasks, asyncDb, () => baselineConfig());
   });
 
   afterEach(async () => {
@@ -58,8 +58,8 @@ describe('Runner.start (issue #272)', () => {
       .mockImplementation(async (taskArg) => {
         await release.promise;
         const snapshot: AttemptGuardrailSnapshot = {
-          guardrailConfig: defaultConfig().guardrails,
-          priceTable: defaultConfig().prices,
+          guardrailConfig: baselineConfig().guardrails,
+          priceTable: baselineConfig().prices,
         };
         return await runs.create(taskArg.id, snapshot);
       });

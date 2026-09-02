@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import type { HarnessConfig } from '../config.js';
+import { AUTO_MODEL_SENTINEL, type HarnessConfig } from '../config.js';
 import type { PersistedAttemptEvent } from '../domain/attempts.js';
 import { isReplay } from '../domain/replay-quarantine.js';
 import type { ModelUsage, AttemptUsage, ToolTokenUsage } from '../domain/usage.js';
@@ -419,7 +419,7 @@ export async function collectUsageWithRetry(
  * (Copilot's router): whatever served is the answer, not a contradiction.
  */
 export function observedModelMismatch(expected: string, models: Record<string, ModelUsage>): string[] | null {
-  if (expected === 'auto') return null;
+  if (expected === AUTO_MODEL_SENTINEL) return null;
   const base = (id: string) => id.replace(/\[[^\]]+\]$/, '').replace(/-\d{8}$/, '');
   const observed = Object.keys(models);
   if (observed.length === 0) return null;

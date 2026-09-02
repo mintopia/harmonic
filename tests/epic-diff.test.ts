@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
-import { defaultConfig } from '../src/config.js';
+import { baselineConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { WorkspaceService } from '../src/domain/workspaces.js';
 import { TrackerPollerManager } from '../src/tracker/manager.js';
@@ -42,7 +42,7 @@ describe('TrackerPollerManager.epicDiff (ADR-0018, issue #441)', () => {
     repo = makeRepo();
     asyncDb = await openAsyncDb(dataDir);
     settingsStore = await makeSettingsStore(dataDir);
-    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
+    tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
     workspaces = new WorkspaceService(asyncDb, settingsStore);
     wsId = (await workspaces.create({ name: 'WS', workingDir: repo, trackerEnabled: true })).id;
     manager = new TrackerPollerManager(tasks, () => workspaces.list());

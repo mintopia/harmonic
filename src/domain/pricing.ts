@@ -27,7 +27,7 @@ export interface Cost {
 
 /**
  * Shipped defaults for the models the supported Harnesses actually use
- * (see `defaultConfig()`), at published API rates. Config `prices`
+ * (see `baselineConfig()`), at published API rates. Config `prices`
  * entries override or extend these — see `resolvePrices`.
  */
 export const DEFAULT_PRICES: PriceTable = {

@@ -1,5 +1,8 @@
+import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { parse } from 'yaml';
 import { z } from 'zod';
 import { resolvePrices, isModelPriced } from './domain/pricing.js';
 
@@ -277,92 +280,53 @@ export type DeepPartial<T> = {
   [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : T[K];
 };
 
-export function defaultConfig(): AppConfig {
-  return {
-    name: '',
-    harnesses: {
-      claude: {
-        command: 'npx',
-        args: ['--yes', '@agentclientprotocol/claude-agent-acp'],
-        env: {},
-        models: ['claude-opus-5', 'claude-fable-5', 'claude-sonnet-5', 'claude-opus-4-8', 'claude-haiku-4-5'],
-        defaultModel: 'claude-sonnet-5',
-      },
-      codex: {
-        // `codex acp` is not a Codex CLI subcommand; the adapter package is the ACP entry point.
-        command: 'npx',
-        args: ['--yes', '@agentclientprotocol/codex-acp'],
-        env: {},
-        // Ids may carry a reasoning-effort suffix, e.g. gpt-5.4-mini[low].
-        models: ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini'],
-        defaultModel: 'gpt-5.6-sol',
-      },
-      copilot: {
-        // `copilot --acp` speaks ACP natively; the built-in github-mcp-server is a per-session network dependency Attempts don't need.
-        command: 'copilot',
-        args: ['--acp', '--disable-builtin-mcps'],
-        env: {},
-        // Only ids with a published API-equivalent rate (gemini-*/mai-* excluded); auto-only plans silently ignore any pin.
-        models: [
-          'auto',
-          'claude-sonnet-5',
-          'claude-sonnet-4.6',
-          'claude-sonnet-4.5',
-          'claude-haiku-4.5',
-          'claude-opus-4.8',
-          'claude-opus-4.7',
-          'claude-opus-4.6',
-          'claude-opus-4.5',
-          'gpt-5.5',
-          'gpt-5.4',
-          'gpt-5.3-codex',
-          'gpt-5.4-mini',
-          'gpt-5.6-luna',
-          'gpt-5.6-terra',
-        ],
-        defaultModel: 'auto',
-      },
-    },
-    prices: {},
-    modelInfo: {},
-    defaults: {
-      harness: 'claude',
-      workingDir: process.cwd(),
-      isolationMode: 'direct',
-      priority: 'normal',
-      conflictResolveTurns: 2,
-    },
-    chat: {
-      harness: 'claude',
-      model: 'claude-sonnet-5',
-    },
-    autoRunner: {
-      enabled: false,
-      maxConcurrentAttempts: 1,
-    },
-    maxAttempts: 2,
-    contextReuseTokenLimit: 200_000,
-    drive: {
-      prompt: DEFAULT_DRIVE_PROMPT,
-      unattendedReminder: UNATTENDED_REMINDER,
-      continuePrompt: DEFAULT_CONTINUE_PROMPT,
-      mergeFate: 'auto-merge',
-      continueAttempts: 10,
-    },
-    taskPrompt: DEFAULT_TASK_PROMPT,
-    conversationIdleTimeoutMinutes: 30,
-    verify: {
-      commands: [],
-      review: { enabled: false },
-    },
-    merge: { postMergeCheck: true },
-    guardrails: {
-      budget: { wallClockMinutes: 60, tokens: null, costUsd: null },
-      progress: false,
-      toolTimeoutMinutes: 20,
-      promptInactivityTimeoutMinutes: 15,
-    },
-  };
+const baselinePath = fileURLToPath(new URL('./baseline.yaml', import.meta.url));
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function resolveBaselineVariables(value: unknown): unknown {
+  if (value === '$CWD') return process.cwd();
+  if (Array.isArray(value)) return value.map(resolveBaselineVariables);
+  if (!isRecord(value)) return value;
+  return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, resolveBaselineVariables(entry)]));
+}
+
+function missingBaselineFields(raw: unknown, resolved: unknown, path = ''): string[] {
+  if (Array.isArray(resolved)) return Array.isArray(raw) ? [] : [path];
+  if (!isRecord(resolved)) return [];
+  if (!isRecord(raw)) return [path || '<root>'];
+  return Object.entries(resolved).flatMap(([key, value]) => {
+    const fieldPath = path ? `${path}.${key}` : key;
+    if (!(key in raw)) return [fieldPath];
+    return missingBaselineFields(raw[key], value, fieldPath);
+  });
+}
+
+export function loadBaselineConfig(path: string = baselinePath): AppConfig {
+  let raw: unknown;
+  try {
+    raw = resolveBaselineVariables(parse(readFileSync(path, 'utf8')));
+  } catch (err) {
+    throw new Error(`Invalid Harmonic baseline file at ${path}: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  try {
+    const config = appConfigSchema.parse(raw);
+    const missing = missingBaselineFields(raw, config);
+    if (missing.length > 0) throw new Error(`missing required defaults: ${missing.join(', ')}`);
+    return config;
+  } catch (err) {
+    throw new Error(`Invalid Harmonic baseline file at ${path}: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+const baseline = loadBaselineConfig();
+
+export const AUTO_MODEL_SENTINEL = baseline.harnesses.copilot.defaultModel;
+
+export function baselineConfig(): AppConfig {
+  return structuredClone(baseline);
 }
 
 export function mergeConfig(base: AppConfig, overrides?: DeepPartial<AppConfig>): AppConfig {

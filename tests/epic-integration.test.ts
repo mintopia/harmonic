@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
-import { defaultConfig } from '../src/config.js';
+import { baselineConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { mirrorScan } from '../src/tracker/mirror.js';
 import { EPIC_LABEL, type Ticket } from '../src/tracker/adapter.js';
@@ -132,7 +132,7 @@ describe('EpicIntegrationCoordinator.reconcile (issue #159)', () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-epic-'));
     asyncDb = await openAsyncDb(dir);
     settingsStore = await makeSettingsStore(dir);
-    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
+    tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
     wsId = (await allWorkspaces(asyncDb, settingsStore)())[0]!.id;
   });
   afterEach(async () => {
@@ -472,7 +472,7 @@ describe('EpicIntegrationCoordinator whole-Epic integrate trigger (issue #161)',
     dir = mkdtempSync(join(tmpdir(), 'harmonic-epic-integrate-'));
     asyncDb = await openAsyncDb(dir);
     settingsStore = await makeSettingsStore(dir);
-    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
+    tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
     wsId = (await allWorkspaces(asyncDb, settingsStore)())[0]!.id;
   });
   afterEach(async () => {
@@ -551,7 +551,7 @@ describe('EpicIntegrationCoordinator.retireIntegrationBranch (issue #159)', () =
     dir = mkdtempSync(join(tmpdir(), 'harmonic-epic-retire-'));
     asyncDb = await openAsyncDb(dir);
     settingsStore = await makeSettingsStore(dir);
-    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
+    tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
   });
   afterEach(async () => {
     await asyncDb.close();
@@ -594,7 +594,7 @@ describe('TaskService.setBaseBranch (issue #159)', () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-setbase-'));
     asyncDb = await openAsyncDb(dir);
     settingsStore = await makeSettingsStore(dir);
-    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
+    tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
   });
   afterEach(async () => {
     await asyncDb.close();

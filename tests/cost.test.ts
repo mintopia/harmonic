@@ -27,8 +27,8 @@ const PRICES = { m1: { input: 1, output: 2, cacheRead: 3, cacheWrite: 4 } };
 
 describe('pricing math', () => {
   it('ships a price for every model in the default harness configs — Cost is never incomplete out of the box', async () => {
-    const { defaultConfig } = await import('../src/config.js');
-    for (const harness of Object.values(defaultConfig().harnesses)) {
+    const { baselineConfig } = await import('../src/config.js');
+    for (const harness of Object.values(baselineConfig().harnesses)) {
       for (const model of new Set([harness.defaultModel, ...harness.models])) {
         if (model === 'auto') continue;
         const cost = costOfUsages([usageOf({ [model]: mu(1000) })], resolvePrices({}));

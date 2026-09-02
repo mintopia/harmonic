@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
-import { defaultConfig } from '../src/config.js';
+import { baselineConfig } from '../src/config.js';
 import { AttemptStore } from '../src/domain/attempts.js';
 import { TaskService } from '../src/domain/tasks.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
@@ -20,7 +20,7 @@ describe('AttemptStore', () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-attempts-'));
     db = await openAsyncDb(dir);
     settingsStore = await makeSettingsStore(dir);
-    const tasks = new TaskService(db, () => defaultConfig(), allWorkspaces(db, settingsStore));
+    const tasks = new TaskService(db, () => baselineConfig(), allWorkspaces(db, settingsStore));
     taskId = (await tasks.create({ prompt: 'timeline', state: 'ready' })).id;
     attempts = new AttemptStore(db);
   });

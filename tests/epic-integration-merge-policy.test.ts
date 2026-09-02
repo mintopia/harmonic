@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
-import { defaultConfig } from '../src/config.js';
+import { baselineConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { Runner } from '../src/execution/runner.js';
 import { runMergePolicy, type MergePolicyDeps, type PostMergeCheckResult } from '../src/execution/merge-policy.js';
@@ -26,7 +26,7 @@ describe('Runner.mergeEpicIntegration (epic → develop, ADR-0001 #382)', () => 
     dir = mkdtempSync(join(tmpdir(), 'harmonic-epic-integrate-'));
     asyncDb = await openAsyncDb(dir);
     settingsStore = await makeSettingsStore(dir);
-    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
+    tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
     repo = join(dir, 'repo');
     execFileSync('git', ['init', '-b', 'develop', repo], { encoding: 'utf8' });
     git(repo, 'config', 'user.name', 'Test');
@@ -51,7 +51,7 @@ describe('Runner.mergeEpicIntegration (epic → develop, ADR-0001 #382)', () => 
   });
 
   const makeRunner = (postMerge?: PostMergeHook): Runner =>
-    new Runner(tasks, asyncDb, () => defaultConfig(), {
+    new Runner(tasks, asyncDb, () => baselineConfig(), {
       worktreesDir: join(dir, 'worktrees'),
       criticDrive: { run: async () => ({ output: '', permissionRequests: [] }) },
       ...(postMerge ? { postMerge } : {}),
