@@ -140,9 +140,14 @@ export function writeCopilotUsageDb(dbPath: string, rows: CopilotUsageRow[]): vo
   db.close();
 }
 
+// Kept a margin below vitest's 20s testTimeout (vitest.config.ts) so a never-met
+// condition rejects with the clear message below instead of the harness killing
+// the test with an opaque timeout.
+export const DEFAULT_WAITFOR_TIMEOUT_MS = 15_000;
+
 export async function waitFor<T>(
   fn: () => Promise<T | undefined | false>,
-  { timeoutMs = 10_000, intervalMs = 25 } = {},
+  { timeoutMs = DEFAULT_WAITFOR_TIMEOUT_MS, intervalMs = 25 } = {},
 ): Promise<T> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {

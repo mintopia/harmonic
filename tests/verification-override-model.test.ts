@@ -16,7 +16,7 @@ import type { VerificationCommand, VerificationCritic } from '../web/src/types.j
 const baseCommand: VerificationCommand = { command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 };
 const baseCritic: VerificationCritic = { prompt: 'review the diff', model: 'claude-opus-5' };
 
-describe('reviewUnrunnable (ADR-0044 §F, issue #340)', () => {
+describe('reviewUnrunnable (issue #340)', () => {
   it('flags a review toggled on with no resolved model', () => {
     expect(reviewUnrunnable({ requested: true, model: '', prompt: 'review the diff' })).toBe(true);
   });

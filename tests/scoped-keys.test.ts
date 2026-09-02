@@ -45,7 +45,7 @@ describe('attempt-scoped key restrictions', () => {
     expect(await asAgent('POST', '/api/tasks/1/complete')).toBe(403);
   });
 
-  it('keeps the escalation actions human-only, always (ADR-0041; #140 retired the agentReview flag)', async () => {
+  it('keeps the escalation actions human-only, always (#140 retired the agentReview flag)', async () => {
     const done = await server.api('POST', '/api/tasks', {
       prompt: 'escalation target',
       workingDir: mkdtempSync(join(tmpdir(), 'harmonic-scoped-')),
@@ -55,9 +55,6 @@ describe('attempt-scoped key restrictions', () => {
     expect(await asAgent('POST', `/api/tasks/${done.body.id}/accept`)).toBe(403);
     expect(await asAgent('POST', `/api/tasks/${done.body.id}/reject`, { guidance: 'x' })).toBe(403);
     expect(await asAgent('POST', `/api/tasks/${done.body.id}/close`)).toBe(403);
-
-    await server.api('PATCH', '/api/config', { agentReview: true });
-    expect(await asAgent('POST', `/api/tasks/${done.body.id}/accept`)).toBe(403);
   });
 
 });

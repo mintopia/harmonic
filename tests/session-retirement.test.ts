@@ -32,7 +32,7 @@ describe('decideRetirement (issue #148)', () => {
     });
   });
 
-  it('by default retains until the Task disposition — idle with no deadline (ADR-0046)', () => {
+  it('by default retains until the Task disposition — idle with no deadline', () => {
     expect(DEFAULT_RETENTION.retentionTtlMs).toBeNull();
     expect(decideRetirement('other', 0)).toEqual({
       kind: 'idle',

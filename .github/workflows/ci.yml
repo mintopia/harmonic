@@ -31,7 +31,9 @@ jobs:
       - run: npm ci
 
       - run: npm run typecheck
-      - run: npm test
+
+      # Fails if line coverage drops below the floor in vitest.config.ts.
+      - run: npm run test:coverage
 
       # The committed OpenAPI snapshot (website/src/openapi.json, issue #74)
       # must match the live zod route schemas: regenerate it and fail if it

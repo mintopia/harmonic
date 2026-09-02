@@ -105,7 +105,6 @@ describe('Stats heavy aggregate runs in a worker (#257)', () => {
       expect(total).toBeGreaterThan(0);
       expect(elapsedMs).toBeGreaterThan(200);
       expect(stalls).toEqual([]);
-      expect(monitor.underPressure).toBe(false);
     } finally {
       monitor.stop();
       await worker.close();

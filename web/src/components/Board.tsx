@@ -16,6 +16,7 @@ import { subscribe } from '../ws';
 import { toastError } from '../toast';
 import { Icon } from './Icon';
 import { EpicIntegrationBar } from './EpicIntegrationBar';
+import { useAppContext } from '../app-context';
 import { formatModelLabel, providerLabel } from './TaskIdentity';
 import {
   blockerBadge,
@@ -90,12 +91,13 @@ function runTask(taskId: number, onChanged: () => void) {
   };
 }
 
-function RunNowButton({ taskId, onChanged }: { taskId: number; onChanged: () => void }) {
+function RunNowButton({ taskId }: { taskId: number }) {
+  const { refresh } = useAppContext();
   return (
     <button
       type="button"
       className={`relative inline-flex items-center rounded-md border border-accent bg-accent px-[13px] py-[7px] text-[13px] font-semibold text-on-accent transition-colors hover:opacity-90 ${HIT44}`}
-      onClick={runTask(taskId, onChanged)}
+      onClick={runTask(taskId, refresh)}
     >
       Run now
     </button>
@@ -149,13 +151,13 @@ function HitlBadge() {
   );
 }
 
-function TaskCard({ task, onOpen, onChanged }: { task: Task; onOpen: () => void; onChanged: () => void }) {
+function TaskCard({ task, onOpen }: { task: Task; onOpen: () => void }) {
   const hasReadout = task.runStartedAt != null;
   const action =
     task.state === 'escalated' ? (
       <ResolveButton onOpen={onOpen} />
     ) : task.state === 'ready' && task.agentWorkable ? (
-      <RunNowButton taskId={task.id} onChanged={onChanged} />
+      <RunNowButton taskId={task.id} />
     ) : null;
   const showFoot = !!task.branch || hasReadout || !!action;
 
@@ -230,7 +232,7 @@ function EpicKindBadge({ epic }: { epic: Epic }) {
   );
 }
 
-function EpicAttentionCard({ epic, onOpenEpic }: { epic: Epic; onOpenEpic?: (epic: Epic) => void }) {
+export function EpicAttentionCard({ epic, onOpenEpic }: { epic: Epic; onOpenEpic?: (epic: Epic) => void }) {
   const open = () => onOpenEpic?.(epic);
   return (
     <article data-epic-ref={epic.ref} className="group bold-wash escalated relative flex w-[26.25rem] shrink-0 cursor-pointer flex-col overflow-hidden rounded-lg bg-surface shadow-card transition-shadow duration-150 motion-reduce:transition-none hover:shadow-float">
@@ -369,12 +371,11 @@ function itemDot(item: PendingItem): string {
 function PendingCard({
   item,
   onOpenTask,
-  onChanged,
 }: {
   item: PendingItem;
   onOpenTask: (taskId: number) => void;
-  onChanged: () => void;
 }) {
+  const { refresh } = useAppContext();
   const muted = item.humanOnly;
   const wash: TaskState | '' = muted || isBlocked(item) || item.state === null ? '' : item.state;
   // An unmirrored member (no backing Task) has no in-app target — its title button
@@ -400,7 +401,7 @@ function PendingCard({
               type="button"
               aria-label="Run now"
               title="Run now"
-              onClick={runTask(item.taskId, onChanged)}
+              onClick={runTask(item.taskId, refresh)}
               className="relative z-10 grid size-[23px] place-items-center rounded-md border border-ready-dot/40 bg-ready-tint text-ready transition-colors duration-150 hover:bg-ready-dot hover:text-white after:absolute after:-inset-2.5 after:content-['']"
             >
               <svg aria-hidden="true" width="11" height="11" viewBox="0 0 24 24" fill="currentColor">
@@ -438,12 +439,10 @@ function PendingCard({
 function BlockerColumns({
   columns,
   onOpenTask,
-  onChanged,
   className = '',
 }: {
   columns: BlockerColumn[];
   onOpenTask: (taskId: number) => void;
-  onChanged: () => void;
   className?: string;
 }) {
   return (
@@ -457,7 +456,7 @@ function BlockerColumns({
             </h3>
             <div className="flex flex-col gap-2">
               {column.items.map((item) => (
-                <PendingCard key={item.key} item={item} onOpenTask={onOpenTask} onChanged={onChanged} />
+                <PendingCard key={item.key} item={item} onOpenTask={onOpenTask} />
               ))}
             </div>
           </section>
@@ -467,19 +466,17 @@ function BlockerColumns({
   );
 }
 
-function EpicBand({
+export function EpicBand({
   epic,
   columns,
   defaultOpen = false,
   onOpenTask,
-  onChanged,
   onOpenEpic,
 }: {
   epic: Epic;
   columns: BlockerColumn[];
   defaultOpen?: boolean;
   onOpenTask: (taskId: number) => void;
-  onChanged: () => void;
   /** Open this Epic's summary page — the one rich Epic surface. */
   onOpenEpic?: (epic: Epic) => void;
 }) {
@@ -522,7 +519,7 @@ function EpicBand({
 
       {open && hasColumns && (
         <div className="border-t border-hairline">
-          <BlockerColumns columns={columns} onOpenTask={onOpenTask} onChanged={onChanged} className="p-4" />
+          <BlockerColumns columns={columns} onOpenTask={onOpenTask} className="p-4" />
         </div>
       )}
 
@@ -599,16 +596,14 @@ function AllClear() {
 function AttentionCard({
   entry,
   onOpen,
-  onChanged,
   onOpenEpic,
 }: {
   entry: AttentionEntry;
   onOpen: (task: Task) => void;
-  onChanged: () => void;
   onOpenEpic?: (epic: Epic) => void;
 }) {
   if (entry.kind === 'epic') return <EpicAttentionCard epic={entry.epic} onOpenEpic={onOpenEpic} />;
-  return <TaskCard task={entry.task} onOpen={() => onOpen(entry.task)} onChanged={onChanged} />;
+  return <TaskCard task={entry.task} onOpen={() => onOpen(entry.task)} />;
 }
 
 const PIP_FILL: Record<MemberPipStatus, string> = {
@@ -636,7 +631,7 @@ function StatusPips({ epic }: { epic: Epic }) {
   );
 }
 
-function ClosedRail({
+export function ClosedRail({
   members,
   onOpenTask,
   collapsible = false,
@@ -703,7 +698,6 @@ export function Board({
   epics,
   onOpen,
   onOpenTask,
-  onChanged,
   onNewTask,
   onOpenEpic,
 }: {
@@ -712,7 +706,6 @@ export function Board({
   epics: Epic[];
   onOpen: (task: Task) => void;
   onOpenTask: (taskId: number) => void;
-  onChanged: () => void;
   onNewTask: () => void;
   onOpenEpic?: (epic: Epic) => void;
 }) {
@@ -740,7 +733,6 @@ export function Board({
                 key={entry.kind === 'epic' ? `epic:${entry.epic.ref}` : `task:${entry.task.id}`}
                 entry={entry}
                 onOpen={onOpen}
-                onChanged={onChanged}
                 onOpenEpic={onOpenEpic}
               />
             ))}
@@ -752,7 +744,7 @@ export function Board({
         <BoardSection label="Running" count={String(running.length)} tone="running">
           <CardStrip count={running.length}>
             {running.map((task) => (
-              <TaskCard key={task.id} task={task} onOpen={() => onOpen(task)} onChanged={onChanged} />
+              <TaskCard key={task.id} task={task} onOpen={() => onOpen(task)} />
             ))}
           </CardStrip>
         </BoardSection>
@@ -768,13 +760,12 @@ export function Board({
                   epic={group.epic}
                   columns={group.columns}
                   onOpenTask={onOpenTask}
-                  onChanged={onChanged}
                   onOpenEpic={onOpenEpic}
                 />
               ) : (
                 <div key="standalone" className={hasEpicGroups ? 'mt-2' : ''}>
                   {hasEpicGroups && <div className={`${boardSectionTitle} text-ink mb-2.5 px-0.5`}>Standalone</div>}
-                  <BlockerColumns columns={group.columns} onOpenTask={onOpenTask} onChanged={onChanged} className="pb-2" />
+                  <BlockerColumns columns={group.columns} onOpenTask={onOpenTask} className="pb-2" />
                 </div>
               ),
             )}

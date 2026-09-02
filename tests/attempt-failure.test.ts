@@ -11,7 +11,7 @@ describe('isExecutionFailure', () => {
     expect(isExecutionFailure({ state: 'failed' })).toBe(true);
   });
 
-  it('does not treat completed, cancelled, or still-running Runs as failures (ADR-0028)', () => {
+  it('does not treat completed, cancelled, or still-running Runs as failures', () => {
     expect(isExecutionFailure({ state: 'completed' })).toBe(false);
     expect(isExecutionFailure({ state: 'cancelled' })).toBe(false);
     expect(isExecutionFailure({ state: 'running' })).toBe(false);

@@ -127,6 +127,25 @@ describe('GET /api/activity snapshot (issue #51)', () => {
     expect(proc.cost.totalUsd).toBeGreaterThan(0);
   });
 
+  it('keeps a live Runner snapshot available to a reconnecting activity client', async () => {
+    const { attemptId } = await startHangingRun(workDir);
+
+    const first = await waitFor(async () => {
+      const { body } = await server.api('GET', '/api/activity');
+      return (body.processes as any[]).find(
+        (process) => process.type === 'attempt' && process.attemptId === attemptId && process.activity === 'Read',
+      );
+    });
+    expect(first.usage.toolCalls).toEqual({ Read: 1 });
+
+    const { body } = await server.api('GET', '/api/activity');
+    const reconnected = (body.processes as any[]).find(
+      (process) => process.type === 'attempt' && process.attemptId === attemptId,
+    );
+    expect(reconnected).toMatchObject({ activity: 'Read', tree: { id: sessionId, depth: 0 } });
+    expect(reconnected.usage.toolCalls).toEqual({ Read: 1 });
+  });
+
   it('includes a warm Conversation as a chat for an operator; a read key sees Runs only', async () => {
     const { attemptId } = await startHangingRun();
     await waitFor(async () => {

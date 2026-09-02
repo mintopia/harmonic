@@ -1,14 +1,14 @@
 #!/usr/bin/env node
-import { parseArgs } from 'node:util';
 import { mkdirSync, openSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { buildApp } from './server/app.js';
-import { defaultDataDir } from './config.js';
+import { defaultDataDir, verifyChannelsUnconfigured } from './config.js';
 import { acquireLock, daemonStatus, logFilePath, releaseLock, stopDaemon, writeDaemon } from './daemon.js';
 import { initializeTelemetry, resolveTelemetryOptions } from './telemetry.js';
 import { logger } from './logger.js';
 import { installProcessSafetyNet } from './reliability/process-safety-net.js';
+import { dispatchCli } from './cli-dispatch.js';
 
 const HELP = `harmonic — queue, run, and review autonomous agent tasks
 
@@ -47,12 +47,13 @@ const displayUrl = (host: string, port: number) =>
   `http://${host === '0.0.0.0' ? 'localhost' : host}:${port}`;
 
 async function main(): Promise<void> {
-  const [command, ...rest] = process.argv.slice(2);
+  const argv = process.argv.slice(2);
+  const rest = argv.slice(1);
+  const dispatch = dispatchCli(argv);
 
-  if (command === 'status' || command === 'stop') {
-    const { values } = parseArgs({ args: rest, options: { 'data-dir': { type: 'string' } } });
-    const dataDir = values['data-dir'] ?? defaultDataDir();
-    if (command === 'stop') {
+  if (dispatch.kind === 'status' || dispatch.kind === 'stop') {
+    const dataDir = dispatch.dataDir ?? defaultDataDir();
+    if (dispatch.kind === 'stop') {
       logger.info((await stopDaemon(dataDir)) ? 'Stopped.' : 'Not running.');
       return;
     }
@@ -68,27 +69,14 @@ async function main(): Promise<void> {
     return;
   }
 
-  if (command !== 'serve' && command !== 'start') {
+  if (dispatch.kind === 'help') {
     process.stdout.write(HELP);
-    process.exit(command === undefined || command === 'help' || command === '--help' ? 0 : 1);
+    process.exit(dispatch.exitCode);
   }
 
-  const { values } = parseArgs({
-    args: rest,
-    options: {
-      port: { type: 'string', default: '4700' },
-      host: { type: 'string', default: '0.0.0.0' },
-      'data-dir': { type: 'string' },
-      password: { type: 'string' },
-      'otel-endpoint': { type: 'string' },
-      'otel-headers': { type: 'string' },
-      'otel-export': { type: 'string' },
-      'otel-metric-export-interval': { type: 'string' },
-      'otel-stdout-log-level': { type: 'string' },
-    },
-  });
+  const { values } = dispatch;
 
-  if (command === 'start') {
+  if (dispatch.kind === 'start') {
     const dataDir = values['data-dir'] ?? defaultDataDir();
     const port = Number(values.port);
     const host = values.host!;
@@ -154,12 +142,18 @@ async function main(): Promise<void> {
     releaseLock(dataDir);
     throw error;
   }
-  if (!app.ctx.auth.hasPassword()) {
+  if (!(await app.ctx.auth.hasPassword())) {
     const loopback = host === '127.0.0.1' || host === '::1' || host === 'localhost';
     logger.warn(
       `No operator password set — Harmonic is running ungated${loopback ? '' : ` and reachable on ${host}`}.\n` +
         (loopback ? '' : '  Anyone who can reach this address has full access. Bind to 127.0.0.1 or set a password.\n') +
         '  Set one any time: harmonic serve --password <password>   (or HARMONIC_PASSWORD)',
+    );
+  }
+  const { verify } = app.ctx.settingsStore.getGlobal();
+  if (verifyChannelsUnconfigured(verify)) {
+    logger.warn(
+      'No command verifier and no critic review are configured — merges will proceed with no verification at all. Configure one in Settings → Verification, or add commands/enable review for a workspace.',
     );
   }
   await app.listen({ port, host });

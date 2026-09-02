@@ -1,13 +1,21 @@
 import { Git } from './git.js';
-import { integrationBranchName } from './epic-integration.js';
 import type { MergePolicyOutcome } from './merge-policy.js';
-import { decideEpicIntegrate, type MemberMergeState } from '../domain/epic-integrate-decision.js';
+import { decideEpicIntegrate, reduceMemberState, type MemberMergeState } from '../domain/epic-integrate-decision.js';
 import type { VerificationDecision } from '../verification/combine.js';
 import { logger } from '../logger.js';
 import { EpicOperations } from './epic-operations.js';
+import type { TaskRow } from '../db/schema.js';
+import type { TaskService } from '../domain/tasks.js';
+import { deriveLeafEpics } from '../domain/epic-derivation.js';
+import type { Ticket } from '../tracker/adapter.js';
+import { persistedTickets } from '../tracker/persisted.js';
+import { mergeIntoBase, type MergeIntoBaseArgs, type MergeIntoBaseOutcome } from './branch-merge.js';
+import { withBaseCheckoutLock, withRepoLock } from './repo-lock.js';
 
-/** The slice of {@link Git} the coordinator needs — real Git in prod, a fake in tests. */
-export interface EpicIntegrateGit {
+export { reduceMemberState };
+
+/** The slice of {@link Git} used by Epic branch lifecycle, refresh, and integration. */
+export interface EpicGit {
   branchExists(dir: string, name: string): Promise<boolean>;
   revParse(dir: string, rev: string): Promise<string>;
   /** The default branch the integration branch integrates into, or `null` on a detached HEAD. */
@@ -18,6 +26,21 @@ export interface EpicIntegrateGit {
    * already integrated even when a squash/rebase rewrote its commits so the tip is
    * not a literal ancestor. Heavier than {@link isAncestor} (a real 3-way merge). */
   isContentContained(dir: string, baseBranch: string, branch: string): Promise<boolean>;
+  createBranch(dir: string, name: string, startPoint: string): Promise<unknown>;
+  deleteBranch(dir: string, name: string): Promise<unknown>;
+  branchCheckedOutAt(dir: string, branch: string): Promise<string | null>;
+}
+
+/** The integration branch Harmonic cuts for an Epic, keyed by its tracker ref. */
+export function integrationBranchName(epicRef: number): string {
+  return `epic/${epicRef}`;
+}
+
+/** The inverse of {@link integrationBranchName}, or `null` for a non-Epic branch. */
+export function parseIntegrationBranch(name: string | null | undefined): number | null {
+  if (!name) return null;
+  const match = /^epic\/(\d+)$/.exec(name);
+  return match ? Number(match[1]) : null;
 }
 
 /** Run a whole-Epic Verification against the integration branch's tip OID and
@@ -75,9 +98,9 @@ export type EpicIntegrateOutcome =
 
 const STICKY_ESCALATION_HOLD_REASON = 'already escalated for this member state; awaiting operator or a state change';
 
-export class EpicIntegrateCoordinator {
+export class EpicCoordinator {
   private readonly repoDir: string;
-  private readonly git: EpicIntegrateGit;
+  private readonly git: Pick<EpicGit, 'branchExists' | 'revParse' | 'symbolicBranch' | 'isAncestor' | 'isContentContained'>;
   private readonly verify: EpicVerify;
   private readonly integrate: EpicIntegrate;
   private readonly retire: (epicRef: number) => Promise<void>;
@@ -100,7 +123,7 @@ export class EpicIntegrateCoordinator {
   constructor(deps: {
     /** The base repo owning `epic/<ref>` — the Workspace's working directory. */
     repoDir: string;
-    git?: EpicIntegrateGit;
+    git?: Pick<EpicGit, 'branchExists' | 'revParse' | 'symbolicBranch' | 'isAncestor' | 'isContentContained'>;
     /** Whole-Epic Verification against the integration tip. */
     verify: EpicVerify;
     /** Merge the integration branch into the default branch under the one merge policy. */
@@ -337,5 +360,252 @@ export class EpicIntegrateCoordinator {
     } catch (err) {
       this.onError(`epic ${ref} integration branch retire (${context}) failed: ${String(err)}`);
     }
+  }
+}
+
+/** A live integration branch that must follow one observed default-branch advance. */
+export interface EpicRefreshTarget {
+  ref: number;
+  repoDir: string;
+  defaultBranch: string;
+}
+
+export type EpicRefreshOutcome =
+  | { status: 'refreshed'; oid: string }
+  | { status: 'resolving'; detail: string }
+  | { status: 'deferred'; reason: string }
+  | { status: 'escalated'; reason: string };
+
+export type EpicRefreshResolveDispatchOutcome =
+  | { status: 'dispatched' }
+  | { status: 'escalated'; reason: string };
+
+/** Refreshes a live integration branch after the default branch advances. */
+export class EpicRefresh {
+  private readonly resolving = new Set<number>();
+
+  constructor(private readonly deps: {
+    git?: Pick<EpicGit, 'revParse'>;
+    merge?: (args: MergeIntoBaseArgs) => Promise<MergeIntoBaseOutcome>;
+    dispatchResolve: (target: EpicRefreshTarget, detail: string) => Promise<EpicRefreshResolveDispatchOutcome>;
+    escalate: (epicRef: number, reason: string) => void;
+  }) {}
+
+  refresh(target: EpicRefreshTarget): Promise<EpicRefreshOutcome> {
+    const branch = integrationBranchName(target.ref);
+    return withBaseCheckoutLock(target.repoDir, async () => {
+      const expectedOid = await (this.deps.git ?? Git).revParse(target.repoDir, target.defaultBranch);
+      const outcome = await withRepoLock(target.repoDir, () =>
+        (this.deps.merge ?? mergeIntoBase)({
+          repoDir: target.repoDir,
+          baseBranch: branch,
+          branch: target.defaultBranch,
+          expectedOid,
+          mode: 'merge',
+          mutexHeld: true,
+        }),
+      );
+      if (outcome.ok) {
+        this.resolving.delete(target.ref);
+        return { status: 'refreshed', oid: outcome.oid };
+      }
+      if (outcome.reason === 'fallback-pr-manual' || outcome.reason === 'target-advanced') {
+        return { status: 'deferred', reason: outcome.detail };
+      }
+      if (outcome.reason !== 'conflict') {
+        const reason = `integration refresh failed: ${outcome.detail}`;
+        this.resolving.delete(target.ref);
+        this.deps.escalate(target.ref, reason);
+        return { status: 'escalated', reason };
+      }
+      if (this.resolving.has(target.ref)) {
+        const reason = `integration refresh still conflicts after corrective turn: ${outcome.detail}`;
+        this.resolving.delete(target.ref);
+        this.deps.escalate(target.ref, reason);
+        return { status: 'escalated', reason };
+      }
+      const dispatch = await this.deps.dispatchResolve(target, outcome.detail);
+      if (dispatch.status === 'escalated') return dispatch;
+      this.resolving.add(target.ref);
+      return { status: 'resolving', detail: outcome.detail };
+    });
+  }
+}
+
+const PRE_SPAWN: ReadonlySet<string> = new Set(['draft', 'ready']);
+
+export interface EpicIntegrateTrigger {
+  submit(target: EpicIntegrateTarget, opts?: { force?: boolean }): Promise<unknown>;
+}
+
+export interface EpicRefreshTrigger {
+  refresh(target: EpicRefreshTarget): Promise<EpicRefreshOutcome>;
+}
+
+/** Coordinates integration-branch creation, task bases, and poll-time triggers. */
+export class EpicLifecycle {
+  private readyMemberRefs = new Set<number>();
+  private leafEpicRefs = new Set<number>();
+  private latestTickets: Ticket[] = [];
+  private operations = new EpicOperations();
+
+  constructor(
+    private readonly tasks: TaskService,
+    private readonly workingDir: string,
+    private readonly git: Pick<EpicGit, 'symbolicBranch' | 'branchExists' | 'createBranch' | 'deleteBranch' | 'branchCheckedOutAt' | 'isAncestor'> = Git,
+    private readonly onError: (msg: string) => void = logger.error,
+    private epicIntegrate?: EpicIntegrateTrigger,
+    private epicRefresh?: EpicRefreshTrigger,
+  ) {}
+
+  attachIntegrateTrigger(trigger: EpicIntegrateTrigger): void {
+    this.epicIntegrate = trigger;
+  }
+
+  attachRefreshTrigger(trigger: EpicRefreshTrigger): void {
+    this.epicRefresh = trigger;
+  }
+
+  attachOperations(operations: EpicOperations): void {
+    this.operations = operations;
+  }
+
+  async refreshAfterDefaultBranchAdvance(defaultBranch: string): Promise<void> {
+    if (!this.epicRefresh) return;
+    const tickets = this.latestTickets.length > 0
+      ? this.latestTickets
+      : await persistedTickets(await this.tasks.list(), await this.tasks.listTrackerContainers());
+    await this.refreshDriftedEpics(defaultBranch, deriveLeafEpics(tickets));
+  }
+
+  private async refreshDriftedEpics(defaultBranch: string, epics: readonly { ref: number }[]): Promise<void> {
+    if (!this.epicRefresh) return;
+    for (const epic of epics) {
+      const branch = integrationBranchName(epic.ref);
+      if (!(await this.git.branchExists(this.workingDir, branch))) continue;
+      if (await this.git.isAncestor(this.workingDir, defaultBranch, branch)) continue;
+      try {
+        const outcome = await this.epicRefresh.refresh({ ref: epic.ref, repoDir: this.workingDir, defaultBranch });
+        if (outcome.status !== 'refreshed') {
+          const why = 'reason' in outcome ? outcome.reason : outcome.detail;
+          logger.warn(`epic ${epic.ref} still behind ${defaultBranch} after refresh: ${outcome.status} (${why})`);
+        }
+      } catch (err) {
+        this.onError(`epic ${epic.ref} integration refresh failed: ${String(err)}`);
+      }
+    }
+  }
+
+  async reconcile(tickets: Ticket[], mirrored: TaskRow[]): Promise<void> {
+    this.latestTickets = tickets;
+    const mirroredWithDeps = mirrored.length > 0 ? await this.tasks.listWithDeps({ workspaceId: mirrored[0]!.workspaceId ?? undefined }) : [];
+    const readinessByRef = new Map<number, { agentWorkable: boolean }>();
+    for (const task of mirroredWithDeps) {
+      if (task.origin === 'mirrored' && task.trackerRef !== null) readinessByRef.set(task.trackerRef, { agentWorkable: task.agentWorkable });
+    }
+    const epics = deriveLeafEpics(tickets, readinessByRef);
+    this.leafEpicRefs = new Set(epics.map((epic) => epic.ref));
+    const readyRefs = new Set<number>();
+    for (const epic of epics) for (const ref of epic.ready) readyRefs.add(ref);
+    this.readyMemberRefs = readyRefs;
+
+    let cachedDefault: string | null | undefined;
+    const defaultBranchOnce = async (): Promise<string | null> => {
+      if (cachedDefault === undefined) cachedDefault = await this.git.symbolicBranch(this.workingDir);
+      return cachedDefault;
+    };
+    if (this.epicRefresh) {
+      const defaultBranch = await defaultBranchOnce();
+      if (defaultBranch !== null) await this.refreshDriftedEpics(defaultBranch, epics);
+    }
+    if (readyRefs.size === 0 && this.epicIntegrate === undefined) return;
+
+    const byRef = new Map<number, TaskRow>();
+    for (const task of mirrored) if (task.trackerRef != null) byRef.set(task.trackerRef, task);
+    const defaultBranch = await defaultBranchOnce();
+    if (defaultBranch === null) return;
+
+    for (const epic of epics) {
+      if (epic.ready.length > 0) {
+        const branch = integrationBranchName(epic.ref);
+        try {
+          await this.operations.run({
+            repoDir: this.workingDir,
+            epicRef: epic.ref,
+            type: 'cut',
+            attributes: { 'epic.integration_branch': branch },
+            work: () => this.ensureIntegrationBranch(branch, defaultBranch),
+          });
+          for (const memberRef of epic.ready) {
+            const task = byRef.get(memberRef);
+            if (!task) continue;
+            const live = await this.tasks.get(task.id);
+            if (PRE_SPAWN.has(live.state) && live.baseBranch !== branch) await this.tasks.setBaseBranch(live.id, branch);
+          }
+        } catch (err) {
+          const reason = `integration branch reconcile failed: ${String(err)}`;
+          this.operations.fail({ repoDir: this.workingDir, epicRef: epic.ref, reason });
+          this.onError(`epic ${epic.ref} ${reason}`);
+        }
+      }
+      if (this.epicIntegrate) {
+        const members = await Promise.all(epic.members.map(async (ref) => {
+          const task = byRef.get(ref);
+          return reduceMemberState(task ? await this.tasks.get(task.id) : undefined);
+        }));
+        void this.epicIntegrate.submit({ ref: epic.ref, members, memberRefs: epic.members })
+          .catch((err) => this.onError(`epic ${epic.ref} whole-Epic integrate attempt failed: ${String(err)}`));
+      }
+    }
+  }
+
+  membersOf(epicRef: number): number[] {
+    return deriveLeafEpics(this.latestTickets).find((epic) => epic.ref === epicRef)?.members ?? [];
+  }
+
+  awaitsBase(task: TaskRow): boolean {
+    return task.origin === 'mirrored' && task.baseBranch == null && task.trackerRef != null && this.readyMemberRefs.has(task.trackerRef);
+  }
+
+  async memberBaseNotReady(task: TaskRow): Promise<boolean> {
+    if (task.origin !== 'mirrored') return false;
+    if (this.awaitsBase(task)) return true;
+    const epicRef = task.mapRef ?? parseIntegrationBranch(task.baseBranch);
+    if (epicRef === null) return false;
+    const branch = integrationBranchName(epicRef);
+    try {
+      const exists = await this.git.branchExists(this.workingDir, branch);
+      if (task.baseBranch === branch) return !exists;
+      if (exists) return true;
+      return await this.isLeafEpic(epicRef, task.workspaceId);
+    } catch (err) {
+      this.onError(`epic ${epicRef} integration branch existence check failed: ${String(err)}`);
+      return true;
+    }
+  }
+
+  private async isLeafEpic(epicRef: number, workspaceId: number | null): Promise<boolean> {
+    if (this.leafEpicRefs.has(epicRef)) return true;
+    const listArg = workspaceId == null ? undefined : { workspaceId };
+    const tickets = await persistedTickets(
+      await this.tasks.list(listArg),
+      await this.tasks.listTrackerContainers(workspaceId ?? undefined),
+    );
+    this.leafEpicRefs = new Set(deriveLeafEpics(tickets).map((epic) => epic.ref));
+    return this.leafEpicRefs.has(epicRef);
+  }
+
+  private async ensureIntegrationBranch(branch: string, defaultBranch: string): Promise<void> {
+    if (await this.git.branchExists(this.workingDir, branch)) return;
+    await this.git.createBranch(this.workingDir, branch, defaultBranch);
+  }
+
+  async retireIntegrationBranch(epicRef: number): Promise<void> {
+    const branch = integrationBranchName(epicRef);
+    const defaultBranch = await this.git.symbolicBranch(this.workingDir);
+    if (defaultBranch === null || !(await this.git.branchExists(this.workingDir, branch))) return;
+    if ((await this.git.branchCheckedOutAt(this.workingDir, branch)) !== null) return;
+    if (!(await this.git.isAncestor(this.workingDir, defaultBranch, branch))) return;
+    await this.git.deleteBranch(this.workingDir, branch);
   }
 }

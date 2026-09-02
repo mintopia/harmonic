@@ -1,4 +1,4 @@
-import type { Verdict } from './verification-model.js';
+import type { Verdict } from '../../src/verification/critic-schema.js';
 
 /** The stored Ticket states; blocked-ness and agent-workability are derived, never stored. */
 export const TASK_STATES = ['draft', 'ready', 'working', 'escalated', 'done', 'cancelled'] as const;
@@ -37,7 +37,7 @@ export interface Attempt {
   verifiedSha: string | null;
   /** Why this attempt handed the ticket to a human; null unless it escalated. */
   escalationReason: string | null;
-  /** Read-time command and critic outcomes for this attempt's owning Run. */
+  /** Read-time command and critic outcomes for this Attempt. */
   verifierStatuses: VerifierStatus[];
   continuation: {
     path: 'continued-session' | 'new-session-condensed';
@@ -275,7 +275,7 @@ export interface VerificationReview {
   harness?: string;
 }
 
-/** The budget Guardrail: a mandatory wall-clock bound per afk Run
+/** The budget Guardrail: a mandatory wall-clock bound per afk Attempt
  * plus optional token and cost caps (`null` = that cap is off). */
 export interface BudgetGuardrail {
   wallClockMinutes: number;
@@ -302,7 +302,7 @@ export interface Task {
   model: string;
   workingDir: string;
   isolationMode: 'direct' | 'worktree';
-  /** Explicit base branch a worktree Run is cut from and merges back onto
+  /** Explicit base branch a worktree Attempt is cut from and merges back onto
    *; null resolves at spawn to the working dir's
    * current branch. */
   baseBranch: string | null;
@@ -506,7 +506,7 @@ export interface AttemptEvent {
   seq: number;
   ts: number;
   type: 'session_update' | 'permission_request' | 'lifecycle';
-  payload: any;
+  payload: unknown;
 }
 
 /** A renderer-compatible event parsed from a native harness transcript. */
@@ -580,7 +580,7 @@ export interface ConversationEvent {
   seq: number;
   ts: number;
   type: 'session_update' | 'permission_request' | 'lifecycle' | 'user_turn';
-  payload: any;
+  payload: unknown;
 }
 
 /**
@@ -658,7 +658,7 @@ export interface ToolTokenAttribution {
   cost?: number;
 }
 
-/** Usage aggregate for a Run or Conversation (server `AttemptUsage`) — rolled up over the whole Process Tree. */
+/** Usage aggregate for an Attempt or Conversation (server `AttemptUsage`) — rolled up over the whole Process Tree. */
 export interface AttemptUsage {
   /** Per-model breakdown (session-log fallback; ACP only reports aggregates). */
   models: Record<string, ModelUsage>;
@@ -695,7 +695,7 @@ export type ProcessTree = ProcessNode;
 
 /**
  * One live process in the instance-wide Activity snapshot (
- * `GET /api/activity`): an in-flight Run or a warm Conversation, joined with
+ * `GET /api/activity`): an in-flight Attempt or a warm Conversation, joined with
  * its latest Usage, context fill, and derived Cost. `startedAt` is the source
  * of truth for elapsed — the client ticks it live. A Conversation's
  * `tree`/`activity` are null (no live tailer) and its `escalated` is always false.
@@ -705,7 +705,7 @@ export interface ActivityProcess {
   attemptId: number | null;
   conversationId: number | null;
   taskId: number | null;
-  /** Display title: a Run's Task prompt first line, a Conversation's title. */
+  /** Display title: an Attempt's Task prompt first line, a Conversation's title. */
   title: string;
   workspaceId: number;
   /** The owning Workspace's name — the view spans Workspaces. */
@@ -726,14 +726,14 @@ export interface ActivityProcess {
   contextTokens: number | null;
   /** The model's configured context window; null when unconfigured (percentage suppressed). */
   contextWindow: number | null;
-  /** One-line "what the agent is doing now" (Runs only); null for a Conversation. */
+  /** One-line "what the agent is doing now" (Attempts only); null for a Conversation. */
   activity: string | null;
   tree: ProcessTree | null;
   cost: Cost | null;
 }
 
 /**
- * The live `attempt_usage` firehose delta: a Run's latest live-usage
+ * The live `attempt_usage` firehose delta: an Attempt's latest live-usage
  * snapshot plus Cost derived on read. The Activity view merges it into the
  * matching row so tokens, context fill, cost, and the activity line tick live
  * between snapshot polls.
@@ -773,7 +773,7 @@ export interface AppConfig {
     commands: VerificationCommand[];
     review: VerificationReview;
   };
-  /** Run Guardrails: the global-default budget bounds, progress
+  /** Attempt Guardrails: the global-default budget bounds, progress
    * toggle, and tool-timeout a Workspace inherits until it overrides them. */
   guardrails: { budget: BudgetGuardrail; progress: boolean; toolTimeoutMinutes: number };
   /** How mirrored Tasks are driven: prompt and branch fate. */
@@ -785,7 +785,7 @@ export interface AppConfig {
     /** The re-prompt nudge sent when a turn ends without finish/escalate, with {taskId} placeholder. */
     continuePrompt: string;
     mergeFate: 'auto-merge' | 'open-PR' | 'artifact';
-    /** How many times a Run that ended its turn without finish/escalate is re-prompted to continue before it is treated as unresolved and verified. 0 keeps single-turn behaviour. */
+    /** How many times an Attempt that ended its turn without finish/escalate is re-prompted to continue before it is treated as unresolved and verified. 0 keeps single-turn behaviour. */
     continueAttempts: number;
   };
   /** Maximum implementation attempts before the ticket is escalated. */
@@ -793,6 +793,6 @@ export interface AppConfig {
   /** Reuse a warm Session into the next attempt while its context occupancy stays
    * below this many tokens; at or above it, start a condensed new Session. */
   contextReuseTokenLimit: number;
-  /** The Task Prompt template for native Runs, with {prompt}/{id}/{workingDir}/{harness}/{model} placeholders. */
+  /** The Task Prompt template for native Attempts, with {prompt}/{id}/{workingDir}/{harness}/{model} placeholders. */
   taskPrompt: string;
 }

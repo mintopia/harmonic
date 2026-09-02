@@ -1,4 +1,4 @@
-import { createElement, useEffect, useState } from 'react';
+import { createElement, useState } from 'react';
 import {
   flaggedWorktreeReasonLabel,
   isFlaggedWorktreesSnapshot,
@@ -7,6 +7,7 @@ import {
 } from '../flagged-worktrees-model.js';
 import { subscribe } from '../ws.js';
 import { card, chip, tableHead } from '../ui.js';
+import { useLiveEffect } from '../useLiveEffect.js';
 
 const GRID = 'grid grid-cols-[minmax(14rem,2fr)_5rem_5rem_7rem] gap-x-4 px-4';
 
@@ -48,27 +49,30 @@ export function FlaggedWorktreesTable({ worktrees }: { worktrees: FlaggedWorktre
 export function FlaggedWorktreesView() {
   const [worktrees, setWorktrees] = useState<FlaggedWorktree[] | null>(null);
 
-  useEffect(() => {
-    let active = true;
+  useLiveEffect((live) => {
     let snapshotLoaded = false;
-    const pending: FlaggedWorktree[][] = [];
+    let pending: FlaggedWorktree[][] = [];
     const apply = (next: FlaggedWorktree[]) => setWorktrees((current) => mergeFlaggedWorktrees(current ?? [], next));
+    const installSnapshot = (snapshot: FlaggedWorktree[]) => {
+      if (!live()) return;
+      snapshotLoaded = true;
+      setWorktrees(pending.reduce(mergeFlaggedWorktrees, snapshot));
+    };
+    const load = () => {
+      snapshotLoaded = false;
+      pending = [];
+      fetch('/api/flagged-worktrees')
+        .then((response) => (response.ok ? response.json() : { worktrees: [] }))
+        .then((snapshot: unknown) => installSnapshot(isFlaggedWorktreesSnapshot(snapshot) ? snapshot.worktrees : []))
+        .catch(() => installSnapshot([]));
+    };
     const unsubscribe = subscribe((message) => {
       if (message.type !== 'flagged-worktrees') return;
       if (snapshotLoaded) apply(message.flags);
       else pending.push(message.flags);
-    });
-    const installSnapshot = (snapshot: FlaggedWorktree[]) => {
-      if (!active) return;
-      snapshotLoaded = true;
-      setWorktrees(pending.reduce(mergeFlaggedWorktrees, snapshot));
-    };
-    fetch('/api/flagged-worktrees')
-      .then((response) => (response.ok ? response.json() : { worktrees: [] }))
-      .then((snapshot: unknown) => installSnapshot(isFlaggedWorktreesSnapshot(snapshot) ? snapshot.worktrees : []))
-      .catch(() => installSnapshot([]));
+    }, load);
+    load();
     return () => {
-      active = false;
       unsubscribe();
     };
   }, []);

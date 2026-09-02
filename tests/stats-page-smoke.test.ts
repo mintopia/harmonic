@@ -96,7 +96,7 @@ describe('StatsPage smoke (issue #452)', () => {
 
     await renderPage(1);
 
-    expect(host!.textContent).toContain('No runs to chart yet');
+    expect(host!.textContent).toContain('No attempts to chart yet');
   });
 
   it('renders the populated dashboard sections', async () => {

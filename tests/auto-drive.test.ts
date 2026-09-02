@@ -173,7 +173,7 @@ describe('Drive Prompt fill (issue #33)', () => {
     expect(await drive.continueAttempts(worktreeTask({ id: 7 }))).toBe(3);
   });
 
-  it('resolves every drive.* field per-Workspace via the injected resolver (ADR-0044/#339)', async () => {
+  it('resolves every drive.* field per-Workspace via the injected resolver (#339)', async () => {
     const config: AppConfig = {
       ...baselineConfig(),
       drive: { ...baselineConfig().drive, prompt: 'GLOBAL {ref}', continueAttempts: 1, mergeFate: 'auto-merge' },

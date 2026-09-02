@@ -16,8 +16,6 @@ import {
   type RawTaskRow,
   type TaskState,
   type MergeStatus,
-  type Workflow,
-  type WayfinderType,
   type WorkspaceRow,
   type TrackerFacts,
   type TrackerContainerRow,
@@ -33,7 +31,11 @@ import { deleteAttemptsAndChildrenAsync } from './attempt-cascade.js';
 import { forEachYielding } from '../reliability/yield.js';
 import { orderEligibleWorkYielding } from './work-ordering.js';
 import { mirroredAgentEligible } from './agent-workable.js';
+import { withTaskLock } from './task-lock.js';
 import type { StoredEpicRecord } from './epic-derivation.js';
+import { TaskBlockerGraph } from './task-blocker-graph.js';
+import { TaskMirror, type MirrorInput } from './task-mirror.js';
+export type { MirrorInput } from './task-mirror.js';
 
 export const createTaskInputSchema = z.object({
   prompt: z.string().min(1, 'prompt is required').meta({ example: 'Add rate limiting to POST /api/tasks' }),
@@ -190,6 +192,29 @@ const EDITABLE_STATES: TaskState[] = ['draft', 'ready'];
 const CANCELLABLE_STATES: TaskState[] = ['draft', 'ready', 'working', 'escalated'];
 const TERMINAL_STATES: TaskState[] = ['done', 'cancelled'];
 
+/**
+ * The whole legal Task lifecycle (ADR-0020). Terminal `done` has no outgoing
+ * edge; `cancelled` reopens only to `ready` (via `uncancel`). `ready → done` is
+ * the reconcile-only edge for a merge that settled its Attempt before the Task
+ * reached `done`. A same-state write is an idempotent no-op (e.g. re-escalating
+ * to refresh the reason), not a transition, so it is always allowed.
+ */
+const LEGAL_TRANSITIONS: Record<TaskState, readonly TaskState[]> = {
+  draft: ['ready', 'cancelled'],
+  ready: ['working', 'escalated', 'done', 'cancelled'],
+  working: ['ready', 'escalated', 'done', 'cancelled'],
+  escalated: ['ready', 'done', 'cancelled'],
+  done: [],
+  cancelled: ['ready'],
+};
+
+function assertTaskTransition(id: number, from: TaskState, to: TaskState): void {
+  if (from === to) return;
+  if (!LEGAL_TRANSITIONS[from].includes(to)) {
+    throw new DomainError('invalid_state', `task ${id}: illegal transition ${from} → ${to}`);
+  }
+}
+
 export type TaskNotification = 'task.created' | 'run.started' | 'task.escalated' | 'task.done';
 
 const STATE_NOTIFICATIONS: Partial<Record<TaskState, TaskNotification>> = {
@@ -197,29 +222,6 @@ const STATE_NOTIFICATIONS: Partial<Record<TaskState, TaskNotification>> = {
   escalated: 'task.escalated',
   done: 'task.done',
 };
-
-/** Normalised input for a mirrored-Task upsert; role fields already derived from labels. */
-export interface MirrorInput {
-  trackerRef: number;
-  prompt: string;
-  workflow: Workflow;
-  wayfinderType: WayfinderType | null;
-  mapRef: number | null;
-  /** The tracker open/closed axis; closed → done. */
-  closed: boolean;
-  /**
-   * Whether the resolved tracker adapter can close this ticket. The
-   * `done → ready` reopen flip only fires for a tracker that can close; an
-   * inbound-only adapter never closes, so its done Task stays done. Defaults to
-   * capable.
-   */
-  trackerCanClose?: boolean;
-  /**
-   * The last-scan normalised tracker facts, persisted verbatim. Optional:
-   * omitting it leaves the durable fact columns untouched.
-   */
-  facts?: TrackerFacts;
-}
 
 function trackerFactColumns(facts: TrackerFacts) {
   return {
@@ -235,6 +237,9 @@ function trackerFactColumns(facts: TrackerFacts) {
 }
 
 export class TaskService {
+  private readonly blockerGraph: TaskBlockerGraph;
+  private readonly mirror: TaskMirror;
+
   constructor(
     private readonly db: AsyncDbHandle,
     private readonly getConfig: () => AppConfig,
@@ -243,7 +248,25 @@ export class TaskService {
     private readonly onNotify: (event: TaskNotification, task: TaskRow) => void = () => {},
     /** Fired once a Task's row is actually gone, so a live board can drop it immediately. */
     private readonly onRemoved: (id: number) => void = () => {},
-  ) {}
+  ) {
+    this.blockerGraph = new TaskBlockerGraph(this.db, {
+      get: (id) => this.get(id),
+      withDeps: (task) => this.withDeps(task),
+      assertOperatorEditable: (task) => this.assertOperatorEditable(task),
+      cancel: (id) => this.cancel(id),
+      onChanged: this.onChanged,
+      editableStates: EDITABLE_STATES,
+      cancellableStates: CANCELLABLE_STATES,
+    });
+    this.mirror = new TaskMirror(this.db, {
+      resolveWorkspace: (workspaceId) => this.resolveWorkspace(workspaceId),
+      changed: (task) => this.changed(task),
+      get: (id) => this.get(id),
+      clearDismissal: (workspaceId, trackerRef) => this.clearDismissal(workspaceId, trackerRef),
+      removeTaskCascade: (id, tombstone) => this.removeTaskCascade(id, tombstone),
+      blockerGraph: this.blockerGraph,
+    });
+  }
 
   private async resolveWorkspace(workspaceId?: number): Promise<WorkspaceRow> {
     return resolveWorkspace(await this.getWorkspaces(), workspaceId);
@@ -378,82 +401,7 @@ export class TaskService {
    * Mirrored Tasks never enter draft.
    */
   async upsertMirrored(input: MirrorInput, workspaceId?: number): Promise<TaskRow> {
-    const workspace = await this.resolveWorkspace(workspaceId);
-    const { row, dirty } = await this.db.write(async (db) => {
-      const existing = await db
-        .select()
-        .from(tasks)
-        .where(and(eq(tasks.workspaceId, workspace.id), eq(tasks.trackerRef, input.trackerRef)))
-        .get();
-      const now = Date.now();
-      if (existing) {
-        const state: TaskState =
-          existing.state === 'working' || existing.state === 'escalated'
-            ? existing.state
-            : input.closed
-              ? 'done'
-              : existing.state === 'done' && input.trackerCanClose !== false
-                ? 'ready'
-              : existing.state;
-        const factCols = input.facts ? trackerFactColumns(input.facts) : {};
-        // trackerBlockedBy/trackerLabels are JSON columns: Drizzle parses them
-        // into a fresh array on every read, so `===` never holds.
-        const factUnchanged = ([col, value]: [string, unknown]) => {
-          const current = existing[col as keyof typeof existing];
-          return typeof value === 'object' && value !== null
-            ? JSON.stringify(current) === JSON.stringify(value)
-            : current === value;
-        };
-        const unchanged =
-          existing.state === state &&
-          existing.prompt === input.prompt &&
-          existing.workflow === input.workflow &&
-          existing.wayfinderType === input.wayfinderType &&
-          existing.mapRef === input.mapRef &&
-          Object.entries(factCols).every(factUnchanged);
-        if (unchanged) return { row: existing, dirty: false };
-        const updated = await db
-          .update(tasks)
-          .set({
-            prompt: input.prompt,
-            state,
-            workflow: input.workflow,
-            wayfinderType: input.wayfinderType,
-            mapRef: input.mapRef,
-            ...factCols,
-            updatedAt: now,
-          })
-          .where(eq(tasks.id, existing.id))
-          .returning()
-          .get();
-        return { row: updated, dirty: true };
-      }
-      const inserted = await db
-        .insert(tasks)
-        .values({
-          prompt: input.prompt,
-          workspaceId: workspace.id,
-          harness: null,
-          model: null,
-          isolationMode: null,
-          priority: null,
-          conflictResolveTurns: null,
-          workingDir: workspace.workingDir,
-          state: input.closed ? 'done' : 'ready',
-          origin: 'mirrored',
-          trackerRef: input.trackerRef,
-          workflow: input.workflow,
-          wayfinderType: input.wayfinderType,
-          mapRef: input.mapRef,
-          ...(input.facts ? trackerFactColumns(input.facts) : {}),
-          createdAt: now,
-          updatedAt: now,
-        })
-        .returning()
-        .get();
-      return { row: inserted, dirty: true };
-    });
-    return dirty ? await this.changed(row) : await this.resolve(row);
+    return this.mirror.upsertMirrored(input, workspaceId);
   }
 
   /**
@@ -695,19 +643,31 @@ export class TaskService {
    * `undefined`, so local Task state is the cross-process ownership lock.
    */
   async claimReady(id: number): Promise<TaskRow | undefined> {
-    const row = await this.db.write((db) =>
-      db
-        .update(tasks)
-        .set({ state: 'working', updatedAt: Date.now() })
-        .where(and(eq(tasks.id, id), eq(tasks.state, 'ready')))
-        .returning()
-        .get(),
-    );
-    if (!row) return undefined;
-    const task = await this.resolve(row);
-    this.onChanged(task);
-    this.onNotify('run.started', task);
-    return task;
+    return withTaskLock(id, async () => {
+      const claimed = await this.db.write((db) =>
+        db
+          .update(tasks)
+          .set({ state: 'working', updatedAt: Date.now() })
+          .where(and(eq(tasks.id, id), eq(tasks.state, 'ready')))
+          .returning()
+          .get(),
+      );
+      if (!claimed) return undefined;
+      const workspace = await this.resolveWorkspace(claimed.workspaceId ?? undefined);
+      const pinned = this.resolveDefaults(this.overridesOf(claimed), workspace);
+      const row = await this.db.write((db) =>
+        db
+          .update(tasks)
+          .set({ ...pinned, updatedAt: Date.now() })
+          .where(and(eq(tasks.id, id), eq(tasks.state, 'working')))
+          .returning()
+          .get(),
+      );
+      const task = await this.resolve(row ?? claimed);
+      this.onChanged(task);
+      this.onNotify('run.started', task);
+      return task;
+    });
   }
 
   async get(id: number): Promise<TaskRow> {
@@ -737,11 +697,13 @@ export class TaskService {
 
   /** Promote a draft to ready. Blockers are derived at read and pick time. */
   async promote(id: number): Promise<TaskRow> {
-    const task = await this.get(id);
-    if (task.state !== 'draft') {
-      throw new DomainError('invalid_state', `task ${id} is ${task.state}; only drafts can be promoted to ready`);
-    }
-    return this.setState(id, 'ready');
+    return withTaskLock(id, async () => {
+      const task = await this.get(id);
+      if (task.state !== 'draft') {
+        throw new DomainError('invalid_state', `task ${id} is ${task.state}; only drafts can be promoted to ready`);
+      }
+      return this.setState(id, 'ready');
+    });
   }
 
   /**
@@ -751,36 +713,40 @@ export class TaskService {
    * so its feedback rides the column.
    */
   async requeue(id: number, feedback?: string, continuation?: 'full' | 'condensed'): Promise<TaskRow> {
-    const task = await this.get(id);
-    if (task.state !== 'escalated') {
-      throw new DomainError('invalid_state', `task ${id} is ${task.state}; only escalated tasks can be re-queued`);
-    }
-    const trimmed = feedback?.trim();
-    const patch: Partial<TaskRow> = {
-      state: 'ready',
-      escalationReason: null,
-      mergeStatus: null,
-      updatedAt: Date.now(),
-      feedback: null,
-      continuationChoice: continuation ?? null,
-    };
-    if (trimmed) {
-      if (task.origin === 'mirrored') patch.feedback = trimmed;
-      else patch.prompt = `${task.prompt}\n\n## Feedback from the previous attempt\n\n${trimmed}`;
-    }
-    const row = await this.db.write((db) =>
-      db.update(tasks).set(patch).where(eq(tasks.id, id)).returning().get(),
-    );
-    return await this.changed(row!);
+    return withTaskLock(id, async () => {
+      const task = await this.get(id);
+      if (task.state !== 'escalated') {
+        throw new DomainError('invalid_state', `task ${id} is ${task.state}; only escalated tasks can be re-queued`);
+      }
+      const trimmed = feedback?.trim();
+      const patch: Partial<TaskRow> = {
+        state: 'ready',
+        escalationReason: null,
+        mergeStatus: null,
+        updatedAt: Date.now(),
+        feedback: null,
+        continuationChoice: continuation ?? null,
+      };
+      if (trimmed) {
+        if (task.origin === 'mirrored') patch.feedback = trimmed;
+        else patch.prompt = `${task.prompt}\n\n## Feedback from the previous attempt\n\n${trimmed}`;
+      }
+      const row = await this.db.write((db) =>
+        db.update(tasks).set(patch).where(eq(tasks.id, id)).returning().get(),
+      );
+      return await this.changed(row!);
+    });
   }
 
   /** Return a cancelled task to the queue in place — the inverse of {@link cancel}. */
   async uncancel(id: number): Promise<TaskRow> {
-    const task = await this.get(id);
-    if (task.state !== 'cancelled') {
-      throw new DomainError('invalid_state', `task ${id} is ${task.state}; only cancelled tasks can be uncancelled`);
-    }
-    return this.setState(id, 'ready');
+    return withTaskLock(id, async () => {
+      const task = await this.get(id);
+      if (task.state !== 'cancelled') {
+        throw new DomainError('invalid_state', `task ${id} is ${task.state}; only cancelled tasks can be uncancelled`);
+      }
+      return this.setState(id, 'ready');
+    });
   }
 
   /**
@@ -788,37 +754,44 @@ export class TaskService {
    * stays on the row until an operator Accepts, Rejects with guidance, or Closes it.
    */
   async escalate(id: number, reason: string): Promise<TaskRow> {
-    const row = await this.db.write((db) =>
-      db
-        .update(tasks)
-        .set({ state: 'escalated', escalationReason: reason, mergeStatus: null, updatedAt: Date.now() })
-        .where(eq(tasks.id, id))
-        .returning()
-        .get(),
-    );
-    const task = await this.changed(row!);
-    this.onNotify('task.escalated', task);
-    await this.emitDependents(id);
-    return task;
+    return withTaskLock(id, async () => {
+      assertTaskTransition(id, (await this.getRaw(id)).state, 'escalated');
+      const row = await this.db.write((db) =>
+        db
+          .update(tasks)
+          .set({ state: 'escalated', escalationReason: reason, mergeStatus: null, updatedAt: Date.now() })
+          .where(eq(tasks.id, id))
+          .returning()
+          .get(),
+      );
+      const task = await this.changed(row!);
+      this.onNotify('task.escalated', task);
+      await this.blockerGraph.emitDependents(id);
+      return task;
+    });
   }
 
   async cancel(id: number): Promise<TaskRow> {
-    const task = await this.get(id);
-    if (!CANCELLABLE_STATES.includes(task.state)) {
-      throw new DomainError('invalid_state', `task ${id} is ${task.state}, which is terminal`);
-    }
-    return this.setState(id, 'cancelled');
+    return withTaskLock(id, async () => {
+      const task = await this.get(id);
+      if (!CANCELLABLE_STATES.includes(task.state)) {
+        throw new DomainError('invalid_state', `task ${id} is ${task.state}, which is terminal`);
+      }
+      return this.setState(id, 'cancelled');
+    });
   }
 
   /** Operator override: force a working task straight to done. Unblocks
    * dependents like any completion. Pairs with runner.completeForTask, which
    * stops the still-running agent. */
   async complete(id: number): Promise<TaskRow> {
-    const task = await this.get(id);
-    if (task.state !== 'working') {
-      throw new DomainError('invalid_state', `task ${id} is ${task.state}, not working`);
-    }
-    return this.setState(id, 'done');
+    return withTaskLock(id, async () => {
+      const task = await this.get(id);
+      if (task.state !== 'working') {
+        throw new DomainError('invalid_state', `task ${id} is ${task.state}, not working`);
+      }
+      return this.setState(id, 'done');
+    });
   }
 
   /**
@@ -827,32 +800,27 @@ export class TaskService {
    * is rejected and the caller must treat it as a clean no-op.
    */
   async claimMirroredAutoRun(id: number): Promise<TaskRow | undefined> {
-    const row = await this.db.write((db) =>
-      db
-        .update(tasks)
-        .set({ state: 'working', updatedAt: Date.now() })
-        .where(and(eq(tasks.id, id), eq(tasks.state, 'ready'), eq(tasks.origin, 'mirrored')))
-        .returning()
-        .get(),
-    );
-    return row ? await this.changed(row) : undefined;
+    return withTaskLock(id, () => this.mirror.claimMirroredAutoRun(id));
   }
 
   async setState(id: number, state: TaskState): Promise<TaskRow> {
-    const row = await this.db.write((db) =>
-      db
-        .update(tasks)
-        .set({ state, mergeStatus: null, updatedAt: Date.now(), ...(state === 'escalated' ? {} : { escalationReason: null }) })
-        .where(eq(tasks.id, id))
-        .returning()
-        .get(),
-    );
-    const task = await this.resolve(row!);
-    this.onChanged(task);
-    const notification = STATE_NOTIFICATIONS[state];
-    if (notification) this.onNotify(notification, task);
-    if (state === 'done' || state === 'cancelled') await this.emitDependents(id);
-    return task;
+    return withTaskLock(id, async () => {
+      assertTaskTransition(id, (await this.getRaw(id)).state, state);
+      const row = await this.db.write((db) =>
+        db
+          .update(tasks)
+          .set({ state, mergeStatus: null, updatedAt: Date.now(), ...(state === 'escalated' ? {} : { escalationReason: null }) })
+          .where(eq(tasks.id, id))
+          .returning()
+          .get(),
+      );
+      const task = await this.resolve(row!);
+      this.onChanged(task);
+      const notification = STATE_NOTIFICATIONS[state];
+      if (notification) this.onNotify(notification, task);
+      if (state === 'done' || state === 'cancelled') await this.blockerGraph.emitDependents(id);
+      return task;
+    });
   }
 
   /** Set the live merge indicator (`merging` / `resolving-conflicts`, or null at rest) and broadcast it. Orthogonal to `state`; every `setState`/`escalate`/`requeue` clears it. */
@@ -861,12 +829,6 @@ export class TaskService {
       db.update(tasks).set({ mergeStatus, updatedAt: Date.now() }).where(eq(tasks.id, id)).returning().get(),
     );
     return await this.changed(row!);
-  }
-
-  private async emitDependents(id: number): Promise<void> {
-    for (const dependentId of await this.dependents(id)) {
-      this.onChanged(await this.get(dependentId));
-    }
   }
 
   /**
@@ -889,27 +851,11 @@ export class TaskService {
   }
 
   async dependsOn(taskId: number): Promise<number[]> {
-    return (
-      await this.db.read((db) =>
-        db
-          .select({ id: taskDependencies.dependsOnId })
-          .from(taskDependencies)
-          .where(eq(taskDependencies.taskId, taskId))
-          .all(),
-      )
-    ).map((r) => r.id);
+    return this.blockerGraph.dependsOn(taskId);
   }
 
   async dependents(taskId: number): Promise<number[]> {
-    return (
-      await this.db.read((db) =>
-        db
-          .select({ id: taskDependencies.taskId })
-          .from(taskDependencies)
-          .where(eq(taskDependencies.dependsOnId, taskId))
-          .all(),
-      )
-    ).map((r) => r.id);
+    return this.blockerGraph.dependents(taskId);
   }
 
   private assertOperatorEditable(task: TaskRow): void {
@@ -924,75 +870,20 @@ export class TaskService {
    * blocked⇄ready. A live Attempt is never interrupted and nothing cascades.
    */
   async reconcileMirroredDeps(taskId: number, dependsOnIds: number[]): Promise<void> {
-    const desired = new Set(dependsOnIds.filter((id) => id !== taskId));
-    const current = new Set(await this.dependsOn(taskId));
-    const toAdd = [...desired].filter((id) => !current.has(id));
-    const toRemove = [...current].filter((id) => !desired.has(id));
-    if (toAdd.length === 0 && toRemove.length === 0) return;
-    await this.db.write(async (db) => {
-      for (const id of toAdd) {
-        await db.insert(taskDependencies).values({ taskId, dependsOnId: id }).onConflictDoNothing().run();
-      }
-      for (const id of toRemove) {
-        await db
-          .delete(taskDependencies)
-          .where(and(eq(taskDependencies.taskId, taskId), eq(taskDependencies.dependsOnId, id)))
-          .run();
-      }
-    });
-    await this.rederiveBlocked(taskId);
+    await this.mirror.reconcileMirroredDeps(taskId, dependsOnIds);
   }
 
   async addDependency(taskId: number, dependsOnId: number): Promise<TaskWithDeps> {
-    const task = await this.get(taskId);
-    this.assertOperatorEditable(task);
-    await this.get(dependsOnId);
-    if (!EDITABLE_STATES.includes(task.state)) {
-      throw new DomainError('invalid_state', `task ${taskId} is ${task.state}; dependencies can only change on draft or ready tasks`);
-    }
-    if (taskId === dependsOnId || (await this.reaches(dependsOnId, taskId))) {
-      throw new DomainError('conflict', `dependency ${taskId} → ${dependsOnId} would create a cycle`);
-    }
-    await this.db.write((db) =>
-      db.insert(taskDependencies).values({ taskId, dependsOnId }).onConflictDoNothing().run(),
-    );
-    await this.rederiveBlocked(taskId);
-    return this.withDeps(await this.get(taskId));
+    return this.blockerGraph.addDependency(taskId, dependsOnId);
   }
 
   async removeDependency(taskId: number, dependsOnId: number): Promise<TaskWithDeps> {
-    this.assertOperatorEditable(await this.get(taskId));
-    await this.db.write((db) =>
-      db
-        .delete(taskDependencies)
-        .where(and(eq(taskDependencies.taskId, taskId), eq(taskDependencies.dependsOnId, dependsOnId)))
-        .run(),
-    );
-    await this.rederiveBlocked(taskId);
-    return this.withDeps(await this.get(taskId));
+    return this.blockerGraph.removeDependency(taskId, dependsOnId);
   }
 
   /** Cancel a task and everything that transitively depends on it. */
   async cancelWithDependents(id: number): Promise<number[]> {
-    const toCancel = [id];
-    const seen = new Set(toCancel);
-    for (let i = 0; i < toCancel.length; i++) {
-      for (const dep of await this.dependents(toCancel[i]!)) {
-        if (!seen.has(dep)) {
-          seen.add(dep);
-          toCancel.push(dep);
-        }
-      }
-    }
-    const cancelled: number[] = [];
-    for (const taskId of toCancel) {
-      const task = await this.get(taskId);
-      if (taskId === id || CANCELLABLE_STATES.includes(task.state)) {
-        await this.cancel(taskId);
-        cancelled.push(taskId);
-      }
-    }
-    return cancelled;
+    return this.blockerGraph.cancelWithDependents(id);
   }
 
   /**
@@ -1016,27 +907,11 @@ export class TaskService {
    * `working`; a later poll removes it once it settles.
    */
   async demoteMirroredToContainer(workspaceId: number, trackerRef: number): Promise<void> {
-    await this.clearDismissal(workspaceId, trackerRef);
-    const row = await this.db.read((db) =>
-      db
-        .select({
-          id: tasks.id,
-          state: tasks.state,
-          origin: tasks.origin,
-          trackerRef: tasks.trackerRef,
-          workspaceId: tasks.workspaceId,
-        })
-        .from(tasks)
-        .where(and(eq(tasks.workspaceId, workspaceId), eq(tasks.trackerRef, trackerRef)))
-        .get(),
-    );
-    if (!row) return;
-    if (!decideTaskDeletion(row).ok) return;
-    await this.removeTaskCascade(row.id, null);
+    await this.mirror.demoteMirroredToContainer(workspaceId, trackerRef);
   }
 
   private async removeTaskCascade(id: number, tombstone: DeletionDecision['tombstone']): Promise<void> {
-    const formerDependents = await this.dependents(id);
+    const formerDependents = await this.blockerGraph.dependents(id);
     await this.db.transaction(async (tx) => {
       const sessionRowIds = [
         ...new Set(
@@ -1091,10 +966,7 @@ export class TaskService {
         }
       }
     });
-    for (const depId of formerDependents) {
-      await this.rederiveBlocked(depId);
-      this.onChanged(await this.get(depId));
-    }
+    await this.blockerGraph.rederiveAndEmitBlockers(formerDependents);
     this.onRemoved(id);
   }
 
@@ -1197,26 +1069,6 @@ export class TaskService {
       isEpic: this.isEpic(task, containerRefs),
       overrides: this.overridesOf(rawById.get(task.id) ?? task),
     }));
-  }
-
-  private async reaches(from: number, to: number): Promise<boolean> {
-    const queue = [from];
-    const seen = new Set(queue);
-    while (queue.length > 0) {
-      const current = queue.shift()!;
-      if (current === to) return true;
-      for (const next of await this.dependsOn(current)) {
-        if (!seen.has(next)) {
-          seen.add(next);
-          queue.push(next);
-        }
-      }
-    }
-    return false;
-  }
-
-  private async rederiveBlocked(taskId: number): Promise<void> {
-    this.onChanged(await this.get(taskId));
   }
 
 }

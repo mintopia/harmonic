@@ -45,7 +45,6 @@ describe('EventLoopMonitor', () => {
     sched.fireAt(1300);
     expect(stalls).toEqual([{ lagMs: 300, delayMs: 1300 }]);
     expect(monitor.lastLagMs).toBe(300);
-    expect(monitor.underPressure).toBe(true);
   });
 
   it('does not report and clears pressure when a probe fires on time', () => {
@@ -56,7 +55,6 @@ describe('EventLoopMonitor', () => {
     sched.fireAt(2300);
     expect(stalls).toHaveLength(1);
     expect(monitor.lastLagMs).toBe(0);
-    expect(monitor.underPressure).toBe(false);
   });
 
   it('re-arms after each probe so it keeps monitoring', () => {

@@ -10,7 +10,7 @@ export interface MergeIntoBaseArgs {
   repoDir: string;
   /** The target branch being advanced (a short name, e.g. `main`). */
   baseBranch: string;
-  /** The Run's branch whose work is being merged into `baseBranch`. */
+  /** The Attempt's branch whose work is being merged into `baseBranch`. */
   branch: string;
   /** Exact branch tip verified for this merging. The merge consumes this OID,
    * never a later resolution of `branch`. */

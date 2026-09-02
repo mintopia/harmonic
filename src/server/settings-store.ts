@@ -8,10 +8,8 @@ import {
   appConfigSchema,
   baselineConfig,
   mergeConfig,
-  migrateLegacyConfig,
   type AppConfig,
   type DeepPartial,
-  type LegacyConfig,
 } from '../config.js';
 
 export type { WorkspaceOverrides };
@@ -62,7 +60,7 @@ function loadFromDisk(path: string, baseline: AppConfig): SettingsFile {
     throw new Error(`Invalid Harmonic settings file at ${path}: ${err instanceof Error ? err.message : String(err)}`);
   }
   try {
-    const storedGlobal = migrateLegacyConfig((raw.global ?? {}) as LegacyConfig);
+    const storedGlobal = (raw.global ?? {}) as DeepPartial<AppConfig>;
     const global = mergeConfig(baseline, storedGlobal);
     const globalPatch = isFlattenedGlobal(raw.global) ? (deepDiff(baseline, global) ?? {}) : storedGlobal;
     const workspaces: Record<string, WorkspaceOverrides> = {};
@@ -127,9 +125,9 @@ export class SettingsStore implements WorkspaceSettingsStore {
     return this.global;
   }
 
-  async updateGlobal(patch: LegacyConfig): Promise<AppConfig> {
+  async updateGlobal(patch: DeepPartial<AppConfig>): Promise<AppConfig> {
     this.reloadIfChanged();
-    this.global = mergeConfig(this.global, migrateLegacyConfig(patch));
+    this.global = mergeConfig(this.global, patch);
     this.globalPatch = deepDiff(baselineConfig(), this.global) ?? {};
     this.persist();
     return this.global;

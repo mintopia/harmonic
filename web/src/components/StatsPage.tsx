@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { formatAvgCostPerRun, formatCost, usd } from '../cost';
 import { api } from '../api';
 import { card, displayTitle, labelType, tableHead, touchTarget } from '../ui';
@@ -21,6 +21,7 @@ import { Donut, type DonutSegment } from './Donut';
 import { fillSeries, METRIC_LABEL, type StatMetric } from './costChart-model';
 import { EmptyState } from './EmptyState';
 import { AttemptHeatmap } from './AttemptHeatmap';
+import { useLiveEffect } from '../useLiveEffect';
 import { FlowThroughput } from './FlowThroughput';
 import { TokenTypeBar, TokenTypeLegend } from './TokenTypeBar';
 
@@ -115,23 +116,19 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
   const [error, setError] = useState<string | null>(null);
   const [metric, setMetric] = useState<StatMetric>('usd');
 
-  useEffect(() => {
+  useLiveEffect((live) => {
     if (workspaceId === null) return;
     const span = RANGES[range] ?? null;
     const from = span === null ? 0 : Date.now() - span;
-    let cancelled = false;
     setError(null);
     api
       .stats(from, Date.now(), workspaceId)
-      .then((s) => !cancelled && setStats(s))
+      .then((s) => live() && setStats(s))
       .catch((e) => {
-        if (cancelled) return;
+        if (!live()) return;
         setStats(null);
         setError(e instanceof Error ? e.message : String(e));
       });
-    return () => {
-      cancelled = true;
-    };
   }, [range, workspaceId]);
 
   const filled = stats ? fillSeries(stats.series, stats.from, stats.to) : [];
@@ -237,7 +234,7 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
                 <div className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3 lg:grid-cols-2">
                   <SummaryCell label="Attempts" value={fmt(stats.attemptCount)} />
                   <SummaryCell label="Failure rate" value={pct(failRate)} />
-                  <SummaryCell label="Avg cost / run" value={avgCostText ?? '—'} />
+                  <SummaryCell label="Avg cost / attempt" value={avgCostText ?? '—'} />
                   <SummaryCell label="Median duration" value={medDuration ?? '—'} />
                   <SummaryCell label="Cache hit rate" value={pct(cacheHit)} />
                   <SummaryCell label="Subagent share" value={pct(share)} />
@@ -255,7 +252,7 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
       {!stats && !error && <div className={`${card} p-5 text-muted`}>Loading…</div>}
 
       {stats && stats.attemptCount === 0 && (
-        <EmptyState title="No runs to chart yet">
+        <EmptyState title="No attempts to chart yet">
           Cost, tokens, and the per-model breakdown appear here once an agent has run. If you’ve run
           tasks before, try a wider range.
         </EmptyState>

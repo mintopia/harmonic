@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-/** Structurally identical to `web/src/verification-model.ts`'s `Verdict`; `src` cannot import `web/src` (`rootDir`). */
+/** Shared with `web` (imported directly by `web/src/types.ts`). */
 export type Verdict = 'pass' | 'fail' | 'inconclusive';
 
 /** The output contract demanded of the critic: one JSON object with `verdict` and a non-empty `summary`. */

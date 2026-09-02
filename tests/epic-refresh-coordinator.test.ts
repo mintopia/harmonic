@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { EpicRefreshCoordinator, type EpicRefreshOutcome } from '../src/execution/epic-refresh-coordinator.js';
+import { EpicRefresh, type EpicRefreshOutcome } from '../src/execution/epic-coordinator.js';
 import type { MergeIntoBaseOutcome } from '../src/execution/branch-merge.js';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { baselineConfig } from '../src/config.js';
@@ -21,10 +21,10 @@ const conflict = (detail = 'both changed package.json'): MergeIntoBaseOutcome =>
   detail,
 });
 
-describe('EpicRefreshCoordinator', () => {
+describe('EpicRefresh', () => {
   it('merges develop into an integration branch under the repo lock', async () => {
     const calls: string[] = [];
-    const coordinator = new EpicRefreshCoordinator({
+    const coordinator = new EpicRefresh({
       git: fakeGit,
       merge: async ({ baseBranch, branch }) => {
         calls.push(`${baseBranch}<-${branch}`);
@@ -44,7 +44,7 @@ describe('EpicRefreshCoordinator', () => {
     const outcomes = [conflict('first conflict'), conflict('second conflict')];
     const resolutions: string[] = [];
     const escalations: Array<{ ref: number; reason: string }> = [];
-    const coordinator = new EpicRefreshCoordinator({
+    const coordinator = new EpicRefresh({
       git: fakeGit,
       merge: async () => outcomes.shift()!,
       dispatchResolve: async (_target, detail) => {
@@ -68,7 +68,7 @@ describe('EpicRefreshCoordinator', () => {
     let release!: () => void;
     const first = new Promise<void>((resolve) => { release = resolve; });
     const starts: number[] = [];
-    const coordinator = new EpicRefreshCoordinator({
+    const coordinator = new EpicRefresh({
       git: fakeGit,
       merge: async () => {
         starts.push(starts.length + 1);
@@ -90,7 +90,7 @@ describe('EpicRefreshCoordinator', () => {
 
   it('defers a checked-out integration branch instead of falsely escalating it', async () => {
     const escalations: string[] = [];
-    const coordinator = new EpicRefreshCoordinator({
+    const coordinator = new EpicRefresh({
       git: fakeGit,
       merge: async () => ({ ok: false, reason: 'fallback-pr-manual', detail: 'branch is checked out' }),
       dispatchResolve: async () => ({ status: 'dispatched' }),
@@ -106,7 +106,7 @@ describe('EpicRefreshCoordinator', () => {
   it('does not record a resolution attempt until dispatch succeeds', async () => {
     const dispatches: string[] = [];
     const escalations: string[] = [];
-    const coordinator = new EpicRefreshCoordinator({
+    const coordinator = new EpicRefresh({
       git: fakeGit,
       merge: async () => conflict('refresh conflict'),
       dispatchResolve: async (_target, detail) => {
@@ -127,7 +127,7 @@ describe('EpicRefreshCoordinator', () => {
   });
 
   it('returns an escalation when no running member can host a refresh resolution, without stranding the resolving flag', async () => {
-    const coordinator = new EpicRefreshCoordinator({
+    const coordinator = new EpicRefresh({
       git: fakeGit,
       merge: async () => conflict('refresh conflict'),
       dispatchResolve: async () => ({
@@ -219,7 +219,7 @@ describe('epic refresh corrective turn (issue #315)', () => {
     git(repo, 'checkout', '--detach');
 
     const target = { ref: 5, repoDir: repo, defaultBranch: 'develop' };
-    const coordinator: EpicRefreshCoordinator = new EpicRefreshCoordinator({
+    const coordinator: EpicRefresh = new EpicRefresh({
       dispatchResolve: (t, detail) =>
         runner.enqueueEpicRefreshResolution(t, detail, (_ref, reason) => { escalations.push(reason); }, async () => {
           const outcome = await coordinator.refresh(t);
@@ -250,7 +250,7 @@ describe('epic refresh corrective turn (issue #315)', () => {
     git(repo, 'checkout', '--detach');
 
     const target = { ref: 5, repoDir: repo, defaultBranch: 'develop' };
-    const coordinator: EpicRefreshCoordinator = new EpicRefreshCoordinator({
+    const coordinator: EpicRefresh = new EpicRefresh({
       dispatchResolve: (t, detail) =>
         runner.enqueueEpicRefreshResolution(t, detail, (_ref, reason) => { escalations.push(reason); }, async () => {
           const outcome = await coordinator.refresh(t);
@@ -303,7 +303,7 @@ describe('epic refresh corrective turn (issue #315)', () => {
     git(repo, 'checkout', '--detach');
 
     const target = { ref: 5, repoDir: repo, defaultBranch: 'develop' };
-    const coordinator: EpicRefreshCoordinator = new EpicRefreshCoordinator({
+    const coordinator: EpicRefresh = new EpicRefresh({
       dispatchResolve: (t, detail) =>
         runner.enqueueEpicRefreshResolution(t, detail, (_ref, reason) => { escalations.push(reason); }, async () => {
           const outcome = await coordinator.refresh(t);

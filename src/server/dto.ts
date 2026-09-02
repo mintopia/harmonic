@@ -9,6 +9,7 @@ import type {
   TaskRow,
 } from '../db/schema.js';
 import type { TaskWithDeps } from '../domain/tasks.js';
+import type { IsolationMode, Priority } from '../config.js';
 import type { Ticket } from '../tracker/adapter.js';
 import type { ScheduledJobSnapshot } from '../scheduler/scheduler.js';
 import type { FlaggedWorktree } from '../domain/flagged-worktrees.js';
@@ -231,7 +232,7 @@ function apiAttemptState(state: AttemptState): ApiAttemptSummary['state'] {
 }
 
 /** An `AttemptRow` projected onto its public wire summary, given the Attempt's
- * already summed tool-call total (its native ADR-0031 aggregate). */
+ * already summed tool-call total (its native aggregate). */
 export function attemptToApiSummary(run: AttemptRow, toolCalls: number, contextWindow: number | null = null): ApiAttemptSummary {
   return {
     id: run.id,
@@ -285,8 +286,16 @@ type TrackerFactColumns =
   | 'trackerUrl'
   | 'trackerCreatedAt';
 
-export type ApiTask = Omit<TaskWithDeps, 'workspaceId' | TrackerFactColumns> & {
+export type ApiTask = Omit<TaskWithDeps, 'workspaceId' | 'isolationMode' | 'priority' | 'overrides' | TrackerFactColumns> & {
   workspaceId: number;
+  /** Resolved effective value; always one of `ISOLATION_MODES` (`config.ts`) at rest. */
+  isolationMode: IsolationMode;
+  /** Resolved effective value; always one of `PRIORITIES` (`config.ts`) at rest. */
+  priority: Priority;
+  overrides: Omit<TaskWithDeps['overrides'], 'isolationMode' | 'priority'> & {
+    isolationMode: IsolationMode | null;
+    priority: Priority | null;
+  };
   /** The prompt's first line, bounded; the full `prompt` is item-GET-only. */
   summary: string;
   cost: Cost | null;
@@ -417,6 +426,13 @@ export function taskToApiDto(
   const running = runs.find((r) => r.state === 'running');
   return {
     ...stripTrackerFactCols(task),
+    isolationMode: task.isolationMode as IsolationMode,
+    priority: task.priority as Priority,
+    overrides: {
+      ...task.overrides,
+      isolationMode: task.overrides.isolationMode as IsolationMode | null,
+      priority: task.overrides.priority as Priority | null,
+    },
     workspaceId: atRestWorkspaceId(task.workspaceId),
     summary: summarize(task.prompt),
     cost: sumCosts(runs.map((run) => parseCost(run.cost))),

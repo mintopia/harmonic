@@ -73,7 +73,7 @@ describe('run execution over ACP (direct mode)', () => {
     );
   });
 
-  it('a native Run resolves and uses the Workspace Task Prompt override, else inherits the global default (ADR-0044/#339)', async () => {
+  it('a native Run resolves and uses the Workspace Task Prompt override, else inherits the global default (#339)', async () => {
     const wsId = (await server.api('GET', '/api/workspaces')).body.workspaces[0].id;
     const promptOf = async (attemptId: number) =>
       (await server.app.ctx.asyncDb.read((d) => d.select().from(attempts).where(eq(attempts.id, attemptId)).get()))!.prompt;
@@ -103,7 +103,7 @@ describe('run execution over ACP (direct mode)', () => {
     expect(overridePrompt!.startsWith('WS-TASKPROMPT::')).toBe(true);
   });
 
-  it('a native Run merges terminal exactly once — done is final and the escalation actions refuse (ADR-0041)', async () => {
+  it('a native Run merges terminal exactly once — done is final and the escalation actions refuse', async () => {
     const { taskId, attemptId } = await createAndRun({
       updates: [{ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'done' } }],
       stopReason: 'end_turn',
@@ -340,7 +340,7 @@ describe('run execution over ACP (direct mode)', () => {
   });
 });
 
-describe('direct Work Context occupancy (ADR-0001, ADR-0046)', () => {
+describe('direct Work Context occupancy (ADR-0001)', () => {
   let server: TestServer;
   const workingDirA = mkdtempSync(join(tmpdir(), 'harmonic-context-a-'));
   const workingDirC = mkdtempSync(join(tmpdir(), 'harmonic-context-c-'));
@@ -355,7 +355,7 @@ describe('direct Work Context occupancy (ADR-0001, ADR-0046)', () => {
     await server.close();
   });
 
-  it('attaches a second Run to an already-working direct context (201), not blocked — the operator\'s accepted risk (ADR-0046, #369)', async () => {
+  it('attaches a second Run to an already-working direct context (201), not blocked — the operator\'s accepted risk (#369)', async () => {
     const createdA = await server.api('POST', '/api/tasks', {
       prompt: scenario({ exit: 'hang' }),
       workingDir: workingDirA,

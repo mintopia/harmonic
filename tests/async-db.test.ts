@@ -42,7 +42,7 @@ const guardrailEventValues = (attemptId: number, seq: number, now: number) => ({
   payload: '{}',
 });
 
-describe('openAsyncDb boot (ADR-0029 Expand)', () => {
+describe('openAsyncDb boot', () => {
   let dir: string;
   let h: AsyncDbHandle;
 
@@ -90,7 +90,7 @@ describe('openAsyncDb boot (ADR-0029 Expand)', () => {
   });
 });
 
-describe('read/write queue facade (ADR-0029 §2)', () => {
+describe('read/write queue facade', () => {
   let dir: string;
   let h: AsyncDbHandle;
 
@@ -152,7 +152,7 @@ describe('read/write queue facade (ADR-0029 §2)', () => {
   });
 });
 
-describe('transactions as exclusive write-queue units (ADR-0029 §3)', () => {
+describe('transactions as exclusive write-queue units', () => {
   let dir: string;
   let h: AsyncDbHandle;
   let attemptId: number;
@@ -203,7 +203,7 @@ describe('transactions as exclusive write-queue units (ADR-0029 §3)', () => {
   });
 });
 
-describe('per-query wall-clock timeouts (ADR-0029 §5, #212)', () => {
+describe('per-query wall-clock timeouts (#212)', () => {
   let dir: string;
   let h: AsyncDbHandle;
 
@@ -320,7 +320,7 @@ describe('per-query wall-clock timeouts (ADR-0029 §5, #212)', () => {
   });
 });
 
-describe('unique-index CAS behaviour unchanged under libsql (ADR-0029 §3)', () => {
+describe('unique-index CAS behaviour unchanged under libsql', () => {
   let dir: string;
   let h: AsyncDbHandle;
 

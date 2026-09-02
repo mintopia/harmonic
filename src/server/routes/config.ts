@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import type { App } from '../app.js';
+import type { ExecutionContext } from '../app.js';
 import {
   HARNESS_IDS,
   ISOLATION_MODES,
@@ -9,10 +9,9 @@ import {
   PRIORITIES,
   appConfigSchema,
   verificationCommandSchema,
-  verificationCriticSchema,
   verificationReviewSchema,
   type AppConfig,
-  type LegacyConfig,
+  type DeepPartial,
 } from '../../config.js';
 
 /** A deep-partial patch of `AppConfig`; `appConfigSchema` re-validates the merged result. */
@@ -90,26 +89,6 @@ const configPatchBodySchema = z
       })
       .partial()
       .optional(),
-    agentReview: z
-      .boolean()
-      .optional()
-      .meta({ example: false })
-      .describe(
-        'Deprecated (#140): folded into verification.autoAccept; retained so a pre-upgrade client PATCHing it still merges non-exposing behaviour.',
-      ),
-    /** Migration-only input; converted to `verify` before storage and never returned. */
-    verification: z
-      .object({
-        /** The command verifier; null clears it. Send the whole object to set one (deep-merged, then re-parsed). */
-        command: verificationCommandSchema.nullable().meta({ example: { command: 'npm', args: ['test'] } }),
-        /** The agent critic; null clears it. Send the whole object to set one. */
-        critic: verificationCriticSchema.nullable().meta({ example: { prompt: 'Review the diff for correctness.', model: 'claude-opus-5' } }),
-        /** Accepted and dropped. */
-        autoAccept: z.boolean().meta({ example: true }),
-      })
-      .partial()
-      .meta({ example: { critic: null } })
-      .optional(),
     verify: z
       .object({
         commands: z.array(verificationCommandSchema),
@@ -121,8 +100,7 @@ const configPatchBodySchema = z
   .partial()
   .meta({ id: 'ConfigPatch' });
 
-export async function configRoutes(fastify: FastifyInstance): Promise<void> {
-  const { ctx } = fastify as App;
+export async function configRoutes(fastify: FastifyInstance, ctx: Pick<ExecutionContext, 'autoRunner' | 'settingsStore'>): Promise<void> {
   const app = fastify.withTypeProvider<ZodTypeProvider>();
 
   app.get(
@@ -157,7 +135,7 @@ export async function configRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req) => {
-      const updated = await ctx.settingsStore.updateGlobal(req.body as LegacyConfig);
+      const updated = await ctx.settingsStore.updateGlobal(req.body as DeepPartial<AppConfig>);
       ctx.autoRunner.poke();
       return updated;
     },

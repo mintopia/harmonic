@@ -1,9 +1,6 @@
-import type { HarnessId } from '../../config.js';
 import type { ModelUsage } from '../../domain/usage.js';
 import type { ParsedSession } from '../usage.js';
-import { claudeAdapter } from './claude.js';
-import { codexAdapter } from './codex.js';
-import { copilotAdapter } from './copilot.js';
+import type { TranscriptLogEvent } from './transcript.js';
 
 export type { ModelUsage };
 
@@ -78,8 +75,18 @@ export interface UsageCollector {
   toolName(payload: unknown): string | null;
 }
 
+export interface TranscriptCollector {
+  events(entry: unknown, firstId: number, parentToolUseId?: string): TranscriptLogEvent[];
+  isDuplicateMessage?(entry: unknown, previousEntry: unknown): boolean;
+  subagents?(rootPath: string): Promise<Array<{ path: string; parentToolUseId: string }>>;
+}
+
 /** Per-harness knowledge, keyed by HarnessId. */
 export interface HarnessAdapter {
+  /** Prefix used when this harness invokes one of Harmonic's prompt skills. */
+  commandPrefix: '$' | '/';
+  /** Native transcript parser and optional related transcript discovery. */
+  transcript: TranscriptCollector | null;
   /**
    * Env overlay for the spawned harness process: model pinning and quirk
    * workarounds. Keys with `undefined` values override anything inherited
@@ -98,25 +105,12 @@ export interface HarnessAdapter {
    * env-var mechanism (HARMONIC_MCP_URL / HARMONIC_API_KEY).
    */
   mcpServers(input: { url: string; token: string }): unknown[];
+  /** Selects this harness's unattended ACP permission mode, if it advertises one. */
+  unattendedPermissionMode(available: readonly string[]): string | undefined;
+  /** Whether a missing unattended mode must stop an autonomous turn. */
+  requiresUnattendedPermissionMode: boolean;
   /** The harness's Usage Collector; null while it has none (ACP totals only). */
   usage: UsageCollector | null;
-}
-
-const unknownAdapter: HarnessAdapter = {
-  spawnEnv: () => ({}),
-  mcpServers: () => [],
-  usage: null,
-};
-
-const adapters: Record<HarnessId, HarnessAdapter> = {
-  claude: claudeAdapter,
-  codex: codexAdapter,
-  copilot: copilotAdapter,
-};
-
-/** Lookup takes the untyped harness id off a TaskRow; unknown ids get a no-op adapter. */
-export function adapterFor(harnessId: string): HarnessAdapter {
-  return (adapters as Record<string, HarnessAdapter>)[harnessId] ?? unknownAdapter;
 }
 
 /**
@@ -135,18 +129,4 @@ export function wholeFileReader(
     },
     latest: () => cached,
   };
-}
-
-/**
- * Monotonic version of the adapter layer's assumptions, bumped when a change to
- * how harnesses are spawned/driven would make a mid-flight Session unsafe to
- * resume. A Session whose stored `adapterVersion` differs from the current one
- * is forced to a fresh Session rather than a `session/load`.
- */
-export const ADAPTER_VERSION = 1;
-
-/** The `adapterVersion` string recorded on a Session: the harness id plus the
- * adapter version, e.g. `claude@1`. */
-export function adapterVersion(harnessId: string): string {
-  return `${harnessId}@${ADAPTER_VERSION}`;
 }

@@ -1,7 +1,8 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { AcpDriver } from '../acp/driver.js';
-import { adapterFor } from './harness/adapter.js';
+import { parsePermissionRequest, type PermissionRequest } from '../acp/permission-request.js';
+import { adapterFor } from './harness/registry.js';
 import { accumulateUsage, collectUsageWithRetry, type AttemptUsage } from './usage.js';
 import { resolvePrices } from '../domain/pricing.js';
 import { DomainError } from '../domain/errors.js';
@@ -10,17 +11,17 @@ import type { ConversationStore, PersistedConversationEvent } from '../domain/co
 import type { PermissionRuleStore } from '../domain/permission-rules.js';
 import type { ConversationRow } from '../db/schema.js';
 import { startOperation } from '../telemetry/operations.js';
+import { logger } from '../logger.js';
 
-function permissionKind(request: unknown): string | null {
-  const kind = (request as any)?.toolCall?.kind;
-  return typeof kind === 'string' && kind ? kind : null;
+function permissionKind(request: PermissionRequest): string | null {
+  return request.toolCall.kind || null;
 }
 
-function allowOptionId(request: unknown): string | null {
-  const options = (request as any)?.options ?? [];
+function allowOptionId(request: PermissionRequest): string | null {
+  const options = request.options;
   const pick =
-    options.find((o: any) => o.kind === 'allow_once') ??
-    options.find((o: any) => o.kind === 'allow_always') ??
+    options.find((o) => o.kind === 'allow_once') ??
+    options.find((o) => o.kind === 'allow_always') ??
     options[0];
   return pick?.optionId ?? null;
 }
@@ -29,7 +30,7 @@ export interface PendingPermissionBroadcast {
   conversationId: number;
   reqId: string;
   /** The ACP session/request_permission params (toolCall + options). */
-  request: unknown;
+  request: PermissionRequest;
 }
 
 export interface ConversationDriverEvents {
@@ -48,7 +49,7 @@ type PermissionOutcome = { outcome: 'selected'; optionId: string } | { outcome: 
 interface PendingPermission {
   conversationId: number;
   workingDir: string;
-  request: unknown;
+  request: PermissionRequest;
   resolve: (outcome: PermissionOutcome) => void;
 }
 
@@ -267,7 +268,14 @@ export class ConversationDriver {
         void this.record(convo.id, 'session_update', update).catch(() => {});
       },
       onRequest: async (method, params) => {
-        if (method === 'session/request_permission') return this.decidePermission(convo.id, convo.workingDir, params);
+        if (method === 'session/request_permission') {
+          const request = parsePermissionRequest(params);
+          if (!request) {
+            logger.warn('acp: rejected malformed permission request', { conversationId: convo.id });
+            return { outcome: 'cancelled' };
+          }
+          return this.decidePermission(convo.id, convo.workingDir, request);
+        }
         return null;
       },
     });
@@ -320,7 +328,7 @@ export class ConversationDriver {
     }
   }
 
-  private async decidePermission(conversationId: number, workingDir: string, request: unknown): Promise<PermissionOutcome> {
+  private async decidePermission(conversationId: number, workingDir: string, request: PermissionRequest): Promise<PermissionOutcome> {
     const kind = permissionKind(request);
     const rule = kind ? ((await this.rules?.findMatch(kind, workingDir)) ?? null) : null;
     if (rule) {

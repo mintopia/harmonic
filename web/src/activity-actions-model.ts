@@ -30,7 +30,7 @@ export type ActivityResolve =
   | { kind: 'permission'; pending: PendingPermission; grantOptionId: string | null; denyOptionId: string | null }
   | { kind: 'escalated'; taskId: number };
 
-/** How Stop ends a process: cancel the Run's Task (`cancelForTask` server-side) or end the Conversation. */
+/** How Stop ends a process: cancel the Attempt's Task (`cancelForTask` server-side) or end the Conversation. */
 export type ActivityStop =
   | { kind: 'attempt'; taskId: number }
   | { kind: 'chat'; conversationId: number };
@@ -40,7 +40,7 @@ export interface ActivityRowActions {
   resolve: ActivityResolve | null;
   /** The mirrored issue's tracker URL — a passive ticket deep-link; null when the process carries none. */
   ticketUrl: string | null;
-  /** How Stop ends this process; null only for a malformed row (a Run with no Task, a chat with no id). */
+  /** How Stop ends this process; null only for a malformed row (an Attempt with no Task, a chat with no id). */
   stop: ActivityStop | null;
   /** True when a resolve action leads, so the component renders Stop quiet/secondary rather than primary. */
   stopDemoted: boolean;
@@ -65,9 +65,9 @@ export function permissionGrantDeny(pending: PendingPermission): {
 
 /**
  * The row's action layout, a pure function of the process snapshot plus any
- * pending ACP permission for it (chats only — Runs don't surface permission
+ * pending ACP permission for it (chats only — Attempts don't surface permission
  * prompts on this channel). Precedence for the primary resolve: a pending
- * permission (blocked) wins, else an escalated Run (needs you); everything
+ * permission (blocked) wins, else an escalated Attempt (needs you); everything
  * else is an ordinary row (Stop leads, plus the ticket deep-link when present).
  */
 export function activityRowActions(

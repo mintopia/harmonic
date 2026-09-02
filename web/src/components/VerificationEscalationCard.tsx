@@ -41,17 +41,19 @@ function PanelLabel({ children }: { children: string }) {
 
 function BarRow({ label, count, share, color }: { label: string; count: number; share: number; color: string }) {
   return (
-    <div className="grid grid-cols-[minmax(6rem,9rem)_1fr_auto] items-center gap-3">
-      <span className="truncate text-data text-ink" title={label}>
+    <div className="grid grid-cols-[minmax(6rem,9rem)_1fr] items-center gap-3">
+      <dt className="truncate text-data text-ink" title={label}>
         {label}
-      </span>
-      <span className="h-2 overflow-hidden rounded-full bg-raised" aria-hidden="true">
-        <span
-          className="block h-full rounded-full"
-          style={{ width: `${Math.max(count > 0 ? 3 : 0, share * 100)}%`, backgroundColor: color }}
-        />
-      </span>
-      <span className="whitespace-nowrap text-right text-data tabular-nums text-muted">{fmt(count)}</span>
+      </dt>
+      <dd className="m-0 flex items-center gap-3">
+        <span className="h-2 flex-1 overflow-hidden rounded-full bg-raised" aria-hidden="true">
+          <span
+            className="block h-full rounded-full"
+            style={{ width: `${Math.max(count > 0 ? 3 : 0, share * 100)}%`, backgroundColor: color }}
+          />
+        </span>
+        <span className="whitespace-nowrap text-right text-data tabular-nums text-muted">{fmt(count)}</span>
+      </dd>
     </div>
   );
 }
@@ -109,7 +111,7 @@ export function VerificationEscalationCard({
                 <p className="text-muted">No Tasks settled in range.</p>
               ) : (
                 <>
-                  <div className="flex flex-col gap-2.5" role="table" aria-label="Merge-gate outcomes">
+                  <dl className="flex flex-col gap-2.5" aria-label="Merge-gate outcomes">
                     {gateBars.map(({ key, count }) => (
                       <BarRow
                         key={key}
@@ -119,7 +121,7 @@ export function VerificationEscalationCard({
                         color={GATE_COLOR[key]!}
                       />
                     ))}
-                  </div>
+                  </dl>
                   <p className="mt-2.5 text-label text-faint">
                     = {fmt(settled)} settled {settled === 1 ? 'task' : 'tasks'}
                   </p>
@@ -132,7 +134,7 @@ export function VerificationEscalationCard({
               {guardrailBars.length === 0 ? (
                 <p className="text-muted">No guardrail trips in range.</p>
               ) : (
-                <div className="flex flex-col gap-2.5" role="table" aria-label="Guardrail trips by dimension">
+                <dl className="flex flex-col gap-2.5" aria-label="Guardrail trips by dimension">
                   {guardrailBars.map(({ key, count }) => (
                     <BarRow
                       key={key}
@@ -142,7 +144,7 @@ export function VerificationEscalationCard({
                       color="var(--hm-running-dot)"
                     />
                   ))}
-                </div>
+                </dl>
               )}
             </div>
           </div>

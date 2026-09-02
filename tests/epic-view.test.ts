@@ -34,7 +34,7 @@ const task = (over: Partial<TaskRow>): TaskRow =>
 
 const noFacts: EpicFacts = {
   integration: { branch: 'epic/10', exists: false, tip: null },
-  verification: { status: null },
+  verification: { status: null, configured: false },
   integrate: { inFlight: false, held: null },
 };
 
@@ -107,12 +107,12 @@ describe('composeEpicView', () => {
   it('passes integration/verification/integrate facts through unchanged, including branch absent (exists:false, tip:null)', () => {
     const facts: EpicFacts = {
       integration: { branch: 'epic/10', exists: false, tip: null },
-      verification: { status: null },
+      verification: { status: null, configured: false },
       integrate: { inFlight: false, held: null },
     };
     const epic = composeEpicView(derived({ members: [], ready: [] }), new Map(), new Map(), facts, noMeta);
     expect(epic.integration).toEqual({ branch: 'epic/10', exists: false, tip: null });
-    expect(epic.verification).toEqual({ status: null });
+    expect(epic.verification).toEqual({ status: null, configured: false });
     expect(epic.integrate).toEqual({ inFlight: false, held: null });
     expect(epic.memberCount).toBe(0);
     expect(epic.foldedCount).toBe(0);
@@ -121,12 +121,12 @@ describe('composeEpicView', () => {
   it('passes a present branch (exists:true, non-null tip), in-flight integrate, and a hold reason through unchanged', () => {
     const facts: EpicFacts = {
       integration: { branch: 'epic/10', exists: true, tip: 'a1b2c3d' },
-      verification: { status: 'pass' },
+      verification: { status: 'pass', configured: true },
       integrate: { inFlight: true, held: 'already escalated for this member state; awaiting operator or a state change' },
     };
     const epic = composeEpicView(derived({ members: [], ready: [] }), new Map(), new Map(), facts, noMeta);
     expect(epic.integration).toEqual({ branch: 'epic/10', exists: true, tip: 'a1b2c3d' });
-    expect(epic.verification).toEqual({ status: 'pass' });
+    expect(epic.verification).toEqual({ status: 'pass', configured: true });
     expect(epic.integrate).toEqual({ inFlight: true, held: expect.stringContaining('escalated') });
   });
 

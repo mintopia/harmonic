@@ -1,17 +1,12 @@
-import { open, readdir, readFile } from 'node:fs/promises';
-import { basename, dirname, join } from 'node:path';
+import { open } from 'node:fs/promises';
 import { forEachYielding } from '../reliability/yield.js';
+import { adapterFor } from './harness/registry.js';
+import type { TranscriptLogEvent } from './harness/transcript.js';
 
 const MAX_TRANSCRIPT_BYTES = 2 * 1024 * 1024;
 const MAX_EVENTS = 2_000;
 
-export interface TranscriptLogEvent {
-  id: number;
-  seq: number;
-  ts: number;
-  type: 'session_update';
-  payload: Record<string, unknown>;
-}
+export type { TranscriptLogEvent } from './harness/transcript.js';
 
 export type TranscriptLog = { status: 'available'; events: TranscriptLogEvent[] } | { status: 'unavailable' };
 
@@ -52,6 +47,8 @@ export function withOperatorMessages(events: TranscriptLogEvent[], operator: Ope
  */
 export async function readTranscriptLog(input: { harness: string; path: string | null; startedAt: number; finishedAt: number | null }): Promise<TranscriptLog> {
   if (!input.path) return { status: 'unavailable' };
+  const transcript = adapterFor(input.harness).transcript;
+  if (!transcript) return { status: 'unavailable' };
 
   const text = await readTail(input.path);
   if (text === null) return { status: 'unavailable' };
@@ -59,43 +56,34 @@ export async function readTranscriptLog(input: { harness: string; path: string |
   const inWindow = (ts: number) => ts === 0 || (ts >= input.startedAt && (input.finishedAt === null || ts <= input.finishedAt));
   const events: TranscriptLogEvent[] = [];
   let recognized = false;
-  let previousCodexEventMessage: string | null = null;
+  let previousEntry: unknown = undefined;
   await forEachYielding(text.split('\n'), (line) => {
     const entry = parseLine(line);
     if (entry === undefined) return;
-    const codexEventMessage = input.harness === 'codex' ? codexEventMessageText(entry) : null;
-    const codexResponseMessage = input.harness === 'codex' ? codexResponseMessageText(entry) : null;
-    const duplicateCodexResponse = codexResponseMessage !== null && codexResponseMessage === previousCodexEventMessage;
-    const parsed = input.harness === 'claude' ? claudeEvents(entry, events.length + 1) : input.harness === 'codex' ? codexEvents(entry, events.length + 1) : [];
+    const duplicateMessage = previousEntry !== undefined && transcript.isDuplicateMessage?.(entry, previousEntry) === true;
+    const parsed = transcript.events(entry, events.length + 1);
     if (parsed.length > 0) recognized = true;
     for (const event of parsed) {
       if (!inWindow(event.ts)) continue;
-      if (!duplicateCodexResponse) events.push(event);
+      if (!duplicateMessage) events.push(event);
     }
-    const ts = timestamp(asRecord(entry)?.timestamp);
-    previousCodexEventMessage = codexEventMessage !== null && inWindow(ts) ? codexEventMessage : null;
+    if (parsed.some((event) => inWindow(event.ts))) previousEntry = entry;
   });
 
   if (!recognized) return { status: 'unavailable' };
 
-  if (input.harness === 'claude') {
-    // Claude Code writes each spawned Subagent's transcript beside the root
-    // session (`<sessionId>/subagents/agent-<id>.jsonl`, ADR 0009). Fold them
-    // in tagged with the spawning tool call so the transcript view can lane
-    // them apart from the main agent instead of interleaving foreign turns.
-    for (const sub of await readClaudeSubagents(input.path)) {
+  if (transcript.subagents) {
+    for (const sub of await transcript.subagents(input.path)) {
       const subText = await readTail(sub.path);
       if (subText === null) continue;
       await forEachYielding(subText.split('\n'), (line) => {
         const entry = parseLine(line);
         if (entry === undefined) return;
-        for (const event of claudeEvents(entry, events.length + 1, sub.parentToolUseId)) {
+        for (const event of transcript.events(entry, events.length + 1, sub.parentToolUseId)) {
           if (inWindow(event.ts)) events.push(event);
         }
       });
     }
-    // Stable by timestamp: each file is already in order, and a Subagent's
-    // turns slot in at the moment they happened relative to the root.
     events.sort((a, b) => a.ts - b.ts);
     events.forEach((event, i) => {
       event.id = i + 1;
@@ -136,198 +124,4 @@ function parseLine(line: string): unknown {
   } catch {
     return undefined;
   }
-}
-
-/** Every Subagent transcript under a Claude root session, with the tool-call id
- * that spawned it (its `.meta.json` sidecar's `toolUseId`, falling back to the
- * agent id so an unlabelled Subagent still lanes on its own). */
-async function readClaudeSubagents(rootPath: string): Promise<Array<{ path: string; parentToolUseId: string }>> {
-  const dir = join(dirname(rootPath), basename(rootPath, '.jsonl'), 'subagents');
-  let names: string[];
-  try {
-    names = (await readdir(dir, { recursive: true })) as string[];
-  } catch {
-    return [];
-  }
-  const found = new Map<string, { jsonl?: string; meta?: string }>();
-  for (const rel of names) {
-    const m = /^agent-(.+)\.(jsonl|meta\.json)$/.exec(basename(rel));
-    if (!m) continue;
-    const entry = found.get(m[1]!) ?? {};
-    if (m[2] === 'jsonl') entry.jsonl = join(dir, rel);
-    else entry.meta = join(dir, rel);
-    found.set(m[1]!, entry);
-  }
-  const subs: Array<{ path: string; parentToolUseId: string }> = [];
-  for (const [id, { jsonl, meta }] of found) {
-    if (!jsonl) continue;
-    let parentToolUseId = id;
-    if (meta) {
-      try {
-        const parsed = asRecord(JSON.parse(await readFile(meta, 'utf8')));
-        if (typeof parsed?.toolUseId === 'string') parentToolUseId = parsed.toolUseId;
-      } catch {
-        /* incomplete sidecar write mid-run: lane on the agent id */
-      }
-    }
-    subs.push({ path: jsonl, parentToolUseId });
-  }
-  return subs;
-}
-
-function claudeEvents(entry: unknown, firstId: number, parentToolUseId?: string): TranscriptLogEvent[] {
-  const record = asRecord(entry);
-  const message = asRecord(record?.message);
-  const content = message?.content;
-  if (record?.type !== 'assistant' || !Array.isArray(content)) return [];
-  const ts = timestamp(record?.timestamp);
-  const lane = parentToolUseId ? { parentToolUseId } : {};
-  const events: TranscriptLogEvent[] = [];
-  for (const block of content) {
-    const value = asRecord(block);
-    if (!value) continue;
-    const id = firstId + events.length;
-    if (value.type === 'text' && typeof value.text === 'string') {
-      events.push({ id, seq: id, ts, type: 'session_update', payload: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: value.text }, ...(parentToolUseId ? { _meta: { claudeCode: lane } } : {}) } });
-    } else if (value.type === 'thinking' && typeof value.thinking === 'string') {
-      events.push({ id, seq: id, ts, type: 'session_update', payload: { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: value.thinking }, ...(parentToolUseId ? { _meta: { claudeCode: lane } } : {}) } });
-    } else if (value.type === 'tool_use' && typeof value.id === 'string') {
-      const name = typeof value.name === 'string' ? value.name : 'Tool call';
-      events.push({
-        id,
-        seq: id,
-        ts,
-        type: 'session_update',
-        payload: { sessionUpdate: 'tool_call', toolCallId: value.id, title: withTarget(name, value.input), status: 'completed', _meta: { claudeCode: { toolName: name, ...lane } } },
-      });
-    }
-  }
-  return events;
-}
-
-function codexEvents(entry: unknown, firstId: number): TranscriptLogEvent[] {
-  const record = asRecord(entry);
-  const payload = asRecord(record?.payload);
-  if (!record || !payload) return [];
-  const ts = timestamp(record.timestamp);
-  const events: TranscriptLogEvent[] = [];
-  const push = (update: Record<string, unknown>) => {
-    const id = firstId + events.length;
-    events.push({ id, seq: id, ts, type: 'session_update', payload: update });
-  };
-
-  const message = codexResponseMessageText(entry) ?? codexEventMessageText(entry);
-  if (message !== null) push({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: message } });
-
-  // Reasoning summaries only ever carry plaintext in `summary`; `encrypted_content` is opaque and never surfaced.
-  if (record.type === 'response_item' && payload.type === 'reasoning' && Array.isArray(payload.summary)) {
-    for (const part of payload.summary) {
-      const block = asRecord(part);
-      const text = block && (block.type === 'summary_text' || block.type === 'text') ? block.text : null;
-      if (typeof text === 'string' && text) push({ sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text } });
-    }
-  }
-
-  if (record.type === 'response_item' && (payload.type === 'custom_tool_call' || payload.type === 'function_call')) {
-    const name = typeof payload.name === 'string' ? payload.name : 'Tool call';
-    const qualified = typeof payload.namespace === 'string' && payload.namespace ? `${payload.namespace}.${name}` : name;
-    const title = withTarget(qualified, payload.input ?? payload.arguments);
-    const callId = typeof payload.call_id === 'string' ? payload.call_id : typeof payload.id === 'string' ? payload.id : qualified;
-    push({ sessionUpdate: 'tool_call', toolCallId: callId, title, status: 'completed' });
-  }
-
-  return events;
-}
-
-function withTarget(name: string, rawInput: unknown): string {
-  const target = toolTarget(name, rawInput);
-  return target ? `${name} ${target}` : name;
-}
-
-const str = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
-
-/** Per-tool targets where the generic field scan would read nothing useful: a
- * bare `Skill` or `Agent` row tells the operator nothing about what ran. */
-const TOOL_TARGETS: Record<string, (input: Record<string, unknown>) => string> = {
-  Skill: (i) => [str(i.skill) && `/${str(i.skill)}`, str(i.args)].filter(Boolean).join(' '),
-  Agent: (i) => [str(i.description) || str(i.prompt), str(i.subagent_type) && `(${str(i.subagent_type)})`].filter(Boolean).join(' '),
-  Task: (i) => [str(i.description) || str(i.prompt), str(i.subagent_type) && `(${str(i.subagent_type)})`].filter(Boolean).join(' '),
-  TodoWrite: (i) => (Array.isArray(i.todos) ? `${i.todos.length} todo${i.todos.length === 1 ? '' : 's'}` : ''),
-  Grep: (i) => [str(i.pattern), str(i.path)].filter(Boolean).join(' in '),
-  Glob: (i) => [str(i.pattern), str(i.path)].filter(Boolean).join(' in '),
-  AskUserQuestion: (i) => {
-    const first = Array.isArray(i.questions) ? asRecord(i.questions[0]) : null;
-    return str(first?.question);
-  },
-};
-
-const GENERIC_TARGET_KEYS = ['command', 'cmd', 'script', 'file_path', 'path', 'filename', 'pattern', 'query', 'url', 'skill', 'description', 'prompt', 'title', 'name', 'message', 'text', 'model'];
-
-/** A concise one-line command/target from a tool's input, which arrives as an
- * object (Claude `tool_use`) or a JSON/plain string (Codex `input`/`arguments`). */
-function toolTarget(name: string, raw: unknown): string {
-  let value: unknown = raw;
-  if (typeof raw === 'string') {
-    const trimmed = raw.trim();
-    if (!trimmed) return '';
-    try {
-      value = JSON.parse(trimmed);
-    } catch {
-      return oneLine(trimmed);
-    }
-  }
-  if (typeof value === 'string') return oneLine(value);
-  const record = asRecord(value);
-  if (!record) return '';
-  const specific = TOOL_TARGETS[name]?.(record);
-  if (specific) return oneLine(specific);
-  // A front-door MCP call (`order { action, args }`): the action plus its args.
-  if (typeof record.action === 'string' && record.action) {
-    const args = record.args !== undefined ? ` ${JSON.stringify(record.args)}` : '';
-    return oneLine(`${record.action}${args}`);
-  }
-  for (const key of GENERIC_TARGET_KEYS) {
-    const field = record[key];
-    if (Array.isArray(field)) return oneLine(field.map(String).join(' '));
-    if (typeof field === 'string' && field) return oneLine(field);
-  }
-  return '';
-}
-
-function oneLine(text: string): string {
-  const collapsed = text.replace(/\s+/g, ' ').trim();
-  return collapsed.length > 240 ? `${collapsed.slice(0, 240)}…` : collapsed;
-}
-
-function codexEventMessageText(entry: unknown): string | null {
-  const record = asRecord(entry);
-  const payload = asRecord(record?.payload);
-  return record?.type === 'event_msg' && payload?.type === 'agent_message' ? contentText(payload.message) : null;
-}
-
-function codexResponseMessageText(entry: unknown): string | null {
-  const record = asRecord(entry);
-  const payload = asRecord(record?.payload);
-  return record?.type === 'response_item' && payload?.type === 'message' && payload.role === 'assistant' ? contentText(payload.content) : null;
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value !== null && typeof value === 'object' && !Array.isArray(value) ? Object.fromEntries(Object.entries(value)) : null;
-}
-
-function timestamp(value: unknown): number {
-  return typeof value === 'string' && !Number.isNaN(Date.parse(value)) ? Date.parse(value) : 0;
-}
-
-function contentText(value: unknown): string | null {
-  if (typeof value === 'string') return value;
-  if (!Array.isArray(value)) return null;
-  const text = value
-    .map((part) => {
-      const block = asRecord(part);
-      return block?.type === 'output_text' || block?.type === 'text' ? block.text : null;
-    })
-    .filter((part): part is string => typeof part === 'string')
-    .join('');
-  return text || null;
 }

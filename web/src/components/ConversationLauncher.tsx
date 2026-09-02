@@ -112,7 +112,7 @@ function Transcript({ events }: { events: ConversationEvent[] }) {
           {turn.userTurn && (
             <div className="mb-1.5 flex justify-end">
               <p className="max-w-[85%] whitespace-pre-wrap rounded-lg bg-accent-tint px-3 py-2 text-ink">
-                {turn.userTurn.payload.text}
+                {(turn.userTurn.payload as { text?: string } | null | undefined)?.text}
               </p>
             </div>
           )}
@@ -608,13 +608,15 @@ export function ConversationLauncher({
   useEffect(() => {
     if (workspaceId === null) return;
     setConversations([]);
-    api.conversations(workspaceId).then(({ conversations }) => setConversations(conversations), toastError);
+    const load = () =>
+      api.conversations(workspaceId).then(({ conversations }) => setConversations(conversations), toastError);
+    load();
     const unsubscribe = subscribe((msg) => {
       setAttention((current) => applyAttentionMessage(current, msg, focusedRef.current));
       if (msg.type === 'conversation_changed' && msg.conversation.workspaceId === workspaceId) {
         setConversations((current) => upsertConversation(current, msg.conversation));
       }
-    });
+    }, load);
     return unsubscribe;
   }, [workspaceId]);
 

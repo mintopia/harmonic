@@ -25,7 +25,7 @@ function makeRepo(): string {
 
 const critic = () => ({ reviewEnabled: true, reviewPrompt: 'Review the diff for correctness.', reviewModel: 'stub-model' });
 
-describe('escalation actions on a worktree ticket (ADR-0041)', () => {
+describe('escalation actions on a worktree ticket', () => {
   let server: TestServer;
   let repoDir: string;
   let workspaceId: number;

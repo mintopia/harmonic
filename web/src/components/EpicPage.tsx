@@ -36,6 +36,7 @@ import { Markdown } from './Markdown';
 import { TokenTypeBar, TokenTypeLegend } from './TokenTypeBar';
 import { ModelLabel, ProviderChip } from './TaskIdentity';
 import { ChangedFilesNav, changedFileKind } from './ticket/ChangedFilesNav';
+import { Fact } from './Fact';
 
 const sectionCaps = 'text-label font-bold uppercase tracking-[0.1em] text-faint';
 
@@ -54,15 +55,6 @@ function fmtRelative(ms: number): string {
   return `${Math.floor(h / 24)}d ago`;
 }
 
-function Fact({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="min-w-0">
-      <dt className="mb-[3px] text-[10px] font-bold uppercase tracking-[0.07em] text-faint">{label}</dt>
-      <dd className="min-w-0 text-[12.5px] text-ink">{children}</dd>
-    </div>
-  );
-}
-
 function Description({ text }: { text: string }) {
   const [expanded, setExpanded] = useState(false);
   return (
@@ -75,6 +67,7 @@ function Description({ text }: { text: string }) {
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
+        aria-expanded={expanded}
         className="mt-1.5 text-[12.5px] font-semibold text-accent transition-colors hover:text-ink"
       >
         {expanded ? 'Show less' : 'Show more'}
@@ -316,7 +309,7 @@ function ChildTokenBar({ totals }: { totals: ModelUsage | null | undefined }) {
   if (tokenBarEmpty(segments)) return <span className="text-faint">—</span>;
   const title = segments.map((s) => `${s.label} ${s.value.toLocaleString()}`).join(' · ');
   return (
-    <div className="flex h-2 w-full overflow-hidden rounded-full bg-raised" title={title} aria-label={title}>
+    <div role="img" className="flex h-2 w-full overflow-hidden rounded-full bg-raised" title={title} aria-label={title}>
       {segments.map((s) => (
         <span key={s.key} className={`h-full ${s.fill}`} style={{ width: `${s.pct}%` }} />
       ))}
@@ -472,7 +465,7 @@ const STEP_LABEL_TONE: Record<IntegrationStepState, string> = {
   pending: 'text-faint',
 };
 
-function EpicStepper({ epic }: { epic: Epic }) {
+export function EpicStepper({ epic }: { epic: Epic }) {
   const steps = epicLifecycleSteps(epic);
   const current = steps.find((s) => s.state === 'current' || s.state === 'held');
   return (
@@ -481,8 +474,8 @@ function EpicStepper({ epic }: { epic: Epic }) {
       aria-label={`Epic lifecycle — ${current ? current.label : 'complete'}${epic.integrate.held != null ? ' (escalated)' : ''}`}
     >
       {steps.map((step, i) => {
-        const leftDone = i > 0 && steps[i - 1]!.state === 'done';
-        const rightDone = step.state === 'done';
+        const leftDone = i > 0 && steps[i - 1]!.state === 'done' && !steps[i - 1]!.disabled;
+        const rightDone = step.state === 'done' && !step.disabled;
         return (
           <li
             key={step.key}
@@ -492,13 +485,13 @@ function EpicStepper({ epic }: { epic: Epic }) {
             <div className="flex w-full items-center">
               <span className={`h-0.5 flex-1 rounded ${i === 0 ? 'invisible' : leftDone ? 'bg-merged' : 'bg-edge'}`} />
               <span
-                className={`flex size-6 shrink-0 items-center justify-center rounded-full border text-[11px] font-bold tabular-nums ${PHASE_NODE_STYLES[STEP_NODE[step.state]]}`}
+                className={`flex size-6 shrink-0 items-center justify-center rounded-full border text-[11px] font-bold tabular-nums ${PHASE_NODE_STYLES[step.disabled ? 'pending' : STEP_NODE[step.state]]}`}
               >
-                {step.state === 'done' ? <Icon name="check" className="size-3.5" /> : i + 1}
+                {!step.disabled && step.state === 'done' ? <Icon name="check" className="size-3.5" /> : i + 1}
               </span>
               <span className={`h-0.5 flex-1 rounded ${i === steps.length - 1 ? 'invisible' : rightDone ? 'bg-merged' : 'bg-edge'}`} />
             </div>
-            <span className={`text-[12px] font-semibold leading-tight ${STEP_LABEL_TONE[step.state]}`}>{step.label}</span>
+            <span className={`text-[12px] font-semibold leading-tight ${step.disabled ? 'text-faint' : STEP_LABEL_TONE[step.state]}`}>{step.label}</span>
             <span className="max-w-[10rem] truncate text-[10.5px] leading-tight text-faint" title={step.sublabel}>
               {step.sublabel}
             </span>
@@ -567,21 +560,17 @@ export function EpicPage({
     const unsubscribe = subscribe((msg) => {
       if (msg.type === 'task_changed' && childIdsRef.current.has(msg.task.id)) setRefreshKey((k) => k + 1);
       else if (msg.type === 'task_removed' && childIdsRef.current.has(msg.id)) setRefreshKey((k) => k + 1);
-    });
+    }, () => setRefreshKey((k) => k + 1));
     return unsubscribe;
   }, []);
 
-  useEffect(() => {
-    let live = true;
+  useLiveEffect((live) => {
     setDiffFiles(null);
     setDiffFailed(false);
     api.epicDiffFiles(workspaceId, epicRef).then(
-      ({ files }) => live && setDiffFiles(files),
-      () => live && setDiffFailed(true),
+      ({ files }) => live() && setDiffFiles(files),
+      () => live() && setDiffFailed(true),
     );
-    return () => {
-      live = false;
-    };
   }, [workspaceId, epicRef]);
 
   useEffect(() => {

@@ -52,6 +52,7 @@ import {
 import { computeContextUsage, formatContextUsage } from '../conversation-telemetry-model';
 import { ProcessDrillIn, hasProcessTree } from './ProcessDrillIn';
 import { issueRef, taskLabel } from '../id-format.js';
+import { useLiveEffect } from '../useLiveEffect';
 
 const compact = new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 });
 
@@ -336,13 +337,12 @@ export function ActivityView({ config }: { config: AppConfig | null }) {
     [],
   );
 
-  useEffect(() => {
-    let cancelled = false;
+  useLiveEffect((live) => {
     const load = () =>
       fetch('/api/activity')
         .then((r) => (r.ok ? r.json() : null))
         .then((body: { processes: ActivityProcess[] } | null) => {
-          if (!cancelled && body) setProcesses(body.processes);
+          if (live() && body) setProcesses(body.processes);
         })
         .catch(() => {});
     load();
@@ -362,9 +362,8 @@ export function ActivityView({ config }: { config: AppConfig | null }) {
       } else if (msg.type === 'conversation_event') {
         setPending((current) => resolvePendingPermissionFromEvent(current, msg.event));
       }
-    });
+    }, load);
     return () => {
-      cancelled = true;
       clearInterval(poll);
       unsubscribe();
     };
