@@ -1,12 +1,11 @@
 import type { FastifyInstance } from 'fastify';
-import type { App } from './app.js';
+import type { AppContext } from './app.js';
 import { attemptTimelineToApi, conversationToApi, attemptToApi, attemptUsageToApi, taskToApi } from './serialize.js';
 import { flaggedWorktreesToApi, operationEventToApi, scheduledJobsToApi } from './dto.js';
 import { forEachYielding } from '../reliability/yield.js';
 
 /** One firehose socket at /api/ws: every event is broadcast to every client; clients filter. */
-export async function wsRoutes(fastify: FastifyInstance): Promise<void> {
-  const { ctx } = fastify as unknown as App;
+export async function wsRoutes(fastify: FastifyInstance, ctx: AppContext): Promise<void> {
 
   fastify.get('/ws', { websocket: true }, async (socket, req) => {
     const send = (msg: unknown) => {

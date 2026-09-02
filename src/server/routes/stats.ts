@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import type { App } from '../app.js';
+import type { PersistenceContext } from '../app.js';
 import { mergeUsage, type AttemptUsage } from '../../execution/usage.js';
 import { costOfAttempts } from '../dto.js';
 import { buildDaySeries } from '../stats-series.js';
@@ -291,8 +291,7 @@ async function computeStats(statsReader: StatsWorkerClient, range: StatsRange) {
   };
 }
 
-export async function statsRoutes(fastify: FastifyInstance): Promise<void> {
-  const { ctx } = fastify as App;
+export async function statsRoutes(fastify: FastifyInstance, ctx: Pick<PersistenceContext, 'statsReader'>): Promise<void> {
   const app = fastify.withTypeProvider<ZodTypeProvider>();
 
   app.get(

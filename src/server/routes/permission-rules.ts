@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import type { App } from '../app.js';
+import type { PersistenceContext } from '../app.js';
 import { idParamsSchema, okResponseSchema, errorResponse } from '../schemas.js';
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
 
@@ -18,8 +18,7 @@ const permissionRuleSchema = z
 
 const permissionRulesListResponseSchema = listResponse('rules', permissionRuleSchema);
 
-export async function permissionRuleRoutes(fastify: FastifyInstance): Promise<void> {
-  const { ctx } = fastify as App;
+export async function permissionRuleRoutes(fastify: FastifyInstance, ctx: Pick<PersistenceContext, 'permissionRules'>): Promise<void> {
   const app = fastify.withTypeProvider<ZodTypeProvider>();
 
   app.get(

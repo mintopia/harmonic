@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import type { App } from '../app.js';
+import type { PersistenceContext } from '../app.js';
 import { errorResponse, okResponseSchema } from '../schemas.js';
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
 
@@ -56,8 +56,7 @@ const keyWithTokenSchema = keySchema.extend({
 
 const keysListResponseSchema = listResponse('keys', keySchema);
 
-export async function authRoutes(fastify: FastifyInstance): Promise<void> {
-  const { ctx } = fastify as App;
+export async function authRoutes(fastify: FastifyInstance, ctx: Pick<PersistenceContext, 'auth'>): Promise<void> {
   const app = fastify.withTypeProvider<ZodTypeProvider>();
 
   app.post(

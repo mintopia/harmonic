@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import type { App } from '../app.js';
+import type { TrackingContext } from '../app.js';
 import { DomainError } from '../../domain/errors.js';
 import { errorResponse } from '../schemas.js';
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
@@ -103,8 +103,7 @@ const epicIntegrateOutcomeSchema = z
 
 const epicToApi = (epic: Epic): Epic => epic;
 
-export async function epicRoutes(fastify: FastifyInstance): Promise<void> {
-  const { ctx } = fastify as App;
+export async function epicRoutes(fastify: FastifyInstance, ctx: Pick<TrackingContext, 'trackerManager' | 'workspaces'>): Promise<void> {
   const app = fastify.withTypeProvider<ZodTypeProvider>();
 
   app.get(

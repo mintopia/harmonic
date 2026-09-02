@@ -1,15 +1,14 @@
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import type { App } from '../app.js';
+import type { AppContext } from '../app.js';
 import { activityProcessSchema } from '../schemas.js';
 import { activitySnapshot } from '../serialize.js';
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
 
 const activityResponseSchema = listResponse('processes', activityProcessSchema);
 
-export async function activityRoutes(fastify: FastifyInstance): Promise<void> {
-  const { ctx } = fastify as App;
+export async function activityRoutes(fastify: FastifyInstance, ctx: AppContext): Promise<void> {
   const app = fastify.withTypeProvider<ZodTypeProvider>();
 
   app.get(

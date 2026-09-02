@@ -163,6 +163,77 @@ export interface AppContext {
   flaggedWorktrees: FlaggedWorktreeRegistry;
 }
 
+export type PersistenceContext = Pick<
+  AppContext,
+  | 'asyncDb'
+  | 'statsReader'
+  | 'settingsStore'
+  | 'workspaces'
+  | 'tasks'
+  | 'attempts'
+  | 'sessions'
+  | 'conversations'
+  | 'permissionRules'
+  | 'guardrailEvents'
+  | 'verificationAttempts'
+  | 'auth'
+  | 'channels'
+>;
+
+export type ExecutionContext = Pick<
+  AppContext,
+  | 'tasks'
+  | 'settingsStore'
+  | 'workspaces'
+  | 'attempts'
+  | 'sessions'
+  | 'runner'
+  | 'conversations'
+  | 'conversationDriver'
+  | 'escalation'
+  | 'autoRunner'
+  | 'guardrailEvents'
+  | 'verificationAttempts'
+  | 'auth'
+  | 'notifier'
+  | 'bus'
+  | 'flaggedWorktrees'
+>;
+
+export type TrackingContext = Pick<
+  AppContext,
+  'tasks' | 'workspaces' | 'settingsStore' | 'trackerManager' | 'scheduler' | 'channels' | 'notifier' | 'bus'
+>;
+
+export interface AppContexts {
+  persistence: PersistenceContext;
+  execution: ExecutionContext;
+  tracking: TrackingContext;
+}
+
+export function createPersistenceContext(ctx: AppContext): PersistenceContext {
+  const { asyncDb, statsReader, settingsStore, workspaces, tasks, attempts, sessions, conversations, permissionRules, guardrailEvents, verificationAttempts, auth, channels } = ctx;
+  return { asyncDb, statsReader, settingsStore, workspaces, tasks, attempts, sessions, conversations, permissionRules, guardrailEvents, verificationAttempts, auth, channels };
+}
+
+export function createExecutionContext(ctx: AppContext): ExecutionContext {
+  const { tasks, settingsStore, workspaces, attempts, sessions, runner, conversations, conversationDriver, escalation, autoRunner, guardrailEvents, verificationAttempts, auth, notifier, bus, flaggedWorktrees } = ctx;
+  return { tasks, settingsStore, workspaces, attempts, sessions, runner, conversations, conversationDriver, escalation, autoRunner, guardrailEvents, verificationAttempts, auth, notifier, bus, flaggedWorktrees };
+}
+
+export function createTrackingContext(ctx: AppContext): TrackingContext {
+  const { tasks, workspaces, settingsStore, trackerManager, scheduler, channels, notifier, bus } = ctx;
+  return { tasks, workspaces, settingsStore, trackerManager, scheduler, channels, notifier, bus };
+}
+
+export function createAppContexts(ctx: AppContext): AppContexts {
+  return {
+    persistence: createPersistenceContext(ctx),
+    execution: createExecutionContext(ctx),
+    tracking: createTrackingContext(ctx),
+  };
+}
+
 /** One Fastify route registration, as captured by the `onRoute` hook below. */
 export interface RegisteredRoute {
   method: string;
@@ -458,6 +529,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   });
 
   const ctx: AppContext = { asyncDb, statsReader, settingsStore, workspaces, tasks, attempts, sessions: sessionStore, runner, conversations, conversationDriver, permissionRules, escalation, autoRunner, guardrailEvents, verificationAttempts, trackerManager, scheduler, auth, channels, notifier, bus, flaggedWorktrees };
+  const contexts = createAppContexts(ctx);
 
   const app = Fastify({ logger: false }) as unknown as App;
   app.decorate('ctx', ctx);
@@ -640,21 +712,21 @@ not resolved yet.`;
     return reply.status(500).send({ error: { code: 'internal', message: 'internal server error' } });
   });
 
-  await app.register(taskRoutes, { prefix: '/api' });
-  await app.register(mapRoutes, { prefix: '/api' });
-  await app.register(workspaceRoutes, { prefix: '/api' });
+  await app.register((fastify) => taskRoutes(fastify, ctx), { prefix: '/api' });
+  await app.register((fastify) => mapRoutes(fastify, contexts.tracking), { prefix: '/api' });
+  await app.register((fastify) => workspaceRoutes(fastify, contexts.tracking), { prefix: '/api' });
   await app.register(conversationRoutes, { prefix: '/api' });
-  await app.register(permissionRuleRoutes, { prefix: '/api' });
-  await app.register(configRoutes, { prefix: '/api' });
-  await app.register(authRoutes, { prefix: '/api' });
-  await app.register(statsRoutes, { prefix: '/api' });
-  await app.register(activityRoutes, { prefix: '/api' });
+  await app.register((fastify) => permissionRuleRoutes(fastify, contexts.persistence), { prefix: '/api' });
+  await app.register((fastify) => configRoutes(fastify, contexts.execution), { prefix: '/api' });
+  await app.register((fastify) => authRoutes(fastify, contexts.persistence), { prefix: '/api' });
+  await app.register((fastify) => statsRoutes(fastify, contexts.persistence), { prefix: '/api' });
+  await app.register((fastify) => activityRoutes(fastify, ctx), { prefix: '/api' });
   await app.register(operationRoutes, { prefix: '/api' });
-  await app.register(scheduledJobRoutes, { prefix: '/api' });
-  await app.register(flaggedWorktreeRoutes, { prefix: '/api' });
-  await app.register(channelRoutes, { prefix: '/api' });
+  await app.register((fastify) => scheduledJobRoutes(fastify, contexts.tracking), { prefix: '/api' });
+  await app.register((fastify) => flaggedWorktreeRoutes(fastify, contexts.execution), { prefix: '/api' });
+  await app.register((fastify) => channelRoutes(fastify, contexts.persistence), { prefix: '/api' });
   await app.register(fsRoutes, { prefix: '/api' });
-  await app.register(epicRoutes, { prefix: '/api' });
+  await app.register((fastify) => epicRoutes(fastify, contexts.tracking), { prefix: '/api' });
   await app.register(openapiRoutes, { prefix: '/api' });
 
   app.post('/mcp', { schema: { hide: true } }, async (req, reply) => {
@@ -685,7 +757,7 @@ not resolved yet.`;
     await trackerManager.sync();
     loopMonitor?.start();
   });
-  await app.register(wsRoutes, { prefix: '/api' });
+  await app.register((fastify) => wsRoutes(fastify, ctx), { prefix: '/api' });
 
   const webRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'dist', 'web');
   if (existsSync(webRoot)) {

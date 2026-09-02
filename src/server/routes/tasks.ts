@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import type { App } from '../app.js';
+import type { AppContext } from '../app.js';
 import { createTaskInputSchema, updateTaskInputSchema, taskListQuerySchema, compareListRows } from '../../domain/tasks.js';
 import { previewHumanRejectContinuation } from '../../domain/session-continuation.js';
 import {
@@ -319,8 +319,7 @@ function sortListRows(rows: ApiTaskListRow[], sortBy: string | undefined, order:
   });
 }
 
-export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
-  const { ctx } = fastify as App;
+export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Promise<void> {
   const app = fastify.withTypeProvider<ZodTypeProvider>();
 
   const withDeps = async (task: { id: number }) =>
