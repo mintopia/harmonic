@@ -4,6 +4,7 @@ import type { AttemptStore } from './attempts.js';
 import type { TaskService } from './tasks.js';
 import type { MergeEffectExec } from './merge.js';
 import type { AttemptSettleCoordinator } from './attempt-settle.js';
+import { withTaskLock } from './task-lock.js';
 import type { VerificationDecision } from '../verification/combine.js';
 
 /**
@@ -60,33 +61,38 @@ export class EscalationService {
    * verification entirely.
    */
   async accept(taskId: number, opts?: { force?: boolean }): Promise<TaskRow> {
-    const { task, run } = await this.escalated(taskId);
-    const head = run ? await this.hooks.candidateHead(task, run) : null;
-    if (!run || !head) {
-      throw new DomainError('conflict', `task ${taskId} has no candidate to accept; the branch has no commits ahead of its base`);
-    }
-    if (!opts?.force) {
-      const decision = await this.hooks.verifyCandidate(task, run, head);
-      if (decision.outcome !== 'proceed') {
-        const feedback = `Operator Accept ran verification and it did not pass (${decision.outcome}): ${decision.reason}`;
-        await this.hooks.resume(task, feedback, false);
-        return await this.taskService.get(taskId);
+    // Hold the Task across the whole verify→merge→settle span (ADR-0020): a slow
+    // conflict-resolving merge must not let a racing verify/requeue transition
+    // the Task underneath it and strand a merged branch behind an open ticket.
+    return withTaskLock(taskId, async () => {
+      const { task, run } = await this.escalated(taskId);
+      const head = run ? await this.hooks.candidateHead(task, run) : null;
+      if (!run || !head) {
+        throw new DomainError('conflict', `task ${taskId} has no candidate to accept; the branch has no commits ahead of its base`);
       }
-    }
-    await this.attempts.update(run.id, { verifiedHeadOid: head });
-    const merged = await this.attempts.get(run.id);
-    await this.taskService.setMergeStatus(task.id, 'merging');
-    for (const effect of this.mergeEffects(task, merged)) {
-      const result = await effect.apply();
-      if (!result.ok) {
-        // Only a real merge conflict surfaces the resolving-conflicts indicator; a
-        // post-merge-red or ticket-close failure leaves the ticket plainly escalated.
-        await this.taskService.setMergeStatus(task.id, result.observed?.reason === 'conflict' ? 'resolving-conflicts' : null);
-        throw new DomainError('conflict', result.detail ?? `${effect.effect} failed on accept`);
+      if (!opts?.force) {
+        const decision = await this.hooks.verifyCandidate(task, run, head);
+        if (decision.outcome !== 'proceed') {
+          const feedback = `Operator Accept ran verification and it did not pass (${decision.outcome}): ${decision.reason}`;
+          await this.hooks.resume(task, feedback, false);
+          return await this.taskService.get(taskId);
+        }
       }
-    }
-    await this.settle.settle(task, merged, 'operator-accept', { runState: 'completed', taskAction: 'done', reason: null });
-    return await this.taskService.get(taskId);
+      await this.attempts.update(run.id, { verifiedHeadOid: head });
+      const merged = await this.attempts.get(run.id);
+      await this.taskService.setMergeStatus(task.id, 'merging');
+      for (const effect of this.mergeEffects(task, merged)) {
+        const result = await effect.apply();
+        if (!result.ok) {
+          // Only a real merge conflict surfaces the resolving-conflicts indicator; a
+          // post-merge-red or ticket-close failure leaves the ticket plainly escalated.
+          await this.taskService.setMergeStatus(task.id, result.observed?.reason === 'conflict' ? 'resolving-conflicts' : null);
+          throw new DomainError('conflict', result.detail ?? `${effect.effect} failed on accept`);
+        }
+      }
+      await this.settle.settle(task, merged, 'operator-accept', { runState: 'completed', taskAction: 'done', reason: null });
+      return await this.taskService.get(taskId);
+    });
   }
 
   async reject(taskId: number, guidance: string, startNow = false): Promise<TaskRow> {

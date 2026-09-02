@@ -33,6 +33,7 @@ import { deleteAttemptsAndChildrenAsync } from './attempt-cascade.js';
 import { forEachYielding } from '../reliability/yield.js';
 import { orderEligibleWorkYielding } from './work-ordering.js';
 import { mirroredAgentEligible } from './agent-workable.js';
+import { withTaskLock } from './task-lock.js';
 import type { StoredEpicRecord } from './epic-derivation.js';
 
 export const createTaskInputSchema = z.object({
@@ -189,6 +190,29 @@ export interface OrderedEligibleTask extends TaskRow {
 const EDITABLE_STATES: TaskState[] = ['draft', 'ready'];
 const CANCELLABLE_STATES: TaskState[] = ['draft', 'ready', 'working', 'escalated'];
 const TERMINAL_STATES: TaskState[] = ['done', 'cancelled'];
+
+/**
+ * The whole legal Task lifecycle (ADR-0020). Terminal `done` has no outgoing
+ * edge; `cancelled` reopens only to `ready` (via `uncancel`). `ready → done` is
+ * the reconcile-only edge for a merge that settled its Attempt before the Task
+ * reached `done`. A same-state write is an idempotent no-op (e.g. re-escalating
+ * to refresh the reason), not a transition, so it is always allowed.
+ */
+const LEGAL_TRANSITIONS: Record<TaskState, readonly TaskState[]> = {
+  draft: ['ready', 'cancelled'],
+  ready: ['working', 'escalated', 'done', 'cancelled'],
+  working: ['ready', 'escalated', 'done', 'cancelled'],
+  escalated: ['ready', 'done', 'cancelled'],
+  done: [],
+  cancelled: ['ready'],
+};
+
+function assertTaskTransition(id: number, from: TaskState, to: TaskState): void {
+  if (from === to) return;
+  if (!LEGAL_TRANSITIONS[from].includes(to)) {
+    throw new DomainError('invalid_state', `task ${id}: illegal transition ${from} → ${to}`);
+  }
+}
 
 export type TaskNotification = 'task.created' | 'run.started' | 'task.escalated' | 'task.done';
 
@@ -387,6 +411,11 @@ export class TaskService {
         .get();
       const now = Date.now();
       if (existing) {
+        // Tracker-owned reopen: a re-opened issue flips `done → ready` here. This
+        // is a deliberate exception to the ADR-0020 lifecycle table (`done` is
+        // terminal there): the tracker, not the operator, owns a mirrored Task's
+        // open/closed axis, so this write is a direct column set outside
+        // `setState`'s guard and the per-Task lock.
         const state: TaskState =
           existing.state === 'working' || existing.state === 'escalated'
             ? existing.state
@@ -695,19 +724,21 @@ export class TaskService {
    * `undefined`, so local Task state is the cross-process ownership lock.
    */
   async claimReady(id: number): Promise<TaskRow | undefined> {
-    const row = await this.db.write((db) =>
-      db
-        .update(tasks)
-        .set({ state: 'working', updatedAt: Date.now() })
-        .where(and(eq(tasks.id, id), eq(tasks.state, 'ready')))
-        .returning()
-        .get(),
-    );
-    if (!row) return undefined;
-    const task = await this.resolve(row);
-    this.onChanged(task);
-    this.onNotify('run.started', task);
-    return task;
+    return withTaskLock(id, async () => {
+      const row = await this.db.write((db) =>
+        db
+          .update(tasks)
+          .set({ state: 'working', updatedAt: Date.now() })
+          .where(and(eq(tasks.id, id), eq(tasks.state, 'ready')))
+          .returning()
+          .get(),
+      );
+      if (!row) return undefined;
+      const task = await this.resolve(row);
+      this.onChanged(task);
+      this.onNotify('run.started', task);
+      return task;
+    });
   }
 
   async get(id: number): Promise<TaskRow> {
@@ -737,11 +768,13 @@ export class TaskService {
 
   /** Promote a draft to ready. Blockers are derived at read and pick time. */
   async promote(id: number): Promise<TaskRow> {
-    const task = await this.get(id);
-    if (task.state !== 'draft') {
-      throw new DomainError('invalid_state', `task ${id} is ${task.state}; only drafts can be promoted to ready`);
-    }
-    return this.setState(id, 'ready');
+    return withTaskLock(id, async () => {
+      const task = await this.get(id);
+      if (task.state !== 'draft') {
+        throw new DomainError('invalid_state', `task ${id} is ${task.state}; only drafts can be promoted to ready`);
+      }
+      return this.setState(id, 'ready');
+    });
   }
 
   /**
@@ -751,36 +784,40 @@ export class TaskService {
    * so its feedback rides the column.
    */
   async requeue(id: number, feedback?: string, continuation?: 'full' | 'condensed'): Promise<TaskRow> {
-    const task = await this.get(id);
-    if (task.state !== 'escalated') {
-      throw new DomainError('invalid_state', `task ${id} is ${task.state}; only escalated tasks can be re-queued`);
-    }
-    const trimmed = feedback?.trim();
-    const patch: Partial<TaskRow> = {
-      state: 'ready',
-      escalationReason: null,
-      mergeStatus: null,
-      updatedAt: Date.now(),
-      feedback: null,
-      continuationChoice: continuation ?? null,
-    };
-    if (trimmed) {
-      if (task.origin === 'mirrored') patch.feedback = trimmed;
-      else patch.prompt = `${task.prompt}\n\n## Feedback from the previous attempt\n\n${trimmed}`;
-    }
-    const row = await this.db.write((db) =>
-      db.update(tasks).set(patch).where(eq(tasks.id, id)).returning().get(),
-    );
-    return await this.changed(row!);
+    return withTaskLock(id, async () => {
+      const task = await this.get(id);
+      if (task.state !== 'escalated') {
+        throw new DomainError('invalid_state', `task ${id} is ${task.state}; only escalated tasks can be re-queued`);
+      }
+      const trimmed = feedback?.trim();
+      const patch: Partial<TaskRow> = {
+        state: 'ready',
+        escalationReason: null,
+        mergeStatus: null,
+        updatedAt: Date.now(),
+        feedback: null,
+        continuationChoice: continuation ?? null,
+      };
+      if (trimmed) {
+        if (task.origin === 'mirrored') patch.feedback = trimmed;
+        else patch.prompt = `${task.prompt}\n\n## Feedback from the previous attempt\n\n${trimmed}`;
+      }
+      const row = await this.db.write((db) =>
+        db.update(tasks).set(patch).where(eq(tasks.id, id)).returning().get(),
+      );
+      return await this.changed(row!);
+    });
   }
 
   /** Return a cancelled task to the queue in place — the inverse of {@link cancel}. */
   async uncancel(id: number): Promise<TaskRow> {
-    const task = await this.get(id);
-    if (task.state !== 'cancelled') {
-      throw new DomainError('invalid_state', `task ${id} is ${task.state}; only cancelled tasks can be uncancelled`);
-    }
-    return this.setState(id, 'ready');
+    return withTaskLock(id, async () => {
+      const task = await this.get(id);
+      if (task.state !== 'cancelled') {
+        throw new DomainError('invalid_state', `task ${id} is ${task.state}; only cancelled tasks can be uncancelled`);
+      }
+      return this.setState(id, 'ready');
+    });
   }
 
   /**
@@ -788,37 +825,44 @@ export class TaskService {
    * stays on the row until an operator Accepts, Rejects with guidance, or Closes it.
    */
   async escalate(id: number, reason: string): Promise<TaskRow> {
-    const row = await this.db.write((db) =>
-      db
-        .update(tasks)
-        .set({ state: 'escalated', escalationReason: reason, mergeStatus: null, updatedAt: Date.now() })
-        .where(eq(tasks.id, id))
-        .returning()
-        .get(),
-    );
-    const task = await this.changed(row!);
-    this.onNotify('task.escalated', task);
-    await this.emitDependents(id);
-    return task;
+    return withTaskLock(id, async () => {
+      assertTaskTransition(id, (await this.getRaw(id)).state, 'escalated');
+      const row = await this.db.write((db) =>
+        db
+          .update(tasks)
+          .set({ state: 'escalated', escalationReason: reason, mergeStatus: null, updatedAt: Date.now() })
+          .where(eq(tasks.id, id))
+          .returning()
+          .get(),
+      );
+      const task = await this.changed(row!);
+      this.onNotify('task.escalated', task);
+      await this.emitDependents(id);
+      return task;
+    });
   }
 
   async cancel(id: number): Promise<TaskRow> {
-    const task = await this.get(id);
-    if (!CANCELLABLE_STATES.includes(task.state)) {
-      throw new DomainError('invalid_state', `task ${id} is ${task.state}, which is terminal`);
-    }
-    return this.setState(id, 'cancelled');
+    return withTaskLock(id, async () => {
+      const task = await this.get(id);
+      if (!CANCELLABLE_STATES.includes(task.state)) {
+        throw new DomainError('invalid_state', `task ${id} is ${task.state}, which is terminal`);
+      }
+      return this.setState(id, 'cancelled');
+    });
   }
 
   /** Operator override: force a working task straight to done. Unblocks
    * dependents like any completion. Pairs with runner.completeForTask, which
    * stops the still-running agent. */
   async complete(id: number): Promise<TaskRow> {
-    const task = await this.get(id);
-    if (task.state !== 'working') {
-      throw new DomainError('invalid_state', `task ${id} is ${task.state}, not working`);
-    }
-    return this.setState(id, 'done');
+    return withTaskLock(id, async () => {
+      const task = await this.get(id);
+      if (task.state !== 'working') {
+        throw new DomainError('invalid_state', `task ${id} is ${task.state}, not working`);
+      }
+      return this.setState(id, 'done');
+    });
   }
 
   /**
@@ -827,32 +871,37 @@ export class TaskService {
    * is rejected and the caller must treat it as a clean no-op.
    */
   async claimMirroredAutoRun(id: number): Promise<TaskRow | undefined> {
-    const row = await this.db.write((db) =>
-      db
-        .update(tasks)
-        .set({ state: 'working', updatedAt: Date.now() })
-        .where(and(eq(tasks.id, id), eq(tasks.state, 'ready'), eq(tasks.origin, 'mirrored')))
-        .returning()
-        .get(),
-    );
-    return row ? await this.changed(row) : undefined;
+    return withTaskLock(id, async () => {
+      const row = await this.db.write((db) =>
+        db
+          .update(tasks)
+          .set({ state: 'working', updatedAt: Date.now() })
+          .where(and(eq(tasks.id, id), eq(tasks.state, 'ready'), eq(tasks.origin, 'mirrored')))
+          .returning()
+          .get(),
+      );
+      return row ? await this.changed(row) : undefined;
+    });
   }
 
   async setState(id: number, state: TaskState): Promise<TaskRow> {
-    const row = await this.db.write((db) =>
-      db
-        .update(tasks)
-        .set({ state, mergeStatus: null, updatedAt: Date.now(), ...(state === 'escalated' ? {} : { escalationReason: null }) })
-        .where(eq(tasks.id, id))
-        .returning()
-        .get(),
-    );
-    const task = await this.resolve(row!);
-    this.onChanged(task);
-    const notification = STATE_NOTIFICATIONS[state];
-    if (notification) this.onNotify(notification, task);
-    if (state === 'done' || state === 'cancelled') await this.emitDependents(id);
-    return task;
+    return withTaskLock(id, async () => {
+      assertTaskTransition(id, (await this.getRaw(id)).state, state);
+      const row = await this.db.write((db) =>
+        db
+          .update(tasks)
+          .set({ state, mergeStatus: null, updatedAt: Date.now(), ...(state === 'escalated' ? {} : { escalationReason: null }) })
+          .where(eq(tasks.id, id))
+          .returning()
+          .get(),
+      );
+      const task = await this.resolve(row!);
+      this.onChanged(task);
+      const notification = STATE_NOTIFICATIONS[state];
+      if (notification) this.onNotify(notification, task);
+      if (state === 'done' || state === 'cancelled') await this.emitDependents(id);
+      return task;
+    });
   }
 
   /** Set the live merge indicator (`merging` / `resolving-conflicts`, or null at rest) and broadcast it. Orthogonal to `state`; every `setState`/`escalate`/`requeue` clears it. */
