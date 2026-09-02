@@ -19,6 +19,7 @@ export function useTicketAttempts(taskId: number): { runs: AttemptSummary[]; att
         if (!live()) return;
         setAttempts(next);
       }, toastError);
+    load();
     const unsubscribe = subscribe((msg) => {
       if (msg.type === 'attempt_timeline_changed' && msg.taskId === taskId) {
         setAttempts(msg.attempts);
@@ -35,6 +36,7 @@ export function useTicketAttempts(taskId: number): { runs: AttemptSummary[]; att
         if (!live()) return;
         setRuns(list);
       });
+    load();
     const unsubscribe = subscribe((msg) => {
       if (msg.type === 'attempt_changed' && msg.run.taskId === taskId) {
         setRuns((current) => {

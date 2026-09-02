@@ -235,6 +235,8 @@ export function App() {
 
   useEffect(() => {
     if (!authed || activeWorkspaceId === null) return;
+    refresh();
+    refreshEpics();
     const debouncedRefreshEpics = debounce(refreshEpics, 250);
     const unsubscribe = subscribe((msg) => {
       if (msg.type === 'task_changed' && msg.task.workspaceId === activeWorkspaceId) {

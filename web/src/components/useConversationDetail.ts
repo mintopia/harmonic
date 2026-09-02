@@ -47,6 +47,7 @@ export function useConversationDetail(
       }, toastError);
       api.conversationEvents(id).then(({ events }) => live && setEvents(events), toastError);
     };
+    load();
     const unsubscribe = subscribe((msg) => {
       if (msg.type === 'conversation_event' && msg.event.conversationId === id) {
         setEvents((current) =>

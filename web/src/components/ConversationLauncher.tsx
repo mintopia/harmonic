@@ -610,6 +610,7 @@ export function ConversationLauncher({
     setConversations([]);
     const load = () =>
       api.conversations(workspaceId).then(({ conversations }) => setConversations(conversations), toastError);
+    load();
     const unsubscribe = subscribe((msg) => {
       setAttention((current) => applyAttentionMessage(current, msg, focusedRef.current));
       if (msg.type === 'conversation_changed' && msg.conversation.workspaceId === workspaceId) {

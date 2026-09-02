@@ -345,6 +345,7 @@ export function ActivityView({ config }: { config: AppConfig | null }) {
           if (!cancelled && body) setProcesses(body.processes);
         })
         .catch(() => {});
+    load();
     const poll = setInterval(load, 5_000);
 
     const unsubscribe = subscribe((msg) => {

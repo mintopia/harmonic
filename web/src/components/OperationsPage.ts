@@ -83,6 +83,7 @@ function OperationsReadout() {
       if (snapshotLoaded) apply(message.event);
       else pending.push(message.event);
     }, load);
+    load();
     const timer = setInterval(() => setNow(Date.now()), 1_000);
     return () => {
       active = false;

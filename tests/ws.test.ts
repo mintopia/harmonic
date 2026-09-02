@@ -128,7 +128,7 @@ describe('subscribe', () => {
     expect(FakeWebSocket.instances).toHaveLength(2);
   });
 
-  it('re-runs each subscriber onOpen exactly once per (re)open', async () => {
+  it('runs each subscriber onReopen exactly once per reconnect, never on the first open', async () => {
     vi.useFakeTimers();
     vi.spyOn(Math, 'random').mockReturnValue(0);
     vi.stubGlobal('WebSocket', FakeWebSocket);
@@ -149,16 +149,16 @@ describe('subscribe', () => {
       },
     );
 
-    expect(reloadsA).toBe(1);
-    expect(reloadsB).toBe(1);
+    expect(reloadsA).toBe(0);
+    expect(reloadsB).toBe(0);
     expect(FakeWebSocket.instances).toHaveLength(1);
 
-    for (let open = 2; open <= 4; open += 1) {
+    for (let reconnect = 1; reconnect <= 3; reconnect += 1) {
       FakeWebSocket.instances[FakeWebSocket.instances.length - 1]!.serverClose();
       vi.advanceTimersByTime(1);
       FakeWebSocket.instances[FakeWebSocket.instances.length - 1]!.onopen?.();
-      expect(reloadsA).toBe(open);
-      expect(reloadsB).toBe(open);
+      expect(reloadsA).toBe(reconnect);
+      expect(reloadsB).toBe(reconnect);
     }
 
     unsubscribeA();

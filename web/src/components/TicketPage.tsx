@@ -1286,6 +1286,7 @@ export function TicketPage({
       api.taskTimeline(task.id).then(({ events: next }) => {
         if (live()) setTimelineEvents(next);
       }, toastError);
+    load();
     const unsubscribe = subscribe((msg) => {
       if ((msg.type === 'attempt_timeline_changed' && msg.taskId === task.id) || (msg.type === 'attempt_changed' && msg.run.taskId === task.id)) load();
       // The full Task rides `task_changed`; apply it so state/escalationReason/mergeStatus update live without a refetch.
@@ -1338,6 +1339,7 @@ export function TicketPage({
     }
     const load = () =>
       api.attemptGuardrailEvents(selectedRunId).then(({ guardrailEvents }) => live() && setGuardrailEvents(guardrailEvents));
+    load();
     const unsubscribe = subscribe((msg) => {
       if (msg.type === 'attempt_changed' && msg.run.id === selectedRunId) load();
     }, load);

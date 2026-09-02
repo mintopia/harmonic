@@ -71,6 +71,7 @@ export function FlaggedWorktreesView() {
       if (snapshotLoaded) apply(message.flags);
       else pending.push(message.flags);
     }, load);
+    load();
     return () => {
       active = false;
       unsubscribe();

@@ -105,6 +105,7 @@ export function ScheduledJobsView() {
       if (snapshotLoaded) apply(message.jobs);
       else pending.push(message.jobs);
     }, load);
+    load();
     const timer = setInterval(() => setNow(Date.now()), 1_000);
     return () => {
       active = false;
