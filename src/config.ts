@@ -37,13 +37,12 @@ export const DEFAULT_TASK_PROMPT = `{prompt}`;
 export const harnessConfigSchema = z.object({
   /** Command + args spawned to speak ACP on stdio. */
   command: z.string().meta({ example: 'npx' }),
-  args: z.array(z.string()).default([]).meta({ example: ['@zed-industries/claude-code-acp'] }),
+  args: z.array(z.string()).meta({ example: ['@zed-industries/claude-code-acp'] }),
   /** Extra environment for the spawned process (e.g. API keys). */
   env: z
     .record(z.string(), z.string())
-    .default({})
     .meta({ example: { ANTHROPIC_API_KEY: '<your-api-key>' } }),
-  models: z.array(z.string()).default([]).meta({ example: ['sonnet-5', 'opus-4.8'] }),
+  models: z.array(z.string()).meta({ example: ['sonnet-5', 'opus-4.8'] }),
   defaultModel: z.string().meta({ example: 'sonnet-5' }),
   /**
    * Root of the harness's native session logs, for the per-model usage
@@ -151,7 +150,7 @@ export function costCapMessage(unpriced: string[]): string {
 
 export const appConfigSchema = z.object({
   /** Operator-chosen display name; feeds the sidebar heading and browser title. Empty (the default) falls back to "Harmonic". */
-  name: z.string().default('').meta({ example: 'Production' }),
+  name: z.string().meta({ example: 'Production' }),
   harnesses: z.record(z.enum(HARNESS_IDS), harnessConfigSchema).meta({
     example: {
       claude: {
@@ -169,12 +168,10 @@ export const appConfigSchema = z.object({
    */
   prices: z
     .record(z.string(), modelPriceSchema)
-    .default({})
     .meta({ example: { 'sonnet-5': { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 } } }),
   /** Optional per-model context-window / cache-TTL facts for Conversation telemetry. */
   modelInfo: z
     .record(z.string(), modelInfoSchema)
-    .default({})
     .meta({ example: { 'sonnet-5': { contextWindow: 200000, cacheTtlSeconds: 300 } } }),
   defaults: z.object({
     harness: z.enum(HARNESS_IDS).meta({ example: 'claude' }),
@@ -195,56 +192,48 @@ export const appConfigSchema = z.object({
     maxConcurrentAttempts: z.number().int().min(1).meta({ example: 3 }),
   }),
   /** Maximum failed implementation attempts before the ticket is escalated. */
-  maxAttempts: z.number().int().min(1).default(2).meta({ example: 2 }),
+  maxAttempts: z.number().int().min(1).meta({ example: 2 }),
   /** Reuse a warm Session into Attempt N+1 while its context occupancy stays
    * below this many tokens; at or above it, start a condensed new Session. A raw
    * token count (not a fraction), so it is independent of the model's window. */
-  contextReuseTokenLimit: z.number().int().min(0).default(200_000).meta({ example: 200_000 }),
+  contextReuseTokenLimit: z.number().int().min(0).meta({ example: 200_000 }),
   /**
    * `prompt` is the global Drive Prompt template; `unattendedReminder` is appended to every auto-driven turn;
    * `continuePrompt` is the re-prompt nudge; `mergeFate` is the default fate of a completed worktree branch
    * (research Tasks are always artifacts); `continueAttempts` is how many re-prompts an Attempt gets before it
    * is verified as-is (0 = single turn).
    */
-  drive: z
-    .object({
-      prompt: z.string().default(DEFAULT_DRIVE_PROMPT).meta({ example: DEFAULT_DRIVE_PROMPT }),
-      unattendedReminder: z.string().default(UNATTENDED_REMINDER).meta({ example: UNATTENDED_REMINDER }),
-      continuePrompt: z.string().default(DEFAULT_CONTINUE_PROMPT).meta({ example: DEFAULT_CONTINUE_PROMPT }),
-      mergeFate: z.enum(MERGE_FATES).default('auto-merge').meta({ example: 'auto-merge' }),
-      continueAttempts: z.number().int().min(0).default(10).meta({ example: 10 }),
-    })
-    .prefault({}),
+  drive: z.object({
+    prompt: z.string().meta({ example: DEFAULT_DRIVE_PROMPT }),
+    unattendedReminder: z.string().meta({ example: UNATTENDED_REMINDER }),
+    continuePrompt: z.string().meta({ example: DEFAULT_CONTINUE_PROMPT }),
+    mergeFate: z.enum(MERGE_FATES).meta({ example: 'auto-merge' }),
+    continueAttempts: z.number().int().min(0).meta({ example: 10 }),
+  }),
   /** Operator-editable wrapper around a native Task's prompt (`{prompt}`, `{id}`, `{workingDir}`, `{harness}`, `{model}`); defaults to bare `{prompt}`. */
-  taskPrompt: z.string().default(DEFAULT_TASK_PROMPT).meta({ example: DEFAULT_TASK_PROMPT }),
+  taskPrompt: z.string().meta({ example: DEFAULT_TASK_PROMPT }),
   /** End a Conversation with no Turn for this many minutes; 0 disables. Fractional values are allowed. */
-  conversationIdleTimeoutMinutes: z.number().nonnegative().default(30).meta({ example: 30 }),
+  conversationIdleTimeoutMinutes: z.number().nonnegative().meta({ example: 30 }),
   /** Ordered verification contract. Commands fail fast; review runs last. */
-  verify: z
-    .object({
-      commands: z.array(verificationCommandSchema).default([]),
-      review: verificationReviewSchema.prefault({}),
-    })
-    .prefault({}),
+  verify: z.object({
+    commands: z.array(verificationCommandSchema),
+    review: verificationReviewSchema,
+  }),
   /** `postMergeCheck` runs the verification commands on the merged base tip; the off-switch for slow suites. */
-  merge: z
-    .object({
-      postMergeCheck: z.boolean().default(true),
-    })
-    .prefault({}),
+  merge: z.object({
+    postMergeCheck: z.boolean(),
+  }),
   /**
    * `budget` = the wall-clock/token/cost caps; `progress` toggles the stall/loop detector;
    * `toolTimeoutMinutes` bounds any single tool call (the stall detector suspends itself while one is outstanding);
    * `promptInactivityTimeoutMinutes` bounds an ACP prompt turn by silence, suspended while a tool call is outstanding, always on.
    */
-  guardrails: z
-    .object({
-      budget: budgetGuardrailSchema.prefault({}),
-      progress: z.boolean().default(false),
-      toolTimeoutMinutes: z.number().positive().default(20),
-      promptInactivityTimeoutMinutes: z.number().positive().default(15),
-    })
-    .prefault({}),
+  guardrails: z.object({
+    budget: budgetGuardrailSchema,
+    progress: z.boolean(),
+    toolTimeoutMinutes: z.number().positive(),
+    promptInactivityTimeoutMinutes: z.number().positive(),
+  }),
 }).superRefine((config, ctx) => {
   for (const [id, harness] of Object.entries(config.harnesses)) {
     if (harness.models.length > 0 && !harness.models.includes(harness.defaultModel)) {

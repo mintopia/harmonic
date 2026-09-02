@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parse, stringify } from 'yaml';
 import { SettingsStore } from '../src/server/settings-store.js';
-import { baselineConfig, loadBaselineConfig, verificationCommandSchema, budgetGuardrailSchema } from '../src/config.js';
+import { appConfigSchema, baselineConfig, loadBaselineConfig, verificationCommandSchema, budgetGuardrailSchema } from '../src/config.js';
 
 describe('SettingsStore (issue #391)', () => {
   let dir: string;
@@ -50,6 +50,12 @@ describe('SettingsStore (issue #391)', () => {
     writeFileSync(path, 'maxAttempts: 3\n');
 
     expect(() => loadBaselineConfig(path)).toThrow(path);
+  });
+
+  it('does not apply shipped defaults outside the baseline', () => {
+    const { maxAttempts: _maxAttempts, ...withoutMaxAttempts } = baselineConfig();
+
+    expect(appConfigSchema.safeParse(withoutMaxAttempts).success).toBe(false);
   });
 
   it('names the baseline file when its YAML is invalid', () => {

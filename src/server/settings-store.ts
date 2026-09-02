@@ -23,7 +23,7 @@ function blankOverrides(): ResolvedOverrides {
 }
 
 interface SettingsFile {
-  globalPatch: DeepPartial<AppConfig>;
+  globalPatch: unknown;
   global: AppConfig;
   /** Sparse per-Workspace override entries keyed by Workspace id (string) —
    * only non-null (i.e. actually overridden) keys are present. */
@@ -69,7 +69,7 @@ function loadFromDisk(path: string, baseline: AppConfig): SettingsFile {
     for (const [id, entry] of Object.entries(raw.workspaces ?? {})) {
       workspaces[id] = workspaceOverridesSchema.parse(entry);
     }
-    return { globalPatch: globalPatch as DeepPartial<AppConfig>, global, workspaces };
+    return { globalPatch, global, workspaces };
   } catch (err) {
     throw new Error(`Invalid Harmonic settings file at ${path}: ${err instanceof Error ? err.message : String(err)}`);
   }
@@ -82,7 +82,7 @@ function loadFromDisk(path: string, baseline: AppConfig): SettingsFile {
  */
 export class SettingsStore implements WorkspaceSettingsStore {
   private global: AppConfig;
-  private globalPatch: DeepPartial<AppConfig>;
+  private globalPatch: unknown;
   private workspaces: Record<string, WorkspaceOverrides>;
   private loadedMtimeMs = 0;
   private lastCheckMs = 0;
@@ -117,7 +117,7 @@ export class SettingsStore implements WorkspaceSettingsStore {
     }
     const store = new SettingsStore(path, file, clock);
     store.global = mergeConfig(store.global, overrides);
-    store.globalPatch = (deepDiff(baselineConfig(), store.global) ?? {}) as DeepPartial<AppConfig>;
+    store.globalPatch = deepDiff(baselineConfig(), store.global) ?? {};
     store.persist();
     return store;
   }
@@ -130,7 +130,7 @@ export class SettingsStore implements WorkspaceSettingsStore {
   async updateGlobal(patch: LegacyConfig): Promise<AppConfig> {
     this.reloadIfChanged();
     this.global = mergeConfig(this.global, migrateLegacyConfig(patch));
-    this.globalPatch = (deepDiff(baselineConfig(), this.global) ?? {}) as DeepPartial<AppConfig>;
+    this.globalPatch = deepDiff(baselineConfig(), this.global) ?? {};
     this.persist();
     return this.global;
   }
@@ -138,7 +138,7 @@ export class SettingsStore implements WorkspaceSettingsStore {
   async replaceGlobal(config: AppConfig): Promise<AppConfig> {
     this.reloadIfChanged();
     this.global = appConfigSchema.parse(config);
-    this.globalPatch = (deepDiff(baselineConfig(), this.global) ?? {}) as DeepPartial<AppConfig>;
+    this.globalPatch = deepDiff(baselineConfig(), this.global) ?? {};
     this.persist();
     return this.global;
   }
