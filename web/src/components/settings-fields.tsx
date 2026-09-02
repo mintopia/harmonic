@@ -1,8 +1,9 @@
 import type { AppConfig } from '../types';
 import { settingsRegistry, type SettingKey } from '../../../src/domain/settings-registry.js';
 import { field as fieldClass, selectField } from '../ui';
-import { FieldError, fieldLabel } from './SettingsSection';
+import { FieldError } from './SettingsSection';
 import { Switch } from './Switch';
+import { LayerField } from './LayerField';
 
 export interface FieldOption {
   value: string;
@@ -177,11 +178,13 @@ export function ConfigField({
   config,
   errors,
   onConfig,
+  baseline,
 }: {
   descriptor: ScalarDescriptor;
   config: AppConfig;
   errors: Record<string, string>;
   onConfig: (c: AppConfig) => void;
+  baseline: AppConfig;
 }) {
   const d = descriptor;
   const errorKey = typeof d.errorKey === 'function' ? d.errorKey(config) : d.errorKey;
@@ -203,22 +206,19 @@ export function ConfigField({
     />
   );
 
-  if (d.control === 'toggle') {
-    return (
-      <div>
-        <span className={fieldLabel}>{d.label}</span>
-        <div className="pt-1">{control}</div>
-        <FieldError message={error} />
-      </div>
-    );
-  }
-
   return (
     <div className={d.control === 'text' ? d.widthClass : undefined}>
-      <label className={fieldLabel} htmlFor={d.id}>
-        {d.label}
-      </label>
-      {control}
+      <LayerField
+        label={d.label}
+        htmlFor={d.control === 'toggle' ? undefined : d.id}
+        value={d.get(config)}
+        inheritedValue={d.get(baseline)}
+        inherited={d.get(config) === d.get(baseline)}
+        onChange={(raw) => onConfig(d.set(config, raw))}
+        onRevert={() => onConfig(d.set(config, d.get(baseline)))}
+      >
+        {() => (d.control === 'toggle' ? <div className="pt-1">{control}</div> : control)}
+      </LayerField>
       <FieldError message={error} />
     </div>
   );

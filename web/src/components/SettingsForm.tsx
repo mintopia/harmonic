@@ -27,6 +27,7 @@ export function SettingsForm({
   error,
   onSave,
   onDiscard,
+  headerActions,
   children,
 }: {
   title: string;
@@ -42,14 +43,18 @@ export function SettingsForm({
   onDiscard: () => void;
   /** Extra out-of-panel content, e.g. the workspace delete confirm dialog. */
   children?: ReactNode;
+  headerActions?: ReactNode;
 }) {
   const sections = sectionsForTab(ctx.surface, tab);
   const label = ctx.surface === 'workspace' ? 'Workspace settings sections' : 'Settings sections';
   return (
     <div>
-      <div className="max-w-3xl">
-        <h1 className={displayTitle}>{title}</h1>
-        <p className="mt-1 text-muted">{intro}</p>
+      <div className="flex max-w-3xl flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className={displayTitle}>{title}</h1>
+          <p className="mt-1 text-muted">{intro}</p>
+        </div>
+        {headerActions}
       </div>
 
       <div className="mt-5">

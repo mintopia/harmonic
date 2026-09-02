@@ -13,6 +13,16 @@ export interface InheritState<T> {
   effective: T;
 }
 
+export interface LayerState<T> {
+  effective: T;
+  inherited: boolean;
+  modified: boolean;
+}
+
+export function layerState<T>(value: T, inheritedValue: T, inherited: boolean): LayerState<T> {
+  return { effective: inherited ? inheritedValue : value, inherited, modified: !inherited };
+}
+
 /**
  * Resolve what an inheritance field should display: `null`/`undefined` inherit
  * the global default (mirroring `resolve` in src/domain/setting-override.ts),

@@ -2,9 +2,8 @@ import type { ReactNode } from 'react';
 import type { AppConfig, Workspace } from '../types';
 import { settingsRegistry, type SettingKey } from '../../../src/domain/settings-registry.js';
 import { FieldError } from './SettingsSection';
-import { InheritField } from './InheritField';
+import { LayerField } from './LayerField';
 import { ScalarControl, type FieldOption, type ScalarControlKind } from './settings-fields';
-import type { InheritSource } from './inherit-field-model';
 
 type Scalar = string | number | boolean;
 
@@ -40,25 +39,15 @@ export interface OverridableDescriptor {
   step?: number;
   /** Optional shorter label than the registry's, for a section context. */
   label?: string;
-  /** Renders the inherited value on the read-only line; defaults to `String`. */
   format?: (v: Scalar) => string;
   switchLabel?: string;
-  inheritedFrom?: InheritSource;
-  /** Replace the default {@link ScalarControl} — e.g. a model combobox — while
-   * still riding the shared InheritField wrapper. */
+  /** Replace the default {@link ScalarControl} — e.g. a model combobox. */
   renderControl?: (
     input: { id?: string; value: Scalar; onChange: (value: Scalar) => void },
     ctx: { config: AppConfig; workspace: Workspace },
   ) => ReactNode;
 }
 
-/**
- * Renders one overridable setting on the workspace surface: an
- * {@link InheritField} (the inherit/override toggle + inherited read-only line)
- * wrapping the shared {@link ScalarControl}, plus its FieldError. Mirrors
- * `ConfigField` field-for-field, so the workspace page declares descriptor
- * arrays exactly like the global page and never hand-writes an override block.
- */
 export function OverrideField({
   descriptor,
   config,
@@ -77,14 +66,14 @@ export function OverrideField({
   const control = spec.control as ScalarControlKind;
   return (
     <div>
-      <InheritField<Scalar>
+      <LayerField<Scalar>
         label={d.label ?? spec.label}
         htmlFor={control === 'toggle' ? undefined : d.id}
-        value={d.get(workspace)}
-        inherited={d.inherited(config, workspace)}
-        inheritedFrom={d.inheritedFrom}
-        format={d.format ?? String}
+        value={d.get(workspace) ?? d.inherited(config, workspace)}
+        inheritedValue={d.inherited(config, workspace)}
+        inherited={d.get(workspace) === null || d.get(workspace) === undefined}
         onChange={(next) => onWorkspace(d.set(workspace, next))}
+        onRevert={() => onWorkspace(d.set(workspace, null))}
       >
         {({ id, value, onChange }) =>
           d.renderControl ? (
@@ -104,7 +93,7 @@ export function OverrideField({
             />
           )
         }
-      </InheritField>
+      </LayerField>
       <FieldError message={errors[d.errorKey]} />
     </div>
   );

@@ -27,6 +27,7 @@ import { CommandListEditor } from './CommandListEditor';
 import { ConfigField, registryField, toOptions, withCurrent, type FieldOption, type ScalarDescriptor } from './settings-fields';
 import { OverrideField, type OverridableDescriptor } from './settings-override-fields';
 import { InheritField } from './InheritField';
+import { LayerField } from './LayerField';
 import { HarnessesSection } from './HarnessSettings';
 import { ChannelsSection } from './Channels';
 import { PermissionRules } from './PermissionRules';
@@ -40,6 +41,7 @@ export type Surface = 'global' | 'workspace';
 export interface GlobalRenderCtx {
   surface: 'global';
   config: AppConfig;
+  baseline: AppConfig;
   setConfig: (config: AppConfig) => void;
   errors: Record<string, string>;
   channels: {
@@ -81,14 +83,6 @@ function harnessOptions(config: AppConfig, current: string | null | undefined): 
   return options;
 }
 
-function summarizePrompt(prompt: string): string {
-  const trimmed = prompt.trim();
-  if (trimmed === '') return 'Not configured';
-  const firstLine = trimmed.split('\n')[0] ?? trimmed;
-  return firstLine.length > 60 ? `${firstLine.slice(0, 60)}…` : firstLine;
-}
-
-
 interface GlobalPrompt {
   id: string;
   label?: string;
@@ -119,19 +113,31 @@ interface OverridablePrompt {
 
 function renderGlobalPrompt(d: GlobalPrompt, ctx: GlobalRenderCtx): ReactNode {
   const value = d.get(ctx.config);
+  const baseline = d.get(ctx.baseline);
   return (
-    <PromptField
-      id={d.id}
-      label={d.label}
-      description={d.description}
+    <LayerField
+      label={d.label ?? ''}
+      htmlFor={d.id}
       value={value}
+      inheritedValue={baseline}
+      inherited={value === baseline}
       onChange={(next) => ctx.setConfig(d.set(ctx.config, next))}
-      placeholders={d.placeholders}
-      preview={d.compile(value, ctx.config)}
-      error={ctx.errors[d.errorKey]}
-      rows={d.rows}
-      textareaClass={d.textareaClass}
-    />
+      onRevert={() => ctx.setConfig(d.set(ctx.config, baseline))}
+    >
+      {({ value, onChange }) => (
+        <PromptField
+          id={d.id}
+          description={d.description}
+          value={value}
+          onChange={onChange}
+          placeholders={d.placeholders}
+          preview={d.compile(value, ctx.config)}
+          error={ctx.errors[d.errorKey]}
+          rows={d.rows}
+          textareaClass={d.textareaClass}
+        />
+      )}
+    </LayerField>
   );
 }
 
@@ -151,13 +157,14 @@ function OverridePrompt({
   const d = descriptor;
   const spec = settingsRegistry[d.key];
   return (
-    <InheritField<string>
+    <LayerField<string>
       label={d.label ?? spec.label}
       htmlFor={d.id}
-      value={d.get(workspace)}
-      inherited={d.inherited(config)}
-      format={summarizePrompt}
+      value={d.get(workspace) ?? d.inherited(config)}
+      inheritedValue={d.inherited(config)}
+      inherited={d.get(workspace) === null || d.get(workspace) === undefined}
       onChange={(next) => onWorkspace(d.set(workspace, next))}
+      onRevert={() => onWorkspace(d.set(workspace, null))}
     >
       {({ id, value, onChange }) => (
         <PromptField
@@ -172,7 +179,7 @@ function OverridePrompt({
           textareaClass={d.textareaClass}
         />
       )}
-    </InheritField>
+    </LayerField>
   );
 }
 
@@ -205,7 +212,7 @@ function renderField(node: FieldNode, ctx: RenderCtx): ReactNode {
   if (node.kind === 'scalar') {
     if (ctx.surface === 'global') {
       return node.global ? (
-        <ConfigField key={node.id} descriptor={node.global} config={ctx.config} errors={ctx.errors} onConfig={ctx.setConfig} />
+        <ConfigField key={node.id} descriptor={node.global} config={ctx.config} baseline={ctx.baseline} errors={ctx.errors} onConfig={ctx.setConfig} />
       ) : null;
     }
     return node.workspace ? (
