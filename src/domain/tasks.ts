@@ -725,7 +725,7 @@ export class TaskService {
    */
   async claimReady(id: number): Promise<TaskRow | undefined> {
     return withTaskLock(id, async () => {
-      const row = await this.db.write((db) =>
+      const claimed = await this.db.write((db) =>
         db
           .update(tasks)
           .set({ state: 'working', updatedAt: Date.now() })
@@ -733,8 +733,18 @@ export class TaskService {
           .returning()
           .get(),
       );
-      if (!row) return undefined;
-      const task = await this.resolve(row);
+      if (!claimed) return undefined;
+      const workspace = await this.resolveWorkspace(claimed.workspaceId ?? undefined);
+      const pinned = this.resolveDefaults(this.overridesOf(claimed), workspace);
+      const row = await this.db.write((db) =>
+        db
+          .update(tasks)
+          .set({ ...pinned, updatedAt: Date.now() })
+          .where(and(eq(tasks.id, id), eq(tasks.state, 'working')))
+          .returning()
+          .get(),
+      );
+      const task = await this.resolve(row ?? claimed);
       this.onChanged(task);
       this.onNotify('run.started', task);
       return task;
