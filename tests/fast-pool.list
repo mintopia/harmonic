@@ -25,8 +25,6 @@ tests/attempt-rail-model.test.ts
 tests/attempts.test.ts
 tests/auto-drive.test.ts
 tests/board-sections-model.test.ts
-tests/branch-retirement.test.ts
-tests/config-store.test.ts
 tests/contrast.test.ts
 tests/conversation-attention-model.test.ts
 tests/conversation-list-model.test.ts
@@ -86,7 +84,6 @@ tests/router-model.test.ts
 tests/runner-cancel-attempt-gone.test.ts
 tests/runner-start.test.ts
 tests/scheduled-jobs-model.test.ts
-tests/server-error-handler.test.ts
 tests/session-continuation.test.ts
 tests/session-fallback.test.ts
 tests/session-resume.test.ts

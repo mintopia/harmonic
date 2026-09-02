@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { parseArgs } from 'node:util';
 import { mkdirSync, openSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -9,6 +8,7 @@ import { acquireLock, daemonStatus, logFilePath, releaseLock, stopDaemon, writeD
 import { initializeTelemetry, resolveTelemetryOptions } from './telemetry.js';
 import { logger } from './logger.js';
 import { installProcessSafetyNet } from './reliability/process-safety-net.js';
+import { dispatchCli } from './cli-dispatch.js';
 
 const HELP = `harmonic — queue, run, and review autonomous agent tasks
 
@@ -47,12 +47,13 @@ const displayUrl = (host: string, port: number) =>
   `http://${host === '0.0.0.0' ? 'localhost' : host}:${port}`;
 
 async function main(): Promise<void> {
-  const [command, ...rest] = process.argv.slice(2);
+  const argv = process.argv.slice(2);
+  const rest = argv.slice(1);
+  const dispatch = dispatchCli(argv);
 
-  if (command === 'status' || command === 'stop') {
-    const { values } = parseArgs({ args: rest, options: { 'data-dir': { type: 'string' } } });
-    const dataDir = values['data-dir'] ?? defaultDataDir();
-    if (command === 'stop') {
+  if (dispatch.kind === 'status' || dispatch.kind === 'stop') {
+    const dataDir = dispatch.dataDir ?? defaultDataDir();
+    if (dispatch.kind === 'stop') {
       logger.info((await stopDaemon(dataDir)) ? 'Stopped.' : 'Not running.');
       return;
     }
@@ -68,27 +69,14 @@ async function main(): Promise<void> {
     return;
   }
 
-  if (command !== 'serve' && command !== 'start') {
+  if (dispatch.kind === 'help') {
     process.stdout.write(HELP);
-    process.exit(command === undefined || command === 'help' || command === '--help' ? 0 : 1);
+    process.exit(dispatch.exitCode);
   }
 
-  const { values } = parseArgs({
-    args: rest,
-    options: {
-      port: { type: 'string', default: '4700' },
-      host: { type: 'string', default: '0.0.0.0' },
-      'data-dir': { type: 'string' },
-      password: { type: 'string' },
-      'otel-endpoint': { type: 'string' },
-      'otel-headers': { type: 'string' },
-      'otel-export': { type: 'string' },
-      'otel-metric-export-interval': { type: 'string' },
-      'otel-stdout-log-level': { type: 'string' },
-    },
-  });
+  const { values } = dispatch;
 
-  if (command === 'start') {
+  if (dispatch.kind === 'start') {
     const dataDir = values['data-dir'] ?? defaultDataDir();
     const port = Number(values.port);
     const host = values.host!;
