@@ -303,6 +303,30 @@ export function baselineConfig(): AppConfig {
   return structuredClone(baseline);
 }
 
+function migrateLegacyModelCatalogs(overrides: unknown): unknown {
+  if (!isRecord(overrides) || !isRecord(overrides.harnesses)) return overrides;
+  const migrated = structuredClone(overrides);
+  const prices = isRecord(migrated.prices) ? migrated.prices : {};
+  const modelInfo = isRecord(migrated.modelInfo) ? migrated.modelInfo : {};
+  const harnesses = migrated.harnesses;
+  if (!isRecord(harnesses)) return migrated;
+  for (const harness of Object.values(harnesses)) {
+    if (!isRecord(harness) || !Array.isArray(harness.models)) continue;
+    harness.models = harness.models.map((model) => {
+      if (typeof model !== 'string') return model;
+      const info = isRecord(modelInfo[model]) ? modelInfo[model] : {};
+      return {
+        id: model,
+        ...(isRecord(prices[model]) ? { price: prices[model] } : {}),
+        ...(typeof info.contextWindow === 'number' ? { contextWindow: info.contextWindow } : {}),
+      };
+    });
+  }
+  delete migrated.prices;
+  delete migrated.modelInfo;
+  return migrated;
+}
+
 export function mergeConfig(base: AppConfig, overrides?: DeepPartial<AppConfig>): AppConfig {
   if (!overrides) return base;
   const merge = (a: any, b: any): any => {
@@ -313,7 +337,7 @@ export function mergeConfig(base: AppConfig, overrides?: DeepPartial<AppConfig>)
     for (const key of Object.keys(b)) out[key] = merge(a[key], b[key]);
     return out;
   };
-  return appConfigSchema.parse(merge(base, overrides));
+  return appConfigSchema.parse(merge(base, migrateLegacyModelCatalogs(overrides)));
 }
 
 export function defaultDataDir(): string {

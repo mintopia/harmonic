@@ -1,15 +1,8 @@
 import type { AttemptRow, SessionRow } from '../db/schema.js';
 
-/** Fixed provider cache windows. They are execution facts, not settings. */
-export const HARNESS_SESSION_WARM_WINDOWS_MS: Readonly<Record<string, number>> = {
-  claude: 60 * 60 * 1000,
-  codex: 5 * 60 * 1000,
-  copilot: 5 * 60 * 1000,
-};
-
 export type DeterministicContinuation = {
   path: 'continued-session' | 'new-session-condensed';
-  reason: 'continued-within-limits' | 'context-tokens' | 'session-cold' | 'missing-context-tokens' | 'missing-warm-window';
+  reason: 'continued-within-limits' | 'context-tokens' | 'session-cold' | 'missing-context-tokens';
   /** The session's context-window occupancy in raw tokens (the last turn's
    * input-side footprint), or null when it can't be known. */
   contextTokens: number | null;
@@ -23,17 +16,16 @@ export type DeterministicContinuation = {
 
 /** Deterministically choose Attempt N+1's Session. Boundary values start fresh. */
 export function decideAttemptContinuation(input: {
-  harness: string;
+  cacheWarmSeconds: number;
   contextTokens: number | null;
   lastActiveAt: number;
   contextReuseTokenLimit: number;
   now: number;
 }): DeterministicContinuation {
-  const warmWindowMs = HARNESS_SESSION_WARM_WINDOWS_MS[input.harness] ?? null;
+  const warmWindowMs = input.cacheWarmSeconds * 1000;
   const lastActiveAgeMs = input.now - input.lastActiveAt;
   const facts = { contextTokens: input.contextTokens, contextReuseTokenLimit: input.contextReuseTokenLimit, lastActiveAt: input.lastActiveAt, lastActiveAgeMs, warmWindowMs };
   if (input.contextTokens === null) return { path: 'new-session-condensed', reason: 'missing-context-tokens', ...facts };
-  if (warmWindowMs === null) return { path: 'new-session-condensed', reason: 'missing-warm-window', ...facts };
   if (input.contextTokens >= input.contextReuseTokenLimit) return { path: 'new-session-condensed', reason: 'context-tokens', ...facts };
   if (lastActiveAgeMs >= warmWindowMs) return { path: 'new-session-condensed', reason: 'session-cold', ...facts };
   return { path: 'continued-session', reason: 'continued-within-limits', ...facts };
@@ -230,8 +222,8 @@ export function planSessionContinuation(
 }
 
 /** A whole {@link SessionRow} projected to the {@link SessionWarmthFacts} the cost estimate reads. */
-export function sessionWarmthFacts(row: SessionRow): SessionWarmthFacts {
-  return { estimatedWarmUntil: row.estimatedWarmUntil, lastActiveAt: row.lastActiveAt };
+export function sessionWarmthFacts(row: SessionRow, cacheWarmSeconds: number): SessionWarmthFacts {
+  return { estimatedWarmUntil: row.lastActiveAt + cacheWarmSeconds * 1000, lastActiveAt: row.lastActiveAt };
 }
 
 /**
@@ -244,6 +236,7 @@ export function sessionWarmthFacts(row: SessionRow): SessionWarmthFacts {
 export function previewHumanRejectContinuation(
   runsForTask: readonly AttemptRow[],
   getSession: (sessionRowId: number) => SessionRow | null,
+  cacheWarmSeconds: number,
   now: number,
 ): Extract<SessionContinuationPlan, { mode: 'offer-choice' }> | null {
   for (let i = runsForTask.length - 1; i >= 0; i--) {
@@ -251,7 +244,7 @@ export function previewHumanRejectContinuation(
     if (run.sessionRowId === null) continue;
     const session = getSession(run.sessionRowId);
     if (!session) continue;
-    const plan = planSessionContinuation('human-reject', sessionWarmthFacts(session), now);
+    const plan = planSessionContinuation('human-reject', sessionWarmthFacts(session, cacheWarmSeconds), now);
     return plan as Extract<SessionContinuationPlan, { mode: 'offer-choice' }>;
   }
   return null;

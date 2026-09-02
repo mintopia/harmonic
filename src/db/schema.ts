@@ -515,8 +515,6 @@ export const sessions = sqliteTable(
     adapterVersion: text('adapter_version'),
     status: text('status').$type<SessionStatus>().notNull().default('active'),
     lastActiveAt: integer('last_active_at').notNull(),
-    /** Estimated epoch ms until the provider prompt-cache goes cold (Claude ~1h); a cost estimate, never a correctness TTL. Null when unknown. */
-    estimatedWarmUntil: integer('estimated_warm_until'),
     /** The builder worktree this Session owns; null for direct-mode / non-git Sessions. */
     worktreePath: text('worktree_path'),
     worktreeRepoDir: text('worktree_repo_dir'),

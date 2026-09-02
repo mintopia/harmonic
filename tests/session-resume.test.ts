@@ -169,7 +169,6 @@ describe('assessResumeEligibility (issue #142)', () => {
         adapterVersion: 'claude@1',
         status: 'active',
         lastActiveAt: 0,
-        estimatedWarmUntil: null,
         worktreePath: null,
         worktreeRepoDir: null,
         retireReason: null,
