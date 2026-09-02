@@ -16,8 +16,6 @@ import {
   type RawTaskRow,
   type TaskState,
   type MergeStatus,
-  type Workflow,
-  type WayfinderType,
   type WorkspaceRow,
   type TrackerFacts,
   type TrackerContainerRow,
@@ -35,6 +33,9 @@ import { orderEligibleWorkYielding } from './work-ordering.js';
 import { mirroredAgentEligible } from './agent-workable.js';
 import { withTaskLock } from './task-lock.js';
 import type { StoredEpicRecord } from './epic-derivation.js';
+import { TaskBlockerGraph } from './task-blocker-graph.js';
+import { TaskMirror, type MirrorInput } from './task-mirror.js';
+export type { MirrorInput } from './task-mirror.js';
 
 export const createTaskInputSchema = z.object({
   prompt: z.string().min(1, 'prompt is required').meta({ example: 'Add rate limiting to POST /api/tasks' }),
@@ -222,29 +223,6 @@ const STATE_NOTIFICATIONS: Partial<Record<TaskState, TaskNotification>> = {
   done: 'task.done',
 };
 
-/** Normalised input for a mirrored-Task upsert; role fields already derived from labels. */
-export interface MirrorInput {
-  trackerRef: number;
-  prompt: string;
-  workflow: Workflow;
-  wayfinderType: WayfinderType | null;
-  mapRef: number | null;
-  /** The tracker open/closed axis; closed → done. */
-  closed: boolean;
-  /**
-   * Whether the resolved tracker adapter can close this ticket. The
-   * `done → ready` reopen flip only fires for a tracker that can close; an
-   * inbound-only adapter never closes, so its done Task stays done. Defaults to
-   * capable.
-   */
-  trackerCanClose?: boolean;
-  /**
-   * The last-scan normalised tracker facts, persisted verbatim. Optional:
-   * omitting it leaves the durable fact columns untouched.
-   */
-  facts?: TrackerFacts;
-}
-
 function trackerFactColumns(facts: TrackerFacts) {
   return {
     trackerState: facts.state,
@@ -259,6 +237,9 @@ function trackerFactColumns(facts: TrackerFacts) {
 }
 
 export class TaskService {
+  private readonly blockerGraph: TaskBlockerGraph;
+  private readonly mirror: TaskMirror;
+
   constructor(
     private readonly db: AsyncDbHandle,
     private readonly getConfig: () => AppConfig,
@@ -267,7 +248,25 @@ export class TaskService {
     private readonly onNotify: (event: TaskNotification, task: TaskRow) => void = () => {},
     /** Fired once a Task's row is actually gone, so a live board can drop it immediately. */
     private readonly onRemoved: (id: number) => void = () => {},
-  ) {}
+  ) {
+    this.blockerGraph = new TaskBlockerGraph(this.db, {
+      get: (id) => this.get(id),
+      withDeps: (task) => this.withDeps(task),
+      assertOperatorEditable: (task) => this.assertOperatorEditable(task),
+      cancel: (id) => this.cancel(id),
+      onChanged: this.onChanged,
+      editableStates: EDITABLE_STATES,
+      cancellableStates: CANCELLABLE_STATES,
+    });
+    this.mirror = new TaskMirror(this.db, {
+      resolveWorkspace: (workspaceId) => this.resolveWorkspace(workspaceId),
+      changed: (task) => this.changed(task),
+      get: (id) => this.get(id),
+      clearDismissal: (workspaceId, trackerRef) => this.clearDismissal(workspaceId, trackerRef),
+      removeTaskCascade: (id, tombstone) => this.removeTaskCascade(id, tombstone),
+      blockerGraph: this.blockerGraph,
+    });
+  }
 
   private async resolveWorkspace(workspaceId?: number): Promise<WorkspaceRow> {
     return resolveWorkspace(await this.getWorkspaces(), workspaceId);
@@ -402,87 +401,7 @@ export class TaskService {
    * Mirrored Tasks never enter draft.
    */
   async upsertMirrored(input: MirrorInput, workspaceId?: number): Promise<TaskRow> {
-    const workspace = await this.resolveWorkspace(workspaceId);
-    const { row, dirty } = await this.db.write(async (db) => {
-      const existing = await db
-        .select()
-        .from(tasks)
-        .where(and(eq(tasks.workspaceId, workspace.id), eq(tasks.trackerRef, input.trackerRef)))
-        .get();
-      const now = Date.now();
-      if (existing) {
-        // Tracker-owned reopen: a re-opened issue flips `done → ready` here. This
-        // is a deliberate exception to the ADR-0020 lifecycle table (`done` is
-        // terminal there): the tracker, not the operator, owns a mirrored Task's
-        // open/closed axis, so this write is a direct column set outside
-        // `setState`'s guard and the per-Task lock.
-        const state: TaskState =
-          existing.state === 'working' || existing.state === 'escalated'
-            ? existing.state
-            : input.closed
-              ? 'done'
-              : existing.state === 'done' && input.trackerCanClose !== false
-                ? 'ready'
-              : existing.state;
-        const factCols = input.facts ? trackerFactColumns(input.facts) : {};
-        // trackerBlockedBy/trackerLabels are JSON columns: Drizzle parses them
-        // into a fresh array on every read, so `===` never holds.
-        const factUnchanged = ([col, value]: [string, unknown]) => {
-          const current = existing[col as keyof typeof existing];
-          return typeof value === 'object' && value !== null
-            ? JSON.stringify(current) === JSON.stringify(value)
-            : current === value;
-        };
-        const unchanged =
-          existing.state === state &&
-          existing.prompt === input.prompt &&
-          existing.workflow === input.workflow &&
-          existing.wayfinderType === input.wayfinderType &&
-          existing.mapRef === input.mapRef &&
-          Object.entries(factCols).every(factUnchanged);
-        if (unchanged) return { row: existing, dirty: false };
-        const updated = await db
-          .update(tasks)
-          .set({
-            prompt: input.prompt,
-            state,
-            workflow: input.workflow,
-            wayfinderType: input.wayfinderType,
-            mapRef: input.mapRef,
-            ...factCols,
-            updatedAt: now,
-          })
-          .where(eq(tasks.id, existing.id))
-          .returning()
-          .get();
-        return { row: updated, dirty: true };
-      }
-      const inserted = await db
-        .insert(tasks)
-        .values({
-          prompt: input.prompt,
-          workspaceId: workspace.id,
-          harness: null,
-          model: null,
-          isolationMode: null,
-          priority: null,
-          conflictResolveTurns: null,
-          workingDir: workspace.workingDir,
-          state: input.closed ? 'done' : 'ready',
-          origin: 'mirrored',
-          trackerRef: input.trackerRef,
-          workflow: input.workflow,
-          wayfinderType: input.wayfinderType,
-          mapRef: input.mapRef,
-          ...(input.facts ? trackerFactColumns(input.facts) : {}),
-          createdAt: now,
-          updatedAt: now,
-        })
-        .returning()
-        .get();
-      return { row: inserted, dirty: true };
-    });
-    return dirty ? await this.changed(row) : await this.resolve(row);
+    return this.mirror.upsertMirrored(input, workspaceId);
   }
 
   /**
@@ -881,17 +800,7 @@ export class TaskService {
    * is rejected and the caller must treat it as a clean no-op.
    */
   async claimMirroredAutoRun(id: number): Promise<TaskRow | undefined> {
-    return withTaskLock(id, async () => {
-      const row = await this.db.write((db) =>
-        db
-          .update(tasks)
-          .set({ state: 'working', updatedAt: Date.now() })
-          .where(and(eq(tasks.id, id), eq(tasks.state, 'ready'), eq(tasks.origin, 'mirrored')))
-          .returning()
-          .get(),
-      );
-      return row ? await this.changed(row) : undefined;
-    });
+    return withTaskLock(id, () => this.mirror.claimMirroredAutoRun(id));
   }
 
   async setState(id: number, state: TaskState): Promise<TaskRow> {
@@ -923,7 +832,7 @@ export class TaskService {
   }
 
   private async emitDependents(id: number): Promise<void> {
-    for (const dependentId of await this.dependents(id)) {
+    for (const dependentId of await this.blockerGraph.dependents(id)) {
       this.onChanged(await this.get(dependentId));
     }
   }
@@ -948,27 +857,11 @@ export class TaskService {
   }
 
   async dependsOn(taskId: number): Promise<number[]> {
-    return (
-      await this.db.read((db) =>
-        db
-          .select({ id: taskDependencies.dependsOnId })
-          .from(taskDependencies)
-          .where(eq(taskDependencies.taskId, taskId))
-          .all(),
-      )
-    ).map((r) => r.id);
+    return this.blockerGraph.dependsOn(taskId);
   }
 
   async dependents(taskId: number): Promise<number[]> {
-    return (
-      await this.db.read((db) =>
-        db
-          .select({ id: taskDependencies.taskId })
-          .from(taskDependencies)
-          .where(eq(taskDependencies.dependsOnId, taskId))
-          .all(),
-      )
-    ).map((r) => r.id);
+    return this.blockerGraph.dependents(taskId);
   }
 
   private assertOperatorEditable(task: TaskRow): void {
@@ -983,75 +876,20 @@ export class TaskService {
    * blocked⇄ready. A live Attempt is never interrupted and nothing cascades.
    */
   async reconcileMirroredDeps(taskId: number, dependsOnIds: number[]): Promise<void> {
-    const desired = new Set(dependsOnIds.filter((id) => id !== taskId));
-    const current = new Set(await this.dependsOn(taskId));
-    const toAdd = [...desired].filter((id) => !current.has(id));
-    const toRemove = [...current].filter((id) => !desired.has(id));
-    if (toAdd.length === 0 && toRemove.length === 0) return;
-    await this.db.write(async (db) => {
-      for (const id of toAdd) {
-        await db.insert(taskDependencies).values({ taskId, dependsOnId: id }).onConflictDoNothing().run();
-      }
-      for (const id of toRemove) {
-        await db
-          .delete(taskDependencies)
-          .where(and(eq(taskDependencies.taskId, taskId), eq(taskDependencies.dependsOnId, id)))
-          .run();
-      }
-    });
-    await this.rederiveBlocked(taskId);
+    await this.mirror.reconcileMirroredDeps(taskId, dependsOnIds);
   }
 
   async addDependency(taskId: number, dependsOnId: number): Promise<TaskWithDeps> {
-    const task = await this.get(taskId);
-    this.assertOperatorEditable(task);
-    await this.get(dependsOnId);
-    if (!EDITABLE_STATES.includes(task.state)) {
-      throw new DomainError('invalid_state', `task ${taskId} is ${task.state}; dependencies can only change on draft or ready tasks`);
-    }
-    if (taskId === dependsOnId || (await this.reaches(dependsOnId, taskId))) {
-      throw new DomainError('conflict', `dependency ${taskId} → ${dependsOnId} would create a cycle`);
-    }
-    await this.db.write((db) =>
-      db.insert(taskDependencies).values({ taskId, dependsOnId }).onConflictDoNothing().run(),
-    );
-    await this.rederiveBlocked(taskId);
-    return this.withDeps(await this.get(taskId));
+    return this.blockerGraph.addDependency(taskId, dependsOnId);
   }
 
   async removeDependency(taskId: number, dependsOnId: number): Promise<TaskWithDeps> {
-    this.assertOperatorEditable(await this.get(taskId));
-    await this.db.write((db) =>
-      db
-        .delete(taskDependencies)
-        .where(and(eq(taskDependencies.taskId, taskId), eq(taskDependencies.dependsOnId, dependsOnId)))
-        .run(),
-    );
-    await this.rederiveBlocked(taskId);
-    return this.withDeps(await this.get(taskId));
+    return this.blockerGraph.removeDependency(taskId, dependsOnId);
   }
 
   /** Cancel a task and everything that transitively depends on it. */
   async cancelWithDependents(id: number): Promise<number[]> {
-    const toCancel = [id];
-    const seen = new Set(toCancel);
-    for (let i = 0; i < toCancel.length; i++) {
-      for (const dep of await this.dependents(toCancel[i]!)) {
-        if (!seen.has(dep)) {
-          seen.add(dep);
-          toCancel.push(dep);
-        }
-      }
-    }
-    const cancelled: number[] = [];
-    for (const taskId of toCancel) {
-      const task = await this.get(taskId);
-      if (taskId === id || CANCELLABLE_STATES.includes(task.state)) {
-        await this.cancel(taskId);
-        cancelled.push(taskId);
-      }
-    }
-    return cancelled;
+    return this.blockerGraph.cancelWithDependents(id);
   }
 
   /**
@@ -1075,27 +913,11 @@ export class TaskService {
    * `working`; a later poll removes it once it settles.
    */
   async demoteMirroredToContainer(workspaceId: number, trackerRef: number): Promise<void> {
-    await this.clearDismissal(workspaceId, trackerRef);
-    const row = await this.db.read((db) =>
-      db
-        .select({
-          id: tasks.id,
-          state: tasks.state,
-          origin: tasks.origin,
-          trackerRef: tasks.trackerRef,
-          workspaceId: tasks.workspaceId,
-        })
-        .from(tasks)
-        .where(and(eq(tasks.workspaceId, workspaceId), eq(tasks.trackerRef, trackerRef)))
-        .get(),
-    );
-    if (!row) return;
-    if (!decideTaskDeletion(row).ok) return;
-    await this.removeTaskCascade(row.id, null);
+    await this.mirror.demoteMirroredToContainer(workspaceId, trackerRef);
   }
 
   private async removeTaskCascade(id: number, tombstone: DeletionDecision['tombstone']): Promise<void> {
-    const formerDependents = await this.dependents(id);
+    const formerDependents = await this.blockerGraph.dependents(id);
     await this.db.transaction(async (tx) => {
       const sessionRowIds = [
         ...new Set(
@@ -1151,7 +973,7 @@ export class TaskService {
       }
     });
     for (const depId of formerDependents) {
-      await this.rederiveBlocked(depId);
+      await this.blockerGraph.rederiveBlocked(depId);
       this.onChanged(await this.get(depId));
     }
     this.onRemoved(id);
@@ -1256,26 +1078,6 @@ export class TaskService {
       isEpic: this.isEpic(task, containerRefs),
       overrides: this.overridesOf(rawById.get(task.id) ?? task),
     }));
-  }
-
-  private async reaches(from: number, to: number): Promise<boolean> {
-    const queue = [from];
-    const seen = new Set(queue);
-    while (queue.length > 0) {
-      const current = queue.shift()!;
-      if (current === to) return true;
-      for (const next of await this.dependsOn(current)) {
-        if (!seen.has(next)) {
-          seen.add(next);
-          queue.push(next);
-        }
-      }
-    }
-    return false;
-  }
-
-  private async rederiveBlocked(taskId: number): Promise<void> {
-    this.onChanged(await this.get(taskId));
   }
 
 }
