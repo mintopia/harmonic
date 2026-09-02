@@ -5,6 +5,16 @@ set -uo pipefail
 
 cd "$(dirname "$0")/.."
 
+# A disposable verify worktree has no node_modules; link it from the repo's
+# main worktree (found via git, so no path is hardcoded) so deps resolve.
+if [ ! -e node_modules ] && [ ! -L node_modules ]; then
+  common=$(git rev-parse --git-common-dir 2>/dev/null) || common=""
+  if [ -n "$common" ]; then
+    main_nm="$(cd "$common/.." && pwd)/node_modules"
+    [ -d "$main_nm" ] && ln -s "$main_nm" node_modules
+  fi
+fi
+
 status=0
 
 run() {
