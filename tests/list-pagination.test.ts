@@ -75,7 +75,7 @@ describe('derived-rollup pagination (epics, maps)', () => {
     members: [],
     ready: [],
     integration: { branch: `epic/${ref}`, exists: true, tip: null },
-    verification: { status: null },
+    verification: { status: null, configured: false },
     integrate: { inFlight: false, held: null },
     foldedCount: 0,
     memberCount: 0,

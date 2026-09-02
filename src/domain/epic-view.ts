@@ -31,6 +31,8 @@ export interface EpicIntegration {
 export interface EpicVerification {
   /** The whole-Epic verification result; `null` if unknown/not-run. */
   status: 'pass' | 'fail' | 'pending' | null;
+  /** Whether the whole-Epic command verifier has any command resolved for this workspace. */
+  configured: boolean;
 }
 
 export interface EpicIntegrateState {

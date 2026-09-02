@@ -174,6 +174,25 @@ describe('taskLifecycle', () => {
     });
   });
 
+  it('keeps Implementation pending on a done Task with no Attempts to back it', () => {
+    expect(taskLifecycle('done', []).current).toBe('retire');
+    expect(statuses('done', [])).toEqual({
+      worktree: 'done',
+      implementation: 'pending',
+      merge: 'done',
+      postMergeCheck: 'done',
+      closeIssue: 'done',
+      retire: 'done',
+    });
+  });
+
+  it('flags the post-merge check disabled when no command verifier is configured', () => {
+    const step = (configured: boolean) => taskLifecycle('done', [stateAttempt('completed')], configured).steps.find((s) => s.key === 'postMergeCheck');
+    expect(step(false)?.disabled).toBe(true);
+    expect(step(true)?.disabled).toBeUndefined();
+    expect(taskLifecycle('done', [stateAttempt('completed')]).steps.find((s) => s.key === 'postMergeCheck')?.disabled).toBeUndefined();
+  });
+
   it('halts a cancelled Task at Implementation once it has run an Attempt', () => {
     expect(statuses('cancelled', [stateAttempt('cancelled')])).toEqual({
       worktree: 'done',

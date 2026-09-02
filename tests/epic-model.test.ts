@@ -27,7 +27,7 @@ const epic = (overrides: Partial<Epic> = {}): Epic => {
     members,
     ready: [],
     integration: { branch: 'epic/1', exists: true, tip: null },
-    verification: { status: null },
+    verification: { status: null, configured: true },
     integrate: { inFlight: false, held: null },
     foldedCount: members.filter((m) => m.mergeStatus === 'completed').length,
     memberCount: members.length,
@@ -44,7 +44,7 @@ describe('statusLineParts', () => {
       ref: 7,
       members: [m1, m2],
       integration: { branch: 'epic/7', exists: true, tip: 'abc1234' },
-      verification: { status: 'pass' },
+      verification: { status: 'pass', configured: true },
     });
     expect(statusLineParts(e)).toEqual({
       ref: 'epic/7',
@@ -60,7 +60,7 @@ describe('statusLineParts', () => {
       ref: 9,
       members: [],
       integration: { branch: 'epic/9', exists: false, tip: null },
-      verification: { status: null },
+      verification: { status: null, configured: true },
     });
     expect(statusLineParts(e)).toEqual({
       ref: 'epic/9',
@@ -76,7 +76,7 @@ describe('statusLineParts', () => {
       ref: 3,
       members: [],
       integration: { branch: 'epic/3', exists: true, tip: 'deadbee' },
-      verification: { status: 'fail' },
+      verification: { status: 'fail', configured: true },
     });
     expect(statusLineParts(e)).toEqual({
       ref: 'epic/3',
@@ -92,13 +92,13 @@ describe('statusLineParts', () => {
       ref: 4,
       members: [],
       integration: { branch: 'epic/4', exists: true, tip: 'cafefee' },
-      verification: { status: 'pending' },
+      verification: { status: 'pending', configured: true },
     });
     const unknown = epic({
       ref: 4,
       members: [],
       integration: { branch: 'epic/4', exists: true, tip: 'cafefee' },
-      verification: { status: null },
+      verification: { status: null, configured: true },
     });
     expect(statusLineParts(pending)).toEqual({
       ref: 'epic/4',
@@ -280,7 +280,7 @@ describe('isEpicIntegrating', () => {
 
 describe('integrationSteps', () => {
   it('when not verified, verify is current and merge/check/retire are pending', () => {
-    const e = epic({ members: [], verification: { status: 'pending' } });
+    const e = epic({ members: [], verification: { status: 'pending', configured: true } });
     const steps = integrationSteps(e);
     expect(steps.map((s) => s.key)).toEqual(['verify', 'merge', 'check', 'retire']);
     expect(steps).toEqual([
@@ -292,7 +292,7 @@ describe('integrationSteps', () => {
   });
 
   it('when verified and not held, verify is done and merge is current', () => {
-    const e = epic({ members: [], verification: { status: 'pass' }, integrate: { inFlight: false, held: null } });
+    const e = epic({ members: [], verification: { status: 'pass', configured: true }, integrate: { inFlight: false, held: null } });
     const steps = integrationSteps(e);
     expect(steps).toEqual([
       { key: 'verify', label: 'Verify', state: 'done' },
@@ -305,7 +305,7 @@ describe('integrationSteps', () => {
   it('when verified and held, merge state is held', () => {
     const e = epic({
       members: [],
-      verification: { status: 'pass' },
+      verification: { status: 'pass', configured: true },
       integrate: { inFlight: false, held: 'escalated' },
     });
     const steps = integrationSteps(e);
@@ -315,11 +315,25 @@ describe('integrationSteps', () => {
   it('when not verified and held, verify state is held', () => {
     const e = epic({
       members: [],
-      verification: { status: 'pending' },
+      verification: { status: 'pending', configured: true },
       integrate: { inFlight: false, held: 'escalated' },
     });
     const steps = integrationSteps(e);
     expect(steps.find((s) => s.key === 'verify')?.state).toBe('held');
+  });
+
+  it('when the verifier is unconfigured, verify is disabled and out of the current position; merge is current', () => {
+    const e = epic({ members: [], verification: { status: null, configured: false } });
+    const steps = integrationSteps(e);
+    const verify = steps.find((s) => s.key === 'verify')!;
+    const merge = steps.find((s) => s.key === 'merge')!;
+    expect(verify).toEqual({ key: 'verify', label: 'Verify', state: 'done', disabled: true });
+    expect(merge.state).toBe('current');
+  });
+
+  it('when configured, no step carries the disabled flag', () => {
+    const e = epic({ members: [], verification: { status: 'pending', configured: true } });
+    expect(integrationSteps(e).every((s) => s.disabled === undefined)).toBe(true);
   });
 });
 
@@ -330,9 +344,33 @@ describe('finished (integrated) epics', () => {
 
   it('epicLifecycleSteps marks build and every gate step done regardless of live facts', () => {
     const steps = epicLifecycleSteps(
-      epic({ state: 'integrated', memberCount: 3, foldedCount: 1, verification: { status: null }, integrate: { inFlight: false, held: 'stale' } }),
+      epic({ state: 'integrated', memberCount: 3, foldedCount: 1, verification: { status: null, configured: true }, integrate: { inFlight: false, held: 'stale' } }),
     );
     expect(steps.map((s) => s.state)).toEqual(['done', 'done', 'done', 'done', 'done']);
     expect(steps.find((s) => s.key === 'verify')?.sublabel).toBe('passed');
+  });
+});
+
+describe('epicLifecycleSteps with an unconfigured whole-Epic verifier', () => {
+  it('marks verify disabled and satisfied, reads "not configured", and leaves merge as the live step', () => {
+    const m1 = member({ ref: 1, mergeStatus: 'completed' });
+    const e = epic({ members: [m1], verification: { status: null, configured: false } });
+    const steps = epicLifecycleSteps(e);
+    const verify = steps.find((s) => s.key === 'verify')!;
+    const merge = steps.find((s) => s.key === 'merge')!;
+    expect(verify.disabled).toBe(true);
+    expect(verify.state).toBe('done');
+    expect(verify.sublabel).toBe('not configured');
+    expect(merge.state).toBe('current');
+  });
+
+  it('leaves configured epics unaffected (no disabled flag, honest sublabel)', () => {
+    const m1 = member({ ref: 1, mergeStatus: 'completed' });
+    const e = epic({ members: [m1], verification: { status: 'pending', configured: true } });
+    const steps = epicLifecycleSteps(e);
+    const verify = steps.find((s) => s.key === 'verify')!;
+    expect(verify.disabled).toBeUndefined();
+    expect(verify.state).toBe('current');
+    expect(verify.sublabel).toBe('whole-epic checks');
   });
 });

@@ -146,6 +146,11 @@ export function costCapMessage(unpriced: string[]): string {
   return `a cost cap with no token fallback requires every configured model to be priced — unpriced: ${unpriced.join(', ')}`;
 }
 
+/** True when neither the command verifier nor critic review is configured, so candidates would merge unverified. */
+export function verifyChannelsUnconfigured(verify: Pick<AppConfig, 'verify'>['verify']): boolean {
+  return verify.commands.length === 0 && !verify.review.enabled;
+}
+
 export const appConfigSchema = z.object({
   /** Operator-chosen display name; feeds the sidebar heading and browser title. Empty (the default) falls back to "Harmonic". */
   name: z.string().default('').meta({ example: 'Production' }),

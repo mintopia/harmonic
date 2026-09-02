@@ -31,9 +31,9 @@ export function EpicIntegrationBar({ epic }: { epic: Epic }) {
       >
         {steps.map((step, i) => (
           <li key={step.key} className="flex flex-1 items-center gap-2 last:flex-none">
-            <span className="flex items-center gap-1.5 whitespace-nowrap">
-              <span aria-hidden="true" className={`size-2.5 rounded-full ${STEP_FILL[step.state]}`} />
-              <span className={`text-small font-medium ${STEP_TEXT[step.state]}`}>{step.label}</span>
+            <span className="flex items-center gap-1.5 whitespace-nowrap" title={step.disabled ? 'Not configured' : undefined}>
+              <span aria-hidden="true" className={`size-2.5 rounded-full ${step.disabled ? STEP_FILL.pending : STEP_FILL[step.state]}`} />
+              <span className={`text-small font-medium ${step.disabled ? STEP_TEXT.pending : STEP_TEXT[step.state]}`}>{step.label}</span>
             </span>
             {i < steps.length - 1 && <span aria-hidden="true" className="h-px flex-1 bg-edge" />}
           </li>
