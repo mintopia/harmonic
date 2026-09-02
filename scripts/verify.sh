@@ -5,6 +5,18 @@ set -uo pipefail
 
 cd "$(dirname "$0")/.."
 
+# The command verifier runs this in a fresh detached git worktree that has no
+# node_modules, so lint/typecheck cannot resolve local tooling or @types/node.
+# Reuse the main worktree's install via a symlink; fall back to a clean install.
+if [ ! -e node_modules ]; then
+  main_root="$(cd "$(dirname "$(git rev-parse --git-common-dir 2>/dev/null || echo .)")" 2>/dev/null && pwd)"
+  if [ -n "${main_root}" ] && [ -d "${main_root}/node_modules" ]; then
+    ln -s "${main_root}/node_modules" node_modules
+  else
+    npm ci --prefer-offline --no-audit --no-fund --silent
+  fi
+fi
+
 status=0
 
 run() {
