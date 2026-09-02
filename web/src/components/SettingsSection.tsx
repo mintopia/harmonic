@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { card, field, labelType } from '../ui';
+import type { LabeledPreview } from '../prompt-preview-model';
 
 export function SettingsSection({
   title,
@@ -34,13 +35,27 @@ export function PlaceholderList({ placeholders }: { placeholders: [string, strin
   );
 }
 
-export function PromptPreview({ text }: { text: string }) {
+const previewPane = 'mt-1.5 max-h-72 overflow-auto whitespace-pre-wrap rounded bg-raised p-2.5 text-small text-ink';
+
+/** The compiled prompt under a prompt editor: a single pane for one string, or —
+ * when the same template compiles differently per Task kind — the labeled
+ * variants laid out side by side so the operator can compare them. */
+export function PromptPreview({ text }: { text: string | LabeledPreview[] }) {
   return (
     <details className="mt-2">
       <summary className={`cursor-pointer ${labelType} text-muted`}>Compiled preview</summary>
-      <pre className="mt-1.5 max-h-72 overflow-auto whitespace-pre-wrap rounded bg-raised p-2.5 text-small text-ink">
-        {text}
-      </pre>
+      {typeof text === 'string' ? (
+        <pre className={previewPane}>{text}</pre>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {text.map((variant) => (
+            <div key={variant.label} className="min-w-0">
+              <div className={`mt-1.5 ${labelType} text-muted`}>{variant.label}</div>
+              <pre className={previewPane}>{variant.text}</pre>
+            </div>
+          ))}
+        </div>
+      )}
     </details>
   );
 }
@@ -78,7 +93,7 @@ export function PromptField({
   value: string;
   onChange: (value: string) => void;
   placeholders: [string, string][];
-  preview: string;
+  preview: string | LabeledPreview[];
   error?: string;
   rows?: number;
   textareaClass?: string;

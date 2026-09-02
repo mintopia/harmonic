@@ -26,11 +26,23 @@ describe('prompt-preview-model (settings compiled preview)', () => {
     expect(out).toBe('Example task prompt. [123/claude/claude-opus-5] in /repo');
   });
 
-  it('compileCriticPreview interpolates the note AND appends the read-only + verdict scaffolding', () => {
-    const out = compileCriticPreview('Review issue {ref}: {title}.');
-    expect(out).toContain(`Review issue ${SAMPLE_DRIVE_FIELDS.ref}: ${SAMPLE_DRIVE_FIELDS.title}.`);
-    expect(out).toMatch(/READ-ONLY/i);
-    expect(out).toContain('"verdict":"pass|fail|inconclusive"');
-    expect(out).not.toContain('HARMONIC_UNTRUSTED_DIFF');
+  it('compileCriticPreview shows both Task-kind variants, each with the read-only + verdict scaffolding', () => {
+    const [mirrored, native] = compileCriticPreview('Review issue {ref}: {title}.');
+    if (!mirrored || !native) throw new Error('expected two compiled variants');
+
+    expect(mirrored.label).toMatch(/mirrored/i);
+    expect(mirrored.text).toContain(`Review issue ${SAMPLE_DRIVE_FIELDS.ref}: ${SAMPLE_DRIVE_FIELDS.title}.`);
+    expect(mirrored.text).toContain('the referenced ticket');
+
+    expect(native.label).toMatch(/native/i);
+    // Native Task has no ref: the token compiles to empty; title still fills from the prompt.
+    expect(native.text).toContain(`Review issue : ${SAMPLE_DRIVE_FIELDS.title}.`);
+    expect(native.text).toContain('there is no external ticket to consult');
+
+    for (const { text } of [mirrored, native]) {
+      expect(text).toMatch(/READ-ONLY/i);
+      expect(text).toContain('"verdict":"pass|fail|inconclusive"');
+      expect(text).not.toContain('HARMONIC_UNTRUSTED_DIFF');
+    }
   });
 });

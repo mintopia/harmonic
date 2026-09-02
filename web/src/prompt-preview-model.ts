@@ -10,6 +10,22 @@ export const SAMPLE_DRIVE_FIELDS: DriveFields = {
   body: 'Example issue body describing the change to make.',
 };
 
+/** A native (board-authored) Task has no mirrored issue: `ref`/`url` are empty, so
+ * `buildCriticPrompt` compiles its no-ticket variant. `title`/`body` still come
+ * from the Task's own prompt (`driveFields`), so they stay populated. */
+export const SAMPLE_NATIVE_DRIVE_FIELDS: DriveFields = {
+  ...SAMPLE_DRIVE_FIELDS,
+  ref: '',
+  url: '',
+};
+
+/** A compiled prompt shown under one editor, optionally split into labeled
+ * variants that render side by side. */
+export interface LabeledPreview {
+  label: string;
+  text: string;
+}
+
 /** Illustrative value for the `{taskId}` token. */
 export const SAMPLE_TASK_ID = '123';
 
@@ -59,12 +75,20 @@ export function compileTaskIdPreview(template: string): string {
 
 /** Compile the critic review prompt exactly as `runCritic` would: the operator
  * note interpolated, plus the appended revision block, restraint instruction, and
- * JSON-verdict scaffolding. Sample revisions stand in for a live Task's. */
-export function compileCriticPreview(operatorPrompt: string): string {
-  return buildCriticPrompt({
-    operatorPrompt,
-    fields: SAMPLE_DRIVE_FIELDS,
-    verifiedHeadOid: SAMPLE_VERIFIED_HEAD_OID,
-    baseOid: SAMPLE_BASE_OID,
-  });
+ * JSON-verdict scaffolding. Sample revisions stand in for a live Task's. The same
+ * operator prompt compiles differently per Task kind, so both variants are shown:
+ * a mirrored Task judged against its ticket, and a native Task judged against the
+ * instructions alone. */
+export function compileCriticPreview(operatorPrompt: string): LabeledPreview[] {
+  const compile = (fields: DriveFields) =>
+    buildCriticPrompt({
+      operatorPrompt,
+      fields,
+      verifiedHeadOid: SAMPLE_VERIFIED_HEAD_OID,
+      baseOid: SAMPLE_BASE_OID,
+    });
+  return [
+    { label: 'Mirrored task (has ticket)', text: compile(SAMPLE_DRIVE_FIELDS) },
+    { label: 'Native task (no ticket)', text: compile(SAMPLE_NATIVE_DRIVE_FIELDS) },
+  ];
 }
