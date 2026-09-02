@@ -59,12 +59,12 @@ afterEach(async () => {
 describe('EpicBand collapsible closed-tasks section (issue #423)', () => {
   it('renders the closed members via a collapsible ClosedRail, only when there are any', () => {
     const withClosed = renderToStaticMarkup(
-      createElement(EpicBand, { epic: epic(), columns: [], onOpenTask: () => {}, onChanged: () => {} }),
+      createElement(EpicBand, { epic: epic(), columns: [], onOpenTask: () => {} }),
     );
     expect(withClosed).toContain('Closed · 2');
 
     const withoutClosed = renderToStaticMarkup(
-      createElement(EpicBand, { epic: epic({ members: [] }), columns: [], onOpenTask: () => {}, onChanged: () => {} }),
+      createElement(EpicBand, { epic: epic({ members: [] }), columns: [], onOpenTask: () => {} }),
     );
     expect(withoutClosed).not.toContain('Closed ·');
   });

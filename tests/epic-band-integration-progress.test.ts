@@ -34,7 +34,6 @@ describe('EpicBand whole-Epic integration progress (issue #424)', () => {
         epic: epic(),
         columns: [],
         onOpenTask: () => {},
-        onChanged: () => {},
       }),
     );
 
@@ -50,7 +49,6 @@ describe('EpicBand whole-Epic integration progress (issue #424)', () => {
         epic: epic({ foldedCount: 1, memberCount: 2 }),
         columns: [],
         onOpenTask: () => {},
-        onChanged: () => {},
       }),
     );
 

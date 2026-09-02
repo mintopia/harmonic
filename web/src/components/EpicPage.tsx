@@ -36,6 +36,7 @@ import { Markdown } from './Markdown';
 import { TokenTypeBar, TokenTypeLegend } from './TokenTypeBar';
 import { ModelLabel, ProviderChip } from './TaskIdentity';
 import { ChangedFilesNav, changedFileKind } from './ticket/ChangedFilesNav';
+import { Fact } from './Fact';
 
 const sectionCaps = 'text-label font-bold uppercase tracking-[0.1em] text-faint';
 
@@ -52,15 +53,6 @@ function fmtRelative(ms: number): string {
   const h = Math.floor(m / 60);
   if (h < 24) return `${h}h ago`;
   return `${Math.floor(h / 24)}d ago`;
-}
-
-function Fact({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="min-w-0">
-      <dt className="mb-[3px] text-[10px] font-bold uppercase tracking-[0.07em] text-faint">{label}</dt>
-      <dd className="min-w-0 text-[12.5px] text-ink">{children}</dd>
-    </div>
-  );
 }
 
 function Description({ text }: { text: string }) {
@@ -572,17 +564,13 @@ export function EpicPage({
     return unsubscribe;
   }, []);
 
-  useEffect(() => {
-    let live = true;
+  useLiveEffect((live) => {
     setDiffFiles(null);
     setDiffFailed(false);
     api.epicDiffFiles(workspaceId, epicRef).then(
-      ({ files }) => live && setDiffFiles(files),
-      () => live && setDiffFailed(true),
+      ({ files }) => live() && setDiffFiles(files),
+      () => live() && setDiffFailed(true),
     );
-    return () => {
-      live = false;
-    };
   }, [workspaceId, epicRef]);
 
   useEffect(() => {

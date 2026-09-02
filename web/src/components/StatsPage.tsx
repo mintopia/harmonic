@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { formatAvgCostPerRun, formatCost, usd } from '../cost';
 import { api } from '../api';
 import { card, displayTitle, labelType, tableHead, touchTarget } from '../ui';
@@ -21,6 +21,7 @@ import { Donut, type DonutSegment } from './Donut';
 import { fillSeries, METRIC_LABEL, type StatMetric } from './costChart-model';
 import { EmptyState } from './EmptyState';
 import { AttemptHeatmap } from './AttemptHeatmap';
+import { useLiveEffect } from '../useLiveEffect';
 import { FlowThroughput } from './FlowThroughput';
 import { TokenTypeBar, TokenTypeLegend } from './TokenTypeBar';
 
@@ -115,23 +116,19 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
   const [error, setError] = useState<string | null>(null);
   const [metric, setMetric] = useState<StatMetric>('usd');
 
-  useEffect(() => {
+  useLiveEffect((live) => {
     if (workspaceId === null) return;
     const span = RANGES[range] ?? null;
     const from = span === null ? 0 : Date.now() - span;
-    let cancelled = false;
     setError(null);
     api
       .stats(from, Date.now(), workspaceId)
-      .then((s) => !cancelled && setStats(s))
+      .then((s) => live() && setStats(s))
       .catch((e) => {
-        if (cancelled) return;
+        if (!live()) return;
         setStats(null);
         setError(e instanceof Error ? e.message : String(e));
       });
-    return () => {
-      cancelled = true;
-    };
   }, [range, workspaceId]);
 
   const filled = stats ? fillSeries(stats.series, stats.from, stats.to) : [];

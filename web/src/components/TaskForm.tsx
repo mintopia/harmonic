@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import { api } from '../api';
 import type { AppConfig, Task, Workspace } from '../types';
 import { Modal } from './Modal';
@@ -7,6 +7,7 @@ import { InheritField } from './InheritField';
 import { inheritSource } from './inherit-field-model';
 import { btnGhost, btnPrimary, field, panelTitle, labelType, selectField } from '../ui';
 import { taskLabel } from '../id-format.js';
+import { useLiveEffect } from '../useLiveEffect';
 
 const label = `mb-1 block ${labelType} text-muted`;
 
@@ -31,18 +32,14 @@ export function TaskForm({
   onSaved: () => void;
 }) {
   const [prompt, setPrompt] = useState(task?.prompt ?? '');
-  useEffect(() => {
+  useLiveEffect((live) => {
     if (!task || task.prompt !== undefined) return;
-    let cancelled = false;
     api
       .task(task.id)
       .then((full) => {
-        if (!cancelled && full.prompt !== undefined) setPrompt(full.prompt);
+        if (live() && full.prompt !== undefined) setPrompt(full.prompt);
       })
       .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
   }, [task]);
   const [ov, setOv] = useState<Overrides>(
     task?.overrides ?? {

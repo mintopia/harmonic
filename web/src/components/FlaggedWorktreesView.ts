@@ -1,4 +1,4 @@
-import { createElement, useEffect, useState } from 'react';
+import { createElement, useState } from 'react';
 import {
   flaggedWorktreeReasonLabel,
   isFlaggedWorktreesSnapshot,
@@ -7,6 +7,7 @@ import {
 } from '../flagged-worktrees-model.js';
 import { subscribe } from '../ws.js';
 import { card, chip, tableHead } from '../ui.js';
+import { useLiveEffect } from '../useLiveEffect.js';
 
 const GRID = 'grid grid-cols-[minmax(14rem,2fr)_5rem_5rem_7rem] gap-x-4 px-4';
 
@@ -48,13 +49,12 @@ export function FlaggedWorktreesTable({ worktrees }: { worktrees: FlaggedWorktre
 export function FlaggedWorktreesView() {
   const [worktrees, setWorktrees] = useState<FlaggedWorktree[] | null>(null);
 
-  useEffect(() => {
-    let active = true;
+  useLiveEffect((live) => {
     let snapshotLoaded = false;
     let pending: FlaggedWorktree[][] = [];
     const apply = (next: FlaggedWorktree[]) => setWorktrees((current) => mergeFlaggedWorktrees(current ?? [], next));
     const installSnapshot = (snapshot: FlaggedWorktree[]) => {
-      if (!active) return;
+      if (!live()) return;
       snapshotLoaded = true;
       setWorktrees(pending.reduce(mergeFlaggedWorktrees, snapshot));
     };
@@ -73,7 +73,6 @@ export function FlaggedWorktreesView() {
     }, load);
     load();
     return () => {
-      active = false;
       unsubscribe();
     };
   }, []);
