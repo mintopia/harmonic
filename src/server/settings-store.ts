@@ -33,15 +33,23 @@ interface RawSettingsFile {
   workspaces?: Record<string, unknown>;
 }
 
-function deepDiff(base: unknown, value: unknown, path: readonly string[] = []): unknown {
+/**
+ * Diff `value` against `base` into a sparse patch. With `tombstones` on (the
+ * default, for operator edits) a model field or whole model that `base` has but
+ * `value` drops is recorded as an explicit `null` clear. With it off (legacy
+ * flattened-config conversion) a dropped field is treated as inherited, not
+ * cleared — so a field the baseline has since gained isn't retroactively
+ * tombstoned across a config that simply predates it.
+ */
+function deepDiff(base: unknown, value: unknown, path: readonly string[] = [], tombstones = true): unknown {
   if (isDeepStrictEqual(base, value)) return undefined;
   if (isModelCatalogPath(path) && Array.isArray(base) && Array.isArray(value)) {
-    return modelCatalogDiff(base, value);
+    return modelCatalogDiff(base, value, tombstones);
   }
   if (Array.isArray(base) || Array.isArray(value) || !isRecord(base) || !isRecord(value)) return value;
   const patch: Record<string, unknown> = {};
   for (const key of Object.keys(value)) {
-    const difference = deepDiff(base[key], value[key], [...path, key]);
+    const difference = deepDiff(base[key], value[key], [...path, key], tombstones);
     if (difference !== undefined) patch[key] = difference;
   }
   return Object.keys(patch).length === 0 ? undefined : patch;
@@ -51,22 +59,24 @@ function isModelCatalogPath(path: readonly string[]): boolean {
   return path[0] === 'harnesses' && path[2] === 'models';
 }
 
-function modelCatalogDiff(base: unknown[], value: unknown[]): Record<string, unknown> | undefined {
+function modelCatalogDiff(base: unknown[], value: unknown[], tombstones = true): Record<string, unknown> | undefined {
   const baseline = new Map(base.flatMap((model) => isRecord(model) && typeof model.id === 'string' ? [[model.id, model] as const] : []));
   const resolved = new Map(value.flatMap((model) => isRecord(model) && typeof model.id === 'string' ? [[model.id, model] as const] : []));
   const patch: Record<string, unknown> = {};
   for (const [id, model] of baseline) {
     const next = resolved.get(id);
     if (next === undefined) {
-      patch[id] = null;
+      if (tombstones) patch[id] = null;
       continue;
     }
-    const difference = deepDiff(model, next);
+    const difference = deepDiff(model, next, [], tombstones);
     const entryPatch = isRecord(difference) ? difference : {};
     {
       delete entryPatch.id;
-      for (const key of Object.keys(model)) {
-        if (key !== 'id' && !(key in next)) entryPatch[key] = null;
+      if (tombstones) {
+        for (const key of Object.keys(model)) {
+          if (key !== 'id' && !(key in next)) entryPatch[key] = null;
+        }
       }
       if (Object.keys(entryPatch).length > 0) patch[id] = entryPatch;
     }
@@ -92,8 +102,16 @@ function loadFromDisk(path: string, baseline: AppConfig): SettingsFile {
   }
   try {
     const storedGlobal = (raw.global ?? {}) as DeepPartial<AppConfig>;
-    const global = mergeConfig(baseline, storedGlobal);
-    const globalPatch = isFlattenedGlobal(raw.global) ? (deepDiff(baseline, global) ?? {}) : storedGlobal;
+    // A flattened (whole-config) global is converted to a sparse patch in
+    // inherit mode: a field it doesn't carry is treated as inherited from the
+    // baseline, never as a clear, so a baseline addition the file predates
+    // (e.g. model prices) isn't frozen into a catalog-wide tombstone. `global`
+    // is then resolved from that patch so it and the patch agree.
+    const flattened = isFlattenedGlobal(raw.global);
+    const globalPatch = flattened
+      ? ((deepDiff(baseline, mergeConfig(baseline, storedGlobal), [], false) ?? {}) as DeepPartial<AppConfig>)
+      : storedGlobal;
+    const global = mergeConfig(baseline, globalPatch);
     const workspaces: Record<string, WorkspaceOverrides> = {};
     for (const [id, entry] of Object.entries(raw.workspaces ?? {})) {
       workspaces[id] = workspaceOverridesSchema.parse(entry);
