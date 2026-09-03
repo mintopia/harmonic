@@ -41,6 +41,7 @@ not-yet-torn-down machinery is marked `legacy until ADR-1 epic`.
 | 0021 | [Second code, architecture & product review remediation](0021-second-review-remediation.md) |
 | 0022 | [Configuration layering, modified state, and the per-harness model catalog](0022-configuration-layering-and-model-catalog.md) |
 | 0023 | [A root ticket with children is a structural Epic, no label required](0023-structural-root-epics.md) |
+| 0024 | [Operations is a worktree control surface: inventory, force-cleanup, reconcile-on-demand](0024-operations-worktree-control-surface.md) |
 
 ## Where every pre-reset ADR went
 
