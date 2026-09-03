@@ -5,6 +5,12 @@ Date: 2026-08-28
 Part of the 2026-08-28 ADR reset (see README.md). Target-state note: span
 names carrying pre-reset vocabulary are renamed with the ADR-0001 epic.
 
+**Amended by ADR-0024** (Operations worktree control surface): the
+flagged-worktrees list is replaced by a full worktree inventory plus operator
+force-cleanup and reconcile-on-demand. The automation invariant below —
+auto-remove only clean terminal worktrees, never delete a dirty/unreadable one —
+is unchanged.
+
 ## Operations are OpenTelemetry spans
 
 Every discrete atomic action Harmonic's runtime performs is an OTel span with
