@@ -3,7 +3,7 @@ import { operationForest, visibleOperationForest, type Operation, type Operation
 import { card, displayTitle, labelType, sectionTitle } from '../ui.js';
 import { subscribe, type OperationEvent } from '../ws.js';
 import { ScheduledJobsView } from './ScheduledJobsView.js';
-import { FlaggedWorktreesView } from './FlaggedWorktreesView.js';
+import { WorktreeInventoryView } from './WorktreeInventoryView.js';
 import { useLiveEffect } from '../useLiveEffect.js';
 import type { Task } from '../types.js';
 import type { Epic } from '../epic-model.js';
@@ -11,7 +11,7 @@ import type { Epic } from '../epic-model.js';
 export interface OperationsPageProps {
   scheduledJobs?: ReactNode;
   spanTree?: ReactNode;
-  flaggedWorktrees?: ReactNode;
+  worktreeInventory?: ReactNode;
   tasks?: readonly Task[];
   epics?: readonly Epic[];
   onOpenTask?: (taskId: number) => void;
@@ -186,7 +186,7 @@ function OperationsReadout({ tasks, epics, onOpenTask, onOpenEpic }: Pick<Operat
  * Operations hosts independent scheduler and telemetry sections; the telemetry
  * section owns its snapshot-plus-firehose read model.
  */
-export function OperationsPage({ scheduledJobs, spanTree, flaggedWorktrees, tasks, epics, onOpenTask, onOpenEpic }: OperationsPageProps) {
+export function OperationsPage({ scheduledJobs, spanTree, worktreeInventory, tasks, epics, onOpenTask, onOpenEpic }: OperationsPageProps) {
   return createElement(
     'div',
     null,
@@ -204,7 +204,7 @@ export function OperationsPage({ scheduledJobs, spanTree, flaggedWorktrees, task
         'section',
         { 'aria-labelledby': 'worktrees-heading' },
         createElement('h2', { id: 'worktrees-heading', className: sectionTitle }, 'Worktrees'),
-        flaggedWorktrees ?? createElement(FlaggedWorktreesView, { onOpenTask, onOpenEpic }),
+        worktreeInventory ?? createElement(WorktreeInventoryView, { onOpenTask, onOpenEpic }),
       ),
       createElement(
         'section',

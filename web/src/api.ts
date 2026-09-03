@@ -26,7 +26,7 @@ import type {
 } from './types.js';
 import type { Epic, EpicIntegrateOutcome } from './epic-model.js';
 import type { Stats } from './stats-model.js';
-import type { WorktreeInventoryEntry } from './flagged-worktrees-model.js';
+import type { WorktreeInventoryEntry } from './worktree-inventory-model.js';
 
 class ApiError extends Error {
   constructor(

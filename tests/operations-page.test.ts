@@ -2,8 +2,8 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { OperationRow, OperationsPage } from '../web/src/components/OperationsPage.js';
-import { WorktreesTable } from '../web/src/components/FlaggedWorktreesView.js';
-import type { WorktreeInventoryEntry } from '../web/src/flagged-worktrees-model.js';
+import { WorktreesTable } from '../web/src/components/WorktreeInventoryView.js';
+import type { WorktreeInventoryEntry } from '../web/src/worktree-inventory-model.js';
 import { ScheduledJobsTable } from '../web/src/components/ScheduledJobsView.js';
 import type { Operation } from '../web/src/operations-model.js';
 
