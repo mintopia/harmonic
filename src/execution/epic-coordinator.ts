@@ -69,6 +69,7 @@ export type EpicVerificationStatus = 'pass' | 'fail' | 'pending' | null;
  * its members' mirrored Task states. */
 export interface EpicIntegrateTarget {
   ref: number;
+  title?: string;
   /** Each member's reduced merge state. An empty array is only safe under an
    * operator force-integrate (which bypasses the per-member gate); a non-force
    * submit with `[]` decides `noop` and never integrates. */
@@ -172,6 +173,7 @@ export class EpicCoordinator {
       return await this.operations.run({
         repoDir: this.repoDir,
         epicRef: target.ref,
+        epicTitle: target.title,
         type: 'integrate',
         attributes: { 'epic.integration_branch': integrationBranchName(target.ref) },
         work: () => this.attempt(target, force),
@@ -237,6 +239,7 @@ export class EpicCoordinator {
       verification = await this.operations.run({
         repoDir: this.repoDir,
         epicRef: target.ref,
+        epicTitle: target.title,
         type: 'verify',
         attributes: { 'git.verified_head_oid': verifiedHeadOid },
         work: () => this.verify({ repoDir: this.repoDir, verifiedHeadOid }),
@@ -261,6 +264,7 @@ export class EpicCoordinator {
     const integrated = await this.operations.run({
       repoDir: this.repoDir,
       epicRef: target.ref,
+      epicTitle: target.title,
       type: 'merge',
       attributes: { 'git.base_branch': defaultBranch, 'git.branch': branch },
       work: () => this.integrate({ repoDir: this.repoDir, epicRef: target.ref, defaultBranch, integrationBranch: branch }),
@@ -272,7 +276,7 @@ export class EpicCoordinator {
     const recorded = await this.recordIntegrationQuietly(target, integrated.mergeOid);
 
     this.clearMergeGuards(target.ref);
-    if (recorded) await this.retireQuietly(target.ref, 'after integrate');
+    if (recorded) await this.retireQuietly(target.ref, target.title, 'after integrate');
     this.operations.complete({ repoDir: this.repoDir, epicRef: target.ref });
     return { status: 'integrated', oid: integrated.mergeOid };
   }
@@ -334,7 +338,7 @@ export class EpicCoordinator {
     const tip = await this.git.revParse(this.repoDir, branch);
     this.settledEscalated.delete(target.ref);
     const recorded = await this.recordIntegrationQuietly(target, null);
-    if (recorded) await this.retireQuietly(target.ref, 'already-contained');
+    if (recorded) await this.retireQuietly(target.ref, target.title, 'already-contained');
     this.operations.complete({ repoDir: this.repoDir, epicRef: target.ref });
     return { status: 'integrated', oid: tip };
   }
@@ -349,11 +353,12 @@ export class EpicCoordinator {
     }
   }
 
-  private async retireQuietly(ref: number, context: string): Promise<void> {
+  private async retireQuietly(ref: number, title: string | undefined, context: string): Promise<void> {
     try {
       await this.operations.run({
         repoDir: this.repoDir,
         epicRef: ref,
+        epicTitle: title,
         type: 'retire',
         work: () => this.retire(ref),
       });
@@ -532,6 +537,7 @@ export class EpicLifecycle {
           await this.operations.run({
             repoDir: this.workingDir,
             epicRef: epic.ref,
+            epicTitle: epic.title,
             type: 'cut',
             attributes: { 'epic.integration_branch': branch },
             work: () => this.ensureIntegrationBranch(branch, defaultBranch),
@@ -553,7 +559,7 @@ export class EpicLifecycle {
           const task = byRef.get(ref);
           return reduceMemberState(task ? await this.tasks.get(task.id) : undefined);
         }));
-        void this.epicIntegrate.submit({ ref: epic.ref, members, memberRefs: epic.members })
+        void this.epicIntegrate.submit({ ref: epic.ref, title: epic.title, members, memberRefs: epic.members })
           .catch((err) => this.onError(`epic ${epic.ref} whole-Epic integrate attempt failed: ${String(err)}`));
       }
     }

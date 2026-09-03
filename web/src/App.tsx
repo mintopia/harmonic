@@ -647,7 +647,9 @@ export function App() {
                     </Suspense>
                   )}
                   {view === 'stats' && <StatsPage workspaceId={activeWorkspaceId} />}
-                  {view === 'operations' && <OperationsPage />}
+                  {view === 'operations' && (
+                    <OperationsPage tasks={taskList} epics={epics} onOpenTask={openTaskById} onOpenEpic={openEpicByRef} />
+                  )}
                   {view === 'api' && <ApiPage />}
                   {view === 'settings' && <SettingsPage onSaved={setConfig} />}
                   {view === 'workspace' && config && activeWorkspace && (

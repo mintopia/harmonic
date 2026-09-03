@@ -643,6 +643,7 @@ export class Runner {
       parent,
       attributes: {
         'task.id': task.id,
+        'task.title': task.trackerTitle ?? task.prompt.split('\n').find((line) => line.trim().length > 0)?.trim() ?? `Task ${task.id}`,
         'attempt.id': bound.id,
         'task.origin': task.origin,
         ...(task.workspaceId == null ? {} : { 'workspace.id': task.workspaceId }),

@@ -1,8 +1,22 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { OperationsPage } from '../web/src/components/OperationsPage.js';
+import { OperationRow, OperationsPage } from '../web/src/components/OperationsPage.js';
 import { ScheduledJobsTable } from '../web/src/components/ScheduledJobsView.js';
+import type { Operation } from '../web/src/operations-model.js';
+
+const operation = (attributes: Record<string, unknown>): Operation => ({
+  type: 'attempt',
+  name: 'harmonic.attempt',
+  traceId: 'trace-1',
+  spanId: 'span-1',
+  parentSpanId: null,
+  attributes,
+  startedAt: 1_000,
+  endedAt: null,
+  status: { code: 0, message: null },
+  children: [],
+});
 
 describe('OperationsPage', () => {
   it('provides independent labelled slots for scheduled jobs and live spans', () => {
@@ -50,5 +64,42 @@ describe('OperationsPage', () => {
     expect(html).toContain('title="Tracker will not resolve"');
     expect(html).not.toContain('Disabled');
     expect(html).not.toContain('<button');
+  });
+
+  it('links a live operation to its owning Task title and states what it is doing', () => {
+    const root = operation({ 'task.id': 7, 'task.title': 'Fix live operation subjects' });
+    root.children = [operation({})];
+    const html = renderToStaticMarkup(createElement(OperationRow, {
+      operation: root,
+      now: 2_000,
+      depth: 0,
+      onOpenTask: () => {},
+    }));
+
+    expect(html.match(/>Fix live operation subjects<\/button>/g)).toHaveLength(2);
+    expect(html).toContain('>Working on this Task</span>');
+  });
+
+  it('links a live operation to its owning Epic title', () => {
+    const html = renderToStaticMarkup(createElement(OperationRow, {
+      operation: operation({ 'epic.ref': 24, 'epic.title': 'Live operations refinement' }),
+      now: 2_000,
+      depth: 0,
+      onOpenEpic: () => {},
+    }));
+
+    expect(html).toContain('>Live operations refinement</button>');
+  });
+
+  it('uses the loaded Task title for operations recorded before title metadata', () => {
+    const html = renderToStaticMarkup(createElement(OperationRow, {
+      operation: operation({ 'task.id': 7 }),
+      now: 2_000,
+      depth: 0,
+      tasks: [{ id: 7, summary: 'Fix live operation subjects' }],
+      onOpenTask: () => {},
+    }));
+
+    expect(html).toContain('>Fix live operation subjects</button>');
   });
 });
