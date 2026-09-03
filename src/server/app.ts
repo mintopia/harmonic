@@ -164,6 +164,7 @@ export interface AppContext {
   notifier: Notifier;
   bus: EventBus;
   flaggedWorktrees: FlaggedWorktreeRegistry;
+  reconcileWorktrees: () => ReturnType<WorktreeReconciler['reconcile']>;
 }
 
 export type PersistenceContext = Pick<
@@ -335,6 +336,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     dropIndexForPath,
   );
   const drainRetirement = singleFlight(() => sessionRetirement.drain());
+  const reconcileWorktrees = singleFlight(() => worktreeReconciler.reconcile());
   let runnerRef: Runner | undefined;
   let trackerManagerRef: TrackerPollerManager | undefined;
   let epicServiceRef: EpicService | undefined;
@@ -499,7 +501,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   scheduler.register({
     name: 'Worktree reconciliation',
     intervalMs: 30 * 60 * 1000,
-    run: async () => { await worktreeReconciler.reconcile(); },
+    run: async () => { await reconcileWorktrees(); },
   });
   const eventLoopTuning = opts.reliabilityTuning?.eventLoop;
   const loopMonitor =
@@ -555,7 +557,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     })().catch(() => {});
   });
 
-  const ctx: AppContext = { asyncDb, statsReader, settingsStore, workspaces, tasks, attempts, sessions: sessionStore, runner, conversations, conversationDriver, permissionRules, escalation, autoRunner, guardrailEvents, verificationAttempts, trackerManager, epicService, scheduler, auth, channels, notifier, bus, flaggedWorktrees };
+  const ctx: AppContext = { asyncDb, statsReader, settingsStore, workspaces, tasks, attempts, sessions: sessionStore, runner, conversations, conversationDriver, permissionRules, escalation, autoRunner, guardrailEvents, verificationAttempts, trackerManager, epicService, scheduler, auth, channels, notifier, bus, flaggedWorktrees, reconcileWorktrees };
   const contexts = createAppContexts(ctx);
 
   const app = Fastify({ logger: false }) as unknown as App;
@@ -748,7 +750,7 @@ not resolved yet.`;
   await app.register((fastify) => authRoutes(fastify, contexts.persistence), { prefix: '/api' });
   await app.register((fastify) => statsRoutes(fastify, contexts.persistence), { prefix: '/api' });
   await app.register((fastify) => activityRoutes(fastify, ctx), { prefix: '/api' });
-  await app.register(operationRoutes, { prefix: '/api' });
+  await app.register((fastify) => operationRoutes(fastify, ctx), { prefix: '/api' });
   await app.register((fastify) => scheduledJobRoutes(fastify, contexts.tracking), { prefix: '/api' });
   await app.register((fastify) => flaggedWorktreeRoutes(fastify, contexts.execution), { prefix: '/api' });
   await app.register((fastify) => channelRoutes(fastify, contexts.persistence), { prefix: '/api' });
