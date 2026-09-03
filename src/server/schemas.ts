@@ -249,6 +249,7 @@ export const scheduledJobSchema = z
 
 export const worktreeInventorySchema = z
   .object({
+    id: z.string().meta({ example: 'WzEsIi9kYXRhL3dvcmt0cmVlcy90YXNrLTQyIl0' }),
     path: z.string().meta({ example: '/data/worktrees/task-42' }),
     workspaceId: z.number().meta({ example: 1 }),
     branch: z.string().nullable().meta({ example: 'harmonic/task-42' }),

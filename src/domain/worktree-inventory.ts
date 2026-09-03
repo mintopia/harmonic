@@ -20,6 +20,10 @@ export interface WorktreeInventoryEntry {
   state: WorktreeState;
 }
 
+export function worktreeId(entry: Pick<WorktreeInventoryEntry, 'workspaceId' | 'path'>): string {
+  return Buffer.from(JSON.stringify([entry.workspaceId, entry.path])).toString('base64url');
+}
+
 interface InventoryWorkspace {
   id: number;
   workingDir: string;
