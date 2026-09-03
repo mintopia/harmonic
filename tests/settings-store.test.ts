@@ -36,6 +36,39 @@ describe('SettingsStore (issue #391)', () => {
     expect(parse(readFileSync(path, 'utf8'))).toEqual({ global: { maxAttempts: 7 }, workspaces: {} });
   });
 
+  it('a flattened config predating baseline model prices inherits them, never tombstones them', async () => {
+    // A whole-config global saved before baseline.yaml carried model prices:
+    // every model is valid but priceless, plus one operator-added model.
+    const flattened = structuredClone(baselineConfig());
+    for (const harness of Object.values(flattened.harnesses)) {
+      harness.models = harness.models.map(({ price: _price, ...rest }) => rest);
+    }
+    flattened.harnesses.claude.models.push({ id: 'operator-added', price: { input: 2, output: 4, cacheRead: 0.2, cacheWrite: 0.5 }, contextWindow: 128_000 });
+
+    const path = join(dir, 'settings.yaml');
+    writeFileSync(path, stringify({ global: flattened, workspaces: {} }));
+
+    const store = await SettingsStore.create(dir);
+    const base = baselineConfig();
+    for (const id of Object.keys(base.harnesses)) {
+      for (const baseModel of base.harnesses[id].models) {
+        const resolved = store.getGlobal().harnesses[id].models.find((m) => m.id === baseModel.id);
+        expect(resolved?.price).toEqual(baseModel.price);
+      }
+    }
+    expect(store.getGlobal().harnesses.claude.models).toContainEqual(
+      expect.objectContaining({ id: 'operator-added', price: { input: 2, output: 4, cacheRead: 0.2, cacheWrite: 0.5 } }),
+    );
+
+    // The converged sparse patch carries only the real addition — no price tombstones.
+    const persisted = parse(readFileSync(path, 'utf8')).global;
+    expect(JSON.stringify(persisted)).not.toContain('"price":null');
+    expect(persisted.harnesses.claude.models).toEqual({
+      'operator-added': { id: 'operator-added', price: { input: 2, output: 4, cacheRead: 0.2, cacheWrite: 0.5 }, contextWindow: 128_000 },
+    });
+    expect(persisted.harnesses.codex).toBeUndefined();
+  });
+
   it('migrates legacy top-level price and context data without harness overrides', async () => {
     const path = join(dir, 'settings.yaml');
     writeFileSync(path, stringify({
