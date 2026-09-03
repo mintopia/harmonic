@@ -13,6 +13,10 @@ export interface BusEvents {
   operations: (event: OperationEvent) => void;
   attempt_event: (event: PersistedAttemptEvent) => void;
   attempt_log_event: (event: LiveAttemptEvent) => void;
+  /** The critic's own live ACP transcript, streamed on its own channel keyed by
+   * the builder Attempt id — kept apart from `attempt_log_event` so the running
+   * critic renders as its own chat without leaking into the Implementation lane. */
+  critic_log_event: (event: LiveAttemptEvent) => void;
   attempt_changed: (run: AttemptRow) => void;
   /** A Step transitioned within a still-running Attempt (Implementation →
    * Verify → Review). The Attempt row is unchanged, so `attempt_changed` never
@@ -36,6 +40,7 @@ export interface BusEvents {
 export class EventBus implements FlaggedWorktreeEmitter {
   private emitter = new EventEmitter();
   private readonly attemptLogEvents = new Map<number, LiveAttemptEvent[]>();
+  private readonly criticLogEvents = new Map<number, LiveAttemptEvent[]>();
   private static readonly maxRunLogEvents = 2_048;
 
   constructor() {
@@ -46,25 +51,45 @@ export class EventBus implements FlaggedWorktreeEmitter {
     this.emitter.emit(event, ...args);
   }
 
-  /** Add a transient ACP update to the active Attempt's reconnect buffer. */
-  emitAttemptLog(event: LiveAttemptEvent): void {
-    const events = this.attemptLogEvents.get(event.attemptId) ?? [];
+  private static buffer(map: Map<number, LiveAttemptEvent[]>, event: LiveAttemptEvent): void {
+    const events = map.get(event.attemptId) ?? [];
     events.push(event);
     if (events.length > EventBus.maxRunLogEvents) events.splice(0, events.length - EventBus.maxRunLogEvents);
-    this.attemptLogEvents.set(event.attemptId, events);
+    map.set(event.attemptId, events);
+  }
+
+  private static *replay(map: Map<number, LiveAttemptEvent[]>, attemptId: number, after: number): IterableIterator<LiveAttemptEvent> {
+    for (const event of map.get(attemptId) ?? []) {
+      if (event.seq > after) yield event;
+    }
+  }
+
+  /** Add a transient ACP update to the active Attempt's reconnect buffer. */
+  emitAttemptLog(event: LiveAttemptEvent): void {
+    EventBus.buffer(this.attemptLogEvents, event);
     this.emitter.emit('attempt_log_event', event);
   }
 
   *replayAttemptLog({ attemptId, after }: { attemptId: number; after: number }): IterableIterator<LiveAttemptEvent> {
-    for (const event of this.attemptLogEvents.get(attemptId) ?? []) {
-      if (event.seq > after) yield event;
-    }
+    yield* EventBus.replay(this.attemptLogEvents, attemptId, after);
   }
 
   /** The current live-stream watermark, used to cut REST hydration over to WS. */
   latestAttemptLogSeq({ attemptId }: { attemptId: number }): number {
     const events = this.attemptLogEvents.get(attemptId);
     return events?.[events.length - 1]?.seq ?? 0;
+  }
+
+  /** The critic's own live ACP transcript channel — same buffer/replay shape as
+   * {@link emitAttemptLog}, in a separate keyspace so it never mixes with the
+   * builder's Implementation stream. */
+  emitCriticLog(event: LiveAttemptEvent): void {
+    EventBus.buffer(this.criticLogEvents, event);
+    this.emitter.emit('critic_log_event', event);
+  }
+
+  *replayCriticLog({ attemptId, after }: { attemptId: number; after: number }): IterableIterator<LiveAttemptEvent> {
+    yield* EventBus.replay(this.criticLogEvents, attemptId, after);
   }
 
   on<K extends keyof BusEvents>(event: K, listener: BusEvents[K]): () => void {

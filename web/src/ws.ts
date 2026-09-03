@@ -31,6 +31,7 @@ export interface OperationEvent {
 export type ServerMessage =
   | { type: 'attempt_event'; event: AttemptEvent }
   | { type: 'attempt_log_event'; event: AttemptLogEvent }
+  | { type: 'critic_log_event'; event: AttemptLogEvent }
   | { type: 'attempt_changed'; run: AttemptSummary }
   | { type: 'task_changed'; task: Task }
   | { type: 'attempt_timeline_changed'; taskId: number; attempts: Attempt[]; budgetBase: number }
@@ -138,23 +139,32 @@ export function subscribe(onMessage: (msg: ServerMessage) => void, onReopen?: ()
   );
 }
 
-/** A cursor-resumable subscription to one AttemptSummary's transient ACP transcript. */
-export function subscribeAttemptLog({
-  attemptId,
-  after,
-  onEvent,
-}: {
-  attemptId: number;
-  after: () => number;
-  onEvent: (event: AttemptLogEvent) => void;
-}): () => void {
+function subscribeLog(
+  channel: 'attempt_log_event' | 'critic_log_event',
+  subscribe: 'attempt_log_subscribe' | 'critic_log_subscribe',
+  { attemptId, after, onEvent }: { attemptId: number; after: () => number; onEvent: (event: AttemptLogEvent) => void },
+  // The attempt log hydrates its history from REST, so it skips the first
+  // replay; the critic channel has no REST snapshot, so it replays the buffer.
+  replayOnFirstOpen: boolean,
+): () => void {
   let firstSubscription = true;
   return subscribeWithOpen((message) => {
-    if (message.type === 'attempt_log_event' && message.event.attemptId === attemptId && message.event.seq > after()) {
+    if (message.type === channel && message.event.attemptId === attemptId && message.event.seq > after()) {
       onEvent(message.event);
     }
   }, (socket) => {
-    socket.send(JSON.stringify({ type: 'attempt_log_subscribe', attemptId, after: after(), replay: !firstSubscription }));
+    socket.send(JSON.stringify({ type: subscribe, attemptId, after: after(), replay: replayOnFirstOpen || !firstSubscription }));
     firstSubscription = false;
   });
+}
+
+/** A cursor-resumable subscription to one AttemptSummary's transient ACP transcript. */
+export function subscribeAttemptLog(args: { attemptId: number; after: () => number; onEvent: (event: AttemptLogEvent) => void }): () => void {
+  return subscribeLog('attempt_log_event', 'attempt_log_subscribe', args, false);
+}
+
+/** A cursor-resumable subscription to a running critic's own live ACP transcript
+ * — its own channel, keyed by the builder Attempt id. */
+export function subscribeCriticLog(args: { attemptId: number; after: () => number; onEvent: (event: AttemptLogEvent) => void }): () => void {
+  return subscribeLog('critic_log_event', 'critic_log_subscribe', args, true);
 }

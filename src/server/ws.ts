@@ -19,6 +19,7 @@ export async function wsRoutes(fastify: FastifyInstance, ctx: AppContext): Promi
     const token = (req.query as Record<string, string | undefined>)?.token;
     const readOnly = (token ? await ctx.auth.verifyKey(token) : null)?.scope === 'read';
     let unsubscribeAttemptLog: (() => void) | undefined;
+    let unsubscribeCriticLog: (() => void) | undefined;
     const unsubscribes = [
       ctx.bus.on('attempt_event', (event) => send({ type: 'attempt_event', event })),
       ctx.bus.on('attempt_changed', async (run) => {
@@ -54,37 +55,50 @@ export async function wsRoutes(fastify: FastifyInstance, ctx: AppContext): Promi
       } catch {
         return;
       }
-      if (!isAttemptLogSubscription(message)) return;
-      unsubscribeAttemptLog?.();
+      const sub = logSubscription(message);
+      if (!sub) return;
+      const channel = sub.type === 'critic_log_subscribe' ? 'critic_log_event' : 'attempt_log_event';
+      const replaySource = channel === 'critic_log_event' ? ctx.bus.replayCriticLog.bind(ctx.bus) : ctx.bus.replayAttemptLog.bind(ctx.bus);
+      if (channel === 'critic_log_event') unsubscribeCriticLog?.();
+      else unsubscribeAttemptLog?.();
       const queued: Array<ReturnType<typeof ctx.bus.replayAttemptLog> extends IterableIterator<infer Event> ? Event : never> = [];
       let replaying = true;
-      unsubscribeAttemptLog = ctx.bus.on('attempt_log_event', (event) => {
-        if (event.attemptId !== message.attemptId || event.seq <= message.after) return;
+      const unsubscribe = ctx.bus.on(channel, (event) => {
+        if (event.attemptId !== sub.attemptId || event.seq <= sub.after) return;
         if (replaying) queued.push(event);
-        else send({ type: 'attempt_log_event', event });
+        else send({ type: channel, event });
       });
-      if (message.replay !== false) {
-        await forEachYielding(ctx.bus.replayAttemptLog({ attemptId: message.attemptId, after: message.after }), (event) => {
-          send({ type: 'attempt_log_event', event });
+      if (channel === 'critic_log_event') unsubscribeCriticLog = unsubscribe;
+      else unsubscribeAttemptLog = unsubscribe;
+      if (sub.replay !== false) {
+        await forEachYielding(replaySource({ attemptId: sub.attemptId, after: sub.after }), (event) => {
+          send({ type: channel, event });
         });
       }
       while (queued.length > 0) {
-        await forEachYielding(queued.splice(0), (event) => send({ type: 'attempt_log_event', event }));
+        await forEachYielding(queued.splice(0), (event) => send({ type: channel, event }));
       }
       replaying = false;
     });
     socket.on('close', () => {
       unsubscribeAttemptLog?.();
+      unsubscribeCriticLog?.();
       unsubscribes.forEach((u) => u());
     });
   });
 }
 
-function isAttemptLogSubscription(message: unknown): message is { type: 'attempt_log_subscribe'; attemptId: number; after: number; replay?: boolean } {
-  if (typeof message !== 'object' || message === null) return false;
+/** The builder's transient ACP transcript and the critic's own live channel
+ * share one subscription shape; the `type` selects the bus channel. */
+function logSubscription(message: unknown): { type: 'attempt_log_subscribe' | 'critic_log_subscribe'; attemptId: number; after: number; replay?: boolean } | null {
+  if (typeof message !== 'object' || message === null) return null;
   const type = Reflect.get(message, 'type');
   const attemptId = Reflect.get(message, 'attemptId');
   const after = Reflect.get(message, 'after');
   const replay = Reflect.get(message, 'replay');
-  return type === 'attempt_log_subscribe' && typeof attemptId === 'number' && Number.isInteger(attemptId) && typeof after === 'number' && Number.isInteger(after) && after >= 0 && (replay === undefined || typeof replay === 'boolean');
+  if (type !== 'attempt_log_subscribe' && type !== 'critic_log_subscribe') return null;
+  if (typeof attemptId !== 'number' || !Number.isInteger(attemptId)) return null;
+  if (typeof after !== 'number' || !Number.isInteger(after) || after < 0) return null;
+  if (replay !== undefined && typeof replay !== 'boolean') return null;
+  return { type, attemptId, after, ...(replay === undefined ? {} : { replay }) };
 }

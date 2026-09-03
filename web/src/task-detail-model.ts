@@ -13,6 +13,12 @@ import type { AttemptLogEvent, AttemptSummary, MergeStatus, Step, StepState, Ste
  */
 export type ContentSelection = RailSelection;
 
+/** A harness id as a display name for the UI: the stored id is lowercase
+ * (`claude`, `codex`), shown title-cased. */
+export function harnessLabel(harness: string): string {
+  return harness.charAt(0).toUpperCase() + harness.slice(1);
+}
+
 /** The content-panel kind the selection resolves to. `stats` is the default
  * whole-Task view; `attempt` an Attempt's own content; `diff` a changed-file
  * diff; `timeline` the lifecycle stream. */

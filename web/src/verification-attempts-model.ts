@@ -48,6 +48,7 @@ export function criticUnavailableReason(
   hasTranscript: boolean,
 ): string | null {
   if (hasTranscript) return null;
+  if (state === 'running') return null;
   if (state === 'disabled') return 'Critic disabled for this workspace.';
   if (state === 'unrunnable') return 'Review is enabled but resolves to no model — it cannot run.';
   if (!hasAttempt) return 'Critic did not run.';

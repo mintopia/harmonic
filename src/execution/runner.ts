@@ -72,6 +72,9 @@ export interface RunnerEvents {
   onAttemptEvent?: (event: PersistedAttemptEvent) => void;
   /** ACP session updates are transient: streamed to clients, never persisted. */
   onAttemptLogEvent?: (event: LiveAttemptEvent) => void;
+  /** The critic turn's ACP session updates, on their own channel (same shape as
+   * `onAttemptLogEvent`) so a running critic streams as its own chat. */
+  onCriticLogEvent?: (event: LiveAttemptEvent) => void;
   /** Fired whenever a run reaches a terminal state. */
   onAttemptFinished?: (run: AttemptRow) => void;
   /** Fired ~1s while a run tails its native log. */
@@ -372,6 +375,7 @@ export class Runner {
   private readonly pendingContinuation = new Map<number, DeterministicContinuation>();
   private readonly progressEvents = new Map<number, ProgressEvent[]>();
   private readonly progressSequences = new Map<number, number>();
+  private readonly criticLogSequences = new Map<number, number>();
   private readonly outstandingProgressActions = new Map<number, ProgressEvent>();
   private readonly spendPollMs: number;
   private readonly spendGraceMs: number;
@@ -468,6 +472,26 @@ export class Runner {
         else if (!timer) timer = setTimeout(flush, 400);
       },
       flush,
+    };
+  }
+
+  /**
+   * Relay one critic turn's ACP session updates onto the critic-log channel,
+   * verbatim and keyed by the builder Attempt — the same event shape the builder
+   * streams, so the running critic renders through the identical chat viewer.
+   */
+  private criticUpdateRelay(attemptId: number): (update: { sessionUpdate: string; [key: string]: unknown }) => void {
+    return (update) => {
+      const seq = (this.criticLogSequences.get(attemptId) ?? 0) + 1;
+      this.criticLogSequences.set(attemptId, seq);
+      this.events.onCriticLogEvent?.({
+        id: LIVE_RUN_LOG_EVENT_ID_OFFSET + seq,
+        attemptId,
+        seq,
+        ts: Date.now(),
+        type: 'session_update',
+        payload: update,
+      });
     };
   }
 
@@ -1096,7 +1120,6 @@ export class Runner {
         const timelineStep = await this.attempts.createStep(timelineAttempt.id, { type: 'review' });
         await this.updateStep(task.id, timelineStep.id, { state: 'running', startedAt: Date.now() });
         record('lifecycle', { event: 'verification-started', mechanism: 'critic', model: review.model });
-        const relay = this.verificationOutputRelay(run.id, 'critic', null);
         const attempt = await runCritic({
           cwd: criticCwd,
           verifiedHeadOid: oid,
@@ -1109,9 +1132,8 @@ export class Runner {
           attributes: { 'task.id': task.id, 'attempt.id': run.id },
           // `exactOptionalPropertyTypes` forbids an explicit `undefined`.
           ...(this.criticDrive ? { drive: this.criticDrive } : {}),
-          onProgress: relay.push,
+          onUpdate: this.criticUpdateRelay(run.id),
         });
-        relay.flush();
         const persisted = await this.verificationAttempts.append(timelineAttempt.id, criticAttemptToInput(attempt));
         // The harness rarely has its transcript or usage flushed by the
         // session-end boundary, so both are resolved off the hot path.
@@ -1236,6 +1258,7 @@ export class Runner {
       this.lastTurnContextTokens.delete(closedRunId);
       this.progressEvents.delete(closedRunId);
       this.progressSequences.delete(closedRunId);
+      this.criticLogSequences.delete(closedRunId);
       this.outstandingProgressActions.delete(closedRunId);
       const nextAttempt = await this.attempts.ensureForRun(task.id, attemptNumber, Date.now());
       run = await this.attempts.update(nextAttempt.id, {
@@ -1259,6 +1282,7 @@ export class Runner {
       this.lastTurnContextTokens.delete(run.id);
       this.progressEvents.delete(run.id);
       this.progressSequences.delete(run.id);
+      this.criticLogSequences.delete(run.id);
       this.outstandingProgressActions.delete(run.id);
     }
   }

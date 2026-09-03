@@ -4,7 +4,8 @@ import '../index.css';
 import { TicketPage } from '../components/TicketPage';
 import { EpicPage } from '../components/EpicPage';
 import { Board } from '../components/Board';
-import { task, boardEpic, boardTasks, doneEpic } from './fixtures';
+import { Verification } from '../components/ticket/Verification';
+import { task, boardEpic, boardTasks, doneEpic, runs } from './fixtures';
 
 const params = new URLSearchParams(window.location.search);
 const which = params.get('story');
@@ -23,6 +24,14 @@ function Story() {
           onNewTask={() => {}}
           onOpenEpic={() => {}}
         />
+      </div>
+    );
+  }
+  if (which === 'critic-running') {
+    const runningCritic = [{ mechanism: 'critic', state: 'running', reason: null }] as any;
+    return (
+      <div style={{ minHeight: '100vh', background: 'var(--hm-canvas)', padding: 30, maxWidth: 900 }}>
+        <Verification attempts={[]} statuses={runningCritic} run={runs[2] as any} only="critic" criticAgent="Codex" />
       </div>
     );
   }

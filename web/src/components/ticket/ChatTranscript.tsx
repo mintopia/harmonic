@@ -25,24 +25,24 @@ function clockTime(at: number): string {
   return new Date(at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
 }
 
-function Avatar({ operator }: { operator: boolean }) {
+function Avatar({ operator, initial }: { operator: boolean; initial: string }) {
   return operator ? (
     <span className="grid size-7 shrink-0 place-items-center rounded-md bg-await-tint text-await">
       <Icon name="user" className="size-3.5" />
     </span>
   ) : (
-    <span className="grid size-7 shrink-0 place-items-center rounded-md bg-accent-tint text-[11px] font-bold text-accent">C</span>
+    <span className="grid size-7 shrink-0 place-items-center rounded-md bg-accent-tint text-[11px] font-bold text-accent">{initial}</span>
   );
 }
 
-function MessageRow({ row, model }: { row: Extract<ChatRow, { kind: 'message' }>; model: string }) {
+function MessageRow({ row, model, agent }: { row: Extract<ChatRow, { kind: 'message' }>; model: string; agent: string }) {
   const operator = row.author === 'operator';
   return (
     <div className="flex gap-3">
-      <Avatar operator={operator} />
+      <Avatar operator={operator} initial={agent.charAt(0).toUpperCase()} />
       <div className="min-w-0 flex-1">
         <div className="mb-1 flex items-baseline gap-2">
-          <span className="text-[12.5px] font-semibold text-ink">{operator ? 'You' : 'Claude'}</span>
+          <span className="text-[12.5px] font-semibold text-ink">{operator ? 'You' : agent}</span>
           <span className="font-data text-[11px] text-faint">
             {operator ? 'steered' : model} · {clockTime(row.at)}
           </span>
@@ -103,7 +103,7 @@ function Note({ row }: { row: Extract<ChatRow, { kind: 'note' }> }) {
 /** A spawned Subagent's own transcript, folded under the Agent call that
  * spawned it — collapsed by default so the main agent's thread stays legible,
  * one click away when the operator wants the detail. */
-function SubagentLane({ label, rows, model }: { label: string; rows: ChatRow[]; model: string }) {
+function SubagentLane({ label, rows, model, agent }: { label: string; rows: ChatRow[]; model: string; agent: string }) {
   return (
     <details className="ml-10 overflow-hidden rounded-md border border-hairline bg-surface">
       <summary className="flex cursor-pointer items-center gap-2.5 px-3 py-2 text-[12.5px] font-semibold text-ink hover:bg-raised">
@@ -113,17 +113,17 @@ function SubagentLane({ label, rows, model }: { label: string; rows: ChatRow[]; 
       </summary>
       <div className="flex flex-col gap-3 border-t border-hairline px-3 py-3">
         {rows.map((row) => (
-          <Row key={row.key} row={row} model={model} />
+          <Row key={row.key} row={row} model={model} agent={agent} />
         ))}
       </div>
     </details>
   );
 }
 
-function Row({ row, model }: { row: ChatRow; model: string }) {
+function Row({ row, model, agent }: { row: ChatRow; model: string; agent: string }) {
   switch (row.kind) {
     case 'message':
-      return <MessageRow row={row} model={model} />;
+      return <MessageRow row={row} model={model} agent={agent} />;
     case 'thought':
       return <ThoughtMessage text={row.text} />;
     case 'tool':
@@ -148,6 +148,7 @@ export function ChatTranscript({
   onToggleFollow,
   steer,
   model,
+  agent,
   stepLabel,
 }: {
   events: AttemptLogEvent[];
@@ -156,6 +157,9 @@ export function ChatTranscript({
   onToggleFollow?: () => void;
   steer?: ReactNode;
   model: string;
+  /** The harness that drove this session, shown as the message author (e.g.
+   * "Claude", "Codex") so a transcript never misattributes a non-Claude run. */
+  agent: string;
   stepLabel?: string;
 }) {
   const { rows, hidden, lanes } = useMemo(() => {
@@ -193,13 +197,13 @@ export function ChatTranscript({
             const lane = row.kind === 'tool' && row.toolCallId ? lanes.get(row.toolCallId) : undefined;
             return (
               <div key={row.key} className="flex flex-col gap-3">
-                <Row row={row} model={model} />
-                {lane && <SubagentLane label={lane.label} rows={lane.rows} model={model} />}
+                <Row row={row} model={model} agent={agent} />
+                {lane && <SubagentLane label={lane.label} rows={lane.rows} model={model} agent={agent} />}
               </div>
             );
           })}
           {[...lanes].filter(([id]) => !anchored.has(id)).map(([id, lane]) => (
-            <SubagentLane key={id} label={lane.label} rows={lane.rows} model={model} />
+            <SubagentLane key={id} label={lane.label} rows={lane.rows} model={model} agent={agent} />
           ))}
         </div>
       )}

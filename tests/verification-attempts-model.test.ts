@@ -28,6 +28,7 @@ const attempt = (
   output: '',
   hasTranscript: false,
   prompt: null,
+  harness: null,
   ...overrides,
 });
 
@@ -210,6 +211,10 @@ describe('criticUnavailableReason (#331)', () => {
   it('is null when a transcript is present — nothing to explain', () => {
     expect(criticUnavailableReason('passed', true, true)).toBeNull();
     expect(criticUnavailableReason('disabled', false, true)).toBeNull();
+  });
+
+  it('is null while the critic is running — its live transcript speaks for it', () => {
+    expect(criticUnavailableReason('running', false, false)).toBeNull();
   });
 
   it('says disabled when the verifier is off for the workspace', () => {

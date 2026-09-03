@@ -58,6 +58,8 @@ describe('agent critic end-to-end (issue #164)', () => {
     run: async (req) => {
       lastCriticHarnessId = req.harnessId;
       lastCriticCwd = req.cwd;
+      req.onUpdate?.({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'reviewing the change' } });
+      req.onUpdate?.({ sessionUpdate: 'tool_call', toolCallId: 'c1', kind: 'read', title: 'Read src/config.ts', status: 'completed' });
       return { output: JSON.stringify(criticResult), permissionRequests: [] };
     },
   };
@@ -164,6 +166,16 @@ describe('agent critic end-to-end (issue #164)', () => {
     expect(await verdictEvents(attemptId)).toEqual([
       { event: 'verification', mechanism: 'critic', verdict: 'pass', summary: 'looks correct' },
     ]);
+
+    // The critic's ACP updates stream on their own channel (keyed by the builder
+    // Attempt), verbatim and structured, so the running critic renders as a chat.
+    const criticLog = [...server.app.ctx.bus.replayCriticLog({ attemptId, after: 0 })];
+    expect(criticLog.map((e) => e.payload)).toEqual([
+      { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'reviewing the change' } },
+      { sessionUpdate: 'tool_call', toolCallId: 'c1', kind: 'read', title: 'Read src/config.ts', status: 'completed' },
+    ]);
+    // ...and never leak into the builder's Implementation transcript stream.
+    expect([...server.app.ctx.bus.replayAttemptLog({ attemptId, after: 0 })].some((e) => e.payload.sessionUpdate === 'tool_call' && e.payload.toolCallId === 'c1')).toBe(false);
   });
 
   it('AC3: a failing critic records feedback on attempt 1 and escalates after attempt 2', async () => {

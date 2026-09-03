@@ -109,6 +109,9 @@ export interface VerificationAttempt {
   /** The exact prompt sent to the critic for this attempt; null for a command
    * verifier (which sends no prompt) and pre-feature rows. */
   prompt: string | null;
+  /** The critic harness that drove this attempt (may differ from the builder's);
+   * null for a command verifier or a pre-feature row. */
+  harness: string | null;
   /** Whether a critic-session transcript can be read for this attempt
    * — fetch it with `api.criticLog(id)`. */
   hasTranscript: boolean;

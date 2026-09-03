@@ -281,6 +281,8 @@ const verificationAttemptSchema = z.object({
   output: z.string().meta({ example: '' }),
   /** The exact prompt sent to the critic; null for a command verifier. */
   prompt: z.string().nullable().meta({ example: null }),
+  /** The critic harness that produced the transcript; null for a command verifier or an older row. */
+  harness: z.string().nullable().meta({ example: 'claude' }),
   /** Whether a critic transcript is available; fetch the parsed log from `GET /api/verification-attempts/:id/log`. */
   hasTranscript: z.boolean().meta({ example: false }),
 });

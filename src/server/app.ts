@@ -438,6 +438,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     events: {
       onAttemptEvent: (event) => bus.emit('attempt_event', event),
       onAttemptLogEvent: (event) => bus.emitAttemptLog(event),
+      onCriticLogEvent: (event) => bus.emitCriticLog(event),
       onAttemptFinished: (run) => bus.emit('attempt_changed', run),
       onAttemptUsage: (payload) => bus.emit('attempt_usage', payload),
       onStepChanged: (taskId) => bus.emit('step_changed', { taskId }),

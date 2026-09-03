@@ -2,6 +2,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ServerMessage } from '../web/src/ws.js';
+import type { AttemptLogEvent } from '../web/src/types.js';
 
 class FakeWebSocket {
   static instances: FakeWebSocket[] = [];
@@ -226,6 +227,28 @@ describe('subscribeAttemptLog', () => {
     vi.advanceTimersByTime(1_500);
     FakeWebSocket.instances[1]?.onopen?.();
     expect(FakeWebSocket.instances[1]?.sent).toEqual([{ type: 'attempt_log_subscribe', attemptId: 42, after: 7, replay: true }]);
+
+    unsubscribe();
+  });
+});
+
+describe('subscribeCriticLog', () => {
+  it('replays from its own channel on the first open and forwards only critic_log events', async () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket);
+    vi.resetModules();
+    const { subscribeCriticLog } = await import('../web/src/ws.js');
+    const seen: AttemptLogEvent[] = [];
+
+    const unsubscribe = subscribeCriticLog({ attemptId: 42, after: () => 0, onEvent: (event) => seen.push(event) });
+    // No REST snapshot backs the critic channel, so it replays from its buffer on the first open.
+    expect(FakeWebSocket.instances[0]?.sent).toEqual([{ type: 'critic_log_subscribe', attemptId: 42, after: 0, replay: true }]);
+
+    const socket = FakeWebSocket.instances[0]!;
+    const criticEvent: AttemptLogEvent = { id: 1, attemptId: 42, seq: 1, ts: 1, type: 'session_update', payload: { sessionUpdate: 'agent_message_chunk' } };
+    // A same-id builder event on the other channel must not reach a critic subscriber.
+    socket.emit({ type: 'attempt_log_event', event: { id: 9, attemptId: 42, seq: 2, ts: 2, type: 'session_update', payload: { sessionUpdate: 'agent_message_chunk' } } });
+    socket.emit({ type: 'critic_log_event', event: criticEvent });
+    expect(seen).toEqual([criticEvent]);
 
     unsubscribe();
   });

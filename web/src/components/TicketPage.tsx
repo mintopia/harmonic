@@ -19,7 +19,7 @@ import { Gate } from './ticket/Gate';
 import { CrumbBar } from './CrumbBar';
 import { LifecycleTimeline } from './ticket/LifecycleTimeline';
 import { attemptTone, runFailureBannerLabel, runForAttempt, stateTone, type TimelineTone } from '../attempt-timeline-model';
-import { attemptStepTabs, contentPanel, defaultSelection, defaultStepTab, taskLifecycle, taskStats, verificationOutputTail, type ContentSelection, type LifecycleStepKey, type LifecycleStepStatus, type StepTab, type TaskStats } from '../task-detail-model';
+import { attemptStepTabs, contentPanel, defaultSelection, defaultStepTab, harnessLabel, taskLifecycle, taskStats, verificationOutputTail, type ContentSelection, type LifecycleStepKey, type LifecycleStepStatus, type StepTab, type TaskStats } from '../task-detail-model';
 import { isAtLiveEdge } from '../follow-tail-model';
 import { ChatTranscript } from './ticket/ChatTranscript';
 import { card, labelType, railSectionHead, railSectionCount, railNavButton, railNavSelected, railNavIdle, PHASE_NODE_STYLES, statePill, mergeStatusPill } from '../ui';
@@ -194,7 +194,7 @@ function Properties({ task, allTasks, workspaceName }: { task: Task; allTasks: T
     <dl className="grid grid-cols-2 gap-x-6 gap-y-3.5">
       <Fact label="Priority">{task.priority}</Fact>
       <Fact label="Agent">
-        {task.harness.charAt(0).toUpperCase() + task.harness.slice(1)} <span className="font-data text-muted">{task.model}</span>
+        {harnessLabel(task.harness)} <span className="font-data text-muted">{task.model}</span>
       </Fact>
       <Fact label="Workspace">{workspaceName ?? '—'}</Fact>
       <Fact label="Depends on">
@@ -661,6 +661,7 @@ function AttemptPanel({
   guardrailEvents,
   baseBranch,
   primaryModel,
+  agent,
 }: {
   run: AttemptSummary;
   attempt: Attempt | undefined;
@@ -675,6 +676,7 @@ function AttemptPanel({
   guardrailEvents: GuardrailEvent[];
   baseBranch: string | null;
   primaryModel: string;
+  agent: string;
 }) {
   const steps = attempt?.steps ?? [];
   const tabs = attemptStepTabs(steps, attempt?.verifierStatuses ?? verifierStatuses);
@@ -691,6 +693,7 @@ function AttemptPanel({
       onToggleFollow={onToggleFollow}
       steer={run.state === 'running' ? <SteerBox taskId={run.taskId} /> : undefined}
       model={topModel}
+      agent={agent}
       stepLabel="Implementation"
     />
   );
@@ -716,7 +719,7 @@ function AttemptPanel({
       ) : (
         <div className="mt-4">
           {reviewPrompt && <PromptSent prompt={reviewPrompt} label="Review prompt sent" />}
-          <Verification attempts={verificationAttempts} statuses={verifierStatuses} run={run} only="critic" steps={steps} liveOutput={verificationOutputTail(events, 'critic')} />
+          <Verification attempts={verificationAttempts} statuses={verifierStatuses} run={run} only="critic" steps={steps} criticAgent={agent} />
           <CriticSessions attempts={verificationAttempts} run={run} />
         </div>
       )
@@ -1047,6 +1050,7 @@ export function TicketPage({
                     guardrailEvents={guardrailEvents}
                     baseBranch={task.baseBranch}
                     primaryModel={task.model}
+                    agent={harnessLabel(task.harness)}
                   />
                 ) : (
                   <NoRunsYet />

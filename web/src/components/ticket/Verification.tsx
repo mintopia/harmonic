@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../../api';
+import { harnessLabel } from '../../task-detail-model';
 import { criticUnavailableReason, overallDecision, verificationRows } from '../../verification-attempts-model';
 import type { AttemptLogEvent, AttemptSummary, Step, VerificationAttempt, VerifierStatus } from '../../types';
 import { useLiveEffect } from '../../useLiveEffect';
+import { useCriticLiveStream } from '../useCriticLiveStream';
 import { Icon } from '../Icon';
 import { Markdown } from '../Markdown';
 import { ChatTranscript } from './ChatTranscript';
@@ -42,7 +44,7 @@ function mechanismName(mechanism: string, run: AttemptSummary): string {
   return mechanism.charAt(0).toUpperCase() + mechanism.slice(1);
 }
 
-function CriticSession({ attemptId, label, model }: { attemptId: number; label: string; model: string }) {
+function CriticSession({ attemptId, label, model, agent }: { attemptId: number; label: string; model: string; agent: string }) {
   const [state, setState] = useState<'loading' | 'ready' | 'unavailable'>('loading');
   const [events, setEvents] = useState<AttemptLogEvent[]>([]);
 
@@ -64,7 +66,7 @@ function CriticSession({ attemptId, label, model }: { attemptId: number; label: 
 
   if (state === 'loading') return <p className="mt-3 text-[12px] text-muted">Loading critic session…</p>;
   if (state === 'unavailable') return <p className="mt-3 text-[12px] text-muted">Critic session log could not be loaded.</p>;
-  return <ChatTranscript events={events} unavailable={false} model={model} stepLabel={label} />;
+  return <ChatTranscript events={events} unavailable={false} model={model} agent={agent} stepLabel={label} />;
 }
 
 export function CriticSessions({ attempts, run }: { attempts: VerificationAttempt[]; run: AttemptSummary }) {
@@ -74,10 +76,18 @@ export function CriticSessions({ attempts, run }: { attempts: VerificationAttemp
   return (
     <div className="flex flex-col gap-2">
       {sessions.map((c, i) => (
-        <CriticSession key={c.id} attemptId={c.id} model={model} label={sessions.length > 1 ? `Critic ${i + 1} of ${sessions.length} · ${c.verdict}` : 'Critic'} />
+        <CriticSession key={c.id} attemptId={c.id} model={model} agent={c.harness ? harnessLabel(c.harness) : 'Critic'} label={sessions.length > 1 ? `Critic ${i + 1} of ${sessions.length} · ${c.verdict}` : 'Critic'} />
       ))}
     </div>
   );
+}
+
+/** The critic while it runs: its own live ACP transcript streamed on the critic
+ * channel, rendered through the same chat viewer as the builder and the settled
+ * critic session — the running and finished views are the same component. */
+function CriticLive({ attemptId, model, agent }: { attemptId: number; model: string; agent: string }) {
+  const events = useCriticLiveStream(attemptId);
+  return <ChatTranscript events={events} unavailable={false} model={model} agent={agent} stepLabel="Critic" />;
 }
 
 function RunningVerifier({ step, output }: { step: Step | undefined; output: string | null }) {
@@ -103,9 +113,12 @@ export interface VerificationProps {
   only?: 'command' | 'critic';
   steps?: readonly Step[];
   liveOutput?: string | null;
+  /** Author label for the running critic's live transcript (the reviewing
+   * harness); the settled session derives its own from the persisted row. */
+  criticAgent?: string;
 }
 
-export function Verification({ attempts, statuses, run, only, steps = [], liveOutput = null }: VerificationProps) {
+export function Verification({ attempts, statuses, run, only, steps = [], liveOutput = null, criticAgent }: VerificationProps) {
   const decision = overallDecision(attempts);
   const rows = verificationRows(statuses, attempts).filter(({ status }) => !only || status.mechanism === only);
   const criticSessions = attempts.filter((a) => a.mechanism === 'critic' && a.hasTranscript);
@@ -131,7 +144,9 @@ export function Verification({ attempts, statuses, run, only, steps = [], liveOu
               <div className="mt-1 text-[13px] leading-[1.55] text-muted [&_code]:rounded-[5px] [&_code]:bg-raised [&_code]:px-[5px] [&_code]:py-px [&_code]:font-data [&_code]:text-[12px]">{attempt ? attempt.mechanism === 'critic' ? <Markdown source={attempt.summary} className="text-muted" /> : attempt.summary : status.reason}</div>
               {status.commands && status.commands.length > 0 && <ol className="mt-1 flex flex-col gap-0.5">{status.commands.map((cmd, i) => <li key={i} className="text-[12px] text-muted"><span className="mr-1.5 tabular-nums text-edge">{i + 1}.</span><code className="rounded-[5px] bg-raised px-[5px] py-px font-data text-[12px]">{cmd}</code></li>)}</ol>}
               {criticReason && <p className="mt-2 text-[12px] text-muted">{criticReason}</p>}
-              {status.state === 'running' && <RunningVerifier step={steps.find((s) => s.type === (status.mechanism === 'command' ? 'verification' : 'review') && s.state === 'running')} output={liveOutput} />}
+              {status.state === 'running' && (status.mechanism === 'critic'
+                ? <CriticLive attemptId={run.id} model={criticModel(run) ?? 'critic'} agent={criticAgent ?? 'Critic'} />
+                : <RunningVerifier step={steps.find((s) => s.type === 'verification' && s.state === 'running')} output={liveOutput} />)}
             </div>
             <span className={`shrink-0 text-[10px] font-bold uppercase tracking-[0.04em] ${attempt ? VERDICT_TONE[attempt.verdict] ?? 'text-muted' : status.state === 'running' ? 'text-running' : 'text-muted'}`}>{status.state}</span>
           </div>;
