@@ -76,6 +76,10 @@ export interface RunnerEvents {
   onAttemptFinished?: (run: AttemptRow) => void;
   /** Fired ~1s while a run tails its native log. */
   onAttemptUsage?: (payload: { attemptId: number; snapshot: AttemptUsageSnapshot }) => void;
+  /** Fired when a Step transitions within a still-running Attempt, so the
+   * Task-detail timeline follows the live phase (the Attempt row is unchanged,
+   * so `onAttemptFinished` never covers these). */
+  onStepChanged?: (taskId: number) => void;
 }
 
 /** A live ACP update, with an Attempt-local monotonic id for reconnect de-duplication. */
@@ -972,6 +976,20 @@ export class Runner {
     return !!(review.enabled && review.prompt && review.model);
   }
 
+  /** Patch a Step and announce the transition, so the Task-detail timeline
+   * follows the live phase. Wraps every mid-Attempt Step mutation: each Step is
+   * created then immediately set `running`, so patching alone covers every
+   * open/settle transition without a second emit on creation. */
+  private async updateStep(
+    taskId: number,
+    id: number,
+    patch: Parameters<AttemptStore['updateStep']>[1],
+  ): Promise<Awaited<ReturnType<AttemptStore['updateStep']>>> {
+    const step = await this.attempts.updateStep(id, patch);
+    this.events.onStepChanged?.(taskId);
+    return step;
+  }
+
   private async noVerifiedHeadVerdict(
     task: TaskRow,
     mechanism: 'command' | 'critic',
@@ -989,7 +1007,7 @@ export class Runner {
       type: mechanism === 'command' ? 'verification' : 'review',
       logLocator: `verification_attempt:${persisted.id}`,
     });
-    await this.attempts.updateStep(timeline.id, {
+    await this.updateStep(task.id, timeline.id, {
       state: 'failed', verdict: 'inconclusive', startedAt: persisted.ts, endedAt: Date.now(),
     });
     record('lifecycle', { event: 'verification', mechanism, verdict: 'inconclusive' });
@@ -1026,7 +1044,7 @@ export class Runner {
         const label = [command.command, ...command.args].join(' ').trim();
         const timelineAttempt = await this.latestAttemptFor(task);
         const timelineStep = await this.attempts.createStep(timelineAttempt.id, { type: 'verification', command: command.command });
-        await this.attempts.updateStep(timelineStep.id, { state: 'running', startedAt: Date.now() });
+        await this.updateStep(task.id, timelineStep.id, { state: 'running', startedAt: Date.now() });
         record('lifecycle', { event: 'verification-started', mechanism: 'command', command: label });
         const relay = this.verificationOutputRelay(run.id, 'command', label);
         const attempt = await runCommandVerifier({
@@ -1041,7 +1059,7 @@ export class Runner {
         });
         relay.flush();
         const persisted = await this.verificationAttempts.append(timelineAttempt.id, commandAttemptToInput(attempt));
-        await this.attempts.updateStep(timelineStep.id, {
+        await this.updateStep(task.id, timelineStep.id, {
           state: attempt.verdict === 'pass' ? 'passed' : 'failed',
           verdict: attempt.verdict,
           logLocator: `verification_attempt:${persisted.id}`,
@@ -1076,7 +1094,7 @@ export class Runner {
         if (run.branch) await indexWorktree(criticCwd);
         const timelineAttempt = await this.latestAttemptFor(task);
         const timelineStep = await this.attempts.createStep(timelineAttempt.id, { type: 'review' });
-        await this.attempts.updateStep(timelineStep.id, { state: 'running', startedAt: Date.now() });
+        await this.updateStep(task.id, timelineStep.id, { state: 'running', startedAt: Date.now() });
         record('lifecycle', { event: 'verification-started', mechanism: 'critic', model: review.model });
         const relay = this.verificationOutputRelay(run.id, 'critic', null);
         const attempt = await runCritic({
@@ -1105,7 +1123,7 @@ export class Runner {
             sessionLogDir: criticHarness.sessionLogDir,
           });
         }
-        await this.attempts.updateStep(timelineStep.id, {
+        await this.updateStep(task.id, timelineStep.id, {
           state: attempt.verdict === 'pass' ? 'passed' : 'failed',
           verdict: attempt.verdict,
           logLocator: `verification_attempt:${persisted.id}`,
@@ -1133,11 +1151,11 @@ export class Runner {
   ): Promise<{ ok: true; tip: string } | { ok: false; conflict: boolean; detail: string }> {
     const attempt = await this.attempts.ensureForRun(task.id, attemptNumber, attemptStartedAt);
     const row = await this.attempts.createStep(attempt.id, { type: 'rebase', logLocator: `git:rebase:${baseBranch}` });
-    await this.attempts.updateStep(row.id, { state: 'running', startedAt: Date.now() });
+    await this.updateStep(task.id, row.id, { state: 'running', startedAt: Date.now() });
     const baseOid = await Git.revParse(task.workingDir, baseBranch);
     const rebased = await Git.rebaseOnto(worktreePath, baseOid);
     if (!rebased.ok) {
-      await this.attempts.updateStep(row.id, {
+      await this.updateStep(task.id, row.id, {
         state: 'failed',
         verdict: rebased.conflict ? 'fail' : 'inconclusive',
         endedAt: Date.now(),
@@ -1145,7 +1163,7 @@ export class Runner {
       });
       return { ok: false, conflict: rebased.conflict, detail: rebased.detail };
     }
-    await this.attempts.updateStep(row.id, {
+    await this.updateStep(task.id, row.id, {
       state: 'passed',
       verdict: 'pass',
       endedAt: Date.now(),
@@ -1611,7 +1629,7 @@ export class Runner {
       const rows = await this.attempts.listSteps(attempt.id);
       const implementation = rows.find((row) => row.type === 'implementation' && row.state === 'running');
       if (to === 'verifying' && implementation) {
-        await this.attempts.updateStep(implementation.id, { state: 'passed', verdict: 'pass', endedAt: Date.now() });
+        await this.updateStep(task.id, implementation.id, { state: 'passed', verdict: 'pass', endedAt: Date.now() });
       }
     };
 
@@ -1640,7 +1658,7 @@ export class Runner {
       const steps = await this.attempts.listSteps(turn.attemptAtStart.id);
       if (!steps.some((row) => row.type === 'implementation' && row.state === 'running')) {
         const implementation = await this.attempts.createStep(turn.attemptAtStart.id, { type: 'implementation', logLocator: 'session:pending' });
-        await this.attempts.updateStep(implementation.id, { state: 'running', startedAt: Date.now() });
+        await this.updateStep(task.id, implementation.id, { state: 'running', startedAt: Date.now() });
       }
       this.gitBreaker?.recordSuccess(repoKey(task.workingDir));
       if (this.keys && this.mcpUrl) {

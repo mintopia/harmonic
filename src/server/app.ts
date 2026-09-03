@@ -440,6 +440,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
       onAttemptLogEvent: (event) => bus.emitAttemptLog(event),
       onAttemptFinished: (run) => bus.emit('attempt_changed', run),
       onAttemptUsage: (payload) => bus.emit('attempt_usage', payload),
+      onStepChanged: (taskId) => bus.emit('step_changed', { taskId }),
     },
     gitBreaker,
     epicBaseNotReady: (task) => epicServiceRef?.epicBaseNotReady(task) ?? false,

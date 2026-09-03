@@ -3,7 +3,7 @@
 import { splitPathTail } from './path.js';
 import type { RailSelection } from './router-model.js';
 import { ROOT_AGENT, totalTokens } from './stats-model.js';
-import type { AttemptLogEvent, AttemptSummary, Step, StepState, StepType, TaskState, ToolTokenAttribution, VerificationMechanism, VerifierStatus } from './types.js';
+import type { AttemptLogEvent, AttemptSummary, MergeStatus, Step, StepState, StepType, TaskState, ToolTokenAttribution, VerificationMechanism, VerifierStatus } from './types.js';
 
 /**
  * What the operator has selected in the navigation sidebar, normalised for the
@@ -102,6 +102,7 @@ interface LifecyclePosition {
 function lifecyclePosition(
   state: TaskState,
   attempts: readonly Pick<AttemptSummary, 'state'>[],
+  mergeStatus: MergeStatus | null,
 ): LifecyclePosition {
   const settled = { halted: false, allDone: false, awaiting: false };
   switch (state) {
@@ -109,7 +110,9 @@ function lifecyclePosition(
     case 'ready':
       return { current: 'worktree', ...settled };
     case 'working':
-      return attempts.some((a) => a.state === 'completed')
+      // A live merge keeps the Task `working` while its Attempt still runs, so
+      // the node advances on `mergeStatus` as well as a settled Attempt.
+      return mergeStatus !== null || attempts.some((a) => a.state === 'completed')
         ? { current: 'merge', ...settled }
         : { current: 'implementation', ...settled };
     case 'escalated':
@@ -134,14 +137,16 @@ function lifecyclePosition(
  * and `done` must never claim implementation happened when none ran.
  * `commandConfigured` flags the post-merge check `disabled` when no command
  * verifier is configured (global or workspace), since the check is vacuous
- * without one.
+ * without one. A non-null `mergeStatus` means the Task is actively merging,
+ * which lights the `merge` node while the Task is still `working`.
  */
 export function taskLifecycle(
   state: TaskState,
   attempts: readonly Pick<AttemptSummary, 'state'>[],
   commandConfigured = true,
+  mergeStatus: MergeStatus | null = null,
 ): TaskLifecycle {
-  const { current, halted, allDone, awaiting } = lifecyclePosition(state, attempts);
+  const { current, halted, allDone, awaiting } = lifecyclePosition(state, attempts, mergeStatus);
   const currentIndex = LIFECYCLE_STEPS.findIndex((s) => s.key === current);
   const steps = LIFECYCLE_STEPS.map(({ key, label }, i): LifecycleStep => {
     let status: LifecycleStepStatus = allDone

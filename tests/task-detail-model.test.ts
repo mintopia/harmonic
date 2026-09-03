@@ -150,6 +150,11 @@ describe('taskLifecycle', () => {
     });
   });
 
+  it('advances a working Task to Merge while it is actively merging', () => {
+    expect(taskLifecycle('working', [stateAttempt('running')], true, 'merging').current).toBe('merge');
+    expect(taskLifecycle('working', [stateAttempt('running')], true, 'resolving-conflicts').current).toBe('merge');
+  });
+
   it('sits an escalated Task at the Merge gate, awaiting review', () => {
     expect(taskLifecycle('escalated', [stateAttempt('completed')]).current).toBe('merge');
     expect(statuses('escalated', [stateAttempt('completed')])).toEqual({

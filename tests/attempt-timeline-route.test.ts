@@ -87,4 +87,32 @@ describe('attempt timeline API', () => {
     expect(rest.body.attempts[0].steps[1]).not.toHaveProperty('verifiedSha');
     socket.close();
   });
+
+  it('broadcasts the timeline when a Step transitions mid-Attempt', async () => {
+    const messages: unknown[] = [];
+    const socket = new WebSocket(`${server.baseUrl.replace('http', 'ws')}/api/ws?token=${server.sessionToken}`);
+    socket.addEventListener('message', (event) => messages.push(JSON.parse(String(event.data))));
+    await new Promise<void>((resolve, reject) => {
+      socket.addEventListener('open', () => resolve());
+      socket.addEventListener('error', reject);
+    });
+
+    const created = await server.api('POST', '/api/tasks', { prompt: 'live phase' });
+    const attempt = await server.app.ctx.attempts.ensureForRun(created.body.id, 1, 10);
+    const verification = await server.app.ctx.attempts.createStep(attempt.id, { type: 'verification', command: 'npm test' });
+    await server.app.ctx.attempts.updateStep(verification.id, { state: 'running', startedAt: 11 });
+
+    // The Attempt row never changes when Implementation gives way to Verify, so
+    // only `step_changed` can carry the live phase to the Task-detail timeline.
+    server.app.ctx.bus.emit('step_changed', { taskId: created.body.id });
+
+    const message = await waitFor(async () => messages.find(
+      (m) => typeof m === 'object' && m !== null
+        && Reflect.get(m, 'type') === 'attempt_timeline_changed'
+        && Reflect.get(m, 'taskId') === created.body.id,
+    ));
+    const steps = (Reflect.get(message!, 'attempts') as { steps: { type: string; state: string }[] }[])[0]!.steps;
+    expect(steps).toEqual([{ ...steps[0], type: 'verification', state: 'running' }]);
+    socket.close();
+  });
 });

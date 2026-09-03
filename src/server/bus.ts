@@ -14,6 +14,10 @@ export interface BusEvents {
   attempt_event: (event: PersistedAttemptEvent) => void;
   attempt_log_event: (event: LiveAttemptEvent) => void;
   attempt_changed: (run: AttemptRow) => void;
+  /** A Step transitioned within a still-running Attempt (Implementation →
+   * Verify → Review). The Attempt row is unchanged, so `attempt_changed` never
+   * fires here; this is what refreshes the Task-detail timeline mid-Attempt. */
+  step_changed: (payload: { taskId: number }) => void;
   /** Live-usage snapshot pushed ~1s while an Attempt tails its native log. */
   attempt_usage: (payload: { attemptId: number; snapshot: AttemptUsageSnapshot }) => void;
   task_changed: (task: TaskRow) => void;

@@ -25,6 +25,7 @@ export async function wsRoutes(fastify: FastifyInstance, ctx: AppContext): Promi
         send({ type: 'attempt_changed', run: await attemptToApi(ctx, run) });
         sendAttemptTimeline(run.taskId);
       }),
+      ctx.bus.on('step_changed', ({ taskId }) => sendAttemptTimeline(taskId)),
       ctx.bus.on('attempt_usage', ({ attemptId, snapshot }) => {
         void attemptUsageToApi(ctx, attemptId, snapshot).then((usage) => send({ type: 'attempt_usage', attemptId, ...usage }));
       }),
