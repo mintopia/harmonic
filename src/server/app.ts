@@ -341,7 +341,6 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     () => workspaces.list(),
     Git,
     worktreesDir,
-    undefined,
     dropIndexForPath,
   );
   const drainRetirement = singleFlight(() => sessionRetirement.drain());

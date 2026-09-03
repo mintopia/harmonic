@@ -50,7 +50,8 @@ describe('SettingsStore (issue #391)', () => {
 
     const store = await SettingsStore.create(dir);
     const base = baselineConfig();
-    for (const id of Object.keys(base.harnesses)) {
+    const harnessIds = ['claude', 'codex', 'copilot'] satisfies Array<keyof typeof base.harnesses>;
+    for (const id of harnessIds) {
       for (const baseModel of base.harnesses[id].models) {
         const resolved = store.getGlobal().harnesses[id].models.find((m) => m.id === baseModel.id);
         expect(resolved?.price).toEqual(baseModel.price);
