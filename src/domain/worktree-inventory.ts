@@ -106,8 +106,10 @@ export class WorktreeInventory {
         if (error instanceof GitError && /not a git repository/i.test(`${error.message}\n${error.stderr}`)) return;
         throw error;
       }
+      const baseCheckout = resolve(workspace.workingDir);
       const listedTaskIds = new Set<number>();
       await forEachYielding(listed, async (worktree) => {
+        if (resolve(worktree.path) === baseCheckout) return;
         const taskId = taskIdFor(worktree.path);
         if (taskId !== null) listedTaskIds.add(taskId);
         const task = taskId === null ? undefined : byId.get(taskId);
