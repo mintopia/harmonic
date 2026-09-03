@@ -12,7 +12,7 @@ import type { TaskWithDeps } from '../domain/tasks.js';
 import type { IsolationMode, Priority } from '../config.js';
 import type { Ticket } from '../tracker/adapter.js';
 import type { ScheduledJobSnapshot } from '../scheduler/scheduler.js';
-import type { WorktreeInventoryEntry } from '../domain/worktree-inventory.js';
+import { worktreeId, type WorktreeInventoryEntry } from '../domain/worktree-inventory.js';
 import { resolveVerifiers } from '../domain/setting-override.js';
 import { verifierStatuses, type VerifierStatus } from '../domain/verifier-status.js';
 import { sumCosts, type Cost } from '../domain/pricing.js';
@@ -28,7 +28,8 @@ export const atRestWorkspaceId = (workspaceId: number | null): number => workspa
 
 export const scheduledJobsToApi = (jobs: ScheduledJobSnapshot[]): ScheduledJobSnapshot[] => jobs;
 
-export const worktreesToApi = (worktrees: readonly WorktreeInventoryEntry[]): readonly WorktreeInventoryEntry[] => worktrees;
+export const worktreesToApi = (worktrees: readonly WorktreeInventoryEntry[]) =>
+  worktrees.map((worktree) => ({ id: worktreeId(worktree), ...worktree }));
 
 export interface ApiStep {
   id: number;

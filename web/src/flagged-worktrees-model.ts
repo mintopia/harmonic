@@ -1,6 +1,7 @@
 export type WorktreeState = 'Active' | 'Stale' | 'Dirty' | 'Unreadable' | 'Orphan' | 'Missing';
 
 export interface WorktreeInventoryEntry {
+  id: string;
   workspaceId: number;
   path: string;
   branch: string | null;
@@ -15,7 +16,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function isWorktree(value: unknown): value is WorktreeInventoryEntry {
-  if (!isRecord(value) || typeof value.workspaceId !== 'number' || typeof value.path !== 'string') return false;
+  if (!isRecord(value) || typeof value.id !== 'string' || typeof value.workspaceId !== 'number' || typeof value.path !== 'string') return false;
   if (value.branch !== null && typeof value.branch !== 'string') return false;
   if (value.sizeBytes !== null && typeof value.sizeBytes !== 'number') return false;
   if (value.dirty !== null && typeof value.dirty !== 'boolean') return false;
