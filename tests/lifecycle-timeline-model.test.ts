@@ -5,11 +5,13 @@ import type { TicketTimelineEvent } from '../web/src/types.js';
 const event = (kind: TicketTimelineEvent['kind'], ts: number, data: unknown): TicketTimelineEvent => ({ attemptId: 1, kind, ts, data });
 
 describe('lifecycleTimelineRows', () => {
+  const lifecycle = (ts: number, payload: unknown): TicketTimelineEvent => event('lifecycle', ts, { type: 'lifecycle', payload });
+
   it('keeps the audit chronology and gives verification, escalation, and disposition events operator-readable labels', () => {
     const rows = lifecycleTimelineRows([
       event('verification', 10, { verdict: 'pass', summary: 'checks passed' }),
       event('verification', 20, { outcome: 'skipped', command: 'npm test' }),
-      event('escalation', 30, {}),
+      lifecycle(30, { event: 'escalated' }),
       event('operator-reject', 40, { feedback: 'Use the documented timeout.' }),
     ]);
 
@@ -19,6 +21,31 @@ describe('lifecycleTimelineRows', () => {
       [30, 'Escalated → awaiting review', null, 'awaiting'],
       [40, 'Operator rejected with guidance', 'Use the documented timeout.', 'awaiting'],
     ]);
+  });
+
+  it('reads recorded lifecycle events as significant, legible rows instead of a raw token', () => {
+    const rows = lifecycleTimelineRows([
+      lifecycle(10, { event: 'merged', oid: '0f758cd2200565e7605902a86c2827c65ad25ce0', baseBranch: 'develop' }),
+      lifecycle(20, { event: 'escalated', gate: 'post-merge-red', reason: 'the post-merge check failed on develop' }),
+      lifecycle(30, { event: 'rebase-conflict', baseBranch: 'develop' }),
+      lifecycle(40, { event: 'progress-nudge', pattern: 'monologue' }),
+      lifecycle(50, { event: 'ticket-closed', trackerRef: '185' }),
+      lifecycle(60, { event: 'retired' }),
+    ]);
+
+    expect(rows.map((row) => [row.label, row.detail, row.tone, row.tag])).toEqual([
+      ['Merged to develop', '0f758cd', 'passed', null],
+      ['Escalated — post-merge check failed', 'the post-merge check failed on develop', 'awaiting', null],
+      ['Rebase hit a conflict', 'develop', 'failed', null],
+      ['Nudged — attempt stalled', 'monologue', 'awaiting', null],
+      ['Issue #185 closed', null, 'passed', 'GITHUB'],
+      ['Worktree cleaned up', null, 'neutral', null],
+    ]);
+  });
+
+  it('humanises an unrecognised lifecycle event rather than dumping the raw token', () => {
+    const rows = lifecycleTimelineRows([lifecycle(10, { event: 'some-new-signal' })]);
+    expect(rows[0]).toMatchObject({ label: 'Some new signal', tone: 'neutral' });
   });
 
   it('keeps disabled verification visible and tolerates unrecognised event payloads', () => {

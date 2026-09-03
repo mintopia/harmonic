@@ -124,8 +124,6 @@ export type TicketTimelineKind =
   | 'lifecycle'
   | 'verification'
   | 'guardrail'
-  | 'escalation'
-  | 'operator-accept'
   | 'operator-reject'
   | 'fact';
 

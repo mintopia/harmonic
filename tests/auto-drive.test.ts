@@ -251,6 +251,20 @@ describe('Drive Prompt fill (issue #33)', () => {
     expect(await drive.closeCompleted(worktreeTask())).toBe(true);
     expect(calls.close).toEqual([]);
   });
+
+  it('fires onTicketClosed only on a genuine close — never on an already-closed ticket or a Task with no ref', async () => {
+    const closed: (number | null)[] = [];
+    const open = fakeAdapter('open');
+    const drive = new AutoDrive(() => baselineConfig(), () => null, async () => open.adapter, undefined, undefined, (task) => closed.push(task.trackerRef));
+    await drive.closeCompleted(worktreeTask());
+    expect(closed).toEqual([7]);
+
+    const already = fakeAdapter('closed');
+    const idempotent = new AutoDrive(() => baselineConfig(), () => null, async () => already.adapter, undefined, undefined, (task) => closed.push(task.trackerRef));
+    await idempotent.closeCompleted(worktreeTask());
+    await idempotent.closeTicket(worktreeTask({ trackerRef: null }));
+    expect(closed).toEqual([7]);
+  });
 });
 
 describe('AutoDrive.onCompleted — Merge Fate close-after-verify (issue #139)', () => {

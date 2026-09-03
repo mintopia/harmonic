@@ -7,7 +7,8 @@ import type { AttemptLogEvent } from '../types';
 import { EpicPage } from '../components/EpicPage';
 import { Board } from '../components/Board';
 import { Verification } from '../components/ticket/Verification';
-import { task, boardEpic, boardTasks, doneEpic, runs } from './fixtures';
+import { LifecycleTimeline } from '../components/ticket/LifecycleTimeline';
+import { task, boardEpic, boardTasks, doneEpic, runs, timeline } from './fixtures';
 
 const params = new URLSearchParams(window.location.search);
 const which = params.get('story');
@@ -53,6 +54,13 @@ function Story() {
     return (
       <div style={{ minHeight: '100vh', background: 'var(--hm-canvas)', padding: 30, maxWidth: 760, margin: '0 auto' }}>
         <ChatTranscript events={codexEvents} unavailable={false} model="gpt-5.6-sol" agent="Codex" stepLabel="Implement" />
+      </div>
+    );
+  }
+  if (which === 'timeline') {
+    return (
+      <div style={{ minHeight: '100vh', background: 'var(--hm-canvas)', padding: 30, maxWidth: 760, margin: '0 auto' }}>
+        <LifecycleTimeline events={timeline} following={false} onToggleFollow={() => {}} />
       </div>
     );
   }

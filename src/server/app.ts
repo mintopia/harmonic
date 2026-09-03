@@ -296,12 +296,27 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     },
   });
   const sessionStore = new SessionStore(asyncDb);
+  /** Record a lifecycle audit event onto an Attempt and push it live, so a
+   * disposition the runner does not itself record (a ticket close, a worktree
+   * retirement) still lands on the ticket Timeline. Best-effort. */
+  const recordAttemptLifecycle = (run: AttemptRow, payload: Record<string, unknown>): void => {
+    void (async () => {
+      try {
+        bus.emit('attempt_event', await attempts.appendEvent(run.id, { type: 'lifecycle', payload }));
+      } catch (err) {
+        logger.debug(`timeline lifecycle event '${String(payload.event)}' dropped for attempt ${run.id}: ${String(err)}`);
+      }
+    })();
+  };
   const sessionRetirement = new SessionRetirementCoordinator(
     sessionStore,
     attempts,
     (repoDir, worktreePath) =>
       Git.removeWorktree(repoDir, worktreePath)
         .then(() => dropIndexForPath(worktreePath)),
+    undefined,
+    undefined,
+    (run) => recordAttemptLifecycle(run, { event: 'retired' }),
   );
   const flaggedWorktrees = new FlaggedWorktreeRegistry(bus);
   const worktreeReconciler = new WorktreeReconciler(
@@ -400,6 +415,12 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     undefined,
     getWorkspaceRow,
     (workspaceId, ref) => tasks.epicKind(workspaceId, ref),
+    (task) => {
+      void (async () => {
+        const run = (await attempts.listForTask(task.id)).at(-1);
+        if (run) recordAttemptLifecycle(run, { event: 'ticket-closed', trackerRef: task.trackerRef != null ? String(task.trackerRef) : null });
+      })();
+    },
   );
   const mergeEffectsFor = (task: TaskRow, run: AttemptRow): MergeEffectExec[] => {
     const effects: MergeEffectExec[] = [];

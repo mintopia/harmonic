@@ -136,7 +136,8 @@ export const timeline = [
   { attemptId: 503, ts: T0 + min(31), kind: 'attempt-started', data: { attempt: 3 } },
   { attemptId: 503, ts: T0 + min(85), kind: 'verification', data: { verdict: 'pass', summary: 'defaults and overrides behave as specified', mechanism: 'critic' } },
   { attemptId: 503, ts: T0 + min(89), kind: 'attempt-finished', data: { attempt: 3, state: 'passed' } },
-  { attemptId: null, ts: T0 + min(90), kind: 'escalation', data: {} },
+  { attemptId: 503, ts: T0 + min(90), kind: 'lifecycle', data: { type: 'lifecycle', payload: { event: 'merged', oid: '0f758cd2200565e7605902a86c2827c65ad25ce0', baseBranch: 'develop' } } },
+  { attemptId: 503, ts: T0 + min(91), kind: 'lifecycle', data: { type: 'lifecycle', payload: { event: 'ticket-closed', trackerRef: '185' } } },
 ] as any;
 
 export const diffFiles = [

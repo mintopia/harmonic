@@ -33,6 +33,9 @@ export class SessionRetirementCoordinator {
     private readonly removeWorktree: RemoveWorktree,
     private readonly config: RetentionConfig = DEFAULT_RETENTION,
     private readonly clock: () => number = Date.now,
+    /** Notified with the Session's latest Attempt when its worktree is actually
+     * removed — the hook that records the Timeline's `retired` event. */
+    private readonly onRetired?: (run: AttemptRow) => void,
   ) {}
 
   /**
@@ -84,6 +87,8 @@ export class SessionRetirementCoordinator {
       if (await this.hasActiveRun(session.id)) return;
       if (session.worktreePath && session.worktreeRepoDir) {
         await this.removeWorktree(session.worktreeRepoDir, session.worktreePath).catch(() => {});
+        const run = (await this.runs.listForSession(session.id)).at(-1);
+        if (run) this.onRetired?.(run);
       }
       await this.sessions.markRetired(session.id, now);
       retired++;

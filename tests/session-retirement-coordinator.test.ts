@@ -231,5 +231,30 @@ describe('Session retirement (issue #148)', () => {
       await expect(coord.drain(now)).resolves.toBe(1);
       expect((await sessions.get(s.id)).status).toBe('retired');
     });
+
+    it('notifies onRetired with the Session\'s latest Attempt when its worktree is cleaned up', async () => {
+      const s = await dispatch();
+      await sessions.bindWorktree(s.id, '/repo', '/wt/run-1', now);
+      const run = await runForSession(s.id);
+      await runs.update(run.id, { state: 'passed' });
+      await sessions.beginRetiring(s.id, 'merged', now);
+      const retiredRuns: number[] = [];
+      const coord = new SessionRetirementCoordinator(sessions, runs, vi.fn(async () => {}), cfg, () => now, (r) => retiredRuns.push(r.id));
+
+      await coord.drain(now);
+
+      expect(retiredRuns).toEqual([run.id]);
+    });
+
+    it('does not notify onRetired for a Session with no worktree to clean up', async () => {
+      const s = await dispatch();
+      await sessions.beginRetiring(s.id, 'operator-disposition', now);
+      const retiredRuns: number[] = [];
+      const coord = new SessionRetirementCoordinator(sessions, runs, vi.fn(async () => {}), cfg, () => now, (r) => retiredRuns.push(r.id));
+
+      await coord.drain(now);
+
+      expect(retiredRuns).toEqual([]);
+    });
   });
 });

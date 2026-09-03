@@ -25,6 +25,10 @@ export class AutoDrive {
     /** Resolves the stored `kind` of a Task's parent Epic (its `mapRef`); a Map
      * child drives `/wayfinder {mapRef}`. Absent → every child keeps its own drive. */
     private readonly getEpicKind?: (workspaceId: number, ref: number) => Promise<StoredEpicKind | null>,
+    /** Notified when {@link closeTicket} issues a genuine tracker close (a real
+     * ref that was open) — the hook that records the Timeline's ticket-closed
+     * event. Not fired for the no-op paths (no ref, or already closed). */
+    private readonly onTicketClosed?: (task: TaskRow) => void,
   ) {}
 
   /** The auto-driven path: a mirrored Task Harmonic runs unattended. */
@@ -150,6 +154,7 @@ export class AutoDrive {
       // Closing an already-closed issue errors on some trackers (`gh issue close`).
       if ((await adapter.readTicket(ref)).state === 'closed') return true;
       await adapter.close(ref, comment);
+      this.onTicketClosed?.(task);
       return true;
     } catch {
       return false;
