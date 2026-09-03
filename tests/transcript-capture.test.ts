@@ -24,7 +24,7 @@ function fakeVerificationAttempts(over: Record<string, unknown> = {}): Verificat
   } as unknown as VerificationAttemptStore;
 }
 
-function fakeConfig(harnesses: Record<string, { sessionLogDir?: string }> = {}): () => AppConfig {
+function fakeConfig(harnesses: Record<string, { sessionLogDir?: string; models?: unknown[] }> = {}): () => AppConfig {
   return () => ({ harnesses }) as unknown as AppConfig;
 }
 

@@ -123,7 +123,7 @@ export async function configRoutes(fastify: FastifyInstance, ctx: Pick<Execution
         tags: ['Config'],
         description: 'Get the distributed baseline and effective global configuration for settings inheritance controls.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
-        response: { 200: z.object({ baseline: appConfigSchema, global: appConfigSchema }) },
+        response: { 200: z.object({ baseline: appConfigSchema, global: appConfigSchema }).describe('The distributed baseline config and the effective global config the inheritance controls resolve against.') },
       },
     },
     async () => ({ baseline: ctx.settingsStore.getBaseline(), global: ctx.settingsStore.getGlobal() }),
@@ -180,7 +180,7 @@ export async function configRoutes(fastify: FastifyInstance, ctx: Pick<Execution
         tags: ['Config'],
         description: 'Clear every global override and return to the distributed baseline.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
-        response: { 200: appConfigSchema },
+        response: { 200: appConfigSchema.describe('The whole configuration as stored once every global override was cleared.') },
       },
     },
     async () => {

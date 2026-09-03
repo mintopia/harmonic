@@ -33,7 +33,9 @@ describe('GET /api/activity snapshot (issue #51)', () => {
         claude: {
           command: process.execPath,
           args: [join(import.meta.dirname, 'stub-harness.mjs')],
-          models: ['stub-model'],
+          // The session log reports `claude-opus-4-8`, so the catalog must price
+          // it for the Activity view's derived Cost to resolve (not stay null).
+          models: [{ id: 'stub-model' }, { id: 'claude-opus-4-8', price: { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 } }],
           defaultModel: 'stub-model',
           sessionLogDir: logDir,
           env: { STUB_SESSION_ID: sessionId },
