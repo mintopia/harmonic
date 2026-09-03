@@ -2,6 +2,8 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { OperationRow, OperationsPage } from '../web/src/components/OperationsPage.js';
+import { WorktreesTable } from '../web/src/components/FlaggedWorktreesView.js';
+import type { WorktreeInventoryEntry } from '../web/src/flagged-worktrees-model.js';
 import { ScheduledJobsTable } from '../web/src/components/ScheduledJobsView.js';
 import type { Operation } from '../web/src/operations-model.js';
 
@@ -19,6 +21,31 @@ const operation = (attributes: Record<string, unknown>): Operation => ({
 });
 
 describe('OperationsPage', () => {
+  it('renders the worktree inventory controls and state-specific actions', () => {
+    const worktrees: WorktreeInventoryEntry[] = [
+      { id: 'dirty', workspaceId: 1, path: '/worktrees/task-1', branch: 'harmonic/task-1', subject: { kind: 'task', taskId: 1, title: 'Dirty task' }, sizeBytes: 1_572_864, dirty: true, state: 'Dirty' },
+      { id: 'stale', workspaceId: 1, path: '/worktrees/task-2', branch: 'harmonic/task-2', subject: null, sizeBytes: 512, dirty: false, state: 'Stale' },
+    ];
+    const html = renderToStaticMarkup(createElement(WorktreesTable, {
+      worktrees,
+      busyId: null,
+      onOpenTask: () => {},
+      onClean: () => {},
+      onForceCleanup: () => {},
+    }));
+
+    for (const header of ['State', 'Branch', 'Subject', 'Size', 'Actions']) {
+      expect(html).toContain(`>${header}<`);
+    }
+    expect(html).toContain('>Dirty<');
+    expect(html).toContain('harmonic/task-1');
+    expect(html).toContain('Task 1: Dirty task');
+    expect(html).toContain('1.5 MB');
+    expect(html).toContain('>Open</button>');
+    expect(html).toContain('>Force cleanup</button>');
+    expect(html).toContain('>Clean now</button>');
+  });
+
   it('provides independent labelled slots for scheduled jobs and live spans', () => {
     const html = renderToStaticMarkup(
       createElement(OperationsPage, {

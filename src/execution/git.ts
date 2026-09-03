@@ -107,6 +107,19 @@ export const Git = {
     return (await git(dir, 'status', '--porcelain')).length > 0;
   },
 
+  /** Paths whose working-tree changes a forced cleanup would discard. */
+  async dirtyFiles(dir: string): Promise<string[]> {
+    const records = (await git(dir, 'status', '--porcelain', '-z')).split('\0');
+    const files: string[] = [];
+    for (let index = 0; index < records.length - 1; index += 1) {
+      const record = records[index]!;
+      const status = record.slice(0, 2);
+      files.push(record.slice(3));
+      if (status[0] === 'R' || status[0] === 'C' || status[1] === 'R' || status[1] === 'C') index += 1;
+    }
+    return files;
+  },
+
   /**
    * The symbolic branch HEAD points at, or `null` on a detached HEAD. Unlike
    * {@link currentBranch} (`--abbrev-ref`, which returns the literal `HEAD` when

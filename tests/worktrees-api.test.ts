@@ -68,6 +68,28 @@ describe('worktree inventory API (issue #482)', () => {
     );
   });
 
+  it('lists only the dirty files that a managed worktree cleanup would discard', async () => {
+    server = await startServer();
+    const path = `${server.dataDir}/worktrees/task-42`;
+    vi.spyOn(server.app.ctx.worktreeInventory, 'snapshot').mockResolvedValue([
+      {
+        workspaceId: 1,
+        path,
+        branch: 'harmonic/task-42',
+        subject: { kind: 'task', taskId: 42, title: 'Issue 42' },
+        sizeBytes: null,
+        dirty: true,
+        state: 'Dirty',
+      },
+    ]);
+    vi.spyOn(Git, 'dirtyFiles').mockResolvedValue(['src/changed.ts', 'untracked.txt']);
+
+    const response = await server.api('GET', `/api/worktrees/${worktreeId({ workspaceId: 1, path })}/dirty-files`);
+
+    expect(response).toMatchObject({ status: 200, body: { files: ['src/changed.ts', 'untracked.txt'] } });
+    expect(Git.dirtyFiles).toHaveBeenCalledWith(path);
+  });
+
   it('refuses force-cleanup outside the managed worktree root', async () => {
     server = await startServer();
     vi.spyOn(server.app.ctx.worktreeInventory, 'snapshot').mockResolvedValue([

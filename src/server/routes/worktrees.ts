@@ -9,9 +9,10 @@ import { listResponse, paginate, paginationQuerySchema } from '../pagination.js'
 
 const worktreesResponseSchema = listResponse('worktrees', worktreeInventorySchema);
 const cleanupResponseSchema = z.object({ removed: z.boolean() });
+const dirtyFilesResponseSchema = z.object({ files: z.array(z.string()) });
 const cleanupParamsSchema = z.object({ id: z.string().min(1).meta({ example: 'WzEsIi9kYXRhL3dvcmt0cmVlcy90YXNrLTQyIl0' }) });
 
-export async function worktreeRoutes(fastify: FastifyInstance, ctx: Pick<ExecutionContext, 'worktreeInventory' | 'forceCleanupWorktree'>): Promise<void> {
+export async function worktreeRoutes(fastify: FastifyInstance, ctx: Pick<ExecutionContext, 'worktreeInventory' | 'forceCleanupWorktree' | 'dirtyWorktreeFiles'>): Promise<void> {
   const app = fastify.withTypeProvider<ZodTypeProvider>();
   app.get('/worktrees', {
     schema: {
@@ -43,5 +44,23 @@ export async function worktreeRoutes(fastify: FastifyInstance, ctx: Pick<Executi
     const removed = await ctx.forceCleanupWorktree(req.params.id);
     if (removed === null) throw new DomainError('not_found', 'no worktree exists for this inventory entry');
     return { removed };
+  });
+
+  app.get('/worktrees/:id/dirty-files', {
+    schema: {
+      tags: ['Worktrees'],
+      description: 'The uncommitted paths that a forced cleanup would discard.',
+      security: [{ bearerAuth: [] }, { sessionCookie: [] }],
+      params: cleanupParamsSchema,
+      response: {
+        200: dirtyFilesResponseSchema.describe('The uncommitted files that cleanup would discard.'),
+        403: errorResponse('The worktree is outside Harmonic’s managed worktree root.'),
+        404: errorResponse('No managed worktree exists for this Task.'),
+      },
+    },
+  }, async (req) => {
+    const files = await ctx.dirtyWorktreeFiles(req.params.id);
+    if (files === null) throw new DomainError('not_found', 'no worktree exists for this inventory entry');
+    return { files };
   });
 }

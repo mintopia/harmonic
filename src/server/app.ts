@@ -165,6 +165,7 @@ export interface AppContext {
   bus: EventBus;
   worktreeInventory: WorktreeInventory;
   forceCleanupWorktree: (id: string) => Promise<boolean | null>;
+  dirtyWorktreeFiles: (id: string) => Promise<string[] | null>;
   reconcileWorktrees: () => ReturnType<WorktreeReconciler['reconcile']>;
 }
 
@@ -204,6 +205,7 @@ export type ExecutionContext = Pick<
   | 'bus'
   | 'worktreeInventory'
   | 'forceCleanupWorktree'
+  | 'dirtyWorktreeFiles'
 >;
 
 export type TrackingContext = Pick<AppContext, 'tasks' | 'workspaces' | 'settingsStore' | 'trackerManager' | 'epicService' | 'scheduler' | 'channels' | 'notifier' | 'bus'>;
@@ -220,8 +222,8 @@ export function createPersistenceContext(ctx: AppContext): PersistenceContext {
 }
 
 export function createExecutionContext(ctx: AppContext): ExecutionContext {
-  const { tasks, settingsStore, workspaces, attempts, sessions, runner, conversations, conversationDriver, escalation, autoRunner, guardrailEvents, verificationAttempts, auth, notifier, bus, worktreeInventory, forceCleanupWorktree } = ctx;
-  return { tasks, settingsStore, workspaces, attempts, sessions, runner, conversations, conversationDriver, escalation, autoRunner, guardrailEvents, verificationAttempts, auth, notifier, bus, worktreeInventory, forceCleanupWorktree };
+  const { tasks, settingsStore, workspaces, attempts, sessions, runner, conversations, conversationDriver, escalation, autoRunner, guardrailEvents, verificationAttempts, auth, notifier, bus, worktreeInventory, forceCleanupWorktree, dirtyWorktreeFiles } = ctx;
+  return { tasks, settingsStore, workspaces, attempts, sessions, runner, conversations, conversationDriver, escalation, autoRunner, guardrailEvents, verificationAttempts, auth, notifier, bus, worktreeInventory, forceCleanupWorktree, dirtyWorktreeFiles };
 }
 
 export function createTrackingContext(ctx: AppContext): TrackingContext {
@@ -371,6 +373,18 @@ export async function buildApp(opts: AppOptions): Promise<App> {
       await publishWorktrees();
     }
     return removed;
+  };
+  const dirtyWorktreeFiles = async (id: string): Promise<string[] | null> => {
+    const entry = (await worktreeInventory.snapshot()).find(
+      (candidate) => worktreeId(candidate) === id,
+    );
+    if (!entry) return null;
+
+    const worktreePath = resolve(entry.path);
+    if (!isInside(managedWorktreesRoot, worktreePath)) {
+      throw new DomainError('forbidden', 'worktree is outside Harmonic’s managed worktree root');
+    }
+    return entry.dirty ? Git.dirtyFiles(worktreePath) : [];
   };
   const reconcileWorktrees = singleFlight(async () => {
     const result = await worktreeReconciler.reconcile();
@@ -603,7 +617,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     })().catch(() => {});
   });
 
-  const ctx: AppContext = { asyncDb, statsReader, settingsStore, workspaces, tasks, attempts, sessions: sessionStore, runner, conversations, conversationDriver, permissionRules, escalation, autoRunner, guardrailEvents, verificationAttempts, trackerManager, epicService, scheduler, auth, channels, notifier, bus, worktreeInventory, forceCleanupWorktree, reconcileWorktrees };
+  const ctx: AppContext = { asyncDb, statsReader, settingsStore, workspaces, tasks, attempts, sessions: sessionStore, runner, conversations, conversationDriver, permissionRules, escalation, autoRunner, guardrailEvents, verificationAttempts, trackerManager, epicService, scheduler, auth, channels, notifier, bus, worktreeInventory, forceCleanupWorktree, dirtyWorktreeFiles, reconcileWorktrees };
   const contexts = createAppContexts(ctx);
 
   const app = Fastify({ logger: false }) as unknown as App;
