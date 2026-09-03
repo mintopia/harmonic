@@ -66,6 +66,7 @@ describe('Runner.mergeEpicIntegration (epic → develop, ADR-0001 #382)', () => 
     });
 
     const outcome = await runner.mergeEpicIntegration({
+      workspaceId: 1,
       repoDir: repo,
       epicRef: 5,
       defaultBranch: 'develop',
@@ -85,6 +86,7 @@ describe('Runner.mergeEpicIntegration (epic → develop, ADR-0001 #382)', () => 
     const before = git(repo, 'rev-parse', 'develop');
 
     const outcome = await runner.mergeEpicIntegration({
+      workspaceId: 1,
       repoDir: repo,
       epicRef: 5,
       defaultBranch: 'develop',
@@ -116,6 +118,7 @@ describe('Runner.mergeEpicIntegration (epic → develop, ADR-0001 #382)', () => 
 
     const runner = makeRunner();
     const outcome = await runner.mergeEpicIntegration({
+      workspaceId: 1,
       repoDir: conflictRepo,
       epicRef: 9,
       defaultBranch: 'develop',

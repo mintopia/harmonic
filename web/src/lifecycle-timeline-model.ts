@@ -125,9 +125,17 @@ function lifecycleRow(payload: Record<string, unknown> | null): RowCore {
   }
 }
 
+/** A `lifecycle` event carrying one merge sub-step: rendered by the dedicated
+ * merge-progress surface, so it is kept out of the flat lifecycle rows. */
+function isMergeStep(event: TicketTimelineEvent): boolean {
+  if (event.kind !== 'lifecycle') return false;
+  const payload = (event.data as { payload?: { event?: string } } | null)?.payload;
+  return payload?.event === 'merge-step';
+}
+
 /** Convert the bounded server projection into compact, chronological audit rows. */
 export function lifecycleTimelineRows(events: TicketTimelineEvent[]): LifecycleTimelineRow[] {
-  return events.map<LifecycleTimelineRow>((event, index) => {
+  return events.filter((event) => !isMergeStep(event)).map<LifecycleTimelineRow>((event, index) => {
     const data = record(event.data);
     const base = { id: `${event.ts}:${event.kind}:${event.attemptId ?? 'task'}:${index}`, at: event.ts };
     switch (event.kind) {

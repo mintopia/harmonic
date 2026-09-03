@@ -18,6 +18,8 @@ import { AttemptRail } from './ticket/AttemptRail';
 import { Gate } from './ticket/Gate';
 import { CrumbBar } from './CrumbBar';
 import { LifecycleTimeline } from './ticket/LifecycleTimeline';
+import { MergeProgress } from './MergeProgress';
+import { mergeStepsFromTimeline } from '../merge-progress-model.js';
 import { attemptTone, runFailureBannerLabel, runForAttempt, stateTone, type TimelineTone } from '../attempt-timeline-model';
 import { attemptStepTabs, contentPanel, defaultSelection, defaultStepTab, harnessLabel, taskLifecycle, taskStats, verificationOutputTail, type ContentSelection, type LifecycleStepKey, type LifecycleStepStatus, type StepTab, type TaskStats } from '../task-detail-model';
 import { isAtLiveEdge } from '../follow-tail-model';
@@ -1028,11 +1030,18 @@ export function TicketPage({
               {panel.kind === 'diff' ? (
                 <ChangesPane task={task} attemptId={latestAttemptId} selectedFile={selectedFile ?? ''} running={anyRunning} />
               ) : panel.kind === 'timeline' ? (
-                <LifecycleTimeline
-                  events={timelineEvents}
-                  following={following}
-                  onToggleFollow={() => setFollowing((f) => !f)}
-                />
+                <>
+                  <LifecycleTimeline
+                    events={timelineEvents}
+                    following={following}
+                    onToggleFollow={() => setFollowing((f) => !f)}
+                  />
+                  {mergeStepsFromTimeline(timelineEvents).length > 0 && (
+                    <div className="px-5 pb-6">
+                      <MergeProgress steps={mergeStepsFromTimeline(timelineEvents)} />
+                    </div>
+                  )}
+                </>
               ) : panel.kind === 'attempt' ? (
                 selectedRun ? (
                   <AttemptPanel

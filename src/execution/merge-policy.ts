@@ -30,6 +30,28 @@ export interface MergePolicyDeps {
   runPostMergeCheck: (mergeOid: string, baseDir: string) => Promise<PostMergeCheckResult>;
   // Escalate the task with a composed plain-language reason (NEVER a raw git conflict dump).
   escalate: (reason: string) => Promise<void>;
+  // Observe each merge step as it happens, for the merge-visibility timeline.
+  // Must never throw and must not block: the policy fires it and moves on.
+  onStep?: (event: MergeStepEvent) => void;
+}
+
+/** One observable step of a single merge, in emission order, for the merge-visibility timeline. */
+export type MergeStepEvent =
+  | { step: 'started'; baseBranch: string; taskBranch: string }
+  | { step: 'conflict'; paths: string[] }
+  | { step: 'resolve-turn'; turn: number; unmergedCount: number }
+  | { step: 'post-check-skipped'; mergeOid: string }
+  | { step: 'post-check-passed'; mergeOid: string }
+  | { step: 'reverted'; mergeOid: string; revertOid: string }
+  | { step: 'merged'; mergeOid: string }
+  | { step: 'escalated'; reason: 'conflict' | 'post-merge-red'; message: string };
+
+function emitStep(deps: MergePolicyDeps, event: MergeStepEvent): void {
+  try {
+    deps.onStep?.(event);
+  } catch {
+    // A visibility sink must never break the merge it observes.
+  }
 }
 
 export interface MergePolicyInput {
@@ -76,6 +98,7 @@ async function resolveConflict(
       'merge.unmerged_count': unmerged.length,
     });
     logger.info('merge: resolving conflicts', { 'merge.turn': turn, 'merge.unmerged_count': unmerged.length });
+    emitStep(deps, { step: 'resolve-turn', turn, unmergedCount: unmerged.length });
     try {
       await within(turnOp, () =>
         deps.resolveConflictTurn({
@@ -120,7 +143,7 @@ async function criticalSection(input: MergePolicyInput, deps: MergePolicyDeps): 
   try {
     const started = await withRepoLock(
       input.baseDir,
-      async (): Promise<{ mergeOid: string } | { conflict: true }> => {
+      async (): Promise<{ mergeOid: string } | { conflict: true; paths: string[] }> => {
         if (parkedBranch !== input.baseBranch) {
           logger.info('merge: checking out base branch', { 'merge.base_branch': input.baseBranch });
           await Git.checkout(input.baseDir, input.baseBranch);
@@ -128,8 +151,9 @@ async function criticalSection(input: MergePolicyInput, deps: MergePolicyDeps): 
         const merge = await Git.mergeNoFf(input.baseDir, input.taskBranch);
         if (merge.ok) return { mergeOid: merge.mergeOid };
         if (merge.conflict) {
-          logger.warn('merge: conflicts detected', { 'merge.task_branch': input.taskBranch });
-          return { conflict: true };
+          const paths = await Git.unmergedPaths(input.baseDir);
+          logger.warn('merge: conflicts detected', { 'merge.task_branch': input.taskBranch, 'merge.unmerged_count': paths.length });
+          return { conflict: true, paths };
         }
         throw new Error(merge.detail);
       },
@@ -139,6 +163,7 @@ async function criticalSection(input: MergePolicyInput, deps: MergePolicyDeps): 
     if ('mergeOid' in started) {
       mergeOid = started.mergeOid;
     } else {
+      emitStep(deps, { step: 'conflict', paths: started.paths });
       const resolved = await resolveConflict(input, deps);
       if ('escalated' in resolved) return escalateConflict(input);
       mergeOid = resolved.mergeOid;
@@ -155,8 +180,12 @@ async function criticalSection(input: MergePolicyInput, deps: MergePolicyDeps): 
         const revertOid = await withRepoLock(input.baseDir, () => Git.revertMergeCommit(input.baseDir, mergeOid));
         const message = postMergeRedMessage(input.taskBranch, input.baseBranch, check.output);
         logger.warn('merge: reverted to keep base green', { 'merge.revert_oid': revertOid });
+        emitStep(deps, { step: 'reverted', mergeOid, revertOid });
         return { kind: 'escalated', reason: 'post-merge-red', message, revertOid };
       }
+      emitStep(deps, { step: 'post-check-passed', mergeOid });
+    } else {
+      emitStep(deps, { step: 'post-check-skipped', mergeOid });
     }
 
     return { kind: 'merged', mergeOid };
@@ -198,6 +227,7 @@ export async function runMergePolicy(input: MergePolicyInput, deps: MergePolicyD
         'merge.conflict_resolve_turns': input.conflictResolveTurns,
         'merge.post_merge_check': input.postMergeCheck,
       });
+      emitStep(deps, { step: 'started', baseBranch: input.baseBranch, taskBranch: input.taskBranch });
 
       const outcome = await mergeUnderLock(input, deps);
 
@@ -205,9 +235,11 @@ export async function runMergePolicy(input: MergePolicyInput, deps: MergePolicyD
         logger.warn('merge: escalating', { 'merge.reason': outcome.reason });
         await deps.escalate(outcome.message);
         mergeOp?.update({ 'merge.outcome': 'escalated', 'merge.reason': outcome.reason });
+        emitStep(deps, { step: 'escalated', reason: outcome.reason, message: outcome.message });
       } else {
         logger.info('merge: merged', { 'merge.oid': outcome.mergeOid });
         mergeOp?.update({ 'merge.outcome': 'merged', 'merge.oid': outcome.mergeOid });
+        emitStep(deps, { step: 'merged', mergeOid: outcome.mergeOid });
       }
 
       mergeOp?.end();

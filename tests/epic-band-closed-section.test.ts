@@ -40,6 +40,7 @@ function epic(overrides: Partial<Epic> = {}): Epic {
     integration: { branch: 'epic/423', exists: false, tip: null },
     verification: { status: null, configured: true },
     integrate: { inFlight: false, held: null },
+    mergeSteps: [],
     foldedCount: 1,
     memberCount: 2,
     ...overrides,

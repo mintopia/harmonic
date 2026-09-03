@@ -8,7 +8,25 @@ import { EpicPage } from '../components/EpicPage';
 import { Board } from '../components/Board';
 import { Verification } from '../components/ticket/Verification';
 import { LifecycleTimeline } from '../components/ticket/LifecycleTimeline';
+import { MergeProgress } from '../components/MergeProgress';
+import { EpicIntegrationBar } from '../components/EpicIntegrationBar';
+import type { MergeStepEvent } from '../merge-progress-model';
 import { task, boardEpic, boardTasks, doneEpic, runs, timeline } from './fixtures';
+
+const mergedSteps: MergeStepEvent[] = [
+  { step: 'started', baseBranch: 'develop', taskBranch: 'task/handoff-10-merge-visibility' },
+  { step: 'conflict', paths: ['src/execution/merge-policy.ts', 'web/src/App.tsx'] },
+  { step: 'resolve-turn', turn: 1, unmergedCount: 2 },
+  { step: 'post-check-skipped', mergeOid: '4f7a1c9e2b3d5a6f8091' },
+  { step: 'merged', mergeOid: '4f7a1c9e2b3d5a6f8091' },
+];
+
+const revertedSteps: MergeStepEvent[] = [
+  { step: 'started', baseBranch: 'develop', taskBranch: 'task/schema-sync-rewrite' },
+  { step: 'post-check-passed', mergeOid: 'aa11bb22cc33dd44ee55' },
+  { step: 'reverted', mergeOid: '9c8d7e6f5a4b3c2d1e0f', revertOid: '112233445566778899aa' },
+  { step: 'escalated', reason: 'post-merge-red', message: 'The post-merge check on develop failed after merging task/schema-sync-rewrite; the merge was reverted so the base stays green.\n\nFailing output:\n  FAIL tests/schema-sync.test.ts > drops a removed column' },
+];
 
 const params = new URLSearchParams(window.location.search);
 const which = params.get('story');
@@ -61,6 +79,16 @@ function Story() {
     return (
       <div style={{ minHeight: '100vh', background: 'var(--hm-canvas)', padding: 30, maxWidth: 760, margin: '0 auto' }}>
         <LifecycleTimeline events={timeline} following={false} onToggleFollow={() => {}} />
+      </div>
+    );
+  }
+  if (which === 'merge') {
+    const cardStyle = { background: 'var(--hm-surface)', border: '1px solid var(--hm-hairline)', borderRadius: 8, padding: 20 };
+    return (
+      <div style={{ minHeight: '100vh', background: 'var(--hm-canvas)', padding: 30, display: 'grid', gap: 24, maxWidth: 720, margin: '0 auto' }}>
+        <div style={cardStyle}><MergeProgress steps={mergedSteps} /></div>
+        <div style={cardStyle}><MergeProgress steps={revertedSteps} /></div>
+        <div style={{ ...cardStyle, padding: 0 }}><EpicIntegrationBar epic={{ ...boardEpic, mergeSteps: mergedSteps } as any} /></div>
       </div>
     );
   }

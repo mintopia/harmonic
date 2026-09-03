@@ -27,6 +27,9 @@ export interface BusEvents {
   task_changed: (task: TaskRow) => void;
   /** A Task's row was hard-deleted; a live board drops it immediately. */
   task_removed: (payload: { id: number }) => void;
+  /** An Epic's integration merge advanced a step; a live board refreshes its
+   * merge progress (Epics have no Attempt row, so `attempt_event` never covers this). */
+  epic_changed: (payload: { workspaceId: number; epicRef: number }) => void;
   conversation_event: (event: PersistedConversationEvent) => void;
   conversation_changed: (conversation: ConversationRow) => void;
   permission_request: (pending: PendingPermissionBroadcast) => void;

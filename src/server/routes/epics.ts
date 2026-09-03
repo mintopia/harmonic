@@ -62,6 +62,19 @@ const epicIntegrateStateSchema = z
   })
   .meta({ id: 'EpicIntegrateState' });
 
+const mergeStepSchema = z
+  .discriminatedUnion('step', [
+    z.object({ step: z.literal('started'), baseBranch: z.string(), taskBranch: z.string() }),
+    z.object({ step: z.literal('conflict'), paths: z.array(z.string()) }),
+    z.object({ step: z.literal('resolve-turn'), turn: z.number().int(), unmergedCount: z.number().int() }),
+    z.object({ step: z.literal('post-check-skipped'), mergeOid: z.string() }),
+    z.object({ step: z.literal('post-check-passed'), mergeOid: z.string() }),
+    z.object({ step: z.literal('reverted'), mergeOid: z.string(), revertOid: z.string() }),
+    z.object({ step: z.literal('merged'), mergeOid: z.string() }),
+    z.object({ step: z.literal('escalated'), reason: z.enum(['conflict', 'post-merge-red']), message: z.string() }),
+  ])
+  .meta({ id: 'MergeStepEvent' });
+
 const epicSchema = z
   .object({
     ref: z.number().int().meta({ example: 42 }),
@@ -78,6 +91,7 @@ const epicSchema = z
     integration: epicIntegrationSchema,
     verification: epicVerificationSchema,
     integrate: epicIntegrateStateSchema,
+    mergeSteps: z.array(mergeStepSchema),
     foldedCount: z.number().int(),
     memberCount: z.number().int(),
   })

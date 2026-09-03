@@ -38,6 +38,9 @@ export type ServerMessage =
   // Hard-delete: the Task is gone server-side (Attempts/history
   // cascaded); drop it from local state so the board/graph lose it too.
   | { type: 'task_removed'; id: number }
+  // An Epic's integration merge advanced a step; the board refetches its epics
+  // so the merge progress follows live (Epics carry no Attempt stream).
+  | { type: 'epic_changed'; workspaceId: number; epicRef: number }
   // Live AttemptSummary usage: the Activity view merges these deltas into its
   // rows so tokens/context/cost tick live. Sent to read keys too.
   | ({ type: 'attempt_usage' } & AttemptUsageEvent)

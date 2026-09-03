@@ -253,6 +253,9 @@ export function App() {
         );
         debouncedRefreshEpics();
       }
+      if (msg.type === 'epic_changed' && msg.workspaceId === activeWorkspaceId) {
+        debouncedRefreshEpics();
+      }
       if (msg.type === 'task_removed') {
         setTasks((current) => (current ?? []).filter((t) => t.id !== msg.id));
         setFetchedTask((current) => (current && current.id === msg.id ? null : current));

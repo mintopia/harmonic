@@ -3,6 +3,7 @@ import type { EpicRow, TaskRow, WorkspaceRow } from '../db/schema.js';
 import type { TaskService, TaskWithDeps } from '../domain/tasks.js';
 import { deriveLeafEpics, type DerivedEpic } from '../domain/epic-derivation.js';
 import { composeEpicView, type Epic, type EpicFacts, type EpicMeta } from '../domain/epic-view.js';
+import { EpicMergeEventStore } from '../domain/epic-merge-events.js';
 import { resolveVerifiers } from '../domain/setting-override.js';
 import { resolveRepositoryDefaultBranch } from '../execution/branch-merge.js';
 import { EpicOperations } from '../execution/epic-operations.js';
@@ -27,6 +28,7 @@ import type { FeatureIndex } from './local-markdown.js';
 import { persistedTickets } from './persisted.js';
 
 export type MergeEpicIntegration = (input: {
+  workspaceId: number;
   repoDir: string;
   epicRef: number;
   defaultBranch: string;
@@ -66,6 +68,7 @@ export class TrackerEpicService implements EpicService {
       escalate: (epicRef: number, reason: string) => void,
       retry: () => Promise<unknown>,
     ) => Promise<EpicRefreshResolveDispatchOutcome> = async () => ({ status: 'dispatched' }),
+    private readonly epicMergeEvents?: EpicMergeEventStore,
   ) {}
 
   startWorkspace(workspace: WorkspaceRow): EpicIntegrationSync {
@@ -83,7 +86,7 @@ export class TrackerEpicService implements EpicService {
         repoDir: workspace.workingDir,
         verify: async ({ repoDir, verifiedHeadOid }) => verifyEpicIntegration({ repoDir, verifiedHeadOid, verifiers: await resolveWorkspaceVerifiers() }),
         integrate: ({ repoDir, epicRef, defaultBranch, integrationBranch }) => mergeEpicIntegration({
-          repoDir, epicRef, defaultBranch, integrationBranch,
+          workspaceId: workspace.id, repoDir, epicRef, defaultBranch, integrationBranch,
           runPostMergeCheck: async (mergeOid) => {
             const decision = await verifyEpicIntegration({ repoDir, verifiedHeadOid: mergeOid, verifiers: await resolveWorkspaceVerifiers() });
             return { pass: decision.outcome === 'proceed', output: decision.outcome === 'proceed' ? '' : decision.reason };
@@ -197,7 +200,8 @@ export class TrackerEpicService implements EpicService {
   private async epicFacts(workspaceId: number, epicRef: number, configured: boolean): Promise<EpicFacts> {
     const branch = integrationBranchName(epicRef); const integrate = this.entries.get(workspaceId)?.epicIntegrate;
     const integration = integrate ? await integrate.integrationFacts(epicRef) : { exists: false, tip: null };
-    return { integration: { branch, ...integration }, verification: { status: integrate?.verificationStatus(epicRef) ?? null, configured }, integrate: { inFlight: integrate?.isInFlight(epicRef) ?? false, held: integrate?.heldReason(epicRef) ?? null } };
+    const mergeSteps = this.epicMergeEvents ? (await this.epicMergeEvents.list(workspaceId, epicRef)).map((event) => event.step) : [];
+    return { integration: { branch, ...integration }, verification: { status: integrate?.verificationStatus(epicRef) ?? null, configured }, integrate: { inFlight: integrate?.isInFlight(epicRef) ?? false, held: integrate?.heldReason(epicRef) ?? null }, mergeSteps };
   }
   private async epicBaseBranch(workspaceId: number): Promise<string | null> { const workspace = (await this.getWorkspaces()).find((candidate) => candidate.id === workspaceId); return workspace ? resolveRepositoryDefaultBranch(workspace.workingDir).catch(() => null) : null; }
   private async verificationConfigured(workspaceId: number): Promise<boolean> { const workspace = (await this.getWorkspaces()).find((candidate) => candidate.id === workspaceId); return !!workspace && !!this.getConfig && resolveVerifiers(workspace, this.getConfig()).commands.length > 0; }

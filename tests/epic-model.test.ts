@@ -29,6 +29,7 @@ const epic = (overrides: Partial<Epic> = {}): Epic => {
     integration: { branch: 'epic/1', exists: true, tip: null },
     verification: { status: null, configured: true },
     integrate: { inFlight: false, held: null },
+    mergeSteps: [],
     foldedCount: members.filter((m) => m.mergeStatus === 'completed').length,
     memberCount: members.length,
     ...overrides,

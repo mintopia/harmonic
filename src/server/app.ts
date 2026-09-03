@@ -21,6 +21,7 @@ import type { AppConfig, DeepPartial } from '../config.js';
 import { SettingsStore } from './settings-store.js';
 import { TaskService } from '../domain/tasks.js';
 import { AttemptStore } from '../domain/attempts.js';
+import { EpicMergeEventStore } from '../domain/epic-merge-events.js';
 import { ConversationStore } from '../domain/conversations.js';
 import { WorkspaceService } from '../domain/workspaces.js';
 import { PermissionRuleStore } from '../domain/permission-rules.js';
@@ -274,6 +275,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     (id) => bus.emit('task_removed', { id }),
   );
   const attempts = new AttemptStore(asyncDb);
+  const epicMergeEvents = new EpicMergeEventStore(asyncDb);
   const guardrailEvents = new GuardrailEventStore(asyncDb);
   const verificationAttempts = new VerificationAttemptStore(asyncDb);
   const conversations = new ConversationStore(asyncDb, (conversation) => bus.emit('conversation_changed', conversation));
@@ -463,6 +465,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
       onAttemptFinished: (run) => bus.emit('attempt_changed', run),
       onAttemptUsage: (payload) => bus.emit('attempt_usage', payload),
       onStepChanged: (taskId) => bus.emit('step_changed', { taskId }),
+      onEpicMergeStep: (payload) => bus.emit('epic_changed', payload),
     },
     gitBreaker,
     epicBaseNotReady: (task) => epicServiceRef?.epicBaseNotReady(task) ?? false,
@@ -529,6 +532,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     epicOperations,
     (input) => runnerRef!.mergeEpicIntegration(input),
     (target, detail, escalate, retry) => runnerRef!.enqueueEpicRefreshResolution(target, detail, escalate, retry),
+    epicMergeEvents,
   );
   epicServiceRef = epicService;
   const trackerManager = new TrackerPollerManager(tasks, () => workspaces.list(), epicService, undefined, undefined, scheduler);

@@ -41,6 +41,7 @@ function configuredCacheWarmSeconds(config: AppConfig, harness: string): number 
   return Object.entries(config.harnesses).find(([id]) => id === harness)?.[1].cacheWarmSeconds;
 }
 import { VerificationAttemptStore } from '../domain/verification-attempts.js';
+import { EpicMergeEventStore } from '../domain/epic-merge-events.js';
 import { GuardrailEventStore } from '../domain/guardrail-events.js';
 import { toProgressEvents } from '../domain/guardrail-progress.js';
 import type { ProgressEvent } from '../domain/stall-detector.js';
@@ -51,7 +52,7 @@ import { pricesForHarness } from '../domain/pricing.js';
 import { isForeignKeyViolation } from '../db/errors.js';
 import { logger } from '../logger.js';
 import type { PostMergeHook } from './branch-merge.js';
-import { runMergePolicy, type MergePolicyDeps, type MergePolicyOutcome, type PostMergeCheckResult } from './merge-policy.js';
+import { runMergePolicy, type MergePolicyDeps, type MergePolicyOutcome, type MergeStepEvent, type PostMergeCheckResult } from './merge-policy.js';
 import {
   integrationBranchName,
   parseIntegrationBranch,
@@ -83,6 +84,9 @@ export interface RunnerEvents {
    * Task-detail timeline follows the live phase (the Attempt row is unchanged,
    * so `onAttemptFinished` never covers these). */
   onStepChanged?: (taskId: number) => void;
+  /** Fired after each Epic integration-merge step is persisted, so the Epic's
+   * merge progress can follow live (Epics have no Attempt row to stream). */
+  onEpicMergeStep?: (payload: { workspaceId: number; epicRef: number }) => void;
 }
 
 /** A live ACP update, with an Attempt-local monotonic id for reconnect de-duplication. */
@@ -364,6 +368,7 @@ export class Runner {
   private readonly guardrailEvents: GuardrailEventStore;
   private readonly sessionStore: SessionStore;
   private readonly attempts: AttemptStore;
+  private readonly epicMergeEvents: EpicMergeEventStore;
   private readonly settleCoordinator: AttemptSettleCoordinator;
   private readonly sessionRetirement: SessionRetirementHook | undefined;
   private readonly tailer: LiveUsageTailer;
@@ -401,6 +406,7 @@ export class Runner {
     this.spendPollMs = options.spendGuardrail?.pollMs ?? 1000;
     this.spendGraceMs = options.spendGuardrail?.graceMs ?? 60_000;
     this.attempts = new AttemptStore(this.asyncDb);
+    this.epicMergeEvents = new EpicMergeEventStore(this.asyncDb);
     this.verificationAttempts = new VerificationAttemptStore(this.asyncDb);
     this.guardrailEvents = new GuardrailEventStore(this.asyncDb);
     this.sessionStore = new SessionStore(this.asyncDb);
@@ -1430,6 +1436,7 @@ export class Runner {
    * the Epic-level escalation surface, rather than settled here.
    */
   async mergeEpicIntegration(input: {
+    workspaceId: number;
     repoDir: string;
     epicRef: number;
     defaultBranch: string;
@@ -1467,6 +1474,17 @@ export class Runner {
       },
       runPostMergeCheck: input.runPostMergeCheck,
       escalate: async () => {},
+      onStep: (step) => persistStep(step),
+    };
+    let persistChain: Promise<unknown> = Promise.resolve();
+    const persistStep = (step: MergeStepEvent): void => {
+      persistChain = persistChain
+        .then(async () => {
+          if (step.step === 'started') await this.epicMergeEvents.clear(input.workspaceId, input.epicRef);
+          await this.epicMergeEvents.append(input.workspaceId, input.epicRef, step);
+          this.events.onEpicMergeStep?.({ workspaceId: input.workspaceId, epicRef: input.epicRef });
+        })
+        .catch((err) => logger.warn('epic merge step persist failed', { error: err instanceof Error ? err.message : String(err) }));
     };
     const outcome = await runMergePolicy(
       {
@@ -1478,6 +1496,7 @@ export class Runner {
       },
       deps,
     );
+    await persistChain;
     if (outcome.kind === 'merged') {
       await this.postMerge?.({ repoDir: input.repoDir, baseBranch: input.defaultBranch });
     }
@@ -1492,6 +1511,7 @@ export class Runner {
     patch: Partial<AttemptRow>,
   ): MergePolicyDeps {
     return {
+      onStep: (event) => record('lifecycle', { event: 'merge-step', step: event }),
       resolveConflictTurn: async (ctx) => {
         try {
           const config = this.getConfig();

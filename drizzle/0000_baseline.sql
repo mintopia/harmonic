@@ -112,6 +112,17 @@ CREATE TABLE `epics` (
 	FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`id`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
+CREATE TABLE `epic_merge_events` (
+	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
+	`workspace_id` integer NOT NULL,
+	`epic_ref` integer NOT NULL,
+	`seq` integer NOT NULL,
+	`ts` integer NOT NULL,
+	`payload` text NOT NULL,
+	FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`id`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX `epic_merge_events_epic_seq_unique` ON `epic_merge_events` (`workspace_id`,`epic_ref`,`seq`);--> statement-breakpoint
 CREATE TABLE `guardrail_events` (
 	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
 	`attempt_id` integer NOT NULL,

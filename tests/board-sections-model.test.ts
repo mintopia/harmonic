@@ -99,6 +99,7 @@ const epic = (ref: number, members: EpicMember[], extra: Partial<Epic> = {}): Ep
   integration: { branch: `epic/${ref}`, exists: true, tip: 'a1f9c02' },
   verification: { status: 'pending', configured: false },
   integrate: { inFlight: false, held: null },
+  mergeSteps: [],
   foldedCount: members.filter((entry) => entry.mergeStatus === 'completed').length,
   memberCount: members.length,
   ...extra,

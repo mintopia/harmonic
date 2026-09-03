@@ -41,6 +41,7 @@ describe('Epic read model operator surface (issue #167)', () => {
     integration: { branch: 'epic/42', exists: true, tip: 'a1b2c3d' },
     verification: { status: null, configured: false },
     integrate: { inFlight: false, held: null },
+    mergeSteps: [],
     foldedCount: 1,
     memberCount: 2,
     ...over,

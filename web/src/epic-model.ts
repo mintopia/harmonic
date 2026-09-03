@@ -1,5 +1,6 @@
 // Explicit .js extension: this module is shared with the node-side test
 // project, whose nodenext resolution requires it (Vite maps .js → .ts).
+import type { MergeStepEvent } from './merge-progress-model.js';
 
 /** Mirrors `reduceMemberState` server-side. */
 export type MemberMergeStatus = 'completed' | 'blocked' | 'pending';
@@ -64,6 +65,8 @@ export interface Epic {
   integration: EpicIntegration;
   verification: EpicVerification;
   integrate: EpicIntegrateState;
+  /** Steps of the current integration merge, in order; empty until an integration runs. */
+  mergeSteps: MergeStepEvent[];
   /** members with mergeStatus === 'completed' */
   foldedCount: number;
   /** members.length */

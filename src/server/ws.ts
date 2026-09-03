@@ -33,6 +33,7 @@ export async function wsRoutes(fastify: FastifyInstance, ctx: AppContext): Promi
       ctx.bus.on('task_changed', async (task) =>
         send({ type: 'task_changed', task: await taskToApi(ctx, await ctx.tasks.withDeps(task)) })),
       ctx.bus.on('task_removed', ({ id }) => send({ type: 'task_removed', id })),
+      ctx.bus.on('epic_changed', (payload) => send({ type: 'epic_changed', ...payload })),
       ctx.bus.on('scheduled_jobs', (jobs) => send({ type: 'scheduled-jobs', jobs: scheduledJobsToApi(jobs) })),
       ctx.bus.on('operations', (event) => send({ type: 'operations', event: operationEventToApi(event) })),
       ctx.bus.on('flagged_worktrees', (flags) => send({ type: 'flagged-worktrees', flags: flaggedWorktreesToApi(flags) })),

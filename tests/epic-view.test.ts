@@ -36,6 +36,7 @@ const noFacts: EpicFacts = {
   integration: { branch: 'epic/10', exists: false, tip: null },
   verification: { status: null, configured: false },
   integrate: { inFlight: false, held: null },
+  mergeSteps: [],
 };
 
 const noMeta: EpicMeta = { description: '', createdAt: 0, baseBranch: null, dependsOn: [], kind: 'spec', state: 'open' };
@@ -109,6 +110,7 @@ describe('composeEpicView', () => {
       integration: { branch: 'epic/10', exists: false, tip: null },
       verification: { status: null, configured: false },
       integrate: { inFlight: false, held: null },
+      mergeSteps: [],
     };
     const epic = composeEpicView(derived({ members: [], ready: [] }), new Map(), new Map(), facts, noMeta);
     expect(epic.integration).toEqual({ branch: 'epic/10', exists: false, tip: null });
@@ -123,6 +125,7 @@ describe('composeEpicView', () => {
       integration: { branch: 'epic/10', exists: true, tip: 'a1b2c3d' },
       verification: { status: 'pass', configured: true },
       integrate: { inFlight: true, held: 'already escalated for this member state; awaiting operator or a state change' },
+      mergeSteps: [],
     };
     const epic = composeEpicView(derived({ members: [], ready: [] }), new Map(), new Map(), facts, noMeta);
     expect(epic.integration).toEqual({ branch: 'epic/10', exists: true, tip: 'a1b2c3d' });

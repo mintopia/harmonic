@@ -1,4 +1,5 @@
 import type { TaskRow } from '../db/schema.js';
+import type { MergeStepEvent } from '../execution/merge-policy.js';
 import type { DerivedEpic } from './epic-derivation.js';
 import { reduceMemberState, type MemberMergeState } from './epic-integrate-decision.js';
 
@@ -66,6 +67,8 @@ export interface Epic {
   integration: EpicIntegration;
   verification: EpicVerification;
   integrate: EpicIntegrateState;
+  /** Steps of the current integration merge, in order; empty until an integration runs. */
+  mergeSteps: MergeStepEvent[];
   /** Members with `mergeStatus === 'completed'`. */
   foldedCount: number;
   memberCount: number;
@@ -88,6 +91,7 @@ export interface EpicFacts {
   integration: EpicIntegration;
   verification: EpicVerification;
   integrate: EpicIntegrateState;
+  mergeSteps: MergeStepEvent[];
 }
 
 /**
@@ -137,6 +141,7 @@ export function composeEpicView(
     integration: facts.integration,
     verification: facts.verification,
     integrate: facts.integrate,
+    mergeSteps: facts.mergeSteps,
     foldedCount: members.filter((m) => m.mergeStatus === 'completed').length,
     memberCount: members.length,
   };

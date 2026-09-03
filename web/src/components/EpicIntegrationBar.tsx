@@ -1,6 +1,7 @@
 import type { Epic, IntegrationStepState } from '../epic-model';
 import { integrationSteps } from '../epic-model';
 import { sectionLabel } from '../ui';
+import { MergeProgress } from './MergeProgress';
 
 const STEP_FILL: Record<IntegrationStepState, string> = {
   done: 'bg-merged-dot',
@@ -39,6 +40,11 @@ export function EpicIntegrationBar({ epic }: { epic: Epic }) {
           </li>
         ))}
       </ol>
+      {epic.mergeSteps.length > 0 && (
+        <div className="mt-3">
+          <MergeProgress steps={epic.mergeSteps} />
+        </div>
+      )}
     </div>
   );
 }
