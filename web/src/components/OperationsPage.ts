@@ -202,8 +202,8 @@ export function OperationsPage({ scheduledJobs, spanTree, flaggedWorktrees, task
       ),
       createElement(
         'section',
-        { 'aria-labelledby': 'flagged-worktrees-heading' },
-        createElement('h2', { id: 'flagged-worktrees-heading', className: sectionTitle }, 'Flagged worktrees'),
+        { 'aria-labelledby': 'worktrees-heading' },
+        createElement('h2', { id: 'worktrees-heading', className: sectionTitle }, 'Worktrees'),
         flaggedWorktrees ?? createElement(FlaggedWorktreesView),
       ),
       createElement(

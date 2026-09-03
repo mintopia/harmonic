@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { AppContext } from './app.js';
 import { attemptTimelineToApi, conversationToApi, attemptToApi, attemptUsageToApi, taskToApi } from './serialize.js';
-import { flaggedWorktreesToApi, operationEventToApi, scheduledJobsToApi } from './dto.js';
+import { operationEventToApi, scheduledJobsToApi, worktreesToApi } from './dto.js';
 import { forEachYielding } from '../reliability/yield.js';
 
 /** One firehose socket at /api/ws: every event is broadcast to every client; clients filter. */
@@ -36,7 +36,7 @@ export async function wsRoutes(fastify: FastifyInstance, ctx: AppContext): Promi
       ctx.bus.on('epic_changed', (payload) => send({ type: 'epic_changed', ...payload })),
       ctx.bus.on('scheduled_jobs', (jobs) => send({ type: 'scheduled-jobs', jobs: scheduledJobsToApi(jobs) })),
       ctx.bus.on('operations', (event) => send({ type: 'operations', event: operationEventToApi(event) })),
-      ctx.bus.on('flagged_worktrees', (flags) => send({ type: 'flagged-worktrees', flags: flaggedWorktreesToApi(flags) })),
+      ctx.bus.on('worktrees', (worktrees) => send({ type: 'worktrees', worktrees: worktreesToApi(worktrees) })),
     ];
     if (!readOnly) {
       unsubscribes.push(

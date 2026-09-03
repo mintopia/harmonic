@@ -69,7 +69,7 @@ export class WorktreeReconciler {
     private readonly workspaces: WorkspaceSource,
     private readonly git: WorktreeRepository,
     worktreesDir: string,
-    private readonly flagStore: FlaggedWorktreeStore,
+    private readonly flagStore?: FlaggedWorktreeStore,
     /** Reap the removed worktree's jCodeMunch index; defaults to a no-op. */
     private readonly reapIndex: (absPath: string) => Promise<void> = async () => {},
   ) {
@@ -138,7 +138,7 @@ export class WorktreeReconciler {
       }
     });
 
-    this.flagStore.replace(flags);
+    this.flagStore?.replace(flags);
     if (firstError !== undefined) throw firstError;
     return { removed, recreated, flagged: flags.length };
   }

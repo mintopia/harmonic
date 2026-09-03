@@ -1,57 +1,36 @@
-/** A managed worktree the reconciler will not delete until an
- * operator disposes of it by hand. */
-export interface FlaggedWorktree {
-  path: string;
-  repoDir: string;
+export type WorktreeState = 'Active' | 'Stale' | 'Dirty' | 'Unreadable' | 'Orphan' | 'Missing';
+
+export interface WorktreeInventoryEntry {
   workspaceId: number;
-  taskId: number | null;
+  path: string;
   branch: string | null;
-  reason: 'dirty' | 'unreadable' | 'unrecognized';
+  subject: { kind: 'task'; taskId: number; title: string } | { kind: 'epic'; epicRef: number; title: string } | null;
+  sizeBytes: number | null;
+  dirty: boolean | null;
+  state: WorktreeState;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
-function isNullableNumber(value: unknown): value is number | null {
-  return value === null || typeof value === 'number';
+function isWorktree(value: unknown): value is WorktreeInventoryEntry {
+  if (!isRecord(value) || typeof value.workspaceId !== 'number' || typeof value.path !== 'string') return false;
+  if (value.branch !== null && typeof value.branch !== 'string') return false;
+  if (value.sizeBytes !== null && typeof value.sizeBytes !== 'number') return false;
+  if (value.dirty !== null && typeof value.dirty !== 'boolean') return false;
+  const subject = value.subject;
+  if (subject !== null && (!isRecord(subject) || typeof subject.title !== 'string' ||
+    (subject.kind !== 'task' && subject.kind !== 'epic') ||
+    (subject.kind === 'task' && typeof subject.taskId !== 'number') ||
+    (subject.kind === 'epic' && typeof subject.epicRef !== 'number'))) return false;
+  return value.state === 'Active' || value.state === 'Stale' || value.state === 'Dirty' || value.state === 'Unreadable' || value.state === 'Orphan' || value.state === 'Missing';
 }
 
-function isNullableString(value: unknown): value is string | null {
-  return value === null || typeof value === 'string';
+export function isWorktreesSnapshot(value: unknown): value is { worktrees: WorktreeInventoryEntry[] } {
+  return isRecord(value) && Array.isArray(value.worktrees) && value.worktrees.every(isWorktree);
 }
 
-function isFlaggedWorktree(value: unknown): value is FlaggedWorktree {
-  if (!isRecord(value)) return false;
-  return typeof value.path === 'string'
-    && typeof value.repoDir === 'string'
-    && typeof value.workspaceId === 'number'
-    && isNullableNumber(value.taskId)
-    && isNullableString(value.branch)
-    && (value.reason === 'dirty' || value.reason === 'unreadable' || value.reason === 'unrecognized');
-}
-
-/** Validates the API/firehose registry at the browser boundary. */
-export function isFlaggedWorktreesSnapshot(value: unknown): value is { worktrees: FlaggedWorktree[] } {
-  return isRecord(value) && Array.isArray(value.worktrees) && value.worktrees.every(isFlaggedWorktree);
-}
-
-/**
- * A flagged-worktrees event is a complete registry snapshot, not a delta —
- * the reconciler rebuilds it in full every pass, so replacing the prior list
- * drops a worktree that was disposed of (or reconciled clean) since.
- */
-export function mergeFlaggedWorktrees(_previous: readonly FlaggedWorktree[], next: readonly FlaggedWorktree[]): FlaggedWorktree[] {
+export function mergeWorktrees(_previous: readonly WorktreeInventoryEntry[], next: readonly WorktreeInventoryEntry[]): WorktreeInventoryEntry[] {
   return [...next];
-}
-
-export function flaggedWorktreeReasonLabel(reason: FlaggedWorktree['reason']): string {
-  switch (reason) {
-    case 'dirty':
-      return 'Dirty';
-    case 'unreadable':
-      return 'Unreadable';
-    case 'unrecognized':
-      return 'Unrecognized';
-  }
 }

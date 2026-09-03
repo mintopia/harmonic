@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, realpathSync, rmSync } from 'node:fs';
+import { access, lstat, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import type { Attributes } from '@opentelemetry/api';
@@ -373,6 +374,31 @@ export const Git = {
       if (current) entries.push(current);
       return entries;
     });
+  },
+
+  async worktreeSize(path: string): Promise<number> {
+    let total = 0;
+    const pending = [path];
+    while (pending.length > 0) {
+      const batch = pending.splice(0, 64);
+      await forEachYielding(batch, async (entry) => {
+        const stat = await lstat(entry);
+        total += stat.size;
+        if (!stat.isDirectory() || stat.isSymbolicLink()) return;
+        const children = await readdir(entry);
+        pending.push(...children.map((child) => join(entry, child)));
+      });
+    }
+    return total;
+  },
+
+  async pathExists(path: string): Promise<boolean> {
+    try {
+      await access(path);
+      return true;
+    } catch {
+      return false;
+    }
   },
 
   /** Snapshot everything in the worktree onto its branch; no-op when clean. */
