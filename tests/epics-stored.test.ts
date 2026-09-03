@@ -83,12 +83,12 @@ describe('stored Epic spine (ADR-0018, #437)', () => {
     expect(await tasks.epicKind(wsId, 999)).toBeNull();
   });
 
-  it('a bare parent of work Tasks (not epic-type) gets no row', async () => {
+  it('a root parent of work Tasks is a structural Epic without a label', async () => {
     await mirrorScan(tasks, [
       ticket({ number: 10, title: 'Task with subtasks' }),
       ticket({ number: 11, parent: 10 }),
     ], wsId);
-    expect(await readEpics()).toEqual([]);
+    expect((await readEpics()).map((r) => [r.trackerRef, r.kind])).toEqual([[10, 'epic']]);
   });
 
   it('kind updates on re-scan when labels/structure change', async () => {

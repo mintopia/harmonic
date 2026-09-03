@@ -124,11 +124,20 @@ describe('deriveStoredEpics', () => {
     expect(deriveStoredEpics(tickets)).toEqual([{ ref: 10, kind: 'epic' }]);
   });
 
-  it('a bare parent of work Tasks (no epic label, not a Map) is not a stored Epic', () => {
+  it('a root parent of work Tasks is a structural Epic without an epic label or Map marker', () => {
     const tickets = [
       ticket({ number: 10, title: 'Task with subtasks' }),
       ticket({ number: 11, parent: 10 }),
       ticket({ number: 12, parent: 10 }),
+    ];
+    expect(deriveStoredEpics(tickets)).toEqual([{ ref: 10, kind: 'epic' }]);
+  });
+
+  it('a bare mid-spine parent (has its own parent, no label) is not a stored Epic', () => {
+    const tickets = [
+      ticket({ number: 10, title: 'Root', labels: [EPIC_LABEL] }),
+      ticket({ number: 11, title: 'Mid', parent: 10 }),
+      ticket({ number: 12, parent: 11 }),
     ];
     expect(deriveStoredEpics(tickets)).toEqual([]);
   });

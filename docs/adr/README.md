@@ -39,6 +39,8 @@ not-yet-torn-down machinery is marked `legacy until ADR-1 epic`.
 | 0019 | [Code & architecture review remediation](0019-code-and-architecture-review-remediation.md) |
 | 0020 | [Task lifecycle state machine](0020-task-lifecycle-state-machine.md) |
 | 0021 | [Second code, architecture & product review remediation](0021-second-review-remediation.md) |
+| 0022 | [Configuration layering, modified state, and the per-harness model catalog](0022-configuration-layering-and-model-catalog.md) |
+| 0023 | [A root ticket with children is a structural Epic, no label required](0023-structural-root-epics.md) |
 
 ## Where every pre-reset ADR went
 

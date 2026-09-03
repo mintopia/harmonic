@@ -103,13 +103,18 @@ function storedEpicKind(epic: Ticket): StoredEpicKind {
 }
 
 /**
- * Derive the leaf-most epic-type containers a scan should persist as stored
- * Epics: each open, label-identified Epic (a Map or an `epic`-labelled
- * container) that is leaf-most and has ≥1 member, tagged with its `kind`.
+ * Derive the leaf-most containers a scan should persist as stored Epics: each
+ * open, leaf-most container with ≥1 member that is either label-identified (a
+ * Map or an `epic`-labelled Epic) or a structural Epic — a root ticket (no
+ * parent) that groups work, which needs no `epic` label to count. Matches the
+ * root-container `isEpic` flag the mirror already sets on such a Task.
  */
 export function deriveStoredEpics(tickets: Ticket[]): StoredEpicRecord[] {
   return leafMostContainers(indexTickets(tickets))
-    .filter(({ container, children }) => isEpicTypeContainer(container) && children.length > 0)
+    .filter(
+      ({ container, children }) =>
+        children.length > 0 && (isEpicTypeContainer(container) || container.parent == null),
+    )
     .map(({ container }) => ({ ref: container.number, kind: storedEpicKind(container) }))
     .sort((a, b) => a.ref - b.ref);
 }
