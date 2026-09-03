@@ -21,7 +21,7 @@ describe('OperationsPage', () => {
     expect(html).toContain('span-tree-slot');
   });
 
-  it('renders the read-only scheduled jobs table with failing and disabled jobs distinct', () => {
+  it('renders scheduled jobs as a compact read-only strip', () => {
     const html = renderToStaticMarkup(
       createElement(ScheduledJobsTable, {
         now: 2_000,
@@ -33,13 +33,22 @@ describe('OperationsPage', () => {
       }),
     );
 
-    for (const header of ['Name', 'Scope', 'Interval', 'Last run', 'Last duration', 'Result', 'Next run', 'Status', 'Operation']) {
+    for (const header of ['Name', 'Cadence', 'Next run', 'Result']) {
       expect(html).toContain(`>${header}<`);
     }
-    expect(html).toContain('Workspace');
+    expect(html).toContain('60s');
+    expect(html).toContain('—');
     expect(html).toContain('Error');
-    expect(html).toContain('Tracker will not resolve');
-    expect(html).toContain('Disabled');
+    expect(html).not.toContain('Scope');
+    expect(html).not.toContain('Last run');
+    expect(html).not.toContain('Last duration');
+    expect(html).not.toContain('Status');
+    expect(html).not.toContain('Operation');
+    expect(html).not.toContain('Workspace');
+    expect(html).toContain('<dt class="sr-only">Cadence</dt>');
+    expect(html).toContain('aria-label="Error: Tracker will not resolve"');
+    expect(html).toContain('title="Tracker will not resolve"');
+    expect(html).not.toContain('Disabled');
     expect(html).not.toContain('<button');
   });
 });
