@@ -84,11 +84,7 @@ function ToolCard({ row }: { row: Extract<ChatRow, { kind: 'tool' }> }) {
 }
 
 function ThoughtMessage({ text }: { text: string }) {
-  return (
-    <p className="ml-10 whitespace-pre-wrap break-words border-l-2 border-hairline pl-3 text-[13px] italic leading-relaxed text-muted">
-      {text}
-    </p>
-  );
+  return <Markdown source={text} className="ml-10 break-words border-l-2 border-hairline pl-3 text-[13px] italic leading-relaxed text-muted" />;
 }
 
 function Note({ row }: { row: Extract<ChatRow, { kind: 'note' }> }) {

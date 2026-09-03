@@ -5,7 +5,7 @@ import { dominantModel, foldModels, usageFromModels, type ParsedSession, type Pr
 import { forEachYielding } from '../../reliability/yield.js';
 import type { HarnessAdapter, ModelUsage, SessionTailReader } from './adapter.js';
 import { LineCursor, type LineAccumulator } from './incremental-log.js';
-import { asRecord, contentText, timestamp, withTarget, type TranscriptLogEvent } from './transcript.js';
+import { asRecord, contentText, oneLine, timestamp, withTarget, type TranscriptLogEvent } from './transcript.js';
 
 const num = (v: unknown): number => (typeof v === 'number' ? v : 0);
 
@@ -359,6 +359,59 @@ const responseMessage = (entry: unknown): string | null => {
   return record?.type === 'response_item' && payload?.type === 'message' && payload.role === 'assistant' ? contentText(payload.content) : null;
 };
 
+/**
+ * Codex's `exec` tool can carry a freeform JS snippet that drives the sandbox
+ * instead of a plain command: `tools.exec_command({cmd})` runs shell,
+ * `tools.apply_patch(patch)` edits files, `tools.mcp__<server>__<tool>({...})`
+ * calls an MCP tool. Unwrap it to the underlying action so the transcript shows
+ * the command, not the harness plumbing wrapped around it. A shell call reduces
+ * to the same `exec <cmd>` title the structured `{"command":[…]}` form yields.
+ */
+function isExecScript(name: string, input: unknown): input is string {
+  return name === 'exec' && typeof input === 'string' && /tools\.\w+\s*\(|^\s*const\s|\*\*\* (?:Add|Update|Delete) File:/.test(input);
+}
+
+function codexExecTitle(src: string): string {
+  const files = [...src.matchAll(/\*\*\* (?:Add|Update|Delete) File: ([^"\\\n]+)/g)].map((m) => m[1]!.trim());
+  if (files.length) return oneLine(`apply_patch ${files[0]}${files.length > 1 ? ` (+${files.length - 1})` : ''}`);
+  const cmds = [...src.matchAll(/"cmd"\s*:\s*("(?:\\.|[^"\\])*")/g)]
+    .map((m) => {
+      try {
+        return JSON.parse(m[1]!) as string;
+      } catch {
+        return null;
+      }
+    })
+    .filter((cmd): cmd is string => cmd !== null);
+  if (cmds.length) return oneLine(`exec ${cmds[0]}${cmds.length > 1 ? ` (+${cmds.length - 1})` : ''}`);
+  const mcp = /tools\.mcp__(.+?)__([A-Za-z0-9_]+)\s*\(\s*\{([^]*?)\}/.exec(src);
+  if (mcp) {
+    const action = /\baction\s*:\s*["']([^"']+)["']/.exec(mcp[3]!)?.[1];
+    return oneLine(`${mcp[1]}.${mcp[2]}${action ? ` ${action}` : ''}`);
+  }
+  const other = /tools\.([A-Za-z0-9_]+)\s*\(/.exec(src);
+  if (other) return other[1]!;
+  return oneLine(`exec ${src}`);
+}
+
+/**
+ * Codex's `collaboration` function calls carry an encrypted `message` payload
+ * that {@link withTarget} would otherwise surface as an opaque blob; prefer the
+ * readable spawn/followup target so the transcript names the delegated agent.
+ */
+function codexCallTitle(qualified: string, args: unknown): string {
+  let record = asRecord(args);
+  if (typeof args === 'string') {
+    try {
+      record = asRecord(JSON.parse(args));
+    } catch {
+      record = null;
+    }
+  }
+  const label = record?.task_name ?? record?.target;
+  return typeof label === 'string' && label ? `${qualified} ${oneLine(label)}` : withTarget(qualified, args);
+}
+
 function transcriptEvents(entry: unknown, firstId: number): TranscriptLogEvent[] {
   const record = asRecord(entry);
   const payload = asRecord(record?.payload);
@@ -375,14 +428,20 @@ function transcriptEvents(entry: unknown, firstId: number): TranscriptLogEvent[]
     for (const part of payload.summary) {
       const block = asRecord(part);
       const text = block && (block.type === 'summary_text' || block.type === 'text') ? block.text : null;
-      if (typeof text === 'string' && text) push({ sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text } });
+      // Each Codex reasoning summary is a whole markdown block, not a streaming
+      // delta; the transcript coalescer concatenates same-variant chunks with no
+      // separator, so a trailing blank line keeps consecutive summaries from
+      // fusing into one run (`**A****B**`) when rendered as markdown.
+      if (typeof text === 'string' && text) push({ sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: `${text}\n\n` } });
     }
   }
   if (record.type === 'response_item' && (payload.type === 'custom_tool_call' || payload.type === 'function_call')) {
     const name = typeof payload.name === 'string' ? payload.name : 'Tool call';
     const qualified = typeof payload.namespace === 'string' && payload.namespace ? `${payload.namespace}.${name}` : name;
     const callId = typeof payload.call_id === 'string' ? payload.call_id : typeof payload.id === 'string' ? payload.id : qualified;
-    push({ sessionUpdate: 'tool_call', toolCallId: callId, title: withTarget(qualified, payload.input ?? payload.arguments), status: 'completed' });
+    const input = payload.input ?? payload.arguments;
+    const title = isExecScript(name, input) ? codexExecTitle(input) : codexCallTitle(qualified, input);
+    push({ sessionUpdate: 'tool_call', toolCallId: callId, title, status: 'completed' });
   }
   return events;
 }

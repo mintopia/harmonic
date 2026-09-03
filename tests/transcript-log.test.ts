@@ -48,7 +48,7 @@ describe('native transcript log parser', () => {
     ).resolves.toEqual({
       status: 'available',
       events: [
-        { id: 1, seq: 1, ts: Date.parse('2026-08-21T10:01:00.000Z'), type: 'session_update', payload: { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: 'planning the edit' } } },
+        { id: 1, seq: 1, ts: Date.parse('2026-08-21T10:01:00.000Z'), type: 'session_update', payload: { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: 'planning the edit\n\n' } } },
         { id: 2, seq: 2, ts: Date.parse('2026-08-21T10:01:01.000Z'), type: 'session_update', payload: { sessionUpdate: 'tool_call', toolCallId: 'call_a', title: 'exec ls', status: 'completed' } },
         { id: 3, seq: 3, ts: Date.parse('2026-08-21T10:01:02.000Z'), type: 'session_update', payload: { sessionUpdate: 'tool_call', toolCallId: 'fc_1', title: 'collaboration.send_message', status: 'completed' } },
       ],
@@ -146,6 +146,32 @@ describe('native transcript log parser', () => {
     await expect(readTranscriptLog({ harness: 'claude', path: claude, startedAt: 0, finishedAt: null })).resolves.toMatchObject({
       status: 'available',
       events: [{ payload: { title: 'Edit web/src/ui.ts' } }],
+    });
+  });
+
+  it('unwraps a Codex exec JS harness snippet to the underlying action', async () => {
+    const title = async (input: string) => {
+      const file = join(mkdtempSync(join(tmpdir(), 'harmonic-codex-log-')), 'rollout.jsonl');
+      writeFileSync(file, JSON.stringify({ timestamp: '2026-08-21T10:01:00.000Z', type: 'response_item', payload: { type: 'custom_tool_call', call_id: 'c', name: 'exec', input } }));
+      const log = await readTranscriptLog({ harness: 'codex', path: file, startedAt: 0, finishedAt: null });
+      return log.status === 'available' ? (log.events[0]!.payload as { title: string }).title : null;
+    };
+
+    expect(await title('const r = await tools.exec_command({"cmd":"npm test","workdir":"/w","yield_time_ms":10000});\ntext(r.output);')).toBe('exec npm test');
+    expect(await title('const patch = "*** Begin Patch\\n*** Update File: web/src/ui.ts\\n"; await tools.apply_patch(patch);')).toBe('apply_patch web/src/ui.ts');
+    expect(await title('const r = await tools.mcp__jcodemunch__order({action:"get_ranked_context",args:{repo:"x"}}); text(r);')).toBe('jcodemunch.order get_ranked_context');
+    expect(await title('const matches = ALL_TOOLS.filter(x => /comment/i.test(x.name)); text(matches);')).toBe('exec const matches = ALL_TOOLS.filter(x => /comment/i.test(x.name)); text(matches);');
+  });
+
+  it('names a Codex spawn_agent by its task instead of its encrypted message', async () => {
+    const file = join(mkdtempSync(join(tmpdir(), 'harmonic-codex-log-')), 'rollout.jsonl');
+    writeFileSync(
+      file,
+      JSON.stringify({ timestamp: '2026-08-21T10:01:00.000Z', type: 'response_item', payload: { type: 'function_call', id: 'fc', name: 'spawn_agent', namespace: 'collaboration', arguments: JSON.stringify({ task_name: 'issue_analysis', model: 'gpt-5.6-sol', message: 'gAAAAABopaqueblob' }) } }),
+    );
+    await expect(readTranscriptLog({ harness: 'codex', path: file, startedAt: 0, finishedAt: null })).resolves.toMatchObject({
+      status: 'available',
+      events: [{ payload: { title: 'collaboration.spawn_agent issue_analysis' } }],
     });
   });
 });

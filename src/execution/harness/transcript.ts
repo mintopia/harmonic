@@ -67,7 +67,7 @@ export function withTarget(name: string, rawInput: unknown): string {
   return name;
 }
 
-function oneLine(text: string): string {
+export function oneLine(text: string): string {
   const collapsed = text.replace(/\s+/g, ' ').trim();
   return collapsed.length > 240 ? `${collapsed.slice(0, 240)}…` : collapsed;
 }
