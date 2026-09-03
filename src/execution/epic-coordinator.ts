@@ -79,6 +79,10 @@ export interface EpicIntegrateTarget {
   memberRefs?: number[];
 }
 
+function withEpicTitle(title: string | undefined): { epicTitle?: string } {
+  return title === undefined ? {} : { epicTitle: title };
+}
+
 /** Persist a completed Epic integration onto its stored record: the merge-commit
  * hash (null for a no-op finish where the branch already matched base) and the
  * member-ref snapshot. */
@@ -173,7 +177,7 @@ export class EpicCoordinator {
       return await this.operations.run({
         repoDir: this.repoDir,
         epicRef: target.ref,
-        epicTitle: target.title,
+        ...withEpicTitle(target.title),
         type: 'integrate',
         attributes: { 'epic.integration_branch': integrationBranchName(target.ref) },
         work: () => this.attempt(target, force),
@@ -239,7 +243,7 @@ export class EpicCoordinator {
       verification = await this.operations.run({
         repoDir: this.repoDir,
         epicRef: target.ref,
-        epicTitle: target.title,
+        ...withEpicTitle(target.title),
         type: 'verify',
         attributes: { 'git.verified_head_oid': verifiedHeadOid },
         work: () => this.verify({ repoDir: this.repoDir, verifiedHeadOid }),
@@ -264,7 +268,7 @@ export class EpicCoordinator {
     const integrated = await this.operations.run({
       repoDir: this.repoDir,
       epicRef: target.ref,
-      epicTitle: target.title,
+      ...withEpicTitle(target.title),
       type: 'merge',
       attributes: { 'git.base_branch': defaultBranch, 'git.branch': branch },
       work: () => this.integrate({ repoDir: this.repoDir, epicRef: target.ref, defaultBranch, integrationBranch: branch }),
@@ -358,7 +362,7 @@ export class EpicCoordinator {
       await this.operations.run({
         repoDir: this.repoDir,
         epicRef: ref,
-        epicTitle: title,
+        ...withEpicTitle(title),
         type: 'retire',
         work: () => this.retire(ref),
       });
