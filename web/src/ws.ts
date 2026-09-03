@@ -10,7 +10,7 @@ import type {
   Task,
 } from './types.js';
 import type { ScheduledJob } from './scheduled-jobs-model.js';
-import type { FlaggedWorktree } from './flagged-worktrees-model.js';
+import type { WorktreeInventoryEntry } from './worktree-inventory-model.js';
 
 export interface OperationEvent {
   type: 'op-started' | 'op-updated' | 'op-ended';
@@ -46,7 +46,7 @@ export type ServerMessage =
   | ({ type: 'attempt_usage' } & AttemptUsageEvent)
   | { type: 'operations'; event: OperationEvent }
   | { type: 'scheduled-jobs'; jobs: ScheduledJob[] }
-  | { type: 'flagged-worktrees'; flags: FlaggedWorktree[] }
+  | { type: 'worktrees'; worktrees: WorktreeInventoryEntry[] }
   | { type: 'conversation_event'; event: ConversationEvent }
   | { type: 'conversation_changed'; conversation: Conversation }
   // The Harness is blocked on this ACP permission request until

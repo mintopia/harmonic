@@ -7,15 +7,16 @@ export type EpicOperationType = 'cut' | 'member-merge' | 'git.rebase' | 'git.fas
 export class EpicOperations {
   private readonly roots = new Map<string, Operation>();
 
-  run<T>({ repoDir, epicRef, type, attributes = {}, parent, work }: {
+  run<T>({ repoDir, epicRef, epicTitle, type, attributes = {}, parent, work }: {
     repoDir: string;
     epicRef: number;
+    epicTitle?: string;
     type: EpicOperationType;
     attributes?: Attributes;
     parent?: Operation;
     work: (operation: Operation) => Promise<T>;
   }): Promise<T> {
-    const root = this.root(repoDir, epicRef);
+    const root = this.root(repoDir, epicRef, epicTitle);
     const operation = startOperation({
       type: `epic.${type}`,
       attributes: { 'epic.ref': epicRef, ...attributes },
@@ -52,11 +53,14 @@ export class EpicOperations {
     return this.roots.has(this.key(repoDir, epicRef));
   }
 
-  private root(repoDir: string, epicRef: number): Operation {
+  private root(repoDir: string, epicRef: number, epicTitle?: string): Operation {
     const key = this.key(repoDir, epicRef);
     const current = this.roots.get(key);
     if (current) return current;
-    const root = startOperation({ type: 'epic', attributes: { 'epic.ref': epicRef, 'epic.repo_dir': repoDir } });
+    const root = startOperation({
+      type: 'epic',
+      attributes: { 'epic.ref': epicRef, 'epic.repo_dir': repoDir, ...(epicTitle === undefined ? {} : { 'epic.title': epicTitle }) },
+    });
     this.roots.set(key, root);
     return root;
   }

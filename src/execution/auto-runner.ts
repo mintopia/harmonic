@@ -15,9 +15,11 @@ function failureReason(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function taskOperationAttributes(task: Pick<TaskRow, 'id' | 'origin' | 'priority' | 'workspaceId'>): Record<string, string | number> {
+function taskOperationAttributes(task: Pick<TaskRow, 'id' | 'origin' | 'priority' | 'workspaceId' | 'prompt' | 'trackerTitle'>): Record<string, string | number> {
+  const title = task.trackerTitle ?? task.prompt.split('\n').find((line) => line.trim().length > 0)?.trim() ?? `Task ${task.id}`;
   return {
     'task.id': task.id,
+    'task.title': title,
     'task.origin': task.origin,
     'task.priority': task.priority,
     ...(task.workspaceId == null ? {} : { 'workspace.id': task.workspaceId }),

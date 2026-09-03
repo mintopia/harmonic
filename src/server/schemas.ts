@@ -247,17 +247,21 @@ export const scheduledJobSchema = z
   })
   .meta({ id: 'ScheduledJob' });
 
-/** A managed worktree the reconciler will not delete until an operator disposes of it by hand. */
-export const flaggedWorktreeSchema = z
+export const worktreeInventorySchema = z
   .object({
+    id: z.string().meta({ example: 'WzEsIi9kYXRhL3dvcmt0cmVlcy90YXNrLTQyIl0' }),
     path: z.string().meta({ example: '/data/worktrees/task-42' }),
-    repoDir: z.string().meta({ example: '/home/operator/repo' }),
     workspaceId: z.number().meta({ example: 1 }),
-    taskId: z.number().nullable().meta({ example: 42 }),
     branch: z.string().nullable().meta({ example: 'harmonic/task-42' }),
-    reason: z.enum(['dirty', 'unreadable', 'unrecognized']).meta({ example: 'dirty' }),
+    subject: z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('task'), taskId: z.number(), title: z.string() }),
+      z.object({ kind: z.literal('epic'), epicRef: z.number(), title: z.string() }),
+    ]).nullable(),
+    sizeBytes: z.number().int().nonnegative().nullable().meta({ example: 1048576 }),
+    dirty: z.boolean().nullable().meta({ example: false }),
+    state: z.enum(['Active', 'Stale', 'Dirty', 'Unreadable', 'Orphan', 'Missing']).meta({ example: 'Active' }),
   })
-  .meta({ id: 'FlaggedWorktree' });
+  .meta({ id: 'WorktreeInventoryEntry' });
 
 /** One live or recently-completed Operation, recursive through `children`. */
 export const operationSchema = z

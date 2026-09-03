@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, realpathSync, rmSync } from 'node:fs';
+import { access, lstat, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import type { Attributes } from '@opentelemetry/api';
@@ -104,6 +105,19 @@ export const Git = {
    * staged, or untracked). Empty `git status --porcelain` output → clean. */
   async isDirty(dir: string): Promise<boolean> {
     return (await git(dir, 'status', '--porcelain')).length > 0;
+  },
+
+  /** Paths whose working-tree changes a forced cleanup would discard. */
+  async dirtyFiles(dir: string): Promise<string[]> {
+    const records = (await git(dir, 'status', '--porcelain', '-z')).split('\0');
+    const files: string[] = [];
+    for (let index = 0; index < records.length - 1; index += 1) {
+      const record = records[index]!;
+      const status = record.slice(0, 2);
+      files.push(record.slice(3));
+      if (status[0] === 'R' || status[0] === 'C' || status[1] === 'R' || status[1] === 'C') index += 1;
+    }
+    return files;
   },
 
   /**
@@ -373,6 +387,31 @@ export const Git = {
       if (current) entries.push(current);
       return entries;
     });
+  },
+
+  async worktreeSize(path: string): Promise<number> {
+    let total = 0;
+    const pending = [path];
+    while (pending.length > 0) {
+      const batch = pending.splice(0, 64);
+      await forEachYielding(batch, async (entry) => {
+        const stat = await lstat(entry);
+        total += stat.size;
+        if (!stat.isDirectory() || stat.isSymbolicLink()) return;
+        const children = await readdir(entry);
+        pending.push(...children.map((child) => join(entry, child)));
+      });
+    }
+    return total;
+  },
+
+  async pathExists(path: string): Promise<boolean> {
+    try {
+      await access(path);
+      return true;
+    } catch {
+      return false;
+    }
   },
 
   /** Snapshot everything in the worktree onto its branch; no-op when clean. */

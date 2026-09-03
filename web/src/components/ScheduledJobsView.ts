@@ -1,61 +1,48 @@
 import { createElement, useState } from 'react';
 import {
   formatScheduledJobDuration,
-  formatScheduledJobLastRun,
   formatScheduledJobNextRun,
   isScheduledJobsSnapshot,
   mergeScheduledJobs,
-  scheduledJobScope,
   type ScheduledJob,
 } from '../scheduled-jobs-model.js';
 import { subscribe } from '../ws.js';
-import { card, chip, tableHead } from '../ui.js';
+import { card, labelType } from '../ui.js';
 import { useLiveEffect } from '../useLiveEffect.js';
 
-const GRID = 'grid grid-cols-[minmax(10rem,1.5fr)_7rem_6rem_7rem_7rem_minmax(10rem,1fr)_7rem_6rem_7rem] gap-x-4 px-4';
+const STRIP = 'grid grid-cols-[minmax(10rem,1.5fr)_minmax(5rem,auto)_minmax(6rem,auto)_minmax(6rem,1fr)] items-center gap-x-4 px-4';
 
 function empty() {
   return createElement('span', { className: 'text-muted' }, '—');
-}
-
-function OperationCell({ job }: { job: ScheduledJob }) {
-  if (job.lastOperationSpanId === null) return empty();
-  return createElement(
-    'a',
-    {
-      href: `#operation-${job.lastOperationSpanId}`,
-      className: 'truncate font-mono text-small text-muted hover:text-ink hover:underline',
-      title: `Firing span ${job.lastOperationSpanId}`,
-    },
-    job.lastOperationSpanId.slice(0, 8),
-  );
 }
 
 function ResultCell({ job }: { job: ScheduledJob }) {
   if (job.lastStatus === null) return empty();
   const failed = job.lastStatus === 'error';
   return createElement(
-    'div',
-    { className: `min-w-0 ${failed ? 'text-fail' : 'text-done'}` },
-    createElement('div', { className: 'font-medium' }, failed ? 'Error' : 'OK'),
-    failed && job.lastError && createElement('div', { className: 'truncate text-small', title: job.lastError }, job.lastError),
+    'span',
+    {
+      'aria-label': failed && job.lastError ? `Error: ${job.lastError}` : undefined,
+      className: `font-medium ${failed ? 'text-fail' : 'text-done'}`,
+      title: failed ? job.lastError ?? undefined : undefined,
+    },
+    failed ? 'Error' : 'OK',
   );
 }
 
 function ScheduledJobRow({ job, now }: { job: ScheduledJob; now: number }) {
   const disabled = job.status === 'disabled';
   return createElement(
-    'div',
-    { role: 'row', className: `${GRID} items-center border-t border-hairline py-3 ${disabled ? 'bg-raised/60 text-muted' : ''}` },
-    createElement('div', { role: 'cell', className: 'min-w-0 truncate font-medium text-ink', title: job.name }, job.name),
-    createElement('div', { role: 'cell', className: 'text-small text-muted' }, scheduledJobScope(job)),
-    createElement('div', { role: 'cell', className: 'tabular-nums text-small text-muted' }, formatScheduledJobDuration(job.intervalMs)),
-    createElement('div', { role: 'cell', className: 'tabular-nums text-small text-muted' }, formatScheduledJobLastRun(job.lastRunAt, now) ?? empty()),
-    createElement('div', { role: 'cell', className: 'tabular-nums text-small text-muted' }, formatScheduledJobDuration(job.lastDurationMs) ?? empty()),
-    createElement('div', { role: 'cell' }, createElement(ResultCell, { job })),
-    createElement('div', { role: 'cell', className: 'tabular-nums text-small text-muted' }, formatScheduledJobNextRun(job.nextRunAt, now) ?? empty()),
-    createElement('div', { role: 'cell' }, createElement('span', { className: `${chip} ${disabled ? 'bg-raised text-muted' : 'bg-ready-tint text-ready'}` }, disabled ? 'Disabled' : 'Active')),
-    createElement('div', { role: 'cell', className: 'min-w-0' }, createElement(OperationCell, { job })),
+    'li',
+    { className: `border-t border-hairline ${disabled ? 'bg-raised/60' : ''}` },
+    createElement(
+      'dl',
+      { className: `${STRIP} py-3` },
+      createElement('div', { className: 'min-w-0' }, createElement('dt', { className: 'sr-only' }, 'Name'), createElement('dd', { className: 'truncate font-medium text-ink', title: job.name }, job.name)),
+      createElement('div', null, createElement('dt', { className: 'sr-only' }, 'Cadence'), createElement('dd', { className: 'tabular-nums text-small text-muted' }, formatScheduledJobDuration(job.intervalMs))),
+      createElement('div', null, createElement('dt', { className: 'sr-only' }, 'Next run'), createElement('dd', { className: 'tabular-nums text-small text-muted' }, formatScheduledJobNextRun(job.nextRunAt, now) ?? empty())),
+      createElement('div', { className: 'min-w-0' }, createElement('dt', { className: 'sr-only' }, 'Result'), createElement('dd', null, createElement(ResultCell, { job }))),
+    ),
   );
 }
 
@@ -63,19 +50,13 @@ function ScheduledJobRow({ job, now }: { job: ScheduledJob; now: number }) {
 export function ScheduledJobsTable({ jobs, now }: { jobs: ScheduledJob[]; now: number }) {
   return createElement(
     'div',
-    { role: 'table', 'aria-label': 'Scheduled jobs', className: `${card} overflow-x-auto` },
+    { className: card },
     createElement(
       'div',
-      { role: 'rowgroup' },
-      createElement(
-        'div',
-        { role: 'row', className: `${GRID} min-w-[55rem] py-2.5 ${tableHead}` },
-        ...['Name', 'Scope', 'Interval', 'Last run', 'Last duration', 'Result', 'Next run', 'Status', 'Operation'].map((label) =>
-          createElement('span', { key: label, role: 'columnheader' }, label),
-        ),
-      ),
+      { 'aria-hidden': true, className: `${STRIP} py-2.5 ${labelType} text-muted` },
+      ...['Name', 'Cadence', 'Next run', 'Result'].map((label) => createElement('span', { key: label }, label)),
     ),
-    createElement('div', { role: 'rowgroup', className: 'min-w-[55rem]' }, jobs.map((job) => createElement(ScheduledJobRow, { key: job.jobKey, job, now }))),
+    createElement('ul', { 'aria-label': 'Scheduled jobs' }, jobs.map((job) => createElement(ScheduledJobRow, { key: job.jobKey, job, now }))),
   );
 }
 

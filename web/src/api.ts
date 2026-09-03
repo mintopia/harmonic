@@ -26,6 +26,7 @@ import type {
 } from './types.js';
 import type { Epic, EpicIntegrateOutcome } from './epic-model.js';
 import type { Stats } from './stats-model.js';
+import type { WorktreeInventoryEntry } from './worktree-inventory-model.js';
 
 class ApiError extends Error {
   constructor(
@@ -83,6 +84,16 @@ export const api = {
   // path starts at the server user's home. Operator-only (full-scope session).
   browseFs: (path?: string) =>
     request<FsListing>('GET', path ? `/api/fs?path=${encodeURIComponent(path)}` : '/api/fs'),
+  worktrees: ({ limit, offset }: { limit?: number; offset?: number } = {}) => {
+    const params = new URLSearchParams();
+    if (limit !== undefined) params.set('limit', String(limit));
+    if (offset !== undefined) params.set('offset', String(offset));
+    const query = params.toString();
+    return request<{ worktrees: WorktreeInventoryEntry[]; total: number }>('GET', query ? `/api/worktrees?${query}` : '/api/worktrees');
+  },
+  dirtyWorktreeFiles: (id: string) => request<{ files: string[] }>('GET', `/api/worktrees/${encodeURIComponent(id)}/dirty-files`),
+  cleanupWorktree: (id: string) => request<{ removed: boolean }>('POST', `/api/worktrees/${encodeURIComponent(id)}/cleanup`),
+  reconcileWorktrees: () => request<{ removed: number; recreated: number; flagged: number }>('POST', '/api/operations/reconcile'),
   workspaces: () => request<{ workspaces: Workspace[]; total: number }>('GET', '/api/workspaces'),
   createWorkspace: (input: { name: string; workingDir: string }) =>
     request<Workspace>('POST', '/api/workspaces', input),

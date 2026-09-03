@@ -24,7 +24,7 @@ describe('Epic Operations (issue #291)', () => {
   it('keeps cut, member work, healing, verification, integration, and retirement under one root across ticks', async () => {
     const exporter = installOperations();
     const operations = new EpicOperations();
-    const context = { repoDir: '/workspaces/harmonic', epicRef: 291 };
+    const context = { repoDir: '/workspaces/harmonic', epicRef: 291, epicTitle: 'Operations refinement' };
 
     for (const type of ['cut', 'member-merge', 'heal', 'member-merge', 'verify', 'merge', 'retire'] as const) {
       await operations.run({ ...context, type, work: async () => {} });
@@ -35,6 +35,7 @@ describe('Epic Operations (issue #291)', () => {
     const root = spans.find((span) => span.name === 'harmonic.epic');
     if (!root) throw new Error('Expected Epic root Operation');
     expect(spans.filter((span) => span.name === 'harmonic.epic').length).toBe(1);
+    expect(root.attributes['epic.title']).toBe('Operations refinement');
     for (const span of spans.filter((span) => span.name !== 'harmonic.epic')) {
       expect(span.parentSpanContext?.spanId).toBe(root.spanContext().spanId);
     }
