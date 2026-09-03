@@ -66,11 +66,12 @@ function ForceAcceptButton({ className, onConfirm, busy }: { className: string; 
   );
 }
 
-function CloseButton({ className, label, onConfirm }: { className: string; label: string; onConfirm: () => void }) {
+function CloseButton({ className, label, onConfirm, disabled }: { className: string; label: string; onConfirm: () => void; disabled?: boolean }) {
   const { armed, trigger, ref } = useArmedConfirm(onConfirm);
   return (
     <button
       ref={ref}
+      disabled={disabled}
       className={armed ? 'font-semibold text-fail transition-colors duration-150' : className}
       onClick={trigger}
     >
@@ -100,6 +101,11 @@ export function TaskActions({
 
   const actions = taskActions(task.state);
   const escalation = escalationActions(task);
+  // A merge in flight (Accept) is persisted on the Task, not just in this
+  // component's `accepting` flag — so the actions stay disabled across a reload
+  // or a leave-and-return, never handing the operator a second Accept/Reject
+  // that would race the merge.
+  const merging = task.mergeStatus === 'merging';
   if (variant === 'footer' && actions.length === 0) return null;
 
   const decision =
@@ -136,19 +142,19 @@ export function TaskActions({
         return (
           <Fragment key={action}>
             {decision && decision.outcome !== 'proceed' ? (
-              <AcceptButton className={btnAccept} label={label} onConfirm={onConfirm} busy={accepting} />
+              <AcceptButton className={btnAccept} label={label} onConfirm={onConfirm} busy={accepting || merging} />
             ) : (
-              <button className={btnAccept} onClick={onConfirm} disabled={accepting}>
-                {accepting ? 'Accepting…' : label}
+              <button className={btnAccept} onClick={onConfirm} disabled={accepting || merging}>
+                {accepting || merging ? 'Accepting…' : label}
               </button>
             )}
-            <ForceAcceptButton className={secondary} onConfirm={onForceConfirm} busy={accepting} />
+            <ForceAcceptButton className={secondary} onConfirm={onForceConfirm} busy={accepting || merging} />
           </Fragment>
         );
       }
       case 'reject':
         return (
-          <button key={action} className={btnReject} onClick={() => setRejecting(true)}>
+          <button key={action} className={btnReject} disabled={merging} onClick={() => setRejecting(true)}>
             {variant === 'footer' ? 'Reject with guidance…' : 'Reject'}
           </button>
         );
@@ -158,6 +164,7 @@ export function TaskActions({
             key={action}
             className={btnQuietDestructive}
             label={variant === 'footer' ? 'Close task' : 'Close'}
+            disabled={merging}
             onConfirm={actDone(() => api.closeTask(task.id), `${taskLabel(task.id)} closed`)}
           />
         );
@@ -197,7 +204,7 @@ export function TaskActions({
         );
       case 'delete':
         return (
-          <button key={action} className={btnQuietDestructive} onClick={() => setDeleting(true)}>
+          <button key={action} className={btnQuietDestructive} disabled={merging} onClick={() => setDeleting(true)}>
             Delete
           </button>
         );

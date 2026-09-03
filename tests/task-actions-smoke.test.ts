@@ -56,6 +56,17 @@ describe('TaskActions smoke (issue #469)', () => {
     expect(accept?.title).toBe('Branch is empty — nothing to merge');
   });
 
+  it('disables the escalation actions while an Accept is merging', async () => {
+    const task = makeTask({ id: 7, prompt: 'Add retry backoff', summary: 'Add retry backoff', state: 'escalated', hasCandidate: true, mergeStatus: 'merging' });
+
+    await renderActions({ task, variant: 'footer' });
+
+    const buttons = [...host!.querySelectorAll('button')];
+    expect(buttons.length).toBeGreaterThan(0);
+    for (const button of buttons) expect(button.disabled).toBe(true);
+    expect(buttons.some((b) => b.textContent === 'Accepting…')).toBe(true);
+  });
+
   it('calls the run API and onChanged when Run now is clicked', async () => {
     const task = makeTask({ id: 7, prompt: 'Add retry backoff', summary: 'Add retry backoff', state: 'ready' });
     let changed = false;
