@@ -8,7 +8,7 @@ export interface OperationForest {
 }
 
 const RECENT_LIMIT = 100;
-const SUPPRESSED_OPERATION_TYPES = new Set(['tracker.mirror.issue']);
+const SUPPRESSED_OPERATION_TYPES = new Set(['tracker.mirror.issue', 'harmonic.job']);
 
 function isSuppressed(operation: Operation): boolean {
   return SUPPRESSED_OPERATION_TYPES.has(operation.type);

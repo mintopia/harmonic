@@ -23,8 +23,8 @@ const operation = (attributes: Record<string, unknown>): Operation => ({
 describe('OperationsPage', () => {
   it('renders the worktree inventory controls and state-specific actions', () => {
     const worktrees: WorktreeInventoryEntry[] = [
-      { id: 'dirty', workspaceId: 1, path: '/worktrees/task-1', branch: 'harmonic/task-1', subject: { kind: 'task', taskId: 1, title: 'Dirty task' }, sizeBytes: 1_572_864, dirty: true, state: 'Dirty' },
-      { id: 'stale', workspaceId: 1, path: '/worktrees/task-2', branch: 'harmonic/task-2', subject: null, sizeBytes: 512, dirty: false, state: 'Stale' },
+      { id: 'dirty', workspaceId: 1, path: '/worktrees/task-1', branch: 'harmonic/task-1', subject: { kind: 'task', taskId: 1, title: 'Dirty task' }, sizeBytes: 1_572_864, dirty: true, changeCount: 3, state: 'Dirty' },
+      { id: 'stale', workspaceId: 1, path: '/worktrees/task-2', branch: 'harmonic/task-2', subject: null, sizeBytes: 512, dirty: false, changeCount: 0, state: 'Stale' },
     ];
     const html = renderToStaticMarkup(createElement(WorktreesTable, {
       worktrees,
@@ -34,12 +34,15 @@ describe('OperationsPage', () => {
       onForceCleanup: () => {},
     }));
 
-    for (const header of ['State', 'Branch', 'Subject', 'Size', 'Actions']) {
+    for (const header of ['Worktree', 'Branch', 'Subject', 'State', 'Changes', 'Size', 'Actions']) {
       expect(html).toContain(`>${header}<`);
     }
     expect(html).toContain('>Dirty<');
+    expect(html).toContain('>task-1<');
     expect(html).toContain('harmonic/task-1');
     expect(html).toContain('Task 1: Dirty task');
+    expect(html).toContain('>3 uncommitted<');
+    expect(html).toContain('>Clean<');
     expect(html).toContain('1.5 MB');
     expect(html).toContain('>Open</button>');
     expect(html).toContain('>Force cleanup</button>');

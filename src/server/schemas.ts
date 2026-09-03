@@ -259,6 +259,7 @@ export const worktreeInventorySchema = z
     ]).nullable(),
     sizeBytes: z.number().int().nonnegative().nullable().meta({ example: 1048576 }),
     dirty: z.boolean().nullable().meta({ example: false }),
+    changeCount: z.number().int().nonnegative().nullable().meta({ example: 3 }),
     state: z.enum(['Active', 'Stale', 'Dirty', 'Unreadable', 'Orphan', 'Missing']).meta({ example: 'Active' }),
   })
   .meta({ id: 'WorktreeInventoryEntry' });

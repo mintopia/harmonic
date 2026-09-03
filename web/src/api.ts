@@ -89,7 +89,7 @@ export const api = {
     if (limit !== undefined) params.set('limit', String(limit));
     if (offset !== undefined) params.set('offset', String(offset));
     const query = params.toString();
-    return request<{ worktrees: WorktreeInventoryEntry[]; total: number }>('GET', query ? `/api/worktrees?${query}` : '/api/worktrees');
+    return request<{ worktrees: WorktreeInventoryEntry[]; total: number; reconciledAt: number | null }>('GET', query ? `/api/worktrees?${query}` : '/api/worktrees');
   },
   dirtyWorktreeFiles: (id: string) => request<{ files: string[] }>('GET', `/api/worktrees/${encodeURIComponent(id)}/dirty-files`),
   cleanupWorktree: (id: string) => request<{ removed: boolean }>('POST', `/api/worktrees/${encodeURIComponent(id)}/cleanup`),

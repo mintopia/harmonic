@@ -1,9 +1,10 @@
 import { createElement, useState, type ReactNode } from 'react';
 import { operationForest, visibleOperationForest, type Operation, type OperationForest } from '../operations-model.js';
-import { card, displayTitle, labelType, sectionTitle } from '../ui.js';
+import type { WorktreeInventoryEntry } from '../worktree-inventory-model.js';
+import { btnPrimary, card, displayTitle, labelType } from '../ui.js';
 import { subscribe, type OperationEvent } from '../ws.js';
 import { ScheduledJobsView } from './ScheduledJobsView.js';
-import { WorktreeInventoryView } from './WorktreeInventoryView.js';
+import { CleanupDialog, sizeLabel, useWorktreeInventory, WorktreesTable } from './WorktreeInventoryView.js';
 import { useLiveEffect } from '../useLiveEffect.js';
 import type { Task } from '../types.js';
 import type { Epic } from '../epic-model.js';
@@ -11,11 +12,35 @@ import type { Epic } from '../epic-model.js';
 export interface OperationsPageProps {
   scheduledJobs?: ReactNode;
   spanTree?: ReactNode;
-  worktreeInventory?: ReactNode;
   tasks?: readonly Task[];
   epics?: readonly Epic[];
   onOpenTask?: (taskId: number) => void;
   onOpenEpic?: (epicRef: number) => void;
+}
+
+const ATTENTION_STATES = new Set(['Dirty', 'Unreadable', 'Orphan']);
+
+function reconciledLabel(reconciledAt: number): string {
+  const seconds = Math.max(0, Math.floor((Date.now() - reconciledAt) / 1_000));
+  if (seconds < 60) return 'reconciled just now';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `reconciled ${minutes}m ago`;
+  return `reconciled ${Math.floor(minutes / 60)}h ago`;
+}
+
+function WorktreeSummary({ worktrees, reconciledAt }: { worktrees: readonly WorktreeInventoryEntry[] | null; reconciledAt: number | null }) {
+  if (worktrees === null) return null;
+  const total = worktrees.length;
+  const attention = worktrees.filter((worktree) => ATTENTION_STATES.has(worktree.state)).length;
+  const stale = worktrees.filter((worktree) => worktree.state === 'Stale').length;
+  const totalBytes = worktrees.reduce((sum, worktree) => sum + (worktree.sizeBytes ?? 0), 0);
+  const dot = createElement('span', { 'aria-hidden': true, className: 'text-faint' }, '·');
+  const parts: ReactNode[] = [createElement('span', { key: 'total' }, `${total} ${total === 1 ? 'worktree' : 'worktrees'} on disk`)];
+  if (attention > 0) parts.push(dot, createElement('span', { key: 'attn', className: 'text-running' }, `${attention} need attention`));
+  if (stale > 0) parts.push(dot, createElement('span', { key: 'stale', className: 'text-merged' }, `${stale} stale`));
+  parts.push(dot, createElement('span', { key: 'size' }, sizeLabel(totalBytes)));
+  if (reconciledAt !== null) parts.push(dot, createElement('span', { key: 'reconciled' }, reconciledLabel(reconciledAt)));
+  return createElement('div', { className: 'flex flex-wrap items-center gap-x-2.5 gap-y-1 text-small text-muted' }, ...parts);
 }
 
 const EMPTY_FOREST: OperationForest = { operations: [], recent: [] };
@@ -183,35 +208,56 @@ function OperationsReadout({ tasks, epics, onOpenTask, onOpenEpic }: Pick<Operat
 }
 
 /**
- * Operations hosts independent scheduler and telemetry sections; the telemetry
- * section owns its snapshot-plus-firehose read model.
+ * Operations leads with the worktree inventory — the operator's disposal
+ * surface — then pairs the live-span readout with the scheduler strip. The
+ * inventory read model (snapshot plus firehose) is lifted to the page so the
+ * header can total it and own the reconcile action.
  */
-export function OperationsPage({ scheduledJobs, spanTree, worktreeInventory, tasks, epics, onOpenTask, onOpenEpic }: OperationsPageProps) {
+export function OperationsPage({ scheduledJobs, spanTree, tasks, epics, onOpenTask, onOpenEpic }: OperationsPageProps) {
+  const inventory = useWorktreeInventory();
+  const { worktrees, reconciledAt, busyId, reconciling, error, confirmation } = inventory;
   return createElement(
     'div',
-    null,
-    createElement('h1', { className: `${displayTitle} mb-5` }, 'Operations'),
+    { className: 'grid gap-6' },
+    createElement(
+      'header',
+      { className: 'flex flex-wrap items-end justify-between gap-4' },
+      createElement('div', { className: 'grid gap-1.5' },
+        createElement('h1', { className: displayTitle }, 'Operations'),
+        createElement(WorktreeSummary, { worktrees, reconciledAt }),
+      ),
+      createElement('button', { type: 'button', className: btnPrimary, disabled: reconciling, onClick: inventory.reconcile }, reconciling ? 'Reconciling…' : 'Reconcile now'),
+    ),
+    error && createElement('p', { role: 'alert', className: 'text-small text-fail' }, error),
+    createElement(
+      'section',
+      { 'aria-labelledby': 'worktrees-heading', className: 'grid gap-3' },
+      createElement('h2', { id: 'worktrees-heading', className: 'sr-only' }, 'Worktrees'),
+      worktrees === null
+        ? createElement('p', { className: 'text-small text-muted' }, 'Loading worktrees…')
+        : worktrees.length === 0
+          ? createElement('p', { className: 'text-small text-muted' }, 'No worktrees found.')
+          : createElement(WorktreesTable, { worktrees, busyId, onOpenTask, onOpenEpic, onClean: inventory.clean, onForceCleanup: inventory.forceCleanup }),
+    ),
     createElement(
       'div',
-      { className: 'grid gap-4' },
+      { className: 'grid gap-6 lg:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]' },
       createElement(
         'section',
-        { 'aria-labelledby': 'scheduled-jobs-heading' },
-        createElement('h2', { id: 'scheduled-jobs-heading', className: sectionTitle }, 'Scheduled jobs'),
-        scheduledJobs ?? createElement(ScheduledJobsView),
-      ),
-      createElement(
-        'section',
-        { 'aria-labelledby': 'worktrees-heading' },
-        createElement('h2', { id: 'worktrees-heading', className: sectionTitle }, 'Worktrees'),
-        worktreeInventory ?? createElement(WorktreeInventoryView, { onOpenTask, onOpenEpic }),
-      ),
-      createElement(
-        'section',
-        { 'aria-labelledby': 'span-tree-heading' },
-        createElement('h2', { id: 'span-tree-heading', className: sectionTitle }, 'Live spans'),
+        { 'aria-labelledby': 'span-tree-heading', className: 'grid gap-3' },
+        createElement('h2', { id: 'span-tree-heading', className: 'sr-only' }, 'Live operations'),
         spanTree ?? createElement(OperationsReadout, { tasks, epics, onOpenTask, onOpenEpic }),
       ),
+      createElement(
+        'section',
+        { 'aria-labelledby': 'scheduled-jobs-heading', className: 'grid gap-3' },
+        createElement('h2', { id: 'scheduled-jobs-heading', className: 'sr-only' }, 'Scheduled jobs'),
+        scheduledJobs ?? createElement(ScheduledJobsView),
+      ),
     ),
+    confirmation && createElement(CleanupDialog, {
+      worktree: confirmation.worktree, files: confirmation.files, error, busy: busyId === confirmation.worktree.id,
+      onClose: inventory.dismissConfirmation, onConfirm: inventory.confirmCleanup,
+    }),
   );
 }

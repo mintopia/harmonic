@@ -17,6 +17,7 @@ export interface WorktreeInventoryEntry {
   subject: WorktreeSubject | null;
   sizeBytes: number | null;
   dirty: boolean | null;
+  changeCount: number | null;
   state: WorktreeState;
 }
 
@@ -41,7 +42,7 @@ interface InventoryTask {
 
 export interface WorktreeInventoryRepository {
   listWorktrees(repoDir: string): Promise<readonly WorktreeRecord[]>;
-  isDirty(dir: string): Promise<boolean>;
+  changeCount(dir: string): Promise<number>;
   isValidWorktree(repoDir: string, worktreePath: string): Promise<boolean>;
   pathExists(path: string): Promise<boolean>;
   worktreeSize(path: string): Promise<number>;
@@ -121,6 +122,7 @@ export class WorktreeInventory {
           subject: subjectFor(task, byTrackerRef),
           sizeBytes: null,
           dirty: null,
+          changeCount: null,
           state: 'Missing',
         });
       });
@@ -139,15 +141,16 @@ export class WorktreeInventory {
     try {
       if (!(await this.git.isValidWorktree(workspace.workingDir, path))) {
         if (!(await this.git.pathExists(path))) {
-          return { workspaceId: workspace.id, path, branch: worktree.branch, subject, sizeBytes: null, dirty: null, state: 'Missing' };
+          return { workspaceId: workspace.id, path, branch: worktree.branch, subject, sizeBytes: null, dirty: null, changeCount: null, state: 'Missing' };
         }
-        return { workspaceId: workspace.id, path, branch: worktree.branch, subject, sizeBytes: null, dirty: null, state: 'Unreadable' };
+        return { workspaceId: workspace.id, path, branch: worktree.branch, subject, sizeBytes: null, dirty: null, changeCount: null, state: 'Unreadable' };
       }
-      const [sizeBytes, dirty] = await Promise.all([this.git.worktreeSize(path), this.git.isDirty(path)]);
+      const [sizeBytes, changeCount] = await Promise.all([this.git.worktreeSize(path), this.git.changeCount(path)]);
+      const dirty = changeCount > 0;
       const state: WorktreeState = !task ? 'Orphan' : terminalStates.has(task.state) ? 'Stale' : dirty ? 'Dirty' : 'Active';
-      return { workspaceId: workspace.id, path, branch: worktree.branch, subject, sizeBytes, dirty, state };
+      return { workspaceId: workspace.id, path, branch: worktree.branch, subject, sizeBytes, dirty, changeCount, state };
     } catch {
-      return { workspaceId: workspace.id, path, branch: worktree.branch, subject, sizeBytes: null, dirty: null, state: 'Unreadable' };
+      return { workspaceId: workspace.id, path, branch: worktree.branch, subject, sizeBytes: null, dirty: null, changeCount: null, state: 'Unreadable' };
     }
   }
 }

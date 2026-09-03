@@ -7,7 +7,7 @@ function repository(overrides: Partial<WorktreeInventoryRepository>): WorktreeIn
   };
   return {
     listWorktrees: overrides.listWorktrees ?? unexpected('listWorktrees'),
-    isDirty: overrides.isDirty ?? unexpected('isDirty'),
+    changeCount: overrides.changeCount ?? unexpected('changeCount'),
     isValidWorktree: overrides.isValidWorktree ?? unexpected('isValidWorktree'),
     pathExists: overrides.pathExists ?? unexpected('pathExists'),
     worktreeSize: overrides.worktreeSize ?? unexpected('worktreeSize'),
@@ -34,19 +34,19 @@ describe('worktree inventory (issue #482)', () => {
         ],
         isValidWorktree: async (_repoDir, path) => path !== '/trees/task-4',
         pathExists: async () => true,
-        isDirty: async (path) => path === '/trees/task-1',
+        changeCount: async (path) => (path === '/trees/task-1' ? 3 : 0),
         worktreeSize: async () => 42,
       }),
       '/trees',
     );
 
     await expect(inventory.snapshot()).resolves.toEqual([
-      { workspaceId: 1, path: '/trees/task-1', branch: 'harmonic/task-1', subject: { kind: 'task', taskId: 1, title: 'Active issue' }, sizeBytes: 42, dirty: true, state: 'Dirty' },
-      { workspaceId: 1, path: '/trees/task-2', branch: 'harmonic/task-2', subject: { kind: 'task', taskId: 2, title: 'Completed issue' }, sizeBytes: 42, dirty: false, state: 'Stale' },
-      { workspaceId: 1, path: '/trees/task-4', branch: 'harmonic/task-4', subject: { kind: 'task', taskId: 4, title: 'Unreadable issue' }, sizeBytes: null, dirty: null, state: 'Unreadable' },
-      { workspaceId: 1, path: '/trees/task-99', branch: 'harmonic/task-99', subject: null, sizeBytes: 42, dirty: false, state: 'Orphan' },
-      { workspaceId: 1, path: '/trees/scratch', branch: 'operator/wip', subject: null, sizeBytes: 42, dirty: false, state: 'Orphan' },
-      { workspaceId: 1, path: '/trees/task-3', branch: 'harmonic/task-3', subject: { kind: 'task', taskId: 3, title: 'Missing issue' }, sizeBytes: null, dirty: null, state: 'Missing' },
+      { workspaceId: 1, path: '/trees/task-1', branch: 'harmonic/task-1', subject: { kind: 'task', taskId: 1, title: 'Active issue' }, sizeBytes: 42, dirty: true, changeCount: 3, state: 'Dirty' },
+      { workspaceId: 1, path: '/trees/task-2', branch: 'harmonic/task-2', subject: { kind: 'task', taskId: 2, title: 'Completed issue' }, sizeBytes: 42, dirty: false, changeCount: 0, state: 'Stale' },
+      { workspaceId: 1, path: '/trees/task-4', branch: 'harmonic/task-4', subject: { kind: 'task', taskId: 4, title: 'Unreadable issue' }, sizeBytes: null, dirty: null, changeCount: null, state: 'Unreadable' },
+      { workspaceId: 1, path: '/trees/task-99', branch: 'harmonic/task-99', subject: null, sizeBytes: 42, dirty: false, changeCount: 0, state: 'Orphan' },
+      { workspaceId: 1, path: '/trees/scratch', branch: 'operator/wip', subject: null, sizeBytes: 42, dirty: false, changeCount: 0, state: 'Orphan' },
+      { workspaceId: 1, path: '/trees/task-3', branch: 'harmonic/task-3', subject: { kind: 'task', taskId: 3, title: 'Missing issue' }, sizeBytes: null, dirty: null, changeCount: null, state: 'Missing' },
     ]);
   });
 });

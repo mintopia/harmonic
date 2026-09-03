@@ -33,6 +33,7 @@ describe('worktree inventory API (issue #482)', () => {
       subject: { kind: 'task', taskId: 1, title: 'Issue 1' },
       sizeBytes: 4,
       dirty: false,
+      changeCount: 0,
       state: 'Active',
     }]);
 
@@ -52,6 +53,7 @@ describe('worktree inventory API (issue #482)', () => {
         subject: { kind: 'task', taskId: 42, title: 'Issue 42' },
         sizeBytes: null,
         dirty: true,
+        changeCount: 2,
         state: 'Dirty',
       },
     ]);
@@ -79,6 +81,7 @@ describe('worktree inventory API (issue #482)', () => {
         subject: { kind: 'task', taskId: 42, title: 'Issue 42' },
         sizeBytes: null,
         dirty: true,
+        changeCount: 2,
         state: 'Dirty',
       },
     ]);
@@ -100,6 +103,7 @@ describe('worktree inventory API (issue #482)', () => {
         subject: { kind: 'task', taskId: 42, title: 'Issue 42' },
         sizeBytes: null,
         dirty: null,
+        changeCount: null,
         state: 'Unreadable',
       },
     ]);
@@ -122,6 +126,7 @@ describe('worktree inventory API (issue #482)', () => {
         subject: { kind: 'task', taskId: 42, title: 'Issue 42' },
         sizeBytes: null,
         dirty: null,
+        changeCount: null,
         state: 'Stale',
       },
     ]);
@@ -143,6 +148,7 @@ describe('worktree inventory API (issue #482)', () => {
         subject: null,
         sizeBytes: null,
         dirty: null,
+        changeCount: null,
         state: 'Orphan',
       },
     ]);

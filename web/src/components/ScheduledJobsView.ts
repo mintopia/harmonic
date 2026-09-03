@@ -51,6 +51,7 @@ export function ScheduledJobsTable({ jobs, now }: { jobs: ScheduledJob[]; now: n
   return createElement(
     'div',
     { className: card },
+    createElement('div', { className: `border-b border-hairline px-4 py-3 ${labelType} text-muted` }, 'Scheduled jobs'),
     createElement(
       'div',
       { 'aria-hidden': true, className: `${STRIP} py-2.5 ${labelType} text-muted` },

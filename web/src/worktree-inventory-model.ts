@@ -8,6 +8,7 @@ export interface WorktreeInventoryEntry {
   subject: { kind: 'task'; taskId: number; title: string } | { kind: 'epic'; epicRef: number; title: string } | null;
   sizeBytes: number | null;
   dirty: boolean | null;
+  changeCount: number | null;
   state: WorktreeState;
 }
 
@@ -20,6 +21,7 @@ function isWorktree(value: unknown): value is WorktreeInventoryEntry {
   if (value.branch !== null && typeof value.branch !== 'string') return false;
   if (value.sizeBytes !== null && typeof value.sizeBytes !== 'number') return false;
   if (value.dirty !== null && typeof value.dirty !== 'boolean') return false;
+  if (value.changeCount !== null && typeof value.changeCount !== 'number') return false;
   const subject = value.subject;
   if (subject !== null && (!isRecord(subject) || typeof subject.title !== 'string' ||
     (subject.kind !== 'task' && subject.kind !== 'epic') ||

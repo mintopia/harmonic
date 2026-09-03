@@ -107,6 +107,14 @@ export const Git = {
     return (await git(dir, 'status', '--porcelain')).length > 0;
   },
 
+  /** How many working-tree entries `git status --porcelain` reports — the
+   * count a "N uncommitted" label reads from. One line per changed path
+   * (a rename is a single line), so line count is the entry count. */
+  async changeCount(dir: string): Promise<number> {
+    const output = await git(dir, 'status', '--porcelain');
+    return output.length === 0 ? 0 : output.split('\n').filter((line) => line.length > 0).length;
+  },
+
   /** Paths whose working-tree changes a forced cleanup would discard. */
   async dirtyFiles(dir: string): Promise<string[]> {
     const records = (await git(dir, 'status', '--porcelain', '-z')).split('\0');

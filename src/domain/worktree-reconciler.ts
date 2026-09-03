@@ -58,6 +58,12 @@ function parseTaskId(name: string): number | null {
  */
 export class WorktreeReconciler {
   private readonly managedRoot: string;
+  private lastReconciledAt: number | null = null;
+
+  /** When reconciliation last completed in this process (scheduled or on-demand), or null before its first run. */
+  get reconciledAt(): number | null {
+    return this.lastReconciledAt;
+  }
 
   constructor(
     private readonly activeTasks: ActiveTaskSource,
@@ -88,6 +94,7 @@ export class WorktreeReconciler {
         'worktree.flagged': result.flagged,
       });
       operation.end();
+      this.lastReconciledAt = Date.now();
       return result;
     } catch (error) {
       operation.fail(error);

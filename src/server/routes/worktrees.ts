@@ -7,12 +7,14 @@ import { errorResponse, worktreeInventorySchema } from '../schemas.js';
 import { worktreesToApi } from '../dto.js';
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
 
-const worktreesResponseSchema = listResponse('worktrees', worktreeInventorySchema);
+const worktreesResponseSchema = listResponse('worktrees', worktreeInventorySchema).extend({
+  reconciledAt: z.number().nullable().meta({ example: 1784032260000 }),
+});
 const cleanupResponseSchema = z.object({ removed: z.boolean() });
 const dirtyFilesResponseSchema = z.object({ files: z.array(z.string()) });
 const cleanupParamsSchema = z.object({ id: z.string().min(1).meta({ example: 'WzEsIi9kYXRhL3dvcmt0cmVlcy90YXNrLTQyIl0' }) });
 
-export async function worktreeRoutes(fastify: FastifyInstance, ctx: Pick<ExecutionContext, 'worktreeInventory' | 'forceCleanupWorktree' | 'dirtyWorktreeFiles'>): Promise<void> {
+export async function worktreeRoutes(fastify: FastifyInstance, ctx: Pick<ExecutionContext, 'worktreeInventory' | 'forceCleanupWorktree' | 'dirtyWorktreeFiles' | 'worktreesReconciledAt'>): Promise<void> {
   const app = fastify.withTypeProvider<ZodTypeProvider>();
   app.get('/worktrees', {
     schema: {
@@ -25,7 +27,7 @@ export async function worktreeRoutes(fastify: FastifyInstance, ctx: Pick<Executi
   }, async (req) => {
     const { limit, offset } = req.query;
     const { items, total } = paginate([...worktreesToApi(await ctx.worktreeInventory.snapshot())], { limit, offset });
-    return { worktrees: items, total };
+    return { worktrees: items, total, reconciledAt: ctx.worktreesReconciledAt() };
   });
 
   app.post('/worktrees/:id/cleanup', {
