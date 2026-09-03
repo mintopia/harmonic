@@ -283,6 +283,7 @@ CREATE TABLE `verification_attempts` (
 	`prompt` text,
 	`transcript_path` text,
 	`harness` text,
+	`usage` text,
 	FOREIGN KEY (`attempt_id`) REFERENCES `attempts`(`id`) ON UPDATE no action ON DELETE no action
 );
 --> statement-breakpoint

@@ -1,7 +1,10 @@
 import { adapterFor } from './harness/registry.js';
+import { collectUsage } from './usage.js';
 import type { AppConfig } from '../config.js';
+import { pricesForHarness } from '../domain/pricing.js';
 import type { SessionStore } from '../domain/sessions.js';
 import type { VerificationAttemptStore } from '../domain/verification-attempts.js';
+import { logger } from '../logger.js';
 
 /**
  * Resolves and persists the harnesses' native transcript (`${sessionId}.jsonl`)
@@ -72,5 +75,46 @@ export class TranscriptCapture {
       await this.verificationAttempts.setTranscriptPath(input.attemptId, transcriptPath).catch(() => {});
       return;
     }
+  }
+
+  /**
+   * Resolve the critic turn's per-model usage from its settled session log and
+   * persist it, so Task Stats can bill the critic its own slice. Like the
+   * transcript, the tokens rarely exist at the session-end boundary, so this
+   * retries off the hot path and is strictly best-effort: a missing reading
+   * only costs the critic its Stats line, never the Attempt.
+   */
+  async captureCriticUsage(input: {
+    attemptId: number;
+    sessionId: string;
+    harnessId: string;
+    cwd: string;
+  }): Promise<void> {
+    const harness = this.getConfig().harnesses[input.harnessId as keyof AppConfig['harnesses']];
+    if (!harness) return;
+    for (const delayMs of [100, 500, 2_000]) {
+      await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+      const usage = collectUsage({
+        harnessId: input.harnessId,
+        harness,
+        cwd: input.cwd,
+        sessionId: input.sessionId,
+        prices: pricesForHarness(harness),
+      });
+      if (usage && Object.keys(usage.models).length > 0) {
+        await this.verificationAttempts.setUsage(input.attemptId, JSON.stringify(usage)).catch(() => {});
+        logger.info('captured critic usage', {
+          attemptId: input.attemptId,
+          harness: input.harnessId,
+          models: Object.keys(usage.models).join(','),
+        });
+        return;
+      }
+    }
+    logger.warn('critic usage unresolved after retries; Task Stats will omit this critic run', {
+      attemptId: input.attemptId,
+      harness: input.harnessId,
+      sessionId: input.sessionId,
+    });
   }
 }

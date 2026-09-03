@@ -4,18 +4,24 @@ import type { SessionStore } from '../src/domain/sessions.js';
 import type { VerificationAttemptStore } from '../src/domain/verification-attempts.js';
 import type { AppConfig } from '../src/config.js';
 
-const { resolveTranscriptPath } = vi.hoisted(() => ({ resolveTranscriptPath: vi.fn() }));
+const { resolveTranscriptPath, collectUsage } = vi.hoisted(() => ({ resolveTranscriptPath: vi.fn(), collectUsage: vi.fn() }));
 
 vi.mock('../src/execution/harness/registry.js', () => ({
   adapterFor: (harnessId: string) => (harnessId === 'no-resolver' ? { usage: {} } : { usage: { resolveTranscriptPath } }),
 }));
+
+vi.mock('../src/execution/usage.js', () => ({ collectUsage }));
 
 function fakeSessionStore(over: Record<string, unknown> = {}): SessionStore {
   return { get: vi.fn(), setTranscriptPath: vi.fn().mockResolvedValue(undefined), ...over } as unknown as SessionStore;
 }
 
 function fakeVerificationAttempts(over: Record<string, unknown> = {}): VerificationAttemptStore {
-  return { setTranscriptPath: vi.fn().mockResolvedValue(undefined), ...over } as unknown as VerificationAttemptStore;
+  return {
+    setTranscriptPath: vi.fn().mockResolvedValue(undefined),
+    setUsage: vi.fn().mockResolvedValue(undefined),
+    ...over,
+  } as unknown as VerificationAttemptStore;
 }
 
 function fakeConfig(harnesses: Record<string, { sessionLogDir?: string }> = {}): () => AppConfig {
@@ -26,6 +32,7 @@ describe('TranscriptCapture', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     resolveTranscriptPath.mockReset();
+    collectUsage.mockReset();
   });
 
   afterEach(() => vi.useRealTimers());
@@ -216,6 +223,54 @@ describe('TranscriptCapture', () => {
 
       expect(resolveTranscriptPath).not.toHaveBeenCalled();
       expect(verificationAttempts.setTranscriptPath).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('captureCriticUsage', () => {
+    const usage = { models: { 'opus-4.8': { inputTokens: 10, outputTokens: 5, cacheReadTokens: 0, cacheWriteTokens: 0 } } };
+
+    it('persists usage resolved from the settled critic session log', async () => {
+      collectUsage.mockReturnValueOnce(null).mockReturnValueOnce(usage);
+      const verificationAttempts = fakeVerificationAttempts();
+      const capture = new TranscriptCapture(
+        fakeSessionStore(),
+        verificationAttempts,
+        fakeConfig({ claude: { sessionLogDir: '/logs', models: [] } }),
+      );
+
+      const done = capture.captureCriticUsage({ attemptId: 21, sessionId: 'critic-sess', harnessId: 'claude', cwd: '/wt' });
+      await vi.advanceTimersByTimeAsync(100 + 500);
+      await done;
+
+      expect(collectUsage).toHaveBeenCalledTimes(2);
+      expect(verificationAttempts.setUsage).toHaveBeenCalledWith(21, JSON.stringify(usage));
+    });
+
+    it('retries the full backoff and persists nothing when usage never resolves', async () => {
+      collectUsage.mockReturnValue(null);
+      const verificationAttempts = fakeVerificationAttempts();
+      const capture = new TranscriptCapture(
+        fakeSessionStore(),
+        verificationAttempts,
+        fakeConfig({ claude: { sessionLogDir: '/logs', models: [] } }),
+      );
+
+      const done = capture.captureCriticUsage({ attemptId: 22, sessionId: 'critic-sess-2', harnessId: 'claude', cwd: '/wt' });
+      await vi.advanceTimersByTimeAsync(100 + 500 + 2_000);
+      await done;
+
+      expect(collectUsage).toHaveBeenCalledTimes(3);
+      expect(verificationAttempts.setUsage).not.toHaveBeenCalled();
+    });
+
+    it('returns immediately when the critic harness is not configured', async () => {
+      const verificationAttempts = fakeVerificationAttempts();
+      const capture = new TranscriptCapture(fakeSessionStore(), verificationAttempts, fakeConfig({}));
+
+      await capture.captureCriticUsage({ attemptId: 23, sessionId: 'critic-sess-3', harnessId: 'ghost', cwd: '/wt' });
+
+      expect(collectUsage).not.toHaveBeenCalled();
+      expect(verificationAttempts.setUsage).not.toHaveBeenCalled();
     });
   });
 });

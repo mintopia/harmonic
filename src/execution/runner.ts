@@ -1113,14 +1113,22 @@ export class Runner {
         });
         relay.flush();
         const persisted = await this.verificationAttempts.append(timelineAttempt.id, criticAttemptToInput(attempt));
-        // The harness may not have flushed its log by the session-end boundary,
-        // so `attempt.transcriptPath` is often null here.
-        if (attempt.transcriptPath === null && attempt.sessionId) {
-          void this.transcripts.captureCriticTranscript({
+        // The harness rarely has its transcript or usage flushed by the
+        // session-end boundary, so both are resolved off the hot path.
+        if (attempt.sessionId) {
+          if (attempt.transcriptPath === null) {
+            void this.transcripts.captureCriticTranscript({
+              attemptId: persisted.id,
+              sessionId: attempt.sessionId,
+              harnessId: criticHarnessId,
+              sessionLogDir: criticHarness.sessionLogDir,
+            });
+          }
+          void this.transcripts.captureCriticUsage({
             attemptId: persisted.id,
             sessionId: attempt.sessionId,
             harnessId: criticHarnessId,
-            sessionLogDir: criticHarness.sessionLogDir,
+            cwd: criticCwd,
           });
         }
         await this.updateStep(task.id, timelineStep.id, {

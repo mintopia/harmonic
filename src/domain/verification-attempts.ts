@@ -22,6 +22,9 @@ export interface VerificationAttemptInput {
    * Both null for the command verifier and where no transcript was resolved. */
   transcriptPath?: string | null;
   harness?: string | null;
+  /** The critic turn's `AttemptUsage` as JSON; usually filled in after the fact
+   * via {@link VerificationAttemptStore.setUsage} once the session log settles. */
+  usage?: string | null;
 }
 
 /**
@@ -57,6 +60,7 @@ export class VerificationAttemptStore {
           prompt: attempt.prompt ?? null,
           transcriptPath: attempt.transcriptPath ?? null,
           harness: attempt.harness ?? null,
+          usage: attempt.usage ?? null,
         })
         .returning()
         .get();
@@ -68,6 +72,14 @@ export class VerificationAttemptStore {
   setTranscriptPath(id: number, transcriptPath: string): Promise<void> {
     return this.db.write(async (db) => {
       await db.update(verificationAttempts).set({ transcriptPath }).where(eq(verificationAttempts.id, id)).run();
+    });
+  }
+
+  /** Fill in a critic attempt's usage after the fact, from the settled critic
+   * session log — the harness rarely has its tokens ready at session end. */
+  setUsage(id: number, usage: string): Promise<void> {
+    return this.db.write(async (db) => {
+      await db.update(verificationAttempts).set({ usage }).where(eq(verificationAttempts.id, id)).run();
     });
   }
 

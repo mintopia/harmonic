@@ -107,6 +107,61 @@ export function costOfUsages(usages: (AttemptUsage | null)[], prices: PriceTable
   return { totalUsd, byModel, incomplete };
 }
 
+/**
+ * Fold an Attempt's critic-review runs into its Usage and Cost for display: the
+ * critic's tokens merge into the per-model Usage (so the token bar and billable
+ * I/O count them under their model), while its dollars land on a single `critic`
+ * key in `cost.byModel` — a slice that stands on its own rather than being
+ * absorbed into the implementation model's cost. Each critic run carries its own
+ * harness prices, since the reviewer can run a different harness than the build.
+ * Pure: the stored Attempt row keeps only its implementation Usage/Cost.
+ */
+export function withCriticContribution(
+  usage: AttemptUsage | null,
+  cost: Cost | null,
+  critics: { usage: AttemptUsage; prices: PriceTable }[],
+): { usage: AttemptUsage | null; cost: Cost | null } {
+  if (critics.length === 0) return { usage, cost };
+
+  const models: Record<string, ModelUsage> = {};
+  for (const [model, mu] of Object.entries(usage?.models ?? {})) models[model] = { ...mu };
+  for (const critic of critics) {
+    for (const [model, mu] of Object.entries(critic.usage.models)) {
+      const bucket = (models[model] ??= { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 });
+      bucket.inputTokens += mu.inputTokens;
+      bucket.outputTokens += mu.outputTokens;
+      bucket.cacheReadTokens += mu.cacheReadTokens;
+      bucket.cacheWriteTokens += mu.cacheWriteTokens;
+    }
+  }
+  const mergedUsage: AttemptUsage = usage
+    ? { ...usage, models }
+    : { models, totals: null, toolCalls: {}, source: 'session-log' };
+
+  let criticTotal: number | null = null;
+  let criticIncomplete = false;
+  for (const critic of critics) {
+    const cc = costOfUsages([critic.usage], critic.prices);
+    if (!cc) {
+      criticIncomplete = true;
+      continue;
+    }
+    criticIncomplete ||= cc.incomplete;
+    if (cc.totalUsd !== null) criticTotal = (criticTotal ?? 0) + cc.totalUsd;
+    else criticIncomplete = true;
+  }
+
+  const byModel: Record<string, number | null> = { ...(cost?.byModel ?? {}), critic: criticTotal };
+  let totalUsd: number | null = null;
+  for (const usd of Object.values(byModel)) if (usd !== null) totalUsd = (totalUsd ?? 0) + usd;
+  const mergedCost: Cost = {
+    totalUsd,
+    byModel,
+    incomplete: (cost?.incomplete ?? false) || criticIncomplete,
+  };
+  return { usage: mergedUsage, cost: mergedCost };
+}
+
 /** Sum Costs already frozen on Attempts, preserving unknown-model floors. */
 export function sumCosts(costs: (Cost | null)[]): Cost | null {
   const present = costs.filter((cost): cost is Cost => cost !== null);

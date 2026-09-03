@@ -445,6 +445,10 @@ export const verificationAttempts = sqliteTable('verification_attempts', {
   transcriptPath: text('transcript_path'),
   /** The critic harness id that produced {@link transcriptPath}; may differ from the builder's. */
   harness: text('harness'),
+  /** The critic turn's `AttemptUsage` as JSON, resolved from the critic session
+   * log after it settled; null for the command verifier and where usage could
+   * not be read. Feeds the critic's own slice of Task Stats. */
+  usage: text('usage'),
 }, (t) => [
   uniqueIndex('verification_attempts_attempt_seq_unique').on(t.attemptId, t.seq),
 ]);

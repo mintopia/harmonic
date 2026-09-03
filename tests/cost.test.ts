@@ -7,7 +7,7 @@ import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js
 import { attempts } from '../src/db/schema.js';
 import { verificationCommandSchema } from '../src/config.js';
 import type { DeepPartial, AppConfig } from '../src/config.js';
-import { costOfUsages, pricesForHarness } from '../src/domain/pricing.js';
+import { costOfUsages, pricesForHarness, withCriticContribution } from '../src/domain/pricing.js';
 import type { ModelUsage, AttemptUsage } from '../src/execution/usage.js';
 
 const mu = (tokens: number): ModelUsage => ({
@@ -25,6 +25,39 @@ const usageOf = (models: Record<string, ModelUsage>): AttemptUsage => ({
 });
 
 const PRICES = { m1: { input: 1, output: 2, cacheRead: 3, cacheWrite: 4 } };
+
+describe('withCriticContribution', () => {
+  const impl = usageOf({ m1: mu(100) });
+  const implCost = costOfUsages([impl], PRICES);
+
+  it('folds critic tokens into the model and gives the critic its own cost slice, without double-counting', () => {
+    const { usage, cost } = withCriticContribution(impl, implCost, [{ usage: usageOf({ m1: mu(50) }), prices: PRICES }]);
+    expect(usage!.models.m1).toEqual(mu(150));
+    // impl m1 cost is untouched; the critic's dollars sit on their own `critic` key.
+    expect(cost!.byModel.m1).toBeCloseTo(10 * 100 / 1_000_000);
+    expect(cost!.byModel.critic).toBeCloseTo(10 * 50 / 1_000_000);
+    expect(cost!.totalUsd).toBeCloseTo(10 * 150 / 1_000_000);
+    expect(cost!.incomplete).toBe(false);
+  });
+
+  it('surfaces a critic run even when the implementation usage was never captured', () => {
+    const { usage, cost } = withCriticContribution(null, null, [{ usage: usageOf({ m1: mu(20) }), prices: PRICES }]);
+    expect(usage!.models.m1).toEqual(mu(20));
+    expect(cost!.byModel).toEqual({ critic: expect.closeTo(10 * 20 / 1_000_000) });
+  });
+
+  it('returns the inputs untouched when there is no critic run', () => {
+    const { usage, cost } = withCriticContribution(impl, implCost, []);
+    expect(usage).toBe(impl);
+    expect(cost).toBe(implCost);
+  });
+
+  it('flags incomplete and a null critic slice when the critic model has no price', () => {
+    const { cost } = withCriticContribution(impl, implCost, [{ usage: usageOf({ mystery: mu(10) }), prices: PRICES }]);
+    expect(cost!.byModel.critic).toBeNull();
+    expect(cost!.incomplete).toBe(true);
+  });
+});
 
 describe('pricing math', () => {
   it('ships a price for every model in the default harness configs — Cost is never incomplete out of the box', async () => {

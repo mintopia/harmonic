@@ -6,7 +6,7 @@ import { and, desc, eq } from 'drizzle-orm';
 import type { TaskWithDeps } from '../domain/tasks.js';
 import { resolveVerifiers } from '../domain/setting-override.js';
 import { verifierStatuses, type VerifierStatus } from '../domain/verifier-status.js';
-import { costOfUsages, pricesForHarness, resolveContextWindowForHarness } from '../domain/pricing.js';
+import { costOfUsages, pricesForHarness, resolveContextWindowForHarness, withCriticContribution } from '../domain/pricing.js';
 import { DomainError } from '../domain/errors.js';
 import type { AttemptUsageSnapshot } from '../execution/usage.js';
 import { Git } from '../execution/git.js';
@@ -148,10 +148,20 @@ export async function ticketTimelineToApi(ctx: AppContext, taskId: number): Prom
 export async function attemptToApi(ctx: AppContext, run: AttemptRow): Promise<ApiAttemptSummary> {
   // The per-Attempt tool-call total from its native aggregate — one
   // bounded read per Attempt (attempts-per-Task is small), no event replay.
-  const [toolTotals, task] = await Promise.all([ctx.attempts.listToolCalls(run.id), ctx.tasks.get(run.taskId)]);
+  const [toolTotals, task, verifications] = await Promise.all([
+    ctx.attempts.listToolCalls(run.id),
+    ctx.tasks.get(run.taskId),
+    ctx.verificationAttempts.list(run.id),
+  ]);
   let toolCalls = 0;
   for (const total of toolTotals.values()) toolCalls += total;
-  return attemptToApiSummary(run, toolCalls, contextWindowOf(ctx, task.model, task.harness));
+  const summary = attemptToApiSummary(run, toolCalls, contextWindowOf(ctx, task.model, task.harness));
+  const critics = verifications.flatMap((row) => {
+    const usage = row.mechanism === 'critic' ? parseUsage(row.usage) : null;
+    return usage ? [{ usage, prices: pricesOf(ctx, row.harness ?? task.harness) }] : [];
+  });
+  const { usage, cost } = withCriticContribution(summary.usage, summary.cost, critics);
+  return { ...summary, usage, cost };
 }
 
 export async function attemptUsageToApi(ctx: AppContext, attemptId: number, snapshot: AttemptUsageSnapshot): Promise<ApiAttemptUsage> {

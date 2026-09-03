@@ -117,6 +117,7 @@ const verificationAttemptRow = (over: Partial<VerificationAttemptRow> = {}): Ver
   transcriptPath: null,
   harness: null,
   prompt: null,
+  usage: null,
   ...over,
 });
 
