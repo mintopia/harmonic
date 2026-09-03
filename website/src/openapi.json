@@ -1051,31 +1051,20 @@
           "nextRunAt"
         ]
       },
-      "FlaggedWorktreeInput": {
+      "WorktreeInventoryEntryInput": {
         "type": "object",
         "properties": {
+          "id": {
+            "type": "string",
+            "example": "WzEsIi9kYXRhL3dvcmt0cmVlcy90YXNrLTQyIl0"
+          },
           "path": {
             "type": "string",
             "example": "/data/worktrees/task-42"
           },
-          "repoDir": {
-            "type": "string",
-            "example": "/home/operator/repo"
-          },
           "workspaceId": {
             "type": "number",
             "example": 1
-          },
-          "taskId": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": 42
           },
           "branch": {
             "anyOf": [
@@ -1088,23 +1077,103 @@
             ],
             "example": "harmonic/task-42"
           },
-          "reason": {
+          "subject": {
+            "anyOf": [
+              {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "task"
+                      },
+                      "taskId": {
+                        "type": "number"
+                      },
+                      "title": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "taskId",
+                      "title"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "epic"
+                      },
+                      "epicRef": {
+                        "type": "number"
+                      },
+                      "title": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "epicRef",
+                      "title"
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sizeBytes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 1048576
+          },
+          "dirty": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": false
+          },
+          "state": {
             "type": "string",
             "enum": [
-              "dirty",
-              "unreadable",
-              "unrecognized"
+              "Active",
+              "Stale",
+              "Dirty",
+              "Unreadable",
+              "Orphan",
+              "Missing"
             ],
-            "example": "dirty"
+            "example": "Active"
           }
         },
         "required": [
+          "id",
           "path",
-          "repoDir",
           "workspaceId",
-          "taskId",
           "branch",
-          "reason"
+          "subject",
+          "sizeBytes",
+          "dirty",
+          "state"
         ]
       },
       "OperationInput": {
@@ -2899,6 +2968,165 @@
           "held"
         ]
       },
+      "MergeStepEventInput": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
+                "const": "started"
+              },
+              "baseBranch": {
+                "type": "string"
+              },
+              "taskBranch": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "step",
+              "baseBranch",
+              "taskBranch"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
+                "const": "conflict"
+              },
+              "paths": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "step",
+              "paths"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
+                "const": "resolve-turn"
+              },
+              "turn": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "unmergedCount": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "step",
+              "turn",
+              "unmergedCount"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
+                "const": "post-check-skipped"
+              },
+              "mergeOid": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "step",
+              "mergeOid"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
+                "const": "post-check-passed"
+              },
+              "mergeOid": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "step",
+              "mergeOid"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
+                "const": "reverted"
+              },
+              "mergeOid": {
+                "type": "string"
+              },
+              "revertOid": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "step",
+              "mergeOid",
+              "revertOid"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
+                "const": "merged"
+              },
+              "mergeOid": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "step",
+              "mergeOid"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
+                "const": "escalated"
+              },
+              "reason": {
+                "type": "string",
+                "enum": [
+                  "conflict",
+                  "post-merge-red"
+                ]
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "step",
+              "reason",
+              "message"
+            ]
+          }
+        ]
+      },
       "EpicInput": {
         "type": "object",
         "properties": {
@@ -2991,6 +3219,12 @@
           "integrate": {
             "$ref": "#/components/schemas/EpicIntegrateStateInput"
           },
+          "mergeSteps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MergeStepEventInput"
+            }
+          },
           "foldedCount": {
             "type": "integer",
             "minimum": -9007199254740991,
@@ -3017,6 +3251,7 @@
           "integration",
           "verification",
           "integrate",
+          "mergeSteps",
           "foldedCount",
           "memberCount"
         ]
@@ -3874,18 +4109,137 @@
                   }
                 },
                 "models": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  },
-                  "example": [
-                    "sonnet-5",
-                    "opus-4-8"
-                  ]
+                  "anyOf": [
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "minLength": 1,
+                            "example": "sonnet-5"
+                          },
+                          "price": {
+                            "type": "object",
+                            "properties": {
+                              "input": {
+                                "type": "number",
+                                "minimum": 0,
+                                "example": 3
+                              },
+                              "output": {
+                                "type": "number",
+                                "minimum": 0,
+                                "example": 15
+                              },
+                              "cacheRead": {
+                                "type": "number",
+                                "minimum": 0,
+                                "example": 0.3
+                              },
+                              "cacheWrite": {
+                                "type": "number",
+                                "minimum": 0,
+                                "example": 3.75
+                              }
+                            },
+                            "required": [
+                              "input",
+                              "output",
+                              "cacheRead",
+                              "cacheWrite"
+                            ]
+                          },
+                          "contextWindow": {
+                            "example": 200000,
+                            "type": "integer",
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "id"
+                        ]
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "minLength": 1,
+                                "example": "sonnet-5"
+                              },
+                              "price": {
+                                "type": "object",
+                                "properties": {
+                                  "input": {
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "example": 3
+                                  },
+                                  "output": {
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "example": 15
+                                  },
+                                  "cacheRead": {
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "example": 0.3
+                                  },
+                                  "cacheWrite": {
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "example": 3.75
+                                  }
+                                },
+                                "required": [
+                                  "input",
+                                  "output",
+                                  "cacheRead",
+                                  "cacheWrite"
+                                ]
+                              },
+                              "contextWindow": {
+                                "example": 200000,
+                                "type": "integer",
+                                "exclusiveMinimum": 0,
+                                "maximum": 9007199254740991
+                              }
+                            }
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    }
+                  ],
+                  "example": {
+                    "sonnet-5": {
+                      "contextWindow": 200000
+                    },
+                    "retired-model": null
+                  }
                 },
                 "defaultModel": {
                   "type": "string",
                   "example": "sonnet-5"
+                },
+                "cacheWarmSeconds": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991,
+                  "example": 300
                 },
                 "sessionLogDir": {
                   "type": "string",
@@ -3896,45 +4250,6 @@
             "example": {
               "claude": {
                 "defaultModel": "sonnet-5"
-              }
-            }
-          },
-          "prices": {
-            "type": "object",
-            "propertyNames": {
-              "type": "string"
-            },
-            "additionalProperties": {
-              "type": "object",
-              "properties": {
-                "input": {
-                  "type": "number",
-                  "minimum": 0,
-                  "example": 3
-                },
-                "output": {
-                  "type": "number",
-                  "minimum": 0,
-                  "example": 15
-                },
-                "cacheRead": {
-                  "type": "number",
-                  "minimum": 0,
-                  "example": 0.3
-                },
-                "cacheWrite": {
-                  "type": "number",
-                  "minimum": 0,
-                  "example": 3.75
-                }
-              }
-            },
-            "example": {
-              "sonnet-5": {
-                "input": 3,
-                "output": 15,
-                "cacheRead": 0.3,
-                "cacheWrite": 3.75
               }
             }
           },
@@ -5295,31 +5610,20 @@
         ],
         "additionalProperties": false
       },
-      "FlaggedWorktree": {
+      "WorktreeInventoryEntry": {
         "type": "object",
         "properties": {
+          "id": {
+            "type": "string",
+            "example": "WzEsIi9kYXRhL3dvcmt0cmVlcy90YXNrLTQyIl0"
+          },
           "path": {
             "type": "string",
             "example": "/data/worktrees/task-42"
           },
-          "repoDir": {
-            "type": "string",
-            "example": "/home/operator/repo"
-          },
           "workspaceId": {
             "type": "number",
             "example": 1
-          },
-          "taskId": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": 42
           },
           "branch": {
             "anyOf": [
@@ -5332,23 +5636,105 @@
             ],
             "example": "harmonic/task-42"
           },
-          "reason": {
+          "subject": {
+            "anyOf": [
+              {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "task"
+                      },
+                      "taskId": {
+                        "type": "number"
+                      },
+                      "title": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "taskId",
+                      "title"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "epic"
+                      },
+                      "epicRef": {
+                        "type": "number"
+                      },
+                      "title": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "epicRef",
+                      "title"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sizeBytes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 1048576
+          },
+          "dirty": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": false
+          },
+          "state": {
             "type": "string",
             "enum": [
-              "dirty",
-              "unreadable",
-              "unrecognized"
+              "Active",
+              "Stale",
+              "Dirty",
+              "Unreadable",
+              "Orphan",
+              "Missing"
             ],
-            "example": "dirty"
+            "example": "Active"
           }
         },
         "required": [
+          "id",
           "path",
-          "repoDir",
           "workspaceId",
-          "taskId",
           "branch",
-          "reason"
+          "subject",
+          "sizeBytes",
+          "dirty",
+          "state"
         ],
         "additionalProperties": false
       },
@@ -7157,6 +7543,173 @@
         ],
         "additionalProperties": false
       },
+      "MergeStepEvent": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
+                "const": "started"
+              },
+              "baseBranch": {
+                "type": "string"
+              },
+              "taskBranch": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "step",
+              "baseBranch",
+              "taskBranch"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
+                "const": "conflict"
+              },
+              "paths": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "step",
+              "paths"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
+                "const": "resolve-turn"
+              },
+              "turn": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "unmergedCount": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "step",
+              "turn",
+              "unmergedCount"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
+                "const": "post-check-skipped"
+              },
+              "mergeOid": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "step",
+              "mergeOid"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
+                "const": "post-check-passed"
+              },
+              "mergeOid": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "step",
+              "mergeOid"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
+                "const": "reverted"
+              },
+              "mergeOid": {
+                "type": "string"
+              },
+              "revertOid": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "step",
+              "mergeOid",
+              "revertOid"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
+                "const": "merged"
+              },
+              "mergeOid": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "step",
+              "mergeOid"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
+                "const": "escalated"
+              },
+              "reason": {
+                "type": "string",
+                "enum": [
+                  "conflict",
+                  "post-merge-red"
+                ]
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "step",
+              "reason",
+              "message"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
       "Epic": {
         "type": "object",
         "properties": {
@@ -7249,6 +7802,12 @@
           "integrate": {
             "$ref": "#/components/schemas/EpicIntegrateState"
           },
+          "mergeSteps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MergeStepEvent"
+            }
+          },
           "foldedCount": {
             "type": "integer",
             "minimum": -9007199254740991,
@@ -7275,6 +7834,7 @@
           "integration",
           "verification",
           "integrate",
+          "mergeSteps",
           "foldedCount",
           "memberCount"
         ],
@@ -8154,18 +8714,141 @@
                   }
                 },
                 "models": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  },
-                  "example": [
-                    "sonnet-5",
-                    "opus-4-8"
-                  ]
+                  "anyOf": [
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "minLength": 1,
+                            "example": "sonnet-5"
+                          },
+                          "price": {
+                            "type": "object",
+                            "properties": {
+                              "input": {
+                                "type": "number",
+                                "minimum": 0,
+                                "example": 3
+                              },
+                              "output": {
+                                "type": "number",
+                                "minimum": 0,
+                                "example": 15
+                              },
+                              "cacheRead": {
+                                "type": "number",
+                                "minimum": 0,
+                                "example": 0.3
+                              },
+                              "cacheWrite": {
+                                "type": "number",
+                                "minimum": 0,
+                                "example": 3.75
+                              }
+                            },
+                            "required": [
+                              "input",
+                              "output",
+                              "cacheRead",
+                              "cacheWrite"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "contextWindow": {
+                            "example": 200000,
+                            "type": "integer",
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "id"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "minLength": 1,
+                                "example": "sonnet-5"
+                              },
+                              "price": {
+                                "type": "object",
+                                "properties": {
+                                  "input": {
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "example": 3
+                                  },
+                                  "output": {
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "example": 15
+                                  },
+                                  "cacheRead": {
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "example": 0.3
+                                  },
+                                  "cacheWrite": {
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "example": 3.75
+                                  }
+                                },
+                                "required": [
+                                  "input",
+                                  "output",
+                                  "cacheRead",
+                                  "cacheWrite"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "contextWindow": {
+                                "example": 200000,
+                                "type": "integer",
+                                "exclusiveMinimum": 0,
+                                "maximum": 9007199254740991
+                              }
+                            },
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    }
+                  ],
+                  "example": {
+                    "sonnet-5": {
+                      "contextWindow": 200000
+                    },
+                    "retired-model": null
+                  }
                 },
                 "defaultModel": {
                   "type": "string",
                   "example": "sonnet-5"
+                },
+                "cacheWarmSeconds": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991,
+                  "example": 300
                 },
                 "sessionLogDir": {
                   "type": "string",
@@ -8177,46 +8860,6 @@
             "example": {
               "claude": {
                 "defaultModel": "sonnet-5"
-              }
-            }
-          },
-          "prices": {
-            "type": "object",
-            "propertyNames": {
-              "type": "string"
-            },
-            "additionalProperties": {
-              "type": "object",
-              "properties": {
-                "input": {
-                  "type": "number",
-                  "minimum": 0,
-                  "example": 3
-                },
-                "output": {
-                  "type": "number",
-                  "minimum": 0,
-                  "example": 15
-                },
-                "cacheRead": {
-                  "type": "number",
-                  "minimum": 0,
-                  "example": 0.3
-                },
-                "cacheWrite": {
-                  "type": "number",
-                  "minimum": 0,
-                  "example": 3.75
-                }
-              },
-              "additionalProperties": false
-            },
-            "example": {
-              "sonnet-5": {
-                "input": 3,
-                "output": 15,
-                "cacheRead": 0.3,
-                "cacheWrite": 3.75
               }
             }
           },
@@ -10013,7 +10656,6 @@
                               "verification",
                               "guardrail",
                               "operator-reject",
-                              "merging",
                               "fact"
                             ]
                           },
@@ -10703,6 +11345,17 @@
                             ],
                             "example": null
                           },
+                          "harness": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "example": "claude"
+                          },
                           "hasTranscript": {
                             "type": "boolean",
                             "example": false
@@ -10719,6 +11372,7 @@
                           "summary",
                           "output",
                           "prompt",
+                          "harness",
                           "hasTranscript"
                         ],
                         "additionalProperties": false
@@ -13289,7 +13943,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The stored configuration in full: harnesses, price overrides, defaults, auto-runner settings, and flags.",
+            "description": "The stored configuration in full: harnesses and their model catalogs, defaults, auto-runner settings, and flags.",
             "content": {
               "application/json": {
                 "schema": {
@@ -13792,7 +14446,7 @@
                     "guardrails"
                   ],
                   "additionalProperties": false,
-                  "description": "The stored configuration in full: harnesses, price overrides, defaults, auto-runner settings, and flags."
+                  "description": "The stored configuration in full: harnesses and their model catalogs, defaults, auto-runner settings, and flags."
                 }
               }
             }
@@ -14338,7 +14992,7 @@
         "tags": [
           "Config"
         ],
-        "description": "Full-replace the stored configuration. Unlike PATCH's deep-merge, a record key omitted here (a harness env var, a price override) is deleted, not left alone — the settings UI loads the whole config, edits locally, and saves the complete object so it can delete as well as add. Validated atomically against the config schema: an invalid body is rejected with no partial write. Operator only; not reachable with an attempt-scoped Attempt Key.",
+        "description": "Full-replace the stored configuration. Unlike PATCH's deep-merge, a record key omitted here (a harness environment variable, a catalog entry) is deleted, not left alone. The settings UI loads the whole config, edits locally, and saves the complete object so it can delete as well as add. The config schema validates the request atomically, so an invalid body makes no partial write. Operator only; not reachable with an attempt-scoped Attempt Key.",
         "requestBody": {
           "required": true,
           "content": {
@@ -15336,6 +15990,1571 @@
                   ],
                   "additionalProperties": false,
                   "description": "The whole configuration as stored after the replace."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/config/layers": {
+      "get": {
+        "tags": [
+          "Config"
+        ],
+        "description": "Get the distributed baseline and effective global configuration for settings inheritance controls.",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The distributed baseline config and the effective global config the inheritance controls resolve against.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "baseline": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "example": "Production"
+                        },
+                        "harnesses": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string",
+                            "enum": [
+                              "claude",
+                              "codex",
+                              "copilot"
+                            ]
+                          },
+                          "additionalProperties": {
+                            "type": "object",
+                            "properties": {
+                              "command": {
+                                "type": "string",
+                                "example": "npx"
+                              },
+                              "args": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "example": [
+                                  "@zed-industries/claude-code-acp"
+                                ]
+                              },
+                              "env": {
+                                "type": "object",
+                                "propertyNames": {
+                                  "type": "string"
+                                },
+                                "additionalProperties": {
+                                  "type": "string"
+                                },
+                                "example": {
+                                  "ANTHROPIC_API_KEY": "<your-api-key>"
+                                }
+                              },
+                              "models": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "id": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "example": "sonnet-5"
+                                    },
+                                    "price": {
+                                      "type": "object",
+                                      "properties": {
+                                        "input": {
+                                          "type": "number",
+                                          "minimum": 0,
+                                          "example": 3
+                                        },
+                                        "output": {
+                                          "type": "number",
+                                          "minimum": 0,
+                                          "example": 15
+                                        },
+                                        "cacheRead": {
+                                          "type": "number",
+                                          "minimum": 0,
+                                          "example": 0.3
+                                        },
+                                        "cacheWrite": {
+                                          "type": "number",
+                                          "minimum": 0,
+                                          "example": 3.75
+                                        }
+                                      },
+                                      "required": [
+                                        "input",
+                                        "output",
+                                        "cacheRead",
+                                        "cacheWrite"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    "contextWindow": {
+                                      "example": 200000,
+                                      "type": "integer",
+                                      "exclusiveMinimum": 0,
+                                      "maximum": 9007199254740991
+                                    }
+                                  },
+                                  "required": [
+                                    "id"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                "example": [
+                                  {
+                                    "id": "sonnet-5"
+                                  },
+                                  {
+                                    "id": "opus-4.8"
+                                  }
+                                ]
+                              },
+                              "defaultModel": {
+                                "type": "string",
+                                "example": "sonnet-5"
+                              },
+                              "cacheWarmSeconds": {
+                                "type": "integer",
+                                "exclusiveMinimum": 0,
+                                "maximum": 9007199254740991,
+                                "example": 300
+                              },
+                              "sessionLogDir": {
+                                "example": "~/.claude/projects",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "command",
+                              "args",
+                              "env",
+                              "models",
+                              "defaultModel",
+                              "cacheWarmSeconds"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "required": [
+                            "claude",
+                            "codex",
+                            "copilot"
+                          ],
+                          "example": {
+                            "claude": {
+                              "command": "npx",
+                              "args": [
+                                "@zed-industries/claude-code-acp"
+                              ],
+                              "env": {},
+                              "models": [
+                                {
+                                  "id": "sonnet-5"
+                                },
+                                {
+                                  "id": "opus-4.8"
+                                }
+                              ],
+                              "defaultModel": "sonnet-5",
+                              "cacheWarmSeconds": 300
+                            }
+                          }
+                        },
+                        "defaults": {
+                          "type": "object",
+                          "properties": {
+                            "harness": {
+                              "type": "string",
+                              "enum": [
+                                "claude",
+                                "codex",
+                                "copilot"
+                              ],
+                              "example": "claude"
+                            },
+                            "workingDir": {
+                              "type": "string",
+                              "example": "/home/dev/harmonic"
+                            },
+                            "isolationMode": {
+                              "type": "string",
+                              "enum": [
+                                "direct",
+                                "worktree"
+                              ],
+                              "example": "worktree"
+                            },
+                            "priority": {
+                              "type": "string",
+                              "enum": [
+                                "high",
+                                "normal",
+                                "low"
+                              ],
+                              "example": "normal"
+                            },
+                            "conflictResolveTurns": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991,
+                              "example": 2
+                            }
+                          },
+                          "required": [
+                            "harness",
+                            "workingDir",
+                            "isolationMode",
+                            "priority",
+                            "conflictResolveTurns"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "chat": {
+                          "type": "object",
+                          "properties": {
+                            "harness": {
+                              "type": "string",
+                              "enum": [
+                                "claude",
+                                "codex",
+                                "copilot"
+                              ],
+                              "example": "claude"
+                            },
+                            "model": {
+                              "type": "string",
+                              "example": "claude-sonnet-5"
+                            }
+                          },
+                          "required": [
+                            "harness",
+                            "model"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "autoRunner": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean",
+                              "example": true
+                            },
+                            "maxConcurrentAttempts": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 9007199254740991,
+                              "example": 3
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "maxConcurrentAttempts"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "maxAttempts": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 9007199254740991,
+                          "example": 2
+                        },
+                        "contextReuseTokenLimit": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991,
+                          "example": 200000
+                        },
+                        "drive": {
+                          "type": "object",
+                          "properties": {
+                            "prompt": {
+                              "type": "string",
+                              "example": "Resolve tracker issue #{ref} ({url})."
+                            },
+                            "unattendedReminder": {
+                              "type": "string",
+                              "example": "Task {taskId} is running unattended."
+                            },
+                            "continuePrompt": {
+                              "type": "string",
+                              "example": "Continue Task {taskId}."
+                            },
+                            "mergeFate": {
+                              "type": "string",
+                              "enum": [
+                                "auto-merge",
+                                "open-PR",
+                                "artifact"
+                              ],
+                              "example": "auto-merge"
+                            },
+                            "continueAttempts": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991,
+                              "example": 10
+                            }
+                          },
+                          "required": [
+                            "prompt",
+                            "unattendedReminder",
+                            "continuePrompt",
+                            "mergeFate",
+                            "continueAttempts"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "taskPrompt": {
+                          "type": "string",
+                          "example": "Work on {prompt}."
+                        },
+                        "conversationIdleTimeoutMinutes": {
+                          "type": "number",
+                          "minimum": 0,
+                          "example": 30
+                        },
+                        "verify": {
+                          "type": "object",
+                          "properties": {
+                            "commands": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "command": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "example": "npm"
+                                  },
+                                  "args": {
+                                    "default": [],
+                                    "example": [
+                                      "test"
+                                    ],
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "cwd": {
+                                    "example": "packages/api",
+                                    "type": "string"
+                                  },
+                                  "env": {
+                                    "default": {},
+                                    "example": {
+                                      "CI": "1"
+                                    },
+                                    "type": "object",
+                                    "propertyNames": {
+                                      "type": "string"
+                                    },
+                                    "additionalProperties": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "timeoutSeconds": {
+                                    "default": 600,
+                                    "example": 600,
+                                    "type": "integer",
+                                    "exclusiveMinimum": 0,
+                                    "maximum": 9007199254740991
+                                  }
+                                },
+                                "required": [
+                                  "command",
+                                  "args",
+                                  "env",
+                                  "timeoutSeconds"
+                                ],
+                                "additionalProperties": false
+                              }
+                            },
+                            "review": {
+                              "type": "object",
+                              "properties": {
+                                "enabled": {
+                                  "default": false,
+                                  "type": "boolean"
+                                },
+                                "prompt": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "model": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "harness": {
+                                  "type": "string",
+                                  "enum": [
+                                    "claude",
+                                    "codex",
+                                    "copilot"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "enabled"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": [
+                            "commands",
+                            "review"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "merge": {
+                          "type": "object",
+                          "properties": {
+                            "postMergeCheck": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "postMergeCheck"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "guardrails": {
+                          "type": "object",
+                          "properties": {
+                            "budget": {
+                              "type": "object",
+                              "properties": {
+                                "wallClockMinutes": {
+                                  "default": 60,
+                                  "example": 60,
+                                  "type": "number",
+                                  "exclusiveMinimum": 0
+                                },
+                                "tokens": {
+                                  "default": null,
+                                  "example": 2000000,
+                                  "anyOf": [
+                                    {
+                                      "type": "integer",
+                                      "exclusiveMinimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "costUsd": {
+                                  "default": null,
+                                  "example": 10,
+                                  "anyOf": [
+                                    {
+                                      "type": "number",
+                                      "exclusiveMinimum": 0
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "wallClockMinutes",
+                                "tokens",
+                                "costUsd"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "progress": {
+                              "type": "boolean"
+                            },
+                            "toolTimeoutMinutes": {
+                              "type": "number",
+                              "exclusiveMinimum": 0
+                            },
+                            "promptInactivityTimeoutMinutes": {
+                              "type": "number",
+                              "exclusiveMinimum": 0
+                            }
+                          },
+                          "required": [
+                            "budget",
+                            "progress",
+                            "toolTimeoutMinutes",
+                            "promptInactivityTimeoutMinutes"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "harnesses",
+                        "defaults",
+                        "chat",
+                        "autoRunner",
+                        "maxAttempts",
+                        "contextReuseTokenLimit",
+                        "drive",
+                        "taskPrompt",
+                        "conversationIdleTimeoutMinutes",
+                        "verify",
+                        "merge",
+                        "guardrails"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "global": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "example": "Production"
+                        },
+                        "harnesses": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string",
+                            "enum": [
+                              "claude",
+                              "codex",
+                              "copilot"
+                            ]
+                          },
+                          "additionalProperties": {
+                            "type": "object",
+                            "properties": {
+                              "command": {
+                                "type": "string",
+                                "example": "npx"
+                              },
+                              "args": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "example": [
+                                  "@zed-industries/claude-code-acp"
+                                ]
+                              },
+                              "env": {
+                                "type": "object",
+                                "propertyNames": {
+                                  "type": "string"
+                                },
+                                "additionalProperties": {
+                                  "type": "string"
+                                },
+                                "example": {
+                                  "ANTHROPIC_API_KEY": "<your-api-key>"
+                                }
+                              },
+                              "models": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "id": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "example": "sonnet-5"
+                                    },
+                                    "price": {
+                                      "type": "object",
+                                      "properties": {
+                                        "input": {
+                                          "type": "number",
+                                          "minimum": 0,
+                                          "example": 3
+                                        },
+                                        "output": {
+                                          "type": "number",
+                                          "minimum": 0,
+                                          "example": 15
+                                        },
+                                        "cacheRead": {
+                                          "type": "number",
+                                          "minimum": 0,
+                                          "example": 0.3
+                                        },
+                                        "cacheWrite": {
+                                          "type": "number",
+                                          "minimum": 0,
+                                          "example": 3.75
+                                        }
+                                      },
+                                      "required": [
+                                        "input",
+                                        "output",
+                                        "cacheRead",
+                                        "cacheWrite"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    "contextWindow": {
+                                      "example": 200000,
+                                      "type": "integer",
+                                      "exclusiveMinimum": 0,
+                                      "maximum": 9007199254740991
+                                    }
+                                  },
+                                  "required": [
+                                    "id"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                "example": [
+                                  {
+                                    "id": "sonnet-5"
+                                  },
+                                  {
+                                    "id": "opus-4.8"
+                                  }
+                                ]
+                              },
+                              "defaultModel": {
+                                "type": "string",
+                                "example": "sonnet-5"
+                              },
+                              "cacheWarmSeconds": {
+                                "type": "integer",
+                                "exclusiveMinimum": 0,
+                                "maximum": 9007199254740991,
+                                "example": 300
+                              },
+                              "sessionLogDir": {
+                                "example": "~/.claude/projects",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "command",
+                              "args",
+                              "env",
+                              "models",
+                              "defaultModel",
+                              "cacheWarmSeconds"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "required": [
+                            "claude",
+                            "codex",
+                            "copilot"
+                          ],
+                          "example": {
+                            "claude": {
+                              "command": "npx",
+                              "args": [
+                                "@zed-industries/claude-code-acp"
+                              ],
+                              "env": {},
+                              "models": [
+                                {
+                                  "id": "sonnet-5"
+                                },
+                                {
+                                  "id": "opus-4.8"
+                                }
+                              ],
+                              "defaultModel": "sonnet-5",
+                              "cacheWarmSeconds": 300
+                            }
+                          }
+                        },
+                        "defaults": {
+                          "type": "object",
+                          "properties": {
+                            "harness": {
+                              "type": "string",
+                              "enum": [
+                                "claude",
+                                "codex",
+                                "copilot"
+                              ],
+                              "example": "claude"
+                            },
+                            "workingDir": {
+                              "type": "string",
+                              "example": "/home/dev/harmonic"
+                            },
+                            "isolationMode": {
+                              "type": "string",
+                              "enum": [
+                                "direct",
+                                "worktree"
+                              ],
+                              "example": "worktree"
+                            },
+                            "priority": {
+                              "type": "string",
+                              "enum": [
+                                "high",
+                                "normal",
+                                "low"
+                              ],
+                              "example": "normal"
+                            },
+                            "conflictResolveTurns": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991,
+                              "example": 2
+                            }
+                          },
+                          "required": [
+                            "harness",
+                            "workingDir",
+                            "isolationMode",
+                            "priority",
+                            "conflictResolveTurns"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "chat": {
+                          "type": "object",
+                          "properties": {
+                            "harness": {
+                              "type": "string",
+                              "enum": [
+                                "claude",
+                                "codex",
+                                "copilot"
+                              ],
+                              "example": "claude"
+                            },
+                            "model": {
+                              "type": "string",
+                              "example": "claude-sonnet-5"
+                            }
+                          },
+                          "required": [
+                            "harness",
+                            "model"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "autoRunner": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean",
+                              "example": true
+                            },
+                            "maxConcurrentAttempts": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 9007199254740991,
+                              "example": 3
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "maxConcurrentAttempts"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "maxAttempts": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 9007199254740991,
+                          "example": 2
+                        },
+                        "contextReuseTokenLimit": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991,
+                          "example": 200000
+                        },
+                        "drive": {
+                          "type": "object",
+                          "properties": {
+                            "prompt": {
+                              "type": "string",
+                              "example": "Resolve tracker issue #{ref} ({url})."
+                            },
+                            "unattendedReminder": {
+                              "type": "string",
+                              "example": "Task {taskId} is running unattended."
+                            },
+                            "continuePrompt": {
+                              "type": "string",
+                              "example": "Continue Task {taskId}."
+                            },
+                            "mergeFate": {
+                              "type": "string",
+                              "enum": [
+                                "auto-merge",
+                                "open-PR",
+                                "artifact"
+                              ],
+                              "example": "auto-merge"
+                            },
+                            "continueAttempts": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991,
+                              "example": 10
+                            }
+                          },
+                          "required": [
+                            "prompt",
+                            "unattendedReminder",
+                            "continuePrompt",
+                            "mergeFate",
+                            "continueAttempts"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "taskPrompt": {
+                          "type": "string",
+                          "example": "Work on {prompt}."
+                        },
+                        "conversationIdleTimeoutMinutes": {
+                          "type": "number",
+                          "minimum": 0,
+                          "example": 30
+                        },
+                        "verify": {
+                          "type": "object",
+                          "properties": {
+                            "commands": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "command": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "example": "npm"
+                                  },
+                                  "args": {
+                                    "default": [],
+                                    "example": [
+                                      "test"
+                                    ],
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "cwd": {
+                                    "example": "packages/api",
+                                    "type": "string"
+                                  },
+                                  "env": {
+                                    "default": {},
+                                    "example": {
+                                      "CI": "1"
+                                    },
+                                    "type": "object",
+                                    "propertyNames": {
+                                      "type": "string"
+                                    },
+                                    "additionalProperties": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "timeoutSeconds": {
+                                    "default": 600,
+                                    "example": 600,
+                                    "type": "integer",
+                                    "exclusiveMinimum": 0,
+                                    "maximum": 9007199254740991
+                                  }
+                                },
+                                "required": [
+                                  "command",
+                                  "args",
+                                  "env",
+                                  "timeoutSeconds"
+                                ],
+                                "additionalProperties": false
+                              }
+                            },
+                            "review": {
+                              "type": "object",
+                              "properties": {
+                                "enabled": {
+                                  "default": false,
+                                  "type": "boolean"
+                                },
+                                "prompt": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "model": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "harness": {
+                                  "type": "string",
+                                  "enum": [
+                                    "claude",
+                                    "codex",
+                                    "copilot"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "enabled"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": [
+                            "commands",
+                            "review"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "merge": {
+                          "type": "object",
+                          "properties": {
+                            "postMergeCheck": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "postMergeCheck"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "guardrails": {
+                          "type": "object",
+                          "properties": {
+                            "budget": {
+                              "type": "object",
+                              "properties": {
+                                "wallClockMinutes": {
+                                  "default": 60,
+                                  "example": 60,
+                                  "type": "number",
+                                  "exclusiveMinimum": 0
+                                },
+                                "tokens": {
+                                  "default": null,
+                                  "example": 2000000,
+                                  "anyOf": [
+                                    {
+                                      "type": "integer",
+                                      "exclusiveMinimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "costUsd": {
+                                  "default": null,
+                                  "example": 10,
+                                  "anyOf": [
+                                    {
+                                      "type": "number",
+                                      "exclusiveMinimum": 0
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "wallClockMinutes",
+                                "tokens",
+                                "costUsd"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "progress": {
+                              "type": "boolean"
+                            },
+                            "toolTimeoutMinutes": {
+                              "type": "number",
+                              "exclusiveMinimum": 0
+                            },
+                            "promptInactivityTimeoutMinutes": {
+                              "type": "number",
+                              "exclusiveMinimum": 0
+                            }
+                          },
+                          "required": [
+                            "budget",
+                            "progress",
+                            "toolTimeoutMinutes",
+                            "promptInactivityTimeoutMinutes"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "harnesses",
+                        "defaults",
+                        "chat",
+                        "autoRunner",
+                        "maxAttempts",
+                        "contextReuseTokenLimit",
+                        "drive",
+                        "taskPrompt",
+                        "conversationIdleTimeoutMinutes",
+                        "verify",
+                        "merge",
+                        "guardrails"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "baseline",
+                    "global"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The distributed baseline config and the effective global config the inheritance controls resolve against."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/config/overrides": {
+      "delete": {
+        "tags": [
+          "Config"
+        ],
+        "description": "Clear every global override and return to the distributed baseline.",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The whole configuration as stored once every global override was cleared.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "example": "Production"
+                    },
+                    "harnesses": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string",
+                        "enum": [
+                          "claude",
+                          "codex",
+                          "copilot"
+                        ]
+                      },
+                      "additionalProperties": {
+                        "type": "object",
+                        "properties": {
+                          "command": {
+                            "type": "string",
+                            "example": "npx"
+                          },
+                          "args": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "example": [
+                              "@zed-industries/claude-code-acp"
+                            ]
+                          },
+                          "env": {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string"
+                            },
+                            "additionalProperties": {
+                              "type": "string"
+                            },
+                            "example": {
+                              "ANTHROPIC_API_KEY": "<your-api-key>"
+                            }
+                          },
+                          "models": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "example": "sonnet-5"
+                                },
+                                "price": {
+                                  "type": "object",
+                                  "properties": {
+                                    "input": {
+                                      "type": "number",
+                                      "minimum": 0,
+                                      "example": 3
+                                    },
+                                    "output": {
+                                      "type": "number",
+                                      "minimum": 0,
+                                      "example": 15
+                                    },
+                                    "cacheRead": {
+                                      "type": "number",
+                                      "minimum": 0,
+                                      "example": 0.3
+                                    },
+                                    "cacheWrite": {
+                                      "type": "number",
+                                      "minimum": 0,
+                                      "example": 3.75
+                                    }
+                                  },
+                                  "required": [
+                                    "input",
+                                    "output",
+                                    "cacheRead",
+                                    "cacheWrite"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                "contextWindow": {
+                                  "example": 200000,
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0,
+                                  "maximum": 9007199254740991
+                                }
+                              },
+                              "required": [
+                                "id"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "example": [
+                              {
+                                "id": "sonnet-5"
+                              },
+                              {
+                                "id": "opus-4.8"
+                              }
+                            ]
+                          },
+                          "defaultModel": {
+                            "type": "string",
+                            "example": "sonnet-5"
+                          },
+                          "cacheWarmSeconds": {
+                            "type": "integer",
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "example": 300
+                          },
+                          "sessionLogDir": {
+                            "example": "~/.claude/projects",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "command",
+                          "args",
+                          "env",
+                          "models",
+                          "defaultModel",
+                          "cacheWarmSeconds"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "required": [
+                        "claude",
+                        "codex",
+                        "copilot"
+                      ],
+                      "example": {
+                        "claude": {
+                          "command": "npx",
+                          "args": [
+                            "@zed-industries/claude-code-acp"
+                          ],
+                          "env": {},
+                          "models": [
+                            {
+                              "id": "sonnet-5"
+                            },
+                            {
+                              "id": "opus-4.8"
+                            }
+                          ],
+                          "defaultModel": "sonnet-5",
+                          "cacheWarmSeconds": 300
+                        }
+                      }
+                    },
+                    "defaults": {
+                      "type": "object",
+                      "properties": {
+                        "harness": {
+                          "type": "string",
+                          "enum": [
+                            "claude",
+                            "codex",
+                            "copilot"
+                          ],
+                          "example": "claude"
+                        },
+                        "workingDir": {
+                          "type": "string",
+                          "example": "/home/dev/harmonic"
+                        },
+                        "isolationMode": {
+                          "type": "string",
+                          "enum": [
+                            "direct",
+                            "worktree"
+                          ],
+                          "example": "worktree"
+                        },
+                        "priority": {
+                          "type": "string",
+                          "enum": [
+                            "high",
+                            "normal",
+                            "low"
+                          ],
+                          "example": "normal"
+                        },
+                        "conflictResolveTurns": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991,
+                          "example": 2
+                        }
+                      },
+                      "required": [
+                        "harness",
+                        "workingDir",
+                        "isolationMode",
+                        "priority",
+                        "conflictResolveTurns"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "chat": {
+                      "type": "object",
+                      "properties": {
+                        "harness": {
+                          "type": "string",
+                          "enum": [
+                            "claude",
+                            "codex",
+                            "copilot"
+                          ],
+                          "example": "claude"
+                        },
+                        "model": {
+                          "type": "string",
+                          "example": "claude-sonnet-5"
+                        }
+                      },
+                      "required": [
+                        "harness",
+                        "model"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "autoRunner": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean",
+                          "example": true
+                        },
+                        "maxConcurrentAttempts": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 9007199254740991,
+                          "example": 3
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "maxConcurrentAttempts"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "maxAttempts": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991,
+                      "example": 2
+                    },
+                    "contextReuseTokenLimit": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "example": 200000
+                    },
+                    "drive": {
+                      "type": "object",
+                      "properties": {
+                        "prompt": {
+                          "type": "string",
+                          "example": "Resolve tracker issue #{ref} ({url})."
+                        },
+                        "unattendedReminder": {
+                          "type": "string",
+                          "example": "Task {taskId} is running unattended."
+                        },
+                        "continuePrompt": {
+                          "type": "string",
+                          "example": "Continue Task {taskId}."
+                        },
+                        "mergeFate": {
+                          "type": "string",
+                          "enum": [
+                            "auto-merge",
+                            "open-PR",
+                            "artifact"
+                          ],
+                          "example": "auto-merge"
+                        },
+                        "continueAttempts": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991,
+                          "example": 10
+                        }
+                      },
+                      "required": [
+                        "prompt",
+                        "unattendedReminder",
+                        "continuePrompt",
+                        "mergeFate",
+                        "continueAttempts"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "taskPrompt": {
+                      "type": "string",
+                      "example": "Work on {prompt}."
+                    },
+                    "conversationIdleTimeoutMinutes": {
+                      "type": "number",
+                      "minimum": 0,
+                      "example": 30
+                    },
+                    "verify": {
+                      "type": "object",
+                      "properties": {
+                        "commands": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "command": {
+                                "type": "string",
+                                "minLength": 1,
+                                "example": "npm"
+                              },
+                              "args": {
+                                "default": [],
+                                "example": [
+                                  "test"
+                                ],
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "cwd": {
+                                "example": "packages/api",
+                                "type": "string"
+                              },
+                              "env": {
+                                "default": {},
+                                "example": {
+                                  "CI": "1"
+                                },
+                                "type": "object",
+                                "propertyNames": {
+                                  "type": "string"
+                                },
+                                "additionalProperties": {
+                                  "type": "string"
+                                }
+                              },
+                              "timeoutSeconds": {
+                                "default": 600,
+                                "example": 600,
+                                "type": "integer",
+                                "exclusiveMinimum": 0,
+                                "maximum": 9007199254740991
+                              }
+                            },
+                            "required": [
+                              "command",
+                              "args",
+                              "env",
+                              "timeoutSeconds"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "review": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "default": false,
+                              "type": "boolean"
+                            },
+                            "prompt": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "model": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "harness": {
+                              "type": "string",
+                              "enum": [
+                                "claude",
+                                "codex",
+                                "copilot"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "enabled"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "commands",
+                        "review"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "merge": {
+                      "type": "object",
+                      "properties": {
+                        "postMergeCheck": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "postMergeCheck"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "guardrails": {
+                      "type": "object",
+                      "properties": {
+                        "budget": {
+                          "type": "object",
+                          "properties": {
+                            "wallClockMinutes": {
+                              "default": 60,
+                              "example": 60,
+                              "type": "number",
+                              "exclusiveMinimum": 0
+                            },
+                            "tokens": {
+                              "default": null,
+                              "example": 2000000,
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "costUsd": {
+                              "default": null,
+                              "example": 10,
+                              "anyOf": [
+                                {
+                                  "type": "number",
+                                  "exclusiveMinimum": 0
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "wallClockMinutes",
+                            "tokens",
+                            "costUsd"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "progress": {
+                          "type": "boolean"
+                        },
+                        "toolTimeoutMinutes": {
+                          "type": "number",
+                          "exclusiveMinimum": 0
+                        },
+                        "promptInactivityTimeoutMinutes": {
+                          "type": "number",
+                          "exclusiveMinimum": 0
+                        }
+                      },
+                      "required": [
+                        "budget",
+                        "progress",
+                        "toolTimeoutMinutes",
+                        "promptInactivityTimeoutMinutes"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "harnesses",
+                    "defaults",
+                    "chat",
+                    "autoRunner",
+                    "maxAttempts",
+                    "contextReuseTokenLimit",
+                    "drive",
+                    "taskPrompt",
+                    "conversationIdleTimeoutMinutes",
+                    "verify",
+                    "merge",
+                    "guardrails"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The whole configuration as stored once every global override was cleared."
                 }
               }
             }
@@ -17369,6 +19588,58 @@
         }
       }
     },
+    "/api/operations/reconcile": {
+      "post": {
+        "tags": [
+          "Operations"
+        ],
+        "description": "Run worktree reconciliation immediately.",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The outcome of the worktree reconciliation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "removed": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "recreated": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "flagged": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "removed",
+                    "recreated",
+                    "flagged"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The outcome of the worktree reconciliation."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/scheduled-jobs": {
       "get": {
         "tags": [
@@ -17441,12 +19712,12 @@
         }
       }
     },
-    "/api/flagged-worktrees": {
+    "/api/worktrees": {
       "get": {
         "tags": [
-          "Worktree Reconciliation"
+          "Worktrees"
         ],
-        "description": "Read-only registry of worktrees the reconciler (ADR-0010) will not delete — dirty, unreadable, or unrecognized — awaiting operator disposition.",
+        "description": "A read-time inventory of every Git worktree joined to mirrored Tasks and Epics. The state is never persisted.",
         "parameters": [
           {
             "schema": {
@@ -17481,7 +19752,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The current flagged-worktree registry snapshot.",
+            "description": "The current worktree inventory snapshot.",
             "content": {
               "application/json": {
                 "schema": {
@@ -17490,7 +19761,7 @@
                     "worktrees": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/FlaggedWorktree"
+                        "$ref": "#/components/schemas/WorktreeInventoryEntry"
                       }
                     },
                     "total": {
@@ -17505,7 +19776,150 @@
                     "total"
                   ],
                   "additionalProperties": false,
-                  "description": "The current flagged-worktree registry snapshot."
+                  "description": "The current worktree inventory snapshot."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/worktrees/{id}/cleanup": {
+      "post": {
+        "tags": [
+          "Worktrees"
+        ],
+        "description": "Human-only, confirmed removal of a managed worktree and its Harmonic branch. Dirty and unreadable worktrees are never removed automatically; this is the explicit operator disposition path.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "example": "WzEsIi9kYXRhL3dvcmt0cmVlcy90YXNrLTQyIl0"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Whether the worktree was removed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "removed": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "removed"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Whether the worktree was removed."
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The worktree is outside Harmonic’s managed worktree root.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No managed worktree exists for this Task.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/worktrees/{id}/dirty-files": {
+      "get": {
+        "tags": [
+          "Worktrees"
+        ],
+        "description": "The uncommitted paths that a forced cleanup would discard.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "example": "WzEsIi9kYXRhL3dvcmt0cmVlcy90YXNrLTQyIl0"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The uncommitted files that cleanup would discard.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "files": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "files"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The uncommitted files that cleanup would discard."
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The worktree is outside Harmonic’s managed worktree root.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No managed worktree exists for this Task.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
