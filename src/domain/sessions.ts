@@ -179,6 +179,22 @@ export class SessionStore {
     ))!;
   }
 
+  /** Refresh the Session's activity clock. `lastActiveAt` models when the harness
+   * last did work — i.e. when the provider prompt cache was last warmed — which the
+   * continuation warm-window check reads to decide whether a retry may resume the
+   * Session or must mint a fresh one. Without a per-turn touch it stays pinned at
+   * dispatch time and long-running attempts age their own Session out of the window. */
+  async touch(id: number, now: number): Promise<SessionRow> {
+    return (await this.db.write((db) =>
+      db
+        .update(sessions)
+        .set({ lastActiveAt: now, updatedAt: now })
+        .where(eq(sessions.id, id))
+        .returning()
+        .get(),
+    ))!;
+  }
+
   /** Record a native transcript discovered after the harness has flushed it. */
   async setTranscriptPath(id: number, transcriptPath: string, now: number): Promise<SessionRow> {
     return (await this.db.write((db) =>

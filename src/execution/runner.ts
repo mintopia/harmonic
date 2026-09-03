@@ -1948,6 +1948,9 @@ export class Runner {
     const finalize = async (): Promise<void> => {
       if (finalized) return;
       finalized = true;
+      if (turn.sessionRowId !== undefined) {
+        await this.sessionStore.touch(turn.sessionRowId, Date.now()).catch(() => {});
+      }
       await this.tailer.stop(run.id);
       turn.clearTimer();
       await flushToolCalls().catch(() => {});

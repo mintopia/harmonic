@@ -228,6 +228,20 @@ describe('Sessions (issue #141)', () => {
       });
     });
 
+    describe('touch', () => {
+      it('advances lastActiveAt and updatedAt so a long turn keeps the Session warm', async () => {
+        const created = await store.recordDispatch(baseInput());
+        expect(created.lastActiveAt).toBe(now);
+
+        const later = now + 20 * 60_000;
+        const touched = await store.touch(created.id, later);
+        expect(touched.id).toBe(created.id);
+        expect(touched.lastActiveAt).toBe(later);
+        expect(touched.updatedAt).toBe(later);
+        expect(touched.createdAt).toBe(created.createdAt);
+      });
+    });
+
     describe('setTranscriptPath', () => {
       it('records a transcript discovered after the initial dispatch', async () => {
         const created = await store.recordDispatch(baseInput());
