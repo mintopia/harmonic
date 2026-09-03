@@ -1,8 +1,9 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SpanStatusCode, trace } from '@opentelemetry/api';
 import { initializeTelemetry, resolveTelemetryOptions, type TelemetryController } from '../src/telemetry.js';
 import type { OperationEvent } from '../src/telemetry/operations.js';
 import { operationRegistry, startOperation } from '../src/telemetry/operations.js';
+import { WorktreeReconciler } from '../src/domain/worktree-reconciler.js';
 import { startServer, waitFor, type TestServer } from './helpers.js';
 
 describe('Operations API (issue #293)', () => {
@@ -13,6 +14,7 @@ describe('Operations API (issue #293)', () => {
     await server?.close();
     await telemetry?.shutdown();
     trace.disable();
+    vi.restoreAllMocks();
     server = undefined;
     telemetry = undefined;
   });
@@ -48,6 +50,45 @@ describe('Operations API (issue #293)', () => {
       headers: { authorization: `Bearer ${readKey.body.token}` },
     });
     expect(readResponse.status).toBe(200);
+  });
+
+  it('reconciles managed worktrees on demand', async () => {
+    server = await startServer();
+
+    const response = await server.api('POST', '/api/operations/reconcile');
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ removed: 0, recreated: 0, flagged: 0 });
+  });
+
+  it('shares the reconciliation flight with the scheduled job', async () => {
+    server = await startServer();
+    let active = 0;
+    let maxActive = 0;
+    let calls = 0;
+    let release: (() => void) | undefined;
+    const entered = new Promise<void>((resolve) => {
+      vi.spyOn(WorktreeReconciler.prototype, 'reconcile').mockImplementation(async () => {
+        calls += 1;
+        active += 1;
+        maxActive = Math.max(maxActive, active);
+        if (calls === 1) {
+          resolve();
+          await new Promise<void>((continueReconciliation) => { release = continueReconciliation; });
+        }
+        active -= 1;
+        return { removed: 1, recreated: 2, flagged: 3 };
+      });
+    });
+
+    const manual = server.api('POST', '/api/operations/reconcile');
+    await entered;
+    const scheduled = server.app.ctx.scheduler.runNow('Worktree reconciliation');
+    release?.();
+
+    await expect(manual).resolves.toMatchObject({ status: 200, body: { removed: 1, recreated: 2, flagged: 3 } });
+    await expect(scheduled).resolves.toBeUndefined();
+    expect(maxActive).toBe(1);
   });
 
   it('streams operation events to full and read-scoped firehose clients', async () => {
