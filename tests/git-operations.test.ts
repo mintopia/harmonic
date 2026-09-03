@@ -116,6 +116,17 @@ describe('Git operation instrumentation (issue #287)', () => {
   });
 });
 
+describe('Git.dirtyFiles', () => {
+  it('lists the current paths for tracked, untracked, and renamed changes', async () => {
+    const repo = makeRepo();
+    writeFileSync(join(repo, 'base.txt'), 'changed\n');
+    writeFileSync(join(repo, 'untracked.txt'), 'new\n');
+    git(repo, 'mv', 'base.txt', 'renamed.txt');
+
+    await expect(Git.dirtyFiles(repo)).resolves.toEqual(['renamed.txt', 'untracked.txt']);
+  });
+});
+
 describe('worktreeDiff — live diff of a running Run against its fork point', () => {
   it('includes committed AND uncommitted tracked changes', async () => {
     const repo = makeRepo();

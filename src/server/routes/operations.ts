@@ -46,7 +46,7 @@ export async function operationRoutes(
       tags: ['Operations'],
       description: 'Run worktree reconciliation immediately.',
       security: [{ bearerAuth: [] }, { sessionCookie: [] }],
-      response: { 200: reconciliationResponseSchema },
+      response: { 200: reconciliationResponseSchema.describe('The outcome of the worktree reconciliation.') },
     },
   }, () => ctx.reconcileWorktrees());
 }

@@ -204,7 +204,7 @@ export function OperationsPage({ scheduledJobs, spanTree, flaggedWorktrees, task
         'section',
         { 'aria-labelledby': 'worktrees-heading' },
         createElement('h2', { id: 'worktrees-heading', className: sectionTitle }, 'Worktrees'),
-        flaggedWorktrees ?? createElement(FlaggedWorktreesView),
+        flaggedWorktrees ?? createElement(FlaggedWorktreesView, { onOpenTask, onOpenEpic }),
       ),
       createElement(
         'section',

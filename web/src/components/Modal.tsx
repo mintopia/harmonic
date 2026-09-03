@@ -16,7 +16,7 @@ export function Modal({
   label: string;
   onClose: () => void;
   className?: string;
-  children: ReactNode;
+  children?: ReactNode;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
 
