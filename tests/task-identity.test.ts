@@ -34,7 +34,7 @@ describe('TaskIdentity', () => {
     expect(html).toContain('title="claude-sonnet-4-6"');
     expect(html).toContain('aria-label="claude-sonnet-4-6"');
     expect(html).toContain('>sonnet-4-6<');
-    expect(html).toContain('>CL<');
+    expect(html).toContain('>Claude<');
   });
 });
 
