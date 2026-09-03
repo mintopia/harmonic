@@ -10,7 +10,7 @@ import type {
   Task,
 } from './types.js';
 import type { ScheduledJob } from './scheduled-jobs-model.js';
-import type { WorktreeInventoryEntry } from './worktree-inventory-model.js';
+import type { WorktreeInventoryEntry } from './flagged-worktrees-model.js';
 
 export interface OperationEvent {
   type: 'op-started' | 'op-updated' | 'op-ended';

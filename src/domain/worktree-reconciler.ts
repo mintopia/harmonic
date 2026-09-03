@@ -3,6 +3,7 @@ import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { GitError } from './errors.js';
 import { forEachYielding } from '../reliability/yield.js';
 import { startOperation } from '../telemetry/operations.js';
+import type { FlaggedWorktree } from './flagged-worktrees.js';
 
 /** A non-terminal Task the runner may still be, or become, active on. */
 export interface ActiveTask {
@@ -38,6 +39,10 @@ export interface WorktreeRepository {
   ): Promise<boolean>;
 }
 
+export interface FlaggedWorktreeStore {
+  replace(flags: readonly FlaggedWorktree[]): void;
+}
+
 export function isInside(root: string, path: string): boolean {
   const rel = relative(root, path);
   return rel !== '' && rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
@@ -53,8 +58,8 @@ function parseTaskId(name: string): number | null {
 /**
  * Boot/periodic worktree reconciliation. A live Task's worktree is recreated
  * when missing; a terminal Task's clean worktree is removed; anything dirty,
- * unreadable, or unrecognized is left on disk for the inventory to surface to
- * an operator. Only paths under the managed worktree root are ever touched.
+ * unreadable, or unrecognized is left on disk and surfaced through `flagStore`
+ * for an operator. Only paths under the managed worktree root are ever touched.
  */
 export class WorktreeReconciler {
   private readonly managedRoot: string;
@@ -64,6 +69,7 @@ export class WorktreeReconciler {
     private readonly workspaces: WorkspaceSource,
     private readonly git: WorktreeRepository,
     worktreesDir: string,
+    private readonly flagStore?: FlaggedWorktreeStore,
     /** Reap the removed worktree's jCodeMunch index; defaults to a no-op. */
     private readonly reapIndex: (absPath: string) => Promise<void> = async () => {},
   ) {
@@ -105,7 +111,7 @@ export class WorktreeReconciler {
 
     let removed = 0;
     let recreated = 0;
-    let flagged = 0;
+    const flags: FlaggedWorktree[] = [];
     let firstError: unknown;
 
     await forEachYielding(await this.workspaces(), async (workspace) => {
@@ -122,31 +128,32 @@ export class WorktreeReconciler {
 
         const missing = await this.recreateMissing(workspace, active);
         recreated += missing.recreated;
-        flagged += missing.flagged;
+        flags.push(...missing.flags);
         const activeIds = new Set(active.map((task) => task.id));
         const outcome = await this.removeOrFlag(workspace, worktrees, activeIds);
         removed += outcome.removed;
-        flagged += outcome.flagged;
+        flags.push(...outcome.flags);
       } catch (error) {
         firstError ??= error;
       }
     });
 
+    this.flagStore?.replace(flags);
     if (firstError !== undefined) throw firstError;
-    return { removed, recreated, flagged };
+    return { removed, recreated, flagged: flags.length };
   }
 
   private async recreateMissing(
     workspace: ManagedWorkspace,
     active: readonly ActiveTask[],
-  ): Promise<{ recreated: number; flagged: number }> {
+  ): Promise<{ recreated: number; flags: FlaggedWorktree[] }> {
     let recreated = 0;
-    let flagged = 0;
+    const flags: FlaggedWorktree[] = [];
     await forEachYielding(active, async (task) => {
       const path = this.worktreePathForTask(task.id);
       if (await this.git.isValidWorktree(workspace.workingDir, path)) return;
       if (existsSync(path)) {
-        flagged++;
+        flags.push({ path, repoDir: workspace.workingDir, workspaceId: workspace.id, taskId: task.id, branch: this.branchForTask(task.id), reason: 'unreadable' });
         return;
       }
       const branch = this.branchForTask(task.id);
@@ -154,32 +161,32 @@ export class WorktreeReconciler {
       await this.git.addWorktreeCheckout(workspace.workingDir, path, branch);
       recreated++;
     });
-    return { recreated, flagged };
+    return { recreated, flags };
   }
 
   private async removeOrFlag(
     workspace: ManagedWorkspace,
     worktrees: readonly WorktreeRecord[],
     activeIds: ReadonlySet<number>,
-  ): Promise<{ removed: number; flagged: number }> {
+  ): Promise<{ removed: number; flags: FlaggedWorktree[] }> {
     let removed = 0;
-    let flagged = 0;
+    const flags: FlaggedWorktree[] = [];
     await forEachYielding(worktrees, async (worktree) => {
       const path = resolve(worktree.path);
       if (!isInside(this.managedRoot, path)) return;
       const taskId = parseTaskId(basename(path));
       if (taskId === null) {
-        flagged++;
+        flags.push({ path, repoDir: workspace.workingDir, workspaceId: workspace.id, taskId: null, branch: worktree.branch, reason: 'unrecognized' });
         return;
       }
       if (activeIds.has(taskId)) return;
 
       if (!(await this.git.isValidWorktree(workspace.workingDir, path))) {
-        flagged++;
+        flags.push({ path, repoDir: workspace.workingDir, workspaceId: workspace.id, taskId, branch: worktree.branch, reason: 'unreadable' });
         return;
       }
       if (await this.git.isDirty(path)) {
-        flagged++;
+        flags.push({ path, repoDir: workspace.workingDir, workspaceId: workspace.id, taskId, branch: worktree.branch, reason: 'dirty' });
         return;
       }
       const didRemove = await this.git.removeWorktreeAndDeleteBranch(workspace.workingDir, path, worktree.branch, async () => {
@@ -191,6 +198,6 @@ export class WorktreeReconciler {
         await this.reapIndex(path);
       }
     });
-    return { removed, flagged };
+    return { removed, flags };
   }
 }

@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { WorktreeReconciler, type WorktreeRepository } from '../src/domain/worktree-reconciler.js';
+import type { FlaggedWorktree } from '../src/domain/flagged-worktrees.js';
 import { Git } from '../src/execution/git.js';
 
 const tempDirs: string[] = [];
@@ -33,10 +34,19 @@ function fakeGit(overrides: Partial<WorktreeRepository>): WorktreeRepository {
   };
 }
 
+function flagStore() {
+  let current: readonly FlaggedWorktree[] = [];
+  return {
+    store: { replace: (flags: readonly FlaggedWorktree[]) => { current = flags; } },
+    snapshot: () => current,
+  };
+}
+
 describe('worktree reconciler (issue #386, ADR-0010)', () => {
-  it('leaves a dirty worktree of a terminal task on disk', async () => {
+  it('flags a dirty worktree of a terminal task and does NOT remove it', async () => {
     const managedRoot = '/harmonic/worktrees';
     const path = join(managedRoot, 'task-5');
+    const { store, snapshot } = flagStore();
     const removeWorktreeAndDeleteBranch = vi.fn();
 
     const reconciler = new WorktreeReconciler(
@@ -49,15 +59,20 @@ describe('worktree reconciler (issue #386, ADR-0010)', () => {
         removeWorktreeAndDeleteBranch,
       }),
       managedRoot,
+      store,
     );
 
     await expect(reconciler.reconcile()).resolves.toEqual({ removed: 0, recreated: 0, flagged: 1 });
     expect(removeWorktreeAndDeleteBranch).not.toHaveBeenCalled();
+    expect(snapshot()).toEqual([
+      { path, repoDir: '/repo', workspaceId: 1, taskId: 5, branch: 'harmonic/task-5', reason: 'dirty' },
+    ]);
   });
 
-  it('leaves an unreadable worktree of a terminal task on disk', async () => {
+  it('flags an unreadable worktree of a terminal task and does NOT remove it', async () => {
     const managedRoot = '/harmonic/worktrees';
     const path = join(managedRoot, 'task-9');
+    const { store, snapshot } = flagStore();
     const removeWorktreeAndDeleteBranch = vi.fn();
 
     const reconciler = new WorktreeReconciler(
@@ -69,15 +84,20 @@ describe('worktree reconciler (issue #386, ADR-0010)', () => {
         removeWorktreeAndDeleteBranch,
       }),
       managedRoot,
+      store,
     );
 
     await expect(reconciler.reconcile()).resolves.toEqual({ removed: 0, recreated: 0, flagged: 1 });
     expect(removeWorktreeAndDeleteBranch).not.toHaveBeenCalled();
+    expect(snapshot()).toEqual([
+      { path, repoDir: '/repo', workspaceId: 1, taskId: 9, branch: 'harmonic/task-9', reason: 'unreadable' },
+    ]);
   });
 
   it('removes a clean worktree of a terminal task and reaps its index, rechecking under the lock', async () => {
     const managedRoot = '/harmonic/worktrees';
     const path = join(managedRoot, 'task-2');
+    const { store, snapshot } = flagStore();
     const reaped: string[] = [];
     let beforeRemoveResult: boolean | undefined;
 
@@ -97,6 +117,7 @@ describe('worktree reconciler (issue #386, ADR-0010)', () => {
         },
       }),
       managedRoot,
+      store,
       async (absPath) => {
         reaped.push(absPath);
       },
@@ -105,11 +126,13 @@ describe('worktree reconciler (issue #386, ADR-0010)', () => {
     await expect(reconciler.reconcile()).resolves.toEqual({ removed: 1, recreated: 0, flagged: 0 });
     expect(beforeRemoveResult).toBe(true);
     expect(reaped).toEqual([path]);
+    expect(snapshot()).toEqual([]);
   });
 
   it('recreates a live task worktree via addWorktreeCheckout when its branch still exists', async () => {
     const managedRoot = '/harmonic/worktrees';
     const path = join(managedRoot, 'task-7');
+    const { store } = flagStore();
     const addWorktreeCheckout = vi.fn(async () => {});
 
     const reconciler = new WorktreeReconciler(
@@ -122,16 +145,18 @@ describe('worktree reconciler (issue #386, ADR-0010)', () => {
         addWorktreeCheckout,
       }),
       managedRoot,
+      store,
     );
 
     await expect(reconciler.reconcile()).resolves.toEqual({ removed: 0, recreated: 1, flagged: 0 });
     expect(addWorktreeCheckout).toHaveBeenCalledWith('/repo', path, 'harmonic/task-7');
   });
 
-  it('leaves a live task worktree that is present but unreadable, never discarding it', async () => {
+  it('flags a live task worktree that is present but unreadable, never discarding it', async () => {
     const managedRoot = tempDir('harmonic-reconcile-unreadable-');
     const path = join(managedRoot, 'task-7');
     mkdirSync(path);
+    const { store, snapshot } = flagStore();
     const addWorktreeCheckout = vi.fn(async () => {});
 
     const reconciler = new WorktreeReconciler(
@@ -143,15 +168,20 @@ describe('worktree reconciler (issue #386, ADR-0010)', () => {
         addWorktreeCheckout,
       }),
       managedRoot,
+      store,
     );
 
     await expect(reconciler.reconcile()).resolves.toEqual({ removed: 0, recreated: 0, flagged: 1 });
     expect(addWorktreeCheckout).not.toHaveBeenCalled();
     expect(existsSync(path)).toBe(true);
+    expect(snapshot()).toEqual([
+      { path, repoDir: '/repo', workspaceId: 1, taskId: 7, branch: 'harmonic/task-7', reason: 'unreadable' },
+    ]);
   });
 
   it('does NOT recreate a live task worktree when its branch is gone', async () => {
     const managedRoot = '/harmonic/worktrees';
+    const { store } = flagStore();
     const addWorktreeCheckout = vi.fn(async () => {});
 
     const reconciler = new WorktreeReconciler(
@@ -164,15 +194,17 @@ describe('worktree reconciler (issue #386, ADR-0010)', () => {
         addWorktreeCheckout,
       }),
       managedRoot,
+      store,
     );
 
     await expect(reconciler.reconcile()).resolves.toEqual({ removed: 0, recreated: 0, flagged: 0 });
     expect(addWorktreeCheckout).not.toHaveBeenCalled();
   });
 
-  it('leaves a managed path that does not parse as task-<id> on disk', async () => {
+  it('flags a managed path that does not parse as task-<id> and never removes it', async () => {
     const managedRoot = '/harmonic/worktrees';
     const path = join(managedRoot, 'scratch');
+    const { store, snapshot } = flagStore();
     const removeWorktreeAndDeleteBranch = vi.fn();
 
     const reconciler = new WorktreeReconciler(
@@ -183,10 +215,14 @@ describe('worktree reconciler (issue #386, ADR-0010)', () => {
         removeWorktreeAndDeleteBranch,
       }),
       managedRoot,
+      store,
     );
 
     await expect(reconciler.reconcile()).resolves.toEqual({ removed: 0, recreated: 0, flagged: 1 });
     expect(removeWorktreeAndDeleteBranch).not.toHaveBeenCalled();
+    expect(snapshot()).toEqual([
+      { path, repoDir: '/repo', workspaceId: 1, taskId: null, branch: 'operator/wip', reason: 'unrecognized' },
+    ]);
   });
 
   it('(real git) removes a clean orphaned task-<id> worktree and its dangling branch', async () => {
@@ -200,17 +236,20 @@ describe('worktree reconciler (issue #386, ADR-0010)', () => {
     const managedRoot = tempDir('harmonic-reconcile-worktrees-');
     const orphan = join(managedRoot, 'task-1');
     git(repo, 'worktree', 'add', '-b', 'harmonic/task-1', orphan);
+    const { store, snapshot } = flagStore();
 
     const reconciler = new WorktreeReconciler(
       async () => [],
       async () => [{ id: 1, workingDir: repo }],
       Git,
       managedRoot,
+      store,
     );
 
     await expect(reconciler.reconcile()).resolves.toEqual({ removed: 1, recreated: 0, flagged: 0 });
     expect(existsSync(orphan)).toBe(false);
     expect(git(repo, 'branch', '--list', 'harmonic/task-1')).toBe('');
+    expect(snapshot()).toEqual([]);
   });
 
   it('(real git) leaves a dirty task-<id> worktree of a terminal task on disk and surfaces it', async () => {
@@ -225,16 +264,21 @@ describe('worktree reconciler (issue #386, ADR-0010)', () => {
     const dirty = join(managedRoot, 'task-2');
     git(repo, 'worktree', 'add', '-b', 'harmonic/task-2', dirty);
     writeFileSync(join(dirty, 'WIP.md'), 'not yet committed\n');
+    const { store, snapshot } = flagStore();
 
     const reconciler = new WorktreeReconciler(
       async () => [],
       async () => [{ id: 1, workingDir: repo }],
       Git,
       managedRoot,
+      store,
     );
 
     await expect(reconciler.reconcile()).resolves.toEqual({ removed: 0, recreated: 0, flagged: 1 });
     expect(existsSync(dirty)).toBe(true);
     expect(git(repo, 'branch', '--list', 'harmonic/task-2')).not.toBe('');
+    expect(snapshot()).toEqual([
+      { path: dirty, repoDir: repo, workspaceId: 1, taskId: 2, branch: 'harmonic/task-2', reason: 'dirty' },
+    ]);
   });
 });

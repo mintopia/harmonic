@@ -1,6 +1,6 @@
 import { createElement, useCallback, useState } from 'react';
 import { api } from '../api.js';
-import { mergeWorktrees, type WorktreeInventoryEntry, type WorktreeState } from '../worktree-inventory-model.js';
+import { mergeWorktrees, type WorktreeInventoryEntry, type WorktreeState } from '../flagged-worktrees-model.js';
 import { subscribe } from '../ws.js';
 import { btnGhost, btnPrimary, btnQuiet, btnQuietDestructive, card, chip, panelTitle, tableHead } from '../ui.js';
 import { useLiveEffect } from '../useLiveEffect.js';
@@ -73,7 +73,7 @@ function CleanupDialog({ worktree, files, error, busy, onClose, onConfirm }: {
   return createElement(Modal, { label: 'Force cleanup dirty worktree', onClose }, content);
 }
 
-export function WorktreeInventoryView({ onOpenTask, onOpenEpic }: { onOpenTask?: (taskId: number) => void; onOpenEpic?: (epicRef: number) => void }) {
+export function FlaggedWorktreesView({ onOpenTask, onOpenEpic }: { onOpenTask?: (taskId: number) => void; onOpenEpic?: (epicRef: number) => void }) {
   const [worktrees, setWorktrees] = useState<WorktreeInventoryEntry[] | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [reconciling, setReconciling] = useState(false);
