@@ -7,7 +7,7 @@ import type { PendingPermissionBroadcast } from '../execution/conversation-drive
 import type { AttemptUsageSnapshot } from '../execution/usage.js';
 import type { ScheduledJobSnapshot } from '../scheduler/scheduler.js';
 import type { OperationEvent } from '../telemetry/operations.js';
-import type { FlaggedWorktree, FlaggedWorktreeEmitter } from '../domain/flagged-worktrees.js';
+import type { WorktreeInventoryEntry } from '../domain/worktree-inventory.js';
 
 export interface BusEvents {
   operations: (event: OperationEvent) => void;
@@ -35,12 +35,11 @@ export interface BusEvents {
   permission_request: (pending: PendingPermissionBroadcast) => void;
   /** Full Scheduled Jobs registry snapshot. */
   scheduled_jobs: (jobs: ScheduledJobSnapshot[]) => void;
-  /** Full flagged-worktree disposition registry snapshot. */
-  flagged_worktrees: (flags: readonly FlaggedWorktree[]) => void;
+  worktrees: (worktrees: readonly WorktreeInventoryEntry[]) => void;
 }
 
 /** In-process pub/sub feeding the WebSocket stream. */
-export class EventBus implements FlaggedWorktreeEmitter {
+export class EventBus {
   private emitter = new EventEmitter();
   private readonly attemptLogEvents = new Map<number, LiveAttemptEvent[]>();
   private readonly criticLogEvents = new Map<number, LiveAttemptEvent[]>();

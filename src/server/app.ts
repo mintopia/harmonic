@@ -31,7 +31,7 @@ import { SessionStore } from '../domain/sessions.js';
 import { SessionRetirementCoordinator } from '../domain/session-retirement-coordinator.js';
 import { dropIndexForPath } from '../execution/code-index.js';
 import { WorktreeReconciler } from '../domain/worktree-reconciler.js';
-import { FlaggedWorktreeRegistry } from '../domain/flagged-worktrees.js';
+import { WorktreeInventory } from '../domain/worktree-inventory.js';
 import { Git } from '../execution/git.js';
 import { GuardrailEventStore } from '../domain/guardrail-events.js';
 import { VerificationAttemptStore } from '../domain/verification-attempts.js';
@@ -72,7 +72,7 @@ import { activityRoutes } from './routes/activity.js';
 import { operationRoutes } from './routes/operations.js';
 import { channelRoutes } from './routes/channels.js';
 import { scheduledJobRoutes } from './routes/scheduled-jobs.js';
-import { flaggedWorktreeRoutes } from './routes/flagged-worktrees.js';
+import { worktreeRoutes } from './routes/worktrees.js';
 import { fsRoutes } from './routes/fs.js';
 import { openapiRoutes, readPackageManifest } from './routes/openapi.js';
 import { ChannelService } from '../notifications/channels.js';
@@ -163,7 +163,7 @@ export interface AppContext {
   channels: ChannelService;
   notifier: Notifier;
   bus: EventBus;
-  flaggedWorktrees: FlaggedWorktreeRegistry;
+  worktreeInventory: WorktreeInventory;
   reconcileWorktrees: () => ReturnType<WorktreeReconciler['reconcile']>;
 }
 
@@ -201,7 +201,7 @@ export type ExecutionContext = Pick<
   | 'auth'
   | 'notifier'
   | 'bus'
-  | 'flaggedWorktrees'
+  | 'worktreeInventory'
 >;
 
 export type TrackingContext = Pick<AppContext, 'tasks' | 'workspaces' | 'settingsStore' | 'trackerManager' | 'epicService' | 'scheduler' | 'channels' | 'notifier' | 'bus'>;
@@ -218,8 +218,8 @@ export function createPersistenceContext(ctx: AppContext): PersistenceContext {
 }
 
 export function createExecutionContext(ctx: AppContext): ExecutionContext {
-  const { tasks, settingsStore, workspaces, attempts, sessions, runner, conversations, conversationDriver, escalation, autoRunner, guardrailEvents, verificationAttempts, auth, notifier, bus, flaggedWorktrees } = ctx;
-  return { tasks, settingsStore, workspaces, attempts, sessions, runner, conversations, conversationDriver, escalation, autoRunner, guardrailEvents, verificationAttempts, auth, notifier, bus, flaggedWorktrees };
+  const { tasks, settingsStore, workspaces, attempts, sessions, runner, conversations, conversationDriver, escalation, autoRunner, guardrailEvents, verificationAttempts, auth, notifier, bus, worktreeInventory } = ctx;
+  return { tasks, settingsStore, workspaces, attempts, sessions, runner, conversations, conversationDriver, escalation, autoRunner, guardrailEvents, verificationAttempts, auth, notifier, bus, worktreeInventory };
 }
 
 export function createTrackingContext(ctx: AppContext): TrackingContext {
@@ -321,7 +321,12 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     undefined,
     (run) => recordAttemptLifecycle(run, { event: 'retired' }),
   );
-  const flaggedWorktrees = new FlaggedWorktreeRegistry(bus);
+  const worktreeInventory = new WorktreeInventory(
+    () => workspaces.list(),
+    () => tasks.list(),
+    Git,
+    worktreesDir,
+  );
   const worktreeReconciler = new WorktreeReconciler(
     async () => {
       const openTasks = await tasks.list({ state: 'open' });
@@ -332,11 +337,18 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     () => workspaces.list(),
     Git,
     worktreesDir,
-    flaggedWorktrees,
+    undefined,
     dropIndexForPath,
   );
   const drainRetirement = singleFlight(() => sessionRetirement.drain());
-  const reconcileWorktrees = singleFlight(() => worktreeReconciler.reconcile());
+  const publishWorktrees = async (): Promise<void> => {
+    bus.emit('worktrees', await worktreeInventory.snapshot());
+  };
+  const reconcileWorktrees = singleFlight(async () => {
+    const result = await worktreeReconciler.reconcile();
+    await publishWorktrees();
+    return result;
+  });
   let runnerRef: Runner | undefined;
   let trackerManagerRef: TrackerPollerManager | undefined;
   let epicServiceRef: EpicService | undefined;
@@ -546,6 +558,12 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     run: () => trackerManager.reconcileEpics(),
   });
   bus.on('attempt_changed', () => autoRunner.poke());
+  bus.on('task_changed', () => {
+    void publishWorktrees().catch((error: unknown) => logger.debug(`worktree inventory refresh failed: ${String(error)}`));
+  });
+  bus.on('task_removed', () => {
+    void publishWorktrees().catch((error: unknown) => logger.debug(`worktree inventory refresh failed: ${String(error)}`));
+  });
   bus.on('attempt_changed', () => {
     void drainRetirement().catch(() => {});
   });
@@ -557,7 +575,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     })().catch(() => {});
   });
 
-  const ctx: AppContext = { asyncDb, statsReader, settingsStore, workspaces, tasks, attempts, sessions: sessionStore, runner, conversations, conversationDriver, permissionRules, escalation, autoRunner, guardrailEvents, verificationAttempts, trackerManager, epicService, scheduler, auth, channels, notifier, bus, flaggedWorktrees, reconcileWorktrees };
+  const ctx: AppContext = { asyncDb, statsReader, settingsStore, workspaces, tasks, attempts, sessions: sessionStore, runner, conversations, conversationDriver, permissionRules, escalation, autoRunner, guardrailEvents, verificationAttempts, trackerManager, epicService, scheduler, auth, channels, notifier, bus, worktreeInventory, reconcileWorktrees };
   const contexts = createAppContexts(ctx);
 
   const app = Fastify({ logger: false }) as unknown as App;
@@ -752,7 +770,7 @@ not resolved yet.`;
   await app.register((fastify) => activityRoutes(fastify, ctx), { prefix: '/api' });
   await app.register((fastify) => operationRoutes(fastify, ctx), { prefix: '/api' });
   await app.register((fastify) => scheduledJobRoutes(fastify, contexts.tracking), { prefix: '/api' });
-  await app.register((fastify) => flaggedWorktreeRoutes(fastify, contexts.execution), { prefix: '/api' });
+  await app.register((fastify) => worktreeRoutes(fastify, contexts.execution), { prefix: '/api' });
   await app.register((fastify) => channelRoutes(fastify, contexts.persistence), { prefix: '/api' });
   await app.register(fsRoutes, { prefix: '/api' });
   await app.register((fastify) => epicRoutes(fastify, contexts.tracking), { prefix: '/api' });
