@@ -1,5 +1,5 @@
 import { describe, it, expect, afterAll, afterEach } from 'vitest';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -168,7 +168,7 @@ describe('runCritic (issue #136)', () => {
       drive,
     });
 
-    expect(attempt.transcriptPath).toBe(transcriptPath);
+    expect(attempt.transcriptPath).toBe(realpathSync(transcriptPath));
     expect(attempt.sessionId).toBe(sessionId);
   });
 

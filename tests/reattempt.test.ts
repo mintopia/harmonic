@@ -41,7 +41,7 @@ describe('unified corrective attempts', () => {
 
     await waitFor(async () => {
       const attempts = await timeline(ticket.id);
-      return attempts.length === 2 ? attempts : undefined;
+      return attempts.length === 2 && attempts[1]!.steps.some((step) => step.type === 'implementation') ? attempts : undefined;
     });
     const attempts = await timeline(ticket.id);
     expect(attempts[0]).toMatchObject({ number: 1, state: 'escalated' });

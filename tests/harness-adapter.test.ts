@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mkdirSync, mkdtempSync, writeFileSync, appendFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync, appendFileSync, realpathSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { adapterFor } from '../src/execution/harness/registry.js';
@@ -421,7 +421,7 @@ describe('harness adapters', () => {
     writeFileSync(transcript, '[]');
 
     await expect(adapterFor('claude').usage!.resolveTranscriptPath!({ sessionLogDir: root, sessionId: 'abc-123' })).resolves.toBe(
-      transcript,
+      realpathSync(transcript),
     );
     await expect(adapterFor('claude').usage!.resolveTranscriptPath!({ sessionLogDir: root, sessionId: 'missing' })).resolves.toBeNull();
   });

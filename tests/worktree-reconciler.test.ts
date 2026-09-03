@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { WorktreeReconciler, type WorktreeRepository } from '../src/domain/worktree-reconciler.js';
@@ -9,7 +9,8 @@ import { Git } from '../src/execution/git.js';
 
 const tempDirs: string[] = [];
 const tempDir = (prefix: string) => {
-  const dir = mkdtempSync(join(tmpdir(), prefix));
+  // realpath so paths match git's canonical worktree paths (macOS /var → /private/var symlink).
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), prefix)));
   tempDirs.push(dir);
   return dir;
 };
