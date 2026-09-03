@@ -1,13 +1,13 @@
 import { createElement, type ReactNode } from 'react';
-import { chip, toolChip } from '../ui.js';
+import { toolChip } from '../ui.js';
 
 const MODEL_PREFIXES = ['claude-', 'gpt-', 'copilot-', 'cursor-'] as const;
 
-const PROVIDER_META = {
-  claude: { label: 'Claude', mark: 'CL' },
-  codex: { label: 'Codex', mark: 'CX' },
-  copilot: { label: 'Copilot', mark: 'GH' },
-  cursor: { label: 'Cursor', mark: 'CU' },
+const PROVIDER_LABELS = {
+  claude: 'Claude',
+  codex: 'Codex',
+  copilot: 'Copilot',
+  cursor: 'Cursor',
 } as const;
 
 function el(type: string, props: Record<string, unknown>, ...children: ReactNode[]) {
@@ -16,15 +16,7 @@ function el(type: string, props: Record<string, unknown>, ...children: ReactNode
 
 export function providerLabel(harness: string): string {
   const normalized = harness.trim().toLowerCase();
-  return PROVIDER_META[normalized as keyof typeof PROVIDER_META]?.label ?? harness;
-}
-
-function providerMark(harness: string): string {
-  const normalized = harness.trim().toLowerCase();
-  const known = PROVIDER_META[normalized as keyof typeof PROVIDER_META]?.mark;
-  if (known) return known;
-  const [first = '', second = ''] = harness.trim().toUpperCase();
-  return `${first}${second}` || '??';
+  return PROVIDER_LABELS[normalized as keyof typeof PROVIDER_LABELS] ?? harness;
 }
 
 export function formatModelLabel(model: string): string {
@@ -45,19 +37,12 @@ export function ProviderChip({
   className?: string;
 }) {
   const label = providerLabel(harness);
-  const mark = providerMark(harness);
   const modeClass = compact ? 'gap-1.5 pr-1.5 sm:pr-2' : 'gap-2';
 
   return el(
     'span',
     { className: `${toolChip} inline-flex items-center ${modeClass} ${className}`.trim(), title: label },
-    el(
-      'span',
-      { 'aria-hidden': 'true', className: `${chip} px-1.5 py-0 text-[10px] text-tool` },
-      mark,
-    ),
-    el('span', { className: compact ? 'hidden sm:inline' : '' }, label),
-    compact ? el('span', { className: 'sr-only' }, label) : null,
+    label,
   );
 }
 
