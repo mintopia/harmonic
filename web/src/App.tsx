@@ -702,6 +702,7 @@ export function App() {
             <ConversationLauncher
               config={config}
               workspace={workspaces.find((w) => w.id === activeWorkspaceId) ?? null}
+              conversationId={route.conversation}
             />
           )}
         </div>

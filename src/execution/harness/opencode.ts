@@ -128,6 +128,7 @@ function processNode(session: UsageSession, depth: number, children: ProcessNode
     model: dominantModel(models) ?? 'unknown',
     usage: foldModels(models),
     contextTokens: latest ? latest.inputTokens + latest.cacheReadTokens + latest.cacheWriteTokens : null,
+    lastTool: null,
     status: 'inactive',
     depth,
     toolUseId: null,

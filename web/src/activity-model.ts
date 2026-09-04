@@ -1,6 +1,6 @@
 // Explicit .js extensions: this module is shared with the node-side test
 // project, whose nodenext resolution requires them (Vite maps .js → .ts).
-import type { ActivityProcess, Cost, AttemptUsage, AttemptUsageEvent } from './types.js';
+import type { ActivityProcess, Cost, AttemptUsage, AttemptUsageEvent, ProcessNode } from './types.js';
 
 /**
  * The Activity view's attention model. Every in-flight process is
@@ -101,6 +101,39 @@ export function filterActivity(processes: ActivityProcess[], filter: ActivityFil
     if (filter.workspaceId !== null && p.workspaceId !== filter.workspaceId) return false;
     return true;
   });
+}
+
+export interface FleetLane {
+  process: ActivityProcess;
+  node: ProcessNode | null;
+  depth: number;
+}
+
+/** Flatten each root's Process Tree beneath its context-ordered root lane. */
+export function fleetLanes(processes: ActivityProcess[]): FleetLane[] {
+  const lanes: FleetLane[] = [];
+  const roots = [...processes].sort((a, b) => {
+    const aFill = contextFillFraction(a);
+    const bFill = contextFillFraction(b);
+    if (aFill === bFill) return a.startedAt - b.startedAt;
+    if (aFill === null) return 1;
+    if (bFill === null) return -1;
+    return bFill - aFill;
+  });
+  for (const process of roots) {
+    const add = (node: ProcessNode, depth: number) => {
+      lanes.push({ process, node, depth });
+      for (const child of node.children) add(child, depth + 1);
+    };
+    if (process.tree) add(process.tree, 0);
+    else lanes.push({ process, node: null, depth: 0 });
+  }
+  return lanes;
+}
+
+function subagentCount(node: ProcessNode | null): number {
+  if (!node) return 0;
+  return node.children.reduce((count, child) => count + 1 + subagentCount(child), 0);
 }
 
 /** One entry in the Workspace filter dropdown. */
@@ -314,10 +347,12 @@ export function mergeRunUsage(processes: ActivityProcess[], event: AttemptUsageE
 
 /** The summary strip's figures: the one-glance fleet readout above the rows. */
 export interface ActivitySummary {
+  /** Root Agents, one for every in-flight Attempt or Conversation. */
+  agentCount: number;
+  /** Every Process Tree descendant, excluding each root Agent. */
+  subagentCount: number;
   /** In-flight Attempts (afk work) — the machine-ceiling numerator. */
   runningCount: number;
-  /** Rows in the "Needs you" tier — the count that should pull the eye. */
-  needsYouCount: number;
   /** Fleet Cost as an honest floor across every process; null when nothing is priceable. */
   cost: Cost | null;
   /** Summed average token throughput across the fleet. */
@@ -333,8 +368,9 @@ export function activitySummary(
 ): ActivitySummary {
   const runningCount = processes.filter((p) => p.type === 'attempt').length;
   return {
+    agentCount: processes.length,
+    subagentCount: processes.reduce((count, process) => count + subagentCount(process.tree), 0),
     runningCount,
-    needsYouCount: processes.filter((p) => attentionTier(p) === 'needs-you').length,
     cost: sumCosts(processes.map((p) => p.cost)),
     tokensPerSecond: processes.reduce((sum, p) => sum + tokensPerSecond(p, now), 0),
     ceiling: { running: runningCount, max: machineCeiling },
