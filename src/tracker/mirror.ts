@@ -32,7 +32,7 @@ const trackerFacts = (ticket: Ticket): TrackerFacts => ({
 });
 
 /** The upsert input for one ticket — role derived, open/closed axis resolved. */
-export function toMirrorInput(ticket: Ticket, trackerCanClose = true): MirrorInput {
+export function toMirrorInput(ticket: Ticket, trackerCanClose = true, observedAt?: number): MirrorInput {
   return {
     trackerRef: ticket.number,
     prompt: mirrorPrompt(ticket),
@@ -41,6 +41,7 @@ export function toMirrorInput(ticket: Ticket, trackerCanClose = true): MirrorInp
     closed: ticket.state === 'closed',
     trackerCanClose,
     facts: trackerFacts(ticket),
+    observedAt,
   };
 }
 
@@ -52,11 +53,14 @@ export async function mirrorScan(
   {
     trackerCanClose = true,
     pollSpanContext,
+    observedAt,
   }: {
     /** Whether the polling adapter can close a ticket. */
     trackerCanClose?: boolean;
     /** The poll Operation that owns per-issue mirror children, when called from a poll. */
     pollSpanContext?: SpanContext;
+    /** When this poll's tracker snapshot was captured, so a pre-close scan can't reopen a merged Task. */
+    observedAt?: number;
   } = {},
 ): Promise<TaskRow[]> {
   const issues: Ticket[] = [];
@@ -83,7 +87,7 @@ export async function mirrorScan(
         })
       : undefined;
     try {
-      const upsert = () => tasks.upsertMirrored(toMirrorInput(t, trackerCanClose), workspaceId);
+      const upsert = () => tasks.upsertMirrored(toMirrorInput(t, trackerCanClose, observedAt), workspaceId);
       const row = operation ? await operation.run(upsert) : await upsert();
       rows.push(row);
       operation?.end();
