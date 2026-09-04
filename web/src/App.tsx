@@ -258,6 +258,7 @@ export function App() {
       if (!live()) return;
       if (msg.type === 'task_changed' && msg.task.workspaceId === activeWorkspaceId) {
         const outcomes: (() => void)[] = [];
+        let handledEscalation = false;
         setTasks((current) => {
           const prev = (current ?? []).find((t) => t.id === msg.task.id);
           if (prev?.mergeStatus && !msg.task.mergeStatus && msg.task.state === 'done') {
@@ -265,10 +266,15 @@ export function App() {
           } else if (prev && prev.state !== 'escalated' && msg.task.state === 'escalated') {
             outcomes.push(() => toastFail(`${taskLabel(msg.task.id)} escalated — needs a decision`));
           }
+          if (prev?.state === 'escalated' && msg.task.state !== 'escalated') handledEscalation = true;
           const rest = (current ?? []).filter((t) => t.id !== msg.task.id);
           return [...rest, msg.task];
         });
         outcomes[0]?.();
+        if (handledEscalation) {
+          storeDismissed(localStorage, ESCALATION_HINT_DISMISSED_KEY);
+          setEscalationHintDismissed(true);
+        }
         setFetchedTask((current) =>
           current?.id === msg.task.id || routeRef.current.task === msg.task.id ? msg.task : current,
         );
@@ -590,12 +596,12 @@ export function App() {
                 </div>
               )}
               {showRunHint && (
-                <div className="mx-6 mt-4 flex shrink-0 items-start gap-3 rounded-lg bg-raised px-4 py-2.5 text-small">
+                <div className="mx-6 mt-4 flex shrink-0 items-start gap-3 rounded-lg border-l-4 border-l-ready bg-ready-tint px-4 py-2.5 text-small">
                   <span
                     aria-hidden="true"
-                    className="mt-1 size-1.5 shrink-0 rounded-full bg-ready-dot"
+                    className="mt-1 size-2 shrink-0 rounded-full bg-ready-dot"
                   />
-                  <p className="flex-1 text-muted">
+                  <p className="flex-1 text-ink">
                     Your first task is ready, but nothing's running it yet. Press{' '}
                     <span className="font-semibold text-ink">Run now</span> on the card, or turn the{' '}
                     <span className="font-semibold text-ink">Auto-runner</span> on above.
@@ -606,9 +612,9 @@ export function App() {
                 </div>
               )}
               {showEscalationHint && (
-                <div className="mx-6 mt-4 flex shrink-0 items-start gap-3 rounded-lg bg-raised px-4 py-2.5 text-small">
-                  <span aria-hidden="true" className="mt-1 size-1.5 shrink-0 rounded-full bg-await-dot" />
-                  <p className="flex-1 text-muted">
+                <div className="mx-6 mt-4 flex shrink-0 items-start gap-3 rounded-lg border-l-4 border-l-await bg-await-tint px-4 py-2.5 text-small">
+                  <span aria-hidden="true" className="mt-1 size-2 shrink-0 rounded-full bg-await-dot" />
+                  <p className="flex-1 text-ink">
                     A ticket is escalated. Open it to read why and the changes so far, then{' '}
                     <span className="font-semibold text-ink">Accept</span> to merge as-is,{' '}
                     <span className="font-semibold text-ink">Reject</span> with guidance for the next attempt, or{' '}
