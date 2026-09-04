@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { api } from '../api';
 import type { AppConfig, Task, Workspace } from '../types';
 import { Modal } from './Modal';
-import { ModelCombobox } from './ModelCombobox';
+import { DiscoveryModelPicker } from './DiscoveryModelPicker.js';
 import { InheritField } from './InheritField';
 import { inheritSource } from './inherit-field-model';
 import { btnGhost, btnPrimary, field, panelTitle, labelType, selectField } from '../ui';
@@ -135,7 +135,7 @@ export function TaskForm({
             onChange={(model) => set('model', model)}
           >
             {({ id, value, onChange }) => (
-              <ModelCombobox id={id} value={value} onChange={onChange} options={models} />
+              <DiscoveryModelPicker id={id ?? 'task-model'} harness={effHarness ?? config.defaults.harness ?? ''} value={value ?? inheritedModel ?? ''} onChange={onChange} options={models} />
             )}
           </InheritField>
 

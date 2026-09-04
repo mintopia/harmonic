@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync, appendFileSync, realpathSync } f
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { adapterFor } from '../src/execution/harness/registry.js';
-import { writeCopilotUsageDb } from './helpers.js';
+import { writeCopilotUsageDb, writeOpenCodeUsageDb } from './helpers.js';
 
 const spawnInput = (model: string, extra: { cwd?: string; sessionLogDir?: string } = {}) => ({
   model,
@@ -36,13 +36,98 @@ describe('harness adapters', () => {
     });
   });
 
-  it('only copilot pins via ACP session/set_model — sent for every run, auto included', () => {
+  it('copilot and OpenCode pin via ACP session/set_model', () => {
     // An unpinned Copilot session inherits the operator's persisted
     // settings.json model, so the pin must be sent even for 'auto'.
     expect(adapterFor('copilot').sessionModelId?.('claude-haiku-4.5')).toBe('claude-haiku-4.5');
     expect(adapterFor('copilot').sessionModelId?.('auto')).toBe('auto');
+    expect(adapterFor('opencode').sessionModelId?.('meta/muse-spark-1.3-contributor')).toBe('meta/muse-spark-1.3-contributor');
+    expect(adapterFor('opencode').sessionModelId?.('openrouter/anthropic/claude-sonnet-5')).toBe('openrouter/anthropic/claude-sonnet-5');
     expect(adapterFor('claude').sessionModelId).toBeUndefined();
     expect(adapterFor('codex').sessionModelId).toBeUndefined();
+  });
+
+  it('OpenCode relies on its ACP permission defaults and generic ACP usage collection', () => {
+    const adapter = adapterFor('opencode');
+    expect(adapter).toMatchObject({ commandPrefix: '/', transcript: null, requiresUnattendedPermissionMode: false });
+    expect(adapter.usage).not.toBeNull();
+    expect(adapter.unattendedPermissionMode([])).toBeUndefined();
+    expect(adapter.spawnEnv(spawnInput('meta/muse-spark-1.3-contributor'))).toEqual({});
+  });
+
+  it('OpenCode discovers credentialed providers and their cached model metadata without ACP', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'opencode-home-'));
+    const priorHome = process.env.HOME;
+    process.env.HOME = home;
+    try {
+      const cache = join(home, '.cache', 'opencode');
+      const data = join(home, '.local', 'share', 'opencode');
+      mkdirSync(cache, { recursive: true });
+      mkdirSync(data, { recursive: true });
+      writeFileSync(join(cache, 'models.json'), JSON.stringify({
+        openai: {
+          name: 'OpenAI',
+          models: {
+            'gpt-5.6': {
+              name: 'GPT-5.6',
+              cost: { input: 2.5, output: 10, cache_read: 0.25, cache_write: 2.5 },
+              limit: { context: 400_000 },
+            },
+          },
+        },
+        opencode: { name: 'OpenCode', models: { 'free-model': { name: 'Free model' } } },
+        anthropic: { name: 'Anthropic', models: { 'claude-sonnet': { name: 'Claude Sonnet' } } },
+      }));
+      writeFileSync(join(data, 'auth.json'), JSON.stringify({ openai: { type: 'api' } }));
+
+      const capabilities = adapterFor('opencode').capabilities!;
+      await expect(capabilities.selectProvider()).resolves.toEqual([
+        { id: 'openai', label: 'OpenAI', authed: true },
+        { id: 'opencode', label: 'OpenCode', authed: false },
+      ]);
+      await expect(capabilities.selectModel('openai')).resolves.toEqual([
+        {
+          id: 'openai/gpt-5.6',
+          label: 'GPT-5.6',
+          price: { input: 2.5, output: 10, cacheRead: 0.25, cacheWrite: 2.5 },
+          contextWindow: 400_000,
+        },
+      ]);
+      await expect(capabilities.selectModel('anthropic')).resolves.toEqual([]);
+    } finally {
+      if (priorHome === undefined) delete process.env.HOME;
+      else process.env.HOME = priorHome;
+    }
+  });
+
+  it('OpenCode discovery keeps the free tier when auth metadata is unavailable', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'opencode-home-'));
+    const priorHome = process.env.HOME;
+    process.env.HOME = home;
+    try {
+      const capabilities = adapterFor('opencode').capabilities!;
+      await expect(capabilities.selectProvider()).resolves.toEqual([]);
+      await expect(capabilities.selectModel('openai')).resolves.toEqual([]);
+
+      const cache = join(home, '.cache', 'opencode');
+      const data = join(home, '.local', 'share', 'opencode');
+      mkdirSync(cache, { recursive: true });
+      writeFileSync(join(cache, 'models.json'), JSON.stringify({
+        opencode: { name: 'OpenCode', models: { 'free-model': { name: 'Free model' } } },
+      }));
+      await expect(capabilities.selectProvider()).resolves.toEqual([{ id: 'opencode', label: 'OpenCode', authed: false }]);
+      await expect(capabilities.selectModel('opencode')).resolves.toEqual([{ id: 'opencode/free-model', label: 'Free model' }]);
+
+      mkdirSync(data, { recursive: true });
+      writeFileSync(join(data, 'auth.json'), '{');
+      await expect(capabilities.selectProvider()).resolves.toEqual([{ id: 'opencode', label: 'OpenCode', authed: false }]);
+      writeFileSync(join(cache, 'models.json'), '{');
+      await expect(capabilities.selectProvider()).resolves.toEqual([]);
+      await expect(capabilities.selectModel('openai')).resolves.toEqual([]);
+    } finally {
+      if (priorHome === undefined) delete process.env.HOME;
+      else process.env.HOME = priorHome;
+    }
   });
 
   it('copilot spawn tweaks disable auto-update and never pin via --model or OTel', () => {
@@ -53,7 +138,7 @@ describe('harness adapters', () => {
     expect(env).not.toHaveProperty('COPILOT_OTEL_FILE_EXPORTER_PATH');
   });
 
-  it.each(['claude', 'codex', 'copilot'])(
+  it.each(['claude', 'codex', 'copilot', 'opencode'])(
     '%s registers the MCP server over ACP with the Attempt Key bearer header',
     (harness) => {
       expect(adapterFor(harness).mcpServers({ url: 'http://127.0.0.1:1/mcp', token: 'rk' })).toEqual([
@@ -73,6 +158,87 @@ describe('harness adapters', () => {
       '/copilot/session-store.db',
     );
     expect(usage.sessionLogFile({ sessionLogDir: '/copilot', cwd: '/w', sessionId: null })).toBeNull();
+  });
+
+  it("OpenCode's Usage Collector reads parent and Subagent session rows from opencode.db", () => {
+    const root = 'parent-session';
+    const dir = mkdtempSync(join(tmpdir(), 'opencode-db-'));
+    const file = join(dir, '.local', 'share', 'opencode', 'opencode.db');
+    mkdirSync(join(dir, '.local', 'share', 'opencode'), { recursive: true });
+    writeOpenCodeUsageDb(file, [
+      {
+        id: root,
+      },
+      {
+        id: 'subagent-session',
+        parent_id: root,
+      },
+      { id: 'nested-subagent-session', parent_id: 'subagent-session' },
+      { id: 'other-session' },
+    ], [
+      { session_id: root, providerID: 'openai', modelID: 'gpt-5.6', input: 1000, output: 100, cacheRead: 800, cacheWrite: 50 },
+      { session_id: 'subagent-session', providerID: 'anthropic', modelID: 'claude-sonnet', input: 200, output: 20, cacheRead: 10 },
+      { session_id: 'nested-subagent-session', providerID: 'openrouter', modelID: 'anthropic/claude-sonnet', input: 50, output: 5 },
+      { session_id: 'other-session', providerID: 'openai', modelID: 'gpt-5.6', input: 999999, output: 999999 },
+    ]);
+
+    const usage = adapterFor('opencode').usage!;
+    expect(usage.sessionLogFile({ sessionLogDir: dir, cwd: '/w', sessionId: root })).toBe(file);
+    expect(usage.sessionLogFile({ cwd: '/w', sessionId: root })).toBe(join(homedir(), '.local', 'share', 'opencode', 'opencode.db'));
+    expect(usage.modelsFromSessionLog(file, root)).toEqual({
+      'openai/gpt-5.6': { inputTokens: 1000, outputTokens: 100, cacheReadTokens: 800, cacheWriteTokens: 50 },
+      'anthropic/claude-sonnet': { inputTokens: 200, outputTokens: 20, cacheReadTokens: 10, cacheWriteTokens: 0 },
+      'openrouter/anthropic/claude-sonnet': { inputTokens: 50, outputTokens: 5, cacheReadTokens: 0, cacheWriteTokens: 0 },
+    });
+
+    const parsed = usage.parse!({ sessionLogDir: dir, cwd: '/w', sessionId: root })!;
+    expect(parsed.usage.models).toEqual(usage.modelsFromSessionLog(file, root));
+    expect(parsed.tree).toMatchObject({
+      id: root,
+      name: 'root',
+      model: 'openai/gpt-5.6',
+      usage: { inputTokens: 1000, outputTokens: 100, cacheReadTokens: 800, cacheWriteTokens: 50 },
+    });
+    expect(parsed.tree.children).toEqual([
+      expect.objectContaining({
+        id: 'subagent-session',
+        name: 'subagent',
+        model: 'anthropic/claude-sonnet',
+        usage: { inputTokens: 200, outputTokens: 20, cacheReadTokens: 10, cacheWriteTokens: 0 },
+      }),
+    ]);
+    expect(parsed.tree.children[0]!.children).toEqual([
+      expect.objectContaining({ id: 'nested-subagent-session', model: 'openrouter/anthropic/claude-sonnet' }),
+    ]);
+    expect(usage.modelsFromSessionLog(join(dir, 'missing.db'), root)).toEqual({});
+    expect(usage.modelsFromSessionLog(file, null)).toEqual({});
+    expect(usage.parse!({ sessionLogDir: dir, cwd: '/w', sessionId: 'missing' })).toBeNull();
+  });
+
+  it("OpenCode's Usage Collector ignores cycles in a corrupt Subagent session tree", () => {
+    const root = 'root-session';
+    const dir = mkdtempSync(join(tmpdir(), 'opencode-cycle-'));
+    const file = join(dir, '.local', 'share', 'opencode', 'opencode.db');
+    mkdirSync(join(dir, '.local', 'share', 'opencode'), { recursive: true });
+    writeOpenCodeUsageDb(
+      file,
+      [
+        { id: root, parent_id: 'subagent-session' },
+        { id: 'subagent-session', parent_id: root },
+      ],
+      [
+        { session_id: root, providerID: 'openai', modelID: 'gpt-5.6', input: 100 },
+        { session_id: 'subagent-session', providerID: 'anthropic', modelID: 'claude-sonnet', input: 10 },
+      ],
+    );
+
+    const parsed = adapterFor('opencode').usage!.parse!({ sessionLogDir: dir, cwd: '/w', sessionId: root })!;
+    expect(parsed.usage.models).toEqual({
+      'openai/gpt-5.6': { inputTokens: 100, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+      'anthropic/claude-sonnet': { inputTokens: 10, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+    });
+    expect(parsed.tree.children).toHaveLength(1);
+    expect(parsed.tree.children[0]!.children).toEqual([]);
   });
 
   it("copilot's Usage Collector aggregates session-store.db rows by model, with the cache split and AI Units", () => {

@@ -647,6 +647,9 @@ export interface ModelPrice {
   cacheWrite: number;
 }
 
+export interface HarnessProvider { id: string; label: string; authed: boolean; }
+export interface DiscoveredHarnessModel { id: string; label: string; price?: ModelPrice; contextWindow?: number; }
+
 /** Per-model token counters (server `ModelUsage`) — the four counters Cost prices, plus optional harness-native spend. */
 export interface ModelUsage {
   inputTokens: number;
