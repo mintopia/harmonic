@@ -216,6 +216,15 @@ export class ConversationDriver {
     await this.record(conversationId, 'permission_request', { request: pending.request, outcome, reqId, ...(rule ? { rule } : {}) });
   }
 
+  /** Every permission currently blocked on the operator, so a newly-connected client can seed its pending-permission state instead of only seeing requests raised after it subscribed. */
+  listPendingPermissions(): PendingPermissionBroadcast[] {
+    return [...this.pendingPermissions].map(([reqId, pending]) => ({
+      reqId,
+      conversationId: pending.conversationId,
+      request: pending.request,
+    }));
+  }
+
   /** Explicit End: stop the harness and mark the Conversation ended. */
   async end(conversationId: number): Promise<ConversationRow> {
     const entry = this.active.get(conversationId);

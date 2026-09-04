@@ -2,34 +2,8 @@
 // project, whose nodenext resolution requires them (Vite maps .js → .ts).
 import type { ActivityProcess, Cost, AttemptUsage, AttemptUsageEvent, ProcessNode } from './types.js';
 
-/**
- * The Activity view's attention model. Every in-flight process is
- * sorted into one of three tiers so the fleet re-ranks by what the operator
- * should look at first — the view holds no state of its own (CONTEXT.md:
- * Activity), so the ranking is a pure function of the snapshot + live deltas.
- *
- * - **Needs you**: an afk Attempt that escalated to a human, or any
- *   process past its context window (degrading — a human should intervene).
- *   These are the only rows that genuinely block on the operator.
- * - **High load**: a process running hot — context fill at or above
- *   `HIGH_LOAD_FILL` but still under the window. The "watch this one" tier.
- * - **Steady**: everything else, including any process whose window is
- *   unconfigured (no threshold to judge it against — honest, never a fake %).
- */
-export const ATTENTION_TIERS = ['needs-you', 'high-load', 'steady'] as const;
-export type AttentionTier = (typeof ATTENTION_TIERS)[number];
-
 /** Context fill (fraction of the configured window) that marks a process "running hot". */
 export const HIGH_LOAD_FILL = 0.75;
-
-const TIER_LABELS: Record<AttentionTier, string> = {
-  'needs-you': 'Needs you',
-  'high-load': 'High load',
-  steady: 'Steady',
-};
-export function tierLabel(tier: AttentionTier): string {
-  return TIER_LABELS[tier];
-}
 
 /**
  * Context-window fill as a fraction, or null when it can't be known honestly:
@@ -42,37 +16,6 @@ export function contextFillFraction(process: ActivityProcess): number | null {
   const { contextTokens, contextWindow } = process;
   if (contextTokens === null || contextWindow === null) return null;
   return contextTokens / contextWindow;
-}
-
-export function attentionTier(process: ActivityProcess): AttentionTier {
-  if (process.escalated) return 'needs-you';
-  const fill = contextFillFraction(process);
-  if (fill === null) return 'steady';
-  if (fill >= 1) return 'needs-you';
-  if (fill >= HIGH_LOAD_FILL) return 'high-load';
-  return 'steady';
-}
-
-const TIER_RANK: Record<AttentionTier, number> = { 'needs-you': 0, 'high-load': 1, steady: 2 };
-
-/**
- * Re-rank the fleet by attention: tier first, then context fill (fullest
- * first, unknown-fill last), then the longest-running process (oldest
- * `startedAt`) first. Pure — returns a new array, never mutates the input.
- */
-export function rankActivity(processes: ActivityProcess[]): ActivityProcess[] {
-  return [...processes].sort((a, b) => {
-    const tier = TIER_RANK[attentionTier(a)] - TIER_RANK[attentionTier(b)];
-    if (tier !== 0) return tier;
-    const fa = contextFillFraction(a);
-    const fb = contextFillFraction(b);
-    if (fa !== fb) {
-      if (fa === null) return 1;
-      if (fb === null) return -1;
-      return fb - fa;
-    }
-    return a.startedAt - b.startedAt;
-  });
 }
 
 /** The Activity toolbar's type segments: the fleet, just Attempts, or just Chats. */
@@ -160,105 +103,6 @@ export function resolveActivityFilter(filter: ActivityFilter, workspaces: Worksp
   if (filter.workspaceId === null) return filter;
   if (workspaces.some((w) => w.id === filter.workspaceId)) return filter;
   return { ...filter, workspaceId: null };
-}
-
-/**
- * The Activity toolbar's sort modes. 'attention' is the default —
- * the tiered ranker above; the rest order by a single live metric, largest
- * first, with the "Needs you" tier always pinned on top (see `sortActivity`).
- */
-export const ACTIVITY_SORTS = ['attention', 'cost', 'context', 'tokens', 'elapsed'] as const;
-export type ActivitySort = (typeof ACTIVITY_SORTS)[number];
-
-const SORT_LABELS: Record<ActivitySort, string> = {
-  attention: 'Attention',
-  cost: 'Cost',
-  context: 'Context',
-  tokens: 'Tokens',
-  elapsed: 'Elapsed',
-};
-export function sortLabel(sort: ActivitySort): string {
-  return SORT_LABELS[sort];
-}
-
-function sortMetric(process: ActivityProcess, sort: ActivitySort, now: number): number | null {
-  switch (sort) {
-    case 'cost':
-      return process.cost?.totalUsd ?? null;
-    case 'context':
-      return contextFillFraction(process);
-    case 'tokens':
-      return usageTotalTokens(process.usage);
-    case 'elapsed':
-      return elapsedMs(process, now);
-    case 'attention':
-      return null;
-  }
-}
-
-function partitionNeedsYou(processes: ActivityProcess[]): [ActivityProcess[], ActivityProcess[]] {
-  const needsYou: ActivityProcess[] = [];
-  const rest: ActivityProcess[] = [];
-  for (const p of processes) (attentionTier(p) === 'needs-you' ? needsYou : rest).push(p);
-  return [needsYou, rest];
-}
-
-/**
- * Order the fleet for display. 'attention' defers to `rankActivity`
- * (tier, then fill, then age). Every other sort orders by its live metric —
- * largest first, unknown last, oldest-first on a tie — but keeps the whole
- * "Needs you" tier pinned above the sorted rest, so an escalation never scrolls
- * out of view. Pure — returns a new array, never mutates the input.
- */
-export function sortActivity(processes: ActivityProcess[], sort: ActivitySort, now: number): ActivityProcess[] {
-  if (sort === 'attention') return rankActivity(processes);
-  const byMetric = (a: ActivityProcess, b: ActivityProcess) => {
-    const ma = sortMetric(a, sort, now);
-    const mb = sortMetric(b, sort, now);
-    if (ma !== mb) {
-      if (ma === null) return 1;
-      if (mb === null) return -1;
-      return mb - ma;
-    }
-    return a.startedAt - b.startedAt;
-  };
-  const [needsYou, rest] = partitionNeedsYou(processes);
-  return [...rankActivity(needsYou), ...rest.sort(byMetric)];
-}
-
-/** One rendered band in the Activity table: a header label plus its rows. */
-export interface ActivitySection {
-  /** Stable key + identity: a tier name under 'attention', else 'needs-you' / 'sorted'. */
-  key: string;
-  label: string;
-  /** True for the pinned "Needs you" band — the view tints its header accent. */
-  pinned: boolean;
-  rows: ActivityProcess[];
-}
-
-/**
- * Group the (already-filtered) fleet into the table's display bands.
- * Under 'attention', the three attention tiers (empty ones dropped). Under a
- * metric sort, the pinned "Needs you" band above a single "By {metric}" band —
- * so escalations stay pinned whatever the sort. Pure.
- */
-export function activitySections(processes: ActivityProcess[], sort: ActivitySort, now: number): ActivitySection[] {
-  const sorted = sortActivity(processes, sort, now);
-  if (sort === 'attention') {
-    return ATTENTION_TIERS.map((tier) => ({
-      key: tier,
-      label: tierLabel(tier),
-      pinned: tier === 'needs-you',
-      rows: sorted.filter((p) => attentionTier(p) === tier),
-    })).filter((s) => s.rows.length > 0);
-  }
-  const [needsYou, rest] = partitionNeedsYou(sorted);
-  const sections: ActivitySection[] = [];
-  if (needsYou.length > 0)
-    sections.push({ key: 'needs-you', label: tierLabel('needs-you'), pinned: true, rows: needsYou });
-  if (rest.length > 0)
-    sections.push({ key: 'sorted', label: `By ${sortLabel(sort).toLowerCase()}`, pinned: false, rows: rest });
-  return sections;
 }
 
 /**

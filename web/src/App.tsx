@@ -202,6 +202,7 @@ export function App() {
   const [refreshingTracker, setRefreshingTracker] = useState(false);
   const [pendingPermissionAlerts, setPendingPermissionAlerts] = useState<PendingPermissionAlert[]>([]);
   const [conversationToOpen, setConversationToOpen] = useState<number | null>(null);
+  const handleConversationOpened = useCallback(() => setConversationToOpen(null), []);
 
   useEffect(() => {
     applyTheme(document.documentElement, theme);
@@ -793,7 +794,7 @@ export function App() {
               pendingPermission={
                 pendingPermissionAlerts.find(({ permission }) => permission.conversationId === conversationToOpen)?.permission ?? null
               }
-              onConversationOpened={() => setConversationToOpen(null)}
+              onConversationOpened={handleConversationOpened}
             />
           )}
         </div>

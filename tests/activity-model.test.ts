@@ -1,23 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
-  activitySections,
   activitySummary,
   activityWorkspaces,
-  attentionTier,
-  ATTENTION_TIERS,
   contextFillFraction,
   elapsedMs,
   fleetLanes,
   filterActivity,
-  HIGH_LOAD_FILL,
   mergeRunUsage,
-  rankActivity,
   resolveActivityFilter,
-  sortActivity,
-  sortLabel,
-  ACTIVITY_SORTS,
   sumCosts,
-  tierLabel,
   tokensPerSecond,
   usageTotalTokens,
 } from '../web/src/activity-model.js';
@@ -73,56 +64,6 @@ describe('contextFillFraction', () => {
   it('is the fraction when both are known — deliberately unclamped past 1', () => {
     expect(contextFillFraction(proc({ contextTokens: 150_000, contextWindow: 200_000 }))).toBeCloseTo(0.75);
     expect(contextFillFraction(proc({ contextTokens: 220_000, contextWindow: 200_000 }))).toBeCloseTo(1.1);
-  });
-});
-
-describe('attentionTier', () => {
-  it('an escalated Run needs you', () => {
-    expect(attentionTier(proc({ escalated: true }))).toBe('needs-you');
-  });
-  it('a process over its context window needs you (degrading)', () => {
-    expect(attentionTier(proc({ contextTokens: 210_000, contextWindow: 200_000 }))).toBe('needs-you');
-  });
-  it('a process at/over the high-load fill but under the window is high load', () => {
-    const fill = Math.round(HIGH_LOAD_FILL * 200_000);
-    expect(attentionTier(proc({ contextTokens: fill, contextWindow: 200_000 }))).toBe('high-load');
-  });
-  it('a comfortable process is steady', () => {
-    expect(attentionTier(proc({ contextTokens: 20_000, contextWindow: 200_000 }))).toBe('steady');
-  });
-  it('an unknown-window process is steady — no threshold to judge it against', () => {
-    expect(attentionTier(proc({ contextTokens: 999_999, contextWindow: null }))).toBe('steady');
-  });
-  it('escalation outranks a merely-comfortable fill', () => {
-    expect(attentionTier(proc({ escalated: true, contextTokens: 10, contextWindow: 200_000 }))).toBe('needs-you');
-  });
-  it('every tier has a human label', () => {
-    for (const t of ATTENTION_TIERS) expect(tierLabel(t)).toMatch(/\w/);
-  });
-});
-
-describe('rankActivity', () => {
-  it('orders needs-you before high-load before steady, then by fill desc, then oldest first', () => {
-    const steady = proc({ attemptId: 1, contextTokens: 10_000, contextWindow: 200_000 });
-    const highA = proc({ attemptId: 2, contextTokens: 160_000, contextWindow: 200_000, startedAt: 500 });
-    const highB = proc({ attemptId: 3, contextTokens: 190_000, contextWindow: 200_000, startedAt: 400 });
-    const needs = proc({ attemptId: 4, escalated: true });
-    const ranked = rankActivity([steady, highA, highB, needs]);
-    expect(ranked.map((p) => p.attemptId)).toEqual([4, 3, 2, 1]);
-  });
-
-  it('within a tier, the longer-running process (older startedAt) leads on a fill tie', () => {
-    const older = proc({ attemptId: 1, startedAt: 100, contextTokens: null, contextWindow: null });
-    const newer = proc({ attemptId: 2, startedAt: 900, contextTokens: null, contextWindow: null });
-    const ranked = rankActivity([newer, older]);
-    expect(ranked.map((p) => p.attemptId)).toEqual([1, 2]);
-  });
-
-  it('does not mutate its input', () => {
-    const input = [proc({ attemptId: 1 }), proc({ attemptId: 2, escalated: true })];
-    const copy = [...input];
-    rankActivity(input);
-    expect(input).toEqual(copy);
   });
 });
 
@@ -193,88 +134,6 @@ describe('resolveActivityFilter', () => {
   });
   it('drops a Workspace filter when the fleet is empty', () => {
     expect(resolveActivityFilter({ type: 'all', workspaceId: 1 }, [])).toEqual({ type: 'all', workspaceId: null });
-  });
-});
-
-describe('sortActivity', () => {
-  it('"attention" defers to rankActivity', () => {
-    const steady = proc({ attemptId: 1, contextTokens: 10_000, contextWindow: 200_000 });
-    const needs = proc({ attemptId: 2, escalated: true });
-    expect(sortActivity([steady, needs], 'attention', 0)).toEqual(rankActivity([steady, needs]));
-  });
-
-  it('"cost" orders by priced total desc, with the Needs-you tier pinned above', () => {
-    const cheap = proc({ attemptId: 1, cost: { totalUsd: 0.1, byModel: {}, incomplete: false } });
-    const dear = proc({ attemptId: 2, cost: { totalUsd: 9.0, byModel: {}, incomplete: false } });
-    const needsCheap = proc({ attemptId: 3, escalated: true, cost: { totalUsd: 0.01, byModel: {}, incomplete: false } });
-    expect(sortActivity([cheap, dear, needsCheap], 'cost', 0).map((p) => p.attemptId)).toEqual([3, 2, 1]);
-  });
-
-  it('"tokens" orders by total tokens desc, unknown last', () => {
-    const many = proc({ attemptId: 1, usage: usage(9000) });
-    const few = proc({ attemptId: 2, usage: usage(100) });
-    const none = proc({ attemptId: 3, usage: usage(null) });
-    expect(sortActivity([few, none, many], 'tokens', 0).map((p) => p.attemptId)).toEqual([1, 2, 3]);
-  });
-
-  it('"context" orders by fill desc, unconfigured window last', () => {
-    const full = proc({ attemptId: 1, contextTokens: 180_000, contextWindow: 200_000 });
-    const light = proc({ attemptId: 2, contextTokens: 20_000, contextWindow: 200_000 });
-    const unknown = proc({ attemptId: 3, contextTokens: null, contextWindow: null });
-    expect(sortActivity([light, unknown, full], 'context', 0).map((p) => p.attemptId)).toEqual([1, 2, 3]);
-  });
-
-  it('"elapsed" orders by longest-running first', () => {
-    const old = proc({ attemptId: 1, startedAt: 100 });
-    const mid = proc({ attemptId: 2, startedAt: 500 });
-    const fresh = proc({ attemptId: 3, startedAt: 900 });
-    expect(sortActivity([fresh, old, mid], 'elapsed', 1_000).map((p) => p.attemptId)).toEqual([1, 2, 3]);
-  });
-
-  it('does not mutate its input', () => {
-    const input = [proc({ attemptId: 1, escalated: true }), proc({ attemptId: 2 })];
-    const copy = [...input];
-    sortActivity(input, 'cost', 0);
-    expect(input).toEqual(copy);
-  });
-
-  it('every sort has a human label', () => {
-    for (const s of ACTIVITY_SORTS) expect(sortLabel(s)).toMatch(/\w/);
-  });
-});
-
-describe('activitySections', () => {
-  it('under "attention", groups into non-empty tier bands with Needs-you pinned', () => {
-    const steady = proc({ attemptId: 1, contextTokens: 10_000, contextWindow: 200_000 });
-    const needs = proc({ attemptId: 2, escalated: true });
-    const sections = activitySections([steady, needs], 'attention', 0);
-    expect(sections.map((s) => s.key)).toEqual(['needs-you', 'steady']);
-    expect(sections[0]!.pinned).toBe(true);
-    expect(sections[0]!.rows.map((p) => p.attemptId)).toEqual([2]);
-  });
-
-  it('under a metric sort, pins Needs-you above one sorted section', () => {
-    const dear = proc({ attemptId: 1, cost: { totalUsd: 9, byModel: {}, incomplete: false } });
-    const cheap = proc({ attemptId: 2, cost: { totalUsd: 1, byModel: {}, incomplete: false } });
-    const needs = proc({ attemptId: 3, escalated: true, cost: { totalUsd: 0.01, byModel: {}, incomplete: false } });
-    const sections = activitySections([cheap, dear, needs], 'cost', 0);
-    expect(sections.map((s) => s.key)).toEqual(['needs-you', 'sorted']);
-    expect(sections[0]!.pinned).toBe(true);
-    expect(sections[0]!.rows.map((p) => p.attemptId)).toEqual([3]);
-    expect(sections[1]!.rows.map((p) => p.attemptId)).toEqual([1, 2]);
-  });
-
-  it('under a metric sort with no escalations, is a single sorted section', () => {
-    const dear = proc({ attemptId: 1, cost: { totalUsd: 9, byModel: {}, incomplete: false } });
-    const cheap = proc({ attemptId: 2, cost: { totalUsd: 1, byModel: {}, incomplete: false } });
-    const sections = activitySections([cheap, dear], 'cost', 0);
-    expect(sections.map((s) => s.key)).toEqual(['sorted']);
-    expect(sections[0]!.rows.map((p) => p.attemptId)).toEqual([1, 2]);
-  });
-
-  it('an empty fleet has no sections', () => {
-    expect(activitySections([], 'attention', 0)).toEqual([]);
-    expect(activitySections([], 'cost', 0)).toEqual([]);
   });
 });
 

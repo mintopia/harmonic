@@ -601,6 +601,9 @@ export function ConversationLauncher({
   const focusedId = view.kind === 'detail' ? view.conversationId : null;
   const [openedPendingPermission, setOpenedPendingPermission] = useState<PendingPermission | null>(null);
   const clearOpenedPendingPermission = useCallback(() => setOpenedPendingPermission(null), []);
+  // The route-driven auto-open must fire once per distinct deep-linked conversation, not on
+  // every render, or a manual Close is re-opened on the next tick.
+  const autoOpenedConversationId = useRef<number | null>(null);
 
   useEffect(() => {
     if (openConversationId !== null) {
@@ -608,10 +611,13 @@ export function ConversationLauncher({
       setOpen(true);
       setView({ kind: 'detail', conversationId: openConversationId });
       storeConversationId(localStorage, openConversationId);
+      autoOpenedConversationId.current = openConversationId;
       onConversationOpened();
       return;
     }
     if (conversationId === null || conversationId === undefined) return;
+    if (autoOpenedConversationId.current === conversationId) return;
+    autoOpenedConversationId.current = conversationId;
     setOpenedPendingPermission((current) =>
       current?.conversationId === conversationId ? current : null,
     );
