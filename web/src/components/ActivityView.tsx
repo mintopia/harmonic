@@ -73,17 +73,54 @@ function Empty() {
   return <span className="text-muted">—</span>;
 }
 
+function modelEntryFor(
+  node: ProcessNode,
+  process: ActivityProcess,
+  config: AppConfig | null,
+) {
+  const models = config?.harnesses[process.harness]?.models;
+  const baseModel = node.model.replace(/-\d{8}$/, "");
+  return (
+    models?.find((model) => model.id === node.model) ??
+    models?.find((model) => model.id === baseModel)
+  );
+}
+
 function contextWindowFor(
   node: ProcessNode | null,
   process: ActivityProcess,
   config: AppConfig | null,
 ): number | null {
   if (!node) return process.contextWindow;
-  return (
-    config?.harnesses[process.harness]?.models.find(
-      (model) => model.id === node.model,
-    )?.contextWindow ?? process.contextWindow
-  );
+  const window = modelEntryFor(node, process, config)?.contextWindow;
+  if (window !== undefined) return window;
+  return node.model === process.model ? process.contextWindow : null;
+}
+
+function costForNode(
+  node: ProcessNode,
+  process: ActivityProcess,
+  config: AppConfig | null,
+): string | null {
+  const price = modelEntryFor(node, process, config)?.price;
+  if (!price)
+    return formatCost({
+      totalUsd: null,
+      byModel: { [node.model]: null },
+      incomplete: true,
+    });
+  const usage = node.usage;
+  const totalUsd =
+    (usage.inputTokens * price.input +
+      usage.outputTokens * price.output +
+      usage.cacheReadTokens * price.cacheRead +
+      usage.cacheWriteTokens * price.cacheWrite) /
+    1_000_000;
+  return formatCost({
+    totalUsd,
+    byModel: { [node.model]: totalUsd },
+    incomplete: false,
+  });
 }
 
 function ContextMeter({
@@ -157,7 +194,9 @@ function Lane({
       : `/?conversation=${process.conversationId}`;
   const name = node?.name ?? process.title;
   const model = node?.model ?? process.model;
-  const cost = isRoot ? formatCost(process.cost) : null;
+  const cost = node
+    ? costForNode(node, process, config)
+    : formatCost(process.cost);
   const active =
     node?.status === "active" || (node === null && process.type === "chat");
   return (

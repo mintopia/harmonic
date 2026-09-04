@@ -148,8 +148,8 @@ describe('filterActivity', () => {
 });
 
 describe('fleetLanes', () => {
-  it('orders roots by context fill and places subagents beneath their root', () => {
-    const cool = proc({ attemptId: 1, contextTokens: 10_000, contextWindow: 200_000, tree: { id: 'root', name: 'root', model: 'sonnet-5', usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }, contextTokens: 10_000, lastTool: null, status: 'active', depth: 0, toolUseId: null, children: [{ id: 'child', name: 'child', model: 'sonnet-5', usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }, contextTokens: 1, lastTool: null, status: 'active', depth: 1, toolUseId: 'tool', children: [] }] } });
+  it('orders roots by context fill and shows direct subagents beneath their root', () => {
+    const cool = proc({ attemptId: 1, contextTokens: 10_000, contextWindow: 200_000, tree: { id: 'root', name: 'root', model: 'sonnet-5', usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }, contextTokens: 10_000, lastTool: null, status: 'active', depth: 0, toolUseId: null, children: [{ id: 'child', name: 'child', model: 'sonnet-5', usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }, contextTokens: 1, lastTool: null, status: 'active', depth: 1, toolUseId: 'tool', children: [{ id: 'grandchild', name: 'grandchild', model: 'sonnet-5', usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }, contextTokens: 1, lastTool: null, status: 'active', depth: 2, toolUseId: 'nested-tool', children: [] }] }] } });
     const hot = proc({ attemptId: 2, contextTokens: 180_000, contextWindow: 200_000 });
     expect(fleetLanes([cool, hot]).map((lane) => [lane.process.attemptId, lane.depth])).toEqual([[2, 0], [1, 0], [1, 1]]);
   });
