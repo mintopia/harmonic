@@ -68,6 +68,8 @@ export interface Route {
    * with `task` (both live in the pathname, one path at a time).
    */
   epic: number | null;
+  /** A Conversation opened in the dock from a shareable Activity link. */
+  conversation?: number | null;
   /** Deck terminal columns the operator has peeked open. */
   peeked: TaskState[];
   table: TableFilters;
@@ -79,6 +81,7 @@ export const DEFAULT_ROUTE: Route = {
   view: 'board',
   task: null,
   epic: null,
+  conversation: null,
   peeked: [],
   table: DEFAULT_TABLE_FILTERS,
   panel: NO_SELECTION,
@@ -94,6 +97,7 @@ const PARAM = {
   sort: 'sort',
   order: 'order',
   panel: 'panel',
+  conversation: 'conversation',
 } as const;
 
 /** `panel` param ⇄ {@link RailSelection}: `timeline`, `changes`, `attempt:<n>`,
@@ -159,6 +163,8 @@ export function parseRoute(pathname: string, search: string): Route {
   const epicMatch = EPIC_PATH.exec(pathname);
   const epicRef = epicMatch ? Number(epicMatch[1]) : NaN;
   const epic = epicMatch && Number.isSafeInteger(epicRef) && epicRef > 0 ? epicRef : null;
+  const rawConversation = Number(params.get(PARAM.conversation));
+  const conversation = Number.isSafeInteger(rawConversation) && rawConversation > 0 ? rawConversation : null;
 
   const peeked: TaskState[] = [];
   for (const raw of (params.get(PARAM.peek) ?? '').split(',')) {
@@ -180,7 +186,7 @@ export function parseRoute(pathname: string, search: string): Route {
   // A rail selection only means something on a detail page.
   const panel = task !== null || epic !== null ? parsePanel(params.get(PARAM.panel)) : NO_SELECTION;
 
-  return { view, task, epic, peeked, table, panel };
+  return { view, task, epic, conversation, peeked, table, panel };
 }
 
 /**
@@ -194,6 +200,7 @@ export function serializeRoute(route: Route): string {
   const params = new URLSearchParams();
 
   if (route.view !== 'board') params.set(PARAM.view, route.view);
+  if (route.conversation) params.set(PARAM.conversation, String(route.conversation));
 
   const peekSet = new Set(route.peeked);
   const peek = TASK_STATES.filter((s) => peekSet.has(s));

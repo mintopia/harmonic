@@ -7,6 +7,7 @@ import {
   ATTENTION_TIERS,
   contextFillFraction,
   elapsedMs,
+  fleetLanes,
   filterActivity,
   HIGH_LOAD_FILL,
   mergeRunUsage,
@@ -143,6 +144,14 @@ describe('filterActivity', () => {
   });
   it('combines type and workspace (an empty intersection is honest)', () => {
     expect(filterActivity([run, chat], { type: 'attempts', workspaceId: 2 })).toEqual([]);
+  });
+});
+
+describe('fleetLanes', () => {
+  it('orders roots by context fill and places subagents beneath their root', () => {
+    const cool = proc({ attemptId: 1, contextTokens: 10_000, contextWindow: 200_000, tree: { id: 'root', name: 'root', model: 'sonnet-5', usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }, contextTokens: 10_000, lastTool: null, status: 'active', depth: 0, toolUseId: null, children: [{ id: 'child', name: 'child', model: 'sonnet-5', usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }, contextTokens: 1, lastTool: null, status: 'active', depth: 1, toolUseId: 'tool', children: [] }] } });
+    const hot = proc({ attemptId: 2, contextTokens: 180_000, contextWindow: 200_000 });
+    expect(fleetLanes([cool, hot]).map((lane) => [lane.process.attemptId, lane.depth])).toEqual([[2, 0], [1, 0], [1, 1]]);
   });
 });
 
@@ -380,16 +389,17 @@ describe('mergeRunUsage', () => {
 });
 
 describe('activitySummary', () => {
-  it('counts running Runs, needs-you rows, fleet cost, tok/s, and ceiling usage', () => {
+  it('counts Agents, Subagents, fleet cost, tok/s, and ceiling usage', () => {
     const now = 4_000;
     const procs = [
-      proc({ attemptId: 1, type: 'attempt', startedAt: 1_000, usage: usage(6000), cost: { totalUsd: 1, byModel: {}, incomplete: false } }),
+      proc({ attemptId: 1, type: 'attempt', startedAt: 1_000, usage: usage(6000), tree: { id: 'root', name: 'root', model: 'sonnet-5', usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }, contextTokens: 1, lastTool: null, status: 'active', depth: 0, toolUseId: null, children: [{ id: 'child', name: 'child', model: 'sonnet-5', usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }, contextTokens: 1, lastTool: null, status: 'active', depth: 1, toolUseId: 'tool', children: [] }] }, cost: { totalUsd: 1, byModel: {}, incomplete: false } }),
       proc({ attemptId: 2, type: 'attempt', escalated: true, startedAt: 2_000, usage: usage(3000), cost: { totalUsd: null, byModel: {}, incomplete: true } }),
       proc({ type: 'chat', attemptId: null, conversationId: 5, startedAt: 2_000, usage: usage(3000), cost: { totalUsd: 0.5, byModel: {}, incomplete: false } }),
     ];
     const s = activitySummary(procs, 4, now);
+    expect(s.agentCount).toBe(3);
+    expect(s.subagentCount).toBe(1);
     expect(s.runningCount).toBe(2);
-    expect(s.needsYouCount).toBe(1);
     expect(s.ceiling).toEqual({ running: 2, max: 4 });
     expect(s.cost?.totalUsd).toBeCloseTo(1.5);
     expect(s.cost?.incomplete).toBe(true);
@@ -398,6 +408,6 @@ describe('activitySummary', () => {
 
   it('an empty fleet is all zeros and a null cost', () => {
     const s = activitySummary([], 3, 1_000);
-    expect(s).toEqual({ runningCount: 0, needsYouCount: 0, cost: null, tokensPerSecond: 0, ceiling: { running: 0, max: 3 } });
+    expect(s).toEqual({ agentCount: 0, subagentCount: 0, runningCount: 0, cost: null, tokensPerSecond: 0, ceiling: { running: 0, max: 3 } });
   });
 });

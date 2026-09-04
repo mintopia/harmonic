@@ -561,9 +561,11 @@ type LauncherView = { kind: 'list' } | { kind: 'detail'; conversationId: number 
 export function ConversationLauncher({
   config,
   workspace,
+  conversationId,
 }: {
   config: AppConfig | null;
   workspace: Workspace | null;
+  conversationId?: number | null;
 }) {
   const workspaceId = workspace?.id ?? null;
   const [open, setOpen] = useState(false);
@@ -591,6 +593,13 @@ export function ConversationLauncher({
     return persisted === null ? { kind: 'list' } : { kind: 'detail', conversationId: persisted };
   });
   const focusedId = view.kind === 'detail' ? view.conversationId : null;
+
+  useEffect(() => {
+    if (conversationId === null || conversationId === undefined) return;
+    setOpen(true);
+    setView({ kind: 'detail', conversationId });
+    storeConversationId(localStorage, conversationId);
+  }, [conversationId]);
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
 
