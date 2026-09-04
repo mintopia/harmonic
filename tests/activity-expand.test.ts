@@ -4,10 +4,17 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ActivityView } from "../web/src/components/ActivityView.js";
 import type { ActivityProcess } from "../web/src/types.js";
+import { makeConfig } from "./component-smoke-harness.js";
 
 const usage = {
   inputTokens: 0,
   outputTokens: 0,
+  cacheReadTokens: 0,
+  cacheWriteTokens: 0,
+};
+const subagentUsage = {
+  inputTokens: 0,
+  outputTokens: 1_000_000,
   cacheReadTokens: 0,
   cacheWriteTokens: 0,
 };
@@ -48,13 +55,26 @@ const process = (type: "attempt" | "chat"): ActivityProcess => ({
               id: "child",
               name: "Subagent",
               model: "claude-test",
-              usage,
+              usage: subagentUsage,
               contextTokens: 50,
               lastTool: "Edit",
               status: "active",
               depth: 1,
               toolUseId: "tool",
-              children: [],
+              children: [
+                {
+                  id: "grandchild",
+                  name: "Deep Subagent",
+                  model: "claude-test",
+                  usage,
+                  contextTokens: 25,
+                  lastTool: "Write",
+                  status: "active",
+                  depth: 2,
+                  toolUseId: "nested-tool",
+                  children: [],
+                },
+              ],
             },
           ],
         }
@@ -94,7 +114,28 @@ describe("Activity fleet lanes", () => {
     host = document.body.appendChild(document.createElement("div"));
     root = createRoot(host);
     await act(async () => {
-      root?.render(createElement(ActivityView, { config: null }));
+      root?.render(
+        createElement(ActivityView, {
+          config: makeConfig({
+            harnesses: {
+              claude: {
+                command: "claude",
+                args: [],
+                env: {},
+                models: [
+                  {
+                    id: "claude-test",
+                    price: { input: 1, output: 2, cacheRead: 0.1, cacheWrite: 1 },
+                    contextWindow: 200,
+                  },
+                ],
+                defaultModel: "claude-test",
+                cacheWarmSeconds: 300,
+              },
+            },
+          }),
+        }),
+      );
       await Promise.resolve();
       await Promise.resolve();
     });
@@ -102,6 +143,10 @@ describe("Activity fleet lanes", () => {
     expect(host.textContent).toContain("Read");
     expect(host.textContent).toContain("Edit");
     expect(host.textContent).toContain("100 / 200 · 50%");
+    expect(host.textContent).toContain("50 / 200 · 25%");
+    expect(host.textContent).toContain("1M");
+    expect(host.textContent).toContain("$2.00");
+    expect(host.textContent).not.toContain("Deep Subagent");
     expect(host.querySelector('a[href="/task/4"]')).not.toBeNull();
     expect(host.querySelector('a[href="/?conversation=2"]')).not.toBeNull();
     expect(host.querySelectorAll('button[aria-label*="Expand"]')).toHaveLength(

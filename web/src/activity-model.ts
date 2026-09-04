@@ -109,7 +109,7 @@ export interface FleetLane {
   depth: number;
 }
 
-/** Flatten each root's Process Tree beneath its context-ordered root lane. */
+/** Place each root and its direct Subagents beneath its context-ordered root lane. */
 export function fleetLanes(processes: ActivityProcess[]): FleetLane[] {
   const lanes: FleetLane[] = [];
   const roots = [...processes].sort((a, b) => {
@@ -121,11 +121,11 @@ export function fleetLanes(processes: ActivityProcess[]): FleetLane[] {
     return bFill - aFill;
   });
   for (const process of roots) {
-    const add = (node: ProcessNode, depth: number) => {
-      lanes.push({ process, node, depth });
-      for (const child of node.children) add(child, depth + 1);
-    };
-    if (process.tree) add(process.tree, 0);
+    if (process.tree) {
+      lanes.push({ process, node: process.tree, depth: 0 });
+      for (const child of process.tree.children)
+        lanes.push({ process, node: child, depth: 1 });
+    }
     else lanes.push({ process, node: null, depth: 0 });
   }
   return lanes;
