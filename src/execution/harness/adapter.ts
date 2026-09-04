@@ -1,3 +1,4 @@
+import type { ModelPrice } from '../../domain/pricing.js';
 import type { ModelUsage } from '../../domain/usage.js';
 import type { ParsedSession } from '../usage.js';
 import type { TranscriptLogEvent } from './transcript.js';
@@ -81,6 +82,27 @@ export interface TranscriptCollector {
   subagents?(rootPath: string): Promise<Array<{ path: string; parentToolUseId: string }>>;
 }
 
+/** A provider the harness discovered from its current local configuration. */
+export interface HarnessProvider {
+  id: string;
+  label: string;
+  authed: boolean;
+}
+
+/** A model a harness discovered for one provider. */
+export interface HarnessModel {
+  id: string;
+  label: string;
+  price?: ModelPrice;
+  contextWindow?: number;
+}
+
+/** Optional harness abilities that do not belong to the execution contract. */
+export interface HarnessCapabilities {
+  selectProvider(): Promise<HarnessProvider[]>;
+  selectModel(providerId: string): Promise<HarnessModel[]>;
+}
+
 /** Per-harness knowledge, keyed by HarnessId. */
 export interface HarnessAdapter {
   /** Prefix used when this harness invokes one of Harmonic's prompt skills. */
@@ -111,6 +133,8 @@ export interface HarnessAdapter {
   requiresUnattendedPermissionMode: boolean;
   /** The harness's Usage Collector; null while it has none (ACP totals only). */
   usage: UsageCollector | null;
+  /** Optional dynamic discovery abilities, absent when this harness has none. */
+  capabilities?: HarnessCapabilities;
 }
 
 /**
