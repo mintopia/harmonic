@@ -51,7 +51,7 @@ harnesses:
     cacheWarmSeconds: 300
   opencode:
     command: opencode
-    args: [acp, --auto]
+    args: [acp]
     env: {}
     models:
       - { id: meta/muse-spark-1.3-contributor, price: { input: 0.1, output: 0.2, cacheRead: 0.002, cacheWrite: 0 }, contextWindow: 1048576 }
