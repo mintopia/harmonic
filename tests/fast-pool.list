@@ -11,7 +11,6 @@
 # Anything not listed runs in the default "isolated" project (fresh fork per
 # file) — when in doubt, leave a new test file OFF this list; it just runs
 # slower, never flakier.
-tests/activity-actions-model.test.ts
 tests/activity-model.test.ts
 tests/api-request.test.ts
 tests/async-db.test.ts
