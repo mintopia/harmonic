@@ -780,7 +780,7 @@ not resolved yet.`;
     return reply.status(401).send({ error: { code: 'unauthenticated', message: 'authentication required' } });
   });
 
-  app.setErrorHandler((err, _req, reply) => {
+  app.setErrorHandler((err, req, reply) => {
     if (err instanceof DomainError) {
       return reply.status(err.httpStatus).send({ error: { code: err.code, message: err.message } });
     }
@@ -799,7 +799,13 @@ not resolved yet.`;
         error: { code: 'validation', message: err.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ') },
       });
     }
-    app.log.error(err);
+    const cause = err instanceof Error ? err : undefined;
+    logger.error(`unhandled error serving ${req.method} ${req.url}: ${cause?.message ?? String(err)}`, {
+      method: req.method,
+      url: req.url,
+      error: cause?.message ?? String(err),
+      ...(cause?.stack ? { stack: cause.stack } : {}),
+    });
     return reply.status(500).send({ error: { code: 'internal', message: 'internal server error' } });
   });
 
