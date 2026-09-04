@@ -5,8 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { buildApp, type App } from '../src/server/app.js';
-import type { DeepPartial } from '../src/config.js';
-import type { AppConfig } from '../src/config.js';
+import type { AppConfig, DeepPartial, HarnessId } from '../src/config.js';
 import type { CriticHarnessDrive } from '../src/verification/critic.js';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { settings, workspaces } from '../src/db/schema.js';
@@ -78,7 +77,7 @@ export function seedLocalMarkdownTicket(
 }
 
 /** Config overrides registering the stub ACP agent as the given harness. */
-export function stubHarness(harnessId: 'claude' | 'codex' | 'copilot' = 'claude'): DeepPartial<AppConfig> {
+export function stubHarness(harnessId: HarnessId = 'claude'): DeepPartial<AppConfig> {
   return {
     harnesses: {
       [harnessId]: {

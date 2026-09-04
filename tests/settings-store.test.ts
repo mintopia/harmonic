@@ -50,7 +50,7 @@ describe('SettingsStore (issue #391)', () => {
 
     const store = await SettingsStore.create(dir);
     const base = baselineConfig();
-    const harnessIds = ['claude', 'codex', 'copilot'] satisfies Array<keyof typeof base.harnesses>;
+    const harnessIds = ['claude', 'codex', 'copilot', 'opencode'] satisfies Array<keyof typeof base.harnesses>;
     for (const id of harnessIds) {
       for (const baseModel of base.harnesses[id].models) {
         const resolved = store.getGlobal().harnesses[id].models.find((m) => m.id === baseModel.id);

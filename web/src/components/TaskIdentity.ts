@@ -7,6 +7,7 @@ const PROVIDER_LABELS = {
   claude: 'Claude',
   codex: 'Codex',
   copilot: 'Copilot',
+  opencode: 'OpenCode',
   cursor: 'Cursor',
 } as const;
 
