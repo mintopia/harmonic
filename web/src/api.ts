@@ -23,6 +23,8 @@ import type {
   VerificationCommand,
   VerifierStatus,
   Workspace,
+  HarnessProvider,
+  DiscoveredHarnessModel,
 } from './types.js';
 import type { Epic, EpicIntegrateOutcome } from './epic-model.js';
 import type { Stats } from './stats-model.js';
@@ -54,6 +56,8 @@ export async function request<T>(method: string, path: string, body?: unknown): 
 }
 
 export const api = {
+  harnessProviders: (harness: string) => request<{ providers: HarnessProvider[] }>('GET', `/api/harnesses/${encodeURIComponent(harness)}/providers`),
+  harnessModels: (harness: string, provider: string) => request<{ models: DiscoveredHarnessModel[] }>('GET', `/api/harnesses/${encodeURIComponent(harness)}/models?provider=${encodeURIComponent(provider)}`),
   config: () => request<AppConfig>('GET', '/api/config'),
   configLayers: () => request<ConfigLayers>('GET', '/api/config/layers'),
   updateConfig: (patch: object) => request<AppConfig>('PATCH', '/api/config', patch),

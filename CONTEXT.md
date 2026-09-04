@@ -404,12 +404,36 @@ _Avoid_: accept, merge gate, land (banned)
 
 **Harness**:
 An agent CLI that Harmonic drives to execute Attempts — Claude (Claude Code),
-Codex, or Copilot — exclusively over ACP. A **closed set of three**: each needs
-a code Adapter, so operators tune a Harness's config (command, args, env, its
-Model catalog) but cannot add a Harness. Each Harness owns a **Model catalog**
-and a single **`cacheWarmSeconds`** — the warm-window estimate that seeds a
-Session's derived warm-until.
-_Avoid_: agent (ambiguous), backend, provider
+Codex, Copilot, or OpenCode — exclusively over ACP. A **closed set of four**:
+each needs a code Adapter, so operators tune a Harness's config (command, args,
+env, its Model catalog) but cannot add a Harness. Each Harness owns a **Model
+catalog** and a single **`cacheWarmSeconds`** — the warm-window estimate that
+seeds a Session's derived warm-until. OpenCode runs unattended via its
+`--auto` spawn flag (it has no full-access ACP mode to flip into), and is a
+multi-**Provider** router whose catalog can be discovered at runtime (see
+Harness Capability). (ADR-0025.)
+_Avoid_: agent (ambiguous), backend, provider (a Provider is what a routing
+Harness routes *to*, not a synonym for the Harness)
+
+**Provider**:
+An upstream model vendor or gateway a routing Harness can send a prompt to —
+OpenRouter, Meta, OpenCode Zen, and so on — credentialed per-Provider. A Model
+under a Provider is addressed `provider/model`. A Provider is **available** when
+it is credentialed (plus any always-on free tier); only available Providers are
+offered by discovery. Distinct from a Harness: OpenCode is one Harness that
+routes across many Providers. (ADR-0025.)
+_Avoid_: harness, backend, vendor (as a synonym for Harness)
+
+**Harness Capability**:
+An **optional** ability a Harness's Adapter declares beyond the base contract,
+absent on the Harnesses that do not support it. The first two are **dynamic
+discovery** — **select_provider** (the available Providers a Harness can route
+to) and **select_model** (the Models available under a given Provider, with
+price and context window). Only OpenCode declares them today; discovery reads
+local metadata (the models.dev cache + credential file), costs no inference,
+and surfaces in the launcher as a per-run Model pick that prices itself from
+that metadata. (ADR-0025.)
+_Avoid_: feature, plugin, extension
 
 **Model**:
 A first-class entry in a Harness's **Model catalog** —
@@ -519,6 +543,14 @@ every Subagent session — while it executes, rolled up so the parent's total
 includes its whole Process Tree. Persisted as a single latest snapshot during
 execution and finalised at the end; the source for Cost and statistics.
 
+**Agent**:
+The root node of a Process Tree — the live harness Session driving an Attempt or
+Conversation, with its own model, Usage, and context fill. Pairs with Subagent
+(its spawned children); together they are the node terms the Activity view
+shows. Distinct from the "avoid agent" note on Harness, which bars calling the
+*CLI* an agent — an Agent is one running instance of a Harness, not the Harness.
+_Avoid_: root process (fine inside Process-Tree internals; the UI term is Agent)
+
 **Subagent**:
 A nested agent a Harness spawns within an Attempt or Conversation — itself a
 token-spending session with its own model and Usage. Discovered from the
@@ -538,14 +570,16 @@ The per-Harness code module behind which all harness-specific knowledge
 lives: spawn tweaks (quirk workarounds), the model pin — spawn-time env
 (Claude, Codex) or ACP `session/set_model` after `session/new` (Copilot) —
 and the Usage Collector. Keyed by Harness; operator config holds only
-what is genuinely operator-tunable.
+what is genuinely operator-tunable. Carries an **optional** `capabilities`
+extension point (see Harness Capability) that a Harness declares only if it
+supports it. (ADR-0025.)
 _Avoid_: plugin, driver
 
 **Usage Collector**:
 The per-Harness mechanism that parses the Harness's native session logs into
 Usage and the Process Tree — a per-model token breakdown across the parent and
-every Subagent session. Claude and Codex read jsonl transcripts; Copilot reads
-its session store. Each Harness has exactly one. ACP result metadata and OTel
+every Subagent session. Claude and Codex read jsonl transcripts; Copilot and
+OpenCode read their SQLite session stores. Each Harness has exactly one. ACP result metadata and OTel
 are no longer the source (see ADR 0009).
 _Avoid_: log parser (it is more than one log)
 
@@ -681,8 +715,12 @@ compound.
 **Activity**:
 The instance-wide live view of every in-flight harness process — Attempts and
 active Conversations across all Workspaces — showing realtime Usage, context
-fill, Cost, and each process's Process Tree. Read-only but for a per-process
-Stop/Kill and a deep-link to a related ticket; holds no state of its own.
+fill, Cost, each Agent's last tool, and each process's Process Tree. **Strictly
+read-only**: the sole interaction is a deep-link to an Agent's Task or
+Conversation page, where every action lives (Stop/Kill, permission answers,
+escalation resolve). It holds no state and carries no action affordances of its
+own — a permission that needs the operator is raised app-wide (top of every
+page), never surfaced here.
 Distinct from **Operations**: Activity answers *what are the agents doing*
 (agent / Subagent internals — usage, tools, context), Operations answers *what
 is Harmonic's runtime doing* (orchestration). An Attempt appears in both — as

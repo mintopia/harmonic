@@ -3,6 +3,7 @@ import type { AsyncDbHandle } from '../db/async.js';
 import { taskDependencies, tasks, type RawTaskRow, type TaskRow, type TaskState, type TrackerFacts, type WayfinderType, type Workflow, type WorkspaceRow } from '../db/schema.js';
 import { decideTaskDeletion, type DeletionDecision } from './task-deletion.js';
 import type { TaskBlockerGraph } from './task-blocker-graph.js';
+import { logger } from '../logger.js';
 
 export interface MirrorInput {
   trackerRef: number;
@@ -13,6 +14,8 @@ export interface MirrorInput {
   closed: boolean;
   trackerCanClose?: boolean;
   facts?: TrackerFacts;
+  /** When the tracker snapshot behind this input was captured. Absent for callers that mirror synchronously (no poll scan). */
+  observedAt?: number;
 }
 
 export interface TaskMirrorOptions {
@@ -49,11 +52,27 @@ export class TaskMirror {
       const existing = await db.select().from(tasks).where(and(eq(tasks.workspaceId, workspace.id), eq(tasks.trackerRef, input.trackerRef))).get();
       const now = Date.now();
       if (existing) {
+        // A merged Task is `done` and Harmonic closed its ticket; the Task's
+        // last write (the settle to `done`, after the close) dates that close.
+        // A poll whose scan predates the close still carries the issue as open,
+        // so reopen `done`→`ready` only when the snapshot was observed after
+        // that close — a stale in-flight scan cannot re-queue a finished Task,
+        // while a genuine human reopen (observed later) still does.
+        const observedAfterClose = input.observedAt === undefined || input.observedAt > existing.updatedAt;
+        const reopenFromDone = existing.state === 'done' && !input.closed && input.trackerCanClose !== false;
+        if (reopenFromDone && !observedAfterClose) {
+          logger.info('mirror: ignored stale-open snapshot for merged task', {
+            taskId: existing.id,
+            trackerRef: input.trackerRef,
+            observedAt: input.observedAt,
+            closedAt: existing.updatedAt,
+          });
+        }
         const state: TaskState = existing.state === 'working' || existing.state === 'escalated'
           ? existing.state
           : input.closed
             ? 'done'
-            : existing.state === 'done' && input.trackerCanClose !== false
+            : reopenFromDone && observedAfterClose
               ? 'ready'
               : existing.state;
         const factCols = input.facts ? trackerFactColumns(input.facts) : {};

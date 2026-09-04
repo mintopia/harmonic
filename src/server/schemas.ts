@@ -201,7 +201,7 @@ export const activityProcessSchema = z
     workspaceId: z.number().meta({ example: 1 }),
     /** The owning Workspace's name — the view spans Workspaces. */
     workspaceName: z.string().meta({ example: 'harmonic' }),
-    /** One of config.ts's HARNESS_IDS ('claude' | 'codex' | 'copilot'); stored as plain text. */
+    /** One of config.ts's HARNESS_IDS; stored as plain text. */
     harness: z.string().meta({ example: 'claude' }),
     model: z.string().meta({ example: 'sonnet-5' }),
     /** A running Attempt's AttemptState, or a warm Conversation's ConversationState. */

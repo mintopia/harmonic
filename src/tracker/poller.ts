@@ -69,6 +69,7 @@ export class TrackerPoller {
     }
     this.onResolved(resolutionSuccess(adapter));
     poll.update({ 'tracker.name': adapter.name });
+    const observedAt = Date.now();
     const tickets = await adapter.scan();
     poll.update({ 'tracker.ticket.count': tickets.length });
     this.urlByRef = new Map();
@@ -83,6 +84,7 @@ export class TrackerPoller {
     const mirrored = await mirrorScan(this.tasks, tickets, this.workspaceId, {
       trackerCanClose: !!adapter.close,
       pollSpanContext: poll.spanContext,
+      observedAt,
     });
     poll.update({ 'tracker.mirrored.count': mirrored.length });
     if (this.epics && (this.opts.reconcileOnPoll ?? true)) {

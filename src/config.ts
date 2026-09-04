@@ -6,7 +6,7 @@ import { parse } from 'yaml';
 import { z } from 'zod';
 import { isModelPriced, pricesForHarness } from './domain/pricing.js';
 
-export const HARNESS_IDS = ['claude', 'codex', 'copilot'] as const;
+export const HARNESS_IDS = ['claude', 'codex', 'copilot', 'opencode'] as const;
 export type HarnessId = (typeof HARNESS_IDS)[number];
 
 export const ISOLATION_MODES = ['direct', 'worktree'] as const;

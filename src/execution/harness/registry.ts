@@ -3,6 +3,7 @@ import type { HarnessAdapter } from './adapter.js';
 import { claudeAdapter } from './claude.js';
 import { codexAdapter } from './codex.js';
 import { copilotAdapter } from './copilot.js';
+import { opencodeAdapter } from './opencode.js';
 
 const unknownAdapter: HarnessAdapter = {
   commandPrefix: '/',
@@ -19,6 +20,7 @@ const adapters: Record<HarnessId, HarnessAdapter> = {
   claude: claudeAdapter,
   codex: codexAdapter,
   copilot: copilotAdapter,
+  opencode: opencodeAdapter,
 };
 
 function isHarnessId(harnessId: string): harnessId is HarnessId {
