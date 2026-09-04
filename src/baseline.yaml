@@ -2,7 +2,18 @@ name: ""
 harnesses:
   claude:
     command: npx
-    args: [--yes, "@agentclientprotocol/claude-agent-acp"]
+    # Run the resolved entry through `node` instead of exec'ing the bin: some
+    # provisioning environments extract the npx package without the executable
+    # bit, and exec'ing a non-+x bin dies with "Permission denied" (code 127).
+    # `node` reads the file, so the missing bit is irrelevant.
+    args:
+      - --yes
+      - --package=@agentclientprotocol/claude-agent-acp
+      - --
+      - sh
+      - -c
+      - 'IFS=:; for d in $PATH; do f="$d/claude-agent-acp"; [ -e "$f" ] && exec node "$f" "$@"; done; echo "claude-agent-acp not found on PATH" >&2; exit 127'
+      - claude-agent-acp
     env: {}
     models:
       - { id: claude-opus-5, price: { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 }, contextWindow: 1000000 }
@@ -14,7 +25,16 @@ harnesses:
     cacheWarmSeconds: 3600
   codex:
     command: npx
-    args: [--yes, "@agentclientprotocol/codex-acp"]
+    # See the claude harness note: launch via `node` so a non-executable npx
+    # bin (missing +x after extraction) can't abort with "Permission denied".
+    args:
+      - --yes
+      - --package=@agentclientprotocol/codex-acp
+      - --
+      - sh
+      - -c
+      - 'IFS=:; for d in $PATH; do f="$d/codex-acp"; [ -e "$f" ] && exec node "$f" "$@"; done; echo "codex-acp not found on PATH" >&2; exit 127'
+      - codex-acp
     env: {}
     models:
       - { id: gpt-5.6-sol, price: { input: 5, output: 30, cacheRead: 0.5, cacheWrite: 6.25 }, contextWindow: 400000 }
