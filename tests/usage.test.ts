@@ -51,6 +51,25 @@ describe('usage collection retry (log-flush race)', () => {
   });
 });
 
+describe('OpenCode ACP usage', () => {
+  it('keeps standard ACP token totals when no native session-log collector exists', () => {
+    expect(
+      collectUsage({
+        harnessId: 'opencode',
+        harness: { command: 'opencode', args: ['acp'], env: {}, models: [], defaultModel: 'meta/muse-spark-1.3-contributor', cacheWarmSeconds: 300 },
+        cwd: '/w',
+        sessionId: 'opencode-session',
+        promptResult: { usage: { inputTokens: 212, outputTokens: 36, cachedReadTokens: 18_545, totalTokens: 18_795 } },
+        events: [],
+      }),
+    ).toMatchObject({
+      models: {},
+      totals: { inputTokens: 212, outputTokens: 36, cacheReadTokens: 18_545, cacheWriteTokens: 0, totalTokens: 18_795 },
+      source: 'acp',
+    });
+  });
+});
+
 describe('collectUsage rolls Subagent models + per-agent breakdown into the persisted Usage', () => {
   const assistant = (model: string, u: Record<string, number>, id = model) =>
     JSON.stringify({ type: 'assistant', message: { id, model, usage: u } });

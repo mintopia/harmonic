@@ -7,11 +7,11 @@ describe('baseline model catalog', () => {
     expect(baselineConfig().harnesses.claude.cacheWarmSeconds).toBe(3600);
   });
 
-  it('registers a priced OpenCode catalog with its auto-access ACP command', () => {
+  it('registers a priced OpenCode catalog with its ACP command', () => {
     const config = baselineConfig();
     expect(config.harnesses.opencode).toMatchObject({
       command: 'opencode',
-      args: ['acp', '--auto'],
+      args: ['acp'],
       defaultModel: 'meta/muse-spark-1.3-contributor',
       cacheWarmSeconds: 300,
     });

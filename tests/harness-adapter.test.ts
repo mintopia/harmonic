@@ -47,7 +47,7 @@ describe('harness adapters', () => {
     expect(adapterFor('codex').sessionModelId).toBeUndefined();
   });
 
-  it('OpenCode needs no ACP permission mode because its --auto command flag grants unattended access', () => {
+  it('OpenCode relies on its ACP permission defaults and generic ACP usage collection', () => {
     const adapter = adapterFor('opencode');
     expect(adapter).toMatchObject({ commandPrefix: '/', transcript: null, usage: null, requiresUnattendedPermissionMode: false });
     expect(adapter.unattendedPermissionMode([])).toBeUndefined();
