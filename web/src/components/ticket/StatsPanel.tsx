@@ -7,37 +7,23 @@ import { card } from '../../ui';
 import { BarChart, type Bar } from '../BarChart';
 import { Donut, type DonutSegment } from '../Donut';
 import { EmptyState } from '../EmptyState';
+import { TokenTypeBar, TokenTypeLegend } from '../TokenTypeBar';
+import type { ModelUsage } from '../../stats-model';
 
 const sectionCaps = 'text-label font-bold uppercase tracking-[0.1em] text-faint';
-const TOKEN_SEGMENTS = [
-  { key: 'input' as const, label: 'input', fill: 'bg-token-input' },
-  { key: 'output' as const, label: 'output', fill: 'bg-token-output' },
-  { key: 'cachedIn' as const, label: 'cached in', fill: 'bg-token-cache-read' },
-  { key: 'cachedOut' as const, label: 'cached out', fill: 'bg-token-cache-write' },
-];
 const COST_DONUT_COLORS = ['var(--hm-accent)', 'var(--hm-ink)', 'var(--hm-muted)', 'var(--hm-faint)', 'var(--hm-edge-strong)'];
 const compactTokens = new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 });
 
-function ModelTokenBar({ model, maxTotal }: { model: TaskModelStats; maxTotal: number }) {
-  const total = modelTotal(model);
-  const widthPct = maxTotal > 0 ? (total / maxTotal) * 100 : 0;
-  const seg = (v: number) => (total > 0 ? (v / total) * 100 : 0);
-  return (
-    <div className="grid gap-1.5">
-      <div className="flex items-baseline justify-between gap-3"><span className="truncate font-data text-data font-semibold text-ink" title={model.model}>{model.model}</span><span className="shrink-0 tabular-nums text-data text-muted">{compactTokens.format(total)}</span></div>
-      <div className="flex h-2.5 overflow-hidden rounded-full bg-raised" style={{ width: `${Math.max(4, widthPct)}%` }} aria-hidden="true">{TOKEN_SEGMENTS.map((s) => <span key={s.key} className={`h-full ${s.fill}`} style={{ width: `${seg(model[s.key])}%` }} />)}</div>
-      <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-label tabular-nums text-faint">{TOKEN_SEGMENTS.map((s) => <span key={s.key}>{s.label} {compactTokens.format(model[s.key])}</span>)}</div>
-    </div>
-  );
-}
-
-function TokenLegend() {
-  return <div className="flex flex-wrap gap-x-3 gap-y-1 text-label text-faint">{TOKEN_SEGMENTS.map((s) => <span key={s.key} className="inline-flex items-center gap-1.5"><span className={`size-2 rounded-[2px] ${s.fill}`} aria-hidden="true" />{s.label}</span>)}</div>;
-}
+const modelUsage = (m: TaskModelStats): ModelUsage => ({
+  inputTokens: m.input,
+  outputTokens: m.output,
+  cacheReadTokens: m.cachedIn,
+  cacheWriteTokens: m.cachedOut,
+});
 
 function TokenBreakdownCard({ byModel }: { byModel: TaskModelStats[] }) {
   const maxTotal = Math.max(...byModel.map(modelTotal), 1);
-  return <section className={`${card} p-5`}><div className="mb-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-2"><h3 className={sectionCaps}>Token breakdown by model</h3><TokenLegend /></div><div className="flex flex-col gap-4">{byModel.map((m) => <ModelTokenBar key={m.model} model={m} maxTotal={maxTotal} />)}</div></section>;
+  return <section className={`${card} p-5`}><div className="mb-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-2"><h3 className={sectionCaps}>Token breakdown by model</h3><TokenTypeLegend /></div><div className="flex flex-col gap-4">{byModel.map((m) => <TokenTypeBar key={m.model} label={m.model} usage={modelUsage(m)} maxTotal={maxTotal} trailing={m.cost == null ? undefined : usd(m.cost)} />)}</div></section>;
 }
 
 function AgentDonutCard({ stats }: { stats: TaskStats }) {

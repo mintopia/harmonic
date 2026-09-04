@@ -11,6 +11,7 @@ export const api = {
   task: (_id: number) => ok(f.task),
   epic: (_workspaceId: number, _epicRef: number) => ok(f.epic),
   epicStats: (_epicRef: number, _workspaceId: number) => ok(f.epicStats),
+  stats: (_from: number, _to: number, _workspaceId: number) => ok(f.statsFixture),
   taskUsage: (id: number) =>
     ok(f.epicChildUsage[id] ?? { models: {}, agents: {}, toolCalls: {}, totals: null, source: null, cost: null, attemptCount: 0 }),
   taskTimeline: (_id: number) => ok({ events: f.timeline }),

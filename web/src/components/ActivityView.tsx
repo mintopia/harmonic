@@ -18,6 +18,7 @@ import {
   touchTargetInline,
 } from '../ui';
 import { EmptyState } from './EmptyState';
+import { TokenSum } from './TokenTypeBar';
 import { useArmedConfirm } from './useArmedConfirm';
 import { fmtElapsed } from '../board-sections-model';
 import {
@@ -281,9 +282,13 @@ const ProcessRow = memo(function ProcessRow({
 
       <ContextCell process={process} />
 
-      <div role="cell" className="text-right text-small tabular-nums text-ink">
-        <span className="sr-only">Tokens: </span>
-        {tokens === null ? <Empty /> : compact.format(tokens)}
+      <div role="cell" className="flex justify-end text-right text-small tabular-nums text-ink">
+        <span className="sr-only">Tokens: {tokens === null ? 'none' : compact.format(tokens)}</span>
+        {process.usage?.totals ? (
+          <TokenSum usage={process.usage.totals} trailing={cost ?? undefined} />
+        ) : (
+          <Empty />
+        )}
       </div>
 
       <div role="cell" className="text-right">

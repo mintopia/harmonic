@@ -260,22 +260,31 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
 
       {stats && stats.attemptCount > 0 && (
         <>
-          <div className="mb-5">
-            <StatLabel>Cost · {range}</StatLabel>
-            <div
-              className={`text-hero font-display-weight tabular-nums ${costText == null ? 'text-faint' : 'text-ink'}`}
-            >
-              {costText ?? '—'}
+          <section className={`${card} mb-4 p-5`}>
+            <div className="mb-5 flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+              <div>
+                <StatLabel>Cost · {range}</StatLabel>
+                <div
+                  className={`text-hero font-display-weight tabular-nums ${costText == null ? 'text-faint' : 'text-ink'}`}
+                >
+                  {costText ?? '—'}
+                </div>
+              </div>
+              <div className="text-right">
+                <StatLabel>Avg / attempt</StatLabel>
+                <div className={`text-title font-semibold tabular-nums ${avgCostText == null ? 'text-faint' : 'text-ink'}`}>
+                  {avgCostText ?? '—'}
+                </div>
+              </div>
             </div>
-          </div>
-
-          <div className={`${card} mb-4 grid grid-cols-2 gap-x-6 gap-y-5 p-5 sm:grid-cols-3 lg:grid-cols-5`}>
-            <SummaryCell label="Attempts" value={fmt(stats.attemptCount)} />
-            <SummaryCell label="Tokens in" swatch="bg-token-input" value={stats.totals ? compact.format(stats.totals.inputTokens) : '—'} />
-            <SummaryCell label="Tokens out" swatch="bg-token-output" value={stats.totals ? compact.format(stats.totals.outputTokens) : '—'} />
-            <SummaryCell label="Cache read" swatch="bg-token-cache-read" value={stats.totals ? compact.format(stats.totals.cacheReadTokens) : '—'} />
-            <SummaryCell label="Cache write" swatch="bg-token-cache-write" value={stats.totals ? compact.format(stats.totals.cacheWriteTokens) : '—'} />
-          </div>
+            <div className="grid grid-cols-2 gap-x-6 gap-y-5 border-t border-hairline pt-5 sm:grid-cols-3 lg:grid-cols-5">
+              <SummaryCell label="Attempts" value={fmt(stats.attemptCount)} />
+              <SummaryCell label="Tokens in" swatch="bg-token-input" value={stats.totals ? compact.format(stats.totals.inputTokens) : '—'} />
+              <SummaryCell label="Tokens out" swatch="bg-token-output" value={stats.totals ? compact.format(stats.totals.outputTokens) : '—'} />
+              <SummaryCell label="Cache read" swatch="bg-token-cache-read" value={stats.totals ? compact.format(stats.totals.cacheReadTokens) : '—'} />
+              <SummaryCell label="Cache write" swatch="bg-token-cache-write" value={stats.totals ? compact.format(stats.totals.cacheWriteTokens) : '—'} />
+            </div>
+          </section>
 
           <FlowThroughput
             tasksMergedByDay={stats.tasksMergedByDay}
@@ -298,7 +307,9 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
                 />
               </div>
               <CostBars series={filled} metric={metric} />
-              <CumulativeCurve series={filled} metric={metric} />
+              <div className="pl-[calc(2.75rem+0.5rem)]">
+                <CumulativeCurve series={filled} metric={metric} />
+              </div>
             </section>
           )}
 

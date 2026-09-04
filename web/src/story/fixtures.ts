@@ -304,6 +304,27 @@ export const epicStats = {
   costPerMergedTask: { mergedTasks: 2, mergedCost: { totalUsd: 24.1, byModel: {}, incomplete: false }, wastedCost: null },
 } as any;
 
+const STATS_DAY = 24 * 3600_000;
+const STATS_USD = [0, 2.1, 5.4, 0, 8.9, 12.3, 6.7, 3.2, 0, 9.1, 14.8, 7.6, 4.3, 11.2];
+export const statsFixture = {
+  ...epicStats,
+  from: E0 - 13 * STATS_DAY,
+  to: E0,
+  series: STATS_USD.map((u, i) => ({
+    day: E0 - (13 - i) * STATS_DAY,
+    totalUsd: u,
+    incomplete: i === 10,
+    tokens: Math.round(u * 42_000),
+    attempts: Math.round(u),
+    fails: i % 5 === 0 ? 1 : 0,
+  })),
+  byWorkspace: [
+    { workspaceId: 1, name: 'harmonic', cost: { totalUsd: 34.5, byModel: {}, incomplete: false }, inputTokens: 620_000, outputTokens: 82_000, tasks: 12, failureRate: 0.14 },
+    { workspaceId: 2, name: 'website', cost: { totalUsd: 7.68, byModel: {}, incomplete: false }, inputTokens: 232_000, outputTokens: 23_000, tasks: 4, failureRate: 0.25 },
+  ],
+  tasksMergedByDay: [0, 1, 2, 0, 3, 2, 1, 1, 0, 2, 3, 1, 2, 2].map((count, i) => ({ day: E0 - (13 - i) * STATS_DAY, count })),
+} as any;
+
 export const epicChildren = [
   {
     id: 501, summary: 'Add the resolveGuardrails() resolver + migration', workspaceId: 1, harness: 'claude', model: 'opus-4.8',

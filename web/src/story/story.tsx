@@ -5,6 +5,7 @@ import { TicketPage } from '../components/TicketPage';
 import { ChatTranscript } from '../components/ticket/ChatTranscript';
 import type { AttemptLogEvent } from '../types';
 import { EpicPage } from '../components/EpicPage';
+import { StatsPage } from '../components/StatsPage';
 import { Board } from '../components/Board';
 import { Verification } from '../components/ticket/Verification';
 import { LifecycleTimeline } from '../components/ticket/LifecycleTimeline';
@@ -89,6 +90,13 @@ function Story() {
         <div style={cardStyle}><MergeProgress steps={mergedSteps} /></div>
         <div style={cardStyle}><MergeProgress steps={revertedSteps} /></div>
         <div style={{ ...cardStyle, padding: 0 }}><EpicIntegrationBar epic={{ ...boardEpic, mergeSteps: mergedSteps } as any} /></div>
+      </div>
+    );
+  }
+  if (which === 'stats') {
+    return (
+      <div style={{ minHeight: '100vh', background: 'var(--hm-canvas)', padding: 24, maxWidth: 1100, margin: '0 auto' }}>
+        <StatsPage workspaceId={1} />
       </div>
     );
   }
