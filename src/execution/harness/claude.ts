@@ -23,6 +23,7 @@ interface Transcript {
   /** Per-model usage; chunked assistant messages repeat the id, so dedupe on it. */
   models: Record<string, ModelUsage>;
   contextTokens: number | null;
+  lastTool: string | null;
   /** tool_use ids that received a tool_result here — a spawned Subagent that has finished. */
   completed: Set<string>;
   turns: UsageTurn[];
@@ -34,6 +35,7 @@ class TranscriptAcc implements LineAccumulator {
   readonly completed = new Set<string>();
   readonly turns: UsageTurn[] = [];
   contextTokens: number | null = null;
+  lastTool: string | null = null;
 
   fold(line: string): void {
     if (!line.trim()) return;
@@ -66,6 +68,7 @@ class TranscriptAcc implements LineAccumulator {
           .map((block: unknown) => (block as { name?: unknown }).name)
           .filter((name: unknown): name is string => typeof name === 'string')
       : [];
+    this.lastTool = tools.at(-1) ?? this.lastTool;
     this.turns.push({
       model: message.model,
       usage: {
@@ -79,7 +82,7 @@ class TranscriptAcc implements LineAccumulator {
   }
 
   snapshot(): Transcript {
-    return { models: this.models, contextTokens: this.contextTokens, completed: this.completed, turns: this.turns };
+    return { models: this.models, contextTokens: this.contextTokens, lastTool: this.lastTool, completed: this.completed, turns: this.turns };
   }
 }
 
@@ -132,7 +135,7 @@ function readSubagents(subDir: string): Subagent[] {
       } catch {
       }
     }
-    subs.push({ id, meta: parsed, scan: jsonl ? scanTranscript(jsonl) : { models: {}, contextTokens: null, completed: new Set(), turns: [] } });
+    subs.push({ id, meta: parsed, scan: jsonl ? scanTranscript(jsonl) : { models: {}, contextTokens: null, lastTool: null, completed: new Set(), turns: [] } });
   }
   return subs;
 }
@@ -151,6 +154,7 @@ function buildParsed(rootId: string, rootScan: Transcript, subs: Subagent[]): Pa
     model: dominantModel(rootScan.models) ?? 'unknown',
     usage: foldModels(rootScan.models),
     contextTokens: rootScan.contextTokens,
+    lastTool: rootScan.lastTool,
     status: 'active',
     depth: 0,
     toolUseId: null,
@@ -166,6 +170,7 @@ function buildParsed(rootId: string, rootScan: Transcript, subs: Subagent[]): Pa
       model: dominantModel(s.scan.models) ?? s.meta.model ?? 'unknown',
       usage: foldModels(s.scan.models),
       contextTokens: s.scan.contextTokens,
+      lastTool: s.scan.lastTool,
       status: s.meta.toolUseId && completed.has(s.meta.toolUseId) ? 'inactive' : 'active',
       depth: typeof s.meta.spawnDepth === 'number' ? s.meta.spawnDepth : 1,
       toolUseId: s.meta.toolUseId ?? null,
@@ -184,7 +189,7 @@ function buildParsed(rootId: string, rootScan: Transcript, subs: Subagent[]): Pa
   return { usage: usageFromModels(rolled), tree: root, turns: [...rootScan.turns, ...subs.flatMap((sub) => sub.scan.turns)] } satisfies ParsedSession;
 }
 
-const emptyTranscript = (): Transcript => ({ models: {}, contextTokens: null, completed: new Set<string>(), turns: [] });
+const emptyTranscript = (): Transcript => ({ models: {}, contextTokens: null, lastTool: null, completed: new Set<string>(), turns: [] });
 
 function claudeProjectsDir(sessionLogDir: string | undefined): string {
   if (!sessionLogDir) return join(homedir(), '.claude', 'projects');

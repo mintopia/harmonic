@@ -38,6 +38,8 @@ export interface ProcessNode {
   usage: ModelUsage;
   /** Latest context-window fill for this node, or null when unknown. */
   contextTokens: number | null;
+  /** Most-recent native tool name for this node, or null when unavailable. */
+  lastTool: string | null;
   status: ProcessStatus;
   /** 0 for the root; +1 per Subagent nesting level. */
   depth: number;

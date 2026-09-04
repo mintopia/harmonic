@@ -22,6 +22,7 @@ describe('GET /api/activity snapshot (issue #51)', () => {
           id: 'm1',
           model: 'claude-opus-4-8',
           usage: { input_tokens: 100, output_tokens: 10, cache_read_input_tokens: 5 },
+          content: [{ type: 'tool_use', id: 'toolu_1', name: 'Read' }],
         },
       }),
     );
@@ -125,7 +126,7 @@ describe('GET /api/activity snapshot (issue #51)', () => {
     expect(proc.contextWindow).toBeNull();
     expect(proc.usage.models['claude-opus-4-8']).toMatchObject({ inputTokens: 100, outputTokens: 10, cacheReadTokens: 5 });
     expect(proc.contextTokens).toBe(105);
-    expect(proc.tree).toMatchObject({ id: sessionId, depth: 0 });
+    expect(proc.tree).toMatchObject({ id: sessionId, depth: 0, lastTool: 'Read' });
     expect(proc.cost.totalUsd).toBeGreaterThan(0);
   });
 
@@ -144,7 +145,7 @@ describe('GET /api/activity snapshot (issue #51)', () => {
     const reconnected = (body.processes as any[]).find(
       (process) => process.type === 'attempt' && process.attemptId === attemptId,
     );
-    expect(reconnected).toMatchObject({ activity: 'Read', tree: { id: sessionId, depth: 0 } });
+    expect(reconnected).toMatchObject({ activity: 'Read', tree: { id: sessionId, depth: 0, lastTool: 'Read' } });
     expect(reconnected.usage.toolCalls).toEqual({ Read: 1 });
   });
 

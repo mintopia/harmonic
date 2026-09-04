@@ -186,6 +186,7 @@ export const copilotAdapter: HarnessAdapter = {
           model: dominantModel(models) ?? info?.model ?? 'unknown',
           usage: foldModels(models),
           contextTokens: rs.length ? num(rs[rs.length - 1]!.input_tokens) : null,
+          lastTool: null,
           status: info?.status ?? 'active',
           depth,
           toolUseId: depth === 0 ? null : id,

@@ -8,7 +8,7 @@ const snap = (activity: string | null): AttemptUsageSnapshot => ({
   usage: { models: {}, totals: null, toolCalls: {}, source: 'session-log' },
   contextTokens: null,
   activity,
-  tree: { id: 'r', name: 'root', model: 'unknown', usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }, contextTokens: null, status: 'active', depth: 0, toolUseId: null, children: [] },
+  tree: { id: 'r', name: 'root', model: 'unknown', usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }, contextTokens: null, lastTool: null, status: 'active', depth: 0, toolUseId: null, children: [] },
 });
 
 describe('LiveUsageTailer cadence (ADR 0010)', () => {

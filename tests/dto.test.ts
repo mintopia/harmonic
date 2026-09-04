@@ -174,6 +174,7 @@ const processTree = (over: Partial<ProcessNode> = {}): ProcessNode => ({
   model: 'claude-sonnet-5',
   usage: modelUsage(),
   contextTokens: null,
+  lastTool: null,
   status: 'active',
   depth: 0,
   toolUseId: null,

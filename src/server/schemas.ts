@@ -173,6 +173,8 @@ export const processNodeSchema = z
     usage: modelUsageSchema,
     /** Latest context-window fill for this node; null when unknown. */
     contextTokens: z.number().nullable().meta({ example: 48210 }),
+    /** Most-recent native tool name for this node; null when unavailable. */
+    lastTool: z.string().nullable().meta({ example: 'Read' }),
     status: z.enum(['active', 'inactive', 'hidden']).meta({ example: 'active' }),
     /** 0 for the root; +1 per Subagent nesting level. */
     depth: z.number().meta({ example: 0 }),
