@@ -14,7 +14,6 @@ import { toastError } from '../toast';
 import { cardTitle } from '../board-sections-model';
 import {
   card,
-  panel,
   chip,
   stateChip,
   stateDot,
@@ -302,7 +301,7 @@ function ChangesPanel({
 }
 
 const GRID =
-  'grid grid-cols-[7.5rem_minmax(0,1fr)_8rem] md:grid-cols-[7.5rem_minmax(0,1fr)_8rem_5rem_5.5rem] lg:grid-cols-[7.5rem_minmax(0,1fr)_8rem_6rem_9rem_5rem_5.5rem_8rem_8rem] items-center gap-x-3 px-4';
+  'grid grid-cols-[7.5rem_minmax(11rem,1fr)_8rem] md:grid-cols-[7.5rem_minmax(11rem,1fr)_8rem_5rem_5.5rem] lg:grid-cols-[7.5rem_minmax(11rem,1fr)_8rem_6rem_9rem_5rem_5.5rem_8rem_8rem] items-center gap-x-3 px-4';
 
 function ChildTokenBar({ totals }: { totals: ModelUsage | null | undefined }) {
   const segments = tokenBarSegments(totals);
@@ -392,7 +391,7 @@ function ChildTasksTable({
           This Epic has no member Tasks yet.
         </EmptyState>
       ) : (
-        <div className={`${panel} overflow-x-auto`} role="table" aria-label="Child tasks">
+        <div className={`${card} overflow-x-auto`} role="table" aria-label="Child tasks">
           <div role="rowgroup">
             <div role="row" className={`${GRID} text-label font-semibold uppercase text-muted py-2.5`}>
               <span role="columnheader" className="text-right">

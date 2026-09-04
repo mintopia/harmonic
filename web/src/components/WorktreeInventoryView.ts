@@ -6,8 +6,8 @@ import { btnGhost, btnPrimary, btnQuiet, btnQuietDestructive, card, chip, panelT
 import { useLiveEffect } from '../useLiveEffect.js';
 import { Modal } from './Modal.js';
 
-const GRID = 'grid grid-cols-[7rem_minmax(11rem,1.2fr)_minmax(13rem,1.7fr)_7rem_8rem_5rem_minmax(11rem,auto)] gap-x-4 px-4';
-const MIN_W = 'min-w-[72rem]';
+const GRID = 'grid grid-cols-[6rem_minmax(7.5rem,1.2fr)_minmax(9rem,1.7fr)_6rem_7rem_5rem_minmax(7.5rem,auto)] gap-x-3 px-4';
+const MIN_W = 'min-w-[52rem]';
 const PAGE_SIZE = 100;
 const STATE_STYLE: Record<WorktreeState, string> = {
   Active: 'bg-ready-tint text-ready', Stale: 'bg-merged-tint text-merged', Dirty: 'bg-running-tint text-running',
