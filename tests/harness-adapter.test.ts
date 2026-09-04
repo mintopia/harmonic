@@ -36,13 +36,22 @@ describe('harness adapters', () => {
     });
   });
 
-  it('only copilot pins via ACP session/set_model — sent for every run, auto included', () => {
+  it('copilot and OpenCode pin via ACP session/set_model', () => {
     // An unpinned Copilot session inherits the operator's persisted
     // settings.json model, so the pin must be sent even for 'auto'.
     expect(adapterFor('copilot').sessionModelId?.('claude-haiku-4.5')).toBe('claude-haiku-4.5');
     expect(adapterFor('copilot').sessionModelId?.('auto')).toBe('auto');
+    expect(adapterFor('opencode').sessionModelId?.('meta/muse-spark-1.3-contributor')).toBe('meta/muse-spark-1.3-contributor');
+    expect(adapterFor('opencode').sessionModelId?.('openrouter/anthropic/claude-sonnet-5')).toBe('openrouter/anthropic/claude-sonnet-5');
     expect(adapterFor('claude').sessionModelId).toBeUndefined();
     expect(adapterFor('codex').sessionModelId).toBeUndefined();
+  });
+
+  it('OpenCode needs no ACP permission mode because its --auto command flag grants unattended access', () => {
+    const adapter = adapterFor('opencode');
+    expect(adapter).toMatchObject({ commandPrefix: '/', transcript: null, usage: null, requiresUnattendedPermissionMode: false });
+    expect(adapter.unattendedPermissionMode([])).toBeUndefined();
+    expect(adapter.spawnEnv(spawnInput('meta/muse-spark-1.3-contributor'))).toEqual({});
   });
 
   it('copilot spawn tweaks disable auto-update and never pin via --model or OTel', () => {
@@ -53,7 +62,7 @@ describe('harness adapters', () => {
     expect(env).not.toHaveProperty('COPILOT_OTEL_FILE_EXPORTER_PATH');
   });
 
-  it.each(['claude', 'codex', 'copilot'])(
+  it.each(['claude', 'codex', 'copilot', 'opencode'])(
     '%s registers the MCP server over ACP with the Attempt Key bearer header',
     (harness) => {
       expect(adapterFor(harness).mcpServers({ url: 'http://127.0.0.1:1/mcp', token: 'rk' })).toEqual([

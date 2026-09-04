@@ -6,6 +6,35 @@ describe('baseline model catalog', () => {
   it('keeps Claude sessions warm for one hour', () => {
     expect(baselineConfig().harnesses.claude.cacheWarmSeconds).toBe(3600);
   });
+
+  it('registers a priced OpenCode catalog with its auto-access ACP command', () => {
+    const config = baselineConfig();
+    expect(config.harnesses.opencode).toMatchObject({
+      command: 'opencode',
+      args: ['acp', '--auto'],
+      defaultModel: 'meta/muse-spark-1.3-contributor',
+      cacheWarmSeconds: 300,
+    });
+    expect(config.harnesses.opencode.models).toEqual([
+      {
+        id: 'meta/muse-spark-1.3-contributor',
+        price: { input: 0.1, output: 0.2, cacheRead: 0.002, cacheWrite: 0 },
+        contextWindow: 1_048_576,
+      },
+      {
+        id: 'openrouter/anthropic/claude-sonnet-5',
+        price: { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 },
+        contextWindow: 1_000_000,
+      },
+      {
+        id: 'openrouter/openai/gpt-5.6-sol',
+        price: { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 },
+        contextWindow: 1_050_000,
+      },
+    ]);
+    expect(config.defaults.harness).toBe('claude');
+    expect(config.chat.harness).toBe('claude');
+  });
 });
 
 describe('PATCH /api/config verification', () => {

@@ -9,7 +9,7 @@ export const SORT_KEYS = ['createdAt', 'updatedAt', 'priority', 'cost'] as const
 export type SortKey = (typeof SORT_KEYS)[number];
 
 /** Harnesses the Table's filter offers — the only values a `harness` param may hold. */
-export const TABLE_HARNESSES = ['claude', 'codex', 'copilot'] as const;
+export const TABLE_HARNESSES = ['claude', 'codex', 'copilot', 'opencode'] as const;
 /** Priorities the Table's filter offers — the only values a `priority` param may hold. */
 export const TABLE_PRIORITIES = ['high', 'normal', 'low'] as const;
 

@@ -81,7 +81,7 @@ const taskWithDepsSchema = z
     id: z.number().meta({ example: 4821 }),
     prompt: z.string().meta({ example: 'Add rate limiting to POST /api/tasks' }),
     workspaceId: z.number().meta({ example: 1 }),
-    /** One of config.ts's HARNESS_IDS ('claude' | 'codex' | 'copilot'); stored as plain text. */
+    /** One of config.ts's HARNESS_IDS; stored as plain text. */
     harness: z.string().meta({ example: 'claude' }),
     model: z.string().meta({ example: 'sonnet-5' }),
     workingDir: z.string().meta({ example: '/home/dev/harmonic' }),

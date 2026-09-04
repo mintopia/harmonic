@@ -2,7 +2,7 @@ import type { SessionRow } from '../db/schema.js';
 
 /** The facet of a stored Session the compatibility matrix reads. A whole {@link SessionRow} is structurally assignable. */
 export interface StoredSessionFacts {
-  /** The Harness the Session ran against (claude/codex/copilot). */
+  /** The Harness the Session ran against. */
   harness: string;
   /** The adapter/config version it was dispatched under (e.g. `claude@1`), or
    * null when the Session never recorded one. */
