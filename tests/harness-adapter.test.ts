@@ -54,6 +54,81 @@ describe('harness adapters', () => {
     expect(adapter.spawnEnv(spawnInput('meta/muse-spark-1.3-contributor'))).toEqual({});
   });
 
+  it('OpenCode discovers credentialed providers and their cached model metadata without ACP', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'opencode-home-'));
+    const priorHome = process.env.HOME;
+    process.env.HOME = home;
+    try {
+      const cache = join(home, '.cache', 'opencode');
+      const data = join(home, '.local', 'share', 'opencode');
+      mkdirSync(cache, { recursive: true });
+      mkdirSync(data, { recursive: true });
+      writeFileSync(join(cache, 'models.json'), JSON.stringify({
+        openai: {
+          name: 'OpenAI',
+          models: {
+            'gpt-5.6': {
+              name: 'GPT-5.6',
+              cost: { input: 2.5, output: 10, cache_read: 0.25, cache_write: 2.5 },
+              limit: { context: 400_000 },
+            },
+          },
+        },
+        opencode: { name: 'OpenCode', models: { 'free-model': { name: 'Free model' } } },
+        anthropic: { name: 'Anthropic', models: { 'claude-sonnet': { name: 'Claude Sonnet' } } },
+      }));
+      writeFileSync(join(data, 'auth.json'), JSON.stringify({ openai: { type: 'api' } }));
+
+      const capabilities = adapterFor('opencode').capabilities!;
+      await expect(capabilities.selectProvider()).resolves.toEqual([
+        { id: 'openai', label: 'OpenAI', authed: true },
+        { id: 'opencode', label: 'OpenCode', authed: false },
+      ]);
+      await expect(capabilities.selectModel('openai')).resolves.toEqual([
+        {
+          id: 'openai/gpt-5.6',
+          label: 'GPT-5.6',
+          price: { input: 2.5, output: 10, cacheRead: 0.25, cacheWrite: 2.5 },
+          contextWindow: 400_000,
+        },
+      ]);
+      await expect(capabilities.selectModel('anthropic')).resolves.toEqual([]);
+    } finally {
+      if (priorHome === undefined) delete process.env.HOME;
+      else process.env.HOME = priorHome;
+    }
+  });
+
+  it('OpenCode discovery keeps the free tier when auth metadata is unavailable', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'opencode-home-'));
+    const priorHome = process.env.HOME;
+    process.env.HOME = home;
+    try {
+      const capabilities = adapterFor('opencode').capabilities!;
+      await expect(capabilities.selectProvider()).resolves.toEqual([]);
+      await expect(capabilities.selectModel('openai')).resolves.toEqual([]);
+
+      const cache = join(home, '.cache', 'opencode');
+      const data = join(home, '.local', 'share', 'opencode');
+      mkdirSync(cache, { recursive: true });
+      writeFileSync(join(cache, 'models.json'), JSON.stringify({
+        opencode: { name: 'OpenCode', models: { 'free-model': { name: 'Free model' } } },
+      }));
+      await expect(capabilities.selectProvider()).resolves.toEqual([{ id: 'opencode', label: 'OpenCode', authed: false }]);
+      await expect(capabilities.selectModel('opencode')).resolves.toEqual([{ id: 'opencode/free-model', label: 'Free model' }]);
+
+      mkdirSync(data, { recursive: true });
+      writeFileSync(join(data, 'auth.json'), '{');
+      await expect(capabilities.selectProvider()).resolves.toEqual([{ id: 'opencode', label: 'OpenCode', authed: false }]);
+      writeFileSync(join(cache, 'models.json'), '{');
+      await expect(capabilities.selectProvider()).resolves.toEqual([]);
+      await expect(capabilities.selectModel('openai')).resolves.toEqual([]);
+    } finally {
+      if (priorHome === undefined) delete process.env.HOME;
+      else process.env.HOME = priorHome;
+    }
+  });
+
   it('copilot spawn tweaks disable auto-update and never pin via --model or OTel', () => {
     const env = adapterFor('copilot').spawnEnv(spawnInput('claude-haiku-4.5'));
     expect(env.COPILOT_AUTO_UPDATE).toBe('false');
