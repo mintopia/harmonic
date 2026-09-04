@@ -540,6 +540,42 @@ describe('EpicLifecycle whole-Epic integrate trigger (issue #161)', () => {
     await coord.reconcile(tickets, mirrored);
     expect(trigger.calls).toHaveLength(1);
   });
+
+  it('offers a closed Epic whose integration branch still holds unmerged work for integrate', async () => {
+    const tickets = [
+      ticket({ number: 10, title: 'Epic', state: 'closed', closedAt: '2026-08-08T00:00:00Z' }),
+      ticket({ number: 11, parent: 10, state: 'closed', closedAt: '2026-08-08T00:00:00Z' }),
+      ticket({ number: 12, parent: 10, state: 'closed', closedAt: '2026-08-08T00:00:00Z' }),
+    ];
+    const mirrored = await mscan(tickets);
+    const git = new FakeGit(['epic/10'], 'develop');
+    const trigger = new FakeIntegrate();
+    const coord = new EpicLifecycle(tasks, dir, git);
+    coord.attachIntegrateTrigger(trigger);
+    await tasks.setState(await memberTaskId(11), 'done');
+    await tasks.setState(await memberTaskId(12), 'done');
+
+    await coord.reconcile(tickets, mirrored);
+
+    expect(trigger.calls).toEqual([{ ref: 10, members: ['completed', 'completed'], force: false }]);
+  });
+
+  it('does not offer a closed Epic with no integration branch (nothing to fold)', async () => {
+    const tickets = [
+      ticket({ number: 10, title: 'Epic', state: 'closed', closedAt: '2026-08-08T00:00:00Z' }),
+      ticket({ number: 11, parent: 10, state: 'closed', closedAt: '2026-08-08T00:00:00Z' }),
+    ];
+    const mirrored = await mscan(tickets);
+    const git = new FakeGit([], 'develop');
+    const trigger = new FakeIntegrate();
+    const coord = new EpicLifecycle(tasks, dir, git);
+    coord.attachIntegrateTrigger(trigger);
+    await tasks.setState(await memberTaskId(11), 'done');
+
+    await coord.reconcile(tickets, mirrored);
+
+    expect(trigger.calls).toEqual([]);
+  });
 });
 
 describe('EpicLifecycle.retireIntegrationBranch (issue #159)', () => {

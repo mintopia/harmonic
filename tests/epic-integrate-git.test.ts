@@ -52,6 +52,7 @@ const build = (opts: {
   integrate?: EpicIntegrate;
   now?: () => number;
   verifyBackoffMs?: number;
+  operationTimeoutMs?: number;
 } = {}) => {
   const git = opts.git ?? new FakeGit();
   const verify = vi.fn<VerifyFn>(opts.verify ?? (async () => proceed));
@@ -70,6 +71,7 @@ const build = (opts: {
     escalate,
     now: opts.now ?? (() => (t += 600_000)),
     ...(opts.verifyBackoffMs !== undefined ? { verifyBackoffMs: opts.verifyBackoffMs } : {}),
+    ...(opts.operationTimeoutMs !== undefined ? { operationTimeoutMs: opts.operationTimeoutMs } : {}),
     recordIntegration,
     onError,
   });
@@ -168,6 +170,29 @@ describe('EpicCoordinator', () => {
     expect(out.status).toBe('escalated');
     expect(integrate).not.toHaveBeenCalled();
     expect(escalate).toHaveBeenCalledWith(42, expect.stringContaining('could not run'));
+  });
+
+  it('escalates and frees the in-flight guard when a verification hangs past the operation timeout', async () => {
+    const { coord, integrate, escalate } = build({
+      verify: () => new Promise<never>(() => {}), // never resolves
+      operationTimeoutMs: 20,
+    });
+    const out = await coord.submit({ ref: 42, members: members('completed') });
+    expect(out.status).toBe('escalated');
+    expect(integrate).not.toHaveBeenCalled();
+    expect(escalate).toHaveBeenCalledWith(42, expect.stringContaining('timed out'));
+    expect(coord.isInFlight(42)).toBe(false);
+  });
+
+  it('escalates when the integrate itself hangs past the operation timeout', async () => {
+    const { coord, escalate } = build({
+      integrate: () => new Promise<never>(() => {}), // never resolves
+      operationTimeoutMs: 20,
+    });
+    const out = await coord.submit({ ref: 42, members: members('completed') });
+    expect(out.status).toBe('escalated');
+    expect(escalate).toHaveBeenCalledWith(42, expect.stringContaining('could not run'));
+    expect(coord.isInFlight(42)).toBe(false);
   });
 
   it('escalates when the integrate escalates (unresolved conflict / red post-merge check)', async () => {

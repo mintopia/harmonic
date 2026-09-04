@@ -59,6 +59,10 @@ const epicIntegrateStateSchema = z
   .object({
     inFlight: z.boolean(),
     held: z.string().nullable().meta({ example: 'already escalated for this member state; awaiting operator or a state change' }),
+    phase: z
+      .object({ phase: z.enum(['verifying', 'merging']), sinceMs: z.number().int() })
+      .nullable()
+      .meta({ example: { phase: 'verifying', sinceMs: 1080000 } }),
   })
   .meta({ id: 'EpicIntegrateState' });
 

@@ -6,13 +6,27 @@ import { logger } from '../logger.js';
 import { EpicOperations } from './epic-operations.js';
 import type { TaskRow } from '../db/schema.js';
 import type { TaskService } from '../domain/tasks.js';
-import { deriveLeafEpics } from '../domain/epic-derivation.js';
+import { deriveLeafEpics, type DerivedEpic } from '../domain/epic-derivation.js';
 import type { Ticket } from '../tracker/adapter.js';
 import { persistedTickets } from '../tracker/persisted.js';
 import { mergeIntoBase, type MergeIntoBaseArgs, type MergeIntoBaseOutcome } from './branch-merge.js';
 import { withBaseCheckoutLock, withRepoLock } from './repo-lock.js';
 
 export { reduceMemberState };
+
+/** Reject if `work` outruns `ms`, so a hung verify/integrate can never pin the
+ * per-Epic in-flight guard forever. Best-effort: the timeout frees the guard and
+ * escalates; it cannot abort the orphaned work, only stop waiting on it. */
+function withTimeout<T>(work: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    timer.unref?.();
+  });
+  return Promise.race([work, timeout]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+}
 
 /** The slice of {@link Git} used by Epic branch lifecycle, refresh, and integration. */
 export interface EpicGit {
@@ -122,8 +136,14 @@ export class EpicCoordinator {
 
   private readonly lastVerifyAttemptAt = new Map<number, number>();
 
+  /** The phase and start time of an in-flight attempt's current long operation,
+   * so a stuck integrate surfaces as e.g. "verifying (18m)" rather than a bare,
+   * unexplained "merging". Only meaningful while {@link inFlight} holds the ref. */
+  private readonly phaseInFlight = new Map<number, { phase: 'verifying' | 'merging'; since: number }>();
+
   private readonly now: () => number;
   private readonly verifyBackoffMs: number;
+  private readonly operationTimeoutMs: number;
 
   constructor(deps: {
     /** The base repo owning `epic/<ref>` — the Workspace's working directory. */
@@ -141,6 +161,10 @@ export class EpicCoordinator {
     now?: () => number;
     /** Minimum gap between whole-Epic verify+integrate attempts per Epic; default 60s. */
     verifyBackoffMs?: number;
+    /** Upper bound on a single whole-Epic verify or integrate before it is abandoned
+     * and the Epic escalated, so a hung operation can never wedge the poll loop;
+     * default 20min. */
+    operationTimeoutMs?: number;
     onError?: (msg: string) => void;
     operations?: EpicOperations;
     /** Persist the integration snapshot onto the stored Epic record; absent ⇒ nothing is recorded. */
@@ -154,6 +178,7 @@ export class EpicCoordinator {
     this.escalateFn = deps.escalate;
     this.now = deps.now ?? (() => Date.now());
     this.verifyBackoffMs = deps.verifyBackoffMs ?? 60_000;
+    this.operationTimeoutMs = deps.operationTimeoutMs ?? 20 * 60_000;
     this.onError = deps.onError ?? logger.error;
     this.operations = deps.operations ?? new EpicOperations();
     this.recordIntegrationFn = deps.recordIntegration;
@@ -184,6 +209,7 @@ export class EpicCoordinator {
       });
     } finally {
       this.inFlight.delete(target.ref);
+      this.phaseInFlight.delete(target.ref);
     }
   }
 
@@ -238,6 +264,7 @@ export class EpicCoordinator {
 
     const verifiedHeadOid = await this.git.revParse(this.repoDir, branch);
     this.lastVerification.set(target.ref, 'pending');
+    this.phaseInFlight.set(target.ref, { phase: 'verifying', since: this.now() });
     let verification: VerificationDecision;
     try {
       verification = await this.operations.run({
@@ -246,7 +273,7 @@ export class EpicCoordinator {
         ...withEpicTitle(target.title),
         type: 'verify',
         attributes: { 'git.verified_head_oid': verifiedHeadOid },
-        work: () => this.verify({ repoDir: this.repoDir, verifiedHeadOid }),
+        work: () => withTimeout(this.verify({ repoDir: this.repoDir, verifiedHeadOid }), this.operationTimeoutMs, 'whole-Epic verification'),
       });
     } catch (err) {
       this.lastVerification.set(target.ref, 'fail');
@@ -264,15 +291,21 @@ export class EpicCoordinator {
     }
 
     this.lastVerification.set(target.ref, 'pass');
+    this.phaseInFlight.set(target.ref, { phase: 'merging', since: this.now() });
 
-    const integrated = await this.operations.run({
-      repoDir: this.repoDir,
-      epicRef: target.ref,
-      ...withEpicTitle(target.title),
-      type: 'merge',
-      attributes: { 'git.base_branch': defaultBranch, 'git.branch': branch },
-      work: () => this.integrate({ repoDir: this.repoDir, epicRef: target.ref, defaultBranch, integrationBranch: branch }),
-    });
+    let integrated: MergePolicyOutcome;
+    try {
+      integrated = await this.operations.run({
+        repoDir: this.repoDir,
+        epicRef: target.ref,
+        ...withEpicTitle(target.title),
+        type: 'merge',
+        attributes: { 'git.base_branch': defaultBranch, 'git.branch': branch },
+        work: () => withTimeout(this.integrate({ repoDir: this.repoDir, epicRef: target.ref, defaultBranch, integrationBranch: branch }), this.operationTimeoutMs, 'whole-Epic integrate'),
+      });
+    } catch (err) {
+      return this.escalate(target, force, `whole-Epic integrate into '${defaultBranch}' could not run: ${err instanceof Error ? err.message : String(err)}`);
+    }
     if (integrated.kind === 'escalated') {
       return this.escalate(target, force, `whole-Epic integrate into '${defaultBranch}' failed (${integrated.reason}): ${integrated.message}`);
     }
@@ -288,6 +321,15 @@ export class EpicCoordinator {
   /** Whether `epicRef` currently has a integrate attempt in flight. */
   isInFlight(epicRef: number): boolean {
     return this.inFlight.has(epicRef);
+  }
+
+  /** The current phase of an in-flight attempt and how long it has run, so a
+   * stuck integrate is legible ("verifying" for 18m) instead of an opaque badge.
+   * `null` when nothing is in flight or no long operation has begun this attempt. */
+  activePhase(epicRef: number): { phase: 'verifying' | 'merging'; sinceMs: number } | null {
+    if (!this.inFlight.has(epicRef)) return null;
+    const entry = this.phaseInFlight.get(epicRef);
+    return entry ? { phase: entry.phase, sinceMs: this.now() - entry.since } : null;
   }
 
   /** The last retained whole-Epic Verification status for `epicRef`. */
@@ -558,15 +600,39 @@ export class EpicLifecycle {
           this.onError(`epic ${epic.ref} ${reason}`);
         }
       }
-      if (this.epicIntegrate) {
-        const members = await Promise.all(epic.members.map(async (ref) => {
-          const task = byRef.get(ref);
-          return reduceMemberState(task ? await this.tasks.get(task.id) : undefined);
-        }));
-        void this.epicIntegrate.submit({ ref: epic.ref, title: epic.title, members, memberRefs: epic.members })
-          .catch((err) => this.onError(`epic ${epic.ref} whole-Epic integrate attempt failed: ${String(err)}`));
+      await this.submitWholeEpicIntegrate(epic, byRef);
+    }
+
+    // Closed-but-unintegrated Epics: a leaf Epic whose ticket was closed while its
+    // integration branch still holds unmerged work would otherwise strand forever
+    // (the open-only derivation above never surfaces it, and there is no operator
+    // force path). Offer any closed leaf with a live integration branch to the same
+    // integrate; the whole-Epic verify gate inside `submit` is what protects against
+    // folding abandoned or broken work — an already-merged branch short-circuits to
+    // integrated, an unverifiable one escalates.
+    if (this.epicIntegrate) {
+      const closed = deriveLeafEpics(tickets, readinessByRef, { includeClosed: true }).filter(
+        (epic) => !this.leafEpicRefs.has(epic.ref),
+      );
+      for (const epic of closed) {
+        if (!(await this.git.branchExists(this.workingDir, integrationBranchName(epic.ref)))) continue;
+        await this.submitWholeEpicIntegrate(epic, byRef);
       }
     }
+  }
+
+  private async submitWholeEpicIntegrate(epic: DerivedEpic, byRef: ReadonlyMap<number, TaskRow>): Promise<void> {
+    const trigger = this.epicIntegrate;
+    if (!trigger) return;
+    const members = await Promise.all(
+      epic.members.map(async (ref) => {
+        const task = byRef.get(ref);
+        return reduceMemberState(task ? await this.tasks.get(task.id) : undefined);
+      }),
+    );
+    void trigger
+      .submit({ ref: epic.ref, title: epic.title, members, memberRefs: epic.members })
+      .catch((err) => this.onError(`epic ${epic.ref} whole-Epic integrate attempt failed: ${String(err)}`));
   }
 
   membersOf(epicRef: number): number[] {

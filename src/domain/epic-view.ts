@@ -41,6 +41,9 @@ export interface EpicIntegrateState {
   inFlight: boolean;
   /** The escalation/hold reason if the coordinator is holding; else `null`. */
   held: string | null;
+  /** The running phase and its age (ms) while `inFlight`, so a stuck attempt is
+   * legible ("verifying" for 18m) instead of an opaque badge; `null` at rest. */
+  phase: { phase: 'verifying' | 'merging'; sinceMs: number } | null;
 }
 
 export interface Epic {

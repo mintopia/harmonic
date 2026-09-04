@@ -35,7 +35,7 @@ const task = (over: Partial<TaskRow>): TaskRow =>
 const noFacts: EpicFacts = {
   integration: { branch: 'epic/10', exists: false, tip: null },
   verification: { status: null, configured: false },
-  integrate: { inFlight: false, held: null },
+  integrate: { inFlight: false, held: null, phase: null },
   mergeSteps: [],
 };
 
@@ -109,13 +109,13 @@ describe('composeEpicView', () => {
     const facts: EpicFacts = {
       integration: { branch: 'epic/10', exists: false, tip: null },
       verification: { status: null, configured: false },
-      integrate: { inFlight: false, held: null },
+      integrate: { inFlight: false, held: null, phase: null },
       mergeSteps: [],
     };
     const epic = composeEpicView(derived({ members: [], ready: [] }), new Map(), new Map(), facts, noMeta);
     expect(epic.integration).toEqual({ branch: 'epic/10', exists: false, tip: null });
     expect(epic.verification).toEqual({ status: null, configured: false });
-    expect(epic.integrate).toEqual({ inFlight: false, held: null });
+    expect(epic.integrate).toEqual({ inFlight: false, held: null, phase: null });
     expect(epic.memberCount).toBe(0);
     expect(epic.foldedCount).toBe(0);
   });
@@ -124,13 +124,13 @@ describe('composeEpicView', () => {
     const facts: EpicFacts = {
       integration: { branch: 'epic/10', exists: true, tip: 'a1b2c3d' },
       verification: { status: 'pass', configured: true },
-      integrate: { inFlight: true, held: 'already escalated for this member state; awaiting operator or a state change' },
+      integrate: { inFlight: true, held: 'already escalated for this member state; awaiting operator or a state change', phase: null },
       mergeSteps: [],
     };
     const epic = composeEpicView(derived({ members: [], ready: [] }), new Map(), new Map(), facts, noMeta);
     expect(epic.integration).toEqual({ branch: 'epic/10', exists: true, tip: 'a1b2c3d' });
     expect(epic.verification).toEqual({ status: 'pass', configured: true });
-    expect(epic.integrate).toEqual({ inFlight: true, held: expect.stringContaining('escalated') });
+    expect(epic.integrate).toEqual({ inFlight: true, held: expect.stringContaining('escalated'), phase: null });
   });
 
   it('carries ref/title from the DerivedEpic and kind from the meta record', () => {
