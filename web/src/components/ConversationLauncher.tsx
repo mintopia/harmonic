@@ -562,10 +562,16 @@ export function ConversationLauncher({
   config,
   workspace,
   conversationId,
+  openConversationId,
+  pendingPermission,
+  onConversationOpened,
 }: {
   config: AppConfig | null;
   workspace: Workspace | null;
   conversationId?: number | null;
+  openConversationId: number | null;
+  pendingPermission: PendingPermission | null;
+  onConversationOpened: () => void;
 }) {
   const workspaceId = workspace?.id ?? null;
   const [open, setOpen] = useState(false);
@@ -593,13 +599,26 @@ export function ConversationLauncher({
     return persisted === null ? { kind: 'list' } : { kind: 'detail', conversationId: persisted };
   });
   const focusedId = view.kind === 'detail' ? view.conversationId : null;
+  const [openedPendingPermission, setOpenedPendingPermission] = useState<PendingPermission | null>(null);
+  const clearOpenedPendingPermission = useCallback(() => setOpenedPendingPermission(null), []);
 
   useEffect(() => {
+    if (openConversationId !== null) {
+      setOpenedPendingPermission(pendingPermission);
+      setOpen(true);
+      setView({ kind: 'detail', conversationId: openConversationId });
+      storeConversationId(localStorage, openConversationId);
+      onConversationOpened();
+      return;
+    }
     if (conversationId === null || conversationId === undefined) return;
+    setOpenedPendingPermission((current) =>
+      current?.conversationId === conversationId ? current : null,
+    );
     setOpen(true);
     setView({ kind: 'detail', conversationId });
     storeConversationId(localStorage, conversationId);
-  }, [conversationId]);
+  }, [conversationId, openConversationId, onConversationOpened, pendingPermission]);
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
 
@@ -664,6 +683,8 @@ export function ConversationLauncher({
     removeConversationFromList,
     openConversation,
     openList,
+    pendingPermission: openedPendingPermission,
+    clearPendingPermission: clearOpenedPendingPermission,
   });
 
   if (!open) {
