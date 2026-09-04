@@ -25,6 +25,7 @@ const node = (over: Partial<ProcessNode> & { id: string }): ProcessNode => ({
   model: 'sonnet-5',
   usage: mu(),
   contextTokens: null,
+  lastTool: null,
   status: 'active',
   depth: 0,
   toolUseId: null,

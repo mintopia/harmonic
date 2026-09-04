@@ -34,6 +34,7 @@ function process(attemptId: number, title: string): ActivityProcess {
       model: 'claude-test',
       usage,
       contextTokens: null,
+      lastTool: null,
       status: 'active',
       depth: 0,
       toolUseId: null,

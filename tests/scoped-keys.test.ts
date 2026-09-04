@@ -129,7 +129,7 @@ describe('read-scoped key (issue #35)', () => {
         usage: { models: {}, totals: null, toolCalls: {}, source: 'session-log' },
         contextTokens: 1234,
         activity: 'Editing src/foo.ts',
-        tree: { id: 's1', name: 'root', model: 'unknown', usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }, contextTokens: 1234, status: 'active', depth: 0, toolUseId: null, children: [] },
+        tree: { id: 's1', name: 'root', model: 'unknown', usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }, contextTokens: 1234, lastTool: null, status: 'active', depth: 0, toolUseId: null, children: [] },
       },
     } as any);
     server.app.ctx.bus.emit('conversation_event', { id: 1, conversationId: 1, seq: 1, ts: 0, type: 'lifecycle', payload: {} } as any);

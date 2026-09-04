@@ -339,7 +339,7 @@ describe('mergeRunUsage', () => {
     usage: usage(9999),
     contextTokens: 123,
     activity: 'Editing foo.ts',
-    tree: { id: 's', name: 'root', model: 'sonnet-5', usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }, contextTokens: 123, status: 'active', depth: 0, toolUseId: null, children: [] },
+    tree: { id: 's', name: 'root', model: 'sonnet-5', usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }, contextTokens: 123, lastTool: null, status: 'active', depth: 0, toolUseId: null, children: [] },
     cost: { totalUsd: 2.0, byModel: {}, incomplete: false },
     ...over,
   });
