@@ -140,6 +140,69 @@ export function writeCopilotUsageDb(dbPath: string, rows: CopilotUsageRow[]): vo
   db.close();
 }
 
+export interface OpenCodeSessionRow {
+  id: string;
+  parent_id?: string | null;
+  agent?: string;
+}
+
+export interface OpenCodeUsageRow {
+  session_id: string;
+  providerID: string;
+  modelID: string;
+  input?: number;
+  output?: number;
+  cacheRead?: number;
+  cacheWrite?: number;
+}
+
+export function writeOpenCodeUsageDb(
+  dbPath: string,
+  sessions: OpenCodeSessionRow[],
+  usageRows: OpenCodeUsageRow[],
+): void {
+  const db = new DatabaseSync(dbPath);
+  db.exec(`CREATE TABLE session (
+    id TEXT PRIMARY KEY,
+    parent_id TEXT,
+    agent TEXT
+  );
+  CREATE TABLE message (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
+    time_created INTEGER NOT NULL,
+    data TEXT NOT NULL
+  )`);
+  const sessionStatement = db.prepare(
+    'INSERT INTO session (id, parent_id, agent) VALUES (@id, @parent_id, @agent)',
+  );
+  for (const session of sessions)
+    sessionStatement.run({
+      parent_id: null,
+      agent: null,
+      ...session,
+    });
+  const usageStatement = db.prepare(
+    'INSERT INTO message (session_id, time_created, data) VALUES (@session_id, @time_created, @data)',
+  );
+  for (const row of usageRows)
+    usageStatement.run({
+      session_id: row.session_id,
+      time_created: 0,
+      data: JSON.stringify({
+        role: 'assistant',
+        providerID: row.providerID,
+        modelID: row.modelID,
+        tokens: {
+          input: row.input ?? 0,
+          output: row.output ?? 0,
+          cache: { read: row.cacheRead ?? 0, write: row.cacheWrite ?? 0 },
+        },
+      }),
+    });
+  db.close();
+}
+
 // Kept a margin below vitest's 20s testTimeout (vitest.config.ts) so a never-met
 // condition rejects with the clear message below instead of the harness killing
 // the test with an opaque timeout.

@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync, appendFileSync, realpathSync } f
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { adapterFor } from '../src/execution/harness/registry.js';
-import { writeCopilotUsageDb } from './helpers.js';
+import { writeCopilotUsageDb, writeOpenCodeUsageDb } from './helpers.js';
 
 const spawnInput = (model: string, extra: { cwd?: string; sessionLogDir?: string } = {}) => ({
   model,
@@ -49,7 +49,8 @@ describe('harness adapters', () => {
 
   it('OpenCode needs no ACP permission mode because its --auto command flag grants unattended access', () => {
     const adapter = adapterFor('opencode');
-    expect(adapter).toMatchObject({ commandPrefix: '/', transcript: null, usage: null, requiresUnattendedPermissionMode: false });
+    expect(adapter).toMatchObject({ commandPrefix: '/', transcript: null, requiresUnattendedPermissionMode: false });
+    expect(adapter.usage).not.toBeNull();
     expect(adapter.unattendedPermissionMode([])).toBeUndefined();
     expect(adapter.spawnEnv(spawnInput('meta/muse-spark-1.3-contributor'))).toEqual({});
   });
@@ -157,6 +158,87 @@ describe('harness adapters', () => {
       '/copilot/session-store.db',
     );
     expect(usage.sessionLogFile({ sessionLogDir: '/copilot', cwd: '/w', sessionId: null })).toBeNull();
+  });
+
+  it("OpenCode's Usage Collector reads parent and Subagent session rows from opencode.db", () => {
+    const root = 'parent-session';
+    const dir = mkdtempSync(join(tmpdir(), 'opencode-db-'));
+    const file = join(dir, '.local', 'share', 'opencode', 'opencode.db');
+    mkdirSync(join(dir, '.local', 'share', 'opencode'), { recursive: true });
+    writeOpenCodeUsageDb(file, [
+      {
+        id: root,
+      },
+      {
+        id: 'subagent-session',
+        parent_id: root,
+      },
+      { id: 'nested-subagent-session', parent_id: 'subagent-session' },
+      { id: 'other-session' },
+    ], [
+      { session_id: root, providerID: 'openai', modelID: 'gpt-5.6', input: 1000, output: 100, cacheRead: 800, cacheWrite: 50 },
+      { session_id: 'subagent-session', providerID: 'anthropic', modelID: 'claude-sonnet', input: 200, output: 20, cacheRead: 10 },
+      { session_id: 'nested-subagent-session', providerID: 'openrouter', modelID: 'anthropic/claude-sonnet', input: 50, output: 5 },
+      { session_id: 'other-session', providerID: 'openai', modelID: 'gpt-5.6', input: 999999, output: 999999 },
+    ]);
+
+    const usage = adapterFor('opencode').usage!;
+    expect(usage.sessionLogFile({ sessionLogDir: dir, cwd: '/w', sessionId: root })).toBe(file);
+    expect(usage.sessionLogFile({ cwd: '/w', sessionId: root })).toBe(join(homedir(), '.local', 'share', 'opencode', 'opencode.db'));
+    expect(usage.modelsFromSessionLog(file, root)).toEqual({
+      'openai/gpt-5.6': { inputTokens: 1000, outputTokens: 100, cacheReadTokens: 800, cacheWriteTokens: 50 },
+      'anthropic/claude-sonnet': { inputTokens: 200, outputTokens: 20, cacheReadTokens: 10, cacheWriteTokens: 0 },
+      'openrouter/anthropic/claude-sonnet': { inputTokens: 50, outputTokens: 5, cacheReadTokens: 0, cacheWriteTokens: 0 },
+    });
+
+    const parsed = usage.parse!({ sessionLogDir: dir, cwd: '/w', sessionId: root })!;
+    expect(parsed.usage.models).toEqual(usage.modelsFromSessionLog(file, root));
+    expect(parsed.tree).toMatchObject({
+      id: root,
+      name: 'root',
+      model: 'openai/gpt-5.6',
+      usage: { inputTokens: 1000, outputTokens: 100, cacheReadTokens: 800, cacheWriteTokens: 50 },
+    });
+    expect(parsed.tree.children).toEqual([
+      expect.objectContaining({
+        id: 'subagent-session',
+        name: 'subagent',
+        model: 'anthropic/claude-sonnet',
+        usage: { inputTokens: 200, outputTokens: 20, cacheReadTokens: 10, cacheWriteTokens: 0 },
+      }),
+    ]);
+    expect(parsed.tree.children[0]!.children).toEqual([
+      expect.objectContaining({ id: 'nested-subagent-session', model: 'openrouter/anthropic/claude-sonnet' }),
+    ]);
+    expect(usage.modelsFromSessionLog(join(dir, 'missing.db'), root)).toEqual({});
+    expect(usage.modelsFromSessionLog(file, null)).toEqual({});
+    expect(usage.parse!({ sessionLogDir: dir, cwd: '/w', sessionId: 'missing' })).toBeNull();
+  });
+
+  it("OpenCode's Usage Collector ignores cycles in a corrupt Subagent session tree", () => {
+    const root = 'root-session';
+    const dir = mkdtempSync(join(tmpdir(), 'opencode-cycle-'));
+    const file = join(dir, '.local', 'share', 'opencode', 'opencode.db');
+    mkdirSync(join(dir, '.local', 'share', 'opencode'), { recursive: true });
+    writeOpenCodeUsageDb(
+      file,
+      [
+        { id: root, parent_id: 'subagent-session' },
+        { id: 'subagent-session', parent_id: root },
+      ],
+      [
+        { session_id: root, providerID: 'openai', modelID: 'gpt-5.6', input: 100 },
+        { session_id: 'subagent-session', providerID: 'anthropic', modelID: 'claude-sonnet', input: 10 },
+      ],
+    );
+
+    const parsed = adapterFor('opencode').usage!.parse!({ sessionLogDir: dir, cwd: '/w', sessionId: root })!;
+    expect(parsed.usage.models).toEqual({
+      'openai/gpt-5.6': { inputTokens: 100, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+      'anthropic/claude-sonnet': { inputTokens: 10, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+    });
+    expect(parsed.tree.children).toHaveLength(1);
+    expect(parsed.tree.children[0]!.children).toEqual([]);
   });
 
   it("copilot's Usage Collector aggregates session-store.db rows by model, with the cache split and AI Units", () => {
