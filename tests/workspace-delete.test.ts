@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
-import { trackerDismissals, attempts, guardrailEvents } from '../src/db/schema.js';
+import { trackerDismissals, attempts, guardrailEvents, sessions, scheduledJobs } from '../src/db/schema.js';
 import { eq } from 'drizzle-orm';
 import { baselineConfig } from '../src/config.js';
 import { WorkspaceService } from '../src/domain/workspaces.js';
@@ -69,5 +69,23 @@ describe('WorkspaceService.delete guards (issue #61)', () => {
 
     await expect(workspaces.delete(ws.id)).resolves.toBeUndefined();
     expect(await asyncDb.read((d) => d.select().from(guardrailEvents).where(eq(guardrailEvents.attemptId, attemptId)).all())).toHaveLength(0);
+  });
+
+  it('deletes a Workspace that has Sessions and scheduled jobs (non-cascading FKs) with no FK error', async () => {
+    const ws = (await workspaces.list())[0]!;
+    const now = Date.now();
+    await asyncDb.write((d) =>
+      d.insert(sessions).values({
+        harness: 'claude', harnessSessionId: 'acp-1', model: 'sonnet-5', cwd: '/tmp',
+        workspaceId: ws.id, lastActiveAt: now, createdAt: now, updatedAt: now,
+      }).run(),
+    );
+    await asyncDb.write((d) =>
+      d.insert(scheduledJobs).values({ jobKey: `tracker.poll:${ws.id}`, name: 'tracker.poll', workspaceId: ws.id }).run(),
+    );
+
+    await expect(workspaces.delete(ws.id)).resolves.toBeUndefined();
+    expect(await asyncDb.read((d) => d.select().from(sessions).where(eq(sessions.workspaceId, ws.id)).all())).toHaveLength(0);
+    expect(await asyncDb.read((d) => d.select().from(scheduledJobs).where(eq(scheduledJobs.workspaceId, ws.id)).all())).toHaveLength(0);
   });
 });

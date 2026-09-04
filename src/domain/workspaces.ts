@@ -11,6 +11,8 @@ import {
   conversations,
   conversationEvents,
   trackerDismissals,
+  sessions,
+  scheduledJobs,
   type WorkspaceRow,
   type WorkspaceIdentityRow,
 } from '../db/schema.js';
@@ -255,7 +257,8 @@ export class WorkspaceService {
    * Delete a Workspace and everything on its board. Refuses any Workspace with
    * a running Task. Deleting the last Workspace is allowed. Cascades in a
    * transaction: its Tasks (+ Attempts, Attempt events, Dependency edges,
-   * Channel links) and Conversations (+ events) go first.
+   * Channel links), Conversations (+ events), Sessions, and scheduled jobs go
+   * first — all hold non-cascading FKs to the Workspace row.
    */
   async delete(id: number): Promise<void> {
     await this.get(id);
@@ -289,6 +292,8 @@ export class WorkspaceService {
         await tx.delete(conversationEvents).where(inArray(conversationEvents.conversationId, convIds)).run();
         await tx.delete(conversations).where(inArray(conversations.id, convIds)).run();
       }
+      await tx.delete(sessions).where(eq(sessions.workspaceId, id)).run();
+      await tx.delete(scheduledJobs).where(eq(scheduledJobs.workspaceId, id)).run();
       await tx.delete(trackerDismissals).where(eq(trackerDismissals.workspaceId, id)).run();
       await tx.delete(workspaces).where(eq(workspaces.id, id)).run();
     });
