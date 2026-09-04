@@ -7,78 +7,10 @@ import { toastError, toastSuccess } from '../toast';
 import { overallDecision } from '../verification-attempts-model';
 import { RejectDialog } from './RejectDialog';
 import { DeleteTaskDialog } from './DeleteTaskDialog';
-import { useArmedConfirm } from './useArmedConfirm';
+import { ConfirmDialog } from './ConfirmDialog';
 import { taskLabel } from '../id-format.js';
 
-/** Cancel, armed with a two-step confirm. Its own component so the hook is
- * called unconditionally (rules of hooks), not inside the action switch. */
-function CancelButton({ className, onConfirm }: { className: string; onConfirm: () => void }) {
-  const { armed, trigger, ref } = useArmedConfirm(onConfirm);
-  return (
-    <button
-      ref={ref}
-      className={armed ? 'font-semibold text-fail transition-colors duration-150' : className}
-      onClick={trigger}
-    >
-      {armed ? 'Sure?' : 'Cancel'}
-    </button>
-  );
-}
-
-function CompleteButton({ className, onConfirm }: { className: string; onConfirm: () => void }) {
-  const { armed, trigger, ref } = useArmedConfirm(onConfirm);
-  return (
-    <button
-      ref={ref}
-      className={armed ? 'font-semibold text-ink transition-colors duration-150' : className}
-      onClick={trigger}
-    >
-      {armed ? 'Sure?' : 'Complete'}
-    </button>
-  );
-}
-
-function AcceptButton({ className, label, onConfirm, busy }: { className: string; label: string; onConfirm: () => void; busy?: boolean }) {
-  const { armed, trigger, ref } = useArmedConfirm(onConfirm);
-  return (
-    <button
-      ref={ref}
-      disabled={busy}
-      className={armed ? 'font-semibold text-fail transition-colors duration-150' : className}
-      onClick={trigger}
-    >
-      {busy ? 'Accepting…' : armed ? 'Critic flagged — accept anyway?' : label}
-    </button>
-  );
-}
-
-function ForceAcceptButton({ className, onConfirm, busy }: { className: string; onConfirm: () => void; busy?: boolean }) {
-  const { armed, trigger, ref } = useArmedConfirm(onConfirm);
-  return (
-    <button
-      ref={ref}
-      disabled={busy}
-      className={armed ? 'font-semibold text-fail transition-colors duration-150' : className}
-      onClick={trigger}
-    >
-      {busy ? 'Accepting…' : armed ? 'Skip verification and merge?' : 'Force accept'}
-    </button>
-  );
-}
-
-function CloseButton({ className, label, onConfirm, disabled }: { className: string; label: string; onConfirm: () => void; disabled?: boolean }) {
-  const { armed, trigger, ref } = useArmedConfirm(onConfirm);
-  return (
-    <button
-      ref={ref}
-      disabled={disabled}
-      className={armed ? 'font-semibold text-fail transition-colors duration-150' : className}
-      onClick={trigger}
-    >
-      {armed ? 'Sure?' : label}
-    </button>
-  );
-}
+type Confirming = 'cancel' | 'complete' | 'accept-flagged' | 'force-accept' | 'close';
 
 export function TaskActions({
   task,
@@ -95,6 +27,7 @@ export function TaskActions({
 }) {
   const [rejecting, setRejecting] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [confirming, setConfirming] = useState<Confirming | null>(null);
   // Accept runs verification + merge synchronously in the request; without an
   // immediate pending state the click looks inert until it resolves.
   const [accepting, setAccepting] = useState(false);
@@ -119,18 +52,27 @@ export function TaskActions({
       onChanged();
     }, toastError);
 
+  const acceptWith = (opts?: { force?: boolean }, done?: string) => () => {
+    setAccepting(true);
+    api.acceptTask(task.id, opts).then(() => {
+      toastSuccess(done!, { sticky: true });
+      onChanged();
+    }, toastError).finally(() => setAccepting(false));
+  };
+  const onAccept = acceptWith(undefined, `${taskLabel(task.id)} accepted — merging`);
+  const onForceAccept = acceptWith({ force: true }, `${taskLabel(task.id)} force-accepted — merging`);
+  const onComplete = act(() => api.completeTask(task.id));
+  const onCancelTask = actDone(() => api.cancelTask(task.id), `${taskLabel(task.id)} cancelled`);
+  const onCloseTask = actDone(() => api.closeTask(task.id), `${taskLabel(task.id)} closed`);
+
+  const confirmThen = (fn: () => void) => () => {
+    setConfirming(null);
+    fn();
+  };
+
   const button = (action: TaskAction) => {
     switch (action) {
       case 'accept': {
-        const acceptWith = (opts?: { force?: boolean }, done?: string) => () => {
-          setAccepting(true);
-          api.acceptTask(task.id, opts).then(() => {
-            toastSuccess(done!);
-            onChanged();
-          }, toastError).finally(() => setAccepting(false));
-        };
-        const onConfirm = acceptWith(undefined, `${taskLabel(task.id)} accepted — merging`);
-        const onForceConfirm = acceptWith({ force: true }, `${taskLabel(task.id)} force-accepted — merging`);
         const label = variant === 'footer' ? 'Accept & merge' : 'Accept';
         if (escalation && !escalation.accept) {
           return (
@@ -142,13 +84,25 @@ export function TaskActions({
         return (
           <Fragment key={action}>
             {decision && decision.outcome !== 'proceed' ? (
-              <AcceptButton className={btnAccept} label={label} onConfirm={onConfirm} busy={accepting || merging} />
+              <button
+                className={btnAccept}
+                onClick={() => setConfirming('accept-flagged')}
+                disabled={accepting || merging}
+              >
+                {accepting || merging ? 'Accepting…' : label}
+              </button>
             ) : (
-              <button className={btnAccept} onClick={onConfirm} disabled={accepting || merging}>
+              <button className={btnAccept} onClick={onAccept} disabled={accepting || merging}>
                 {accepting || merging ? 'Accepting…' : label}
               </button>
             )}
-            <ForceAcceptButton className={secondary} onConfirm={onForceConfirm} busy={accepting || merging} />
+            <button
+              className={secondary}
+              onClick={() => setConfirming('force-accept')}
+              disabled={accepting || merging}
+            >
+              {accepting || merging ? 'Accepting…' : 'Force accept'}
+            </button>
           </Fragment>
         );
       }
@@ -160,13 +114,14 @@ export function TaskActions({
         );
       case 'close':
         return (
-          <CloseButton
+          <button
             key={action}
             className={btnQuietDestructive}
-            label={variant === 'footer' ? 'Close task' : 'Close'}
             disabled={merging}
-            onConfirm={actDone(() => api.closeTask(task.id), `${taskLabel(task.id)} closed`)}
-          />
+            onClick={() => setConfirming('close')}
+          >
+            {variant === 'footer' ? 'Close task' : 'Close'}
+          </button>
         );
       case 'run':
         return (
@@ -187,14 +142,16 @@ export function TaskActions({
           </button>
         );
       case 'complete':
-        return <CompleteButton key={action} className={secondary} onConfirm={act(() => api.completeTask(task.id))} />;
+        return (
+          <button key={action} className={secondary} onClick={() => setConfirming('complete')}>
+            Complete
+          </button>
+        );
       case 'cancel':
         return (
-          <CancelButton
-            key={action}
-            className={btnQuietDestructive}
-            onConfirm={actDone(() => api.cancelTask(task.id), `${taskLabel(task.id)} cancelled`)}
-          />
+          <button key={action} className={btnQuietDestructive} onClick={() => setConfirming('cancel')}>
+            Cancel
+          </button>
         );
       case 'uncancel':
         return (
@@ -235,6 +192,67 @@ export function TaskActions({
       )}
       {deleting && (
         <DeleteTaskDialog task={task} onClose={() => setDeleting(false)} onDone={done(() => setDeleting(false))} />
+      )}
+      {confirming === 'cancel' && (
+        <ConfirmDialog
+          label={`Cancel ${taskLabel(task.id)}`}
+          title="Cancel this task?"
+          confirmLabel="Cancel task"
+          tone="danger"
+          onCancel={() => setConfirming(null)}
+          onConfirm={confirmThen(onCancelTask)}
+        >
+          This abandons the task. This cannot be undone.
+        </ConfirmDialog>
+      )}
+      {confirming === 'complete' && (
+        <ConfirmDialog
+          label={`Complete ${taskLabel(task.id)}`}
+          title="Mark this task complete?"
+          confirmLabel="Complete"
+          tone="primary"
+          onCancel={() => setConfirming(null)}
+          onConfirm={confirmThen(onComplete)}
+        >
+          Marks the task done without running verification.
+        </ConfirmDialog>
+      )}
+      {confirming === 'accept-flagged' && (
+        <ConfirmDialog
+          label={`Accept ${taskLabel(task.id)}`}
+          title="Critic flagged this attempt"
+          confirmLabel="Accept anyway"
+          tone="review"
+          onCancel={() => setConfirming(null)}
+          onConfirm={confirmThen(onAccept)}
+        >
+          The critic did not recommend merging this candidate. Accept and merge anyway?
+        </ConfirmDialog>
+      )}
+      {confirming === 'force-accept' && (
+        <ConfirmDialog
+          label={`Force accept ${taskLabel(task.id)}`}
+          title="Skip verification and merge?"
+          confirmLabel="Skip verification & merge"
+          tone="danger"
+          onCancel={() => setConfirming(null)}
+          onConfirm={confirmThen(onForceAccept)}
+        >
+          This merges the candidate branch without running verification — implementation, tests, and the critic
+          review are all skipped. Use only when you've reviewed the change yourself.
+        </ConfirmDialog>
+      )}
+      {confirming === 'close' && (
+        <ConfirmDialog
+          label={`Close ${taskLabel(task.id)}`}
+          title="Close this task?"
+          confirmLabel="Close task"
+          tone="danger"
+          onCancel={() => setConfirming(null)}
+          onConfirm={confirmThen(onCloseTask)}
+        >
+          This ends the task without merging its candidate. This cannot be undone.
+        </ConfirmDialog>
       )}
     </>
   );

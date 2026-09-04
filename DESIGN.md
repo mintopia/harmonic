@@ -142,15 +142,11 @@ typography:
     fontWeight: 400
     lineHeight: 1.5
 rounded:
-  sm: "8px"
-  md: "10px"
-  lg: "13px"
-  xl: "13px"
+  sm: "3px"
+  md: "3px"
+  lg: "4px"
+  xl: "4px"
   pill: "999px"
-  bold-sm: "3px"
-  bold-md: "3px"
-  bold-lg: "4px"
-  bold-xl: "4px"
 spacing:
   xs: "4px"
   sm: "8px"
@@ -172,7 +168,7 @@ This is a redesign, not a retheme: the UI is organised around the real lifecycle
 
 **The Prime Directive — the operator's attention leads.** Every surface is ordered so the thing that needs the operator *now* is first and loudest: escalations at the top of the Board; the escalation surface (Accept / Reject with guidance / Close) as the one loud element on a Ticket. Density is a virtue here, not a risk — but density is earned by structure (grouping, hierarchy, alignment), never bought with clutter.
 
-Both themes are first-class. **Dark is the canonical operator identity** (warm-neutral near-black `#15161A` → `#202227`, depth from lightness steps); **Light** (the matte paper world, canvas `#F1F2EF` with white panels on soft shadows) ships for bright rooms. Theme follows `prefers-color-scheme` with a manual override persisted in `localStorage` and stamped as `data-theme` on the root. A **Soft ↔ Bold** density toggle is also first-class (§ 3). Which of Light/Dark and Soft/Bold ships as the default is **still open** — do not hardcode one away.
+Both themes are first-class. **Dark is the canonical operator identity** (warm-neutral near-black `#15161A` → `#202227`, depth from lightness steps); **Light** (the matte paper world, canvas `#F1F2EF` with white panels on soft shadows) ships for bright rooms. Theme follows `prefers-color-scheme` with a manual override persisted in `localStorage` and stamped as `data-theme` on the root. Density is **Bold** (§ 3): sharp corners and state-tint washes, always on. Which of Light/Dark ships as the default is **still open** — do not hardcode one away.
 
 Paper keeps rejecting PRODUCT.md's anti-references: **CI/CD console gloom** (structure + hierarchy, not a wall of widgets), **chat-app cuteness** (no avatars, no emoji status; agents are processes), **kanban-tool sprawl** (the Board is an attention queue with one escalation surface, not a project-management board).
 
@@ -181,11 +177,11 @@ Paper keeps rejecting PRODUCT.md's anti-references: **CI/CD console gloom** (str
 - Matte, low-chroma, quiet: near-neutral grounds, quiet real elevation, generous but disciplined density.
 - **Two deliberate voices** — teal for actions/tooling, indigo for the review state — over a semantic state-signal family (§ 2). No third accent.
 - Monospace is reserved for **code** — file paths, branch refs, commit oids, shell commands, tool targets, session ids, inline code. Everything read as language or as a figure is sans with `tabular-nums`.
-- True dual theme + Soft/Bold density, **WCAG 2.1 AA** floor in both themes — no exceptions (the running-amber carve-out was retired by issue #458, § 2).
+- True dual theme, **WCAG 2.1 AA** floor in both themes — no exceptions (the running-amber carve-out was retired by issue #458, § 2).
 
 ## 2. Colours
 
-Two voices — a **teal action accent** and an **indigo review hue** — over a low-chroma near-neutral ground and a semantic state-signal family. Every informational pairing holds WCAG AA against its documented background in its theme: text-on-tint state pills and metadata at ≥4.5:1, non-text affordances (dividers, seams, the switch off-track) at ≥3:1, in **both** themes — with no exceptions (the former running-amber carve-out was retired by issue #458; see below). `web/src/index.css` + `tests/contrast.test.ts` are the implementation gate when Paper ships in the app; this file is the intent, and the mockup's in-browser WCAG sampler is the current source of truth (0 failures across Light/Dark × Soft/Bold, 2026-08-21).
+Two voices — a **teal action accent** and an **indigo review hue** — over a low-chroma near-neutral ground and a semantic state-signal family. Every informational pairing holds WCAG AA against its documented background in its theme: text-on-tint state pills and metadata at ≥4.5:1, non-text affordances (dividers, seams, the switch off-track) at ≥3:1, in **both** themes — with no exceptions (the former running-amber carve-out was retired by issue #458; see below). `web/src/index.css` + `tests/contrast.test.ts` are the implementation gate when Paper ships in the app; this file is the intent, and the mockup's in-browser WCAG sampler is the current source of truth (0 failures across Light/Dark, 2026-08-21).
 
 ### The two voices
 - **Teal Accent** (`#0D7271` light / `#33BDB4` dark): the interface's action/tooling voice — primary actions, active nav, current selection, focus rings, the *ready* frontier and `Run now`, tooling/branch/epic refs, and the escalation `Accept` button. Filled buttons pair it with white in light / near-black (`#0E1413`) in dark. Hover: `#0B6360` light, `#4CD0C7` dark. **Accent Tint** (`#E0F0EF` / `#123330`): fill under active nav, the `Run now` ghost, tooling badges.
@@ -243,7 +239,7 @@ Working weights: 400 body / 500–600 UI emphasis / 700–800 headings. `tabular
 
 **The Three Weights Rule.** 400 / 500–600 / 700 (800 for the Display title). If hierarchy needs more, fix size or colour-layer, not the weight ramp.
 
-**Soft vs Bold (density).** A first-class toggle on the root (`.bold`). **Soft** is the calm default look: rounded corners (8/10/13px), state colour on dots + bars + pills only. **Bold** sharpens every corner (3/3/4px) and washes ready/running/await/merged cards and nodes with their state tint for a denser, higher-signal read. **Bold's density is locked** — do not restyle it or run `quieter` on it (Jess: "leave as is entirely"). Which of Soft/Bold ships as default is open.
+**Density.** Sharp corners (3/3/4px) and ready/running/await/merged cards and nodes washed with their state tint for a dense, high-signal read. **This density is locked** — do not restyle it or run `quieter` on it (Jess: "leave as is entirely").
 
 ## 4. Elevation & grouping
 
@@ -257,7 +253,7 @@ Depth is real but quiet, **declared once per element** (never a border *and* a w
 
 ## 5. Layout & Information Architecture
 
-**App shell (landmarked).** A slim left **`<nav>` rail** (~224px, Shell fill, hairline right edge): the wordmark, the Workspace switcher, and primary nav grouped **Workspace** (Board / Activity / Table / Graph / Stats) and **Instance** (API / Workspace), as line-icon + label rows (active = teal text on Accent Tint; a badge carries a count, **indigo** when it's the Attention count). A collapse toggle pins bottom; below ~860px the rail collapses to icons. A thin **`<header>` status strip** carries *status, not navigation* — the auto-runner switch, running count (amber dot) + machine ceiling, today's cost — then, right-aligned, the Soft/Bold toggle, the theme cycle, Settings, and the one primary action (**New task**). The working column is `<main>`; the shell is pinned and only the working area scrolls.
+**App shell (landmarked).** A slim left **`<nav>` rail** (~224px, Shell fill, hairline right edge): the wordmark, the Workspace switcher, and primary nav grouped **Workspace** (Board / Activity / Table / Graph / Stats) and **Instance** (API / Workspace), as line-icon + label rows (active = teal text on Accent Tint; a badge carries a count, **indigo** when it's the Attention count). A collapse toggle pins bottom; below ~860px the rail collapses to icons. A thin **`<header>` status strip** carries *status, not navigation* — the auto-runner switch, running count (amber dot) + machine ceiling, today's cost — then, right-aligned, the theme cycle, Settings, and the one primary action (**New task**). The working column is `<main>`; the shell is pinned and only the working area scrolls.
 
 ### The Board (home / signature surface)
 Full-width, attention-ordered sections, top → bottom (ADR-0011 Visibility; state is implied by colour, **never a column**):

@@ -5,6 +5,7 @@ import { TASK_STATES } from '../types';
 import { TABLE_HARNESSES, TABLE_PRIORITIES, type TableFilters, type SortKey } from '../router-model';
 import {
   btnGhost,
+  btnPrimary,
   btnQuiet,
   chip,
   displayTitle,
@@ -38,6 +39,7 @@ export function TableView({
   onOpenEpic,
   filters,
   onFiltersChange,
+  onNewTask,
 }: {
   /** Scopes the table to the active Workspace; no fetch until resolved. */
   workspaceId: number | null;
@@ -47,6 +49,7 @@ export function TableView({
   /** Filter/sort selection — lives in the URL, owned by App. */
   filters: TableFilters;
   onFiltersChange: (next: TableFilters) => void;
+  onNewTask: () => void;
 }) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [total, setTotal] = useState(0);
@@ -332,8 +335,16 @@ export function TableView({
                 No tasks match these filters.
               </EmptyState>
             ) : (
-              <EmptyState title="No tasks yet" className="my-8">
-                Create one on the Board to get started.
+              <EmptyState
+                title="No tasks yet"
+                className="my-8"
+                action={
+                  <button className={btnPrimary} onClick={onNewTask}>
+                    New task
+                  </button>
+                }
+              >
+                Describe the work and Harmonic will queue it.
               </EmptyState>
             )}
           </div>

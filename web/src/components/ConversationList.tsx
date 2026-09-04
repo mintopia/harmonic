@@ -1,10 +1,11 @@
+import { useState } from 'react';
 import type { AttentionState } from '../conversation-attention-model';
 import { conversationDisplayTitle } from '../conversation-list-model';
 import { formatTokens } from '../conversation-telemetry-model';
 import { formatCost } from '../cost';
 import type { Conversation } from '../types';
 import { btnQuiet, btnQuietDestructive, conversationStateChip, panelTitle, touchTarget } from '../ui';
-import { ArmedButton } from './ArmedButton';
+import { ConfirmDialog } from './ConfirmDialog';
 import { EmptyState } from './EmptyState';
 import { Icon } from './Icon';
 
@@ -19,6 +20,7 @@ function ConversationRow({
   onSelect: () => void;
   onDelete: () => void;
 }) {
+  const [confirming, setConfirming] = useState(false);
   const tokens = formatTokens(conversation.usage);
   const cost = formatCost(conversation.cost);
   const title = conversationDisplayTitle(conversation.title);
@@ -56,13 +58,29 @@ function ConversationRow({
           {cost ? ` · ${cost}` : ''}
         </div>
       </div>
-      <ArmedButton
-        label="Delete"
-        armedLabel="Delete?"
-        ariaLabel={`Delete conversation ${title}`}
+      <button
+        type="button"
+        aria-label={`Delete conversation ${title}`}
         className={`${btnQuietDestructive} shrink-0`}
-        onConfirm={onDelete}
-      />
+        onClick={() => setConfirming(true)}
+      >
+        Delete
+      </button>
+      {confirming && (
+        <ConfirmDialog
+          label={`Delete conversation ${title}`}
+          title={`Delete "${title}"?`}
+          confirmLabel="Delete"
+          tone="danger"
+          onCancel={() => setConfirming(false)}
+          onConfirm={() => {
+            setConfirming(false);
+            onDelete();
+          }}
+        >
+          This permanently deletes the conversation and its history. This cannot be undone.
+        </ConfirmDialog>
+      )}
     </li>
   );
 }

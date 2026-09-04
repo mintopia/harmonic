@@ -17,9 +17,9 @@ import {
   touchTarget,
   touchTargetInline,
 } from '../ui';
+import { ConfirmDialog } from './ConfirmDialog';
 import { EmptyState } from './EmptyState';
 import { TokenSum } from './TokenTypeBar';
-import { useArmedConfirm } from './useArmedConfirm';
 import { fmtElapsed } from '../board-sections-model';
 import {
   activitySections,
@@ -130,21 +130,44 @@ function ContextCell({ process }: { process: ActivityProcess }) {
   );
 }
 
-function StopButton({ onConfirm, demoted }: { onConfirm: () => void; demoted: boolean }) {
-  const { armed, trigger, ref } = useArmedConfirm(onConfirm);
+function StopButton({
+  title,
+  kind,
+  onConfirm,
+  demoted,
+}: {
+  title: string;
+  kind: 'attempt' | 'chat';
+  onConfirm: () => void;
+  demoted: boolean;
+}) {
+  const [confirming, setConfirming] = useState(false);
   const resting = demoted
     ? 'font-normal text-muted transition-colors duration-150 hover:text-fail'
     : btnQuietDestructive;
   return (
-    <button
-      ref={ref}
-      onClick={trigger}
-      className={`${touchTarget} text-small ${
-        armed ? 'font-semibold text-fail transition-colors duration-150' : resting
-      }`}
-    >
-      {armed ? 'Stop?' : 'Stop'}
-    </button>
+    <>
+      <button onClick={() => setConfirming(true)} className={`${touchTarget} text-small ${resting}`}>
+        Stop
+      </button>
+      {confirming && (
+        <ConfirmDialog
+          label={`Stop ${title}`}
+          title={kind === 'attempt' ? 'Cancel this attempt?' : 'End this conversation?'}
+          confirmLabel="Stop"
+          tone="danger"
+          onCancel={() => setConfirming(false)}
+          onConfirm={() => {
+            setConfirming(false);
+            onConfirm();
+          }}
+        >
+          {kind === 'attempt'
+            ? 'This cancels the task the attempt is working on.'
+            : 'This ends the conversation. It cannot be resumed.'}
+        </ConfirmDialog>
+      )}
+    </>
   );
 }
 
@@ -216,7 +239,9 @@ function RowActions({
           Resolve →
         </a>
       )}
-      {stop && <StopButton onConfirm={stopConfirm} demoted={stopDemoted} />}
+      {stop && (
+        <StopButton title={process.title} kind={stop.kind} onConfirm={stopConfirm} demoted={stopDemoted} />
+      )}
     </div>
   );
 }

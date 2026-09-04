@@ -3,7 +3,7 @@ import { api } from '../api';
 import type { Task } from '../types';
 import { toastSuccess } from '../toast';
 import { Modal } from './Modal';
-import { btnDestructive, panelTitle } from '../ui';
+import { btnDestructive, btnGhost, panelTitle } from '../ui';
 import { taskLabel } from '../id-format.js';
 
 export function DeleteTaskDialog({
@@ -48,6 +48,9 @@ export function DeleteTaskDialog({
         )}
         {error && <p className="mt-3 text-fail">{error}</p>}
         <div className="mt-5 flex justify-end gap-2">
+          <button type="button" className={`${btnGhost} px-3 py-1.5`} onClick={onClose} disabled={busy}>
+            Cancel
+          </button>
           <button type="button" className={btnDestructive} onClick={confirm} disabled={busy}>
             {busy ? 'Deleting…' : 'Delete permanently'}
           </button>

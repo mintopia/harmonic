@@ -696,6 +696,7 @@ export function Board({
   tasks,
   loading,
   epics,
+  hasHistory,
   onOpen,
   onOpenTask,
   onNewTask,
@@ -704,16 +705,22 @@ export function Board({
   tasks: Task[];
   loading: boolean;
   epics: Epic[];
+  /** Whether this Workspace has ever had a task, independent of `tasks` (open-only,
+   * so a Workspace whose every task closed reads empty here too). Null while that
+   * check is still in flight — held on the skeleton rather than guessed, so a
+   * genuine cold start never flashes AllClear before FirstRunBoard. */
+  hasHistory: boolean | null;
   onOpen: (task: Task) => void;
   onOpenTask: (taskId: number) => void;
   onNewTask: () => void;
   onOpenEpic?: (epic: Epic) => void;
 }) {
   const sections = useMemo(() => boardSections(tasks, epics), [tasks, epics]);
+  const empty = tasks.length === 0 && epics.length === 0;
 
-  if (loading) return <BoardSkeleton />;
+  if (loading || (empty && hasHistory === null)) return <BoardSkeleton />;
 
-  if (tasks.length === 0 && epics.length === 0) return <FirstRunBoard onNewTask={onNewTask} />;
+  if (empty && hasHistory === false) return <FirstRunBoard onNewTask={onNewTask} />;
 
   const { attention, running, pending } = sections;
   if (attention.length === 0 && running.length === 0 && pending.length === 0) return <AllClear />;

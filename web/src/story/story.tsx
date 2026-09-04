@@ -41,6 +41,7 @@ function Story() {
           tasks={boardTasks}
           loading={false}
           epics={[boardEpic, doneEpic]}
+          hasHistory={true}
           onOpen={() => {}}
           onOpenTask={() => {}}
           onNewTask={() => {}}

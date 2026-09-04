@@ -256,10 +256,10 @@
 }
 
 @theme {
-  --radius-sm: 8px;
-  --radius-md: 10px;
-  --radius-lg: 13px;
-  --radius-xl: 13px;
+  --radius-sm: 3px;
+  --radius-md: 3px;
+  --radius-lg: 4px;
+  --radius-xl: 4px;
 
   --font-data: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 
@@ -288,21 +288,14 @@
   --ease-out-quint: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.bold {
-  --radius-sm: 3px;
-  --radius-md: 3px;
-  --radius-lg: 4px;
-  --radius-xl: 4px;
-}
-
-.bold .bold-wash.ready { background-color: var(--hm-ready-tint); }
-.bold :is(.bold-wash.running, .bold-wash.working) { background-color: var(--hm-running-tint); }
-.bold :is(.bold-wash.await, .bold-wash.escalated) { background-color: var(--hm-await-tint); }
-.bold :is(.bold-wash.merged, .bold-wash.done) { background-color: var(--hm-merged-tint); }
-.bold .node.ready .node-fill { fill: var(--hm-ready-tint); }
-.bold :is(.node.running, .node.working) .node-fill { fill: var(--hm-running-tint); }
-.bold :is(.node.await, .node.escalated) .node-fill { fill: var(--hm-await-tint); }
-.bold :is(.node.merged, .node.done) .node-fill { fill: var(--hm-merged-tint); }
+.bold-wash.ready { background-color: var(--hm-ready-tint); }
+:is(.bold-wash.running, .bold-wash.working) { background-color: var(--hm-running-tint); }
+:is(.bold-wash.await, .bold-wash.escalated) { background-color: var(--hm-await-tint); }
+:is(.bold-wash.merged, .bold-wash.done) { background-color: var(--hm-merged-tint); }
+.node.ready .node-fill { fill: var(--hm-ready-tint); }
+:is(.node.running, .node.working) .node-fill { fill: var(--hm-running-tint); }
+:is(.node.await, .node.escalated) .node-fill { fill: var(--hm-await-tint); }
+:is(.node.merged, .node.done) .node-fill { fill: var(--hm-merged-tint); }
 
 /* Kept off the `--font-weight-*` theme namespace so it doesn't collide with the
    `font-display` family utility (`--font-display`). */

@@ -28,6 +28,7 @@ interface HeaderStatusBarProps {
   onSettingsClick: () => void;
   onLogout: () => void;
   onNewTask: () => void;
+  onHelpClick: () => void;
 }
 
 export function HeaderStatusBar({
@@ -42,11 +43,12 @@ export function HeaderStatusBar({
   onSettingsClick,
   onLogout,
   onNewTask,
+  onHelpClick,
 }: HeaderStatusBarProps) {
   return (
     <header
       aria-label="Status"
-      className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-hairline bg-shell px-6 py-2.5 max-rail:flex-nowrap max-rail:gap-x-2 max-rail:overflow-x-auto max-rail:px-4"
+      className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-hairline bg-shell px-6 py-2.5 max-rail:gap-x-2 max-rail:px-4"
     >
       {config && (
         <Switch checked={config.autoRunner.enabled} label="Auto-runner" onChange={onAutoRunnerChange}>
@@ -85,6 +87,14 @@ export function HeaderStatusBar({
         </span>
       )}
       <div className="flex-1" />
+      <button
+        aria-label="Help"
+        title="Help"
+        className={`${touchTarget} rounded-md text-muted transition-colors duration-150 hover:bg-raised hover:text-ink`}
+        onClick={onHelpClick}
+      >
+        <Icon name="help" />
+      </button>
       <button
         aria-label={THEME_LABELS[theme]}
         title={THEME_LABELS[theme]}

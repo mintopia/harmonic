@@ -27,6 +27,7 @@ import { ConversationLauncher } from './components/ConversationLauncher';
 import { NewWorkspaceForm, WorkspaceSwitcher } from './components/WorkspaceSwitcher';
 import { WorkspaceSettingsPage } from './components/WorkspaceSettingsPage';
 import { EmptyState } from './components/EmptyState';
+import { HelpModal } from './components/HelpModal';
 import { VIEW_LABELS, isWorkspaceScopedView, loadRailCollapsed, storeRailCollapsed } from './rail-model';
 import { CrumbBar } from './components/CrumbBar';
 import type { View } from './rail-model';
@@ -47,7 +48,8 @@ import {
   ESCALATION_HINT_DISMISSED_KEY,
 } from './onboarding-model';
 import { btnPrimary, btnQuiet } from './ui';
-import { Toaster, toastError } from './toast';
+import { Toaster, toastError, toastFail, toastSuccess } from './toast';
+import { taskLabel } from './id-format.js';
 import { ReviewLiveRegions } from './components/ReviewLiveRegions';
 import {
   advanceReviewAnnouncements,
@@ -158,6 +160,7 @@ export function App() {
   const [authed, setAuthed] = useState<boolean | null>(null);
   const [passwordSet, setPasswordSet] = useState(true);
   const [tasks, setTasks] = useState<Task[] | null>(null);
+  const [hasHistory, setHasHistory] = useState<boolean | null>(null);
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [workspacesLoaded, setWorkspacesLoaded] = useState(false);
@@ -166,6 +169,7 @@ export function App() {
   );
   const [creatingWorkspace, setCreatingWorkspace] = useState(false);
   const [editing, setEditing] = useState<Task | 'new' | null>(null);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [fetchedTask, setFetchedTask] = useState<Task | null>(null);
   const [epics, setEpics] = useState<Epic[]>([]);
   const [route, navigate] = useRoute();
@@ -238,16 +242,33 @@ export function App() {
 
   useLiveEffect((live) => {
     if (!authed || activeWorkspaceId === null) return;
+    setHasHistory(null);
+    api.tasks({ workspaceId: activeWorkspaceId, limit: 1 }).then(
+      ({ total }) => live() && setHasHistory(total > 0),
+      () => {},
+    );
+  }, [authed, activeWorkspaceId]);
+
+  useLiveEffect((live) => {
+    if (!authed || activeWorkspaceId === null) return;
     refresh();
     refreshEpics();
     const debouncedRefreshEpics = debounce(refreshEpics, 250);
     const unsubscribe = subscribe((msg) => {
       if (!live()) return;
       if (msg.type === 'task_changed' && msg.task.workspaceId === activeWorkspaceId) {
+        const outcomes: (() => void)[] = [];
         setTasks((current) => {
+          const prev = (current ?? []).find((t) => t.id === msg.task.id);
+          if (prev?.mergeStatus && !msg.task.mergeStatus && msg.task.state === 'done') {
+            outcomes.push(() => toastSuccess(`${taskLabel(msg.task.id)} merged`, { sticky: true }));
+          } else if (prev && prev.state !== 'escalated' && msg.task.state === 'escalated') {
+            outcomes.push(() => toastFail(`${taskLabel(msg.task.id)} escalated — needs a decision`));
+          }
           const rest = (current ?? []).filter((t) => t.id !== msg.task.id);
           return [...rest, msg.task];
         });
+        outcomes[0]?.();
         setFetchedTask((current) =>
           current?.id === msg.task.id || routeRef.current.task === msg.task.id ? msg.task : current,
         );
@@ -503,7 +524,9 @@ export function App() {
           onSettingsClick={() => pickView('settings')}
           onLogout={() => fetch('/api/auth/logout', { method: 'POST' }).then(() => setAuthed(false))}
           onNewTask={() => setEditing('new')}
+          onHelpClick={() => setHelpOpen(true)}
         />
+        {helpOpen && <HelpModal onClose={() => setHelpOpen(false)} />}
 
         <Toaster />
 
@@ -621,6 +644,7 @@ export function App() {
                         tasks={taskList}
                         loading={tasks === null}
                         epics={epics}
+                        hasHistory={hasHistory}
                         onOpen={openRow}
                         onOpenTask={openTaskById}
                         onNewTask={() => setEditing('new')}
@@ -635,6 +659,7 @@ export function App() {
                       onOpenEpic={openEpicByRef}
                       filters={route.table}
                       onFiltersChange={setTableFilters}
+                      onNewTask={() => setEditing('new')}
                     />
                   )}
                   {view === 'graph' && (

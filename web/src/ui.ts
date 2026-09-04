@@ -58,6 +58,13 @@ export const btnDestructive =
 export const btnAccept = btnPrimary;
 export const btnReject = btnGhost;
 
+/** The needs-you review confirm — indigo (DESIGN.md § 2's "await" hue), the one
+ * other case besides Escalated itself where that tone is sanctioned: accepting
+ * a critic-flagged attempt anyway is a deliberate human override, not the
+ * ordinary teal Accept. */
+export const btnReview =
+  'inline-flex min-h-11 items-center justify-center rounded-md bg-await px-3.5 py-2 font-semibold text-on-await shadow-btn transition-colors duration-150 hover:opacity-90 disabled:opacity-50 disabled:hover:opacity-90';
+
 export const field =
   'w-full rounded-md border border-edge bg-field px-2.5 py-1.5 text-ink placeholder:text-muted focus:border-accent focus:outline-none';
 

@@ -24,7 +24,7 @@ import { attemptTone, runFailureBannerLabel, runForAttempt, stateTone, type Time
 import { attemptStepTabs, contentPanel, defaultSelection, defaultStepTab, harnessLabel, taskLifecycle, taskStats, verificationOutputTail, type ContentSelection, type LifecycleStepKey, type LifecycleStepStatus, type StepTab, type TaskStats } from '../task-detail-model';
 import { isAtLiveEdge } from '../follow-tail-model';
 import { ChatTranscript } from './ticket/ChatTranscript';
-import { card, labelType, railSectionHead, railSectionCount, railNavButton, railNavSelected, railNavIdle, PHASE_NODE_STYLES, statePill, mergeStatusPill } from '../ui';
+import { btnPrimary, card, labelType, railSectionHead, railSectionCount, railNavButton, railNavSelected, railNavIdle, PHASE_NODE_STYLES, statePill, mergeStatusPill } from '../ui';
 import { toastError } from '../toast';
 import { ticketIdentity } from '../id-format.js';
 import { splitPathTail } from '../path';
@@ -479,9 +479,19 @@ function ChangesPane({
   );
 }
 
-function NoRunsYet() {
+function NoRunsYet({ task, onChanged }: { task: Task; onChanged: () => void }) {
   return (
-    <EmptyState title="No attempts yet" className="py-8">
+    <EmptyState
+      title="No attempts yet"
+      className="py-8"
+      action={
+        task.state === 'ready' ? (
+          <button className={btnPrimary} onClick={() => api.runTask(task.id).then(onChanged, toastError)}>
+            Run now
+          </button>
+        ) : undefined
+      }
+    >
       This task hasn't run yet.
     </EmptyState>
   );
@@ -1062,7 +1072,7 @@ export function TicketPage({
                     agent={harnessLabel(task.harness)}
                   />
                 ) : (
-                  <NoRunsYet />
+                  <NoRunsYet task={task} onChanged={onChanged} />
                 )
               ) : (
                 <StatsPanel stats={taskStats(statsAttemptsOf(runs, liveUsage))} />

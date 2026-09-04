@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { api } from '../api';
 import { card } from '../ui';
 import type { DayCost } from './costChart-model';
@@ -37,6 +37,7 @@ function monthTicks(hm: Heatmap): { x: number; label: string }[] {
 export function AttemptHeatmap({ workspaceId, aside }: { workspaceId: number | null; aside?: ReactNode }) {
   const [loaded, setLoaded] = useState<{ series: DayCost[]; now: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   useLiveEffect((live) => {
     if (workspaceId === null) return;
@@ -58,6 +59,10 @@ export function AttemptHeatmap({ workspaceId, aside }: { workspaceId: number | n
   const width = WEEKDAY_GUTTER_PX + cols * CELL_PITCH_PX;
   const height = MONTH_GUTTER_PX + 7 * CELL_PITCH_PX;
 
+  useLayoutEffect(() => {
+    if (loaded && scrollRef.current) scrollRef.current.scrollLeft = scrollRef.current.scrollWidth;
+  }, [loaded]);
+
   return (
     <section className={`${card} mb-4 p-5`}>
       <div className="mb-3 flex flex-wrap items-baseline gap-x-3">
@@ -72,7 +77,7 @@ export function AttemptHeatmap({ workspaceId, aside }: { workspaceId: number | n
 
           {hm && (
             <>
-              <div className="overflow-x-auto">
+              <div ref={scrollRef} className="overflow-x-auto [scrollbar-width:thin]">
                 <svg
                   width={width}
                   height={height}

@@ -33,7 +33,7 @@ import {
 } from '../conversation-attention-model';
 import { conversationDisplayTitle, removeConversationById, upsertConversation } from '../conversation-list-model';
 import { formatCost } from '../cost';
-import { ArmedButton } from './ArmedButton';
+import { ConfirmDialog } from './ConfirmDialog';
 import { ConversationList } from './ConversationList';
 import { EventStream } from './EventStream';
 import { ModelCombobox } from './ModelCombobox';
@@ -429,6 +429,7 @@ function ConversationHeader({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
   const [saving, setSaving] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const startEdit = () => {
     setDraft(conversation?.title ?? '');
@@ -506,18 +507,33 @@ function ConversationHeader({
           </button>
         )}
         {conversation && (
-          <ArmedButton
-            label="Delete"
-            armedLabel="Delete?"
-            ariaLabel="Delete conversation"
+          <button
+            aria-label="Delete conversation"
             className={`${touchTargetInline} ${btnQuietDestructive}`}
-            onConfirm={onDelete}
-          />
+            onClick={() => setConfirmingDelete(true)}
+          >
+            Delete
+          </button>
         )}
         <button aria-label="Close conversation panel" className={`${touchTarget} ${btnQuiet}`} onClick={onClose}>
           <Icon name="close" />
         </button>
       </div>
+      {confirmingDelete && (
+        <ConfirmDialog
+          label={`Delete conversation ${title}`}
+          title={`Delete "${title}"?`}
+          confirmLabel="Delete"
+          tone="danger"
+          onCancel={() => setConfirmingDelete(false)}
+          onConfirm={() => {
+            setConfirmingDelete(false);
+            onDelete();
+          }}
+        >
+          This permanently deletes the conversation and its history. This cannot be undone.
+        </ConfirmDialog>
+      )}
       {conversation && (
         <div className="mt-1 flex items-center gap-1.5 text-small text-muted">
           <span

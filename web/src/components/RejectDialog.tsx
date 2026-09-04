@@ -3,7 +3,7 @@ import { api } from '../api';
 import { toastSuccess } from '../toast';
 import { useLiveEffect } from '../useLiveEffect';
 import { Modal } from './Modal';
-import { btnPrimary, btnQuietDestructive, field, panelTitle, labelType } from '../ui';
+import { btnGhost, btnPrimary, btnQuietDestructive, field, panelTitle, labelType } from '../ui';
 import { taskLabel } from '../id-format.js';
 
 /** Reject with guidance: the guidance becomes the
@@ -83,6 +83,9 @@ export function RejectDialog({
         />
         {error && <p className="mb-3 text-fail">{error}</p>}
         <div className="flex justify-end gap-2">
+          <button type="button" className={`${btnGhost} px-3 py-1.5`} onClick={onClose} disabled={busy}>
+            Cancel
+          </button>
           <button
             type="button"
             onClick={() => submit(false)}
