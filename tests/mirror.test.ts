@@ -285,6 +285,24 @@ describe('mirrorScan upsert', () => {
     expect(reopened.state).toBe('ready');
   });
 
+  it('a pre-close poll snapshot does not reopen a just-merged Task; a genuinely later reopen still does (issue #484)', async () => {
+    const [task] = await mscan([ticket({ number: 484, labels: ['ready-for-agent'] })]);
+    await tasks.setState(task!.id, 'done');
+    const closedAt = (await tasks.get(task!.id)).updatedAt;
+
+    const stale = await tasks.upsertMirrored(
+      toMirrorInput(ticket({ number: 484, labels: ['ready-for-agent'] }), true, closedAt - 1000),
+      wsId,
+    );
+    expect(stale.state).toBe('done');
+
+    const fresh = await tasks.upsertMirrored(
+      toMirrorInput(ticket({ number: 484, labels: ['ready-for-agent'] }), true, closedAt + 1000),
+      wsId,
+    );
+    expect(fresh.state).toBe('ready');
+  });
+
   it('reconcile never interrupts a running Run (nothing cascades)', async () => {
     const [, dependent] = await mscan([
       ticket({ number: 1 }),
