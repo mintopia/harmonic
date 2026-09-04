@@ -36,7 +36,7 @@ import { formatCost } from '../cost';
 import { ConfirmDialog } from './ConfirmDialog';
 import { ConversationList } from './ConversationList';
 import { EventStream } from './EventStream';
-import { ModelCombobox } from './ModelCombobox';
+import { DiscoveryModelPicker } from './DiscoveryModelPicker.js';
 import { PathTail } from './PathTail';
 import { Icon } from './Icon';
 import { useConversationDetail } from './useConversationDetail';
@@ -362,7 +362,7 @@ function Composer({
             <label className={fieldLabel} htmlFor="conv-model">
               Model
             </label>
-            <ModelCombobox id="conv-model" value={model} onChange={setModel} options={models} />
+            <DiscoveryModelPicker id="conv-model" harness={harness} value={model} onChange={setModel} options={models} />
           </div>
         </div>
       )}
