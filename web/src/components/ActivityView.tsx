@@ -41,15 +41,6 @@ import {
   type ActivityTypeFilter,
 } from '../activity-model';
 import { activityRowActions } from '../activity-actions-model';
-import {
-  addPendingPermission,
-  removePendingForConversation,
-  removePendingPermission,
-  resolvePendingPermissionFromEvent,
-  NO_PENDING_PERMISSIONS,
-  type PendingPermission,
-  type PendingPermissions,
-} from '../conversation-permissions-model';
 import { computeContextUsage, formatContextUsage } from '../conversation-telemetry-model';
 import { ProcessDrillIn, hasProcessTree } from './ProcessDrillIn';
 import { issueRef, taskLabel } from '../id-format.js';
@@ -173,14 +164,10 @@ function StopButton({
 
 function RowActions({
   process,
-  pending,
-  onAnswered,
 }: {
   process: ActivityProcess;
-  pending?: PendingPermission | undefined;
-  onAnswered: (reqId: string) => void;
 }) {
-  const { resolve, ticketUrl, stop, stopDemoted } = activityRowActions(process, pending);
+  const { resolve, ticketUrl, stop, stopDemoted } = activityRowActions(process);
   const fail = (p: Promise<unknown>) => {
     p.catch(toastError);
   };
@@ -194,9 +181,6 @@ function RowActions({
     }
   };
 
-  const answer = (p: PendingPermission, optionId: string) =>
-    fail(api.answerPermission(p.conversationId, p.reqId, optionId).then(() => onAnswered(p.reqId)));
-
   return (
     <div role="cell" className="flex items-center justify-end gap-3">
       {ticketUrl && (
@@ -209,26 +193,6 @@ function RowActions({
         >
           {process.trackerRef != null ? issueRef(process.trackerRef) : 'Ticket'} ↗
         </a>
-      )}
-      {resolve?.kind === 'permission' && (
-        <>
-          {resolve.grantOptionId && (
-            <button
-              onClick={() => answer(resolve.pending, resolve.grantOptionId!)}
-              className={`${touchTarget} text-small font-semibold text-tool transition-opacity duration-150 hover:opacity-80`}
-            >
-              Grant
-            </button>
-          )}
-          {resolve.denyOptionId && (
-            <button
-              onClick={() => answer(resolve.pending, resolve.denyOptionId!)}
-              className={`${touchTarget} text-small ${btnQuietDestructive}`}
-            >
-              Deny
-            </button>
-          )}
-        </>
       )}
       {resolve?.kind === 'escalated' && (
         <a
@@ -264,8 +228,6 @@ function ExpandToggle({ expandable, expanded, onToggle }: { expandable: boolean;
 const ProcessRow = memo(function ProcessRow({
   process,
   now,
-  pending,
-  onAnswered,
   expandable,
   expanded,
   rowKey,
@@ -273,8 +235,6 @@ const ProcessRow = memo(function ProcessRow({
 }: {
   process: ActivityProcess;
   now: number;
-  pending?: PendingPermission | undefined;
-  onAnswered: (reqId: string) => void;
   expandable: boolean;
   expanded: boolean;
   rowKey: string;
@@ -334,7 +294,7 @@ const ProcessRow = memo(function ProcessRow({
         {fmtElapsed(elapsedMs(process, now))}
       </div>
 
-      <RowActions process={process} pending={pending} onAnswered={onAnswered} />
+      <RowActions process={process} />
     </div>
   );
 });
@@ -351,8 +311,6 @@ function Stat({ label, value, tone = 'text-ink' }: { label: string; value: strin
 export function ActivityView({ config }: { config: AppConfig | null }) {
   const [processes, setProcesses] = useState<ActivityProcess[] | null>(null);
   const [now, setNow] = useState(() => Date.now());
-  const [pending, setPending] = useState<PendingPermissions>(NO_PENDING_PERMISSIONS);
-  const answered = useCallback((reqId: string) => setPending((current) => removePendingPermission(current, reqId)), []);
   const [filter, setFilter] = useState<ActivityFilter>(NO_ACTIVITY_FILTER);
   const [sort, setSort] = useState<ActivitySort>('attention');
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(() => new Set());
@@ -386,11 +344,6 @@ export function ActivityView({ config }: { config: AppConfig | null }) {
       } else if (msg.type === 'conversation_changed' && msg.conversation.state === 'ended') {
         const endedId = msg.conversation.id;
         setProcesses((prev) => prev?.filter((p) => !(p.type === 'chat' && p.conversationId === endedId)) ?? prev);
-        setPending((current) => removePendingForConversation(current, endedId));
-      } else if (msg.type === 'permission_request') {
-        setPending((current) => addPendingPermission(current, msg));
-      } else if (msg.type === 'conversation_event') {
-        setPending((current) => resolvePendingPermissionFromEvent(current, msg.event));
       }
     }, load);
     return () => {
@@ -523,12 +476,6 @@ export function ActivityView({ config }: { config: AppConfig | null }) {
                         <ProcessRow
                           process={p}
                           now={now}
-                          pending={
-                            p.type === 'chat'
-                              ? Object.values(pending).find((pp) => pp.conversationId === p.conversationId)
-                              : undefined
-                          }
-                          onAnswered={answered}
                           expandable={expandable}
                           expanded={expanded}
                           rowKey={key}
