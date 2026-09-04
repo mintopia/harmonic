@@ -36,6 +36,10 @@ describe('scheduled jobs read model (issue #302)', () => {
     expect(scheduledJobScope(job())).toBe('Global');
     expect(scheduledJobScope(job({ workspaceId: 2 }))).toBe('Workspace');
     expect(formatScheduledJobDuration(1_500)).toBe('1.5s');
+    expect(formatScheduledJobDuration(300_000)).toBe('5m');
+    expect(formatScheduledJobDuration(1_800_000)).toBe('30m');
+    expect(formatScheduledJobDuration(86_400_000)).toBe('1d');
+    expect(formatScheduledJobDuration(90_000)).toBe('90s');
     expect(formatScheduledJobLastRun(1_000, 62_000)).toBe('1m ago');
     expect(formatScheduledJobNextRun(122_000, 62_000)).toBe('in 1m');
     expect(formatScheduledJobNextRun(null, 62_000)).toBeNull();

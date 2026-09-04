@@ -80,7 +80,7 @@ describe('OperationsPage', () => {
     for (const header of ['Name', 'Cadence', 'Next run', 'Result']) {
       expect(html).toContain(`>${header}<`);
     }
-    expect(html).toContain('60s');
+    expect(html).toContain('1m');
     expect(html).toContain('—');
     expect(html).toContain('Error');
     expect(html).not.toContain('Scope');

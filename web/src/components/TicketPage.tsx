@@ -41,12 +41,8 @@ import { Fact } from './Fact';
 
 const sectionCaps = 'text-label font-bold uppercase tracking-[0.1em] text-faint';
 
-const STATE_LABEL: Record<string, string> = {
-  escalated: 'awaiting review',
-};
-
 function humanState(state: string): string {
-  return STATE_LABEL[state] ?? state.replace(/-/g, ' ');
+  return state.replace(/-/g, ' ');
 }
 
 function StatePill({ state }: { state: string }) {

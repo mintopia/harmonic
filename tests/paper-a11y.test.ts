@@ -12,7 +12,7 @@ describe('Paper accessibility contract (issue #266)', () => {
 
     expect(app).toContain('advanceReviewAnnouncements');
     expect(board).toContain("aria-live={attn ? 'polite' : undefined}");
-    expect(toasts).toContain('aria-live="assertive"');
+    expect(toasts).toContain("aria-live={success ? 'polite' : 'assertive'}");
   });
 
   it('keeps state dots named and compact controls touchable', () => {

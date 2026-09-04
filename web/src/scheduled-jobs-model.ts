@@ -62,6 +62,9 @@ export function formatScheduledJobDuration(ms: number | null): string | null {
   if (ms === null) return null;
   if (ms < 1_000) return `${ms}ms`;
   const seconds = ms / 1_000;
+  if (seconds % 86_400 === 0) return `${seconds / 86_400}d`;
+  if (seconds % 3_600 === 0) return `${seconds / 3_600}h`;
+  if (seconds % 60 === 0) return `${seconds / 60}m`;
   return `${seconds % 1 === 0 ? seconds : seconds.toFixed(1)}s`;
 }
 

@@ -207,6 +207,8 @@ export const boardEpic = {
   integration: { branch: 'epic/421', exists: true, tip: 'a1b2c3d' },
   verification: { status: 'pending' },
   integrate: { inFlight: false, held: null },
+  mergeSteps: [],
+  dependsOn: [],
   foldedCount: 2,
   memberCount: 8,
 } as any;
@@ -254,6 +256,8 @@ export const doneEpic = {
   integration: { branch: 'epic/422', exists: true, tip: 'd4e5f6a' },
   verification: { status: 'pending' },
   integrate: { inFlight: true, held: null },
+  mergeSteps: [],
+  dependsOn: [],
   foldedCount: 3,
   memberCount: 3,
 } as any;
@@ -273,6 +277,10 @@ export const epic = {
   integration: { branch: 'epic/166', exists: true, tip: 'a1b2c3d' },
   verification: { status: 'pass' },
   integrate: { inFlight: false, held: 'Whole-Epic verification failed on the last attempt — a command check regressed.' },
+  mergeSteps: [],
+  dependsOn: [],
+  createdAt: E0 - 3 * 24 * 3600_000,
+  updatedAt: E0 + emin(230),
   foldedCount: 2,
   memberCount: 4,
 } as any;
