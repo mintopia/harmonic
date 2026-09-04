@@ -41,7 +41,7 @@ export function toMirrorInput(ticket: Ticket, trackerCanClose = true, observedAt
     closed: ticket.state === 'closed',
     trackerCanClose,
     facts: trackerFacts(ticket),
-    observedAt,
+    ...(observedAt !== undefined ? { observedAt } : {}),
   };
 }
 
