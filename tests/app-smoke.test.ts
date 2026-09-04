@@ -3,25 +3,18 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../web/src/App.js';
-import type { AppConfig, Conversation, Workspace } from '../web/src/types.js';
+import type { AppConfig, Workspace } from '../web/src/types.js';
 
 class IdleWebSocket {
   static OPEN = 1;
-  static latest: IdleWebSocket | null = null;
   readyState = 0;
   onopen: (() => void) | null = null;
   onmessage: ((event: MessageEvent) => void) | null = null;
   onclose: (() => void) | null = null;
 
-  constructor(_url: string) {
-    IdleWebSocket.latest = this;
-  }
+  constructor(_url: string) {}
 
   close() {}
-
-  emit(message: unknown) {
-    this.onmessage?.(new MessageEvent('message', { data: JSON.stringify(message) }));
-  }
 }
 
 function makeConfig(): AppConfig {
@@ -88,34 +81,7 @@ function makeWorkspace(overrides: Partial<Workspace> = {}): Workspace {
   };
 }
 
-function makeConversation(overrides: Partial<Conversation> = {}): Conversation {
-  return {
-    id: 12,
-    title: 'Fix the deployment',
-    workspaceId: 1,
-    harness: 'claude',
-    model: 'claude-sonnet-4-6',
-    workingDir: '/tmp/ws1',
-    state: 'active',
-    sessionId: 'session-12',
-    createdAt: 0,
-    updatedAt: 0,
-    endedAt: null,
-    usage: null,
-    cost: null,
-    contextTokens: null,
-    contextWindow: null,
-    cacheWarmSeconds: null,
-    ...overrides,
-  };
-}
-
-function stubFetch(opts: {
-  authenticated: boolean;
-  passwordConfigured: boolean;
-  workspaces?: Workspace[];
-  conversation?: Conversation;
-}) {
+function stubFetch(opts: { authenticated: boolean; passwordConfigured: boolean; workspaces?: Workspace[] }) {
   const workspaces = opts.workspaces ?? [];
   vi.stubGlobal('fetch', async (input: string | URL | Request) => {
     const path = String(input instanceof Request ? input.url : input);
@@ -124,12 +90,6 @@ function stubFetch(opts: {
     }
     if (path === '/api/config') return new Response(JSON.stringify(makeConfig()));
     if (path === '/api/workspaces') return new Response(JSON.stringify({ workspaces, total: workspaces.length }));
-    if (path.startsWith('/api/conversations?')) {
-      const conversations = opts.conversation ? [opts.conversation] : [];
-      return new Response(JSON.stringify({ conversations, total: conversations.length }));
-    }
-    if (path === '/api/conversations/12') return new Response(JSON.stringify(opts.conversation ?? makeConversation()));
-    if (path === '/api/conversations/12/events') return new Response(JSON.stringify({ events: [] }));
     if (path.startsWith('/api/tasks')) return new Response(JSON.stringify({ tasks: [], total: 0 }));
     if (path.includes('/epics')) return new Response(JSON.stringify({ epics: [], total: 0 }));
     if (path.startsWith('/api/stats')) return new Response(JSON.stringify({ cost: null }));
@@ -144,7 +104,6 @@ function stubMatchMedia() {
     addEventListener() {},
     removeEventListener() {},
   }));
-  Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value() {} });
 }
 
 let root: Root | null = null;
@@ -166,12 +125,7 @@ async function flush() {
   });
 }
 
-async function renderApp(opts: {
-  authenticated: boolean;
-  passwordConfigured: boolean;
-  workspaces?: Workspace[];
-  conversation?: Conversation;
-}) {
+async function renderApp(opts: { authenticated: boolean; passwordConfigured: boolean; workspaces?: Workspace[] }) {
   stubMatchMedia();
   vi.stubGlobal('WebSocket', IdleWebSocket);
   stubFetch(opts);
@@ -224,57 +178,5 @@ describe('App smoke (issue #452)', () => {
     );
     expect(themeButton).toBeDefined();
     expect(el.querySelector('button[aria-label="Settings"]')).not.toBeNull();
-  });
-
-  it('shows and clears the global permission alert outside Activity', async () => {
-    const el = await renderApp({
-      authenticated: true,
-      passwordConfigured: true,
-      workspaces: [makeWorkspace()],
-      conversation: makeConversation(),
-    });
-
-    await act(async () => {
-      IdleWebSocket.latest?.emit({
-        type: 'permission_request',
-        conversationId: 12,
-        reqId: 'request-12',
-        request: {
-          sessionId: 'session-12',
-          toolCall: { title: 'Run the deployment', kind: 'execute' },
-          options: [{ optionId: 'allow', name: 'Allow once', kind: 'allow_once' }],
-        },
-      });
-    });
-    await flush();
-
-    expect(el.textContent).toContain('Fix the deployment needs your permission');
-    const answerButton = el.querySelector<HTMLButtonElement>('button[aria-label="Open conversation Fix the deployment"]');
-    expect(answerButton).not.toBeNull();
-
-    await act(async () => answerButton?.click());
-    await flush();
-
-    expect(el.querySelector('[role="dialog"][aria-label="Conversation"]')).not.toBeNull();
-    expect(el.textContent).toContain('Fix the deployment');
-    expect([...el.querySelectorAll('button')].some((button) => button.textContent === 'Allow once')).toBe(true);
-
-    await act(async () => {
-      IdleWebSocket.latest?.emit({
-        type: 'conversation_event',
-        event: {
-          id: 1,
-          conversationId: 12,
-          seq: 1,
-          ts: 1,
-          type: 'permission_request',
-          payload: { reqId: 'request-12' },
-        },
-      });
-    });
-    await flush();
-
-    expect(el.textContent).not.toContain('Fix the deployment needs your permission');
-    expect([...el.querySelectorAll('button')].some((button) => button.textContent === 'Allow once')).toBe(false);
   });
 });

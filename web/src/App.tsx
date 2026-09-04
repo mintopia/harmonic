@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { api } from './api';
 import { formatCost } from './cost';
-import type { AppConfig, Conversation, Cost, Task, Workspace } from './types';
+import type { AppConfig, Cost, Task, Workspace } from './types';
 import type { Epic } from './epic-model';
 import { Board } from './components/Board';
 import { HeaderStatusBar } from './components/HeaderStatusBar';
@@ -56,12 +56,6 @@ import {
   EMPTY_REVIEW_ANNOUNCEMENT_CURSOR,
   type ReviewAnnouncementCursor,
 } from './review-announce-model';
-import {
-  removePendingForConversation,
-  resolvePendingPermissionFromEvent,
-  type PendingPermission,
-} from './conversation-permissions-model';
-import { conversationDisplayTitle } from './conversation-list-model';
 
 const GraphView = lazy(() => import('./components/GraphView').then((m) => ({ default: m.GraphView })));
 
@@ -106,10 +100,6 @@ function useRoute(): [Route, (next: Route, opts?: { replace?: boolean }) => void
 }
 
 const BOARD_PAGE = 100;
-interface PendingPermissionAlert {
-  permission: PendingPermission;
-  conversationTitle: string;
-}
 async function fetchOpenTasks(workspaceId: number): Promise<Task[]> {
   const all: Task[] = [];
   for (let offset = 0; ; offset += BOARD_PAGE) {
@@ -200,8 +190,6 @@ export function App() {
     loadDismissed(localStorage, ESCALATION_HINT_DISMISSED_KEY),
   );
   const [refreshingTracker, setRefreshingTracker] = useState(false);
-  const [pendingPermissionAlerts, setPendingPermissionAlerts] = useState<PendingPermissionAlert[]>([]);
-  const [conversationToOpen, setConversationToOpen] = useState<number | null>(null);
 
   useEffect(() => {
     applyTheme(document.documentElement, theme);
@@ -294,55 +282,6 @@ export function App() {
       }
       if (msg.type === 'epic_changed' && msg.workspaceId === activeWorkspaceId) {
         debouncedRefreshEpics();
-      }
-      if (msg.type === 'permission_request') {
-        setPendingPermissionAlerts((current) => {
-          const permission: PendingPermission = {
-            reqId: msg.reqId,
-            conversationId: msg.conversationId,
-            request: msg.request,
-          };
-          const existing = current.findIndex(({ permission }) => permission.reqId === msg.reqId);
-          if (existing === -1) return [...current, { permission, conversationTitle: 'Conversation' }];
-          const next = current.slice();
-          const previous = next[existing];
-          if (!previous) return current;
-          next[existing] = { ...previous, permission };
-          return next;
-        });
-        api.conversation(msg.conversationId).then(
-          (conversation) =>
-            setPendingPermissionAlerts((current) =>
-              current.map((alert) =>
-                alert.permission.conversationId === conversation.id
-                  ? { ...alert, conversationTitle: conversationDisplayTitle(conversation.title) }
-                  : alert,
-              ),
-            ),
-          () => {},
-        );
-      }
-      if (msg.type === 'conversation_event') {
-        setPendingPermissionAlerts((current) => {
-          const pending = Object.fromEntries(current.map(({ permission }) => [permission.reqId, permission]));
-          const resolved = resolvePendingPermissionFromEvent(pending, msg.event);
-          return current.filter(({ permission }) => resolved[permission.reqId] !== undefined);
-        });
-      }
-      if (msg.type === 'conversation_changed') {
-        const conversation: Conversation = msg.conversation;
-        setPendingPermissionAlerts((current) => {
-          if (conversation.state === 'ended') {
-            const pending = Object.fromEntries(current.map(({ permission }) => [permission.reqId, permission]));
-            const remaining = removePendingForConversation(pending, conversation.id);
-            return current.filter(({ permission }) => remaining[permission.reqId] !== undefined);
-          }
-          return current.map((alert) =>
-            alert.permission.conversationId === conversation.id
-              ? { ...alert, conversationTitle: conversationDisplayTitle(conversation.title) }
-              : alert,
-          );
-        });
       }
       if (msg.type === 'task_removed') {
         setTasks((current) => (current ?? []).filter((t) => t.id !== msg.id));
@@ -597,31 +536,6 @@ export function App() {
 
         <Toaster />
 
-        {pendingPermissionAlerts.length > 0 && (
-          <div
-            role="alert"
-            className="shrink-0 border-b border-await bg-await-tint px-6 py-2.5 text-small"
-          >
-            {pendingPermissionAlerts.map(({ permission, conversationTitle }) => (
-              <div key={permission.reqId} className="flex items-center gap-3 py-0.5">
-                <span aria-hidden="true" className="size-2 shrink-0 rounded-full bg-await-dot" />
-                <p className="min-w-0 flex-1 text-ink">
-                  <span className="font-semibold">{conversationTitle} needs your permission</span>
-                  {permission.request.toolCall?.title && <> to {permission.request.toolCall.title}</>}
-                </p>
-                <button
-                  type="button"
-                  aria-label={`Open conversation ${conversationTitle}`}
-                  className={`${btnQuiet} shrink-0 text-await hover:text-ink`}
-                  onClick={() => setConversationToOpen(permission.conversationId)}
-                >
-                  Answer →
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-
         <div className="relative min-h-0 flex-1">
           {route.epic !== null && activeWorkspaceId !== null ? (
             <EpicPage
@@ -788,11 +702,6 @@ export function App() {
             <ConversationLauncher
               config={config}
               workspace={workspaces.find((w) => w.id === activeWorkspaceId) ?? null}
-              openConversationId={conversationToOpen}
-              pendingPermission={
-                pendingPermissionAlerts.find(({ permission }) => permission.conversationId === conversationToOpen)?.permission ?? null
-              }
-              onConversationOpened={() => setConversationToOpen(null)}
             />
           )}
         </div>

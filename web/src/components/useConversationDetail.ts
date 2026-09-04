@@ -20,19 +20,9 @@ export function useConversationDetail(
     removeConversationFromList: (id: number) => void;
     openConversation: (id: number) => void;
     openList: () => void;
-    pendingPermission: PendingPermission | null;
-    clearPendingPermission: () => void;
   },
 ) {
-  const {
-    workspaceId,
-    upsertConversationInList,
-    removeConversationFromList,
-    openConversation,
-    openList,
-    pendingPermission,
-    clearPendingPermission,
-  } = options;
+  const { workspaceId, upsertConversationInList, removeConversationFromList, openConversation, openList } = options;
 
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [events, setEvents] = useState<ConversationEvent[]>([]);
@@ -48,11 +38,7 @@ export function useConversationDetail(
     const id = focusedId;
     setConversation(null);
     setEvents([]);
-    setPending(
-      pendingPermission?.conversationId === id
-        ? { [pendingPermission.reqId]: pendingPermission }
-        : {},
-    );
+    setPending({});
     const load = () => {
       api.conversation(id).then((c) => {
         if (!live()) return;
@@ -68,16 +54,6 @@ export function useConversationDetail(
           current.some((e) => e.id === msg.event.id) ? current : [...current, msg.event],
         );
         setPending((current) => resolvePendingPermissionFromEvent(current, msg.event));
-        const payload = msg.event.payload;
-        if (
-          msg.event.type === 'permission_request' &&
-          payload !== null &&
-          typeof payload === 'object' &&
-          'reqId' in payload &&
-          payload.reqId === pendingPermission?.reqId
-        ) {
-          clearPendingPermission();
-        }
       }
       if (msg.type === 'permission_request' && msg.conversationId === id) {
         setPending((current) => addPendingPermission(current, msg));
@@ -85,16 +61,13 @@ export function useConversationDetail(
       if (msg.type === 'conversation_changed' && msg.conversation.id === id) {
         setConversation(msg.conversation);
         upsertConversationInList(msg.conversation);
-        if (msg.conversation.state === 'ended') {
-          setPending({});
-          clearPendingPermission();
-        }
+        if (msg.conversation.state === 'ended') setPending({});
       }
     }, load);
     return () => {
       unsubscribe();
     };
-  }, [focusedId, upsertConversationInList, pendingPermission, clearPendingPermission]);
+  }, [focusedId, upsertConversationInList]);
 
   const send = async (fields: { harness: string; model: string }, text: string) => {
     let id = focusedId;
@@ -148,7 +121,6 @@ export function useConversationDetail(
     try {
       await api.answerPermission(p.conversationId, p.reqId, optionId, remember);
       setPending((current) => removePendingPermission(current, p.reqId));
-      clearPendingPermission();
     } catch (e) {
       toastError(e);
     }

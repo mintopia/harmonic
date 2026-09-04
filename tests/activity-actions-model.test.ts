@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { activityRowActions } from '../web/src/activity-actions-model.js';
+import { activityRowActions, permissionGrantDeny } from '../web/src/activity-actions-model.js';
 import { chooseRejectOptionId } from '../web/src/conversation-permissions-model.js';
+import type { PendingPermission } from '../web/src/conversation-permissions-model.js';
 import type { ActivityProcess, PermissionAcpRequestOption } from '../web/src/types.js';
 
 function proc(over: Partial<ActivityProcess> = {}): ActivityProcess {
@@ -30,6 +31,15 @@ function proc(over: Partial<ActivityProcess> = {}): ActivityProcess {
   };
 }
 
+function pending(options: PermissionAcpRequestOption[], over: Partial<PendingPermission> = {}): PendingPermission {
+  return {
+    reqId: 'req-1',
+    conversationId: 7,
+    request: { sessionId: 's', toolCall: { title: 'Write foo.ts', kind: 'edit' }, options },
+    ...over,
+  };
+}
+
 const ALLOW_ONCE: PermissionAcpRequestOption = { optionId: 'a1', name: 'Allow once', kind: 'allow_once' };
 const ALLOW_ALWAYS: PermissionAcpRequestOption = { optionId: 'a2', name: 'Allow always', kind: 'allow_always' };
 const REJECT_ONCE: PermissionAcpRequestOption = { optionId: 'r1', name: 'Reject', kind: 'reject_once' };
@@ -44,6 +54,17 @@ describe('chooseRejectOptionId', () => {
   });
   it('is null when the request offers no way to reject', () => {
     expect(chooseRejectOptionId([ALLOW_ONCE, ALLOW_ALWAYS])).toBeNull();
+  });
+});
+
+describe('permissionGrantDeny', () => {
+  it('collapses the option list into a canonical Grant and Deny optionId', () => {
+    const gd = permissionGrantDeny(pending([ALLOW_ALWAYS, ALLOW_ONCE, REJECT_ONCE]));
+    expect(gd).toEqual({ grantOptionId: 'a1', denyOptionId: 'r1' });
+  });
+  it('leaves a verb null when the request cannot support it (never fabricates one)', () => {
+    expect(permissionGrantDeny(pending([ALLOW_ONCE]))).toEqual({ grantOptionId: 'a1', denyOptionId: null });
+    expect(permissionGrantDeny(pending([REJECT_ONCE]))).toEqual({ grantOptionId: null, denyOptionId: 'r1' });
   });
 });
 
@@ -68,6 +89,25 @@ describe('activityRowActions', () => {
     expect(a.resolve).toEqual({ kind: 'escalated', taskId: 42 });
     expect(a.stopDemoted).toBe(true);
     expect(a.stop).toEqual({ kind: 'attempt', taskId: 42 });
+  });
+
+  it('a chat blocked on a pending permission resolves via Grant/Deny and demotes Stop', () => {
+    const p = pending([ALLOW_ONCE, REJECT_ONCE], { conversationId: 5 });
+    const a = activityRowActions(proc({ type: 'chat', attemptId: null, taskId: null, conversationId: 5 }), p);
+    expect(a.resolve).toEqual({ kind: 'permission', pending: p, grantOptionId: 'a1', denyOptionId: 'r1' });
+    expect(a.stopDemoted).toBe(true);
+    expect(a.stop).toEqual({ kind: 'chat', conversationId: 5 });
+  });
+
+  it('a pending permission outranks an escalated flag on the same row', () => {
+    const p = pending([ALLOW_ONCE, REJECT_ONCE], { conversationId: 5 });
+    const a = activityRowActions(proc({ type: 'chat', attemptId: null, taskId: null, conversationId: 5, escalated: true }), p);
+    expect(a.resolve?.kind).toBe('permission');
+  });
+
+  it('a Run never takes a permission resolve, even if one is somehow passed (wrong channel)', () => {
+    const a = activityRowActions(proc({ taskId: 42 }), pending([ALLOW_ONCE, REJECT_ONCE]));
+    expect(a.resolve).toBeNull();
   });
 
   it('a malformed row (Run with no Task) has no Stop target rather than a bogus one', () => {

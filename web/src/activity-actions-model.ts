@@ -1,20 +1,34 @@
 // Explicit .js extensions: this module is shared with the node-side test
 // project, whose nodenext resolution requires them (Vite maps .js → .ts).
 import type { ActivityProcess } from './types.js';
+import {
+  chooseAlwaysAllowOptionId,
+  chooseRejectOptionId,
+  type PendingPermission,
+} from './conversation-permissions-model.js';
 
 /**
  * The Activity row's operator actions. Every live row can be
  * stopped, but a bare irreversible Stop is banned (DESIGN.md; the acceptance:
  * "no single misclick kills a run") — the component arms it as a two-step
- * confirm. An escalated row surfaces its resolving action as the primary and
- * demotes Stop. The process's ticket is escalated, so the resolve
+ * confirm. A row that genuinely blocks on the operator surfaces its *resolving*
+ * action as the primary and demotes Stop, so an escalated or permission-blocked
+ * process can be dealt with without leaving Activity:
+ *
+ * - **permission** — a warm Conversation blocked on a pending ACP permission
+ *: Grant / Deny the request in place, wired to the same
+ *   `answerPermission` the conversation panel uses. Grant/Deny collapse the
+ *   request's full option list into two verbs (see `permissionGrantDeny`).
+ * - **escalated** — the process's ticket is escalated: the resolve
  *   is the ticket itself, where the three escalation actions live, so the row
  *   deep-links there (`Resolve →`).
  *
  * The row's ticket deep-link (`ticketUrl`) is orthogonal to the resolve — a
  * passive link to the mirrored issue, shown whenever the process carries one.
  */
-export type ActivityResolve = { kind: 'escalated'; taskId: number };
+export type ActivityResolve =
+  | { kind: 'permission'; pending: PendingPermission; grantOptionId: string | null; denyOptionId: string | null }
+  | { kind: 'escalated'; taskId: number };
 
 /** How Stop ends a process: cancel the Attempt's Task (`cancelForTask` server-side) or end the Conversation. */
 export type ActivityStop =
@@ -33,11 +47,33 @@ export interface ActivityRowActions {
 }
 
 /**
- * The row's action layout, a pure function of the process snapshot. An
- * escalated Attempt needs the operator, otherwise Stop leads alongside any
- * tracker ticket link.
+ * The two verbs the Activity row collapses an ACP permission request into
+ *: one canonical Grant optionId and one canonical Deny optionId.
+ * Either is null when the request offers no way to allow (or reject) at all,
+ * so the component renders only the buttons the request actually supports —
+ * it never fabricates an option the Harness didn't send.
  */
-export function activityRowActions(process: ActivityProcess): ActivityRowActions {
+export function permissionGrantDeny(pending: PendingPermission): {
+  grantOptionId: string | null;
+  denyOptionId: string | null;
+} {
+  return {
+    grantOptionId: chooseAlwaysAllowOptionId(pending.request.options),
+    denyOptionId: chooseRejectOptionId(pending.request.options),
+  };
+}
+
+/**
+ * The row's action layout, a pure function of the process snapshot plus any
+ * pending ACP permission for it (chats only — Attempts don't surface permission
+ * prompts on this channel). Precedence for the primary resolve: a pending
+ * permission (blocked) wins, else an escalated Attempt (needs you); everything
+ * else is an ordinary row (Stop leads, plus the ticket deep-link when present).
+ */
+export function activityRowActions(
+  process: ActivityProcess,
+  pending?: PendingPermission,
+): ActivityRowActions {
   const stop: ActivityStop | null =
     process.type === 'attempt'
       ? process.taskId !== null
@@ -48,7 +84,10 @@ export function activityRowActions(process: ActivityProcess): ActivityRowActions
         : null;
 
   let resolve: ActivityResolve | null = null;
-  if (process.escalated && process.taskId !== null) {
+  if (pending && process.type === 'chat') {
+    const { grantOptionId, denyOptionId } = permissionGrantDeny(pending);
+    resolve = { kind: 'permission', pending, grantOptionId, denyOptionId };
+  } else if (process.escalated && process.taskId !== null) {
     resolve = { kind: 'escalated', taskId: process.taskId };
   }
 
