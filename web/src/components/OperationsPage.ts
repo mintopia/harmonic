@@ -241,7 +241,7 @@ export function OperationsPage({ scheduledJobs, spanTree, tasks, epics, onOpenTa
     ),
     createElement(
       'div',
-      { className: 'grid gap-6 lg:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]' },
+      { className: 'grid gap-6' },
       createElement(
         'section',
         { 'aria-labelledby': 'span-tree-heading', className: 'grid gap-3' },

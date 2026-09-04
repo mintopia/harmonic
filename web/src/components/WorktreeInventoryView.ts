@@ -2,7 +2,7 @@ import { createElement, useCallback, useState } from 'react';
 import { api } from '../api.js';
 import { mergeWorktrees, type WorktreeInventoryEntry, type WorktreeState } from '../worktree-inventory-model.js';
 import { subscribe } from '../ws.js';
-import { btnGhost, btnPrimary, btnQuiet, btnQuietDestructive, card, chip, panelTitle, tableHead } from '../ui.js';
+import { btnGhost, btnPrimary, btnQuiet, btnQuietDestructive, chip, panelTitle, tableHead, tableHeadRow, tableShell } from '../ui.js';
 import { useLiveEffect } from '../useLiveEffect.js';
 import { Modal } from './Modal.js';
 
@@ -66,12 +66,12 @@ export function WorktreesTable({ worktrees, busyId, onOpenTask, onOpenEpic, onCl
   worktrees: WorktreeInventoryEntry[]; busyId: string | null; onOpenTask?: (taskId: number) => void; onOpenEpic?: (epicRef: number) => void;
   onClean: (worktree: WorktreeInventoryEntry) => void; onForceCleanup: (worktree: WorktreeInventoryEntry) => void;
 }) {
-  return createElement('div', { role: 'table', 'aria-label': 'Worktrees', className: `${card} overflow-x-auto` },
+  return createElement('div', { role: 'table', 'aria-label': 'Worktrees', className: tableShell },
     createElement('div', { 'aria-hidden': true, className: `${MIN_W} flex items-center justify-between gap-3 border-b border-hairline px-4 py-3` },
       createElement('span', { className: tableHead }, 'Worktree inventory'),
       createElement('span', { className: 'font-data text-small text-faint' }, 'git worktree list ⋈ database'),
     ),
-    createElement('div', { role: 'rowgroup' }, createElement('div', { role: 'row', className: `${GRID} ${MIN_W} py-2.5 ${tableHead}` }, ...['Worktree', 'Branch', 'Subject', 'State', 'Changes', 'Size', 'Actions'].map((label) => createElement('span', { key: label, role: 'columnheader' }, label)))),
+    createElement('div', { role: 'rowgroup' }, createElement('div', { role: 'row', className: `${GRID} ${MIN_W} ${tableHeadRow}` }, ...['Worktree', 'Branch', 'Subject', 'State', 'Changes', 'Size', 'Actions'].map((label) => createElement('span', { key: label, role: 'columnheader' }, label)))),
     createElement('div', { role: 'rowgroup', className: MIN_W }, worktrees.map((worktree) => createElement(WorktreeRow, { key: worktree.id, worktree, busy: busyId === worktree.id, onOpenTask, onOpenEpic, onClean, onForceCleanup }))),
   );
 }

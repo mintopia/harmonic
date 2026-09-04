@@ -208,7 +208,7 @@ function EndpointPrelude({ endpoint }: { endpoint: ApiReferenceEndpoint }) {
   return (
     <>
       {endpoint.description && (
-        <p className="max-w-[72ch] whitespace-pre-wrap text-muted">{endpoint.description}</p>
+        <p className="whitespace-pre-wrap text-muted">{endpoint.description}</p>
       )}
       <ParamsTable parameters={endpoint.parameters} />
     </>

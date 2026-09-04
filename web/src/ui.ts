@@ -281,6 +281,18 @@ export function laneDot(state: TaskState): string {
  * (DESIGN.md § 4 — never bare ruled rows on the canvas). */
 export const panel = 'overflow-hidden rounded-xl bg-surface shadow-card';
 
+/** A standalone data table's shell — the Tasks table (TableView) is the
+ * reference: panel elevation, clipped radius, and horizontal scroll for a grid
+ * wider than its column. Every top-level table (Tasks, Worktree inventory,
+ * Scheduled jobs) sits in this so their frames can't drift. */
+export const tableShell = `${panel} overflow-x-auto`;
+
+/** The header row on every table: Label-role muted text ({@link tableHead}) plus
+ * the one shared vertical rhythm. Compose with the table's own grid + horizontal
+ * padding so a `<table>` thead, a CSS-grid row, and a `<dl>` strip all read the
+ * same. */
+export const tableHeadRow = `${tableHead} py-2.5`;
+
 /** The Board's top-level section heading — Attention / Running / Pending — and
  * the Standalone sub-group title, one constant so the two can't drift.
  * The colour is the caller's: `text-await` for the Attention section,

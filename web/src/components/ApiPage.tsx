@@ -161,11 +161,11 @@ export function ApiPage() {
           <table className="w-full text-left">
             <thead className={tableHead}>
               <tr>
-                <th className="py-1.5">Name</th>
-                <th>Prefix</th>
-                <th>Scope</th>
-                <th>Last used</th>
-                <th />
+                <th className="py-2.5">Name</th>
+                <th className="py-2.5">Prefix</th>
+                <th className="py-2.5">Scope</th>
+                <th className="py-2.5">Last used</th>
+                <th className="py-2.5" />
               </tr>
             </thead>
             <tbody>

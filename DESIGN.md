@@ -82,10 +82,10 @@ colors:
   running-tint-light: "#F6EBDC"
   running-text-dark: "#DE9A45"
   running-tint-dark: "#3A2C16"
-  done-text-light: "#267356"
-  done-tint-light: "#E1F1EA"
-  done-text-dark: "#37C48E"
-  done-tint-dark: "#12302A"
+  done-text-light: "#127A39"
+  done-tint-light: "#E2F2E6"
+  done-text-dark: "#3ECF7E"
+  done-tint-dark: "#123420"
   on-done-light: "#FFFFFF"
   on-done-dark: "#0E1413"
   failed-text-light: "#AF3C52"
@@ -208,7 +208,7 @@ Each state is a text colour + a dot colour + a tint fill, per theme, rendered as
 - **Working amber** (`#C0722A` / tint `#F6EBDC` · dark `#DE9A45` / tint `#3A2C16`): work in flight — the Attempt loop is executing.
 - **Escalated = indigo** (see the two voices above) — the state that needs you.
 - **Ready = teal** (`#0D7271` / tint `#DDEFEE` · dark `#33BDB4` / tint `#123330`): queued to run, in the ready frontier — the same hue as the action accent, because *ready* is "actionable now."
-- **Done emerald** (`#267356` / tint `#E1F1EA` · dark `#37C48E` / tint `#12302A`): verified, merged. **Distinct green from teal on purpose** — never give *ready* its own separate green (two greens confused the operator; ready is teal, merged is emerald).
+- **Done emerald** (`#127A39` / tint `#E2F2E6` · dark `#3ECF7E` / tint `#123420`): verified, merged. **Distinct green from teal on purpose** — never give *ready* its own separate green (two greens confused the operator; ready is teal, merged is emerald). The emerald sits at hue ~143° vs teal's ~179°: the original `#267356` emerald was only ~22° off the teal and Jess read the *ready* and *done* pills as near-identical, so the hue was pushed a further ~15° toward true green (the ~36° gap now separating them) rather than moving *ready* — *ready* stays welded to the action accent.
 - **Failed rose** (`#AF3C52` / tint `#F9E4E8` · dark `#F0768A` / tint `#3B1D24`): failed, rejected, blocked member, destructive.
 - **Blocked slate** (`#6A7079` / tint `#ECEDEA` · dark `#8A9099` / tint `#282B31`): waiting on a dependency. (Light slate darkened from `#868C95` in the AA retune.)
 - **Tooling = teal** (`= accent`): tool calls, branch/epic refs, harness metadata, the Epic kind badge. Paper folds Deck's separate tooling-cyan into the teal voice.

@@ -9,11 +9,11 @@ import {
   chip,
   displayTitle,
   labelType,
-  panel,
   searchField,
   stateChip,
   stateDot,
-  tableHead,
+  tableHeadRow,
+  tableShell,
   touchOverlay,
 } from '../ui';
 import { toastError } from '../toast';
@@ -278,7 +278,7 @@ export function TableView({
         />
       </div>
 
-      <div className={`${panel} relative overflow-x-auto`} aria-busy={loading} role="table" aria-label="Tasks">
+      <div className={`${tableShell} relative`} aria-busy={loading} role="table" aria-label="Tasks">
         {loading && (
           <div
             aria-hidden="true"
@@ -289,7 +289,7 @@ export function TableView({
         )}
 
         <div role="rowgroup">
-          <div role="row" className={`${GRID} ${tableHead} py-2.5`}>
+          <div role="row" className={`${GRID} ${tableHeadRow}`}>
             <span role="columnheader" className="text-right">
               #
             </span>

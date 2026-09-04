@@ -320,12 +320,12 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
                 <table className="w-full text-left">
                   <thead className={tableHead}>
                     <tr>
-                      <th className="py-1.5">Workspace</th>
-                      <th className="py-1.5 text-right">Cost</th>
-                      <th className="py-1.5 text-right">Tokens in</th>
-                      <th className="py-1.5 text-right">Tokens out</th>
-                      <th className="py-1.5 text-right">Tasks</th>
-                      <th className="py-1.5 text-right">Fail rate</th>
+                      <th className="py-2.5">Workspace</th>
+                      <th className="py-2.5 text-right">Cost</th>
+                      <th className="py-2.5 text-right">Tokens in</th>
+                      <th className="py-2.5 text-right">Tokens out</th>
+                      <th className="py-2.5 text-right">Tasks</th>
+                      <th className="py-2.5 text-right">Fail rate</th>
                     </tr>
                   </thead>
                   <tbody>

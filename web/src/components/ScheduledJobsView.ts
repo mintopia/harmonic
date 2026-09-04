@@ -7,7 +7,7 @@ import {
   type ScheduledJob,
 } from '../scheduled-jobs-model.js';
 import { subscribe } from '../ws.js';
-import { card, labelType } from '../ui.js';
+import { labelType, tableHeadRow, tableShell } from '../ui.js';
 import { useLiveEffect } from '../useLiveEffect.js';
 
 const STRIP = 'grid grid-cols-[minmax(10rem,1.5fr)_minmax(5rem,auto)_minmax(6rem,auto)_minmax(6rem,1fr)] items-center gap-x-4 px-4';
@@ -50,11 +50,11 @@ function ScheduledJobRow({ job, now }: { job: ScheduledJob; now: number }) {
 export function ScheduledJobsTable({ jobs, now }: { jobs: ScheduledJob[]; now: number }) {
   return createElement(
     'div',
-    { className: card },
+    { className: tableShell },
     createElement('div', { className: `border-b border-hairline px-4 py-3 ${labelType} text-muted` }, 'Scheduled jobs'),
     createElement(
       'div',
-      { 'aria-hidden': true, className: `${STRIP} py-2.5 ${labelType} text-muted` },
+      { 'aria-hidden': true, className: `${STRIP} ${tableHeadRow}` },
       ...['Name', 'Cadence', 'Next run', 'Result'].map((label) => createElement('span', { key: label }, label)),
     ),
     createElement('ul', { 'aria-label': 'Scheduled jobs' }, jobs.map((job) => createElement(ScheduledJobRow, { key: job.jobKey, job, now }))),

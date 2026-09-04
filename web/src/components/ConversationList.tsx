@@ -3,7 +3,7 @@ import { conversationDisplayTitle } from '../conversation-list-model';
 import { formatTokens } from '../conversation-telemetry-model';
 import { formatCost } from '../cost';
 import type { Conversation } from '../types';
-import { btnPrimary, btnQuiet, btnQuietDestructive, conversationStateChip, panelTitle, touchTarget } from '../ui';
+import { btnQuiet, btnQuietDestructive, conversationStateChip, panelTitle, touchTarget } from '../ui';
 import { ArmedButton } from './ArmedButton';
 import { EmptyState } from './EmptyState';
 import { Icon } from './Icon';
@@ -91,8 +91,12 @@ export function ConversationList({
       <div className="flex items-center gap-2 border-b border-hairline px-4 py-3">
         <span className={panelTitle}>Conversations</span>
         <div className="flex-1" />
-        <button className={btnPrimary} onClick={onNew}>
-          New conversation
+        <button
+          className="inline-flex min-h-9 items-center gap-1 whitespace-nowrap rounded-md bg-accent px-2.5 py-1 text-small font-semibold text-on-accent transition-colors duration-150 hover:bg-accent-hot"
+          onClick={onNew}
+        >
+          <Icon name="plus" />
+          New
         </button>
         <button
           aria-label={expanded ? 'Collapse to panel' : 'Expand to full view'}
