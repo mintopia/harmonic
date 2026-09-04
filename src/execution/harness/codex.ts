@@ -12,6 +12,7 @@ const num = (v: unknown): number => (typeof v === 'number' ? v : 0);
 interface RolloutScan {
   models: Record<string, ModelUsage>;
   contextTokens: number | null;
+  lastTool: string | null;
   turns: UsageTurn[];
 }
 
@@ -39,6 +40,7 @@ class RolloutAcc implements LineAccumulator {
   readonly models: Record<string, ModelUsage> = {};
   private model: string | null = null;
   private contextTokens: number | null = null;
+  private lastTool: string | null = null;
   private prev = { input: 0, cached: 0, output: 0 };
   private tools: string[] = [];
   private readonly seenToolCalls = new Set<string>();
@@ -81,7 +83,10 @@ class RolloutAcc implements LineAccumulator {
       const id = entry.payload.call_id ?? entry.payload.id;
       if (typeof id !== 'string' || !this.seenToolCalls.has(id)) {
         if (typeof id === 'string') this.seenToolCalls.add(id);
-        this.tools.push(entry.payload.namespace ? `${entry.payload.namespace}.${entry.payload.name}` : entry.payload.name);
+        const namespace = typeof entry.payload.namespace === 'string' ? entry.payload.namespace : null;
+        const tool = namespace ? `${namespace}.${entry.payload.name}` : entry.payload.name;
+        this.tools.push(tool);
+        this.lastTool = tool;
       }
       return;
     }
@@ -126,7 +131,7 @@ class RolloutAcc implements LineAccumulator {
   }
 
   snapshot(): RolloutScan {
-    return { models: this.models, contextTokens: this.contextTokens, turns: this.turns };
+    return { models: this.models, contextTokens: this.contextTokens, lastTool: this.lastTool, turns: this.turns };
   }
 }
 
@@ -167,6 +172,7 @@ function buildRolloutTree(rootId: string, rollouts: Rollout[]): ParsedSession {
     model: dominantModel(rollout.scan.models) ?? 'unknown',
     usage: foldModels(rollout.scan.models),
     contextTokens: rollout.scan.contextTokens,
+    lastTool: rollout.scan.lastTool,
     status: 'active',
     depth,
     toolUseId: null,
@@ -338,7 +344,7 @@ async function findRolloutsYielding(input: { sessionLogDir?: string | undefined;
 }
 
 function emptyScan(): RolloutScan {
-  return { models: {}, contextTokens: null, turns: [] };
+  return { models: {}, contextTokens: null, lastTool: null, turns: [] };
 }
 
 /** Codex's ACP modelId grammar is `<model>[<effort>]`; effort is optional. */

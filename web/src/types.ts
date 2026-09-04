@@ -693,10 +693,9 @@ export interface ProcessNode {
   model: string;
   usage: ModelUsage;
   contextTokens: number | null;
+  lastTool: string | null;
   status: ProcessStatus;
   depth: number;
-  /** For a Subagent, the spawning `Agent`/`Task` tool-use id — the key the
-   * Activity drill-in frames its transcript on; null for the root. */
   toolUseId: string | null;
   children: ProcessNode[];
 }

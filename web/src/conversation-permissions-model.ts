@@ -101,21 +101,3 @@ export function chooseAlwaysAllowOptionId(
   const anyAllow = options.find((o) => o.kind.startsWith('allow_'));
   return anyAllow ? anyAllow.optionId : null;
 }
-
-/**
- * The optionId a bare "Deny" click resolves the request with.
- * Mirrors {@link chooseAlwaysAllowOptionId}: the
- * Activity row collapses the ACP request's full option list into two verbs,
- * so it needs one canonical reject option. Prefers `reject_once` (the
- * least-surprising one-off deny); falls back to any other `reject_*`; returns
- * null for a request that offers no way to reject, so the caller renders no
- * Deny button rather than reaching for an allow option.
- */
-export function chooseRejectOptionId(
-  options: PermissionAcpRequest['options'],
-): string | null {
-  const once = options.find((o) => o.kind === 'reject_once');
-  if (once) return once.optionId;
-  const anyReject = options.find((o) => o.kind.startsWith('reject_'));
-  return anyReject ? anyReject.optionId : null;
-}

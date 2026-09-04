@@ -322,16 +322,16 @@ describe('harness adapters', () => {
     expect(parsed.usage.models['gpt-5-mini']).toMatchObject({ inputTokens: 1000 + (2000 - 1500) });
     expect(parsed.usage.totals?.aiUnits).toBeCloseTo(0.9, 10);
 
-    expect(parsed.tree).toMatchObject({ id: S, depth: 0, model: 'gpt-5-mini', contextTokens: 2000 });
+    expect(parsed.tree).toMatchObject({ id: S, depth: 0, model: 'gpt-5-mini', contextTokens: 2000, lastTool: null });
     expect(parsed.tree.usage).toMatchObject({ inputTokens: 1000 + (2000 - 1500), outputTokens: 300 });
 
     const children = parsed.tree.children;
     expect(children).toHaveLength(2);
     const sub = children.find((c) => c.id === 'tool_sub')!;
-    expect(sub).toMatchObject({ name: 'rubber-duck', model: 'claude-haiku-4.5', status: 'inactive', depth: 1 });
+    expect(sub).toMatchObject({ name: 'rubber-duck', model: 'claude-haiku-4.5', status: 'inactive', depth: 1, lastTool: null });
     expect(sub.usage).toMatchObject({ inputTokens: 500, outputTokens: 50 });
     const pending = children.find((c) => c.id === 'tool_pending')!;
-    expect(pending).toMatchObject({ name: 'laravel-specialist', status: 'active' });
+    expect(pending).toMatchObject({ name: 'laravel-specialist', status: 'active', lastTool: null });
     expect(pending.usage).toMatchObject({ inputTokens: 0, outputTokens: 0 });
 
     expect(adapterFor('copilot').usage!.parse!({ cwd: '/w', sessionId: 'nope', sessionLogDir: home })).toBeNull();
@@ -452,6 +452,7 @@ describe('harness adapters', () => {
           },
         },
       }),
+      JSON.stringify({ type: 'response_item', payload: { type: 'custom_tool_call', call_id: 'call_1', name: 'exec' } }),
       JSON.stringify({ type: 'turn_context', payload: { model: 'gpt-5.4-mini', effort: 'low' } }),
       JSON.stringify({
         type: 'event_msg',
@@ -464,6 +465,8 @@ describe('harness adapters', () => {
           },
         },
       }),
+      JSON.stringify({ type: 'response_item', payload: { type: 'function_call', id: 'call_2', namespace: 'functions', name: 'search' } }),
+      JSON.stringify({ type: 'response_item', payload: { type: 'function_call', id: 'call_3', namespace: { invalid: true }, name: 'read' } }),
     ];
     const root = mkdtempSync(join(tmpdir(), 'codex-parse-'));
     const day = join(root, '2026', '07', '14');
@@ -475,7 +478,7 @@ describe('harness adapters', () => {
       'gpt-5.6-sol': { inputTokens: 6189, outputTokens: 5, cacheReadTokens: 9984, cacheWriteTokens: 0 },
       'gpt-5.4-mini': { inputTokens: 10046, outputTokens: 21, cacheReadTokens: 5504, cacheWriteTokens: 0 },
     });
-    expect(parsed.tree).toMatchObject({ id: 's1', depth: 0, model: 'gpt-5.6-sol', contextTokens: 15550, children: [] });
+    expect(parsed.tree).toMatchObject({ id: 's1', depth: 0, model: 'gpt-5.6-sol', contextTokens: 15550, lastTool: 'read', children: [] });
     expect(parsed.tree.usage).toEqual({ inputTokens: 16235, outputTokens: 26, cacheReadTokens: 15488, cacheWriteTokens: 0 });
     expect(adapterFor('codex').usage!.parse!({ sessionLogDir: root, cwd: '/w', sessionId: 'missing' })).toBeNull();
   });
@@ -528,23 +531,26 @@ describe('harness adapters', () => {
     const subs = join(dir, S, 'subagents');
     mkdirSync(join(subs, 'workflows', 'wf_x'), { recursive: true });
 
-    const assistant = (model: string, u: Record<string, number>, id = model) =>
-      JSON.stringify({ type: 'assistant', message: { id, model, usage: u } });
+    const assistant = (model: string, u: Record<string, number>, id = model, lastTool?: string) =>
+      JSON.stringify({
+        type: 'assistant',
+        message: { id, model, usage: u, ...(lastTool ? { content: [{ type: 'tool_use', id: `toolu_${id}`, name: lastTool }] } : {}) },
+      });
     const toolResult = (toolUseId: string) =>
       JSON.stringify({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: toolUseId }] } });
 
     writeFileSync(
       join(dir, `${S}.jsonl`),
       [
-        assistant('claude-opus-4-8', { input_tokens: 100, output_tokens: 10, cache_read_input_tokens: 5, cache_creation_input_tokens: 2 }),
+        assistant('claude-opus-4-8', { input_tokens: 100, output_tokens: 10, cache_read_input_tokens: 5, cache_creation_input_tokens: 2 }, 'root', 'Read'),
         toolResult('toolu_sub1'),
       ].join('\n'),
     );
-    writeFileSync(join(subs, 'agent-a1.jsonl'), assistant('claude-opus-4-8', { input_tokens: 50, output_tokens: 5 }));
+    writeFileSync(join(subs, 'agent-a1.jsonl'), assistant('claude-opus-4-8', { input_tokens: 50, output_tokens: 5 }, 'a1', 'Write'));
     writeFileSync(join(subs, 'agent-a1.meta.json'), JSON.stringify({ agentType: 'general-purpose', toolUseId: 'toolu_sub1', spawnDepth: 1 }));
-    writeFileSync(join(subs, 'agent-a2.jsonl'), assistant('claude-haiku-4-5', { input_tokens: 20, output_tokens: 2 }));
+    writeFileSync(join(subs, 'agent-a2.jsonl'), assistant('claude-haiku-4-5', { input_tokens: 20, output_tokens: 2 }, 'a2', 'Bash'));
     writeFileSync(join(subs, 'agent-a2.meta.json'), JSON.stringify({ agentType: 'Explore', toolUseId: 'toolu_sub2', parentAgentId: 'a1', spawnDepth: 2 }));
-    writeFileSync(join(subs, 'workflows', 'wf_x', 'agent-a3.jsonl'), assistant('claude-opus-4-8', { input_tokens: 30, output_tokens: 3 }));
+    writeFileSync(join(subs, 'workflows', 'wf_x', 'agent-a3.jsonl'), assistant('claude-opus-4-8', { input_tokens: 30, output_tokens: 3 }, 'a3', 'Grep'));
     writeFileSync(join(subs, 'workflows', 'wf_x', 'agent-a3.meta.json'), JSON.stringify({ agentType: 'workflow-subagent', spawnDepth: 1 }));
     writeFileSync(join(subs, 'agent-a4.meta.json'), JSON.stringify({ agentType: 'code-reviewer', toolUseId: 'toolu_sub4', spawnDepth: 1 }));
 
@@ -553,17 +559,17 @@ describe('harness adapters', () => {
     expect(parsed.usage.models['claude-opus-4-8']).toEqual({ inputTokens: 100 + 50 + 30, outputTokens: 10 + 5 + 3, cacheReadTokens: 5, cacheWriteTokens: 2 });
     expect(parsed.usage.models['claude-haiku-4-5']).toEqual({ inputTokens: 20, outputTokens: 2, cacheReadTokens: 0, cacheWriteTokens: 0 });
 
-    expect(parsed.tree).toMatchObject({ id: S, depth: 0, model: 'claude-opus-4-8', contextTokens: 107 });
+    expect(parsed.tree).toMatchObject({ id: S, depth: 0, model: 'claude-opus-4-8', contextTokens: 107, lastTool: 'Read' });
     expect(parsed.tree.usage).toEqual({ inputTokens: 100, outputTokens: 10, cacheReadTokens: 5, cacheWriteTokens: 2 });
 
     const byId = Object.fromEntries(parsed.tree.children.map((c) => [c.id, c]));
     expect(Object.keys(byId).sort()).toEqual(['a1', 'a3', 'a4']);
-    expect(byId.a1).toMatchObject({ name: 'general-purpose', status: 'inactive', depth: 1 });
-    expect(byId.a3).toMatchObject({ name: 'workflow-subagent', status: 'active' });
-    expect(byId.a4).toMatchObject({ status: 'active' });
+    expect(byId.a1).toMatchObject({ name: 'general-purpose', status: 'inactive', depth: 1, lastTool: 'Write' });
+    expect(byId.a3).toMatchObject({ name: 'workflow-subagent', status: 'active', lastTool: 'Grep' });
+    expect(byId.a4).toMatchObject({ status: 'active', lastTool: null });
     expect(byId.a4!.usage).toEqual({ inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 });
     expect(byId.a1!.children).toHaveLength(1);
-    expect(byId.a1!.children[0]).toMatchObject({ id: 'a2', name: 'Explore', model: 'claude-haiku-4-5', status: 'active', depth: 2 });
+    expect(byId.a1!.children[0]).toMatchObject({ id: 'a2', name: 'Explore', model: 'claude-haiku-4-5', status: 'active', depth: 2, lastTool: 'Bash' });
 
     expect(adapterFor('claude').usage!.parse!({ sessionLogDir: home, cwd: '/w', sessionId: 'missing' })).toBeNull();
   });
