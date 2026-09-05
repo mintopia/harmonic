@@ -45,6 +45,7 @@ import { EpicOperations } from '../execution/epic-operations.js';
 import type { CriticHarnessDrive } from '../verification/critic.js';
 import { ConversationDriver } from '../execution/conversation-driver.js';
 import { AutoRunner } from '../execution/auto-runner.js';
+import { GlobalPause } from '../execution/global-pause.js';
 import { GitCircuitBreaker } from '../execution/git-failure.js';
 import { EventLoopMonitor } from '../reliability/event-loop-monitor.js';
 import { HostLoadSampler } from '../host-load.js';
@@ -63,6 +64,7 @@ import { workspaceRoutes } from './routes/workspaces.js';
 import { conversationRoutes } from './routes/conversations.js';
 import { permissionRuleRoutes } from './routes/permission-rules.js';
 import { configRoutes } from './routes/config.js';
+import { globalPauseRoutes } from './routes/global-pause.js';
 import { wsRoutes } from './ws.js';
 import { EventBus } from './bus.js';
 import { operationRegistry } from '../telemetry/operations.js';
@@ -156,6 +158,7 @@ export interface AppContext {
   permissionRules: PermissionRuleStore;
   escalation: EscalationService;
   autoRunner: AutoRunner;
+  globalPause: GlobalPause;
   guardrailEvents: GuardrailEventStore;
   verificationAttempts: VerificationAttemptStore;
   trackerManager: TrackerPollerManager;
@@ -202,6 +205,7 @@ export type ExecutionContext = Pick<
   | 'conversationDriver'
   | 'escalation'
   | 'autoRunner'
+  | 'globalPause'
   | 'guardrailEvents'
   | 'verificationAttempts'
   | 'auth'
@@ -227,8 +231,8 @@ export function createPersistenceContext(ctx: AppContext): PersistenceContext {
 }
 
 export function createExecutionContext(ctx: AppContext): ExecutionContext {
-  const { tasks, settingsStore, workspaces, attempts, sessions, runner, conversations, conversationDriver, escalation, autoRunner, guardrailEvents, verificationAttempts, auth, notifier, bus, worktreeInventory, forceCleanupWorktree, dirtyWorktreeFiles, worktreesReconciledAt } = ctx;
-  return { tasks, settingsStore, workspaces, attempts, sessions, runner, conversations, conversationDriver, escalation, autoRunner, guardrailEvents, verificationAttempts, auth, notifier, bus, worktreeInventory, forceCleanupWorktree, dirtyWorktreeFiles, worktreesReconciledAt };
+  const { tasks, settingsStore, workspaces, attempts, sessions, runner, conversations, conversationDriver, escalation, autoRunner, globalPause, guardrailEvents, verificationAttempts, auth, notifier, bus, worktreeInventory, forceCleanupWorktree, dirtyWorktreeFiles, worktreesReconciledAt } = ctx;
+  return { tasks, settingsStore, workspaces, attempts, sessions, runner, conversations, conversationDriver, escalation, autoRunner, globalPause, guardrailEvents, verificationAttempts, auth, notifier, bus, worktreeInventory, forceCleanupWorktree, dirtyWorktreeFiles, worktreesReconciledAt };
 }
 
 export function createTrackingContext(ctx: AppContext): TrackingContext {
@@ -396,6 +400,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     return result;
   });
   let runnerRef: Runner | undefined;
+  let globalPauseRef: GlobalPause | undefined;
   let trackerManagerRef: TrackerPollerManager | undefined;
   let epicServiceRef: EpicService | undefined;
   const pendingPostMerge: Parameters<PostMergeHook>[0][] = [];
@@ -518,6 +523,8 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   const epicOperations = new EpicOperations();
   const gitBreaker = new GitCircuitBreaker();
   const runner = new Runner(tasks, asyncDb, () => settingsStore.getGlobal(), {
+    isGloballyPaused: () => globalPauseRef?.isLatched ?? false,
+    onGloballyPaused: async (taskId) => { await globalPauseRef?.track(taskId); },
     events: {
       onAttemptEvent: (event) => bus.emit('attempt_event', event),
       onAttemptLogEvent: (event) => bus.emitAttemptLog(event),
@@ -543,6 +550,9 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     getWorkspace: getWorkspaceRow,
   });
   runnerRef = runner;
+  const globalPause = new GlobalPause(tasks, runner, asyncDb);
+  globalPauseRef = globalPause;
+  await globalPause.rebuild();
   await runner.backfillUsage();
   const escalation = new EscalationService(attempts, tasks, operatorSettle, mergeEffectsFor, {
     resume: (task, guidance, startNow) => runner.resumeWithGuidance(task, guidance, startNow),
@@ -622,7 +632,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     })().catch(() => {});
   });
 
-  const ctx: AppContext = { asyncDb, statsReader, settingsStore, workspaces, tasks, attempts, sessions: sessionStore, runner, conversations, conversationDriver, permissionRules, escalation, autoRunner, guardrailEvents, verificationAttempts, trackerManager, epicService, scheduler, auth, channels, notifier, bus, hostLoad, worktreeInventory, forceCleanupWorktree, dirtyWorktreeFiles, reconcileWorktrees, worktreesReconciledAt: () => worktreeReconciler.reconciledAt };
+  const ctx: AppContext = { asyncDb, statsReader, settingsStore, workspaces, tasks, attempts, sessions: sessionStore, runner, conversations, conversationDriver, permissionRules, escalation, autoRunner, globalPause, guardrailEvents, verificationAttempts, trackerManager, epicService, scheduler, auth, channels, notifier, bus, hostLoad, worktreeInventory, forceCleanupWorktree, dirtyWorktreeFiles, reconcileWorktrees, worktreesReconciledAt: () => worktreeReconciler.reconciledAt };
   const contexts = createAppContexts(ctx);
 
   const app = Fastify({ logger: false }) as unknown as App;
@@ -819,6 +829,7 @@ not resolved yet.`;
   await app.register(conversationRoutes, { prefix: '/api' });
   await app.register((fastify) => permissionRuleRoutes(fastify, contexts.persistence), { prefix: '/api' });
   await app.register((fastify) => configRoutes(fastify, contexts.execution), { prefix: '/api' });
+  await app.register((fastify) => globalPauseRoutes(fastify, contexts.execution), { prefix: '/api' });
   await app.register((fastify) => authRoutes(fastify, contexts.persistence), { prefix: '/api' });
   await app.register((fastify) => statsRoutes(fastify, contexts.persistence), { prefix: '/api' });
   await app.register((fastify) => activityRoutes(fastify, ctx), { prefix: '/api' });
