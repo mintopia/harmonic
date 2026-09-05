@@ -100,9 +100,7 @@ export interface LiveAttemptEvent {
 }
 
 export interface RunnerOptions {
-  /** Whether the fleet-wide execution freeze is latched. */
   isGloballyPaused?: () => boolean;
-  /** Records a Task parked by the fleet-wide execution freeze. */
   onGloballyPaused?: (taskId: number) => Promise<void>;
   events?: RunnerEvents;
   /** Where temporary worktrees live; per-run subdirectories. */

@@ -12,7 +12,6 @@ interface PersistedGlobalPause {
   taskIds: number[];
 }
 
-/** Fleet-wide execution freeze rebuilt from its persisted latch state at boot. */
 export class GlobalPause {
   private latched = false;
   private readonly taskIds = new Set<number>();
