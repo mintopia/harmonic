@@ -137,13 +137,13 @@ describe('run execution over ACP (direct mode)', () => {
     expect(run.state).toBe('cancelled');
   });
 
-  it('records each resumed loop as a distinct run and history survives a Reject with guidance', async () => {
+  it('continues the same Attempt after Reject with guidance', async () => {
     const { taskId, attemptId } = await createAndRun({ exit: 'crash-before-response' });
     await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'escalated');
 
     const beforeReject = (await server.api('GET', `/api/tasks/${taskId}/attempts`)).body.attempts;
     expect(beforeReject[0]!.id).toBe(attemptId);
-    const lastAttemptBeforeReject = beforeReject.at(-1)!.number;
+    const lastAttemptBeforeReject = beforeReject.at(-1)!;
 
     const rejected = await server.api('POST', `/api/tasks/${taskId}/reject`, { guidance: 'try again', start: true });
     expect(rejected.status).toBe(200);
@@ -151,12 +151,10 @@ describe('run execution over ACP (direct mode)', () => {
     await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'escalated');
 
     const afterReject = (await server.api('GET', `/api/tasks/${taskId}/attempts`)).body.attempts;
-    expect(afterReject.slice(0, beforeReject.length)).toEqual(beforeReject);
-    expect(afterReject.length).toBeGreaterThan(beforeReject.length);
-    const attemptNumbers = afterReject.map((r: { number: number }) => r.number);
-    expect(attemptNumbers).toEqual([...attemptNumbers].sort((a, b) => a - b));
-    expect(new Set(attemptNumbers).size).toBe(attemptNumbers.length);
-    expect(afterReject.at(-1)!.number).toBeGreaterThan(lastAttemptBeforeReject);
+    expect(afterReject).toHaveLength(beforeReject.length);
+    expect(afterReject.at(-1)!.id).toBe(lastAttemptBeforeReject.id);
+    expect(afterReject.at(-1)!.number).toBe(lastAttemptBeforeReject.number);
+    expect(afterReject.at(-1)!.sessionId).not.toBe(lastAttemptBeforeReject.sessionId);
   });
 
   it('escalates the task when the harness crashes on every attempt', async () => {
