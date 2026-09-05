@@ -53,8 +53,8 @@ export function ResumeOffer({ taskId, compact = false }: { taskId: number; compa
   const recommended = recommendedPath(preview);
   if (compact) {
     return warm ? (
-      <span className={`${continuationCostChip('warm')} normal-case tracking-normal`} aria-label={`Warm cache for ${warmthCountdown(warmUntil, now)}`}>
-        Warm {warmthCountdown(warmUntil, now)}
+      <span className={`${continuationCostChip('warm')} normal-case tracking-normal`} aria-label={`Likely warm cache for ${warmthCountdown(warmUntil, now)}`}>
+        Likely warm {warmthCountdown(warmUntil, now)}
       </span>
     ) : null;
   }
@@ -65,7 +65,7 @@ export function ResumeOffer({ taskId, compact = false }: { taskId: number; compa
         <h2 className="text-title font-semibold text-ink">Resume session</h2>
         {warm && (
           <span className="text-small tabular-nums text-muted">
-            Warmth countdown {warmthCountdown(warmUntil, now)}
+            Estimated warm time {warmthCountdown(warmUntil, now)}
           </span>
         )}
       </div>
@@ -74,7 +74,7 @@ export function ResumeOffer({ taskId, compact = false }: { taskId: number; compa
           <span className="min-w-0">
             <span className="flex flex-wrap items-center gap-2 text-small font-semibold text-ink">
               Continue full session
-              <span className={continuationCostChip(continueFull.estimate.band)}>{continueFull.estimate.band}</span>
+              <span className={continuationCostChip(continueFull.estimate.band)}>Estimated {continueFull.estimate.band} cost</span>
               {recommended === 'continue-full' && <span className="text-small text-accent">Recommended</span>}
             </span>
             <span className="block text-small text-muted">{continueFull.estimate.note}</span>
@@ -84,7 +84,7 @@ export function ResumeOffer({ taskId, compact = false }: { taskId: number; compa
           <span className="min-w-0">
             <span className="flex flex-wrap items-center gap-2 text-small font-semibold text-ink">
               Start condensed session
-              <span className={continuationCostChip(startCondensed.estimate.band)}>{startCondensed.estimate.band}</span>
+              <span className={continuationCostChip(startCondensed.estimate.band)}>Estimated {startCondensed.estimate.band} cost</span>
               {recommended === 'start-condensed' && <span className="text-small text-accent">Recommended</span>}
             </span>
             <span className="block text-small text-muted">{startCondensed.estimate.note}</span>

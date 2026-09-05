@@ -43,6 +43,18 @@ describe('lifecycleTimelineRows', () => {
     ]);
   });
 
+  it('shows pause and resume reasons as lifecycle facts', () => {
+    const rows = lifecycleTimelineRows([
+      lifecycle(10, { event: 'paused', reason: 'operator request' }),
+      lifecycle(20, { event: 'resumed', reason: 'global pause cleared' }),
+    ]);
+
+    expect(rows.map((row) => [row.label, row.detail, row.tone])).toEqual([
+      ['Paused', 'operator request', 'awaiting'],
+      ['Resumed', 'global pause cleared', 'running'],
+    ]);
+  });
+
   it('weaves granular merge sub-steps into the chronology, deduping the terminal step against the high-level outcome', () => {
     const rows = lifecycleTimelineRows([
       lifecycle(10, { event: 'merge-step', step: { step: 'started', baseBranch: 'develop', taskBranch: 'task/498' } }),

@@ -41,18 +41,21 @@ describe('ResumeOffer (issue #507)', () => {
     expect(rendered.textContent).toContain('Start condensed session');
     expect(rendered.textContent).toContain('Warm cache — lower cost.');
     expect(rendered.textContent).toContain('Fresh condensed context — lower cost.');
-    expect(rendered.textContent).toContain('Warmth countdown');
+    expect(rendered.textContent).toContain('Estimated warm time');
+    expect(rendered.textContent).toContain('Estimated warm cost');
     expect(rendered.textContent).toContain('Recommended');
   });
 
   it('switches the deterministic recommendation to condensed once the full continuation is cold', async () => {
     const rendered = await render({ offered: preview(false) });
     expect(rendered.querySelector('.ring-accent')?.textContent).toContain('Start condensed session');
+    expect(rendered.textContent).toContain('Estimated cold cost');
+    expect(rendered.textContent).toContain('Continue full session');
   });
 
   it('shows the warmth countdown in the compact card chip', async () => {
     const rendered = await render({ compact: true, offered: preview() });
-    expect(rendered.textContent).toMatch(/Warm 0:0[1-5]/);
+    expect(rendered.textContent).toMatch(/Likely warm 0:0[1-5]/);
   });
 
   it('renders no resume or countdown UI when no Session can resume', async () => {
