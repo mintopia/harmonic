@@ -100,6 +100,8 @@ export interface LiveAttemptEvent {
 }
 
 export interface RunnerOptions {
+  isGloballyPaused?: () => boolean;
+  onGloballyPaused?: (taskId: number) => Promise<void>;
   events?: RunnerEvents;
   /** Where temporary worktrees live; per-run subdirectories. */
   worktreesDir?: string;
@@ -180,6 +182,7 @@ interface ActiveRun {
   steerable: boolean;
   steerSupported?: boolean;
   pauseRequested: boolean;
+  globalPauseRequested: boolean;
   verifyAbort: AbortController;
 }
 
@@ -373,6 +376,8 @@ export class Runner {
   private readonly epicMergeEvents: EpicMergeEventStore;
   private readonly settleCoordinator: AttemptSettleCoordinator;
   private readonly sessionRetirement: SessionRetirementHook | undefined;
+  private readonly isGloballyPaused: (() => boolean) | undefined;
+  private readonly onGloballyPaused: ((taskId: number) => Promise<void>) | undefined;
   private readonly tailer: LiveUsageTailer;
   private readonly usage: UsageSampler;
   private readonly transcripts: TranscriptCapture;
@@ -429,6 +434,8 @@ export class Runner {
       options.sessionRetirement,
     );
     this.sessionRetirement = options.sessionRetirement;
+    this.isGloballyPaused = options.isGloballyPaused;
+    this.onGloballyPaused = options.onGloballyPaused;
     this.tailer = new LiveUsageTailer(
       {
         sample: (attemptId) => this.usage.sampleSnapshot(attemptId),
@@ -657,6 +664,7 @@ export class Runner {
     }
     const run = created;
     const bound = await this.bindContinuationIfEligible(task, run);
+    if (await this.pauseIfGloballyPaused(task.id)) return bound;
     const operation = startOperation({
       type: 'attempt',
       parent,
@@ -889,11 +897,37 @@ export class Runner {
     return true;
   }
 
+  async pauseForGlobal(taskId: number): Promise<boolean> {
+    const task = await this.taskService.get(taskId);
+    if (task.state !== 'working') return false;
+    const active = [...this.active.values()].find((candidate) => candidate.taskId === taskId);
+    if (!active) {
+      await this.taskService.pause(taskId);
+      return true;
+    }
+    if (!active.steerable) {
+      active.pauseRequested = true;
+      active.globalPauseRequested = true;
+      await this.taskService.pause(taskId);
+      return true;
+    }
+    const paused = await this.pause(taskId);
+    if (paused) active.globalPauseRequested = true;
+    return paused;
+  }
+
   /** Resume the still-running Attempt and exclude the paused interval from its
    * elapsed wall-clock budget before reattaching its durable Session. */
   async resume(taskId: number): Promise<boolean> {
     const task = await this.taskService.get(taskId);
     if (task.state !== 'paused') return false;
+    const active = [...this.active.values()].find((candidate) => candidate.taskId === taskId);
+    if (active) {
+      active.pauseRequested = false;
+      active.globalPauseRequested = false;
+      await this.taskService.resume(taskId);
+      return true;
+    }
     const run = await this.attempts.getRunningForTask(taskId);
     if (!run) return false;
     const pausedFor = Math.max(0, Date.now() - task.updatedAt);
@@ -906,6 +940,15 @@ export class Runner {
       await this.taskService.pause(taskId);
       throw error;
     }
+  }
+
+  private async pauseIfGloballyPaused(taskId: number): Promise<boolean> {
+    if (!this.isGloballyPaused?.()) return false;
+    if ((await this.taskService.get(taskId)).state === 'working') {
+      await this.taskService.pause(taskId);
+      await this.onGloballyPaused?.(taskId);
+    }
+    return true;
   }
 
   /**
@@ -1730,6 +1773,10 @@ export class Runner {
     const record = (type: 'permission_request' | 'lifecycle', payload: unknown) => {
       this.recordRunEvent(task, run, type, payload);
     };
+    if (await this.pauseIfGloballyPaused(task.id)) {
+      record('lifecycle', { event: 'paused' });
+      return { kind: 'terminal' };
+    }
     const attemptAtStart = await this.attempts.ensureForRun(task.id, attemptNumber, run.startedAt);
     const toolCalls = this.toolCallTotals.get(run.id) ?? (await this.attempts.listToolCalls(attemptAtStart.id));
     this.toolCallTotals.set(run.id, toolCalls);
@@ -1842,6 +1889,11 @@ export class Runner {
     });
 
     try {
+      if (await this.pauseIfGloballyPaused(task.id)) {
+        record('lifecycle', { event: 'paused' });
+        await finalize();
+        return { kind: 'terminal' };
+      }
       const promptText = await this.initializeTurn({
         task,
         run,
@@ -1865,9 +1917,10 @@ export class Runner {
       }
 
       if (active.pauseRequested) {
-        await this.taskService.pause(task.id);
+        if ((await this.taskService.get(task.id)).state === 'working') await this.taskService.pause(task.id);
         record('lifecycle', { event: 'paused' });
         await finalize();
+        if (active.globalPauseRequested) await this.onGloballyPaused?.(task.id);
         return { kind: 'terminal' };
       }
 
@@ -1982,6 +2035,7 @@ export class Runner {
       externallySettled: false,
       steerable: false,
       pauseRequested: false,
+      globalPauseRequested: false,
       verifyAbort: new AbortController(),
     };
     this.active.set(run.id, active);
@@ -2185,6 +2239,7 @@ export class Runner {
     const { task, driver, active, guardrails, listeners, autoDriven, record } = input;
     let promptText = input.promptText;
     let escalating: string | null = null;
+    if (active.pauseRequested) return { result: {}, connectionGone: false, escalating: null };
     active.steerable = true;
     let connectionGone = false;
     const first = await this.promptTurn(driver, promptText, record);
