@@ -28,6 +28,16 @@ export interface OperationEvent {
   };
 }
 
+/** The host OS's 1/5/15-minute load averages, its CPU core count, and whether
+ * it is saturated (the server's hysteresis state, which drives the header tint). */
+export interface HostLoad {
+  load1: number;
+  load5: number;
+  load15: number;
+  cores: number;
+  saturated: boolean;
+}
+
 export type ServerMessage =
   | { type: 'attempt_event'; event: AttemptEvent }
   | { type: 'attempt_log_event'; event: AttemptLogEvent }
@@ -47,6 +57,8 @@ export type ServerMessage =
   | { type: 'operations'; event: OperationEvent }
   | { type: 'scheduled-jobs'; jobs: ScheduledJob[] }
   | { type: 'worktrees'; worktrees: WorktreeInventoryEntry[] }
+  // Host load-average reading, pushed on a fixed tick and once on connect. Sent to read keys too.
+  | { type: 'host_load'; load: HostLoad }
   | { type: 'conversation_event'; event: ConversationEvent }
   | { type: 'conversation_changed'; conversation: Conversation }
   // The Harness is blocked on this ACP permission request until

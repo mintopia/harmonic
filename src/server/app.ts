@@ -47,6 +47,7 @@ import { ConversationDriver } from '../execution/conversation-driver.js';
 import { AutoRunner } from '../execution/auto-runner.js';
 import { GitCircuitBreaker } from '../execution/git-failure.js';
 import { EventLoopMonitor } from '../reliability/event-loop-monitor.js';
+import { HostLoadSampler } from '../host-load.js';
 import { logger } from '../logger.js';
 import { singleFlight } from '../reliability/single-flight.js';
 import { Scheduler, type ScheduledJobRegistration } from '../scheduler/scheduler.js';
@@ -164,6 +165,7 @@ export interface AppContext {
   channels: ChannelService;
   notifier: Notifier;
   bus: EventBus;
+  hostLoad: HostLoadSampler;
   worktreeInventory: WorktreeInventory;
   forceCleanupWorktree: (id: string) => Promise<boolean | null>;
   dirtyWorktreeFiles: (id: string) => Promise<string[] | null>;
@@ -564,6 +566,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     eventLoopTuning?.enabled === false
       ? undefined
       : new EventLoopMonitor({ probeMs: eventLoopTuning?.probeMs, stallMs: eventLoopTuning?.stallMs });
+  const hostLoad = new HostLoadSampler(bus);
   const mirror: MirrorClaim = {
     advertiseClaim: async (task) => {
       await trackerManagerRef?.coordinatorFor(task.workspaceId)?.advertiseClaim(task);
@@ -619,7 +622,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     })().catch(() => {});
   });
 
-  const ctx: AppContext = { asyncDb, statsReader, settingsStore, workspaces, tasks, attempts, sessions: sessionStore, runner, conversations, conversationDriver, permissionRules, escalation, autoRunner, guardrailEvents, verificationAttempts, trackerManager, epicService, scheduler, auth, channels, notifier, bus, worktreeInventory, forceCleanupWorktree, dirtyWorktreeFiles, reconcileWorktrees, worktreesReconciledAt: () => worktreeReconciler.reconciledAt };
+  const ctx: AppContext = { asyncDb, statsReader, settingsStore, workspaces, tasks, attempts, sessions: sessionStore, runner, conversations, conversationDriver, permissionRules, escalation, autoRunner, guardrailEvents, verificationAttempts, trackerManager, epicService, scheduler, auth, channels, notifier, bus, hostLoad, worktreeInventory, forceCleanupWorktree, dirtyWorktreeFiles, reconcileWorktrees, worktreesReconciledAt: () => worktreeReconciler.reconciledAt };
   const contexts = createAppContexts(ctx);
 
   const app = Fastify({ logger: false }) as unknown as App;
@@ -638,6 +641,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     runner.shutdown();
     conversationDriver.shutdown();
     loopMonitor?.stop();
+    hostLoad.stop();
     // asyncDb stays open: libsql rejects in-flight background reads with an unhandled CLIENT_CLOSED once closed.
     await statsReader.close();
   });
@@ -854,6 +858,7 @@ not resolved yet.`;
     scheduler.start();
     await trackerManager.sync();
     loopMonitor?.start();
+    hostLoad.start();
   });
   await app.register((fastify) => wsRoutes(fastify, ctx), { prefix: '/api' });
 

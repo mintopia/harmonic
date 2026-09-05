@@ -37,7 +37,9 @@ export async function wsRoutes(fastify: FastifyInstance, ctx: AppContext): Promi
       ctx.bus.on('scheduled_jobs', (jobs) => send({ type: 'scheduled-jobs', jobs: scheduledJobsToApi(jobs) })),
       ctx.bus.on('operations', (event) => send({ type: 'operations', event: operationEventToApi(event) })),
       ctx.bus.on('worktrees', (worktrees) => send({ type: 'worktrees', worktrees: worktreesToApi(worktrees) })),
+      ctx.bus.on('host_load', (load) => send({ type: 'host_load', load })),
     ];
+    send({ type: 'host_load', load: ctx.hostLoad.current() });
     if (!readOnly) {
       unsubscribes.push(
         ctx.bus.on('conversation_event', (event) => send({ type: 'conversation_event', event })),

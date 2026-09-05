@@ -711,6 +711,15 @@ Job is Harmonic's housekeeping, never a unit of agent work). Note: "job" is
 otherwise avoided (see Task, Operation) — **Scheduled Job** is the one sanctioned
 compound.
 
+**Load Average**:
+The host OS's 1-, 5-, and 15-minute load averages — how many processes are
+runnable or waiting on the host, averaged over each window — surfaced in the
+header status bar so the operator can see how loaded the host is. A pure
+readout that drives no scheduling. The host is **saturated** when the 1-minute
+load reaches the CPU core count (more runnable work than cores); saturation
+tints the header readout and is edge-logged with hysteresis.
+_Avoid_: system load, host metrics
+
 ### Interfaces
 
 **Activity**:

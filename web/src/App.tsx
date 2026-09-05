@@ -10,7 +10,7 @@ import { boardSections } from './board-sections-model';
 import { TaskForm } from './components/TaskForm';
 import { TicketPage } from './components/TicketPage';
 import { EpicPage } from './components/EpicPage';
-import { subscribe } from './ws';
+import { subscribe, type HostLoad } from './ws';
 import { debounce } from './debounce';
 import { useLiveEffect } from './useLiveEffect';
 import { AppContextProvider } from './app-context';
@@ -172,6 +172,7 @@ export function App() {
   const [tasks, setTasks] = useState<Task[] | null>(null);
   const [hasHistory, setHasHistory] = useState<boolean | null>(null);
   const [config, setConfig] = useState<AppConfig | null>(null);
+  const [hostLoad, setHostLoad] = useState<HostLoad | null>(null);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [workspacesLoaded, setWorkspacesLoaded] = useState(false);
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<number | null>(() =>
@@ -344,6 +345,9 @@ export function App() {
               : alert,
           );
         });
+      }
+      if (msg.type === 'host_load') {
+        setHostLoad(msg.load);
       }
       if (msg.type === 'task_removed') {
         setTasks((current) => (current ?? []).filter((t) => t.id !== msg.id));
@@ -582,6 +586,7 @@ export function App() {
           config={config}
           runningCount={runningCount}
           cost24h={cost24h}
+          hostLoad={hostLoad}
           theme={theme}
           view={view}
           passwordSet={passwordSet}

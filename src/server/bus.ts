@@ -8,6 +8,7 @@ import type { AttemptUsageSnapshot } from '../execution/usage.js';
 import type { ScheduledJobSnapshot } from '../scheduler/scheduler.js';
 import type { OperationEvent } from '../telemetry/operations.js';
 import type { WorktreeInventoryEntry } from '../domain/worktree-inventory.js';
+import type { HostLoad } from '../host-load.js';
 
 export interface BusEvents {
   operations: (event: OperationEvent) => void;
@@ -36,6 +37,8 @@ export interface BusEvents {
   /** Full Scheduled Jobs registry snapshot. */
   scheduled_jobs: (jobs: ScheduledJobSnapshot[]) => void;
   worktrees: (worktrees: readonly WorktreeInventoryEntry[]) => void;
+  /** Host load-average reading, sampled on a fixed tick (see HostLoadSampler). */
+  host_load: (load: HostLoad) => void;
 }
 
 /** In-process pub/sub feeding the WebSocket stream. */

@@ -1,6 +1,7 @@
 import { Icon, type IconName } from './Icon';
 import { Switch } from './Switch';
 import type { AppConfig } from '../types';
+import type { HostLoad } from '../ws';
 import type { View } from '../rail-model';
 import type { ThemePref } from '../theme';
 import { btnPrimary, touchTarget } from '../ui';
@@ -20,6 +21,7 @@ interface HeaderStatusBarProps {
   config: AppConfig | null;
   runningCount: number;
   cost24h: string | null;
+  hostLoad: HostLoad | null;
   theme: ThemePref;
   view: View;
   passwordSet: boolean;
@@ -35,6 +37,7 @@ export function HeaderStatusBar({
   config,
   runningCount,
   cost24h,
+  hostLoad,
   theme,
   view,
   passwordSet,
@@ -84,6 +87,17 @@ export function HeaderStatusBar({
         <span className="text-[13px] text-muted" title="Cost over the last 24 hours">
           <span className="text-faint">last 24h</span>{' '}
           <b className="font-semibold tabular-nums text-ink">{cost24h}</b>
+        </span>
+      )}
+      {hostLoad && (
+        <span
+          className="text-[13px] text-muted"
+          title={`Load average (1/5/15 min) · ${hostLoad.cores} cores`}
+        >
+          <span className="text-faint">load</span>{' '}
+          <b className={`font-semibold tabular-nums ${hostLoad.saturated ? 'text-fail' : 'text-ink'}`}>
+            {hostLoad.load1.toFixed(2)} / {hostLoad.load5.toFixed(2)} / {hostLoad.load15.toFixed(2)}
+          </b>
         </span>
       )}
       <div className="flex-1" />
