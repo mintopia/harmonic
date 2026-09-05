@@ -17,6 +17,7 @@ import { toastError } from '../toast';
 import { Icon } from './Icon';
 import { EpicIntegrationBar } from './EpicIntegrationBar';
 import { useAppContext } from '../app-context';
+import { ResumeOffer } from './ResumeOffer';
 import { formatModelLabel, providerLabel } from './TaskIdentity';
 import {
   blockerBadge,
@@ -204,6 +205,9 @@ function TaskCard({ task, onOpen }: { task: Task; onOpen: () => void }) {
         )}
         <div className="-mt-1">
           <WhoLine harness={task.harness} model={task.model} />
+        </div>
+        <div className="mt-2">
+          <ResumeOffer taskId={task.id} compact />
         </div>
         {showFoot && (
           <div className="mt-auto flex items-center gap-2.5 pt-3 text-small text-muted">
