@@ -380,6 +380,7 @@ export class Runner {
   private readonly lastTurnContextTokens = new Map<number, number>();
   private readonly pendingOperatorSeed = new Map<number, string>();
   private readonly pendingContinuation = new Map<number, DeterministicContinuation>();
+  private readonly pendingManualResume = new Map<number, AttemptRow>();
   private readonly progressEvents = new Map<number, ProgressEvent[]>();
   private readonly progressSequences = new Map<number, number>();
   private readonly criticLogSequences = new Map<number, number>();
@@ -534,7 +535,9 @@ export class Runner {
       throw new DomainError('invalid_state', `task ${taskId} is ${task.state}; only ready tasks can run`);
     }
     try {
-      return await this.beginRun(claimed);
+      const resumedAttempt = this.pendingManualResume.get(taskId);
+      this.pendingManualResume.delete(taskId);
+      return await this.beginRun(claimed, undefined, resumedAttempt);
     } catch (err) {
       await this.taskService.setState(taskId, 'ready');
       throw err;
@@ -558,6 +561,7 @@ export class Runner {
       choice = continuation.path === 'continued-session' ? 'full' : 'condensed';
     }
     await this.taskService.requeue(task.id, guidance, choice);
+    if (run) this.pendingManualResume.set(task.id, run);
     if (startNow) {
       if (continuation) this.pendingContinuation.set(task.id, continuation);
       await this.start(task.id);
@@ -613,10 +617,12 @@ export class Runner {
     if (task.state !== 'working') {
       throw new DomainError('invalid_state', `task ${taskId} is ${task.state}; launchClaimed expects a task already flipped to working`);
     }
-    return this.beginRun(task, parent);
+    const resumedAttempt = this.pendingManualResume.get(taskId);
+    this.pendingManualResume.delete(taskId);
+    return this.beginRun(task, parent, resumedAttempt);
   }
 
-  private async beginRun(task: TaskRow, parent?: SpanContext): Promise<AttemptRow> {
+  private async beginRun(task: TaskRow, parent?: SpanContext, resumedAttempt?: AttemptRow): Promise<AttemptRow> {
     if (await this.epicBaseNotReady?.(task)) {
       throw new DomainError(
         'invalid_state',
@@ -632,7 +638,18 @@ export class Runner {
       guardrailConfig: resolveGuardrails(ws, config),
       priceTable: pricesForHarness(harness),
     };
-    const created = await this.attempts.create(task.id, snapshot);
+    const created = resumedAttempt
+      ? await this.attempts.update(resumedAttempt.id, {
+          state: 'running',
+          startedAt: Date.now(),
+          endedAt: null,
+          reason: null,
+          detail: null,
+          guardrailConfig: JSON.stringify(snapshot.guardrailConfig),
+          priceTable: JSON.stringify(snapshot.priceTable),
+          ...(task.continuationChoice === 'condensed' ? { sessionRowId: null, sessionId: null } : {}),
+        })
+      : await this.attempts.create(task.id, snapshot);
     const pendingContinuation = this.pendingContinuation.get(task.id);
     if (pendingContinuation !== undefined) {
       this.pendingContinuation.delete(task.id);
@@ -694,7 +711,7 @@ export class Runner {
       if (prior.sessionRowId === null) continue;
       try {
         const session = await this.sessionStore.get(prior.sessionRowId);
-        return { prior, session, trigger: 'human-reject' };
+        return { prior, session, trigger: 'manual-resume' };
       } catch {
         continue;
       }
@@ -892,11 +909,9 @@ export class Runner {
   }
 
   /**
-   * Continue a settled (escalated) Task's warm Session with an operator
-   * message: when no Attempt is active but the Task's last Session-bound Attempt left a
-   * Session that is BOTH resumable and still inside its harness warm window,
-   * spawn a fresh Attempt bound to that Session whose FIRST turn is the operator's
-   * message. Returns false (→ 409) when there is nothing warm to continue.
+   * Continue a settled Task's Session with an operator message. A cold Session
+   * remains eligible: cache warmth changes the cost estimate, never whether the
+   * operator can continue it. The settled Attempt is resumed in place.
    */
   async steerSettled(taskId: number, text: string): Promise<boolean> {
     if ([...this.active.values()].some((a) => a.taskId === taskId)) return false;
@@ -905,17 +920,33 @@ export class Runner {
     const src = await this.resolveContinuationSource(task);
     if (!src) return false;
     if (!this.resumeEligibilityFor(task, src.session).eligible) return false;
-    const cacheWarmSeconds = configuredCacheWarmSeconds(this.getConfig(), task.harness);
-    if (cacheWarmSeconds === undefined || Date.now() - src.session.lastActiveAt >= cacheWarmSeconds * 1000) return false;
     this.pendingOperatorSeed.set(taskId, text);
     try {
       await this.taskService.requeue(taskId, undefined, 'full');
+      this.pendingManualResume.set(taskId, src.prior);
       await this.start(taskId);
     } catch (err) {
       this.pendingOperatorSeed.delete(taskId);
       throw err;
     }
     return true;
+  }
+
+  /** Resume a paused Task in its latest compatible Session when one is retained. */
+  async resumePaused(taskId: number): Promise<TaskRow> {
+    const task = await this.taskService.get(taskId);
+    if (task.state !== 'paused') return this.taskService.resume(taskId);
+    if ([...this.active.values()].some((active) => active.taskId === taskId)) return this.taskService.resume(taskId);
+    const src = await this.resolveContinuationSource(task);
+    const resumed = await this.taskService.resume(taskId);
+    if (!src || !this.resumeEligibilityFor(task, src.session).eligible) return resumed;
+    try {
+      await this.beginRun(resumed, undefined, src.prior);
+    } catch (err) {
+      await this.taskService.setState(taskId, 'paused');
+      throw err;
+    }
+    return this.taskService.get(taskId);
   }
 
   private forActiveTask(taskId: number, fn: (active: ActiveRun) => void): boolean {
