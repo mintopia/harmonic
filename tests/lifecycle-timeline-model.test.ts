@@ -43,6 +43,28 @@ describe('lifecycleTimelineRows', () => {
     ]);
   });
 
+  it('weaves granular merge sub-steps into the chronology, deduping the terminal step against the high-level outcome', () => {
+    const rows = lifecycleTimelineRows([
+      lifecycle(10, { event: 'merge-step', step: { step: 'started', baseBranch: 'develop', taskBranch: 'task/498' } }),
+      lifecycle(20, { event: 'merge-step', step: { step: 'post-check-passed', mergeOid: 'abcdef1234567' } }),
+      lifecycle(30, { event: 'merge-step', step: { step: 'merged', mergeOid: 'abcdef1234567' } }),
+      lifecycle(40, { event: 'merged', oid: 'abcdef1234567', baseBranch: 'develop' }),
+    ]);
+
+    expect(rows.map((row) => [row.at, row.label, row.tone, row.tag])).toEqual([
+      [10, 'Merge started', 'running', 'MERGE'],
+      [20, 'Post-merge check passed', 'passed', 'MERGE'],
+      [40, 'Merged to develop', 'passed', null],
+    ]);
+  });
+
+  it('folds a conflict merge-step\'s paths into the timeline detail', () => {
+    const rows = lifecycleTimelineRows([
+      lifecycle(10, { event: 'merge-step', step: { step: 'conflict', paths: ['src/a.ts', 'src/b.ts'] } }),
+    ]);
+    expect(rows[0]).toMatchObject({ label: 'Conflicts in 2 files', detail: 'src/a.ts\nsrc/b.ts', tone: 'awaiting', tag: 'MERGE' });
+  });
+
   it('humanises an unrecognised lifecycle event rather than dumping the raw token', () => {
     const rows = lifecycleTimelineRows([lifecycle(10, { event: 'some-new-signal' })]);
     expect(rows[0]).toMatchObject({ label: 'Some new signal', tone: 'neutral' });

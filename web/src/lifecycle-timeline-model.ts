@@ -1,4 +1,5 @@
 import type { TicketTimelineEvent } from './types.js';
+import { mergeStepRow, type MergeStepEvent } from './merge-progress-model.js';
 
 export type LifecycleTimelineTone = 'neutral' | 'running' | 'passed' | 'failed' | 'awaiting';
 
@@ -84,6 +85,12 @@ function lifecycleRow(payload: Record<string, unknown> | null): RowCore {
         gate === 'conflict' ? 'Escalated — merge conflict' : gate === 'post-merge-red' ? 'Escalated — post-merge check failed' : 'Escalated → awaiting review';
       return { label, detail: clip(text(payload?.reason)), tone: 'awaiting', tag: null };
     }
+    case 'merge-step': {
+      const step = payload?.step as MergeStepEvent | undefined;
+      if (!step) return { label: 'Merge step', detail: null, tone: 'neutral', tag: 'MERGE' };
+      const row = mergeStepRow(step, 0);
+      return { label: row.label, detail: row.detail ?? row.log, tone: row.tone, tag: 'MERGE' };
+    }
     case 'rebase-conflict':
       return { label: 'Rebase hit a conflict', detail: text(payload?.baseBranch), tone: 'failed', tag: null };
     case 'verification-started': {
@@ -125,17 +132,18 @@ function lifecycleRow(payload: Record<string, unknown> | null): RowCore {
   }
 }
 
-/** A `lifecycle` event carrying one merge sub-step: rendered by the dedicated
- * merge-progress surface, so it is kept out of the flat lifecycle rows. */
-function isMergeStep(event: TicketTimelineEvent): boolean {
+/** A merge sub-step whose terminal outcome the high-level `merged`/`escalated`
+ * lifecycle event already renders (and which also fires from non-merge paths):
+ * drop the granular twin so the timeline shows the outcome once. */
+function isRedundantMergeStep(event: TicketTimelineEvent): boolean {
   if (event.kind !== 'lifecycle') return false;
-  const payload = (event.data as { payload?: { event?: string } } | null)?.payload;
-  return payload?.event === 'merge-step';
+  const payload = (event.data as { payload?: { event?: string; step?: { step?: string } } } | null)?.payload;
+  return payload?.event === 'merge-step' && (payload.step?.step === 'merged' || payload.step?.step === 'escalated');
 }
 
 /** Convert the bounded server projection into compact, chronological audit rows. */
 export function lifecycleTimelineRows(events: TicketTimelineEvent[]): LifecycleTimelineRow[] {
-  return events.filter((event) => !isMergeStep(event)).map<LifecycleTimelineRow>((event, index) => {
+  return events.filter((event) => !isRedundantMergeStep(event)).map<LifecycleTimelineRow>((event, index) => {
     const data = record(event.data);
     const base = { id: `${event.ts}:${event.kind}:${event.attemptId ?? 'task'}:${index}`, at: event.ts };
     switch (event.kind) {

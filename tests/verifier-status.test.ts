@@ -63,6 +63,18 @@ describe('verifierStatuses', () => {
     ]);
   });
 
+  it('carries the resolved review harness on the critic status so the live view can name the reviewing harness', () => {
+    const [, critic] = verifierStatuses({
+      verifiers: {
+        commands: [],
+        review: { enabled: true, requested: true, prompt: 'Review it.', model: 'stub-model', harness: 'claude' },
+      },
+      attempts: [],
+      stepType: 'review',
+    });
+    expect(critic).toEqual({ mechanism: 'critic', state: 'running', reason: 'The critic is reviewing the candidate now.', harness: 'claude' });
+  });
+
   it('shows a configured verifier as skipped once its Step has been passed over with no attempt', () => {
     expect(
       verifierStatuses({

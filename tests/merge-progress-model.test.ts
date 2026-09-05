@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mergeStepRows, mergeStepsFromTimeline, type MergeStepEvent } from '../web/src/merge-progress-model.js';
-import type { TicketTimelineEvent } from '../web/src/types.js';
+import { mergeStepRows } from '../web/src/merge-progress-model.js';
 
 describe('mergeStepRows', () => {
   it('labels a skipped post-merge check honestly rather than as a pass', () => {
@@ -21,24 +20,5 @@ describe('mergeStepRows', () => {
     const rows = mergeStepRows([{ step: 'reverted', mergeOid: 'aaaaaaa1111', revertOid: 'bbbbbbb2222' }]);
     expect(rows[0]).toMatchObject({ label: 'Reverted to keep base green', detail: 'bbbbbbb', tone: 'failed' });
     expect(rows[0]!.log).toContain('reverted as bbbbbbb');
-  });
-});
-
-describe('mergeStepsFromTimeline', () => {
-  const lifecycle = (payload: unknown): TicketTimelineEvent => ({ attemptId: 1, ts: 0, kind: 'lifecycle', data: { payload } });
-
-  it('pulls merge-step payloads in order and ignores other lifecycle events', () => {
-    const started: MergeStepEvent = { step: 'started', baseBranch: 'develop', taskBranch: 'task/1' };
-    const merged: MergeStepEvent = { step: 'merged', mergeOid: 'deadbeef' };
-    const events: TicketTimelineEvent[] = [
-      lifecycle({ event: 'merge-step', step: started }),
-      lifecycle({ event: 'escalated', reason: 'x' }),
-      lifecycle({ event: 'merge-step', step: merged }),
-    ];
-    expect(mergeStepsFromTimeline(events)).toEqual([started, merged]);
-  });
-
-  it('returns nothing when the stream carries no merge steps', () => {
-    expect(mergeStepsFromTimeline([lifecycle({ event: 'merged', oid: 'x' })])).toEqual([]);
   });
 });
