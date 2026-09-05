@@ -87,6 +87,7 @@ export const workspaceOverridesSchema = z.object({
   driveContinueAttempts: z.number().int().min(0).nullable().optional().meta({ example: 1 }),
   /** Task Prompt override; null inherits `config.taskPrompt`. */
   taskPrompt: z.string().min(1).nullable().optional(),
+  pauseMessage: z.string().min(1).nullable().optional(),
 });
 export type WorkspaceOverrides = z.infer<typeof workspaceOverridesSchema>;
 
@@ -117,6 +118,7 @@ export const OVERRIDE_KEYS = [
   'driveMergeFate',
   'driveContinueAttempts',
   'taskPrompt',
+  'pauseMessage',
 ] as const;
 
 /** A fully-populated overrides object: every key present, `null` meaning
@@ -186,6 +188,7 @@ export class WorkspaceService {
       driveMergeFate: o.driveMergeFate,
       driveContinueAttempts: o.driveContinueAttempts,
       taskPrompt: o.taskPrompt,
+      pauseMessage: o.pauseMessage,
     };
   }
 

@@ -458,7 +458,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     {
       schema: {
         tags: ['Tasks'],
-        description: 'Pause a working task. Reachable with an attempt-scoped Attempt Key.',
+        description: 'Inject the configured pause steer, then pause a working task after its active turn settles. Reachable with an attempt-scoped Attempt Key.',
         params: idParamsSchema,
         response: {
           200: taskSchema.describe('The paused task.'),
@@ -466,7 +466,12 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
         },
       },
     },
-    async (req) => await withDeps(await ctx.tasks.pause(req.params.id)),
+    async (req, reply) => {
+      if (!(await ctx.runner.pause(req.params.id))) {
+        return reply.code(409).send({ error: { code: 'conflict', message: 'The task is not actively running.' } });
+      }
+      return await withDeps({ id: req.params.id });
+    },
   );
 
   app.post(
@@ -474,7 +479,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     {
       schema: {
         tags: ['Tasks'],
-        description: 'Resume a paused task. Reachable with an attempt-scoped Attempt Key.',
+        description: 'Resume a paused task on its existing Session. Reachable with an attempt-scoped Attempt Key.',
         params: idParamsSchema,
         response: {
           200: taskSchema.describe('The working task.'),
@@ -482,7 +487,12 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
         },
       },
     },
-    async (req) => await withDeps(await ctx.tasks.resume(req.params.id)),
+    async (req, reply) => {
+      if (!(await ctx.runner.resume(req.params.id))) {
+        return reply.code(409).send({ error: { code: 'conflict', message: 'The task has no paused Attempt to resume.' } });
+      }
+      return await withDeps({ id: req.params.id });
+    },
   );
 
   app.delete(

@@ -35,7 +35,7 @@ import { AttemptStore, type AttemptGuardrailSnapshot, type PersistedAttemptEvent
 import { AttemptSettleCoordinator, type SettleProjection, type DispositionKind } from '../domain/attempt-settle.js';
 import type { SessionRetirementHook } from '../domain/session-retirement-coordinator.js';
 import type { TaskService } from '../domain/tasks.js';
-import { resolveGuardrails, resolveVerifiers, resolveScoped, resolveTaskPrompt } from '../domain/setting-override.js';
+import { resolveGuardrails, resolvePauseMessage, resolveVerifiers, resolveScoped, resolveTaskPrompt } from '../domain/setting-override.js';
 
 function configuredCacheWarmSeconds(config: AppConfig, harness: string): number | undefined {
   return Object.entries(config.harnesses).find(([id]) => id === harness)?.[1].cacheWarmSeconds;
@@ -135,6 +135,7 @@ export interface RunnerOptions {
         | 'maxAttempts'
         | 'contextReuseTokenLimit'
         | 'taskPrompt'
+        | 'pauseMessage'
       > &
         Partial<Pick<WorkspaceRow, 'workingDir'>>)
     | undefined
@@ -178,6 +179,7 @@ interface ActiveRun {
   externallySettled: boolean;
   steerable: boolean;
   steerSupported?: boolean;
+  pauseRequested: boolean;
   verifyAbort: AbortController;
 }
 
@@ -856,6 +858,37 @@ export class Runner {
     const event = await this.attempts.appendEvent(active.attemptId, { type: 'lifecycle', payload: { event: 'steer_queued', text } });
     this.events.onAttemptEvent?.(event);
     return true;
+  }
+
+  /** Deliver the configured pause steer, then pause at the next prompt boundary. */
+  async pause(taskId: number): Promise<boolean> {
+    const task = await this.taskService.get(taskId);
+    if (task.state !== 'working') return false;
+    const active = [...this.active.values()].find((candidate) => candidate.taskId === taskId);
+    if (!active || active.pauseRequested) return false;
+    const message = resolvePauseMessage(await this.getWorkspace?.(task.workspaceId), this.getConfig());
+    if (!(await this.steer(taskId, message))) return false;
+    active.pauseRequested = true;
+    return true;
+  }
+
+  /** Resume the still-running Attempt and exclude the paused interval from its
+   * elapsed wall-clock budget before reattaching its durable Session. */
+  async resume(taskId: number): Promise<boolean> {
+    const task = await this.taskService.get(taskId);
+    if (task.state !== 'paused') return false;
+    const run = await this.attempts.getRunningForTask(taskId);
+    if (!run) return false;
+    const pausedFor = Math.max(0, Date.now() - task.updatedAt);
+    await this.attempts.update(run.id, { startedAt: run.startedAt + pausedFor });
+    await this.taskService.resume(taskId);
+    try {
+      await this.launchClaimed(taskId);
+      return true;
+    } catch (error) {
+      await this.taskService.pause(taskId);
+      throw error;
+    }
   }
 
   /**
@@ -1800,6 +1833,13 @@ export class Runner {
         return { kind: 'terminal' };
       }
 
+      if (active.pauseRequested) {
+        await this.taskService.pause(task.id);
+        record('lifecycle', { event: 'paused' });
+        await finalize();
+        return { kind: 'terminal' };
+      }
+
       return await this.finishDrivenTurn({
         task,
         run,
@@ -1910,6 +1950,7 @@ export class Runner {
       idle: false,
       externallySettled: false,
       steerable: false,
+      pauseRequested: false,
       verifyAbort: new AbortController(),
     };
     this.active.set(run.id, active);
@@ -2121,6 +2162,7 @@ export class Runner {
     active.idle = true;
     for (let attempt = 1; !escalating && !listeners.stoppedShort && !connectionGone; ) {
       if (active.externallySettled) break;
+      if (active.pauseRequested && active.steerQueue.length === 0) break;
       if (active.escalateReason) {
         escalating = `the agent asked for a human: ${active.escalateReason}`;
         break;

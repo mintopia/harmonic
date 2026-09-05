@@ -155,3 +155,11 @@ export function resolveTaskPrompt(
 ): string {
   return resolveScoped('taskPrompt', ws?.taskPrompt, config.taskPrompt);
 }
+
+/** Resolve the message that asks an active Task to pause at its next turn boundary. */
+export function resolvePauseMessage(
+  ws: Pick<WorkspaceRow, 'pauseMessage'> | null | undefined,
+  config: Pick<AppConfig, 'pauseMessage'>,
+): string {
+  return resolveScoped('pauseMessage', ws?.pauseMessage, config.pauseMessage);
+}

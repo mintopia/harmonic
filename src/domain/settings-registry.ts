@@ -191,6 +191,13 @@ export const settingsRegistry = {
     label: 'Task Prompt',
     help: "Template wrapping a native Task's own prompt; inherits the global Task Prompt when unset.",
   },
+  pauseMessage: {
+    scope: 'overridable',
+    control: 'text',
+    tab: 'prompts',
+    label: 'Pause message',
+    help: 'Message injected before a running Task pauses; inherits the global message unless overridden.',
+  },
 } as const satisfies Record<string, SettingSpec>;
 
 /** A key naming a setting declared in the registry. */

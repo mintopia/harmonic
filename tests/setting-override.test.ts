@@ -1,7 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { resolve, resolveCap, resolveVerifiers, resolveGuardrails, resolveDrive, resolveTaskPrompt } from '../src/domain/setting-override.js';
+import { resolve, resolveCap, resolveVerifiers, resolveGuardrails, resolveDrive, resolvePauseMessage, resolveTaskPrompt } from '../src/domain/setting-override.js';
 
 describe('Setting Override resolution (ADR-0012, issue #59)', () => {
+  it('resolves the pause message from the Workspace override or global default', () => {
+    expect(resolvePauseMessage({ pauseMessage: null }, { pauseMessage: 'global pause' })).toBe('global pause');
+    expect(resolvePauseMessage({ pauseMessage: 'workspace pause' }, { pauseMessage: 'global pause' })).toBe('workspace pause');
+  });
   describe('resolve', () => {
     it('inherits the global default when the Workspace value is null', () => {
       expect(resolve(null, 'claude')).toBe('claude');

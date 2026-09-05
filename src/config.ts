@@ -201,6 +201,7 @@ export const appConfigSchema = z.object({
   }),
   /** Operator-editable wrapper around a native Task's prompt (`{prompt}`, `{id}`, `{workingDir}`, `{harness}`, `{model}`); defaults to bare `{prompt}`. */
   taskPrompt: z.string().meta({ example: 'Work on {prompt}.' }),
+  pauseMessage: z.string().min(1).meta({ example: 'Please finish the current turn, then pause and wait for further instructions.' }),
   /** End a Conversation with no Turn for this many minutes; 0 disables. Fractional values are allowed. */
   conversationIdleTimeoutMinutes: z.number().nonnegative().meta({ example: 30 }),
   /** Ordered verification contract. Commands fail fast; review runs last. */
@@ -306,6 +307,7 @@ export const DEFAULT_DRIVE_PROMPT = baseline.drive.prompt;
 export const UNATTENDED_REMINDER = baseline.drive.unattendedReminder;
 export const DEFAULT_CONTINUE_PROMPT = baseline.drive.continuePrompt;
 export const DEFAULT_TASK_PROMPT = baseline.taskPrompt;
+export const DEFAULT_PAUSE_MESSAGE = baseline.pauseMessage;
 
 export function baselineConfig(): AppConfig {
   return structuredClone(baseline);
