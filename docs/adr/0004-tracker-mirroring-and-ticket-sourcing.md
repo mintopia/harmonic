@@ -100,6 +100,75 @@ Un-dismiss is manual tombstone removal.
   `TrackerAdapter`/`Ticket` seam; no tracker-specific logic reaches the
   domain.
 
+## Amendment (2026-09-05): file-backed tracker closes commit to base, never orphan a working tree
+
+Status: accepted — amends the "Status is bidirectional" clause above.
+
+### Defect
+
+The "close on done" output is safe for API trackers (`gh`/`glab` mutate remote
+state) but broken for the file-backed **local-markdown** tracker, whose
+`close`/`reopen` rewrite the ticket's `**Status:**` field in a working tree
+(`src/tracker/local-markdown.ts`, `writeStatus`). Harmonic issues that write
+against `task.workingDir` **after** the branch has already merged
+(`src/execution/auto-drive.ts`, `closeTicket`, reached from `onCompleted`'s
+`auto-merge` fate) and **never commits it** — `onTicketClosed` only records a
+Timeline event.
+
+The result is an uncommitted modification to a tracked, committed file:
+
+- The closed status never reaches base — the merge is already complete when the
+  write happens.
+- The working tree is left dirty, so the next git operation over it collides: a
+  checked-out base merge bails at `src/execution/branch-merge.ts`
+  (`isDirty(checkoutDir)` → `fallback-pr-manual`), and a reused task worktree
+  cannot reset to base.
+
+This is what surfaces as the local-markdown tracker's ticket files causing
+conflicts when merging development branches. The tracker's file format is fixed
+by the upstream skill, the files must stay committed, and they must live in the
+worktree — so the fix cannot move, ignore, or reformat them. It must **commit**
+the write in the right place.
+
+### Decision
+
+For a **write-capable, file-backed tracker**, a lifecycle status push is
+materialised as a **commit on the base branch**, produced inside the merge's
+locking discipline (ADR-0001) — never as a loose working-tree write, and never
+against `task.workingDir`:
+
+- **Checked-out base (in-place merge):** while the merge mutex is held, rewrite
+  the ticket file in the base checkout, stage the ticket path, commit, and
+  advance the tip through the same ff-only/CAS discipline the merge uses. The
+  working tree ends clean.
+- **Bare / CAS base:** perform the rewrite-and-commit in the detached admin
+  worktree the merge already spins up (`branch-merge.ts`,
+  `mergeIntoBaseUnchecked`, `mode: 'merge'`), then CAS-update the base ref.
+
+The push stays **best-effort and non-blocking**: a failed status commit
+escalates and records exactly as today and never reverts the code merge. It
+remains an **output side-effect** — it does not gate the merge and is not the
+success signal (the verdict and the merge are), preserving this ADR's
+control-path rule. API trackers are unchanged: their close is a remote call
+with no working tree.
+
+### Consequences
+
+- The closed `**Status:**` reaches base as a normal committed change (one file
+  per ticket ⇒ one-sided, no cross-ticket conflict), honouring the
+  bidirectional-status contract for file-backed trackers.
+- No tracker write is ever left in a working tree, so `branch-merge.ts`'s
+  dirty-checkout bailout and the task-worktree reset stop tripping over the
+  ticket files.
+- `closeTicket` moves off `task.workingDir` onto the base target; the tracker
+  close becomes part of the merge sequence's locked region rather than a
+  detached, uncommitted follow-up.
+- Follow-up work: thread the commit through the merge/close path
+  (`auto-drive.ts` + `branch-merge.ts`), have the file-backed adapter's close
+  yield the intended file edit so the merge layer can commit it, and add a
+  git-integration test asserting a local-markdown auto-merge leaves the base
+  checkout clean with the ticket closed on base.
+
 ## Absorbed at the reset
 
 Pre-reset 0030 in full (derivation, claim, scheduling, priority, status,
