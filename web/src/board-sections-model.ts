@@ -20,7 +20,7 @@ function isPending(task: Task): boolean {
   return PENDING_RANK[task.state] !== undefined;
 }
 
-const OPEN_MEMBER_RANK: Partial<Record<TaskState, number>> = { escalated: 0, working: 1, ready: 2, draft: 3 };
+const OPEN_MEMBER_RANK: Partial<Record<TaskState, number>> = { escalated: 0, working: 1, paused: 2, ready: 3, draft: 4 };
 
 function isOpenMember(task: Task): boolean {
   return OPEN_MEMBER_RANK[task.state] !== undefined;
@@ -75,6 +75,7 @@ export interface BoardSections {
   attention: AttentionEntry[];
   /** Working Tasks, standalone and Epic members alike. */
   running: Task[];
+  paused: Task[];
   /** Ready + draft work: one group per active Epic (ascending by ref), then standalone. */
   pending: PendingGroup[];
 }
@@ -217,6 +218,7 @@ export function boardSections(tasks: Task[], epics: Epic[]): BoardSections {
   ];
 
   const running = tasks.filter((t) => t.state === 'working' && !isDriver(t)).sort(byProcessingOrder);
+  const paused = tasks.filter((t) => t.state === 'paused' && !isDriver(t)).sort(byProcessingOrder);
 
   const pending: PendingGroup[] = activeEpics.map((epic) => ({ epic, columns: epicPendingColumns(epic, tasks) }));
   const standalone = tasks
@@ -225,7 +227,7 @@ export function boardSections(tasks: Task[], epics: Epic[]): BoardSections {
     .map((task) => taskItem(task, tasksById));
   if (standalone.length > 0) pending.push({ epic: null, columns: blockerColumns(standalone) });
 
-  return { attention, running, pending };
+  return { attention, running, paused, pending };
 }
 
 /**

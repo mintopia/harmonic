@@ -16,9 +16,9 @@
          indigo is reserved for the one state that needs the operator —
          escalated / "needs you." Deck's "awaiting-review = the accent" is
          retired; in Paper the escalated state owns its own hue.
-       · Board (home): attention-ordered sections — Attention → Running →
-         Pending (ADR-0011, reset 2026-08-28) — as horizontal card strips (Attention /
-         Running) and, inside Pending, collapsible Epic bands plus a standalone
+       · Board (home): attention-ordered sections — Attention → Running → Paused →
+         Pending (ADR-0011, reset 2026-08-28) — as horizontal card strips (Attention / Running / Paused)
+         and, inside Pending, collapsible Epic bands plus a standalone
          group, each laid out in open-blocker-count columns (Frontier / 1 blocker
          / 2 blockers …), not panelled row-lists. State is never a column.
        · Vocabulary: "merged" / "merging", never "landing" / "landed", on every
@@ -260,6 +260,7 @@ Depth is real but quiet, **declared once per element** (never a border *and* a w
 Full-width, attention-ordered sections, top → bottom (ADR-0011 Visibility; state is implied by colour, **never a column**):
 - **Attention** — the sacred core, always first: *escalated* Tickets **and escalated Epics** (a held whole-Epic merge), indigo, with the escalation reason at a glance; the Epic card carries its member-status pips and opens the Epic view. Human-only tickets are never here. A horizontal **card strip** (fixed ~420px cards; overflow shows a right-edge fade + "→ N more" chip). Its section label + count are **indigo**, the one section that isn't faint.
 - **Running** — the working Tickets, a card strip; the count (amber tint) matches "N working." A running Epic member is promoted here, out of its band.
+- **Paused** — operator-held Tickets, a neutral card strip with an explicit Paused label and Resume control; its count is neutral. A paused Epic member remains visible in its Epic band as well as this fleet-wide strip.
 - **Pending** — every ready / draft ticket, **grouped into Epics** (collapsible **bands**, ascending by ref) with a **standalone** group last (loose nodes on the canvas, not boxed). Each group lays its tickets out in **open-blocker-count columns** (below). Standalone (non-Epic) Tasks and Epic members are both first-class.
 
 ### Blocker columns (inside an Epic band, and the standalone group)
