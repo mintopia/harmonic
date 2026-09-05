@@ -79,7 +79,12 @@ export class AttemptStore {
       };
       const placeholder = await db.select().from(attempts).where(and(eq(attempts.taskId, taskId), eq(attempts.state, 'running'))).get();
       if (placeholder) {
-        return db.update(attempts).set(values).where(eq(attempts.id, placeholder.id)).returning().get();
+        return db
+          .update(attempts)
+          .set({ ...values, startedAt: placeholder.startedAt })
+          .where(eq(attempts.id, placeholder.id))
+          .returning()
+          .get();
       }
       const number =
         ((
