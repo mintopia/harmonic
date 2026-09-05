@@ -1,8 +1,11 @@
 import { type AppConfig, type MergeFate } from '../config.js';
 import type { TaskRow, AttemptRow, WorkspaceRow, StoredEpicKind } from '../db/schema.js';
-import { resolveTrackerAdapter, type TrackerAdapter } from '../tracker/adapter.js';
+import { resolveTrackerAdapter, type TrackerAdapter, type TicketRef } from '../tracker/adapter.js';
 import { resolveDrive, type ResolvedDrive } from '../domain/setting-override.js';
 import { driveFields, fillTemplate, splitTitleBody } from './prompt-template.js';
+import { Git } from './git.js';
+import { withBaseCheckoutLock } from './repo-lock.js';
+import { logger } from '../logger.js';
 
 type DriveWorkspace = Pick<
   WorkspaceRow,
@@ -153,11 +156,41 @@ export class AutoDrive {
       const ref = { number: task.trackerRef, title, state: 'open' as const };
       // Closing an already-closed issue errors on some trackers (`gh issue close`).
       if ((await adapter.readTicket(ref)).state === 'closed') return true;
-      await adapter.close(ref, comment);
+      if (adapter.persistsInWorkingTree) {
+        await this.commitLifecycleWrite(task, ref, () => adapter.close!(ref, comment), comment);
+      } else {
+        await adapter.close(ref, comment);
+      }
       this.onTicketClosed?.(task);
       return true;
     } catch {
       return false;
     }
+  }
+
+  /**
+   * A file-backed tracker's lifecycle write mutates a ticket file in the base
+   * checkout; commit it onto the base branch under the base-checkout lock (the
+   * same mutex the merge holds), so it never lingers as a dirty working-tree
+   * change that breaks the next merge. The write runs inside the lock so it can
+   * never race a concurrent merge. See ADR-0004.
+   */
+  private async commitLifecycleWrite(
+    task: TaskRow,
+    ref: TicketRef,
+    write: () => Promise<{ changedPaths?: string[] } | void>,
+    message: string,
+  ): Promise<void> {
+    await withBaseCheckoutLock(task.workingDir, async () => {
+      const result = await write();
+      const paths = result?.changedPaths ?? [];
+      if (paths.length === 0) return;
+      await Git.commitPaths(task.workingDir, paths, message);
+      logger.info('tracker: committed lifecycle change to base', {
+        'tracker.ref': ref.number,
+        'tracker.paths': paths.length,
+        'repo.dir': task.workingDir,
+      });
+    });
   }
 }

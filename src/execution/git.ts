@@ -430,6 +430,22 @@ export const Git = {
     await git(worktreePath, ...IDENTITY, 'commit', '-m', message);
   },
 
+  /** Stage only `paths` and commit them onto the checkout's current branch; no-op
+   * when they introduce no staged change (so re-closing an already-closed ticket
+   * commits nothing). Unlike {@link commitAll} this never sweeps up unrelated
+   * working-tree changes. */
+  async commitPaths(dir: string, paths: string[], message: string): Promise<void> {
+    if (paths.length === 0) return;
+    await git(dir, 'add', '--', ...paths);
+    try {
+      await git(dir, 'diff', '--cached', '--quiet');
+      return;
+    } catch {
+      // A non-zero exit means there are staged changes to commit.
+    }
+    await git(dir, ...IDENTITY, 'commit', '-m', message);
+  },
+
   /** Per-file `additions<TAB>deletions<TAB>path` of what the run's branch adds
    * over the merge base. `--numstat` reports exact line counts, unlike `--stat`,
    * whose `+`/`-` graph is a width-capped histogram, not a count. */

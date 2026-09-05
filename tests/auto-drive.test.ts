@@ -1,7 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { localMarkdownAdapter } from '../src/tracker/local-markdown.js';
+import { Git } from '../src/execution/git.js';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { baselineConfig, UNATTENDED_REMINDER, type AppConfig } from '../src/config.js';
 import { TaskService, type MirrorInput } from '../src/domain/tasks.js';
@@ -532,5 +535,55 @@ describe('Runner auto-drive settle (issue #33)', () => {
     build(config());
     expect(runner.markAgentFinished(999)).toBe(false);
     expect(runner.markEscalate(999, 'need input')).toBe(false);
+  });
+});
+
+describe('AutoDrive.closeTicket — file-backed tracker commits its status change to base (ADR-0004)', () => {
+  let repo: string;
+  const g = (...args: string[]) => execFileSync('git', ['-C', repo, ...args]).toString().trim();
+
+  beforeEach(() => {
+    repo = mkdtempSync(join(tmpdir(), 'harmonic-md-close-'));
+    execFileSync('git', ['-C', repo, 'init', '-q', '-b', 'main']);
+    g('config', 'user.email', 't@example.com');
+    g('config', 'user.name', 'Tester');
+    mkdirSync(join(repo, '.scratch', 'issues'), { recursive: true });
+    writeFileSync(
+      join(repo, '.scratch', 'issues', '07-fix.md'),
+      '# 07 — Fix the bug\n\n**Status:** ready-for-agent\n\n- [ ] do it\n',
+    );
+    g('add', '-A');
+    g('commit', '-q', '-m', 'seed ticket');
+  });
+  afterEach(() => rmSync(repo, { recursive: true, force: true }));
+
+  it('closes the ticket, commits it onto the base branch, and leaves the checkout clean', async () => {
+    const adapter = localMarkdownAdapter(join(repo, '.scratch'));
+    const drive = new AutoDrive(() => baselineConfig(), () => null, async () => adapter);
+    const task = worktreeTask({ trackerRef: 7, workingDir: repo });
+    const before = Number(g('rev-list', '--count', 'HEAD'));
+
+    expect(await drive.closeTicket(task, 'Completed and merged by Harmonic (task 1).')).toBe(true);
+
+    expect(readFileSync(join(repo, '.scratch', 'issues', '07-fix.md'), 'utf8')).toContain('**Status:** closed');
+    // The fix: the status write is committed, so the base checkout is never left dirty.
+    expect(await Git.isDirty(repo)).toBe(false);
+    expect(Number(g('rev-list', '--count', 'HEAD'))).toBe(before + 1);
+    expect(g('show', '--name-only', '--format=', 'HEAD')).toContain('.scratch/issues/07-fix.md');
+    // Committed onto the base branch itself, not a detached HEAD.
+    expect(g('rev-parse', '--abbrev-ref', 'HEAD')).toBe('main');
+  });
+
+  it('is idempotent — re-closing an already-closed ticket commits nothing and stays clean', async () => {
+    const adapter = localMarkdownAdapter(join(repo, '.scratch'));
+    const drive = new AutoDrive(() => baselineConfig(), () => null, async () => adapter);
+    const task = worktreeTask({ trackerRef: 7, workingDir: repo });
+
+    expect(await drive.closeTicket(task)).toBe(true);
+    const afterFirst = g('rev-list', '--count', 'HEAD');
+
+    expect(await drive.closeTicket(task)).toBe(true);
+    expect(g('rev-list', '--count', 'HEAD')).toBe(afterFirst);
+    expect(await Git.isDirty(repo)).toBe(false);
   });
 });

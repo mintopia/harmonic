@@ -70,9 +70,20 @@ export function isEpicTypeContainer(ticket: Pick<Ticket, 'isMap' | 'labels'>): b
   return ticket.isMap || ticket.labels.includes(EPIC_LABEL);
 }
 
+/** What a lifecycle write changed in the working tree, so the caller can commit
+ * it onto the base branch. Absent/empty ⇒ a remote write (GitHub/GitLab) with no
+ * working-tree effect. `changedPaths` are absolute. */
+export interface TrackerLifecycleWrite {
+  changedPaths?: string[];
+}
+
 /** A repo-bound tracker: reads the whole tracker as `Ticket`s; writes only the advisory `claim`/`release` pair and lifecycle `close`/`reopen`. */
 export interface TrackerAdapter {
   readonly name: string;
+  /** True when lifecycle writes mutate files in the repo working tree (local-markdown),
+   * so the caller must commit the returned {@link TrackerLifecycleWrite.changedPaths}
+   * onto the base branch. Remote trackers omit it. */
+  readonly persistsInWorkingTree?: boolean;
   /** Whole tracker, one read. Poll = call on an interval; frontier/board derive from the array. */
   scan(): Promise<Ticket[]>;
   /** Fresh single-ticket read for consumers that need current tracker details. */
@@ -82,17 +93,17 @@ export interface TrackerAdapter {
   /** Remove the advisory assignment when Harmonic hands the Task back. */
   release(ticket: TicketRef): Promise<void>;
   /** Close the ticket with a comment; needs only the portable identity, never a full scanned {@link Ticket}. */
-  close?(ticket: TicketRef, comment: string): Promise<void>;
+  close?(ticket: TicketRef, comment: string): Promise<TrackerLifecycleWrite | void>;
   /** Re-open a ticket closed prematurely, with a comment. A tracker without lifecycle writes omits this. */
-  reopen?(ticket: TicketRef, comment: string): Promise<void>;
+  reopen?(ticket: TicketRef, comment: string): Promise<TrackerLifecycleWrite | void>;
   /** Open a PR from an Attempt's worktree branch; a tracker with no PR concept omits it (treated as artifact). */
   openPR?(input: OpenPRInput): Promise<void>;
 }
 
 /** A tracker that supports Harmonic-owned lifecycle writes as well as inbound reads. */
 export interface WritableTrackerAdapter extends TrackerAdapter {
-  close(ticket: TicketRef, comment: string): Promise<void>;
-  reopen(ticket: TicketRef, comment: string): Promise<void>;
+  close(ticket: TicketRef, comment: string): Promise<TrackerLifecycleWrite | void>;
+  reopen(ticket: TicketRef, comment: string): Promise<TrackerLifecycleWrite | void>;
 }
 
 /** The open-PR Merge Fate's inputs. */

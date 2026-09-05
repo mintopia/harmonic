@@ -63,6 +63,7 @@ export function localMarkdownAdapter(
 ): WritableTrackerAdapter {
   return {
     name: 'local-markdown',
+    persistsInWorkingTree: true,
 
     async scan() {
       return synthesise(await parseAll(dir, opts.featureIndex));
@@ -77,17 +78,17 @@ export function localMarkdownAdapter(
     async claim() {},
     async release() {},
     async close(ticket) {
-      await writeStatus(dir, ticket.number, 'closed', opts.featureIndex);
+      return { changedPaths: [await writeStatus(dir, ticket.number, 'closed', opts.featureIndex)] };
     },
     async reopen(ticket) {
-      await writeStatus(dir, ticket.number, 'open', opts.featureIndex);
+      return { changedPaths: [await writeStatus(dir, ticket.number, 'open', opts.featureIndex)] };
     },
 
   };
 }
 
-/** Persist one lifecycle state through the adapter-owned Status field. */
-async function writeStatus(root: string, ticketNumber: number, status: string, featureIndex?: FeatureIndex): Promise<void> {
+/** Persist one lifecycle state through the adapter-owned Status field; returns the ticket file's absolute path so the caller can commit it. */
+async function writeStatus(root: string, ticketNumber: number, status: string, featureIndex?: FeatureIndex): Promise<string> {
   const ticket = (await parseAll(root, featureIndex)).find((parsed) => parsed.id === ticketNumber && !parsed.isMap);
   if (!ticket) throw new Error(`local-markdown: no ticket #${ticketNumber} under ${root}`);
   const raw = await readFile(ticket.path, 'utf8');
@@ -96,6 +97,7 @@ async function writeStatus(root: string, ticketNumber: number, status: string, f
     ? raw.replace(STATUS_FIELD, field)
     : `${raw}${raw.endsWith('\n') ? '\n' : '\n\n'}${field}\n`;
   await writeFile(ticket.path, updated, 'utf8');
+  return ticket.path;
 }
 
 const idOf = (name: string): number => parseInt(name, 10);
