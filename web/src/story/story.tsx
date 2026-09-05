@@ -51,10 +51,10 @@ function Story() {
     );
   }
   if (which === 'critic-running') {
-    const runningCritic = [{ mechanism: 'critic', state: 'running', reason: null }] as any;
+    const runningCritic = [{ mechanism: 'critic', state: 'running', reason: null, harness: 'claude' }] as any;
     return (
       <div style={{ minHeight: '100vh', background: 'var(--hm-canvas)', padding: 30, maxWidth: 900 }}>
-        <Verification attempts={[]} statuses={runningCritic} run={runs[2] as any} only="critic" criticAgent="Codex" />
+        <Verification attempts={[]} statuses={runningCritic} run={runs[2] as any} only="critic" />
       </div>
     );
   }

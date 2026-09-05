@@ -113,12 +113,9 @@ export interface VerificationProps {
   only?: 'command' | 'critic';
   steps?: readonly Step[];
   liveOutput?: string | null;
-  /** Author label for the running critic's live transcript (the reviewing
-   * harness); the settled session derives its own from the persisted row. */
-  criticAgent?: string;
 }
 
-export function Verification({ attempts, statuses, run, only, steps = [], liveOutput = null, criticAgent }: VerificationProps) {
+export function Verification({ attempts, statuses, run, only, steps = [], liveOutput = null }: VerificationProps) {
   const decision = overallDecision(attempts);
   const rows = verificationRows(statuses, attempts).filter(({ status }) => !only || status.mechanism === only);
   const criticSessions = attempts.filter((a) => a.mechanism === 'critic' && a.hasTranscript);
@@ -145,7 +142,7 @@ export function Verification({ attempts, statuses, run, only, steps = [], liveOu
               {status.commands && status.commands.length > 0 && <ol className="mt-1 flex flex-col gap-0.5">{status.commands.map((cmd, i) => <li key={i} className="text-[12px] text-muted"><span className="mr-1.5 tabular-nums text-edge">{i + 1}.</span><code className="rounded-[5px] bg-raised px-[5px] py-px font-data text-[12px]">{cmd}</code></li>)}</ol>}
               {criticReason && <p className="mt-2 text-[12px] text-muted">{criticReason}</p>}
               {status.state === 'running' && (status.mechanism === 'critic'
-                ? <CriticLive attemptId={run.id} model={criticModel(run) ?? 'critic'} agent={criticAgent ?? 'Critic'} />
+                ? <CriticLive attemptId={run.id} model={criticModel(run) ?? 'critic'} agent={status.harness ? harnessLabel(status.harness) : 'Critic'} />
                 : <RunningVerifier step={steps.find((s) => s.type === 'verification' && s.state === 'running')} output={liveOutput} />)}
             </div>
             <span className={`shrink-0 text-[10px] font-bold uppercase tracking-[0.04em] ${attempt ? VERDICT_TONE[attempt.verdict] ?? 'text-muted' : status.state === 'running' ? 'text-running' : 'text-muted'}`}>{status.state}</span>

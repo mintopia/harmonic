@@ -1,6 +1,3 @@
-// Explicit .js extensions: shared with the nodenext test project (Vite maps .js → .ts).
-import type { TicketTimelineEvent } from './types.js';
-
 /** Mirrors `MergeStepEvent` in `src/execution/merge-policy.ts`; one observable step of a single merge. */
 export type MergeStepEvent =
   | { step: 'started'; baseBranch: string; taskBranch: string }
@@ -27,7 +24,7 @@ export interface MergeStepRow {
 
 const shortOid = (oid: string): string => oid.slice(0, 7);
 
-function rowFor(step: MergeStepEvent, index: number): MergeStepRow {
+export function mergeStepRow(step: MergeStepEvent, index: number): MergeStepRow {
   const key = `${index}:${step.step}`;
   switch (step.step) {
     case 'started':
@@ -75,16 +72,5 @@ function rowFor(step: MergeStepEvent, index: number): MergeStepRow {
 
 /** Turn an ordered merge-step log into display rows. */
 export function mergeStepRows(steps: readonly MergeStepEvent[]): MergeStepRow[] {
-  return steps.map(rowFor);
-}
-
-/** Pull the ordered merge-step log a Task recorded out of its lifecycle timeline stream. */
-export function mergeStepsFromTimeline(events: readonly TicketTimelineEvent[]): MergeStepEvent[] {
-  const steps: MergeStepEvent[] = [];
-  for (const event of events) {
-    if (event.kind !== 'lifecycle') continue;
-    const payload = (event.data as { payload?: unknown } | null)?.payload as { event?: string; step?: MergeStepEvent } | undefined;
-    if (payload?.event === 'merge-step' && payload.step) steps.push(payload.step);
-  }
-  return steps;
+  return steps.map(mergeStepRow);
 }

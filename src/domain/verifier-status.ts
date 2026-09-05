@@ -13,6 +13,10 @@ export interface VerifierStatus {
   reason: string | null;
   /** The ordered command plan (each label is `command` + args), gate-fail-fast in array order; `command` mechanism only, when at least one command is configured. */
   commands?: string[];
+  /** The resolved review harness that will drive the critic; `critic` mechanism
+   * only, when a harness resolves. Lets the live view name the reviewing harness
+   * before the persisted attempt row exists. */
+  harness?: string | null;
 }
 
 type RecordedAttempt = Pick<{ mechanism: VerificationMechanism; seq: number; verdict: Verdict }, 'mechanism' | 'seq' | 'verdict'>;
@@ -49,13 +53,18 @@ export function verifierStatuses({
   }
 
   const commandLabels = verifiers.commands.map((c) => [c.command, ...c.args].join(' ').trim());
+  const criticHarness = verifiers.review.harness ?? null;
 
   return mechanisms.map((mechanism) => {
-    const withCommands = (base: VerifierStatus): VerifierStatus =>
-      mechanism === 'command' && commandLabels.length > 0 ? { ...base, commands: commandLabels } : base;
+    const decorate = (base: VerifierStatus): VerifierStatus =>
+      mechanism === 'command' && commandLabels.length > 0
+        ? { ...base, commands: commandLabels }
+        : mechanism === 'critic' && criticHarness
+          ? { ...base, harness: criticHarness }
+          : base;
 
     const attempt = latestByMechanism.get(mechanism);
-    if (attempt) return withCommands({ mechanism, state: verdictStates[attempt.verdict], reason: null });
+    if (attempt) return decorate({ mechanism, state: verdictStates[attempt.verdict], reason: null });
 
     const configured = mechanism === 'command' ? verifiers.commands.length > 0 : verifiers.review.enabled;
     if (configured) {
@@ -65,7 +74,7 @@ export function verifierStatuses({
       // Past it, or once verification is over, with nothing recorded: skipped.
       const ownStep: StepType = mechanism === 'command' ? 'verification' : 'review';
       if (stepType === ownStep) {
-        return withCommands({ mechanism, state: 'running', reason: mechanism === 'command' ? 'Running the command checks now.' : 'The critic is reviewing the candidate now.' });
+        return decorate({ mechanism, state: 'running', reason: mechanism === 'command' ? 'Running the command checks now.' : 'The critic is reviewing the candidate now.' });
       }
       const pending = stepType == null ? attempts.length === 0 : STEP_TYPES.indexOf(stepType) < STEP_TYPES.indexOf(ownStep);
       const state = pending ? 'planned' : 'skipped';
@@ -73,7 +82,7 @@ export function verifierStatuses({
         state === 'planned'
           ? 'Configured to run — the attempt has not reached verification yet.'
           : `No ${mechanism} verification attempt was recorded for this attempt.`;
-      return withCommands({ mechanism, state, reason });
+      return decorate({ mechanism, state, reason });
     }
     if (mechanism === 'critic' && verifiers.review.requested) {
       return {

@@ -136,6 +136,10 @@ export const timeline = [
   { attemptId: 503, ts: T0 + min(31), kind: 'attempt-started', data: { attempt: 3 } },
   { attemptId: 503, ts: T0 + min(85), kind: 'verification', data: { verdict: 'pass', summary: 'defaults and overrides behave as specified', mechanism: 'critic' } },
   { attemptId: 503, ts: T0 + min(89), kind: 'attempt-finished', data: { attempt: 3, state: 'passed' } },
+  { attemptId: 503, ts: T0 + min(89) + 10_000, kind: 'lifecycle', data: { type: 'lifecycle', payload: { event: 'merge-step', step: { step: 'started', baseBranch: 'develop', taskBranch: 'task/185' } } } },
+  { attemptId: 503, ts: T0 + min(89) + 20_000, kind: 'lifecycle', data: { type: 'lifecycle', payload: { event: 'merge-step', step: { step: 'conflict', paths: ['src/config.ts', 'src/db/schema.ts'] } } } },
+  { attemptId: 503, ts: T0 + min(89) + 35_000, kind: 'lifecycle', data: { type: 'lifecycle', payload: { event: 'merge-step', step: { step: 'resolve-turn', turn: 1, unmergedCount: 2 } } } },
+  { attemptId: 503, ts: T0 + min(89) + 50_000, kind: 'lifecycle', data: { type: 'lifecycle', payload: { event: 'merge-step', step: { step: 'post-check-passed', mergeOid: '0f758cd2200565e7605902a86c2827c65ad25ce0' } } } },
   { attemptId: 503, ts: T0 + min(90), kind: 'lifecycle', data: { type: 'lifecycle', payload: { event: 'merged', oid: '0f758cd2200565e7605902a86c2827c65ad25ce0', baseBranch: 'develop' } } },
   { attemptId: 503, ts: T0 + min(91), kind: 'lifecycle', data: { type: 'lifecycle', payload: { event: 'ticket-closed', trackerRef: '185' } } },
 ] as any;

@@ -86,6 +86,9 @@ export interface VerifierStatus {
   reason: string | null;
   /** The ordered command plan; `command` mechanism only. */
   commands?: string[];
+  /** The resolved review harness that will drive the critic; `critic` mechanism
+   * only. Labels the running critic before its persisted attempt row exists. */
+  harness?: string | null;
 }
 
 /** One persisted Verification-attempt event, as

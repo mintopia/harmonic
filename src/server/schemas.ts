@@ -51,6 +51,7 @@ export const verifierStatusSchema = z
     state: z.enum(['passed', 'failed', 'inconclusive', 'skipped', 'disabled', 'unrunnable', 'planned', 'running']).meta({ example: 'passed' }),
     reason: z.string().nullable().meta({ example: null }),
     commands: z.array(z.string()).optional().meta({ example: ['npm test'] }),
+    harness: z.string().nullable().optional().meta({ example: 'claude' }),
   })
   .meta({ id: 'VerifierStatus' });
 
