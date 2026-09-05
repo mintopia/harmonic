@@ -4,6 +4,7 @@ import { forEachYielding } from '../reliability/yield.js';
 import type { AsyncDbHandle } from '../db/async.js';
 import { settings } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
+import { z } from 'zod';
 
 const GLOBAL_PAUSE_KEY = 'global-pause';
 
@@ -11,6 +12,11 @@ interface PersistedGlobalPause {
   latched: boolean;
   taskIds: number[];
 }
+
+const persistedGlobalPauseSchema = z.object({
+  latched: z.boolean(),
+  taskIds: z.array(z.number().int().positive()),
+});
 
 export class GlobalPause {
   private latched = false;
@@ -30,7 +36,13 @@ export class GlobalPause {
     const stored = await this.db.read((db) =>
       db.select({ value: settings.value }).from(settings).where(eq(settings.key, GLOBAL_PAUSE_KEY)).get(),
     );
-    const persisted: PersistedGlobalPause = stored ? JSON.parse(stored.value) : { latched: false, taskIds: [] };
+    let persisted: PersistedGlobalPause = { latched: false, taskIds: [] };
+    if (stored) {
+      try {
+        const parsed = persistedGlobalPauseSchema.safeParse(JSON.parse(stored.value));
+        if (parsed.success) persisted = parsed.data;
+      } catch {}
+    }
     this.latched = persisted.latched;
     this.taskIds.clear();
     for (const taskId of persisted.taskIds) this.taskIds.add(taskId);

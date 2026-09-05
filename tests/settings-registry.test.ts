@@ -133,6 +133,7 @@ describe('tab taxonomy — settings group into Settings UI tabs', () => {
       'driveUnattendedReminder',
       'driveContinuePrompt',
       'taskPrompt',
+      'pauseMessage',
     ]);
   });
 
