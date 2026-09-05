@@ -110,6 +110,23 @@ describe('task authoring', () => {
     expect((await server.api('POST', `/api/tasks/${created.body.id}/uncancel`)).status).toBe(409);
   });
 
+  it('pauses a working task and resumes it, rejecting either action from the wrong state', async () => {
+    const created = await server.api('POST', '/api/tasks', { prompt: 'Pause me' });
+    await server.app.ctx.tasks.setState(created.body.id, 'working');
+
+    const paused = await server.api('POST', `/api/tasks/${created.body.id}/pause`);
+    expect(paused).toMatchObject({ status: 200, body: { state: 'paused' } });
+    expect((await server.api('POST', `/api/tasks/${created.body.id}/pause`)).status).toBe(409);
+
+    const resumed = await server.api('POST', `/api/tasks/${created.body.id}/resume`);
+    expect(resumed).toMatchObject({ status: 200, body: { state: 'working' } });
+    expect((await server.api('POST', `/api/tasks/${created.body.id}/resume`)).status).toBe(409);
+
+    await server.app.ctx.tasks.setState(created.body.id, 'ready');
+    expect((await server.api('POST', `/api/tasks/${created.body.id}/pause`)).status).toBe(409);
+    expect((await server.api('POST', `/api/tasks/${created.body.id}/resume`)).status).toBe(409);
+  });
+
   it('uncancels to ready while retaining derived blockers when a dependency is unmet', async () => {
     const dep = await server.api('POST', '/api/tasks', { prompt: 'Dependency' });
     const blocked = await server.api('POST', '/api/tasks', {

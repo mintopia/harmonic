@@ -783,11 +783,19 @@ export class TaskService {
   }
 
   async pause(id: number): Promise<TaskRow> {
-    return withTaskLock(id, () => this.setState(id, 'paused'));
+    return withTaskLock(id, async () => {
+      const task = await this.get(id);
+      if (task.state !== 'working') throw new DomainError('invalid_state', `task ${id} is ${task.state}, not working`);
+      return this.setState(id, 'paused');
+    });
   }
 
   async resume(id: number): Promise<TaskRow> {
-    return withTaskLock(id, () => this.setState(id, 'working'));
+    return withTaskLock(id, async () => {
+      const task = await this.get(id);
+      if (task.state !== 'paused') throw new DomainError('invalid_state', `task ${id} is ${task.state}, not paused`);
+      return this.setState(id, 'working');
+    });
   }
 
   /** Operator override: force a working task straight to done. Unblocks

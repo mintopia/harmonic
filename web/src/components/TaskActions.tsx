@@ -62,6 +62,8 @@ export function TaskActions({
   const onAccept = acceptWith(undefined, `${taskLabel(task.id)} accepted — merging`);
   const onForceAccept = acceptWith({ force: true }, `${taskLabel(task.id)} force-accepted — merging`);
   const onComplete = act(() => api.completeTask(task.id));
+  const onPause = actDone(() => api.pauseTask(task.id), `${taskLabel(task.id)} paused`);
+  const onResume = actDone(() => api.resumeTask(task.id), `${taskLabel(task.id)} resumed`);
   const onCancelTask = actDone(() => api.cancelTask(task.id), `${taskLabel(task.id)} cancelled`);
   const onCloseTask = actDone(() => api.closeTask(task.id), `${taskLabel(task.id)} closed`);
 
@@ -145,6 +147,18 @@ export function TaskActions({
         return (
           <button key={action} className={secondary} onClick={() => setConfirming('complete')}>
             Complete
+          </button>
+        );
+      case 'pause':
+        return (
+          <button key={action} className={secondary} onClick={onPause}>
+            Pause
+          </button>
+        );
+      case 'resume':
+        return (
+          <button key={action} className={secondary} onClick={onResume}>
+            Resume
           </button>
         );
       case 'cancel':

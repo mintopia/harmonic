@@ -123,7 +123,7 @@ export const SIGNAL: Record<GraphNodeState, Signal> = {
   draft: { color: 'var(--hm-faint)', text: 'var(--hm-muted)' },
   ready: { color: 'var(--hm-ready-dot)', text: 'var(--hm-ready)' },
   working: { color: 'var(--hm-running-dot)', text: 'var(--hm-running)' },
-  paused: { color: 'var(--hm-blocked)', text: 'var(--hm-blocked)' },
+  paused: { color: 'var(--hm-faint)', text: 'var(--hm-muted)' },
   escalated: { color: 'var(--hm-await-dot)', text: 'var(--hm-await)' },
   done: { color: 'var(--hm-merged-dot)', text: 'var(--hm-merged)' },
   cancelled: { color: 'var(--hm-faint)', text: 'var(--hm-muted)' },

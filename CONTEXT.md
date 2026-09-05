@@ -381,6 +381,9 @@ Auto-Runner.
 **working**: The Attempt loop is executing — some Task of the current Attempt
 is in flight, or the Ticket is merging.
 
+**paused**: Deliberately held by the operator. It resumes only to **working**
+or can be **cancelled**.
+
 **escalated**: Waiting on a human; see Escalation for the triggers and the
 three actions.
 

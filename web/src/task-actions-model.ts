@@ -14,6 +14,8 @@ export type TaskAction =
   | 'ready'
   | 'edit'
   | 'complete'
+  | 'pause'
+  | 'resume'
   | 'cancel'
   | 'uncancel'
   | 'delete';
@@ -27,9 +29,9 @@ export function taskActions(state: TaskState): TaskAction[] {
     case 'draft':
       return ['delete', 'ready', 'edit', 'cancel'];
     case 'working':
-      return ['complete', 'cancel'];
+      return ['pause', 'complete', 'cancel'];
     case 'paused':
-      return ['delete', 'cancel'];
+      return ['delete', 'resume', 'cancel'];
     case 'cancelled':
       return ['delete', 'uncancel'];
     case 'done':

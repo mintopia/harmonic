@@ -119,6 +119,10 @@ describe('Task lifecycle state machine (ADR-0020)', () => {
       expect((await tasks.pause(created.id)).state).toBe('paused');
       expect((await tasks.resume(created.id)).state).toBe('working');
 
+      const resumeErr = await tasks.resume(created.id).catch((e: unknown) => e);
+      expect(resumeErr).toBeInstanceOf(DomainError);
+      expect((resumeErr as DomainError).code).toBe('invalid_state');
+
       await tasks.setState(created.id, 'ready');
       const err = await tasks.pause(created.id).catch((e: unknown) => e);
       expect(err).toBeInstanceOf(DomainError);

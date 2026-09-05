@@ -161,6 +161,8 @@ export const api = {
   promoteTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/ready`),
   cancelTask: (id: number, withDependents = false) =>
     request<Task>('POST', `/api/tasks/${id}/cancel`, withDependents ? { withDependents } : {}),
+  pauseTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/pause`),
+  resumeTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/resume`),
   /** Operator override: stop a working task's agent and settle it done, skipping verification. */
   completeTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/complete`),
   /** Steer a running task: queue a message for its active run, delivered at the next turn boundary. */
