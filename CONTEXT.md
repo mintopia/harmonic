@@ -381,8 +381,14 @@ Auto-Runner.
 **working**: The Attempt loop is executing — some Task of the current Attempt
 is in flight, or the Ticket is merging.
 
-**paused**: Deliberately held by the operator. It resumes only to **working**
-or can be **cancelled**.
+**paused**: A *working* Task an operator deliberately froze at a clean boundary —
+the agent finished its current action and stopped, the Attempt is held with its
+Session intact and its elapsed-time Guardrail budget suspended. Only a *working*
+Task can enter it; resuming thaws the **same** Attempt (see Manual Resume).
+Distinct from *escalated* (the agent gave up) and from a Blocker (a dependency):
+this is an operator freeze, and its cause is a Fact on the timeline. Governed by
+ADR-0027.
+_Avoid_: stopped, suspended, held, blocked
 
 **escalated**: Waiting on a human; see Escalation for the triggers and the
 three actions.
@@ -403,6 +409,55 @@ movement since the verdict is irrelevant — the merge commit reconciles the
 trees, and a verdict attaches to the Attempt, never to a SHA. There is no
 freshness gate, no SHA assertion, and no re-verification loop.
 _Avoid_: accept, merge gate, land (banned)
+
+### Pause and Resume
+
+**Pause**:
+The operator action that freezes running work at a clean boundary (ADR-0027).
+**Graceful**: Harmonic injects a canned pause steer over the steer channel
+("finish the current action and stop; start no new work"), waits for the
+in-flight turn/activity to settle, *then* moves the Task to *paused* — the
+Session is kept intact and the partial work is preserved, never a mid-tool
+abort. Two scopes: **per-Task** (one *working* Task) and **Global Pause**
+(below). The steer text is a Setting Override (Baseline → Global → Workspace).
+Pausing does not stop the Auto-Runner from picking *new* work — that is the
+master switch, a separate control.
+_Avoid_: stop, kill, cancel (Cancel is terminal), suspend
+
+**Global Pause**:
+A **latched**, fleet-wide execution freeze — while it is on, every running
+Attempt is paused *and* any Attempt that starts (picked up or manually launched)
+enters *paused* immediately, until the operator globally resumes. Orthogonal to
+the Auto-Runner **master switch**: the master switch gates whether new work is
+*picked up*, Global Pause gates whether any Attempt *executes*. Global resume
+auto-applies each paused Task's recommended continuation (see Manual Resume)
+silently; it never touches *escalated* Tasks, which stay human-resolved
+per-ticket.
+_Avoid_: master switch (that is the automation gate), stop-all, freeze-all
+
+**Manual Resume**:
+The single surface for every operator-initiated resume — from *paused*, from
+*escalated* (Reject-with-guidance / the warm-Session continue), and an operator
+retry — generalising what was formerly the human-reject-only continuation
+choice. It offers two **always-available** paths: **continue-full** (reuse the
+same Session, full conversation) and **start-condensed** (a fresh Session
+reseeded from a condensed summary), each carrying its warm/cold Cost estimate
+and the deterministic recommendation from context size + warmth (the
+Continuation rule). A **cold** Session is **never refused** — cold only raises
+the surfaced Cost, it never gates the resume. Resuming continues the **same
+Attempt** (the counter advances only on a failed verdict); the condensed path
+rebinds a new Session to that same Attempt.
+_Avoid_: retry, reattempt (Attempt-loop mechanisms), continuation gate
+
+**Warmth Countdown**:
+The read-out of how long a resumable Session's provider prompt-cache is estimated
+to stay warm — `estimatedWarmUntil − now`, counting down on **wall-clock**
+because it tracks the *provider's* cache, not Harmonic's state, so a paused
+Task's countdown keeps ticking. It means "resume within this window or the whole
+conversation is re-sent at full cost." Shown on Task detail wherever a resume is
+offered and as a compact chip on the board card; absent where no resumable
+Session exists. A cost signal, never a gate.
+_Avoid_: warm timer, cache TTL, warm clock
 
 ### Execution
 
@@ -488,9 +543,13 @@ inferred from branch shape. Workspace default, per-Task override.
 The single scheduler across all Workspaces. When a Workspace has it enabled,
 starts that Workspace's *ready* Tasks — highest Priority first, FIFO within —
 up to the Workspace's own concurrency cap, never exceeding the Host
-Ceiling in total. A global **master switch** gates all of them: a Task runs
-only when the master is on *and* its Workspace has the Auto-Runner enabled, so
-the master is the one-click fleet-wide pause. It also honours the Work Context
+Ceiling in total. A global **master switch** gates all of them: a Task is
+*picked up* only when the master is on *and* its Workspace has the Auto-Runner
+enabled — the one-click **automation gate** that stops *new* pickups. It does
+**not** freeze work already running; that is Global Pause, a separate,
+orthogonal control (an operator may leave running Tasks alone while switching
+automation off, or freeze everything mid-flight without disabling automation).
+It also honours the Work Context
 House Rule as a pick predicate: it will not start an Attempt into a Work
 Context already occupied by a working Ticket.
 _Avoid_: daemon, worker pool

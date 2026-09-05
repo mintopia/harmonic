@@ -35,18 +35,21 @@ single table and throw `invalid_state` on an illegal edge. Terminal states
 (`done`, `cancelled`) have no outgoing edge except the one explicit reopen
 (`cancelled → ready` via `uncancel`). The table is the whole legal machine:
 
-| from      | allowed to                          |
-|-----------|-------------------------------------|
-| draft     | ready, cancelled                    |
-| ready     | working, escalated, done, cancelled |
-| working   | ready, paused, escalated, done, cancelled |
-| paused    | working, cancelled                  |
-| escalated | ready, done, cancelled              |
-| done      | — (terminal)                        |
-| cancelled | ready                               |
+| from      | allowed to                                  |
+|-----------|---------------------------------------------|
+| draft     | ready, cancelled                            |
+| ready     | working, escalated, done, cancelled         |
+| working   | ready, escalated, done, cancelled, paused   |
+| escalated | ready, done, cancelled                      |
+| paused    | working, cancelled                          |
+| done      | — (terminal)                                |
+| cancelled | ready                                       |
 
 (`ready → done` is the reconcile-only edge for a merge that settled its Attempt
-before the Task reached `done`; every other edge already has a caller.)
+before the Task reached `done`; every other edge already has a caller. The
+`paused` state and its edges — `working → paused` on pause, `paused → working` on
+resume, `paused → cancelled` on operator Cancel — were added by ADR-0027; pause
+and resume are Task-mutating operations and take the per-Task lock below.)
 
 The one exception is the mirrored-Task tracker reopen (`upsertMirrored`): a
 re-opened tracker issue flips `done → ready` by a direct column write, outside
