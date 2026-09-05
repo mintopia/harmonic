@@ -28,6 +28,8 @@ export function taskActions(state: TaskState): TaskAction[] {
       return ['delete', 'ready', 'edit', 'cancel'];
     case 'working':
       return ['complete', 'cancel'];
+    case 'paused':
+      return ['delete', 'cancel'];
     case 'cancelled':
       return ['delete', 'uncancel'];
     case 'done':

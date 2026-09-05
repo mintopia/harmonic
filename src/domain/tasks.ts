@@ -189,7 +189,7 @@ export interface OrderedEligibleTask extends TaskRow {
 }
 
 const EDITABLE_STATES: TaskState[] = ['draft', 'ready'];
-const CANCELLABLE_STATES: TaskState[] = ['draft', 'ready', 'working', 'escalated'];
+const CANCELLABLE_STATES: TaskState[] = ['draft', 'ready', 'working', 'paused', 'escalated'];
 const TERMINAL_STATES: TaskState[] = ['done', 'cancelled'];
 
 /**
@@ -202,7 +202,8 @@ const TERMINAL_STATES: TaskState[] = ['done', 'cancelled'];
 const LEGAL_TRANSITIONS: Record<TaskState, readonly TaskState[]> = {
   draft: ['ready', 'cancelled'],
   ready: ['working', 'escalated', 'done', 'cancelled'],
-  working: ['ready', 'escalated', 'done', 'cancelled'],
+  working: ['ready', 'paused', 'escalated', 'done', 'cancelled'],
+  paused: ['working', 'cancelled'],
   escalated: ['ready', 'done', 'cancelled'],
   done: [],
   cancelled: ['ready'],
@@ -779,6 +780,14 @@ export class TaskService {
       }
       return this.setState(id, 'cancelled');
     });
+  }
+
+  async pause(id: number): Promise<TaskRow> {
+    return withTaskLock(id, () => this.setState(id, 'paused'));
+  }
+
+  async resume(id: number): Promise<TaskRow> {
+    return withTaskLock(id, () => this.setState(id, 'working'));
   }
 
   /** Operator override: force a working task straight to done. Unblocks

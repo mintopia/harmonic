@@ -159,6 +159,21 @@ describe('CrashRecoveryCoordinator (ADR-0001)', () => {
     expect(await attempts.get(run.id)).toMatchObject({ state: 'failed', reason: 'process-death' });
   });
 
+  it('leaves a paused Task paused while marking its interrupted Run failed', async () => {
+    const created = await tasks.create({ prompt: 'pause me', state: 'ready', workingDir: repo, isolationMode: 'direct' });
+    await tasks.setState(created.id, 'working');
+    await tasks.setState(created.id, 'paused');
+    const run = await attempts.create(created.id);
+    const runPostMergeCheck = vi.fn(async () => ({ pass: true, output: '' }));
+    const coord = new CrashRecoveryCoordinator(attempts, tasks, settle, { runPostMergeCheck });
+
+    await coord.reconcile();
+
+    expect(runPostMergeCheck).not.toHaveBeenCalled();
+    expect(await attempts.get(run.id)).toMatchObject({ state: 'failed', reason: 'process-death' });
+    expect((await tasks.get(created.id)).state).toBe('paused');
+  });
+
   it('reaps a persisted orphan harness process group and marks its Run interrupted', async () => {
     const created = await tasks.create({ prompt: 'direct mode', state: 'ready', workingDir: repo, isolationMode: 'direct' });
     await tasks.setState(created.id, 'working');

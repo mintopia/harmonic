@@ -21,6 +21,10 @@ describe('taskActions', () => {
     expect(taskActions('working')).toEqual(['complete', 'cancel']);
   });
 
+  it('offers delete and cancel while a task is paused', () => {
+    expect(taskActions('paused')).toEqual(['delete', 'cancel']);
+  });
+
   it('offers delete for done (no other action), and delete plus uncancel for cancelled', () => {
     expect(taskActions('done')).toEqual(['delete']);
     expect(taskActions('cancelled')).toEqual(['delete', 'uncancel']);

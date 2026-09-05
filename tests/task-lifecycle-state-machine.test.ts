@@ -14,13 +14,14 @@ import type { TaskState } from '../src/db/schema.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { allWorkspaces, makeSettingsStore } from './helpers.js';
 
-const STATES: TaskState[] = ['draft', 'ready', 'working', 'escalated', 'done', 'cancelled'];
+const STATES: TaskState[] = ['draft', 'ready', 'working', 'paused', 'escalated', 'done', 'cancelled'];
 
 /** ADR-0020's legal transition table — the single source of truth the guard enforces. */
 const LEGAL: Record<TaskState, TaskState[]> = {
   draft: ['ready', 'cancelled'],
   ready: ['working', 'escalated', 'done', 'cancelled'],
-  working: ['ready', 'escalated', 'done', 'cancelled'],
+  working: ['ready', 'paused', 'escalated', 'done', 'cancelled'],
+  paused: ['working', 'cancelled'],
   escalated: ['ready', 'done', 'cancelled'],
   done: [],
   cancelled: ['ready'],
@@ -56,9 +57,13 @@ describe('Task lifecycle state machine (ADR-0020)', () => {
     if (state === 'draft') return (await tasks.create({ prompt: 'p', state: 'draft' })).id;
     const { id } = await tasks.create({ prompt: 'p', state: 'ready' });
     if (state === 'ready') return id;
-    if (state === 'working' || state === 'done' || state === 'cancelled') {
+    if (state === 'working' || state === 'paused' || state === 'done' || state === 'cancelled') {
       if (state !== 'done') await tasks.setState(id, 'working');
       if (state === 'working') return id;
+    }
+    if (state === 'paused') {
+      await tasks.setState(id, 'paused');
+      return id;
     }
     if (state === 'escalated') {
       await tasks.setState(id, 'working');
@@ -105,6 +110,19 @@ describe('Task lifecycle state machine (ADR-0020)', () => {
 
       const reqErr = await tasks.requeue(done).catch((e: unknown) => e);
       expect((reqErr as DomainError).code).toBe('invalid_state');
+    });
+
+    it('pauses and resumes through the lifecycle transition guard', async () => {
+      const created = await tasks.create({ prompt: 'p', state: 'ready' });
+      await tasks.setState(created.id, 'working');
+
+      expect((await tasks.pause(created.id)).state).toBe('paused');
+      expect((await tasks.resume(created.id)).state).toBe('working');
+
+      await tasks.setState(created.id, 'ready');
+      const err = await tasks.pause(created.id).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(DomainError);
+      expect((err as DomainError).code).toBe('invalid_state');
     });
   });
 
