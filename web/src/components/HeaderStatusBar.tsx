@@ -4,7 +4,7 @@ import type { AppConfig } from '../types';
 import type { HostLoad } from '../ws';
 import type { View } from '../rail-model';
 import type { ThemePref } from '../theme';
-import { btnPrimary, touchTarget } from '../ui';
+import { btnPrimary, btnQuiet, touchTarget } from '../ui';
 
 const THEME_ICONS: Record<ThemePref, IconName> = {
   system: 'circle-half',
@@ -25,7 +25,10 @@ interface HeaderStatusBarProps {
   theme: ThemePref;
   view: View;
   passwordSet: boolean;
+  globalPaused: boolean | null;
+  globalPausePending: boolean;
   onAutoRunnerChange: (enabled: boolean) => void;
+  onGlobalPauseChange: (paused: boolean) => void;
   onThemeCycle: () => void;
   onSettingsClick: () => void;
   onLogout: () => void;
@@ -41,7 +44,10 @@ export function HeaderStatusBar({
   theme,
   view,
   passwordSet,
+  globalPaused,
+  globalPausePending,
   onAutoRunnerChange,
+  onGlobalPauseChange,
   onThemeCycle,
   onSettingsClick,
   onLogout,
@@ -62,6 +68,16 @@ export function HeaderStatusBar({
             Auto-runner <b className="font-semibold text-ink">{config.autoRunner.enabled ? 'on' : 'off'}</b>
           </span>
         </Switch>
+      )}
+      {globalPaused !== null && (
+        <button
+          aria-pressed={globalPaused}
+          className={`${btnQuiet} ${globalPaused ? 'bg-raised text-ink' : 'text-muted'} disabled:opacity-60`}
+          disabled={globalPausePending}
+          onClick={() => onGlobalPauseChange(!globalPaused)}
+        >
+          {globalPausePending ? 'Updating fleet…' : globalPaused ? 'Resume fleet' : 'Pause fleet'}
+        </button>
       )}
       {config && (
         <span className="flex items-center gap-2 text-[13px] text-muted">

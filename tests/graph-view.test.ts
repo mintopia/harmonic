@@ -4,7 +4,17 @@ import { describe, expect, it } from 'vitest';
 import { CardNode } from '../web/src/components/GraphView.js';
 import type { Task } from '../web/src/types.js';
 
-const task = (id: number, origin: Task['origin'], trackerRef: number | null = null): Task => ({
+const task = ({
+  id,
+  origin,
+  trackerRef = null,
+  state = 'ready',
+}: {
+  id: number;
+  origin: Task['origin'];
+  trackerRef?: number | null;
+  state?: Task['state'];
+}): Task => ({
   id,
   prompt: 'Fix graph node layout',
   summary: 'Fix graph node layout',
@@ -17,7 +27,7 @@ const task = (id: number, origin: Task['origin'], trackerRef: number | null = nu
   baseBranch: null,
   conflictResolveTurns: 2,
   overrides: { harness: null, model: null, isolationMode: null, priority: null, conflictResolveTurns: null },
-  state: 'ready',
+  state,
   feedback: null,
   createdAt: 0,
   updatedAt: 0,
@@ -69,29 +79,36 @@ describe('CardNode', () => {
     );
 
   it.each(origins)('names the origin in the label for %s tasks', (origin, originLabel) => {
-    const html = render(task(325, origin));
+    const html = render(task({ id: 325, origin }));
 
     expect(html).toContain(`aria-label="Fix graph node layout — Ready, ${originLabel.toLowerCase()}, task 325. Open detail."`);
   });
 
   it('shows a native task by its task key alone, right-aligned', () => {
-    const html = render(task(325, 'native'));
+    const html = render(task({ id: 325, origin: 'native' }));
 
     expect(html).toContain('x="182"');
     expect(html).toContain('>T-325<');
   });
 
   it('shows a mirrored ticket by both ids, tracker ref first', () => {
-    const html = render(task(325, 'mirrored', 436));
+    const html = render(task({ id: 325, origin: 'mirrored', trackerRef: 436 }));
 
     expect(html).toContain('x="182"');
     expect(html).toContain('>#436 · T-325<');
   });
 
   it('keeps the id right-aligned for a longer id', () => {
-    const html = render(task(123456789, 'native'));
+    const html = render(task({ id: 123456789, origin: 'native' }));
 
     expect(html).toContain('x="182"');
     expect(html).toContain('>T-123456789<');
+  });
+
+  it('renders paused as a named graph state', () => {
+    const html = render(task({ id: 325, origin: 'native', state: 'paused' }));
+
+    expect(html).toContain('class="node paused');
+    expect(html).toContain('>PAUSED<');
   });
 });

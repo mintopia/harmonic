@@ -111,7 +111,7 @@ const attentionIds = (sections: ReturnType<typeof boardSections>) =>
 const layout = (columns: ReturnType<typeof blockerColumns>) =>
   columns.map((column) => [column.label, column.items.map((item) => item.label)]);
 
-describe('boardSections — Attention / Running / Pending', () => {
+describe('boardSections — Attention / Running / Paused / Pending', () => {
   it('puts every escalated ticket in Attention (priority, then id) and every working ticket in Running, Epic members included', () => {
     const sections = boardSections(
       [
@@ -167,6 +167,16 @@ describe('boardSections — Attention / Running / Pending', () => {
     const sections = boardSections([task(1, 'ready'), task(2, 'draft'), task(3, 'cancelled')], []);
     expect(sections.attention).toEqual([]);
     expect(sections.running).toEqual([]);
+  });
+
+  it('keeps paused tasks visible in their own section, including Epic members', () => {
+    const sections = boardSections(
+      [task(1, 'paused'), task(2, 'paused')],
+      [epic(30, [member(301, 2, { state: 'paused' })])],
+    );
+
+    expect(sections.paused.map((entry) => entry.id)).toEqual([1, 2]);
+    expect(layout(sections.pending[0]!.columns)).toEqual([['Frontier', ['T-2']]]);
   });
 
   it('lays standalone Pending out by open-blocker count, ready before draft, and hides terminal tickets', () => {

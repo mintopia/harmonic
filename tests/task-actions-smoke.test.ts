@@ -82,4 +82,27 @@ describe('TaskActions smoke (issue #469)', () => {
 
     expect(changed).toBe(true);
   });
+
+  const pauseResumeCases = [
+    ['working', 'Pause', 'pause'],
+    ['paused', 'Resume', 'resume'],
+  ] satisfies ReadonlyArray<readonly [Task['state'], string, string]>;
+
+  it.each(pauseResumeCases)('calls %s task %s through the %s endpoint', async (state, label, endpoint) => {
+    const task = makeTask({ id: 7, state });
+    const changed = vi.fn();
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify(task)));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await renderActions({ task, variant: 'footer', onChanged: changed });
+
+    const button = [...host!.querySelectorAll('button')].find((item) => item.textContent === label)!;
+    await act(async () => {
+      button.click();
+      await flush();
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(`/api/tasks/${task.id}/${endpoint}`, { method: 'POST' });
+    expect(changed).toHaveBeenCalledOnce();
+  });
 });
