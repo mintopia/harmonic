@@ -3,7 +3,7 @@ import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { AppContext } from '../app.js';
 import { createTaskInputSchema, updateTaskInputSchema, taskListQuerySchema, compareListRows } from '../../domain/tasks.js';
-import { previewHumanRejectContinuation } from '../../domain/session-continuation.js';
+import { previewManualResumeContinuation } from '../../domain/session-continuation.js';
 import {
   TASK_STATES,
   MERGE_STATUSES,
@@ -482,7 +482,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
         },
       },
     },
-    async (req) => await withDeps(await ctx.tasks.resume(req.params.id)),
+    async (req) => await withDeps(await ctx.runner.resumePaused(req.params.id)),
   );
 
   app.delete(
@@ -666,7 +666,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       schema: {
         tags: ['Tasks'],
         description:
-          'Preview the Session continuation a Reject with guidance will get (issue #170; decided by the #311 rule, not the operator): if this task has a live Session, the warm-session estimate and the condensed alternative. `available: false` when there is nothing to continue.',
+          'Preview the Session continuation available to a manual resume: if this task has a live Session, the warm-session estimate and the condensed alternative. `available: false` when there is nothing to continue.',
         params: idParamsSchema,
         response: {
           200: continuationPreviewSchema.describe('The continuation offer for this task, or `available: false`.'),
@@ -686,7 +686,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
           sessions.set(run.sessionRowId, null);
         }
       }
-      const plan = previewHumanRejectContinuation(
+      const plan = previewManualResumeContinuation(
         runsForTask,
         (sessionRowId) => sessions.get(sessionRowId) ?? null,
         Object.entries(ctx.settingsStore.getGlobal().harnesses).find(([id]) => id === task.harness)?.[1].cacheWarmSeconds ?? 0,

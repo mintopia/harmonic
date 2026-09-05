@@ -33,7 +33,7 @@ export function decideAttemptContinuation(input: {
 
 /**
  * What prompted the continuation. Two are automated (they reuse the Session
- * silently); one is a human rejection (it surfaces the cost-gated choice).
+ * silently); manual intervention surfaces the cost-gated choice.
  */
 export const CONTINUATION_TRIGGERS = [
   /** Harmonic re-ran the work itself after a transient/interrupted failure. */
@@ -41,9 +41,9 @@ export const CONTINUATION_TRIGGERS = [
   /** The verify-agent rejected the result — an automated critic that fires
    * while the Session is still warm. */
   'verify-reject',
-  /** An operator rejected the result with feedback — the only trigger that
-   * surfaces the "continue full vs condensed new" choice. */
-  'human-reject',
+  /** An operator resumes paused or escalated work, or retries it with
+   * guidance. This surfaces the "continue full vs condensed new" choice. */
+  'manual-resume',
 ] as const;
 export type ContinuationTrigger = (typeof CONTINUATION_TRIGGERS)[number];
 
@@ -138,7 +138,7 @@ export type SessionContinuationPlan =
   | { mode: 'silent-continue'; trigger: AutomatedContinuationTrigger; sameSession: true }
   | {
       mode: 'offer-choice';
-      trigger: 'human-reject';
+      trigger: 'manual-resume';
       continueFull: { session: 'same'; conversation: 'full'; estimate: ContinuationCostEstimate };
       startCondensed: { session: 'new'; conversation: 'condensed'; estimate: CondensedContinuationEstimate };
     };
@@ -215,7 +215,7 @@ export function planSessionContinuation(
   }
   return {
     mode: 'offer-choice',
-    trigger: 'human-reject',
+    trigger: 'manual-resume',
     continueFull: { session: 'same', conversation: 'full', estimate: estimateContinuationCost(warmth, now) },
     startCondensed: { session: 'new', conversation: 'condensed', estimate: estimateCondensedContinuationCost(warmth, now) },
   };
@@ -227,13 +227,13 @@ export function sessionWarmthFacts(row: SessionRow, cacheWarmSeconds: number): S
 }
 
 /**
- * Preview the human-reject continuation choice for a Task before the operator
- * rejects it, so the reject dialog can show both options. Looks at the newest
+ * Preview the manual-resume continuation choice for a Task before the operator
+ * resumes it, so the resume dialog can show both options. Looks at the newest
  * Attempt (`runsForTask` is newest-last) that holds a live Session and projects
- * the `human-reject` plan against its warmth. Returns the `offer-choice` plan,
+ * the `manual-resume` plan against its warmth. Returns the `offer-choice` plan,
  * or `null` when no Attempt ever bound a Session or it has since been swept.
  */
-export function previewHumanRejectContinuation(
+export function previewManualResumeContinuation(
   runsForTask: readonly AttemptRow[],
   getSession: (sessionRowId: number) => SessionRow | null,
   cacheWarmSeconds: number,
@@ -244,7 +244,7 @@ export function previewHumanRejectContinuation(
     if (run.sessionRowId === null) continue;
     const session = getSession(run.sessionRowId);
     if (!session) continue;
-    const plan = planSessionContinuation('human-reject', sessionWarmthFacts(session, cacheWarmSeconds), now);
+    const plan = planSessionContinuation('manual-resume', sessionWarmthFacts(session, cacheWarmSeconds), now);
     return plan as Extract<SessionContinuationPlan, { mode: 'offer-choice' }>;
   }
   return null;

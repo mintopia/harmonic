@@ -129,7 +129,7 @@ describe('steering a running task', () => {
   });
 });
 
-describe('steering a settled task continues its warm session', () => {
+describe('steering a settled task continues its session', () => {
   let server: TestServer;
 
   beforeAll(async () => {
@@ -137,13 +137,17 @@ describe('steering a settled task continues its warm session', () => {
       updates: [{ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'thinking' } }],
       stopReason: 'end_turn',
     });
-    server = await startServer({ ...stubHarness(), maxAttempts: 1, drive: { prompt: scenarioPrompt } });
+    const overrides = stubHarness() as DeepPartial<AppConfig>;
+    overrides.harnesses!.claude!.cacheWarmSeconds = 1;
+    overrides.maxAttempts = 1;
+    overrides.drive = { prompt: scenarioPrompt };
+    server = await startServer(overrides);
   });
   afterAll(async () => {
     await server.close();
   });
 
-  it('continues the warm session as a fresh run seeded with the operator message', async () => {
+  it('continues a cold session in the same attempt seeded with the operator message', async () => {
     const seed = (await server.api('POST', '/api/tasks', { prompt: 'workspace seed' })).body;
     const workspaceId = (await server.app.ctx.tasks.get(seed.id)).workspaceId ?? undefined;
     const mirrored = await server.app.ctx.tasks.upsertMirrored(
@@ -155,7 +159,9 @@ describe('steering a settled task continues its warm session', () => {
       const task = (await server.api('GET', `/api/tasks/${mirrored.id}`)).body;
       return task.state === 'escalated' ? task : undefined;
     });
-    const runsBefore = (await server.app.ctx.attempts.listForTask(mirrored.id)).length;
+    await new Promise<void>((resolve) => setTimeout(resolve, 1_100));
+    const runsBefore = await server.app.ctx.attempts.listForTask(mirrored.id);
+    const attemptBefore = runsBefore.at(-1);
 
     const steered = await server.api('POST', `/api/tasks/${mirrored.id}/steer`, { text: 'actually, focus on the parser' });
     expect(steered.status).toBe(200);
@@ -164,8 +170,9 @@ describe('steering a settled task continues its warm session', () => {
     const latest = await waitFor(async () => {
       const all = await server.app.ctx.attempts.listForTask(mirrored.id);
       const last = all.at(-1);
-      return all.length > runsBefore && last?.prompt?.includes('actually, focus on the parser') ? last : undefined;
+      return all.length === runsBefore.length && last?.prompt?.includes('actually, focus on the parser') ? last : undefined;
     });
+    expect(latest.id).toBe(attemptBefore?.id);
     expect(latest.prompt).toContain('## Operator message');
     expect(latest.prompt).not.toContain('ticket 90210');
   });

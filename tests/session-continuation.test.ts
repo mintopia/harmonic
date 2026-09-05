@@ -5,7 +5,7 @@ import {
   estimateCondensedContinuationCost,
   isAutomatedTrigger,
   sessionWarmthFacts,
-  previewHumanRejectContinuation,
+  previewManualResumeContinuation,
   CONTINUATION_TRIGGERS,
   AUTOMATED_CONTINUATION_TRIGGERS,
   decideAttemptContinuation,
@@ -52,9 +52,9 @@ describe('planSessionContinuation (issue #147)', () => {
     }
   });
 
-  describe('a human rejection surfaces the cost-gated choice', () => {
+  describe('a manual resume surfaces the cost-gated choice', () => {
     it('offers continue-full (same Session, with a cost estimate) vs start-condensed (new Session)', () => {
-      const plan = planSessionContinuation('human-reject', warm, now);
+      const plan = planSessionContinuation('manual-resume', warm, now);
       expect(plan.mode).toBe('offer-choice');
       if (plan.mode !== 'offer-choice') throw new Error('unreachable');
       expect(plan.continueFull.session).toBe('same');
@@ -68,7 +68,7 @@ describe('planSessionContinuation (issue #147)', () => {
 
     it('offers BOTH options even when the Session is stone cold — warmth is a cost signal, not a gate', () => {
       const cold: SessionWarmthFacts = { estimatedWarmUntil: now - HOUR, lastActiveAt: now - 3 * HOUR };
-      const plan = planSessionContinuation('human-reject', cold, now);
+      const plan = planSessionContinuation('manual-resume', cold, now);
       if (plan.mode !== 'offer-choice') throw new Error('expected offer-choice');
       expect(plan.continueFull.estimate.band).toBe('cold');
       expect(plan.continueFull.session).toBe('same');
@@ -78,7 +78,7 @@ describe('planSessionContinuation (issue #147)', () => {
 
     it('offers BOTH options when warmth is unknown — an absent estimate never removes an option', () => {
       const unknownWarmth: SessionWarmthFacts = { estimatedWarmUntil: null, lastActiveAt: now - HOUR };
-      const plan = planSessionContinuation('human-reject', unknownWarmth, now);
+      const plan = planSessionContinuation('manual-resume', unknownWarmth, now);
       if (plan.mode !== 'offer-choice') throw new Error('expected offer-choice');
       expect(plan.continueFull.estimate.band).toBe('unknown');
       expect(plan.continueFull.session).toBe('same');
@@ -111,13 +111,13 @@ describe('planSessionContinuation (issue #147)', () => {
   });
 
   describe('trigger classification', () => {
-    it('exactly automatic-retry and verify-reject are automated; human-reject is not', () => {
+    it('exactly automatic-retry and verify-reject are automated; manual-resume is not', () => {
       expect(isAutomatedTrigger('automatic-retry')).toBe(true);
       expect(isAutomatedTrigger('verify-reject')).toBe(true);
-      expect(isAutomatedTrigger('human-reject')).toBe(false);
+      expect(isAutomatedTrigger('manual-resume')).toBe(false);
     });
 
-    it('every trigger is either automated or the human reject — no gaps', () => {
+    it('every trigger is either automated or manual resume — no gaps', () => {
       for (const trigger of CONTINUATION_TRIGGERS) {
         const plan = planSessionContinuation(trigger, warm, now);
         expect(plan.mode).toBe(isAutomatedTrigger(trigger) ? 'silent-continue' : 'offer-choice');
@@ -217,7 +217,7 @@ describe('estimateContinuationCost (issue #147 AC4)', () => {
   });
 });
 
-describe('previewHumanRejectContinuation (issue #170)', () => {
+describe('previewManualResumeContinuation (issue #506)', () => {
   const HOUR = 60 * 60 * 1000;
   const now = 10 * HOUR;
   const session = (id: number, warmUntil: number): SessionRow =>
@@ -250,7 +250,7 @@ describe('previewHumanRejectContinuation (issue #170)', () => {
 
   it('returns the offer-choice plan projected against the newest Session-bound Run', () => {
     const store = new Map([[5, session(5, now + HOUR)]]);
-    const plan = previewHumanRejectContinuation([run(null), run(5)], (id) => store.get(id) ?? null, HOUR / 1000, now);
+    const plan = previewManualResumeContinuation([run(null), run(5)], (id) => store.get(id) ?? null, HOUR / 1000, now);
     expect(plan?.mode).toBe('offer-choice');
     expect(plan?.continueFull.estimate.band).toBe('warm');
     expect(plan?.startCondensed).toEqual({
@@ -265,21 +265,21 @@ describe('previewHumanRejectContinuation (issue #170)', () => {
       [1, session(1, now + HOUR)],
       [2, session(2, now - HOUR)],
     ]);
-    const plan = previewHumanRejectContinuation([run(1), run(2)], (id) => store.get(id) ?? null, HOUR / 1000, now);
+    const plan = previewManualResumeContinuation([run(1), run(2)], (id) => store.get(id) ?? null, HOUR / 1000, now);
     expect(plan?.continueFull.estimate.band).toBe('cold');
   });
 
   it('returns null when no Run ever bound a Session', () => {
-    expect(previewHumanRejectContinuation([run(null), run(null)], () => null, HOUR / 1000, now)).toBeNull();
+    expect(previewManualResumeContinuation([run(null), run(null)], () => null, HOUR / 1000, now)).toBeNull();
   });
 
   it('returns null when the newest Session was retired and swept (lookup misses)', () => {
-    expect(previewHumanRejectContinuation([run(9)], () => null, HOUR / 1000, now)).toBeNull();
+    expect(previewManualResumeContinuation([run(9)], () => null, HOUR / 1000, now)).toBeNull();
   });
 
   it('skips a swept newer Session and falls back to an older live one', () => {
     const store = new Map([[3, session(3, now + HOUR)]]);
-    const plan = previewHumanRejectContinuation([run(3), run(8)], (id) => store.get(id) ?? null, HOUR / 1000, now);
+    const plan = previewManualResumeContinuation([run(3), run(8)], (id) => store.get(id) ?? null, HOUR / 1000, now);
     expect(plan?.continueFull.estimate.band).toBe('warm');
   });
 });
