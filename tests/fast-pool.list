@@ -24,6 +24,7 @@ tests/attempt-rail-model.test.ts
 tests/attempts.test.ts
 tests/auto-drive.test.ts
 tests/board-sections-model.test.ts
+tests/cli-dispatch.test.ts
 tests/contrast.test.ts
 tests/conversation-attention-model.test.ts
 tests/conversation-list-model.test.ts
@@ -37,6 +38,7 @@ tests/critic-schema.test.ts
 tests/db-migration.test.ts
 tests/directory-picker-model.test.ts
 tests/drive-prompt.test.ts
+tests/dto.test.ts
 tests/epic-derivation.test.ts
 tests/epic-model.test.ts
 tests/epic-operations.test.ts
@@ -62,12 +64,15 @@ tests/mirror.test.ts
 tests/model-filter.test.ts
 tests/no-console-in-src.test.ts
 tests/onboarding-model.test.ts
+tests/opencode-transcript.test.ts
 tests/operations-model.test.ts
 tests/operations-page.test.ts
 tests/ordered-eligible-work.test.ts
+tests/pagination.test.ts
 tests/paper-a11y.test.ts
 tests/path-tail.test.ts
 tests/poller.test.ts
+tests/pricing-catalog.test.ts
 tests/process-tree-de-emphasis.test.ts
 tests/prompt-preview-model.test.ts
 tests/rail-model.test.ts
@@ -91,6 +96,7 @@ tests/session-retirement.test.ts
 tests/sessions.test.ts
 tests/setting-override.test.ts
 tests/settings-rename.test.ts
+tests/settings-store.test.ts
 tests/skip-reason-model.test.ts
 tests/stall-detector.test.ts
 tests/stats-model.test.ts
@@ -106,10 +112,14 @@ tests/tool-call-aggregates.test.ts
 tests/tracker-manager.test.ts
 tests/transcript-log.test.ts
 tests/ui-primitives.test.ts
+tests/unified-diff.test.ts
 tests/verification-attempts-model.test.ts
 tests/verification-attempts.test.ts
 tests/verification-combine.test.ts
 tests/verification-override-model.test.ts
+tests/verifier-status.test.ts
+tests/verify-channels-unconfigured.test.ts
+tests/waitfor-timeout.test.ts
 tests/work-context-key.test.ts
 tests/work-ordering.test.ts
 tests/workspace-delete.test.ts
