@@ -182,6 +182,8 @@ interface ActiveRun {
   steerable: boolean;
   steerSupported?: boolean;
   pauseRequested: boolean;
+  pauseReason: string | null;
+  pauseFactRecorded: boolean;
   globalPauseRequested: boolean;
   verifyAbort: AbortController;
 }
@@ -894,6 +896,8 @@ export class Runner {
     const message = resolvePauseMessage(await this.getWorkspace?.(task.workspaceId), this.getConfig());
     if (!(await this.steer(taskId, message))) return false;
     active.pauseRequested = true;
+    active.pauseReason = 'operator request';
+    logger.info('Task pause requested', { taskId, attemptId: active.attemptId, reason: active.pauseReason });
     return true;
   }
 
@@ -903,29 +907,41 @@ export class Runner {
     const active = [...this.active.values()].find((candidate) => candidate.taskId === taskId);
     if (!active) {
       await this.taskService.pause(taskId);
+      await this.recordLifecycleTransition(taskId, 'paused', 'global pause');
+      logger.info('Task paused', { taskId, reason: 'global pause' });
       return true;
     }
     if (!active.steerable) {
       active.pauseRequested = true;
+      active.pauseReason = 'global pause';
       active.globalPauseRequested = true;
       await this.taskService.pause(taskId);
+      await this.recordLifecycleTransition(taskId, 'paused', 'global pause');
+      active.pauseFactRecorded = true;
+      logger.info('Task paused', { taskId, attemptId: active.attemptId, reason: active.pauseReason });
       return true;
     }
     const paused = await this.pause(taskId);
-    if (paused) active.globalPauseRequested = true;
+    if (paused) {
+      active.pauseReason = 'global pause';
+      active.globalPauseRequested = true;
+    }
     return paused;
   }
 
   /** Resume the still-running Attempt and exclude the paused interval from its
    * elapsed wall-clock budget before reattaching its durable Session. */
-  async resume(taskId: number): Promise<boolean> {
+  async resume(taskId: number, reason = 'operator request'): Promise<boolean> {
     const task = await this.taskService.get(taskId);
     if (task.state !== 'paused') return false;
     const active = [...this.active.values()].find((candidate) => candidate.taskId === taskId);
     if (active) {
       active.pauseRequested = false;
+      active.pauseReason = null;
       active.globalPauseRequested = false;
       await this.taskService.resume(taskId);
+      await this.recordLifecycleTransition(taskId, 'resumed', reason);
+      logger.info('Task resumed', { taskId, attemptId: active.attemptId, reason });
       return true;
     }
     const run = await this.attempts.getRunningForTask(taskId);
@@ -933,6 +949,8 @@ export class Runner {
     const pausedFor = Math.max(0, Date.now() - task.updatedAt);
     await this.attempts.update(run.id, { startedAt: run.startedAt + pausedFor });
     await this.taskService.resume(taskId);
+    await this.recordLifecycleTransition(taskId, 'resumed', reason);
+    logger.info('Task resumed', { taskId, attemptId: run.id, reason });
     try {
       await this.launchClaimed(taskId);
       return true;
@@ -1742,6 +1760,13 @@ export class Runner {
     return decision;
   }
 
+  private async recordLifecycleTransition(taskId: number, event: 'paused' | 'resumed', reason: string): Promise<void> {
+    const run = await this.attempts.getRunningForTask(taskId);
+    if (!run) return;
+    const persisted = await this.attempts.appendEvent(run.id, { type: 'lifecycle', payload: { event, reason } });
+    this.events.onAttemptEvent?.(persisted);
+  }
+
   private recordRunEvent(
     task: TaskRow,
     run: AttemptRow,
@@ -1890,7 +1915,8 @@ export class Runner {
 
     try {
       if (await this.pauseIfGloballyPaused(task.id)) {
-        record('lifecycle', { event: 'paused' });
+        const pausedEvent = await this.attempts.appendEvent(run.id, { type: 'lifecycle', payload: { event: 'paused', reason: 'global pause' } });
+        this.events.onAttemptEvent?.(pausedEvent);
         await finalize();
         return { kind: 'terminal' };
       }
@@ -1918,7 +1944,24 @@ export class Runner {
 
       if (active.pauseRequested) {
         if ((await this.taskService.get(task.id)).state === 'working') await this.taskService.pause(task.id);
-        record('lifecycle', { event: 'paused' });
+        const usage = await this.usage.collectUsageSafe({
+          harnessId: task.harness,
+          harness,
+          cwd: workspace.cwd,
+          attemptId: run.id,
+          promptResult: driven.result,
+        });
+        if (usage?.contextTokens != null) this.lastTurnContextTokens.set(run.id, usage.contextTokens);
+        this.noteModelMismatch(task, usage, record);
+        await this.attempts.update(run.id, { stopReason: driven.result.stopReason ?? null, usage: usage ? JSON.stringify(usage) : null });
+        record('lifecycle', { event: 'finished', stopReason: driven.result.stopReason ?? null });
+        if (!active.pauseFactRecorded) {
+          const pausedEvent = await this.attempts.appendEvent(run.id, {
+            type: 'lifecycle',
+            payload: { event: 'paused', reason: active.pauseReason ?? 'operator request' },
+          });
+          this.events.onAttemptEvent?.(pausedEvent);
+        }
         await finalize();
         if (active.globalPauseRequested) await this.onGloballyPaused?.(task.id);
         return { kind: 'terminal' };
@@ -2035,6 +2078,8 @@ export class Runner {
       externallySettled: false,
       steerable: false,
       pauseRequested: false,
+      pauseReason: null,
+      pauseFactRecorded: false,
       globalPauseRequested: false,
       verifyAbort: new AbortController(),
     };

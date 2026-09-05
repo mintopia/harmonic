@@ -5,6 +5,7 @@ import type { AsyncDbHandle } from '../db/async.js';
 import { settings } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
+import { logger } from '../logger.js';
 
 const GLOBAL_PAUSE_KEY = 'global-pause';
 
@@ -52,7 +53,12 @@ export class GlobalPause {
     this.latched = true;
     await this.persist();
     await forEachYielding(await this.tasks.list({ state: 'working' }), async (task) => {
-      if (await this.runner.pauseForGlobal(task.id)) await this.track(task.id);
+      const paused = await this.runner.pauseForGlobal(task.id);
+      if (paused) {
+        await this.track(task.id);
+      } else {
+        logger.info('Global pause skipped task', { taskId: task.id, reason: 'not actively running' });
+      }
     });
   }
 
@@ -63,13 +69,15 @@ export class GlobalPause {
     this.taskIds.clear();
     await this.persist();
     await forEachYielding(taskIds, async (taskId) => {
-      await this.runner.resume(taskId);
+      const resumed = await this.runner.resume(taskId, 'global pause cleared');
+      if (!resumed) logger.info('Global resume skipped task', { taskId, reason: 'no paused attempt' });
     });
   }
 
   async track(taskId: number): Promise<void> {
     if (!this.latched) {
-      await this.runner.resume(taskId);
+      const resumed = await this.runner.resume(taskId, 'global pause cleared');
+      if (!resumed) logger.info('Global resume skipped task', { taskId, reason: 'no paused attempt' });
       return;
     }
     if (this.taskIds.has(taskId)) return;
