@@ -36,13 +36,45 @@ Adapter `src/execution/harness/opencode.ts`), so ADR-0022 §9's rule — operato
 tune config but cannot *add* a Harness — is unchanged. The "closed set of
 three" becomes a **closed set of four**.
 
-- Spawn: `command: opencode`, `args: [acp, --auto]`.
+- Spawn: `command: opencode`, `args: [acp]` (see Amendment 2026-09-05 — `--auto`
+  is not a valid flag on the `acp` subcommand).
 - Model pin via `session/set_model` after `session/new` (like Copilot's
   `sessionModelId`), ids of the form `provider/model`.
 - Harmonic's MCP is injected over ACP `http` (OpenCode advertises
   `mcpCapabilities.http`).
-- `commandPrefix: '/'`; `transcript: null` (rely on ACP `session/update`, the
-  Copilot precedent).
+- `commandPrefix: '/'`. A durable transcript is read on demand via
+  `opencode export` (see Amendment 2026-09-05), not `transcript: null`.
+
+### Amendment (2026-09-05)
+
+Two §1/§2 details were wrong in practice and are corrected here:
+
+- **Unattended access is not `--auto`.** `--auto` is a flag on the root
+  `opencode` / `opencode run` command, **not** the `acp` subcommand; `opencode
+  acp --auto` fails with a usage error (exit 1), which surfaced as a blanket 500
+  on every OpenCode Turn. OpenCode over ACP advertises **no** ACP permission
+  modes at all (`session/new` returns `configOptions`, never `modes`), so there
+  is nothing to `session/set_mode` into. Unattended access is instead a
+  **per-spawn config override**: the Runner sets `OPENCODE_CONFIG_CONTENT`
+  (OpenCode's highest-precedence inline config) to `{"permission":"allow"}` only
+  for autonomous Attempts (`SpawnInput.unattended`), so the agent never emits
+  `session/request_permission`. Operator-driven Conversations leave it unset, so
+  their permission prompts still surface. This keeps the intent of §2 (per-spawn
+  lever, no global-config edit, Runner hard-stop rule unchanged) via a different
+  mechanism.
+
+- **Transcript is durable, not live-only.** `transcript: null` meant relying on
+  the in-memory `session/update` firehose (never persisted; `schema.ts`), so an
+  OpenCode Attempt's transcript vanished on reload/restart. Instead the OpenCode
+  Adapter implements `exportTranscript`: `/attempts/:id/log` reads the stored
+  session on demand via `opencode export <harnessSessionId>` and maps its
+  `messages[].parts[]` to the same `session/update` payloads the renderer
+  already draws (agent text, reasoning → thought, tool calls with output, edits
+  as a `patch` tool call). This reuses ADR §7's "read the harness's own store"
+  precedent through OpenCode's **official** export interface rather than parsing
+  `opencode.db` internals. The same seam can later give Copilot a durable
+  transcript. (`opencode export` truncates piped stdout at the 64KB pipe buffer,
+  so the Adapter captures it via a temp file.)
 
 ### 2. Unattended access via `--auto`, not a permission mode
 

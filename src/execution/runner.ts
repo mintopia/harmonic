@@ -912,12 +912,13 @@ export class Runner {
     harness: HarnessConfig,
     cwd: string,
     extraEnv: Record<string, string>,
+    unattended: boolean,
   ): ChildProcess {
     const env: Record<string, string | undefined> = {
       ...process.env,
       ...harness.env,
       HARMONIC_MODEL: task.model,
-      ...adapterFor(task.harness).spawnEnv({ model: task.model, cwd, sessionLogDir: harness.sessionLogDir }),
+      ...adapterFor(task.harness).spawnEnv({ model: task.model, cwd, sessionLogDir: harness.sessionLogDir, unattended }),
       ...extraEnv,
     };
     return spawn(harness.command, harness.args, {
@@ -1721,7 +1722,7 @@ export class Runner {
         mcpServers = adapterFor(task.harness).mcpServers({ url: this.mcpUrl, token: runKey });
       }
       if (this.shuttingDown) return { kind: 'terminal' };
-      child = this.spawnHarness(task, harness, workspace.cwd, workspace.env);
+      child = this.spawnHarness(task, harness, workspace.cwd, workspace.env, autoDriven);
       if (child.pid !== undefined) {
         await this.attempts.update(run.id, { pid: child.pid, pgid: child.pid, procStartToken: readProcStartToken(child.pid) });
       }

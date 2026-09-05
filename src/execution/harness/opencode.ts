@@ -1,9 +1,12 @@
 import { DatabaseSync } from 'node:sqlite';
+import { spawn } from 'node:child_process';
+import { closeSync, mkdtempSync, openSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
-import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { homedir, tmpdir } from 'node:os';
+import { basename, join } from 'node:path';
 import { dominantModel, foldModels, usageFromModels, type ParsedSession, type ProcessNode } from '../usage.js';
 import type { HarnessAdapter, ModelUsage } from './adapter.js';
+import { withTarget, type TranscriptLogEvent } from './transcript.js';
 import type { ModelPrice } from '../../domain/pricing.js';
 
 type JsonRecord = Record<string, unknown>;
@@ -209,10 +212,121 @@ const capabilities = {
   },
 };
 
+const EXPORT_MAX_BYTES = 16 * 1024 * 1024;
+const EXPORT_MAX_EVENTS = 2000;
+
+function messageCreatedAt(info: unknown): number {
+  const time = isRecord(info) && isRecord(info.time) ? info.time : {};
+  return typeof time.created === 'number' ? time.created : 0;
+}
+
+/** OpenCode tools key their path as `filePath`, which `withTarget`'s generic
+ * keys (snake_case) miss; prefer it, then fall back to the shared logic. */
+function toolTitle(tool: string, input: unknown): string {
+  const record = isRecord(input) ? input : null;
+  const filePath = record && typeof record.filePath === 'string' ? record.filePath : null;
+  return filePath ? `${tool} ${filePath}` : withTarget(tool, input);
+}
+
+/**
+ * Map one `opencode export` message part to an ACP `session/update` payload the
+ * transcript renderer already understands (agent text, reasoning as thought,
+ * tool calls with their output, edits as a `patch` tool call). Matches the
+ * assistant-only shape the Claude native reader emits; user turns surface via
+ * the operator-message merge in the endpoint.
+ */
+export function exportEvents(json: unknown): TranscriptLogEvent[] {
+  const root = isRecord(json) ? json : null;
+  const messages = root && Array.isArray(root.messages) ? root.messages : [];
+  const events: TranscriptLogEvent[] = [];
+  const push = (ts: number, payload: Record<string, unknown>): void => {
+    const id = events.length + 1;
+    events.push({ id, seq: id, ts, type: 'session_update', payload });
+  };
+  for (const message of messages) {
+    const record = isRecord(message) ? message : null;
+    if (!record || !isRecord(record.info) || record.info.role !== 'assistant') continue;
+    const ts = messageCreatedAt(record.info);
+    for (const part of Array.isArray(record.parts) ? record.parts : []) {
+      const value = isRecord(part) ? part : null;
+      if (!value) continue;
+      if (value.type === 'text' && typeof value.text === 'string' && value.text.trim()) {
+        push(ts, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: value.text } });
+      } else if (value.type === 'reasoning' && typeof value.text === 'string' && value.text.trim()) {
+        push(ts, { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: value.text } });
+      } else if (value.type === 'tool') {
+        const state = isRecord(value.state) ? value.state : {};
+        const tool = typeof value.tool === 'string' ? value.tool : 'Tool call';
+        const output = typeof state.output === 'string' && state.output.trim() ? state.output : null;
+        push(ts, {
+          sessionUpdate: 'tool_call',
+          ...(typeof value.callID === 'string' ? { toolCallId: value.callID } : {}),
+          title: toolTitle(tool, state.input),
+          status: state.status === 'error' ? 'failed' : 'completed',
+          _meta: { opencode: { toolName: tool } },
+          ...(output ? { content: [{ type: 'content', content: { type: 'text', text: output } }] } : {}),
+        });
+      } else if (value.type === 'patch') {
+        const files = Array.isArray(value.files) ? value.files.filter((f): f is string => typeof f === 'string') : [];
+        push(ts, {
+          sessionUpdate: 'tool_call',
+          ...(typeof value.id === 'string' ? { toolCallId: value.id } : {}),
+          title: files.length ? `patch ${files.map((file) => basename(file)).join(', ')}` : 'patch',
+          status: 'completed',
+          _meta: { opencode: { toolName: 'patch' } },
+        });
+      }
+    }
+  }
+  return events.slice(-EXPORT_MAX_EVENTS);
+}
+
+/**
+ * Run `opencode export <sessionId>` and return its parsed JSON, or null on any
+ * failure. The child writes to a temp file, not a pipe: `opencode export`
+ * truncates piped stdout at the 64KB OS pipe buffer, but flushes a file fd in
+ * full.
+ */
+function runExport(sessionId: string): Promise<unknown> {
+  return new Promise((resolve) => {
+    const dir = mkdtempSync(join(tmpdir(), 'harmonic-oc-export-'));
+    const out = join(dir, 'export.json');
+    const fd = openSync(out, 'w');
+    const finish = (parsed: unknown): void => {
+      try {
+        closeSync(fd);
+      } catch {
+      }
+      try {
+        rmSync(dir, { recursive: true, force: true });
+      } catch {
+      }
+      resolve(parsed);
+    };
+    const child = spawn('opencode', ['export', sessionId], { stdio: ['ignore', fd, 'ignore'] });
+    child.on('error', () => finish(null));
+    child.on('close', (code) => {
+      if (code !== 0) return finish(null);
+      try {
+        if (statSync(out).size > EXPORT_MAX_BYTES) return finish(null);
+        finish(JSON.parse(readFileSync(out, 'utf8')));
+      } catch {
+        finish(null);
+      }
+    });
+  });
+}
+
 export const opencodeAdapter: HarnessAdapter = {
   commandPrefix: '/',
   transcript: null,
-  spawnEnv: () => ({}),
+  async exportTranscript({ sessionId }) {
+    if (!sessionId) return null;
+    const events = exportEvents(await runExport(sessionId));
+    return events.length ? events : null;
+  },
+  spawnEnv: ({ unattended }) =>
+    unattended ? { OPENCODE_CONFIG_CONTENT: JSON.stringify({ permission: 'allow' }) } : {},
   sessionModelId: (model) => model,
   mcpServers: ({ url, token }) => [
     {

@@ -17,7 +17,8 @@ import {
 } from '../../db/schema.js';
 import { DomainError } from '../../domain/errors.js';
 import { mergeUsage, type AttemptUsage } from '../../execution/usage.js';
-import { readTranscriptLog, withOperatorMessages, type OperatorMessage } from '../../execution/transcript-log.js';
+import { readTranscriptLog, withOperatorMessages, type OperatorMessage, type TranscriptLog } from '../../execution/transcript-log.js';
+import { adapterFor } from '../../execution/harness/registry.js';
 import { attemptTimelineToApi, attemptToApi, taskToApi, tasksToApi, ticketTimelineToApi, verifierStatusesToApi } from '../serialize.js';
 import { atRestWorkspaceId, costOfAttempts, epicToListRow } from '../dto.js';
 import type { ApiTaskListRow } from '../dto.js';
@@ -795,13 +796,20 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       } catch {
         return { status: 'unavailable' as const, liveCursor: ctx.bus.latestAttemptLogSeq({ attemptId: run.id }) };
       }
-      const path = session.transcriptPath ?? (await ctx.runner.ensureSessionTranscript(run.sessionRowId));
-      const log = await readTranscriptLog({
-        harness: session.harness,
-        path,
-        startedAt: run.startedAt,
-        finishedAt: run.endedAt,
-      });
+      const adapter = adapterFor(session.harness);
+      let log: TranscriptLog;
+      if (adapter.exportTranscript) {
+        const events = await adapter.exportTranscript({ sessionId: session.harnessSessionId, cwd: session.cwd });
+        log = events && events.length > 0 ? { status: 'available', events } : { status: 'unavailable' };
+      } else {
+        const path = session.transcriptPath ?? (await ctx.runner.ensureSessionTranscript(run.sessionRowId));
+        log = await readTranscriptLog({
+          harness: session.harness,
+          path,
+          startedAt: run.startedAt,
+          finishedAt: run.endedAt,
+        });
+      }
       const liveCursor = ctx.bus.latestAttemptLogSeq({ attemptId: run.id });
       if (log.status !== 'available') return { ...log, liveCursor };
       const operator: OperatorMessage[] = (await ctx.attempts.listEvents(run.id)).flatMap((e) => {

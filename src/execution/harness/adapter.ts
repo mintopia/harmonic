@@ -12,6 +12,13 @@ export interface SpawnInput {
   cwd: string;
   /** Operator override for the harness's session-log root (config). */
   sessionLogDir?: string | undefined;
+  /**
+   * True when no human is on the turn (autonomous task run), so a harness with
+   * no ACP permission mode must be pushed into auto-approve some other way. An
+   * operator-driven Conversation leaves this unset so its permission prompts
+   * still surface.
+   */
+  unattended?: boolean | undefined;
 }
 
 /**
@@ -131,6 +138,13 @@ export interface HarnessAdapter {
   unattendedPermissionMode(available: readonly string[]): string | undefined;
   /** Whether a missing unattended mode must stop an autonomous turn. */
   requiresUnattendedPermissionMode: boolean;
+  /**
+   * Produce a durable transcript for a stored session when the harness keeps
+   * no native JSONL file (its history lives in its own store, read on demand).
+   * Preferred over the file-based `transcript` reader when present. Returns null
+   * when the session's transcript cannot be read.
+   */
+  exportTranscript?(input: { sessionId: string; cwd: string }): Promise<TranscriptLogEvent[] | null>;
   /** The harness's Usage Collector; null while it has none (ACP totals only). */
   usage: UsageCollector | null;
   /** Optional dynamic discovery abilities, absent when this harness has none. */
