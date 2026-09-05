@@ -121,6 +121,8 @@ function lifecyclePosition(
       return mergeStatus !== null || attempts.some((a) => a.state === 'completed')
         ? { current: 'merge', ...settled }
         : { current: 'implementation', ...settled };
+    case 'paused':
+      return { current: 'implementation', halted: true, allDone: false, awaiting: false };
     case 'escalated':
       return { current: 'merge', halted: false, allDone: false, awaiting: true };
     case 'done':

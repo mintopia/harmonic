@@ -23,7 +23,7 @@ export interface TrackerFacts {
 }
 
 /** The stored Ticket states. Blocked-ness and agent-workability are derived, never stored. */
-export const TASK_STATES = ['draft', 'ready', 'working', 'escalated', 'done', 'cancelled'] as const;
+export const TASK_STATES = ['draft', 'ready', 'working', 'paused', 'escalated', 'done', 'cancelled'] as const;
 export type TaskState = (typeof TASK_STATES)[number];
 
 /** Transient merge indicator, orthogonal to `state`: `merging` while the candidate is being merged onto its base, `resolving-conflicts` once that merge hit conflicts a human must settle. Null at rest. */

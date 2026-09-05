@@ -30,7 +30,7 @@ function tokenNames(selector: RegExp): Set<string> {
 const lightTokens = tokenNames(/:root\s*\{/);
 const darkTokens = tokenNames(/:root\[data-theme='dark'\]\s*\{/);
 
-const STATES = ['draft', 'ready', 'working', 'escalated', 'done', 'cancelled'] as const satisfies readonly TaskState[];
+const STATES = ['draft', 'ready', 'working', 'paused', 'escalated', 'done', 'cancelled'] as const satisfies readonly TaskState[];
 
 const ATTEMPT_TONES = ['passed', 'failed', 'running'] as const;
 const PILL_STATES = [...STATES, ...ATTEMPT_TONES];

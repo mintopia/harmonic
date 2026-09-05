@@ -164,7 +164,7 @@ spacing:
 
 **"Paper" is a register, not a picture.** No paper texture, no skeuomorphism, no costume — the name means *matte, low-chroma, tactile-but-flat, quiet*. This is the correction to any temptation to theme the tool: Paper is restrained and serious (Linear-grade / terminal-adjacent), never whimsical or metaphor-dressed.
 
-This is a redesign, not a retheme: the UI is organised around the real lifecycle. Tickets flow `draft → ready → working → done` (the Attempt loop merges its own verified work under the one merge policy), reach `escalated` when they need a human (ADR-0001/0002), and Epics **merge** as a batch through an integration branch. The old cobalt "Deck" skin, its panelled row-lists, and its kanban ancestry are gone.
+This is a redesign, not a retheme: the UI is organised around the real lifecycle. Tickets flow `draft → ready → working → done` (the Attempt loop merges its own verified work under the one merge policy), can pause while an operator holds them, reach `escalated` when they need a human (ADR-0001/0002), and Epics **merge** as a batch through an integration branch. The old cobalt "Deck" skin, its panelled row-lists, and its kanban ancestry are gone.
 
 **The Prime Directive — the operator's attention leads.** Every surface is ordered so the thing that needs the operator *now* is first and loudest: escalations at the top of the Board; the escalation surface (Accept / Reject with guidance / Close) as the one loud element on a Ticket. Density is a virtue here, not a risk — but density is earned by structure (grouping, hierarchy, alignment), never bought with clutter.
 
@@ -207,6 +207,7 @@ Each state is a text colour + a dot colour + a tint fill, per theme, rendered as
 - **Done emerald** (`#127A39` / tint `#E2F2E6` · dark `#3ECF7E` / tint `#123420`): verified, merged. **Distinct green from teal on purpose** — never give *ready* its own separate green (two greens confused the operator; ready is teal, merged is emerald). The emerald sits at hue ~143° vs teal's ~179°: the original `#267356` emerald was only ~22° off the teal and Jess read the *ready* and *done* pills as near-identical, so the hue was pushed a further ~15° toward true green (the ~36° gap now separating them) rather than moving *ready* — *ready* stays welded to the action accent.
 - **Failed rose** (`#AF3C52` / tint `#F9E4E8` · dark `#F0768A` / tint `#3B1D24`): failed, rejected, blocked member, destructive.
 - **Blocked slate** (`#6A7079` / tint `#ECEDEA` · dark `#8A9099` / tint `#282B31`): waiting on a dependency. (Light slate darkened from `#868C95` in the AA retune.)
+- **Paused neutral**: an operator-held Task uses the Raised fill and Muted/Faint text. It has no state hue because it is not blocked by a dependency or awaiting review.
 - **Tooling = teal** (`= accent`): tool calls, branch/epic refs, harness metadata, the Epic kind badge. Paper folds Deck's separate tooling-cyan into the teal voice.
 
 ### Named accessibility rules (2026-08-21 audit)

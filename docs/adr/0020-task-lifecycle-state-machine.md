@@ -5,9 +5,9 @@ Date: 2026-09-02
 
 ## Context
 
-A Task's `state` (`draft → ready → working → done`, plus `escalated` and
-`cancelled`, ADR-0001) is mutated from many places: the operator actions
-(`promote`, `requeue`, `uncancel`, `cancel`, `complete`), the Attempt settle
+A Task's `state` (`draft → ready → working → done`, plus `paused`, `escalated`,
+and `cancelled`, ADR-0001) is mutated from many places: the operator actions
+(`promote`, `pause`, `resume`, `requeue`, `uncancel`, `cancel`, `complete`), the Attempt settle
 coordinator, the Auto-Runner, boot crash-recovery, and the escalation/accept
 flow. The operator-action methods each guard their entry state and throw
 `invalid_state` on a bad one. But the shared writer, `TaskService.setState`, is
@@ -39,7 +39,8 @@ single table and throw `invalid_state` on an illegal edge. Terminal states
 |-----------|-------------------------------------|
 | draft     | ready, cancelled                    |
 | ready     | working, escalated, done, cancelled |
-| working   | ready, escalated, done, cancelled   |
+| working   | ready, paused, escalated, done, cancelled |
+| paused    | working, cancelled                  |
 | escalated | ready, done, cancelled              |
 | done      | — (terminal)                        |
 | cancelled | ready                               |

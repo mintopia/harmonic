@@ -453,6 +453,38 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     },
   );
 
+  app.post(
+    '/tasks/:id/pause',
+    {
+      schema: {
+        tags: ['Tasks'],
+        description: 'Pause a working task. Reachable with an attempt-scoped Attempt Key.',
+        params: idParamsSchema,
+        response: {
+          200: taskSchema.describe('The paused task.'),
+          409: errorResponse('The task is not working.'),
+        },
+      },
+    },
+    async (req) => await withDeps(await ctx.tasks.pause(req.params.id)),
+  );
+
+  app.post(
+    '/tasks/:id/resume',
+    {
+      schema: {
+        tags: ['Tasks'],
+        description: 'Resume a paused task. Reachable with an attempt-scoped Attempt Key.',
+        params: idParamsSchema,
+        response: {
+          200: taskSchema.describe('The working task.'),
+          409: errorResponse('The task is not paused.'),
+        },
+      },
+    },
+    async (req) => await withDeps(await ctx.tasks.resume(req.params.id)),
+  );
+
   app.delete(
     '/tasks/:id',
     {
