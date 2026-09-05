@@ -17,12 +17,14 @@ import { toastError } from '../toast';
 import { Icon } from './Icon';
 import { EpicIntegrationBar } from './EpicIntegrationBar';
 import { useAppContext } from '../app-context';
+import { ResumeOffer } from './ResumeOffer';
 import { formatModelLabel, providerLabel } from './TaskIdentity';
 import {
   blockerBadge,
   blockerCountPip,
   boardSectionTitle,
   btnPrimary,
+  btnQuiet,
   chip,
   displayTitle,
   hitlBadge,
@@ -116,6 +118,28 @@ function ResolveButton({ onOpen }: { onOpen: () => void }) {
   );
 }
 
+function PauseResumeButton({ task }: { task: Task }) {
+  const { refresh } = useAppContext();
+  const [pending, setPending] = useState(false);
+  if (task.state !== 'working' && task.state !== 'paused') return null;
+  const pausing = task.state === 'working';
+  const label = pausing ? 'Pause' : 'Resume';
+  return (
+    <button
+      type="button"
+      className={`${btnQuiet} relative z-10 disabled:opacity-60 ${HIT44}`}
+      disabled={pending}
+      onClick={(e) => {
+        e.stopPropagation();
+        setPending(true);
+        (pausing ? api.pauseTask(task.id) : api.resumeTask(task.id)).then(refresh, toastError).finally(() => setPending(false));
+      }}
+    >
+      {pending ? `${pausing ? 'Pausing' : 'Resuming'}…` : label}
+    </button>
+  );
+}
+
 function WhoLine({ harness, model }: { harness: string; model: string }) {
   return (
     <span className="min-w-0 truncate text-small text-muted">
@@ -151,14 +175,16 @@ function HitlBadge() {
   );
 }
 
-function TaskCard({ task, onOpen }: { task: Task; onOpen: () => void }) {
+export function TaskCard({ task, onOpen }: { task: Task; onOpen: () => void }) {
   const hasReadout = task.runStartedAt != null;
   const action =
     task.state === 'escalated' ? (
       <ResolveButton onOpen={onOpen} />
     ) : task.state === 'ready' && task.agentWorkable ? (
       <RunNowButton taskId={task.id} />
-    ) : null;
+    ) : (
+      <PauseResumeButton task={task} />
+    );
   const showFoot = !!task.branch || hasReadout || !!action;
 
   return (
@@ -177,6 +203,8 @@ function TaskCard({ task, onOpen }: { task: Task; onOpen: () => void }) {
               <span className={`${stateChip('working')} motion-safe:animate-pulse`}>merging</span>
             ) : task.state === 'escalated' ? (
               <span className={stateChip(task.state)}>escalated</span>
+            ) : task.state === 'paused' ? (
+              <span className={stateChip(task.state)}>paused</span>
             ) : task.state === 'working' && task.currentStep ? (
               <span className={stateChip(task.state)}>{task.currentStep}</span>
             ) : null}
@@ -204,6 +232,9 @@ function TaskCard({ task, onOpen }: { task: Task; onOpen: () => void }) {
         )}
         <div className="-mt-1">
           <WhoLine harness={task.harness} model={task.model} />
+        </div>
+        <div className="mt-2">
+          <ResumeOffer taskId={task.id} compact />
         </div>
         {showFoot && (
           <div className="mt-auto flex items-center gap-2.5 pt-3 text-small text-muted">
@@ -722,8 +753,8 @@ export function Board({
 
   if (empty && hasHistory === false) return <FirstRunBoard onNewTask={onNewTask} />;
 
-  const { attention, running, pending } = sections;
-  if (attention.length === 0 && running.length === 0 && pending.length === 0) return <AllClear />;
+  const { attention, running, paused, pending } = sections;
+  if (attention.length === 0 && running.length === 0 && paused.length === 0 && pending.length === 0) return <AllClear />;
 
   const pendingCount = pending.reduce((n, group) => n + group.columns.reduce((m, column) => m + column.items.length, 0), 0);
   const hasEpicGroups = pending.some((group) => group.epic !== null);
@@ -751,6 +782,16 @@ export function Board({
         <BoardSection label="Running" count={String(running.length)} tone="running">
           <CardStrip count={running.length}>
             {running.map((task) => (
+              <TaskCard key={task.id} task={task} onOpen={() => onOpen(task)} />
+            ))}
+          </CardStrip>
+        </BoardSection>
+      )}
+
+      {paused.length > 0 && (
+        <BoardSection label="Paused" count={String(paused.length)}>
+          <CardStrip count={paused.length}>
+            {paused.map((task) => (
               <TaskCard key={task.id} task={task} onOpen={() => onOpen(task)} />
             ))}
           </CardStrip>

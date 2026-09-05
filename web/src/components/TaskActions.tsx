@@ -31,6 +31,8 @@ export function TaskActions({
   // Accept runs verification + merge synchronously in the request; without an
   // immediate pending state the click looks inert until it resolves.
   const [accepting, setAccepting] = useState(false);
+  const [pausing, setPausing] = useState(false);
+  const [resuming, setResuming] = useState(false);
 
   const actions = taskActions(task.state);
   const escalation = escalationActions(task);
@@ -62,6 +64,20 @@ export function TaskActions({
   const onAccept = acceptWith(undefined, `${taskLabel(task.id)} accepted — merging`);
   const onForceAccept = acceptWith({ force: true }, `${taskLabel(task.id)} force-accepted — merging`);
   const onComplete = act(() => api.completeTask(task.id));
+  const onPause = () => {
+    setPausing(true);
+    api.pauseTask(task.id).then(() => {
+      toastSuccess(`${taskLabel(task.id)} paused`);
+      onChanged();
+    }, toastError).finally(() => setPausing(false));
+  };
+  const onResume = () => {
+    setResuming(true);
+    api.resumeTask(task.id).then(() => {
+      toastSuccess(`${taskLabel(task.id)} resumed`);
+      onChanged();
+    }, toastError).finally(() => setResuming(false));
+  };
   const onCancelTask = actDone(() => api.cancelTask(task.id), `${taskLabel(task.id)} cancelled`);
   const onCloseTask = actDone(() => api.closeTask(task.id), `${taskLabel(task.id)} closed`);
 
@@ -145,6 +161,18 @@ export function TaskActions({
         return (
           <button key={action} className={secondary} onClick={() => setConfirming('complete')}>
             Complete
+          </button>
+        );
+      case 'pause':
+        return (
+          <button key={action} className={secondary} disabled={pausing} onClick={onPause}>
+            {pausing ? 'Pausing…' : 'Pause'}
+          </button>
+        );
+      case 'resume':
+        return (
+          <button key={action} className={secondary} disabled={resuming} onClick={onResume}>
+            {resuming ? 'Resuming…' : 'Resume'}
           </button>
         );
       case 'cancel':

@@ -16,9 +16,9 @@
          indigo is reserved for the one state that needs the operator —
          escalated / "needs you." Deck's "awaiting-review = the accent" is
          retired; in Paper the escalated state owns its own hue.
-       · Board (home): attention-ordered sections — Attention → Running →
-         Pending (ADR-0011, reset 2026-08-28) — as horizontal card strips (Attention /
-         Running) and, inside Pending, collapsible Epic bands plus a standalone
+       · Board (home): attention-ordered sections — Attention → Running → Paused →
+         Pending (ADR-0011, reset 2026-08-28) — as horizontal card strips (Attention / Running / Paused)
+         and, inside Pending, collapsible Epic bands plus a standalone
          group, each laid out in open-blocker-count columns (Frontier / 1 blocker
          / 2 blockers …), not panelled row-lists. State is never a column.
        · Vocabulary: "merged" / "merging", never "landing" / "landed", on every
@@ -164,7 +164,7 @@ spacing:
 
 **"Paper" is a register, not a picture.** No paper texture, no skeuomorphism, no costume — the name means *matte, low-chroma, tactile-but-flat, quiet*. This is the correction to any temptation to theme the tool: Paper is restrained and serious (Linear-grade / terminal-adjacent), never whimsical or metaphor-dressed.
 
-This is a redesign, not a retheme: the UI is organised around the real lifecycle. Tickets flow `draft → ready → working → done` (the Attempt loop merges its own verified work under the one merge policy), reach `escalated` when they need a human (ADR-0001/0002), and Epics **merge** as a batch through an integration branch. The old cobalt "Deck" skin, its panelled row-lists, and its kanban ancestry are gone.
+This is a redesign, not a retheme: the UI is organised around the real lifecycle. Tickets flow `draft → ready → working → done` (the Attempt loop merges its own verified work under the one merge policy), can pause while an operator holds them, reach `escalated` when they need a human (ADR-0001/0002), and Epics **merge** as a batch through an integration branch. The old cobalt "Deck" skin, its panelled row-lists, and its kanban ancestry are gone.
 
 **The Prime Directive — the operator's attention leads.** Every surface is ordered so the thing that needs the operator *now* is first and loudest: escalations at the top of the Board; the escalation surface (Accept / Reject with guidance / Close) as the one loud element on a Ticket. Density is a virtue here, not a risk — but density is earned by structure (grouping, hierarchy, alignment), never bought with clutter.
 
@@ -207,6 +207,7 @@ Each state is a text colour + a dot colour + a tint fill, per theme, rendered as
 - **Done emerald** (`#127A39` / tint `#E2F2E6` · dark `#3ECF7E` / tint `#123420`): verified, merged. **Distinct green from teal on purpose** — never give *ready* its own separate green (two greens confused the operator; ready is teal, merged is emerald). The emerald sits at hue ~143° vs teal's ~179°: the original `#267356` emerald was only ~22° off the teal and Jess read the *ready* and *done* pills as near-identical, so the hue was pushed a further ~15° toward true green (the ~36° gap now separating them) rather than moving *ready* — *ready* stays welded to the action accent.
 - **Failed rose** (`#AF3C52` / tint `#F9E4E8` · dark `#F0768A` / tint `#3B1D24`): failed, rejected, blocked member, destructive.
 - **Blocked slate** (`#6A7079` / tint `#ECEDEA` · dark `#8A9099` / tint `#282B31`): waiting on a dependency. (Light slate darkened from `#868C95` in the AA retune.)
+- **Paused neutral**: an operator-held Task uses the Raised fill and Muted/Faint text. It has no state hue because it is not blocked by a dependency or awaiting review.
 - **Tooling = teal** (`= accent`): tool calls, branch/epic refs, harness metadata, the Epic kind badge. Paper folds Deck's separate tooling-cyan into the teal voice.
 
 ### Named accessibility rules (2026-08-21 audit)
@@ -259,6 +260,7 @@ Depth is real but quiet, **declared once per element** (never a border *and* a w
 Full-width, attention-ordered sections, top → bottom (ADR-0011 Visibility; state is implied by colour, **never a column**):
 - **Attention** — the sacred core, always first: *escalated* Tickets **and escalated Epics** (a held whole-Epic merge), indigo, with the escalation reason at a glance; the Epic card carries its member-status pips and opens the Epic view. Human-only tickets are never here. A horizontal **card strip** (fixed ~420px cards; overflow shows a right-edge fade + "→ N more" chip). Its section label + count are **indigo**, the one section that isn't faint.
 - **Running** — the working Tickets, a card strip; the count (amber tint) matches "N working." A running Epic member is promoted here, out of its band.
+- **Paused** — operator-held Tickets, a neutral card strip with an explicit Paused label and Resume control; its count is neutral. A paused Epic member remains visible in its Epic band as well as this fleet-wide strip.
 - **Pending** — every ready / draft ticket, **grouped into Epics** (collapsible **bands**, ascending by ref) with a **standalone** group last (loose nodes on the canvas, not boxed). Each group lays its tickets out in **open-blocker-count columns** (below). Standalone (non-Epic) Tasks and Epic members are both first-class.
 
 ### Blocker columns (inside an Epic band, and the standalone group)

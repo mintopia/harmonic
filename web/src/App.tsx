@@ -172,6 +172,8 @@ export function App() {
   const [tasks, setTasks] = useState<Task[] | null>(null);
   const [hasHistory, setHasHistory] = useState<boolean | null>(null);
   const [config, setConfig] = useState<AppConfig | null>(null);
+  const [globalPaused, setGlobalPaused] = useState<boolean | null>(null);
+  const [globalPausePending, setGlobalPausePending] = useState(false);
   const [hostLoad, setHostLoad] = useState<HostLoad | null>(null);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [workspacesLoaded, setWorkspacesLoaded] = useState(false);
@@ -234,6 +236,10 @@ export function App() {
     }
   }, [activeWorkspaceId]);
 
+  const refreshGlobalPause = useCallback(() => {
+    api.globalPause().then(({ paused }) => setGlobalPaused(paused)).catch(() => {});
+  }, []);
+
   const refreshEpics = useCallback(async () => {
     if (activeWorkspaceId === null) return;
     try {
@@ -245,6 +251,7 @@ export function App() {
   useLiveEffect((live) => {
     if (!authed) return;
     api.config().then((next) => live() && setConfig(next)).catch(() => {});
+    api.globalPause().then(({ paused }) => live() && setGlobalPaused(paused)).catch(() => {});
     api.workspaces().then(({ workspaces }) => {
       if (!live()) return;
       setWorkspaces(workspaces);
@@ -267,6 +274,7 @@ export function App() {
     if (!authed || activeWorkspaceId === null) return;
     refresh();
     refreshEpics();
+    refreshGlobalPause();
     const debouncedRefreshEpics = debounce(refreshEpics, 250);
     const unsubscribe = subscribe((msg) => {
       if (!live()) return;
@@ -359,10 +367,12 @@ export function App() {
     }, () => {
       refresh();
       refreshEpics();
+      refreshGlobalPause();
     });
     const timer = setInterval(() => {
       refresh();
       refreshEpics();
+      refreshGlobalPause();
     }, 10_000);
     return () => {
       unsubscribe();
@@ -370,7 +380,7 @@ export function App() {
       debouncedRefreshEpics.cancel();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `view`/`navigate` intentionally excluded; subscribe once per Workspace, routeRef carries the latest route to the handler
-  }, [refresh, refreshEpics, authed, activeWorkspaceId]);
+  }, [refresh, refreshEpics, refreshGlobalPause, authed, activeWorkspaceId]);
 
   const periodCost = usePeriodCost(authed === true, tasks, activeWorkspaceId);
 
@@ -477,6 +487,17 @@ export function App() {
     const next = nextTheme(theme);
     setTheme(next);
     storeTheme(localStorage, next);
+  };
+
+  const setFleetPaused = (paused: boolean) => {
+    if (globalPausePending) return;
+    setGlobalPausePending(true);
+    (paused ? api.pauseGlobal() : api.resumeGlobal())
+      .then(({ paused: next }) => {
+        setGlobalPaused(next);
+        refresh();
+      }, toastError)
+      .finally(() => setGlobalPausePending(false));
   };
 
   const refreshTracker = () => {
@@ -590,9 +611,12 @@ export function App() {
           theme={theme}
           view={view}
           passwordSet={passwordSet}
+          globalPaused={globalPaused}
+          globalPausePending={globalPausePending}
           onAutoRunnerChange={(enabled) =>
             api.updateConfig({ autoRunner: { enabled } }).then(setConfig, toastError)
           }
+          onGlobalPauseChange={setFleetPaused}
           onThemeCycle={cycleTheme}
           onSettingsClick={() => pickView('settings')}
           onLogout={() => fetch('/api/auth/logout', { method: 'POST' }).then(() => setAuthed(false))}

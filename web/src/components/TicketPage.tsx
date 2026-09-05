@@ -35,6 +35,7 @@ import { useLiveUsage } from './useLiveUsage';
 import { AttemptStats, AttemptSummaryCard, StatsPanel, statsAttemptsOf } from './ticket/StatsPanel';
 import { CriticSessions, Verification } from './ticket/Verification';
 import { Fact } from './Fact';
+import { ResumeOffer } from './ResumeOffer';
 
 
 const sectionCaps = 'text-label font-bold uppercase tracking-[0.1em] text-faint';
@@ -987,6 +988,8 @@ export function TicketPage({
             </div>
 
             <TaskProgressBar task={task} attempts={runs} commandConfigured={commandConfigured} />
+
+            <ResumeOffer taskId={task.id} />
 
             {task.skipReason && (
               <div className="mb-4 text-small text-muted">

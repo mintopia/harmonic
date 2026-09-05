@@ -296,6 +296,7 @@ describe('WorkspaceService override persistence (issue #64)', () => {
       driveMergeFate: null,
       driveContinueAttempts: null,
       taskPrompt: null,
+      pauseMessage: null,
     });
   });
 });

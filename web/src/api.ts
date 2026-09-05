@@ -59,6 +59,9 @@ export const api = {
   harnessProviders: (harness: string) => request<{ providers: HarnessProvider[] }>('GET', `/api/harnesses/${encodeURIComponent(harness)}/providers`),
   harnessModels: (harness: string, provider: string) => request<{ models: DiscoveredHarnessModel[] }>('GET', `/api/harnesses/${encodeURIComponent(harness)}/models?provider=${encodeURIComponent(provider)}`),
   config: () => request<AppConfig>('GET', '/api/config'),
+  globalPause: () => request<{ paused: boolean }>('GET', '/api/global-pause'),
+  pauseGlobal: () => request<{ paused: boolean }>('POST', '/api/global-pause'),
+  resumeGlobal: () => request<{ paused: boolean }>('DELETE', '/api/global-pause'),
   configLayers: () => request<ConfigLayers>('GET', '/api/config/layers'),
   updateConfig: (patch: object) => request<AppConfig>('PATCH', '/api/config', patch),
   replaceConfig: (config: AppConfig) => request<AppConfig>('PUT', '/api/config', config),
@@ -161,6 +164,8 @@ export const api = {
   promoteTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/ready`),
   cancelTask: (id: number, withDependents = false) =>
     request<Task>('POST', `/api/tasks/${id}/cancel`, withDependents ? { withDependents } : {}),
+  pauseTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/pause`),
+  resumeTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/resume`),
   /** Operator override: stop a working task's agent and settle it done, skipping verification. */
   completeTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/complete`),
   /** Steer a running task: queue a message for its active run, delivered at the next turn boundary. */

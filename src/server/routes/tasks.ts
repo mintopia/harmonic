@@ -3,7 +3,7 @@ import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { AppContext } from '../app.js';
 import { createTaskInputSchema, updateTaskInputSchema, taskListQuerySchema, compareListRows } from '../../domain/tasks.js';
-import { previewHumanRejectContinuation } from '../../domain/session-continuation.js';
+import { previewManualResumeContinuation } from '../../domain/session-continuation.js';
 import {
   TASK_STATES,
   MERGE_STATUSES,
@@ -453,6 +453,52 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     },
   );
 
+  app.post(
+    '/tasks/:id/pause',
+    {
+      schema: {
+        tags: ['Tasks'],
+        description: 'Inject the configured pause steer, then pause a working task after its active turn settles. Reachable with an attempt-scoped Attempt Key.',
+        params: idParamsSchema,
+        response: {
+          200: taskSchema.describe('The paused task.'),
+          409: errorResponse('The task is not working.'),
+        },
+      },
+    },
+    async (req, reply) => {
+      if (!(await ctx.runner.pause(req.params.id))) {
+        return reply.code(409).send({ error: { code: 'conflict', message: 'The task is not actively running.' } });
+      }
+      return await withDeps({ id: req.params.id });
+    },
+  );
+
+  app.post(
+    '/tasks/:id/resume',
+    {
+      schema: {
+        tags: ['Tasks'],
+        description: 'Resume a paused task on its existing Session. Reachable with an attempt-scoped Attempt Key.',
+        params: idParamsSchema,
+        response: {
+          200: taskSchema.describe('The working task.'),
+          409: errorResponse('The task is not paused.'),
+        },
+      },
+    },
+    async (req, reply) => {
+      if (await ctx.runner.resume(req.params.id)) {
+        return await withDeps({ id: req.params.id });
+      }
+      const task = await ctx.tasks.get(req.params.id);
+      if (task.state !== 'paused') {
+        return reply.code(409).send({ error: { code: 'conflict', message: 'The task has no paused Attempt to resume.' } });
+      }
+      return await withDeps(await ctx.runner.resumePaused(req.params.id));
+    },
+  );
+
   app.delete(
     '/tasks/:id',
     {
@@ -503,19 +549,19 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       schema: {
         tags: ['Tasks'],
         description:
-          "Steer a running task: send an operator message to its active Attempt. When the harness supports ACP mid-turn steering, the message is injected into the running turn immediately — pre-empting the current generation without cancelling it. Otherwise, or when the agent is parked between turns, the message is queued and delivered as a fresh prompt turn at the next turn boundary. When no Attempt is active but the task's last Attempt left a still-warm, resumable session (an escalated task that ended without closure), the message continues that session in a fresh Attempt — a follow-up in the same conversation. Use it to redirect an agent that has gone off-track, nudge one that ended its turn and parked, or continue one whose Attempt just ended while its session is still warm. Operator only.",
+          "Steer a running task: send an operator message to its active Attempt. When the harness supports ACP mid-turn steering, the message is injected into the running turn immediately — pre-empting the current generation without cancelling it. Otherwise, or when the agent is parked between turns, the message is queued and delivered as a fresh prompt turn at the next turn boundary. When no Attempt is active but the task's last Attempt left a resumable session (an escalated task that ended without closure), the message continues that session in a fresh Attempt. A cold cache changes the estimated cost, never eligibility. Use it to redirect an agent that has gone off-track, nudge one that ended its turn and parked, or continue one whose Attempt just ended. Operator only.",
         params: idParamsSchema,
         body: steerInputSchema,
         response: {
-          200: okResponseSchema.describe("The message was injected into the running turn or queued at the next boundary of the task's active Attempt, or continued its last Attempt's still-warm session in a fresh Attempt."),
-          409: errorResponse('The task has no active Attempt to steer and no warm, resumable session to continue.'),
+          200: okResponseSchema.describe("The message was injected into the running turn or queued at the next boundary of the task's active Attempt, or continued its last Attempt's resumable session in a fresh Attempt."),
+          409: errorResponse('The task has no active Attempt to steer and no resumable session to continue.'),
         },
       },
     },
     async (req) => {
       await ctx.tasks.assertExists(req.params.id);
       if (!(await ctx.runner.steer(req.params.id, req.body.text)) && !(await ctx.runner.steerSettled(req.params.id, req.body.text))) {
-        throw new DomainError('invalid_state', `task ${req.params.id} has no active Attempt to steer and no warm session to continue`);
+        throw new DomainError('invalid_state', `task ${req.params.id} has no active Attempt to steer and no resumable session to continue`);
       }
       return { ok: true } as const;
     },
@@ -634,7 +680,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       schema: {
         tags: ['Tasks'],
         description:
-          'Preview the Session continuation a Reject with guidance will get (issue #170; decided by the #311 rule, not the operator): if this task has a live Session, the warm-session estimate and the condensed alternative. `available: false` when there is nothing to continue.',
+          'Preview the Session continuation available to a manual resume: if this task has a live Session, the warm-session estimate and the condensed alternative. `available: false` when there is nothing to continue.',
         params: idParamsSchema,
         response: {
           200: continuationPreviewSchema.describe('The continuation offer for this task, or `available: false`.'),
@@ -654,7 +700,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
           sessions.set(run.sessionRowId, null);
         }
       }
-      const plan = previewHumanRejectContinuation(
+      const plan = previewManualResumeContinuation(
         runsForTask,
         (sessionRowId) => sessions.get(sessionRowId) ?? null,
         Object.entries(ctx.settingsStore.getGlobal().harnesses).find(([id]) => id === task.harness)?.[1].cacheWarmSeconds ?? 0,

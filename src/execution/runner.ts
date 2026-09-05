@@ -35,7 +35,7 @@ import { AttemptStore, type AttemptGuardrailSnapshot, type PersistedAttemptEvent
 import { AttemptSettleCoordinator, type SettleProjection, type DispositionKind } from '../domain/attempt-settle.js';
 import type { SessionRetirementHook } from '../domain/session-retirement-coordinator.js';
 import type { TaskService } from '../domain/tasks.js';
-import { resolveGuardrails, resolveVerifiers, resolveScoped, resolveTaskPrompt } from '../domain/setting-override.js';
+import { resolveGuardrails, resolvePauseMessage, resolveVerifiers, resolveScoped, resolveTaskPrompt } from '../domain/setting-override.js';
 
 function configuredCacheWarmSeconds(config: AppConfig, harness: string): number | undefined {
   return Object.entries(config.harnesses).find(([id]) => id === harness)?.[1].cacheWarmSeconds;
@@ -100,6 +100,8 @@ export interface LiveAttemptEvent {
 }
 
 export interface RunnerOptions {
+  isGloballyPaused?: () => boolean;
+  onGloballyPaused?: (taskId: number) => Promise<void>;
   events?: RunnerEvents;
   /** Where temporary worktrees live; per-run subdirectories. */
   worktreesDir?: string;
@@ -135,6 +137,7 @@ export interface RunnerOptions {
         | 'maxAttempts'
         | 'contextReuseTokenLimit'
         | 'taskPrompt'
+        | 'pauseMessage'
       > &
         Partial<Pick<WorkspaceRow, 'workingDir'>>)
     | undefined
@@ -178,6 +181,10 @@ interface ActiveRun {
   externallySettled: boolean;
   steerable: boolean;
   steerSupported?: boolean;
+  pauseRequested: boolean;
+  pauseReason: string | null;
+  pauseFactRecorded: boolean;
+  globalPauseRequested: boolean;
   verifyAbort: AbortController;
 }
 
@@ -371,6 +378,8 @@ export class Runner {
   private readonly epicMergeEvents: EpicMergeEventStore;
   private readonly settleCoordinator: AttemptSettleCoordinator;
   private readonly sessionRetirement: SessionRetirementHook | undefined;
+  private readonly isGloballyPaused: (() => boolean) | undefined;
+  private readonly onGloballyPaused: ((taskId: number) => Promise<void>) | undefined;
   private readonly tailer: LiveUsageTailer;
   private readonly usage: UsageSampler;
   private readonly transcripts: TranscriptCapture;
@@ -378,6 +387,7 @@ export class Runner {
   private readonly lastTurnContextTokens = new Map<number, number>();
   private readonly pendingOperatorSeed = new Map<number, string>();
   private readonly pendingContinuation = new Map<number, DeterministicContinuation>();
+  private readonly pendingManualResume = new Map<number, AttemptRow>();
   private readonly progressEvents = new Map<number, ProgressEvent[]>();
   private readonly progressSequences = new Map<number, number>();
   private readonly criticLogSequences = new Map<number, number>();
@@ -426,6 +436,8 @@ export class Runner {
       options.sessionRetirement,
     );
     this.sessionRetirement = options.sessionRetirement;
+    this.isGloballyPaused = options.isGloballyPaused;
+    this.onGloballyPaused = options.onGloballyPaused;
     this.tailer = new LiveUsageTailer(
       {
         sample: (attemptId) => this.usage.sampleSnapshot(attemptId),
@@ -532,7 +544,9 @@ export class Runner {
       throw new DomainError('invalid_state', `task ${taskId} is ${task.state}; only ready tasks can run`);
     }
     try {
-      return await this.beginRun(claimed);
+      const resumedAttempt = this.pendingManualResume.get(taskId);
+      this.pendingManualResume.delete(taskId);
+      return await this.beginRun(claimed, undefined, resumedAttempt);
     } catch (err) {
       await this.taskService.setState(taskId, 'ready');
       throw err;
@@ -556,6 +570,7 @@ export class Runner {
       choice = continuation.path === 'continued-session' ? 'full' : 'condensed';
     }
     await this.taskService.requeue(task.id, guidance, choice);
+    if (run) this.pendingManualResume.set(task.id, run);
     if (startNow) {
       if (continuation) this.pendingContinuation.set(task.id, continuation);
       await this.start(task.id);
@@ -611,10 +626,12 @@ export class Runner {
     if (task.state !== 'working') {
       throw new DomainError('invalid_state', `task ${taskId} is ${task.state}; launchClaimed expects a task already flipped to working`);
     }
-    return this.beginRun(task, parent);
+    const resumedAttempt = this.pendingManualResume.get(taskId);
+    this.pendingManualResume.delete(taskId);
+    return this.beginRun(task, parent, resumedAttempt);
   }
 
-  private async beginRun(task: TaskRow, parent?: SpanContext): Promise<AttemptRow> {
+  private async beginRun(task: TaskRow, parent?: SpanContext, resumedAttempt?: AttemptRow): Promise<AttemptRow> {
     if (await this.epicBaseNotReady?.(task)) {
       throw new DomainError(
         'invalid_state',
@@ -630,7 +647,18 @@ export class Runner {
       guardrailConfig: resolveGuardrails(ws, config),
       priceTable: pricesForHarness(harness),
     };
-    const created = await this.attempts.create(task.id, snapshot);
+    const created = resumedAttempt
+      ? await this.attempts.update(resumedAttempt.id, {
+          state: 'running',
+          startedAt: Date.now(),
+          endedAt: null,
+          reason: null,
+          detail: null,
+          guardrailConfig: JSON.stringify(snapshot.guardrailConfig),
+          priceTable: JSON.stringify(snapshot.priceTable),
+          ...(task.continuationChoice === 'condensed' ? { sessionRowId: null, sessionId: null } : {}),
+        })
+      : await this.attempts.create(task.id, snapshot);
     const pendingContinuation = this.pendingContinuation.get(task.id);
     if (pendingContinuation !== undefined) {
       this.pendingContinuation.delete(task.id);
@@ -638,6 +666,7 @@ export class Runner {
     }
     const run = created;
     const bound = await this.bindContinuationIfEligible(task, run);
+    if (await this.pauseIfGloballyPaused(task.id)) return bound;
     const operation = startOperation({
       type: 'attempt',
       parent,
@@ -692,7 +721,7 @@ export class Runner {
       if (prior.sessionRowId === null) continue;
       try {
         const session = await this.sessionStore.get(prior.sessionRowId);
-        return { prior, session, trigger: 'human-reject' };
+        return { prior, session, trigger: 'manual-resume' };
       } catch {
         continue;
       }
@@ -858,12 +887,92 @@ export class Runner {
     return true;
   }
 
+  /** Deliver the configured pause steer, then pause at the next prompt boundary. */
+  async pause(taskId: number): Promise<boolean> {
+    const task = await this.taskService.get(taskId);
+    if (task.state !== 'working') return false;
+    const active = [...this.active.values()].find((candidate) => candidate.taskId === taskId);
+    if (!active || active.pauseRequested) return false;
+    const message = resolvePauseMessage(await this.getWorkspace?.(task.workspaceId), this.getConfig());
+    if (!(await this.steer(taskId, message))) return false;
+    active.pauseRequested = true;
+    active.pauseReason = 'operator request';
+    logger.info('Task pause requested', { taskId, attemptId: active.attemptId, reason: active.pauseReason });
+    return true;
+  }
+
+  async pauseForGlobal(taskId: number): Promise<boolean> {
+    const task = await this.taskService.get(taskId);
+    if (task.state !== 'working') return false;
+    const active = [...this.active.values()].find((candidate) => candidate.taskId === taskId);
+    if (!active) {
+      await this.taskService.pause(taskId);
+      await this.recordLifecycleTransition(taskId, 'paused', 'global pause');
+      logger.info('Task paused', { taskId, reason: 'global pause' });
+      return true;
+    }
+    if (!active.steerable) {
+      active.pauseRequested = true;
+      active.pauseReason = 'global pause';
+      active.globalPauseRequested = true;
+      await this.taskService.pause(taskId);
+      await this.recordLifecycleTransition(taskId, 'paused', 'global pause');
+      active.pauseFactRecorded = true;
+      logger.info('Task paused', { taskId, attemptId: active.attemptId, reason: active.pauseReason });
+      return true;
+    }
+    const paused = await this.pause(taskId);
+    if (paused) {
+      active.pauseReason = 'global pause';
+      active.globalPauseRequested = true;
+    }
+    return paused;
+  }
+
+  /** Resume the still-running Attempt and exclude the paused interval from its
+   * elapsed wall-clock budget before reattaching its durable Session. */
+  async resume(taskId: number, reason = 'operator request'): Promise<boolean> {
+    const task = await this.taskService.get(taskId);
+    if (task.state !== 'paused') return false;
+    const active = [...this.active.values()].find((candidate) => candidate.taskId === taskId);
+    if (active) {
+      active.pauseRequested = false;
+      active.pauseReason = null;
+      active.globalPauseRequested = false;
+      await this.taskService.resume(taskId);
+      await this.recordLifecycleTransition(taskId, 'resumed', reason);
+      logger.info('Task resumed', { taskId, attemptId: active.attemptId, reason });
+      return true;
+    }
+    const run = await this.attempts.getRunningForTask(taskId);
+    if (!run) return false;
+    const pausedFor = Math.max(0, Date.now() - task.updatedAt);
+    await this.attempts.update(run.id, { startedAt: run.startedAt + pausedFor });
+    await this.taskService.resume(taskId);
+    await this.recordLifecycleTransition(taskId, 'resumed', reason);
+    logger.info('Task resumed', { taskId, attemptId: run.id, reason });
+    try {
+      await this.launchClaimed(taskId);
+      return true;
+    } catch (error) {
+      await this.taskService.pause(taskId);
+      throw error;
+    }
+  }
+
+  private async pauseIfGloballyPaused(taskId: number): Promise<boolean> {
+    if (!this.isGloballyPaused?.()) return false;
+    if ((await this.taskService.get(taskId)).state === 'working') {
+      await this.taskService.pause(taskId);
+      await this.onGloballyPaused?.(taskId);
+    }
+    return true;
+  }
+
   /**
-   * Continue a settled (escalated) Task's warm Session with an operator
-   * message: when no Attempt is active but the Task's last Session-bound Attempt left a
-   * Session that is BOTH resumable and still inside its harness warm window,
-   * spawn a fresh Attempt bound to that Session whose FIRST turn is the operator's
-   * message. Returns false (→ 409) when there is nothing warm to continue.
+   * Continue a settled Task's Session with an operator message. A cold Session
+   * remains eligible: cache warmth changes the cost estimate, never whether the
+   * operator can continue it. The settled Attempt is resumed in place.
    */
   async steerSettled(taskId: number, text: string): Promise<boolean> {
     if ([...this.active.values()].some((a) => a.taskId === taskId)) return false;
@@ -872,17 +981,33 @@ export class Runner {
     const src = await this.resolveContinuationSource(task);
     if (!src) return false;
     if (!this.resumeEligibilityFor(task, src.session).eligible) return false;
-    const cacheWarmSeconds = configuredCacheWarmSeconds(this.getConfig(), task.harness);
-    if (cacheWarmSeconds === undefined || Date.now() - src.session.lastActiveAt >= cacheWarmSeconds * 1000) return false;
     this.pendingOperatorSeed.set(taskId, text);
     try {
       await this.taskService.requeue(taskId, undefined, 'full');
+      this.pendingManualResume.set(taskId, src.prior);
       await this.start(taskId);
     } catch (err) {
       this.pendingOperatorSeed.delete(taskId);
       throw err;
     }
     return true;
+  }
+
+  /** Resume a paused Task in its latest compatible Session when one is retained. */
+  async resumePaused(taskId: number): Promise<TaskRow> {
+    const task = await this.taskService.get(taskId);
+    if (task.state !== 'paused') return this.taskService.resume(taskId);
+    if ([...this.active.values()].some((active) => active.taskId === taskId)) return this.taskService.resume(taskId);
+    const src = await this.resolveContinuationSource(task);
+    const resumed = await this.taskService.resume(taskId);
+    if (!src || !this.resumeEligibilityFor(task, src.session).eligible) return resumed;
+    try {
+      await this.beginRun(resumed, undefined, src.prior);
+    } catch (err) {
+      await this.taskService.setState(taskId, 'paused');
+      throw err;
+    }
+    return this.taskService.get(taskId);
   }
 
   private forActiveTask(taskId: number, fn: (active: ActiveRun) => void): boolean {
@@ -1635,6 +1760,13 @@ export class Runner {
     return decision;
   }
 
+  private async recordLifecycleTransition(taskId: number, event: 'paused' | 'resumed', reason: string): Promise<void> {
+    const run = await this.attempts.getRunningForTask(taskId);
+    if (!run) return;
+    const persisted = await this.attempts.appendEvent(run.id, { type: 'lifecycle', payload: { event, reason } });
+    this.events.onAttemptEvent?.(persisted);
+  }
+
   private recordRunEvent(
     task: TaskRow,
     run: AttemptRow,
@@ -1666,6 +1798,10 @@ export class Runner {
     const record = (type: 'permission_request' | 'lifecycle', payload: unknown) => {
       this.recordRunEvent(task, run, type, payload);
     };
+    if (await this.pauseIfGloballyPaused(task.id)) {
+      record('lifecycle', { event: 'paused' });
+      return { kind: 'terminal' };
+    }
     const attemptAtStart = await this.attempts.ensureForRun(task.id, attemptNumber, run.startedAt);
     const toolCalls = this.toolCallTotals.get(run.id) ?? (await this.attempts.listToolCalls(attemptAtStart.id));
     this.toolCallTotals.set(run.id, toolCalls);
@@ -1778,6 +1914,12 @@ export class Runner {
     });
 
     try {
+      if (await this.pauseIfGloballyPaused(task.id)) {
+        const pausedEvent = await this.attempts.appendEvent(run.id, { type: 'lifecycle', payload: { event: 'paused', reason: 'global pause' } });
+        this.events.onAttemptEvent?.(pausedEvent);
+        await finalize();
+        return { kind: 'terminal' };
+      }
       const promptText = await this.initializeTurn({
         task,
         run,
@@ -1797,6 +1939,31 @@ export class Runner {
       escalating = driven.escalating;
       if (active.externallySettled) {
         await finalize();
+        return { kind: 'terminal' };
+      }
+
+      if (active.pauseRequested) {
+        if ((await this.taskService.get(task.id)).state === 'working') await this.taskService.pause(task.id);
+        const usage = await this.usage.collectUsageSafe({
+          harnessId: task.harness,
+          harness,
+          cwd: workspace.cwd,
+          attemptId: run.id,
+          promptResult: driven.result,
+        });
+        if (usage?.contextTokens != null) this.lastTurnContextTokens.set(run.id, usage.contextTokens);
+        this.noteModelMismatch(task, usage, record);
+        await this.attempts.update(run.id, { stopReason: driven.result.stopReason ?? null, usage: usage ? JSON.stringify(usage) : null });
+        record('lifecycle', { event: 'finished', stopReason: driven.result.stopReason ?? null });
+        if (!active.pauseFactRecorded) {
+          const pausedEvent = await this.attempts.appendEvent(run.id, {
+            type: 'lifecycle',
+            payload: { event: 'paused', reason: active.pauseReason ?? 'operator request' },
+          });
+          this.events.onAttemptEvent?.(pausedEvent);
+        }
+        await finalize();
+        if (active.globalPauseRequested) await this.onGloballyPaused?.(task.id);
         return { kind: 'terminal' };
       }
 
@@ -1910,6 +2077,10 @@ export class Runner {
       idle: false,
       externallySettled: false,
       steerable: false,
+      pauseRequested: false,
+      pauseReason: null,
+      pauseFactRecorded: false,
+      globalPauseRequested: false,
       verifyAbort: new AbortController(),
     };
     this.active.set(run.id, active);
@@ -2113,6 +2284,7 @@ export class Runner {
     const { task, driver, active, guardrails, listeners, autoDriven, record } = input;
     let promptText = input.promptText;
     let escalating: string | null = null;
+    if (active.pauseRequested) return { result: {}, connectionGone: false, escalating: null };
     active.steerable = true;
     let connectionGone = false;
     const first = await this.promptTurn(driver, promptText, record);
@@ -2121,6 +2293,7 @@ export class Runner {
     active.idle = true;
     for (let attempt = 1; !escalating && !listeners.stoppedShort && !connectionGone; ) {
       if (active.externallySettled) break;
+      if (active.pauseRequested && active.steerQueue.length === 0) break;
       if (active.escalateReason) {
         escalating = `the agent asked for a human: ${active.escalateReason}`;
         break;
