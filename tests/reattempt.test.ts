@@ -31,7 +31,7 @@ describe('unified corrective attempts', () => {
     return response.body.attempts as { number: number; state: string; feedback: string | null; steps: { type: string }[] }[];
   };
 
-  it('Reject with guidance starts attempt 2 on the same native ticket with the recorded guidance', async () => {
+  it('Reject with guidance resumes the escalated Attempt in place with the recorded guidance', async () => {
     const ticket = await startEscalatedTicket({ baseBranch: 'integration/x' });
     const rejected = await server.api('POST', `/api/tasks/${ticket.id}/reject`, {
       guidance: 'Add the CSV header and cover an empty result.',
@@ -39,21 +39,31 @@ describe('unified corrective attempts', () => {
     });
     expect(rejected.status).toBe(200);
 
+    // Unified manual resume (issue #506): the corrective run reuses the escalated
+    // Attempt in place — no second Attempt row — replaying implementation with the
+    // guidance folded into its prompt.
     await waitFor(async () => {
       const attempts = await timeline(ticket.id);
-      return attempts.length === 2 && attempts[1]!.steps.some((step) => step.type === 'implementation') ? attempts : undefined;
+      return attempts.length === 1 &&
+        attempts[0]!.state === 'escalated' &&
+        attempts[0]!.steps.filter((step) => step.type === 'implementation').length >= 2
+        ? attempts
+        : undefined;
     });
     const attempts = await timeline(ticket.id);
+    expect(attempts).toHaveLength(1);
     expect(attempts[0]).toMatchObject({ number: 1, state: 'escalated' });
-    expect(attempts[0]!.feedback).toContain('Add the CSV header');
-    expect(attempts[1]!.number).toBe(2);
-    expect(attempts[1]!.steps.map((step) => step.type)).toContain('implementation');
+
+    const runs = (await server.api('GET', `/api/tasks/${ticket.id}/attempts`)).body.attempts;
+    expect(runs).toHaveLength(1);
+    expect(runs[0].prompt).toContain('Add the CSV header');
+    expect(runs[0].prompt).toContain('crash-before-response');
 
     const after = await server.api('GET', `/api/tasks/${ticket.id}`);
     expect(after.body.id).toBe(ticket.id);
     expect(after.body.baseBranch).toBe('integration/x');
-    await waitFor(async () => ((await server.api('GET', `/api/tasks/${ticket.id}`)).body.state === 'escalated' && (await timeline(ticket.id)).length === 2 ? true : undefined));
-    expect((await timeline(ticket.id)).map((attempt) => attempt.state)).toEqual(['escalated', 'escalated']);
+    // Budget reset: the resumed Attempt re-escalates as "attempt 1 of 1", not 2-of-N.
+    expect(after.body.escalationReason).toMatch(/attempt 1 of 1 failed/);
   });
 
   it('a mirrored rejection enters the identical corrective Attempt loop without a detached task', async () => {
@@ -78,14 +88,21 @@ describe('unified corrective attempts', () => {
 
     const rejected = await server.api('POST', `/api/tasks/${mirrored.id}/reject`, { guidance: 'Keep the tracker link.', start: true });
     expect(rejected.status).toBe(200);
+    // Resume-in-place (issue #506): the corrective run reuses the one Attempt; it
+    // never spawns a detached duplicate of the mirrored ticket.
     await waitFor(async () => {
       const attempts = await timeline(mirrored.id);
-      return attempts.length === 2 ? attempts : undefined;
+      return attempts.length === 1 &&
+        attempts[0]!.state === 'escalated' &&
+        attempts[0]!.steps.filter((step) => step.type === 'implementation').length >= 2
+        ? attempts
+        : undefined;
     });
 
     const after = await server.api('GET', `/api/tasks/${mirrored.id}`);
     expect(after.body).toMatchObject({ id: mirrored.id, origin: 'mirrored', trackerRef: 55502, mapRef: 77, feedback: 'Keep the tracker link.' });
-    expect((await timeline(mirrored.id))[0]!.feedback).toContain('Keep the tracker link.');
+    const runs = (await server.api('GET', `/api/tasks/${mirrored.id}/attempts`)).body.attempts;
+    expect(runs).toHaveLength(1);
     const all = (await server.api('GET', '/api/tasks')).body.tasks as { trackerRef: number | null }[];
     expect(all.filter((task) => task.trackerRef === 55502)).toHaveLength(1);
     await waitFor(async () => ((await server.api('GET', `/api/tasks/${mirrored.id}`)).body.state === 'escalated' ? true : undefined));

@@ -39,6 +39,7 @@ import { join } from 'node:path';
         number: number;
         state: string;
         feedback: string | null;
+        steps: { type: string }[];
       }>;
 
     async function runToDone(prompt = 'do the thing'): Promise<number> {
@@ -104,22 +105,27 @@ import { join } from 'node:path';
       expect(rejected.status).toBe(200);
       expect(['working', 'escalated']).toContain(rejected.body.state);
 
+      // Unified manual resume (issue #506): the escalated Attempt is resumed in place —
+      // re-running implementation with the guidance folded in — not replaced by a second Attempt.
       const again = await waitFor(async () => {
         const { body } = await server.api('GET', `/api/tasks/${taskId}`);
-        return body.state === 'escalated' && (await timeline(taskId)).length === 2 ? body : undefined;
+        const attempts = await timeline(taskId);
+        return body.state === 'escalated' &&
+          attempts.length === 1 &&
+          attempts[0]!.steps.filter((step) => step.type === 'implementation').length >= 2
+          ? body
+          : undefined;
       });
+      // Budget reset: the resumed Attempt re-escalates as "attempt 1 of 1".
       expect(again.escalationReason).toMatch(/attempt 1 of 1 failed/);
       const attemptsAfter = await timeline(taskId);
       expect(attemptsAfter.map((attempt) => ({ number: attempt.number, state: attempt.state }))).toEqual([
         { number: 1, state: 'escalated' },
-        { number: 2, state: 'escalated' },
       ]);
-      expect(attemptsAfter[0]!.feedback).toBe('Do not crash; write the CSV header first.');
       const runs = (await server.api('GET', `/api/tasks/${taskId}/attempts`)).body.attempts;
-      expect(runs).toHaveLength(2);
-      expect(runs[1].number).toBe(2);
-      expect(runs[1].prompt).toContain('Do not crash; write the CSV header first.');
-      expect(runs[1].prompt).toContain('crash-before-response');
+      expect(runs).toHaveLength(1);
+      expect(runs[0].prompt).toContain('Do not crash; write the CSV header first.');
+      expect(runs[0].prompt).toContain('crash-before-response');
     });
 
     it('Reject without start requeues to ready and records the guidance, but does not force-start', async () => {
@@ -588,19 +594,19 @@ import { join } from 'node:path';
         });
         expect(done.state).toBe('done');
         const attempts = await ticketAttempts(taskId);
+        // Resume-in-place (issue #506): the escalated Attempt 2 is resumed on the same
+        // branch and now passes — no third Attempt row is created.
         expect(attempts.map((a) => ({ number: a.number, state: a.state }))).toEqual([
           { number: 1, state: 'failed' },
-          { number: 2, state: 'escalated' },
-          { number: 3, state: 'passed' },
+          { number: 2, state: 'passed' },
         ]);
-        expect(attempts[1]!.feedback).toBe('The timeout is intentional; see the linked ticket.');
 
         const runs = (await server.api('GET', `/api/tasks/${taskId}/attempts`)).body.attempts;
-        expect(runs).toHaveLength(3);
-        expect(runs[2].number).toBe(3);
-        expect(runs[2].prompt).toContain('The timeout is intentional');
+        expect(runs).toHaveLength(2);
+        expect(runs[1].number).toBe(2);
+        expect(runs[1].prompt).toContain('The timeout is intentional');
         expect(branch).toBe(`harmonic/task-${taskId}`);
-        expect(runs[2].branch).toBe(branch);
+        expect(runs[1].branch).toBe(branch);
         expect(runs[0].branch).toBe(branch);
       });
 
