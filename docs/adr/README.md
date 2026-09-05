@@ -42,6 +42,9 @@ not-yet-torn-down machinery is marked `legacy until ADR-1 epic`.
 | 0022 | [Configuration layering, modified state, and the per-harness model catalog](0022-configuration-layering-and-model-catalog.md) |
 | 0023 | [A root ticket with children is a structural Epic, no label required](0023-structural-root-epics.md) |
 | 0024 | [Operations is a worktree control surface: inventory, force-cleanup, reconcile-on-demand](0024-operations-worktree-control-surface.md) |
+| 0025 | [The OpenCode harness and dynamic harness capabilities](0025-opencode-harness-and-dynamic-capabilities.md) |
+| 0026 | [Activity is strictly a read-only agent glance](0026-activity-strictly-read-only-agent-glance.md) |
+| 0027 | [Pause and resume: an operator execution freeze and one unified warm/cold resume](0027-pause-and-resume.md) |
 
 ## Where every pre-reset ADR went
 

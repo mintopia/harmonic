@@ -58,8 +58,8 @@ at boot.
 - **Step** — one row of an Attempt's timeline: Implementation Step, one
   Verification Step per configured command (ordered, fail-fast), Review Step.
 - Task states: `draft → ready → working → done`, plus `escalated` and
-  `cancelled`. Blocked-ness and agent-workability are **derived**, never
-  stored. There is no *failed* state (failure is an Attempt-level fact; a Task
+  `cancelled` (and `paused`, an operator execution freeze added by ADR-0027).
+  Blocked-ness and agent-workability are **derived**, never stored. There is no *failed* state (failure is an Attempt-level fact; a Task
   loops or escalates, and only a human closes it) and no *awaiting-review*
   (everything Harmonic runs is autonomous; human-only tickets are visible but
   not agent-workable).
