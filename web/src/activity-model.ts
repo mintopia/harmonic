@@ -195,19 +195,19 @@ export interface ActivitySummary {
   agentCount: number;
   /** Every Process Tree descendant, excluding each root Agent. */
   subagentCount: number;
-  /** In-flight Attempts (afk work) — the machine-ceiling numerator. */
+  /** In-flight Attempts (afk work) — the host-ceiling numerator. */
   runningCount: number;
   /** Fleet Cost as an honest floor across every process; null when nothing is priceable. */
   cost: Cost | null;
   /** Summed average token throughput across the fleet. */
   tokensPerSecond: number;
-  /** Attempts in flight against the Machine Ceiling (the global concurrent-Attempt cap). */
+  /** Attempts in flight against the Host Ceiling (the global concurrent-Attempt cap). */
   ceiling: { running: number; max: number };
 }
 
 export function activitySummary(
   processes: ActivityProcess[],
-  machineCeiling: number,
+  hostCeiling: number,
   now: number,
 ): ActivitySummary {
   const runningCount = processes.filter((p) => p.type === 'attempt').length;
@@ -217,6 +217,6 @@ export function activitySummary(
     runningCount,
     cost: sumCosts(processes.map((p) => p.cost)),
     tokensPerSecond: processes.reduce((sum, p) => sum + tokensPerSecond(p, now), 0),
-    ceiling: { running: runningCount, max: machineCeiling },
+    ceiling: { running: runningCount, max: hostCeiling },
   };
 }

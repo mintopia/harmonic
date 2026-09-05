@@ -439,11 +439,11 @@ const autoRunnerEnabled = scalar(
   },
 );
 
-const machineCeiling = scalar(
+const hostCeiling = scalar(
   {
     id: 'settings-max-concurrent-attempts',
     control: 'number',
-    label: 'Machine Ceiling',
+    label: 'Host Ceiling',
     errorKey: 'autoRunner.maxConcurrentAttempts',
     min: 1,
     widthClass: 'w-28',
@@ -1188,12 +1188,12 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
     description: {
       global: 'Starts ready tasks unattended, up to the concurrency cap.',
       workspace:
-        'Whether ready Tasks here run unattended, and how many at once. Both inherit the global defaults until overridden; a cap override can never exceed the Machine Ceiling.',
+        'Whether ready Tasks here run unattended, and how many at once. Both inherit the global defaults until overridden; a cap override can never exceed the Host Ceiling.',
     },
     body: (ctx) =>
       grid(
         ctx.surface === 'global' ? 'flex flex-wrap items-start gap-x-8 gap-y-4' : 'flex flex-col gap-4 sm:max-w-md',
-        [autoRunnerEnabled, machineCeiling, concurrencyCap],
+        [autoRunnerEnabled, hostCeiling, concurrencyCap],
         ctx,
       ),
   },

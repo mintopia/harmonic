@@ -76,7 +76,7 @@ const DEFAULT_MISSING_EPIC_BASE_GRACE_MS = 300_000;
  * highest priority first, FIFO by creation time within a priority. `poke()`
  * whenever something may have changed; it coalesces and never re-enters.
  *
- * Concurrency is two-level: the global Machine Ceiling
+ * Concurrency is two-level: the global Host Ceiling
  * (`config.autoRunner.maxConcurrentAttempts`) caps total concurrent Attempts
  * across all Workspaces, and each Workspace has its own cap clamped to the
  * ceiling. A Task runs only if `master ∧ workspace enabled`, where the

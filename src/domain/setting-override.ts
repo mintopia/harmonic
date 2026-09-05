@@ -29,10 +29,10 @@ export function resolveScoped<T>(key: SettingKey, workspaceVal: T | null | undef
 
 /**
  * A Workspace's concurrency cap resolves like any override, then is clamped to
- * the Machine Ceiling. Inherit (`null`) resolves straight to the ceiling.
+ * the Host Ceiling. Inherit (`null`) resolves straight to the ceiling.
  */
-export function resolveCap(workspaceCap: number | null | undefined, machineCeiling: number): number {
-  return Math.min(resolveScoped('maxConcurrentAttempts', workspaceCap, machineCeiling), machineCeiling);
+export function resolveCap(workspaceCap: number | null | undefined, hostCeiling: number): number {
+  return Math.min(resolveScoped('maxConcurrentAttempts', workspaceCap, hostCeiling), hostCeiling);
 }
 
 /** A resolved review, carrying the raw toggle (`requested`) alongside runnability

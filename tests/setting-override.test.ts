@@ -23,7 +23,7 @@ describe('Setting Override resolution (ADR-0012, issue #59)', () => {
   });
 
   describe('resolveCap', () => {
-    it('inherits the Machine Ceiling when the cap is null', () => {
+    it('inherits the Host Ceiling when the cap is null', () => {
       expect(resolveCap(null, 3)).toBe(3);
     });
 

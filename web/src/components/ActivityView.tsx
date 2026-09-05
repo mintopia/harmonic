@@ -362,7 +362,7 @@ export function ActivityView({ config }: { config: AppConfig | null }) {
           value={compact.format(Math.round(summary.tokensPerSecond))}
         />
         <Stat
-          label="Machine ceiling"
+          label="Host ceiling"
           value={`${summary.ceiling.running}/${summary.ceiling.max}`}
           tone={
             summary.ceiling.running >= summary.ceiling.max

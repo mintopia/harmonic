@@ -187,7 +187,7 @@ describe('auto-runner — two-level cap + master gate (issue #60)', () => {
     return states.every((s) => s === 'done');
   };
 
-  it('never breaches the Machine Ceiling even when per-workspace caps sum higher (3+3, ceiling 4 → ≤4)', async () => {
+  it('never breaches the Host Ceiling even when per-workspace caps sum higher (3+3, ceiling 4 → ≤4)', async () => {
     const ws1 = await defaultWorkspaceId();
     const ws2 = await createWorkspace('Second');
     await server.api('PATCH', '/api/config', { autoRunner: { maxConcurrentAttempts: 4 } });

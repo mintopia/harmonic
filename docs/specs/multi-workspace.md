@@ -1,7 +1,7 @@
 # Spec: Multiple Workspaces in a single instance
 
 Design settled via `/grill-with-docs`. Domain: [CONTEXT.md](../../CONTEXT.md)
-(**Workspace**, **Machine Ceiling**). Decision: [ADR-0008](../adr/0008-workspaces-in-a-single-instance.md).
+(**Workspace**, **Host Ceiling**). Decision: [ADR-0008](../adr/0008-workspaces-in-a-single-instance.md).
 
 ## Model (settled)
 
@@ -12,9 +12,9 @@ Design settled via `/grill-with-docs`. Domain: [CONTEXT.md](../../CONTEXT.md)
   Tracker (`enabled` + `pollIntervalSeconds`), Drive (`prompt`/`mergeFate`/`autoRetry`),
   Verification (`autoAccept`, per ADR-0021 — a passing verifier's auto-accept).
 - **Global config:** Harnesses, model prices, operator password, Notification
-  Channels, `modelInfo`, `conversationIdleTimeoutMinutes`, **Machine Ceiling**.
+  Channels, `modelInfo`, `conversationIdleTimeoutMinutes`, **Host Ceiling**.
 - **Concurrency:** each Workspace fills to its own cap; total never exceeds the
-  Machine Ceiling.
+  Host Ceiling.
 - Always ≥1 Workspace; last cannot be deleted; delete is guarded (no in-flight
   work) + cascades to Tasks/Runs/Conversations.
 - Tasks/Conversations/Runs get `workspaceId`; `workingDir` stays as a
@@ -33,7 +33,7 @@ Design settled via `/grill-with-docs`. Domain: [CONTEXT.md](../../CONTEXT.md)
   `settings.config.defaults.workingDir`; move the per-workspace fields out of
   the global config blob into it; backfill `workspaceId` on every existing
   Task/Conversation; then make `workspaceId` NOT NULL.
-- Trim global config schema; add `machineCeiling`.
+- Trim global config schema; add `hostCeiling`.
 
 ### Stage 2 — Domain + config
 - `WorkspaceService` (CRUD, guards: unique path, last-can't-delete,
@@ -51,7 +51,7 @@ Design settled via `/grill-with-docs`. Domain: [CONTEXT.md](../../CONTEXT.md)
 
 ### Stage 4 — Execution
 - One Auto-Runner: walk Workspaces, fill each enabled one to its cap under a
-  shared Machine-Ceiling counter.
+  shared Host-Ceiling counter.
 - Tracker: one poller per tracker-enabled Workspace; create/tear-down on
   Workspace add/remove and tracker-toggle.
 

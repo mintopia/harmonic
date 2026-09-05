@@ -16,9 +16,10 @@ at least one, and the last cannot be deleted. Deleting one is guarded (no
 in-flight work) and cascades to its Tasks, Attempts, and Conversations.
 _Avoid_: project, repo, context
 
-**Machine Ceiling**:
-The global cap on total concurrent Attempts across all Workspaces — the machine's
+**Host Ceiling**:
+The global cap on total concurrent Attempts across all Workspaces — the host's
 safety limit that a Workspace's own concurrency cap can never breach.
+_Avoid_: machine ceiling (renamed), global cap
 
 **Setting Override**:
 An overridable setting resolves through three layers — **Baseline** (shipped
@@ -29,7 +30,7 @@ changes; an untouched field renders **muted** and *tracks the layer beneath it*
 as that layer ships new defaults, while an overriding value renders unmuted with
 a *modified* mark and a *revert* control — per-field, plus a top-level revert to
 distributed. Global-only settings (Harnesses and their Model catalogs,
-Notification Channels, Permission Rules, API Keys, the Drive Prompt, the Machine
+Notification Channels, Permission Rules, API Keys, the Drive Prompt, the Host
 Ceiling) have no Workspace form; Workspace-only settings (name, Working
 Directory, Tracker enable/interval, Auto-Runner enable) have no global form. The
 baseline is a shipped `baseline.yaml`; the operator + Workspace patches live in
@@ -483,7 +484,7 @@ inferred from branch shape. Workspace default, per-Task override.
 **Auto-Runner**:
 The single scheduler across all Workspaces. When a Workspace has it enabled,
 starts that Workspace's *ready* Tasks — highest Priority first, FIFO within —
-up to the Workspace's own concurrency cap, never exceeding the Machine
+up to the Workspace's own concurrency cap, never exceeding the Host
 Ceiling in total. A global **master switch** gates all of them: a Task runs
 only when the master is on *and* its Workspace has the Auto-Runner enabled, so
 the master is the one-click fleet-wide pause. It also honours the Work Context

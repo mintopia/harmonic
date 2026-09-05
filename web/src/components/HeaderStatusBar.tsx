@@ -54,7 +54,7 @@ export function HeaderStatusBar({
         <Switch checked={config.autoRunner.enabled} label="Auto-runner" onChange={onAutoRunnerChange}>
           <span
             className="text-[13px] text-muted"
-            title={`Machine Ceiling: ${config.autoRunner.maxConcurrentAttempts}`}
+            title={`Host Ceiling: ${config.autoRunner.maxConcurrentAttempts}`}
           >
             Auto-runner <b className="font-semibold text-ink">{config.autoRunner.enabled ? 'on' : 'off'}</b>
           </span>
@@ -72,11 +72,11 @@ export function HeaderStatusBar({
           <span aria-hidden="true" className="text-faint">
             ·
           </span>
-          <span title="Machine worker slots in use / ceiling">
+          <span title="Host worker slots in use / ceiling">
             <span className="tabular-nums">
               {runningCount}/{config.autoRunner.maxConcurrentAttempts}
             </span>{' '}
-            machine
+            host
           </span>
         </span>
       )}

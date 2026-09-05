@@ -34,7 +34,7 @@ export interface OverridableDescriptor {
   /** Options for a `select` control, given the config and current workspace. */
   options?: (c: AppConfig, w: Workspace) => FieldOption[];
   min?: number;
-  /** A number input's `max`, or a config-derived one (e.g. the Machine Ceiling). */
+  /** A number input's `max`, or a config-derived one (e.g. the Host Ceiling). */
   max?: number | ((c: AppConfig) => number);
   step?: number;
   /** Optional shorter label than the registry's, for a section context. */

@@ -13,6 +13,11 @@ it; (2) "harnesses, model prices, `modelInfo` stay global" as separate keys —
 inline" display becomes the muted / modified / revert visual across a third
 (baseline) layer. Everything else here stands.
 
+**Terminology amended (2026-09-05)**, by explicit owner override: the **Machine
+Ceiling** is renamed the **Host Ceiling** — the glossary is the living source of
+truth. The body below keeps the original name as a record of the decision as
+made; the concept is unchanged.
+
 ## One instance, many Workspaces
 
 A **Workspace** is a named Working Directory (a repo root, unique by absolute

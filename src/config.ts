@@ -175,7 +175,7 @@ export const appConfigSchema = z.object({
     harness: z.enum(HARNESS_IDS).meta({ example: 'claude' }),
     model: z.string().meta({ example: 'claude-sonnet-5' }),
   }),
-  /** `enabled` is the fleet-wide master switch gating every Workspace; `maxConcurrentAttempts` is the Machine Ceiling a per-Workspace cap can never exceed. */
+  /** `enabled` is the fleet-wide master switch gating every Workspace; `maxConcurrentAttempts` is the Host Ceiling a per-Workspace cap can never exceed. */
   autoRunner: z.object({
     enabled: z.boolean().meta({ example: true }),
     maxConcurrentAttempts: z.number().int().min(1).meta({ example: 3 }),

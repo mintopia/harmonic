@@ -63,7 +63,7 @@ export const settingsRegistry = {
     control: 'number',
     tab: 'execution',
     label: 'Max concurrent Attempts',
-    help: 'Per-Workspace concurrency cap, clamped to the Machine Ceiling.',
+    help: 'Per-Workspace concurrency cap, clamped to the Host Ceiling.',
   },
   autoRunnerEnabled: {
     scope: 'overridable',

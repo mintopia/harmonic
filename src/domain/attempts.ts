@@ -201,7 +201,7 @@ export class AttemptStore {
     return orphans;
   }
 
-  /** Actively-executing Attempt count, for the Auto-Runner's Machine-Ceiling concurrency cap. */
+  /** Actively-executing Attempt count, for the Auto-Runner's Host-Ceiling concurrency cap. */
   async countRunning(): Promise<number> {
     const row = await this.db.read((db) =>
       db
@@ -213,7 +213,7 @@ export class AttemptStore {
     return row?.n ?? 0;
   }
 
-  /** The Attempts that consume Machine-Ceiling capacity — the same predicate as {@link countRunning}. */
+  /** The Attempts that consume Host-Ceiling capacity — the same predicate as {@link countRunning}. */
   async listRunning(): Promise<AttemptRow[]> {
     return this.db.read((db) => db.select().from(attempts).where(eq(attempts.state, 'running')).all());
   }
