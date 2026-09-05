@@ -17,6 +17,7 @@ describe('EXECUTION_BUDGET_STEPS (issue #127, ADR-0001 Vocabulary)', () => {
 });
 
 describe('countsTowardExecutionBudget (issue #127)', () => {
+  // Schema-driven so a new StepType can't slip the budget untested; literal expectation, not recomputed.
   const expected: Record<StepType, boolean> = {
     rebase: true,
     implementation: true,
@@ -24,11 +25,9 @@ describe('countsTowardExecutionBudget (issue #127)', () => {
     review: true,
   };
 
-  for (const stepType of STEP_TYPES) {
-    it(`${stepType} -> ${expected[stepType]}`, () => {
-      expect(countsTowardExecutionBudget(stepType)).toBe(expected[stepType]);
-    });
-  }
+  it.each(STEP_TYPES)('%s -> counts toward the budget', (stepType) => {
+    expect(countsTowardExecutionBudget(stepType)).toBe(expected[stepType]);
+  });
 
   it('null (no Step running — the gap before merge) does not count', () => {
     expect(countsTowardExecutionBudget(null)).toBe(false);
@@ -36,306 +35,210 @@ describe('countsTowardExecutionBudget (issue #127)', () => {
 });
 
 describe('wallClockBudgetMs', () => {
-  it('converts minutes to milliseconds', () => {
-    expect(wallClockBudgetMs({ wallClockMinutes: 45 })).toBe(2_700_000);
-    expect(wallClockBudgetMs({ wallClockMinutes: 1 })).toBe(60_000);
+  it.each([
+    { wallClockMinutes: 45, expected: 2_700_000 },
+    { wallClockMinutes: 1, expected: 60_000 },
+  ])('converts $wallClockMinutes minutes to $expected ms', ({ wallClockMinutes, expected }) => {
+    expect(wallClockBudgetMs({ wallClockMinutes })).toBe(expected);
   });
 });
 
 describe('wallClockTrip (issue #127, the Step-scoping decision)', () => {
   const budget = { wallClockMinutes: 45 };
 
-  it('trips when elapsed >= budget while any Step is running', () => {
-    for (const stepType of STEP_TYPES) {
-      expect(wallClockTrip({ elapsedMs: 3_000_000, stepType, budget })).toEqual({
-        dimension: 'wall-clock',
-        limitMs: 2_700_000,
-        observedMs: 3_000_000,
-      });
-    }
-  });
-
-  it('does NOT trip when elapsed >= budget but no Step is running (core acceptance — the merge gap)', () => {
-    expect(wallClockTrip({ elapsedMs: 100_000_000, stepType: null, budget })).toBeNull();
-  });
-
-  it('does not trip below budget while a Step is running', () => {
-    expect(wallClockTrip({ elapsedMs: 2_699_999, stepType: 'implementation', budget })).toBeNull();
-  });
-
-  it('trips exactly at the boundary (elapsedMs === limitMs)', () => {
-    expect(wallClockTrip({ elapsedMs: 2_700_000, stepType: 'verification', budget })).toEqual({
+  it.each(STEP_TYPES)('trips when elapsed >= budget while the %s Step is running', (stepType) => {
+    expect(wallClockTrip({ elapsedMs: 3_000_000, stepType, budget })).toEqual({
       dimension: 'wall-clock',
       limitMs: 2_700_000,
-      observedMs: 2_700_000,
+      observedMs: 3_000_000,
     });
   });
 
-  it('the critic (review Step) counts identically to the command verifier (verification Step) — both are active verification work', () => {
-    expect(wallClockTrip({ elapsedMs: 2_700_000, stepType: 'review', budget })).toEqual({
-      dimension: 'wall-clock',
-      limitMs: 2_700_000,
-      observedMs: 2_700_000,
-    });
-  });
-
-  it('trip payload carries the correct limitMs/observedMs for a different budget', () => {
-    const smallBudget = { wallClockMinutes: 5 };
-    expect(wallClockTrip({ elapsedMs: 450_000, stepType: 'implementation', budget: smallBudget })).toEqual({
-      dimension: 'wall-clock',
-      limitMs: 300_000,
-      observedMs: 450_000,
-    });
+  it.each<{ name: string; elapsedMs: number; stepType: StepType | null; budget: { wallClockMinutes: number }; expected: unknown }>([
+    {
+      name: 'does NOT trip when elapsed >= budget but no Step is running (core acceptance — the merge gap)',
+      elapsedMs: 100_000_000,
+      stepType: null,
+      budget,
+      expected: null,
+    },
+    {
+      name: 'does not trip below budget while a Step is running',
+      elapsedMs: 2_699_999,
+      stepType: 'implementation',
+      budget,
+      expected: null,
+    },
+    {
+      name: 'trips exactly at the boundary (elapsedMs === limitMs)',
+      elapsedMs: 2_700_000,
+      stepType: 'verification',
+      budget,
+      expected: { dimension: 'wall-clock', limitMs: 2_700_000, observedMs: 2_700_000 },
+    },
+    {
+      // the critic (review Step) counts identically to the command verifier (verification Step)
+      name: 'the review Step trips identically to the verification Step — both are active verification work',
+      elapsedMs: 2_700_000,
+      stepType: 'review',
+      budget,
+      expected: { dimension: 'wall-clock', limitMs: 2_700_000, observedMs: 2_700_000 },
+    },
+    {
+      name: 'trip payload carries the correct limitMs/observedMs for a different budget',
+      elapsedMs: 450_000,
+      stepType: 'implementation',
+      budget: { wallClockMinutes: 5 },
+      expected: { dimension: 'wall-clock', limitMs: 300_000, observedMs: 450_000 },
+    },
+  ])('$name', ({ elapsedMs, stepType, budget: b, expected }) => {
+    expect(wallClockTrip({ elapsedMs, stepType, budget: b })).toEqual(expected);
   });
 });
 
 describe('formatBudgetReason (issue #127, ADR-0019)', () => {
-  it('renders a 45-minute budget as "budget: 45m"', () => {
-    expect(formatBudgetReason({ dimension: 'wall-clock', limitMs: 2_700_000 })).toBe('budget: 45m');
-  });
-
-  it('renders a 1-minute budget as "budget: 1m"', () => {
-    expect(formatBudgetReason({ dimension: 'wall-clock', limitMs: 60_000 })).toBe('budget: 1m');
-  });
-
-  it('renders a sub-minute duration in seconds', () => {
-    expect(formatBudgetReason({ dimension: 'wall-clock', limitMs: 45_000 })).toBe('budget: 45s');
-  });
-
-  it('renders exactly 1 second as "budget: 1s"', () => {
-    expect(formatBudgetReason({ dimension: 'wall-clock', limitMs: 1_000 })).toBe('budget: 1s');
-  });
-
-  it('renders a sub-second duration in raw milliseconds', () => {
-    expect(formatBudgetReason({ dimension: 'wall-clock', limitMs: 500 })).toBe('budget: 500ms');
-  });
-
-  it('renders a token budget in millions', () => {
-    expect(formatBudgetReason({ dimension: 'tokens', limitTokens: 2_000_000 })).toBe('budget: 2M tokens');
-  });
-
-  it('renders a small token budget as a raw count', () => {
-    expect(formatBudgetReason({ dimension: 'tokens', limitTokens: 500 })).toBe('budget: 500 tokens');
-  });
-
-  it('renders a cost budget as whole dollars', () => {
-    expect(formatBudgetReason({ dimension: 'cost', limitUsd: 10 })).toBe('budget: $10');
-  });
-
-  it('renders a cost budget with cents', () => {
-    expect(formatBudgetReason({ dimension: 'cost', limitUsd: 10.5 })).toBe('budget: $10.5');
+  // Names the configured bound at whichever unit keeps the number small; never the overshoot.
+  it.each<{ name: string; trip: Parameters<typeof formatBudgetReason>[0]; expected: string }>([
+    { name: '45-minute budget -> "budget: 45m"', trip: { dimension: 'wall-clock', limitMs: 2_700_000 }, expected: 'budget: 45m' },
+    { name: '1-minute budget -> "budget: 1m"', trip: { dimension: 'wall-clock', limitMs: 60_000 }, expected: 'budget: 1m' },
+    { name: 'sub-minute duration in seconds', trip: { dimension: 'wall-clock', limitMs: 45_000 }, expected: 'budget: 45s' },
+    { name: 'exactly 1 second -> "budget: 1s"', trip: { dimension: 'wall-clock', limitMs: 1_000 }, expected: 'budget: 1s' },
+    { name: 'sub-second duration in raw milliseconds', trip: { dimension: 'wall-clock', limitMs: 500 }, expected: 'budget: 500ms' },
+    { name: 'token budget in millions', trip: { dimension: 'tokens', limitTokens: 2_000_000 }, expected: 'budget: 2M tokens' },
+    { name: 'small token budget as a raw count', trip: { dimension: 'tokens', limitTokens: 500 }, expected: 'budget: 500 tokens' },
+    { name: 'cost budget as whole dollars', trip: { dimension: 'cost', limitUsd: 10 }, expected: 'budget: $10' },
+    { name: 'cost budget with cents', trip: { dimension: 'cost', limitUsd: 10.5 }, expected: 'budget: $10.5' },
+  ])('renders a $name', ({ trip, expected }) => {
+    expect(formatBudgetReason(trip)).toBe(expected);
   });
 });
 
 describe('formatUnmeasurableReason (issue #128)', () => {
-  it('renders the tokens dimension', () => {
-    expect(formatUnmeasurableReason('tokens')).toBe('budget: tokens unmeasurable');
-  });
-
-  it('renders the cost dimension', () => {
-    expect(formatUnmeasurableReason('cost')).toBe('budget: cost unmeasurable');
+  it.each<['tokens' | 'cost', string]>([
+    ['tokens', 'budget: tokens unmeasurable'],
+    ['cost', 'budget: cost unmeasurable'],
+  ])('renders the %s dimension', (dimension, expected) => {
+    expect(formatUnmeasurableReason(dimension)).toBe(expected);
   });
 });
 
 describe('spendTrip (issue #128, the token/cost spend decision)', () => {
-  describe('token cap only', () => {
-    const budget = { tokens: 1_000, costUsd: null };
-
-    it('trips exactly at the boundary (observedTokens === limit)', () => {
-      for (const stepType of STEP_TYPES) {
-        expect(
-          spendTrip({ stepType, budget, observedTokens: 1_000, observedUsd: null, costIncomplete: false }),
-        ).toEqual({ kind: 'trip', trip: { dimension: 'tokens', limitTokens: 1_000, observedTokens: 1_000 } });
-      }
-    });
-
-    it('trips over the boundary', () => {
-      expect(
-        spendTrip({ stepType: 'implementation', budget, observedTokens: 1_500, observedUsd: null, costIncomplete: false }),
-      ).toEqual({ kind: 'trip', trip: { dimension: 'tokens', limitTokens: 1_000, observedTokens: 1_500 } });
-    });
-
-    it('does not trip below the boundary', () => {
-      expect(
-        spendTrip({ stepType: 'implementation', budget, observedTokens: 999, observedUsd: null, costIncomplete: false }),
-      ).toEqual({ kind: 'ok' });
-    });
-
-    it('is unmeasurable when observedTokens is null', () => {
-      expect(
-        spendTrip({ stepType: 'implementation', budget, observedTokens: null, observedUsd: null, costIncomplete: false }),
-      ).toEqual({ kind: 'unmeasurable', dimension: 'tokens' });
-    });
-
-    it('null stepType (no Step running) is never governed, however far over the cap', () => {
-      expect(
-        spendTrip({ stepType: null, budget, observedTokens: 1_000, observedUsd: null, costIncomplete: false }),
-      ).toEqual({ kind: 'ok' });
-    });
+  it.each(STEP_TYPES)('trips on the token cap at the boundary (observedTokens === limit) while %s runs', (stepType) => {
+    expect(
+      spendTrip({ stepType, budget: { tokens: 1_000, costUsd: null }, observedTokens: 1_000, observedUsd: null, costIncomplete: false }),
+    ).toEqual({ kind: 'trip', trip: { dimension: 'tokens', limitTokens: 1_000, observedTokens: 1_000 } });
   });
 
-  describe('cost cap only, fully priced', () => {
-    const budget = { tokens: null, costUsd: 10 };
+  type SpendArgs = Parameters<typeof spendTrip>[0];
+  const tokenOnly = { tokens: 1_000, costUsd: null };
+  const costOnly = { tokens: null, costUsd: 10 };
+  const bothCaps = { tokens: 1_000, costUsd: 10 };
 
-    it('trips when the priced spend is over the cap', () => {
-      expect(
-        spendTrip({ stepType: 'implementation', budget, observedTokens: null, observedUsd: 15, costIncomplete: false }),
-      ).toEqual({ kind: 'trip', trip: { dimension: 'cost', limitUsd: 10, observedUsd: 15 } });
-    });
-
-    it('trips exactly at the boundary (observedUsd === limit)', () => {
-      expect(
-        spendTrip({ stepType: 'implementation', budget, observedTokens: null, observedUsd: 10, costIncomplete: false }),
-      ).toEqual({ kind: 'trip', trip: { dimension: 'cost', limitUsd: 10, observedUsd: 10 } });
-    });
-
-    it('does not trip when the priced spend is under the cap', () => {
-      expect(
-        spendTrip({ stepType: 'implementation', budget, observedTokens: null, observedUsd: 5, costIncomplete: false }),
-      ).toEqual({ kind: 'ok' });
-    });
-  });
-
-  describe('cost cap, priced floor over cap but costIncomplete', () => {
-    const budget = { tokens: null, costUsd: 10 };
-
-    it('still trips on cost — a floor over the cap is trustworthy regardless of incompleteness', () => {
-      expect(
-        spendTrip({ stepType: 'implementation', budget, observedTokens: 500, observedUsd: 15, costIncomplete: true }),
-      ).toEqual({ kind: 'trip', trip: { dimension: 'cost', limitUsd: 10, observedUsd: 15 } });
-    });
-  });
-
-  describe('cost cap unpriced/incomplete under cap, with a token fallback configured', () => {
-    const budgetWithTokens = { tokens: 1_000, costUsd: 10 };
-
-    it('observedUsd null falls back to the token budget and trips over', () => {
-      expect(
-        spendTrip({
-          stepType: 'implementation',
-          budget: budgetWithTokens,
-          observedTokens: 1_500,
-          observedUsd: null,
-          costIncomplete: false,
-        }),
-      ).toEqual({ kind: 'trip', trip: { dimension: 'tokens', limitTokens: 1_000, observedTokens: 1_500 } });
-    });
-
-    it('observedUsd null falls back to the token budget and stays ok when under', () => {
-      expect(
-        spendTrip({
-          stepType: 'implementation',
-          budget: budgetWithTokens,
-          observedTokens: 500,
-          observedUsd: null,
-          costIncomplete: false,
-        }),
-      ).toEqual({ kind: 'ok' });
-    });
-
-    it('costIncomplete with a floor under the cap falls back to the token budget and trips over', () => {
-      expect(
-        spendTrip({
-          stepType: 'implementation',
-          budget: budgetWithTokens,
-          observedTokens: 1_500,
-          observedUsd: 5,
-          costIncomplete: true,
-        }),
-      ).toEqual({ kind: 'trip', trip: { dimension: 'tokens', limitTokens: 1_000, observedTokens: 1_500 } });
-    });
-
-    it('costIncomplete with a floor under the cap falls back to the token budget and stays ok when under', () => {
-      expect(
-        spendTrip({
-          stepType: 'implementation',
-          budget: budgetWithTokens,
-          observedTokens: 500,
-          observedUsd: 5,
-          costIncomplete: true,
-        }),
-      ).toEqual({ kind: 'ok' });
-    });
-
-    it('falls back to the token budget and is unmeasurable when observedTokens is also null', () => {
-      expect(
-        spendTrip({
-          stepType: 'implementation',
-          budget: budgetWithTokens,
-          observedTokens: null,
-          observedUsd: null,
-          costIncomplete: false,
-        }),
-      ).toEqual({ kind: 'unmeasurable', dimension: 'tokens' });
-    });
-  });
-
-  describe('cost cap unpriced, with NO token fallback configured', () => {
-    const budget = { tokens: null, costUsd: 10 };
-
-    it('is unmeasurable on cost when observedUsd is null', () => {
-      expect(
-        spendTrip({ stepType: 'implementation', budget, observedTokens: null, observedUsd: null, costIncomplete: false }),
-      ).toEqual({ kind: 'unmeasurable', dimension: 'cost' });
-    });
-
-    it('is unmeasurable on cost when costIncomplete is true, even with a floor under the cap', () => {
-      expect(
-        spendTrip({ stepType: 'implementation', budget, observedTokens: null, observedUsd: 2, costIncomplete: true }),
-      ).toEqual({ kind: 'unmeasurable', dimension: 'cost' });
-    });
-  });
-
-  describe('both caps set: cost fully priced under cap, tokens over cap', () => {
-    it('falls through to the independent token cap and trips', () => {
-      const budget = { tokens: 1_000, costUsd: 10 };
-      expect(
-        spendTrip({
-          stepType: 'implementation',
-          budget,
-          observedTokens: 1_500,
-          observedUsd: 5,
-          costIncomplete: false,
-        }),
-      ).toEqual({ kind: 'trip', trip: { dimension: 'tokens', limitTokens: 1_000, observedTokens: 1_500 } });
-    });
-
-    it('falls through to the independent token cap and stays ok when both are under', () => {
-      const budget = { tokens: 1_000, costUsd: 10 };
-      expect(
-        spendTrip({
-          stepType: 'implementation',
-          budget,
-          observedTokens: 500,
-          observedUsd: 5,
-          costIncomplete: false,
-        }),
-      ).toEqual({ kind: 'ok' });
-    });
-  });
-
-  describe('no Step running never trips, no matter how far over budget', () => {
-    const budget = { tokens: 1_000, costUsd: 10 };
-
-    it('null stepType -> ok even with everything massively over cap', () => {
-      expect(
-        spendTrip({
-          stepType: null,
-          budget,
-          observedTokens: 1_000_000,
-          observedUsd: 1_000,
-          costIncomplete: false,
-        }),
-      ).toEqual({ kind: 'ok' });
-    });
-  });
-
-  describe('no caps configured', () => {
-    it('is always ok regardless of observed usage', () => {
-      const budget = { tokens: null, costUsd: null };
-      expect(
-        spendTrip({ stepType: 'implementation', budget, observedTokens: 1_000_000, observedUsd: 1_000, costIncomplete: true }),
-      ).toEqual({ kind: 'ok' });
-    });
+  it.each<{ name: string; args: SpendArgs; expected: unknown }>([
+    // token cap only
+    {
+      name: 'token cap: trips over the boundary',
+      args: { stepType: 'implementation', budget: tokenOnly, observedTokens: 1_500, observedUsd: null, costIncomplete: false },
+      expected: { kind: 'trip', trip: { dimension: 'tokens', limitTokens: 1_000, observedTokens: 1_500 } },
+    },
+    {
+      name: 'token cap: does not trip below the boundary',
+      args: { stepType: 'implementation', budget: tokenOnly, observedTokens: 999, observedUsd: null, costIncomplete: false },
+      expected: { kind: 'ok' },
+    },
+    {
+      name: 'token cap: unmeasurable when observedTokens is null',
+      args: { stepType: 'implementation', budget: tokenOnly, observedTokens: null, observedUsd: null, costIncomplete: false },
+      expected: { kind: 'unmeasurable', dimension: 'tokens' },
+    },
+    {
+      name: 'token cap: null stepType is never governed, however far over the cap',
+      args: { stepType: null, budget: tokenOnly, observedTokens: 1_000, observedUsd: null, costIncomplete: false },
+      expected: { kind: 'ok' },
+    },
+    // cost cap only, fully priced
+    {
+      name: 'cost cap: trips when the priced spend is over the cap',
+      args: { stepType: 'implementation', budget: costOnly, observedTokens: null, observedUsd: 15, costIncomplete: false },
+      expected: { kind: 'trip', trip: { dimension: 'cost', limitUsd: 10, observedUsd: 15 } },
+    },
+    {
+      name: 'cost cap: trips exactly at the boundary (observedUsd === limit)',
+      args: { stepType: 'implementation', budget: costOnly, observedTokens: null, observedUsd: 10, costIncomplete: false },
+      expected: { kind: 'trip', trip: { dimension: 'cost', limitUsd: 10, observedUsd: 10 } },
+    },
+    {
+      name: 'cost cap: does not trip when the priced spend is under the cap',
+      args: { stepType: 'implementation', budget: costOnly, observedTokens: null, observedUsd: 5, costIncomplete: false },
+      expected: { kind: 'ok' },
+    },
+    // cost cap, priced floor over cap but costIncomplete — a floor over the cap is trustworthy regardless
+    {
+      name: 'cost cap: still trips on a floor over the cap even when costIncomplete',
+      args: { stepType: 'implementation', budget: costOnly, observedTokens: 500, observedUsd: 15, costIncomplete: true },
+      expected: { kind: 'trip', trip: { dimension: 'cost', limitUsd: 10, observedUsd: 15 } },
+    },
+    // cost cap unpriced/incomplete under cap, with a token fallback configured
+    {
+      name: 'token fallback: observedUsd null falls back to the token budget and trips over',
+      args: { stepType: 'implementation', budget: bothCaps, observedTokens: 1_500, observedUsd: null, costIncomplete: false },
+      expected: { kind: 'trip', trip: { dimension: 'tokens', limitTokens: 1_000, observedTokens: 1_500 } },
+    },
+    {
+      name: 'token fallback: observedUsd null falls back to the token budget and stays ok when under',
+      args: { stepType: 'implementation', budget: bothCaps, observedTokens: 500, observedUsd: null, costIncomplete: false },
+      expected: { kind: 'ok' },
+    },
+    {
+      name: 'token fallback: costIncomplete with a floor under the cap falls back to tokens and trips over',
+      args: { stepType: 'implementation', budget: bothCaps, observedTokens: 1_500, observedUsd: 5, costIncomplete: true },
+      expected: { kind: 'trip', trip: { dimension: 'tokens', limitTokens: 1_000, observedTokens: 1_500 } },
+    },
+    {
+      name: 'token fallback: costIncomplete with a floor under the cap falls back to tokens and stays ok when under',
+      args: { stepType: 'implementation', budget: bothCaps, observedTokens: 500, observedUsd: 5, costIncomplete: true },
+      expected: { kind: 'ok' },
+    },
+    {
+      name: 'token fallback: unmeasurable when observedTokens is also null',
+      args: { stepType: 'implementation', budget: bothCaps, observedTokens: null, observedUsd: null, costIncomplete: false },
+      expected: { kind: 'unmeasurable', dimension: 'tokens' },
+    },
+    // cost cap unpriced, with NO token fallback configured
+    {
+      name: 'no fallback: unmeasurable on cost when observedUsd is null',
+      args: { stepType: 'implementation', budget: costOnly, observedTokens: null, observedUsd: null, costIncomplete: false },
+      expected: { kind: 'unmeasurable', dimension: 'cost' },
+    },
+    {
+      name: 'no fallback: unmeasurable on cost when costIncomplete is true, even with a floor under the cap',
+      args: { stepType: 'implementation', budget: costOnly, observedTokens: null, observedUsd: 2, costIncomplete: true },
+      expected: { kind: 'unmeasurable', dimension: 'cost' },
+    },
+    // both caps set: cost fully priced under cap falls through to the independent token cap
+    {
+      name: 'both caps: cost under cap falls through to the token cap and trips',
+      args: { stepType: 'implementation', budget: bothCaps, observedTokens: 1_500, observedUsd: 5, costIncomplete: false },
+      expected: { kind: 'trip', trip: { dimension: 'tokens', limitTokens: 1_000, observedTokens: 1_500 } },
+    },
+    {
+      name: 'both caps: cost under cap falls through to the token cap and stays ok when both are under',
+      args: { stepType: 'implementation', budget: bothCaps, observedTokens: 500, observedUsd: 5, costIncomplete: false },
+      expected: { kind: 'ok' },
+    },
+    // no Step running never trips, no matter how far over budget
+    {
+      name: 'no Step running -> ok even with everything massively over cap',
+      args: { stepType: null, budget: bothCaps, observedTokens: 1_000_000, observedUsd: 1_000, costIncomplete: false },
+      expected: { kind: 'ok' },
+    },
+    // no caps configured
+    {
+      name: 'no caps configured -> always ok regardless of observed usage',
+      args: { stepType: 'implementation', budget: { tokens: null, costUsd: null }, observedTokens: 1_000_000, observedUsd: 1_000, costIncomplete: true },
+      expected: { kind: 'ok' },
+    },
+  ])('$name', ({ args, expected }) => {
+    expect(spendTrip(args)).toEqual(expected);
   });
 });
