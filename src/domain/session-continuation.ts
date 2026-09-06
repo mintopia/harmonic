@@ -221,31 +221,74 @@ export function planSessionContinuation(
   };
 }
 
-/** A whole {@link SessionRow} projected to the {@link SessionWarmthFacts} the cost estimate reads. */
-export function sessionWarmthFacts(row: SessionRow, cacheWarmSeconds: number): SessionWarmthFacts {
-  return { estimatedWarmUntil: row.lastActiveAt + cacheWarmSeconds * 1000, lastActiveAt: row.lastActiveAt };
+/**
+ * A whole {@link SessionRow} projected to the {@link SessionWarmthFacts} the cost
+ * estimate reads. While a turn is in progress (`status: 'active'` — a live
+ * Attempt owns the Session) the provider cache is being kept warm, so the warm
+ * window runs from `now`; only once the Session stops does it decay on
+ * wall-clock from `lastActiveAt`.
+ */
+export function sessionWarmthFacts(row: SessionRow, cacheWarmSeconds: number, now?: number): SessionWarmthFacts {
+  const lastActiveAt = row.status === 'active' && now !== undefined ? now : row.lastActiveAt;
+  return { estimatedWarmUntil: lastActiveAt + cacheWarmSeconds * 1000, lastActiveAt };
+}
+
+/** The manual-resume preview: both offered paths, the deterministic recommendation
+ * (warmth **and** context size), and the inputs the UI echoes. */
+export interface ManualResumePreview {
+  plan: Extract<SessionContinuationPlan, { mode: 'offer-choice' }>;
+  /** The pre-selected path: continue the same Session, or start a fresh one. */
+  recommended: 'continue' | 'fresh';
+  /** Why {@link recommended} was chosen (drives the UI's one-line reason). */
+  reason: DeterministicContinuation['reason'];
+  contextTokens: number | null;
+  contextReuseTokenLimit: number;
+  /** Epoch-ms the provider cache is estimated to go cold; drives the countdown. */
+  estimatedWarmUntil: number | null;
 }
 
 /**
  * Preview the manual-resume continuation choice for a Task before the operator
- * resumes it, so the resume dialog can show both options. Looks at the newest
- * Attempt (`runsForTask` is newest-last) that holds a live Session and projects
- * the `manual-resume` plan against its warmth. Returns the `offer-choice` plan,
- * or `null` when no Attempt ever bound a Session or it has since been swept.
+ * resumes it, so the resume dialog can show both options and the recommendation.
+ * Looks at the newest Attempt (`runsForTask` is newest-last) that holds a live
+ * Session, projects the `manual-resume` plan against its warmth, and runs the
+ * deterministic continue-vs-fresh decision from warmth *and* that Attempt's
+ * context size. Returns `null` when no Attempt ever bound a Session, or it has
+ * since been swept.
  */
 export function previewManualResumeContinuation(
   runsForTask: readonly AttemptRow[],
   getSession: (sessionRowId: number) => SessionRow | null,
   cacheWarmSeconds: number,
   now: number,
-): Extract<SessionContinuationPlan, { mode: 'offer-choice' }> | null {
+  context: { tokensForRun: (run: AttemptRow) => number | null; reuseTokenLimit: number },
+): ManualResumePreview | null {
   for (let i = runsForTask.length - 1; i >= 0; i--) {
     const run = runsForTask[i]!;
     if (run.sessionRowId === null) continue;
     const session = getSession(run.sessionRowId);
     if (!session) continue;
-    const plan = planSessionContinuation('manual-resume', sessionWarmthFacts(session, cacheWarmSeconds), now);
-    return plan as Extract<SessionContinuationPlan, { mode: 'offer-choice' }>;
+    const facts = sessionWarmthFacts(session, cacheWarmSeconds, now);
+    const plan = planSessionContinuation('manual-resume', facts, now) as Extract<
+      SessionContinuationPlan,
+      { mode: 'offer-choice' }
+    >;
+    const contextTokens = context.tokensForRun(run);
+    const decision = decideAttemptContinuation({
+      cacheWarmSeconds,
+      contextTokens,
+      lastActiveAt: facts.lastActiveAt,
+      contextReuseTokenLimit: context.reuseTokenLimit,
+      now,
+    });
+    return {
+      plan,
+      recommended: decision.path === 'continued-session' ? 'continue' : 'fresh',
+      reason: decision.reason,
+      contextTokens,
+      contextReuseTokenLimit: context.reuseTokenLimit,
+      estimatedWarmUntil: facts.estimatedWarmUntil,
+    };
   }
   return null;
 }

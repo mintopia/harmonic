@@ -220,7 +220,7 @@ describe('estimateContinuationCost (issue #147 AC4)', () => {
 describe('previewManualResumeContinuation (issue #506)', () => {
   const HOUR = 60 * 60 * 1000;
   const now = 10 * HOUR;
-  const session = (id: number, warmUntil: number): SessionRow =>
+  const session = (id: number, warmUntil: number, status: SessionRow['status'] = 'idle'): SessionRow =>
     ({
       id,
       harness: 'claude',
@@ -234,7 +234,7 @@ describe('previewManualResumeContinuation (issue #506)', () => {
       capabilitySnapshot: '{}',
       supportsLoadSession: true,
       adapterVersion: 'claude@1',
-      status: 'active',
+      status,
       lastActiveAt: warmUntil - HOUR,
       worktreePath: null,
       worktreeRepoDir: null,
@@ -247,39 +247,57 @@ describe('previewManualResumeContinuation (issue #506)', () => {
       updatedAt: 0,
     }) satisfies SessionRow;
   const run = (sessionRowId: number | null): AttemptRow => ({ sessionRowId }) as AttemptRow;
+  const ctx = (tokens: number | null = 100, reuseTokenLimit = 200_000) => ({ tokensForRun: () => tokens, reuseTokenLimit });
 
-  it('returns the offer-choice plan projected against the newest Session-bound Run', () => {
+  it('returns the offer-choice plan and recommends continue on a warm, within-limits Session', () => {
     const store = new Map([[5, session(5, now + HOUR)]]);
-    const plan = previewManualResumeContinuation([run(null), run(5)], (id) => store.get(id) ?? null, HOUR / 1000, now);
-    expect(plan?.mode).toBe('offer-choice');
-    expect(plan?.continueFull.estimate.band).toBe('warm');
-    expect(plan?.startCondensed).toEqual({
+    const preview = previewManualResumeContinuation([run(null), run(5)], (id) => store.get(id) ?? null, HOUR / 1000, now, ctx());
+    expect(preview?.plan.mode).toBe('offer-choice');
+    expect(preview?.plan.continueFull.estimate.band).toBe('warm');
+    expect(preview?.recommended).toBe('continue');
+    expect(preview?.reason).toBe('continued-within-limits');
+    expect(preview?.plan.startCondensed).toEqual({
       session: 'new',
       conversation: 'condensed',
       estimate: estimateCondensedContinuationCost(sessionWarmthFacts(session(5, now + HOUR), HOUR / 1000), now),
     });
   });
 
-  it('walks back from the newest Run — the latest Session-bound Run wins', () => {
-    const store = new Map([
-      [1, session(1, now + HOUR)],
-      [2, session(2, now - HOUR)],
-    ]);
-    const plan = previewManualResumeContinuation([run(1), run(2)], (id) => store.get(id) ?? null, HOUR / 1000, now);
-    expect(plan?.continueFull.estimate.band).toBe('cold');
+  it('recommends a fresh session when the Session has gone cold', () => {
+    const store = new Map([[2, session(2, now - HOUR)]]);
+    const preview = previewManualResumeContinuation([run(2)], (id) => store.get(id) ?? null, HOUR / 1000, now, ctx());
+    expect(preview?.plan.continueFull.estimate.band).toBe('cold');
+    expect(preview?.recommended).toBe('fresh');
+    expect(preview?.reason).toBe('session-cold');
+  });
+
+  it('recommends a fresh session when the context is over the reuse limit, even while warm', () => {
+    const store = new Map([[1, session(1, now + HOUR)]]);
+    const preview = previewManualResumeContinuation([run(1)], (id) => store.get(id) ?? null, HOUR / 1000, now, ctx(250_000));
+    expect(preview?.plan.continueFull.estimate.band).toBe('warm');
+    expect(preview?.recommended).toBe('fresh');
+    expect(preview?.reason).toBe('context-tokens');
+  });
+
+  it('pins the warm window to now while a turn is in progress (active Session)', () => {
+    // lastActiveAt is an hour stale, but an active Session is being kept warm.
+    const store = new Map([[7, session(7, now - HOUR, 'active')]]);
+    const preview = previewManualResumeContinuation([run(7)], (id) => store.get(id) ?? null, HOUR / 1000, now, ctx());
+    expect(preview?.plan.continueFull.estimate.band).toBe('warm');
+    expect(preview?.estimatedWarmUntil).toBe(now + HOUR);
   });
 
   it('returns null when no Run ever bound a Session', () => {
-    expect(previewManualResumeContinuation([run(null), run(null)], () => null, HOUR / 1000, now)).toBeNull();
+    expect(previewManualResumeContinuation([run(null), run(null)], () => null, HOUR / 1000, now, ctx())).toBeNull();
   });
 
   it('returns null when the newest Session was retired and swept (lookup misses)', () => {
-    expect(previewManualResumeContinuation([run(9)], () => null, HOUR / 1000, now)).toBeNull();
+    expect(previewManualResumeContinuation([run(9)], () => null, HOUR / 1000, now, ctx())).toBeNull();
   });
 
   it('skips a swept newer Session and falls back to an older live one', () => {
     const store = new Map([[3, session(3, now + HOUR)]]);
-    const plan = previewManualResumeContinuation([run(3), run(8)], (id) => store.get(id) ?? null, HOUR / 1000, now);
-    expect(plan?.continueFull.estimate.band).toBe('warm');
+    const preview = previewManualResumeContinuation([run(3), run(8)], (id) => store.get(id) ?? null, HOUR / 1000, now, ctx());
+    expect(preview?.plan.continueFull.estimate.band).toBe('warm');
   });
 });

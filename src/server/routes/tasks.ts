@@ -4,6 +4,7 @@ import { z } from 'zod';
 import type { AppContext } from '../app.js';
 import { createTaskInputSchema, updateTaskInputSchema, taskListQuerySchema, compareListRows } from '../../domain/tasks.js';
 import { previewManualResumeContinuation } from '../../domain/session-continuation.js';
+import { resolveScoped } from '../../domain/setting-override.js';
 import {
   TASK_STATES,
   MERGE_STATUSES,
@@ -14,6 +15,7 @@ import {
   GUARDRAIL_CONFIG_SOURCES,
   VERIFICATION_MECHANISMS,
   STEP_TYPES,
+  type AttemptRow,
 } from '../../db/schema.js';
 import { DomainError } from '../../domain/errors.js';
 import { mergeUsage, type AttemptUsage } from '../../execution/usage.js';
@@ -44,6 +46,14 @@ const continuationPreviewSchema = z.discriminatedUnion('available', [
   z.object({ available: z.literal(false) }),
   z.object({
     available: z.literal(true),
+    /** The pre-selected path: continue the same Session, or start a fresh one — from warmth AND context size. */
+    recommended: z.enum(['continue', 'fresh']),
+    /** Why `recommended` was chosen, for the UI's one-line reason. */
+    reason: z.enum(['continued-within-limits', 'context-tokens', 'session-cold', 'missing-context-tokens']),
+    /** The resumable Attempt's context-window occupancy in raw tokens, or null when unknown. */
+    contextTokens: z.number().nullable(),
+    /** At or above this occupancy, a fresh Session is recommended over continuing. */
+    contextReuseTokenLimit: z.number(),
     continueFull: z.object({
       session: z.literal('same'),
       conversation: z.literal('full'),
@@ -67,6 +77,20 @@ const continuationPreviewSchema = z.discriminatedUnion('available', [
     }),
   }),
 ]);
+/** An Attempt's context-window occupancy in raw tokens, from its live snapshot then its final usage; null when neither records one. */
+function contextTokensForAttempt(run: AttemptRow): number | null {
+  for (const json of [run.liveUsage, run.usage]) {
+    if (!json) continue;
+    try {
+      const parsed = JSON.parse(json) as { contextTokens?: unknown };
+      if (typeof parsed.contextTokens === 'number') return parsed.contextTokens;
+    } catch {
+      // A malformed snapshot is treated as "unknown", never a crash.
+    }
+  }
+  return null;
+}
+
 const dependsOnBodySchema = z.object({ dependsOnId: z.number().int().positive().meta({ example: 4818 }) });
 const steerInputSchema = z.object({
   text: z.string().min(1).meta({ example: 'Stop — check the existing tests before changing the limiter.' }),
@@ -690,6 +714,9 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     },
     async (req) => {
       const task = await ctx.tasks.get(req.params.id);
+      // Only a resumable Task offers a continuation: an operator freeze (`paused`)
+      // or an escalation the operator can continue. Nothing to resume otherwise.
+      if (task.state !== 'paused' && task.state !== 'escalated') return { available: false as const };
       const runsForTask = await ctx.attempts.listForTask(req.params.id);
       const sessions = new Map<number, Awaited<ReturnType<typeof ctx.sessions.get>> | null>();
       for (const run of runsForTask) {
@@ -700,14 +727,28 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
           sessions.set(run.sessionRowId, null);
         }
       }
-      const plan = previewManualResumeContinuation(
+      const config = ctx.settingsStore.getGlobal();
+      const workspace = await ctx.workspaces.get(atRestWorkspaceId(task.workspaceId)).catch(() => null);
+      const preview = previewManualResumeContinuation(
         runsForTask,
         (sessionRowId) => sessions.get(sessionRowId) ?? null,
-        Object.entries(ctx.settingsStore.getGlobal().harnesses).find(([id]) => id === task.harness)?.[1].cacheWarmSeconds ?? 0,
+        Object.entries(config.harnesses).find(([id]) => id === task.harness)?.[1].cacheWarmSeconds ?? 0,
         Date.now(),
+        {
+          tokensForRun: contextTokensForAttempt,
+          reuseTokenLimit: resolveScoped('contextReuseTokenLimit', workspace?.contextReuseTokenLimit, config.contextReuseTokenLimit),
+        },
       );
-      if (!plan) return { available: false as const };
-      return { available: true as const, continueFull: plan.continueFull, startCondensed: plan.startCondensed };
+      if (!preview) return { available: false as const };
+      return {
+        available: true as const,
+        recommended: preview.recommended,
+        reason: preview.reason,
+        contextTokens: preview.contextTokens,
+        contextReuseTokenLimit: preview.contextReuseTokenLimit,
+        continueFull: preview.plan.continueFull,
+        startCondensed: preview.plan.startCondensed,
+      };
     },
   );
 

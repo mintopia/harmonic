@@ -36,7 +36,7 @@ describe('HeaderStatusBar global pause control', () => {
     const onGlobalPauseChange = vi.fn();
     await renderHeader({ globalPaused: false, onGlobalPauseChange });
 
-    const button = [...host!.querySelectorAll('button')].find((item) => item.textContent === 'Pause fleet')!;
+    const button = [...host!.querySelectorAll('button')].find((item) => item.getAttribute('aria-label') === 'Pause fleet')!;
     await act(async () => {
       button.click();
       await flush();
@@ -50,7 +50,7 @@ describe('HeaderStatusBar global pause control', () => {
     const onGlobalPauseChange = vi.fn();
     await renderHeader({ globalPaused: true, onGlobalPauseChange });
 
-    const button = [...host!.querySelectorAll('button')].find((item) => item.textContent === 'Resume fleet')!;
+    const button = [...host!.querySelectorAll('button')].find((item) => item.getAttribute('aria-label') === 'Resume fleet')!;
     await act(async () => {
       button.click();
       await flush();

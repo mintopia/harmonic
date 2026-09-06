@@ -52,6 +52,9 @@
   --hm-on-fail: #ffffff;
   --hm-blocked: #5b616a;
   --hm-blocked-tint: #ecedea;
+  --hm-paused: #3f6b8f;
+  --hm-paused-dot: #3f6b8f;
+  --hm-paused-tint: #e6edf3;
   --hm-tool: #0d7271;
   --hm-tool-dot: #0d7271;
   --hm-tool-tint: #ddefee;
@@ -117,6 +120,9 @@
   --hm-on-fail: #0e1413;
   --hm-blocked: #9aa0a9;
   --hm-blocked-tint: #282b31;
+  --hm-paused: #84add6;
+  --hm-paused-dot: #84add6;
+  --hm-paused-tint: #1d2733;
   --hm-tool: #33bdb4;
   --hm-tool-dot: #33bdb4;
   --hm-tool-tint: #123330;
@@ -183,6 +189,9 @@
     --hm-on-fail: #0e1413;
     --hm-blocked: #9aa0a9;
     --hm-blocked-tint: #282b31;
+    --hm-paused: #84add6;
+    --hm-paused-dot: #84add6;
+    --hm-paused-tint: #1d2733;
     --hm-tool: #33bdb4;
     --hm-tool-dot: #33bdb4;
     --hm-tool-tint: #123330;
@@ -240,6 +249,9 @@
   --color-on-fail: var(--hm-on-fail);
   --color-blocked: var(--hm-blocked);
   --color-blocked-tint: var(--hm-blocked-tint);
+  --color-paused: var(--hm-paused);
+  --color-paused-dot: var(--hm-paused-dot);
+  --color-paused-tint: var(--hm-paused-tint);
   --color-tool: var(--hm-tool);
   --color-tool-dot: var(--hm-tool-dot);
   --color-tool-tint: var(--hm-tool-tint);
@@ -291,6 +303,7 @@
 .bold-wash.ready { background-color: var(--hm-ready-tint); }
 :is(.bold-wash.running, .bold-wash.working) { background-color: var(--hm-running-tint); }
 :is(.bold-wash.await, .bold-wash.escalated) { background-color: var(--hm-await-tint); }
+.bold-wash.paused { background-color: var(--hm-paused-tint); }
 :is(.bold-wash.merged, .bold-wash.done) { background-color: var(--hm-merged-tint); }
 .node.ready .node-fill { fill: var(--hm-ready-tint); }
 :is(.node.running, .node.working) .node-fill { fill: var(--hm-running-tint); }

@@ -25,13 +25,13 @@ export function LayerField<T>({
 
   return (
     <div className={state.inherited ? 'opacity-60' : undefined}>
-      <div className="mb-1.5 flex items-center gap-2">
-        <label className={`${labelType} text-muted`} htmlFor={htmlFor}>
+      <div className="mb-1.5 flex min-h-6 items-center gap-2">
+        <label className={`${labelType} whitespace-nowrap text-muted`} htmlFor={htmlFor}>
           {label}
         </label>
-        {state.modified && <span className="text-small text-amber">Modified</span>}
+        {state.modified && <span className="shrink-0 text-small text-amber">Modified</span>}
         {state.modified && (
-          <button type="button" className={`ml-auto ${btnQuiet} text-label`} onClick={onRevert}>
+          <button type="button" className={`ml-auto shrink-0 ${btnQuiet} text-label`} onClick={onRevert}>
             Revert
           </button>
         )}

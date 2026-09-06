@@ -453,6 +453,15 @@ export type ContinuationPreview =
   | { available: false }
   | {
       available: true;
+      /** The pre-selected path: continue the same Session, or start a fresh one —
+       * decided from warmth AND context size. */
+      recommended: 'continue' | 'fresh';
+      /** Why `recommended` was chosen, for the one-line reason shown to the operator. */
+      reason: 'continued-within-limits' | 'context-tokens' | 'session-cold' | 'missing-context-tokens';
+      /** The resumable Attempt's context-window occupancy in raw tokens; null when unknown. */
+      contextTokens: number | null;
+      /** At or above this occupancy, a fresh Session is recommended over continuing. */
+      contextReuseTokenLimit: number;
       continueFull: {
         session: 'same';
         conversation: 'full';

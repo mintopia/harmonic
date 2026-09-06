@@ -12,12 +12,17 @@ afterEach(cleanup);
 function preview(warm = true): ContinuationPreview {
   return {
     available: true,
+    recommended: warm ? 'continue' : 'fresh',
+    reason: warm ? 'continued-within-limits' : 'session-cold',
+    contextTokens: 100,
+    contextReuseTokenLimit: 200_000,
     continueFull: {
       session: 'same',
       conversation: 'full',
       estimate: {
         band: warm ? 'warm' : 'cold', warm, warmthKnown: true,
-        estimatedWarmUntil: Date.now() + 5_000, msSinceActive: 0, msUntilCold: 5_000,
+        estimatedWarmUntil: warm ? Date.now() + 5_000 : Date.now() - 5_000,
+        msSinceActive: 0, msUntilCold: warm ? 5_000 : -5_000,
         note: warm ? 'Warm cache — lower cost.' : 'Cold cache — higher cost.',
       },
     },
@@ -35,30 +40,34 @@ async function render({ compact = false, offered = preview() }: { compact?: bool
 }
 
 describe('ResumeOffer (issue #507)', () => {
-  it('shows both priced paths, selecting the warm full continuation and its live warmth countdown', async () => {
+  it('shows both paths, recommends continue on a warm session, and its live countdown', async () => {
     const rendered = await render();
-    expect(rendered.textContent).toContain('Continue full session');
-    expect(rendered.textContent).toContain('Start condensed session');
-    expect(rendered.textContent).toContain('Warm cache — lower cost.');
-    expect(rendered.textContent).toContain('Fresh condensed context — lower cost.');
-    expect(rendered.textContent).toContain('Estimated warm time');
-    expect(rendered.textContent).toContain('Estimated warm cost');
-    expect(rendered.textContent).toContain('Recommended');
+    expect(rendered.textContent).toContain('Continue session');
+    expect(rendered.textContent).toContain('Start fresh session');
+    expect(rendered.textContent).toContain('Warm cache · low cost');
+    expect(rendered.textContent).toContain('Low cost');
+    expect(rendered.textContent).toContain('Warm for');
+    expect(rendered.querySelector('.ring-accent')?.textContent).toContain('Continue session');
   });
 
-  it('switches the deterministic recommendation to condensed once the full continuation is cold', async () => {
+  it('recommends a fresh session once the continuation is cold, and states why', async () => {
     const rendered = await render({ offered: preview(false) });
-    expect(rendered.querySelector('.ring-accent')?.textContent).toContain('Start condensed session');
-    expect(rendered.textContent).toContain('Estimated cold cost');
-    expect(rendered.textContent).toContain('Continue full session');
+    expect(rendered.querySelector('.ring-accent')?.textContent).toContain('Start fresh session');
+    expect(rendered.textContent).toContain('Cold cache · higher cost');
+    expect(rendered.textContent).toContain('gone cold');
   });
 
-  it('shows the warmth countdown in the compact card chip', async () => {
+  it('shows the warm countdown in the compact card chip', async () => {
     const rendered = await render({ compact: true, offered: preview() });
-    expect(rendered.textContent).toMatch(/Likely warm 0:0[1-5]/);
+    expect(rendered.textContent).toMatch(/Warm 0:0[1-5]/);
   });
 
-  it('renders no resume or countdown UI when no Session can resume', async () => {
+  it('shows a cold signal in the compact chip when the cache has lapsed', async () => {
+    const rendered = await render({ compact: true, offered: preview(false) });
+    expect(rendered.textContent).toContain('Cache cold');
+  });
+
+  it('renders nothing when no Session can resume', async () => {
     const rendered = await render({ offered: { available: false } });
     expect(rendered.textContent).toBe('');
   });

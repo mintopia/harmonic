@@ -4,7 +4,7 @@ import type { AppConfig } from '../types';
 import type { HostLoad } from '../ws';
 import type { View } from '../rail-model';
 import type { ThemePref } from '../theme';
-import { btnPrimary, btnQuiet, touchTarget } from '../ui';
+import { btnPrimary, touchTarget } from '../ui';
 
 const THEME_ICONS: Record<ThemePref, IconName> = {
   system: 'circle-half',
@@ -71,12 +71,20 @@ export function HeaderStatusBar({
       )}
       {globalPaused !== null && (
         <button
+          type="button"
           aria-pressed={globalPaused}
-          className={`${btnQuiet} ${globalPaused ? 'bg-raised text-ink' : 'text-muted'} disabled:opacity-60`}
+          aria-label={globalPaused ? 'Resume fleet' : 'Pause fleet'}
+          title={globalPaused ? 'Fleet paused — resume all execution' : 'Pause all execution'}
+          className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[13px] font-semibold transition-colors duration-150 disabled:opacity-60 ${
+            globalPaused ? 'bg-paused-tint text-paused' : 'text-muted hover:bg-raised hover:text-ink'
+          }`}
           disabled={globalPausePending}
           onClick={() => onGlobalPauseChange(!globalPaused)}
         >
-          {globalPausePending ? 'Updating fleet…' : globalPaused ? 'Resume fleet' : 'Pause fleet'}
+          <svg aria-hidden="true" width="11" height="11" viewBox="0 0 24 24" fill="currentColor">
+            {globalPaused ? <path d="M7 5l12 7-12 7V5z" /> : <path d="M7 4h4v16H7V4zm6 0h4v16h-4V4z" />}
+          </svg>
+          {globalPausePending ? 'Updating…' : globalPaused ? 'Resume' : 'Pause'}
         </button>
       )}
       {config && (
