@@ -1,5 +1,3 @@
-// Merged guardrail runtime suite (events route + supervisor). Consolidated so the isolated-pool
-// import graph is paid once; each source file's helpers stay block-scoped.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { type AttemptRow, type StepType } from '../src/db/schema.js';
 import { type GuardrailEventInput } from '../src/domain/guardrail-events.js';
@@ -8,8 +6,7 @@ import { type GuardrailDeps, GuardrailSupervisor, type GuardrailTurn, PROGRESS_N
 import { type AttemptUsageSnapshot } from '../src/execution/usage.js';
 import { startServer, stubHarness, type TestServer } from './helpers.js';
 
-// ===== guardrail-events-route.test.ts =====
-{
+describe('guardrail-events-route', () => {
   describe('GET /api/attempts/:id/guardrail-events (issue #171)', () => {
     let server: TestServer;
     const ctx = () => server.app.ctx;
@@ -66,10 +63,9 @@ import { startServer, stubHarness, type TestServer } from './helpers.js';
       expect(res.status).toBe(404);
     });
   });
-}
+});
 
-// ===== guardrail-supervisor.test.ts =====
-{
+describe('guardrail-supervisor', () => {
   interface GuardrailSnapshot {
     budget: { wallClockMinutes: number; tokens: number | null; costUsd: number | null };
     progress: boolean;
@@ -345,4 +341,4 @@ import { startServer, stubHarness, type TestServer } from './helpers.js';
       expect(h.steer).toHaveLength(0);
     });
   });
-}
+});

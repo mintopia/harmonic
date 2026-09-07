@@ -1,6 +1,3 @@
-// Merged Git-class suite (branch primitives, rebaseOnto, operation instrumentation,
-// diff/worktree heal). Consolidated from three per-issue files so the isolated-pool
-// import graph is paid once. Each source file's helpers stay block-scoped for byte-identical behavior.
 import { afterAll, afterEach, describe, expect, it } from 'vitest';
 import { Git } from '../src/execution/git.js';
 import { OperationRegistry, startOperation } from '../src/telemetry/operations.js';
@@ -12,8 +9,7 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-// ===== git-branch.test.ts =====
-{
+describe('git-branch', () => {
   const raw = (dir: string, ...args: string[]) =>
     execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
 
@@ -142,10 +138,9 @@ import { join } from 'node:path';
       }
     });
   });
-}
+});
 
-// ===== git-rebase.test.ts =====
-{
+describe('git-rebase', () => {
   const git = (dir: string, ...args: string[]) => execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
 
   const tmpDirs: string[] = [];
@@ -230,10 +225,9 @@ import { join } from 'node:path';
       expect(() => git(featureWt, 'rev-parse', '--verify', 'REBASE_HEAD')).toThrow();
     });
   });
-}
+});
 
-// ===== git-operations.test.ts =====
-{
+describe('git-operations', () => {
   const providers: NodeTracerProvider[] = [];
   const tmpDirs: string[] = [];
 
@@ -445,4 +439,4 @@ import { join } from 'node:path';
       expect(existsSync(wt)).toBe(false);
     });
   });
-}
+});

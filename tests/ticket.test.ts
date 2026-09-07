@@ -1,5 +1,3 @@
-// Merged ticket suite (timeline route + closed-while-working). The web-component ticket files
-// stay separate (jsdom loader). Consolidated so the isolated-pool import graph is paid once.
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { baselineConfig } from '../src/config.js';
 import { type AsyncDbHandle, openAsyncDb } from '../src/db/async.js';
@@ -14,8 +12,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-// ===== ticket-timeline-route.test.ts =====
-{
+describe('ticket-timeline-route', () => {
   describe('GET /api/tasks/:id/timeline (issue #328)', () => {
     let server: TestServer;
 
@@ -100,10 +97,9 @@ import { join } from 'node:path';
       await expect(server.api('GET', '/api/tasks/999999/timeline')).resolves.toMatchObject({ status: 404 });
     });
   });
-}
+});
 
-// ===== ticket-closed-while-working.test.ts =====
-{
+describe('ticket-closed-while-working', () => {
   const mirrored = (ref: number, over: Partial<MirrorInput> = {}): MirrorInput => ({
     trackerRef: ref,
     prompt: `ticket ${ref}\n\nbody`,
@@ -229,4 +225,4 @@ import { join } from 'node:path';
       expect(await tasks.get(task.id)).toMatchObject({ state: 'escalated', escalationReason: 'escalated to human: attempt 2 of 2 failed' });
     });
   });
-}
+});

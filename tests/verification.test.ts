@@ -1,5 +1,3 @@
-// Merged verification suite (attempts route, self-heal, critic, command verifier). Consolidated
-// so the isolated-pool import graph is paid once; each source file's helpers stay block-scoped.
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { type HarnessId, type VerificationCommand, verificationCommandSchema } from '../src/config.js';
 import { AttemptStore } from '../src/domain/attempts.js';
@@ -13,8 +11,7 @@ import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-// ===== verification-attempts-route.test.ts =====
-{
+describe('verification-attempts-route', () => {
   describe('GET /api/attempts/:id/verification-attempts (issue #169)', () => {
     let server: TestServer;
     const ctx = () => server.app.ctx;
@@ -145,10 +142,9 @@ import { join, resolve } from 'node:path';
       expect(res.status).toBe(404);
     });
   });
-}
+});
 
-// ===== verification-selfheal.test.ts =====
-{
+describe('verification-selfheal', () => {
   const git = (dir: string, ...args: string[]) =>
     execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
 
@@ -387,10 +383,9 @@ import { join, resolve } from 'node:path';
       expect(await ticketAttempts(taskId)).toMatchObject([{ number: 1, state: 'escalated' }]);
     });
   });
-}
+});
 
-// ===== verification-critic.test.ts =====
-{
+describe('verification-critic', () => {
   const FAKE_CODE_INDEX_CLI = `#!/usr/bin/env node
   const fs = require('node:fs');
   const args = process.argv.slice(2);
@@ -788,10 +783,9 @@ import { join, resolve } from 'node:path';
       expect(indexCountFor(lastCriticCwd!)).toBe(4);
     });
   });
-}
+});
 
-// ===== verification-command.test.ts =====
-{
+describe('verification-command', () => {
   const git = (dir: string, ...args: string[]) =>
     execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
 
@@ -1230,4 +1224,4 @@ import { join, resolve } from 'node:path';
       expect(mergedFiles).toBe('made by agent');
     });
   });
-}
+});

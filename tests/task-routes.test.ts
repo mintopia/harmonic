@@ -1,5 +1,3 @@
-// Merged task route suite (steering, list-by-epic, list-branch). Consolidated so the isolated-pool
-// import graph is paid once; each source file's helpers stay block-scoped.
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { type AppConfig, type DeepPartial } from '../src/config.js';
 import { Git } from '../src/execution/git.js';
@@ -10,8 +8,7 @@ import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-// ===== task-steering.test.ts =====
-{
+describe('task-steering', () => {
   const scenario = (s: object) => JSON.stringify(s);
 
   const slowFirstTurn = (n = 6, delayMs = 80) =>
@@ -198,10 +195,9 @@ import { join } from 'node:path';
       expect(res.status).toBe(409);
     });
   });
-}
+});
 
-// ===== task-list-epics.test.ts =====
-{
+describe('task-list-epics', () => {
   describe('Tasks list epic rows from the derived model (issue #418)', () => {
     let server: TestServer;
     let workspaceId: number;
@@ -287,10 +283,9 @@ import { join } from 'node:path';
       expect(summaries(miss.body)).toEqual(['task b']);
     });
   });
-}
+});
 
-// ===== task-list-branch.test.ts =====
-{
+describe('task-list-branch', () => {
   const git = (dir: string, ...args: string[]) =>
     execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
 
@@ -348,4 +343,4 @@ import { join } from 'node:path';
       expect(task.stat).toBeNull();
     });
   });
-}
+});
