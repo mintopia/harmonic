@@ -1,13 +1,20 @@
 # Harmonic
 
 Point Harmonic at your issue tracker and it works through your backlog on
-its own. Label an issue for an agent and Harmonic runs a coding agent to
-implement it, reviews the work, and merges the branch when it passes, all
-from one board you watch. It drives agent harnesses (Claude Code, Codex,
-Copilot, OpenCode) over [ACP](https://agentclientprotocol.com), so they're
-interchangeable, and hands a ticket back only when it needs a human. You
-can also queue a one-off task by hand, with a review gate you accept or
-reject before anything merges.
+its own. Write a spec, break it into tickets, and Harmonic runs the ready
+ones out to merged code: for each ticket it starts a coding agent,
+implements the change, has the work reviewed, and merges the branch,
+handing a ticket back only when it needs a human. You watch a board and
+step in only when a ticket needs you.
+
+It's built to run alongside **Matt Pocock's Skills**, which turn a spec
+into labelled tickets in your tracker; Harmonic is the layer that runs
+them. It drives agent harnesses (Claude Code, Codex, Copilot, OpenCode)
+over [ACP](https://agentclientprotocol.com), so they're interchangeable
+with no vendor lock-in. You can also queue a one-off task by hand, with a
+review gate you accept or reject before anything merges.
+
+**Full documentation:** https://mintopia.github.io/harmonic
 
 ## Run
 
