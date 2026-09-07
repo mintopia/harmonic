@@ -121,6 +121,7 @@ function renderGlobalPrompt(d: GlobalPrompt, ctx: GlobalRenderCtx): ReactNode {
       value={value}
       inheritedValue={baseline}
       inherited={value === baseline}
+      dim={false}
       onChange={(next) => ctx.setConfig(d.set(ctx.config, next))}
       onRevert={() => ctx.setConfig(d.set(ctx.config, baseline))}
     >
