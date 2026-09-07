@@ -170,25 +170,29 @@ export function ElicitationPrompt({
     <div
       role="group"
       aria-label="Question from the agent"
-      className="border-t border-hairline bg-running-tint px-4 py-3"
+      className="flex max-h-[55vh] flex-col border-t border-hairline bg-running-tint"
     >
       <div role="alert" className="sr-only">
         {announcement}
       </div>
-      <p className="text-title font-semibold text-ink">The agent is asking a question</p>
-      <Markdown source={message} className="mb-3 mt-1 text-[13.5px] leading-relaxed text-ink" />
-      <div ref={firstRef} className="flex flex-col gap-3">
-        {fields.map((f) => (
-          <Field
-            key={f.key}
-            field={f}
-            value={values[f.key]}
-            disabled={busy}
-            onChange={(v) => setValues((current) => ({ ...current, [f.key]: v }))}
-          />
-        ))}
+      {/* The form can be taller than the panel, so its body scrolls while the
+          action row below stays pinned — Submit/Skip are always reachable. */}
+      <div ref={firstRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+        <p className="text-title font-semibold text-ink">The agent is asking a question</p>
+        <Markdown source={message} className="mb-3 mt-1 text-[13.5px] leading-relaxed text-ink" />
+        <div className="flex flex-col gap-3">
+          {fields.map((f) => (
+            <Field
+              key={f.key}
+              field={f}
+              value={values[f.key]}
+              disabled={busy}
+              onChange={(v) => setValues((current) => ({ ...current, [f.key]: v }))}
+            />
+          ))}
+        </div>
       </div>
-      <div className="mt-3 flex items-center gap-2">
+      <div className="flex items-center gap-2 border-t border-hairline px-4 py-2.5">
         <button
           type="button"
           className={btnPrimary}
