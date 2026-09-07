@@ -29,7 +29,8 @@ export type IconName =
   | 'branch'
   | 'alert-triangle'
   | 'user'
-  | 'help';
+  | 'help'
+  | 'copy';
 
 const PATHS: Record<IconName, JSX.Element> = {
   board: (
@@ -92,6 +93,12 @@ const PATHS: Record<IconName, JSX.Element> = {
     <>
       <circle cx="8" cy="8" r="5.75" />
       <path d="M8 2.25v11.5" />
+    </>
+  ),
+  copy: (
+    <>
+      <rect height="8" rx="1.2" width="8" x="5.5" y="5.5" />
+      <path d="M10.5 2.5H3.2a0.7 0.7 0 0 0-0.7 0.7V10.5" />
     </>
   ),
   check: <path d="M3.5 8.5 6.5 11.5 12.5 4.5" />,

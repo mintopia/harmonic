@@ -2,6 +2,7 @@ import { useMemo, type ReactNode } from 'react';
 import { coalesceTail, isInterrupted, movingBaseView, type StreamEvent, type ToolCallView } from '../event-stream-model';
 import { guardrailDimensionLabel } from '../guardrail-trip-model';
 import { chip, labelType, toolChip } from '../ui';
+import { Markdown } from './Markdown';
 
 const TOOL_KIND_LABEL: Record<string, string> = {
   read: 'read',
@@ -146,16 +147,11 @@ export function EventStream<E extends StreamEvent>({ events }: { events: E[] }) 
       items.map((item) => {
         if (item.kind === 'text') {
           return (
-            <p
+            <Markdown
               key={item.key}
-              className={
-                item.variant === 'thought'
-                  ? 'whitespace-pre-wrap italic text-muted'
-                  : 'whitespace-pre-wrap text-ink'
-              }
-            >
-              {item.text}
-            </p>
+              source={item.text}
+              className={item.variant === 'thought' ? 'italic text-muted' : 'text-ink'}
+            />
           );
         }
         if (item.kind === 'tool') return <ToolLine key={item.key} tool={item.tool} />;

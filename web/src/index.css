@@ -463,10 +463,45 @@
   border-radius: 0.25rem;
 }
 .markdown pre {
+  position: relative;
   padding: 0.6rem 0.75rem;
   overflow-x: auto;
   background: var(--hm-raised);
   border-radius: 0.375rem;
+}
+.md-copy {
+  position: absolute;
+  top: 0.35rem;
+  right: 0.35rem;
+  padding: 0.15rem 0.45rem;
+  font-family: var(--font-sans);
+  font-size: var(--text-label);
+  font-weight: 600;
+  color: var(--hm-muted);
+  background: var(--hm-surface);
+  border: 1px solid var(--hm-hairline);
+  border-radius: 0.25rem;
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity 0.12s ease,
+    color 0.12s ease;
+}
+.markdown pre:hover .md-copy,
+.md-copy:focus-visible {
+  opacity: 1;
+}
+.md-copy:hover {
+  color: var(--hm-ink);
+}
+.md-copy.is-copied {
+  color: var(--hm-merged);
+  opacity: 1;
+}
+@media (hover: none) {
+  .md-copy {
+    opacity: 1;
+  }
 }
 .markdown pre code {
   padding: 0;

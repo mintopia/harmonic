@@ -46,6 +46,22 @@ const answerPermissionInputSchema = z.object({
   remember: z.boolean().optional().meta({ example: false }),
 });
 
+const elicitationParamsSchema = z.object({
+  id: z.coerce.number().int().meta({ example: 7402 }),
+  /** The `elicit-{n}` id the Harness's held question was announced under. */
+  reqId: z.string().min(1).meta({ example: 'elicit-1' }),
+});
+const elicitationContentValueSchema = z.union([z.string(), z.array(z.string()), z.boolean()]);
+const answerElicitationInputSchema = z.discriminatedUnion('action', [
+  z.object({
+    action: z.literal('accept'),
+    /** Field key → chosen value(s): a select's option value, a multi-select's array, free text, or a boolean. */
+    content: z.record(z.string(), elicitationContentValueSchema),
+  }),
+  z.object({ action: z.literal('decline') }),
+  z.object({ action: z.literal('cancel') }),
+]);
+
 /** A Conversation as the API serves it (serialize.ts `ApiConversation`). */
 const conversationSchema = z
   .object({
@@ -316,6 +332,28 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
     },
     async (req) => {
       await ctx.conversationDriver.answerPermission(req.params.id, req.params.reqId, req.body.optionId, req.body.remember);
+      return { ok: true } as const;
+    },
+  );
+
+  app.post(
+    '/conversations/:id/elicitations/:reqId',
+    {
+      schema: {
+        tags: ['Conversations'],
+        description:
+          "Answer a Harness's held structured question (ACP form elicitation, e.g. AskUserQuestion) in a Conversation. `accept` carries the field answers keyed by field id; `decline` skips the question (the harness is told nothing was chosen); `cancel` aborts the asking tool call. Operator only; not reachable with an attempt-scoped key.",
+        security: [{ bearerAuth: [] }, { sessionCookie: [] }],
+        params: elicitationParamsSchema,
+        body: answerElicitationInputSchema,
+        response: {
+          200: okResponseSchema.describe('The answer was handed to the Harness and the held question released.'),
+          404: errorResponse('No elicitation with that reqId is pending for this Conversation.'),
+        },
+      },
+    },
+    async (req) => {
+      await ctx.conversationDriver.answerElicitation(req.params.id, req.params.reqId, req.body);
       return { ok: true } as const;
     },
   );

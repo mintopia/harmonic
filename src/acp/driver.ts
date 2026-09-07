@@ -45,6 +45,14 @@ export interface AcpInitializeResult {
 export interface AcpHandshake {
   cwd: string;
   mcpServers?: unknown[];
+  /**
+   * ACP `clientCapabilities` advertised at initialize. Defaults to none. The
+   * conversation driver opts into `{ elicitation: { form: true } }` so a
+   * harness can ask the operator structured questions (AskUserQuestion);
+   * unattended attempt runs leave it off, so a harness can't block a
+   * head-less run on input no one is there to give.
+   */
+  clientCapabilities?: Record<string, unknown>;
   /** ACP modelId to pin via session/set_model right after session/new; skipped when undefined. */
   modelId?: string | undefined;
   /**
@@ -160,9 +168,12 @@ export class AcpDriver {
     this.exited.catch(() => {});
   }
 
-  private async initialize(onInitialize?: (result: AcpInitializeResult) => void): Promise<AcpInitializeResult> {
+  private async initialize(
+    onInitialize?: (result: AcpInitializeResult) => void,
+    clientCapabilities: Record<string, unknown> = {},
+  ): Promise<AcpInitializeResult> {
     const result = (await this.race(
-      this.connection.request('initialize', { protocolVersion: 1, clientCapabilities: {} }),
+      this.connection.request('initialize', { protocolVersion: 1, clientCapabilities }),
     )) as AcpInitializeResult;
     onInitialize?.(result);
     return result;
@@ -177,7 +188,7 @@ export class AcpDriver {
     const operation = startOperation({ type: 'session.create', attributes: {} });
     try {
       const sessionId = await operation.run(async () => {
-        await this.initialize(opts.onInitialize);
+        await this.initialize(opts.onInitialize, opts.clientCapabilities);
         const session = (await this.race(
           this.connection.request('session/new', { cwd: opts.cwd, mcpServers: opts.mcpServers ?? [] }),
         )) as { sessionId: string; modes?: { availableModes?: { id: string }[] } };

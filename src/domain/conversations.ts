@@ -10,7 +10,7 @@ import { DomainError } from './errors.js';
 
 export interface ConversationEventInput {
   /** 'user_turn' is the operator's own message; the rest mirror Attempt events. */
-  type: 'session_update' | 'permission_request' | 'lifecycle' | 'user_turn';
+  type: 'session_update' | 'permission_request' | 'elicitation_request' | 'lifecycle' | 'user_turn';
   payload: unknown;
 }
 

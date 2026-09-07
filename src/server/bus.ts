@@ -3,7 +3,7 @@ import type { ConversationRow, AttemptRow, TaskRow } from '../db/schema.js';
 import type { PersistedAttemptEvent } from '../domain/attempts.js';
 import type { LiveAttemptEvent } from '../execution/runner.js';
 import type { PersistedConversationEvent } from '../domain/conversations.js';
-import type { PendingPermissionBroadcast } from '../execution/conversation-driver.js';
+import type { PendingPermissionBroadcast, PendingElicitationBroadcast } from '../execution/conversation-driver.js';
 import type { AttemptUsageSnapshot } from '../execution/usage.js';
 import type { ScheduledJobSnapshot } from '../scheduler/scheduler.js';
 import type { OperationEvent } from '../telemetry/operations.js';
@@ -34,6 +34,9 @@ export interface BusEvents {
   conversation_event: (event: PersistedConversationEvent) => void;
   conversation_changed: (conversation: ConversationRow) => void;
   permission_request: (pending: PendingPermissionBroadcast) => void;
+  /** A Harness is asking the operator a structured question (ACP form
+   * elicitation); the Turn is blocked until it's answered. */
+  elicitation_request: (pending: PendingElicitationBroadcast) => void;
   /** Full Scheduled Jobs registry snapshot. */
   scheduled_jobs: (jobs: ScheduledJobSnapshot[]) => void;
   worktrees: (worktrees: readonly WorktreeInventoryEntry[]) => void;
