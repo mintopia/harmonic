@@ -1,9 +1,13 @@
 # Harmonic
 
-Queue, run, and review autonomous coding-agent tasks. Harmonic drives
-agent harnesses (Claude Code, Codex, Copilot) over [ACP](https://agentclientprotocol.com)
-from one board: agents run unattended, nothing merges without passing
-the review gate.
+Point Harmonic at your issue tracker and it works through your backlog on
+its own. Label an issue for an agent and Harmonic runs a coding agent to
+implement it, reviews the work, and merges the branch when it passes, all
+from one board you watch. It drives agent harnesses (Claude Code, Codex,
+Copilot, OpenCode) over [ACP](https://agentclientprotocol.com), so they're
+interchangeable, and hands a ticket back only when it needs a human. You
+can also queue a one-off task by hand, with a review gate you accept or
+reject before anything merges.
 
 ## Run
 

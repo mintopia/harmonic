@@ -1,0 +1,121 @@
+@import '@fontsource-variable/jetbrains-mono';
+
+/* Harmonic "Paper" — the docs theme, matched to the app
+   (web/src/index.css, DESIGN.md § 1–3). A system-sans UI voice with
+   JetBrains Mono reserved for code, a teal action accent and an indigo
+   review voice, over a low-chroma paper/graphite ground. Dark is the
+   canonical operator identity; light is the matte paper world. */
+
+:root {
+  /* System sans is the app's own voice — character from scale, weight, and
+     spacing, not an exotic face. Code is the one exception. */
+  --sl-font: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --sl-font-mono: 'JetBrains Mono Variable', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --ec-frm-edgeBrdrRad: 4px;
+  --ec-brdRad: 4px;
+
+  /* Dark = the base (Starlight's convention); light overrides below. */
+  --sl-color-accent-low: #123330;
+  --sl-color-accent: #33bdb4;
+  --sl-color-accent-high: #bfe4e0;
+  --sl-color-text-accent: #5fcfc6;
+
+  --sl-color-white: #e8e9ec; /* ink — highest-contrast text */
+  --sl-color-gray-1: #e8e9ec;
+  --sl-color-gray-2: #c7cacf;
+  --sl-color-gray-3: #a3a8b0; /* muted */
+  --sl-color-gray-4: #7d828b; /* faint */
+  --sl-color-gray-5: #3b3f47; /* edge */
+  --sl-color-gray-6: #202227; /* surface */
+  --sl-color-gray-7: #191b1f; /* sunken */
+  --sl-color-black: #15161a; /* canvas */
+
+  --sl-color-bg: #15161a;
+  --sl-color-bg-nav: #1b1d22;
+  --sl-color-bg-sidebar: #1b1d22;
+  --sl-color-bg-inline-code: #282b31;
+  --sl-color-hairline: #2c2f36;
+  --sl-color-hairline-shade: #212329;
+  --sl-color-hairline-light: #2c2f36;
+
+  /* Paper state hues for inline diagrams — the app's semantic voices. */
+  --paper-done: #3ecf7e; /* merged emerald */
+  --paper-await: #9096e6; /* escalated / needs-you indigo */
+}
+
+:root[data-theme='light'] {
+  --sl-color-accent-low: #e0f0ef;
+  --sl-color-accent: #0d7271;
+  --sl-color-accent-high: #08403f;
+  --sl-color-text-accent: #0b6360;
+
+  --sl-color-white: #1b1e24; /* ink */
+  --sl-color-gray-1: #1b1e24;
+  --sl-color-gray-2: #3f4550;
+  --sl-color-gray-3: #656b73; /* muted */
+  --sl-color-gray-4: #61676f; /* faint */
+  --sl-color-gray-5: #d5d8d1; /* edge */
+  --sl-color-gray-6: #eeefeb; /* raised */
+  --sl-color-gray-7: #fafaf8; /* sunken */
+  --sl-color-black: #f1f2ef; /* canvas */
+
+  --sl-color-bg: #f1f2ef;
+  --sl-color-bg-nav: #ffffff;
+  --sl-color-bg-sidebar: #ffffff;
+  --sl-color-bg-inline-code: #eeefeb;
+  --sl-color-hairline: #e6e7e2;
+  --sl-color-hairline-shade: #eeefeb;
+  --sl-color-hairline-light: #e6e7e2;
+
+  --paper-done: #127a39;
+  --paper-await: #4b4fa6;
+}
+
+/* Sharp corners — the app's Bold density (radii 3–4px, never soft cards). */
+.sl-markdown-content pre,
+.sl-markdown-content :not(pre) > code,
+.expressive-code .frame,
+.expressive-code .frame pre,
+.starlight-aside,
+.sl-markdown-content table,
+.sl-markdown-content figure svg {
+  border-radius: 4px;
+}
+
+/* Headings: tight, heavy — the app's display register. */
+.sl-markdown-content h1,
+h1.hero-title,
+.hero h1 {
+  font-weight: 800;
+  letter-spacing: -0.025em;
+}
+.sl-markdown-content :is(h2, h3),
+.hero .tagline {
+  letter-spacing: -0.02em;
+}
+.sl-markdown-content :is(h2) {
+  font-weight: 700;
+}
+
+/* Sidebar group headers as the app's uppercase Label. */
+.sidebar-content .top-level > li > details > summary,
+.sidebar-content .top-level > li > .group-label,
+.sidebar-content .top-level > li > span {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  color: var(--sl-color-gray-3);
+}
+
+/* Browser surfaces carry the palette too — the cheapest built-not-assembled
+   signal: selection, caret, and scrollbars are teal, not browser default. */
+::selection {
+  background: var(--sl-color-accent-low);
+  color: var(--sl-color-white);
+}
+:root {
+  scrollbar-color: var(--sl-color-gray-5) transparent;
+  caret-color: var(--sl-color-accent);
+}
