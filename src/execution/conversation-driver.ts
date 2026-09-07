@@ -355,7 +355,11 @@ export class ConversationDriver {
         cwd: convo.workingDir,
         mcpServers,
         modelId,
-        clientCapabilities: { elicitation: { form: true } },
+        // ACP's ElicitationFormCapabilities is an object, not a boolean — an
+        // empty `{}` is how a client advertises form support. `true` fails the
+        // adapter's schema validation and is silently dropped, which leaves
+        // AskUserQuestion disabled.
+        clientCapabilities: { elicitation: { form: {} } },
         onSessionCreated: async (sessionId) => {
           await this.store.update(convo.id, { sessionId });
         },

@@ -47,7 +47,7 @@ export interface AcpHandshake {
   mcpServers?: unknown[];
   /**
    * ACP `clientCapabilities` advertised at initialize. Defaults to none. The
-   * conversation driver opts into `{ elicitation: { form: true } }` so a
+   * conversation driver opts into `{ elicitation: { form: {} } }` so a
    * harness can ask the operator structured questions (AskUserQuestion);
    * unattended attempt runs leave it off, so a harness can't block a
    * head-less run on input no one is there to give.
