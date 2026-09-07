@@ -153,6 +153,11 @@ export class AcpDriver {
         reject(new Error(`harness exited (code ${code ?? 'null'}, signal ${signal ?? 'none'}) before finishing`)),
       );
     });
+    // `race()` attaches its own handler per in-flight request, but the child can
+    // also exit (e.g. SIGKILL on shutdown/cancel) while nothing is racing — an
+    // unhandled rejection then crashes the process. This idle handler keeps the
+    // stored promise always-handled without affecting the race consumers.
+    this.exited.catch(() => {});
   }
 
   private async initialize(onInitialize?: (result: AcpInitializeResult) => void): Promise<AcpInitializeResult> {
