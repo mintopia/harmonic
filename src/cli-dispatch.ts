@@ -16,11 +16,16 @@ export type CliDispatch =
   | { kind: 'status'; dataDir: string | undefined }
   | { kind: 'stop'; dataDir: string | undefined }
   | { kind: 'help'; exitCode: 0 | 1 }
+  | { kind: 'version' }
   | { kind: 'serve'; values: ServeValues }
   | { kind: 'start'; values: ServeValues };
 
 export function dispatchCli(argv: string[]): CliDispatch {
   const [command, ...rest] = argv;
+
+  if (command === 'version' || command === '--version' || command === '-v') {
+    return { kind: 'version' };
+  }
 
   if (command === 'status' || command === 'stop') {
     const { values } = parseArgs({ args: rest, options: { 'data-dir': { type: 'string' } } });

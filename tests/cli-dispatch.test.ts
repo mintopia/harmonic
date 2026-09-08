@@ -18,6 +18,10 @@ describe('dispatchCli', () => {
     expect(dispatchCli(['bogus'])).toEqual({ kind: 'help', exitCode: 1 });
   });
 
+  it.each(['version', '--version', '-v'])('routes "%s" to version', (arg) => {
+    expect(dispatchCli([arg])).toEqual({ kind: 'version' });
+  });
+
   it('routes "status" without --data-dir', () => {
     expect(dispatchCli(['status'])).toEqual({ kind: 'status', dataDir: undefined });
   });
