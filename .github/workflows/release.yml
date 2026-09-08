@@ -31,6 +31,13 @@ jobs:
     steps:
       - id: rp
         uses: googleapis/release-please-action@v5
+        with:
+          # Gitflow: work accrues on develop; releases are cut from main.
+          # Without this, release-please defaults to the repo default branch
+          # (develop) and its release PR only recomputes on a main push, so it
+          # goes stale between releases. Owning main aligns the release PR,
+          # the tag, and the publish on the branch we release from.
+          target-branch: main
 
   publish:
     needs: release-please
