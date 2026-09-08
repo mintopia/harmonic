@@ -303,6 +303,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     events: {
       onEvent: (event) => bus.emit('conversation_event', event),
       onPermissionRequest: (pending) => bus.emit('permission_request', pending),
+      onElicitationRequest: (pending) => bus.emit('elicitation_request', pending),
     },
     rules: permissionRules,
     keys: {

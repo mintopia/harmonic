@@ -8,6 +8,7 @@ import type {
   ContinuationPreview,
   Conversation,
   ConversationEvent,
+  ElicitationAnswer,
   Cost,
   DiffFile,
   FsListing,
@@ -264,6 +265,8 @@ export const api = {
       `/api/conversations/${conversationId}/permissions/${reqId}`,
       remember ? { optionId, remember } : { optionId },
     ),
+  answerElicitation: (conversationId: number, reqId: string, answer: ElicitationAnswer) =>
+    request<{ ok: true }>('POST', `/api/conversations/${conversationId}/elicitations/${reqId}`, answer),
   permissionRules: () => request<{ rules: PermissionRule[]; total: number }>('GET', '/api/permission-rules'),
   deletePermissionRule: (id: number) => request<unknown>('DELETE', `/api/permission-rules/${id}`),
   channels: () => request<{ channels: Channel[]; total: number }>('GET', '/api/channels'),

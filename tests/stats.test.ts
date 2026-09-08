@@ -1,5 +1,3 @@
-// Merged stats suite (async path, enriched rows, route, aggregates). Consolidated so the
-// isolated-pool import graph is paid once; each source file's helpers stay block-scoped.
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { attemptEvents, attempts, type AttemptState, attemptToolCalls, guardrailEvents, tasks, verificationAttempts, workspaces } from '../src/db/schema.js';
 import { type GateReason, type SettledTaskAttempt, type SettleEventRow, StatsWorkerClient } from '../src/db/stats-reader.js';
@@ -8,8 +6,7 @@ import { EventLoopMonitor, type StallInfo } from '../src/reliability/event-loop-
 import { attemptsPerTask, byWorkspace, costPerMergedTask, gateOutcomes, guardrailTripsByDimension, tasksMergedByDay, verdicts, type WorkspaceAttempt } from '../src/server/stats-aggregates.js';
 import { startServer, stubHarness, type TestServer } from './helpers.js';
 
-// ===== stats-async-path.test.ts =====
-{
+describe('stats-async-path', () => {
   describe('Stats heavy aggregate runs in a worker (#257)', () => {
     let server: TestServer | undefined;
 
@@ -128,10 +125,9 @@ import { startServer, stubHarness, type TestServer } from './helpers.js';
       await expect(reader.read({ from: 0, to: Date.now() })).rejects.toThrow('Stats worker is closed');
     });
   });
-}
+});
 
-// ===== stats-enriched.test.ts =====
-{
+describe('stats-enriched', () => {
   describe('Enriched /stats aggregates (ADR-0014)', () => {
     let server: TestServer | undefined;
 
@@ -273,10 +269,9 @@ import { startServer, stubHarness, type TestServer } from './helpers.js';
       expect(scoped.body.byWorkspace[0].workspaceId).toBe(other.id);
     });
   });
-}
+});
 
-// ===== stats-route.test.ts =====
-{
+describe('stats-route', () => {
   describe('GET /api/stats — failedAttempts + durationMs', () => {
     let server: TestServer;
     let taskId: number;
@@ -448,10 +443,9 @@ import { startServer, stubHarness, type TestServer } from './helpers.js';
       expect(body).not.toHaveProperty('reasoning');
     });
   });
-}
+});
 
-// ===== stats-aggregates.test.ts =====
-{
+describe('stats-aggregates', () => {
   const merged = (taskId: number, ts: number): SettleEventRow => ({ taskId, ts, kind: 'merged', gate: null });
   const escalated = (taskId: number, ts: number, gate: GateReason | null = null): SettleEventRow => ({
     taskId,
@@ -626,4 +620,4 @@ import { startServer, stubHarness, type TestServer } from './helpers.js';
       expect(result[0]?.failureRate).toBeNull();
     });
   });
-}
+});

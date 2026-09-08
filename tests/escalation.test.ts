@@ -1,6 +1,3 @@
-// Merged escalation suite (direct-mode actions, EscalationService domain, HTTP routes).
-// Consolidated so the isolated-pool import graph is paid once. Each source file's helpers
-// stay block-scoped for byte-identical behavior.
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { baselineConfig } from '../src/config.js';
 import { type AsyncDbHandle, openAsyncDb } from '../src/db/async.js';
@@ -22,8 +19,7 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-// ===== escalation.test.ts =====
-{
+describe('escalation', () => {
   describe('escalation: the three actions (direct mode)', () => {
     let server: TestServer;
 
@@ -193,10 +189,9 @@ import { join } from 'node:path';
       }
     });
   });
-}
+});
 
-// ===== escalation-service.test.ts =====
-{
+describe('escalation-service', () => {
   describe('EscalationService', () => {
     let dir: string;
     let asyncDb: AsyncDbHandle;
@@ -405,10 +400,9 @@ import { join } from 'node:path';
       });
     });
   });
-}
+});
 
-// ===== escalation-routes.test.ts =====
-{
+describe('escalation-routes', () => {
   const git = (dir: string, ...args: string[]) =>
     execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
 
@@ -637,4 +631,4 @@ import { join } from 'node:path';
       });
     });
   });
-}
+});

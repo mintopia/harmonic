@@ -4,23 +4,22 @@ description: How Harmonic is configured from the command line and the environmen
 ---
 
 Harmonic's startup configuration comes from three places: command-line
-options, environment variables, and built-in defaults. Everything else is
-configured **inside the app** and stored in the database: harnesses, prices,
-notifications, Permission Rules, and the rest. See
-[Settings & overrides](/harmonic/using-harmonic/settings-and-overrides/)
-for those.
+options, environment variables, and built-in defaults. Everything else,
+harnesses, prices, notifications, permission rules, and the rest, is
+configured **inside the app**; see
+[Settings & overrides](/harmonic/run/settings/).
 
 ## Options
 
 Passed to the server commands (`serve`, `start`); `--data-dir` also
 applies to `status` and `stop`. Full command coverage is in the
-[CLI reference](/harmonic/reference/cli/).
+[CLI reference](/harmonic/run/cli/).
 
 | Option | Default | Description |
 | --- | --- | --- |
 | `--port <n>` | `4700` | Port to listen on. |
 | `--host <h>` | `0.0.0.0` | Bind address. `0.0.0.0` is reachable from your network; `127.0.0.1` is local-only. |
-| `--data-dir <dir>` | `~/.harmonic` | Directory holding the SQLite database, the daemon lock, and the background log. |
+| `--data-dir <dir>` | `~/.harmonic` | Where Harmonic keeps its data and background log. |
 | `--password <pw>` | — | Set or update the operator password. `--password ''` removes it and runs ungated. |
 
 ## Environment variables
@@ -52,21 +51,17 @@ go ungated again you must explicitly clear it with `--password ''`.
 
 ## The data directory
 
-Everything Harmonic persists lives under the data directory (default
-`~/.harmonic`, or `--data-dir` / `HARMONIC_DATA_DIR`):
+Everything Harmonic keeps, your workspaces, tickets, history, and
+settings, lives under the data directory (default `~/.harmonic`), along
+with the background log. Back up that folder to back up Harmonic, and
+point it somewhere else with `--data-dir` or `HARMONIC_DATA_DIR`.
 
-| File | What it holds |
-| --- | --- |
-| `harmonic.db` | The SQLite database: every Workspace, Task, Run, and setting. Runs in WAL mode, so you'll also see `harmonic.db-wal` and `harmonic.db-shm` alongside it. |
-| `harmonic.pid` | The background daemon's lock/PID file. One background server runs per data directory; a second `serve`/`start` on the same directory is refused. |
-| `harmonic.log` | Combined stdout and stderr from the background (`start`) server. |
-
-To run two independent instances, give each its own `--data-dir`. `start`,
-`status`, and `stop` all resolve the same `--data-dir` to find each other,
-so pass a matching value to every command when you run off the default.
+Only one server runs per data directory. To run two independent instances,
+give each its own `--data-dir`, and pass the matching value to `status`
+and `stop` so they act on the right one.
 
 ## See also
 
-- [CLI reference](/harmonic/reference/cli/): every command and option.
-- [Security](/harmonic/using-harmonic/security/): the password, host
+- [CLI reference](/harmonic/run/cli/): every command and option.
+- [Security](/harmonic/run/security/): the password, host
   binding, and the ungated warning.

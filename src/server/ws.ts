@@ -49,9 +49,13 @@ export async function wsRoutes(fastify: FastifyInstance, ctx: AppContext): Promi
             .catch(() => {});
         }),
         ctx.bus.on('permission_request', (pending) => send({ type: 'permission_request', ...pending })),
+        ctx.bus.on('elicitation_request', (pending) => send({ type: 'elicitation_request', ...pending })),
       );
       for (const pending of ctx.conversationDriver.listPendingPermissions()) {
         send({ type: 'permission_request', ...pending });
+      }
+      for (const pending of ctx.conversationDriver.listPendingElicitations()) {
+        send({ type: 'elicitation_request', ...pending });
       }
     }
     socket.on('message', async (raw) => {

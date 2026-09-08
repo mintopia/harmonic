@@ -1,5 +1,3 @@
-// Merged session suite (dispatch, on-demand transcript, AcpDriver.load handshake). Consolidated
-// so the isolated-pool import graph is paid once; each source file's helpers stay block-scoped.
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { AcpDriver } from '../src/acp/driver.js';
 import { type AppConfig, type DeepPartial } from '../src/config.js';
@@ -15,8 +13,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-// ===== session-dispatch.test.ts =====
-{
+describe('session-dispatch', () => {
   describe('dispatching a Run persists a durable Session (issue #141)', () => {
     let server: TestServer;
 
@@ -91,10 +88,9 @@ import { join } from 'node:path';
       expect(session.permissionMode).toBeNull();
     });
   });
-}
+});
 
-// ===== session-transcript-ondemand.test.ts =====
-{
+describe('session-transcript-ondemand', () => {
   describe('on-demand transcript resolution (Runner.ensureSessionTranscript)', () => {
     let server: TestServer;
     let logDir: string;
@@ -158,10 +154,9 @@ import { join } from 'node:path';
       expect(await server.app.ctx.runner.ensureSessionTranscript(runRow.sessionRowId!)).toBeNull();
     });
   });
-}
+});
 
-// ===== session-load.test.ts =====
-{
+describe('session-load', () => {
   const STUB_HARNESS = join(import.meta.dirname, 'stub-harness.mjs');
 
   interface Rig {
@@ -397,4 +392,4 @@ import { join } from 'node:path';
       expect(JSON.stringify(regrafted)).not.toContain('OLD-SECRET');
     });
   });
-}
+});

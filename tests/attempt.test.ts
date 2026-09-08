@@ -1,5 +1,3 @@
-// Merged attempt suite (log route, key lifecycle, settle coordinator, timeline route). Consolidated
-// so the isolated-pool import graph is paid once; each source file's helpers stay block-scoped.
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { type AppConfig, baselineConfig, type DeepPartial } from '../src/config.js';
 import { type AsyncDbHandle, openAsyncDb } from '../src/db/async.js';
@@ -14,8 +12,7 @@ import { mkdirSync, mkdtempSync, rmSync, unlinkSync, writeFileSync } from 'node:
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-// ===== attempt-log.test.ts =====
-{
+describe('attempt-log', () => {
   describe('GET /api/attempts/:id/log (issue #242)', () => {
     let server: TestServer;
     const workDir = mkdtempSync(join(tmpdir(), 'harmonic-run-log-work-'));
@@ -107,10 +104,9 @@ import { join } from 'node:path';
       expect(body).toEqual({ status: 'unavailable', liveCursor: 0 });
     });
   });
-}
+});
 
-// ===== attempt-keys.test.ts =====
-{
+describe('attempt-keys', () => {
   const attemptKeyRows = (server: TestServer) =>
     server.app.ctx.asyncDb.read((d) => d.select().from(apiKeys).where(eq(apiKeys.scope, 'attempt')).all());
 
@@ -206,10 +202,9 @@ import { join } from 'node:path';
       await server.api('POST', `/api/tasks/${taskId}/cancel`);
     });
   });
-}
+});
 
-// ===== attempt-settle.test.ts =====
-{
+describe('attempt-settle', () => {
   describe('AttemptSettleCoordinator.settle — guarded state transition', () => {
     let dir: string;
     let asyncDb: AsyncDbHandle;
@@ -315,10 +310,9 @@ import { join } from 'node:path';
       expect((await tasks.get(task.id)).escalationReason).toBe('escalated to human: wall-clock budget exceeded');
     });
   });
-}
+});
 
-// ===== attempt-timeline-route.test.ts =====
-{
+describe('attempt-timeline-route', () => {
   describe('attempt timeline API', () => {
     let server: TestServer;
 
@@ -434,4 +428,4 @@ import { join } from 'node:path';
       socket.close();
     });
   });
-}
+});

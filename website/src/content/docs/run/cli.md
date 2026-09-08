@@ -34,7 +34,7 @@ command when you run off the default.
 | --- | --- | --- | --- |
 | `--port <n>` | `serve`, `start` | `4700` | Port to listen on. |
 | `--host <h>` | `serve`, `start` | `0.0.0.0` | Bind address. `0.0.0.0` is reachable from your network; use `127.0.0.1` for local-only. |
-| `--data-dir <dir>` | all | `~/.harmonic` | Directory holding the SQLite database, the daemon lock, and the background log. |
+| `--data-dir <dir>` | all | `~/.harmonic` | Where Harmonic keeps its data and background log. |
 | `--password <pw>` | `serve`, `start` | — | Set or update the operator password. Pass an empty value (`--password ''`) to remove it and run **ungated**. |
 
 `--data-dir` applies to every command, including `status` and `stop`,
@@ -67,10 +67,9 @@ harmonic start --password ''
 
 ## See also
 
-- [Configuration reference](/harmonic/reference/configuration/): the
+- [Configuration reference](/harmonic/run/configuration/): the
   environment variables (`HARMONIC_DATA_DIR`, `HARMONIC_PASSWORD`) that
   back these options, and what lives in the data directory.
-- [Security](/harmonic/using-harmonic/security/): the password, host
+- [Security](/harmonic/run/security/): the password, host
   binding, and what "ungated" means before you expose Harmonic.
-- [Getting started](/harmonic/using-harmonic/getting-started/): install
-  and run from scratch.
+- [Quickstart](/harmonic/start/quickstart/): install and run from scratch.

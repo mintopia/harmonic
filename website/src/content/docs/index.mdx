@@ -1,13 +1,13 @@
 ---
 title: Harmonic
-tagline: Trustworthy autonomy for your coding agents.
+tagline: From spec to merged code, unattended.
 template: splash
 hero:
-  title: Harmonic
-  tagline: Queue, run, and review autonomous coding-agent tasks, from one board, over open ACP.
+  title: Spec to merged, unattended
+  tagline: Turn a spec into tickets. Harmonic works through them on its own, implementing, reviewing, and merging each one.
   actions:
     - text: Getting started
-      link: /harmonic/using-harmonic/getting-started/
+      link: /harmonic/start/quickstart/
       icon: right-arrow
       variant: primary
     - text: View on GitHub
@@ -16,40 +16,92 @@ hero:
       variant: minimal
 ---
 
-import { Card, CardGrid } from '@astrojs/starlight/components';
+<figure class="hero-flow" aria-label="Pipeline: a spec becomes tickets; Harmonic works through each ticket unattended by implementing it with a coding agent, reviewing it with an AI critic, and merging it.">
+<svg viewBox="0 0 1056 180" role="img" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="hf-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" class="hf-arrowhead" />
+    </marker>
+  </defs>
 
-## What Harmonic is
+  <line x1="218" y1="76" x2="237" y2="76" class="hf-flow" marker-end="url(#hf-arrow)" />
+  <line x1="418" y1="76" x2="437" y2="76" class="hf-flow" marker-end="url(#hf-arrow)" />
+  <line x1="618" y1="76" x2="637" y2="76" class="hf-flow" marker-end="url(#hf-arrow)" />
+  <line x1="818" y1="76" x2="837" y2="76" class="hf-flow" marker-end="url(#hf-arrow)" />
 
-Harmonic queues, runs, and reviews autonomous coding-agent Tasks. It drives
-agent harnesses like Claude Code, Codex, and Copilot over
-[ACP](https://agentclientprotocol.com) from one board. Agents run
-unattended, and nothing merges without passing the review gate.
+  <g>
+    <rect x="42" y="40" width="176" height="72" rx="10" class="hf-box" />
+    <text x="130" y="78" class="hf-t" text-anchor="middle">Spec</text>
+    <text x="130" y="98" class="hf-sub" text-anchor="middle">what you want built</text>
+  </g>
+  <g>
+    <rect x="242" y="40" width="176" height="72" rx="10" class="hf-box" />
+    <text x="330" y="78" class="hf-t" text-anchor="middle">Tickets</text>
+    <text x="330" y="98" class="hf-sub" text-anchor="middle">issues in your tracker</text>
+  </g>
+  <g>
+    <rect x="442" y="40" width="176" height="72" rx="10" class="hf-box hf-box-accent" />
+    <text x="530" y="78" class="hf-t" text-anchor="middle">Implement</text>
+    <text x="530" y="98" class="hf-sub" text-anchor="middle">a coding agent</text>
+  </g>
+  <g>
+    <rect x="642" y="40" width="176" height="72" rx="10" class="hf-box hf-box-accent" />
+    <text x="730" y="78" class="hf-t" text-anchor="middle">Review</text>
+    <text x="730" y="98" class="hf-sub" text-anchor="middle">an AI critic checks it</text>
+  </g>
+  <g>
+    <rect x="842" y="40" width="176" height="72" rx="10" class="hf-box hf-box-done" />
+    <text x="930" y="78" class="hf-t" text-anchor="middle">Merge</text>
+    <text x="930" y="98" class="hf-sub" text-anchor="middle">merged, ticket closed</text>
+  </g>
 
-## The trustworthy-autonomy promise
+  <path d="M442 128 L442 136 L1018 136 L1018 128" class="hf-bracket" />
+  <text x="730" y="158" class="hf-bracket-label" text-anchor="middle">Harmonic works through each ticket, unattended</text>
+</svg>
+</figure>
 
-Success for Harmonic is **trustworthy autonomy**: agents run unattended,
-the operator gets notified, reviews the result, and accepts or rejects it.
-Nothing lands without passing that review gate. The operator rarely has to
-babysit a run; they set tasks up, get notified, review, and accept.
+<style>{`
+  .hero { grid-template-columns: 1fr !important; }
+  .hero .copy { max-width: none !important; }
+  .hero .copy h1, .hero .copy .tagline { max-width: none !important; }
+  .hero-flow { margin: -3rem auto 0; max-width: 68rem; }
+  .hero-flow svg { width: 100%; height: auto; display: block; }
+  @media (max-width: 40rem) { .hero-flow { display: none; } }
+  .hero-flow .hf-box { fill: var(--sl-color-gray-6); stroke: var(--sl-color-gray-5); stroke-width: 1.5; }
+  .hero-flow .hf-box-accent { fill: var(--sl-color-accent-low); stroke: var(--sl-color-accent); }
+  .hero-flow .hf-box-done { fill: var(--sl-color-gray-6); stroke: var(--paper-done); }
+  .hero-flow .hf-t { fill: var(--sl-color-white); font-size: 16px; font-weight: 600; }
+  .hero-flow .hf-sub { fill: var(--sl-color-gray-3); font-size: 13px; }
+  .hero-flow .hf-flow { stroke: var(--sl-color-accent); stroke-width: 2; }
+  .hero-flow .hf-arrowhead { fill: var(--sl-color-accent); }
+  .hero-flow .hf-bracket { fill: none; stroke: var(--sl-color-accent); stroke-width: 1.5; }
+  .hero-flow .hf-bracket-label { fill: var(--sl-color-text-accent); font-size: 13px; letter-spacing: .02em; }
+`}</style>
 
-<CardGrid stagger>
-  <Card title="Runs unattended" icon="rocket">
-    Set a Task up and let the harness work. Harmonic drives the agent over
-    ACP without you watching every step.
-  </Card>
-  <Card title="The review gate is sacred" icon="approve-check">
-    Nothing merges without passing review. Accept or reject what comes back
-    before it lands.
-  </Card>
-  <Card title="No vendor lock-in" icon="open-book">
-    Harmonic speaks to every harness over the open [ACP](https://agentclientprotocol.com)
-    protocol: Claude Code, Codex, Copilot, and beyond.
-  </Card>
-  <Card title="One board" icon="list-format">
-    A single queue keeps agent work moving, glanceable from a side monitor
-    between other work.
-  </Card>
-</CardGrid>
+## What it does
+
+Write a spec, break it into tickets, and Harmonic works through them. For
+each ticket it runs a coding agent to implement the change, has an AI critic
+review the result, and merges the branch and closes the ticket once it
+passes. You watch a board and step in only when a ticket needs a human.
+
+Harmonic is designed to run alongside
+[Matt Pocock's Skills](/harmonic/start/spec-driven-development/), which turn
+your spec into labelled tickets in your tracker. The ones labelled for an
+agent, Harmonic runs itself: it hands the agent the command the ticket
+calls for, `/implement` and the rest of the Skills, and lets them do the
+work exactly as if you'd typed it. If the agent stalls on a
+question it can't answer, it hands the ticket back to you.
+
+## The rest of it
+
+- **No lock-in.** Harmonic drives every agent over [ACP](https://agentclientprotocol.com),
+  so Claude Code, Codex, Copilot, and OpenCode are interchangeable.
+- **Ad-hoc work too.** You can queue a one-off task by hand instead of from
+  the tracker. Those add a human review gate: you accept or reject before
+  anything merges.
+- **Glanceable.** One board per repo, readable from a side monitor, with live
+  token usage and cost on every attempt.
 
 ## Get started
 
@@ -58,5 +110,6 @@ npm install -g @mintopia/harmonic
 harmonic start
 ```
 
-Then open `http://localhost:4700`. See [Getting started](/harmonic/using-harmonic/getting-started/)
-for the full walkthrough.
+Open `http://localhost:4700`, then follow the
+[Quickstart](/harmonic/start/quickstart/) to connect a tracker and run
+your first ticket.

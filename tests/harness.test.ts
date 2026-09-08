@@ -1,5 +1,3 @@
-// Merged harness suite (adapter + routes). Consolidated so the isolated-pool import graph is
-// paid once; each source file's helpers stay block-scoped for byte-identical behavior.
 import * as registry from '../src/execution/harness/registry.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { type HarnessAdapter } from '../src/execution/harness/adapter.js';
@@ -9,8 +7,7 @@ import { appendFileSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } f
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-// ===== harness-adapter.test.ts =====
-{
+describe('harness-adapter', () => {
   const spawnInput = (model: string, extra: { cwd?: string; sessionLogDir?: string } = {}) => ({
     model,
     cwd: extra.cwd ?? '/w',
@@ -794,10 +791,9 @@ import { join } from 'node:path';
       expect(updated!.usage.models['gpt-5.6-mini']).toMatchObject({ inputTokens: 20, outputTokens: 2 });
     });
   });
-}
+});
 
-// ===== harness-routes.test.ts =====
-{
+describe('harness-routes', () => {
   describe('harness discovery API (issue #490)', () => {
     let server: TestServer | undefined;
 
@@ -840,4 +836,4 @@ import { join } from 'node:path';
       await expect(server.api('GET', '/api/harnesses/opencode/models')).resolves.toMatchObject({ status: 400, body: { error: { code: 'validation' } } });
     });
   });
-}
+});

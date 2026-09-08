@@ -1,7 +1,6 @@
 // Deploys as a GitHub Pages *project* page at https://mintopia.github.io/harmonic/,
 // so `site` + `base` must match that path exactly (see .github/workflows/docs.yml).
 import starlight from '@astrojs/starlight';
-import starlightOpenAPI, { openAPISidebarGroups } from 'starlight-openapi';
 import { defineConfig } from 'astro/config';
 
 export default defineConfig({
@@ -16,66 +15,51 @@ export default defineConfig({
   integrations: [
     starlight({
       title: 'Harmonic',
+      logo: {
+        light: './src/assets/harmonic-mark-light.svg',
+        dark: './src/assets/harmonic-mark-dark.svg',
+      },
       description:
-        'Queue, run, and review autonomous coding-agent tasks — trustworthy autonomy for Claude Code, Codex, and Copilot over ACP.',
+        'Point Harmonic at your issue tracker and it works through your backlog on its own — driving Claude Code, Codex, Copilot, and OpenCode over ACP.',
       social: [
         { icon: 'github', label: 'GitHub', href: 'https://github.com/mintopia/harmonic' },
       ],
-      customCss: ['./src/styles/aurora.css'],
+      customCss: ['./src/styles/paper.css'],
       head: [
         {
           tag: 'script',
           content: `if (!localStorage.getItem('starlight-theme')) { localStorage.setItem('starlight-theme', 'dark'); }`,
         },
       ],
-      plugins: [
-        starlightOpenAPI([
-          {
-            base: 'reference/api',
-            label: 'API reference',
-            schema: './src/openapi.json',
-          },
-        ]),
-      ],
       sidebar: [
+        {
+          label: 'Start here',
+          items: [
+            { label: 'Introduction', link: '/' },
+            { label: 'Quickstart', link: '/start/quickstart/' },
+            { label: 'Spec-driven dev', link: '/start/spec-driven-development/' },
+          ],
+        },
         {
           label: 'Using Harmonic',
           items: [
-            { label: 'Introduction', link: '/' },
-            { label: 'Getting started', link: '/using-harmonic/getting-started/' },
-            { label: 'Core concepts', link: '/using-harmonic/core-concepts/' },
-            { label: 'Conversations', link: '/using-harmonic/conversations/' },
-            { label: 'Harnesses', link: '/using-harmonic/harnesses/' },
-            { label: 'Notifications', link: '/using-harmonic/notifications/' },
-            { label: 'Settings & overrides', link: '/using-harmonic/settings-and-overrides/' },
-            { label: 'Security', link: '/using-harmonic/security/' },
-            { label: 'API & MCP', link: '/using-harmonic/api-and-mcp/' },
+            { label: 'Feeding it work', link: '/work/feeding-it-work/' },
+            { label: 'Steering the fleet', link: '/work/steering-the-fleet/' },
+            { label: 'Review & merge', link: '/work/reviewing-and-merging/' },
+            { label: 'Conversations', link: '/work/conversations/' },
+            { label: 'Notifications', link: '/work/notifications/' },
           ],
         },
         {
-          label: 'How it works',
+          label: 'Running Harmonic',
           items: [
-            { label: 'Architecture', link: '/how-it-works/architecture/' },
-            { label: 'ACP & harness adapters', link: '/how-it-works/acp-and-adapters/' },
-            { label: 'Tracker mirroring & skills', link: '/how-it-works/tracker-mirroring/' },
-            { label: 'Design decisions', link: '/how-it-works/design-decisions/' },
+            { label: 'Harnesses', link: '/run/harnesses/' },
+            { label: 'Settings', link: '/run/settings/' },
+            { label: 'Security', link: '/run/security/' },
+            { label: 'CLI', link: '/run/cli/' },
+            { label: 'Configuration', link: '/run/configuration/' },
           ],
         },
-        {
-          label: 'Contributing',
-          items: [
-            { label: 'Development & contributing', link: '/contributing/' },
-          ],
-        },
-        {
-          label: 'Reference',
-          items: [
-            { label: 'CLI reference', link: '/reference/cli/' },
-            { label: 'Configuration reference', link: '/reference/configuration/' },
-            { label: 'Glossary', link: '/reference/glossary/' },
-          ],
-        },
-        ...openAPISidebarGroups,
       ],
     }),
   ],

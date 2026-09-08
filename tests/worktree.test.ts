@@ -1,5 +1,3 @@
-// Merged worktree suite (core worktree ops, reconciler, inventory). Consolidated so the
-// isolated-pool import graph is paid once; each source file's helpers stay block-scoped.
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { tasks, workspaces } from '../src/db/schema.js';
 import { WorktreeInventory, type WorktreeInventoryRepository } from '../src/domain/worktree-inventory.js';
@@ -12,8 +10,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-// ===== worktree.test.ts =====
-{
+describe('worktree', () => {
   const git = (dir: string, ...args: string[]) =>
     execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
 
@@ -415,10 +412,9 @@ import { join } from 'node:path';
       expect(git(repo, 'rev-parse', 'main')).toBe(mainBefore);
     });
   });
-}
+});
 
-// ===== worktree-reconciler.test.ts =====
-{
+describe('worktree-reconciler', () => {
   const tempDirs: string[] = [];
   const tempDir = (prefix: string) => {
     // realpath so paths match git's canonical worktree paths (macOS /var → /private/var symlink).
@@ -651,10 +647,9 @@ import { join } from 'node:path';
       expect(git(repo, 'branch', '--list', 'harmonic/task-2')).not.toBe('');
     });
   });
-}
+});
 
-// ===== worktree-inventory.test.ts =====
-{
+describe('worktree-inventory', () => {
   function repository(overrides: Partial<WorktreeInventoryRepository>): WorktreeInventoryRepository {
     const unexpected = (name: string) => async () => {
       throw new Error(`unexpected call to ${name}`);
@@ -725,4 +720,4 @@ import { join } from 'node:path';
       ]);
     });
   });
-}
+});

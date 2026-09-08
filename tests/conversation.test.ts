@@ -1,7 +1,3 @@
-// Merged Conversation-feature suite (chat defaults, steering, lifecycle, telemetry,
-// permission rules, key lifecycle, interactive permissions). Consolidated from seven
-// per-topic files so the isolated-pool import graph is paid once, not seven times.
-// Each source file's helpers stay block-scoped to keep behavior byte-identical.
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { type AppConfig, type DeepPartial } from '../src/config.js';
 import { apiKeys, conversationEvents } from '../src/db/schema.js';
@@ -10,8 +6,7 @@ import { startServer, stubHarness, type TestServer, waitFor } from './helpers.js
 import { eq } from 'drizzle-orm';
 import { tmpdir } from 'node:os';
 
-// ===== conversation-chat-defaults.test.ts =====
-{
+describe('conversation-chat-defaults', () => {
   const twoHarnessConfig: DeepPartial<AppConfig> = {
     harnesses: {
       claude: {
@@ -76,10 +71,9 @@ import { tmpdir } from 'node:os';
       expect(status).toBe(400);
     });
   });
-}
+});
 
-// ===== conversation-steering.test.ts =====
-{
+describe('conversation-steering', () => {
   async function events(server: TestServer, id: number): Promise<any[]> {
     return (await server.api('GET', `/api/conversations/${id}/events`)).body.events;
   }
@@ -149,10 +143,9 @@ import { tmpdir } from 'node:os';
       expect(server.app.ctx.conversationDriver.isWarm(convo.id)).toBe(true);
     });
   });
-}
+});
 
-// ===== conversation-lifecycle.test.ts =====
-{
+describe('conversation-lifecycle', () => {
   async function firstTurn(server: TestServer, text: string) {
     const { body: convo } = await server.api('POST', '/api/conversations', {});
     await server.api('POST', `/api/conversations/${convo.id}/turns`, { text });
@@ -240,10 +233,9 @@ import { tmpdir } from 'node:os';
       expect(turn.status).toBe(409);
     });
   });
-}
+});
 
-// ===== conversation-telemetry.test.ts =====
-{
+describe('conversation-telemetry', () => {
   const acpTurn = (usage: Record<string, number>) => JSON.stringify({ updates: [], usage });
 
   describe('conversation usage accumulation (unit)', () => {
@@ -341,10 +333,9 @@ import { tmpdir } from 'node:os';
       expect(convo.cacheWarmSeconds).toBe(60);
     });
   });
-}
+});
 
-// ===== conversation-rules.test.ts =====
-{
+describe('conversation-rules', () => {
   async function connectWs(server: TestServer): Promise<{ messages: any[]; close: () => void }> {
     const ws = new WebSocket(`${server.baseUrl.replace('http', 'ws')}/api/ws?token=${server.sessionToken}`);
     const messages: any[] = [];
@@ -443,10 +434,9 @@ import { tmpdir } from 'node:os';
       ws.close();
     });
   });
-}
+});
 
-// ===== conversation-keys.test.ts =====
-{
+describe('conversation-keys', () => {
   const conversationKeyRows = (server: TestServer) =>
     server.app.ctx.asyncDb.read((d) => d.select().from(apiKeys).where(eq(apiKeys.scope, 'conversation')).all());
 
@@ -545,10 +535,9 @@ import { tmpdir } from 'node:os';
       expect(opRes.status).toBe(200);
     });
   });
-}
+});
 
-// ===== conversation-permissions.test.ts =====
-{
+describe('conversation-permissions', () => {
   async function connectWs(server: TestServer): Promise<{ messages: any[]; close: () => void }> {
     const ws = new WebSocket(`${server.baseUrl.replace('http', 'ws')}/api/ws?token=${server.sessionToken}`);
     const messages: any[] = [];
@@ -663,4 +652,4 @@ import { tmpdir } from 'node:os';
       ws.close();
     });
   });
-}
+});

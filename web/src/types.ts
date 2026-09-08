@@ -590,9 +590,44 @@ export interface ConversationEvent {
   conversationId: number;
   seq: number;
   ts: number;
-  type: 'session_update' | 'permission_request' | 'lifecycle' | 'user_turn';
+  type: 'session_update' | 'permission_request' | 'elicitation_request' | 'lifecycle' | 'user_turn';
   payload: unknown;
 }
+
+/** One choice in a `select`/`multiselect` elicitation field. `value` is what
+ * the answer records; `preview` is optional rich focus content. */
+export interface ElicitationOption {
+  value: string;
+  label: string;
+  description?: string;
+  preview?: string;
+}
+
+/** One question in a form elicitation, already parsed from ACP's JSON-Schema
+ * into a render-ready shape (see src/acp/elicitation-request.ts). */
+export interface ElicitationField {
+  key: string;
+  title?: string;
+  description?: string;
+  kind: 'select' | 'multiselect' | 'text' | 'boolean';
+  options?: ElicitationOption[];
+  optional: boolean;
+}
+
+/** The structured question a Harness is blocked on, carried on the
+ * `elicitation_request` WS message and, once answered, on the resolving
+ * `conversation_event`'s payload (`{ request, answer, reqId }`). */
+export interface ElicitationFormRequest {
+  message: string;
+  toolCallId?: string;
+  fields: ElicitationField[];
+}
+
+/** The operator's answer to a form elicitation, sent to the answer endpoint. */
+export type ElicitationAnswer =
+  | { action: 'accept'; content: Record<string, string | string[] | boolean> }
+  | { action: 'decline' }
+  | { action: 'cancel' };
 
 /**
  * One selectable resolution to a pending ACP permission request.

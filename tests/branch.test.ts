@@ -1,5 +1,3 @@
-// Merged branch suite (retirement + merge). Consolidated so the isolated-pool import graph is
-// paid once; each source file's helpers stay block-scoped for byte-identical behavior.
 import { afterAll, describe, expect, it, vi } from 'vitest';
 import { type AttemptRow, type TaskRow } from '../src/db/schema.js';
 import { defaultBranchPostMerge, mergeIntoBase, mergeIntoBaseAndRunPostMerge, resolveRepositoryDefaultBranch } from '../src/execution/branch-merge.js';
@@ -10,8 +8,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-// ===== branch-retirement.test.ts =====
-{
+describe('branch-retirement', () => {
   type RetirableRun = Pick<AttemptRow, 'id' | 'taskId' | 'state' | 'branch' | 'baseBranch'>;
 
   const run = (over: Partial<RetirableRun> = {}): RetirableRun => ({
@@ -188,10 +185,9 @@ import { join } from 'node:path';
       expect(branchGit.deleteBranch).not.toHaveBeenCalledWith('/repo', 'harmonic/task-2-run-2');
     });
   });
-}
+});
 
-// ===== branch-merge.test.ts =====
-{
+describe('branch-merge', () => {
   const git = (dir: string, ...args: string[]) => execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
 
   const tmpDirs: string[] = [];
@@ -474,4 +470,4 @@ import { join } from 'node:path';
       expect(await Git.branchCheckedOutAt(repo, 'main')).toBeNull();
     });
   });
-}
+});

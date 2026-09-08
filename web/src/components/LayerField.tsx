@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { btnQuiet, labelType } from '../ui';
+import { labelType } from '../ui';
 import { layerState } from './inherit-field-model';
 
 export function LayerField<T>({
@@ -8,6 +8,7 @@ export function LayerField<T>({
   value,
   inheritedValue,
   inherited,
+  dim = true,
   onChange,
   onRevert,
   children,
@@ -17,6 +18,10 @@ export function LayerField<T>({
   value: T;
   inheritedValue: T;
   inherited: boolean;
+  // Dim the field while it tracks a parent layer. The workspace surface wants
+  // this (an un-overridden field visibly defers to the global default); the
+  // global surface has no parent, so a field merely at its baseline must not dim.
+  dim?: boolean;
   onChange: (value: T) => void;
   onRevert: () => void;
   children: (input: { id?: string; value: T; onChange: (value: T) => void }) => ReactNode;
@@ -24,14 +29,18 @@ export function LayerField<T>({
   const state = layerState(value, inheritedValue, inherited);
 
   return (
-    <div className={state.inherited ? 'opacity-60' : undefined}>
+    <div className={dim && state.inherited ? 'opacity-60' : undefined}>
       <div className="mb-1.5 flex min-h-6 items-center gap-2">
         <label className={`${labelType} whitespace-nowrap text-muted`} htmlFor={htmlFor}>
           {label}
         </label>
         {state.modified && <span className="shrink-0 text-small text-amber">Modified</span>}
         {state.modified && (
-          <button type="button" className={`ml-auto shrink-0 ${btnQuiet} text-label`} onClick={onRevert}>
+          <button
+            type="button"
+            className="ml-auto shrink-0 text-label font-medium text-muted transition-colors duration-150 hover:text-ink"
+            onClick={onRevert}
+          >
             Revert
           </button>
         )}

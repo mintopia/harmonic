@@ -9,6 +9,14 @@ import {
   type PendingPermission,
   type PendingPermissions,
 } from '../conversation-permissions-model';
+import {
+  addPendingElicitation,
+  removePendingElicitation,
+  resolvePendingElicitationFromEvent,
+  type PendingElicitation,
+  type PendingElicitations,
+} from '../conversation-elicitations-model';
+import type { ElicitationAnswer } from '../types';
 import { toastError } from '../toast';
 import { useLiveEffect } from '../useLiveEffect';
 
@@ -37,6 +45,7 @@ export function useConversationDetail(
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [events, setEvents] = useState<ConversationEvent[]>([]);
   const [pending, setPending] = useState<PendingPermissions>({});
+  const [pendingElicitations, setPendingElicitations] = useState<PendingElicitations>({});
 
   useLiveEffect((live) => {
     if (focusedId === null) {
@@ -53,6 +62,7 @@ export function useConversationDetail(
         ? { [pendingPermission.reqId]: pendingPermission }
         : {},
     );
+    setPendingElicitations({});
     const load = () => {
       api.conversation(id).then((c) => {
         if (!live()) return;
@@ -68,6 +78,7 @@ export function useConversationDetail(
           current.some((e) => e.id === msg.event.id) ? current : [...current, msg.event],
         );
         setPending((current) => resolvePendingPermissionFromEvent(current, msg.event));
+        setPendingElicitations((current) => resolvePendingElicitationFromEvent(current, msg.event));
         const payload = msg.event.payload;
         if (
           msg.event.type === 'permission_request' &&
@@ -82,11 +93,15 @@ export function useConversationDetail(
       if (msg.type === 'permission_request' && msg.conversationId === id) {
         setPending((current) => addPendingPermission(current, msg));
       }
+      if (msg.type === 'elicitation_request' && msg.conversationId === id) {
+        setPendingElicitations((current) => addPendingElicitation(current, msg));
+      }
       if (msg.type === 'conversation_changed' && msg.conversation.id === id) {
         setConversation(msg.conversation);
         upsertConversationInList(msg.conversation);
         if (msg.conversation.state === 'ended') {
           setPending({});
+          setPendingElicitations({});
           clearPendingPermission();
         }
       }
@@ -119,6 +134,7 @@ export function useConversationDetail(
       setConversation(c);
       upsertConversationInList(c);
       setPending({});
+      setPendingElicitations({});
     }, toastError);
   };
 
@@ -154,10 +170,20 @@ export function useConversationDetail(
     }
   };
 
+  const answerElicitation = async (p: PendingElicitation, answer: ElicitationAnswer) => {
+    try {
+      await api.answerElicitation(p.conversationId, p.reqId, answer);
+      setPendingElicitations((current) => removePendingElicitation(current, p.reqId));
+    } catch (e) {
+      toastError(e);
+    }
+  };
+
   return {
     conversation,
     events,
     pending,
-    actions: { send, end, rename, deleteConversation, answerPermission },
+    pendingElicitations,
+    actions: { send, end, rename, deleteConversation, answerPermission, answerElicitation },
   };
 }

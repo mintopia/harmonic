@@ -2,6 +2,11 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { AcpDriver } from '../acp/driver.js';
 import { parsePermissionRequest, type PermissionRequest } from '../acp/permission-request.js';
+import {
+  parseFormElicitation,
+  type ElicitationAnswer,
+  type FormElicitationRequest,
+} from '../acp/elicitation-request.js';
 import { adapterFor } from './harness/registry.js';
 import { accumulateUsage, collectUsageWithRetry, type AttemptUsage } from './usage.js';
 import { pricesForHarness } from '../domain/pricing.js';
@@ -33,6 +38,13 @@ export interface PendingPermissionBroadcast {
   request: PermissionRequest;
 }
 
+export interface PendingElicitationBroadcast {
+  conversationId: number;
+  reqId: string;
+  /** The parsed ACP `elicitation/create` form (message + render-ready fields). */
+  request: FormElicitationRequest;
+}
+
 export interface ConversationDriverEvents {
   /** Fired after every conversation event is persisted (live streaming hook). */
   onEvent?: (event: PersistedConversationEvent) => void;
@@ -42,6 +54,12 @@ export interface ConversationDriverEvents {
    * out-of-band via `answerPermission`.
    */
   onPermissionRequest?: (pending: PendingPermissionBroadcast) => void;
+  /**
+   * A Harness is asking the operator a structured question (ACP form
+   * elicitation, e.g. AskUserQuestion) and the Turn is blocked on the answer.
+   * Broadcast so the panel can prompt; answered via `answerElicitation`.
+   */
+  onElicitationRequest?: (pending: PendingElicitationBroadcast) => void;
 }
 
 type PermissionOutcome = { outcome: 'selected'; optionId: string } | { outcome: 'cancelled' };
@@ -51,6 +69,12 @@ interface PendingPermission {
   workingDir: string;
   request: PermissionRequest;
   resolve: (outcome: PermissionOutcome) => void;
+}
+
+interface PendingElicitation {
+  conversationId: number;
+  request: FormElicitationRequest;
+  resolve: (answer: ElicitationAnswer) => void;
 }
 
 export interface ConversationDriverOptions {
@@ -83,7 +107,9 @@ interface ActiveConversation {
 export class ConversationDriver {
   private readonly active = new Map<number, ActiveConversation>();
   private readonly pendingPermissions = new Map<string, PendingPermission>();
+  private readonly pendingElicitations = new Map<string, PendingElicitation>();
   private nextPermissionId = 0;
+  private nextElicitationId = 0;
   private readonly events: ConversationDriverEvents;
   private readonly rules: PermissionRuleStore | undefined;
   private readonly keys: ConversationDriverOptions['keys'];
@@ -225,6 +251,30 @@ export class ConversationDriver {
     }));
   }
 
+  /**
+   * Answer a held elicitation with the operator's form response. `accept`
+   * carries the field answers; `decline` skips the question (the harness is
+   * told nothing was chosen); `cancel` aborts the asking tool call.
+   */
+  async answerElicitation(conversationId: number, reqId: string, answer: ElicitationAnswer): Promise<void> {
+    const pending = this.pendingElicitations.get(reqId);
+    if (!pending || pending.conversationId !== conversationId) {
+      throw new DomainError('not_found', `no pending elicitation '${reqId}' for conversation ${conversationId}`);
+    }
+    this.pendingElicitations.delete(reqId);
+    pending.resolve(answer);
+    await this.record(conversationId, 'elicitation_request', { request: pending.request, answer, reqId });
+  }
+
+  /** Every elicitation currently blocked on the operator, so a newly-connected client can seed its pending state. */
+  listPendingElicitations(): PendingElicitationBroadcast[] {
+    return [...this.pendingElicitations].map(([reqId, pending]) => ({
+      reqId,
+      conversationId: pending.conversationId,
+      request: pending.request,
+    }));
+  }
+
   /** Explicit End: stop the harness and mark the Conversation ended. */
   async end(conversationId: number): Promise<ConversationRow> {
     const entry = this.active.get(conversationId);
@@ -285,6 +335,14 @@ export class ConversationDriver {
           }
           return this.decidePermission(convo.id, convo.workingDir, request);
         }
+        if (method === 'elicitation/create') {
+          const request = parseFormElicitation(params);
+          if (!request) {
+            logger.warn('acp: declined unpresentable elicitation', { conversationId: convo.id });
+            return { action: 'decline' };
+          }
+          return this.decideElicitation(convo.id, request);
+        }
         return null;
       },
     });
@@ -297,6 +355,11 @@ export class ConversationDriver {
         cwd: convo.workingDir,
         mcpServers,
         modelId,
+        // ACP's ElicitationFormCapabilities is an object, not a boolean — an
+        // empty `{}` is how a client advertises form support. `true` fails the
+        // adapter's schema validation and is silently dropped, which leaves
+        // AskUserQuestion disabled.
+        clientCapabilities: { elicitation: { form: {} } },
         onSessionCreated: async (sessionId) => {
           await this.store.update(convo.id, { sessionId });
         },
@@ -357,6 +420,16 @@ export class ConversationDriver {
     });
   }
 
+  /** Hold an ACP form elicitation open and prompt the operator; the Turn stays
+   * blocked until `answerElicitation` resolves it (or teardown cancels it). */
+  private decideElicitation(conversationId: number, request: FormElicitationRequest): Promise<ElicitationAnswer> {
+    const reqId = `elicit-${++this.nextElicitationId}`;
+    return new Promise<ElicitationAnswer>((resolve) => {
+      this.pendingElicitations.set(reqId, { conversationId, request, resolve });
+      this.events.onElicitationRequest?.({ conversationId, reqId, request });
+    });
+  }
+
   private cancelPendingPermissions(conversationId: number): void {
     for (const [reqId, pending] of this.pendingPermissions) {
       if (pending.conversationId !== conversationId) continue;
@@ -364,6 +437,13 @@ export class ConversationDriver {
       const outcome = { outcome: 'cancelled' as const };
       pending.resolve(outcome);
       void this.record(conversationId, 'permission_request', { request: pending.request, outcome, reqId }).catch(() => {});
+    }
+    for (const [reqId, pending] of this.pendingElicitations) {
+      if (pending.conversationId !== conversationId) continue;
+      this.pendingElicitations.delete(reqId);
+      const answer = { action: 'cancel' as const };
+      pending.resolve(answer);
+      void this.record(conversationId, 'elicitation_request', { request: pending.request, answer, reqId }).catch(() => {});
     }
   }
 
@@ -400,7 +480,7 @@ export class ConversationDriver {
 
   private async record(
     conversationId: number,
-    type: 'session_update' | 'permission_request' | 'lifecycle' | 'user_turn',
+    type: 'session_update' | 'permission_request' | 'elicitation_request' | 'lifecycle' | 'user_turn',
     payload: unknown,
   ): Promise<void> {
     const event = await this.store.appendEvent(conversationId, { type, payload });

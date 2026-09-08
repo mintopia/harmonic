@@ -36,6 +36,7 @@ import { formatCost } from '../cost';
 import { ConfirmDialog } from './ConfirmDialog';
 import { ConversationList } from './ConversationList';
 import { EventStream } from './EventStream';
+import { ElicitationPrompt } from './ElicitationPrompt';
 import { DiscoveryModelPicker } from './DiscoveryModelPicker.js';
 import { PathTail } from './PathTail';
 import { Icon } from './Icon';
@@ -93,7 +94,47 @@ function TelemetryStrip({ conversation, events }: { conversation: Conversation; 
 
 const fieldLabel = `mb-1 block ${labelType} text-muted`;
 
-function Transcript({ events }: { events: ConversationEvent[] }) {
+function clockTime(at: number): string {
+  return new Date(at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
+}
+
+/** The agent's plain message text across a turn (thoughts and tool calls
+ * excluded), for the hover copy button. */
+function agentMessageText(events: ConversationEvent[]): string {
+  return coalesceEvents(events)
+    .flatMap((item) => (item.kind === 'text' && item.variant === 'message' ? [item.text] : []))
+    .join('\n\n');
+}
+
+function CopyButton({ text, label, className = '' }: { text: string; label: string; className?: string }) {
+  const [copied, setCopied] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (timer.current) clearTimeout(timer.current);
+  }, []);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      if (timer.current) clearTimeout(timer.current);
+      timer.current = setTimeout(() => setCopied(false), 1200);
+    } catch {
+      // Clipboard blocked (insecure context / denied) — no-op.
+    }
+  };
+  return (
+    <button
+      type="button"
+      aria-label={copied ? 'Copied' : label}
+      onClick={copy}
+      className={`inline-flex size-6 items-center justify-center rounded text-faint transition-colors duration-150 hover:text-ink ${copied ? 'text-merged' : ''} ${className}`}
+    >
+      <Icon name={copied ? 'check' : 'copy'} className="size-3.5" />
+    </button>
+  );
+}
+
+function Transcript({ events, conversation }: { events: ConversationEvent[]; conversation: Conversation | null }) {
   const turns = segmentTranscript(events);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -105,20 +146,53 @@ function Transcript({ events }: { events: ConversationEvent[] }) {
     return <p className="text-muted">Send a message to begin.</p>;
   }
 
+  const harness = conversation?.harness ?? 'agent';
+  const agentLabel = harness.charAt(0).toUpperCase() + harness.slice(1);
+  const model = conversation?.model ?? '';
+
   return (
     <div className="space-y-4">
-      {turns.map((turn, i) => (
-        <div key={turn.userTurn?.id ?? `pre-${i}`}>
-          {turn.userTurn && (
-            <div className="mb-1.5 flex justify-end">
-              <p className="max-w-[85%] whitespace-pre-wrap rounded-lg bg-accent-tint px-3 py-2 text-ink">
-                {(turn.userTurn.payload as { text?: string } | null | undefined)?.text}
-              </p>
-            </div>
-          )}
-          {turn.agentEvents.length > 0 && <EventStream events={turn.agentEvents} />}
-        </div>
-      ))}
+      {turns.map((turn, i) => {
+        const userText = (turn.userTurn?.payload as { text?: string } | null | undefined)?.text ?? '';
+        const agentText = agentMessageText(turn.agentEvents);
+        const at = turn.agentEvents.at(-1)?.ts ?? turn.userTurn?.ts;
+        return (
+          <div key={turn.userTurn?.id ?? `pre-${i}`} className="space-y-3">
+            {turn.userTurn && (
+              <div className="group flex items-end justify-end gap-1.5">
+                <CopyButton text={userText} label="Copy message" className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100" />
+                <p className="max-w-[85%] whitespace-pre-wrap break-words rounded-lg bg-accent-tint px-3 py-2 text-ink">
+                  {userText}
+                </p>
+              </div>
+            )}
+            {turn.agentEvents.length > 0 && (
+              <div className="group flex gap-3">
+                <span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-md bg-accent-tint text-[11px] font-bold text-accent">
+                  {agentLabel.charAt(0)}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="mb-1 flex items-baseline gap-2">
+                    <span className="text-[12.5px] font-semibold text-ink">{agentLabel}</span>
+                    <span className="font-data text-[11px] text-faint">
+                      {model}
+                      {at ? ` · ${clockTime(at)}` : ''}
+                    </span>
+                    {agentText && (
+                      <CopyButton
+                        text={agentText}
+                        label="Copy message"
+                        className="ml-auto opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                      />
+                    )}
+                  </div>
+                  <EventStream events={turn.agentEvents} />
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
       <div ref={bottomRef} />
     </div>
   );
@@ -231,7 +305,7 @@ function PermissionPrompt({
             className={permissionOptionButtonClass(option.kind)}
             onClick={() => choose(option.optionId, option.optionId)}
           >
-            {permissionOptionLabel(option.kind)}
+            {option.name || permissionOptionLabel(option.kind)}
           </button>
         ))}
         {kind && workingDir && alwaysAllowOptionId && (
@@ -683,7 +757,7 @@ export function ConversationLauncher({
     clearConversationId(localStorage);
   };
 
-  const { conversation, events, pending, actions } = useConversationDetail(focusedId, {
+  const { conversation, events, pending, pendingElicitations, actions } = useConversationDetail(focusedId, {
     workspaceId,
     upsertConversationInList,
     removeConversationFromList,
@@ -761,7 +835,7 @@ export function ConversationLauncher({
           {conversation && <TelemetryStrip conversation={conversation} events={events} />}
 
           <div className="flex-1 overflow-y-auto p-4">
-            <Transcript events={events} />
+            <Transcript events={events} conversation={conversation} />
           </div>
           <StreamAnnouncer events={events} resetKey={conversation?.id ?? 'new'} />
 
@@ -773,6 +847,11 @@ export function ConversationLauncher({
                 workingDir={conversation?.workingDir ?? ''}
                 onAnswer={actions.answerPermission}
               />
+            ))}
+
+          {!ended &&
+            Object.values(pendingElicitations).map((p) => (
+              <ElicitationPrompt key={p.reqId} pending={p} onAnswer={actions.answerElicitation} />
             ))}
 
           {ended ? (

@@ -1,6 +1,3 @@
-// Merged epic routes/logic suite (integrate decision, merge policy, integrate routes, service
-// boundary, read routes, diff, close, stats route, integrate-git). Consolidated so the isolated-pool
-// import graph is paid once; each source file's helpers stay block-scoped for byte-identical behavior.
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { baselineConfig } from '../src/config.js';
 import { type AsyncDbHandle, openAsyncDb } from '../src/db/async.js';
@@ -29,14 +26,9 @@ import { readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-// ===== epic-routes.test.ts =====
-{
-  // Merged epic routes/logic suite (integrate decision, merge policy, integrate routes, service
-  // boundary, read routes, diff, close, stats route). Consolidated so the isolated-pool import graph
-  // is paid once; each source file's helpers stay block-scoped for byte-identical behavior.
+describe('epic-routes', () => {
 
-  // ===== epic-integrate-decision.test.ts =====
-  {
+  describe('epic-integrate-decision', () => {
     const proceed: VerificationDecision = { outcome: 'proceed', reason: 'all 1 verifier passed' };
     const block: VerificationDecision = { outcome: 'block', reason: 'verifier command failed' };
     const escalate: VerificationDecision = { outcome: 'escalate', reason: 'verifier command inconclusive' };
@@ -134,10 +126,9 @@ import { join } from 'node:path';
         }
       });
     });
-  }
+  });
 
-  // ===== epic-integration-merge-policy.test.ts =====
-  {
+  describe('epic-integration-merge-policy', () => {
     describe('Runner.mergeEpicIntegration (epic → develop, ADR-0001 #382)', () => {
       const git = (dir: string, ...args: string[]) =>
         execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
@@ -302,10 +293,9 @@ import { join } from 'node:path';
         });
       });
     });
-  }
+  });
 
-  // ===== epic-integrate-routes.test.ts =====
-  {
+  describe('epic-integrate-routes', () => {
     async function mcpClient(server: TestServer, token: string): Promise<Client> {
       const client = new Client({ name: 'test', version: '0.0.0' });
       const transport = new StreamableHTTPClientTransport(new URL(`${server.baseUrl}/mcp`), {
@@ -463,10 +453,9 @@ import { join } from 'node:path';
         await client.close();
       });
     });
-  }
+  });
 
-  // ===== epic-service-boundary.test.ts =====
-  {
+  describe('epic-service-boundary', () => {
     describe('TrackerPollerManager boundary', () => {
       it('keeps Epic execution dependencies behind EpicService', async () => {
         const source = await readFile(new URL('../src/tracker/manager.ts', import.meta.url), 'utf8');
@@ -476,10 +465,9 @@ import { join } from 'node:path';
         expect(source).toContain("./epic-service.js");
       });
     });
-  }
+  });
 
-  // ===== epic-read-routes.test.ts =====
-  {
+  describe('epic-read-routes', () => {
     describe('Epic read model operator surface (issue #167)', () => {
       let server: TestServer;
 
@@ -659,10 +647,9 @@ import { join } from 'node:path';
         });
       });
     });
-  }
+  });
 
-  // ===== epic-diff.test.ts =====
-  {
+  describe('epic-diff', () => {
     function git(dir: string, ...args: string[]): string {
       return execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
     }
@@ -760,10 +747,9 @@ import { join } from 'node:path';
         await expect(manager.epicDiff(999_999, 1)).resolves.toBe('');
       });
     });
-  }
+  });
 
-  // ===== epic-close.test.ts =====
-  {
+  describe('epic-close', () => {
     const ticket = (over: Partial<Ticket> & Pick<Ticket, 'number'>): Ticket => ({
       title: `epic ${over.number}`,
       state: 'open',
@@ -855,10 +841,9 @@ import { join } from 'node:path';
         expect(close).not.toHaveBeenCalled();
       });
     });
-  }
+  });
 
-  // ===== epic-stats-route.test.ts =====
-  {
+  describe('epic-stats-route', () => {
     describe('GET /api/epics/:ref/stats', () => {
       let server: TestServer;
       let nextAttemptNumber = 1;
@@ -1080,11 +1065,10 @@ import { join } from 'node:path';
         });
       });
     });
-  }
-}
+  });
+});
 
-// ===== epic-integrate-git.test.ts =====
-{
+describe('epic-integrate-git', () => {
   const proceed: VerificationDecision = { outcome: 'proceed', reason: 'all 1 verifier passed' };
   const block: VerificationDecision = { outcome: 'block', reason: 'verifier command failed' };
   const inconclusive: VerificationDecision = { outcome: 'escalate', reason: 'verifier inconclusive' };
@@ -1624,4 +1608,4 @@ import { join } from 'node:path';
       expect((await first).status).toBe('integrated');
     });
   });
-}
+});

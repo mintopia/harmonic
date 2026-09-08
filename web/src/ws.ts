@@ -3,6 +3,7 @@ import type {
   Conversation,
   ConversationEvent,
   PermissionAcpRequest,
+  ElicitationFormRequest,
   AttemptSummary,
   AttemptEvent,
   AttemptLogEvent,
@@ -65,7 +66,12 @@ export type ServerMessage =
   // the operator answers (POST .../permissions/:reqId) or the conversation
   // ends/crashes — the panel clears it on a matching resolved
   // `conversation_event` (payload.reqId) or on conversation end.
-  | { type: 'permission_request'; conversationId: number; reqId: string; request: PermissionAcpRequest };
+  | { type: 'permission_request'; conversationId: number; reqId: string; request: PermissionAcpRequest }
+  // The Harness is blocked on this structured question (ACP form elicitation,
+  // e.g. AskUserQuestion) until the operator answers (POST
+  // .../elicitations/:reqId) or the conversation ends/crashes — the panel
+  // clears it on a matching resolved `conversation_event` or on end.
+  | { type: 'elicitation_request'; conversationId: number; reqId: string; request: ElicitationFormRequest };
 
 const listeners = new Set<{
   onMessage: (msg: ServerMessage) => void;
