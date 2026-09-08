@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.3.0](https://github.com/mintopia/harmonic/compare/v2.2.0...v2.3.0) (2026-09-08)
+
+
+### Features
+
+* **cli:** add a version command ([6b8c7c4](https://github.com/mintopia/harmonic/commit/6b8c7c44a6d2b75bce27420b26023a3ea973eb7f))
+* **tracker:** detect free-tier GitLab epics and blocked-by sections ([eef78c6](https://github.com/mintopia/harmonic/commit/eef78c6a0331eb91ecec7b3f02d30f0a6a3d0e8a))
+
 ## [2.2.0](https://github.com/mintopia/harmonic/compare/v2.1.0...v2.2.0) (2026-09-08)
 
 
