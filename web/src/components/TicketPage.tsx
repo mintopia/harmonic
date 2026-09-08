@@ -259,13 +259,13 @@ function TaskProgressBar({ task, attempts, commandConfigured }: { task: Task; at
               className="flex min-w-0 flex-1 flex-col items-center gap-2 text-center"
             >
               <div className="flex w-full items-center">
-                <span className={`h-0.5 flex-1 rounded ${i === 0 ? 'invisible' : leftDone ? 'bg-merged' : 'bg-edge'}`} />
+                <span className={`-mx-px h-0.5 flex-1 rounded ${i === 0 ? 'invisible' : leftDone ? 'bg-merged' : 'bg-edge'}`} />
                 <span
                   className={`flex size-6 shrink-0 items-center justify-center rounded-full border text-[11px] font-bold tabular-nums ${PHASE_NODE_STYLES[step.status]} ${step.disabled ? 'opacity-60' : ''}`}
                 >
                   {stepGlyph(step.status, i)}
                 </span>
-                <span className={`h-0.5 flex-1 rounded ${i === steps.length - 1 ? 'invisible' : rightDone ? 'bg-merged' : 'bg-edge'}`} />
+                <span className={`-mx-px h-0.5 flex-1 rounded ${i === steps.length - 1 ? 'invisible' : rightDone ? 'bg-merged' : 'bg-edge'}`} />
               </div>
               <span className={`text-[12px] font-semibold leading-tight ${step.disabled ? 'text-faint' : STEP_LABEL_TONE[step.status]}`}>
                 {step.label}

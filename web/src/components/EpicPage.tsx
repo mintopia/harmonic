@@ -482,13 +482,13 @@ export function EpicStepper({ epic }: { epic: Epic }) {
             className="flex min-w-0 flex-1 flex-col items-center gap-2 text-center"
           >
             <div className="flex w-full items-center">
-              <span className={`h-0.5 flex-1 rounded ${i === 0 ? 'invisible' : leftDone ? 'bg-merged' : 'bg-edge'}`} />
+              <span className={`-mx-px h-0.5 flex-1 rounded ${i === 0 ? 'invisible' : leftDone ? 'bg-merged' : 'bg-edge'}`} />
               <span
                 className={`flex size-6 shrink-0 items-center justify-center rounded-full border text-[11px] font-bold tabular-nums ${PHASE_NODE_STYLES[step.disabled ? 'pending' : STEP_NODE[step.state]]}`}
               >
                 {!step.disabled && step.state === 'done' ? <Icon name="check" className="size-3.5" /> : i + 1}
               </span>
-              <span className={`h-0.5 flex-1 rounded ${i === steps.length - 1 ? 'invisible' : rightDone ? 'bg-merged' : 'bg-edge'}`} />
+              <span className={`-mx-px h-0.5 flex-1 rounded ${i === steps.length - 1 ? 'invisible' : rightDone ? 'bg-merged' : 'bg-edge'}`} />
             </div>
             <span className={`text-[12px] font-semibold leading-tight ${step.disabled ? 'text-faint' : STEP_LABEL_TONE[step.state]}`}>{step.label}</span>
             <span className="max-w-[10rem] truncate text-[10.5px] leading-tight text-faint" title={step.sublabel}>
