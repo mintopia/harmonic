@@ -49,6 +49,12 @@ worktree and then merge when done.
 
 Cleanup branches and worktrees when they are finished and merged or abandoned.
 
+### Releases
+
+release-please cuts releases from `main`; `develop` promotes to `main` by a
+merge PR. Before cutting a release, bumping a version, or pushing a tag, see
+`docs/agents/release.md`.
+
 ## Agent skills
 
 ### Issue tracker

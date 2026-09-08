@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Git } from '../src/execution/git.js';
 import { worktreeId } from '../src/domain/worktree-inventory.js';
-import { startServer, waitFor, type TestServer } from './helpers.js';
+import { startServer, waitFor, connectFirehose, type TestServer } from './helpers.js';
 
 describe('worktree inventory API (issue #482)', () => {
   let server: TestServer | undefined;
@@ -18,13 +18,7 @@ describe('worktree inventory API (issue #482)', () => {
     expect(snapshot.status).toBe(200);
     expect(snapshot.body).toMatchObject({ worktrees: expect.any(Array), total: expect.any(Number) });
 
-    const socket = new WebSocket(`${server.baseUrl.replace('http', 'ws')}/api/ws?token=${server.sessionToken}`);
-    const messages: unknown[] = [];
-    socket.addEventListener('message', (event) => messages.push(JSON.parse(String(event.data))));
-    await new Promise<void>((resolve, reject) => {
-      socket.addEventListener('open', () => resolve());
-      socket.addEventListener('error', () => reject(new Error('WebSocket failed to open')));
-    });
+    const { messages, close } = await connectFirehose(server);
 
     server.app.ctx.bus.emit('worktrees', [{
       workspaceId: 1,
@@ -40,7 +34,7 @@ describe('worktree inventory API (issue #482)', () => {
     await expect(waitFor(async () => messages.find((message): message is { type: 'worktrees'; worktrees: unknown[] } =>
       typeof message === 'object' && message !== null && 'type' in message && message.type === 'worktrees',
     ))).resolves.toMatchObject({ worktrees: [{ state: 'Active', path: '/trees/task-1' }] });
-    socket.close();
+    close();
   });
 
   it('lets an operator force-clean a managed worktree and its branch', async () => {

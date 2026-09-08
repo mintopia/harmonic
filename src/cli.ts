@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { mkdirSync, openSync } from 'node:fs';
+import { mkdirSync, openSync, readFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { buildApp } from './server/app.js';
@@ -23,6 +23,7 @@ Commands:
   start       Run the server in the background (logs to <data-dir>/harmonic.log)
   status      Show whether a background server is running
   stop        Stop the background server
+  version     Print the installed Harmonic version (also --version, -v)
 
 Options:
   --port, -p  Port to listen on (default 4700)
@@ -46,6 +47,12 @@ Options:
 const displayUrl = (host: string, port: number) =>
   `http://${host === '0.0.0.0' ? 'localhost' : host}:${port}`;
 
+/** The installed version, read from the package manifest that ships beside dist/. */
+const readVersion = (): string => {
+  const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version?: string };
+  return pkg.version ?? 'unknown';
+};
+
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
   const rest = argv.slice(1);
@@ -66,6 +73,11 @@ async function main(): Promise<void> {
       `Running (pid ${info.pid}) — ${displayUrl(info.host, info.port)}, ` +
         `up since ${new Date(info.startedAt).toLocaleString()}\nLogs: ${logFilePath(dataDir)}`,
     );
+    return;
+  }
+
+  if (dispatch.kind === 'version') {
+    process.stdout.write(`${readVersion()}\n`);
     return;
   }
 

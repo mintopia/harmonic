@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { logger } from '../logger.js';
-import { MAP_LABEL, type Ticket, type TicketRef, type TicketState, type WritableTrackerAdapter } from './adapter.js';
+import { EPIC_LABEL, MAP_LABEL, type Ticket, type TicketRef, type TicketState, type WritableTrackerAdapter } from './adapter.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -60,8 +60,13 @@ interface RawUser {
 /** GitLab reports opened / reopened / closed; only `closed` is closed. */
 const state = (s: string): TicketState => (s === 'closed' ? 'closed' : 'open');
 
+/** Free-tier GitLab has no native Epics, so an `Epic:`-titled issue stands in for one (issue-as-epic convention). */
+const EPIC_TITLE = /^\s*epic\s*:/i;
+
 function normaliseBase(raw: RawIssue): Omit<Ticket, 'parent' | 'blockedBy' | 'blocking' | 'comments'> {
-  const labels = raw.labels ?? [];
+  const rawLabels = raw.labels ?? [];
+  const labels =
+    EPIC_TITLE.test(raw.title) && !rawLabels.includes(EPIC_LABEL) ? [...rawLabels, EPIC_LABEL] : rawLabels;
   return {
     number: raw.iid, // portable identity = the project-scoped iid, never the global id
     title: raw.title,
@@ -79,14 +84,22 @@ function normaliseBase(raw: RawIssue): Omit<Ticket, 'parent' | 'blockedBy' | 'bl
 /**
  * Body-line relationships — GitLab's free tier has neither native sub-issues
  * (Epics/work-items are Premium+) nor `blocks`/`is_blocked_by` issue links
- * (also Premium+), so the wayfinder conventions carry them: `Part of #<map>`
- * for the parent, `Blocked by: #<n>, #<n>` for dependencies (iids).
+ * (also Premium+), so the description carries them: a `Part of [epic] #<n>`
+ * line names the parent, and a `Blocked by` section names the dependencies.
  */
 function parseBody(desc: string): { parent: number | null; blockedBy: number[] } {
-  const parent = desc.match(/^\s*Part of #(\d+)/im);
-  const blockedLine = desc.match(/^\s*Blocked by:\s*(.+)$/im);
-  const blockedBy = blockedLine ? [...blockedLine[1]!.matchAll(/#(\d+)/g)].map((m) => Number(m[1])) : [];
-  return { parent: parent ? Number(parent[1]) : null, blockedBy };
+  const parentMatch = desc.match(/^\s*Part of\b[^#\n]*#(\d+)/im);
+  return { parent: parentMatch ? Number(parentMatch[1]) : null, blockedBy: readBlockedBySection(desc) };
+}
+
+/** The `#<n>`s named in the `Blocked by` section: its heading/label line up to the blank line that ends the block. */
+function readBlockedBySection(desc: string): number[] {
+  const lines = desc.split('\n');
+  const start = lines.findIndex((l) => /^\s*#{0,6}\s*Blocked by\b/i.test(l));
+  if (start === -1) return [];
+  const block: string[] = [];
+  for (let i = start; i < lines.length && !(i > start && lines[i]!.trim() === ''); i++) block.push(lines[i]!);
+  return [...new Set([...block.join('\n').matchAll(/#(\d+)/g)].map((m) => Number(m[1])))];
 }
 
 function synthesise(raws: RawIssue[]): Ticket[] {

@@ -576,6 +576,67 @@ describe('gitlab tracker adapter', () => {
     expect(tickets).toHaveLength(totalIssues);
   });
 
+  it('detects the free-tier epic conventions: Epic-titled container, "Part of epic #n", and the "## Blocked by" section', async () => {
+    const epicFixtures: Record<number, any> = {
+      33: {
+        iid: 33,
+        title: 'Epic: binary fleet version parity',
+        state: 'opened',
+        description:
+          'Epic: bring the fleet to one bar.\n\n## Children\n- [ ] #34 — proxy stamp\n- [ ] #40 — proxy self-update *(blocked by #34)*\n\nThe two real edges are #40←#34.',
+        created_at: '2026-09-08T10:00:00Z',
+        closed_at: null,
+        labels: [],
+        assignees: [],
+        web_url: 'https://gitlab.com/cloud-agent/base/-/issues/33',
+      },
+      34: {
+        iid: 34,
+        title: 'Fix proxy version stamp',
+        state: 'opened',
+        description: '## Acceptance criteria\n- [ ] stamp\n\n## Blocked by\nNone (can start immediately).\n\nPart of epic #33.',
+        created_at: '2026-09-08T10:00:00Z',
+        closed_at: null,
+        labels: ['ready-for-agent'],
+        assignees: [],
+        web_url: 'https://gitlab.com/cloud-agent/base/-/issues/34',
+      },
+      40: {
+        iid: 40,
+        title: 'Proxy self-update',
+        state: 'opened',
+        description:
+          '## Acceptance criteria\n- [ ] self-update\n\n## Blocked by\n- #34 — proxy must report a real semver first.\n\nPart of epic #33.',
+        created_at: '2026-09-08T10:00:00Z',
+        closed_at: null,
+        labels: ['ready-for-agent'],
+        assignees: [],
+        web_url: 'https://gitlab.com/cloud-agent/base/-/issues/40',
+      },
+    };
+    const run: GlabRunner = async (args) => {
+      const path = args[args.length - 1]!;
+      if (/^\/?projects\/.*\/issues\?.*per_page/.test(path)) {
+        const page = Number(new URLSearchParams(path.split('?')[1]).get('page') ?? '1');
+        return JSON.stringify(page === 1 ? Object.values(epicFixtures) : []);
+      }
+      return JSON.stringify({});
+    };
+    const tickets = await gitlabAdapter(cfg, run).scan();
+    const t = (n: number) => tickets.find((x) => x.number === n)!;
+
+    expect(t(33).labels).toContain('epic');
+    expect(t(33).isMap).toBe(false);
+    expect(t(33).blockedBy).toEqual([]);
+    expect(t(33).parent).toBeNull();
+
+    expect(t(34).parent).toBe(33);
+    expect(t(40).parent).toBe(33);
+    expect(t(34).blockedBy).toEqual([]);
+    expect(t(40).blockedBy).toEqual([{ number: 34, title: 'Fix proxy version stamp', state: 'open' }]);
+    expect(t(34).blocking).toEqual([{ number: 40, title: 'Proxy self-update', state: 'open' }]);
+  });
+
   it('warns loudly (never truncates silently) when the page safety valve is hit', async () => {
     const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
     const run: GlabRunner = async (args) => {

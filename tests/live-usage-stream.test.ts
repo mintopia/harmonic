@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
-import { startServer, waitFor, type TestServer } from './helpers.js';
+import { startServer, waitFor, connectFirehose, type TestServer } from './helpers.js';
 import { attempts } from '../src/db/schema.js';
 import type { DeepPartial, AppConfig } from '../src/config.js';
 
@@ -53,13 +53,7 @@ describe('live attempt_usage firehose (ADR 0010)', () => {
   });
 
   it('streams a snapshot with rolled-up Usage, context fill, activity, and a Process Tree', async () => {
-    const ws = new WebSocket(`${server.baseUrl.replace('http', 'ws')}/api/ws?token=${server.sessionToken}`);
-    const messages: any[] = [];
-    ws.addEventListener('message', (ev) => messages.push(JSON.parse(String(ev.data))));
-    await new Promise((resolve, reject) => {
-      ws.addEventListener('open', resolve);
-      ws.addEventListener('error', reject);
-    });
+    const { messages, close } = await connectFirehose(server);
 
     const scenario = JSON.stringify({
       updates: [{ sessionUpdate: 'tool_call', toolCallId: 't1', title: 'Read', kind: 'read', status: 'pending' }],
@@ -86,6 +80,6 @@ describe('live attempt_usage firehose (ADR 0010)', () => {
     });
     expect(JSON.parse(persisted).tree.id).toBe(sessionId);
 
-    ws.close();
+    close();
   });
 });

@@ -63,6 +63,12 @@ source of truth release-please advances.
 - The tag-push publish trigger is retired; a manual `git tag` no longer
   publishes. A one-off manual publish, if ever needed, is `npm publish` from a
   clean checkout by a maintainer with trusted-publisher rights.
+- The release commit lands on `main` (release-please's target branch), so a
+  `back-merge` job — gated on the same `release_created` output as `publish` —
+  returns it to `develop` via an auto-merging `main` → `develop` PR (direct
+  merge push as the fallback). Without it `develop` drifts a release behind
+  every cut. A back-merge PR left open (conflict, or auto-merge disabled) is
+  merged by hand.
 
 ## Supersedes
 

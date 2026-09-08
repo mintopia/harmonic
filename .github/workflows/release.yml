@@ -13,6 +13,11 @@ name: Release
 # to this file's name (release.yml) + repo (mintopia/harmonic): renaming this
 # file, or moving the publish step elsewhere, breaks publishing until the
 # trusted publisher is reconfigured on npmjs.com.
+#
+# The `back-merge` job then returns the release commit (version bump + CHANGELOG)
+# from main to develop, closing the Gitflow gap where main diverges every
+# release. It opens an auto-merging main -> develop PR, falling back to a direct
+# merge push only when the repo can't auto-merge.
 on:
   push:
     branches: [main]
@@ -74,3 +79,54 @@ jobs:
           if [[ "$VERSION" == *-* ]]; then TAG=next; else TAG=latest; fi
           echo "Publishing $VERSION to dist-tag '$TAG'"
           npm publish --tag "$TAG"
+
+  back-merge:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # push the direct-merge fallback to develop
+      pull-requests: write # open + auto-merge the back-merge PR
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: develop
+          fetch-depth: 0
+
+      - name: Back-merge the release into develop
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.release-please.outputs.tag_name }}
+        run: |
+          set -euo pipefail
+          git fetch origin main develop
+          if git merge-base --is-ancestor origin/main origin/develop; then
+            echo "develop already contains main — nothing to back-merge."
+            exit 0
+          fi
+
+          title="chore: back-merge ${TAG} into develop"
+          body="Gitflow back-merge: returns the release bump and CHANGELOG from \`main\` to \`develop\`."
+
+          existing=$(gh pr list --base develop --head main --state open --json number --jq '.[0].number // empty')
+          created=""
+          if [ -n "$existing" ]; then
+            pr="$existing"
+          else
+            pr=$(gh pr create --base develop --head main --title "$title" --body "$body" 2>/tmp/pr.err) && created=1 || pr=""
+          fi
+
+          if [ -n "$pr" ] && gh pr merge "$pr" --auto --merge; then
+            echo "Back-merge PR $pr will merge once it is mergeable."
+            exit 0
+          fi
+
+          echo "PR back-merge did not complete; using the direct-merge fallback."
+          if [ -s /tmp/pr.err ]; then cat /tmp/pr.err; fi
+          if [ -n "$created" ]; then gh pr close "$pr" --comment "Superseded by a direct back-merge from CI." || true; fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout develop
+          git merge --no-ff origin/main -m "$title"
+          git push origin develop
