@@ -1,5 +1,28 @@
 # Changelog
 
+## [2.3.0](https://github.com/mintopia/harmonic/compare/v2.2.0...v2.3.0) (2026-09-08)
+
+
+### Features
+
+* **cli:** add a version command ([6b8c7c4](https://github.com/mintopia/harmonic/commit/6b8c7c44a6d2b75bce27420b26023a3ea973eb7f))
+* **tracker:** detect free-tier GitLab epics and blocked-by sections ([eef78c6](https://github.com/mintopia/harmonic/commit/eef78c6a0331eb91ecec7b3f02d30f0a6a3d0e8a))
+
+## [2.2.0](https://github.com/mintopia/harmonic/compare/v2.1.0...v2.2.0) (2026-09-08)
+
+
+### Features
+
+* **conversation:** render markdown and answer agent questions in chat ([01146ba](https://github.com/mintopia/harmonic/commit/01146ba777704e8a6e7618d87e3ced6ae479ccc8))
+
+
+### Bug Fixes
+
+* **acp:** guard harness-exit promise against unhandled rejection on shutdown SIGKILL ([83da0f0](https://github.com/mintopia/harmonic/commit/83da0f0f48a7168094c22045620feb8810cce5ff))
+* **conversation:** advertise elicitation form capability as an object ([5c2c3ea](https://github.com/mintopia/harmonic/commit/5c2c3ea32693aedc0b94debd0d108c128e2561db))
+* **conversation:** scroll the question form body, pin its actions ([2276114](https://github.com/mintopia/harmonic/commit/2276114b18e03ce03db77ccdde2c4750b7286b6c))
+* **settings:** don't dim baseline fields on the global settings surface ([5028960](https://github.com/mintopia/harmonic/commit/50289604e059bb92bf666f4c61bcec0e32b464d6))
+
 ## [2.1.0](https://github.com/mintopia/harmonic/compare/v2.0.0...v2.1.0) (2026-09-07)
 
 
