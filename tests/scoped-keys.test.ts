@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { startServer, stubHarness, waitFor, captureRunEnv, cancelRunningTasks, type TestServer } from './helpers.js';
+import { startServer, stubHarness, waitFor, captureRunEnv, cancelRunningTasks, connectFirehose, type TestServer } from './helpers.js';
 
 describe('attempt-scoped key restrictions', () => {
   let server: TestServer;
@@ -109,18 +109,8 @@ describe('read-scoped key (issue #35)', () => {
   });
 
   it('filters the WebSocket to task/run/run-event/run-usage, dropping Conversation and permission traffic', async () => {
-    const connect = async (token: string) => {
-      const ws = new WebSocket(`${server.baseUrl.replace('http', 'ws')}/api/ws?token=${token}`);
-      const messages: any[] = [];
-      ws.addEventListener('message', (ev) => messages.push(JSON.parse(String(ev.data))));
-      await new Promise((resolve, reject) => {
-        ws.addEventListener('open', resolve);
-        ws.addEventListener('error', reject);
-      });
-      return { messages, close: () => ws.close() };
-    };
-    const readWs = await connect(readToken);
-    const opWs = await connect(server.sessionToken);
+    const readWs = await connectFirehose(server, readToken);
+    const opWs = await connectFirehose(server, server.sessionToken);
 
     server.app.ctx.bus.emit('attempt_event', { id: 1, attemptId: 1, seq: 1, ts: 0, type: 'lifecycle', payload: {} } as any);
     server.app.ctx.bus.emit('attempt_usage', {

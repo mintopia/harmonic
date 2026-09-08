@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { seedLocalMarkdownTicket, startServer, waitFor, type TestServer } from './helpers.js';
+import { seedLocalMarkdownTicket, startServer, waitFor, connectFirehose, type TestServer } from './helpers.js';
 
 describe('Scheduled Job registry', () => {
   let server: TestServer | undefined;
@@ -17,13 +17,7 @@ describe('Scheduled Job registry', () => {
     server = await startServer(undefined, {
       scheduledJobRegistrations: [{ name: 'test exemplar', intervalMs: 200, run: async () => { runs += 1; } }],
     });
-    const ws = new WebSocket(`${server.baseUrl.replace('http', 'ws')}/api/ws?token=${server.sessionToken}`);
-    const messages: unknown[] = [];
-    ws.addEventListener('message', (event) => messages.push(JSON.parse(String(event.data))));
-    await new Promise<void>((resolve, reject) => {
-      ws.addEventListener('open', () => resolve());
-      ws.addEventListener('error', () => reject(new Error('WebSocket failed to open')));
-    });
+    const { messages, close } = await connectFirehose(server);
 
     const snapshot = await waitFor(async () => {
       const response = await server!.api('GET', '/api/scheduled-jobs');
@@ -51,7 +45,7 @@ describe('Scheduled Job registry', () => {
       headers: { authorization: `Bearer ${readKey.body.token}` },
     });
     expect(readResponse.status).toBe(200);
-    ws.close();
+    close();
 
     const dataDir = server.dataDir;
     await server.app.close();

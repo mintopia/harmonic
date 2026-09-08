@@ -6,7 +6,7 @@ import { AttemptSettleCoordinator } from '../src/domain/attempt-settle.js';
 import { AttemptStore } from '../src/domain/attempts.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { type SettingsStore } from '../src/server/settings-store.js';
-import { allWorkspaces, captureRunEnv, makeSettingsStore, startServer, stubHarness, type TestServer, waitFor } from './helpers.js';
+import { allWorkspaces, captureRunEnv, makeSettingsStore, startServer, stubHarness, type TestServer, waitFor, connectFirehose } from './helpers.js';
 import { eq } from 'drizzle-orm';
 import { mkdirSync, mkdtempSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -325,13 +325,7 @@ describe('attempt-timeline-route', () => {
     });
 
     it('serves the same ordered timeline over REST and WebSocket', async () => {
-      const messages: unknown[] = [];
-      const socket = new WebSocket(`${server.baseUrl.replace('http', 'ws')}/api/ws?token=${server.sessionToken}`);
-      socket.addEventListener('message', (event) => messages.push(JSON.parse(String(event.data))));
-      await new Promise<void>((resolve, reject) => {
-        socket.addEventListener('open', () => resolve());
-        socket.addEventListener('error', reject);
-      });
+      const { messages, close } = await connectFirehose(server);
 
       const created = await server.api('POST', '/api/tasks', { prompt: 'timeline parity' });
       const attempt = await server.app.ctx.attempts.ensureForRun(created.body.id, 1, 10);
@@ -397,17 +391,11 @@ describe('attempt-timeline-route', () => {
         { mechanism: 'critic', state: 'disabled', reason: 'Critic verification is disabled.' },
       ]);
       expect(rest.body.attempts[0].steps[1]).not.toHaveProperty('verifiedSha');
-      socket.close();
+      close();
     });
 
     it('broadcasts the timeline when a Step transitions mid-Attempt', async () => {
-      const messages: unknown[] = [];
-      const socket = new WebSocket(`${server.baseUrl.replace('http', 'ws')}/api/ws?token=${server.sessionToken}`);
-      socket.addEventListener('message', (event) => messages.push(JSON.parse(String(event.data))));
-      await new Promise<void>((resolve, reject) => {
-        socket.addEventListener('open', () => resolve());
-        socket.addEventListener('error', reject);
-      });
+      const { messages, close } = await connectFirehose(server);
 
       const created = await server.api('POST', '/api/tasks', { prompt: 'live phase' });
       const attempt = await server.app.ctx.attempts.ensureForRun(created.body.id, 1, 10);
@@ -425,7 +413,7 @@ describe('attempt-timeline-route', () => {
       ));
       const steps = (Reflect.get(message!, 'attempts') as { steps: { type: string; state: string }[] }[])[0]!.steps;
       expect(steps).toEqual([{ ...steps[0], type: 'verification', state: 'running' }]);
-      socket.close();
+      close();
     });
   });
 });
