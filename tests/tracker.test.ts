@@ -625,17 +625,13 @@ describe('gitlab tracker adapter', () => {
     const tickets = await gitlabAdapter(cfg, run).scan();
     const t = (n: number) => tickets.find((x) => x.number === n)!;
 
-    // Epic-titled issue becomes an epic-type container, without being mislabelled a Map.
     expect(t(33).labels).toContain('epic');
     expect(t(33).isMap).toBe(false);
-    // The epic's own inline "*(blocked by #34)*" / "#40←#34" annotations never leak in as its blockers.
     expect(t(33).blockedBy).toEqual([]);
     expect(t(33).parent).toBeNull();
 
-    // Children parent onto the epic via "Part of epic #33".
     expect(t(34).parent).toBe(33);
     expect(t(40).parent).toBe(33);
-    // "## Blocked by" section: a bullet edge is read; "None" yields nothing; the trailing "Part of epic #33" never leaks.
     expect(t(34).blockedBy).toEqual([]);
     expect(t(40).blockedBy).toEqual([{ number: 34, title: 'Fix proxy version stamp', state: 'open' }]);
     expect(t(34).blocking).toEqual([{ number: 40, title: 'Proxy self-update', state: 'open' }]);
