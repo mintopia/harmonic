@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseFormElicitation } from '../src/acp/elicitation-request.js';
+import { parseFormElicitation, type ElicitationField } from '../src/acp/elicitation-request.js';
 
 // The exact wire shape claude-agent-acp emits for AskUserQuestion: each question
 // is a `question_<n>` field (string+oneOf for single-select, array+anyOf items
@@ -47,7 +47,7 @@ describe('parseFormElicitation', () => {
     expect(parsed?.toolCallId).toBe('call-9');
     expect(parsed?.fields).toHaveLength(3);
 
-    const [q0, custom, q1] = parsed!.fields;
+    const [q0, custom, q1] = parsed!.fields as [ElicitationField, ElicitationField, ElicitationField];
     expect(q0).toMatchObject({ key: 'question_0', kind: 'select', optional: true });
     expect(q0.options).toEqual([
       { value: 'cookie', label: 'httpOnly cookie', description: 'Kills XSS.' },
