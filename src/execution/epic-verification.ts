@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { runCommandVerifier } from '../verification/command-verifier.js';
+import { runCommandVerifierDetached } from '../verification/command-verifier.js';
 import { combineVerdicts, type VerificationDecision, type VerifierVerdict } from '../verification/combine.js';
 import type { ResolvedVerifiers } from '../domain/setting-override.js';
 
@@ -26,7 +26,7 @@ export async function verifyEpicIntegration(args: {
   for (const [index, command] of args.verifiers.commands.entries()) {
     const parent = mkdtempSync(join(args.worktreeParent ?? tmpdir(), 'harmonic-epic-verify-'));
     try {
-      const attempt = await runCommandVerifier({
+      const attempt = await runCommandVerifierDetached({
         repoDir: args.repoDir,
         verifiedHeadOid: args.verifiedHeadOid,
         worktreePath: join(parent, `command-${index}`),

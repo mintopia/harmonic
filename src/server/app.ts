@@ -39,7 +39,7 @@ import type { MergeEffectExec } from '../domain/merge.js';
 import type { TaskRow, AttemptRow } from '../db/schema.js';
 import { CrashRecoveryCoordinator } from '../execution/crash-recovery.js';
 import { resolveVerifiers } from '../domain/setting-override.js';
-import { runCommandVerifier, commandAttemptToInput } from '../verification/command-verifier.js';
+import { runCommandVerifierDetached, commandAttemptToInput } from '../verification/command-verifier.js';
 import { Runner } from '../execution/runner.js';
 import { EpicOperations } from '../execution/epic-operations.js';
 import type { CriticHarnessDrive } from '../verification/critic.js';
@@ -446,7 +446,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     if (commands.length === 0) return { pass: true, output: '' };
     mkdirSync(worktreesDir, { recursive: true });
     for (const command of commands) {
-      const cmdAttempt = await runCommandVerifier({
+      const cmdAttempt = await runCommandVerifierDetached({
         repoDir: baseDir,
         verifiedHeadOid: mergeOid,
         worktreePath: join(worktreesDir, `crash-recovery-postmerge-${run.id}`),

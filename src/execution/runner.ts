@@ -45,7 +45,7 @@ import { EpicMergeEventStore } from '../domain/epic-merge-events.js';
 import { GuardrailEventStore } from '../domain/guardrail-events.js';
 import { toProgressEvents } from '../domain/guardrail-progress.js';
 import type { ProgressEvent } from '../domain/stall-detector.js';
-import { runCommandVerifier, commandAttemptToInput } from '../verification/command-verifier.js';
+import { runCommandVerifier, runCommandVerifierDetached, commandAttemptToInput } from '../verification/command-verifier.js';
 import { createAcpCriticDrive, runCritic, criticAttemptToInput, type CriticHarnessDrive } from '../verification/critic.js';
 import { combineVerdicts, type VerificationDecision, type VerifierVerdict } from '../verification/combine.js';
 import { pricesForHarness } from '../domain/pricing.js';
@@ -1195,9 +1195,8 @@ export class Runner {
       if (!oid) {
         verdicts.push(await this.noVerifiedHeadVerdict(task, 'command', record));
       } else {
-        mkdirSync(this.worktreesDir, { recursive: true });
         // The Step opens before the command runs so the Board badge, the Verify
-        // tab and the timeline show it live — not only once its verdict lands.
+        // tab and the timeline show it live — not only once its verdict arrives.
         const label = [command.command, ...command.args].join(' ').trim();
         const timelineAttempt = await this.latestAttemptFor(task);
         const timelineStep = await this.attempts.createStep(timelineAttempt.id, { type: 'verification', command: command.command });
@@ -1205,9 +1204,8 @@ export class Runner {
         record('lifecycle', { event: 'verification-started', mechanism: 'command', command: label });
         const relay = this.verificationOutputRelay(run.id, 'command', label);
         const attempt = await runCommandVerifier({
-          repoDir: task.workingDir,
+          cwd: run.branch ? this.worktreePathForTask(task) : task.workingDir,
           verifiedHeadOid: oid,
-          worktreePath: join(this.worktreesDir, `cmdverify-${run.id}`),
           command,
           signal,
           parent,
@@ -1676,7 +1674,7 @@ export class Runner {
         mkdirSync(this.worktreesDir, { recursive: true });
         const timelineAttempt = await this.latestAttemptFor(task);
         for (const command of commands) {
-          const attempt = await runCommandVerifier({
+          const attempt = await runCommandVerifierDetached({
             repoDir: baseDir,
             verifiedHeadOid: mergeOid,
             worktreePath: join(this.worktreesDir, `postmerge-${run.id}`),
