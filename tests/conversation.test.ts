@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { type AppConfig, type DeepPartial } from '../src/config.js';
 import { apiKeys, conversationEvents } from '../src/db/schema.js';
 import { accumulateUsage, type AttemptUsage, contextInputTokens } from '../src/execution/usage.js';
-import { startServer, stubHarness, type TestServer, waitFor } from './helpers.js';
+import { startServer, stubHarness, type TestServer, waitFor, connectFirehose } from './helpers.js';
 import { eq } from 'drizzle-orm';
 import { tmpdir } from 'node:os';
 
@@ -336,16 +336,7 @@ describe('conversation-telemetry', () => {
 });
 
 describe('conversation-rules', () => {
-  async function connectWs(server: TestServer): Promise<{ messages: any[]; close: () => void }> {
-    const ws = new WebSocket(`${server.baseUrl.replace('http', 'ws')}/api/ws?token=${server.sessionToken}`);
-    const messages: any[] = [];
-    ws.addEventListener('message', (ev) => messages.push(JSON.parse(String(ev.data))));
-    await new Promise((resolve, reject) => {
-      ws.addEventListener('open', resolve);
-      ws.addEventListener('error', reject);
-    });
-    return { messages, close: () => ws.close() };
-  }
+  const connectWs = (server: TestServer) => connectFirehose(server);
 
   async function events(server: TestServer, id: number): Promise<any[]> {
     return (await server.api('GET', `/api/conversations/${id}/events`)).body.events;
@@ -538,16 +529,7 @@ describe('conversation-keys', () => {
 });
 
 describe('conversation-permissions', () => {
-  async function connectWs(server: TestServer): Promise<{ messages: any[]; close: () => void }> {
-    const ws = new WebSocket(`${server.baseUrl.replace('http', 'ws')}/api/ws?token=${server.sessionToken}`);
-    const messages: any[] = [];
-    ws.addEventListener('message', (ev) => messages.push(JSON.parse(String(ev.data))));
-    await new Promise((resolve, reject) => {
-      ws.addEventListener('open', resolve);
-      ws.addEventListener('error', reject);
-    });
-    return { messages, close: () => ws.close() };
-  }
+  const connectWs = (server: TestServer) => connectFirehose(server);
 
   async function events(server: TestServer, id: number): Promise<any[]> {
     return (await server.api('GET', `/api/conversations/${id}/events`)).body.events;

@@ -1,16 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
-
-async function connectWs(server: TestServer): Promise<{ messages: any[]; send: (message: unknown) => void; close: () => void }> {
-  const ws = new WebSocket(`${server.baseUrl.replace('http', 'ws')}/api/ws?token=${server.sessionToken}`);
-  const messages: any[] = [];
-  ws.addEventListener('message', (ev) => messages.push(JSON.parse(String(ev.data))));
-  await new Promise((resolve, reject) => {
-    ws.addEventListener('open', resolve);
-    ws.addEventListener('error', reject);
-  });
-  return { messages, send: (message) => ws.send(JSON.stringify(message)), close: () => ws.close() };
-}
+import { startServer, stubHarness, waitFor, connectFirehose, type TestServer } from './helpers.js';
 
 describe('live structured run event streaming and replay', () => {
   let server: TestServer;
@@ -29,7 +18,7 @@ describe('live structured run event streaming and replay', () => {
       { sessionUpdate: 'tool_call', toolCallId: 't1', title: 'Read', kind: 'read', status: 'pending' },
       { sessionUpdate: 'plan', entries: [{ content: 'step', status: 'pending', priority: 'medium' }] },
     ];
-    const ws = await connectWs(server);
+    const ws = await connectFirehose(server);
 
     const created = await server.api('POST', '/api/tasks', {
       prompt: JSON.stringify({ updates, delayMs: 40 }),
@@ -61,7 +50,7 @@ describe('live structured run event streaming and replay', () => {
       { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'two' } },
       { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'three' } },
     ];
-    const first = await connectWs(server);
+    const first = await connectFirehose(server);
     const created = await server.api('POST', '/api/tasks', {
       prompt: JSON.stringify({ updates, delayMs: 80 }),
     });
@@ -72,7 +61,7 @@ describe('live structured run event streaming and replay', () => {
     first.close();
 
     await waitFor(async () => (await server.api('GET', `/api/attempts/${attemptId}`)).body.state !== 'running');
-    const reconnected = await connectWs(server);
+    const reconnected = await connectFirehose(server);
     reconnected.send({ type: 'attempt_log_subscribe', attemptId, after: 1 });
     await waitFor(async () => reconnected.messages.filter((m) => m.type === 'attempt_log_event' && m.event.attemptId === attemptId).length === 2);
     const replayed = reconnected.messages.filter((m) => m.type === 'attempt_log_event' && m.event.attemptId === attemptId);
@@ -81,7 +70,7 @@ describe('live structured run event streaming and replay', () => {
   });
 
   it('broadcasts task state changes so the board updates without polling', async () => {
-    const ws = await connectWs(server);
+    const ws = await connectFirehose(server);
     const created = await server.api('POST', '/api/tasks', { prompt: 'plain prompt' });
     await server.api('POST', `/api/tasks/${created.body.id}/run`);
 
@@ -94,7 +83,7 @@ describe('live structured run event streaming and replay', () => {
   });
 
   it('task_changed payloads carry the API task shape, identical to REST', async () => {
-    const ws = await connectWs(server);
+    const ws = await connectFirehose(server);
     const dep = await server.api('POST', '/api/tasks', { prompt: 'dependency', state: 'draft' });
     const created = await server.api('POST', '/api/tasks', {
       prompt: 'dependent',
@@ -118,7 +107,7 @@ describe('live structured run event streaming and replay', () => {
   });
 
   it('re-broadcasts a dependant when its blocker escalates, so blockedOnFailed shows live', async () => {
-    const ws = await connectWs(server);
+    const ws = await connectFirehose(server);
     const blocker = await server.api('POST', '/api/tasks', { prompt: 'blocker' });
     const dependant = await server.api('POST', '/api/tasks', { prompt: 'dependant', dependsOn: [blocker.body.id] });
     await waitFor(async () => ws.messages.some((m) => m.type === 'task_changed' && m.task.id === dependant.body.id));

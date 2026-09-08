@@ -1,16 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
+import { startServer, stubHarness, waitFor, connectFirehose, type TestServer } from './helpers.js';
 
-async function connectWs(server: TestServer): Promise<{ messages: any[]; close: () => void }> {
-  const ws = new WebSocket(`${server.baseUrl.replace('http', 'ws')}/api/ws?token=${server.sessionToken}`);
-  const messages: any[] = [];
-  ws.addEventListener('message', (ev) => messages.push(JSON.parse(String(ev.data))));
-  await new Promise((resolve, reject) => {
-    ws.addEventListener('open', resolve);
-    ws.addEventListener('error', reject);
-  });
-  return { messages, close: () => ws.close() };
-}
+const connectWs = (server: TestServer) => connectFirehose(server);
 
 async function waitForEvent(server: TestServer, id: number, predicate: (e: any) => boolean) {
   return waitFor(async () => {

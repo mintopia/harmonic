@@ -4,7 +4,7 @@ import { initializeTelemetry, resolveTelemetryOptions, type TelemetryController 
 import type { OperationEvent } from '../src/telemetry/operations.js';
 import { operationRegistry, startOperation } from '../src/telemetry/operations.js';
 import { WorktreeReconciler } from '../src/domain/worktree-reconciler.js';
-import { startServer, waitFor, type TestServer } from './helpers.js';
+import { startServer, waitFor, connectFirehose, type TestServer } from './helpers.js';
 
 describe('Operations API (issue #293)', () => {
   let server: TestServer | undefined;
@@ -95,16 +95,13 @@ describe('Operations API (issue #293)', () => {
     telemetry = initializeTelemetry(resolveTelemetryOptions({ exportEnabled: 'false' }));
     server = await startServer();
     const readKey = await server.api('POST', '/api/keys', { name: 'operations-viz', scope: 'read' });
-    const fullWs = new WebSocket(`${server.baseUrl.replace('http', 'ws')}/api/ws?token=${server.sessionToken}`);
-    const readWs = new WebSocket(`${server.baseUrl.replace('http', 'ws')}/api/ws?token=${readKey.body.token}`);
-    const fullMessages: unknown[] = [];
-    const messages: unknown[] = [];
-    fullWs.addEventListener('message', (event) => fullMessages.push(JSON.parse(String(event.data))));
-    readWs.addEventListener('message', (event) => messages.push(JSON.parse(String(event.data))));
-    await Promise.all([fullWs, readWs].map((ws) => new Promise<void>((resolve, reject) => {
-      ws.addEventListener('open', () => resolve());
-      ws.addEventListener('error', () => reject(new Error('WebSocket failed to open')));
-    })));
+    // connectFirehose resolves only after each client's first server message,
+    // which the server sends after registering its bus subscriptions — so the
+    // emit below can't race ahead of the subscription.
+    const full = await connectFirehose(server);
+    const read = await connectFirehose(server, readKey.body.token);
+    const fullMessages = full.messages;
+    const messages = read.messages;
 
     const operationEvent: OperationEvent = {
       type: 'op-started',
@@ -141,7 +138,7 @@ describe('Operations API (issue #293)', () => {
           typeof message === 'object' && message !== null && 'type' in message && message.type === 'operations',
       ) || undefined,
     );
-    fullWs.close();
-    readWs.close();
+    full.close();
+    read.close();
   });
 });

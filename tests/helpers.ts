@@ -221,6 +221,33 @@ export async function waitFor<T>(
   }
 }
 
+export interface FirehoseClient {
+  messages: any[];
+  send: (message: unknown) => void;
+  close: () => void;
+}
+
+/**
+ * Open a firehose WebSocket and resolve only once the server has sent its first
+ * message. The server registers all its bus subscriptions and *then* sends an
+ * initial `host_load` (see server/ws.ts), so the first message proves the
+ * subscriptions are live. Resolving on the socket's `open` event instead races:
+ * `open` fires as soon as the handshake completes, but the server handler still
+ * has an `await` (auth) before it subscribes — so a bus event emitted right
+ * after `open` can be missed entirely. That missed-emit race is the root of the
+ * flaky firehose tests; gating on the first message removes it.
+ */
+export async function connectFirehose(server: TestServer, token: string = server.sessionToken): Promise<FirehoseClient> {
+  const ws = new WebSocket(`${server.baseUrl.replace('http', 'ws')}/api/ws?token=${token}`);
+  const messages: any[] = [];
+  ws.addEventListener('message', (ev) => messages.push(JSON.parse(String(ev.data))));
+  await new Promise<void>((resolve, reject) => {
+    ws.addEventListener('message', () => resolve(), { once: true });
+    ws.addEventListener('error', () => reject(new Error('WebSocket failed to open')));
+  });
+  return { messages, send: (message) => ws.send(JSON.stringify(message)), close: () => ws.close() };
+}
+
 export const TEST_PASSWORD = 'test-password';
 
 export interface TestServer {
