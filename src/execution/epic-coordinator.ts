@@ -684,7 +684,14 @@ export class EpicLifecycle {
       }),
     );
     void trigger
-      .submit({ ref: epic.ref, title: epic.title, body: epic.body, url: epic.url, members, memberRefs: epic.members })
+      .submit({
+        ref: epic.ref,
+        title: epic.title,
+        ...(epic.body !== undefined ? { body: epic.body } : {}),
+        ...(epic.url !== undefined ? { url: epic.url } : {}),
+        members,
+        memberRefs: epic.members,
+      })
       .catch((err) => this.onError(`epic ${epic.ref} whole-Epic integrate attempt failed: ${String(err)}`));
   }
 
