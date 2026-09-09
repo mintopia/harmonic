@@ -10,7 +10,7 @@ import {
   serializerCompiler,
   validatorCompiler,
 } from 'fastify-type-provider-zod';
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { join, dirname, resolve, sep } from 'node:path';
 import { defaultBranchPostMerge, type PostMergeHook } from '../execution/branch-merge.js';
 import { fileURLToPath } from 'node:url';
@@ -29,7 +29,7 @@ import { EscalationService } from '../domain/escalation.js';
 import { AttemptSettleCoordinator } from '../domain/attempt-settle.js';
 import { SessionStore } from '../domain/sessions.js';
 import { SessionRetirementCoordinator } from '../domain/session-retirement-coordinator.js';
-import { dropIndexForPath } from '../execution/code-index.js';
+import { dropIndexForPath, indexWorktree } from '../execution/code-index.js';
 import { isInside, WorktreeReconciler } from '../domain/worktree-reconciler.js';
 import { worktreeId, WorktreeInventory } from '../domain/worktree-inventory.js';
 import { Git } from '../execution/git.js';
@@ -39,7 +39,9 @@ import type { MergeEffectExec } from '../domain/merge.js';
 import type { TaskRow, AttemptRow } from '../db/schema.js';
 import { CrashRecoveryCoordinator } from '../execution/crash-recovery.js';
 import { resolveVerifiers } from '../domain/setting-override.js';
-import { runCommandVerifierDetached, commandAttemptToInput } from '../verification/command-verifier.js';
+import { runCommandVerifier, commandAttemptToInput } from '../verification/command-verifier.js';
+import { runCritic, criticAttemptToInput } from '../verification/critic.js';
+import { driveFields } from '../execution/prompt-template.js';
 import { Runner } from '../execution/runner.js';
 import { EpicOperations } from '../execution/epic-operations.js';
 import type { CriticHarnessDrive } from '../verification/critic.js';
@@ -444,21 +446,51 @@ export async function buildApp(opts: AppOptions): Promise<App> {
       ws ?? { taskPreMergeCommands: null, taskPreMergeCritics: null, taskPostMergeCommands: null, taskPostMergeCritics: null, epicPreMergeCommands: null, epicPreMergeCritics: null },
       settingsStore.getGlobal(),
     );
-    const { commands } = resolvedTask.postMerge;
-    if (commands.length === 0) return { pass: true, output: '' };
-    mkdirSync(worktreesDir, { recursive: true });
+    const { commands, critics } = resolvedTask.postMerge;
     for (const command of commands) {
-      const cmdAttempt = await runCommandVerifierDetached({
-        repoDir: baseDir,
+      const cmdAttempt = await runCommandVerifier({
+        cwd: baseDir,
         verifiedHeadOid: mergeOid,
-        worktreePath: join(worktreesDir, `crash-recovery-postmerge-${run.id}`),
         command,
         attributes: { 'task.id': task.id, 'attempt.id': run.id },
       });
       await verificationAttempts.append(run.id, commandAttemptToInput(cmdAttempt));
       if (cmdAttempt.verdict !== 'pass') return { pass: false, output: cmdAttempt.output };
     }
-    return { pass: true, output: '' };
+    const baseOid = await Git.revParse(baseDir, `${mergeOid}^1`).catch(() => null);
+    if (critics.length > 0) await indexWorktree(baseDir);
+    const criticAttempts = await Promise.all(critics.map(async (configuredCritic) => {
+      const critic = {
+        prompt: task.trackerRef == null ? configuredCritic.noIssuePrompt : configuredCritic.issuePrompt,
+        model: configuredCritic.model,
+        ...(configuredCritic.harness ? { harness: configuredCritic.harness } : {}),
+      };
+      const harnessId = critic.harness ?? task.harness;
+      const harness = settingsStore.getGlobal().harnesses[harnessId as keyof AppConfig['harnesses']];
+      if (!harness) throw new DomainError('validation', `critic harness '${harnessId}' is not configured`);
+      const attempt = await runCritic({
+        cwd: baseDir,
+        verifiedHeadOid: mergeOid,
+        ...(baseOid ? { baseOid } : {}),
+        critic,
+        fields: driveFields(task, () => null),
+        harness,
+        harnessId,
+        attributes: { 'task.id': task.id, 'attempt.id': run.id },
+        ...(opts.criticDrive ? { drive: opts.criticDrive } : {}),
+      });
+      await verificationAttempts.append(run.id, criticAttemptToInput(attempt));
+      return attempt;
+    }));
+    const output = criticAttempts
+      .map((attempt, index) => [attempt, index] as const)
+      .filter(([attempt]) => attempt.verdict !== 'pass')
+      .map(([attempt, index]) => [
+        `Task critic ${index + 1} (${attempt.verdict}): ${attempt.summary}`,
+        attempt.output,
+      ].filter(Boolean).join('\n'))
+      .join('\n\n');
+    return { pass: output.length === 0, output };
   };
   const crashRecovery = new CrashRecoveryCoordinator(attempts, tasks, operatorSettle, {
     runPostMergeCheck: crashRecoveryPostMergeCheck,
