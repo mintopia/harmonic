@@ -34,6 +34,7 @@ export interface EpicVerification {
   status: 'pass' | 'fail' | 'pending' | null;
   /** Whether the whole-Epic command verifier has any command resolved for this workspace. */
   configured: boolean;
+  stages?: { label: string; status: 'pass' | 'fail' | 'pending' | null; verifiers: string[] }[];
 }
 
 export interface EpicIntegrateState {

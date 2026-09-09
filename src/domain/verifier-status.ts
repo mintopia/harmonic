@@ -8,6 +8,7 @@ export type VerifierStatusState = 'passed' | 'failed' | 'inconclusive' | 'skippe
 /** A read-time reconciliation of configured verifiers and their recorded attempts. */
 export interface VerifierStatus {
   mechanism: VerificationMechanism;
+  verifier?: string;
   state: VerifierStatusState;
   /** Explains a non-verdict state; verdict states need no synthetic explanation. */
   reason: string | null;
@@ -54,6 +55,34 @@ export function verifierStatuses({
 
   const commandLabels = verifiers.commands.map((c) => [c.command, ...c.args].join(' ').trim());
   const criticHarness = verifiers.critics[0]?.harness ?? null;
+
+  if (verifiers.commands.length > 1 || verifiers.critics.length > 1) {
+    const attemptsFor = (mechanism: VerificationMechanism) => attempts.filter((attempt) => attempt.mechanism === mechanism).sort((a, b) => a.seq - b.seq);
+    return [
+      ...verifiers.commands.map((_, index): VerifierStatus => {
+        const attempt = attemptsFor('command')[index];
+        if (attempt) return { mechanism: 'command', verifier: `command:${index}`, state: verdictStates[attempt.verdict], reason: null, commands: [commandLabels[index]!] };
+        const pending = stepType == null ? attempts.length === 0 : STEP_TYPES.indexOf(stepType) < STEP_TYPES.indexOf('verification');
+        return {
+          mechanism: 'command', verifier: `command:${index}`,
+          state: stepType === 'verification' ? 'running' : pending ? 'planned' : 'skipped',
+          reason: stepType === 'verification' ? 'Running the command check now.' : pending ? 'Configured to run — the attempt has not reached verification yet.' : 'No command verification attempt was recorded for this attempt.',
+          commands: [commandLabels[index]!],
+        };
+      }),
+      ...verifiers.critics.map((critic, index): VerifierStatus => {
+        const attempt = attemptsFor('critic')[index];
+        if (attempt) return { mechanism: 'critic', verifier: `critic:${index}`, state: verdictStates[attempt.verdict], reason: null, ...(critic.harness ? { harness: critic.harness } : {}) };
+        const pending = stepType == null ? attempts.length === 0 : STEP_TYPES.indexOf(stepType) < STEP_TYPES.indexOf('review');
+        return {
+          mechanism: 'critic', verifier: `critic:${index}`,
+          state: stepType === 'review' ? 'running' : pending ? 'planned' : 'skipped',
+          reason: stepType === 'review' ? 'The critic is reviewing the candidate now.' : pending ? 'Configured to run — the attempt has not reached verification yet.' : 'No critic verification attempt was recorded for this attempt.',
+          ...(critic.harness ? { harness: critic.harness } : {}),
+        };
+      }),
+    ];
+  }
 
   return mechanisms.map((mechanism) => {
     const decorate = (base: VerifierStatus): VerifierStatus =>
