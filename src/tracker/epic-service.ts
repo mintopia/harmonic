@@ -456,7 +456,11 @@ export class TrackerEpicService implements EpicService {
     const branch = integrationBranchName(epicRef); const integrate = this.entries.get(workspaceId)?.epicIntegrate;
     const integration = integrate ? await integrate.integrationFacts(epicRef) : { exists: false, tip: null };
     const mergeSteps = this.epicMergeEvents ? (await this.epicMergeEvents.list(workspaceId, epicRef)).map((event) => event.step) : [];
-    return { integration: { branch, ...integration }, verification: { status: integrate?.verificationStatus(epicRef) ?? null, configured }, integrate: { inFlight: integrate?.isInFlight(epicRef) ?? false, held: integrate?.heldReason(epicRef) ?? null, phase: integrate?.activePhase(epicRef) ?? null }, mergeSteps };
+    const workspace = (await this.getWorkspaces()).find((candidate) => candidate.id === workspaceId);
+    const verifiers = workspace && this.getConfig ? resolveVerifiers(workspace, this.getConfig()).epic.preMerge : { commands: [], critics: [] };
+    const status = integrate?.verificationStatus(epicRef) ?? null;
+    const labels = [...verifiers.commands.map((command) => [command.command, ...command.args].join(' ')), ...verifiers.critics.map((_, index) => `Critic ${index + 1}`)];
+    return { integration: { branch, ...integration }, verification: { status, configured, stages: [{ label: 'Epic pre-merge', status, verifiers: labels }] }, integrate: { inFlight: integrate?.isInFlight(epicRef) ?? false, held: integrate?.heldReason(epicRef) ?? null, phase: integrate?.activePhase(epicRef) ?? null }, mergeSteps };
   }
   private async epicBaseBranch(workspaceId: number): Promise<string | null> { const workspace = (await this.getWorkspaces()).find((candidate) => candidate.id === workspaceId); return workspace ? resolveRepositoryDefaultBranch(workspace.workingDir).catch(() => null) : null; }
   private async verificationConfigured(workspaceId: number): Promise<boolean> { const workspace = (await this.getWorkspaces()).find((candidate) => candidate.id === workspaceId); return !!workspace && !!this.getConfig && resolveVerifiers(workspace, this.getConfig()).epic.preMerge.commands.length > 0; }

@@ -244,6 +244,22 @@ function EpicAttemptsTimeline({ attempts }: { attempts: EpicAttempt[] }) {
   );
 }
 
+function EpicVerificationStages({ epic }: { epic: Epic }) {
+  return (
+    <section className="mb-6">
+      <div className={`${sectionCaps} mb-3`}>Verification</div>
+      <div className={`${card} divide-y divide-hairline`}>
+        {(epic.verification.stages ?? []).map((stage) => (
+          <div key={stage.label} className="px-4 py-3">
+            <div className="flex items-center justify-between gap-3"><span className="text-small font-semibold text-ink">{stage.label}</span><span className="text-data text-muted">{stage.status ?? 'planned'}</span></div>
+            <div className="mt-2 flex flex-wrap gap-2">{stage.verifiers.length > 0 ? stage.verifiers.map((verifier) => <span key={verifier} className="rounded bg-raised px-2 py-1 font-data text-[11px] text-muted">{verifier}</span>) : <span className="text-small text-faint">No verifiers configured.</span>}</div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 
 /** The whole-Epic diff (ADR-0018): what `epic/<ref>` changes over base, fetched
  * once — unlike the live Attempt ChangesPane on TicketPage, an Epic's diff is
@@ -719,6 +735,7 @@ export function EpicPage({
                   </div>
 
                   <div className="mb-8">
+                    {epic && <EpicVerificationStages epic={epic} />}
                     {epicAttempts ? (
                       <EpicAttemptsTimeline attempts={epicAttempts} />
                     ) : (
