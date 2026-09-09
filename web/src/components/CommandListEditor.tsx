@@ -3,12 +3,6 @@ import { field } from '../ui';
 import { FieldError, fieldLabel } from './SettingsSection';
 import { EMPTY_COMMAND, argsText, setCommandField } from './verification-override-model';
 
-/**
- * The add/remove editor for an ordered verification-command list.
- * One component for staged verification settings. The caller supplies a stage's
- * command list and its validation-path prefix, so the editor stays independent
- * of any particular Task or Epic stage.
- */
 export function CommandListEditor({
   commands,
   onChange,
@@ -19,9 +13,7 @@ export function CommandListEditor({
 }: {
   commands: VerificationCommand[];
   onChange: (commands: VerificationCommand[]) => void;
-  /** Input id prefix for this stage and surface. */
   idPrefix: string;
-  /** Server error-path prefix for this stage's command list. */
   errorPrefix: string;
   fieldErrors: Record<string, string>;
   emptyText: string;
