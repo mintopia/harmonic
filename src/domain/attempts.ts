@@ -11,7 +11,9 @@ import {
   type StepRow,
   type StepType,
   type AttemptEventRow,
+  type EpicAttemptRow,
   type TaskAttemptRow,
+  isEpicAttempt,
   isTaskAttempt,
 } from '../db/schema.js';
 import type { DeterministicContinuation } from './session-continuation.js';
@@ -113,8 +115,8 @@ export class AttemptStore {
   }
 
   /** Allocate a fresh Attempt for an Epic, numbered within that Epic's timeline. */
-  async createForEpic(owner: EpicAttemptOwner, snapshot?: AttemptGuardrailSnapshot): Promise<AttemptRow> {
-    return this.db.write(async (db) => {
+  async createForEpic(owner: EpicAttemptOwner, snapshot?: AttemptGuardrailSnapshot): Promise<EpicAttemptRow> {
+    const row = await this.db.write(async (db) => {
       const values = {
         state: 'running' as const,
         startedAt: Date.now(),
@@ -144,6 +146,8 @@ export class AttemptStore {
         )?.n ?? 0) + 1;
       return db.insert(attempts).values({ ...owner, number, ...values }).returning().get();
     });
+    if (!isEpicAttempt(row)) throw new DomainError('not_found', `epic ${owner.workspaceId}/${owner.epicRef} attempt ownership was not persisted`);
+    return row;
   }
 
   /** The single `running` Attempt for a Task (at most one is ever `running` per Task), or `undefined`. */
@@ -155,14 +159,15 @@ export class AttemptStore {
   }
 
   /** The single `running` Attempt for an Epic, or `undefined`. */
-  async getRunningForEpic(owner: EpicAttemptOwner): Promise<AttemptRow | undefined> {
-    return this.db.read((db) =>
+  async getRunningForEpic(owner: EpicAttemptOwner): Promise<EpicAttemptRow | undefined> {
+    const row = await this.db.read((db) =>
       db
         .select()
         .from(attempts)
         .where(and(eq(attempts.workspaceId, owner.workspaceId), eq(attempts.epicRef, owner.epicRef), eq(attempts.state, 'running')))
         .get(),
     );
+    return row && isEpicAttempt(row) ? row : undefined;
   }
 
   /** Get-or-create the Attempt for an explicit `(taskId, number)` — the reject/resume path. */
@@ -176,8 +181,8 @@ export class AttemptStore {
   }
 
   /** Get-or-create the Attempt for an explicit Epic timeline position. */
-  async ensureForEpicRun(owner: EpicAttemptOwner, number: number, startedAt: number): Promise<AttemptRow> {
-    return this.db.write(async (db) => {
+  async ensureForEpicRun(owner: EpicAttemptOwner, number: number, startedAt: number): Promise<EpicAttemptRow> {
+    const row = await this.db.write(async (db) => {
       const existing = await db
         .select()
         .from(attempts)
@@ -185,6 +190,8 @@ export class AttemptStore {
         .get();
       return existing ?? db.insert(attempts).values({ ...owner, number, startedAt }).returning().get();
     });
+    if (!isEpicAttempt(row)) throw new DomainError('not_found', `epic ${owner.workspaceId}/${owner.epicRef} attempt ownership was not persisted`);
+    return row;
   }
 
   async assertExists(id: number): Promise<void> {
@@ -197,8 +204,8 @@ export class AttemptStore {
   }
 
   /** Every Attempt owned by one Epic, ordered by its timeline number. */
-  listForEpic(owner: EpicAttemptOwner): Promise<AttemptRow[]> {
-    return this.db.read((db) =>
+  async listForEpic(owner: EpicAttemptOwner): Promise<EpicAttemptRow[]> {
+    const rows = await this.db.read((db) =>
       db
         .select()
         .from(attempts)
@@ -206,6 +213,7 @@ export class AttemptStore {
         .orderBy(asc(attempts.number))
         .all(),
     );
+    return rows.filter(isEpicAttempt);
   }
 
   /** Attempts for a task list, ordered as {@link listForTask} orders each task's Attempts. */
@@ -348,14 +356,15 @@ export class AttemptStore {
     return row && isTaskAttempt(row) ? row : undefined;
   }
 
-  getForEpicNumber(owner: EpicAttemptOwner, number: number): Promise<AttemptRow | undefined> {
-    return this.db.read((db) =>
+  async getForEpicNumber(owner: EpicAttemptOwner, number: number): Promise<EpicAttemptRow | undefined> {
+    const row = await this.db.read((db) =>
       db
         .select()
         .from(attempts)
         .where(and(eq(attempts.workspaceId, owner.workspaceId), eq(attempts.epicRef, owner.epicRef), eq(attempts.number, number)))
         .get(),
     );
+    return row && isEpicAttempt(row) ? row : undefined;
   }
 
   async get(id: number): Promise<AttemptRow> {
@@ -373,7 +382,7 @@ export class AttemptStore {
   }
 
   /** The Epic's latest Attempt. */
-  async currentForEpic(owner: EpicAttemptOwner): Promise<AttemptRow> {
+  async currentForEpic(owner: EpicAttemptOwner): Promise<EpicAttemptRow> {
     const latest = await this.listForEpic(owner);
     const row = latest.at(-1);
     if (!row) throw new DomainError('not_found', `epic ${owner.workspaceId}/${owner.epicRef} has no attempts`);

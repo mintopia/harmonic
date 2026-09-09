@@ -1,5 +1,5 @@
 import { createClient } from '@libsql/client';
-import { and, eq, gte, inArray, lte, sql } from 'drizzle-orm';
+import { and, eq, gte, inArray, isNull, lte, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/libsql';
 import { join } from 'node:path';
 import { parentPort, workerData } from 'node:worker_threads';
@@ -30,30 +30,31 @@ async function readStats({ from, to, workspaceId, epicRef }: StatsRange): Promis
     epicRef === undefined ? undefined : eq(tasks.mapRef, epicRef),
   );
 
+  const rangeScope = and(gte(attempts.startedAt, from), lte(attempts.startedAt, to));
   const attemptRows = !scoped
-    ? await db.select().from(attempts).where(and(gte(attempts.startedAt, from), lte(attempts.startedAt, to))).all()
-    : (
-        await db
+    ? await db.select().from(attempts).where(rangeScope).all()
+    : [
+        ...(await db
           .select({ attempts })
           .from(attempts)
           .innerJoin(tasks, eq(attempts.taskId, tasks.id))
-          .where(and(gte(attempts.startedAt, from), lte(attempts.startedAt, to), taskScope))
-          .all()
-      ).map((row) => row.attempts);
-  const rows = attemptRows.filter(isTaskAttempt);
-
-  const attemptReasons = !scoped
-    ? await db
-        .select({ attemptId: attempts.id, reason: attempts.reason })
-        .from(attempts)
-        .where(and(eq(attempts.state, 'failed'), gte(attempts.startedAt, from), lte(attempts.startedAt, to)))
-        .all()
-    : await db
-        .select({ attemptId: attempts.id, reason: attempts.reason })
-        .from(attempts)
-        .innerJoin(tasks, eq(attempts.taskId, tasks.id))
-        .where(and(eq(attempts.state, 'failed'), gte(attempts.startedAt, from), lte(attempts.startedAt, to), taskScope))
-        .all();
+          .where(and(rangeScope, taskScope))
+          .all()).map((row) => row.attempts),
+        ...(await db
+          .select()
+          .from(attempts)
+          .where(and(
+            rangeScope,
+            isNull(attempts.taskId),
+            workspaceId === undefined ? undefined : eq(attempts.workspaceId, workspaceId),
+            epicRef === undefined ? undefined : eq(attempts.epicRef, epicRef),
+          ))
+          .all()),
+      ];
+  const rows = attemptRows;
+  const attemptReasons = rows
+    .filter((row) => row.state === 'failed')
+    .map((row) => ({ attemptId: row.id, reason: row.reason }));
 
   const range = {
     from,
@@ -65,7 +66,7 @@ async function readStats({ from, to, workspaceId, epicRef }: StatsRange): Promis
 
   const workspaceRows = await db.select({ id: workspaces.id, name: workspaces.name }).from(workspaces).all();
 
-  const taskIds = [...new Set(rows.map((r) => r.taskId))];
+  const taskIds = [...new Set(rows.filter(isTaskAttempt).map((r) => r.taskId))];
   const taskWorkspaces =
     taskIds.length === 0
       ? []

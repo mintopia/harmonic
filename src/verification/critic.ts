@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import type { Attributes, SpanContext } from '@opentelemetry/api';
 import type { HarnessConfig, VerificationCritic } from '../config.js';
-import { AcpDriver } from '../acp/driver.js';
+import { AcpDriver, type AcpInitializeResult } from '../acp/driver.js';
 import { parsePermissionRequest, type PermissionRequest } from '../acp/permission-request.js';
 import { adapterFor } from '../execution/harness/registry.js';
 import type { DriveFields } from '../execution/prompt-template.js';
@@ -26,6 +26,8 @@ export interface CriticDriveResult {
   permissionRequests: PermissionRequest[];
   /** The harness's own `sessionId` for this turn; absent/null if the handshake never yielded one. */
   sessionId?: string | null;
+  /** Aggregate ACP usage for the prompt turn, when the harness reports it. */
+  usage?: Record<string, unknown> | undefined;
 }
 
 export interface CriticDriveRequest {
@@ -39,6 +41,10 @@ export interface CriticDriveRequest {
   /** Each ACP `session/update` from the critic turn, verbatim, for a live
    * transcript that renders exactly like the builder's. */
   onUpdate?: (update: { sessionUpdate: string; [key: string]: unknown }) => void;
+  /** Called as soon as the harness child exists, so a running Attempt is recoverable. */
+  onProcessStart?: (pid: number) => Promise<void> | void;
+  /** Called after ACP initialization and session creation. */
+  onSessionCreated?: (sessionId: string, initialize: AcpInitializeResult) => Promise<void> | void;
 }
 
 /** The injectable seam between {@link runCritic} and an actual harness spawn. */
@@ -73,6 +79,7 @@ export function createAcpCriticDrive(): CriticHarnessDrive {
         env: env as NodeJS.ProcessEnv,
         stdio: ['pipe', 'pipe', 'pipe'],
       });
+      if (child.pid !== undefined) await req.onProcessStart?.(child.pid);
 
       let output = '';
       const permissionRequests: PermissionRequest[] = [];
@@ -118,15 +125,20 @@ export function createAcpCriticDrive(): CriticHarnessDrive {
       try {
         // Some harnesses (copilot) have no spawn-time model pin; `sessionModelId` fills it via `session/set_model`.
         const modelId = adapterFor(req.harnessId).sessionModelId?.(req.model);
-        const sessionId = await Promise.race([driver.handshake({ cwd: req.cwd, mcpServers: [], modelId }), timeout]);
+        let initialize: AcpInitializeResult | undefined;
+        const sessionId = await Promise.race([
+          driver.handshake({ cwd: req.cwd, mcpServers: [], modelId, onInitialize: (result) => { initialize = result; } }),
+          timeout,
+        ]);
+        if (initialize) await req.onSessionCreated?.(sessionId, initialize);
 
         const mode = adapterFor(req.harnessId).unattendedPermissionMode(driver.availableModes);
         if (mode) {
           await Promise.race([driver.setMode(mode), timeout]);
         }
 
-        await Promise.race([driver.prompt([{ type: 'text', text: req.prompt }]), timeout]);
-        return { output, permissionRequests, sessionId: sessionId ?? null };
+        const promptResult = await Promise.race([driver.prompt([{ type: 'text', text: req.prompt }]), timeout]);
+        return { output, permissionRequests, sessionId: sessionId ?? null, ...(promptResult.usage ? { usage: promptResult.usage } : {}) };
       } finally {
         if (timer) clearTimeout(timer);
         driver.dispose();
@@ -175,6 +187,8 @@ export interface CriticAttempt {
   harness: string | null;
   /** The harness session id for this critic turn, for a deferred transcript re-resolve. */
   sessionId: string | null;
+  /** Aggregate ACP usage returned with the critic prompt response, when available. */
+  usage?: Record<string, unknown>;
 }
 
 const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000;
@@ -204,6 +218,7 @@ async function runCriticUnchecked(args: RunCriticArgs): Promise<CriticAttempt> {
   let summary = '';
   let output = '';
   let sessionId: string | null = null;
+  let usage: Record<string, unknown> | undefined;
 
   const prompt = buildCriticPrompt({
     operatorPrompt: args.critic.prompt,
@@ -223,6 +238,7 @@ async function runCriticUnchecked(args: RunCriticArgs): Promise<CriticAttempt> {
     });
     output = result.output;
     sessionId = result.sessionId ?? null;
+    usage = result.usage;
     const parsed = parseCriticOutput(result.output);
     if (parsed.ok) {
       verdict = parsed.value.verdict;
@@ -257,6 +273,7 @@ async function runCriticUnchecked(args: RunCriticArgs): Promise<CriticAttempt> {
     transcriptPath,
     harness: args.harnessId,
     sessionId,
+    ...(usage ? { usage } : {}),
   };
 }
 

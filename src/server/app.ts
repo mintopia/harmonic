@@ -462,6 +462,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   const crashRecovery = new CrashRecoveryCoordinator(attempts, tasks, operatorSettle, {
     runPostMergeCheck: crashRecoveryPostMergeCheck,
     postMerge,
+    onEpicAttemptInterrupted: (attempt) => { bus.emit('attempt_changed', attempt); },
   });
   await crashRecovery.reconcile();
   for (const orphan of await tasks.list({ state: 'working' })) {
@@ -606,6 +607,12 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     (input) => runnerRef!.mergeEpicIntegration(input),
     (target, detail, escalate, retry) => runnerRef!.enqueueEpicRefreshResolution(target, detail, escalate, retry),
     epicMergeEvents,
+    attempts,
+    (input) => runnerRef!.resolveEpicVerification(input),
+    worktreesDir,
+    (attempt) => bus.emit('attempt_changed', attempt),
+    verificationAttempts,
+    opts.criticDrive,
   );
   epicServiceRef = epicService;
   const trackerManager = new TrackerPollerManager(tasks, () => workspaces.list(), epicService, undefined, undefined, scheduler);
@@ -841,7 +848,7 @@ not resolved yet.`;
   await app.register(harnessRoutes, { prefix: '/api' });
   await app.register((fastify) => channelRoutes(fastify, contexts.persistence), { prefix: '/api' });
   await app.register(fsRoutes, { prefix: '/api' });
-  await app.register((fastify) => epicRoutes(fastify, contexts.tracking), { prefix: '/api' });
+  await app.register((fastify) => epicRoutes(fastify, ctx), { prefix: '/api' });
   await app.register(openapiRoutes, { prefix: '/api' });
 
   app.post('/mcp', { schema: { hide: true } }, async (req, reply) => {

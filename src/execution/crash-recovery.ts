@@ -1,4 +1,4 @@
-import { isTaskAttempt, type AttemptRow, type TaskRow } from '../db/schema.js';
+import { isEpicAttempt, isTaskAttempt, type AttemptRow, type EpicAttemptRow, type TaskRow } from '../db/schema.js';
 import type { AttemptStore } from '../domain/attempts.js';
 import type { TaskService } from '../domain/tasks.js';
 import type { AttemptSettleCoordinator } from '../domain/attempt-settle.js';
@@ -31,6 +31,9 @@ export class CrashRecoveryCoordinator {
       isMerged?: (dir: string, baseBranch: string, branch: string) => Promise<boolean>;
       /** Best-effort notification after a recovered merge is confirmed green. */
       postMerge?: PostMergeHook;
+      /** Reconcile an interrupted whole-Epic Attempt after boot. The next Epic
+       * poll owns retrying its verification; this hook restores its live read model. */
+      onEpicAttemptInterrupted?: (attempt: EpicAttemptRow) => Promise<void> | void;
       yieldOptions?: YieldOptions;
       reaper?: ProcessReaper;
     },
@@ -55,7 +58,12 @@ export class CrashRecoveryCoordinator {
     await this.reconcileMergeOrphans();
     await this.reconcileMergedButUnsettled();
     await this.reapOrphanProcesses();
-    await this.attempts.markInterrupted();
+    const interrupted = await this.attempts.markInterrupted();
+    await forEachYielding(
+      interrupted.filter(isEpicAttempt),
+      async (attempt) => { await this.deps.onEpicAttemptInterrupted?.(attempt); },
+      this.deps.yieldOptions,
+    );
   }
 
   private async reapOrphanProcesses(): Promise<void> {

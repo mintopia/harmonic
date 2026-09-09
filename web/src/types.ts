@@ -430,6 +430,22 @@ export interface AttemptSummary {
   finishedAt: number | null;
 }
 
+/** The owner-neutral execution facts in an Epic's Attempt timeline. */
+export interface EpicAttempt {
+  id: number;
+  number: number;
+  state: AttemptState;
+  reason: string | null;
+  prompt: string | null;
+  usage: AttemptUsage | null;
+  cost: Cost | null;
+  toolCalls: number;
+  contextTokens: number | null;
+  startedAt: number;
+  endedAt: number | null;
+  steps: Step[];
+}
+
 /** A Task's continuation preview, as `GET
  * /api/tasks/:id/continuation` serves it: whether the Task has a live Session
  * to continue, and if so the two re-attempt paths on offer — resume the same

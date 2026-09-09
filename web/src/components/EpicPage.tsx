@@ -3,7 +3,7 @@ import { api } from '../api';
 import { subscribe } from '../ws';
 import { useLiveEffect } from '../useLiveEffect';
 import { useScrollToPanel } from '../useScrollToPanel';
-import type { DiffFile, Task, ModelUsage } from '../types';
+import type { DiffFile, EpicAttempt, Task, ModelUsage } from '../types';
 import type { Epic, EpicStage, IntegrationStepState } from '../epic-model';
 import { epicLifecycleSteps } from '../epic-model';
 import type { Stats } from '../stats-model';
@@ -208,6 +208,37 @@ function UsageCard({ stats, epic }: { stats: Stats; epic: Epic }) {
             })}
           </div>
         </div>
+      )}
+    </section>
+  );
+}
+
+function EpicAttemptsTimeline({ attempts }: { attempts: EpicAttempt[] }) {
+  return (
+    <section>
+      <div className="mb-3 flex items-center justify-between">
+        <h3 className={sectionCaps}>Epic attempts</h3>
+        <span className="text-data text-muted tabular-nums">{attempts.length}</span>
+      </div>
+      {attempts.length === 0 ? (
+        <EmptyState title="No Epic attempts" className="py-8">
+          A clean Epic verification needs no resolver attempt.
+        </EmptyState>
+      ) : (
+        <ol className={`${card} divide-y divide-hairline`} aria-label="Epic attempt timeline">
+          {attempts.map((attempt) => (
+            <li key={attempt.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3">
+              <span className="font-data text-muted">Attempt {attempt.number}</span>
+              <span className={`${stateChip(attempt.state === 'passed' ? 'done' : attempt.state === 'running' ? 'working' : attempt.state === 'escalated' ? 'escalated' : 'cancelled')} capitalize`}>{attempt.state}</span>
+              <span className="text-small text-muted">{fmtTime(attempt.startedAt)}</span>
+              <span className="ml-auto text-data text-muted tabular-nums">{rowCost(attempt.cost)}</span>
+              {attempt.usage?.totals?.totalTokens != null && (
+                <span className="text-data text-faint tabular-nums">{attempt.usage.totals.totalTokens.toLocaleString()} tokens</span>
+              )}
+              {attempt.reason && <p className="w-full text-small text-muted">{attempt.reason}</p>}
+            </li>
+          ))}
+        </ol>
       )}
     </section>
   );
@@ -520,6 +551,7 @@ export function EpicPage({
 }) {
   const [epic, setEpic] = useState<Epic | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
+  const [epicAttempts, setEpicAttempts] = useState<EpicAttempt[] | null>(null);
   const [childTasks, setChildTasks] = useState<Task[] | null>(null);
   const [childTotals, setChildTotals] = useState<Map<number, ModelUsage | null>>(() => new Map());
   const [diffFiles, setDiffFiles] = useState<DiffFile[] | null>(null);
@@ -535,6 +567,10 @@ export function EpicPage({
   useLiveEffect((live) => {
     api.epicStats(epicRef, workspaceId).then((s) => live() && setStats(s), toastError);
   }, [epicRef, workspaceId, refreshKey]);
+
+  useLiveEffect((live) => {
+    api.epicAttempts(workspaceId, epicRef).then(({ attempts }) => live() && setEpicAttempts(attempts), toastError);
+  }, [workspaceId, epicRef, refreshKey]);
 
   const childIdsRef = useRef<Set<number>>(new Set());
   useLiveEffect((live) => {
@@ -559,9 +595,10 @@ export function EpicPage({
     const unsubscribe = subscribe((msg) => {
       if (msg.type === 'task_changed' && childIdsRef.current.has(msg.task.id)) setRefreshKey((k) => k + 1);
       else if (msg.type === 'task_removed' && childIdsRef.current.has(msg.id)) setRefreshKey((k) => k + 1);
+      else if (msg.type === 'epic_changed' && msg.workspaceId === workspaceId && msg.epicRef === epicRef) setRefreshKey((k) => k + 1);
     }, () => setRefreshKey((k) => k + 1));
     return unsubscribe;
-  }, []);
+  }, [epicRef, workspaceId]);
 
   useLiveEffect((live) => {
     setDiffFiles(null);
@@ -631,6 +668,14 @@ export function EpicPage({
                       <UsageCard stats={stats} epic={epic} />
                     ) : (
                       <div className={`${card} p-5 text-muted`}>Loading usage…</div>
+                    )}
+                  </div>
+
+                  <div className="mb-8">
+                    {epicAttempts ? (
+                      <EpicAttemptsTimeline attempts={epicAttempts} />
+                    ) : (
+                      <p className="text-muted">Loading Epic attempts…</p>
                     )}
                   </div>
 

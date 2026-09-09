@@ -233,6 +233,11 @@ export function isTaskAttempt(attempt: AttemptRow): attempt is TaskAttemptRow {
   return attempt.taskId !== null;
 }
 
+/** Whether an Attempt belongs to a stored Epic rather than a Task. */
+export function isEpicAttempt(attempt: AttemptRow): attempt is EpicAttemptRow {
+  return attempt.taskId === null && attempt.workspaceId !== null && attempt.epicRef !== null;
+}
+
 /** Individually visible work within an Attempt. `logLocator` points to its transcript/output. */
 export const steps = sqliteTable('steps', {
   id: integer('id').primaryKey({ autoIncrement: true }),

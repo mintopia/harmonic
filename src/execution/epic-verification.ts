@@ -1,9 +1,13 @@
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { runCommandVerifierDetached } from '../verification/command-verifier.js';
+import { runCommandVerifier } from '../verification/command-verifier.js';
 import { combineVerdicts, type VerificationDecision, type VerifierVerdict } from '../verification/combine.js';
 import type { VerificationStage } from '../config.js';
+
+/** Executes one configured Epic critic against the checked-out integration tree. */
+export type EpicCriticRunner = (args: {
+  cwd: string;
+  verifiedHeadOid: string;
+  critic: VerificationStage['critics'][number];
+}) => Promise<VerifierVerdict & { summary?: string; output?: string }>;
 
 /**
  * Run a whole-Epic Verification against an integration branch's tip and fold the
@@ -11,34 +15,44 @@ import type { VerificationStage } from '../config.js';
  * verdict set is empty and {@link combineVerdicts} returns `proceed`.
  */
 export async function verifyEpicIntegration(args: {
-  /** The base repo owning the integration branch and object store. */
-  repoDir: string;
+  /** The existing checkout of `epic/<ref>` at the candidate revision. */
+  worktreePath: string;
   /** The integration branch tip OID to Verify. */
   verifiedHeadOid: string;
   verifiers: VerificationStage;
+  /** Runs a configured critic in the same live Epic worktree as the commands. */
+  runCritic: EpicCriticRunner;
   /** Cancellation, wired to server shutdown; an abort kills the verifier child. */
   signal?: AbortSignal;
-  /** Parent dir for the disposable verification worktree; defaults to the OS temp dir. */
-  worktreeParent?: string;
 }): Promise<VerificationDecision> {
   const verdicts: VerifierVerdict[] = [];
 
-  for (const [index, command] of args.verifiers.commands.entries()) {
-    const parent = mkdtempSync(join(args.worktreeParent ?? tmpdir(), 'harmonic-epic-verify-'));
-    try {
-      const attempt = await runCommandVerifierDetached({
-        repoDir: args.repoDir,
-        verifiedHeadOid: args.verifiedHeadOid,
-        worktreePath: join(parent, `command-${index}`),
-        command,
-        ...(args.signal ? { signal: args.signal } : {}),
-      });
-      verdicts.push({ verifier: 'command', verdict: attempt.verdict });
-      if (attempt.verdict !== 'pass') break;
-    } finally {
-      rmSync(parent, { recursive: true, force: true });
-    }
+  for (const command of args.verifiers.commands) {
+    const attempt = await runCommandVerifier({
+      cwd: args.worktreePath,
+      verifiedHeadOid: args.verifiedHeadOid,
+      command,
+      ...(args.signal ? { signal: args.signal } : {}),
+    });
+    verdicts.push({ verifier: attempt.verifier, verdict: attempt.verdict });
+    if (attempt.verdict !== 'pass') return combineVerdicts(verdicts);
   }
 
-  return combineVerdicts(verdicts);
+  const critics = await Promise.all(args.verifiers.critics.map((critic) => args.runCritic({
+    cwd: args.worktreePath,
+    verifiedHeadOid: args.verifiedHeadOid,
+    critic,
+  })));
+  verdicts.push(...critics);
+
+  const decision = combineVerdicts(verdicts);
+  if (decision.outcome === 'proceed') return decision;
+
+  const feedback = critics
+    .map((critic, index) => [
+      `Epic critic ${index + 1} (${critic.verdict}): ${critic.summary ?? ''}`,
+      critic.output ?? '',
+    ].filter(Boolean).join('\n'))
+    .join('\n\n');
+  return feedback ? { ...decision, reason: `${decision.reason}\n\n${feedback}` } : decision;
 }

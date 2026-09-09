@@ -227,6 +227,23 @@ export type ApiAttemptSummary = {
   finishedAt: number | null;
 };
 
+/** An Epic-owned Attempt's durable execution and cost facts.  Unlike a Task
+ * Attempt it has no Task-specific branch, verifier, or continuation fields. */
+export type ApiEpicAttempt = {
+  id: number;
+  number: number;
+  state: AttemptRow['state'];
+  reason: string | null;
+  prompt: string | null;
+  usage: AttemptUsage | null;
+  cost: Cost | null;
+  toolCalls: number;
+  contextTokens: number | null;
+  startedAt: number;
+  endedAt: number | null;
+  steps: ApiStep[];
+};
+
 function apiAttemptState(state: AttemptState): ApiAttemptSummary['state'] {
   if (state === 'passed') return 'completed';
   if (state === 'escalated') return 'failed';
@@ -260,6 +277,24 @@ export function attemptToApiSummary(run: TaskAttemptRow, toolCalls: number, cont
     contextWindow,
     startedAt: run.startedAt,
     finishedAt: run.endedAt,
+  };
+}
+
+/** Project the owner-neutral execution facts of an Epic Attempt for its timeline. */
+export function epicAttemptToApi(run: AttemptRow, toolCalls: number, stepRows: readonly StepRow[]): ApiEpicAttempt {
+  return {
+    id: run.id,
+    number: run.number,
+    state: run.state,
+    reason: run.detail ?? run.reason,
+    prompt: run.prompt,
+    usage: parseUsage(run.usage),
+    cost: parseCost(run.cost),
+    toolCalls,
+    contextTokens: liveContextTokens(run.liveUsage),
+    startedAt: run.startedAt,
+    endedAt: run.endedAt,
+    steps: stepRows.map(stepToApi),
   };
 }
 

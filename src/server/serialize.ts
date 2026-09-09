@@ -16,6 +16,7 @@ import {
   parseUsage,
   attemptToTimelineApi,
   attemptToApiSummary,
+  epicAttemptToApi,
   taskToApiDto,
   toListRow,
   latestVerifiedRef,
@@ -27,6 +28,7 @@ import {
   type ApiAttemptTimeline,
   type ApiTicketTimelineEvent,
   type ApiAttemptSummary,
+  type ApiEpicAttempt,
   type ApiAttemptUsage,
   type ApiTask,
   type ApiTaskListRow,
@@ -163,6 +165,28 @@ export async function attemptToApi(ctx: AppContext, run: AttemptRow): Promise<Ap
   });
   const { usage, cost } = withCriticContribution(summary.usage, summary.cost, critics);
   return { ...summary, usage, cost };
+}
+
+/** The durable Attempt timeline for one Epic. Task-only branch and verifier
+ * details are intentionally absent from this distinct owner projection. */
+export async function epicAttemptTimelineToApi(
+  ctx: AppContext,
+  owner: { workspaceId: number; epicRef: number },
+): Promise<{ attempts: ApiEpicAttempt[] }> {
+  const runs = await ctx.attempts.listForEpic(owner);
+  return {
+    attempts: await Promise.all(
+      runs.map(async (run) => {
+        const [toolTotals, stepRows] = await Promise.all([
+          ctx.attempts.listToolCalls(run.id),
+          ctx.attempts.listSteps(run.id),
+        ]);
+        let toolCalls = 0;
+        for (const count of toolTotals.values()) toolCalls += count;
+        return epicAttemptToApi(run, toolCalls, stepRows);
+      }),
+    ),
+  };
 }
 
 export async function attemptUsageToApi(ctx: AppContext, attemptId: number, snapshot: AttemptUsageSnapshot): Promise<ApiAttemptUsage> {

@@ -24,9 +24,12 @@ export async function wsRoutes(fastify: FastifyInstance, ctx: AppContext): Promi
     const unsubscribes = [
       ctx.bus.on('attempt_event', (event) => send({ type: 'attempt_event', event })),
       ctx.bus.on('attempt_changed', async (run) => {
-        if (!isTaskAttempt(run)) return;
-        send({ type: 'attempt_changed', run: await attemptToApi(ctx, run) });
-        sendAttemptTimeline(run.taskId);
+        if (isTaskAttempt(run)) {
+          send({ type: 'attempt_changed', run: await attemptToApi(ctx, run) });
+          sendAttemptTimeline(run.taskId);
+        } else if (run.workspaceId !== null && run.epicRef !== null) {
+          send({ type: 'epic_changed', workspaceId: run.workspaceId, epicRef: run.epicRef });
+        }
       }),
       ctx.bus.on('step_changed', ({ taskId }) => sendAttemptTimeline(taskId)),
       ctx.bus.on('attempt_usage', ({ attemptId, snapshot }) => {

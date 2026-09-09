@@ -68,6 +68,18 @@ const LIFECYCLE_SETTLE_GRACE_MS = 15_000;
 
 const LIVE_RUN_LOG_EVENT_ID_OFFSET = 1_000_000_000;
 
+export interface EpicVerificationResolutionInput {
+  workspaceId: number;
+  epicRef: number;
+  title?: string;
+  repoDir: string;
+  worktreePath: string;
+  attempt: AttemptRow;
+  verifiedHeadOid: string;
+  verificationReason: string;
+  resolvePrompt: string;
+}
+
 export interface RunnerEvents {
   /** Fired after every run event is persisted (live streaming hook). */
   onAttemptEvent?: (event: PersistedAttemptEvent) => void;
@@ -1452,6 +1464,101 @@ export class Runner {
       `Verified head: ${current.verifiedHeadOid ?? '(none produced)'}`,
       `Attempt events: ${events.length}.`,
     ].join('\n');
+  }
+
+  /** Run the corrective turn for a failed whole-Epic verification in a checked-out integration worktree. */
+  async resolveEpicVerification(input: EpicVerificationResolutionInput): Promise<void> {
+    const config = this.getConfig();
+    const branch = integrationBranchName(input.epicRef);
+    const host = (await this.taskService.list({ state: 'working' })).find((task) => task.baseBranch === branch);
+    const harnessId = host?.harness ?? config.defaults.harness;
+    const harness = config.harnesses[harnessId as keyof AppConfig['harnesses']];
+    if (!harness) throw new Error(`harness '${harnessId}' is not configured for Epic verification resolution`);
+    const model = host?.model ?? harness.defaultModel;
+    const worktreePath = input.worktreePath;
+
+    const step = await this.attempts.createStep(input.attempt.id, { type: 'implementation' });
+    await this.attempts.updateStep(step.id, { state: 'running', startedAt: Date.now() });
+    const prompt = [
+      input.resolvePrompt
+        .replaceAll('{ref}', String(input.epicRef))
+        .replaceAll('{title}', input.title ?? `Epic #${input.epicRef}`),
+      '',
+      '## Failing Epic verification',
+      input.verificationReason,
+      '',
+      `Work in the checked-out integration branch \`${branch}\`. Fix the failure and commit the result. Do not create or switch branches, and do not push.`,
+    ].join('\n');
+    const toolCalls = this.toolCallTotals.get(input.attempt.id) ?? await this.attempts.listToolCalls(input.attempt.id);
+    this.toolCallTotals.set(input.attempt.id, toolCalls);
+    const onUpdate = (update: { sessionUpdate: string; [key: string]: unknown }): void => {
+      const seq = (this.progressSequences.get(input.attempt.id) ?? 0) + 1;
+      this.progressSequences.set(input.attempt.id, seq);
+      this.events.onAttemptLogEvent?.({
+        id: LIVE_RUN_LOG_EVENT_ID_OFFSET + seq,
+        attemptId: input.attempt.id,
+        seq,
+        ts: Date.now(),
+        type: 'session_update',
+        payload: update,
+      });
+      if (update.sessionUpdate !== 'tool_call') return;
+      const name = toolCallName(update, (payload) => adapterFor(harnessId).usage?.toolName(payload) ?? null);
+      toolCalls.set(name, (toolCalls.get(name) ?? 0) + 1);
+    };
+    await this.attempts.update(input.attempt.id, {
+      priceTable: JSON.stringify(pricesForHarness(harness)),
+      prompt,
+    });
+    try {
+      const drive = this.criticDrive ?? createAcpCriticDrive();
+      const result = await drive.run({
+        harness,
+        harnessId,
+        model,
+        cwd: worktreePath,
+        prompt,
+        timeoutMs: EPIC_REFRESH_RESOLVE_TIMEOUT_MS,
+        onUpdate,
+        onProcessStart: async (pid) => {
+          await this.attempts.update(input.attempt.id, { pid, pgid: pid, procStartToken: readProcStartToken(pid) });
+        },
+        onSessionCreated: async (sessionId, initialize) => {
+          const session = await this.sessionStore.recordDispatch({
+            harness: harnessId,
+            harnessSessionId: sessionId,
+            model,
+            cwd: worktreePath,
+            workspaceId: input.workspaceId,
+            mcpTemplates: [],
+            capabilities: initialize,
+            adapterVersion: adapterVersion(harnessId),
+            now: Date.now(),
+          });
+          await this.attempts.update(input.attempt.id, { sessionId, sessionRowId: session.id });
+          await this.attempts.updateStep(step.id, { logLocator: `session:${session.id}` });
+        },
+      });
+      await this.attempts.replaceToolCalls(input.attempt.id, toolCalls);
+      const usage = collectUsage({
+        harnessId,
+        harness,
+        cwd: worktreePath,
+        sessionId: result.sessionId ?? null,
+        ...(result.usage ? { promptResult: { usage: result.usage } } : {}),
+        prices: pricesForHarness(harness),
+      });
+      if (usage) await this.attempts.updateWithFrozenCost(input.attempt.id, { usage: JSON.stringify(usage), pid: null, pgid: null, procStartToken: null });
+      else await this.attempts.update(input.attempt.id, { pid: null, pgid: null, procStartToken: null });
+      await this.attempts.updateStep(step.id, { state: 'passed', endedAt: Date.now() });
+    } catch (error) {
+      await this.attempts.replaceToolCalls(input.attempt.id, toolCalls);
+      await this.attempts.update(input.attempt.id, { pid: null, pgid: null, procStartToken: null });
+      await this.attempts.updateStep(step.id, { state: 'failed', endedAt: Date.now() });
+      throw error;
+    } finally {
+      this.toolCallTotals.delete(input.attempt.id);
+    }
   }
 
   /**

@@ -59,7 +59,7 @@ export function parseIntegrationBranch(name: string | null | undefined): number 
 
 /** Run a whole-Epic Verification against the integration branch's tip OID and
  * fold the verifiers' verdicts into a single decision. */
-export type EpicVerify = (args: { repoDir: string; verifiedHeadOid: string }) => Promise<VerificationDecision>;
+export type EpicVerify = (args: { repoDir: string; epicRef: number; verifiedHeadOid: string }) => Promise<VerificationDecision>;
 
 /** Start the resolver only after an Epic verification fails.  The resolver owns
  * its own Attempt and leaves the integration branch ready for the next poll's
@@ -67,6 +67,7 @@ export type EpicVerify = (args: { repoDir: string; verifiedHeadOid: string }) =>
 export type EpicResolve = (args: {
   repoDir: string;
   epicRef: number;
+  title?: string;
   verifiedHeadOid: string;
   verification: VerificationDecision;
 }) => Promise<void>;
@@ -288,7 +289,7 @@ export class EpicCoordinator {
         ...withEpicTitle(target.title),
         type: 'verify',
         attributes: { 'git.verified_head_oid': verifiedHeadOid },
-        work: () => withTimeout(this.verify({ repoDir: this.repoDir, verifiedHeadOid }), this.operationTimeoutMs, 'whole-Epic verification'),
+        work: () => withTimeout(this.verify({ repoDir: this.repoDir, epicRef: target.ref, verifiedHeadOid }), this.operationTimeoutMs, 'whole-Epic verification'),
       });
     } catch (err) {
       this.lastVerification.set(target.ref, 'fail');
@@ -306,7 +307,7 @@ export class EpicCoordinator {
             ...withEpicTitle(target.title),
             type: 'resolve',
             attributes: { 'git.verified_head_oid': verifiedHeadOid },
-            work: () => withTimeout(this.resolve!({ repoDir: this.repoDir, epicRef: target.ref, verifiedHeadOid, verification }), this.operationTimeoutMs, 'whole-Epic resolution'),
+            work: () => withTimeout(this.resolve!({ repoDir: this.repoDir, epicRef: target.ref, title: target.title, verifiedHeadOid, verification }), this.operationTimeoutMs, 'whole-Epic resolution'),
           });
           return { status: 'waiting', reason: 'whole-Epic verification failed; resolver dispatched' };
         } catch (err) {

@@ -1015,6 +1015,51 @@ describe('epic-routes', () => {
         });
       });
 
+      it('includes an Attempt owned directly by the Epic in its usage and cost rollup', async () => {
+        const workspaceId = (await server.app.ctx.workspaces.list())[0]!.id;
+        await server.app.ctx.tasks.syncEpics(workspaceId, [{ ref: 777, kind: 'epic' }]);
+        const run = await server.app.ctx.attempts.createForEpic({ workspaceId, epicRef: 777 });
+        await server.app.ctx.attempts.update(run.id, {
+          state: 'passed',
+          endedAt: Date.now(),
+          cost: cost(11),
+          usage: usageJson({
+            totals: { inputTokens: 700, outputTokens: 70, cacheReadTokens: 0, cacheWriteTokens: 0, totalTokens: 770 },
+          }),
+        });
+
+        const { status, body } = await server.api('GET', `/api/epics/777/stats?from=0&workspaceId=${workspaceId}`);
+        expect(status).toBe(200);
+        expect(body.attemptCount).toBe(1);
+        expect(body.cost?.totalUsd).toBeCloseTo(11);
+        expect(body.totals?.totalTokens).toBe(770);
+      });
+
+      it('returns an Epic-owned Attempt on the Epic timeline', async () => {
+        const workspaceId = (await server.app.ctx.workspaces.list())[0]!.id;
+        await server.app.ctx.tasks.syncEpics(workspaceId, [{ ref: 778, kind: 'epic' }]);
+        const run = await server.app.ctx.attempts.createForEpic({ workspaceId, epicRef: 778 });
+        await server.app.ctx.attempts.update(run.id, {
+          state: 'passed',
+          endedAt: Date.now(),
+          cost: cost(2),
+          usage: usageJson({ totals: { inputTokens: 10, outputTokens: 2, cacheReadTokens: 0, cacheWriteTokens: 0, totalTokens: 12 } }),
+        });
+        const step = await server.app.ctx.attempts.createStep(run.id, { type: 'implementation' });
+        await server.app.ctx.attempts.updateStep(step.id, { state: 'passed', startedAt: Date.now(), endedAt: Date.now() });
+
+        const { status, body } = await server.api('GET', `/api/workspaces/${workspaceId}/epics/778/attempts`);
+        expect(status).toBe(200);
+        expect(body.attempts).toContainEqual(expect.objectContaining({
+          id: run.id,
+          number: 1,
+          state: 'passed',
+          cost: expect.objectContaining({ totalUsd: 2 }),
+          usage: expect.objectContaining({ totals: expect.objectContaining({ totalTokens: 12 }) }),
+          steps: [expect.objectContaining({ id: step.id, type: 'implementation', state: 'passed' })],
+        }));
+      });
+
       describe('optional workspaceId narrowing', () => {
         let defaultWorkspaceId: number;
         let otherWorkspaceId: number;
