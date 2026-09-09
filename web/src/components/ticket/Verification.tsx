@@ -118,7 +118,7 @@ export interface VerificationProps {
 
 export function Verification({ attempts, statuses, run, only, verifier, steps = [], liveOutput = null }: VerificationProps) {
   const decision = overallDecision(attempts);
-  const rows = verificationRows(statuses, attempts).filter(({ status }) => (!only || status.mechanism === only) && (!verifier || status.verifier === verifier));
+  const rows = verificationRows(statuses, attempts).filter(({ status }) => (!only || status.mechanism === only) && (!verifier || status.verifier === undefined || status.verifier === verifier));
   const criticSessions = attempts.filter((a) => a.mechanism === 'critic' && a.hasTranscript);
   const hasPlanned = statuses.some((status) => status.state === 'planned');
   const commandRow = rows.find(({ status }) => status.mechanism === 'command');
