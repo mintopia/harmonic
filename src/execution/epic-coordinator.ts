@@ -61,6 +61,16 @@ export function parseIntegrationBranch(name: string | null | undefined): number 
  * fold the verifiers' verdicts into a single decision. */
 export type EpicVerify = (args: { repoDir: string; verifiedHeadOid: string }) => Promise<VerificationDecision>;
 
+/** Start the resolver only after an Epic verification fails.  The resolver owns
+ * its own Attempt and leaves the integration branch ready for the next poll's
+ * full verification pass. */
+export type EpicResolve = (args: {
+  repoDir: string;
+  epicRef: number;
+  verifiedHeadOid: string;
+  verification: VerificationDecision;
+}) => Promise<void>;
+
 /** Merge the Epic's integration branch into the default branch under the one
  * merge policy: `git merge --no-ff` under the base repo mutex, bounded agentic
  * resolve turns, the deterministic post-merge check, and `git revert -m 1` on red.
@@ -121,6 +131,7 @@ export class EpicCoordinator {
   private readonly repoDir: string;
   private readonly git: Pick<EpicGit, 'branchExists' | 'revParse' | 'symbolicBranch' | 'isAncestor' | 'isContentContained'>;
   private readonly verify: EpicVerify;
+  private readonly resolve: EpicResolve | undefined;
   private readonly integrate: EpicIntegrate;
   private readonly retire: (epicRef: number) => Promise<void>;
   private readonly escalateFn: (epicRef: number, reason: string) => void;
@@ -151,6 +162,9 @@ export class EpicCoordinator {
     git?: Pick<EpicGit, 'branchExists' | 'revParse' | 'symbolicBranch' | 'isAncestor' | 'isContentContained'>;
     /** Whole-Epic Verification against the integration tip. */
     verify: EpicVerify;
+    /** Resolve a failed whole-Epic verification.  Omitted only while the
+     * resolver is unavailable, in which case a failed verification escalates. */
+    resolve?: EpicResolve;
     /** Merge the integration branch into the default branch under the one merge policy. */
     integrate: EpicIntegrate;
     /** Retire the integration branch after a successful integrate. */
@@ -173,6 +187,7 @@ export class EpicCoordinator {
     this.repoDir = deps.repoDir;
     this.git = deps.git ?? Git;
     this.verify = deps.verify;
+    this.resolve = deps.resolve;
     this.integrate = deps.integrate;
     this.retire = deps.retire;
     this.escalateFn = deps.escalate;
@@ -283,6 +298,21 @@ export class EpicCoordinator {
     const verdict = decideEpicIntegrate({ integrationExists: true, members: target.members, verification, force });
     if (verdict.action === 'escalate') {
       this.lastVerification.set(target.ref, 'fail');
+      if (this.resolve) {
+        try {
+          await this.operations.run({
+            repoDir: this.repoDir,
+            epicRef: target.ref,
+            ...withEpicTitle(target.title),
+            type: 'resolve',
+            attributes: { 'git.verified_head_oid': verifiedHeadOid },
+            work: () => withTimeout(this.resolve!({ repoDir: this.repoDir, epicRef: target.ref, verifiedHeadOid, verification }), this.operationTimeoutMs, 'whole-Epic resolution'),
+          });
+          return { status: 'waiting', reason: 'whole-Epic verification failed; resolver dispatched' };
+        } catch (err) {
+          return this.escalate(target, force, `whole-Epic resolution could not run: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
       return this.escalate(target, force, verdict.reason);
     }
     if (verdict.action !== 'integrate') {

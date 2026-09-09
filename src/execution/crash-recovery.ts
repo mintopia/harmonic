@@ -1,4 +1,4 @@
-import type { AttemptRow, TaskRow } from '../db/schema.js';
+import { isTaskAttempt, type AttemptRow, type TaskRow } from '../db/schema.js';
 import type { AttemptStore } from '../domain/attempts.js';
 import type { TaskService } from '../domain/tasks.js';
 import type { AttemptSettleCoordinator } from '../domain/attempt-settle.js';
@@ -68,7 +68,7 @@ export class CrashRecoveryCoordinator {
 
   private async reconcileMergeOrphans(): Promise<void> {
     const running = await this.attempts.listAllRunning();
-    const candidates = running.filter((run) => run.branch !== null && run.baseBranch !== null);
+    const candidates = running.filter(isTaskAttempt).filter((run) => run.branch !== null && run.baseBranch !== null);
     await forEachYielding(
       candidates,
       async (run) => {

@@ -3,6 +3,7 @@ import type { AppContext } from './app.js';
 import { attemptTimelineToApi, conversationToApi, attemptToApi, attemptUsageToApi, taskToApi } from './serialize.js';
 import { operationEventToApi, scheduledJobsToApi, worktreesToApi } from './dto.js';
 import { forEachYielding } from '../reliability/yield.js';
+import { isTaskAttempt } from '../db/schema.js';
 
 /** One firehose socket at /api/ws: every event is broadcast to every client; clients filter. */
 export async function wsRoutes(fastify: FastifyInstance, ctx: AppContext): Promise<void> {
@@ -23,6 +24,7 @@ export async function wsRoutes(fastify: FastifyInstance, ctx: AppContext): Promi
     const unsubscribes = [
       ctx.bus.on('attempt_event', (event) => send({ type: 'attempt_event', event })),
       ctx.bus.on('attempt_changed', async (run) => {
+        if (!isTaskAttempt(run)) return;
         send({ type: 'attempt_changed', run: await attemptToApi(ctx, run) });
         sendAttemptTimeline(run.taskId);
       }),

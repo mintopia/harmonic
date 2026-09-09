@@ -1110,10 +1110,12 @@ describe('epic-integrate-git', () => {
   const merged = (mergeOid = 'integrated-oid'): MergePolicyOutcome => ({ kind: 'merged', mergeOid });
 
   type VerifyFn = (args: { repoDir: string; verifiedHeadOid: string }) => Promise<VerificationDecision>;
+  type ResolveFn = (args: { repoDir: string; epicRef: number; verifiedHeadOid: string; verification: VerificationDecision }) => Promise<void>;
 
   const build = (opts: {
     git?: FakeGit;
     verify?: VerifyFn;
+    resolve?: ResolveFn;
     integrate?: EpicIntegrate;
     now?: () => number;
     verifyBackoffMs?: number;
@@ -1121,6 +1123,7 @@ describe('epic-integrate-git', () => {
   } = {}) => {
     const git = opts.git ?? new FakeGit();
     const verify = vi.fn<VerifyFn>(opts.verify ?? (async () => proceed));
+    const resolve = opts.resolve && vi.fn<ResolveFn>(opts.resolve);
     const integrate = vi.fn<EpicIntegrate>(opts.integrate ?? (async () => merged()));
     const retire = vi.fn(async (_ref: number) => {});
     const escalate = vi.fn<(epicRef: number, reason: string) => void>();
@@ -1131,6 +1134,7 @@ describe('epic-integrate-git', () => {
       repoDir: '/repo',
       git,
       verify,
+      ...(resolve ? { resolve } : {}),
       integrate,
       retire,
       escalate,
@@ -1140,7 +1144,7 @@ describe('epic-integrate-git', () => {
       recordIntegration,
       onError,
     });
-    return { coord, git, verify, integrate, retire, escalate, recordIntegration, onError };
+    return { coord, git, verify, resolve, integrate, retire, escalate, recordIntegration, onError };
   };
 
   const members = (...m: MemberMergeState[]): MemberMergeState[] => m;
@@ -1215,6 +1219,17 @@ describe('epic-integrate-git', () => {
       expect(integrate).not.toHaveBeenCalled();
       expect(retire).not.toHaveBeenCalled();
       expect(escalate).toHaveBeenCalledWith(42, expect.stringContaining('verification'));
+    });
+
+    it('verifies before dispatching the resolver and does not merge on a failed verification', async () => {
+      const { coord, verify, resolve, integrate, escalate } = build({ verify: async () => block, resolve: async () => {} });
+      const out = await coord.submit({ ref: 42, members: members('completed') });
+      expect(out).toEqual({ status: 'waiting', reason: 'whole-Epic verification failed; resolver dispatched' });
+      expect(resolve).toHaveBeenCalledWith(expect.objectContaining({ epicRef: 42, verifiedHeadOid: 'oid-epic-42', verification: block }));
+      if (!resolve) throw new Error('expected resolver');
+      expect(verify.mock.invocationCallOrder[0]!).toBeLessThan(resolve.mock.invocationCallOrder[0]!);
+      expect(integrate).not.toHaveBeenCalled();
+      expect(escalate).not.toHaveBeenCalled();
     });
 
     it('escalates on an inconclusive/escalate whole-Epic verdict (fail-safe)', async () => {

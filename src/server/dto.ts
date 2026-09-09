@@ -1,5 +1,6 @@
 import type {
   AttemptRow,
+  TaskAttemptRow,
   AttemptState,
   StepRow,
   StepType,
@@ -99,7 +100,7 @@ export function verifiedShaOf(verificationAttempts: readonly VerificationAttempt
 /** One Attempt row projected onto its timeline DTO, given the Attempt's already
  * read Steps and Verification Attempts plus the Task's configured verifiers. */
 export function attemptToTimelineApi(
-  attempt: AttemptRow,
+  attempt: TaskAttemptRow,
   stepRows: readonly StepRow[],
   attemptVerifications: readonly VerificationAttemptRow[],
   verifiers: ReturnType<typeof resolveVerifiers>,
@@ -234,7 +235,7 @@ function apiAttemptState(state: AttemptState): ApiAttemptSummary['state'] {
 
 /** An `AttemptRow` projected onto its public wire summary, given the Attempt's
  * already summed tool-call total (its native aggregate). */
-export function attemptToApiSummary(run: AttemptRow, toolCalls: number, contextWindow: number | null = null): ApiAttemptSummary {
+export function attemptToApiSummary(run: TaskAttemptRow, toolCalls: number, contextWindow: number | null = null): ApiAttemptSummary {
   return {
     id: run.id,
     taskId: run.taskId,

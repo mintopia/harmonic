@@ -11,6 +11,8 @@ import {
   type StepRow,
   type StepType,
   type AttemptEventRow,
+  type TaskAttemptRow,
+  isTaskAttempt,
 } from '../db/schema.js';
 import type { DeterministicContinuation } from './session-continuation.js';
 import { DomainError } from './errors.js';
@@ -24,6 +26,12 @@ import { forEachYielding } from '../reliability/yield.js';
 export interface AttemptGuardrailSnapshot {
   guardrailConfig: ResolvedGuardrails;
   priceTable: PriceTable;
+}
+
+/** The durable identity of an Epic that owns an Attempt. */
+export interface EpicAttemptOwner {
+  workspaceId: number;
+  epicRef: number;
 }
 
 export interface StepInput {
@@ -69,8 +77,8 @@ export class AttemptStore {
    * `startedAt`. Fills in an existing `running` placeholder row (pre-created
    * by {@link ensureForRun} on the resume path) rather than inserting beside it.
    */
-  async create(taskId: number, snapshot?: AttemptGuardrailSnapshot): Promise<AttemptRow> {
-    return this.db.write(async (db) => {
+  async create(taskId: number, snapshot?: AttemptGuardrailSnapshot): Promise<TaskAttemptRow> {
+    const row = await this.db.write(async (db) => {
       const values = {
         state: 'running' as const,
         startedAt: Date.now(),
@@ -100,20 +108,82 @@ export class AttemptStore {
         .returning()
         .get();
     });
+    if (!isTaskAttempt(row)) throw new DomainError('not_found', `task ${taskId} attempt ownership was not persisted`);
+    return row;
+  }
+
+  /** Allocate a fresh Attempt for an Epic, numbered within that Epic's timeline. */
+  async createForEpic(owner: EpicAttemptOwner, snapshot?: AttemptGuardrailSnapshot): Promise<AttemptRow> {
+    return this.db.write(async (db) => {
+      const values = {
+        state: 'running' as const,
+        startedAt: Date.now(),
+        guardrailConfig: snapshot ? JSON.stringify(snapshot.guardrailConfig) : null,
+        priceTable: snapshot ? JSON.stringify(snapshot.priceTable) : null,
+      };
+      const placeholder = await db
+        .select()
+        .from(attempts)
+        .where(and(eq(attempts.workspaceId, owner.workspaceId), eq(attempts.epicRef, owner.epicRef), eq(attempts.state, 'running')))
+        .get();
+      if (placeholder) {
+        return db
+          .update(attempts)
+          .set({ ...values, startedAt: placeholder.startedAt })
+          .where(eq(attempts.id, placeholder.id))
+          .returning()
+          .get();
+      }
+      const number =
+        ((
+          await db
+            .select({ n: sql<number>`coalesce(max(${attempts.number}), 0)` })
+            .from(attempts)
+            .where(and(eq(attempts.workspaceId, owner.workspaceId), eq(attempts.epicRef, owner.epicRef)))
+            .get()
+        )?.n ?? 0) + 1;
+      return db.insert(attempts).values({ ...owner, number, ...values }).returning().get();
+    });
   }
 
   /** The single `running` Attempt for a Task (at most one is ever `running` per Task), or `undefined`. */
-  async getRunningForTask(taskId: number): Promise<AttemptRow | undefined> {
-    return this.db.read((db) =>
+  async getRunningForTask(taskId: number): Promise<TaskAttemptRow | undefined> {
+    const row = await this.db.read((db) =>
       db.select().from(attempts).where(and(eq(attempts.taskId, taskId), eq(attempts.state, 'running'))).get(),
+    );
+    return row && isTaskAttempt(row) ? row : undefined;
+  }
+
+  /** The single `running` Attempt for an Epic, or `undefined`. */
+  async getRunningForEpic(owner: EpicAttemptOwner): Promise<AttemptRow | undefined> {
+    return this.db.read((db) =>
+      db
+        .select()
+        .from(attempts)
+        .where(and(eq(attempts.workspaceId, owner.workspaceId), eq(attempts.epicRef, owner.epicRef), eq(attempts.state, 'running')))
+        .get(),
     );
   }
 
   /** Get-or-create the Attempt for an explicit `(taskId, number)` — the reject/resume path. */
-  async ensureForRun(taskId: number, number: number, startedAt: number): Promise<AttemptRow> {
-    return this.db.write(async (db) => {
+  async ensureForRun(taskId: number, number: number, startedAt: number): Promise<TaskAttemptRow> {
+    const row = await this.db.write(async (db) => {
       const existing = await db.select().from(attempts).where(and(eq(attempts.taskId, taskId), eq(attempts.number, number))).get();
       return existing ?? db.insert(attempts).values({ taskId, number, startedAt }).returning().get();
+    });
+    if (!isTaskAttempt(row)) throw new DomainError('not_found', `task ${taskId} attempt ownership was not persisted`);
+    return row;
+  }
+
+  /** Get-or-create the Attempt for an explicit Epic timeline position. */
+  async ensureForEpicRun(owner: EpicAttemptOwner, number: number, startedAt: number): Promise<AttemptRow> {
+    return this.db.write(async (db) => {
+      const existing = await db
+        .select()
+        .from(attempts)
+        .where(and(eq(attempts.workspaceId, owner.workspaceId), eq(attempts.epicRef, owner.epicRef), eq(attempts.number, number)))
+        .get();
+      return existing ?? db.insert(attempts).values({ ...owner, number, startedAt }).returning().get();
     });
   }
 
@@ -121,16 +191,30 @@ export class AttemptStore {
     await this.get(id);
   }
 
-  listForTask(taskId: number): Promise<AttemptRow[]> {
-    return this.db.read((db) => db.select().from(attempts).where(eq(attempts.taskId, taskId)).orderBy(asc(attempts.number)).all());
+  async listForTask(taskId: number): Promise<TaskAttemptRow[]> {
+    const rows = await this.db.read((db) => db.select().from(attempts).where(eq(attempts.taskId, taskId)).orderBy(asc(attempts.number)).all());
+    return rows.filter(isTaskAttempt);
+  }
+
+  /** Every Attempt owned by one Epic, ordered by its timeline number. */
+  listForEpic(owner: EpicAttemptOwner): Promise<AttemptRow[]> {
+    return this.db.read((db) =>
+      db
+        .select()
+        .from(attempts)
+        .where(and(eq(attempts.workspaceId, owner.workspaceId), eq(attempts.epicRef, owner.epicRef)))
+        .orderBy(asc(attempts.number))
+        .all(),
+    );
   }
 
   /** Attempts for a task list, ordered as {@link listForTask} orders each task's Attempts. */
-  async listForTasks(taskIds: number[]): Promise<AttemptRow[]> {
+  async listForTasks(taskIds: number[]): Promise<TaskAttemptRow[]> {
     if (taskIds.length === 0) return [];
-    return this.db.read((db) =>
+    const rows = await this.db.read((db) =>
       db.select().from(attempts).where(inArray(attempts.taskId, taskIds)).orderBy(asc(attempts.taskId), asc(attempts.number)).all(),
     );
+    return rows.filter(isTaskAttempt);
   }
 
   listAll(): Promise<AttemptRow[]> {
@@ -231,11 +315,11 @@ export class AttemptStore {
   async countRunningByWorkspace(): Promise<Map<number, number>> {
     const rows = await this.db.read((db) =>
       db
-        .select({ workspaceId: tasks.workspaceId, n: sql<number>`count(*)` })
+        .select({ workspaceId: sql<number | null>`coalesce(${attempts.workspaceId}, ${tasks.workspaceId})`, n: sql<number>`count(*)` })
         .from(attempts)
-        .innerJoin(tasks, eq(attempts.taskId, tasks.id))
+        .leftJoin(tasks, eq(attempts.taskId, tasks.id))
         .where(eq(attempts.state, 'running'))
-        .groupBy(tasks.workspaceId)
+        .groupBy(attempts.workspaceId, tasks.workspaceId)
         .all(),
     );
     const counts = new Map<number, number>();
@@ -259,8 +343,19 @@ export class AttemptStore {
     });
   }
 
-  getForTaskNumber(taskId: number, number: number): Promise<AttemptRow | undefined> {
-    return this.db.read((db) => db.select().from(attempts).where(and(eq(attempts.taskId, taskId), eq(attempts.number, number))).get());
+  async getForTaskNumber(taskId: number, number: number): Promise<TaskAttemptRow | undefined> {
+    const row = await this.db.read((db) => db.select().from(attempts).where(and(eq(attempts.taskId, taskId), eq(attempts.number, number))).get());
+    return row && isTaskAttempt(row) ? row : undefined;
+  }
+
+  getForEpicNumber(owner: EpicAttemptOwner, number: number): Promise<AttemptRow | undefined> {
+    return this.db.read((db) =>
+      db
+        .select()
+        .from(attempts)
+        .where(and(eq(attempts.workspaceId, owner.workspaceId), eq(attempts.epicRef, owner.epicRef), eq(attempts.number, number)))
+        .get(),
+    );
   }
 
   async get(id: number): Promise<AttemptRow> {
@@ -270,12 +365,18 @@ export class AttemptStore {
   }
 
   /** The Task's latest Attempt. */
-  async currentForTask(taskId: number): Promise<AttemptRow> {
-    const latest = await this.db.read((db) =>
-      db.select().from(attempts).where(eq(attempts.taskId, taskId)).orderBy(asc(attempts.number)).all(),
-    );
+  async currentForTask(taskId: number): Promise<TaskAttemptRow> {
+    const latest = await this.listForTask(taskId);
     const row = latest.at(-1);
     if (!row) throw new DomainError('not_found', `task ${taskId} has no attempts`);
+    return row;
+  }
+
+  /** The Epic's latest Attempt. */
+  async currentForEpic(owner: EpicAttemptOwner): Promise<AttemptRow> {
+    const latest = await this.listForEpic(owner);
+    const row = latest.at(-1);
+    if (!row) throw new DomainError('not_found', `epic ${owner.workspaceId}/${owner.epicRef} has no attempts`);
     return row;
   }
 
@@ -287,7 +388,9 @@ export class AttemptStore {
     const attemptRows = await this.db.read((db) =>
       db.select().from(attempts).where(inArray(attempts.taskId, taskAttempts.map((t) => t.taskId))).all(),
     );
-    for (const row of attemptRows) if (numberByTask.get(row.taskId) === row.number) result.set(row.taskId, row.id);
+    for (const row of attemptRows) {
+      if (isTaskAttempt(row) && numberByTask.get(row.taskId) === row.number) result.set(row.taskId, row.id);
+    }
     return result;
   }
 
@@ -311,7 +414,7 @@ export class AttemptStore {
     const attemptRows = await this.db.read((db) =>
       db.select().from(attempts).where(inArray(attempts.taskId, taskAttempts.map((t) => t.taskId))).all(),
     );
-    const wanted = attemptRows.filter((a) => numberByTask.get(a.taskId) === a.number);
+    const wanted = attemptRows.filter(isTaskAttempt).filter((attempt) => numberByTask.get(attempt.taskId) === attempt.number);
     if (wanted.length === 0) return result;
     const stepRows = await this.db.read((db) =>
       db.select().from(steps).where(inArray(steps.attemptId, wanted.map((a) => a.id))).orderBy(asc(steps.position)).all(),

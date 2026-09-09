@@ -4,7 +4,7 @@ import { drizzle } from 'drizzle-orm/libsql';
 import { join } from 'node:path';
 import { parentPort, workerData } from 'node:worker_threads';
 import { totalsForRange } from '../domain/tool-call-aggregates.js';
-import { attemptEvents, attempts, guardrailEvents, tasks, verificationAttempts, workspaces } from './schema.js';
+import { attemptEvents, attempts, guardrailEvents, isTaskAttempt, tasks, verificationAttempts, workspaces } from './schema.js';
 import * as schema from './schema.js';
 import {
   isStatsWorkerRequest,
@@ -30,7 +30,7 @@ async function readStats({ from, to, workspaceId, epicRef }: StatsRange): Promis
     epicRef === undefined ? undefined : eq(tasks.mapRef, epicRef),
   );
 
-  const rows = !scoped
+  const attemptRows = !scoped
     ? await db.select().from(attempts).where(and(gte(attempts.startedAt, from), lte(attempts.startedAt, to))).all()
     : (
         await db
@@ -40,6 +40,7 @@ async function readStats({ from, to, workspaceId, epicRef }: StatsRange): Promis
           .where(and(gte(attempts.startedAt, from), lte(attempts.startedAt, to), taskScope))
           .all()
       ).map((row) => row.attempts);
+  const rows = attemptRows.filter(isTaskAttempt);
 
   const attemptReasons = !scoped
     ? await db
@@ -77,7 +78,7 @@ async function readStats({ from, to, workspaceId, epicRef }: StatsRange): Promis
   const eventKind = sql<'merged' | 'escalated'>`json_extract(${attemptEvents.payload}, '$.event')`;
   const eventGate = sql<GateReason | null>`json_extract(${attemptEvents.payload}, '$.gate')`;
   const settleEvents = await db
-    .select({ taskId: attempts.taskId, ts: attemptEvents.ts, kind: eventKind, gate: eventGate })
+    .select({ taskId: tasks.id, ts: attemptEvents.ts, kind: eventKind, gate: eventGate })
     .from(attemptEvents)
     .innerJoin(attempts, eq(attemptEvents.attemptId, attempts.id))
     .innerJoin(tasks, eq(attempts.taskId, tasks.id))
@@ -97,8 +98,9 @@ async function readStats({ from, to, workspaceId, epicRef }: StatsRange): Promis
     settledTaskIds.length === 0
       ? []
       : await db
-          .select({ taskId: attempts.taskId, cost: attempts.cost })
-          .from(attempts)
+          .select({ taskId: tasks.id, cost: attempts.cost })
+          .from(tasks)
+          .innerJoin(attempts, eq(attempts.taskId, tasks.id))
           .where(inArray(attempts.taskId, settledTaskIds))
           .all();
 

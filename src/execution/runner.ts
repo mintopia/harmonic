@@ -16,7 +16,7 @@ import { codeIndexRepoGuidance, driveFields, promptForTask } from './prompt-temp
 import { indexWorktree, dropIndexForPath } from './code-index.js';
 import type { AutoDrive } from './auto-drive.js';
 import type { AppConfig, HarnessConfig } from '../config.js';
-import type { TaskRow, AttemptRow, WorkspaceRow, SessionRow } from '../db/schema.js';
+import { isTaskAttempt, type TaskRow, type AttemptRow, type WorkspaceRow, type SessionRow } from '../db/schema.js';
 import { AcpDriver, AcpPromptTimeoutError, type AcpInitializeResult, type PromptResult } from '../acp/driver.js';
 import { AcpConnectionClosedError } from '../acp/connection.js';
 import { parsePermissionRequest } from '../acp/permission-request.js';
@@ -2589,7 +2589,7 @@ export class Runner {
    */
   async backfillUsage(): Promise<void> {
     const config = this.getConfig();
-    for (const run of await this.attempts.listUsageBackfillCandidates()) {
+    for (const run of (await this.attempts.listUsageBackfillCandidates()).filter(isTaskAttempt)) {
       try {
         const task = await this.taskService.get(run.taskId);
         const harness = config.harnesses[task.harness as keyof typeof config.harnesses];
@@ -2613,6 +2613,7 @@ export class Runner {
       }
     }
     await this.attempts.backfillCosts(async (attempt) => {
+      if (!isTaskAttempt(attempt)) return pricesForHarness(config.harnesses.claude);
       const task = await this.taskService.get(attempt.taskId);
       return pricesForHarness(config.harnesses[task.harness as keyof typeof config.harnesses] ?? config.harnesses.claude);
     });

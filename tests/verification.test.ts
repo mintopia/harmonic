@@ -196,6 +196,7 @@ describe('verification-selfheal', () => {
     const attempts = async (attemptId: number) => {
       const store = new VerificationAttemptStore(server.app.ctx.asyncDb);
       const run = await server.app.ctx.attempts.get(attemptId);
+      if (run.taskId === null) throw new Error('expected Task Attempt');
       const taskAttempts = await server.app.ctx.attempts.listForTask(run.taskId);
       return (await Promise.all(taskAttempts.map((a) => store.list(a.id)))).flat();
     };

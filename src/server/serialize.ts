@@ -1,7 +1,7 @@
 import type { AppContext } from './app.js';
 import type { AppConfig, HarnessConfig } from '../config.js';
-import type { AttemptRow, VerificationAttemptRow, StepType, ConversationRow } from '../db/schema.js';
-import { attempts, steps, guardrailEvents, attemptEvents, verificationAttempts } from '../db/schema.js';
+import type { AttemptRow, TaskAttemptRow, VerificationAttemptRow, StepType, ConversationRow } from '../db/schema.js';
+import { attempts, steps, guardrailEvents, attemptEvents, isTaskAttempt, verificationAttempts } from '../db/schema.js';
 import { and, desc, eq } from 'drizzle-orm';
 import type { TaskWithDeps } from '../domain/tasks.js';
 import { resolveVerifiers } from '../domain/setting-override.js';
@@ -67,7 +67,7 @@ export async function attemptTimelineToApi(ctx: AppContext, taskId: number): Pro
 /** The configured-or-recorded verifier rows for one Attempt's always-visible read model. */
 export async function verifierStatusesToApi(
   ctx: AppContext,
-  run: Pick<AttemptRow, 'id' | 'taskId' | 'number'>,
+  run: Pick<TaskAttemptRow, 'id' | 'taskId' | 'number'>,
   recordedAttempts?: readonly VerificationAttemptRow[],
 ): Promise<VerifierStatus[]> {
   const task = await ctx.tasks.get(run.taskId);
@@ -146,6 +146,7 @@ export async function ticketTimelineToApi(ctx: AppContext, taskId: number): Prom
 }
 
 export async function attemptToApi(ctx: AppContext, run: AttemptRow): Promise<ApiAttemptSummary> {
+  if (!isTaskAttempt(run)) throw new DomainError('not_found', `Epic Attempt ${run.id} has no Task summary`);
   // The per-Attempt tool-call total from its native aggregate — one
   // bounded read per Attempt (attempts-per-Task is small), no event replay.
   const [toolTotals, task, verifications] = await Promise.all([
@@ -167,7 +168,8 @@ export async function attemptToApi(ctx: AppContext, run: AttemptRow): Promise<Ap
 export async function attemptUsageToApi(ctx: AppContext, attemptId: number, snapshot: AttemptUsageSnapshot): Promise<ApiAttemptUsage> {
   let harness: string | undefined;
   try {
-    harness = (await ctx.tasks.get((await ctx.attempts.get(attemptId)).taskId)).harness;
+    const attempt = await ctx.attempts.get(attemptId);
+    harness = isTaskAttempt(attempt) ? (await ctx.tasks.get(attempt.taskId)).harness : undefined;
   } catch (err) {
     if (!(err instanceof DomainError) || err.code !== 'not_found') throw err;
   }
@@ -186,7 +188,7 @@ export async function taskToApi(ctx: AppContext, task: TaskWithDeps): Promise<Ap
 /** Serialize a task list from its batched Attempts as lean rows (no `prompt`). */
 export async function tasksToApi(ctx: AppContext, tasks: TaskWithDeps[]): Promise<ApiTaskListRow[]> {
   if (tasks.length === 0) return [];
-  const runsByTask = new Map(tasks.map((task) => [task.id, [] as AttemptRow[]]));
+  const runsByTask = new Map(tasks.map((task) => [task.id, [] as TaskAttemptRow[]]));
   for (const run of await ctx.attempts.listForTasks(tasks.map((task) => task.id))) runsByTask.get(run.taskId)?.push(run);
   const running = tasks.flatMap((task) => {
     const run = task.state === 'working' ? runsByTask.get(task.id)?.find((candidate) => candidate.state === 'running') : undefined;
@@ -240,7 +242,7 @@ function taskToApiWithRuns(
   });
 }
 
-async function runningToolCount(ctx: AppContext, run: AttemptRow): Promise<number> {
+async function runningToolCount(ctx: AppContext, run: TaskAttemptRow): Promise<number> {
   const attempt = await ctx.attempts.getForTaskNumber(run.taskId, run.number);
   if (!attempt) return 0;
   const totals = await ctx.attempts.listToolCalls(attempt.id);
@@ -252,7 +254,7 @@ async function runningToolCount(ctx: AppContext, run: AttemptRow): Promise<numbe
 /** Every live process across Workspaces; `includeChats` is false for a Read Key. */
 export async function activitySnapshot(ctx: AppContext, includeChats: boolean): Promise<ApiActivityProcess[]> {
   const snapshots = new Map((await ctx.runner.activeSnapshots()).map((snapshot) => [snapshot.attemptId, snapshot.snapshot]));
-  const runs: ApiActivityProcess[] = await Promise.all((await ctx.attempts.listRunning()).map(async (run) => {
+  const runs: ApiActivityProcess[] = await Promise.all((await ctx.attempts.listRunning()).filter(isTaskAttempt).map(async (run) => {
     const task = await ctx.tasks.get(run.taskId);
     const snapshot = snapshots.get(run.id) ?? null;
     return attemptProcessToApi({
