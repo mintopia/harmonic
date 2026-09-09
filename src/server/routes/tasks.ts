@@ -15,6 +15,7 @@ import {
   GUARDRAIL_CONFIG_SOURCES,
   VERIFICATION_MECHANISMS,
   STEP_TYPES,
+  isTaskAttempt,
   type AttemptRow,
 } from '../../db/schema.js';
 import { DomainError } from '../../domain/errors.js';
@@ -975,6 +976,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     },
     async (req) => {
       const run = await ctx.attempts.get(req.params.id);
+      if (!isTaskAttempt(run)) throw new DomainError('not_found', `Epic Attempt ${run.id} has no task verification status`);
       const { limit, offset } = req.query;
       const attempts = await ctx.verificationAttempts.list(run.id);
       const verifierStatuses = await verifierStatusesToApi(ctx, run, attempts);
@@ -1073,7 +1075,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     },
     async (req) => {
       const run = await ctx.attempts.get(req.params.id);
-      if (!run.branch || !run.baseBranch) return { branch: null, baseBranch: null, stat: null };
+      if (!isTaskAttempt(run) || !run.branch || !run.baseBranch) return { branch: null, baseBranch: null, stat: null };
       const task = await ctx.tasks.get(run.taskId);
       const stat = await attemptDiffStat(task.workingDir, run).catch(() => null);
       return { branch: run.branch, baseBranch: run.baseBranch, stat };
@@ -1094,6 +1096,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     },
     async (req) => {
       const run = await ctx.attempts.get(req.params.id);
+      if (!isTaskAttempt(run)) return { files: [], total: 0 };
       const task = await ctx.tasks.get(run.taskId);
       const { limit, offset } = req.query;
       const files = await attemptDiffFiles(task.workingDir, run).catch(() => []);

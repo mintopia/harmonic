@@ -1,22 +1,16 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { verifyChannelsUnconfigured, type AppConfig } from '../src/config.js';
 
-const defaultVerify = (): AppConfig['verify'] => ({ commands: [], review: { enabled: false } });
+const verify = (): AppConfig['verify'] => ({
+  task: { preMerge: { commands: [], critics: [] }, postMerge: { commands: [], critics: [] } },
+  epic: { preMerge: { commands: [], critics: [] }, resolvePrompt: 'Resolve failures.' },
+});
 
 describe('verifyChannelsUnconfigured', () => {
-  it('is true for the default config — no commands, review disabled', () => {
-    expect(verifyChannelsUnconfigured(defaultVerify())).toBe(true);
-  });
-
-  it('is false once a command verifier is configured', () => {
-    const verify = defaultVerify();
-    verify.commands.push({ command: 'true', args: [], env: {}, timeoutSeconds: 30 });
-    expect(verifyChannelsUnconfigured(verify)).toBe(false);
-  });
-
-  it('is false once critic review is enabled', () => {
-    const verify = defaultVerify();
-    verify.review.enabled = true;
-    expect(verifyChannelsUnconfigured(verify)).toBe(false);
+  it('is true only when all stage lists are empty', () => {
+    expect(verifyChannelsUnconfigured(verify())).toBe(true);
+    const configured = verify();
+    configured.epic.preMerge.critics.push({ prompt: 'Review.', model: 'claude-opus-5' });
+    expect(verifyChannelsUnconfigured(configured)).toBe(false);
   });
 });

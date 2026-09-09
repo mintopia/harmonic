@@ -124,6 +124,17 @@ describe('buildCriticPrompt (issue #136; 2026-08 containment amendment)', () => 
       }
     });
 
+    it('does not interpolate ticket-only title or body tokens', () => {
+      const prompt = buildCriticPrompt({
+        operatorPrompt: 'Review {skill}. Hidden ticket details: {title} / {body}.',
+        fields: NATIVE_FIELDS,
+        verifiedHeadOid: CANDIDATE,
+      });
+      expect(prompt).toMatch(/Review \/implement\. Hidden ticket details:\s*\/\s*\./);
+      expect(prompt).not.toContain('Add a flag');
+      expect(prompt).not.toContain('Wire it through.');
+    });
+
     it('judges against the instructions, not a ticket, on the no-change branch', () => {
       const prompt = buildCriticPrompt({ operatorPrompt: 'Review it.', fields: NATIVE_FIELDS, verifiedHeadOid: CANDIDATE, baseOid: CANDIDATE });
       expect(prompt).toMatch(/when the review instructions above required none/i);

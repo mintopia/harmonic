@@ -61,6 +61,13 @@ describe('latestAttempts', () => {
 });
 
 describe('verificationRows', () => {
+  it('keeps a legacy single-verifier row available when a selected tab supplies its stable id', () => {
+    const statuses: VerifierStatus[] = [{ mechanism: 'command', state: 'passed', reason: null }];
+    expect(verificationRows(statuses, [attempt(1, 'command', 'pass')])).toEqual([
+      { status: statuses[0], attempt: expect.objectContaining({ mechanism: 'command' }) },
+    ]);
+  });
+
   it('joins each status to its latest recorded attempt without dropping skipped or disabled rows', () => {
     const statuses: VerifierStatus[] = [
       { mechanism: 'command', state: 'skipped', reason: 'No command verification attempt was recorded for this attempt.' },

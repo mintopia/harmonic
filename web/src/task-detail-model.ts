@@ -363,6 +363,7 @@ export function taskStats(attempts: readonly StatsAttempt[]): TaskStats {
  * the tab's dot; `pending` is true only when every Step of the type is still
  * pending, which is what renders the empty placeholder. */
 export interface StepTab {
+  id: string;
   type: StepType;
   label: string;
   /** A short qualifier shown after the label — the verification command
@@ -413,13 +414,23 @@ function plannedTabDetail(type: StepType, verifierStatuses: readonly VerifierSta
 }
 
 export function attemptStepTabs(steps: readonly Step[], verifierStatuses: readonly VerifierStatus[] = []): StepTab[] {
-  return STEP_TAB_ORDER.flatMap((type) => {
+  return STEP_TAB_ORDER.flatMap<StepTab>((type) => {
     const ofType = steps.filter((step) => step.type === type);
     if (ofType.length === 0) {
       if (!typePlanned(type, verifierStatuses)) return [];
-      return [{ type, label: STEP_TAB_LABEL[type], detail: plannedTabDetail(type, verifierStatuses), state: 'pending' as StepState, pending: true }];
+      return [{ id: type, type, label: STEP_TAB_LABEL[type], detail: plannedTabDetail(type, verifierStatuses), state: 'pending' as StepState, pending: true }];
     }
-    return [{ type, label: STEP_TAB_LABEL[type], detail: stepTabDetail(type, ofType), state: rolledUpState(ofType), pending: ofType.every((step) => step.state === 'pending') }];
+    if (type === 'verification' || type === 'review') {
+      return ofType.map((step) => ({
+        id: `${type}:${step.id}`,
+        type,
+        label: type === 'verification' ? 'Verify' : 'Critic',
+        detail: type === 'verification' ? step.command : null,
+        state: step.state,
+        pending: step.state === 'pending',
+      }));
+    }
+    return [{ id: type, type, label: STEP_TAB_LABEL[type], detail: stepTabDetail(type, ofType), state: rolledUpState(ofType), pending: ofType.every((step) => step.state === 'pending') }];
   });
 }
 
@@ -464,14 +475,14 @@ export function defaultSelection(
  * content, else the furthest-progressed tab, else the first. Null only when
  * the Attempt has no Steps at all.
  */
-export function defaultStepTab(tabs: readonly StepTab[]): StepType | null {
+export function defaultStepTab(tabs: readonly StepTab[]): string | null {
   if (tabs.length === 0) return null;
   const running = tabs.find((tab) => tab.state === 'running');
-  if (running) return running.type;
+  if (running) return running.id;
   const failed = tabs.find((tab) => tab.state === 'failed');
-  if (failed) return failed.type;
+  if (failed) return failed.id;
   const implementation = tabs.find((tab) => tab.type === 'implementation' && !tab.pending);
-  if (implementation) return implementation.type;
+  if (implementation) return implementation.id;
   const progressed = [...tabs].reverse().find((tab) => !tab.pending);
-  return (progressed ?? tabs[0]!).type;
+  return (progressed ?? tabs[0]!).id;
 }

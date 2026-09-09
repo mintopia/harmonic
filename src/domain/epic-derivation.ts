@@ -5,6 +5,8 @@ export interface DerivedEpic {
   /** The Epic ticket's tracker ref (its `number`). */
   ref: number;
   title: string;
+  body?: string;
+  url?: string;
   /** The member refs, ascending. */
   members: number[];
   /**
@@ -51,6 +53,8 @@ function toDerivedEpic(
   return {
     ref: epic.number,
     title: epic.title,
+    body: epic.body,
+    url: epic.url,
     members: members.map((c) => c.number).sort((a, b) => a - b),
     ready: members.filter((c) => isReady(c, readinessByRef)).map((c) => c.number).sort((a, b) => a - b),
   };

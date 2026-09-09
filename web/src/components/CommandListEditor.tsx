@@ -5,11 +5,9 @@ import { EMPTY_COMMAND, argsText, setCommandField } from './verification-overrid
 
 /**
  * The add/remove editor for an ordered verification-command list.
- * One component for both settings surfaces: the global page edits
- * `config.verify.commands` directly; the workspace page edits an override array
- * inside an `InheritField` slot. The only per-surface differences are the input
- * id prefix and the server error-path prefix, so those are props — the markup
- * itself is written once.
+ * One component for staged verification settings. The caller supplies a stage's
+ * command list and its validation-path prefix, so the editor stays independent
+ * of any particular Task or Epic stage.
  */
 export function CommandListEditor({
   commands,
@@ -21,9 +19,9 @@ export function CommandListEditor({
 }: {
   commands: VerificationCommand[];
   onChange: (commands: VerificationCommand[]) => void;
-  /** Input id prefix, e.g. `'settings-verify'` or `'workspace-verify'`. */
+  /** Input id prefix for this stage and surface. */
   idPrefix: string;
-  /** Server error-path prefix, e.g. `'verify.commands'` or `'verificationCommand'`. */
+  /** Server error-path prefix for this stage's command list. */
   errorPrefix: string;
   fieldErrors: Record<string, string>;
   emptyText: string;

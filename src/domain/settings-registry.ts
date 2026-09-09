@@ -93,40 +93,47 @@ export const settingsRegistry = {
     label: 'Conflict resolve turns',
     help: 'How many agentic turns may attempt to resolve a merge conflict before the Attempt escalates.',
   },
-  verificationCommand: {
+  taskPreMergeCommands: {
     scope: 'overridable',
     control: 'verifier',
     tab: 'verification',
-    label: 'Verification command',
-    help: 'Command verifier(s) run against the verified head before merging.',
+    label: 'Task pre-merge commands',
+    help: 'Command verifiers run before a Task merge.',
   },
-  reviewEnabled: {
+  taskPreMergeCritics: {
     scope: 'overridable',
-    control: 'toggle',
+    control: 'verifier',
     tab: 'verification',
-    label: 'Review enabled',
-    help: 'Whether an agent critic reviews the verified head before merging.',
+    label: 'Task pre-merge critics',
+    help: 'Critics run after Task pre-merge commands pass.',
   },
-  reviewPrompt: {
+  taskPostMergeCommands: {
     scope: 'overridable',
-    control: 'text',
+    control: 'verifier',
     tab: 'verification',
-    label: 'Review prompt',
-    help: 'Prompt the critic reviewer runs with; inherits the global prompt unless overridden.',
+    label: 'Task post-merge commands',
+    help: 'Command verifiers run after a Task merge.',
   },
-  reviewModel: {
+  taskPostMergeCritics: {
     scope: 'overridable',
-    control: 'select',
+    control: 'verifier',
     tab: 'verification',
-    label: 'Review model',
-    help: 'Model the critic reviewer uses; inherits the global model unless overridden.',
+    label: 'Task post-merge critics',
+    help: 'Critics run after Task post-merge commands pass.',
   },
-  reviewHarness: {
+  epicPreMergeCommands: {
     scope: 'overridable',
-    control: 'select',
+    control: 'verifier',
     tab: 'verification',
-    label: 'Review harness',
-    help: 'Harness the critic reviewer runs on; inherits the global harness (or the builder task) unless overridden.',
+    label: 'Epic pre-merge commands',
+    help: 'Command verifiers run before an Epic merges to its default branch.',
+  },
+  epicPreMergeCritics: {
+    scope: 'overridable',
+    control: 'verifier',
+    tab: 'verification',
+    label: 'Epic pre-merge critics',
+    help: 'Critics run after Epic pre-merge commands pass.',
   },
   guardrailBudget: {
     scope: 'overridable',

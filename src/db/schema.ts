@@ -1,4 +1,5 @@
-import { sqliteTable, integer, text, primaryKey, index, uniqueIndex, type AnySQLiteColumn } from 'drizzle-orm/sqlite-core';
+import { sql } from 'drizzle-orm';
+import { sqliteTable, integer, text, primaryKey, index, uniqueIndex, check, type AnySQLiteColumn } from 'drizzle-orm/sqlite-core';
 import type { Verdict } from '../verification/critic-schema.js';
 import type { TicketRef, TicketState } from '../tracker/adapter.js';
 
@@ -49,8 +50,10 @@ export type WorkspaceRow = WorkspaceIdentityRow & {
   harness: string | null; model: string | null; chatHarness: string | null; chatModel: string | null;
   isolationMode: string | null; priority: string | null;
   conflictResolveTurns: number | null; maxConcurrentAttempts: number | null; autoRunnerEnabled: boolean | null;
-  maxAttempts: number | null; contextReuseTokenLimit: number | null; verificationCommand: string | null;
-  reviewEnabled: boolean | null; reviewPrompt: string | null; reviewModel: string | null; reviewHarness: string | null;
+  maxAttempts: number | null; contextReuseTokenLimit: number | null;
+  taskPreMergeCommands: string | null; taskPreMergeCritics: string | null;
+  taskPostMergeCommands: string | null; taskPostMergeCritics: string | null;
+  epicPreMergeCommands: string | null; epicPreMergeCritics: string | null;
   guardrailBudget: string | null; guardrailProgress: boolean | null; toolTimeoutMinutes: number | null;
   drivePrompt: string | null; driveUnattendedReminder: string | null; driveContinuePrompt: string | null;
   driveMergeFate: string | null; driveContinueAttempts: number | null; taskPrompt: string | null; pauseMessage: string | null;
@@ -162,7 +165,10 @@ export type StepState = (typeof STEP_STATES)[number];
 
 export const attempts = sqliteTable('attempts', {
   id: integer('id').primaryKey({ autoIncrement: true }),
-  taskId: integer('task_id').notNull().references(() => tasks.id),
+  /** Exactly one owner: a Task, or a stored Epic identified by workspace and tracker refs. */
+  taskId: integer('task_id').references(() => tasks.id),
+  workspaceId: integer('workspace_id').references(() => workspaces.id, { onDelete: 'cascade' }),
+  epicRef: integer('epic_ref'),
   number: integer('number').notNull(),
   state: text('state').$type<AttemptState>().notNull().default('running'),
   startedAt: integer('started_at').notNull(),
@@ -211,8 +217,26 @@ export const attempts = sqliteTable('attempts', {
   pgid: integer('pgid'),
   /** /proc/<pid>/stat field 22 (starttime); pins pid identity against reuse for crash-recovery reap. */
   procStartToken: text('proc_start_token'),
-}, (t) => [uniqueIndex('attempts_task_number_unique').on(t.taskId, t.number)]);
+}, (t) => [
+  uniqueIndex('attempts_task_number_unique').on(t.taskId, t.number),
+  uniqueIndex('attempts_epic_number_unique').on(t.workspaceId, t.epicRef, t.number),
+  check(
+    'attempts_exactly_one_owner',
+    sql`(${t.taskId} IS NOT NULL AND ${t.workspaceId} IS NULL AND ${t.epicRef} IS NULL) OR (${t.taskId} IS NULL AND ${t.workspaceId} IS NOT NULL AND ${t.epicRef} IS NOT NULL)`,
+  ),
+]);
 export type AttemptRow = typeof attempts.$inferSelect;
+export type TaskAttemptRow = AttemptRow & { taskId: number };
+export type EpicAttemptRow = AttemptRow & { taskId: null; workspaceId: number; epicRef: number };
+
+export function isTaskAttempt(attempt: AttemptRow): attempt is TaskAttemptRow {
+  return attempt.taskId !== null;
+}
+
+/** Whether an Attempt belongs to a stored Epic rather than a Task. */
+export function isEpicAttempt(attempt: AttemptRow): attempt is EpicAttemptRow {
+  return attempt.taskId === null && attempt.workspaceId !== null && attempt.epicRef !== null;
+}
 
 /** Individually visible work within an Attempt. `logLocator` points to its transcript/output. */
 export const steps = sqliteTable('steps', {

@@ -13,16 +13,18 @@ import {
   attemptProcessToApi,
   conversationProcessToApi,
 } from '../src/server/dto.js';
-import type { AttemptRow, ConversationRow, TaskRow, VerificationAttemptRow } from '../src/db/schema.js';
+import type { ConversationRow, TaskAttemptRow, TaskRow, VerificationAttemptRow } from '../src/db/schema.js';
 import type { TaskWithDeps, TaskOverrides } from '../src/domain/tasks.js';
 import type { Ticket } from '../src/tracker/adapter.js';
 import type { Cost } from '../src/domain/pricing.js';
 import type { AttemptUsage, AttemptUsageSnapshot, ProcessNode } from '../src/execution/usage.js';
 import type { OperationSnapshot } from '../src/telemetry/operations.js';
 
-const attemptRow = (over: Partial<AttemptRow> = {}): AttemptRow => ({
+const attemptRow = (over: Partial<TaskAttemptRow> = {}): TaskAttemptRow => ({
   id: 1,
   taskId: 1,
+  workspaceId: null,
+  epicRef: null,
   number: 1,
   state: 'running',
   startedAt: 1_000,

@@ -7,12 +7,13 @@ import type { ResolvedTracker } from '../../tracker/adapter.js';
 import { createWorkspaceInputSchema, updateWorkspaceInputSchema } from '../../domain/workspaces.js';
 import {
   verificationCommandOverrideSchema,
+  taskVerificationCriticOverrideSchema,
+  epicVerificationCriticOverrideSchema,
   budgetGuardrailSchema,
   unpricedModelsForCostCap,
   costCapMessage,
 } from '../../config.js';
 import { DomainError } from '../../domain/errors.js';
-import { resolveVerifiers } from '../../domain/setting-override.js';
 import { idParamsSchema, errorResponse } from '../schemas.js';
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
 
@@ -50,12 +51,12 @@ const workspaceSchema = z
     /** Per-workspace attempt cap; null inherits `config.maxAttempts`. */
     maxAttempts: z.number().nullable().meta({ example: null }),
     contextReuseTokenLimit: z.number().nullable().meta({ example: null }),
-    // `verificationCommand` is list-grain (null ⇒ inherit, `[]` ⇒ off); the four review scalars inherit independently.
-    verificationCommand: verificationCommandOverrideSchema.nullable().meta({ example: null }),
-    reviewEnabled: z.boolean().nullable().meta({ example: null }),
-    reviewPrompt: z.string().nullable().meta({ example: null }),
-    reviewModel: z.string().nullable().meta({ example: null }),
-    reviewHarness: z.string().nullable().meta({ example: null }),
+    taskPreMergeCommands: verificationCommandOverrideSchema.nullable().meta({ example: null }),
+    taskPreMergeCritics: taskVerificationCriticOverrideSchema.nullable().meta({ example: null }),
+    taskPostMergeCommands: verificationCommandOverrideSchema.nullable().meta({ example: null }),
+    taskPostMergeCritics: taskVerificationCriticOverrideSchema.nullable().meta({ example: null }),
+    epicPreMergeCommands: verificationCommandOverrideSchema.nullable().meta({ example: null }),
+    epicPreMergeCritics: epicVerificationCriticOverrideSchema.nullable().meta({ example: null }),
     guardrailBudget: budgetGuardrailSchema.nullable().meta({ example: null }),
     guardrailProgress: z.boolean().nullable().meta({ example: null }),
     /** Tool-timeout bound override; null inherits `config.guardrails.toolTimeoutMinutes`. */
@@ -88,7 +89,12 @@ export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<Tracki
   /** A Workspace row plus its live Resolved Tracker; JSON-text override columns parsed back to the shape a client PATCHes. */
   const serialize = (ws: WorkspaceRow) => ({
     ...ws,
-    verificationCommand: ws.verificationCommand ? JSON.parse(ws.verificationCommand) : null,
+    taskPreMergeCommands: ws.taskPreMergeCommands ? JSON.parse(ws.taskPreMergeCommands) : null,
+    taskPreMergeCritics: ws.taskPreMergeCritics ? JSON.parse(ws.taskPreMergeCritics) : null,
+    taskPostMergeCommands: ws.taskPostMergeCommands ? JSON.parse(ws.taskPostMergeCommands) : null,
+    taskPostMergeCritics: ws.taskPostMergeCritics ? JSON.parse(ws.taskPostMergeCritics) : null,
+    epicPreMergeCommands: ws.epicPreMergeCommands ? JSON.parse(ws.epicPreMergeCommands) : null,
+    epicPreMergeCritics: ws.epicPreMergeCritics ? JSON.parse(ws.epicPreMergeCritics) : null,
     guardrailBudget: ws.guardrailBudget ? JSON.parse(ws.guardrailBudget) : null,
     resolvedTracker: serializeResolvedTracker(ctx.trackerManager.resolvedTracker(ws.id)),
   });
@@ -174,27 +180,6 @@ export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<Tracki
         const unpriced = unpricedModelsForCostCap(req.body.guardrailBudget, ctx.settingsStore.getGlobal());
         if (unpriced.length > 0) {
           throw new DomainError('validation', `guardrailBudget.costUsd: ${costCapMessage(unpriced)}`);
-        }
-      }
-      if (
-        req.body.reviewEnabled !== undefined ||
-        req.body.reviewPrompt !== undefined ||
-        req.body.reviewModel !== undefined ||
-        req.body.reviewHarness !== undefined
-      ) {
-        const current = await ctx.workspaces.get(req.params.id);
-        const merged = {
-          ...current,
-          reviewEnabled: req.body.reviewEnabled === undefined ? current.reviewEnabled : req.body.reviewEnabled,
-          reviewPrompt: req.body.reviewPrompt === undefined ? current.reviewPrompt : req.body.reviewPrompt,
-          reviewModel: req.body.reviewModel === undefined ? current.reviewModel : req.body.reviewModel,
-          reviewHarness: req.body.reviewHarness === undefined ? current.reviewHarness : req.body.reviewHarness,
-        };
-        const { review } = resolveVerifiers(merged, ctx.settingsStore.getGlobal());
-        if (review.requested && !review.enabled) {
-          const missing = !review.model ? 'reviewModel' : 'reviewPrompt';
-          const noun = missing === 'reviewModel' ? 'model' : 'prompt';
-          throw new DomainError('validation', `${missing}: review is enabled but resolves to no ${noun} — set one or turn review off`);
         }
       }
       const workspace = await ctx.workspaces.update(req.params.id, req.body);

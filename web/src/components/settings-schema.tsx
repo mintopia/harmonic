@@ -1,37 +1,27 @@
 import { Fragment, type ReactNode } from 'react';
-import type { AppConfig, Channel, VerificationCritic, VerificationReview, Workspace } from '../types';
-import { btnGhost, field, selectField } from '../ui';
+import type { AppConfig, Channel, Workspace } from '../types';
+import { btnGhost, field } from '../ui';
 import { FieldError, PromptField, fieldLabel } from './SettingsSection';
 import {
   DRIVE_PLACEHOLDERS,
   TASK_ID_PLACEHOLDER,
   TASK_PLACEHOLDERS,
-  compileCriticPreview,
   compileDrivePreview,
   compileTaskIdPreview,
   compileTaskPreview,
   type LabeledPreview,
 } from '../prompt-preview-model';
-import { ModelCombobox } from './ModelCombobox';
-import { Switch } from './Switch';
-import {
-  EMPTY_CRITIC,
-  missingReviewInput,
-  reviewUnrunnable,
-  setCriticField,
-  summarizeCommands,
-  type ResolvedReviewInputs,
-} from './verification-override-model';
 import { setBudgetField, summarizeBudget } from './guardrail-budget-model';
-import { CommandListEditor } from './CommandListEditor';
 import { ConfigField, registryField, toOptions, withCurrent, type FieldOption, type ScalarDescriptor } from './settings-fields';
 import { OverrideField, type OverridableDescriptor } from './settings-override-fields';
 import { InheritField } from './InheritField';
 import { LayerField } from './LayerField';
+import { Switch } from './Switch';
 import { HarnessesSection } from './HarnessSettings';
 import { ChannelsSection } from './Channels';
 import { PermissionRules } from './PermissionRules';
 import { SecuritySection } from './SecuritySection';
+import { GlobalVerificationSettings, WorkspaceVerificationSettings } from './VerificationSettings';
 import { settingsRegistry, type SettingKey, type SettingTab } from '../../../src/domain/settings-registry.js';
 
 export type Surface = 'global' | 'workspace';
@@ -652,185 +642,6 @@ const continuePromptField = prompt(
 );
 
 
-function ReviewUnrunnableNote({ review }: { review: ResolvedReviewInputs }) {
-  if (!reviewUnrunnable(review)) return null;
-  const missing = missingReviewInput(review);
-  return (
-    <p className="rounded-sm bg-fail-tint px-2.5 py-2 text-small text-fail">
-      Review is enabled but resolves to no {missing} — it will be flagged unrunnable and never run. Set a review {missing}{' '}
-      or turn review off.
-    </p>
-  );
-}
-
-function GlobalVerification({ ctx }: { ctx: GlobalRenderCtx }) {
-  const config = ctx.config;
-  const fieldErrors = ctx.errors;
-  const onChange = (verify: AppConfig['verify']) => ctx.setConfig({ ...config, verify });
-  const v = config.verify;
-  const setReview = (review: VerificationReview) => onChange({ ...v, review });
-  const reviewCritic: VerificationCritic = {
-    prompt: v.review.prompt ?? '',
-    model: v.review.model ?? '',
-    ...(v.review.harness ? { harness: v.review.harness } : {}),
-  };
-  const setCritic = (critic: VerificationCritic) => setReview({ enabled: true, ...critic });
-  return (
-    <div className="flex flex-col gap-4 sm:max-w-md">
-      <ReviewUnrunnableNote review={{ requested: v.review.enabled, model: v.review.model, prompt: v.review.prompt }} />
-      <CommandListEditor
-        commands={v.commands}
-        onChange={(commands) => onChange({ ...v, commands })}
-        idPrefix="settings-verify"
-        errorPrefix="verify.commands"
-        fieldErrors={fieldErrors}
-        emptyText="No commands configured."
-      />
-      <div>
-        <div className="flex items-center justify-between">
-          <span className={fieldLabel}>Review</span>
-          <Switch checked={v.review.enabled} onChange={(enabled) => setReview(enabled ? { enabled: true, ...EMPTY_CRITIC } : { enabled: false })}>
-            Enabled
-          </Switch>
-        </div>
-        {v.review.enabled && (
-          <div className="mt-3 flex flex-col gap-3">
-            <div>
-              <label className={fieldLabel} htmlFor="settings-critic-harness">Harness</label>
-              <select
-                id="settings-critic-harness"
-                className={`${selectField} w-full`}
-                value={reviewCritic.harness ?? ''}
-                onChange={(e) => setCritic(setCriticField(reviewCritic, 'harness', e.target.value))}
-              >
-                <option value="">Same as task</option>
-                {Object.keys(config.harnesses).map((h) => (
-                  <option key={h} value={h}>
-                    {h}
-                  </option>
-                ))}
-              </select>
-              <FieldError message={fieldErrors['verify.review.harness']} />
-            </div>
-            <div>
-              <label className={fieldLabel} htmlFor="settings-critic-model">Model</label>
-              <ModelCombobox
-                id="settings-critic-model"
-                value={reviewCritic.model}
-                onChange={(m) => setCritic(setCriticField(reviewCritic, 'model', m))}
-                options={reviewCritic.harness ? (config.harnesses[reviewCritic.harness]?.models ?? []).map((model) => model.id) : []}
-              />
-              <FieldError message={fieldErrors['verify.review.model']} />
-            </div>
-            <PromptField
-              id="settings-critic-prompt"
-              label="Review prompt"
-              description="The critic reads the candidate checkout and the issue itself (read-only). Harmonic appends the read-only instruction and the JSON verdict contract — see the compiled preview."
-              rows={3}
-              value={reviewCritic.prompt}
-              onChange={(promptText) => setCritic(setCriticField(reviewCritic, 'prompt', promptText))}
-              placeholders={DRIVE_PLACEHOLDERS}
-              preview={compileCriticPreview(reviewCritic.prompt)}
-              error={fieldErrors['verify.review.prompt']}
-            />
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-const reviewScalarFields: OverridableDescriptor[] = [
-  {
-    key: 'reviewEnabled',
-    id: 'workspace-review-enabled',
-    errorKey: 'reviewEnabled',
-    switchLabel: 'Enabled',
-    get: (w) => w.reviewEnabled,
-    set: (w, v) => ({ ...w, reviewEnabled: v as boolean | null }),
-    inherited: (c) => c.verify.review.enabled,
-    format: (v) => (v ? 'On' : 'Off'),
-  },
-  {
-    key: 'reviewHarness',
-    id: 'workspace-review-harness',
-    errorKey: 'reviewHarness',
-    get: (w) => w.reviewHarness,
-    set: (w, v) => ({ ...w, reviewHarness: v as string | null }),
-    inherited: (c) => c.verify.review.harness ?? (Object.keys(c.harnesses)[0] ?? ''),
-    options: (c) => toOptions(Object.keys(c.harnesses)),
-    format: (h) => (h ? String(h) : 'Same as task (builder harness)'),
-  },
-  {
-    key: 'reviewModel',
-    id: 'workspace-review-model',
-    errorKey: 'reviewModel',
-    get: (w) => w.reviewModel,
-    set: (w, v) => ({ ...w, reviewModel: v as string | null }),
-    inherited: (c) => c.verify.review.model ?? '',
-    format: (m) => (m ? String(m) : 'Not configured'),
-    renderControl: ({ id, value, onChange }, { config, workspace }) => {
-      const reviewHarnessEff = (workspace.reviewHarness ?? config.verify.review.harness) || undefined;
-      return (
-        <ModelCombobox
-          id={id}
-          value={String(value)}
-          onChange={onChange}
-          options={reviewHarnessEff ? (config.harnesses[reviewHarnessEff]?.models ?? []).map((model) => model.id) : []}
-        />
-      );
-    },
-  },
-];
-
-const reviewPromptField: OverridablePrompt = {
-  key: 'reviewPrompt',
-  id: 'workspace-review-prompt',
-  errorKey: 'reviewPrompt',
-  get: (w) => w.reviewPrompt,
-  set: (w, v) => ({ ...w, reviewPrompt: v }),
-  inherited: (c) => c.verify.review.prompt ?? '',
-  placeholders: DRIVE_PLACEHOLDERS,
-  compile: compileCriticPreview,
-  rows: 3,
-};
-
-function WorkspaceVerification({ ctx }: { ctx: WorkspaceRenderCtx }) {
-  const { config, workspace, errors } = ctx;
-  const resolvedReview: ResolvedReviewInputs = {
-    requested: Boolean(workspace.reviewEnabled ?? config.verify.review.enabled),
-    model: workspace.reviewModel ?? config.verify.review.model,
-    prompt: workspace.reviewPrompt ?? config.verify.review.prompt,
-  };
-  return (
-    <div className="flex flex-col gap-4 sm:max-w-md">
-      <ReviewUnrunnableNote review={resolvedReview} />
-      <div>
-        <InheritField
-          label="Command verifier"
-          value={workspace.verificationCommand}
-          inherited={config.verify.commands}
-          format={summarizeCommands}
-          onChange={(verificationCommand) => ctx.setWorkspace({ ...workspace, verificationCommand })}
-        >
-          {({ value, onChange }) => (
-            <CommandListEditor
-              commands={value}
-              onChange={onChange}
-              idPrefix="workspace-verify"
-              errorPrefix="verificationCommand"
-              fieldErrors={errors}
-              emptyText="No commands — verification runs nothing in this workspace."
-            />
-          )}
-        </InheritField>
-      </div>
-      {overrideGrid(reviewScalarFields, 'flex flex-col gap-4', ctx)}
-      <OverridePrompt descriptor={reviewPromptField} config={config} workspace={workspace} errors={errors} onWorkspace={ctx.setWorkspace} />
-    </div>
-  );
-}
-
 const guardrailScalarFields: OverridableDescriptor[] = [
   {
     key: 'guardrailProgress',
@@ -1239,11 +1050,16 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
     title: 'Verification',
     description: {
       global:
-        'Commands run in order and stop at the first failure. An optional review runs after every command passes. Each Workspace can override these defaults.',
+        'Task and Epic verification is configured as independent command and critic lists for each stage.',
       workspace:
-        'Commands run in order and stop at the first failure. Review runs only after they pass. This Workspace can override the global default.',
+        'Each Task and Epic verification stage can inherit the global list, replace it, or turn it off independently.',
     },
-    body: (ctx) => (ctx.surface === 'global' ? <GlobalVerification ctx={ctx} /> : <WorkspaceVerification ctx={ctx} />),
+    body: (ctx) =>
+      ctx.surface === 'global' ? (
+        <GlobalVerificationSettings config={ctx.config} setConfig={ctx.setConfig} fieldErrors={ctx.errors} />
+      ) : (
+        <WorkspaceVerificationSettings workspace={ctx.workspace} config={ctx.config} setWorkspace={ctx.setWorkspace} fieldErrors={ctx.errors} />
+      ),
   },
 
   {

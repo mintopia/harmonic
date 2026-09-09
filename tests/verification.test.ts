@@ -74,10 +74,7 @@ describe('verification-attempts-route', () => {
     it('reconciles recorded attempts with configured verifier statuses', async () => {
       const configured = await startServer({
         ...stubHarness(),
-        verify: {
-          commands: [{ command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }],
-          review: { enabled: true, prompt: 'Review the diff.', model: 'stub-model' },
-        },
+        verify: { task: { preMerge: { commands: [{ command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }], critics: [{ issuePrompt: 'Review the issue diff.', noIssuePrompt: 'Review the Task diff.', model: 'stub-model' }] } } },
       });
       try {
         const created = await configured.api('POST', '/api/tasks', { prompt: 'verification status target' });
@@ -107,10 +104,7 @@ describe('verification-attempts-route', () => {
     it('reconciles recorded attempts with configured verifier statuses', async () => {
       const configured = await startServer({
         ...stubHarness(),
-        verify: {
-          commands: [{ command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }],
-          review: { enabled: true, prompt: 'Review the diff.', model: 'stub-model' },
-        },
+        verify: { task: { preMerge: { commands: [{ command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }], critics: [{ issuePrompt: 'Review the issue diff.', noIssuePrompt: 'Review the Task diff.', model: 'stub-model' }] } } },
       });
       try {
         const created = await configured.api('POST', '/api/tasks', { prompt: 'verification status target' });
@@ -193,7 +187,7 @@ describe('verification-selfheal', () => {
     });
     beforeEach(async () => {
       await server.app.ctx.workspaces.update(workspaceId, {
-        verificationCommand: null,
+        taskPreMergeCommands: null,
         maxAttempts: null,
       });
       await server.app.ctx.settingsStore.updateGlobal({ maxAttempts: 2 });
@@ -202,6 +196,7 @@ describe('verification-selfheal', () => {
     const attempts = async (attemptId: number) => {
       const store = new VerificationAttemptStore(server.app.ctx.asyncDb);
       const run = await server.app.ctx.attempts.get(attemptId);
+      if (run.taskId === null) throw new Error('expected Task Attempt');
       const taskAttempts = await server.app.ctx.attempts.listForTask(run.taskId);
       return (await Promise.all(taskAttempts.map((a) => store.list(a.id)))).flat();
     };
@@ -221,7 +216,7 @@ describe('verification-selfheal', () => {
 
     it('AC1/AC2: an actionable fail creates Attempt N+1 with feedback and re-verifies', async () => {
       await server.app.ctx.workspaces.update(workspaceId, {
-        verificationCommand: [markerCommand('ok')],
+        taskPreMergeCommands: [markerCommand('ok')],
       });
       const baseOidBefore = git(repoDir, 'rev-parse', 'main');
 
@@ -243,7 +238,7 @@ describe('verification-selfheal', () => {
       expect(git(repoDir, 'show', `${baseOidAfter}:marker.txt`)).toBe('ok');
 
       const rows = await attempts(attemptId);
-      expect(rows.map((r) => r.verdict)).toEqual(['fail', 'pass', 'pass']);
+      expect(rows.map((r) => r.verdict)).toEqual(['fail', 'pass']);
       expect(rows[0]!.inputOid).not.toBe(rows[1]!.inputOid);
 
       const attemptsByTicket = await ticketAttempts(taskId);
@@ -272,7 +267,7 @@ describe('verification-selfheal', () => {
 
     async function runContinuationScenario(inputTokens: number) {
       await server.app.ctx.workspaces.update(workspaceId, {
-        verificationCommand: [markerCommand('ok')],
+        taskPreMergeCommands: [markerCommand('ok')],
         contextReuseTokenLimit: 20,
       });
       const { taskId } = await runWorktreeTask({
@@ -319,7 +314,7 @@ describe('verification-selfheal', () => {
     });
 
     it('AC4: an inconclusive verdict consumes an attempt and escalates only at the cap', async () => {
-      await server.app.ctx.workspaces.update(workspaceId, { verificationCommand: [inconclusiveCommand()] });
+      await server.app.ctx.workspaces.update(workspaceId, { taskPreMergeCommands: [inconclusiveCommand()] });
 
       const { taskId, attemptId } = await runWorktreeTask({ writeFiles: { 'marker.txt': 'anything\n' } });
 
@@ -341,7 +336,7 @@ describe('verification-selfheal', () => {
     });
 
     it('AC3: an actionable fail exhausts maxAttempts and escalates', async () => {
-      await server.app.ctx.workspaces.update(workspaceId, { verificationCommand: [alwaysFail()] });
+      await server.app.ctx.workspaces.update(workspaceId, { taskPreMergeCommands: [alwaysFail()] });
       await server.app.ctx.settingsStore.updateGlobal({ maxAttempts: 2 });
 
       const { taskId, attemptId } = await runWorktreeTask({ writeFiles: { 'marker.txt': 'bad\n' } });
@@ -364,7 +359,7 @@ describe('verification-selfheal', () => {
     });
 
     it('a workspace maxAttempts override escalates after its first failed attempt', async () => {
-      await server.app.ctx.workspaces.update(workspaceId, { verificationCommand: [alwaysFail()] });
+      await server.app.ctx.workspaces.update(workspaceId, { taskPreMergeCommands: [alwaysFail()] });
       await server.app.ctx.settingsStore.updateGlobal({ maxAttempts: 3 });
       await server.app.ctx.workspaces.update(workspaceId, { maxAttempts: 1 });
 
@@ -408,9 +403,9 @@ describe('verification-critic', () => {
     return dir;
   }
 
-  const critic = () => ({ reviewEnabled: true, reviewPrompt: 'Review the diff for correctness.', reviewModel: 'stub-model' });
+  const critic = () => ({ taskPreMergeCritics: [{ issuePrompt: 'Review the issue diff for correctness.', noIssuePrompt: 'Review the Task diff for correctness.', model: 'stub-model' }] });
 
-  const criticWithHarness = (harness: HarnessId) => ({ ...critic(), reviewHarness: harness });
+  const criticWithHarness = (harness: HarnessId) => ({ taskPreMergeCritics: [{ issuePrompt: 'Review the issue diff for correctness.', noIssuePrompt: 'Review the Task diff for correctness.', model: 'stub-model', harness }] });
 
   const exitCommand = (code: number): VerificationCommand =>
     verificationCommandSchema.parse({
@@ -488,11 +483,8 @@ describe('verification-critic', () => {
       lastCriticHarnessId = undefined;
       await server.app.ctx.workspaces.update(workspaceId, {
         isolationMode: 'worktree',
-        verificationCommand: null,
-        reviewEnabled: null,
-        reviewPrompt: null,
-        reviewModel: null,
-        reviewHarness: null,
+        taskPreMergeCommands: null,
+        taskPreMergeCritics: null,
       });
     });
 
@@ -585,6 +577,28 @@ describe('verification-critic', () => {
       expect(git(repoDir, 'rev-parse', 'main')).toBe(baseOidBefore);
     });
 
+    it('runs every critic and carries every failing verdict into the next Attempt', async () => {
+      criticResult = { verdict: 'fail', summary: 'the change matches the ticket' };
+      await server.app.ctx.workspaces.update(workspaceId, {
+        taskPreMergeCritics: [
+          { issuePrompt: 'Check the API.', noIssuePrompt: 'Check the API.', model: 'stub-model' },
+          { issuePrompt: 'Check the database.', noIssuePrompt: 'Check the database.', model: 'stub-model' },
+        ],
+      });
+      const { taskId } = await createAndRun();
+
+      const task = await waitFor(async () => {
+        const { body } = await server.api('GET', `/api/tasks/${taskId}`);
+        return body.state === 'escalated' ? body : undefined;
+      });
+      expect(task.state).toBe('escalated');
+
+      const rows = await attempts(taskId);
+      expect(rows).toHaveLength(4);
+      const timeline = await server.api('GET', `/api/tasks/${taskId}/attempts/timeline`);
+      expect(timeline.body.attempts[0].feedback).toContain('the change matches the ticket');
+    });
+
     it('AC3: an inconclusive critic consumes the same bounded Attempt loop', async () => {
       criticResult = { verdict: 'inconclusive', summary: 'cannot tell from the diff alone' };
       await server.app.ctx.workspaces.update(workspaceId, critic());
@@ -604,7 +618,7 @@ describe('verification-critic', () => {
     it('AC1: the critic verdict combines with the command verdict — command pass + critic fail still Escalates', async () => {
       criticResult = { verdict: 'fail', summary: 'logic is wrong despite green tests' };
       await server.app.ctx.workspaces.update(workspaceId, {
-        verificationCommand: [exitCommand(0)],
+        taskPreMergeCommands: [exitCommand(0)],
         ...critic(),
       });
       const { taskId } = await createAndRun();
@@ -631,7 +645,7 @@ describe('verification-critic', () => {
     it('AC1: command pass + critic pass together merges the Run (all verifiers passed)', async () => {
       criticResult = { verdict: 'pass', summary: 'correct and complete' };
       await server.app.ctx.workspaces.update(workspaceId, {
-        verificationCommand: [exitCommand(0)],
+        taskPreMergeCommands: [exitCommand(0)],
         ...critic(),
       });
       const { taskId } = await createAndRun();
@@ -646,15 +660,15 @@ describe('verification-critic', () => {
       expect(run).toMatchObject({ state: 'completed' });
 
       const rows = await attempts(taskId);
-      expect(rows).toHaveLength(3);
-      expect(rows.map((r) => `${r.mechanism}:${r.verdict}`).sort()).toEqual(['command:pass', 'command:pass', 'critic:pass']);
+      expect(rows).toHaveLength(2);
+      expect(rows.map((r) => `${r.mechanism}:${r.verdict}`).sort()).toEqual(['command:pass', 'critic:pass']);
     });
 
     it('records implementation, verification, and review outcomes in the Attempt timeline', async () => {
       criticResult = { verdict: 'pass', summary: 'correct and complete' };
       const command = exitCommand(0);
       await server.app.ctx.workspaces.update(workspaceId, {
-        verificationCommand: [command],
+        taskPreMergeCommands: [command],
         ...critic(),
       });
       const { taskId, attemptId } = await createAndRun();
@@ -849,7 +863,7 @@ describe('verification-command', () => {
         .map((e: any) => e.payload);
 
     it('AC1/AC3/AC4/AC5: a passing command merges a native Run to done; the attempt records the verified head OID', async () => {
-      await server.app.ctx.workspaces.update(workspaceId, { verificationCommand: [exitCommand(0)] });
+      await server.app.ctx.workspaces.update(workspaceId, { taskPreMergeCommands: [exitCommand(0)] });
       const { taskId, attemptId } = await createAndRun();
 
       const task = await waitFor(async () => {
@@ -875,7 +889,7 @@ describe('verification-command', () => {
     it('a direct Run works in place: its verified commit is the base branch tip, with no private ref and no run branch', async () => {
       await server.app.ctx.workspaces.update(workspaceId, {
         isolationMode: 'direct',
-        verificationCommand: [exitCommand(0)],
+        taskPreMergeCommands: [exitCommand(0)],
       });
       const baseBefore = git(repoDir, 'rev-parse', 'main');
       const { taskId } = await createAndRun();
@@ -898,7 +912,7 @@ describe('verification-command', () => {
     it('a pre-existing dirty tree does not fail a direct Run; its candidate is the agent\'s own commit', async () => {
       await server.app.ctx.workspaces.update(workspaceId, {
         isolationMode: 'direct',
-        verificationCommand: [exitCommand(0)],
+        taskPreMergeCommands: [exitCommand(0)],
       });
       writeFileSync(join(repoDir, 'operator-scratch.txt'), 'not the agent\n');
 
@@ -915,7 +929,7 @@ describe('verification-command', () => {
     });
 
     it('AC2/AC4: a failing command records feedback on attempt 1, then escalates after attempt 2', async () => {
-      await server.app.ctx.workspaces.update(workspaceId, { verificationCommand: [exitCommand(1)] });
+      await server.app.ctx.workspaces.update(workspaceId, { taskPreMergeCommands: [exitCommand(1)] });
       const { taskId } = await createAndRun();
 
       const run = await waitFor(async () => {
@@ -946,7 +960,7 @@ describe('verification-command', () => {
 
     it('AC2/AC4: an inconclusive command consumes the same bounded Attempt loop', async () => {
       await server.app.ctx.workspaces.update(workspaceId, {
-        verificationCommand: [
+        taskPreMergeCommands: [
           verificationCommandSchema.parse({
             command: 'definitely-not-a-real-command-xyzzy',
             args: [],
@@ -975,7 +989,7 @@ describe('verification-command', () => {
     it('a configured command with no committed implementation fails closed', async () => {
       await server.app.ctx.workspaces.update(workspaceId, {
         isolationMode: 'direct',
-        verificationCommand: [exitCommand(0)],
+        taskPreMergeCommands: [exitCommand(0)],
       });
       writeFileSync(join(repoDir, 'uncommitted.txt'), 'dirty\n');
 
@@ -996,7 +1010,7 @@ describe('verification-command', () => {
     it('a dirty worktree receives one commit nudge without consuming an Attempt', async () => {
       await server.app.ctx.workspaces.update(workspaceId, {
         isolationMode: 'direct',
-        verificationCommand: null,
+        taskPreMergeCommands: null,
       });
       const created = await server.api('POST', '/api/tasks', {
         prompt: JSON.stringify({ writeFiles: { 'nudge-me.txt': 'dirty\n' }, commit: false }),
@@ -1022,7 +1036,7 @@ describe('verification-command', () => {
     it('a pass merges the Run onto the base as an ordinary merge commit (ADR-0001)', async () => {
       await server.app.ctx.workspaces.update(workspaceId, {
         isolationMode: 'worktree',
-        verificationCommand: [exitCommand(0)],
+        taskPreMergeCommands: [exitCommand(0)],
       });
       const { taskId } = await createAndRun();
       await waitFor(async () => {
@@ -1039,7 +1053,7 @@ describe('verification-command', () => {
     it('opens every Attempt with a recorded Rebase Task, including a clean no-op rebase', async () => {
       await server.app.ctx.workspaces.update(workspaceId, {
         isolationMode: 'worktree',
-        verificationCommand: [exitCommand(0)],
+        taskPreMergeCommands: [exitCommand(0)],
       });
       const { taskId } = await createAndRun();
       await waitFor(async () => {
@@ -1064,7 +1078,7 @@ describe('verification-command', () => {
         });
       await server.app.ctx.workspaces.update(workspaceId, {
         isolationMode: 'worktree',
-        verificationCommand: [echoExit('CMD1', 0), echoExit('CMD2', 1), echoExit('CMD3', 0)],
+        taskPreMergeCommands: [echoExit('CMD1', 0), echoExit('CMD2', 1), echoExit('CMD3', 0)],
       });
       const { taskId } = await createAndRun();
       await waitFor(async () => {
@@ -1119,7 +1133,7 @@ describe('verification-command', () => {
 
     it('a passing verification merges directly — there is no review gate to park at', async () => {
       await server.app.ctx.workspaces.update(workspaceId, {
-        verificationCommand: [exitCommand(0)],
+        taskPreMergeCommands: [exitCommand(0)],
       });
       const { taskId } = await createAndRun();
 
@@ -1135,7 +1149,7 @@ describe('verification-command', () => {
 
     it('a pass merges under Harmonic\'s own merge fact, never the operator disposition', async () => {
       await server.app.ctx.workspaces.update(workspaceId, {
-        verificationCommand: [exitCommand(0)],
+        taskPreMergeCommands: [exitCommand(0)],
       });
       const { taskId } = await createAndRun();
 
@@ -1159,7 +1173,7 @@ describe('verification-command', () => {
 
     it('safety: a fail on every attempt Escalates — merging never rescues a red verdict', async () => {
       await server.app.ctx.workspaces.update(workspaceId, {
-        verificationCommand: [exitCommand(1)],
+        taskPreMergeCommands: [exitCommand(1)],
       });
       const { taskId } = await createAndRun();
 
@@ -1178,7 +1192,7 @@ describe('verification-command', () => {
 
     it('with NO verifier configured a run still merges — nothing to verify means nothing blocks', async () => {
       await server.app.ctx.workspaces.update(workspaceId, {
-        verificationCommand: null,
+        taskPreMergeCommands: null,
       });
       const { taskId } = await createAndRun();
 
@@ -1196,7 +1210,7 @@ describe('verification-command', () => {
 
     it('a worktree run merges the merge into the base branch (no human gate)', async () => {
       await server.app.ctx.workspaces.update(workspaceId, {
-        verificationCommand: [exitCommand(0)],
+        taskPreMergeCommands: [exitCommand(0)],
       });
       const baseOidBefore = git(repoDir, 'rev-parse', 'main');
 

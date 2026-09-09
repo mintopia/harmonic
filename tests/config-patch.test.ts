@@ -59,57 +59,57 @@ describe('PATCH /api/config verification', () => {
 
   it('accepts a command verifier and fills its defaults', async () => {
     const patched = await server.api('PATCH', '/api/config', {
-      verify: { commands: [{ command: 'npm', args: ['test'] }] },
+      verify: { task: { preMerge: { commands: [{ command: 'npm', args: ['test'] }], critics: [] } } },
     });
     expect(patched.status).toBe(200);
-    expect(patched.body.verify.commands[0].command).toBe('npm');
-    expect(patched.body.verify.commands[0].args).toEqual(['test']);
-    expect(patched.body.verify.commands[0].timeoutSeconds).toBe(600);
+    expect(patched.body.verify.task.preMerge.commands[0].command).toBe('npm');
+    expect(patched.body.verify.task.preMerge.commands[0].args).toEqual(['test']);
+    expect(patched.body.verify.task.preMerge.commands[0].timeoutSeconds).toBe(600);
   });
 
   it('accepts an agent critic', async () => {
     const patched = await server.api('PATCH', '/api/config', {
-      verify: { review: { enabled: true, prompt: 'Review the diff.', model: 'claude-opus-5' } },
+      verify: { task: { preMerge: { commands: [], critics: [{ prompt: 'Review the diff.', model: 'claude-opus-5' }] } } },
     });
     expect(patched.status).toBe(200);
-    expect(patched.body.verify.review.model).toBe('claude-opus-5');
+    expect(patched.body.verify.task.preMerge.critics[0].model).toBe('claude-opus-5');
   });
 
   it('accepts a critic harness (issue #174) and round-trips it', async () => {
     const withHarness = await server.api('PATCH', '/api/config', {
-      verify: { review: { enabled: true, prompt: 'Review the diff.', model: 'claude-opus-5', harness: 'codex' } },
+      verify: { task: { preMerge: { commands: [], critics: [{ prompt: 'Review the diff.', model: 'claude-opus-5', harness: 'codex' }] } } },
     });
     expect(withHarness.status).toBe(200);
-    expect(withHarness.body.verify.review.harness).toBe('codex');
+    expect(withHarness.body.verify.task.preMerge.critics[0].harness).toBe('codex');
 
     const after = await server.api('GET', '/api/config');
-    expect(after.body.verify.review.harness).toBe('codex');
+    expect(after.body.verify.task.preMerge.critics[0].harness).toBe('codex');
   });
 
   it('accepts a critic with no harness (issue #174) — the field is optional, "Same as task"', async () => {
     const patched = await server.api('PATCH', '/api/config', {
-      verify: { review: { enabled: true, prompt: 'Review the diff.', model: 'claude-opus-5' } },
+      verify: { task: { preMerge: { commands: [], critics: [{ prompt: 'Review the diff.', model: 'claude-opus-5' }] } } },
     });
     expect(patched.status).toBe(200);
-    expect(patched.body.verify.review.harness).toBeUndefined();
+    expect(patched.body.verify.task.preMerge.critics[0].harness).toBeUndefined();
   });
 
   it('rejects an invalid critic harness (issue #174) — not one of the known harness ids', async () => {
     const invalid = await server.api('PATCH', '/api/config', {
-      verify: { review: { enabled: true, prompt: 'Review the diff.', model: 'claude-opus-5', harness: 'nonexistent' } },
+      verify: { task: { preMerge: { commands: [], critics: [{ prompt: 'Review the diff.', model: 'claude-opus-5', harness: 'nonexistent' }] } } },
     });
     expect(invalid.status).toBe(400);
   });
 
   it('clears a configured command back to null', async () => {
     const withCommand = await server.api('PATCH', '/api/config', {
-      verify: { commands: [{ command: 'npm', args: ['test'] }] },
+      verify: { task: { preMerge: { commands: [{ command: 'npm', args: ['test'] }], critics: [] } } },
     });
-    expect(withCommand.body.verify.commands[0].command).toBe('npm');
+    expect(withCommand.body.verify.task.preMerge.commands[0].command).toBe('npm');
 
-    const cleared = await server.api('PATCH', '/api/config', { verify: { commands: [] } });
+    const cleared = await server.api('PATCH', '/api/config', { verify: { task: { preMerge: { commands: [], critics: [] } } } });
     expect(cleared.status).toBe(200);
-    expect(cleared.body.verify.commands).toEqual([]);
+    expect(cleared.body.verify.task.preMerge.commands).toEqual([]);
   });
 
   it('accepts a maxAttempts patch and leaves verification settings untouched', async () => {

@@ -78,34 +78,40 @@ export type VerificationCommand = z.infer<typeof verificationCommandSchema>;
  * An agent critic verifier: a read-only reviewer Harness with its own prompt and
  * model that judges the candidate diff.
  */
-export const verificationCriticSchema = z.object({
-  prompt: z
-    .string()
-    .min(1)
-    .meta({ example: 'Review the change against issue {ref}: {title}. Read the code and the issue to decide.' }),
+const verificationCriticIdentitySchema = z.object({
   model: z.string().min(1).meta({ example: 'claude-opus-5' }),
   /** Reviewer harness; omitted = reuse the builder task's harness. */
   harness: z.enum(HARNESS_IDS).optional().meta({ example: 'claude' }),
 });
-export type VerificationCritic = z.infer<typeof verificationCriticSchema>;
 
-/** The one optional review step that follows the ordered command list. */
-export const verificationReviewSchema = z
-  .object({
-    enabled: z.boolean().default(false),
-    prompt: z.string().min(1).optional(),
-    model: z.string().min(1).optional(),
-    harness: z.enum(HARNESS_IDS).optional(),
-  })
-  .superRefine((review, ctx) => {
-    if (!review.enabled) return;
-    if (!review.prompt) ctx.addIssue({ code: 'custom', path: ['prompt'], message: 'prompt is required when review is enabled' });
-    if (!review.model) ctx.addIssue({ code: 'custom', path: ['model'], message: 'model is required when review is enabled' });
-  });
-export type VerificationReview = z.infer<typeof verificationReviewSchema>;
+export const taskVerificationCriticSchema = verificationCriticIdentitySchema.extend({
+  issuePrompt: z.string().min(1).meta({ example: 'Review issue {ref}: {title}. {body}' }),
+  noIssuePrompt: z.string().min(1).meta({ example: 'Review the Task instructions and candidate change.' }),
+});
+export type TaskVerificationCritic = z.infer<typeof taskVerificationCriticSchema>;
+
+export const epicVerificationCriticSchema = verificationCriticIdentitySchema.extend({
+  prompt: z
+    .string()
+    .min(1)
+    .meta({ example: 'Review the change against issue {ref}: {title}. Read the code and the issue to decide.' }),
+});
+export type EpicVerificationCritic = z.infer<typeof epicVerificationCriticSchema>;
 
 /** List-grain override: `null`/absent inherits the global list, a non-empty array replaces it, an empty array runs no commands. */
 export const verificationCommandOverrideSchema = z.array(verificationCommandSchema);
+export const taskVerificationCriticOverrideSchema = z.array(taskVerificationCriticSchema);
+export const epicVerificationCriticOverrideSchema = z.array(epicVerificationCriticSchema);
+
+/** One verification stage; commands run before its independent critic list. */
+const verificationStageSchema = <TCritic extends z.ZodType>(criticSchema: TCritic) => z.object({
+  commands: z.array(verificationCommandSchema),
+  critics: z.array(criticSchema),
+});
+export const taskVerificationStageSchema = verificationStageSchema(taskVerificationCriticSchema);
+export const epicVerificationStageSchema = verificationStageSchema(epicVerificationCriticSchema);
+export type TaskVerificationStage = z.infer<typeof taskVerificationStageSchema>;
+export type EpicVerificationStage = z.infer<typeof epicVerificationStageSchema>;
 
 /** Wall-clock is mandatory; tokens and cost are opt-in (null = unset). The effective config is snapshotted onto an Attempt at start. */
 export const budgetGuardrailSchema = z.object({
@@ -130,9 +136,12 @@ export function unpricedModelsForCostCap(
     for (const m of harness.models) if (!isModelPriced(m.id, prices)) configured.add(`${harnessId}/${m.id}`);
     if (!isModelPriced(harness.defaultModel, prices)) configured.add(`${harnessId}/${harness.defaultModel}`);
   }
-  if (config.verify.review.enabled && config.verify.review.model) {
-    const harness = config.harnesses[config.verify.review.harness ?? config.defaults.harness];
-    if (harness && !isModelPriced(config.verify.review.model, pricesForHarness(harness))) configured.add(`${config.verify.review.harness ?? config.defaults.harness}/${config.verify.review.model}`);
+  for (const stage of [config.verify.task.preMerge, config.verify.task.postMerge, config.verify.epic.preMerge]) {
+    for (const critic of stage.critics) {
+      const harnessId = critic.harness ?? config.defaults.harness;
+      const harness = config.harnesses[harnessId];
+      if (harness && !isModelPriced(critic.model, pricesForHarness(harness))) configured.add(`${harnessId}/${critic.model}`);
+    }
   }
   return [...configured];
 }
@@ -142,9 +151,11 @@ export function costCapMessage(unpriced: string[]): string {
   return `a cost cap with no token fallback requires every configured model to be priced — unpriced: ${unpriced.join(', ')}`;
 }
 
-/** True when neither the command verifier nor critic review is configured, so candidates would merge unverified. */
+/** True when no verifier is configured for any stage. */
 export function verifyChannelsUnconfigured(verify: Pick<AppConfig, 'verify'>['verify']): boolean {
-  return verify.commands.length === 0 && !verify.review.enabled;
+  return [verify.task.preMerge, verify.task.postMerge, verify.epic.preMerge].every(
+    (stage) => stage.commands.length === 0 && stage.critics.length === 0,
+  );
 }
 
 export const appConfigSchema = z.object({
@@ -204,10 +215,10 @@ export const appConfigSchema = z.object({
   pauseMessage: z.string().min(1).meta({ example: 'Please finish the current turn, then pause and wait for further instructions.' }),
   /** End a Conversation with no Turn for this many minutes; 0 disables. Fractional values are allowed. */
   conversationIdleTimeoutMinutes: z.number().nonnegative().meta({ example: 30 }),
-  /** Ordered verification contract. Commands fail fast; review runs last. */
+  /** Ordered verifier lists for each Task and Epic verification stage. */
   verify: z.object({
-    commands: z.array(verificationCommandSchema),
-    review: verificationReviewSchema,
+    task: z.object({ preMerge: taskVerificationStageSchema, postMerge: taskVerificationStageSchema }),
+    epic: z.object({ preMerge: epicVerificationStageSchema, resolvePrompt: z.string().min(1) }),
   }),
   /** `postMergeCheck` runs the verification commands on the merged base tip; the off-switch for slow suites. */
   merge: z.object({
