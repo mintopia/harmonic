@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { baselineConfig } from '../src/config.js';
 import { type AsyncDbHandle, openAsyncDb } from '../src/db/async.js';
-import { type AttemptRow, type TaskRow } from '../src/db/schema.js';
+import { type TaskAttemptRow, type TaskRow } from '../src/db/schema.js';
 import { AttemptSettleCoordinator } from '../src/domain/attempt-settle.js';
 import { AttemptStore } from '../src/domain/attempts.js';
 import { DomainError } from '../src/domain/errors.js';
@@ -244,17 +244,20 @@ describe('escalation-service', () => {
       rmSync(dir, { recursive: true, force: true });
     });
 
-    async function escalated(candidate = true): Promise<{ task: TaskRow; run: AttemptRow }> {
+    async function escalated(candidate = true): Promise<{ task: TaskRow; run: TaskAttemptRow }> {
       const created = await tasks.create({ prompt: 'p', state: 'ready' });
       await tasks.setState(created.id, 'working');
       let run = await attempts.create(created.id);
-      if (candidate) run = await attempts.update(run.id, { verifiedHeadOid: 'b'.repeat(40) });
+      if (candidate) {
+        await attempts.update(run.id, { verifiedHeadOid: 'b'.repeat(40) });
+        run = await attempts.currentForTask(created.id);
+      }
       await settle.settle(await tasks.get(created.id), run, 'escalate', {
         runState: 'failed',
         taskAction: 'escalate',
         reason: 'escalated to human: attempt 2 of 2 failed',
       });
-      return { task: await tasks.get(created.id), run: await attempts.get(run.id) };
+      return { task: await tasks.get(created.id), run: await attempts.currentForTask(created.id) };
     }
 
     it('every action 409s invalid_state on a ticket that is not escalated', async () => {

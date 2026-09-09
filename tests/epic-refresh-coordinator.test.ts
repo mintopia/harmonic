@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -8,7 +8,10 @@ import type { MergeIntoBaseOutcome } from '../src/execution/branch-merge.js';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { baselineConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
+import { WorkspaceService } from '../src/domain/workspaces.js';
+import { AttemptStore } from '../src/domain/attempts.js';
 import { Runner } from '../src/execution/runner.js';
+import { TrackerEpicService } from '../src/tracker/epic-service.js';
 import type { CriticDriveRequest } from '../src/verification/critic.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { allWorkspaces, makeSettingsStore, waitFor } from './helpers.js';
@@ -323,5 +326,139 @@ describe('epic refresh corrective turn (issue #315)', () => {
     expect(driveCalls[0]!.harnessId).toBe(cfg.defaults.harness);
     expect(driveCalls[0]!.model).toBe(cfg.harnesses[cfg.defaults.harness]!.defaultModel);
     git(repo, 'merge-base', '--is-ancestor', 'develop', 'epic/5');
+  });
+
+  it('uses an existing Epic checkout and persists the resolver session, usage, process identity, and Step', async () => {
+    const workspaces = new WorkspaceService(asyncDb, settingsStore);
+    const workspace = await workspaces.create({ name: 'Epic resolver', workingDir: repo });
+    await tasks.syncEpics(workspace.id, [{ ref: 5, kind: 'epic' }]);
+    const attempts = new AttemptStore(asyncDb);
+    const attempt = await attempts.createForEpic({ workspaceId: workspace.id, epicRef: 5 });
+    const liveWorktree = join(dir, 'epic-live');
+    git(repo, 'worktree', 'add', liveWorktree, 'epic/5');
+    const cwd: string[] = [];
+    const updates: { attemptId: number; payload: { sessionUpdate: string } }[] = [];
+    const runner = new Runner(tasks, asyncDb, () => baselineConfig(), {
+      worktreesDir: join(dir, 'worktrees'),
+      events: {
+        onAttemptLogEvent: (event) => updates.push(event),
+      },
+      criticDrive: {
+        run: async (req) => {
+          cwd.push(req.cwd);
+          await req.onProcessStart?.(process.pid);
+          await req.onSessionCreated?.('epic-resolve-session', { agentCapabilities: {} });
+          req.onUpdate?.({ sessionUpdate: 'tool_call', kind: 'read' });
+          return {
+            output: 'fixed',
+            permissionRequests: [],
+            sessionId: 'epic-resolve-session',
+            usage: { inputTokens: 12, outputTokens: 3, totalTokens: 15 },
+          };
+        },
+      },
+    });
+
+    await runner.resolveEpicVerification({
+      workspaceId: workspace.id,
+      epicRef: 5,
+      repoDir: repo,
+      worktreePath: liveWorktree,
+      attempt,
+      verifiedHeadOid: git(repo, 'rev-parse', 'epic/5'),
+      verificationReason: 'test failed',
+      resolvePrompt: 'Fix Epic {ref}: {title}',
+    });
+
+    const stored = await attempts.get(attempt.id);
+    expect(cwd).toEqual([liveWorktree]);
+    expect(stored).toMatchObject({ sessionId: 'epic-resolve-session', pid: null, pgid: null, procStartToken: null });
+    expect(stored.prompt).toContain('Fix Epic 5: Epic #5');
+    expect(JSON.parse(stored.usage ?? '{}')).toMatchObject({ totals: { totalTokens: 15 } });
+    expect(await attempts.listToolCalls(attempt.id)).toEqual(new Map([['Read', 1]]));
+    expect(updates).toContainEqual(expect.objectContaining({ attemptId: attempt.id, payload: expect.objectContaining({ sessionUpdate: 'tool_call' }) }));
+    expect(await attempts.listSteps(attempt.id)).toContainEqual(expect.objectContaining({ type: 'implementation', state: 'passed', logLocator: expect.stringContaining('session:') }));
+    expect(git(repo, 'worktree', 'list')).toContain(liveWorktree);
+    git(repo, 'worktree', 'remove', '--force', liveWorktree);
+  });
+
+  it('keeps one managed Epic checkout from failed verification through the resolver, then retires it', async () => {
+    const workspaces = new WorkspaceService(asyncDb, settingsStore);
+    const workspace = await workspaces.create({ name: 'Epic attempt', workingDir: repo });
+    await tasks.syncEpics(workspace.id, [{ ref: 5, kind: 'epic' }]);
+    const config = baselineConfig();
+    config.verify.epic.preMerge.commands = [{
+      command: 'node',
+      args: ['-e', 'process.exit(1)'],
+      env: {},
+      timeoutSeconds: 10,
+    }];
+    const worktreesDir = join(dir, 'worktrees');
+    const paths: string[] = [];
+    const attemptStates: string[] = [];
+    const service = new TrackerEpicService(
+      tasks,
+      async () => [workspace],
+      undefined,
+      undefined,
+      () => config,
+      undefined,
+      async () => ({ kind: 'merged', mergeOid: 'unused' }),
+      undefined,
+      undefined,
+      new AttemptStore(asyncDb),
+      async (input) => {
+        paths.push(input.worktreePath);
+        expect(git(input.worktreePath, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('epic/5');
+        expect(existsSync(input.worktreePath)).toBe(true);
+      },
+      worktreesDir,
+      (attempt) => { attemptStates.push(attempt.state); },
+    );
+    service.startWorkspace(workspace);
+
+    await expect(service.forceIntegrateEpic(workspace.id, 5)).resolves.toEqual({
+      status: 'waiting', reason: 'whole-Epic verification failed; resolver dispatched',
+    });
+
+    const [worktreePath] = paths;
+    expect(worktreePath).toBe(join(worktreesDir, `epic-attempt-${workspace.id}-5`));
+    expect(existsSync(worktreePath!)).toBe(false);
+    expect(git(repo, 'worktree', 'list')).not.toContain(worktreePath!);
+    expect(attemptStates).toEqual(['running', 'failed']);
+  });
+
+  it('reclaims a crashed deterministic Epic Attempt checkout before retrying verification', async () => {
+    const workspaces = new WorkspaceService(asyncDb, settingsStore);
+    const workspace = await workspaces.create({ name: 'Epic attempt recovery', workingDir: repo });
+    await tasks.syncEpics(workspace.id, [{ ref: 5, kind: 'epic' }]);
+    const config = baselineConfig();
+    const worktreesDir = join(dir, 'worktrees');
+    const stale = join(worktreesDir, `epic-attempt-${workspace.id}-5`);
+    mkdirSync(worktreesDir, { recursive: true });
+    git(repo, 'worktree', 'add', stale, 'epic/5');
+    const service = new TrackerEpicService(
+      tasks,
+      async () => [workspace],
+      undefined,
+      undefined,
+      () => config,
+      undefined,
+      async () => ({ kind: 'merged', mergeOid: 'unused' }),
+      undefined,
+      undefined,
+      new AttemptStore(asyncDb),
+      async () => {},
+      worktreesDir,
+    );
+    service.startWorkspace(workspace);
+
+    await expect(service.forceIntegrateEpic(workspace.id, 5)).resolves.toEqual({
+      status: 'integrated',
+      oid: 'unused',
+    });
+
+    expect(existsSync(stale)).toBe(false);
+    expect(git(repo, 'worktree', 'list')).not.toContain(stale);
   });
 });

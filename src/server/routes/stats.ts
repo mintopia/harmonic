@@ -19,7 +19,7 @@ import {
   verdicts,
 } from '../stats-aggregates.js';
 import { logger } from '../../logger.js';
-import type { AttemptState } from '../../db/schema.js';
+import { isTaskAttempt, type AttemptState } from '../../db/schema.js';
 import type { StatsRange, StatsWorkerClient } from '../../db/stats-reader.js';
 
 function statsAttemptState(state: AttemptState): 'running' | 'completed' | 'failed' | 'cancelled' {
@@ -287,7 +287,7 @@ async function computeStats(statsReader: StatsWorkerClient, range: StatsRange) {
     verdicts: verdicts(verifications),
     gateOutcomes: gateOutcomes(settleEvents),
     guardrailTrips: guardrailTripsByDimension(guardrailTrips),
-    byWorkspace: byWorkspace(rows, taskWorkspaces, workspaces),
+    byWorkspace: byWorkspace(rows.filter(isTaskAttempt), taskWorkspaces, workspaces),
   };
 }
 

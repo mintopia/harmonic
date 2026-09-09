@@ -1,4 +1,4 @@
-import type { AttemptRow, TaskRow } from '../db/schema.js';
+import { type AttemptRow, type TaskRow } from '../db/schema.js';
 import { forEachYielding, type YieldOptions } from '../reliability/yield.js';
 import { Git } from './git.js';
 import { logger } from '../logger.js';
@@ -44,7 +44,7 @@ export class BranchRetirementCoordinator {
   /** Backfill terminal Attempts' branches from prior Harmonic versions. */
   async reconcile(options?: YieldOptions): Promise<void> {
     await forEachYielding(await this.attempts.listAll(), async (attempt) => {
-      if (attempt.state === 'running') return;
+      if (attempt.state === 'running' || attempt.taskId === null) return;
       try {
         await this.onAttemptSettled(await this.tasks.get(attempt.taskId), attempt);
       } catch (err) {
