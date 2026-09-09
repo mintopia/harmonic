@@ -6,6 +6,17 @@ Part of the 2026-08-28 ADR reset (see README.md). The in-place critic is
 implemented (#385): the provisioned checkout, its index management, the mutation
 fingerprint, and merge-cleanliness are gone; restraint is by prompt instruction.
 
+Amended 2026-09-08: the verify commands run in place too (see "Verify commands
+run in place"). The disposable per-Attempt detached worktree — the last of the
+frozen-tree machinery the reset missed — is deleted; a detached checkout is
+retained only where no live checkout of the target commit exists.
+
+Superseded in part by ADR-0028 (2026-09-08): the single-critic Review model and
+the whole-Epic-verify-without-resolve clause are replaced by staged Verification
+(commands + a list of critics at three stages) and an Epic that runs Attempts.
+The in-place doctrine and verdict-attaches-to-Attempt rule below stand and
+extend to every stage.
+
 ## The Verification gate
 
 Before a Task's work merges, an optional Verification runs inside each
@@ -21,6 +32,26 @@ burns an Attempt rather than escalating directly — the loop stays uniform.
 
 **A verdict attaches to the Attempt, never to a SHA** (ADR-0001). Merging
 never re-checks it, and base movement never invalidates it.
+
+## Verify commands run in place
+
+Like the critic, the verify commands run **in place** in the Attempt's builder
+worktree (or the live checkout in direct mode). That worktree already sits at
+the candidate head the Attempt committed, so there is no separate disposable
+checkout and no frozen-tree machinery. One Attempt owns one worktree with one
+agent: there is no concurrent reader a mutating command must be isolated from,
+and a command that does mutate touches only that worktree — the same accepted,
+logged tradeoff (ADR-0010) already recorded for the critic. Running in place
+also means a command sees exactly what the agent produced, including any
+sibling checkouts the agent set up under the worktree — a detached checkout of
+the base tree alone would silently omit them.
+
+The lone exception is a Verification with **no live checkout at the target
+commit**: whole-Epic integration (a merged integration branch tip) and the
+crash-recovery post-merge check (a merge commit on the shared base). Those
+carve a disposable detached worktree for the run — running a mutating command
+directly in the shared base checkout is the one place isolation genuinely
+matters.
 
 ## The critic is an independent, tool-enabled evaluator
 
@@ -90,6 +121,11 @@ is a loud, visible state on the settings surface, never a silent no-op.
 - The critic-checkout provisioning, its index management, the mutation
   fingerprint, and `Git.mergeCleanliness` are deleted with the frozen-tree
   model.
+- The command verifier's disposable per-Attempt detached worktree is deleted;
+  it runs in the builder worktree via the same cwd resolution as the critic.
+  `runCommandVerifierDetached` retains a detached checkout only for the
+  Epic-integration and crash-recovery post-merge surfaces, which have no live
+  checkout at the target commit.
 - `skipped` vs `disabled` classification is a best-effort display
   reconciliation, not a persisted fact; if it misleads, persisting the
   resolved-verifier set onto the Attempt is the follow-up.

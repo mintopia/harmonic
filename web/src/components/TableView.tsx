@@ -190,13 +190,13 @@ export function TableView({
       onClick={() => onOpenEpic(task.trackerRef ?? task.id)}
     >
       <div role="cell" className="flex items-center justify-end gap-1.5 whitespace-nowrap tabular-nums text-muted">
+        <span className={`${chip} shrink-0 bg-accent-tint text-accent`}>
+          <span className="sr-only">Epic: </span>epic
+        </span>
         <span className="sr-only">Issue: </span>
         {issueRef(task.trackerRef ?? task.id)}
       </div>
       <div role="cell" className="flex min-w-0 items-center gap-2 pr-2">
-        <span className={`${chip} shrink-0 bg-accent-tint text-accent`}>
-          <span className="sr-only">Epic: </span>epic
-        </span>
         <div className="min-w-0 flex-1">
           <button
             type="button"

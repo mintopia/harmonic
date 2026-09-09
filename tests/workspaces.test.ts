@@ -124,68 +124,56 @@ describe('Workspace CRUD (ADR-0008, issue #41)', () => {
     rmSync(repo, { recursive: true, force: true });
   });
 
-  it('round-trips per-Workspace verifier overrides through PATCH and GET (issue #132, #337)', async () => {
+  it('round-trips per-Workspace staged verifier lists through PATCH and GET', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'harmonic-workspace-verify-'));
     const created = await server.api('POST', '/api/workspaces', { name: 'Verified', workingDir: dir });
     expect(created.status).toBe(201);
-    expect(created.body.verificationCommand).toBeNull();
-    expect(created.body.reviewEnabled).toBeNull();
-    expect(created.body.reviewPrompt).toBeNull();
-    expect(created.body.reviewModel).toBeNull();
-    expect(created.body).not.toHaveProperty('verificationAutoAccept');
+    expect(created.body.taskPreMergeCommands).toBeNull();
+    expect(created.body.taskPreMergeCritics).toBeNull();
+    expect(created.body.taskPostMergeCommands).toBeNull();
+    expect(created.body.taskPostMergeCritics).toBeNull();
+    expect(created.body.epicPreMergeCommands).toBeNull();
+    expect(created.body.epicPreMergeCritics).toBeNull();
 
     const set = await server.api('PATCH', `/api/workspaces/${created.body.id}`, {
-      verificationCommand: [{ command: 'npm', args: ['test'] }],
-      reviewEnabled: true,
-      reviewPrompt: 'review the diff',
-      reviewModel: 'claude-opus-5',
+      taskPreMergeCommands: [{ command: 'npm', args: ['test'] }],
+      taskPreMergeCritics: [{ issuePrompt: 'review the issue diff', noIssuePrompt: 'review the Task diff', model: 'claude-opus-5' }],
     });
     expect(set.status).toBe(200);
-    expect(set.body.verificationCommand).toMatchObject([{ command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }]);
-    expect(set.body.reviewEnabled).toBe(true);
-    expect(set.body.reviewPrompt).toBe('review the diff');
-    expect(set.body.reviewModel).toBe('claude-opus-5');
+    expect(set.body.taskPreMergeCommands).toMatchObject([{ command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }]);
+    expect(set.body.taskPreMergeCritics).toMatchObject([{ issuePrompt: 'review the issue diff', noIssuePrompt: 'review the Task diff', model: 'claude-opus-5' }]);
 
     const fetched = await server.api('GET', `/api/workspaces/${created.body.id}`);
-    expect(fetched.body.verificationCommand).toMatchObject([{ command: 'npm', args: ['test'] }]);
+    expect(fetched.body.taskPreMergeCommands).toMatchObject([{ command: 'npm', args: ['test'] }]);
 
-    const disabled = await server.api('PATCH', `/api/workspaces/${created.body.id}`, {
-      reviewEnabled: false,
-    });
+    const disabled = await server.api('PATCH', `/api/workspaces/${created.body.id}`, { taskPreMergeCritics: [] });
     expect(disabled.status).toBe(200);
-    expect(disabled.body.reviewEnabled).toBe(false);
-    expect(disabled.body.reviewPrompt).toBe('review the diff');
-    expect(disabled.body.reviewModel).toBe('claude-opus-5');
-    await server.api('PATCH', `/api/workspaces/${created.body.id}`, { reviewEnabled: true });
+    expect(disabled.body.taskPreMergeCritics).toEqual([]);
 
     const cleared = await server.api('PATCH', `/api/workspaces/${created.body.id}`, {
-      verificationCommand: null,
+      taskPreMergeCommands: null,
     });
     expect(cleared.status).toBe(200);
-    expect(cleared.body.verificationCommand).toBeNull();
-    expect(cleared.body.reviewEnabled).toBe(true);
-    expect(cleared.body.reviewPrompt).toBe('review the diff');
+    expect(cleared.body.taskPreMergeCommands).toBeNull();
+    expect(cleared.body.taskPreMergeCritics).toEqual([]);
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it('rejects a review override that resolves to enabled-without-a-model (issue #340)', async () => {
+  it('rejects an invalid staged critic override', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'harmonic-workspace-review-unrunnable-'));
-    const created = await server.api('POST', '/api/workspaces', { name: 'Unrunnable review', workingDir: dir });
+    const created = await server.api('POST', '/api/workspaces', { name: 'Invalid critic', workingDir: dir });
     expect(created.status).toBe(201);
 
-    const rejected = await server.api('PATCH', `/api/workspaces/${created.body.id}`, { reviewEnabled: true });
+    const rejected = await server.api('PATCH', `/api/workspaces/${created.body.id}`, { taskPreMergeCritics: [{ issuePrompt: 'review it', model: 'claude-opus-5' }] });
     expect(rejected.status).toBe(400);
-    expect(rejected.body.error.message).toContain('reviewModel');
-    expect((await server.api('GET', `/api/workspaces/${created.body.id}`)).body.reviewEnabled).toBeNull();
+    expect(rejected.body.error.message).toContain('noIssuePrompt');
+    expect((await server.api('GET', `/api/workspaces/${created.body.id}`)).body.taskPreMergeCritics).toBeNull();
 
     const accepted = await server.api('PATCH', `/api/workspaces/${created.body.id}`, {
-      reviewEnabled: true,
-      reviewModel: 'claude-opus-5',
-      reviewPrompt: 'review it',
+      taskPreMergeCritics: [{ issuePrompt: 'review the issue', noIssuePrompt: 'review the Task', model: 'claude-opus-5' }],
     });
     expect(accepted.status).toBe(200);
-    expect(accepted.body.reviewEnabled).toBe(true);
-    expect(accepted.body.reviewModel).toBe('claude-opus-5');
+    expect(accepted.body.taskPreMergeCritics).toMatchObject([{ issuePrompt: 'review the issue', noIssuePrompt: 'review the Task', model: 'claude-opus-5' }]);
     rmSync(dir, { recursive: true, force: true });
   });
 

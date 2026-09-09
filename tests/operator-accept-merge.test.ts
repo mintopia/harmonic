@@ -51,7 +51,7 @@ describe('operator Accept merge (ADR-0001, issue #383)', () => {
     const repo = makeRepo();
     await server.app.ctx.workspaces.update(wsId, {
       workingDir: repo,
-      verificationCommand: [verificationCommandSchema.parse({ command: process.execPath, args: ['-e', 'process.exit(1)'], timeoutSeconds: 30 })],
+      taskPreMergeCommands: [verificationCommandSchema.parse({ command: process.execPath, args: ['-e', 'process.exit(1)'], timeoutSeconds: 30 })],
     });
 
     const created = await server.api('POST', '/api/tasks', {
@@ -73,7 +73,7 @@ describe('operator Accept merge (ADR-0001, issue #383)', () => {
     const mainTip = advanceMain(repo, 'other.txt', 'someone else merged\n');
 
     await server.app.ctx.workspaces.update(wsId, {
-      verificationCommand: [verificationCommandSchema.parse({ command: process.execPath, args: ['-e', 'process.exit(0)'], timeoutSeconds: 30 })],
+      taskPreMergeCommands: [verificationCommandSchema.parse({ command: process.execPath, args: ['-e', 'process.exit(0)'], timeoutSeconds: 30 })],
     });
 
     const accepted = await server.api('POST', `/api/tasks/${taskId}/accept`, { force: true });
@@ -95,7 +95,7 @@ describe('operator Accept merge (ADR-0001, issue #383)', () => {
     const repo = makeRepo();
     await server.app.ctx.workspaces.update(wsId, {
       workingDir: repo,
-      verificationCommand: [verificationCommandSchema.parse({ command: process.execPath, args: ['-e', 'process.exit(1)'], timeoutSeconds: 30 })],
+      taskPreMergeCommands: [verificationCommandSchema.parse({ command: process.execPath, args: ['-e', 'process.exit(1)'], timeoutSeconds: 30 })],
     });
 
     const created = await server.api('POST', '/api/tasks', {
@@ -111,7 +111,7 @@ describe('operator Accept merge (ADR-0001, issue #383)', () => {
     });
 
     await server.app.ctx.workspaces.update(wsId, {
-      verificationCommand: [verificationCommandSchema.parse({ command: process.execPath, args: ['-e', 'process.exit(0)'], timeoutSeconds: 30 })],
+      taskPreMergeCommands: [verificationCommandSchema.parse({ command: process.execPath, args: ['-e', 'process.exit(0)'], timeoutSeconds: 30 })],
     });
 
     const accepted = await server.api('POST', `/api/tasks/${taskId}/accept`);
@@ -130,7 +130,7 @@ describe('operator Accept merge (ADR-0001, issue #383)', () => {
     await server.app.ctx.workspaces.update(wsId, {
       workingDir: repo,
       conflictResolveTurns: 0,
-      verificationCommand: [verificationCommandSchema.parse({ command: process.execPath, args: ['-e', 'process.exit(1)'], timeoutSeconds: 30 })],
+      taskPreMergeCommands: [verificationCommandSchema.parse({ command: process.execPath, args: ['-e', 'process.exit(1)'], timeoutSeconds: 30 })],
     });
 
     const created = await server.api('POST', '/api/tasks', {
@@ -162,9 +162,11 @@ describe('operator Accept merge (ADR-0001, issue #383)', () => {
     wsId = (await server.app.ctx.workspaces.list())[0]!.id;
 
     const repo = makeRepo();
+    const redCommand = verificationCommandSchema.parse({ command: process.execPath, args: ['-e', 'process.exit(1)'], timeoutSeconds: 30 });
     await server.app.ctx.workspaces.update(wsId, {
       workingDir: repo,
-      verificationCommand: [verificationCommandSchema.parse({ command: process.execPath, args: ['-e', 'process.exit(1)'], timeoutSeconds: 30 })],
+      taskPreMergeCommands: [redCommand],
+      taskPostMergeCommands: [redCommand],
     });
 
     const created = await server.api('POST', '/api/tasks', {
@@ -205,7 +207,7 @@ describe('escalated worktree Run diff snapshot', () => {
       await server.app.ctx.workspaces.update(wsId, {
         workingDir: repo,
         maxAttempts: 1,
-        verificationCommand: [
+        taskPreMergeCommands: [
           verificationCommandSchema.parse({
             command: process.execPath,
             args: ['-e', 'process.exit(1)'],

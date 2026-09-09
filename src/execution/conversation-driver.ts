@@ -64,11 +64,15 @@ export interface ConversationDriverEvents {
 
 type PermissionOutcome = { outcome: 'selected'; optionId: string } | { outcome: 'cancelled' };
 
+// ACP RequestPermissionResponse nests the outcome under `outcome`; the harness
+// reads result.outcome.outcome. A bare PermissionOutcome is read as a reject.
+type PermissionResponse = { outcome: PermissionOutcome };
+
 interface PendingPermission {
   conversationId: number;
   workingDir: string;
   request: PermissionRequest;
-  resolve: (outcome: PermissionOutcome) => void;
+  resolve: (response: PermissionResponse) => void;
 }
 
 interface PendingElicitation {
@@ -238,7 +242,7 @@ export class ConversationDriver {
       }
     }
     const outcome = { outcome: 'selected' as const, optionId };
-    pending.resolve(outcome);
+    pending.resolve({ outcome });
     await this.record(conversationId, 'permission_request', { request: pending.request, outcome, reqId, ...(rule ? { rule } : {}) });
   }
 
@@ -331,7 +335,7 @@ export class ConversationDriver {
           const request = parsePermissionRequest(params);
           if (!request) {
             logger.warn('acp: rejected malformed permission request', { conversationId: convo.id });
-            return { outcome: 'cancelled' };
+            return { outcome: { outcome: 'cancelled' } };
           }
           return this.decidePermission(convo.id, convo.workingDir, request);
         }
@@ -400,7 +404,7 @@ export class ConversationDriver {
     }
   }
 
-  private async decidePermission(conversationId: number, workingDir: string, request: PermissionRequest): Promise<PermissionOutcome> {
+  private async decidePermission(conversationId: number, workingDir: string, request: PermissionRequest): Promise<PermissionResponse> {
     const kind = permissionKind(request);
     const rule = kind ? ((await this.rules?.findMatch(kind, workingDir)) ?? null) : null;
     if (rule) {
@@ -411,10 +415,10 @@ export class ConversationDriver {
         outcome,
         rule: { kind: rule.kind, workingDir: rule.workingDir },
       });
-      return outcome;
+      return { outcome };
     }
     const reqId = `perm-${++this.nextPermissionId}`;
-    return new Promise<PermissionOutcome>((resolve) => {
+    return new Promise<PermissionResponse>((resolve) => {
       this.pendingPermissions.set(reqId, { conversationId, workingDir, request, resolve });
       this.events.onPermissionRequest?.({ conversationId, reqId, request });
     });
@@ -435,7 +439,7 @@ export class ConversationDriver {
       if (pending.conversationId !== conversationId) continue;
       this.pendingPermissions.delete(reqId);
       const outcome = { outcome: 'cancelled' as const };
-      pending.resolve(outcome);
+      pending.resolve({ outcome });
       void this.record(conversationId, 'permission_request', { request: pending.request, outcome, reqId }).catch(() => {});
     }
     for (const [reqId, pending] of this.pendingElicitations) {

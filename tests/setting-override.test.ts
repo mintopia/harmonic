@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import type { AppConfig } from '../src/config.js';
+import type { WorkspaceRow } from '../src/db/schema.js';
 import { resolve, resolveCap, resolveVerifiers, resolveGuardrails, resolveDrive, resolvePauseMessage, resolveTaskPrompt } from '../src/domain/setting-override.js';
 
 describe('Setting Override resolution (ADR-0012, issue #59)', () => {
@@ -41,242 +43,61 @@ describe('Setting Override resolution (ADR-0012, issue #59)', () => {
     });
   });
 
-  describe('resolveVerifiers (issue #132, ADR-0021)', () => {
-    it('resolves an empty verifier set when nothing is configured anywhere', () => {
-      const config = { verify: { commands: [], review: { enabled: false } } };
-      expect(
-        resolveVerifiers(
-          { verificationCommand: null, reviewEnabled: null, reviewPrompt: null, reviewModel: null, reviewHarness: null },
-          config,
-        ),
-      ).toEqual({
-        commands: [],
-        review: { enabled: false, requested: false },
-        command: null,
-        critic: null,
+  describe('staged verifier settings', () => {
+    const globalCommand = { command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 };
+    const globalCritic = { issuePrompt: 'Review the issue.', noIssuePrompt: 'Review the Task.', model: 'claude-opus-5' };
+    const epicCritic = { prompt: 'Review the epic.', model: 'claude-opus-5' };
+    const config: Pick<AppConfig, 'verify'> = {
+      verify: {
+        task: {
+          preMerge: { commands: [globalCommand], critics: [globalCritic] },
+          postMerge: { commands: [globalCommand], critics: [globalCritic] },
+        },
+        epic: { preMerge: { commands: [globalCommand], critics: [epicCritic] }, resolvePrompt: 'Resolve it.' },
+      },
+    };
+    const inherited: Pick<WorkspaceRow, 'taskPreMergeCommands' | 'taskPreMergeCritics' | 'taskPostMergeCommands' | 'taskPostMergeCritics' | 'epicPreMergeCommands' | 'epicPreMergeCritics'> = {
+      taskPreMergeCommands: null,
+      taskPreMergeCritics: null,
+      taskPostMergeCommands: null,
+      taskPostMergeCritics: null,
+      epicPreMergeCommands: null,
+      epicPreMergeCritics: null,
+    };
+
+    it('inherits every global stage list when its Workspace override is null', () => {
+      expect(resolveVerifiers(inherited, config)).toEqual({
+        task: {
+          preMerge: { commands: [globalCommand], critics: [globalCritic] },
+          postMerge: { commands: [globalCommand], critics: [globalCritic] },
+        },
+        epic: { preMerge: { commands: [globalCommand], critics: [epicCritic] } },
       });
     });
 
-    it('inherits the global commands when the Workspace column is null, per-key from review', () => {
-      const globalCommand = { command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 };
-      const config = {
-        verify: { commands: [globalCommand], review: { enabled: false } },
-      };
-      const resolved = resolveVerifiers(
-        { verificationCommand: null, reviewEnabled: null, reviewPrompt: null, reviewModel: null, reviewHarness: null },
-        config as any,
-      );
-      expect(resolved.commands).toEqual([globalCommand]);
-      expect(resolved.command).toEqual(globalCommand);
-      expect(resolved.critic).toBeNull();
-    });
-
-    it('uses a Workspace command-list override over the global default, independent of review', () => {
-      const globalReview = { enabled: true, prompt: 'global review', model: 'claude-opus-5' };
-      const config = { verify: { commands: [], review: globalReview } };
-      const override = { command: 'pnpm', args: ['lint'], env: {}, timeoutSeconds: 300 };
+    it('replaces only the explicitly configured Workspace lists', () => {
+      const command = { command: 'pnpm', args: ['lint'], env: {}, timeoutSeconds: 300 };
+      const critic = { prompt: 'Review the epic.', model: 'gpt-5.3-codex' };
       const resolved = resolveVerifiers(
         {
-          verificationCommand: JSON.stringify([override]),
-          reviewEnabled: null,
-          reviewPrompt: null,
-          reviewModel: null,
-          reviewHarness: null,
+          ...inherited,
+          taskPreMergeCommands: JSON.stringify([command]),
+          epicPreMergeCritics: JSON.stringify([critic]),
         },
-        config as any,
+        config,
       );
-      expect(resolved.commands).toEqual([override]);
-      expect(resolved.command).toEqual(override);
-      expect(resolved.critic).toEqual({ prompt: 'global review', model: 'claude-opus-5' });
+      expect(resolved.task.preMerge).toEqual({ commands: [command], critics: [globalCritic] });
+      expect(resolved.task.postMerge).toEqual({ commands: [globalCommand], critics: [globalCritic] });
+      expect(resolved.epic.preMerge).toEqual({ commands: [globalCommand], critics: [critic] });
     });
 
-    it('uses a Workspace review override over the global default, independent of commands', () => {
-      const globalCommand = { command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 };
-      const config = { verify: { commands: [globalCommand], review: { enabled: false } } };
-      const override = { prompt: 'review the diff', model: 'claude-opus-5' };
+    it('turns off an individual list with an explicit empty Workspace array', () => {
       const resolved = resolveVerifiers(
-        {
-          verificationCommand: null,
-          reviewEnabled: true,
-          reviewPrompt: override.prompt,
-          reviewModel: override.model,
-          reviewHarness: null,
-        },
-        config as any,
+        { ...inherited, taskPostMergeCommands: JSON.stringify([]), epicPreMergeCritics: JSON.stringify([]) },
+        config,
       );
-      expect(resolved.review).toMatchObject({ enabled: true, ...override });
-      expect(resolved.critic).toEqual(override);
-      expect(resolved.commands).toEqual([globalCommand]);
-    });
-
-    it('resolves no auto-accept at all — a passing verification merges, there is no gate to skip', () => {
-      const config = { verify: { commands: [], review: { enabled: false } } };
-      const resolved = resolveVerifiers(
-        { verificationCommand: null, reviewEnabled: null, reviewPrompt: null, reviewModel: null, reviewHarness: null },
-        config as any,
-      );
-      expect(resolved).not.toHaveProperty('autoAccept');
-    });
-
-    describe('list-grain command override (issue #338) + decomposed review scalars (issue #337)', () => {
-      it('resolves commands to empty when the Workspace column holds an explicit empty array (off), even with a configured global default', () => {
-        const globalCommand = { command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 };
-        const config = { verify: { commands: [globalCommand], review: { enabled: false } } };
-        const resolved = resolveVerifiers(
-          {
-            verificationCommand: JSON.stringify([]),
-            reviewEnabled: null,
-            reviewPrompt: null,
-            reviewModel: null,
-            reviewHarness: null,
-          },
-          config as any,
-        );
-        expect(resolved.commands).toEqual([]);
-        expect(resolved.command).toBeNull();
-      });
-
-      it('resolves review to disabled when reviewEnabled is explicitly false, even with a configured global default', () => {
-        const globalReview = { enabled: true, prompt: 'global review', model: 'claude-opus-5' };
-        const config = { verify: { commands: [], review: globalReview } };
-        const resolved = resolveVerifiers(
-          {
-            verificationCommand: null,
-            reviewEnabled: false,
-            reviewPrompt: null,
-            reviewModel: null,
-            reviewHarness: null,
-          },
-          config as any,
-        );
-        expect(resolved.review).toMatchObject({ enabled: false });
-        expect(resolved.critic).toBeNull();
-      });
-
-      it('still inherits the global default when the column is null (not explicitly disabled)', () => {
-        const globalCommand = { command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 };
-        const globalReview = { enabled: true, prompt: 'global review', model: 'claude-opus-5' };
-        const config = {
-          verify: { commands: [globalCommand], review: globalReview },
-        };
-        const resolved = resolveVerifiers(
-          { verificationCommand: null, reviewEnabled: null, reviewPrompt: null, reviewModel: null, reviewHarness: null },
-          config as any,
-        );
-        expect(resolved.commands).toEqual([globalCommand]);
-        expect(resolved.critic).toEqual({ prompt: 'global review', model: 'claude-opus-5' });
-      });
-
-      it('still overrides commands with a stored list, and review distinct from an explicit disable', () => {
-        const config = { verify: { commands: [], review: { enabled: false } } };
-        const commandOverride = { command: 'pnpm', args: ['lint'], env: {}, timeoutSeconds: 300 };
-        const criticOverride = { prompt: 'review the diff', model: 'claude-opus-5' };
-        const resolved = resolveVerifiers(
-          {
-            verificationCommand: JSON.stringify([commandOverride]),
-            reviewEnabled: true,
-            reviewPrompt: criticOverride.prompt,
-            reviewModel: criticOverride.model,
-            reviewHarness: null,
-          },
-          config as any,
-        );
-        expect(resolved.commands).toEqual([commandOverride]);
-        expect(resolved.critic).toEqual(criticOverride);
-      });
-
-      it('an ordered multi-command Workspace override resolves whole, in order', () => {
-        const config = { verify: { commands: [], review: { enabled: false } } };
-        const first = { command: 'npm', args: ['run', 'typecheck'], env: {}, timeoutSeconds: 300 };
-        const second = { command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 };
-        const resolved = resolveVerifiers(
-          {
-            verificationCommand: JSON.stringify([first, second]),
-            reviewEnabled: null,
-            reviewPrompt: null,
-            reviewModel: null,
-            reviewHarness: null,
-          },
-          config as any,
-        );
-        expect(resolved.commands).toEqual([first, second]);
-        expect(resolved.command).toEqual(first);
-      });
-    });
-
-    it('enables the review when a workspace overrides with reviewEnabled+prompt+model, over a disabled global', () => {
-      const config = { verify: { commands: [], review: { enabled: false } } };
-      const criticOverride = { prompt: 'review the diff', model: 'claude-opus-5' };
-      const resolved = resolveVerifiers(
-        {
-          verificationCommand: null,
-          reviewEnabled: true,
-          reviewPrompt: criticOverride.prompt,
-          reviewModel: criticOverride.model,
-          reviewHarness: null,
-        },
-        config as any,
-      );
-      expect(resolved.review).toMatchObject({ enabled: true, ...criticOverride });
-      expect(resolved.critic).toEqual(criticOverride);
-    });
-
-    it('keeps an explicit reviewEnabled:false distinct so a disabled workspace review stays off, even though prompt/model still inherit', () => {
-      const config = { verify: { commands: [], review: { enabled: true, prompt: 'g', model: 'claude-opus-5' } } };
-      const resolved = resolveVerifiers(
-        {
-          verificationCommand: null,
-          reviewEnabled: false,
-          reviewPrompt: null,
-          reviewModel: null,
-          reviewHarness: null,
-        },
-        config as any,
-      );
-      expect(resolved.review).toMatchObject({ enabled: false });
-      expect(resolved.critic).toBeNull();
-    });
-
-    it('resolves review to not-runnable when reviewEnabled is on but no prompt/model resolves from any layer (issue #337)', () => {
-      const config = { verify: { commands: [], review: { enabled: false } } };
-      const resolved = resolveVerifiers(
-        {
-          verificationCommand: null,
-          reviewEnabled: true,
-          reviewPrompt: null,
-          reviewModel: null,
-          reviewHarness: null,
-        },
-        config as any,
-      );
-      expect(resolved.review.enabled).toBe(false);
-      expect(resolved.critic).toBeNull();
-    });
-
-    it('surfaces enabled-but-unrunnable distinctly: reviewEnabled=true with no model anywhere (issue #340)', () => {
-      const config = { verify: { commands: [], review: { enabled: false } } };
-      const resolved = resolveVerifiers(
-        {
-          verificationCommand: null,
-          reviewEnabled: true,
-          reviewPrompt: null,
-          reviewModel: null,
-          reviewHarness: null,
-        },
-        config as any,
-      );
-      expect(resolved.review.enabled).toBe(false);
-      expect(resolved.review.requested).toBe(true);
-      expect(resolved.critic).toBeNull();
-    });
-
-    it('resolves requested to false when everything inherits from a disabled global (issue #340)', () => {
-      const config = { verify: { commands: [], review: { enabled: false } } };
-      const resolved = resolveVerifiers(
-        { verificationCommand: null, reviewEnabled: null, reviewPrompt: null, reviewModel: null, reviewHarness: null },
-        config as any,
-      );
-      expect(resolved.review.requested).toBe(false);
+      expect(resolved.task.postMerge).toEqual({ commands: [], critics: [globalCritic] });
+      expect(resolved.epic.preMerge).toEqual({ commands: [globalCommand], critics: [] });
     });
   });
 
@@ -379,6 +200,18 @@ describe('Setting Override resolution (ADR-0012, issue #59)', () => {
     });
   });
 
+  describe('staged verifier overrides (#523)', () => {
+    const command = { command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 };
+    const critic = { issuePrompt: 'Review this issue change.', noIssuePrompt: 'Review this Task change.', model: 'claude-opus-5' };
+    const config = { verify: { task: { preMerge: { commands: [command], critics: [critic] }, postMerge: { commands: [], critics: [] } }, epic: { preMerge: { commands: [], critics: [] }, resolvePrompt: 'Resolve it.' } } };
+    const inherited = { taskPreMergeCommands: null, taskPreMergeCritics: null, taskPostMergeCommands: null, taskPostMergeCritics: null, epicPreMergeCommands: null, epicPreMergeCritics: null };
+    it('inherits and replaces every list at its own stage grain', () => {
+      expect(resolveVerifiers(inherited, config).task.preMerge).toEqual({ commands: [command], critics: [critic] });
+      expect(resolveVerifiers({ ...inherited, taskPreMergeCommands: JSON.stringify([]) }, config).task.preMerge).toEqual({ commands: [], critics: [critic] });
+      expect(resolveVerifiers({ ...inherited, epicPreMergeCritics: JSON.stringify([critic]) }, config).epic.preMerge.critics).toEqual([critic]);
+    });
+  });
+
   describe('resolveTaskPrompt (issue #339) — native Task framing overridable per-Workspace', () => {
     const config = { taskPrompt: 'GLOBAL {prompt}' };
 
@@ -393,5 +226,27 @@ describe('Setting Override resolution (ADR-0012, issue #59)', () => {
     it('uses the Workspace Task Prompt override over the global default', () => {
       expect(resolveTaskPrompt({ taskPrompt: 'WS {prompt}' }, config as any)).toBe('WS {prompt}');
     });
+  });
+});
+
+describe('staged verifier overrides (#523)', () => {
+  const command = { command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 };
+  const critic = { issuePrompt: 'Review this issue change.', noIssuePrompt: 'Review this Task change.', model: 'claude-opus-5' };
+  const config = {
+    verify: {
+      task: { preMerge: { commands: [command], critics: [critic] }, postMerge: { commands: [], critics: [] } },
+      epic: { preMerge: { commands: [], critics: [] }, resolvePrompt: 'Resolve it.' },
+    },
+  };
+  const inherited = {
+    taskPreMergeCommands: null, taskPreMergeCritics: null,
+    taskPostMergeCommands: null, taskPostMergeCritics: null,
+    epicPreMergeCommands: null, epicPreMergeCritics: null,
+  };
+
+  it('inherits and replaces every list at its own stage grain', () => {
+    expect(resolveVerifiers(inherited, config).task.preMerge).toEqual({ commands: [command], critics: [critic] });
+    expect(resolveVerifiers({ ...inherited, taskPreMergeCommands: JSON.stringify([]) }, config).task.preMerge).toEqual({ commands: [], critics: [critic] });
+    expect(resolveVerifiers({ ...inherited, epicPreMergeCritics: JSON.stringify([critic]) }, config).epic.preMerge.critics).toEqual([critic]);
   });
 });

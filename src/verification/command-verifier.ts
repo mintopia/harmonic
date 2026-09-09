@@ -152,12 +152,13 @@ export function exitCodeToVerdict(r: CommandSpawnResult): { verdict: Verdict; su
 }
 
 export interface RunCommandVerifierArgs {
-  /** The base repo owning the candidate ref and object store. */
-  repoDir: string;
-  /** The fixed commit the command verifies. */
+  /** An existing checkout to run the command in — the candidate is already
+   * materialised here. A Task passes its builder worktree (in place); a surface
+   * with no live checkout at the target commit uses
+   * {@link runCommandVerifierDetached} to carve a disposable one. */
+  cwd: string;
+  /** The commit this attempt verifies — recorded as the attempt's `inputOid`. */
   verifiedHeadOid: string;
-  /** Where to check out the disposable detached worktree for this attempt. */
-  worktreePath: string;
   command: VerificationCommand;
   /** Cancellation, wired to Runner shutdown; an abort kills the command child. */
   signal?: AbortSignal;
@@ -171,7 +172,7 @@ export interface RunCommandVerifierArgs {
   onOutput?: (chunk: string) => void;
 }
 
-/** Run the command verifier against a candidate OID in a disposable detached worktree and resolve a {@link CommandAttempt}. Never throws for a verdict outcome; a worktree setup failure folds into `inconclusive`. */
+/** Run the command verifier in {@link RunCommandVerifierArgs.cwd} and resolve a {@link CommandAttempt}. Never throws for a verdict outcome. */
 export async function runCommandVerifier(args: RunCommandVerifierArgs): Promise<CommandAttempt> {
   const operation = args.parent
     ? startOperation({ type: 'verify.command', parent: args.parent, attributes: { 'verification.mechanism': 'command', ...args.attributes } })
@@ -194,26 +195,37 @@ async function runCommandVerifierUnchecked(args: RunCommandVerifierArgs): Promis
   const spawner = args.spawn ?? createChildProcessSpawn();
   const timeoutMs = args.timeoutMs ?? args.command.timeoutSeconds * 1000;
 
-  let verdict: Verdict = 'inconclusive';
-  let summary = '';
-  let output = '';
+  const cwd = args.command.cwd ? join(args.cwd, args.command.cwd) : args.cwd;
+  const result = await spawner.run({
+    command: args.command,
+    cwd,
+    timeoutMs,
+    outputCap: OUTPUT_CHAR_CAP,
+    signal: args.signal,
+    ...(args.onOutput ? { onOutput: args.onOutput } : {}),
+  });
+  const mapped = exitCodeToVerdict(result);
+  return { verifier: 'command', verdict: mapped.verdict, summary: mapped.summary, output: result.output, inputOid: args.verifiedHeadOid };
+}
 
+export interface RunCommandVerifierDetachedArgs extends Omit<RunCommandVerifierArgs, 'cwd'> {
+  /** The base repo owning the target commit and object store. */
+  repoDir: string;
+  /** Where to carve the disposable detached worktree for this attempt. */
+  worktreePath: string;
+}
+
+/** Run the command verifier against {@link RunCommandVerifierDetachedArgs.verifiedHeadOid}
+ * in a disposable detached worktree carved from `repoDir` — for surfaces with no
+ * live checkout at the target commit (Epic integration, crash-recovery
+ * post-merge), where the command must not run in a shared checkout. A checkout
+ * failure folds into `inconclusive`; never throws for a verdict outcome. */
+export async function runCommandVerifierDetached(args: RunCommandVerifierDetachedArgs): Promise<CommandAttempt> {
+  const { repoDir, worktreePath, ...rest } = args;
   try {
-    await withDetachedWorktree(args.repoDir, args.verifiedHeadOid, args.worktreePath, async (dir) => {
-      const cwd = args.command.cwd ? join(dir, args.command.cwd) : dir;
-      const result = await spawner.run({
-        command: args.command,
-        cwd,
-        timeoutMs,
-        outputCap: OUTPUT_CHAR_CAP,
-        signal: args.signal,
-        ...(args.onOutput ? { onOutput: args.onOutput } : {}),
-      });
-      output = result.output;
-      const mapped = exitCodeToVerdict(result);
-      verdict = mapped.verdict;
-      summary = mapped.summary;
-    });
+    return await withDetachedWorktree(repoDir, args.verifiedHeadOid, worktreePath, (dir) =>
+      runCommandVerifier({ ...rest, cwd: dir }),
+    );
   } catch (err) {
     return {
       verifier: 'command',
@@ -223,8 +235,6 @@ async function runCommandVerifierUnchecked(args: RunCommandVerifierArgs): Promis
       inputOid: args.verifiedHeadOid,
     };
   }
-
-  return { verifier: 'command', verdict, summary, output, inputOid: args.verifiedHeadOid };
 }
 
 /** Map a {@link CommandAttempt} to the persisted {@link VerificationAttemptInput}. */

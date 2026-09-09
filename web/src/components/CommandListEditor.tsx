@@ -3,14 +3,6 @@ import { field } from '../ui';
 import { FieldError, fieldLabel } from './SettingsSection';
 import { EMPTY_COMMAND, argsText, setCommandField } from './verification-override-model';
 
-/**
- * The add/remove editor for an ordered verification-command list.
- * One component for both settings surfaces: the global page edits
- * `config.verify.commands` directly; the workspace page edits an override array
- * inside an `InheritField` slot. The only per-surface differences are the input
- * id prefix and the server error-path prefix, so those are props — the markup
- * itself is written once.
- */
 export function CommandListEditor({
   commands,
   onChange,
@@ -21,9 +13,7 @@ export function CommandListEditor({
 }: {
   commands: VerificationCommand[];
   onChange: (commands: VerificationCommand[]) => void;
-  /** Input id prefix, e.g. `'settings-verify'` or `'workspace-verify'`. */
   idPrefix: string;
-  /** Server error-path prefix, e.g. `'verify.commands'` or `'verificationCommand'`. */
   errorPrefix: string;
   fieldErrors: Record<string, string>;
   emptyText: string;

@@ -38,7 +38,7 @@ describe('appConfigSchema guardrail rejection (issue #126, ADR-0019)', () => {
     const config = JSON.parse(JSON.stringify(baselineConfig()));
     config.harnesses.copilot.models = config.harnesses.copilot.models.filter((m: { id: string }) => m.id !== 'auto');
     config.harnesses.copilot.defaultModel = 'claude-sonnet-5';
-    config.verify.review = { enabled: true, prompt: 'review', model: 'unpriced-critic-model' };
+    config.verify.task.preMerge.critics = [{ issuePrompt: 'review issue', noIssuePrompt: 'review Task', model: 'unpriced-critic-model' }];
     config.guardrails.budget.costUsd = 10;
     config.guardrails.budget.tokens = null;
 

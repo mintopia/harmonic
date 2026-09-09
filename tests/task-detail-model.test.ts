@@ -404,7 +404,7 @@ const step = (type: StepType, state: StepState): Step => ({
 });
 
 describe('attemptStepTabs', () => {
-  it('keeps one tab per Step type in canonical lifecycle order', () => {
+  it('keeps structural tabs first, then one tab for each verification Step', () => {
     const tabs = attemptStepTabs([
       step('review', 'pending'),
       step('rebase', 'passed'),
@@ -412,7 +412,7 @@ describe('attemptStepTabs', () => {
       step('implementation', 'passed'),
     ]);
     expect(tabs.map((t) => t.type)).toEqual(['rebase', 'implementation', 'verification', 'review']);
-    expect(tabs.map((t) => t.label)).toEqual(['Rebase', 'Implementation', 'Verify', 'Review']);
+    expect(tabs.map((t) => t.label)).toEqual(['Rebase', 'Implementation', 'Verify', 'Critic']);
   });
 
   it('always shows the structural Rebase and Implementation tabs, even before a Step of them exists', () => {
@@ -441,25 +441,25 @@ describe('attemptStepTabs', () => {
     expect(disabled.map((t) => t.type)).toEqual(['rebase', 'implementation']);
   });
 
-  it('folds several verification command Steps into a single Verify tab', () => {
+  it('keeps several verification command Steps separate', () => {
     const tabs = attemptStepTabs([
       step('verification', 'passed'),
       step('verification', 'running'),
       step('verification', 'pending'),
     ]);
-    expect(tabs.filter((t) => t.type === 'verification')).toHaveLength(1);
-    expect(tabs.find((t) => t.type === 'verification')).toMatchObject({ state: 'running', pending: false });
+    expect(tabs.filter((t) => t.type === 'verification')).toHaveLength(3);
+    expect(tabs.filter((t) => t.type === 'verification').map((tab) => tab.state)).toEqual(['passed', 'running', 'pending']);
   });
 
-  it('rolls a type up to failed when any of its Steps failed', () => {
+  it('keeps a failed verification Step failed without changing a passing sibling', () => {
     const tabs = attemptStepTabs([step('verification', 'passed'), step('verification', 'failed')]);
-    expect(tabs.find((t) => t.type === 'verification')!.state).toBe('failed');
+    expect(tabs.filter((t) => t.type === 'verification').map((tab) => tab.state)).toEqual(['passed', 'failed']);
   });
 
-  it('marks a tab pending only when every Step of the type is pending', () => {
+  it('marks each individual verifier tab pending only while that Step is pending', () => {
     expect(attemptStepTabs([step('review', 'pending')]).find((t) => t.type === 'review')!.pending).toBe(true);
     expect(attemptStepTabs([step('review', 'passed')]).find((t) => t.type === 'review')!.pending).toBe(false);
-    expect(attemptStepTabs([step('verification', 'pending'), step('verification', 'passed')]).find((t) => t.type === 'verification')!.pending).toBe(false);
+    expect(attemptStepTabs([step('verification', 'pending'), step('verification', 'passed')]).filter((t) => t.type === 'verification').map((tab) => tab.pending)).toEqual([true, false]);
   });
 
   it('carries the verification command as tab detail; the other tabs carry none', () => {
@@ -479,7 +479,7 @@ describe('attemptStepTabs', () => {
 describe('defaultStepTab', () => {
   it('opens the live Step when one is running', () => {
     const tabs = attemptStepTabs([step('implementation', 'passed'), step('verification', 'running')]);
-    expect(defaultStepTab(tabs)).toBe('verification');
+    expect(defaultStepTab(tabs)).toBe(tabs.find((tab) => tab.type === 'verification')!.id);
   });
 
   it('opens Implementation once it has content and nothing is running', () => {
@@ -498,7 +498,7 @@ describe('defaultStepTab', () => {
 
   it('opens a failed Step ahead of Implementation — what an escalated Attempt needs reviewed', () => {
     const tabs = attemptStepTabs([step('implementation', 'passed'), step('verification', 'failed')]);
-    expect(defaultStepTab(tabs)).toBe('verification');
+    expect(defaultStepTab(tabs)).toBe(tabs.find((tab) => tab.type === 'verification')!.id);
   });
 });
 

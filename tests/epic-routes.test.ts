@@ -1015,6 +1015,51 @@ describe('epic-routes', () => {
         });
       });
 
+      it('includes an Attempt owned directly by the Epic in its usage and cost rollup', async () => {
+        const workspaceId = (await server.app.ctx.workspaces.list())[0]!.id;
+        await server.app.ctx.tasks.syncEpics(workspaceId, [{ ref: 777, kind: 'epic' }]);
+        const run = await server.app.ctx.attempts.createForEpic({ workspaceId, epicRef: 777 });
+        await server.app.ctx.attempts.update(run.id, {
+          state: 'passed',
+          endedAt: Date.now(),
+          cost: cost(11),
+          usage: usageJson({
+            totals: { inputTokens: 700, outputTokens: 70, cacheReadTokens: 0, cacheWriteTokens: 0, totalTokens: 770 },
+          }),
+        });
+
+        const { status, body } = await server.api('GET', `/api/epics/777/stats?from=0&workspaceId=${workspaceId}`);
+        expect(status).toBe(200);
+        expect(body.attemptCount).toBe(1);
+        expect(body.cost?.totalUsd).toBeCloseTo(11);
+        expect(body.totals?.totalTokens).toBe(770);
+      });
+
+      it('returns an Epic-owned Attempt on the Epic timeline', async () => {
+        const workspaceId = (await server.app.ctx.workspaces.list())[0]!.id;
+        await server.app.ctx.tasks.syncEpics(workspaceId, [{ ref: 778, kind: 'epic' }]);
+        const run = await server.app.ctx.attempts.createForEpic({ workspaceId, epicRef: 778 });
+        await server.app.ctx.attempts.update(run.id, {
+          state: 'passed',
+          endedAt: Date.now(),
+          cost: cost(2),
+          usage: usageJson({ totals: { inputTokens: 10, outputTokens: 2, cacheReadTokens: 0, cacheWriteTokens: 0, totalTokens: 12 } }),
+        });
+        const step = await server.app.ctx.attempts.createStep(run.id, { type: 'implementation' });
+        await server.app.ctx.attempts.updateStep(step.id, { state: 'passed', startedAt: Date.now(), endedAt: Date.now() });
+
+        const { status, body } = await server.api('GET', `/api/workspaces/${workspaceId}/epics/778/attempts`);
+        expect(status).toBe(200);
+        expect(body.attempts).toContainEqual(expect.objectContaining({
+          id: run.id,
+          number: 1,
+          state: 'passed',
+          cost: expect.objectContaining({ totalUsd: 2 }),
+          usage: expect.objectContaining({ totals: expect.objectContaining({ totalTokens: 12 }) }),
+          steps: [expect.objectContaining({ id: step.id, type: 'implementation', state: 'passed' })],
+        }));
+      });
+
       describe('optional workspaceId narrowing', () => {
         let defaultWorkspaceId: number;
         let otherWorkspaceId: number;
@@ -1110,10 +1155,12 @@ describe('epic-integrate-git', () => {
   const merged = (mergeOid = 'integrated-oid'): MergePolicyOutcome => ({ kind: 'merged', mergeOid });
 
   type VerifyFn = (args: { repoDir: string; verifiedHeadOid: string }) => Promise<VerificationDecision>;
+  type ResolveFn = (args: { repoDir: string; epicRef: number; verifiedHeadOid: string; verification: VerificationDecision }) => Promise<void>;
 
   const build = (opts: {
     git?: FakeGit;
     verify?: VerifyFn;
+    resolve?: ResolveFn;
     integrate?: EpicIntegrate;
     now?: () => number;
     verifyBackoffMs?: number;
@@ -1121,6 +1168,7 @@ describe('epic-integrate-git', () => {
   } = {}) => {
     const git = opts.git ?? new FakeGit();
     const verify = vi.fn<VerifyFn>(opts.verify ?? (async () => proceed));
+    const resolve = opts.resolve && vi.fn<ResolveFn>(opts.resolve);
     const integrate = vi.fn<EpicIntegrate>(opts.integrate ?? (async () => merged()));
     const retire = vi.fn(async (_ref: number) => {});
     const escalate = vi.fn<(epicRef: number, reason: string) => void>();
@@ -1131,6 +1179,7 @@ describe('epic-integrate-git', () => {
       repoDir: '/repo',
       git,
       verify,
+      ...(resolve ? { resolve } : {}),
       integrate,
       retire,
       escalate,
@@ -1140,7 +1189,7 @@ describe('epic-integrate-git', () => {
       recordIntegration,
       onError,
     });
-    return { coord, git, verify, integrate, retire, escalate, recordIntegration, onError };
+    return { coord, git, verify, resolve, integrate, retire, escalate, recordIntegration, onError };
   };
 
   const members = (...m: MemberMergeState[]): MemberMergeState[] => m;
@@ -1215,6 +1264,17 @@ describe('epic-integrate-git', () => {
       expect(integrate).not.toHaveBeenCalled();
       expect(retire).not.toHaveBeenCalled();
       expect(escalate).toHaveBeenCalledWith(42, expect.stringContaining('verification'));
+    });
+
+    it('verifies before dispatching the resolver and does not merge on a failed verification', async () => {
+      const { coord, verify, resolve, integrate, escalate } = build({ verify: async () => block, resolve: async () => {} });
+      const out = await coord.submit({ ref: 42, members: members('completed') });
+      expect(out).toEqual({ status: 'waiting', reason: 'whole-Epic verification failed; resolver dispatched' });
+      expect(resolve).toHaveBeenCalledWith(expect.objectContaining({ epicRef: 42, verifiedHeadOid: 'oid-epic-42', verification: block }));
+      if (!resolve) throw new Error('expected resolver');
+      expect(verify.mock.invocationCallOrder[0]!).toBeLessThan(resolve.mock.invocationCallOrder[0]!);
+      expect(integrate).not.toHaveBeenCalled();
+      expect(escalate).not.toHaveBeenCalled();
     });
 
     it('escalates on an inconclusive/escalate whole-Epic verdict (fail-safe)', async () => {

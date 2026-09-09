@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { api } from '../api';
 import { formatCost } from '../cost';
-import type { Attempt, Step, StepType, GuardrailEvent, AttemptSummary, AttemptLogEvent, AttemptUsageEvent, Task, TicketTimelineEvent, VerificationAttempt, VerifierStatus } from '../types';
+import type { Attempt, Step, GuardrailEvent, AttemptSummary, AttemptLogEvent, AttemptUsageEvent, Task, TicketTimelineEvent, VerificationAttempt, VerifierStatus } from '../types';
 import { EmptyState } from './EmptyState';
 import { DiffViewer } from './DiffViewer';
 import type { DiffFile } from '../types';
@@ -259,13 +259,13 @@ function TaskProgressBar({ task, attempts, commandConfigured }: { task: Task; at
               className="flex min-w-0 flex-1 flex-col items-center gap-2 text-center"
             >
               <div className="flex w-full items-center">
-                <span className={`h-0.5 flex-1 rounded ${i === 0 ? 'invisible' : leftDone ? 'bg-merged' : 'bg-edge'}`} />
+                <span className={`-mx-px h-0.5 flex-1 rounded ${i === 0 ? 'invisible' : leftDone ? 'bg-merged' : 'bg-edge'}`} />
                 <span
                   className={`flex size-6 shrink-0 items-center justify-center rounded-full border text-[11px] font-bold tabular-nums ${PHASE_NODE_STYLES[step.status]} ${step.disabled ? 'opacity-60' : ''}`}
                 >
                   {stepGlyph(step.status, i)}
                 </span>
-                <span className={`h-0.5 flex-1 rounded ${i === steps.length - 1 ? 'invisible' : rightDone ? 'bg-merged' : 'bg-edge'}`} />
+                <span className={`-mx-px h-0.5 flex-1 rounded ${i === steps.length - 1 ? 'invisible' : rightDone ? 'bg-merged' : 'bg-edge'}`} />
               </div>
               <span className={`text-[12px] font-semibold leading-tight ${step.disabled ? 'text-faint' : STEP_LABEL_TONE[step.status]}`}>
                 {step.label}
@@ -593,19 +593,19 @@ function PanelNav({ selected, onSelect }: { selected: 'stats' | 'timeline' | nul
 }
 
 
-function StepTabsBar({ tabs, active, onSelect }: { tabs: StepTab[]; active: StepType; onSelect: (type: StepType) => void }) {
+function StepTabsBar({ tabs, active, onSelect }: { tabs: StepTab[]; active: string; onSelect: (id: string) => void }) {
   return (
     <div role="tablist" aria-label="Attempt steps" className="mt-4 flex flex-wrap gap-1 border-b border-hairline">
       {tabs.map((tab) => {
-        const selected = tab.type === active;
+        const selected = tab.id === active;
         const tone = stateTone(tab.state);
         return (
           <button
-            key={tab.type}
+            key={tab.id}
             role="tab"
             type="button"
             aria-selected={selected}
-            onClick={() => onSelect(tab.type)}
+            onClick={() => onSelect(tab.id)}
             className={`-mb-px inline-flex min-h-11 items-center gap-2 border-b-2 px-3 py-2 text-[13px] font-semibold transition-colors ${
               selected ? 'border-accent text-ink' : 'border-transparent text-muted hover:text-ink'
             }`}
@@ -687,9 +687,9 @@ function AttemptPanel({
 }) {
   const steps = attempt?.steps ?? [];
   const tabs = attemptStepTabs(steps, attempt?.verifierStatuses ?? verifierStatuses);
-  const [picked, setPicked] = useState<StepType | null>(null);
-  const active = picked && tabs.some((tab) => tab.type === picked) ? picked : defaultStepTab(tabs);
-  const activeTab = tabs.find((tab) => tab.type === active);
+  const [picked, setPicked] = useState<string | null>(null);
+  const active = picked && tabs.some((tab) => tab.id === picked) ? picked : defaultStepTab(tabs);
+  const activeTab = tabs.find((tab) => tab.id === active);
 
   const topModel = stats.byModel[0]?.model ?? primaryModel;
   const chat = (
@@ -711,22 +711,22 @@ function AttemptPanel({
     activeTab && active ? (
       activeTab.pending ? (
         <PendingStep label={activeTab.label} />
-      ) : active === 'rebase' ? (
+      ) : activeTab.type === 'rebase' ? (
         <RebaseStatus step={steps.find((s) => s.type === 'rebase')!} baseBranch={baseBranch} />
-      ) : active === 'implementation' ? (
+      ) : activeTab.type === 'implementation' ? (
         <>
           <GuardrailAlert events={guardrailEvents} />
           {run.prompt && <PromptSent prompt={run.prompt} />}
           {chat}
         </>
-      ) : active === 'verification' ? (
+      ) : activeTab.type === 'verification' ? (
         <div className="mt-4">
-          <Verification attempts={verificationAttempts} statuses={verifierStatuses} run={run} only="command" steps={steps} liveOutput={verificationOutputTail(events, 'command')} />
+          <Verification attempts={verificationAttempts} statuses={verifierStatuses} run={run} only="command" verifier={`command:${steps.filter((step) => step.type === 'verification').findIndex((step) => `verification:${step.id}` === activeTab.id)}`} steps={steps} liveOutput={verificationOutputTail(events, 'command')} />
         </div>
       ) : (
         <div className="mt-4">
           {reviewPrompt && <PromptSent prompt={reviewPrompt} label="Review prompt sent" />}
-          <Verification attempts={verificationAttempts} statuses={verifierStatuses} run={run} only="critic" steps={steps} />
+          <Verification attempts={verificationAttempts} statuses={verifierStatuses} run={run} only="critic" verifier={`critic:${steps.filter((step) => step.type === 'review').findIndex((step) => `review:${step.id}` === activeTab.id)}`} steps={steps} />
           <CriticSessions attempts={verificationAttempts} run={run} />
         </div>
       )
@@ -831,7 +831,7 @@ export function TicketPage({
       const workspace = workspaces.find((workspace) => workspace.id === task.workspaceId);
       setMaxAttempts(workspace?.maxAttempts ?? config.maxAttempts);
       setWorkspaceName(workspace?.name ?? null);
-      setCommandConfigured((workspace?.verificationCommand ?? config.verify.commands).length > 0);
+      setCommandConfigured((workspace?.taskPreMergeCommands ?? config.verify.task.preMerge.commands).length > 0);
     }, toastError);
   }, [task.workspaceId]);
 

@@ -64,13 +64,14 @@ _Avoid_: job, item, run (deleted concept)
 One iteration of a Task's implement→verify loop, and the single execution
 noun: it carries the Session it prompts over, Usage, Cost, guardrail scoping,
 the transcript locator, and its timeline of Steps (Implementation →
-Verification per command → Review), ending at a verdict. A failed verdict —
-command fail, review reject, or review `inconclusive` — feeds the next
+Verification per command → per Critic), ending at a verdict. A failed verdict —
+command fail, critic reject, or `inconclusive` — feeds the next
 Attempt in the same worktree (counter +1); `maxAttempts` reached →
 *escalated*. The Attempt is the history unit on the Ticket page; a
 commit-your-work nudge increments nothing. The system never creates a new
 Ticket in response to failure. Crash recovery reasons about Attempts
-directly.
+directly. An Epic is workable too — its Verification and resolve loop run as
+Attempts attached to the Epic (see Epic Attempt, ADR-0028).
 _Avoid_: retry, reattempt (old loop mechanisms collapsed into this counter);
 run, phase, candidate, self-heal (all deleted concepts, ADR-0001)
 
@@ -78,9 +79,9 @@ run, phase, candidate, self-heal (all deleted concepts, ADR-0001)
 One individually undertaken step within an Attempt, each a timeline row with
 its own logs and outcome: the **Implementation Step** (the agent implements
 and commits — only the agent ever commits), one **Verification Step** per
-configured command (ordered, fail-fast), and the optional **Review Step**
-(the critic). There is no rebase step — base movement is reconciled by the
-merge commit, never by re-basing the work (ADR-0001).
+configured command (ordered, fail-fast) and one per **Critic** (parallel), the
+commands gating the critics. There is no rebase step — base movement is
+reconciled by the merge commit, never by re-basing the work (ADR-0001).
 _Avoid_: task (the board unit), run, phase, stage
 
 **Activity Event**:
@@ -95,7 +96,7 @@ _Avoid_: log line, message, run event (pre-reset name)
 A small, immutable recorded signal an Attempt emits (agent-finish, verdicts,
 guardrail trips, lifecycle transitions) that routing derives from: every
 lifecycle transition is a deterministic function of recorded Facts — agent
-judgment lives inside the Implementation and Review Steps, never in routing.
+judgment lives inside the Implementation and Verification Steps, never in routing.
 _Avoid_: event (that is the Activity Event stream), log line, marker
 
 **Blocker**:
@@ -314,25 +315,39 @@ A Member whose merge status is *blocked* that stalls the whole Epic on the
 automatic path until it clears or the operator Force-integrates.
 _Avoid_: stuck task
 
-**Whole-Epic Verification**:
-The Verification run against the Integration branch tip once the integrate gate
-opens — the same command primitive as per-Attempt Verification — catching breakage
-in the union of Members that each passed alone. A non-pass fail-safe Escalates;
-Verification runs no corrective turn at Epic scope.
-_Avoid_: final check
+**Epic Pre-Merge Verification** (was *Whole-Epic Verification*):
+The Verification stage run against the Integration branch tip once every Member
+is complete, before the Epic merges to the default branch — the same command +
+Critic primitives as a Task stage, run **in place** in the Epic's worktree —
+catching breakage in the union of Members that each passed alone. A non-pass no
+longer just fail-safes: it drives a bounded **resolve loop** (see Epic Attempt),
+escalating the Epic only when the Attempt limit is spent (ADR-0028).
+_Avoid_: whole-epic verification (renamed), final check
+
+**Epic Attempt**:
+An Attempt attached to an **Epic**, not a Task — the execution noun for the Epic
+Pre-Merge Verification and its resolve loop. Its loop is **inverted** from a
+Task's: it **verifies first** and spawns an agent **only on failure** (a clean
+first pass runs no agent). The resolve agent works in the Epic's worktree on
+`epic/<ref>`, driven by the editable **Epic resolve prompt**
+(`verify.epic.resolvePrompt`) plus injected failing-verifier feedback, bounded
+by normal `maxAttempts`; exhaustion Escalates the Epic through the same surface
+as a Task (ADR-0028).
+_Avoid_: integration task, epic run
 
 **Whole-Epic integrate**:
 Merging the Integration branch into the default branch — a merge commit under
-the mutex, the post-merge check on the merged default tip, revert-and-escalate
-on red (ADR-0001) — then retiring the branch. Runs only when the integrate
-gate is open and Whole-Epic Verification passes; a cheap ancestor check first
-keeps it idempotent when the work is already contained.
+the mutex, the post-merge check on the merged default tip (the one **detached**
+check left in the system, ADR-0028), revert-and-escalate on red (ADR-0001) —
+then retiring the branch. Runs only when the integrate gate is open and Epic
+Pre-Merge Verification passes; a cheap ancestor check first keeps it idempotent
+when the work is already contained.
 _Avoid_: final merge
 
 **Force-integrate the ready subset**:
 The operator-only override that opens an Epic's integrate gate unconditionally —
 integrating whatever Members are already folded into the Integration branch even
-while a sibling is stuck — without bypassing Whole-Epic Verification. The one
+while a sibling is stuck — without bypassing Epic Pre-Merge Verification. The one
 escape hatch when a Blocking Member stalls the Epic.
 _Avoid_: force merge, partial integrate
 
@@ -579,16 +594,34 @@ never stacked on top of. Enforced by the Auto-Runner as a pick predicate
 _Avoid_: workspace (that is the board container), sandbox
 
 **Verification**:
-The automated gate between implementation and Merge, run inside each
-Attempt: `verify.commands[]` (ordered, fail-fast, one Verification Task each)
-then the optional **Review Task** — a single critic Harness with configurable
-harness, model, and prompt, run only after the commands pass. Resolved global
-default with per-Workspace override; zero verifiers configured = the gate
-passes. Any command fail, review reject, or review *inconclusive* is a
-**failed Attempt** — feedback into the next Attempt, counter +1; `inconclusive`
-burns an Attempt rather than escalating (ADR-0003). The verdict attaches to
-the Attempt, never to a SHA (ADR-0001); Merge never re-checks it.
-_Avoid_: review gate (deleted), validation, lint, test (it is more than either)
+The automated gate between implementation and Merge, run at **three configured
+stages**: `verify.task.preMerge` (in the worktree), `verify.task.postMerge`
+(after the merge to the Epic, revert-on-red), and the **Epic Pre-Merge
+Verification** (`verify.epic.preMerge`). Each stage is a pair of lists —
+**verify commands** (ordered, fail-fast, one Verification Step each) that
+**gate** the **Critics** (parallel, all-must-pass, every critic's feedback
+collected before the retry). A stage with zero verifiers passes; resolved
+global default with **per-stage, per-list** Workspace override. Any command
+fail or critic reject/*inconclusive* is a **failed Attempt** — feedback into
+the next Attempt, counter +1 (ADR-0003, ADR-0028). The verdict attaches to the
+Attempt, never to a SHA (ADR-0001); Merge never re-checks it. Everything runs
+**in place** in the live worktree; the one detached check is the Epic's
+merge-to-default post-merge check.
+_Avoid_: review gate (deleted), Review Task / single critic (superseded — a
+Critic is a listable verifier now), validation, lint, test (more than either)
+
+**Critic**:
+A read-only reviewer verifier — its own Harness, model, and prompt — that judges
+the candidate **in place**, **listable per stage** (many per stage, run in
+parallel, all-must-pass). A **task Critic** carries a prompt **pair**
+(`issuePrompt` / `noIssuePrompt`), chosen at run time by whether the Task has a
+tracker issue (`trackerRef`): the issue variant interpolates
+`{ref}/{title}/{body}/{url}`, the no-issue variant only the ticket-free tokens,
+so a bare-prompt Task is never reviewed against an empty `{title}`. An **epic
+Critic** carries a single prompt — an Epic is always a tracker container, so its
+no-issue variant never fires. Both bodies are editable with a live per-variant
+preview. Replaces the single Review (ADR-0028).
+_Avoid_: review, reviewer Task (the single-critic name, superseded)
 
 **Continuation rule**:
 The deterministic choice at Attempt N+1: continue the prior Session (feedback
@@ -706,7 +739,7 @@ _Avoid_: run time, wall-clock, elapsed
 
 **Failure rate**:
 Failed Attempts over total Attempts, at Attempt grain: a failed Attempt
-counts, and **a review rejection is a failed Attempt** (the loop's uniform
+counts, and **a critic rejection is a failed Attempt** (the loop's uniform
 outcome). Cancelled work is deliberate abandonment and stays out of the
 numerator, shown separately in the state breakdown, which is always rendered
 beside the rate (ADR-0008).

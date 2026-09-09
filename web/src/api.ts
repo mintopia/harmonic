@@ -17,11 +17,14 @@ import type {
   PermissionRule,
   AttemptSummary,
   AttemptEvent,
+  EpicAttempt,
   AttemptLogEvent,
   Task,
   TicketTimelineEvent,
   VerificationAttempt,
   VerificationCommand,
+  TaskVerificationCritic,
+  EpicVerificationCritic,
   VerifierStatus,
   Workspace,
   HarnessProvider,
@@ -125,11 +128,12 @@ export const api = {
       autoRunnerEnabled?: boolean | null;
       maxAttempts?: number | null;
       contextReuseTokenLimit?: number | null;
-      verificationCommand?: VerificationCommand[] | null;
-      reviewEnabled?: boolean | null;
-      reviewPrompt?: string | null;
-      reviewModel?: string | null;
-      reviewHarness?: string | null;
+      taskPreMergeCommands?: VerificationCommand[] | null;
+      taskPreMergeCritics?: TaskVerificationCritic[] | null;
+      taskPostMergeCommands?: VerificationCommand[] | null;
+      taskPostMergeCritics?: TaskVerificationCritic[] | null;
+      epicPreMergeCommands?: VerificationCommand[] | null;
+      epicPreMergeCritics?: EpicVerificationCritic[] | null;
       guardrailBudget?: BudgetGuardrail | null;
       guardrailProgress?: boolean | null;
       toolTimeoutMinutes?: number | null;
@@ -178,6 +182,8 @@ export const api = {
   removeDependency: (id: number, depId: number) =>
     request<Task>('DELETE', `/api/tasks/${id}/dependencies/${depId}`),
   continuationPreview: (id: number) => request<ContinuationPreview>('GET', `/api/tasks/${id}/continuation`),
+  rejectEpic: (workspaceId: number, epicRef: number, guidance: string, continuation: 'continue' | 'fresh') =>
+    request<EpicIntegrateOutcome>('POST', `/api/workspaces/${workspaceId}/epics/${epicRef}/reject`, { guidance, continuation }),
   // The three escalation actions, escalated tickets only.
   // `force: true` is the as-is override (Force-Accept): the server skips
   // candidate verification and merges the branch head as it stands. Omitted
@@ -289,6 +295,8 @@ export const api = {
   },
   epic: (workspaceId: number, epicRef: number) =>
     request<Epic>('GET', `/api/workspaces/${workspaceId}/epics/${epicRef}`),
+  epicAttempts: (workspaceId: number, epicRef: number) =>
+    request<{ attempts: EpicAttempt[] }>('GET', `/api/workspaces/${workspaceId}/epics/${epicRef}/attempts`),
   forceIntegrateEpic: (workspaceId: number, epicRef: number) =>
     request<EpicIntegrateOutcome>('POST', `/api/workspaces/${workspaceId}/epics/${epicRef}/force-integrate`),
   epicDiffFiles: (workspaceId: number, epicRef: number) =>

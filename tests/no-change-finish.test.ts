@@ -24,7 +24,7 @@ function makeRepo(): string {
   return dir;
 }
 
-const critic = () => ({ reviewEnabled: true, reviewPrompt: 'Review the change for correctness.', reviewModel: 'stub-model' });
+const critic = () => ({ taskPreMergeCritics: [{ issuePrompt: 'Review the issue change for correctness.', noIssuePrompt: 'Review the Task change for correctness.', model: 'stub-model' }] });
 
 describe('a finish_task that changed nothing', () => {
   let server: TestServer;
@@ -55,7 +55,7 @@ describe('a finish_task that changed nothing', () => {
     criticResult = { verdict: 'pass', summary: 'the ticket needs no change' };
     await server.app.ctx.workspaces.update(workspaceId, {
       isolationMode: 'worktree',
-      verificationCommand: null,
+      taskPreMergeCommands: null,
       ...critic(),
     });
   });
@@ -103,7 +103,7 @@ describe('a finish_task that changed nothing', () => {
   }, 30_000);
 
   it('escalates when no critic is configured — nothing can judge a no-op', async () => {
-    await server.app.ctx.workspaces.update(workspaceId, { reviewEnabled: false, verificationCommand: null });
+    await server.app.ctx.workspaces.update(workspaceId, { taskPreMergeCritics: [], taskPreMergeCommands: null });
     const { taskId } = await runNoChangeFinish();
     const task = await waitState(taskId, 'escalated');
     expect(task.escalationReason).toMatch(/finished without changing any files and no critic is configured/);

@@ -1,13 +1,15 @@
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import type { TrackingContext } from '../app.js';
+import type { AppContext } from '../app.js';
 import { DomainError } from '../../domain/errors.js';
-import { errorResponse } from '../schemas.js';
+import { attemptUsageSchema, costSchema, errorResponse } from '../schemas.js';
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
 import type { Epic } from '../../domain/epic-view.js';
 import { diffFilesResponseSchema } from './diff.js';
 import { parseUnifiedDiff } from '../../domain/unified-diff.js';
+import { epicAttemptTimelineToApi } from '../serialize.js';
+import { ATTEMPT_STATES } from '../../db/schema.js';
 
 /** Path params for a whole-Epic action: the owning Workspace and the Epic's tracker ref. */
 const epicParamsSchema = z.object({
@@ -18,6 +20,11 @@ const epicParamsSchema = z.object({
 /** Path params for the read endpoints: the owning Workspace only (`GET …/epics`). */
 const epicListParamsSchema = z.object({
   workspaceId: z.coerce.number().int().meta({ example: 1 }),
+});
+
+const rejectEpicInputSchema = z.object({
+  guidance: z.string().trim().min(1).meta({ example: 'Fix the failing integration test before trying again.' }),
+  continuation: z.enum(['continue', 'fresh']).meta({ example: 'continue' }),
 });
 
 /** The `GET …/epics` querystring: the shared pagination fragment plus a
@@ -52,7 +59,7 @@ const epicIntegrationSchema = z
   .meta({ id: 'EpicIntegration' });
 
 const epicVerificationSchema = z
-  .object({ status: z.enum(['pass', 'fail', 'pending']).nullable(), configured: z.boolean() })
+  .object({ status: z.enum(['pass', 'fail', 'pending']).nullable(), configured: z.boolean(), stages: z.array(z.object({ label: z.string(), status: z.enum(['pass', 'fail', 'pending']).nullable(), verifiers: z.array(z.string()) })).optional() })
   .meta({ id: 'EpicVerification' });
 
 const epicIntegrateStateSchema = z
@@ -103,6 +110,38 @@ const epicSchema = z
 
 const epicsListResponseSchema = listResponse('epics', epicSchema);
 
+const epicAttemptSchema = z
+  .object({
+    id: z.number().int(),
+    number: z.number().int().positive(),
+    state: z.enum(ATTEMPT_STATES),
+    reason: z.string().nullable(),
+    prompt: z.string().nullable(),
+    usage: attemptUsageSchema.nullable(),
+    cost: costSchema.nullable(),
+    toolCalls: z.number().int().nonnegative(),
+    contextTokens: z.number().nullable(),
+    startedAt: z.number().int(),
+    endedAt: z.number().int().nullable(),
+    steps: z.array(z.object({
+      id: z.number().int(),
+      attemptId: z.number().int(),
+      type: z.enum(['rebase', 'implementation', 'verification', 'review']),
+      position: z.number().int(),
+      state: z.enum(['pending', 'running', 'passed', 'failed', 'skipped', 'cancelled']),
+      command: z.string().nullable(),
+      verdict: z.string().nullable(),
+      logLocator: z.string().nullable(),
+      startedAt: z.number().int().nullable(),
+      endedAt: z.number().int().nullable(),
+    })),
+  })
+  .meta({ id: 'EpicAttempt' });
+
+const epicAttemptTimelineResponseSchema = z
+  .object({ attempts: z.array(epicAttemptSchema) })
+  .meta({ id: 'EpicAttemptTimelineResponse' });
+
 /** `EpicIntegrateOutcome` (`execution/epic-integrate-git.ts`) as the API serves it — a discriminated union on `status`. */
 const epicIntegrateOutcomeSchema = z
   .discriminatedUnion('status', [
@@ -121,7 +160,7 @@ const epicIntegrateOutcomeSchema = z
 
 const epicToApi = (epic: Epic): Epic => epic;
 
-export async function epicRoutes(fastify: FastifyInstance, ctx: Pick<TrackingContext, 'trackerManager' | 'workspaces'>): Promise<void> {
+export async function epicRoutes(fastify: FastifyInstance, ctx: AppContext): Promise<void> {
   const app = fastify.withTypeProvider<ZodTypeProvider>();
 
   app.get(
@@ -176,6 +215,50 @@ export async function epicRoutes(fastify: FastifyInstance, ctx: Pick<TrackingCon
         throw new DomainError('not_found', `no Epic ${req.params.epicRef} derived for workspace ${req.params.workspaceId}`);
       }
       return epicToApi(epic);
+    },
+  );
+
+  app.get(
+    '/workspaces/:workspaceId/epics/:epicRef/attempts',
+    {
+      schema: {
+        tags: ['Epics'],
+        description: 'Every durable Attempt owned by this Epic, ordered by its Epic-local timeline number. Operator only.',
+        security: [{ bearerAuth: [] }, { sessionCookie: [] }],
+        params: epicParamsSchema,
+        response: {
+          200: epicAttemptTimelineResponseSchema.describe('The Epic Attempt timeline with durable usage and frozen cost.'),
+          404: errorResponse('No Workspace has that id.'),
+        },
+      },
+    },
+    async (req) => {
+      await ctx.workspaces.assertExists(req.params.workspaceId);
+      return epicAttemptTimelineToApi(ctx, req.params);
+    },
+  );
+
+  app.post(
+    '/workspaces/:workspaceId/epics/:epicRef/reject',
+    {
+      schema: {
+        tags: ['Epics'],
+        description: 'Reject an escalated Epic with guidance. The guidance is recorded on the escalated Epic Attempt and included in the next whole-Epic resolver turn. Operator only.',
+        security: [{ bearerAuth: [] }, { sessionCookie: [] }],
+        params: epicParamsSchema,
+        body: rejectEpicInputSchema,
+        response: {
+          200: epicIntegrateOutcomeSchema.describe('The outcome of rejecting the Epic and requeuing it with operator guidance.'),
+          404: errorResponse('No Workspace has that id.'),
+          409: errorResponse('The Epic is not escalated or has no active whole-Epic coordinator.'),
+        },
+      },
+    },
+    async (req) => {
+      await ctx.workspaces.assertExists(req.params.workspaceId);
+      const outcome = await ctx.trackerManager.rejectEpic(req.params.workspaceId, req.params.epicRef, req.body.guidance, req.body.continuation);
+      if (!outcome) throw new DomainError('conflict', `Epic ${req.params.epicRef} is not escalated`);
+      return outcome;
     },
   );
 
