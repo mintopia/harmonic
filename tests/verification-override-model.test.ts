@@ -9,10 +9,10 @@ import {
   summarizeCommands,
   summarizeCritic,
 } from '../web/src/components/verification-override-model.js';
-import type { VerificationCommand, VerificationCritic } from '../web/src/types.js';
+import type { TaskVerificationCritic, VerificationCommand } from '../web/src/types.js';
 
 const baseCommand: VerificationCommand = { command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 };
-const baseCritic: VerificationCritic = { prompt: 'review the diff', model: 'claude-opus-5' };
+const baseCritic: TaskVerificationCritic = { issuePrompt: 'review the issue diff', noIssuePrompt: 'review the Task diff', model: 'claude-opus-5' };
 
 describe('setCommandField (issue #165)', () => {
   it('sets the executable from a text input', () => {
@@ -75,7 +75,7 @@ describe('summarizeCommands (issue #338)', () => {
 describe('setCriticField (issue #165)', () => {
   it('sets a free-text field', () => {
     expect(setCriticField(baseCritic, 'model', 'gpt-5')).toEqual({ ...baseCritic, model: 'gpt-5' });
-    expect(setCriticField(baseCritic, 'prompt', 'check tests')).toEqual({ ...baseCritic, prompt: 'check tests' });
+    expect(setCriticField(baseCritic, 'noIssuePrompt', 'check tests')).toEqual({ ...baseCritic, noIssuePrompt: 'check tests' });
   });
 });
 

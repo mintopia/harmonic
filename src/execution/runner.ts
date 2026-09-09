@@ -1245,8 +1245,13 @@ export class Runner {
       }
     }
 
-    const critic = critics[0];
-    if (criticEnabled && critic && verdicts.every((entry) => entry.verdict === 'pass')) {
+    for (const configuredCritic of critics) {
+      if (!criticEnabled || !verdicts.every((entry) => entry.verdict === 'pass')) break;
+      const critic = {
+        prompt: task.trackerRef == null ? configuredCritic.noIssuePrompt : configuredCritic.issuePrompt,
+        model: configuredCritic.model,
+        ...(configuredCritic.harness ? { harness: configuredCritic.harness } : {}),
+      };
       if (!oid) {
         verdicts.push(await this.noVerifiedHeadVerdict(task, 'critic', record));
       } else {

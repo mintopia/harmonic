@@ -1,12 +1,12 @@
 import { runCommandVerifier } from '../verification/command-verifier.js';
 import { combineVerdicts, type VerificationDecision, type VerifierVerdict } from '../verification/combine.js';
-import type { VerificationStage } from '../config.js';
+import type { EpicVerificationStage } from '../config.js';
 
 /** Executes one configured Epic critic against the checked-out integration tree. */
 export type EpicCriticRunner = (args: {
   cwd: string;
   verifiedHeadOid: string;
-  critic: VerificationStage['critics'][number];
+  critic: EpicVerificationStage['critics'][number];
 }) => Promise<VerifierVerdict & { summary?: string; output?: string }>;
 
 /**
@@ -19,7 +19,7 @@ export async function verifyEpicIntegration(args: {
   worktreePath: string;
   /** The integration branch tip OID to Verify. */
   verifiedHeadOid: string;
-  verifiers: VerificationStage;
+  verifiers: EpicVerificationStage;
   /** Runs a configured critic in the same live Epic worktree as the commands. */
   runCritic: EpicCriticRunner;
   /** Cancellation, wired to server shutdown; an abort kills the verifier child. */

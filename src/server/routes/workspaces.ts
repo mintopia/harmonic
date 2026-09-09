@@ -7,7 +7,8 @@ import type { ResolvedTracker } from '../../tracker/adapter.js';
 import { createWorkspaceInputSchema, updateWorkspaceInputSchema } from '../../domain/workspaces.js';
 import {
   verificationCommandOverrideSchema,
-  verificationCriticOverrideSchema,
+  taskVerificationCriticOverrideSchema,
+  epicVerificationCriticOverrideSchema,
   budgetGuardrailSchema,
   unpricedModelsForCostCap,
   costCapMessage,
@@ -51,11 +52,11 @@ const workspaceSchema = z
     maxAttempts: z.number().nullable().meta({ example: null }),
     contextReuseTokenLimit: z.number().nullable().meta({ example: null }),
     taskPreMergeCommands: verificationCommandOverrideSchema.nullable().meta({ example: null }),
-    taskPreMergeCritics: verificationCriticOverrideSchema.nullable().meta({ example: null }),
+    taskPreMergeCritics: taskVerificationCriticOverrideSchema.nullable().meta({ example: null }),
     taskPostMergeCommands: verificationCommandOverrideSchema.nullable().meta({ example: null }),
-    taskPostMergeCritics: verificationCriticOverrideSchema.nullable().meta({ example: null }),
+    taskPostMergeCritics: taskVerificationCriticOverrideSchema.nullable().meta({ example: null }),
     epicPreMergeCommands: verificationCommandOverrideSchema.nullable().meta({ example: null }),
-    epicPreMergeCritics: verificationCriticOverrideSchema.nullable().meta({ example: null }),
+    epicPreMergeCritics: epicVerificationCriticOverrideSchema.nullable().meta({ example: null }),
     guardrailBudget: budgetGuardrailSchema.nullable().meta({ example: null }),
     guardrailProgress: z.boolean().nullable().meta({ example: null }),
     /** Tool-timeout bound override; null inherits `config.guardrails.toolTimeoutMinutes`. */

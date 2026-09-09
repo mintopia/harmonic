@@ -31,7 +31,7 @@ describe('prompt-preview-model (settings compiled preview)', () => {
   });
 
   it('compileCriticPreview shows both Task-kind variants, each with the read-only + verdict scaffolding', () => {
-    const [mirrored, native] = compileCriticPreview('Review issue {ref}: {title}.');
+    const [mirrored, native] = compileCriticPreview({ issuePrompt: 'Review issue {ref}: {title}.', noIssuePrompt: 'Review the Task via {skill}.' });
     if (!mirrored || !native) throw new Error('expected two compiled variants');
 
     expect(mirrored.label).toMatch(/mirrored/i);
@@ -39,8 +39,8 @@ describe('prompt-preview-model (settings compiled preview)', () => {
     expect(mirrored.text).toContain('the referenced ticket');
 
     expect(native.label).toMatch(/native/i);
-    // Native Task has no ref: the token compiles to empty; title still fills from the prompt.
-    expect(native.text).toContain(`Review issue : ${SAMPLE_DRIVE_FIELDS.title}.`);
+    expect(native.text).toContain(`Review the Task via ${SAMPLE_DRIVE_FIELDS.skill}.`);
+    expect(native.text).not.toContain(SAMPLE_DRIVE_FIELDS.title);
     expect(native.text).toContain('there is no external ticket to consult');
 
     for (const { text } of [mirrored, native]) {

@@ -307,7 +307,7 @@ export class EpicCoordinator {
             ...withEpicTitle(target.title),
             type: 'resolve',
             attributes: { 'git.verified_head_oid': verifiedHeadOid },
-            work: () => withTimeout(this.resolve!({ repoDir: this.repoDir, epicRef: target.ref, title: target.title, verifiedHeadOid, verification }), this.operationTimeoutMs, 'whole-Epic resolution'),
+            work: () => withTimeout(this.resolve!({ repoDir: this.repoDir, epicRef: target.ref, ...withEpicTitle(target.title), verifiedHeadOid, verification }), this.operationTimeoutMs, 'whole-Epic resolution'),
           });
           return { status: 'waiting', reason: 'whole-Epic verification failed; resolver dispatched' };
         } catch (err) {

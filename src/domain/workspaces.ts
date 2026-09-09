@@ -20,7 +20,8 @@ import { DomainError } from './errors.js';
 import { deleteAttemptsAndChildrenAsync } from './attempt-cascade.js';
 import {
   verificationCommandOverrideSchema,
-  verificationCriticOverrideSchema,
+  taskVerificationCriticOverrideSchema,
+  epicVerificationCriticOverrideSchema,
   budgetGuardrailSchema,
   MERGE_FATES,
 } from '../config.js';
@@ -56,11 +57,11 @@ export const workspaceOverridesSchema = z.object({
   maxAttempts: z.number().int().min(1).nullable().optional().meta({ example: 2 }),
   contextReuseTokenLimit: z.number().int().min(0).nullable().optional().meta({ example: 200_000 }),
   taskPreMergeCommands: verificationCommandOverrideSchema.nullable().optional(),
-  taskPreMergeCritics: verificationCriticOverrideSchema.nullable().optional(),
+  taskPreMergeCritics: taskVerificationCriticOverrideSchema.nullable().optional(),
   taskPostMergeCommands: verificationCommandOverrideSchema.nullable().optional(),
-  taskPostMergeCritics: verificationCriticOverrideSchema.nullable().optional(),
+  taskPostMergeCritics: taskVerificationCriticOverrideSchema.nullable().optional(),
   epicPreMergeCommands: verificationCommandOverrideSchema.nullable().optional(),
-  epicPreMergeCritics: verificationCriticOverrideSchema.nullable().optional(),
+  epicPreMergeCritics: epicVerificationCriticOverrideSchema.nullable().optional(),
   /** Budget-Guardrail override; null inherits `config.guardrails.budget`. */
   guardrailBudget: budgetGuardrailSchema.nullable().optional(),
   /** Progress-detector toggle override; null inherits `config.guardrails.progress`. */

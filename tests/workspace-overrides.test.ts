@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { WorkspaceService } from '../src/domain/workspaces.js';
-import { verificationCommandSchema, verificationCriticSchema, budgetGuardrailSchema } from '../src/config.js';
+import { verificationCommandSchema, taskVerificationCriticSchema, budgetGuardrailSchema } from '../src/config.js';
 import { resolveVerifiers, resolveDrive } from '../src/domain/setting-override.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { makeSettingsStore } from './helpers.js';
@@ -120,17 +120,17 @@ describe('WorkspaceService override persistence (issue #64)', () => {
     const ws = (await workspaces.list())[0]!;
     const updated = await workspaces.update(ws.id, {
       taskPreMergeCommands: [verificationCommandSchema.parse({ command: 'npm', args: ['test'] })],
-      taskPreMergeCritics: [verificationCriticSchema.parse({ prompt: 'review', model: 'claude-opus-5' })],
+      taskPreMergeCritics: [taskVerificationCriticSchema.parse({ issuePrompt: 'review issue', noIssuePrompt: 'review Task', model: 'claude-opus-5' })],
     });
     expect(JSON.parse(updated.taskPreMergeCommands!)).toMatchObject([{ command: 'npm', args: ['test'] }]);
-    expect(JSON.parse(updated.taskPreMergeCritics!)).toMatchObject([{ prompt: 'review', model: 'claude-opus-5' }]);
+    expect(JSON.parse(updated.taskPreMergeCritics!)).toMatchObject([{ issuePrompt: 'review issue', noIssuePrompt: 'review Task', model: 'claude-opus-5' }]);
   });
 
   it('clears staged verifier overrides back to inherit with null', async () => {
     const ws = (await workspaces.list())[0]!;
     await workspaces.update(ws.id, {
       taskPreMergeCommands: [verificationCommandSchema.parse({ command: 'npm', args: ['test'] })],
-      taskPreMergeCritics: [verificationCriticSchema.parse({ prompt: 'review', model: 'claude-opus-5' })],
+      taskPreMergeCritics: [taskVerificationCriticSchema.parse({ issuePrompt: 'review issue', noIssuePrompt: 'review Task', model: 'claude-opus-5' })],
     });
     const cleared = await workspaces.update(ws.id, {
       taskPreMergeCommands: null,
@@ -146,7 +146,7 @@ describe('WorkspaceService override persistence (issue #64)', () => {
     expect(JSON.parse(updated.taskPreMergeCritics!)).toEqual([]);
     const resolved = resolveVerifiers(updated, {
       verify: {
-        task: { preMerge: { commands: [], critics: [{ prompt: 'global review', model: 'claude-opus-5' }] }, postMerge: { commands: [], critics: [] } },
+        task: { preMerge: { commands: [], critics: [{ issuePrompt: 'global issue review', noIssuePrompt: 'global Task review', model: 'claude-opus-5' }] }, postMerge: { commands: [], critics: [] } },
         epic: { preMerge: { commands: [], critics: [] }, resolvePrompt: 'Resolve failures.' },
       },
     } as any);

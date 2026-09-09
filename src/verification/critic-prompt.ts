@@ -18,11 +18,11 @@ export function buildCriticPrompt({
   verifiedHeadOid,
   baseOid,
 }: BuildCriticPromptArgs): string {
-  const interpolated = fillTemplate(operatorPrompt, fields);
+  const hasTicket = fields.ref.trim() !== '' || fields.url.trim() !== '';
+  const interpolated = fillTemplate(operatorPrompt, hasTicket ? fields : { ...fields, title: '', body: '' });
   // A native (board-authored) Task has no mirrored issue: `ref`/`url` are empty,
   // so the critic must judge against the instructions themselves, not a ticket
   // that does not exist.
-  const hasTicket = fields.ref.trim() !== '' || fields.url.trim() !== '';
   const spec = hasTicket ? 'the referenced ticket' : 'the review instructions above';
   const ticketFirst = hasTicket
     ? 'First read the referenced ticket (named in the review instructions above) to understand the outcome it requires, and judge the candidate against that outcome.'
