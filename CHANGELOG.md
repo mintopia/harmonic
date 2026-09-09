@@ -1,5 +1,32 @@
 # Changelog
 
+## [2.4.0](https://github.com/mintopia/harmonic/compare/v2.3.0...v2.4.0) (2026-09-09)
+
+
+### Features
+
+* add task critic prompt variants ([6f53546](https://github.com/mintopia/harmonic/commit/6f535466ef3e36063cb663b7b0a18c94202ecd5d))
+* **epics:** add attempt ownership ([3c17d98](https://github.com/mintopia/harmonic/commit/3c17d985e35dbfe5b09738bedb1b4484f976a95b))
+* **epics:** run and display epic attempts ([5a893f7](https://github.com/mintopia/harmonic/commit/5a893f7734aff69b4241d5b780520fac857481af))
+* **epics:** verify and resolve in the epic worktree ([eb91bc8](https://github.com/mintopia/harmonic/commit/eb91bc85699c1d50b3672293832c3dd05c7037da))
+* resume escalated epic attempts ([7980b9e](https://github.com/mintopia/harmonic/commit/7980b9e65dec49eae25ae4a9890d56d2a7218af8))
+* run task verification stages in place ([ef6ee3e](https://github.com/mintopia/harmonic/commit/ef6ee3ecdc1d1c92bf6a3c770cae524dd4197efa))
+* **settings:** add staged verification editors ([fe4b47c](https://github.com/mintopia/harmonic/commit/fe4b47c135b64456c4edb1da120d1d4cd4ad4044))
+* show epic verifier stage status ([ef0850f](https://github.com/mintopia/harmonic/commit/ef0850f8b63f517030f6cd2a1ac76b64be72df22))
+* show individual verifier steps ([3a262e9](https://github.com/mintopia/harmonic/commit/3a262e92171e1f8b507c202a489d185d2bc8ea99))
+* **verification:** stage verifier configuration ([fa20b6f](https://github.com/mintopia/harmonic/commit/fa20b6fb7b004ccabba3533e22403b3bf36759bb))
+
+
+### Bug Fixes
+
+* approve conversation permissions via ACP outcome envelope ([159d3c6](https://github.com/mintopia/harmonic/commit/159d3c666ee06f21e6947a56c269a463741d5791))
+* **epics:** omit absent prompt fields ([9d716b4](https://github.com/mintopia/harmonic/commit/9d716b428c59229d4a50876307f6054f6ef2a7af))
+* green the staged-verification CI failures ([4f4bc76](https://github.com/mintopia/harmonic/commit/4f4bc7680c559487da363f85698dbe885b675353))
+* keep single verifier tabs visible ([41a16f2](https://github.com/mintopia/harmonic/commit/41a16f2dd26acf03b41865b27d2776868beb731f))
+* select verifier by step identity ([8d28693](https://github.com/mintopia/harmonic/commit/8d286932804a74ac93be3018575f2643c6a44f2c))
+* **web:** close hairline gaps in lifecycle stepper connector line ([f24a66e](https://github.com/mintopia/harmonic/commit/f24a66e08f7cfd72528b3d5bc1d00dd6725783c8))
+* **web:** stream attempt transcript live without a hard refresh ([06ca098](https://github.com/mintopia/harmonic/commit/06ca098f9817936fc0eb4a19b240d0296e2cb695))
+
 ## [2.3.0](https://github.com/mintopia/harmonic/compare/v2.2.0...v2.3.0) (2026-09-08)
 
 
