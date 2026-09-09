@@ -248,7 +248,7 @@ export async function epicRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
         params: epicParamsSchema,
         body: rejectEpicInputSchema,
         response: {
-          200: epicIntegrateOutcomeSchema,
+          200: epicIntegrateOutcomeSchema.describe('The outcome of rejecting the Epic and requeuing it with operator guidance.'),
           404: errorResponse('No Workspace has that id.'),
           409: errorResponse('The Epic is not escalated or has no active whole-Epic coordinator.'),
         },

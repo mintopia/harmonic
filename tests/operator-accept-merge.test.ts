@@ -162,9 +162,11 @@ describe('operator Accept merge (ADR-0001, issue #383)', () => {
     wsId = (await server.app.ctx.workspaces.list())[0]!.id;
 
     const repo = makeRepo();
+    const redCommand = verificationCommandSchema.parse({ command: process.execPath, args: ['-e', 'process.exit(1)'], timeoutSeconds: 30 });
     await server.app.ctx.workspaces.update(wsId, {
       workingDir: repo,
-      taskPreMergeCommands: [verificationCommandSchema.parse({ command: process.execPath, args: ['-e', 'process.exit(1)'], timeoutSeconds: 30 })],
+      taskPreMergeCommands: [redCommand],
+      taskPostMergeCommands: [redCommand],
     });
 
     const created = await server.api('POST', '/api/tasks', {
