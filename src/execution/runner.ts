@@ -72,6 +72,8 @@ export interface EpicVerificationResolutionInput {
   workspaceId: number;
   epicRef: number;
   title?: string;
+  body?: string;
+  url?: string;
   repoDir: string;
   worktreePath: string;
   attempt: AttemptRow;
@@ -1509,7 +1511,9 @@ export class Runner {
     const prompt = [
       input.resolvePrompt
         .replaceAll('{ref}', String(input.epicRef))
-        .replaceAll('{title}', input.title ?? `Epic #${input.epicRef}`),
+        .replaceAll('{title}', input.title ?? `Epic #${input.epicRef}`)
+        .replaceAll('{body}', input.body ?? '')
+        .replaceAll('{url}', input.url ?? ''),
       '',
       '## Failing Epic verification',
       input.verificationReason,
@@ -1568,6 +1572,15 @@ export class Runner {
           await this.attempts.updateStep(step.id, { logLocator: `session:${session.id}` });
         },
       });
+      if (await Git.currentBranch(worktreePath) !== branch) {
+        throw new Error(`Epic verification resolver left '${branch}'`);
+      }
+      if (await Git.isDirty(worktreePath)) {
+        throw new Error('Epic verification resolver left uncommitted changes');
+      }
+      if (await Git.revParse(worktreePath, 'HEAD') === input.verifiedHeadOid) {
+        throw new Error('Epic verification resolver did not commit a change');
+      }
       await this.attempts.replaceToolCalls(input.attempt.id, toolCalls);
       const usage = collectUsage({
         harnessId,

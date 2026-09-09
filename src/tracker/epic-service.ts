@@ -23,6 +23,7 @@ import {
   type EpicRefreshTarget,
 } from '../execution/epic-coordinator.js';
 import { verifyEpicIntegration } from '../execution/epic-verification.js';
+import { runCommandVerifierDetached } from '../verification/command-verifier.js';
 import { Git } from '../execution/git.js';
 import { collectUsage } from '../execution/usage.js';
 import { criticAttemptToInput, runCritic, type CriticHarnessDrive } from '../verification/critic.js';
@@ -39,6 +40,8 @@ export type EpicResolutionDispatch = (input: {
   workspaceId: number;
   epicRef: number;
   title?: string;
+  body?: string;
+  url?: string;
   repoDir: string;
   worktreePath: string;
   attempt: AttemptRow;
@@ -117,28 +120,28 @@ export class TrackerEpicService implements EpicService {
       const publishEpicAttempt = (attempt: AttemptRow): void => {
         if (isEpicAttempt(attempt)) this.onEpicAttemptChanged?.(attempt);
       };
-      const attemptWorktrees = new Map<number, string>();
-      const releaseAttemptWorktree = async (epicRef: number): Promise<void> => {
-        const worktreePath = attemptWorktrees.get(epicRef);
+      const epicWorktrees = new Map<number, string>();
+      const releaseEpicWorktree = async (epicRef: number): Promise<void> => {
+        const worktreePath = epicWorktrees.get(epicRef);
         if (!worktreePath) return;
-        attemptWorktrees.delete(epicRef);
+        epicWorktrees.delete(epicRef);
         await Git.removeWorktree(workspace.workingDir, worktreePath).catch(() => {});
       };
-      const attemptWorktree = async (repoDir: string, epicRef: number): Promise<string> => {
-        const existing = attemptWorktrees.get(epicRef);
+      const epicWorktree = async (repoDir: string, epicRef: number): Promise<string> => {
+        const existing = epicWorktrees.get(epicRef);
         if (existing) return existing;
         const parent = this.worktreesDir ?? tmpdir();
         mkdirSync(parent, { recursive: true });
-        const path = join(parent, `epic-attempt-${workspace.id}-${epicRef}`);
+        const path = join(parent, `epic-${workspace.id}-${epicRef}`);
         try {
           await Git.addWorktreeCheckout(repoDir, path, integrationBranchName(epicRef));
         } catch {
-          // This path is deterministic and solely owned by the Epic Attempt.
+          // This path is deterministic and solely owned by the Epic.
           // A crash can leave either Git's worktree registration or its directory.
           await Git.removeWorktree(repoDir, path).catch(() => rmSync(path, { recursive: true, force: true }));
           await Git.addWorktreeCheckout(repoDir, path, integrationBranchName(epicRef));
         }
-        attemptWorktrees.set(epicRef, path);
+        epicWorktrees.set(epicRef, path);
         return path;
       };
       const verify = async ({ repoDir, epicRef, verifiedHeadOid }: { repoDir: string; epicRef: number; verifiedHeadOid: string }) => {
@@ -149,7 +152,7 @@ export class TrackerEpicService implements EpicService {
           publishEpicAttempt(attempt);
         }
         try {
-          const worktreePath = await attemptWorktree(repoDir, epicRef);
+          const worktreePath = await epicWorktree(repoDir, epicRef);
           const decision = await verifyEpicIntegration({
             worktreePath,
             verifiedHeadOid,
@@ -236,7 +239,6 @@ export class TrackerEpicService implements EpicService {
             }));
             verificationAttempts.delete(epicRef);
           }
-          await releaseAttemptWorktree(epicRef);
           throw error;
         }
       };
@@ -244,11 +246,11 @@ export class TrackerEpicService implements EpicService {
         repoDir: workspace.workingDir,
         verify,
         ...(epicAttempts && dispatchEpicResolution ? {
-          resolve: async ({ repoDir, epicRef, title, verifiedHeadOid, verification, guidance, continuationSessionId, continuationSessionRowId }) => {
+          resolve: async ({ repoDir, epicRef, title, body, url, verifiedHeadOid, verification, guidance, continuationSessionId, continuationSessionRowId }) => {
             const attempt = verificationAttempts.get(epicRef) ?? await epicAttempts.getRunningForEpic({ workspaceId: workspace.id, epicRef });
             if (!attempt) throw new Error(`Epic #${epicRef} has no running Attempt to resolve`);
             const maxAttempts = workspace.maxAttempts ?? getConfig().maxAttempts;
-            if (!attempt.feedback && attempt.number > maxAttempts) {
+            if (!attempt.feedback && attempt.number >= maxAttempts) {
               publishEpicAttempt(await epicAttempts.updateWithFrozenCost(attempt.id, {
                 state: 'escalated',
                 reason: 'epic-verification',
@@ -256,16 +258,17 @@ export class TrackerEpicService implements EpicService {
                 endedAt: Date.now(),
                 verifiedHeadOid,
               }));
-              await releaseAttemptWorktree(epicRef);
               throw new Error(`Epic verification exhausted its ${maxAttempts}-Attempt limit: ${verification.reason}`);
             }
             try {
-              const worktreePath = attemptWorktrees.get(epicRef);
+              const worktreePath = epicWorktrees.get(epicRef);
               if (!worktreePath) throw new Error(`Epic #${epicRef} has no verification worktree to resolve`);
               await dispatchEpicResolution({
                 workspaceId: workspace.id,
                 epicRef,
                 ...(title ? { title } : {}),
+                ...(body ? { body } : {}),
+                ...(url ? { url } : {}),
                 repoDir,
                 worktreePath,
                 attempt,
@@ -292,7 +295,6 @@ export class TrackerEpicService implements EpicService {
               throw error;
             } finally {
               verificationAttempts.delete(epicRef);
-              await releaseAttemptWorktree(epicRef);
             }
           },
         } : {}),
@@ -302,25 +304,26 @@ export class TrackerEpicService implements EpicService {
               workspaceId: workspace.id, repoDir, epicRef, defaultBranch, integrationBranch,
               runPostMergeCheck: async (mergeOid, baseDir) => {
                 const stage = (await resolveWorkspaceVerifiers()).epic.preMerge;
-                const decision = await verifyEpicIntegration({
-                  worktreePath: baseDir,
-                  verifiedHeadOid: mergeOid,
-                  verifiers: { commands: stage.commands, critics: [] },
-                  runCritic: async () => ({
-                    verifier: 'critic',
-                    verdict: 'inconclusive',
-                    summary: 'critics do not run during the post-merge command check',
-                    output: '',
-                  }),
-                });
-                return { pass: decision.outcome === 'proceed', output: decision.outcome === 'proceed' ? '' : decision.reason };
+                for (const command of stage.commands) {
+                  const attempt = await runCommandVerifierDetached({
+                    repoDir: baseDir,
+                    worktreePath: join(this.worktreesDir ?? tmpdir(), `epic-post-merge-${workspace.id}-${epicRef}`),
+                    verifiedHeadOid: mergeOid,
+                    command,
+                  });
+                  if (attempt.verdict !== 'pass') return { pass: false, output: `${attempt.summary}\n${attempt.output}`.trim() };
+                }
+                return { pass: true, output: '' };
               },
             });
           } finally {
-            await releaseAttemptWorktree(epicRef);
+            await releaseEpicWorktree(epicRef);
           }
         },
-        retire: (epicRef) => epics.retireIntegrationBranch(epicRef),
+        retire: async (epicRef) => {
+          await releaseEpicWorktree(epicRef);
+          await epics.retireIntegrationBranch(epicRef);
+        },
         escalate: (epicRef, reason) => this.onError(`epic ${epicRef} whole-Epic integrate escalated: ${reason}`),
         operations: this.operations,
         recordIntegration: ({ epicRef, mergeCommit, memberRefs }) => recordAndCloseIntegratedEpic({
@@ -439,7 +442,8 @@ export class TrackerEpicService implements EpicService {
   }
   private isHistorical(row: EpicRow): boolean { return row.state === 'integrated' && row.memberRefs !== null; }
   private storedToDerived(row: EpicRow, tickets: Ticket[], mirrored: TaskRow[]): DerivedEpic {
-    return { ref: row.trackerRef, title: tickets.find((ticket) => ticket.number === row.trackerRef)?.title ?? mirrored.find((task) => task.trackerRef === row.trackerRef)?.trackerTitle ?? `Epic #${row.trackerRef}`, members: [...(row.memberRefs ?? [])].sort((a, b) => a - b), ready: [] };
+    const ticket = tickets.find((candidate) => candidate.number === row.trackerRef);
+    return { ref: row.trackerRef, title: ticket?.title ?? mirrored.find((task) => task.trackerRef === row.trackerRef)?.trackerTitle ?? `Epic #${row.trackerRef}`, body: ticket?.body ?? '', url: ticket?.url ?? '', members: [...(row.memberRefs ?? [])].sort((a, b) => a - b), ready: [] };
   }
   private async composeOne(workspaceId: number, epic: DerivedEpic, tickets: Ticket[], mirrored: TaskRow[], baseBranch: string | null, rows: ReadonlyMap<number, EpicRow>, configured: boolean): Promise<Epic> {
     const titles = new Map(tickets.map((ticket) => [ticket.number, ticket.title])); const tasks = new Map<number, TaskRow>();
