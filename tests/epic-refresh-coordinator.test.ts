@@ -428,6 +428,41 @@ describe('epic refresh corrective turn (issue #315)', () => {
     expect(attemptStates).toEqual(['running', 'failed']);
   });
 
+  it('requeues an escalated Epic with guidance and resets its resolver budget', async () => {
+    const workspaces = new WorkspaceService(asyncDb, settingsStore);
+    const workspace = await workspaces.create({ name: 'Epic manual resume', workingDir: repo });
+    await tasks.syncEpics(workspace.id, [{ ref: 5, kind: 'epic' }]);
+    const config = baselineConfig();
+    config.maxAttempts = 1;
+    config.verify.epic.preMerge.commands = [{ command: 'node', args: ['-e', 'process.exit(1)'], env: {}, timeoutSeconds: 10 }];
+    const guidance: string[] = [];
+    const attempts = new AttemptStore(asyncDb);
+    const service = new TrackerEpicService(
+      tasks,
+      async () => [workspace],
+      undefined,
+      undefined,
+      () => config,
+      undefined,
+      async () => ({ kind: 'merged', mergeOid: 'unused' }),
+      undefined,
+      undefined,
+      attempts,
+      async (input) => { guidance.push(input.verificationReason); },
+      join(dir, 'worktrees'),
+    );
+    service.startWorkspace(workspace);
+
+    await expect(service.forceIntegrateEpic(workspace.id, 5)).resolves.toMatchObject({ status: 'waiting' });
+    await expect(service.forceIntegrateEpic(workspace.id, 5)).resolves.toMatchObject({ status: 'escalated' });
+    const escalated = await attempts.currentForEpic({ workspaceId: workspace.id, epicRef: 5 });
+    expect(escalated.state).toBe('escalated');
+
+    await expect(service.rejectEpic(workspace.id, 5, 'Keep the public API compatible.', 'fresh')).resolves.toMatchObject({ status: 'waiting' });
+    expect(await attempts.get(escalated.id)).toMatchObject({ id: escalated.id, number: escalated.number, state: 'failed', feedback: 'Keep the public API compatible.' });
+    expect(guidance.at(-1)).toContain('Keep the public API compatible.');
+  });
+
   it('reclaims a crashed deterministic Epic Attempt checkout before retrying verification', async () => {
     const workspaces = new WorkspaceService(asyncDb, settingsStore);
     const workspace = await workspaces.create({ name: 'Epic attempt recovery', workingDir: repo });

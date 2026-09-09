@@ -556,6 +556,8 @@ export function EpicPage({
   const [childTotals, setChildTotals] = useState<Map<number, ModelUsage | null>>(() => new Map());
   const [diffFiles, setDiffFiles] = useState<DiffFile[] | null>(null);
   const [diffFailed, setDiffFailed] = useState(false);
+  const [guidance, setGuidance] = useState('');
+  const [rejecting, setRejecting] = useState(false);
   // Bumped by the WS subscription below to re-run the epic/stats/children fetches
   // when a member Task changes, so the page updates live without a manual refresh.
   const [refreshKey, setRefreshKey] = useState(0);
@@ -620,6 +622,19 @@ export function EpicPage({
   const title = epic?.title || `Epic ${epicRef}`;
   const selectedFile = selection.kind === 'file' ? selection.path : null;
   const showChanges = selection.kind === 'file' || selection.kind === 'changes';
+  const rejectEpic = async (continuation: 'continue' | 'fresh') => {
+    if (!guidance.trim()) return;
+    setRejecting(true);
+    try {
+      await api.rejectEpic(workspaceId, epicRef, guidance, continuation);
+      setGuidance('');
+      setRefreshKey((key) => key + 1);
+    } catch (error) {
+      toastError(error);
+    } finally {
+      setRejecting(false);
+    }
+  };
   // A rail pick (or a deep link to a panel) lands on the content panel itself;
   // a fresh open with nothing picked starts at the Epic header.
   const scrollRef = useRef<HTMLElement>(null);
@@ -647,6 +662,38 @@ export function EpicPage({
             </div>
 
             {epic?.description && <Description text={epic.description} />}
+
+            {epic?.integrate.held && (
+              <section className={`${card} mb-6 border border-await/30 p-4`} aria-label="Epic escalation actions">
+                <div className={`${sectionCaps} mb-2 text-await`}>Escalated</div>
+                <p className="mb-3 text-small text-muted">{epic.integrate.held}</p>
+                <label className="mb-1 block text-small font-semibold text-muted" htmlFor="epic-guidance">Guidance</label>
+                <textarea
+                  id="epic-guidance"
+                  rows={3}
+                  className="w-full rounded border border-hairline bg-raised p-2 text-small text-ink"
+                  value={guidance}
+                  onChange={(event) => setGuidance(event.target.value)}
+                  placeholder="What should the resolver do differently?"
+                />
+                <button
+                  type="button"
+                  className="mt-3 rounded bg-raised px-3 py-1.5 text-small font-semibold text-ink disabled:opacity-50"
+                  disabled={rejecting || !guidance.trim()}
+                  onClick={() => rejectEpic('fresh')}
+                >
+                  {rejecting ? 'Requeuing…' : 'Reject and start fresh'}
+                </button>
+                <button
+                  type="button"
+                  className="ml-2 mt-3 rounded bg-fail px-3 py-1.5 text-small font-semibold text-white disabled:opacity-50"
+                  disabled={rejecting || !guidance.trim()}
+                  onClick={() => rejectEpic('continue')}
+                >
+                  Continue with guidance
+                </button>
+              </section>
+            )}
 
             <div ref={contentRef} className="min-w-0 border-t border-hairline">
               {showChanges ? (

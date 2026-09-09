@@ -45,6 +45,8 @@ export interface CriticDriveRequest {
   onProcessStart?: (pid: number) => Promise<void> | void;
   /** Called after ACP initialization and session creation. */
   onSessionCreated?: (sessionId: string, initialize: AcpInitializeResult) => Promise<void> | void;
+  /** Reload this prior ACP session instead of starting a fresh one. */
+  continueSessionId?: string;
 }
 
 /** The injectable seam between {@link runCritic} and an actual harness spawn. */
@@ -126,11 +128,15 @@ export function createAcpCriticDrive(): CriticHarnessDrive {
         // Some harnesses (copilot) have no spawn-time model pin; `sessionModelId` fills it via `session/set_model`.
         const modelId = adapterFor(req.harnessId).sessionModelId?.(req.model);
         let initialize: AcpInitializeResult | undefined;
-        const sessionId = await Promise.race([
-          driver.handshake({ cwd: req.cwd, mcpServers: [], modelId, onInitialize: (result) => { initialize = result; } }),
-          timeout,
-        ]);
-        if (initialize) await req.onSessionCreated?.(sessionId, initialize);
+        let sessionId: string;
+        if (req.continueSessionId) {
+          const loaded = await Promise.race([driver.load({ sessionId: req.continueSessionId, cwd: req.cwd, mcpServers: [], modelId, onInitialize: (result) => { initialize = result; } }), timeout]);
+          if (loaded.loaded) sessionId = req.continueSessionId;
+          else sessionId = await Promise.race([driver.handshake({ cwd: req.cwd, mcpServers: [], modelId, onInitialize: (result) => { initialize = result; } }), timeout]);
+        } else {
+          sessionId = await Promise.race([driver.handshake({ cwd: req.cwd, mcpServers: [], modelId, onInitialize: (result) => { initialize = result; } }), timeout]);
+        }
+        if (initialize && sessionId !== req.continueSessionId) await req.onSessionCreated?.(sessionId, initialize);
 
         const mode = adapterFor(req.harnessId).unattendedPermissionMode(driver.availableModes);
         if (mode) {
