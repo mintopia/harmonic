@@ -114,6 +114,7 @@ function scopedKeyAllowed(path: string): boolean {
   if (/^\/api\/tasks\/\d+\/complete$/.test(path)) return false;
   if (/^\/api\/tasks\/\d+\/steer$/.test(path)) return false;
   if (/^\/api\/workspaces\/\d+\/epics\/\d+\/force-integrate$/.test(path)) return false;
+  if (/^\/api\/workspaces\/\d+\/epics\/\d+\/reject$/.test(path)) return false;
   if (/^\/api\/workspaces\/\d+\/epics(\/\d+)?$/.test(path)) return false;
   if (/^\/api\/tasks\/\d+\/(accept|reject|close)$/.test(path)) return false;
   if (/^\/api\/tasks\/\d+\/channels(\/|$)/.test(path)) return false;

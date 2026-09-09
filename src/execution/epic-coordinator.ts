@@ -70,6 +70,11 @@ export type EpicResolve = (args: {
   title?: string;
   verifiedHeadOid: string;
   verification: VerificationDecision;
+  /** Operator feedback supplied when resuming an escalated Epic. */
+  guidance?: string;
+  continuation?: 'continue' | 'fresh';
+  continuationSessionId?: string;
+  continuationSessionRowId?: number;
 }) => Promise<void>;
 
 /** Merge the Epic's integration branch into the default branch under the one
@@ -147,6 +152,8 @@ export class EpicCoordinator {
   private readonly lastVerification = new Map<number, Exclude<EpicVerificationStatus, null>>();
 
   private readonly lastVerifyAttemptAt = new Map<number, number>();
+
+  private readonly resumes = new Map<number, { guidance: string; continuation: 'continue' | 'fresh'; continuationSessionId?: string; continuationSessionRowId?: number }>();
 
   /** The phase and start time of an in-flight attempt's current long operation,
    * so a stuck integrate surfaces as e.g. "verifying (18m)" rather than a bare,
@@ -293,7 +300,7 @@ export class EpicCoordinator {
       });
     } catch (err) {
       this.lastVerification.set(target.ref, 'fail');
-      return this.escalate(target, force, `whole-Epic verification could not run: ${err instanceof Error ? err.message : String(err)}`);
+      return this.escalate(target, `whole-Epic verification could not run: ${err instanceof Error ? err.message : String(err)}`);
     }
 
     const verdict = decideEpicIntegrate({ integrationExists: true, members: target.members, verification, force });
@@ -301,20 +308,22 @@ export class EpicCoordinator {
       this.lastVerification.set(target.ref, 'fail');
       if (this.resolve) {
         try {
+          const resume = this.resumes.get(target.ref);
+          this.resumes.delete(target.ref);
           await this.operations.run({
             repoDir: this.repoDir,
             epicRef: target.ref,
             ...withEpicTitle(target.title),
             type: 'resolve',
             attributes: { 'git.verified_head_oid': verifiedHeadOid },
-            work: () => withTimeout(this.resolve!({ repoDir: this.repoDir, epicRef: target.ref, ...withEpicTitle(target.title), verifiedHeadOid, verification }), this.operationTimeoutMs, 'whole-Epic resolution'),
+            work: () => withTimeout(this.resolve!({ repoDir: this.repoDir, epicRef: target.ref, ...withEpicTitle(target.title), verifiedHeadOid, verification, ...(resume ? resume : {}) }), this.operationTimeoutMs, 'whole-Epic resolution'),
           });
           return { status: 'waiting', reason: 'whole-Epic verification failed; resolver dispatched' };
         } catch (err) {
-          return this.escalate(target, force, `whole-Epic resolution could not run: ${err instanceof Error ? err.message : String(err)}`);
+          return this.escalate(target, `whole-Epic resolution could not run: ${err instanceof Error ? err.message : String(err)}`);
         }
       }
-      return this.escalate(target, force, verdict.reason);
+      return this.escalate(target, verdict.reason);
     }
     if (verdict.action !== 'integrate') {
       this.onError(`epic ${target.ref} unexpected post-verification decision: ${verdict.action}`);
@@ -335,10 +344,10 @@ export class EpicCoordinator {
         work: () => withTimeout(this.integrate({ repoDir: this.repoDir, epicRef: target.ref, defaultBranch, integrationBranch: branch }), this.operationTimeoutMs, 'whole-Epic integrate'),
       });
     } catch (err) {
-      return this.escalate(target, force, `whole-Epic integrate into '${defaultBranch}' could not run: ${err instanceof Error ? err.message : String(err)}`);
+      return this.escalate(target, `whole-Epic integrate into '${defaultBranch}' could not run: ${err instanceof Error ? err.message : String(err)}`);
     }
     if (integrated.kind === 'escalated') {
-      return this.escalate(target, force, `whole-Epic integrate into '${defaultBranch}' failed (${integrated.reason}): ${integrated.message}`);
+      return this.escalate(target, `whole-Epic integrate into '${defaultBranch}' failed (${integrated.reason}): ${integrated.message}`);
     }
 
     const recorded = await this.recordIntegrationQuietly(target, integrated.mergeOid);
@@ -380,6 +389,13 @@ export class EpicCoordinator {
     return this.settledEscalated.has(epicRef) ? STICKY_ESCALATION_HOLD_REASON : null;
   }
 
+  /** Reopen an operator-held Epic and carry its feedback into the next resolver turn. */
+  resume(epicRef: number, guidance: string, continuation: 'continue' | 'fresh', session?: { id: string; rowId: number }): void {
+    this.settledEscalated.delete(epicRef);
+    this.lastVerifyAttemptAt.delete(epicRef);
+    this.resumes.set(epicRef, { guidance, continuation, ...(session ? { continuationSessionId: session.id, continuationSessionRowId: session.rowId } : {}) });
+  }
+
   /** The integration branch's existence and tip OID for `epicRef`; `tip:null` when the branch is absent. */
   async integrationFacts(epicRef: number): Promise<{ exists: boolean; tip: string | null }> {
     const branch = integrationBranchName(epicRef);
@@ -389,8 +405,8 @@ export class EpicCoordinator {
     return { exists: true, tip };
   }
 
-  private escalate(target: EpicIntegrateTarget, force: boolean, reason: string): EpicIntegrateOutcome {
-    if (!force) this.settledEscalated.set(target.ref, this.signatureOf(target.members));
+  private escalate(target: EpicIntegrateTarget, reason: string): EpicIntegrateOutcome {
+    this.settledEscalated.set(target.ref, this.signatureOf(target.members));
     this.escalateFn(target.ref, reason);
     this.operations.fail({ repoDir: this.repoDir, epicRef: target.ref, reason });
     return { status: 'escalated', reason };
@@ -404,11 +420,13 @@ export class EpicCoordinator {
     this.settledEscalated.delete(ref);
     this.lastVerification.delete(ref);
     this.lastVerifyAttemptAt.delete(ref);
+    this.resumes.delete(ref);
   }
 
   private clearMergeGuards(ref: number): void {
     this.settledEscalated.delete(ref);
     this.lastVerifyAttemptAt.delete(ref);
+    this.resumes.delete(ref);
   }
 
   private async retireContained(target: EpicIntegrateTarget, branch: string): Promise<EpicIntegrateOutcome> {

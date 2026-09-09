@@ -61,6 +61,7 @@ export interface EpicService {
   startWorkspace(workspace: WorkspaceRow): EpicIntegrationSync;
   stopWorkspace(workspaceId: number): void;
   forceIntegrateEpic(workspaceId: number, epicRef: number): Promise<EpicIntegrateOutcome | null>;
+  rejectEpic(workspaceId: number, epicRef: number, guidance: string, continuation: 'continue' | 'fresh'): Promise<EpicIntegrateOutcome | null>;
   epicBaseNotReady(task: TaskRow): Promise<boolean>;
   refreshAfterDefaultBranchAdvance(workingDir: string, defaultBranch: string): Promise<void>;
   listEpics(workspaceId: number): Promise<Epic[]>;
@@ -243,11 +244,11 @@ export class TrackerEpicService implements EpicService {
         repoDir: workspace.workingDir,
         verify,
         ...(epicAttempts && dispatchEpicResolution ? {
-          resolve: async ({ repoDir, epicRef, title, verifiedHeadOid, verification }) => {
+          resolve: async ({ repoDir, epicRef, title, verifiedHeadOid, verification, guidance, continuationSessionId, continuationSessionRowId }) => {
             const attempt = verificationAttempts.get(epicRef) ?? await epicAttempts.getRunningForEpic({ workspaceId: workspace.id, epicRef });
             if (!attempt) throw new Error(`Epic #${epicRef} has no running Attempt to resolve`);
             const maxAttempts = workspace.maxAttempts ?? getConfig().maxAttempts;
-            if (attempt.number >= maxAttempts) {
+            if (!attempt.feedback && attempt.number > maxAttempts) {
               publishEpicAttempt(await epicAttempts.updateWithFrozenCost(attempt.id, {
                 state: 'escalated',
                 reason: 'epic-verification',
@@ -269,8 +270,9 @@ export class TrackerEpicService implements EpicService {
                 worktreePath,
                 attempt,
                 verifiedHeadOid,
-                verificationReason: verification.reason,
+                verificationReason: guidance ? `${verification.reason}\n\n## Operator guidance\n${guidance}` : verification.reason,
                 resolvePrompt: getConfig().verify.epic.resolvePrompt,
+                ...(continuationSessionId && continuationSessionRowId !== undefined ? { continuationSessionId, continuationSessionRowId } : {}),
               });
               publishEpicAttempt(await epicAttempts.updateWithFrozenCost(attempt.id, {
                 state: 'failed',
@@ -349,6 +351,29 @@ export class TrackerEpicService implements EpicService {
   async forceIntegrateEpic(workspaceId: number, epicRef: number): Promise<EpicIntegrateOutcome | null> {
     const entry = this.entries.get(workspaceId);
     return entry?.epicIntegrate?.submit({ ref: epicRef, members: [], memberRefs: entry.epics.membersOf(epicRef) }, { force: true }) ?? null;
+  }
+
+  async rejectEpic(workspaceId: number, epicRef: number, guidance: string, continuation: 'continue' | 'fresh'): Promise<EpicIntegrateOutcome | null> {
+    const entry = this.entries.get(workspaceId);
+    const coordinator = entry?.epicIntegrate;
+    if (!entry || !coordinator || coordinator.heldReason(epicRef) === null || !this.epicAttempts) return null;
+    const attempt = await this.epicAttempts.currentForEpic({ workspaceId, epicRef });
+    if (attempt.state !== 'escalated') return null;
+    await this.epicAttempts.update(attempt.id, {
+      state: 'running',
+      endedAt: null,
+      feedback: guidance,
+      ...(continuation === 'fresh' ? { sessionId: null, sessionRowId: null } : {}),
+    });
+    coordinator.resume(
+      epicRef,
+      guidance,
+      continuation,
+      continuation === 'continue' && attempt.sessionId && attempt.sessionRowId !== null
+        ? { id: attempt.sessionId, rowId: attempt.sessionRowId }
+        : undefined,
+    );
+    return coordinator.submit({ ref: epicRef, members: [], memberRefs: entry.epics.membersOf(epicRef) }, { force: true });
   }
 
   async epicBaseNotReady(task: TaskRow): Promise<boolean> {

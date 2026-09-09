@@ -78,6 +78,8 @@ export interface EpicVerificationResolutionInput {
   verifiedHeadOid: string;
   verificationReason: string;
   resolvePrompt: string;
+  continuationSessionId?: string;
+  continuationSessionRowId?: number;
 }
 
 export interface RunnerEvents {
@@ -1514,6 +1516,7 @@ export class Runner {
     await this.attempts.update(input.attempt.id, {
       priceTable: JSON.stringify(pricesForHarness(harness)),
       prompt,
+      ...(input.continuationSessionId && input.continuationSessionRowId !== undefined ? { sessionId: input.continuationSessionId, sessionRowId: input.continuationSessionRowId } : {}),
     });
     try {
       const drive = this.criticDrive ?? createAcpCriticDrive();
@@ -1525,6 +1528,7 @@ export class Runner {
         prompt,
         timeoutMs: EPIC_REFRESH_RESOLVE_TIMEOUT_MS,
         onUpdate,
+        ...(input.continuationSessionId ? { continueSessionId: input.continuationSessionId } : {}),
         onProcessStart: async (pid) => {
           await this.attempts.update(input.attempt.id, { pid, pgid: pid, procStartToken: readProcStartToken(pid) });
         },

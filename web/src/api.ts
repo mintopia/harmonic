@@ -182,6 +182,8 @@ export const api = {
   removeDependency: (id: number, depId: number) =>
     request<Task>('DELETE', `/api/tasks/${id}/dependencies/${depId}`),
   continuationPreview: (id: number) => request<ContinuationPreview>('GET', `/api/tasks/${id}/continuation`),
+  rejectEpic: (workspaceId: number, epicRef: number, guidance: string, continuation: 'continue' | 'fresh') =>
+    request<EpicIntegrateOutcome>('POST', `/api/workspaces/${workspaceId}/epics/${epicRef}/reject`, { guidance, continuation }),
   // The three escalation actions, escalated tickets only.
   // `force: true` is the as-is override (Force-Accept): the server skips
   // candidate verification and merges the branch head as it stands. Omitted

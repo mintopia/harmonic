@@ -22,6 +22,11 @@ const epicListParamsSchema = z.object({
   workspaceId: z.coerce.number().int().meta({ example: 1 }),
 });
 
+const rejectEpicInputSchema = z.object({
+  guidance: z.string().trim().min(1).meta({ example: 'Fix the failing integration test before trying again.' }),
+  continuation: z.enum(['continue', 'fresh']).meta({ example: 'continue' }),
+});
+
 /** The `GET …/epics` querystring: the shared pagination fragment plus a
  * case-insensitive substring search over the Epic title. */
 const epicListQuerySchema = paginationQuerySchema.extend({
@@ -230,6 +235,30 @@ export async function epicRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     async (req) => {
       await ctx.workspaces.assertExists(req.params.workspaceId);
       return epicAttemptTimelineToApi(ctx, req.params);
+    },
+  );
+
+  app.post(
+    '/workspaces/:workspaceId/epics/:epicRef/reject',
+    {
+      schema: {
+        tags: ['Epics'],
+        description: 'Reject an escalated Epic with guidance. The guidance is recorded on the escalated Epic Attempt and included in the next whole-Epic resolver turn. Operator only.',
+        security: [{ bearerAuth: [] }, { sessionCookie: [] }],
+        params: epicParamsSchema,
+        body: rejectEpicInputSchema,
+        response: {
+          200: epicIntegrateOutcomeSchema,
+          404: errorResponse('No Workspace has that id.'),
+          409: errorResponse('The Epic is not escalated or has no active whole-Epic coordinator.'),
+        },
+      },
+    },
+    async (req) => {
+      await ctx.workspaces.assertExists(req.params.workspaceId);
+      const outcome = await ctx.trackerManager.rejectEpic(req.params.workspaceId, req.params.epicRef, req.body.guidance, req.body.continuation);
+      if (!outcome) throw new DomainError('conflict', `Epic ${req.params.epicRef} is not escalated`);
+      return outcome;
     },
   );
 
