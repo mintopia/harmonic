@@ -68,6 +68,8 @@ export type EpicResolve = (args: {
   repoDir: string;
   epicRef: number;
   title?: string;
+  body?: string;
+  url?: string;
   verifiedHeadOid: string;
   verification: VerificationDecision;
   /** Operator feedback supplied when resuming an escalated Epic. */
@@ -100,6 +102,8 @@ export type EpicVerificationStatus = 'pass' | 'fail' | 'pending' | null;
 export interface EpicIntegrateTarget {
   ref: number;
   title?: string;
+  body?: string;
+  url?: string;
   /** Each member's reduced merge state. An empty array is only safe under an
    * operator force-integrate (which bypasses the per-member gate); a non-force
    * submit with `[]` decides `noop` and never integrates. */
@@ -316,7 +320,7 @@ export class EpicCoordinator {
             ...withEpicTitle(target.title),
             type: 'resolve',
             attributes: { 'git.verified_head_oid': verifiedHeadOid },
-            work: () => withTimeout(this.resolve!({ repoDir: this.repoDir, epicRef: target.ref, ...withEpicTitle(target.title), verifiedHeadOid, verification, ...(resume ? resume : {}) }), this.operationTimeoutMs, 'whole-Epic resolution'),
+            work: () => withTimeout(this.resolve!({ repoDir: this.repoDir, epicRef: target.ref, ...withEpicTitle(target.title), ...(target.body !== undefined ? { body: target.body } : {}), ...(target.url !== undefined ? { url: target.url } : {}), verifiedHeadOid, verification, ...(resume ? resume : {}) }), this.operationTimeoutMs, 'whole-Epic resolution'),
           });
           return { status: 'waiting', reason: 'whole-Epic verification failed; resolver dispatched' };
         } catch (err) {
@@ -680,7 +684,7 @@ export class EpicLifecycle {
       }),
     );
     void trigger
-      .submit({ ref: epic.ref, title: epic.title, members, memberRefs: epic.members })
+      .submit({ ref: epic.ref, title: epic.title, body: epic.body, url: epic.url, members, memberRefs: epic.members })
       .catch((err) => this.onError(`epic ${epic.ref} whole-Epic integrate attempt failed: ${String(err)}`));
   }
 

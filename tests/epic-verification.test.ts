@@ -89,4 +89,24 @@ describe('verifyEpicIntegration', () => {
         'Found a missing migration in src/db/schema.ts.',
     });
   });
+
+  it('retains failed command output for the resolver', async () => {
+    await expect(verifyEpicIntegration({
+      worktreePath: process.cwd(),
+      verifiedHeadOid: 'epic-head',
+      verifiers: {
+        commands: [{
+          command: process.execPath,
+          args: ['-e', 'console.error("missing migration"); process.exit(1)'],
+          env: {},
+          timeoutSeconds: 10,
+        }],
+        critics: [],
+      },
+      runCritic: vi.fn(),
+    })).resolves.toEqual({
+      outcome: 'block',
+      reason: 'verifier command failed\n\nEpic command (fail): command exited 1\nmissing migration\n',
+    });
+  });
 });

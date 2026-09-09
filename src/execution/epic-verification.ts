@@ -35,7 +35,13 @@ export async function verifyEpicIntegration(args: {
       ...(args.signal ? { signal: args.signal } : {}),
     });
     verdicts.push({ verifier: attempt.verifier, verdict: attempt.verdict });
-    if (attempt.verdict !== 'pass') return combineVerdicts(verdicts);
+    if (attempt.verdict !== 'pass') {
+      const decision = combineVerdicts(verdicts);
+      const feedback = [`Epic command (${attempt.verdict}): ${attempt.summary}`, attempt.output]
+        .filter(Boolean)
+        .join('\n');
+      return { ...decision, reason: `${decision.reason}\n\n${feedback}` };
+    }
   }
 
   const critics = await Promise.all(args.verifiers.critics.map((critic) => args.runCritic({
