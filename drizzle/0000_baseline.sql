@@ -31,7 +31,9 @@ CREATE TABLE `attempt_tool_calls` (
 --> statement-breakpoint
 CREATE TABLE `attempts` (
 	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
-	`task_id` integer NOT NULL,
+	`task_id` integer,
+	`workspace_id` integer,
+	`epic_ref` integer,
 	`number` integer NOT NULL,
 	`state` text DEFAULT 'running' NOT NULL,
 	`started_at` integer NOT NULL,
@@ -60,10 +62,13 @@ CREATE TABLE `attempts` (
 	`pgid` integer,
 	`proc_start_token` text,
 	FOREIGN KEY (`task_id`) REFERENCES `tasks`(`id`) ON UPDATE no action ON DELETE no action,
-	FOREIGN KEY (`session_row_id`) REFERENCES `sessions`(`id`) ON UPDATE no action ON DELETE no action
+	FOREIGN KEY (`workspace_id`, `epic_ref`) REFERENCES `epics`(`workspace_id`, `tracker_ref`) ON UPDATE no action ON DELETE cascade,
+	FOREIGN KEY (`session_row_id`) REFERENCES `sessions`(`id`) ON UPDATE no action ON DELETE no action,
+	CHECK ((`task_id` IS NOT NULL AND `workspace_id` IS NULL AND `epic_ref` IS NULL) OR (`task_id` IS NULL AND `workspace_id` IS NOT NULL AND `epic_ref` IS NOT NULL))
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX `attempts_task_number_unique` ON `attempts` (`task_id`,`number`);--> statement-breakpoint
+CREATE UNIQUE INDEX `attempts_epic_number_unique` ON `attempts` (`workspace_id`,`epic_ref`,`number`);--> statement-breakpoint
 CREATE TABLE `channels` (
 	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
 	`name` text NOT NULL,

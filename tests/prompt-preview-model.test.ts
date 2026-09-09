@@ -1,15 +1,23 @@
 import { describe, expect, it } from 'vitest';
 import {
+  CRITIC_NO_ISSUE_PLACEHOLDERS,
+  EPIC_RESOLVE_PLACEHOLDERS,
   SAMPLE_DRIVE_FIELDS,
   SAMPLE_TASK_ID,
   compileCriticPreview,
   compileDrivePreview,
+  compileEpicCriticPreview,
+  compileEpicResolvePreview,
   compileTaskIdPreview,
   compileTaskPreview,
 } from '../web/src/prompt-preview-model.js';
 import { baselineConfig } from '../src/config.js';
 
 describe('prompt-preview-model (settings compiled preview)', () => {
+  it('only offers ticket-free tokens for a native Task critic body', () => {
+    expect(CRITIC_NO_ISSUE_PLACEHOLDERS).toEqual([['{skill}', 'workflow skill — /research or /implement']]);
+  });
+
   it('compileDrivePreview fills the five Drive tokens with sample values', () => {
     const out = compileDrivePreview('issue {ref} — {title} ({url}) via {skill}: {body}');
     expect(out).toBe(
@@ -31,7 +39,7 @@ describe('prompt-preview-model (settings compiled preview)', () => {
   });
 
   it('compileCriticPreview shows both Task-kind variants, each with the read-only + verdict scaffolding', () => {
-    const [mirrored, native] = compileCriticPreview('Review issue {ref}: {title}.');
+    const [mirrored, native] = compileCriticPreview({ issuePrompt: 'Review issue {ref}: {title}.', noIssuePrompt: 'Review the Task via {skill}.' });
     if (!mirrored || !native) throw new Error('expected two compiled variants');
 
     expect(mirrored.label).toMatch(/mirrored/i);
@@ -39,8 +47,8 @@ describe('prompt-preview-model (settings compiled preview)', () => {
     expect(mirrored.text).toContain('the referenced ticket');
 
     expect(native.label).toMatch(/native/i);
-    // Native Task has no ref: the token compiles to empty; title still fills from the prompt.
-    expect(native.text).toContain(`Review issue : ${SAMPLE_DRIVE_FIELDS.title}.`);
+    expect(native.text).toContain(`Review the Task via ${SAMPLE_DRIVE_FIELDS.skill}.`);
+    expect(native.text).not.toContain(SAMPLE_DRIVE_FIELDS.title);
     expect(native.text).toContain('there is no external ticket to consult');
 
     for (const { text } of [mirrored, native]) {
@@ -48,5 +56,24 @@ describe('prompt-preview-model (settings compiled preview)', () => {
       expect(text).toContain('"verdict":"pass|fail|inconclusive"');
       expect(text).not.toContain('HARMONIC_UNTRUSTED_DIFF');
     }
+  });
+
+  it('compiles an Epic critic against its ticket context', () => {
+    const out = compileEpicCriticPreview('Review Epic {ref}: {title}.');
+
+    expect(out).toContain(`Review Epic ${SAMPLE_DRIVE_FIELDS.ref}: ${SAMPLE_DRIVE_FIELDS.title}.`);
+    expect(out).toContain('the referenced ticket');
+    expect(out).toMatch(/READ-ONLY/i);
+  });
+
+  it('matches the Epic resolver prompt and only offers its supported tokens', () => {
+    expect(EPIC_RESOLVE_PLACEHOLDERS).toEqual([
+      ['{ref}', 'Epic issue number'],
+      ['{title}', 'Epic issue title'],
+    ]);
+    expect(compileEpicResolvePreview('Fix {ref}: {title}.')).toContain(
+      `Fix ${SAMPLE_DRIVE_FIELDS.ref}: ${SAMPLE_DRIVE_FIELDS.title}.`,
+    );
+    expect(compileEpicResolvePreview('Fix {ref}.')).toContain('## Failing Epic verification');
   });
 });

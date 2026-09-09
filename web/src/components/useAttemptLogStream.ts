@@ -32,16 +32,17 @@ export function useAttemptLogStream(attemptId: number | null): {
         pending.push(event);
         return;
       }
+      setLogUnavailable(false);
       setEvents((current) => appendAttemptLogEvents({ current, additions: [event] }));
     } });
     api.attemptLog(attemptId).then(
       (log) => {
         if (!live()) return;
-        setLogUnavailable(log.status === 'unavailable');
         const hydratedEvents = appendAttemptLogEvents({
           current: log.status === 'available' ? log.events : [],
           additions: log.status === 'available' ? eventsAfterLiveCursor({ events: pending, liveCursor: log.liveCursor }) : pending,
         });
+        setLogUnavailable(log.status === 'unavailable' && hydratedEvents.length === 0);
         cursor = Math.max(log.liveCursor, attemptLogCursor({ events: pending }));
         setEvents(hydratedEvents);
         hydrated = true;

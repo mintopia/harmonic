@@ -95,7 +95,7 @@ describe('deriveLeafEpics', () => {
     ];
     expect(deriveLeaf(tickets)).toEqual([]);
     const result = deriveLeaf(tickets, [], { includeClosed: true });
-    expect(result).toEqual([{ ref: 10, title: 'Closed Spec', members: [11], ready: [11] }]);
+    expect(result).toEqual([{ ref: 10, title: 'Closed Spec', body: '', url: 'https://github.com/mintopia/harmonic/issues/100', members: [11], ready: [11] }]);
   });
 });
 

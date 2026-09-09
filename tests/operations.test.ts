@@ -277,7 +277,7 @@ describe('Run operations (issue #290)', () => {
       const wsId = (await server.app.ctx.workspaces.list())[0]!.id;
       await server.app.ctx.workspaces.update(wsId, {
         workingDir: repo,
-        verificationCommand: [verificationCommandSchema.parse({ command: process.execPath, args: ['-e', 'process.exit(1)'], timeoutSeconds: 30 })],
+        taskPreMergeCommands: [verificationCommandSchema.parse({ command: process.execPath, args: ['-e', 'process.exit(1)'], timeoutSeconds: 30 })],
       });
       const task = await server.api('POST', '/api/tasks', {
         prompt: JSON.stringify({ writeFiles: { 'ops.txt': 'work\n' } }),
@@ -297,7 +297,7 @@ describe('Run operations (issue #290)', () => {
       expect(registry.list().find((operation) => operation.name === 'harmonic.attempt' && operation.attributes['attempt.id'] === attemptId)).toBeUndefined();
 
       await server.app.ctx.workspaces.update(wsId, {
-        verificationCommand: [verificationCommandSchema.parse({ command: process.execPath, args: ['-e', 'process.exit(0)'], timeoutSeconds: 30 })],
+        taskPreMergeCommands: [verificationCommandSchema.parse({ command: process.execPath, args: ['-e', 'process.exit(0)'], timeoutSeconds: 30 })],
       });
 
       const escalatedAttempt = await server.app.ctx.attempts.currentForTask(task.body.id);
@@ -336,7 +336,7 @@ describe('Automated merge policy operations (issue #387)', () => {
       const wsId = (await server.app.ctx.workspaces.list())[0]!.id;
       await server.app.ctx.workspaces.update(wsId, {
         workingDir: repo,
-        verificationCommand: [verificationCommandSchema.parse({ command: process.execPath, args: ['-e', 'process.exit(0)'], timeoutSeconds: 30 })],
+        taskPreMergeCommands: [verificationCommandSchema.parse({ command: process.execPath, args: ['-e', 'process.exit(0)'], timeoutSeconds: 30 })],
       });
       await server.app.ctx.settingsStore.updateGlobal({
         merge: { postMergeCheck: false },

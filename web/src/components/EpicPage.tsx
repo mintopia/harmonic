@@ -3,7 +3,7 @@ import { api } from '../api';
 import { subscribe } from '../ws';
 import { useLiveEffect } from '../useLiveEffect';
 import { useScrollToPanel } from '../useScrollToPanel';
-import type { DiffFile, Task, ModelUsage } from '../types';
+import type { DiffFile, EpicAttempt, Task, ModelUsage } from '../types';
 import type { Epic, EpicStage, IntegrationStepState } from '../epic-model';
 import { epicLifecycleSteps } from '../epic-model';
 import type { Stats } from '../stats-model';
@@ -209,6 +209,53 @@ function UsageCard({ stats, epic }: { stats: Stats; epic: Epic }) {
           </div>
         </div>
       )}
+    </section>
+  );
+}
+
+function EpicAttemptsTimeline({ attempts }: { attempts: EpicAttempt[] }) {
+  return (
+    <section>
+      <div className="mb-3 flex items-center justify-between">
+        <h3 className={sectionCaps}>Epic attempts</h3>
+        <span className="text-data text-muted tabular-nums">{attempts.length}</span>
+      </div>
+      {attempts.length === 0 ? (
+        <EmptyState title="No Epic attempts" className="py-8">
+          A clean Epic verification needs no resolver attempt.
+        </EmptyState>
+      ) : (
+        <ol className={`${card} divide-y divide-hairline`} aria-label="Epic attempt timeline">
+          {attempts.map((attempt) => (
+            <li key={attempt.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3">
+              <span className="font-data text-muted">Attempt {attempt.number}</span>
+              <span className={`${stateChip(attempt.state === 'passed' ? 'done' : attempt.state === 'running' ? 'working' : attempt.state === 'escalated' ? 'escalated' : 'cancelled')} capitalize`}>{attempt.state}</span>
+              <span className="text-small text-muted">{fmtTime(attempt.startedAt)}</span>
+              <span className="ml-auto text-data text-muted tabular-nums">{rowCost(attempt.cost)}</span>
+              {attempt.usage?.totals?.totalTokens != null && (
+                <span className="text-data text-faint tabular-nums">{attempt.usage.totals.totalTokens.toLocaleString()} tokens</span>
+              )}
+              {attempt.reason && <p className="w-full text-small text-muted">{attempt.reason}</p>}
+            </li>
+          ))}
+        </ol>
+      )}
+    </section>
+  );
+}
+
+function EpicVerificationStages({ epic }: { epic: Epic }) {
+  return (
+    <section className="mb-6">
+      <div className={`${sectionCaps} mb-3`}>Verification</div>
+      <div className={`${card} divide-y divide-hairline`}>
+        {(epic.verification.stages ?? []).map((stage) => (
+          <div key={stage.label} className="px-4 py-3">
+            <div className="flex items-center justify-between gap-3"><span className="text-small font-semibold text-ink">{stage.label}</span><span className="text-data text-muted">{stage.status ?? 'planned'}</span></div>
+            <div className="mt-2 flex flex-wrap gap-2">{stage.verifiers.length > 0 ? stage.verifiers.map((verifier) => <span key={verifier} className="rounded bg-raised px-2 py-1 font-data text-[11px] text-muted">{verifier}</span>) : <span className="text-small text-faint">No verifiers configured.</span>}</div>
+          </div>
+        ))}
+      </div>
     </section>
   );
 }
@@ -482,13 +529,13 @@ export function EpicStepper({ epic }: { epic: Epic }) {
             className="flex min-w-0 flex-1 flex-col items-center gap-2 text-center"
           >
             <div className="flex w-full items-center">
-              <span className={`h-0.5 flex-1 rounded ${i === 0 ? 'invisible' : leftDone ? 'bg-merged' : 'bg-edge'}`} />
+              <span className={`-mx-px h-0.5 flex-1 rounded ${i === 0 ? 'invisible' : leftDone ? 'bg-merged' : 'bg-edge'}`} />
               <span
                 className={`flex size-6 shrink-0 items-center justify-center rounded-full border text-[11px] font-bold tabular-nums ${PHASE_NODE_STYLES[step.disabled ? 'pending' : STEP_NODE[step.state]]}`}
               >
                 {!step.disabled && step.state === 'done' ? <Icon name="check" className="size-3.5" /> : i + 1}
               </span>
-              <span className={`h-0.5 flex-1 rounded ${i === steps.length - 1 ? 'invisible' : rightDone ? 'bg-merged' : 'bg-edge'}`} />
+              <span className={`-mx-px h-0.5 flex-1 rounded ${i === steps.length - 1 ? 'invisible' : rightDone ? 'bg-merged' : 'bg-edge'}`} />
             </div>
             <span className={`text-[12px] font-semibold leading-tight ${step.disabled ? 'text-faint' : STEP_LABEL_TONE[step.state]}`}>{step.label}</span>
             <span className="max-w-[10rem] truncate text-[10.5px] leading-tight text-faint" title={step.sublabel}>
@@ -520,10 +567,13 @@ export function EpicPage({
 }) {
   const [epic, setEpic] = useState<Epic | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
+  const [epicAttempts, setEpicAttempts] = useState<EpicAttempt[] | null>(null);
   const [childTasks, setChildTasks] = useState<Task[] | null>(null);
   const [childTotals, setChildTotals] = useState<Map<number, ModelUsage | null>>(() => new Map());
   const [diffFiles, setDiffFiles] = useState<DiffFile[] | null>(null);
   const [diffFailed, setDiffFailed] = useState(false);
+  const [guidance, setGuidance] = useState('');
+  const [rejecting, setRejecting] = useState(false);
   // Bumped by the WS subscription below to re-run the epic/stats/children fetches
   // when a member Task changes, so the page updates live without a manual refresh.
   const [refreshKey, setRefreshKey] = useState(0);
@@ -535,6 +585,10 @@ export function EpicPage({
   useLiveEffect((live) => {
     api.epicStats(epicRef, workspaceId).then((s) => live() && setStats(s), toastError);
   }, [epicRef, workspaceId, refreshKey]);
+
+  useLiveEffect((live) => {
+    api.epicAttempts(workspaceId, epicRef).then(({ attempts }) => live() && setEpicAttempts(attempts), toastError);
+  }, [workspaceId, epicRef, refreshKey]);
 
   const childIdsRef = useRef<Set<number>>(new Set());
   useLiveEffect((live) => {
@@ -559,9 +613,10 @@ export function EpicPage({
     const unsubscribe = subscribe((msg) => {
       if (msg.type === 'task_changed' && childIdsRef.current.has(msg.task.id)) setRefreshKey((k) => k + 1);
       else if (msg.type === 'task_removed' && childIdsRef.current.has(msg.id)) setRefreshKey((k) => k + 1);
+      else if (msg.type === 'epic_changed' && msg.workspaceId === workspaceId && msg.epicRef === epicRef) setRefreshKey((k) => k + 1);
     }, () => setRefreshKey((k) => k + 1));
     return unsubscribe;
-  }, []);
+  }, [epicRef, workspaceId]);
 
   useLiveEffect((live) => {
     setDiffFiles(null);
@@ -583,6 +638,19 @@ export function EpicPage({
   const title = epic?.title || `Epic ${epicRef}`;
   const selectedFile = selection.kind === 'file' ? selection.path : null;
   const showChanges = selection.kind === 'file' || selection.kind === 'changes';
+  const rejectEpic = async (continuation: 'continue' | 'fresh') => {
+    if (!guidance.trim()) return;
+    setRejecting(true);
+    try {
+      await api.rejectEpic(workspaceId, epicRef, guidance, continuation);
+      setGuidance('');
+      setRefreshKey((key) => key + 1);
+    } catch (error) {
+      toastError(error);
+    } finally {
+      setRejecting(false);
+    }
+  };
   // A rail pick (or a deep link to a panel) lands on the content panel itself;
   // a fresh open with nothing picked starts at the Epic header.
   const scrollRef = useRef<HTMLElement>(null);
@@ -611,6 +679,38 @@ export function EpicPage({
 
             {epic?.description && <Description text={epic.description} />}
 
+            {epic?.integrate.held && (
+              <section className={`${card} mb-6 border border-await/30 p-4`} aria-label="Epic escalation actions">
+                <div className={`${sectionCaps} mb-2 text-await`}>Escalated</div>
+                <p className="mb-3 text-small text-muted">{epic.integrate.held}</p>
+                <label className="mb-1 block text-small font-semibold text-muted" htmlFor="epic-guidance">Guidance</label>
+                <textarea
+                  id="epic-guidance"
+                  rows={3}
+                  className="w-full rounded border border-hairline bg-raised p-2 text-small text-ink"
+                  value={guidance}
+                  onChange={(event) => setGuidance(event.target.value)}
+                  placeholder="What should the resolver do differently?"
+                />
+                <button
+                  type="button"
+                  className="mt-3 rounded bg-raised px-3 py-1.5 text-small font-semibold text-ink disabled:opacity-50"
+                  disabled={rejecting || !guidance.trim()}
+                  onClick={() => rejectEpic('fresh')}
+                >
+                  {rejecting ? 'Requeuing…' : 'Reject and start fresh'}
+                </button>
+                <button
+                  type="button"
+                  className="ml-2 mt-3 rounded bg-fail px-3 py-1.5 text-small font-semibold text-white disabled:opacity-50"
+                  disabled={rejecting || !guidance.trim()}
+                  onClick={() => rejectEpic('continue')}
+                >
+                  Continue with guidance
+                </button>
+              </section>
+            )}
+
             <div ref={contentRef} className="min-w-0 border-t border-hairline">
               {showChanges ? (
                 <ChangesPanel files={diffFiles} failed={diffFailed} selectedFile={selectedFile ?? ''} epic={epic} />
@@ -631,6 +731,15 @@ export function EpicPage({
                       <UsageCard stats={stats} epic={epic} />
                     ) : (
                       <div className={`${card} p-5 text-muted`}>Loading usage…</div>
+                    )}
+                  </div>
+
+                  <div className="mb-8">
+                    {epic && <EpicVerificationStages epic={epic} />}
+                    {epicAttempts ? (
+                      <EpicAttemptsTimeline attempts={epicAttempts} />
+                    ) : (
+                      <p className="text-muted">Loading Epic attempts…</p>
                     )}
                   </div>
 

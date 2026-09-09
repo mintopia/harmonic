@@ -1,40 +1,10 @@
-import type { VerificationCommand, VerificationCritic } from '../types.js';
-
-/**
- * The already-resolved review inputs the settings surface needs to judge
- * runnability: the raw on/off toggle plus whatever model/prompt resolved from any
- * layer. `requested` mirrors `resolveReview`'s raw toggle (src/domain/
- * setting-override.ts) and is kept deliberately distinct from that resolver's
- * runnability-folded `enabled`, so the two are never conflated here.
- */
-export interface ResolvedReviewInputs {
-  requested: boolean;
-  model?: string | null;
-  prompt?: string | null;
-}
-
-/**
- * A review is enabled-but-unrunnable when it is toggled on yet has no resolved
- * model or prompt from any layer — so it can never run and Harmonic would
- * silently skip it. The settings surface flags this
- * loudly instead. Mirrors `resolveReview`'s `requested && !(prompt && model)`
- * fold on already-resolved values so the global and workspace verification
- * sections judge runnability identically.
- */
-export function reviewUnrunnable(review: ResolvedReviewInputs): boolean {
-  return review.requested && !(review.model && review.prompt);
-}
-
-/** Which resolved review input is missing, for the unrunnable copy — model first. */
-export function missingReviewInput(review: Pick<ResolvedReviewInputs, 'model' | 'prompt'>): 'model' | 'prompt' {
-  return !review.model ? 'model' : 'prompt';
-}
+import type { TaskVerificationCritic, VerificationCommand } from '../types.js';
 
 /** Seed for a freshly enabled command override when no global default exists. */
 export const EMPTY_COMMAND: VerificationCommand = { command: '', args: [], env: {}, timeoutSeconds: 600 };
 
 /** Seed for a freshly enabled critic override when no global default exists. */
-export const EMPTY_CRITIC: VerificationCritic = { prompt: '', model: '' };
+export const EMPTY_CRITIC: TaskVerificationCritic = { issuePrompt: '', noIssuePrompt: '', model: '' };
 
 /** An editable dimension of the command verifier. `args` is a whitespace-joined string in the UI. */
 export type CommandField = 'command' | 'args' | 'timeoutSeconds';
@@ -85,7 +55,7 @@ export function summarizeCommands(commands: VerificationCommand[]): string {
 }
 
 /** An editable dimension of the agent critic. `harness` is a select, not free text. */
-export type CriticField = 'prompt' | 'model' | 'harness';
+export type CriticField = 'issuePrompt' | 'noIssuePrompt' | 'model' | 'harness';
 
 /**
  * Fold a raw text-input value into the critic object. `prompt`/`model` are free
@@ -94,7 +64,7 @@ export type CriticField = 'prompt' | 'model' | 'harness';
  * `harness` is optional, and `z.enum` rejects `''`), not `harness: ''`, so a
  * blank selection strips the key instead of setting it.
  */
-export function setCriticField(critic: VerificationCritic, field: CriticField, raw: string): VerificationCritic {
+export function setCriticField(critic: TaskVerificationCritic, field: CriticField, raw: string): TaskVerificationCritic {
   if (field === 'harness' && raw === '') {
     const { harness: _harness, ...rest } = critic;
     return rest;
@@ -107,7 +77,7 @@ export function setCriticField(critic: VerificationCritic, field: CriticField, r
  * reviewer harness (when overridden) and model. An empty model (the seed for
  * an unconfigured global default) reads as "Not configured".
  */
-export function summarizeCritic(critic: VerificationCritic): string {
+export function summarizeCritic(critic: TaskVerificationCritic): string {
   if (critic.model.trim() === '') return 'Not configured';
   return critic.harness ? `Critic (${critic.harness}): model ${critic.model}` : `Critic model: ${critic.model}`;
 }

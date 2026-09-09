@@ -33,6 +33,7 @@ export interface EpicVerification {
   status: 'pass' | 'fail' | 'pending' | null;
   /** True iff the whole-Epic command verifier has ≥1 command configured; false means the gate is vacuous. */
   configured: boolean;
+  stages?: { label: string; status: 'pass' | 'fail' | 'pending' | null; verifiers: string[] }[];
 }
 
 export interface EpicIntegrateState {

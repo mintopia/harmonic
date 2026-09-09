@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { baselineConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
+import { WorkspaceService } from '../src/domain/workspaces.js';
 import { AttemptStore } from '../src/domain/attempts.js';
 import { AttemptSettleCoordinator } from '../src/domain/attempt-settle.js';
 import { CrashRecoveryCoordinator } from '../src/execution/crash-recovery.js';
@@ -157,6 +158,23 @@ describe('CrashRecoveryCoordinator (ADR-0001)', () => {
 
     expect(runPostMergeCheck).not.toHaveBeenCalled();
     expect(await attempts.get(run.id)).toMatchObject({ state: 'failed', reason: 'process-death' });
+  });
+
+  it('settles an interrupted Epic Attempt and notifies the Epic reconciler so its next poll can retry verification', async () => {
+    const workspaces = new WorkspaceService(asyncDb, settingsStore);
+    const workspace = await workspaces.create({ name: 'Epic recovery', workingDir: repo });
+    await tasks.syncEpics(workspace.id, [{ ref: 42, kind: 'epic' }]);
+    const attempt = await attempts.createForEpic({ workspaceId: workspace.id, epicRef: 42 });
+    const onEpicAttemptInterrupted = vi.fn();
+    const coord = new CrashRecoveryCoordinator(attempts, tasks, settle, {
+      runPostMergeCheck: async () => ({ pass: true, output: '' }),
+      onEpicAttemptInterrupted,
+    });
+
+    await coord.reconcile();
+
+    expect(await attempts.get(attempt.id)).toMatchObject({ state: 'failed', reason: 'process-death' });
+    expect(onEpicAttemptInterrupted).toHaveBeenCalledWith(expect.objectContaining({ id: attempt.id, workspaceId: workspace.id, epicRef: 42 }));
   });
 
   it('leaves a paused Task paused while marking its interrupted Run failed', async () => {

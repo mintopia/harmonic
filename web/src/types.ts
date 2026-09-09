@@ -82,6 +82,7 @@ export type VerificationMechanism = 'critic' | 'command';
 /** One verifier category's current read-time status, including categories that did not run. */
 export interface VerifierStatus {
   mechanism: VerificationMechanism;
+  verifier?: string;
   state: 'passed' | 'failed' | 'inconclusive' | 'skipped' | 'disabled' | 'unrunnable' | 'planned' | 'running';
   reason: string | null;
   /** The ordered command plan; `command` mechanism only. */
@@ -216,22 +217,12 @@ export interface Workspace {
   /** Per-workspace attempt cap; null inherits `config.maxAttempts`. */
   maxAttempts: number | null;
   contextReuseTokenLimit: number | null;
-  /** Verification overrides. The
-   * command verifier is list-grain, exactly mirroring the global editor: `null`
-   * inherits the global `config.verify.commands` list, an empty array turns
-   * verification off for this Workspace (no commands run here), and a
-   * non-empty array overrides the whole ordered list. It reads back as the
-   * shape it was PATCHed as. */
-  verificationCommand: VerificationCommand[] | null;
-  /**
-   * Critic-review override, decomposed into four
-   * independently-inheritable scalars: null inherits the matching global
-   * `config.verify.review.*`, a value overrides it. "Off" is `reviewEnabled:false`.
-   */
-  reviewEnabled: boolean | null;
-  reviewPrompt: string | null;
-  reviewModel: string | null;
-  reviewHarness: string | null;
+  taskPreMergeCommands: VerificationCommand[] | null;
+  taskPreMergeCritics: TaskVerificationCritic[] | null;
+  taskPostMergeCommands: VerificationCommand[] | null;
+  taskPostMergeCritics: TaskVerificationCritic[] | null;
+  epicPreMergeCommands: VerificationCommand[] | null;
+  epicPreMergeCritics: EpicVerificationCritic[] | null;
   /** Guardrail overrides; `null` inherits
    * `config.guardrails.{budget,progress}`. The budget reads back as the parsed
    * object shape it was PATCHed as. */
@@ -264,19 +255,29 @@ export interface VerificationCommand {
 
 /** An agent critic verifier: a read-only reviewer with
  * its own prompt and model. Mirrors `verificationCriticSchema`. */
-export interface VerificationCritic {
+export interface TaskVerificationCritic {
+  issuePrompt: string;
+  noIssuePrompt: string;
+  model: string;
+  /** Reviewer harness; omitted = reuse the builder task's harness. */
+  harness?: string;
+}
+
+export interface EpicVerificationCritic {
   prompt: string;
   model: string;
   /** Reviewer harness; omitted = reuse the builder task's harness. */
   harness?: string;
 }
 
-/** The optional review task that runs after every verification command passes. */
-export interface VerificationReview {
-  enabled: boolean;
-  prompt?: string;
-  model?: string;
-  harness?: string;
+export interface TaskVerificationStage {
+  commands: VerificationCommand[];
+  critics: TaskVerificationCritic[];
+}
+
+export interface EpicVerificationStage {
+  commands: VerificationCommand[];
+  critics: EpicVerificationCritic[];
 }
 
 /** The budget Guardrail: a mandatory wall-clock bound per afk Attempt
@@ -441,6 +442,22 @@ export interface AttemptSummary {
   contextWindow?: number | null;
   startedAt: number;
   finishedAt: number | null;
+}
+
+/** The owner-neutral execution facts in an Epic's Attempt timeline. */
+export interface EpicAttempt {
+  id: number;
+  number: number;
+  state: AttemptState;
+  reason: string | null;
+  prompt: string | null;
+  usage: AttemptUsage | null;
+  cost: Cost | null;
+  toolCalls: number;
+  contextTokens: number | null;
+  startedAt: number;
+  endedAt: number | null;
+  steps: Step[];
 }
 
 /** A Task's continuation preview, as `GET
@@ -822,10 +839,10 @@ export interface AppConfig {
     model: string;
   };
   autoRunner: { enabled: boolean; maxConcurrentAttempts: number };
-  /** Ordered verification commands and the optional review task. */
+  /** Per-stage command and critic verifier lists. */
   verify: {
-    commands: VerificationCommand[];
-    review: VerificationReview;
+    task: { preMerge: TaskVerificationStage; postMerge: TaskVerificationStage };
+    epic: { preMerge: EpicVerificationStage; resolvePrompt: string };
   };
   /** Attempt Guardrails: the global-default budget bounds, progress
    * toggle, and tool-timeout a Workspace inherits until it overrides them. */

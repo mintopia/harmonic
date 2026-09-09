@@ -10,6 +10,7 @@ import type { VerificationCommand } from '../src/config.js';
 import { OperationRegistry, startOperation } from '../src/telemetry/operations.js';
 import {
   runCommandVerifier,
+  runCommandVerifierDetached,
   commandAttemptToInput,
   exitCodeToVerdict,
   createChildProcessSpawn,
@@ -122,9 +123,8 @@ describe('command verifier (issue #135)', () => {
   it('AC1/AC3: exit 0 → pass, at the candidate OID, mapped to a persistable attempt', async () => {
     const { repo, oid } = await repoWithCandidate();
     const attempt = await runCommandVerifier({
-      repoDir: repo,
+      cwd: repo,
       verifiedHeadOid: oid,
-      worktreePath: freshWorktreePath(),
       command: nodeCommand('process.exit(0)'),
       spawn: fakeSpawn({ code: 0, signal: null, output: 'ok' }),
     });
@@ -147,9 +147,8 @@ describe('command verifier (issue #135)', () => {
 
     const attempt = await parent.run(() =>
       runCommandVerifier({
-        repoDir: repo,
+        cwd: repo,
         verifiedHeadOid: oid,
-        worktreePath: freshWorktreePath(),
         command: nodeCommand('process.exit(1)'),
         spawn: fakeSpawn({ code: 1, signal: null, output: 'nope' }),
         parent: parent.spanContext,
@@ -176,9 +175,8 @@ describe('command verifier (issue #135)', () => {
   it('AC2: non-zero exit → fail', async () => {
     const { repo, oid } = await repoWithCandidate();
     const attempt = await runCommandVerifier({
-      repoDir: repo,
+      cwd: repo,
       verifiedHeadOid: oid,
-      worktreePath: freshWorktreePath(),
       command: nodeCommand('process.exit(1)'),
       spawn: fakeSpawn({ code: 1, signal: null, output: '' }),
     });
@@ -188,9 +186,8 @@ describe('command verifier (issue #135)', () => {
   it('AC2: missing command (ENOENT) → inconclusive, via the real spawner', async () => {
     const { repo, oid } = await repoWithCandidate();
     const attempt = await runCommandVerifier({
-      repoDir: repo,
+      cwd: repo,
       verifiedHeadOid: oid,
-      worktreePath: freshWorktreePath(),
       command: {
         command: 'definitely-not-a-real-command-xyzzy',
         args: [],
@@ -206,9 +203,8 @@ describe('command verifier (issue #135)', () => {
   it('AC2: a command that overruns its timeout → inconclusive (real spawn)', async () => {
     const { repo, oid } = await repoWithCandidate();
     const attempt = await runCommandVerifier({
-      repoDir: repo,
+      cwd: repo,
       verifiedHeadOid: oid,
-      worktreePath: freshWorktreePath(),
       command: nodeCommand('setTimeout(() => {}, 60000)'),
       spawn: createChildProcessSpawn(),
       timeoutMs: 150,
@@ -217,10 +213,10 @@ describe('command verifier (issue #135)', () => {
     expect(attempt.summary).toMatch(/timed out/);
   });
 
-  it('AC2: a bad candidate OID (checkout failure) → inconclusive, never throws', async () => {
+  it('detached: a bad candidate OID (checkout failure) → inconclusive, never throws', async () => {
     const repo = makeRepo();
     repos.push(repo);
-    const attempt = await runCommandVerifier({
+    const attempt = await runCommandVerifierDetached({
       repoDir: repo,
       verifiedHeadOid: '0000000000000000000000000000000000000000',
       worktreePath: freshWorktreePath(),
@@ -235,9 +231,8 @@ describe('command verifier (issue #135)', () => {
     const ac = new AbortController();
     setTimeout(() => ac.abort(), 100);
     const attempt = await runCommandVerifier({
-      repoDir: repo,
+      cwd: repo,
       verifiedHeadOid: oid,
-      worktreePath: freshWorktreePath(),
       command: nodeCommand('setTimeout(() => {}, 60000)'),
       spawn: createChildProcessSpawn(),
       signal: ac.signal,
@@ -247,12 +242,23 @@ describe('command verifier (issue #135)', () => {
     expect(attempt.summary).toMatch(/cancelled/);
   });
 
-  it('runs at the candidate tree: a command reading a candidate-only file exits 0 (real spawn)', async () => {
+  it('detached: checks out the candidate tree — a command reading a candidate-only file exits 0 (real spawn)', async () => {
+    const { repo, oid } = await repoWithCandidate();
+    const attempt = await runCommandVerifierDetached({
+      repoDir: repo,
+      worktreePath: freshWorktreePath(),
+      verifiedHeadOid: oid,
+      command: nodeCommand('require("node:fs").readFileSync("work.txt"); process.exit(0)'),
+      spawn: createChildProcessSpawn(),
+    });
+    expect(attempt.verdict).toBe('pass');
+  });
+
+  it('runs in the given cwd: a command reading a file present in cwd exits 0 (real spawn)', async () => {
     const { repo, oid } = await repoWithCandidate();
     const attempt = await runCommandVerifier({
-      repoDir: repo,
+      cwd: repo,
       verifiedHeadOid: oid,
-      worktreePath: freshWorktreePath(),
       command: nodeCommand('require("node:fs").readFileSync("work.txt"); process.exit(0)'),
       spawn: createChildProcessSpawn(),
     });
@@ -262,9 +268,8 @@ describe('command verifier (issue #135)', () => {
   it('a command that writes to its checkout reports its exit-code verdict', async () => {
     const { repo, oid } = await repoWithCandidate();
     const attempt = await runCommandVerifier({
-      repoDir: repo,
+      cwd: repo,
       verifiedHeadOid: oid,
-      worktreePath: freshWorktreePath(),
       command: nodeCommand('require("node:fs").writeFileSync("artifact.txt", "built"); process.exit(0)'),
       spawn: createChildProcessSpawn(),
     });
@@ -274,9 +279,8 @@ describe('command verifier (issue #135)', () => {
   it('output beyond the cap is truncated (real spawn)', async () => {
     const { repo, oid } = await repoWithCandidate();
     const attempt = await runCommandVerifier({
-      repoDir: repo,
+      cwd: repo,
       verifiedHeadOid: oid,
-      worktreePath: freshWorktreePath(),
       // Write well past the cap in chunks and let the process exit naturally, so
       // stdout fully drains to the parent before close (a `process.exit` would
       // truncate the pipe mid-flush and under-fill the buffer).

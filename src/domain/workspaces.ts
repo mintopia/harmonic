@@ -20,9 +20,10 @@ import { DomainError } from './errors.js';
 import { deleteAttemptsAndChildrenAsync } from './attempt-cascade.js';
 import {
   verificationCommandOverrideSchema,
+  taskVerificationCriticOverrideSchema,
+  epicVerificationCriticOverrideSchema,
   budgetGuardrailSchema,
   MERGE_FATES,
-  HARNESS_IDS,
 } from '../config.js';
 
 export const createWorkspaceInputSchema = z.object({
@@ -55,20 +56,12 @@ export const workspaceOverridesSchema = z.object({
   autoRunnerEnabled: z.boolean().nullable().optional().meta({ example: true }),
   maxAttempts: z.number().int().min(1).nullable().optional().meta({ example: 2 }),
   contextReuseTokenLimit: z.number().int().min(0).nullable().optional().meta({ example: 200_000 }),
-  /**
-   * Command-verifier override, list-grain: null/absent inherits
-   * `config.verify.commands`, a non-empty array overrides the whole list, and an
-   * explicit empty array `[]` runs no commands here.
-   */
-  verificationCommand: verificationCommandOverrideSchema.nullable().optional(),
-  /**
-   * Critic-review override, decomposed into four independently-inheritable
-   * scalars: null/absent inherits the matching global `config.verify.review.*`.
-   */
-  reviewEnabled: z.boolean().nullable().optional().meta({ example: true }),
-  reviewPrompt: z.string().min(1).nullable().optional().meta({ example: 'Review the diff for correctness.' }),
-  reviewModel: z.string().min(1).nullable().optional().meta({ example: 'claude-opus-5' }),
-  reviewHarness: z.enum(HARNESS_IDS).nullable().optional().meta({ example: 'claude' }),
+  taskPreMergeCommands: verificationCommandOverrideSchema.nullable().optional(),
+  taskPreMergeCritics: taskVerificationCriticOverrideSchema.nullable().optional(),
+  taskPostMergeCommands: verificationCommandOverrideSchema.nullable().optional(),
+  taskPostMergeCritics: taskVerificationCriticOverrideSchema.nullable().optional(),
+  epicPreMergeCommands: verificationCommandOverrideSchema.nullable().optional(),
+  epicPreMergeCritics: epicVerificationCriticOverrideSchema.nullable().optional(),
   /** Budget-Guardrail override; null inherits `config.guardrails.budget`. */
   guardrailBudget: budgetGuardrailSchema.nullable().optional(),
   /** Progress-detector toggle override; null inherits `config.guardrails.progress`. */
@@ -104,11 +97,12 @@ export const OVERRIDE_KEYS = [
   'autoRunnerEnabled',
   'maxAttempts',
   'contextReuseTokenLimit',
-  'verificationCommand',
-  'reviewEnabled',
-  'reviewPrompt',
-  'reviewModel',
-  'reviewHarness',
+  'taskPreMergeCommands',
+  'taskPreMergeCritics',
+  'taskPostMergeCommands',
+  'taskPostMergeCritics',
+  'epicPreMergeCommands',
+  'epicPreMergeCritics',
   'guardrailBudget',
   'guardrailProgress',
   'toolTimeoutMinutes',
@@ -174,11 +168,12 @@ export class WorkspaceService {
       autoRunnerEnabled: o.autoRunnerEnabled,
       maxAttempts: o.maxAttempts,
       contextReuseTokenLimit: o.contextReuseTokenLimit,
-      verificationCommand: o.verificationCommand != null ? JSON.stringify(o.verificationCommand) : null,
-      reviewEnabled: o.reviewEnabled,
-      reviewPrompt: o.reviewPrompt,
-      reviewModel: o.reviewModel,
-      reviewHarness: o.reviewHarness,
+      taskPreMergeCommands: o.taskPreMergeCommands != null ? JSON.stringify(o.taskPreMergeCommands) : null,
+      taskPreMergeCritics: o.taskPreMergeCritics != null ? JSON.stringify(o.taskPreMergeCritics) : null,
+      taskPostMergeCommands: o.taskPostMergeCommands != null ? JSON.stringify(o.taskPostMergeCommands) : null,
+      taskPostMergeCritics: o.taskPostMergeCritics != null ? JSON.stringify(o.taskPostMergeCritics) : null,
+      epicPreMergeCommands: o.epicPreMergeCommands != null ? JSON.stringify(o.epicPreMergeCommands) : null,
+      epicPreMergeCritics: o.epicPreMergeCritics != null ? JSON.stringify(o.epicPreMergeCritics) : null,
       guardrailBudget: o.guardrailBudget != null ? JSON.stringify(o.guardrailBudget) : null,
       guardrailProgress: o.guardrailProgress,
       toolTimeoutMinutes: o.toolTimeoutMinutes,

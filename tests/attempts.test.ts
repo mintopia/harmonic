@@ -6,6 +6,7 @@ import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { baselineConfig } from '../src/config.js';
 import { AttemptStore } from '../src/domain/attempts.js';
 import { TaskService } from '../src/domain/tasks.js';
+import { WorkspaceService } from '../src/domain/workspaces.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { allWorkspaces, makeSettingsStore } from './helpers.js';
 
@@ -47,5 +48,24 @@ describe('AttemptStore', () => {
       { type: 'verification', position: 2, state: 'passed', command: 'npm test', logLocator: 'output:1' },
     ]);
     expect(second.state).toBe('running');
+  });
+
+  it('numbers and lists an Epic timeline independently of its Task attempts', async () => {
+    const workspace = new WorkspaceService(db, settingsStore);
+    const workspaceId = (await workspace.create({ name: 'Epic workspace', workingDir: dir, trackerEnabled: true })).id;
+    const tasks = new TaskService(db, () => baselineConfig(), allWorkspaces(db, settingsStore));
+    await tasks.syncEpics(workspaceId, [{ ref: 526, kind: 'epic' }]);
+
+    const first = await attempts.createForEpic({ workspaceId, epicRef: 526 });
+    await attempts.finish(first.id, 'passed');
+    const second = await attempts.createForEpic({ workspaceId, epicRef: 526 });
+
+    expect(first).toMatchObject({ taskId: null, workspaceId, epicRef: 526, number: 1 });
+    expect(second).toMatchObject({ taskId: null, workspaceId, epicRef: 526, number: 2 });
+    expect(await attempts.listForEpic({ workspaceId, epicRef: 526 })).toMatchObject([
+      { id: first.id, number: 1, state: 'passed' },
+      { id: second.id, number: 2, state: 'running' },
+    ]);
+    expect(await attempts.listForTask(taskId)).toHaveLength(0);
   });
 });
