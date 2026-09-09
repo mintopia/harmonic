@@ -721,7 +721,7 @@ function AttemptPanel({
         </>
       ) : activeTab.type === 'verification' ? (
         <div className="mt-4">
-          <Verification attempts={verificationAttempts} statuses={verifierStatuses} run={run} only="command" verifier={activeTab.detail ? `command:${steps.filter((step) => step.type === 'verification').findIndex((step) => step.command === activeTab.detail)}` : undefined} steps={steps} liveOutput={verificationOutputTail(events, 'command')} />
+          <Verification attempts={verificationAttempts} statuses={verifierStatuses} run={run} only="command" verifier={`command:${steps.filter((step) => step.type === 'verification').findIndex((step) => `verification:${step.id}` === activeTab.id)}`} steps={steps} liveOutput={verificationOutputTail(events, 'command')} />
         </div>
       ) : (
         <div className="mt-4">
