@@ -146,7 +146,11 @@ describe('one merge policy, everywhere (issue #381, ADR-0001)', () => {
     '(a) an afk auto-merge Task with a REAL post-merge check merges as an ordinary merge commit (never a fast-forward), closes the ticket, and does not deadlock',
     async () => {
       const repo = makeRepo();
-      await server.app.ctx.workspaces.update(wsId, { workingDir: repo, taskPreMergeCommands: [passingVerifier()] });
+      await server.app.ctx.workspaces.update(wsId, {
+        workingDir: repo,
+        taskPreMergeCommands: [passingVerifier()],
+        taskPostMergeCommands: [passingVerifier()],
+      });
       await server.app.ctx.settingsStore.updateGlobal({
         merge: { postMergeCheck: true },
         drive: { prompt: JSON.stringify({ writeFiles: { 'impl-{ref}.txt': 'implementation {ref}\n' }, mcpFinish: true }) },
@@ -167,6 +171,34 @@ describe('one merge policy, everywhere (issue #381, ADR-0001)', () => {
     },
     30_000,
   );
+
+  it('runs task post-merge commands in the live integration checkout, then reverts and escalates on red', async () => {
+    const repo = makeRepo();
+    const postMergeFail = verificationCommandSchema.parse({
+      command: process.execPath,
+      args: ['-e', 'process.exit(1)'],
+      timeoutSeconds: 30,
+    });
+    await server.app.ctx.workspaces.update(wsId, {
+      workingDir: repo,
+      taskPreMergeCommands: [passingVerifier()],
+      taskPostMergeCommands: [postMergeFail],
+    });
+    await server.app.ctx.settingsStore.updateGlobal({
+      merge: { postMergeCheck: true },
+      drive: { prompt: JSON.stringify({ writeFiles: { 'impl-{ref}.txt': 'implementation {ref}\n' }, mcpFinish: true }) },
+    });
+
+    const { taskId, attemptId, trackerRef } = await launchAfk();
+    const task = await waitEscalated(taskId);
+    expect(task.escalationReason).toContain('post-merge check');
+    expect(() => git(repo, 'show', `main:impl-${trackerRef}.txt`)).toThrow();
+    expect(Number(git(repo, 'rev-list', '--count', '--merges', 'main'))).toBe(1);
+
+    const events = await lifecycle(attemptId);
+    expect(events.filter((event) => event.event === 'verification' && event.mechanism === 'command')).toHaveLength(2);
+    await server.app.ctx.workspaces.update(wsId, { taskPostMergeCommands: null });
+  }, 30_000);
 
   it('(b) a sibling advancing the base mid-verification does not trigger re-verification — the candidate still merges as an ordinary merge commit', async () => {
     const repo = makeRepo();

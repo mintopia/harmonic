@@ -577,6 +577,28 @@ describe('verification-critic', () => {
       expect(git(repoDir, 'rev-parse', 'main')).toBe(baseOidBefore);
     });
 
+    it('runs every critic and carries every failing verdict into the next Attempt', async () => {
+      criticResult = { verdict: 'fail', summary: 'the change matches the ticket' };
+      await server.app.ctx.workspaces.update(workspaceId, {
+        taskPreMergeCritics: [
+          { issuePrompt: 'Check the API.', noIssuePrompt: 'Check the API.', model: 'stub-model' },
+          { issuePrompt: 'Check the database.', noIssuePrompt: 'Check the database.', model: 'stub-model' },
+        ],
+      });
+      const { taskId } = await createAndRun();
+
+      const task = await waitFor(async () => {
+        const { body } = await server.api('GET', `/api/tasks/${taskId}`);
+        return body.state === 'escalated' ? body : undefined;
+      });
+      expect(task.state).toBe('escalated');
+
+      const rows = await attempts(taskId);
+      expect(rows).toHaveLength(4);
+      const timeline = await server.api('GET', `/api/tasks/${taskId}/attempts/timeline`);
+      expect(timeline.body.attempts[0].feedback).toContain('the change matches the ticket');
+    });
+
     it('AC3: an inconclusive critic consumes the same bounded Attempt loop', async () => {
       criticResult = { verdict: 'inconclusive', summary: 'cannot tell from the diff alone' };
       await server.app.ctx.workspaces.update(workspaceId, critic());

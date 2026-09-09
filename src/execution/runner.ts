@@ -45,7 +45,7 @@ import { EpicMergeEventStore } from '../domain/epic-merge-events.js';
 import { GuardrailEventStore } from '../domain/guardrail-events.js';
 import { toProgressEvents } from '../domain/guardrail-progress.js';
 import type { ProgressEvent } from '../domain/stall-detector.js';
-import { runCommandVerifier, runCommandVerifierDetached, commandAttemptToInput } from '../verification/command-verifier.js';
+import { runCommandVerifier, commandAttemptToInput } from '../verification/command-verifier.js';
 import { createAcpCriticDrive, runCritic, criticAttemptToInput, type CriticHarnessDrive } from '../verification/critic.js';
 import { combineVerdicts, type VerificationDecision, type VerifierVerdict } from '../verification/combine.js';
 import { pricesForHarness } from '../domain/pricing.js';
@@ -1247,8 +1247,11 @@ export class Runner {
       }
     }
 
-    for (const configuredCritic of critics) {
-      if (!criticEnabled || !verdicts.every((entry) => entry.verdict === 'pass')) break;
+    const criticFeedback: string[] = [];
+    if (criticEnabled && verdicts.every((entry) => entry.verdict === 'pass')) {
+      const criticCwd = run.branch ? this.worktreePathForTask(task) : task.workingDir;
+      if (run.branch && critics.length > 0) await indexWorktree(criticCwd);
+      await Promise.all(critics.map(async (configuredCritic, index) => {
       const critic = {
         prompt: task.trackerRef == null ? configuredCritic.noIssuePrompt : configuredCritic.issuePrompt,
         model: configuredCritic.model,
@@ -1266,9 +1269,6 @@ export class Runner {
           run.branch && run.baseBranch
             ? await Git.mergeBase(task.workingDir, run.baseBranch, run.branch).catch(() => null)
             : null;
-        const criticCwd = run.branch ? this.worktreePathForTask(task) : task.workingDir;
-        // The worktree's code index dates from Attempt start; refresh it to the candidate head.
-        if (run.branch) await indexWorktree(criticCwd);
         const timelineAttempt = await this.latestAttemptFor(task);
         const timelineStep = await this.attempts.createStep(timelineAttempt.id, { type: 'review' });
         await this.updateStep(task.id, timelineStep.id, { state: 'running', startedAt: Date.now() });
@@ -1319,10 +1319,23 @@ export class Runner {
           summary: attempt.summary,
         });
         verdicts.push({ verifier: attempt.verifier, verdict: attempt.verdict });
+        if (attempt.verdict !== 'pass') {
+          criticFeedback.push([
+            `Task critic ${index + 1} (${attempt.verdict}): ${attempt.summary}`,
+            attempt.output,
+          ].filter(Boolean).join('\n'));
+        }
       }
+      }));
     }
 
-    return { decision: combineVerdicts(verdicts), ran: verdicts.length > 0 };
+    const decision = combineVerdicts(verdicts);
+    return {
+      decision: criticFeedback.length > 0
+        ? { ...decision, reason: `${decision.reason}\n\n${criticFeedback.join('\n\n')}` }
+        : decision,
+      ran: verdicts.length > 0,
+    };
   }
 
   private async runRebaseTask(
@@ -1362,7 +1375,14 @@ export class Runner {
   ): Promise<TurnOutcome> {
     const attemptRow = await this.latestAttemptFor(task);
     const attempts = await this.verificationAttempts.list(attemptRow.id);
-    const output = attempts[attempts.length - 1]?.output ?? '';
+    const criticOutput = attempts
+      .filter((attempt) => attempt.mechanism === 'critic' && attempt.verdict !== 'pass')
+      .map((attempt, index) => [
+        `Task critic ${index + 1} (${attempt.verdict}): ${attempt.summary}`,
+        attempt.output,
+      ].filter(Boolean).join('\n'))
+      .join('\n\n');
+    const output = criticOutput || attempts[attempts.length - 1]?.output || '';
     record('lifecycle', { event: 'verification-actionable-fail', reason: decision.reason });
     const reason = decision.outcome === 'block' ? decision.reason : `verification ${decision.outcome}: ${decision.reason}`;
     return { kind: 'actionable-fail', reason, output };
@@ -1789,15 +1809,12 @@ export class Runner {
           ws ?? { taskPreMergeCommands: null, taskPreMergeCritics: null, taskPostMergeCommands: null, taskPostMergeCritics: null, epicPreMergeCommands: null, epicPreMergeCritics: null },
           config,
         );
-        const { commands } = resolvedTask.postMerge;
-        if (commands.length === 0) return { pass: true, output: '' };
-        mkdirSync(this.worktreesDir, { recursive: true });
+        const { commands, critics } = resolvedTask.postMerge;
         const timelineAttempt = await this.latestAttemptFor(task);
         for (const command of commands) {
-          const attempt = await runCommandVerifierDetached({
-            repoDir: baseDir,
+          const attempt = await runCommandVerifier({
+            cwd: baseDir,
             verifiedHeadOid: mergeOid,
-            worktreePath: join(this.worktreesDir, `postmerge-${run.id}`),
             command,
             signal,
             attributes: { 'task.id': task.id, 'attempt.id': run.id },
@@ -1806,7 +1823,64 @@ export class Runner {
           record('lifecycle', { event: 'verification', mechanism: 'command', verdict: attempt.verdict, summary: attempt.summary });
           if (attempt.verdict !== 'pass') return { pass: false, output: attempt.output };
         }
-        return { pass: true, output: '' };
+        const baseOid = await Git.revParse(baseDir, `${mergeOid}^1`).catch(() => null);
+        if (critics.length > 0) await indexWorktree(baseDir);
+        const criticAttempts = await Promise.all(critics.map(async (configuredCritic) => {
+          const critic = {
+            prompt: task.trackerRef == null ? configuredCritic.noIssuePrompt : configuredCritic.issuePrompt,
+            model: configuredCritic.model,
+            ...(configuredCritic.harness ? { harness: configuredCritic.harness } : {}),
+          };
+          const criticHarnessId = critic.harness ?? task.harness;
+          const criticHarness = config.harnesses[criticHarnessId as keyof typeof config.harnesses];
+          if (!criticHarness) {
+            throw new DomainError('validation', `critic harness '${criticHarnessId}' is not configured`);
+          }
+          const attempt = await runCritic({
+            cwd: baseDir,
+            verifiedHeadOid: mergeOid,
+            ...(baseOid ? { baseOid } : {}),
+            critic,
+            fields: driveFields(task, this.urlFor),
+            harness: criticHarness,
+            harnessId: criticHarnessId,
+            attributes: { 'task.id': task.id, 'attempt.id': run.id },
+            ...(this.criticDrive ? { drive: this.criticDrive } : {}),
+            onUpdate: this.criticUpdateRelay(run.id),
+          });
+          const persisted = await this.verificationAttempts.append(timelineAttempt.id, criticAttemptToInput(attempt));
+          if (attempt.sessionId) {
+            if (attempt.transcriptPath === null) {
+              void this.transcripts.captureCriticTranscript({
+                attemptId: persisted.id,
+                sessionId: attempt.sessionId,
+                harnessId: criticHarnessId,
+                sessionLogDir: criticHarness.sessionLogDir,
+              });
+            }
+            void this.transcripts.captureCriticUsage({
+              attemptId: persisted.id,
+              sessionId: attempt.sessionId,
+              harnessId: criticHarnessId,
+              cwd: baseDir,
+            });
+          }
+          record('lifecycle', { event: 'verification', mechanism: 'critic', verdict: attempt.verdict, summary: attempt.summary });
+          return attempt;
+        }));
+        const decision = combineVerdicts(criticAttempts.map((attempt) => ({ verifier: attempt.verifier, verdict: attempt.verdict })));
+        if (decision.outcome === 'proceed') return { pass: true, output: '' };
+        return {
+          pass: false,
+          output: criticAttempts
+            .map((attempt, index) => [attempt, index] as const)
+            .filter(([attempt]) => attempt.verdict !== 'pass')
+            .map(([attempt, index]) => [
+              `Task critic ${index + 1} (${attempt.verdict}): ${attempt.summary}`,
+              attempt.output,
+            ].filter(Boolean).join('\n'))
+            .join('\n\n'),
+        };
       },
       escalate: async (reason) => {
         await this.settleEscalated(task, run, reason, patch);
