@@ -574,11 +574,16 @@ describe('conversation-permissions', () => {
       );
       expect(resolved.payload.outcome).toEqual({ outcome: 'selected', optionId: allowOnce.optionId });
       expect(resolved.payload.reqId).toBe(reqId);
-      await waitFor(async () =>
-        (await events(server, convo.id)).some(
+      const echoed = await waitFor(async () =>
+        (await events(server, convo.id)).find(
           (e) => e.type === 'session_update' && String(e.payload?.content?.text ?? '').startsWith('permission:'),
         ),
       );
+      // The harness receives an ACP RequestPermissionResponse with the outcome
+      // nested under `outcome`; a bare outcome is read as a reject.
+      expect(JSON.parse(String(echoed.payload.content.text).slice('permission:'.length))).toEqual({
+        outcome: { outcome: 'selected', optionId: allowOnce.optionId },
+      });
       ws.close();
     });
 
