@@ -831,7 +831,7 @@ export function TicketPage({
       const workspace = workspaces.find((workspace) => workspace.id === task.workspaceId);
       setMaxAttempts(workspace?.maxAttempts ?? config.maxAttempts);
       setWorkspaceName(workspace?.name ?? null);
-      setCommandConfigured((workspace?.verificationCommand ?? config.verify.commands).length > 0);
+      setCommandConfigured((workspace?.taskPreMergeCommands ?? config.verify.task.preMerge.commands).length > 0);
     }, toastError);
   }, [task.workspaceId]);
 

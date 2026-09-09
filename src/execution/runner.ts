@@ -129,11 +129,12 @@ export interface RunnerOptions {
         | 'guardrailBudget'
         | 'guardrailProgress'
         | 'toolTimeoutMinutes'
-        | 'verificationCommand'
-        | 'reviewEnabled'
-        | 'reviewPrompt'
-        | 'reviewModel'
-        | 'reviewHarness'
+        | 'taskPreMergeCommands'
+        | 'taskPreMergeCritics'
+        | 'taskPostMergeCommands'
+        | 'taskPostMergeCritics'
+        | 'epicPreMergeCommands'
+        | 'epicPreMergeCritics'
         | 'maxAttempts'
         | 'contextReuseTokenLimit'
         | 'taskPrompt'
@@ -1126,11 +1127,11 @@ export class Runner {
 
   private async criticEnabledFor(task: TaskRow): Promise<boolean> {
     const ws = await this.getWorkspace?.(task.workspaceId);
-    const { review } = resolveVerifiers(
-      ws ?? { verificationCommand: null, reviewEnabled: null, reviewPrompt: null, reviewModel: null, reviewHarness: null },
+    const { task: resolvedTask } = resolveVerifiers(
+      ws ?? { taskPreMergeCommands: null, taskPreMergeCritics: null, taskPostMergeCommands: null, taskPostMergeCritics: null, epicPreMergeCommands: null, epicPreMergeCritics: null },
       this.getConfig(),
     );
-    return !!(review.enabled && review.prompt && review.model);
+    return resolvedTask.preMerge.critics.length > 0;
   }
 
   /** Patch a Step and announce the transition, so the Task-detail timeline
@@ -1183,10 +1184,11 @@ export class Runner {
     run = await this.attempts.get(run.id);
     const config = this.getConfig();
     const ws = await this.getWorkspace?.(task.workspaceId);
-    const { commands, review } = resolveVerifiers(
-      ws ?? { verificationCommand: null, reviewEnabled: null, reviewPrompt: null, reviewModel: null, reviewHarness: null },
+    const { task: resolvedTask } = resolveVerifiers(
+      ws ?? { taskPreMergeCommands: null, taskPreMergeCritics: null, taskPostMergeCommands: null, taskPostMergeCritics: null, epicPreMergeCommands: null, epicPreMergeCritics: null },
       config,
     );
+    const { commands, critics } = resolvedTask.preMerge;
 
     const verdicts: VerifierVerdict[] = [];
     const oid = head;
@@ -1231,11 +1233,12 @@ export class Runner {
       }
     }
 
-    if (criticEnabled && review.enabled && review.prompt && review.model && verdicts.every((entry) => entry.verdict === 'pass')) {
+    const critic = critics[0];
+    if (criticEnabled && critic && verdicts.every((entry) => entry.verdict === 'pass')) {
       if (!oid) {
         verdicts.push(await this.noVerifiedHeadVerdict(task, 'critic', record));
       } else {
-        const criticHarnessId = review.harness ?? task.harness;
+        const criticHarnessId = critic.harness ?? task.harness;
         const criticHarness = config.harnesses[criticHarnessId as keyof typeof config.harnesses];
         if (!criticHarness) {
           throw new DomainError('validation', `critic harness '${criticHarnessId}' is not configured`);
@@ -1250,12 +1253,12 @@ export class Runner {
         const timelineAttempt = await this.latestAttemptFor(task);
         const timelineStep = await this.attempts.createStep(timelineAttempt.id, { type: 'review' });
         await this.updateStep(task.id, timelineStep.id, { state: 'running', startedAt: Date.now() });
-        record('lifecycle', { event: 'verification-started', mechanism: 'critic', model: review.model });
+        record('lifecycle', { event: 'verification-started', mechanism: 'critic', model: critic.model });
         const attempt = await runCritic({
           cwd: criticCwd,
           verifiedHeadOid: oid,
           ...(baseOid ? { baseOid } : {}),
-          critic: { prompt: review.prompt!, model: review.model!, ...(review.harness ? { harness: review.harness } : {}) },
+          critic,
           fields: driveFields(task, this.urlFor),
           harness: criticHarness,
           harnessId: criticHarnessId,
@@ -1666,10 +1669,11 @@ export class Runner {
       runPostMergeCheck: async (mergeOid, baseDir) => {
         const config = this.getConfig();
         const ws = await this.getWorkspace?.(task.workspaceId);
-        const { commands } = resolveVerifiers(
-          ws ?? { verificationCommand: null, reviewEnabled: null, reviewPrompt: null, reviewModel: null, reviewHarness: null },
+        const { task: resolvedTask } = resolveVerifiers(
+          ws ?? { taskPreMergeCommands: null, taskPreMergeCritics: null, taskPostMergeCommands: null, taskPostMergeCritics: null, epicPreMergeCommands: null, epicPreMergeCritics: null },
           config,
         );
+        const { commands } = resolvedTask.postMerge;
         if (commands.length === 0) return { pass: true, output: '' };
         mkdirSync(this.worktreesDir, { recursive: true });
         const timelineAttempt = await this.latestAttemptFor(task);

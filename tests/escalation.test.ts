@@ -417,7 +417,7 @@ describe('escalation-routes', () => {
     return dir;
   }
 
-  const critic = () => ({ reviewEnabled: true, reviewPrompt: 'Review the diff for correctness.', reviewModel: 'stub-model' });
+  const critic = () => ({ taskPreMergeCritics: [{ prompt: 'Review the diff for correctness.', model: 'stub-model' }] });
 
   describe('escalation actions on a worktree ticket', () => {
     let server: TestServer;
@@ -445,7 +445,7 @@ describe('escalation-routes', () => {
       criticResult = { verdict: 'fail', summary: 'not good enough yet' };
       await server.app.ctx.workspaces.update(workspaceId, {
         isolationMode: 'worktree',
-        verificationCommand: null,
+        taskPreMergeCommands: null,
         ...critic(),
       });
     });

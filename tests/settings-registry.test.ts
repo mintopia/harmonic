@@ -36,11 +36,12 @@ describe('Settings registry (issue #336) — single authority for scope', () => 
     'autoRunnerEnabled',
     'maxAttempts',
     'contextReuseTokenLimit',
-    'verificationCommand',
-    'reviewEnabled',
-    'reviewPrompt',
-    'reviewModel',
-    'reviewHarness',
+    'taskPreMergeCommands',
+    'taskPreMergeCritics',
+    'taskPostMergeCommands',
+    'taskPostMergeCritics',
+    'epicPreMergeCommands',
+    'epicPreMergeCritics',
     'guardrailBudget',
     'guardrailProgress',
     'toolTimeoutMinutes',
@@ -106,11 +107,12 @@ describe('tab taxonomy — settings group into Settings UI tabs', () => {
 
   it('settingsForTab("verification") returns exactly the verification settings', () => {
     expect(settingsForTab('verification')).toEqual([
-      'verificationCommand',
-      'reviewEnabled',
-      'reviewPrompt',
-      'reviewModel',
-      'reviewHarness',
+      'taskPreMergeCommands',
+      'taskPreMergeCritics',
+      'taskPostMergeCommands',
+      'taskPostMergeCritics',
+      'epicPreMergeCommands',
+      'epicPreMergeCritics',
     ]);
   });
 
@@ -123,7 +125,7 @@ describe('tab taxonomy — settings group into Settings UI tabs', () => {
     expect(execution).toEqual(
       expect.arrayContaining(['harness', 'maxAttempts', 'guardrailBudget', 'toolTimeoutMinutes']),
     );
-    expect(execution).not.toContain('verificationCommand');
+    expect(execution).not.toContain('taskPreMergeCommands');
     expect(execution).not.toContain('chatHarness');
   });
 
@@ -229,21 +231,22 @@ describe('scope changes control live resolution (registry is the single authorit
     });
   });
 
-  it('resolveVerifiers: flipping verificationCommand to global-only ignores the Workspace verifier', () => {
+  it('resolveVerifiers: flipping a stage list to global-only ignores the Workspace verifier', () => {
     const globalCommand = { command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 };
     const wsCommand = { command: 'pnpm', args: ['lint'], env: {}, timeoutSeconds: 300 };
-    const config = { verify: { commands: [globalCommand], review: { enabled: false } } } as never;
+    const config = { verify: { task: { preMerge: { commands: [globalCommand], critics: [] }, postMerge: { commands: [], critics: [] } }, epic: { preMerge: { commands: [], critics: [] }, resolvePrompt: 'Resolve it.' } } } as never;
     const ws = {
-      verificationCommand: JSON.stringify([wsCommand]),
-      reviewEnabled: null,
-      reviewPrompt: null,
-      reviewModel: null,
-      reviewHarness: null,
+      taskPreMergeCommands: JSON.stringify([wsCommand]),
+      taskPreMergeCritics: null,
+      taskPostMergeCommands: null,
+      taskPostMergeCritics: null,
+      epicPreMergeCommands: null,
+      epicPreMergeCritics: null,
     };
 
-    expect(resolveVerifiers(ws, config).commands).toEqual([wsCommand]);
-    withScope('verificationCommand', 'global-only', () => {
-      expect(resolveVerifiers(ws, config).commands).toEqual([globalCommand]);
+    expect(resolveVerifiers(ws, config).task.preMerge.commands).toEqual([wsCommand]);
+    withScope('taskPreMergeCommands', 'global-only', () => {
+      expect(resolveVerifiers(ws, config).task.preMerge.commands).toEqual([globalCommand]);
     });
   });
 
@@ -256,9 +259,8 @@ describe('scope changes control live resolution (registry is the single authorit
   });
 
   it('hasWorkspaceOverride: an explicit boolean false counts as an override (not truthiness)', () => {
-    expect(hasWorkspaceOverride('reviewEnabled', false)).toBe(true);
-    expect(hasWorkspaceOverride('reviewEnabled', true)).toBe(true);
-    expect(hasWorkspaceOverride('reviewEnabled', null)).toBe(false);
+    expect(hasWorkspaceOverride('taskPreMergeCommands', '[]')).toBe(true);
+    expect(hasWorkspaceOverride('taskPreMergeCommands', null)).toBe(false);
     expect(hasWorkspaceOverride('guardrailProgress', false)).toBe(true);
   });
 });

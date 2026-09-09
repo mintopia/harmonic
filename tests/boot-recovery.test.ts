@@ -105,7 +105,7 @@ describe('boot crash-recovery', () => {
       server = await startServer({ ...stubHarness(), defaults: { isolationMode: 'worktree' }, maxAttempts: 1 });
       const wsId = (await server.app.ctx.workspaces.list())[0]!.id;
       const repo = makeRepo();
-      await server.app.ctx.workspaces.update(wsId, { workingDir: repo, verificationCommand: [passingVerifier()] });
+      await server.app.ctx.workspaces.update(wsId, { workingDir: repo, taskPreMergeCommands: [passingVerifier()] });
 
       const created = await server.api('POST', '/api/tasks', { prompt: JSON.stringify({ writeFiles: { 'impl.txt': 'implementation\n' } }) });
       const taskId: number = created.body.id;
@@ -145,7 +145,7 @@ describe('boot crash-recovery', () => {
       server = await startServer({ ...stubHarness(), defaults: { isolationMode: 'worktree' }, maxAttempts: 1 });
       const wsId = (await server.app.ctx.workspaces.list())[0]!.id;
       const repo = makeRepo();
-      await server.app.ctx.workspaces.update(wsId, { workingDir: repo, verificationCommand: [passingVerifier()] });
+      await server.app.ctx.workspaces.update(wsId, { workingDir: repo, taskPreMergeCommands: [passingVerifier()] });
 
       const created = await server.api('POST', '/api/tasks', { prompt: JSON.stringify({ writeFiles: { 'impl.txt': 'implementation\n' } }) });
       const taskId: number = created.body.id;
@@ -181,7 +181,7 @@ describe('boot crash-recovery', () => {
       server = await startServer({ ...stubHarness(), defaults: { isolationMode: 'worktree' }, maxAttempts: 1 });
       const wsId = (await server.app.ctx.workspaces.list())[0]!.id;
       const repo = makeRepo();
-      await server.app.ctx.workspaces.update(wsId, { workingDir: repo, verificationCommand: [passingVerifier()] });
+      await server.app.ctx.workspaces.update(wsId, { workingDir: repo, taskPreMergeCommands: [passingVerifier()] });
 
       const created = await server.api('POST', '/api/tasks', { prompt: JSON.stringify({ writeFiles: { 'impl.txt': 'implementation\n' } }) });
       const taskId: number = created.body.id;
@@ -212,7 +212,7 @@ describe('boot crash-recovery', () => {
       server = await startServer({ ...stubHarness(), defaults: { isolationMode: 'worktree' }, maxAttempts: 1 });
       const wsId = (await server.app.ctx.workspaces.list())[0]!.id;
       const repo = makeRepo();
-      await server.app.ctx.workspaces.update(wsId, { workingDir: repo, verificationCommand: [passingVerifier()] });
+      await server.app.ctx.workspaces.update(wsId, { workingDir: repo, taskPreMergeCommands: [passingVerifier()] });
 
       const created = await server.api('POST', '/api/tasks', { prompt: JSON.stringify({ writeFiles: { 'impl.txt': 'implementation\n' } }) });
       const taskId: number = created.body.id;

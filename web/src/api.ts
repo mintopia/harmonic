@@ -22,6 +22,7 @@ import type {
   TicketTimelineEvent,
   VerificationAttempt,
   VerificationCommand,
+  VerificationCritic,
   VerifierStatus,
   Workspace,
   HarnessProvider,
@@ -125,11 +126,12 @@ export const api = {
       autoRunnerEnabled?: boolean | null;
       maxAttempts?: number | null;
       contextReuseTokenLimit?: number | null;
-      verificationCommand?: VerificationCommand[] | null;
-      reviewEnabled?: boolean | null;
-      reviewPrompt?: string | null;
-      reviewModel?: string | null;
-      reviewHarness?: string | null;
+      taskPreMergeCommands?: VerificationCommand[] | null;
+      taskPreMergeCritics?: VerificationCritic[] | null;
+      taskPostMergeCommands?: VerificationCommand[] | null;
+      taskPostMergeCritics?: VerificationCritic[] | null;
+      epicPreMergeCommands?: VerificationCommand[] | null;
+      epicPreMergeCritics?: VerificationCritic[] | null;
       guardrailBudget?: BudgetGuardrail | null;
       guardrailProgress?: boolean | null;
       toolTimeoutMinutes?: number | null;

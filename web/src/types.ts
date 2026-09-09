@@ -216,22 +216,12 @@ export interface Workspace {
   /** Per-workspace attempt cap; null inherits `config.maxAttempts`. */
   maxAttempts: number | null;
   contextReuseTokenLimit: number | null;
-  /** Verification overrides. The
-   * command verifier is list-grain, exactly mirroring the global editor: `null`
-   * inherits the global `config.verify.commands` list, an empty array turns
-   * verification off for this Workspace (no commands run here), and a
-   * non-empty array overrides the whole ordered list. It reads back as the
-   * shape it was PATCHed as. */
-  verificationCommand: VerificationCommand[] | null;
-  /**
-   * Critic-review override, decomposed into four
-   * independently-inheritable scalars: null inherits the matching global
-   * `config.verify.review.*`, a value overrides it. "Off" is `reviewEnabled:false`.
-   */
-  reviewEnabled: boolean | null;
-  reviewPrompt: string | null;
-  reviewModel: string | null;
-  reviewHarness: string | null;
+  taskPreMergeCommands: VerificationCommand[] | null;
+  taskPreMergeCritics: VerificationCritic[] | null;
+  taskPostMergeCommands: VerificationCommand[] | null;
+  taskPostMergeCritics: VerificationCritic[] | null;
+  epicPreMergeCommands: VerificationCommand[] | null;
+  epicPreMergeCritics: VerificationCritic[] | null;
   /** Guardrail overrides; `null` inherits
    * `config.guardrails.{budget,progress}`. The budget reads back as the parsed
    * object shape it was PATCHed as. */
@@ -271,12 +261,9 @@ export interface VerificationCritic {
   harness?: string;
 }
 
-/** The optional review task that runs after every verification command passes. */
-export interface VerificationReview {
-  enabled: boolean;
-  prompt?: string;
-  model?: string;
-  harness?: string;
+export interface VerificationStage {
+  commands: VerificationCommand[];
+  critics: VerificationCritic[];
 }
 
 /** The budget Guardrail: a mandatory wall-clock bound per afk Attempt
@@ -822,10 +809,10 @@ export interface AppConfig {
     model: string;
   };
   autoRunner: { enabled: boolean; maxConcurrentAttempts: number };
-  /** Ordered verification commands and the optional review task. */
+  /** Per-stage command and critic verifier lists. */
   verify: {
-    commands: VerificationCommand[];
-    review: VerificationReview;
+    task: { preMerge: VerificationStage; postMerge: VerificationStage };
+    epic: { preMerge: VerificationStage; resolvePrompt: string };
   };
   /** Attempt Guardrails: the global-default budget bounds, progress
    * toggle, and tool-timeout a Workspace inherits until it overrides them. */

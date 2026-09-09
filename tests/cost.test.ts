@@ -240,7 +240,7 @@ describe('cost surfaces (API)', () => {
     // attempt 2 lets it complete normally to `done`.
     const ws = (await server.app.ctx.workspaces.list())[0]!;
     await server.app.ctx.workspaces.update(ws.id, {
-      verificationCommand: [
+      taskPreMergeCommands: [
         verificationCommandSchema.parse({ command: process.execPath, args: ['-e', 'process.exit(0)'], timeoutSeconds: 30 }),
       ],
     });
@@ -249,7 +249,7 @@ describe('cost surfaces (API)', () => {
     await server.api('POST', `/api/tasks/${taskId}/run`);
     await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'escalated');
 
-    await server.app.ctx.workspaces.update(ws.id, { verificationCommand: null });
+    await server.app.ctx.workspaces.update(ws.id, { taskPreMergeCommands: null });
     await server.app.ctx.tasks.requeue(taskId);
     await server.api('POST', `/api/tasks/${taskId}/run`);
     await waitFor(async () => {

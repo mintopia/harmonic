@@ -83,9 +83,12 @@ taskPrompt: "{prompt}"
 pauseMessage: "Please finish the current turn, then pause and wait for further instructions."
 conversationIdleTimeoutMinutes: 30
 verify:
-  commands: []
-  review:
-    enabled: false
+  task:
+    preMerge: { commands: [], critics: [] }
+    postMerge: { commands: [], critics: [] }
+  epic:
+    preMerge: { commands: [], critics: [] }
+    resolvePrompt: "Resolve the Epic verification failures, then commit the fix."
 merge:
   postMergeCheck: true
 guardrails:
