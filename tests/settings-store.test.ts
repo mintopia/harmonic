@@ -107,10 +107,10 @@ describe('SettingsStore (issue #391)', () => {
 
   it('writes changed arrays as whole sparse-patch values', async () => {
     const store = await SettingsStore.create(dir);
-    await store.updateGlobal({ verify: { commands: [{ command: 'npm', args: ['test'] }] } });
+    await store.updateGlobal({ verify: { task: { preMerge: { commands: [{ command: 'npm', args: ['test'] }], critics: [] } } } });
 
     expect(parse(readFileSync(join(dir, 'settings.yaml'), 'utf8')).global).toEqual({
-      verify: { commands: [{ command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }] },
+      verify: { task: { preMerge: { commands: [{ command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }] } } },
     });
   });
 
@@ -261,28 +261,28 @@ describe('SettingsStore (issue #391)', () => {
     expect(raw2.workspaces).toEqual({});
   });
 
-  it('verificationCommand/guardrailBudget persist as native YAML (not JSON strings) and round-trip through getOverrides', async () => {
+  it('taskPreMergeCommands/guardrailBudget persist as native YAML (not JSON strings) and round-trip through getOverrides', async () => {
     const store = await SettingsStore.create(dir);
     const wsId = 2;
     const command = [verificationCommandSchema.parse({ command: 'npm', args: ['test'] })];
     const budget = budgetGuardrailSchema.parse({ wallClockMinutes: 120 });
 
-    await store.setOverrides(wsId, { verificationCommand: command, guardrailBudget: budget });
+    await store.setOverrides(wsId, { taskPreMergeCommands: command, guardrailBudget: budget });
 
     const raw = readFileSync(join(dir, 'settings.yaml'), 'utf8');
     const parsed = parse(raw);
     const stored = parsed.workspaces[String(wsId)];
-    expect(Array.isArray(stored.verificationCommand)).toBe(true);
-    expect(typeof stored.verificationCommand).not.toBe('string');
+    expect(Array.isArray(stored.taskPreMergeCommands)).toBe(true);
+    expect(typeof stored.taskPreMergeCommands).not.toBe('string');
     expect(typeof stored.guardrailBudget).toBe('object');
     expect(typeof stored.guardrailBudget).not.toBe('string');
 
     const overrides = store.getOverrides(wsId);
-    expect(overrides.verificationCommand).toMatchObject(command);
+    expect(overrides.taskPreMergeCommands).toMatchObject(command);
     expect(overrides.guardrailBudget).toMatchObject(budget);
 
     const reopened = await SettingsStore.create(dir);
-    expect(reopened.getOverrides(wsId).verificationCommand).toMatchObject(command);
+    expect(reopened.getOverrides(wsId).taskPreMergeCommands).toMatchObject(command);
     expect(reopened.getOverrides(wsId).guardrailBudget).toMatchObject(budget);
   });
 

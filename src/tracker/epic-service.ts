@@ -84,11 +84,11 @@ export class TrackerEpicService implements EpicService {
       };
       const epicIntegrate = new EpicCoordinator({
         repoDir: workspace.workingDir,
-        verify: async ({ repoDir, verifiedHeadOid }) => verifyEpicIntegration({ repoDir, verifiedHeadOid, verifiers: await resolveWorkspaceVerifiers() }),
+        verify: async ({ repoDir, verifiedHeadOid }) => verifyEpicIntegration({ repoDir, verifiedHeadOid, verifiers: (await resolveWorkspaceVerifiers()).epic.preMerge }),
         integrate: ({ repoDir, epicRef, defaultBranch, integrationBranch }) => mergeEpicIntegration({
           workspaceId: workspace.id, repoDir, epicRef, defaultBranch, integrationBranch,
           runPostMergeCheck: async (mergeOid) => {
-            const decision = await verifyEpicIntegration({ repoDir, verifiedHeadOid: mergeOid, verifiers: await resolveWorkspaceVerifiers() });
+            const decision = await verifyEpicIntegration({ repoDir, verifiedHeadOid: mergeOid, verifiers: (await resolveWorkspaceVerifiers()).epic.preMerge });
             return { pass: decision.outcome === 'proceed', output: decision.outcome === 'proceed' ? '' : decision.reason };
           },
         }),
@@ -204,7 +204,7 @@ export class TrackerEpicService implements EpicService {
     return { integration: { branch, ...integration }, verification: { status: integrate?.verificationStatus(epicRef) ?? null, configured }, integrate: { inFlight: integrate?.isInFlight(epicRef) ?? false, held: integrate?.heldReason(epicRef) ?? null, phase: integrate?.activePhase(epicRef) ?? null }, mergeSteps };
   }
   private async epicBaseBranch(workspaceId: number): Promise<string | null> { const workspace = (await this.getWorkspaces()).find((candidate) => candidate.id === workspaceId); return workspace ? resolveRepositoryDefaultBranch(workspace.workingDir).catch(() => null) : null; }
-  private async verificationConfigured(workspaceId: number): Promise<boolean> { const workspace = (await this.getWorkspaces()).find((candidate) => candidate.id === workspaceId); return !!workspace && !!this.getConfig && resolveVerifiers(workspace, this.getConfig()).commands.length > 0; }
+  private async verificationConfigured(workspaceId: number): Promise<boolean> { const workspace = (await this.getWorkspaces()).find((candidate) => candidate.id === workspaceId); return !!workspace && !!this.getConfig && resolveVerifiers(workspace, this.getConfig()).epic.preMerge.commands.length > 0; }
 }
 
 function historicalEpicTicket(epic: DerivedEpic): Ticket {

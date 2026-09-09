@@ -81,7 +81,7 @@ export async function verifierStatusesToApi(
     listAttempts(),
     ctx.attempts.currentStepType(run.taskId, run.number),
   ]);
-  return verifierStatuses({ verifiers: resolveVerifiers(workspace, ctx.settingsStore.getGlobal()), attempts, stepType });
+  return verifierStatuses({ verifiers: resolveVerifiers(workspace, ctx.settingsStore.getGlobal()).task.preMerge, attempts, stepType });
 }
 
 type PendingTicketTimelineEvent = ApiTicketTimelineEvent & { order: number };
@@ -110,7 +110,7 @@ export async function ticketTimelineToApi(ctx: AppContext, taskId: number): Prom
   const add = (event: ApiTicketTimelineEvent, order: number) => pending.push({ ...event, order });
 
   await forEachYielding(taskAttempts, async (attempt) => {
-    for (const status of verifierStatuses({ verifiers: configuredVerifiers, attempts: verificationByAttempt.get(attempt.id) ?? [] })) {
+    for (const status of verifierStatuses({ verifiers: configuredVerifiers.task.preMerge, attempts: verificationByAttempt.get(attempt.id) ?? [] })) {
       if (status.state !== 'disabled') continue;
       add({
         attemptId: attempt.id,

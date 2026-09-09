@@ -1,5 +1,5 @@
 import { STEP_TYPES, type StepType, type VerificationMechanism } from '../db/schema.js';
-import type { ResolvedVerifiers } from './setting-override.js';
+import type { VerificationStage } from '../config.js';
 import type { Verdict } from '../verification/critic-schema.js';
 
 /** The operator-facing state of one verifier category for an Attempt. */
@@ -41,7 +41,7 @@ export function verifierStatuses({
   attempts,
   stepType,
 }: {
-  verifiers: Pick<ResolvedVerifiers, 'commands' | 'review'>;
+  verifiers: VerificationStage;
   attempts: readonly RecordedAttempt[];
   /** The Attempt's currently-running Step, or the most recent one; `null` when none has started or is running. */
   stepType?: StepType | null;
@@ -53,7 +53,7 @@ export function verifierStatuses({
   }
 
   const commandLabels = verifiers.commands.map((c) => [c.command, ...c.args].join(' ').trim());
-  const criticHarness = verifiers.review.harness ?? null;
+  const criticHarness = verifiers.critics[0]?.harness ?? null;
 
   return mechanisms.map((mechanism) => {
     const decorate = (base: VerifierStatus): VerifierStatus =>
@@ -66,7 +66,7 @@ export function verifierStatuses({
     const attempt = latestByMechanism.get(mechanism);
     if (attempt) return decorate({ mechanism, state: verdictStates[attempt.verdict], reason: null });
 
-    const configured = mechanism === 'command' ? verifiers.commands.length > 0 : verifiers.review.enabled;
+    const configured = mechanism === 'command' ? verifiers.commands.length > 0 : verifiers.critics.length > 0;
     if (configured) {
       // The verifier's own Step is live: it is running now. Before that Step, a
       // configured verifier hasn't had its chance yet — planned, not skipped
@@ -83,13 +83,6 @@ export function verifierStatuses({
           ? 'Configured to run — the attempt has not reached verification yet.'
           : `No ${mechanism} verification attempt was recorded for this attempt.`;
       return decorate({ mechanism, state, reason });
-    }
-    if (mechanism === 'critic' && verifiers.review.requested) {
-      return {
-        mechanism,
-        state: 'unrunnable',
-        reason: 'Review is enabled but resolves to no model, so it cannot run. Set a review model or turn review off.',
-      };
     }
     return {
       mechanism,

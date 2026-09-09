@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { WorkspaceService } from '../src/domain/workspaces.js';
-import { verificationCommandSchema, budgetGuardrailSchema } from '../src/config.js';
+import { verificationCommandSchema, verificationCriticSchema, budgetGuardrailSchema } from '../src/config.js';
 import { resolveVerifiers, resolveDrive } from '../src/domain/setting-override.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { makeSettingsStore } from './helpers.js';
@@ -36,11 +36,12 @@ describe('WorkspaceService override persistence (issue #64)', () => {
     expect(ws.priority).toBeNull();
     expect(ws.maxConcurrentAttempts).toBeNull();
     expect(ws.autoRunnerEnabled).toBeNull();
-    expect(ws.verificationCommand).toBeNull();
-    expect(ws.reviewEnabled).toBeNull();
-    expect(ws.reviewPrompt).toBeNull();
-    expect(ws.reviewModel).toBeNull();
-    expect(ws.reviewHarness).toBeNull();
+    expect(ws.taskPreMergeCommands).toBeNull();
+    expect(ws.taskPreMergeCritics).toBeNull();
+    expect(ws.taskPostMergeCommands).toBeNull();
+    expect(ws.taskPostMergeCritics).toBeNull();
+    expect(ws.epicPreMergeCommands).toBeNull();
+    expect(ws.epicPreMergeCritics).toBeNull();
     expect(ws.guardrailBudget).toBeNull();
     expect(ws.guardrailProgress).toBeNull();
     expect(ws.drivePrompt).toBeNull();
@@ -115,60 +116,49 @@ describe('WorkspaceService override persistence (issue #64)', () => {
     expect(untouched.autoRunnerEnabled).toBe(false);
   });
 
-  it('sets explicit verifier overrides, command stored as JSON, review as plain scalars (issue #132, #337)', async () => {
+  it('sets explicit staged verifier overrides as JSON lists', async () => {
     const ws = (await workspaces.list())[0]!;
     const updated = await workspaces.update(ws.id, {
-      verificationCommand: [verificationCommandSchema.parse({ command: 'npm', args: ['test'] })],
-      reviewEnabled: true,
-      reviewPrompt: 'review',
-      reviewModel: 'claude-opus-5',
+      taskPreMergeCommands: [verificationCommandSchema.parse({ command: 'npm', args: ['test'] })],
+      taskPreMergeCritics: [verificationCriticSchema.parse({ prompt: 'review', model: 'claude-opus-5' })],
     });
-    expect(JSON.parse(updated.verificationCommand!)).toMatchObject([{ command: 'npm', args: ['test'] }]);
-    expect(updated.reviewEnabled).toBe(true);
-    expect(updated.reviewPrompt).toBe('review');
-    expect(updated.reviewModel).toBe('claude-opus-5');
+    expect(JSON.parse(updated.taskPreMergeCommands!)).toMatchObject([{ command: 'npm', args: ['test'] }]);
+    expect(JSON.parse(updated.taskPreMergeCritics!)).toMatchObject([{ prompt: 'review', model: 'claude-opus-5' }]);
   });
 
-  it('clears verifier overrides back to inherit with null (issue #132, #337)', async () => {
+  it('clears staged verifier overrides back to inherit with null', async () => {
     const ws = (await workspaces.list())[0]!;
     await workspaces.update(ws.id, {
-      verificationCommand: [verificationCommandSchema.parse({ command: 'npm', args: ['test'] })],
-      reviewEnabled: true,
-      reviewPrompt: 'review',
-      reviewModel: 'claude-opus-5',
+      taskPreMergeCommands: [verificationCommandSchema.parse({ command: 'npm', args: ['test'] })],
+      taskPreMergeCritics: [verificationCriticSchema.parse({ prompt: 'review', model: 'claude-opus-5' })],
     });
     const cleared = await workspaces.update(ws.id, {
-      verificationCommand: null,
-      reviewEnabled: null,
-      reviewPrompt: null,
-      reviewModel: null,
+      taskPreMergeCommands: null,
+      taskPreMergeCritics: null,
     });
-    expect(cleared.verificationCommand).toBeNull();
-    expect(cleared.reviewEnabled).toBeNull();
-    expect(cleared.reviewPrompt).toBeNull();
-    expect(cleared.reviewModel).toBeNull();
+    expect(cleared.taskPreMergeCommands).toBeNull();
+    expect(cleared.taskPreMergeCritics).toBeNull();
   });
 
-  it('patches reviewEnabled to false, round-trips it, and resolves the review/critic to off (issue #337)', async () => {
+  it('patches a stage list to empty, round-trips it, and resolves just that verifier list to off', async () => {
     const ws = (await workspaces.list())[0]!;
-    const updated = await workspaces.update(ws.id, { reviewEnabled: false });
-    expect(updated.reviewEnabled).toBe(false);
+    const updated = await workspaces.update(ws.id, { taskPreMergeCritics: [] });
+    expect(JSON.parse(updated.taskPreMergeCritics!)).toEqual([]);
     const resolved = resolveVerifiers(updated, {
       verify: {
-        commands: [],
-        review: { enabled: true, prompt: 'global review', model: 'claude-opus-5' },
+        task: { preMerge: { commands: [], critics: [{ prompt: 'global review', model: 'claude-opus-5' }] }, postMerge: { commands: [], critics: [] } },
+        epic: { preMerge: { commands: [], critics: [] }, resolvePrompt: 'Resolve failures.' },
       },
     } as any);
-    expect(resolved.review).toMatchObject({ enabled: false });
-    expect(resolved.critic).toBeNull();
+    expect(resolved.task.preMerge.critics).toEqual([]);
   });
 
   it('leaves an omitted verifier override untouched (issue #132)', async () => {
     const ws = (await workspaces.list())[0]!;
-    await workspaces.update(ws.id, { verificationCommand: [verificationCommandSchema.parse({ command: 'npm', args: ['test'] })] });
+    await workspaces.update(ws.id, { taskPreMergeCommands: [verificationCommandSchema.parse({ command: 'npm', args: ['test'] })] });
     const renamed = await workspaces.update(ws.id, { name: 'Renamed' });
     expect(renamed.name).toBe('Renamed');
-    expect(JSON.parse(renamed.verificationCommand!)).toMatchObject([{ command: 'npm', args: ['test'] }]);
+    expect(JSON.parse(renamed.taskPreMergeCommands!)).toMatchObject([{ command: 'npm', args: ['test'] }]);
   });
 
   it('keeps a false guardrailProgress override distinct from inherit (null) (issue #165)', async () => {
@@ -282,11 +272,12 @@ describe('WorkspaceService override persistence (issue #64)', () => {
       autoRunnerEnabled: null,
       maxAttempts: null,
       contextReuseTokenLimit: null,
-      verificationCommand: null,
-      reviewEnabled: null,
-      reviewPrompt: null,
-      reviewModel: null,
-      reviewHarness: null,
+      taskPreMergeCommands: null,
+      taskPreMergeCritics: null,
+      taskPostMergeCommands: null,
+      taskPostMergeCritics: null,
+      epicPreMergeCommands: null,
+      epicPreMergeCritics: null,
       guardrailBudget: null,
       guardrailProgress: null,
       toolTimeoutMinutes: null,

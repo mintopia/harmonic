@@ -651,11 +651,11 @@ describe('usage collection and statistics', () => {
     // `escalated -> ready` (`tasks.requeue`); clearing the verifier before
     // attempt 2 lets it complete normally to `done`, reporting the same
     // usage again. Runs on a dedicated server since it mutates the default
-    // workspace's verificationCommand.
+    // workspace's task pre-merge command list.
     server = await startServer(stubHarness());
     const ws = (await server.app.ctx.workspaces.list())[0]!;
     await server.app.ctx.workspaces.update(ws.id, {
-      verificationCommand: [
+      taskPreMergeCommands: [
         verificationCommandSchema.parse({ command: process.execPath, args: ['-e', 'process.exit(0)'], timeoutSeconds: 30 }),
       ],
     });
@@ -666,7 +666,7 @@ describe('usage collection and statistics', () => {
     await server.api('POST', `/api/tasks/${taskId}/run`);
     await waitFor(async () => ((await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'escalated' ? true : undefined));
 
-    await server.app.ctx.workspaces.update(ws.id, { verificationCommand: null });
+    await server.app.ctx.workspaces.update(ws.id, { taskPreMergeCommands: null });
     await server.app.ctx.tasks.requeue(taskId);
     await server.api('POST', `/api/tasks/${taskId}/run`);
     await waitFor(async () => {

@@ -117,7 +117,7 @@ export function attemptToTimelineApi(
     verifiedSha: verifiedShaOf(attemptVerifications),
     escalationReason,
     continuation: continuationToApi(attempt.continuation),
-    verifierStatuses: verifierStatuses({ verifiers, attempts: attemptVerifications, stepType }),
+    verifierStatuses: verifierStatuses({ verifiers: verifiers.task.preMerge, attempts: attemptVerifications, stepType }),
     steps: stepRows.map(stepToApi),
   };
 }

@@ -3,7 +3,7 @@ import {
   type AppConfig,
   type VerificationCommand,
   type VerificationCritic,
-  type VerificationReview,
+  type VerificationStage,
   type BudgetGuardrail,
   type MergeFate,
 } from '../config.js';
@@ -35,60 +35,42 @@ export function resolveCap(workspaceCap: number | null | undefined, hostCeiling:
   return Math.min(resolveScoped('maxConcurrentAttempts', workspaceCap, hostCeiling), hostCeiling);
 }
 
-/** A resolved review, carrying the raw toggle (`requested`) alongside runnability
- *  (`enabled`). `requested` without `enabled` is a review toggled on yet missing
- *  a resolved prompt or model, so it can never run. */
-export type ResolvedReview = VerificationReview & { requested: boolean };
-
-/** A Workspace's effective Verification verifiers, each null when unconfigured. */
+/** A Workspace's effective Verification verifiers, resolved at stage/list grain. */
 export type ResolvedVerifiers = {
-  commands: VerificationCommand[];
-  review: ResolvedReview;
-  command: VerificationCommand | null;
-  critic: VerificationCritic | null;
+  task: { preMerge: VerificationStage; postMerge: VerificationStage };
+  epic: { preMerge: VerificationStage };
 };
 
 /**
- * Resolve a Workspace's effective Verification verifiers. The command list
- * overrides at the list grain: `null` inherits the global list, an explicit
- * array overrides it whole (an empty array is off). Each review field
- * (`reviewEnabled`/`reviewPrompt`/`reviewModel`/`reviewHarness`) resolves
- * `workspace ?? global` on its own. Nothing executes here.
+ * Resolve a Workspace's effective Verification verifiers. Every stage/list
+ * resolves independently: `null` inherits, an array replaces, and `[]` turns
+ * just that verifier list off. Nothing executes here.
  */
 export function resolveVerifiers(
-  ws: Pick<WorkspaceRow, 'verificationCommand' | 'reviewEnabled' | 'reviewPrompt' | 'reviewModel' | 'reviewHarness'>,
+  ws: Pick<WorkspaceRow, 'taskPreMergeCommands' | 'taskPreMergeCritics' | 'taskPostMergeCommands' | 'taskPostMergeCritics' | 'epicPreMergeCommands' | 'epicPreMergeCritics'>,
   config: Pick<AppConfig, 'verify'>,
 ): ResolvedVerifiers {
-  const commandStored = ws.verificationCommand == null ? null : (JSON.parse(ws.verificationCommand) as VerificationCommand[]);
-  const commands = resolveScoped('verificationCommand', commandStored, config.verify.commands);
-  const review = resolveReview(ws, config.verify.review);
   return {
-    commands,
-    review,
-    command: commands[0] ?? null,
-    critic: review.enabled && review.prompt && review.model ? { prompt: review.prompt, model: review.model, ...(review.harness ? { harness: review.harness } : {}) } : null,
+    task: {
+      preMerge: resolveStage('taskPreMergeCommands', ws.taskPreMergeCommands, 'taskPreMergeCritics', ws.taskPreMergeCritics, config.verify.task.preMerge),
+      postMerge: resolveStage('taskPostMergeCommands', ws.taskPostMergeCommands, 'taskPostMergeCritics', ws.taskPostMergeCritics, config.verify.task.postMerge),
+    },
+    epic: { preMerge: resolveStage('epicPreMergeCommands', ws.epicPreMergeCommands, 'epicPreMergeCritics', ws.epicPreMergeCritics, config.verify.epic.preMerge) },
   };
 }
 
-function resolveReview(
-  ws: Pick<WorkspaceRow, 'reviewEnabled' | 'reviewPrompt' | 'reviewModel' | 'reviewHarness'>,
-  globalDefault: VerificationReview,
-): ResolvedReview {
-  const requested = resolveScoped('reviewEnabled', ws.reviewEnabled, globalDefault.enabled);
-  const prompt = resolveScoped('reviewPrompt', ws.reviewPrompt, globalDefault.prompt);
-  const model = resolveScoped('reviewModel', ws.reviewModel, globalDefault.model);
-  const harness = resolveScoped<VerificationReview['harness']>(
-    'reviewHarness',
-    ws.reviewHarness as VerificationReview['harness'],
-    globalDefault.harness,
-  );
-  const enabled = Boolean(requested && prompt && model);
+function resolveStage(
+  commandsKey: SettingKey,
+  commandsStored: string | null,
+  criticsKey: SettingKey,
+  criticsStored: string | null,
+  globalDefault: VerificationStage,
+): VerificationStage {
+  const commands = commandsStored == null ? null : (JSON.parse(commandsStored) as VerificationCommand[]);
+  const critics = criticsStored == null ? null : (JSON.parse(criticsStored) as VerificationCritic[]);
   return {
-    enabled,
-    requested,
-    ...(prompt ? { prompt } : {}),
-    ...(model ? { model } : {}),
-    ...(harness ? { harness } : {}),
+    commands: resolveScoped(commandsKey, commands, globalDefault.commands),
+    critics: resolveScoped(criticsKey, critics, globalDefault.critics),
   };
 }
 

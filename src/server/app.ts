@@ -439,10 +439,11 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     baseDir: string;
   }) => {
     const ws = task.workspaceId == null ? undefined : await workspaces.get(task.workspaceId).catch(() => undefined);
-    const { commands } = resolveVerifiers(
-      ws ?? { verificationCommand: null, reviewEnabled: null, reviewPrompt: null, reviewModel: null, reviewHarness: null },
+    const { task: resolvedTask } = resolveVerifiers(
+      ws ?? { taskPreMergeCommands: null, taskPreMergeCritics: null, taskPostMergeCommands: null, taskPostMergeCritics: null, epicPreMergeCommands: null, epicPreMergeCritics: null },
       settingsStore.getGlobal(),
     );
+    const { commands } = resolvedTask.postMerge;
     if (commands.length === 0) return { pass: true, output: '' };
     mkdirSync(worktreesDir, { recursive: true });
     for (const command of commands) {

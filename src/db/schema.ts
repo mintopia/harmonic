@@ -49,8 +49,10 @@ export type WorkspaceRow = WorkspaceIdentityRow & {
   harness: string | null; model: string | null; chatHarness: string | null; chatModel: string | null;
   isolationMode: string | null; priority: string | null;
   conflictResolveTurns: number | null; maxConcurrentAttempts: number | null; autoRunnerEnabled: boolean | null;
-  maxAttempts: number | null; contextReuseTokenLimit: number | null; verificationCommand: string | null;
-  reviewEnabled: boolean | null; reviewPrompt: string | null; reviewModel: string | null; reviewHarness: string | null;
+  maxAttempts: number | null; contextReuseTokenLimit: number | null;
+  taskPreMergeCommands: string | null; taskPreMergeCritics: string | null;
+  taskPostMergeCommands: string | null; taskPostMergeCritics: string | null;
+  epicPreMergeCommands: string | null; epicPreMergeCritics: string | null;
   guardrailBudget: string | null; guardrailProgress: boolean | null; toolTimeoutMinutes: number | null;
   drivePrompt: string | null; driveUnattendedReminder: string | null; driveContinuePrompt: string | null;
   driveMergeFate: string | null; driveContinueAttempts: number | null; taskPrompt: string | null; pauseMessage: string | null;

@@ -146,7 +146,7 @@ describe('one merge policy, everywhere (issue #381, ADR-0001)', () => {
     '(a) an afk auto-merge Task with a REAL post-merge check merges as an ordinary merge commit (never a fast-forward), closes the ticket, and does not deadlock',
     async () => {
       const repo = makeRepo();
-      await server.app.ctx.workspaces.update(wsId, { workingDir: repo, verificationCommand: [passingVerifier()] });
+      await server.app.ctx.workspaces.update(wsId, { workingDir: repo, taskPreMergeCommands: [passingVerifier()] });
       await server.app.ctx.settingsStore.updateGlobal({
         merge: { postMergeCheck: true },
         drive: { prompt: JSON.stringify({ writeFiles: { 'impl-{ref}.txt': 'implementation {ref}\n' }, mcpFinish: true }) },
@@ -171,7 +171,7 @@ describe('one merge policy, everywhere (issue #381, ADR-0001)', () => {
   it('(b) a sibling advancing the base mid-verification does not trigger re-verification — the candidate still merges as an ordinary merge commit', async () => {
     const repo = makeRepo();
     const flag = join(tmpPath('harmonic-auto-merge-flag-'), 'advanced');
-    await server.app.ctx.workspaces.update(wsId, { workingDir: repo, verificationCommand: [siblingAdvanceVerifier(repo, flag)] });
+    await server.app.ctx.workspaces.update(wsId, { workingDir: repo, taskPreMergeCommands: [siblingAdvanceVerifier(repo, flag)] });
     await server.app.ctx.settingsStore.updateGlobal({
       merge: { postMergeCheck: false },
       drive: { prompt: JSON.stringify({ writeFiles: { 'impl-{ref}.txt': 'implementation {ref}\n' }, mcpFinish: true }) },
@@ -202,7 +202,7 @@ describe('one merge policy, everywhere (issue #381, ADR-0001)', () => {
     const flag = join(tmpPath('harmonic-auto-merge-conflict-flag-'), 'advanced');
     await server.app.ctx.workspaces.update(wsId, {
       workingDir: repo,
-      verificationCommand: [conflictingSiblingVerifier(repo, flag)],
+      taskPreMergeCommands: [conflictingSiblingVerifier(repo, flag)],
       conflictResolveTurns: 0,
     });
     await server.app.ctx.settingsStore.updateGlobal({

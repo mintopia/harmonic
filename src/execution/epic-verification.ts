@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runCommandVerifierDetached } from '../verification/command-verifier.js';
 import { combineVerdicts, type VerificationDecision, type VerifierVerdict } from '../verification/combine.js';
-import type { ResolvedVerifiers } from '../domain/setting-override.js';
+import type { VerificationStage } from '../config.js';
 
 /**
  * Run a whole-Epic Verification against an integration branch's tip and fold the
@@ -15,7 +15,7 @@ export async function verifyEpicIntegration(args: {
   repoDir: string;
   /** The integration branch tip OID to Verify. */
   verifiedHeadOid: string;
-  verifiers: ResolvedVerifiers;
+  verifiers: VerificationStage;
   /** Cancellation, wired to server shutdown; an abort kills the verifier child. */
   signal?: AbortSignal;
   /** Parent dir for the disposable verification worktree; defaults to the OS temp dir. */
