@@ -21,6 +21,7 @@ import { HarnessesSection } from './HarnessSettings';
 import { ChannelsSection } from './Channels';
 import { PermissionRules } from './PermissionRules';
 import { SecuritySection } from './SecuritySection';
+import { GlobalVerificationSettings, WorkspaceVerificationSettings } from './VerificationSettings';
 import { settingsRegistry, type SettingKey, type SettingTab } from '../../../src/domain/settings-registry.js';
 
 export type Surface = 'global' | 'workspace';
@@ -1053,7 +1054,12 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
       workspace:
         'Each Task and Epic verification stage can inherit the global list, replace it, or turn it off independently.',
     },
-    body: () => <p className="text-body text-muted">The staged verification editor is being delivered separately.</p>,
+    body: (ctx) =>
+      ctx.surface === 'global' ? (
+        <GlobalVerificationSettings config={ctx.config} setConfig={ctx.setConfig} fieldErrors={ctx.errors} />
+      ) : (
+        <WorkspaceVerificationSettings workspace={ctx.workspace} config={ctx.config} setWorkspace={ctx.setWorkspace} fieldErrors={ctx.errors} />
+      ),
   },
 
   {
