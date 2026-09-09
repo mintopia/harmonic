@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import type { Attributes, SpanContext } from '@opentelemetry/api';
-import type { HarnessConfig, VerificationCritic } from '../config.js';
+import type { HarnessConfig } from '../config.js';
 import { AcpDriver, type AcpInitializeResult } from '../acp/driver.js';
 import { parsePermissionRequest, type PermissionRequest } from '../acp/permission-request.js';
 import { adapterFor } from '../execution/harness/registry.js';
@@ -155,7 +155,7 @@ export interface RunCriticArgs {
   verifiedHeadOid: string;
   /** The base revision the candidate diverged from; omitted ⇒ the critic reviews the candidate alone. */
   baseOid?: string;
-  critic: VerificationCritic;
+  critic: { prompt: string; model: string; harness?: string };
   /** The Drive-Prompt interpolation tokens filled into the operator's review prompt. */
   fields: DriveFields;
   harness: HarnessConfig;

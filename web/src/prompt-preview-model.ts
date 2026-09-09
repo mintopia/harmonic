@@ -83,8 +83,8 @@ export function compileTaskIdPreview(template: string): string {
  * operator prompt compiles differently per Task kind, so both variants are shown:
  * a mirrored Task judged against its ticket, and a native Task judged against the
  * instructions alone. */
-export function compileCriticPreview(operatorPrompt: string): LabeledPreview[] {
-  const compile = (fields: DriveFields) =>
+export function compileCriticPreview(prompts: { issuePrompt: string; noIssuePrompt: string }): LabeledPreview[] {
+  const compile = (operatorPrompt: string, fields: DriveFields) =>
     buildCriticPrompt({
       operatorPrompt,
       fields,
@@ -92,7 +92,7 @@ export function compileCriticPreview(operatorPrompt: string): LabeledPreview[] {
       baseOid: SAMPLE_BASE_OID,
     });
   return [
-    { label: 'Mirrored task (has ticket)', text: compile(SAMPLE_DRIVE_FIELDS) },
-    { label: 'Native task (no ticket)', text: compile(SAMPLE_NATIVE_DRIVE_FIELDS) },
+    { label: 'Mirrored task (has ticket)', text: compile(prompts.issuePrompt, SAMPLE_DRIVE_FIELDS) },
+    { label: 'Native task (no ticket)', text: compile(prompts.noIssuePrompt, SAMPLE_NATIVE_DRIVE_FIELDS) },
   ];
 }

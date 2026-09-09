@@ -2,8 +2,10 @@ import type { WorkspaceRow } from '../db/schema.js';
 import {
   type AppConfig,
   type VerificationCommand,
-  type VerificationCritic,
-  type VerificationStage,
+  type TaskVerificationCritic,
+  type TaskVerificationStage,
+  type EpicVerificationCritic,
+  type EpicVerificationStage,
   type BudgetGuardrail,
   type MergeFate,
 } from '../config.js';
@@ -37,8 +39,8 @@ export function resolveCap(workspaceCap: number | null | undefined, hostCeiling:
 
 /** A Workspace's effective Verification verifiers, resolved at stage/list grain. */
 export type ResolvedVerifiers = {
-  task: { preMerge: VerificationStage; postMerge: VerificationStage };
-  epic: { preMerge: VerificationStage };
+  task: { preMerge: TaskVerificationStage; postMerge: TaskVerificationStage };
+  epic: { preMerge: EpicVerificationStage };
 };
 
 /**
@@ -52,22 +54,37 @@ export function resolveVerifiers(
 ): ResolvedVerifiers {
   return {
     task: {
-      preMerge: resolveStage('taskPreMergeCommands', ws.taskPreMergeCommands, 'taskPreMergeCritics', ws.taskPreMergeCritics, config.verify.task.preMerge),
-      postMerge: resolveStage('taskPostMergeCommands', ws.taskPostMergeCommands, 'taskPostMergeCritics', ws.taskPostMergeCritics, config.verify.task.postMerge),
+      preMerge: resolveTaskStage('taskPreMergeCommands', ws.taskPreMergeCommands, 'taskPreMergeCritics', ws.taskPreMergeCritics, config.verify.task.preMerge),
+      postMerge: resolveTaskStage('taskPostMergeCommands', ws.taskPostMergeCommands, 'taskPostMergeCritics', ws.taskPostMergeCritics, config.verify.task.postMerge),
     },
-    epic: { preMerge: resolveStage('epicPreMergeCommands', ws.epicPreMergeCommands, 'epicPreMergeCritics', ws.epicPreMergeCritics, config.verify.epic.preMerge) },
+    epic: { preMerge: resolveEpicStage('epicPreMergeCommands', ws.epicPreMergeCommands, 'epicPreMergeCritics', ws.epicPreMergeCritics, config.verify.epic.preMerge) },
   };
 }
 
-function resolveStage(
+function resolveTaskStage(
   commandsKey: SettingKey,
   commandsStored: string | null,
   criticsKey: SettingKey,
   criticsStored: string | null,
-  globalDefault: VerificationStage,
-): VerificationStage {
+  globalDefault: TaskVerificationStage,
+): TaskVerificationStage {
   const commands = commandsStored == null ? null : (JSON.parse(commandsStored) as VerificationCommand[]);
-  const critics = criticsStored == null ? null : (JSON.parse(criticsStored) as VerificationCritic[]);
+  const critics = criticsStored == null ? null : (JSON.parse(criticsStored) as TaskVerificationCritic[]);
+  return {
+    commands: resolveScoped(commandsKey, commands, globalDefault.commands),
+    critics: resolveScoped(criticsKey, critics, globalDefault.critics),
+  };
+}
+
+function resolveEpicStage(
+  commandsKey: SettingKey,
+  commandsStored: string | null,
+  criticsKey: SettingKey,
+  criticsStored: string | null,
+  globalDefault: EpicVerificationStage,
+): EpicVerificationStage {
+  const commands = commandsStored == null ? null : (JSON.parse(commandsStored) as VerificationCommand[]);
+  const critics = criticsStored == null ? null : (JSON.parse(criticsStored) as EpicVerificationCritic[]);
   return {
     commands: resolveScoped(commandsKey, commands, globalDefault.commands),
     critics: resolveScoped(criticsKey, critics, globalDefault.critics),

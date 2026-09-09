@@ -23,7 +23,8 @@ import type {
   TicketTimelineEvent,
   VerificationAttempt,
   VerificationCommand,
-  VerificationCritic,
+  TaskVerificationCritic,
+  EpicVerificationCritic,
   VerifierStatus,
   Workspace,
   HarnessProvider,
@@ -128,11 +129,11 @@ export const api = {
       maxAttempts?: number | null;
       contextReuseTokenLimit?: number | null;
       taskPreMergeCommands?: VerificationCommand[] | null;
-      taskPreMergeCritics?: VerificationCritic[] | null;
+      taskPreMergeCritics?: TaskVerificationCritic[] | null;
       taskPostMergeCommands?: VerificationCommand[] | null;
-      taskPostMergeCritics?: VerificationCritic[] | null;
+      taskPostMergeCritics?: TaskVerificationCritic[] | null;
       epicPreMergeCommands?: VerificationCommand[] | null;
-      epicPreMergeCritics?: VerificationCritic[] | null;
+      epicPreMergeCritics?: EpicVerificationCritic[] | null;
       guardrailBudget?: BudgetGuardrail | null;
       guardrailProgress?: boolean | null;
       toolTimeoutMinutes?: number | null;

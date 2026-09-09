@@ -217,11 +217,11 @@ export interface Workspace {
   maxAttempts: number | null;
   contextReuseTokenLimit: number | null;
   taskPreMergeCommands: VerificationCommand[] | null;
-  taskPreMergeCritics: VerificationCritic[] | null;
+  taskPreMergeCritics: TaskVerificationCritic[] | null;
   taskPostMergeCommands: VerificationCommand[] | null;
-  taskPostMergeCritics: VerificationCritic[] | null;
+  taskPostMergeCritics: TaskVerificationCritic[] | null;
   epicPreMergeCommands: VerificationCommand[] | null;
-  epicPreMergeCritics: VerificationCritic[] | null;
+  epicPreMergeCritics: EpicVerificationCritic[] | null;
   /** Guardrail overrides; `null` inherits
    * `config.guardrails.{budget,progress}`. The budget reads back as the parsed
    * object shape it was PATCHed as. */
@@ -254,16 +254,29 @@ export interface VerificationCommand {
 
 /** An agent critic verifier: a read-only reviewer with
  * its own prompt and model. Mirrors `verificationCriticSchema`. */
-export interface VerificationCritic {
+export interface TaskVerificationCritic {
+  issuePrompt: string;
+  noIssuePrompt: string;
+  model: string;
+  /** Reviewer harness; omitted = reuse the builder task's harness. */
+  harness?: string;
+}
+
+export interface EpicVerificationCritic {
   prompt: string;
   model: string;
   /** Reviewer harness; omitted = reuse the builder task's harness. */
   harness?: string;
 }
 
-export interface VerificationStage {
+export interface TaskVerificationStage {
   commands: VerificationCommand[];
-  critics: VerificationCritic[];
+  critics: TaskVerificationCritic[];
+}
+
+export interface EpicVerificationStage {
+  commands: VerificationCommand[];
+  critics: EpicVerificationCritic[];
 }
 
 /** The budget Guardrail: a mandatory wall-clock bound per afk Attempt
@@ -827,8 +840,8 @@ export interface AppConfig {
   autoRunner: { enabled: boolean; maxConcurrentAttempts: number };
   /** Per-stage command and critic verifier lists. */
   verify: {
-    task: { preMerge: VerificationStage; postMerge: VerificationStage };
-    epic: { preMerge: VerificationStage; resolvePrompt: string };
+    task: { preMerge: TaskVerificationStage; postMerge: TaskVerificationStage };
+    epic: { preMerge: EpicVerificationStage; resolvePrompt: string };
   };
   /** Attempt Guardrails: the global-default budget bounds, progress
    * toggle, and tool-timeout a Workspace inherits until it overrides them. */

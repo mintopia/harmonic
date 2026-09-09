@@ -1,5 +1,5 @@
 import { STEP_TYPES, type StepType, type VerificationMechanism } from '../db/schema.js';
-import type { VerificationStage } from '../config.js';
+import type { TaskVerificationStage, EpicVerificationStage } from '../config.js';
 import type { Verdict } from '../verification/critic-schema.js';
 
 /** The operator-facing state of one verifier category for an Attempt. */
@@ -41,7 +41,7 @@ export function verifierStatuses({
   attempts,
   stepType,
 }: {
-  verifiers: VerificationStage;
+  verifiers: TaskVerificationStage | EpicVerificationStage;
   attempts: readonly RecordedAttempt[];
   /** The Attempt's currently-running Step, or the most recent one; `null` when none has started or is running. */
   stepType?: StepType | null;

@@ -9,7 +9,8 @@ import {
   PRIORITIES,
   appConfigSchema,
   modelCatalogEntrySchema,
-  verificationStageSchema,
+  taskVerificationStageSchema,
+  epicVerificationStageSchema,
   type AppConfig,
   type DeepPartial,
 } from '../../config.js';
@@ -86,8 +87,8 @@ const configPatchBodySchema = z
       .optional(),
     verify: z
       .object({
-        task: z.object({ preMerge: verificationStageSchema, postMerge: verificationStageSchema }).partial(),
-        epic: z.object({ preMerge: verificationStageSchema, resolvePrompt: z.string().min(1) }).partial(),
+        task: z.object({ preMerge: taskVerificationStageSchema, postMerge: taskVerificationStageSchema }).partial(),
+        epic: z.object({ preMerge: epicVerificationStageSchema, resolvePrompt: z.string().min(1) }).partial(),
       })
       .partial()
       .optional(),

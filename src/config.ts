@@ -78,27 +78,40 @@ export type VerificationCommand = z.infer<typeof verificationCommandSchema>;
  * An agent critic verifier: a read-only reviewer Harness with its own prompt and
  * model that judges the candidate diff.
  */
-export const verificationCriticSchema = z.object({
-  prompt: z
-    .string()
-    .min(1)
-    .meta({ example: 'Review the change against issue {ref}: {title}. Read the code and the issue to decide.' }),
+const verificationCriticIdentitySchema = z.object({
   model: z.string().min(1).meta({ example: 'claude-opus-5' }),
   /** Reviewer harness; omitted = reuse the builder task's harness. */
   harness: z.enum(HARNESS_IDS).optional().meta({ example: 'claude' }),
 });
-export type VerificationCritic = z.infer<typeof verificationCriticSchema>;
+
+export const taskVerificationCriticSchema = verificationCriticIdentitySchema.extend({
+  issuePrompt: z.string().min(1).meta({ example: 'Review issue {ref}: {title}. {body}' }),
+  noIssuePrompt: z.string().min(1).meta({ example: 'Review the Task instructions and candidate change.' }),
+});
+export type TaskVerificationCritic = z.infer<typeof taskVerificationCriticSchema>;
+
+export const epicVerificationCriticSchema = verificationCriticIdentitySchema.extend({
+  prompt: z
+    .string()
+    .min(1)
+    .meta({ example: 'Review the change against issue {ref}: {title}. Read the code and the issue to decide.' }),
+});
+export type EpicVerificationCritic = z.infer<typeof epicVerificationCriticSchema>;
 
 /** List-grain override: `null`/absent inherits the global list, a non-empty array replaces it, an empty array runs no commands. */
 export const verificationCommandOverrideSchema = z.array(verificationCommandSchema);
-export const verificationCriticOverrideSchema = z.array(verificationCriticSchema);
+export const taskVerificationCriticOverrideSchema = z.array(taskVerificationCriticSchema);
+export const epicVerificationCriticOverrideSchema = z.array(epicVerificationCriticSchema);
 
 /** One verification stage; commands run before its independent critic list. */
-export const verificationStageSchema = z.object({
+const verificationStageSchema = <TCritic extends z.ZodType>(criticSchema: TCritic) => z.object({
   commands: z.array(verificationCommandSchema),
-  critics: z.array(verificationCriticSchema),
+  critics: z.array(criticSchema),
 });
-export type VerificationStage = z.infer<typeof verificationStageSchema>;
+export const taskVerificationStageSchema = verificationStageSchema(taskVerificationCriticSchema);
+export const epicVerificationStageSchema = verificationStageSchema(epicVerificationCriticSchema);
+export type TaskVerificationStage = z.infer<typeof taskVerificationStageSchema>;
+export type EpicVerificationStage = z.infer<typeof epicVerificationStageSchema>;
 
 /** Wall-clock is mandatory; tokens and cost are opt-in (null = unset). The effective config is snapshotted onto an Attempt at start. */
 export const budgetGuardrailSchema = z.object({
@@ -204,8 +217,8 @@ export const appConfigSchema = z.object({
   conversationIdleTimeoutMinutes: z.number().nonnegative().meta({ example: 30 }),
   /** Ordered verifier lists for each Task and Epic verification stage. */
   verify: z.object({
-    task: z.object({ preMerge: verificationStageSchema, postMerge: verificationStageSchema }),
-    epic: z.object({ preMerge: verificationStageSchema, resolvePrompt: z.string().min(1) }),
+    task: z.object({ preMerge: taskVerificationStageSchema, postMerge: taskVerificationStageSchema }),
+    epic: z.object({ preMerge: epicVerificationStageSchema, resolvePrompt: z.string().min(1) }),
   }),
   /** `postMergeCheck` runs the verification commands on the merged base tip; the off-switch for slow suites. */
   merge: z.object({
