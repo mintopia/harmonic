@@ -111,13 +111,14 @@ export interface VerificationProps {
   statuses: VerifierStatus[];
   run: AttemptSummary;
   only?: 'command' | 'critic';
+  verifier?: string;
   steps?: readonly Step[];
   liveOutput?: string | null;
 }
 
-export function Verification({ attempts, statuses, run, only, steps = [], liveOutput = null }: VerificationProps) {
+export function Verification({ attempts, statuses, run, only, verifier, steps = [], liveOutput = null }: VerificationProps) {
   const decision = overallDecision(attempts);
-  const rows = verificationRows(statuses, attempts).filter(({ status }) => !only || status.mechanism === only);
+  const rows = verificationRows(statuses, attempts).filter(({ status }) => (!only || status.mechanism === only) && (!verifier || status.verifier === verifier));
   const criticSessions = attempts.filter((a) => a.mechanism === 'critic' && a.hasTranscript);
   const hasPlanned = statuses.some((status) => status.state === 'planned');
   const commandRow = rows.find(({ status }) => status.mechanism === 'command');
@@ -132,7 +133,7 @@ export function Verification({ attempts, statuses, run, only, steps = [], liveOu
       <div className="mt-3 flex flex-col gap-3">
         {rows.map(({ status, attempt }) => {
           const criticReason = status.mechanism === 'critic' && criticSessions.length === 0 ? criticUnavailableReason(status.state, !!attempt, false) : null;
-          return <div key={status.mechanism} className="flex items-start gap-3">
+          return <div key={status.verifier ?? status.mechanism} className="flex items-start gap-3">
             <span className={`mt-px grid size-[18px] shrink-0 place-items-center rounded-md ${status.state === 'failed' || status.state === 'unrunnable' ? 'bg-fail-tint text-fail' : status.state === 'passed' ? 'bg-merged-tint text-merged' : status.state === 'running' ? 'bg-running-tint text-running' : 'bg-raised text-muted'}`}>
               {status.state === 'running' ? <span className="size-2 animate-pulse rounded-full bg-current motion-reduce:animate-none" /> : status.state === 'failed' ? <span className="text-[11px] leading-none">✕</span> : status.state === 'unrunnable' ? <span className="text-[11px] leading-none font-bold">!</span> : status.state === 'passed' ? <Icon name="check" className="size-3" /> : status.state === 'planned' ? <span className="size-2 rounded-full border border-current" /> : <span className="text-[11px] leading-none">–</span>}
             </span>

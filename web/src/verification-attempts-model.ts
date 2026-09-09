@@ -32,7 +32,11 @@ export function verificationRows(
   attempts: VerificationAttempt[],
 ): { status: VerifierStatus; attempt: VerificationAttempt | undefined }[] {
   const latestByMechanism = new Map(latestAttempts(attempts).map((attempt) => [attempt.mechanism, attempt]));
-  return statuses.map((status) => ({ status, attempt: latestByMechanism.get(status.mechanism) }));
+  const attemptsFor = (mechanism: VerificationMechanism) => attempts.filter((attempt) => attempt.mechanism === mechanism).sort((a, b) => a.seq - b.seq);
+  return statuses.map((status) => {
+    const index = status.verifier ? Number(status.verifier.split(':')[1]) : null;
+    return { status, attempt: index === null ? latestByMechanism.get(status.mechanism) : attemptsFor(status.mechanism)[index] };
+  });
 }
 
 /**

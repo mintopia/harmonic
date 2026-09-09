@@ -2,6 +2,22 @@ import { describe, expect, it } from 'vitest';
 import { verifierStatuses } from '../src/domain/verifier-status.js';
 
 describe('verifierStatuses', () => {
+  it('renders every configured command and critic instead of collapsing a stage to two categories', () => {
+    const statuses = verifierStatuses({
+      verifiers: {
+        commands: [
+          { command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 },
+          { command: 'npm', args: ['run', 'lint'], env: {}, timeoutSeconds: 600 },
+        ],
+        critics: [{ prompt: 'Review.', model: 'stub-model' }, { prompt: 'Check.', model: 'stub-model' }],
+      },
+      attempts: [],
+    });
+    expect(statuses.map((status) => status.verifier)).toEqual(['command:0', 'command:1', 'critic:0', 'critic:1']);
+    expect(statuses.map((status) => status.state)).toEqual(['planned', 'planned', 'planned', 'planned']);
+    expect(statuses.map((status) => status.commands?.[0] ?? null)).toEqual(['npm test', 'npm run lint', null, null]);
+  });
+
   it('keeps the latest recorded verdict for each verifier mechanism', () => {
     expect(
       verifierStatuses({
