@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.5.0](https://github.com/mintopia/harmonic/compare/v2.4.0...v2.5.0) (2026-09-10)
+
+
+### Features
+
+* **settings:** restructure verification settings and unify prompt-editor placeholders ([5d3d258](https://github.com/mintopia/harmonic/commit/5d3d258f1a4a831e6c212d6386b17069c63449c8))
+
+
+### Bug Fixes
+
+* **test:** rename {body} to {description} in epic-resolve fixture and Drive doc ([b978e56](https://github.com/mintopia/harmonic/commit/b978e5608f1c8d6ed20f43fbc9f94362473c159d))
+
 ## [2.4.0](https://github.com/mintopia/harmonic/compare/v2.3.0...v2.4.0) (2026-09-09)
 
 
