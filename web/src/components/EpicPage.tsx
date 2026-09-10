@@ -3,7 +3,7 @@ import { api } from '../api';
 import { subscribe } from '../ws';
 import { useLiveEffect } from '../useLiveEffect';
 import { useScrollToPanel } from '../useScrollToPanel';
-import type { DiffFile, EpicAttempt, Task, ModelUsage } from '../types';
+import type { DiffFile, EpicAttempt, Task, ModelUsage, VerificationAttempt } from '../types';
 import type { Epic, EpicStage, IntegrationStepState } from '../epic-model';
 import { epicLifecycleSteps } from '../epic-model';
 import type { Stats } from '../stats-model';
@@ -36,6 +36,7 @@ import { TokenTypeBar, TokenTypeLegend } from './TokenTypeBar';
 import { ModelLabel, ProviderChip } from './TaskIdentity';
 import { ChangedFilesNav, changedFileKind } from './ticket/ChangedFilesNav';
 import { Fact } from './Fact';
+import { CriticSessions } from './ticket/Verification';
 
 const sectionCaps = 'text-label font-bold uppercase tracking-[0.1em] text-faint';
 
@@ -213,6 +214,24 @@ function UsageCard({ stats, epic }: { stats: Stats; epic: Epic }) {
   );
 }
 
+function EpicVerificationOutput({ attempts }: { attempts: VerificationAttempt[] }) {
+  if (attempts.length === 0) return null;
+  return (
+    <div className="mt-3 w-full border-t border-hairline pt-3">
+      <h4 className={sectionCaps}>Verification output</h4>
+      <div className="mt-2 flex flex-col gap-3">
+        {attempts.filter((attempt) => attempt.mechanism === 'command').map((attempt) => (
+          <div key={attempt.id}>
+            <p className="text-small text-muted">Command · {attempt.verdict} · {attempt.summary}</p>
+            {attempt.output && <pre className="mt-2 max-h-72 overflow-auto rounded-md border border-hairline bg-sunken px-3 py-2 font-data text-[11.5px] leading-[1.55] text-muted">{attempt.output}</pre>}
+          </div>
+        ))}
+        <CriticSessions attempts={attempts} />
+      </div>
+    </div>
+  );
+}
+
 function EpicAttemptsTimeline({ attempts }: { attempts: EpicAttempt[] }) {
   return (
     <section>
@@ -236,6 +255,7 @@ function EpicAttemptsTimeline({ attempts }: { attempts: EpicAttempt[] }) {
                 <span className="text-data text-faint tabular-nums">{attempt.usage.totals.totalTokens.toLocaleString()} tokens</span>
               )}
               {attempt.reason && <p className="w-full text-small text-muted">{attempt.reason}</p>}
+              <EpicVerificationOutput attempts={attempt.verificationAttempts} />
             </li>
           ))}
         </ol>

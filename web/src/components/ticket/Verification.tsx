@@ -69,14 +69,14 @@ function CriticSession({ attemptId, label, model, agent }: { attemptId: number; 
   return <ChatTranscript events={events} unavailable={false} model={model} agent={agent} stepLabel={label} />;
 }
 
-export function CriticSessions({ attempts, run }: { attempts: VerificationAttempt[]; run: AttemptSummary }) {
+export function CriticSessions({ attempts, run, model }: { attempts: VerificationAttempt[]; run?: AttemptSummary; model?: string }) {
   const sessions = attempts.filter((a) => a.mechanism === 'critic' && a.hasTranscript);
   if (sessions.length === 0) return null;
-  const model = criticModel(run) ?? 'critic';
+  const criticName = model ?? (run ? criticModel(run) : null) ?? 'critic';
   return (
     <div className="flex flex-col gap-2">
       {sessions.map((c, i) => (
-        <CriticSession key={c.id} attemptId={c.id} model={model} agent={c.harness ? harnessLabel(c.harness) : 'Critic'} label={sessions.length > 1 ? `Critic ${i + 1} of ${sessions.length} · ${c.verdict}` : 'Critic'} />
+        <CriticSession key={c.id} attemptId={c.id} model={criticName} agent={c.harness ? harnessLabel(c.harness) : 'Critic'} label={sessions.length > 1 ? `Critic ${i + 1} of ${sessions.length} · ${c.verdict}` : 'Critic'} />
       ))}
     </div>
   );
