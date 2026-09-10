@@ -25,6 +25,10 @@ so rendering is shared by shape, not table).
 and re-prompts — the deliberate inverse of task steering (ADR-0005), because a
 chat is interactive and a stale half-answer is worthless.
 
+A server restart ends the warm harness process but not the Conversation. Its
+next Turn reloads the prior ACP session as a cold resume; the operator sees a
+token-cost warning, but cache warmth never blocks resuming.
+
 ## Interactive, human-in-the-loop permissions
 
 In a Conversation the driver holds the harness's ACP

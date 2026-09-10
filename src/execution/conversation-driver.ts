@@ -336,7 +336,8 @@ export class ConversationDriver {
     });
 
     const driver = new AcpDriver(child, {
-      onSessionUpdate: (update) => {
+      onSessionUpdate: (update, replay) => {
+        if (replay) return;
         void this.record(convo.id, 'session_update', update).catch(() => {});
       },
       onRequest: async (method, params) => {
@@ -364,19 +365,28 @@ export class ConversationDriver {
     this.active.set(convo.id, entry);
     try {
       const modelId = adapterFor(convo.harness).sessionModelId?.(convo.model);
-      await driver.handshake({
-        cwd: convo.workingDir,
-        mcpServers,
-        modelId,
-        // ACP's ElicitationFormCapabilities is an object, not a boolean — an
-        // empty `{}` is how a client advertises form support. `true` fails the
-        // adapter's schema validation and is silently dropped, which leaves
-        // AskUserQuestion disabled.
-        clientCapabilities: { elicitation: { form: {} } },
-        onSessionCreated: async (sessionId) => {
-          await this.store.update(convo.id, { sessionId });
-        },
-      });
+      if (convo.sessionId) {
+        const outcome = await driver.load({
+          sessionId: convo.sessionId,
+          cwd: convo.workingDir,
+          mcpServers,
+          modelId,
+          clientCapabilities: { elicitation: { form: {} } },
+        });
+        if (!outcome.loaded) {
+          throw new DomainError('invalid_state', `conversation ${convo.id} cannot resume: ${outcome.detail}`);
+        }
+      } else {
+        await driver.handshake({
+          cwd: convo.workingDir,
+          mcpServers,
+          modelId,
+          clientCapabilities: { elicitation: { form: {} } },
+          onSessionCreated: async (sessionId) => {
+            await this.store.update(convo.id, { sessionId });
+          },
+        });
+      }
       entry.initialMode = driver.currentModeId ?? (driver.availableModes.includes('default') ? 'default' : null);
       await this.applyPermissionMode(entry, convo);
     } catch (err) {

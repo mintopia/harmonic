@@ -344,5 +344,6 @@ export async function conversationToApi(ctx: AppContext, conversation: Conversat
     cost: costOfUsages([usage], pricesForHarness(harness)),
     contextWindow: resolveContextWindowForHarness(conversation.model, harness),
     cacheWarmSeconds: harness.cacheWarmSeconds,
+    coldResume: conversation.state === 'active' && conversation.sessionId !== null && !ctx.conversationDriver.isWarm(conversation.id),
   });
 }

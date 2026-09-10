@@ -137,6 +137,15 @@ export function ConversationContextDrawer({
   );
 }
 
+function ColdResumeWarning({ conversation }: { conversation: Conversation | null }) {
+  if (!conversation?.coldResume) return null;
+  return (
+    <p role="status" className="border-t border-hairline bg-running-tint px-4 py-2.5 text-small text-muted">
+      This conversation will resume from a cold session. Your next message may cost more.
+    </p>
+  );
+}
+
 function PermissionPrompt({
   pending,
   workingDir,
@@ -601,14 +610,17 @@ export function ConversationLauncher({
           ) : (
             config &&
             composerReady && (
-              <Composer
-                config={config}
-                workspace={workspace}
-                conversation={conversation}
-                events={events}
-                expanded={expanded}
-                onSend={actions.send}
-              />
+              <>
+                <ColdResumeWarning conversation={conversation} />
+                <Composer
+                  config={config}
+                  workspace={workspace}
+                  conversation={conversation}
+                  events={events}
+                  expanded={expanded}
+                  onSend={actions.send}
+                />
+              </>
             )
           )}
         </>
@@ -749,14 +761,17 @@ export function ConversationsPage({
             ) : (
               config &&
               composerReady && (
-                <Composer
-                  config={config}
-                  workspace={workspace}
-                  conversation={conversation}
-                  events={events}
-                  expanded={true}
-                  onSend={actions.send}
-                />
+                <>
+                  <ColdResumeWarning conversation={conversation} />
+                  <Composer
+                    config={config}
+                    workspace={workspace}
+                    conversation={conversation}
+                    events={events}
+                    expanded={true}
+                    onSend={actions.send}
+                  />
+                </>
               )
             )}
           </>
