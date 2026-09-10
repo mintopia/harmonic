@@ -795,6 +795,7 @@ export function App() {
                   {view === 'table' && (
                     <TableView
                       workspaceId={activeWorkspaceId}
+                      epics={epics}
                       onOpen={openRow}
                       onOpenEpic={openEpicByRef}
                       filters={route.table}
@@ -808,7 +809,7 @@ export function App() {
                         <div className="flex h-full items-center justify-center text-muted">Loading graph…</div>
                       }
                     >
-                      <GraphView workspaceId={activeWorkspaceId} onOpen={openRow} />
+                      <GraphView workspaceId={activeWorkspaceId} epics={epics} onOpen={openRow} />
                     </Suspense>
                   )}
                   {view === 'stats' && <StatsPage workspaceId={activeWorkspaceId} />}
