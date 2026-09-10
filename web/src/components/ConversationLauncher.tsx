@@ -444,10 +444,10 @@ export function ConversationLauncher({
     return unsubscribe;
   }, [workspaceId]);
 
-  const openList = () => {
+  const openList = useCallback(() => {
     setView({ kind: 'list' });
     clearConversationId(localStorage);
-  };
+  }, []);
   const openConversation = (id: number) => {
     setView({ kind: 'detail', conversationId: id });
     storeConversationId(localStorage, id);
@@ -629,10 +629,10 @@ export function ConversationsPage({
     }, load);
   }, [workspaceId]);
 
-  const openList = () => {
+  const openList = useCallback(() => {
     setView({ kind: 'list' });
     onConversationChange(null);
-  };
+  }, [onConversationChange]);
   const openConversation = (id: number) => {
     setView({ kind: 'detail', conversationId: id });
     onConversationChange(id);

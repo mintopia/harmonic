@@ -436,6 +436,10 @@ export function App() {
   // header, and a Ticket's parent-Epic breadcrumb all open the Epic summary page
   // at /epic/:ref, clearing any focused Ticket.
   const openEpicByRef = (ref: number) => navigate({ ...route, epic: ref, task: null, panel: NO_SELECTION });
+  const pickConversation = useCallback(
+    (conversationId: number | null) => navigate({ ...route, conversation: conversationId }),
+    [navigate, route],
+  );
 
   const activeWorkspaceName =
     workspaces.find((w) => w.id === activeWorkspaceId)?.name ?? null;
@@ -480,7 +484,6 @@ export function App() {
     });
     setMenuOpen(false);
   };
-
 
   const setTableFilters = (table: TableFilters) => navigate({ ...route, table }, { replace: true });
 
@@ -786,9 +789,7 @@ export function App() {
                       config={config}
                       workspace={activeWorkspace}
                       conversationId={route.conversation ?? null}
-                      onConversationChange={(conversationId) =>
-                        navigate({ ...route, conversation: conversationId })
-                      }
+                      onConversationChange={pickConversation}
                     />
                   )}
                   {view === 'table' && (
