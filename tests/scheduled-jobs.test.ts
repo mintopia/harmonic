@@ -69,6 +69,9 @@ describe('Scheduled Job registry', () => {
         expect.objectContaining({ name: 'Worktree reconciliation', workspaceId: null, intervalMs: 30 * 60 * 1000 }),
       ]),
     );
+    expect(initial.body.jobs).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'Update check' }),
+    ]));
 
     const workingDir = mkdtempSync(join(tmpdir(), 'harmonic-unresolved-tracker-'));
     try {
@@ -99,6 +102,51 @@ describe('Scheduled Job registry', () => {
     } finally {
       rmSync(workingDir, { recursive: true, force: true });
     }
+  });
+
+  it('runs the packaged Update check on boot and records a newer stable release', async () => {
+    server = await startServer(undefined, {
+      distributionMode: 'packaged',
+      updateCheckLatest: async () => '2.6.0',
+    });
+
+    const jobs = await waitFor(async () => {
+      const response = await server!.api('GET', '/api/scheduled-jobs');
+      return response.body.jobs.find((job: { name: string; lastStatus: string | null }) =>
+        job.name === 'Update check' && job.lastStatus === 'ok',
+      ) === undefined ? undefined : response.body.jobs;
+    });
+
+    expect(jobs).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'Update check', workspaceId: null, intervalMs: 60 * 60_000, lastStatus: 'ok' }),
+    ]));
+    await expect(server.app.ctx.updateCheck.getAvailableVersion()).resolves.toBe('2.6.0');
+  });
+
+  it('runs again on restart and preserves its recorded update when npm is unavailable', async () => {
+    server = await startServer(undefined, {
+      distributionMode: 'packaged',
+      updateCheckLatest: async () => '2.6.0',
+    });
+    await waitFor(() => server!.app.ctx.updateCheck.getAvailableVersion().then((version) => version === '2.6.0' ? version : undefined));
+    const dataDir = server.dataDir;
+    const [workspace] = await server.app.ctx.workspaces.list();
+    await server.app.close();
+    rmSync(workspace!.workingDir, { recursive: true, force: true });
+
+    server = await startServer(undefined, {
+      dataDir,
+      distributionMode: 'packaged',
+      updateCheckLatest: async () => { throw new Error('npm unavailable'); },
+    });
+    await waitFor(async () => {
+      const jobs = (await server!.api('GET', '/api/scheduled-jobs')).body.jobs;
+      return jobs.find((job: { name: string; lastStatus: string | null }) =>
+        job.name === 'Update check' && job.lastStatus === 'error',
+      );
+    });
+
+    await expect(server.app.ctx.updateCheck.getAvailableVersion()).resolves.toBe('2.6.0');
   });
 
   it('reclaims an idle Session through the retirement Scheduled Job without run activity', async () => {
