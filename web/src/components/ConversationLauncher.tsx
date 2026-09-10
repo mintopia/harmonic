@@ -1,15 +1,7 @@
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import { subscribe } from '../ws';
 import type { AppConfig, Conversation, ConversationEvent, Workspace } from '../types';
-import { segmentTranscript } from '../conversation-transcript-model';
-import { coalesceEvents } from '../event-stream-model';
-import {
-  announceTransitions,
-  EMPTY_ANNOUNCE_CURSOR,
-  type AnnounceCursor,
-} from '../stream-announce-model';
-import { isTurnRunning } from '../conversation-steering-model';
 import {
   chooseAlwaysAllowOptionId,
   permissionOptionLabel,
@@ -21,7 +13,6 @@ import {
   formatColdCacheMessage,
   formatContextUsage,
   formatTokenBreakdown,
-  formatTokens,
   lastConversationTurnAt,
 } from '../conversation-telemetry-model';
 import {
@@ -36,28 +27,38 @@ import { conversationDisplayTitle, removeConversationById, upsertConversation } 
 import { formatCost } from '../cost';
 import { ConfirmDialog } from './ConfirmDialog';
 import { ConversationList } from './ConversationList';
-import { EventStream } from './EventStream';
 import { ElicitationPrompt } from './ElicitationPrompt';
-import { DiscoveryModelPicker } from './DiscoveryModelPicker.js';
 import { PathTail } from './PathTail';
+import { PermissionRules } from './PermissionRules';
+import { providerLabel } from './TaskIdentity';
 import { Icon } from './Icon';
+import { Composer } from './conversation/Composer';
+import { StreamAnnouncer, Transcript } from './conversation/Transcript';
 import { useConversationDetail } from './useConversationDetail';
 import { toastError } from '../toast';
 import {
-  btnPrimary,
   btnQuiet,
   btnQuietDestructive,
   field,
   panelTitle,
-  labelType,
   permissionOptionButtonClass,
-  selectField,
+  sectionTitle,
   toolChip,
   touchTarget,
   touchTargetInline,
 } from '../ui';
 
-function TelemetryStrip({ conversation, events }: { conversation: Conversation; events: ConversationEvent[] }) {
+export function ConversationContextDrawer({
+  conversation,
+  events,
+  onClose,
+  onPermissionModeChange,
+}: {
+  conversation: Conversation;
+  events: ConversationEvent[];
+  onClose: () => void;
+  onPermissionModeChange?: (permissionMode: Conversation['permissionMode']) => void;
+}) {
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -65,7 +66,6 @@ function TelemetryStrip({ conversation, events }: { conversation: Conversation; 
     return () => clearInterval(id);
   }, []);
 
-  const tokens = formatTokens(conversation.usage);
   const tokenBreakdown = formatTokenBreakdown(conversation.usage);
   const cost = formatCost(conversation.cost);
   const context = formatContextUsage(computeContextUsage(conversation));
@@ -74,182 +74,66 @@ function TelemetryStrip({ conversation, events }: { conversation: Conversation; 
     cacheWarmSeconds: conversation.cacheWarmSeconds,
     now,
   });
+  const input = tokenBreakdown?.find(({ label }) => label === 'Input')?.value;
+  const output = tokenBreakdown?.find(({ label }) => label === 'Output')?.value;
 
   return (
-    <div className="border-b border-hairline">
-      <p className="px-4 py-2 text-small text-muted">
-        {tokens === 'no usage yet' ? 'no usage yet' : `${tokens} tokens`}
-        {' · '}
-        {cost ?? '—'}
-        {' · '}
-        {context.value === '—' ? '—' : `${context.value} context`}
-        {context.note ? ` · ${context.note}` : ''}
-      </p>
-      {tokenBreakdown && (
-        <dl className="grid grid-cols-2 gap-x-4 gap-y-1 border-t border-hairline px-4 py-2 text-small sm:grid-cols-4">
+    <aside aria-label="Conversation context" className="flex w-80 shrink-0 flex-col overflow-y-auto border-l border-hairline">
+      <div className="flex items-center justify-between border-b border-hairline px-4 py-3">
+        <h2 className={panelTitle}>Context</h2>
+        <button type="button" className={btnQuiet} onClick={onClose} aria-label="Hide conversation context">
+          Hide
+        </button>
+      </div>
+      <div className="space-y-5 px-4 py-4">
+        <section aria-labelledby="conversation-usage-heading">
+          <h3 id="conversation-usage-heading" className={sectionTitle}>Usage</h3>
+          <p className="mt-1.5 text-small text-muted">
+            {input && output ? `Input ${input} · Output ${output}` : 'No usage yet'}
+          </p>
+          {tokenBreakdown && (
+            <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-small">
           {tokenBreakdown.map(({ label, value }) => (
             <div key={label} className="flex min-w-0 items-baseline justify-between gap-1.5 sm:block">
               <dt className="text-faint">{label}</dt>
-              <dd className="font-data text-ink">{value}</dd>
+              <dd className="tabular-nums text-ink">{value}</dd>
             </div>
           ))}
-        </dl>
-      )}
-      {coldCache && (
-        <p role="status" className="bg-raised px-4 py-1.5 text-small text-muted">
-          {coldCache}
-        </p>
-      )}
-    </div>
-  );
-}
-
-const fieldLabel = `mb-1 block ${labelType} text-muted`;
-
-function clockTime(at: number): string {
-  return new Date(at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
-}
-
-/** The agent's plain message text across a turn (thoughts and tool calls
- * excluded), for the hover copy button. */
-function agentMessageText(events: ConversationEvent[]): string {
-  return coalesceEvents(events)
-    .flatMap((item) => (item.kind === 'text' && item.variant === 'message' ? [item.text] : []))
-    .join('\n\n');
-}
-
-function CopyButton({ text, label, className = '' }: { text: string; label: string; className?: string }) {
-  const [copied, setCopied] = useState(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => () => {
-    if (timer.current) clearTimeout(timer.current);
-  }, []);
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      if (timer.current) clearTimeout(timer.current);
-      timer.current = setTimeout(() => setCopied(false), 1200);
-    } catch {
-      // Clipboard blocked (insecure context / denied) — no-op.
-    }
-  };
-  return (
-    <button
-      type="button"
-      aria-label={copied ? 'Copied' : label}
-      onClick={copy}
-      className={`inline-flex size-6 items-center justify-center rounded text-faint transition-colors duration-150 hover:text-ink ${copied ? 'text-merged' : ''} ${className}`}
-    >
-      <Icon name={copied ? 'check' : 'copy'} className="size-3.5" />
-    </button>
-  );
-}
-
-function Transcript({ events, conversation }: { events: ConversationEvent[]; conversation: Conversation | null }) {
-  const turns = segmentTranscript(events);
-  const bottomRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ block: 'end' });
-  }, [events.length]);
-
-  if (turns.length === 0) {
-    return <p className="text-muted">Send a message to begin.</p>;
-  }
-
-  const harness = conversation?.harness ?? 'agent';
-  const agentLabel = harness.charAt(0).toUpperCase() + harness.slice(1);
-  const model = conversation?.model ?? '';
-
-  return (
-    <div className="space-y-4">
-      {turns.map((turn, i) => {
-        const userText = (turn.userTurn?.payload as { text?: string } | null | undefined)?.text ?? '';
-        const agentText = agentMessageText(turn.agentEvents);
-        const at = turn.agentEvents.at(-1)?.ts ?? turn.userTurn?.ts;
-        return (
-          <div key={turn.userTurn?.id ?? `pre-${i}`} className="space-y-3">
-            {turn.userTurn && (
-              <div className="group flex items-end justify-end gap-1.5">
-                <CopyButton text={userText} label="Copy message" className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100" />
-                <p className="max-w-[85%] whitespace-pre-wrap break-words rounded-lg bg-accent-tint px-3 py-2 text-ink">
-                  {userText}
-                </p>
-              </div>
-            )}
-            {turn.agentEvents.length > 0 && (
-              <div className="group flex gap-3">
-                <span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-md bg-accent-tint text-[11px] font-bold text-accent">
-                  {agentLabel.charAt(0)}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="mb-1 flex items-baseline gap-2">
-                    <span className="text-[12.5px] font-semibold text-ink">{agentLabel}</span>
-                    <span className="font-data text-[11px] text-faint">
-                      {model}
-                      {at ? ` · ${clockTime(at)}` : ''}
-                    </span>
-                    {agentText && (
-                      <CopyButton
-                        text={agentText}
-                        label="Copy message"
-                        className="ml-auto opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
-                      />
-                    )}
-                  </div>
-                  <EventStream events={turn.agentEvents} />
-                </div>
-              </div>
-            )}
-          </div>
-        );
-      })}
-      <div ref={bottomRef} />
-    </div>
-  );
-}
-
-/**
- * Announcements are *appended* as their own nodes rather than replacing the
- * last, so a repeated line ("New message" twice in a turn) is still read out —
- * a polite live region whose text only swaps for an identical string stays
- * silent on the repeat.
- */
-function StreamAnnouncer({
-  events,
-  resetKey,
-}: {
-  events: ConversationEvent[];
-  resetKey: number | string;
-}) {
-  const cursor = useRef<AnnounceCursor>(EMPTY_ANNOUNCE_CURSOR);
-  const seededFor = useRef<number | string | null>(null);
-  const nextId = useRef(0);
-  const [log, setLog] = useState<{ id: number; text: string }[]>([]);
-
-  useEffect(() => {
-    const items = coalesceEvents(events);
-    if (seededFor.current !== resetKey) {
-      cursor.current = announceTransitions(items, EMPTY_ANNOUNCE_CURSOR).cursor;
-      seededFor.current = resetKey;
-      setLog([]);
-      return;
-    }
-    const { announcements, cursor: next } = announceTransitions(items, cursor.current);
-    cursor.current = next;
-    if (announcements.length === 0) return;
-    setLog((prev) =>
-      [...prev, ...announcements.map((text) => ({ id: nextId.current++, text }))].slice(-20),
-    );
-  }, [events, resetKey]);
-
-  return (
-    <div aria-live="polite" className="sr-only">
-      {log.map((entry) => (
-        <p key={entry.id}>{entry.text}</p>
-      ))}
-    </div>
+            </dl>
+          )}
+          <dl className="mt-3 space-y-1 text-small">
+            <div className="flex justify-between gap-3"><dt className="text-faint">Cost</dt><dd className="tabular-nums text-ink">{cost ?? '—'}</dd></div>
+            <div className="flex justify-between gap-3"><dt className="text-faint">Context</dt><dd className="tabular-nums text-ink">{context.value}{context.note ? ` · ${context.note}` : ''}</dd></div>
+          </dl>
+          {coldCache && <p role="status" className="mt-3 bg-raised px-2 py-1.5 text-small text-muted">{coldCache}</p>}
+        </section>
+        <section aria-labelledby="conversation-model-heading">
+          <h3 id="conversation-model-heading" className={sectionTitle}>Model</h3>
+          <p className="mt-1.5 text-small text-muted">{providerLabel(conversation.harness)} · {conversation.model}</p>
+        </section>
+        <section aria-labelledby="conversation-directory-heading">
+          <h3 id="conversation-directory-heading" className={sectionTitle}>Working directory</h3>
+          <PathTail path={conversation.workingDir} className="mt-1.5 font-data text-data text-muted" />
+        </section>
+        <section aria-labelledby="conversation-permissions-heading">
+          <h3 id="conversation-permissions-heading" className={sectionTitle}>Permission Rules</h3>
+          <div className="mt-1.5"><PermissionRules /></div>
+          <label className="mt-3 block text-small text-muted">
+            Permission mode
+            <select
+              aria-label="Permission mode"
+              className={`${field} mt-1 w-full`}
+              value={conversation.permissionMode}
+              disabled={conversation.state === 'ended'}
+              onChange={(event) => onPermissionModeChange?.(event.currentTarget.value === 'automatic' ? 'automatic' : 'ask')}
+            >
+              <option value="ask">Ask each turn</option>
+              <option value="automatic">Automatic</option>
+            </select>
+          </label>
+        </section>
+      </div>
+    </aside>
   );
 }
 
@@ -341,177 +225,20 @@ function PermissionPrompt({
   );
 }
 
-function Composer({
-  config,
-  workspace,
-  conversation,
-  events,
-  expanded,
-  onSend,
-}: {
-  config: AppConfig;
-  workspace: Workspace | null;
-  conversation: Conversation | null;
-  events: ConversationEvent[];
-  expanded: boolean;
-  onSend: (
-    fields: { harness: string; model: string },
-    text: string,
-  ) => Promise<{ queued: boolean }>;
-}) {
-  const [harness, setHarness] = useState(workspace?.chatHarness ?? config.chat.harness);
-  const [model, setModel] = useState(workspace?.chatModel ?? config.chat.model);
-  const [text, setText] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [interrupting, setInterrupting] = useState(false);
-  const [queued, setQueued] = useState(false);
-  const queuedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => () => {
-    if (queuedTimer.current) clearTimeout(queuedTimer.current);
-  }, []);
-
-  const locked = conversation !== null;
-  const ended = conversation?.state === 'ended';
-  const running = conversation?.state === 'active' && isTurnRunning(events);
-  const models = (config.harnesses[harness]?.models ?? []).map((model) => model.id);
-
-  const pickHarness = (h: string) => {
-    setHarness(h);
-    const cfg = config.harnesses[h];
-    if (cfg) setModel(cfg.defaultModel);
-  };
-
-  const send = async () => {
-    const trimmed = text.trim();
-    if (!trimmed || busy || ended) return;
-    setBusy(true);
-    try {
-      const result = await onSend({ harness, model }, trimmed);
-      setText('');
-      if (result.queued) {
-        setQueued(true);
-        if (queuedTimer.current) clearTimeout(queuedTimer.current);
-        queuedTimer.current = setTimeout(() => setQueued(false), 4000);
-      }
-    } catch (e) {
-      toastError(e);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const interrupt = async () => {
-    if (!conversation || interrupting) return;
-    setInterrupting(true);
-    try {
-      const trimmed = text.trim();
-      await api.interrupt(conversation.id, trimmed || undefined);
-      setText('');
-      setQueued(false);
-    } catch (e) {
-      toastError(e);
-    } finally {
-      setInterrupting(false);
-    }
-  };
-
-  const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      send();
-    }
-  };
-
-  return (
-    <div className="border-t border-hairline p-3">
-      {!locked && (
-        <div className={`mb-2 grid gap-2 ${expanded ? 'sm:grid-cols-2' : ''}`}>
-          <div>
-            <label className={fieldLabel} htmlFor="conv-harness">
-              Harness
-            </label>
-            <select
-              id="conv-harness"
-              className={`${selectField} w-full`}
-              value={harness}
-              onChange={(e) => pickHarness(e.target.value)}
-            >
-              {Object.keys(config.harnesses).map((h) => (
-                <option key={h} value={h}>
-                  {h}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className={fieldLabel} htmlFor="conv-model">
-              Model
-            </label>
-            <DiscoveryModelPicker id="conv-model" harness={harness} value={model} onChange={setModel} options={models} />
-          </div>
-        </div>
-      )}
-      {queued && (
-        <p role="status" className="mb-1.5 text-label text-muted motion-safe:animate-[toast-in_150ms_var(--ease-out-quint)]">
-          Queued — will send once the current turn finishes.
-        </p>
-      )}
-      <div className="flex items-end gap-2">
-        <textarea
-          aria-label="Message"
-          className={`${field} min-h-16 flex-1 resize-none`}
-          value={text}
-          disabled={ended}
-          placeholder={
-            ended
-              ? 'Conversation ended.'
-              : running
-                ? 'Message the agent… (Enter queues it for after this turn)'
-                : 'Message the agent… (Enter to send, Shift+Enter for a newline)'
-          }
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={onKeyDown}
-        />
-        {running && (
-          <button
-            type="button"
-            className={`${btnQuietDestructive} px-1 pb-2.5`}
-            disabled={interrupting}
-            onClick={interrupt}
-          >
-            {text.trim() ? 'Interrupt' : 'Stop'}
-          </button>
-        )}
-        <button aria-label="Send" className={btnPrimary} disabled={busy || ended || !text.trim()} onClick={send}>
-          <Icon name="send" />
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function ConversationHeader({
-  conversation,
-  composing,
-  expanded,
-  onBack,
-  onToggleExpand,
-  onRename,
-  onEnd,
-  onDelete,
-  onClose,
-}: {
+type ConversationHeaderProps = {
   conversation: Conversation | null;
   composing: boolean;
-  expanded: boolean;
   onBack: () => void;
-  onToggleExpand: () => void;
   onRename: (title: string | null) => Promise<void>;
   onEnd: () => void;
   onDelete: () => void;
-  onClose: () => void;
-}) {
+} & (
+  | { fullPage: true }
+  | { fullPage?: false; expanded: boolean; onToggleExpand: () => void; onClose: () => void }
+);
+
+function ConversationHeader(props: ConversationHeaderProps) {
+  const { conversation, composing, onBack, onRename, onEnd, onDelete } = props;
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
   const [saving, setSaving] = useState(false);
@@ -580,13 +307,15 @@ function ConversationHeader({
             )}
           </>
         )}
-        <button
-          aria-label={expanded ? 'Collapse to panel' : 'Expand to full view'}
-          className={`${touchTarget} ${btnQuiet}`}
-          onClick={onToggleExpand}
-        >
-          <Icon name={expanded ? 'collapse' : 'expand'} />
-        </button>
+        {!props.fullPage && (
+          <button
+            aria-label={props.expanded ? 'Collapse to panel' : 'Expand to full view'}
+            className={`${touchTarget} ${btnQuiet}`}
+            onClick={props.onToggleExpand}
+          >
+            <Icon name={props.expanded ? 'collapse' : 'expand'} />
+          </button>
+        )}
         {conversation?.state === 'active' && (
           <button className={`${touchTargetInline} ${btnQuiet}`} onClick={onEnd}>
             End
@@ -601,9 +330,11 @@ function ConversationHeader({
             Delete
           </button>
         )}
-        <button aria-label="Close conversation panel" className={`${touchTarget} ${btnQuiet}`} onClick={onClose}>
-          <Icon name="close" />
-        </button>
+        {!props.fullPage && (
+          <button aria-label="Close conversation panel" className={`${touchTarget} ${btnQuiet}`} onClick={props.onClose}>
+            <Icon name="close" />
+          </button>
+        )}
       </div>
       {confirmingDelete && (
         <ConfirmDialog
@@ -630,8 +361,9 @@ function ConversationHeader({
           />
           <span className="sr-only">{conversation.state}</span>
           <span className="shrink-0">
-            {conversation.harness} · {conversation.model}
+            {providerLabel(conversation.harness)} · {conversation.model}
           </span>
+          {conversation.permissionMode === 'automatic' && <span className={toolChip}>Automatic</span>}
           <span aria-hidden="true" className="shrink-0 text-faint">
             ·
           </span>
@@ -756,10 +488,10 @@ export function ConversationLauncher({
     return unsubscribe;
   }, [workspaceId]);
 
-  const openList = () => {
+  const openList = useCallback(() => {
     setView({ kind: 'list' });
     clearConversationId(localStorage);
-  };
+  }, []);
   const openConversation = (id: number) => {
     setView({ kind: 'detail', conversationId: id });
     storeConversationId(localStorage, id);
@@ -844,11 +576,7 @@ export function ConversationLauncher({
             onClose={() => setOpen(false)}
           />
 
-          {conversation && <TelemetryStrip conversation={conversation} events={events} />}
-
-          <div className="flex-1 overflow-y-auto p-4">
-            <Transcript events={events} conversation={conversation} />
-          </div>
+          <Transcript events={events} conversation={conversation} />
           <StreamAnnouncer events={events} resetKey={conversation?.id ?? 'new'} />
 
           {!ended &&
@@ -884,6 +612,170 @@ export function ConversationLauncher({
             )
           )}
         </>
+      )}
+    </div>
+  );
+}
+
+export function ConversationsPage({
+  config,
+  workspace,
+  conversationId,
+  onConversationChange,
+}: {
+  config: AppConfig | null;
+  workspace: Workspace | null;
+  conversationId: number | null;
+  onConversationChange: (conversationId: number | null) => void;
+}) {
+  const workspaceId = workspace?.id ?? null;
+  const [view, setView] = useState<LauncherView>(() =>
+    conversationId === null ? { kind: 'list' } : { kind: 'detail', conversationId },
+  );
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [attention, setAttention] = useState<AttentionState>(NO_ATTENTION);
+  const [openedPendingPermission, setOpenedPendingPermission] = useState<PendingPermission | null>(null);
+  const [contextOpen, setContextOpen] = useState(false);
+  const focusedId = view.kind === 'detail' ? view.conversationId : null;
+  const focusedRef = useRef<number | null>(focusedId);
+
+  useEffect(() => {
+    focusedRef.current = focusedId;
+    if (focusedId !== null) setAttention((current) => clearAttention(current, focusedId));
+  }, [focusedId]);
+
+  useEffect(() => {
+    setView(conversationId === null ? { kind: 'list' } : { kind: 'detail', conversationId });
+  }, [conversationId]);
+
+  const upsertConversationInList = useCallback((conversation: Conversation) => {
+    setConversations((current) => upsertConversation(current, conversation));
+  }, []);
+  const removeConversationFromList = useCallback((id: number) => {
+    setConversations((current) => removeConversationById(current, id));
+    setAttention((current) => clearAttention(current, id));
+  }, []);
+
+  useEffect(() => {
+    if (workspaceId === null) return;
+    setConversations([]);
+    const load = () =>
+      api.conversations(workspaceId).then(({ conversations }) => setConversations(conversations), toastError);
+    load();
+    return subscribe((message) => {
+      setAttention((current) => applyAttentionMessage(current, message, focusedRef.current));
+      if (message.type === 'conversation_changed' && message.conversation.workspaceId === workspaceId) {
+        setConversations((current) => upsertConversation(current, message.conversation));
+      }
+    }, load);
+  }, [workspaceId]);
+
+  const openList = useCallback(() => {
+    setView({ kind: 'list' });
+    onConversationChange(null);
+  }, [onConversationChange]);
+  const openConversation = (id: number) => {
+    setView({ kind: 'detail', conversationId: id });
+    onConversationChange(id);
+  };
+  const openCompose = () => {
+    setView({ kind: 'detail', conversationId: null });
+    onConversationChange(null);
+  };
+  const clearPendingPermission = useCallback(() => setOpenedPendingPermission(null), []);
+  const { conversation, events, pending, pendingElicitations, actions } = useConversationDetail(focusedId, {
+    workspaceId,
+    upsertConversationInList,
+    removeConversationFromList,
+    openConversation,
+    openList,
+    pendingPermission: openedPendingPermission,
+    clearPendingPermission,
+  });
+  const composerReady = view.kind === 'detail' && (view.conversationId === null || conversation !== null);
+  const ended = conversation?.state === 'ended';
+  const deleteConversation = (id: number) => {
+    actions.deleteConversation(id);
+    if (id === focusedId) openList();
+  };
+
+  return (
+    <div className="flex h-full min-h-0 overflow-hidden rounded-lg bg-surface shadow-card">
+      <aside aria-label="Conversations" className="flex w-80 shrink-0 border-r border-hairline">
+        <ConversationList
+          conversations={conversations}
+          attention={attention}
+          fullPage
+          onSelect={openConversation}
+          onNew={openCompose}
+          onDelete={deleteConversation}
+        />
+      </aside>
+      <section aria-label="Conversation transcript" className="flex min-w-0 flex-1 flex-col">
+        {view.kind === 'list' ? (
+          <div className="flex flex-1 items-center justify-center px-6 text-muted">
+            Select a conversation or start a new one.
+          </div>
+        ) : (
+          <>
+            <ConversationHeader
+              conversation={conversation}
+              composing={view.conversationId === null}
+              fullPage
+              onBack={openList}
+              onRename={actions.rename}
+              onEnd={actions.end}
+              onDelete={() => conversation && deleteConversation(conversation.id)}
+            />
+            <Transcript events={events} conversation={conversation} />
+            <StreamAnnouncer events={events} resetKey={conversation?.id ?? 'new'} />
+            {!ended &&
+              Object.values(pending).map((pendingPermission) => (
+                <PermissionPrompt
+                  key={pendingPermission.reqId}
+                  pending={pendingPermission}
+                  workingDir={conversation?.workingDir ?? ''}
+                  onAnswer={actions.answerPermission}
+                />
+              ))}
+            {!ended &&
+              Object.values(pendingElicitations).map((elicitation) => (
+                <ElicitationPrompt key={elicitation.reqId} pending={elicitation} onAnswer={actions.answerElicitation} />
+              ))}
+            {ended ? (
+              <p role="status" className="border-t border-hairline bg-raised px-4 py-2.5 text-muted">
+                This conversation has ended — read-only.
+              </p>
+            ) : (
+              config &&
+              composerReady && (
+                <Composer
+                  config={config}
+                  workspace={workspace}
+                  conversation={conversation}
+                  events={events}
+                  expanded={true}
+                  onSend={actions.send}
+                />
+              )
+            )}
+          </>
+        )}
+      </section>
+      {view.kind === 'detail' && conversation && (
+        contextOpen ? (
+          <ConversationContextDrawer conversation={conversation} events={events} onClose={() => setContextOpen(false)} onPermissionModeChange={actions.setPermissionMode} />
+        ) : (
+          <button
+            type="button"
+            className={`${touchTarget} w-11 shrink-0 border-l border-hairline text-small text-muted hover:bg-raised`}
+            aria-label="Show conversation context"
+            aria-expanded={false}
+            onClick={() => setContextOpen(true)}
+          >
+            Context
+          </button>
+        )
       )}
     </div>
   );

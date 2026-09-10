@@ -23,7 +23,7 @@ import { TableView } from './components/TableView';
 import { ActivityView } from './components/ActivityView';
 import { BrandMark } from './components/BrandMark';
 import { Icon } from './components/Icon';
-import { ConversationLauncher } from './components/ConversationLauncher';
+import { ConversationLauncher, ConversationsPage } from './components/ConversationLauncher';
 import { NewWorkspaceForm, WorkspaceSwitcher } from './components/WorkspaceSwitcher';
 import { WorkspaceSettingsPage } from './components/WorkspaceSettingsPage';
 import { EmptyState } from './components/EmptyState';
@@ -436,6 +436,10 @@ export function App() {
   // header, and a Ticket's parent-Epic breadcrumb all open the Epic summary page
   // at /epic/:ref, clearing any focused Ticket.
   const openEpicByRef = (ref: number) => navigate({ ...route, epic: ref, task: null, panel: NO_SELECTION });
+  const pickConversation = useCallback(
+    (conversationId: number | null) => navigate({ ...route, conversation: conversationId }),
+    [navigate, route],
+  );
 
   const activeWorkspaceName =
     workspaces.find((w) => w.id === activeWorkspaceId)?.name ?? null;
@@ -470,10 +474,16 @@ export function App() {
   };
 
   const pickView = (v: View) => {
-    navigate({ ...route, view: v, task: null, epic: null, panel: NO_SELECTION });
+    navigate({
+      ...route,
+      view: v,
+      task: null,
+      epic: null,
+      conversation: view === 'conversations' ? null : route.conversation,
+      panel: NO_SELECTION,
+    });
     setMenuOpen(false);
   };
-
 
   const setTableFilters = (table: TableFilters) => navigate({ ...route, table }, { replace: true });
 
@@ -774,6 +784,14 @@ export function App() {
                       />
                     )}
                   {view === 'activity' && <ActivityView config={config} />}
+                  {view === 'conversations' && (
+                    <ConversationsPage
+                      config={config}
+                      workspace={activeWorkspace}
+                      conversationId={route.conversation ?? null}
+                      onConversationChange={pickConversation}
+                    />
+                  )}
                   {view === 'table' && (
                     <TableView
                       workspaceId={activeWorkspaceId}
@@ -814,7 +832,7 @@ export function App() {
             </div>
           )}
 
-          {!noWorkspaces && (
+          {!noWorkspaces && view !== 'conversations' && (
             <ConversationLauncher
               config={config}
               workspace={workspaces.find((w) => w.id === activeWorkspaceId) ?? null}
