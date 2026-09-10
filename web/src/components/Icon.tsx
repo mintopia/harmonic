@@ -3,6 +3,7 @@ import type { JSX } from 'react';
 export type IconName =
   | 'board'
   | 'activity'
+  | 'conversations'
   | 'operations'
   | 'table'
   | 'graph'
@@ -41,6 +42,7 @@ const PATHS: Record<IconName, JSX.Element> = {
     </>
   ),
   activity: <path d="M1.5 8h3l1.75-4 2.5 8 1.75-4H14.5" />,
+  conversations: <path d="M2.5 3.5h11a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H8l-3 2.5v-2.5H2.5a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1Z" />,
   operations: (
     <>
       <circle cx="4" cy="4" r="1.5" />

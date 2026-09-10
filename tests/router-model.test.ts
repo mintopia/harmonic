@@ -17,6 +17,7 @@ describe('parseRoute', () => {
     expect(parseRoute('/', '?view=table').view).toBe('table');
     expect(parseRoute('/', '?view=stats').view).toBe('stats');
     expect(parseRoute('/', '?view=operations').view).toBe('operations');
+    expect(parseRoute('/', '?view=conversations').view).toBe('conversations');
   });
 
   it('falls back to the deck for an unknown or missing view', () => {
@@ -125,6 +126,7 @@ describe('serializeRoute', () => {
     expect(serializeRoute({ ...DEFAULT_ROUTE, view: 'board' })).toBe('/');
     expect(serializeRoute({ ...DEFAULT_ROUTE, view: 'table' })).toBe('/?view=table');
     expect(serializeRoute({ ...DEFAULT_ROUTE, view: 'operations' })).toBe('/?view=operations');
+    expect(serializeRoute({ ...DEFAULT_ROUTE, view: 'conversations' })).toBe('/?view=conversations');
   });
 
   it('emits peeked columns in TASK_STATES order regardless of input order', () => {
@@ -211,6 +213,7 @@ describe('round-trip', () => {
     },
     { ...DEFAULT_ROUTE, epic: 421 },
     { ...DEFAULT_ROUTE, view: 'table', epic: 421, table: { ...DEFAULT_TABLE_FILTERS, priority: ['high'] } },
+    { ...DEFAULT_ROUTE, view: 'conversations', conversation: 12 },
   ];
 
   it('serialize → parse is the identity on normalized routes', () => {
