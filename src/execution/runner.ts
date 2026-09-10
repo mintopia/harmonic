@@ -1025,14 +1025,21 @@ export class Runner {
     return true;
   }
 
-  /** Resume a paused Task in its latest compatible Session when one is retained. */
-  async resumePaused(taskId: number): Promise<TaskRow> {
+  /**
+   * Resume a paused Task in its latest compatible Session when one is retained.
+   * `continuation` is the operator's explicit pick: `condensed` starts a fresh
+   * Session from a summary, `full`/undefined reuses the retained one. A Session
+   * that is still live is always continued — a running process can't be forked
+   * into a fresh attempt.
+   */
+  async resumePaused(taskId: number, continuation?: 'full' | 'condensed'): Promise<TaskRow> {
     const task = await this.taskService.get(taskId);
     if (task.state !== 'paused') return this.taskService.resume(taskId);
     if ([...this.active.values()].some((active) => active.taskId === taskId)) return this.taskService.resume(taskId);
-    const src = await this.resolveContinuationSource(task);
+    const chosen = continuation ? await this.taskService.setContinuationChoice(taskId, continuation) : task;
+    const src = await this.resolveContinuationSource(chosen);
     const resumed = await this.taskService.resume(taskId);
-    if (!src || !this.resumeEligibilityFor(task, src.session).eligible) return resumed;
+    if (!src || !this.resumeEligibilityFor(chosen, src.session).eligible) return resumed;
     try {
       await this.beginRun(resumed, undefined, src.prior);
     } catch (err) {

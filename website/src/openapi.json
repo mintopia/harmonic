@@ -11661,7 +11661,34 @@
         "tags": [
           "Tasks"
         ],
-        "description": "Resume a paused task on its existing Session. Reachable with an attempt-scoped Attempt Key.",
+        "description": "Resume a paused task. `continuation` picks how it re-attaches to its prior Session: `full` reuses the retained conversation, `condensed` starts a fresh one; omitted keeps the recommended default. Reachable with an attempt-scoped Attempt Key.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "continuation": {
+                        "example": "full",
+                        "type": "string",
+                        "enum": [
+                          "full",
+                          "condensed"
+                        ]
+                      }
+                    }
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        },
         "parameters": [
           {
             "schema": {

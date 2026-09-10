@@ -83,26 +83,50 @@ describe('TaskActions smoke (issue #469)', () => {
     expect(changed).toBe(true);
   });
 
-  const pauseResumeCases = [
-    ['working', 'Pause', 'pause'],
-    ['paused', 'Resume', 'resume'],
-  ] satisfies ReadonlyArray<readonly [Task['state'], string, string]>;
-
-  it.each(pauseResumeCases)('calls %s task %s through the %s endpoint', async (state, label, endpoint) => {
-    const task = makeTask({ id: 7, state });
+  it('pauses a working task through the pause endpoint', async () => {
+    const task = makeTask({ id: 7, state: 'working' });
     const changed = vi.fn();
     const fetchMock = vi.fn(async () => new Response(JSON.stringify(task)));
     vi.stubGlobal('fetch', fetchMock);
 
     await renderActions({ task, variant: 'footer', onChanged: changed });
 
-    const button = [...host!.querySelectorAll('button')].find((item) => item.textContent === label)!;
+    const button = [...host!.querySelectorAll('button')].find((item) => item.textContent === 'Pause')!;
     await act(async () => {
       button.click();
       await flush();
     });
 
-    expect(fetchMock).toHaveBeenCalledWith(`/api/tasks/${task.id}/${endpoint}`, { method: 'POST' });
+    expect(fetchMock).toHaveBeenCalledWith(`/api/tasks/${task.id}/pause`, { method: 'POST' });
+    expect(changed).toHaveBeenCalledOnce();
+  });
+
+  it('resumes a paused task through the resume dialog', async () => {
+    const task = makeTask({ id: 7, state: 'paused' });
+    const changed = vi.fn();
+    const fetchMock = vi.fn(async (url: string) =>
+      new Response(JSON.stringify(url.includes('/continuation') ? { available: false } : task)),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await renderActions({ task, variant: 'footer', onChanged: changed });
+
+    const open = [...host!.querySelectorAll('button')].find((item) => item.textContent === 'Resume')!;
+    await act(async () => {
+      open.click();
+      await flush();
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(`/api/tasks/${task.id}/continuation`, { method: 'GET' });
+
+    const dialog = host!.querySelector('dialog')!;
+    const confirm = [...dialog.querySelectorAll('button')].find((item) => item.textContent === 'Resume')!;
+    await act(async () => {
+      confirm.click();
+      await flush();
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(`/api/tasks/${task.id}/resume`, { method: 'POST' });
     expect(changed).toHaveBeenCalledOnce();
   });
 });

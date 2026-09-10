@@ -42,6 +42,10 @@ const acceptInputSchema = z.object({
   force: z.boolean().optional().meta({ example: false }),
 }).nullish();
 const cancelInputSchema = z.object({ withDependents: z.boolean().optional().meta({ example: true }) }).nullish();
+/** How to re-attempt a paused Task: `full` reuses the retained Session/conversation; `condensed` starts a fresh Session from a summary. Omitted keeps the recommended default (reuse when eligible). */
+const resumeInputSchema = z
+  .object({ continuation: z.enum(['full', 'condensed']).optional().meta({ example: 'full' }) })
+  .nullish();
 /** What the continuation rule will do with this Task's live Session; `available: false` when there is nothing to continue. */
 const continuationPreviewSchema = z.discriminatedUnion('available', [
   z.object({ available: z.literal(false) }),
@@ -504,8 +508,10 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     {
       schema: {
         tags: ['Tasks'],
-        description: 'Resume a paused task on its existing Session. Reachable with an attempt-scoped Attempt Key.',
+        description:
+          'Resume a paused task. `continuation` picks how it re-attaches to its prior Session: `full` reuses the retained conversation, `condensed` starts a fresh one; omitted keeps the recommended default. Reachable with an attempt-scoped Attempt Key.',
         params: idParamsSchema,
+        body: resumeInputSchema,
         response: {
           200: taskSchema.describe('The working task.'),
           409: errorResponse('The task is not paused.'),
@@ -513,14 +519,17 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       },
     },
     async (req, reply) => {
-      if (await ctx.runner.resume(req.params.id)) {
+      const continuation = req.body?.continuation;
+      // A fresh-Session request must skip the in-place live resume, which would
+      // otherwise reattach the retained conversation before the choice applies.
+      if (continuation !== 'condensed' && (await ctx.runner.resume(req.params.id))) {
         return await withDeps({ id: req.params.id });
       }
       const task = await ctx.tasks.get(req.params.id);
       if (task.state !== 'paused') {
         return reply.code(409).send({ error: { code: 'conflict', message: 'The task has no paused Attempt to resume.' } });
       }
-      return await withDeps(await ctx.runner.resumePaused(req.params.id));
+      return await withDeps(await ctx.runner.resumePaused(req.params.id, continuation));
     },
   );
 
