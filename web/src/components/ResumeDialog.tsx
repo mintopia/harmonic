@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { api } from '../api';
 import { toastSuccess } from '../toast';
 import { useLiveEffect } from '../useLiveEffect';
@@ -52,8 +52,14 @@ export function ResumeDialog({
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
 
+  // Held in a ref so the preview fetch keys on the Task alone; the loader is a
+  // test seam whose identity changes every render and must not drive refetches.
+  const loadPreviewRef = useRef(loadPreview);
+  useEffect(() => {
+    loadPreviewRef.current = loadPreview;
+  }, [loadPreview]);
   useLiveEffect((live) => {
-    loadPreview().then(
+    loadPreviewRef.current().then(
       (next) => {
         if (!live()) return;
         setPreview(next);
