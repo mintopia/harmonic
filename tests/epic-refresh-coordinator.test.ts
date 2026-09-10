@@ -373,7 +373,7 @@ describe('epic refresh corrective turn (issue #315)', () => {
       title: 'Resolver epic',
       body: 'Preserve the public API.',
       url: 'https://example.test/issues/5',
-      resolvePrompt: 'Fix Epic {ref}: {title}\n{body}\n{url}',
+      resolvePrompt: 'Fix Epic {ref}: {title}\n{description}\n{url}',
     });
 
     const stored = await attempts.get(attempt.id);

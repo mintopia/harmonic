@@ -3,11 +3,12 @@ import { buildCriticPrompt } from '../src/verification/critic-prompt.js';
 import type { DriveFields } from '../src/execution/prompt-template.js';
 
 const FIELDS: DriveFields = {
+  taskId: '172',
   skill: '/implement',
   ref: '123',
   url: 'https://tracker.example/issues/123',
   title: 'Fix the timeout',
-  body: 'The request hangs forever.',
+  description: 'The request hangs forever.',
 };
 
 const CANDIDATE = 'cand0000000000000000000000000000000000000';
@@ -16,14 +17,14 @@ const BASE = 'base0000000000000000000000000000000000000';
 describe('buildCriticPrompt (issue #136; 2026-08 containment amendment)', () => {
   it('interpolates the Drive-Prompt tokens into the operator prompt', () => {
     const prompt = buildCriticPrompt({
-      operatorPrompt: 'Review issue {ref} ({url}): {title}. Skill {skill}. Body: {body}',
+      operatorPrompt: 'Task {taskId}: Review issue {ref} ({url}): {title}. Skill {skill}. Body: {description}',
       fields: FIELDS,
       verifiedHeadOid: CANDIDATE,
     });
-    expect(prompt).toContain('Review issue 123 (https://tracker.example/issues/123): Fix the timeout.');
+    expect(prompt).toContain('Task 172: Review issue 123 (https://tracker.example/issues/123): Fix the timeout.');
     expect(prompt).toContain('Skill /implement.');
     expect(prompt).toContain('Body: The request hangs forever');
-    expect(prompt).not.toMatch(/\{(skill|ref|url|title|body)\}/);
+    expect(prompt).not.toMatch(/\{(taskId|skill|ref|url|title|description)\}/);
   });
 
   it('injects no diff and no nonce/delimiter markers', () => {
@@ -114,7 +115,14 @@ describe('buildCriticPrompt (issue #136; 2026-08 containment amendment)', () => 
   });
 
   describe('native (board-authored) Task — no mirrored ticket', () => {
-    const NATIVE_FIELDS: DriveFields = { skill: '/implement', ref: '', url: '', title: 'Add a flag', body: 'Wire it through.' };
+    const NATIVE_FIELDS: DriveFields = {
+      taskId: '288',
+      skill: '/implement',
+      ref: '',
+      url: '',
+      title: 'Add a flag',
+      description: 'Wire it through.',
+    };
 
     it('does not tell the critic to read a ticket that does not exist', () => {
       for (const baseOid of [BASE, CANDIDATE, undefined]) {
@@ -124,15 +132,16 @@ describe('buildCriticPrompt (issue #136; 2026-08 containment amendment)', () => 
       }
     });
 
-    it('does not interpolate ticket-only title or body tokens', () => {
+    it('still resolves the Task-identity tokens (taskId/title/description) with no ticket', () => {
       const prompt = buildCriticPrompt({
-        operatorPrompt: 'Review {skill}. Hidden ticket details: {title} / {body}.',
+        operatorPrompt: 'Review task {taskId} — {title}. {description} Skill {skill}. Ticket: [{ref}{url}]',
         fields: NATIVE_FIELDS,
         verifiedHeadOid: CANDIDATE,
       });
-      expect(prompt).toMatch(/Review \/implement\. Hidden ticket details:\s*\/\s*\./);
-      expect(prompt).not.toContain('Add a flag');
-      expect(prompt).not.toContain('Wire it through.');
+      expect(prompt).toContain('Review task 288 — Add a flag. Wire it through. Skill /implement.');
+      // ref/url are the only ticket-only tokens; they resolve to empty for a native Task.
+      expect(prompt).toContain('Ticket: []');
+      expect(prompt).not.toMatch(/\{(taskId|title|description|skill|ref|url)\}/);
     });
 
     it('judges against the instructions, not a ticket, on the no-change branch', () => {

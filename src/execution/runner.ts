@@ -1512,7 +1512,7 @@ export class Runner {
       input.resolvePrompt
         .replaceAll('{ref}', String(input.epicRef))
         .replaceAll('{title}', input.title ?? `Epic #${input.epicRef}`)
-        .replaceAll('{body}', input.body ?? '')
+        .replaceAll('{description}', input.body ?? '')
         .replaceAll('{url}', input.url ?? ''),
       '',
       '## Failing Epic verification',

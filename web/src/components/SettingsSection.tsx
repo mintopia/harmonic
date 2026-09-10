@@ -1,6 +1,6 @@
-import type { ReactNode } from 'react';
+import { useLayoutEffect, useRef, type ReactNode } from 'react';
 import { card, field, labelType } from '../ui';
-import type { LabeledPreview } from '../prompt-preview-model';
+import type { LabeledPreview, Placeholder } from '../prompt-preview-model';
 
 export function SettingsSection({
   title,
@@ -24,16 +24,44 @@ export function SettingsSection({
 
 export const fieldLabel = `mb-1.5 block ${labelType} text-muted`;
 
-export function PlaceholderList({ placeholders }: { placeholders: [string, string][] }) {
+const chipBase =
+  'rounded-md border px-1.5 py-1 font-data text-small leading-none transition-colors focus:outline-none focus-visible:border-accent';
+
+/** The always-available Task-identity tokens ({@link Placeholder.core}) render
+ * first in the accent voice; context tokens follow after a hairline. Clicking a
+ * chip inserts its token at the editor's caret. Shared by every prompt editor so
+ * the "Insert" row reads the same on Drive, Task, Critic and Epic-resolve. */
+export function PlaceholderChips({
+  placeholders,
+  onInsert,
+}: {
+  placeholders: Placeholder[];
+  onInsert: (token: string) => void;
+}) {
+  const core = placeholders.filter((p) => p.core);
+  const context = placeholders.filter((p) => !p.core);
+  const chip = (p: Placeholder) => (
+    <button
+      key={p.token}
+      type="button"
+      title={p.desc}
+      className={`${chipBase} ${
+        p.core
+          ? 'border-transparent bg-accent-tint text-accent hover:border-accent'
+          : 'border-edge bg-surface text-muted hover:border-accent hover:text-accent'
+      }`}
+      onClick={() => onInsert(p.token)}
+    >
+      {p.token}
+    </button>
+  );
   return (
-    <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-small text-muted">
-      {placeholders.map(([token, desc]) => (
-        <div key={token} className="contents">
-          <dt className="font-data text-ink">{token}</dt>
-          <dd>{desc}</dd>
-        </div>
-      ))}
-    </dl>
+    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+      <span className={`${labelType} text-faint`}>Insert</span>
+      {core.map(chip)}
+      {core.length > 0 && context.length > 0 && <span className="mx-0.5 h-4 w-px self-center bg-hairline" />}
+      {context.map(chip)}
+    </div>
   );
 }
 
@@ -94,12 +122,28 @@ export function PromptField({
   description?: ReactNode;
   value: string;
   onChange: (value: string) => void;
-  placeholders: [string, string][];
+  placeholders: Placeholder[];
   preview: string | LabeledPreview[];
   error?: string;
   rows?: number;
   textareaClass?: string;
 }) {
+  const taRef = useRef<HTMLTextAreaElement>(null);
+  const pendingCaret = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    if (pendingCaret.current === null || !taRef.current) return;
+    const at = pendingCaret.current;
+    pendingCaret.current = null;
+    taRef.current.focus();
+    taRef.current.setSelectionRange(at, at);
+  });
+  const insert = (token: string) => {
+    const el = taRef.current;
+    const start = el ? el.selectionStart : value.length;
+    const end = el ? el.selectionEnd : value.length;
+    pendingCaret.current = start + token.length;
+    onChange(value.slice(0, start) + token + value.slice(end));
+  };
   return (
     <div>
       {label && (
@@ -108,9 +152,16 @@ export function PromptField({
         </label>
       )}
       {description && <p className="mb-1 text-small text-muted">{description}</p>}
-      <textarea id={id} rows={rows} className={textareaClass} value={value} onChange={(e) => onChange(e.target.value)} />
+      <PlaceholderChips placeholders={placeholders} onInsert={insert} />
+      <textarea
+        ref={taRef}
+        id={id}
+        rows={rows}
+        className={`${textareaClass} mt-1.5`}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
       <FieldError message={error} />
-      <PlaceholderList placeholders={placeholders} />
       <PromptPreview text={preview} />
     </div>
   );

@@ -1,7 +1,8 @@
 import { fillTemplate, type DriveFields } from '../execution/prompt-template.js';
 
 export interface BuildCriticPromptArgs {
-  /** The operator's configured critic prompt; supports the Drive Prompt's `{skill}/{ref}/{url}/{title}/{body}` interpolation. */
+  /** The operator's configured critic prompt; supports the Drive Prompt's
+   * `{taskId}/{skill}/{ref}/{url}/{title}/{description}` interpolation. */
   operatorPrompt: string;
   /** The Drive-Prompt interpolation tokens. */
   fields: DriveFields;
@@ -19,10 +20,11 @@ export function buildCriticPrompt({
   baseOid,
 }: BuildCriticPromptArgs): string {
   const hasTicket = fields.ref.trim() !== '' || fields.url.trim() !== '';
-  const interpolated = fillTemplate(operatorPrompt, hasTicket ? fields : { ...fields, title: '', body: '' });
+  const interpolated = fillTemplate(operatorPrompt, fields);
   // A native (board-authored) Task has no mirrored issue: `ref`/`url` are empty,
   // so the critic must judge against the instructions themselves, not a ticket
-  // that does not exist.
+  // that does not exist. `taskId`/`title`/`description` still resolve — they come
+  // from the Task itself, not the ticket.
   const spec = hasTicket ? 'the referenced ticket' : 'the review instructions above';
   const ticketFirst = hasTicket
     ? 'First read the referenced ticket (named in the review instructions above) to understand the outcome it requires, and judge the candidate against that outcome.'

@@ -14,16 +14,21 @@ import {
 import { baselineConfig } from '../src/config.js';
 
 describe('prompt-preview-model (settings compiled preview)', () => {
-  it('only offers ticket-free tokens for a native Task critic body', () => {
-    expect(CRITIC_NO_ISSUE_PLACEHOLDERS).toEqual([['{skill}', 'workflow skill — /research or /implement']]);
+  it('offers the core Task-identity tokens plus {skill} for a native Task critic (no ticket ref/url)', () => {
+    expect(CRITIC_NO_ISSUE_PLACEHOLDERS.map((p) => p.token)).toEqual(['{taskId}', '{title}', '{description}', '{skill}']);
+    expect(CRITIC_NO_ISSUE_PLACEHOLDERS.filter((p) => p.core).map((p) => p.token)).toEqual([
+      '{taskId}',
+      '{title}',
+      '{description}',
+    ]);
   });
 
-  it('compileDrivePreview fills the five Drive tokens with sample values', () => {
-    const out = compileDrivePreview('issue {ref} — {title} ({url}) via {skill}: {body}');
+  it('compileDrivePreview fills the Drive tokens with sample values', () => {
+    const out = compileDrivePreview('task {taskId}: issue {ref} — {title} ({url}) via {skill}: {description}');
     expect(out).toBe(
-      `issue ${SAMPLE_DRIVE_FIELDS.ref} — ${SAMPLE_DRIVE_FIELDS.title} (${SAMPLE_DRIVE_FIELDS.url}) via ${SAMPLE_DRIVE_FIELDS.skill}: ${SAMPLE_DRIVE_FIELDS.body}`,
+      `task ${SAMPLE_DRIVE_FIELDS.taskId}: issue ${SAMPLE_DRIVE_FIELDS.ref} — ${SAMPLE_DRIVE_FIELDS.title} (${SAMPLE_DRIVE_FIELDS.url}) via ${SAMPLE_DRIVE_FIELDS.skill}: ${SAMPLE_DRIVE_FIELDS.description}`,
     );
-    expect(out).not.toMatch(/\{(skill|ref|url|title|body)\}/);
+    expect(out).not.toMatch(/\{(taskId|skill|ref|url|title|description)\}/);
   });
 
   it('compileTaskIdPreview fills {taskId}', () => {
@@ -39,7 +44,10 @@ describe('prompt-preview-model (settings compiled preview)', () => {
   });
 
   it('compileCriticPreview shows both Task-kind variants, each with the read-only + verdict scaffolding', () => {
-    const [mirrored, native] = compileCriticPreview({ issuePrompt: 'Review issue {ref}: {title}.', noIssuePrompt: 'Review the Task via {skill}.' });
+    const [mirrored, native] = compileCriticPreview({
+      issuePrompt: 'Review issue {ref}: {title}.',
+      noIssuePrompt: 'Review task {taskId} — {title} via {skill}.',
+    });
     if (!mirrored || !native) throw new Error('expected two compiled variants');
 
     expect(mirrored.label).toMatch(/mirrored/i);
@@ -47,8 +55,10 @@ describe('prompt-preview-model (settings compiled preview)', () => {
     expect(mirrored.text).toContain('the referenced ticket');
 
     expect(native.label).toMatch(/native/i);
-    expect(native.text).toContain(`Review the Task via ${SAMPLE_DRIVE_FIELDS.skill}.`);
-    expect(native.text).not.toContain(SAMPLE_DRIVE_FIELDS.title);
+    // The Task-identity tokens resolve even with no ticket — the feature gap this closed.
+    expect(native.text).toContain(
+      `Review task ${SAMPLE_DRIVE_FIELDS.taskId} — ${SAMPLE_DRIVE_FIELDS.title} via ${SAMPLE_DRIVE_FIELDS.skill}.`,
+    );
     expect(native.text).toContain('there is no external ticket to consult');
 
     for (const { text } of [mirrored, native]) {
@@ -66,13 +76,10 @@ describe('prompt-preview-model (settings compiled preview)', () => {
     expect(out).toMatch(/READ-ONLY/i);
   });
 
-  it('matches the Epic resolver prompt and only offers its supported tokens', () => {
-    expect(EPIC_RESOLVE_PLACEHOLDERS).toEqual([
-      ['{ref}', 'Epic issue number'],
-      ['{title}', 'Epic issue title'],
-    ]);
-    expect(compileEpicResolvePreview('Fix {ref}: {title}.')).toContain(
-      `Fix ${SAMPLE_DRIVE_FIELDS.ref}: ${SAMPLE_DRIVE_FIELDS.title}.`,
+  it('matches the Epic resolver prompt and offers its supported tokens', () => {
+    expect(EPIC_RESOLVE_PLACEHOLDERS.map((p) => p.token)).toEqual(['{title}', '{description}', '{ref}', '{url}']);
+    expect(compileEpicResolvePreview('Fix {ref}: {title} — {description}')).toContain(
+      `Fix ${SAMPLE_DRIVE_FIELDS.ref}: ${SAMPLE_DRIVE_FIELDS.title} — ${SAMPLE_DRIVE_FIELDS.description}`,
     );
     expect(compileEpicResolvePreview('Fix {ref}.')).toContain('## Failing Epic verification');
   });

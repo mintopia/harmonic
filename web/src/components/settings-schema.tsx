@@ -10,6 +10,7 @@ import {
   compileTaskIdPreview,
   compileTaskPreview,
   type LabeledPreview,
+  type Placeholder,
 } from '../prompt-preview-model';
 import { setBudgetField, summarizeBudget } from './guardrail-budget-model';
 import { ConfigField, registryField, toOptions, withCurrent, type FieldOption, type ScalarDescriptor } from './settings-fields';
@@ -80,7 +81,7 @@ interface GlobalPrompt {
   errorKey: string;
   get: (c: AppConfig) => string;
   set: (c: AppConfig, value: string) => AppConfig;
-  placeholders: [string, string][];
+  placeholders: Placeholder[];
   compile: (text: string, config: AppConfig) => string | LabeledPreview[];
   rows?: number;
   textareaClass?: string;
@@ -95,7 +96,7 @@ interface OverridablePrompt {
   get: (w: Workspace) => string | null;
   set: (w: Workspace, value: string | null) => Workspace;
   inherited: (c: AppConfig) => string;
-  placeholders: [string, string][];
+  placeholders: Placeholder[];
   compile: (text: string, config: AppConfig) => string | LabeledPreview[];
   rows?: number;
   textareaClass?: string;

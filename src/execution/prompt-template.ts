@@ -1,13 +1,17 @@
-/** The five interpolation tokens a Drive-style prompt fills. */
+/** The interpolation tokens a Drive-style prompt fills. `taskId`/`title`/
+ * `description` are always populated — a native (non-mirrored) Task has no
+ * ticket, so only `ref`/`url` go empty. */
 export type DriveFields = {
+  taskId: string;
   skill: string;
   ref: string;
   url: string;
   title: string;
-  body: string;
+  description: string;
 };
 
 type DriveTask = {
+  id: number;
   harness: string;
   wayfinderType: string | null;
   prompt: string;
@@ -48,11 +52,12 @@ export function driveFields<T extends DriveTask>(task: T, urlFor: (task: T) => s
   const isMapChild = task.epicKind === 'map';
   const ref = isMapChild ? task.mapRef : task.trackerRef;
   return {
+    taskId: String(task.id),
     skill: skillFor(task),
     ref: String(ref ?? ''),
     url: urlFor(isMapChild ? { ...task, trackerRef: task.mapRef } : task) ?? '',
     title,
-    body,
+    description: body,
   };
 }
 
