@@ -40,29 +40,85 @@ function ToolStatus({ status }: { status: string | undefined }) {
   );
 }
 
-function ToolLine({ tool }: { tool: ToolCallView }) {
+function inputValue(input: string | null, keys: readonly string[]): string | null {
+  if (!input) return null;
+  try {
+    const parsed: unknown = JSON.parse(input);
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null;
+    for (const [key, value] of Object.entries(parsed)) {
+      if (!keys.includes(key) || (typeof value !== 'string' && typeof value !== 'number')) continue;
+      return String(value);
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function RawToolDetails({ tool }: { tool: ToolCallView }) {
+  if (!tool.input && !tool.output) return null;
+  return (
+    <details className="border-t border-hairline px-3 py-2">
+      <summary className="cursor-pointer text-small font-medium text-muted hover:text-ink">Raw input &amp; output</summary>
+      {tool.input && <pre className="mt-2 max-h-80 overflow-auto rounded-sm bg-field p-2 font-data text-data text-ink">{tool.input}</pre>}
+      {tool.output && <pre className="mt-2 max-h-80 overflow-auto rounded-sm bg-field p-2 font-data text-data text-ink">{tool.output}</pre>}
+    </details>
+  );
+}
+
+function ExecuteCard({ tool }: { tool: ToolCallView }) {
+  const command = inputValue(tool.input, ['command', 'cmd']) ?? tool.title ?? 'Command';
+  return (
+    <div className="overflow-hidden rounded-md border border-hairline bg-sunken">
+      <div className="flex items-center gap-2 border-b border-hairline bg-raised px-3 py-1.5">
+        <span className={`${toolChip} shrink-0`}>run</span>
+        <span className="text-small font-medium text-muted">Terminal</span>
+        <span className="ml-auto"><ToolStatus status={tool.status} /></span>
+      </div>
+      <pre className="overflow-auto px-3 py-2 font-data text-data text-ink"><span className="select-none text-faint">$ </span>{command}</pre>
+      {tool.output && <pre className="max-h-80 overflow-auto border-t border-hairline px-3 py-2 font-data text-data text-muted">{tool.output}</pre>}
+    </div>
+  );
+}
+
+function ReadCard({ tool }: { tool: ToolCallView }) {
+  const path = inputValue(tool.input, ['path', 'filePath', 'file_path']) ?? tool.title ?? 'File';
+  const start = inputValue(tool.input, ['lineStart', 'startLine', 'start']);
+  const end = inputValue(tool.input, ['lineEnd', 'endLine', 'end']);
+  const range = start && end ? `lines ${start}–${end}` : start ? `line ${start}` : null;
+  return (
+    <div className="overflow-hidden rounded-md border border-hairline bg-surface">
+      <div className="flex items-center gap-2 border-b border-hairline bg-sunken px-3 py-1.5">
+        <span className={`${toolChip} shrink-0`}>read</span>
+        <span className="min-w-0 flex-1 truncate font-data text-data text-ink" title={path}>{path}</span>
+        {range && <span className="shrink-0 font-data text-small text-faint">{range}</span>}
+        <ToolStatus status={tool.status} />
+      </div>
+      {tool.output && <pre className="max-h-80 overflow-auto px-3 py-2 font-data text-data text-muted">{tool.output}</pre>}
+    </div>
+  );
+}
+
+function GenericToolCard({ tool }: { tool: ToolCallView }) {
   const target = tool.title || 'Tool call';
   return (
-    <details className="group rounded-md border border-hairline bg-sunken px-2 py-1.5">
-      <summary className="flex cursor-pointer list-none items-center gap-2">
+    <details className="group rounded-md border border-hairline bg-sunken">
+      <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2">
+        <span aria-hidden className="grid size-5 shrink-0 place-items-center rounded-sm bg-tool-tint font-data text-small text-tool">›</span>
         <span className={`${toolChip} shrink-0`}>{toolKindLabel(tool.toolKind)}</span>
-        <span className="min-w-0 flex-1 truncate font-data text-data text-ink" title={target}>
-          {target}
-        </span>
+        <span className="min-w-0 flex-1 truncate font-data text-data text-ink" title={target}>{target}</span>
         {tool.subagent && <span className={`${chip} shrink-0 bg-raised text-muted`}>subagent</span>}
         <ToolStatus status={tool.status} />
       </summary>
-      <div className="mt-2 border-t border-hairline pt-2">
-        <p className="break-all font-data text-data text-ink">{target}</p>
-        {tool.input && (
-          <pre className="mt-2 max-h-80 overflow-auto rounded-sm bg-field p-2 font-data text-data text-ink">{tool.input}</pre>
-        )}
-        {tool.output && (
-          <pre className="mt-2 max-h-80 overflow-auto rounded-sm bg-field p-2 font-data text-data text-ink">{tool.output}</pre>
-        )}
-      </div>
+      <RawToolDetails tool={tool} />
     </details>
   );
+}
+
+function ToolLine({ tool }: { tool: ToolCallView }) {
+  if (tool.toolKind === 'execute') return <ExecuteCard tool={tool} />;
+  if (tool.toolKind === 'read') return <ReadCard tool={tool} />;
+  return <GenericToolCard tool={tool} />;
 }
 
 function payloadValue(payload: unknown, key: string): unknown {
