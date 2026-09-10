@@ -1,8 +1,8 @@
 import { useMemo, type ReactNode } from 'react';
-import { coalesceTail, isInterrupted, movingBaseView, type StreamEvent, type ToolCallView } from '../event-stream-model';
-import { guardrailDimensionLabel } from '../guardrail-trip-model';
-import { chip, labelType, toolChip } from '../ui';
-import { Markdown } from './Markdown';
+import { coalesceTail, isInterrupted, movingBaseView, type StreamEvent, type ToolCallView } from '../../event-stream-model';
+import { guardrailDimensionLabel } from '../../guardrail-trip-model';
+import { chip, labelType, toolChip } from '../../ui';
+import { Markdown } from '../Markdown';
 
 const TOOL_KIND_LABEL: Record<string, string> = {
   read: 'read',
@@ -65,33 +65,36 @@ function ToolLine({ tool }: { tool: ToolCallView }) {
   );
 }
 
+function payloadValue(payload: unknown, key: string): unknown {
+  if (typeof payload !== 'object' || payload === null) return undefined;
+  return Object.entries(payload).find(([name]) => name === key)?.[1];
+}
+
 function renderEventLine(event: StreamEvent): ReactNode {
-  const payload = event.payload as
-    | {
-        sessionUpdate?: string;
-        entries?: { status?: string; content?: string }[];
-        event?: string;
-        observed?: unknown[];
-        expected?: unknown;
-        text?: unknown;
-        pattern?: unknown;
-        dimension?: unknown;
-        reason?: unknown;
-      }
-    | null
-    | undefined;
+  const sessionUpdate = payloadValue(event.payload, 'sessionUpdate');
+  const entries = payloadValue(event.payload, 'entries');
+  const eventName = payloadValue(event.payload, 'event');
+  const observed = payloadValue(event.payload, 'observed');
+  const expected = payloadValue(event.payload, 'expected');
+  const text = payloadValue(event.payload, 'text');
+  const pattern = payloadValue(event.payload, 'pattern');
+  const dimension = payloadValue(event.payload, 'dimension');
+  const reason = payloadValue(event.payload, 'reason');
   if (event.type === 'session_update') {
-    if (payload?.sessionUpdate === 'plan') {
+    if (sessionUpdate === 'plan') {
       return (
         <ul className="space-y-0.5">
-          {(payload.entries ?? []).map((entry, i) => (
-            <li key={i} className="flex items-start gap-2 text-ink">
-              <span className="shrink-0 text-muted">
-                {entry.status === 'completed' ? '☑' : entry.status === 'in_progress' ? '◐' : '☐'}
-              </span>
-              <span>{entry.content}</span>
-            </li>
-          ))}
+          {(Array.isArray(entries) ? entries : []).map((entry, i) => {
+            const status = payloadValue(entry, 'status');
+            return (
+              <li key={i} className="flex items-start gap-2 text-ink">
+                <span className="shrink-0 text-muted">
+                  {status === 'completed' ? '☑' : status === 'in_progress' ? '◐' : '☐'}
+                </span>
+                <span>{String(payloadValue(entry, 'content') ?? '')}</span>
+              </li>
+            );
+          })}
         </ul>
       );
     }
@@ -101,31 +104,31 @@ function renderEventLine(event: StreamEvent): ReactNode {
   if (event.type === 'lifecycle' && isInterrupted(event.payload)) {
     return <div className="text-muted">Interrupted</div>;
   }
-  if (payload?.event === 'model_mismatch') {
+  if (eventName === 'model_mismatch') {
     return (
       <div className="text-tool">
         model mismatch: ran on{' '}
-        <span className="font-medium">{(payload.observed ?? []).join(', ')}</span> (task pinned{' '}
-        <span className="font-medium">{String(payload.expected)}</span>)
+        <span className="font-medium">{(Array.isArray(observed) ? observed : []).join(', ')}</span> (task pinned{' '}
+        <span className="font-medium">{String(expected)}</span>)
       </div>
     );
   }
-  if (payload?.event === 'steer_delivered' || payload?.event === 'steer_queued') {
-    const queued = payload.event === 'steer_queued';
+  if (eventName === 'steer_delivered' || eventName === 'steer_queued') {
+    const queued = eventName === 'steer_queued';
     return (
       <div className="rounded-md bg-accent-tint px-2 py-1 text-ink">
         <span className={`${labelType} mr-2 text-accent`}>{queued ? 'steer queued' : 'steering'}</span>
-        <span className="whitespace-pre-wrap">{String(payload.text ?? '')}</span>
+        <span className="whitespace-pre-wrap">{String(text ?? '')}</span>
       </div>
     );
   }
-  if (payload?.event === 'progress-nudge') {
+  if (eventName === 'progress-nudge') {
     return (
       <div className="rounded-md bg-accent-tint px-2 py-1 text-ink">
         <span className={`${labelType} mr-2 text-accent`}>progress nudge</span>
         <span>
           Redirected before a guardrail trip
-          {payload.pattern ? ` — ${String(payload.pattern)}` : ''}
+          {pattern ? ` — ${String(pattern)}` : ''}
         </span>
       </div>
     );
@@ -139,12 +142,12 @@ function renderEventLine(event: StreamEvent): ReactNode {
       </div>
     );
   }
-  if (payload?.event === 'guardrail-tripped') {
+  if (eventName === 'guardrail-tripped') {
     return (
       <div className="text-fail">
         Guardrail tripped —{' '}
-        <span className="font-medium">{guardrailDimensionLabel(String(payload.dimension))}</span>
-        {payload.reason ? `: ${String(payload.reason)}` : ''}
+        <span className="font-medium">{guardrailDimensionLabel(String(dimension))}</span>
+        {reason ? `: ${String(reason)}` : ''}
       </div>
     );
   }
