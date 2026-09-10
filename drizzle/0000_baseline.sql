@@ -97,6 +97,7 @@ CREATE TABLE `conversations` (
 	`working_dir` text NOT NULL,
 	`workspace_id` integer,
 	`state` text NOT NULL,
+	`permission_mode` text DEFAULT 'ask' NOT NULL,
 	`session_id` text,
 	`usage` text,
 	`context_tokens` integer,

@@ -566,6 +566,7 @@ export interface Conversation {
   harness: string;
   model: string;
   workingDir: string;
+  permissionMode: 'ask' | 'automatic';
   state: 'active' | 'ended';
   sessionId: string | null;
   createdAt: number;

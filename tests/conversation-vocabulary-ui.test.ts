@@ -29,6 +29,7 @@ describe('conversation vocabulary UI (#546)', () => {
       harness: 'opencode',
       model: 'opencode-large',
       workingDir: '/work',
+      permissionMode: 'ask',
       state: 'active',
       sessionId: null,
       createdAt: 0,

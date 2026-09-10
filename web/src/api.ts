@@ -241,12 +241,14 @@ export const api = {
       workspaceId ? `/api/conversations?workspaceId=${workspaceId}` : '/api/conversations',
     ),
   conversation: (id: number) => request<Conversation>('GET', `/api/conversations/${id}`),
-  createConversation: (input: { workspaceId?: number; harness?: string; model?: string; workingDir?: string }) =>
+  createConversation: (input: { workspaceId?: number; harness?: string; model?: string; workingDir?: string; permissionMode?: 'ask' | 'automatic' }) =>
     request<Conversation>('POST', '/api/conversations', input),
   // title: null clears an operator-set title, falling back to the one
   // derived from the first Turn.
   renameConversation: (id: number, title: string | null) =>
     request<Conversation>('PATCH', `/api/conversations/${id}`, { title }),
+  setConversationPermissionMode: (id: number, permissionMode: 'ask' | 'automatic') =>
+    request<Conversation>('PATCH', `/api/conversations/${id}`, { permissionMode }),
   deleteConversation: (id: number) => request<{ ok: true }>('DELETE', `/api/conversations/${id}`),
   conversationEvents: (id: number) =>
     request<{ events: ConversationEvent[]; total: number }>('GET', `/api/conversations/${id}/events`),
