@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.6.0](https://github.com/mintopia/harmonic/compare/v2.5.0...v2.6.0) (2026-09-10)
+
+
+### Features
+
+* **conversation:** expose usage and command details ([f130ec0](https://github.com/mintopia/harmonic/commit/f130ec02c043c9d4856944d6094ac30b2067b4e4))
+
+
+### Bug Fixes
+
+* expose epic verification output ([f5653a1](https://github.com/mintopia/harmonic/commit/f5653a1af8e5f8bb400396bf6d7c9766ce153f3e))
+* rebuild schema tables with definition drift ([3520ec0](https://github.com/mintopia/harmonic/commit/3520ec01ec212c505b3995016c1ae2da4a82e1a4))
+* stream verification and steering updates ([49e8d53](https://github.com/mintopia/harmonic/commit/49e8d538fbcc3296d13d02fc226e9557d5943311))
+
 ## [2.5.0](https://github.com/mintopia/harmonic/compare/v2.4.0...v2.5.0) (2026-09-10)
 
 
