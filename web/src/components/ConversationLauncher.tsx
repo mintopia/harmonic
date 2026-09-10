@@ -40,6 +40,7 @@ import { EventStream } from './EventStream';
 import { ElicitationPrompt } from './ElicitationPrompt';
 import { DiscoveryModelPicker } from './DiscoveryModelPicker.js';
 import { PathTail } from './PathTail';
+import { providerLabel } from './TaskIdentity';
 import { Icon } from './Icon';
 import { useConversationDetail } from './useConversationDetail';
 import { toastError } from '../toast';
@@ -158,8 +159,7 @@ function Transcript({ events, conversation }: { events: ConversationEvent[]; con
     return <p className="text-muted">Send a message to begin.</p>;
   }
 
-  const harness = conversation?.harness ?? 'agent';
-  const agentLabel = harness.charAt(0).toUpperCase() + harness.slice(1);
+  const agentLabel = providerLabel(conversation?.harness ?? '');
   const model = conversation?.model ?? '';
 
   return (
@@ -439,7 +439,7 @@ function Composer({
             >
               {Object.keys(config.harnesses).map((h) => (
                 <option key={h} value={h}>
-                  {h}
+                  {providerLabel(h)}
                 </option>
               ))}
             </select>
@@ -467,8 +467,8 @@ function Composer({
             ended
               ? 'Conversation ended.'
               : running
-                ? 'Message the agent… (Enter queues it for after this turn)'
-                : 'Message the agent… (Enter to send, Shift+Enter for a newline)'
+                ? `Message ${providerLabel(harness)}… (Enter queues it for after this turn)`
+                : `Message ${providerLabel(harness)}… (Enter to send, Shift+Enter for a newline)`
           }
           onChange={(e) => setText(e.target.value)}
           onKeyDown={onKeyDown}
@@ -630,7 +630,7 @@ function ConversationHeader({
           />
           <span className="sr-only">{conversation.state}</span>
           <span className="shrink-0">
-            {conversation.harness} · {conversation.model}
+            {providerLabel(conversation.harness)} · {conversation.model}
           </span>
           <span aria-hidden="true" className="shrink-0 text-faint">
             ·
