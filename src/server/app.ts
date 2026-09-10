@@ -85,6 +85,7 @@ import { ChannelService } from '../notifications/channels.js';
 import { Notifier } from '../notifications/notifier.js';
 import { buildMcpServer } from '../mcp/server.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { detectDistributionMode, type DistributionMode } from '../distribution-mode.js';
 
 export interface AppOptions {
   dataDir: string;
@@ -148,6 +149,7 @@ async function requestIsOperator(req: FastifyRequest, auth: AuthService): Promis
 }
 
 export interface AppContext {
+  distributionMode: DistributionMode;
   asyncDb: AsyncDbHandle;
   statsReader: StatsWorkerClient;
   settingsStore: SettingsStore;
@@ -260,6 +262,7 @@ export interface RegisteredRoute {
 export type App = FastifyInstance & { ctx: AppContext; registeredRoutes: RegisteredRoute[] };
 
 export async function buildApp(opts: AppOptions): Promise<App> {
+  const distributionMode = detectDistributionMode();
   const asyncDb = await openAsyncDb(opts.dataDir);
   const statsReader = openStatsReader(opts.dataDir);
   const worktreesDir = join(opts.dataDir, 'worktrees');
@@ -674,7 +677,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     })().catch(() => {});
   });
 
-  const ctx: AppContext = { asyncDb, statsReader, settingsStore, workspaces, tasks, attempts, sessions: sessionStore, runner, conversations, conversationDriver, permissionRules, escalation, autoRunner, globalPause, guardrailEvents, verificationAttempts, trackerManager, epicService, scheduler, auth, channels, notifier, bus, hostLoad, worktreeInventory, forceCleanupWorktree, dirtyWorktreeFiles, reconcileWorktrees, worktreesReconciledAt: () => worktreeReconciler.reconciledAt };
+  const ctx: AppContext = { distributionMode, asyncDb, statsReader, settingsStore, workspaces, tasks, attempts, sessions: sessionStore, runner, conversations, conversationDriver, permissionRules, escalation, autoRunner, globalPause, guardrailEvents, verificationAttempts, trackerManager, epicService, scheduler, auth, channels, notifier, bus, hostLoad, worktreeInventory, forceCleanupWorktree, dirtyWorktreeFiles, reconcileWorktrees, worktreesReconciledAt: () => worktreeReconciler.reconciledAt };
   const contexts = createAppContexts(ctx);
 
   const app = Fastify({ logger: false }) as unknown as App;
