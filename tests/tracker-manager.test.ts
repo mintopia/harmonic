@@ -13,6 +13,7 @@ import { EPIC_LABEL, TrackerResolutionError } from '../src/tracker/adapter.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { allWorkspaces, makeSettingsStore, waitFor } from './helpers.js';
 import { yieldToEventLoop } from '../src/reliability/yield.js';
+import { integrationSteps } from '../web/src/epic-model.js';
 
 const ticket = (number: number): Ticket => ({
   number,
@@ -168,7 +169,7 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     expect(await manager.maps(workspace.id)).toEqual(legacyMaps);
   });
 
-  it('epicDetail resolves a closed Epic from persisted facts; listEpics stays open-only (#409, #443)', async () => {
+  it('keeps a closed-but-unintegrated Epic on the board until integration completes (#562)', async () => {
     ticketsByRepo.set(repoA, [
       { ...ticket(10), title: 'Closed epic', labels: [EPIC_LABEL] },
       { ...ticket(11), title: 'Closed epic member', parent: 10 },
@@ -186,7 +187,11 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     const beforeRestart = await manager.epicDetail(workspace.id, 10);
     expect(beforeRestart?.ref).toBe(10);
     expect(beforeRestart?.members.map((member) => member.ref)).toEqual([11]);
-    expect((await manager.listEpics(workspace.id)).map((epic) => epic.ref)).not.toContain(10);
+    const visible = await manager.listEpics(workspace.id);
+    const limbo = visible.find((epic) => epic.ref === 10);
+    expect(limbo).toMatchObject({ state: 'open' });
+    if (!limbo) throw new Error('closed-but-unintegrated Epic must remain visible');
+    expect(integrationSteps(limbo).map((step) => step.key)).toEqual(['verify', 'merge', 'check', 'retire']);
 
     manager.stopAll();
     await asyncDb.close();
@@ -198,6 +203,9 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     });
 
     expect(await manager.epicDetail(workspace.id, 10)).toEqual(beforeRestart);
+    expect((await manager.listEpics(workspace.id)).find((epic) => epic.ref === 10)).toMatchObject({ state: 'open' });
+
+    await tasks.markEpicIntegrated(workspace.id, 10, { mergeCommit: 'abc123', memberRefs: [11] });
     expect((await manager.listEpics(workspace.id)).map((epic) => epic.ref)).not.toContain(10);
   });
 
