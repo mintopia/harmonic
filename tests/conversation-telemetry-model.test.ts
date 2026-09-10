@@ -174,7 +174,7 @@ describe('isColdCache / formatColdCacheMessage', () => {
   it('is true once idle time exceeds the warm window, worded as an estimate', () => {
     const now = base.lastTurnAt + 400_000;
     expect(isColdCache({ ...base, now })).toBe(true);
-    expect(formatColdCacheMessage({ ...base, now })).toBe('Cache likely cold — idle 6m, warm window 5m (estimate)');
+    expect(formatColdCacheMessage({ ...base, now })).toBe('Cache likely cold — next message may cost more. Idle 6m, warm window 5m (estimate)');
   });
 
   it('is exactly false at the warm-window boundary', () => {

@@ -598,6 +598,7 @@ export interface Conversation {
   contextWindow: number | null;
   /** The configured harness cache warm period, in seconds. */
   cacheWarmSeconds: number | null;
+  coldResume?: boolean;
 }
 
 /**

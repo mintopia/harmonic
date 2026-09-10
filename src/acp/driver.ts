@@ -92,6 +92,7 @@ export interface AcpLoadHandshake {
   modelId?: string | undefined;
   /** The permission mode to re-establish after load; incompatible if the reloaded harness no longer advertises it. */
   permissionMode?: string | undefined;
+  clientCapabilities?: Record<string, unknown>;
   onInitialize?: (result: AcpInitializeResult) => void;
 }
 
@@ -238,7 +239,7 @@ export class AcpDriver {
   }
 
   private async loadSession(opts: AcpLoadHandshake): Promise<AcpLoadOutcome> {
-    const initResult = await this.initialize(opts.onInitialize);
+    const initResult = await this.initialize(opts.onInitialize, opts.clientCapabilities);
 
     if (initResult.agentCapabilities?.loadSession !== true) {
       return {

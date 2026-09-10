@@ -4643,6 +4643,10 @@
             ],
             "example": 300
           },
+          "coldResume": {
+            "type": "boolean",
+            "example": false
+          },
           "createdAt": {
             "type": "number",
             "example": 1784030400000
@@ -4678,6 +4682,7 @@
           "contextTokens",
           "contextWindow",
           "cacheWarmSeconds",
+          "coldResume",
           "createdAt",
           "updatedAt",
           "endedAt"
@@ -10138,6 +10143,10 @@
             ],
             "example": 300
           },
+          "coldResume": {
+            "type": "boolean",
+            "example": false
+          },
           "createdAt": {
             "type": "number",
             "example": 1784030400000
@@ -10173,6 +10182,7 @@
           "contextTokens",
           "contextWindow",
           "cacheWarmSeconds",
+          "coldResume",
           "createdAt",
           "updatedAt",
           "endedAt"

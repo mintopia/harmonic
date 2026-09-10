@@ -525,7 +525,6 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   }
   await auth.sweepOrphanedAttemptKeys();
   await auth.sweepOrphanedConversationKeys();
-  await conversations.markActiveEnded();
   const getWorkspaceRow = async (id: number | null) => {
     if (id == null) return undefined;
     try {
