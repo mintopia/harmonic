@@ -849,7 +849,7 @@ export interface AppConfig {
   guardrails: { budget: BudgetGuardrail; progress: boolean; toolTimeoutMinutes: number };
   /** How mirrored Tasks are driven: prompt and branch fate. */
   drive: {
-    /** The Drive Prompt template, with {skill}/{ref}/{url}/{title}/{body} placeholders. The default omits {title}/{body} — the agent fetches the issue itself. */
+    /** The Drive Prompt template, with {taskId}/{skill}/{ref}/{url}/{title}/{description} placeholders. The default omits {title}/{description} — the agent fetches the issue itself. */
     prompt: string;
     /** Appended to every auto-driven turn, with {taskId} placeholder. */
     unattendedReminder: string;
