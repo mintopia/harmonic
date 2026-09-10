@@ -53,6 +53,24 @@ async function liveNames(client: Client, type: 'table' | 'index'): Promise<strin
   ).rows.map((row) => String(row.name));
 }
 
+function normalizeDefinition(sql: string): string {
+  return sql.trim().replace(/;$/, '').replace(/[`"']/g, '').replace(/\s+/g, ' ').replace(/\s*,\s*/g, ',').toLowerCase();
+}
+
+async function rebuildTable(client: Client, table: BaselineTable, liveColumns: string[]): Promise<void> {
+  const temporaryName = `__schema_sync_${table.name}_new`;
+  const temporarySql = table.sql.replace(`CREATE TABLE \`${table.name}\``, `CREATE TABLE \`${temporaryName}\``);
+  const commonColumns = table.columns.map((column) => column.name).filter((name) => liveColumns.includes(name));
+  logger.info('schema-sync: rebuilding table for definition drift', { table: table.name });
+  await client.execute(temporarySql);
+  if (commonColumns.length > 0) {
+    const columns = commonColumns.map((name) => `\`${name}\``).join(', ');
+    await client.execute(`INSERT INTO \`${temporaryName}\` (${columns}) SELECT ${columns} FROM \`${table.name}\``);
+  }
+  await client.execute(`DROP TABLE \`${table.name}\``);
+  await client.execute(`ALTER TABLE \`${temporaryName}\` RENAME TO \`${table.name}\``);
+}
+
 async function convergeIncremental(client: Client, baseline: Baseline): Promise<void> {
   const declaredTables = new Set(baseline.tables.map((t) => t.name));
   const declaredIndexes = new Set(baseline.indexes.map((i) => i.name));
@@ -79,10 +97,10 @@ async function convergeIncremental(client: Client, baseline: Baseline): Promise<
       logger.info('schema-sync: dropping column', { table: table.name, column });
       await client.execute(`ALTER TABLE \`${table.name}\` DROP COLUMN \`${column}\``);
     }
-    for (const column of table.columns) {
-      if (!live.includes(column.name)) {
-        await client.execute(`ALTER TABLE \`${table.name}\` ADD COLUMN ${column.definition}`);
-      }
+    const columns = (await client.execute(`pragma table_info(\`${table.name}\`)`)).rows.map((row) => String(row.name));
+    const definition = (await client.execute(`select sql from sqlite_master where type = 'table' and name = '${table.name}'`)).rows[0]?.sql;
+    if (typeof definition !== 'string' || normalizeDefinition(definition) !== normalizeDefinition(table.sql)) {
+      await rebuildTable(client, table, columns);
     }
   }
   for (const index of baseline.indexes) {
