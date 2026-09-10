@@ -1,6 +1,6 @@
 // Explicit .js extensions: this module is shared with the node-side test
 // project, whose nodenext resolution requires them (Vite maps .js → .ts).
-import { isInterrupted, movingBaseView, type StreamItem } from './event-stream-model.js';
+import { isInterrupted, movingBaseView, type StreamItem, type ToolDiff } from './event-stream-model.js';
 import type { AttemptLogEvent } from './types.js';
 
 /**
@@ -14,7 +14,7 @@ import type { AttemptLogEvent } from './types.js';
 export type ChatRow =
   | { kind: 'message'; author: 'assistant' | 'operator'; text: string; at: number; key: number | string; pending?: true }
   | { kind: 'thought'; text: string; key: number }
-  | { kind: 'tool'; toolCallId: string | null; verb: string; target: string | null; status: ChatToolStatus; subagent: boolean; output: string | null; at: number; key: number }
+  | { kind: 'tool'; toolCallId: string | null; verb: string; target: string | null; status: ChatToolStatus; subagent: boolean; output: string | null; diffs: ToolDiff[] | null; at: number; key: number }
   | { kind: 'note'; label: string; text: string | null; key: number };
 
 /** A tool card's outcome badge — settled ok / failed, or still in flight. */
@@ -70,7 +70,7 @@ export function chatRows(items: readonly StreamItem<AttemptLogEvent>[]): ChatRow
     }
     if (item.kind === 'tool') {
       const { verb, target } = splitTitle(item.tool.title ?? 'Tool call');
-      rows.push({ kind: 'tool', toolCallId: item.tool.toolCallId ?? null, verb, target, status: toolStatus(item.tool.status), subagent: item.tool.subagent, output: item.tool.output, at: item.at, key: item.key });
+      rows.push({ kind: 'tool', toolCallId: item.tool.toolCallId ?? null, verb, target, status: toolStatus(item.tool.status), subagent: item.tool.subagent, output: item.tool.output, diffs: item.tool.diffs, at: item.at, key: item.key });
       continue;
     }
     const note = eventRow(item);

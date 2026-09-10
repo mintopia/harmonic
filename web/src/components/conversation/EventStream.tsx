@@ -3,6 +3,8 @@ import { coalesceTail, isInterrupted, movingBaseView, type StreamEvent, type Too
 import { guardrailDimensionLabel } from '../../guardrail-trip-model';
 import { chip, labelType, toolChip } from '../../ui';
 import { Markdown } from '../Markdown';
+import { DiffViewer } from '../DiffViewer';
+import { toolDiffFile } from '../../tool-diff';
 
 const TOOL_KIND_LABEL: Record<string, string> = {
   read: 'read',
@@ -99,6 +101,20 @@ function ReadCard({ tool }: { tool: ToolCallView }) {
   );
 }
 
+function EditCard({ tool }: { tool: ToolCallView }) {
+  if (!tool.diffs?.length) return <GenericToolCard tool={tool} />;
+  return (
+    <div className="overflow-hidden rounded-md border border-hairline bg-surface">
+      <div className="flex items-center gap-2 border-b border-hairline bg-sunken px-3 py-1.5">
+        <span className={`${toolChip} shrink-0`}>edit</span>
+        <span className="text-small font-medium text-muted">Changed file</span>
+        <span className="ml-auto"><ToolStatus status={tool.status} /></span>
+      </div>
+      {tool.diffs.map((diff, index) => <DiffViewer key={`${diff.path}-${index}`} file={toolDiffFile(diff)} />)}
+    </div>
+  );
+}
+
 function GenericToolCard({ tool }: { tool: ToolCallView }) {
   const target = tool.title || 'Tool call';
   return (
@@ -116,6 +132,7 @@ function GenericToolCard({ tool }: { tool: ToolCallView }) {
 }
 
 function ToolLine({ tool }: { tool: ToolCallView }) {
+  if (tool.diffs?.length || tool.toolKind === 'edit') return <EditCard tool={tool} />;
   if (tool.toolKind === 'execute') return <ExecuteCard tool={tool} />;
   if (tool.toolKind === 'read') return <ReadCard tool={tool} />;
   return <GenericToolCard tool={tool} />;

@@ -6,6 +6,8 @@ import type { AttemptLogEvent } from '../../types';
 import { railSectionCount } from '../../ui';
 import { Icon } from '../Icon';
 import { Markdown } from '../Markdown';
+import { DiffViewer } from '../DiffViewer';
+import { toolDiffFile } from '../../tool-diff';
 import { FollowTail } from './FollowTail';
 
 const CAPS = 'text-label font-bold uppercase tracking-[0.1em] text-faint';
@@ -81,7 +83,7 @@ function ToolCard({ row }: { row: Extract<ChatRow, { kind: 'tool' }> }) {
           <span className={`ml-auto shrink-0 text-[10px] font-bold uppercase tracking-[0.05em] ${badge.tone}`}>{badge.label}</span>
         )}
       </div>
-      {row.output && (
+      {row.diffs?.length ? row.diffs.map((diff, index) => <DiffViewer key={`${diff.path}-${index}`} file={toolDiffFile(diff)} />) : row.output && (
         <pre className="max-h-60 overflow-auto border-t border-hairline px-3 py-2 font-data text-[11.5px] leading-[1.55] text-muted">
           {row.output}
         </pre>

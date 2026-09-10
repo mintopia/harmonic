@@ -47,6 +47,42 @@ describe('EventStream tool cards (#549)', () => {
     expect(html).toContain('aria-label="running"');
   });
 
+  it('renders an edit with an ACP diff block as a unified diff card', () => {
+    const html = render([tool(1, {
+      kind: 'edit',
+      status: 'completed',
+      content: [{ type: 'diff', path: 'src/app.ts', oldText: 'before\n', newText: 'after\n' }],
+    })]);
+
+    expect(html).toContain('Changed file');
+    expect(html).toContain('src/app.ts');
+    expect(html).toContain('before');
+    expect(html).toContain('after');
+    expect(html).toContain('aria-label="completed"');
+  });
+
+  it('renders a diff card when a harness omits the edit kind', () => {
+    const html = render([tool(1, {
+      content: [{ type: 'diff', path: 'src/app.ts', oldText: 'before\n', newText: 'after\n' }],
+    })]);
+
+    expect(html).toContain('Changed file');
+    expect(html).toContain('src/app.ts');
+  });
+
+  it('keeps an edit without a diff as the expandable raw detail view', () => {
+    const html = render([tool(1, {
+      kind: 'edit',
+      title: 'Edit src/app.ts',
+      rawInput: { path: 'src/app.ts' },
+      content: [{ content: { text: 'Updated file' } }],
+    })]);
+
+    expect(html).toContain('<details');
+    expect(html).toContain('Raw input &amp; output');
+    expect(html).toContain('Updated file');
+  });
+
   it.each(['search', 'fetch', 'think', 'delete', 'move', 'other'])('keeps %s as a compact expandable summary with raw details', (kind) => {
     const html = render([tool(1, {
       kind,
