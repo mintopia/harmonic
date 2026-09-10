@@ -59,6 +59,11 @@
   --hm-tool-dot: #0d7271;
   --hm-tool-tint: #ddefee;
 
+  --hm-syntax-comment: #656b73;
+  --hm-syntax-keyword: #7c3a2a;
+  --hm-syntax-title: #265f7a;
+  --hm-syntax-string: #46662c;
+
   --hm-token-input: #9e760c;
   --hm-token-output: #c86418;
   --hm-token-cache-read: #cf584a;
@@ -126,6 +131,11 @@
   --hm-tool: #33bdb4;
   --hm-tool-dot: #33bdb4;
   --hm-tool-tint: #123330;
+
+  --hm-syntax-comment: #a3a8b0;
+  --hm-syntax-keyword: #e99a89;
+  --hm-syntax-title: #82c5df;
+  --hm-syntax-string: #b4d28a;
 
   --hm-token-input: #e4c256;
   --hm-token-output: #ef9350;
@@ -196,6 +206,11 @@
     --hm-tool-dot: #33bdb4;
     --hm-tool-tint: #123330;
 
+    --hm-syntax-comment: #a3a8b0;
+    --hm-syntax-keyword: #e99a89;
+    --hm-syntax-title: #82c5df;
+    --hm-syntax-string: #b4d28a;
+
     --hm-token-input: #e4c256;
     --hm-token-output: #ef9350;
     --hm-token-cache-read: #f0836e;
@@ -255,6 +270,10 @@
   --color-tool: var(--hm-tool);
   --color-tool-dot: var(--hm-tool-dot);
   --color-tool-tint: var(--hm-tool-tint);
+  --color-syntax-comment: var(--hm-syntax-comment);
+  --color-syntax-keyword: var(--hm-syntax-keyword);
+  --color-syntax-title: var(--hm-syntax-title);
+  --color-syntax-string: var(--hm-syntax-string);
 
   --color-token-input: var(--hm-token-input);
   --color-token-output: var(--hm-token-output);
@@ -506,6 +525,28 @@
 .markdown pre code {
   padding: 0;
   background: none;
+}
+.hljs-comment,
+.hljs-quote {
+  color: var(--hm-syntax-comment);
+}
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-type,
+.hljs-built_in,
+.hljs-meta {
+  color: var(--hm-syntax-keyword);
+}
+.hljs-title,
+.hljs-title.function_ {
+  color: var(--hm-syntax-title);
+}
+.hljs-string,
+.hljs-number,
+.hljs-literal,
+.hljs-symbol,
+.hljs-attr {
+  color: var(--hm-syntax-string);
 }
 .markdown blockquote {
   padding-left: 0.75rem;

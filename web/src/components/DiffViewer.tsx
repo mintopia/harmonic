@@ -1,4 +1,5 @@
 import type { DiffFile, DiffLine } from '../types';
+import { highlightCode } from '../syntax';
 
 function rowClass(kind: DiffLine['kind']): string {
   if (kind === 'add') return 'bg-merged-tint';
@@ -17,6 +18,8 @@ function sign(kind: DiffLine['kind']): { char: string; cls: string } {
  * already carries the filename as its content title and the ± summary above the
  * hunks, so the strip would repeat it. */
 export function DiffViewer({ file, headerless = false }: { file: DiffFile; headerless?: boolean }) {
+  const language = file.path.split('.').pop();
+
   return (
     <div className="overflow-x-auto bg-surface">
       {!headerless && (
@@ -50,7 +53,7 @@ export function DiffViewer({ file, headerless = false }: { file: DiffFile; heade
                   </td>
                   <td className="pl-3 pr-3.5 whitespace-pre text-ink">
                     <span className={`inline-block w-3 ${s.cls}`}>{s.char}</span>
-                    {line.text}
+                    <span dangerouslySetInnerHTML={{ __html: highlightCode(line.text, language) }} />
                   </td>
                 </tr>
               );
