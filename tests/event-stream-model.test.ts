@@ -111,6 +111,23 @@ describe('coalesceEvents', () => {
     expect(item && item.kind === 'tool' && item.tool.output).toBe('Tests 12 passed');
   });
 
+  it('keeps every streamed output update for one tool call', () => {
+    const call = evt(1, 'session_update', {
+      sessionUpdate: 'tool_call',
+      toolCallId: 't',
+      kind: 'execute',
+      content: [{ content: { text: 'Running tests…' } }],
+    });
+    const update = evt(2, 'session_update', {
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 't',
+      content: [{ content: { text: '12 tests passed' } }],
+    });
+
+    const [item] = coalesceEvents([call, update]);
+    expect(item && item.kind === 'tool' && item.tool.output).toBe('Running tests…\n12 tests passed');
+  });
+
   it('preserves structured command input for the expanded command detail', () => {
     const [item] = coalesceEvents([evt(1, 'session_update', {
       sessionUpdate: 'tool_call',

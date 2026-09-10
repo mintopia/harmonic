@@ -110,6 +110,13 @@ function toolCallView(payload: unknown): ToolCallView {
   };
 }
 
+function mergeOutput(prev: string | null, next: string | null): string | null {
+  if (!prev || !next) return next ?? prev;
+  if (next.startsWith(prev)) return next;
+  if (prev.endsWith(next)) return prev;
+  return `${prev}\n${next}`;
+}
+
 function mergeToolView(prev: ToolCallView, next: ToolCallView): ToolCallView {
   return {
     toolCallId: next.toolCallId ?? prev.toolCallId,
@@ -118,7 +125,7 @@ function mergeToolView(prev: ToolCallView, next: ToolCallView): ToolCallView {
     status: next.status ?? prev.status,
     subagent: prev.subagent || next.subagent,
     input: next.input ?? prev.input,
-    output: next.output ?? prev.output,
+    output: mergeOutput(prev.output, next.output),
   };
 }
 
