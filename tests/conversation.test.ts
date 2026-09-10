@@ -216,21 +216,35 @@ describe('conversation-lifecycle', () => {
       expect((body.events as any[]).some((e) => e.type === 'lifecycle' && e.payload.event === 'idle_timeout')).toBe(true);
     });
 
-    it('marks active Conversations ended on a server restart; the transcript survives', async () => {
+    it('cold-resumes an active Conversation after a server restart', async () => {
       server = await startServer(stubHarness());
       const convo = await firstTurn(server, 'survive as history');
-      expect((await server.api('GET', `/api/conversations/${convo.id}`)).body.state).toBe('active');
+      const originalSessionId = (await server.api('GET', `/api/conversations/${convo.id}`)).body.sessionId;
+      expect(originalSessionId).toEqual(expect.any(String));
 
       const dataDir = server.dataDir;
       await server.app.close();
       server = await startServer(stubHarness(), { dataDir });
 
       const restored = await server.api('GET', `/api/conversations/${convo.id}`);
-      expect(restored.body.state).toBe('ended');
+      expect(restored.body).toMatchObject({ state: 'active', sessionId: originalSessionId, coldResume: true });
+
+      const turn = await server.api('POST', `/api/conversations/${convo.id}/turns`, {
+        text: JSON.stringify({ echoSessionLoad: true }),
+      });
+      expect(turn.status).toBe(200);
+      await waitFor(async () => {
+        const { body } = await server.api('GET', `/api/conversations/${convo.id}`);
+        return body.coldResume === false ? body : undefined;
+      });
+      await waitFor(async () => {
+        const { body } = await server.api('GET', `/api/conversations/${convo.id}/events`);
+        return (body.events as any[]).find((event) => event.type === 'session_update' &&
+          JSON.stringify(event.payload).includes(originalSessionId)) ? body.events : undefined;
+      });
+
       const events = await server.api('GET', `/api/conversations/${convo.id}/events`);
-      expect((events.body.events as any[]).some((e) => e.type === 'user_turn')).toBe(true);
-      const turn = await server.api('POST', `/api/conversations/${convo.id}/turns`, { text: 'nope' });
-      expect(turn.status).toBe(409);
+      expect((events.body.events as any[]).filter((event) => event.type === 'user_turn')).toHaveLength(2);
     });
   });
 });

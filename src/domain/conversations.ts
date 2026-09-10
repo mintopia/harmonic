@@ -134,22 +134,6 @@ export class ConversationStore {
     });
   }
 
-  /**
-   * Boot recovery: any Conversation still 'active' was orphaned by a restart —
-   * its warm harness is gone, so it cannot resume. Mark it ended; the
-   * transcript survives read-only.
-   */
-  async markActiveEnded(): Promise<void> {
-    const now = Date.now();
-    await this.db.write((db) =>
-      db
-        .update(conversations)
-        .set({ state: 'ended', endedAt: now, updatedAt: now })
-        .where(eq(conversations.state, 'active'))
-        .run(),
-    );
-  }
-
   async appendEvent(conversationId: number, event: ConversationEventInput): Promise<PersistedConversationEvent> {
     const row = await this.db.write(async (db) => {
       const seq =

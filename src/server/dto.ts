@@ -667,6 +667,7 @@ export type ApiConversation = Omit<ConversationRow, 'usage' | 'workspaceId'> & {
   contextWindow: number | null;
   /** The harness cache's warm duration in seconds, derived from current configuration. */
   cacheWarmSeconds: number | null;
+  coldResume: boolean;
 };
 
 const DERIVED_TITLE_MAX = 80;
@@ -691,6 +692,7 @@ export function conversationToApiDto(
     cost: Cost | null;
     contextWindow: number | null;
     cacheWarmSeconds: number | null;
+    coldResume?: boolean;
   },
 ): ApiConversation {
   const { usage: rawUsage, ...rest } = conversation;
@@ -703,5 +705,6 @@ export function conversationToApiDto(
     contextTokens: conversation.contextTokens,
     contextWindow: resolved.contextWindow,
     cacheWarmSeconds: resolved.cacheWarmSeconds,
+    coldResume: resolved.coldResume ?? false,
   };
 }

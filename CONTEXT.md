@@ -359,10 +359,10 @@ Working Directory over ACP — a sibling to Task, not a variant of it. Unlike
 a Task it is never queued, never picked by the Auto-Runner, and never verified
 or merged; the human is in the loop for every turn. "Chat" is the
 informal UI verb ("open a chat"); the domain noun is Conversation.
-It is **active** while its harness process is warm (spawned on the first
-turn, kept alive across widget/socket close) and **ended** once explicitly
-ended, idle past the timeout, or killed by a server restart — an ended
-Conversation survives as read-only history but cannot resume.
+It is **active** while it can accept Turns; its warm harness process is spawned
+on the first Turn and kept across widget/socket close. A server restart makes
+an active Conversation cold, but it can resume its prior session; only an
+explicit end or idle timeout makes it **ended** and read-only.
 _Avoid_: chat (as the noun), session (ACP-overloaded), thread
 
 **Turn**:
