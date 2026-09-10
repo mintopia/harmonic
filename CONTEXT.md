@@ -815,6 +815,50 @@ load reaches the CPU core count (more runnable work than cores); saturation
 tints the header readout and is edge-logged with hysteresis.
 _Avoid_: system load, host metrics
 
+### Updates
+
+**Distribution Mode**:
+How this instance was installed, which decides whether it can self-upgrade —
+**packaged** (a global npm install of `@mintopia/harmonic`, upgradable in place)
+or **source** (a git checkout, developer or self-hosted, not upgradable by
+Harmonic itself). Detected at boot from whether a `.git` directory sits at the
+app root. Only *packaged* mode runs the Update Check and shows the Update Banner;
+*source* mode suppresses both, since Harmonic cannot cleanly upgrade a checkout.
+_Avoid_: install type, dev mode, environment
+
+**Update Check**:
+A Scheduled Job that asks the npm registry whether a newer Harmonic is published
+— the `@mintopia/harmonic` package's `latest` dist-tag, compared by semver
+against the running version and offered only when strictly greater. Stable
+releases only; pre-release tags are ignored. Runs on boot and hourly. Present
+only in *packaged* Distribution Mode.
+_Avoid_: version poll, upgrade poll
+
+**Update Banner**:
+The instance-global notice at the top of every board announcing an available
+update. **Three states**: *available* (Upgrade / Dismiss), *armed* (the operator
+chose to upgrade — shows that it will restart once the instance is idle, with
+Cancel), and *upgrading* (the swap is under way). **Dismiss is per-version** — a
+newer published version re-raises it; there is no permanent silence. Dismiss and
+arm are instance-wide, never per-Workspace.
+_Avoid_: update toast, banner notification (a Notification Channel is a different
+thing)
+
+**Armed Upgrade**:
+An operator-confirmed upgrade, pinned to the exact offered version, waiting to
+fire until the instance is **idle**. Arming turns the Auto-Runner **master
+switch off** (no new pickups) and blocks manual launches, so in-flight work
+drains toward idle. **Idle** means zero running Attempts (Task and Epic), no
+in-flight Operation (merge / integrate), and no Conversation mid-turn — a live
+Conversation is **never force-killed**; the upgrade waits for a between-turns gap
+and shows a "waiting for agent before updating" notice. The armed intent and its
+target version are **persisted**, so a crash before it fires does not lose it.
+**Cancel** un-arms, clears the intent, and restores the master switch to its
+pre-arm value. When idle is reached the instance restarts onto the new version
+with all on-disk data — the DB and worktrees — preserved.
+_Avoid_: pending update, scheduled upgrade, auto-upgrade (it is always
+operator-initiated, never silent)
+
 ### Interfaces
 
 **Activity**:
