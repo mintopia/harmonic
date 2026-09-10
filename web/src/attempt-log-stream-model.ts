@@ -21,3 +21,11 @@ export function attemptLogCursor({ events }: { events: readonly AttemptLogEvent[
 export function eventsAfterLiveCursor({ events, liveCursor }: { events: readonly AttemptLogEvent[]; liveCursor: number }): AttemptLogEvent[] {
   return events.filter((event) => event.seq > liveCursor);
 }
+
+/** Buffered verifier output is transient, so REST hydration cannot contain it. */
+export function eventsForAttemptLogHydration({ events, liveCursor }: { events: readonly AttemptLogEvent[]; liveCursor: number }): AttemptLogEvent[] {
+  return events.filter((event) => {
+    const payload = event.payload as { sessionUpdate?: unknown } | null;
+    return event.seq > liveCursor || payload?.sessionUpdate === 'verification_output';
+  });
+}

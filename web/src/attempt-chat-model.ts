@@ -12,7 +12,7 @@ import type { AttemptLogEvent } from './types.js';
  * the component stays a thin renderer, unit-tested away from the DOM.
  */
 export type ChatRow =
-  | { kind: 'message'; author: 'assistant' | 'operator'; text: string; at: number; key: number }
+  | { kind: 'message'; author: 'assistant' | 'operator'; text: string; at: number; key: number | string; pending?: true }
   | { kind: 'thought'; text: string; key: number }
   | { kind: 'tool'; toolCallId: string | null; verb: string; target: string | null; status: ChatToolStatus; subagent: boolean; output: string | null; at: number; key: number }
   | { kind: 'note'; label: string; text: string | null; key: number };
@@ -60,7 +60,7 @@ export function chatRows(items: readonly StreamItem<AttemptLogEvent>[]): ChatRow
     if (item.kind === 'text') {
       if (!item.text.trim()) continue;
       if (item.variant === 'operator') {
-        rows.push({ kind: 'message', author: 'operator', text: item.text, at: item.at, key: item.key });
+        rows.push({ kind: 'message', author: 'operator', text: item.text, at: item.at, key: item.key, pending: item.pending });
       } else if (item.variant === 'thought') {
         rows.push({ kind: 'thought', text: item.text, key: item.key });
       } else {

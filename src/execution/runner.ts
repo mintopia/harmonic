@@ -510,6 +510,19 @@ export class Runner {
     };
   }
 
+  private emitSteerLog({ attemptId, text, queued }: { attemptId: number; text: string; queued: boolean }): void {
+    const seq = (this.progressSequences.get(attemptId) ?? 0) + 1;
+    this.progressSequences.set(attemptId, seq);
+    this.events.onAttemptLogEvent?.({
+      id: LIVE_RUN_LOG_EVENT_ID_OFFSET + seq,
+      attemptId,
+      seq,
+      ts: Date.now(),
+      type: 'session_update',
+      payload: { sessionUpdate: 'operator_message', content: { type: 'text', text }, pending: true, queued },
+    });
+  }
+
   /**
    * Relay one critic turn's ACP session updates onto the critic-log channel,
    * verbatim and keyed by the builder Attempt — the same event shape the builder
@@ -888,6 +901,7 @@ export class Runner {
           active.steerSupported = true;
           const event = await this.attempts.appendEvent(active.attemptId, { type: 'lifecycle', payload: { event: 'steer_injected', text } });
           this.events.onAttemptEvent?.(event);
+          this.emitSteerLog({ attemptId: active.attemptId, text, queued: false });
           return true;
         }
         // Outcome 'promptRequired': the turn ended before the RPC; nothing ran.
@@ -901,6 +915,7 @@ export class Runner {
     active.steerQueue.push(text);
     const event = await this.attempts.appendEvent(active.attemptId, { type: 'lifecycle', payload: { event: 'steer_queued', text } });
     this.events.onAttemptEvent?.(event);
+    this.emitSteerLog({ attemptId: active.attemptId, text, queued: true });
     return true;
   }
 

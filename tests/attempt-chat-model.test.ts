@@ -39,6 +39,19 @@ describe('chatRows', () => {
     ]);
   });
 
+  it('marks a just-sent steer as pending until the agent has acted on it', () => {
+    expect(rows([event(1, 'operator_message', { content: { type: 'text', text: 'Run the focused test.' }, pending: true })])).toEqual([
+      { kind: 'message', author: 'operator', text: 'Run the focused test.', at: 1, key: 1, pending: true },
+    ]);
+  });
+
+  it('keeps consecutive operator steers as separate messages', () => {
+    expect(rows([operator(1, 'Run the focused test.'), operator(2, 'Then check the diff.')])).toEqual([
+      { kind: 'message', author: 'operator', text: 'Run the focused test.', at: 1, key: 1 },
+      { kind: 'message', author: 'operator', text: 'Then check the diff.', at: 2, key: 2 },
+    ]);
+  });
+
   it('folds a tool call and its updates into one card whose status advances in place', () => {
     const result = rows([
       tool(1, 't1', { kind: 'read', title: 'Read src/app.ts', status: 'pending' }),
