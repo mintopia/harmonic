@@ -3569,6 +3569,95 @@
                 "endedAt"
               ]
             }
+          },
+          "verificationAttempts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "attemptId": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "seq": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "ts": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "mechanism": {
+                  "type": "string",
+                  "enum": [
+                    "critic",
+                    "command"
+                  ]
+                },
+                "inputOid": {
+                  "type": "string"
+                },
+                "verdict": {
+                  "type": "string",
+                  "enum": [
+                    "pass",
+                    "fail",
+                    "inconclusive"
+                  ]
+                },
+                "summary": {
+                  "type": "string"
+                },
+                "output": {
+                  "type": "string"
+                },
+                "prompt": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "harness": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hasTranscript": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "id",
+                "attemptId",
+                "seq",
+                "ts",
+                "mechanism",
+                "inputOid",
+                "verdict",
+                "summary",
+                "output",
+                "prompt",
+                "harness",
+                "hasTranscript"
+              ]
+            }
           }
         },
         "required": [
@@ -3583,7 +3672,8 @@
           "contextTokens",
           "startedAt",
           "endedAt",
-          "steps"
+          "steps",
+          "verificationAttempts"
         ]
       },
       "EpicAttemptTimelineResponseInput": {
@@ -8932,6 +9022,96 @@
               ],
               "additionalProperties": false
             }
+          },
+          "verificationAttempts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "attemptId": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "seq": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "ts": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "mechanism": {
+                  "type": "string",
+                  "enum": [
+                    "critic",
+                    "command"
+                  ]
+                },
+                "inputOid": {
+                  "type": "string"
+                },
+                "verdict": {
+                  "type": "string",
+                  "enum": [
+                    "pass",
+                    "fail",
+                    "inconclusive"
+                  ]
+                },
+                "summary": {
+                  "type": "string"
+                },
+                "output": {
+                  "type": "string"
+                },
+                "prompt": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "harness": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hasTranscript": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "id",
+                "attemptId",
+                "seq",
+                "ts",
+                "mechanism",
+                "inputOid",
+                "verdict",
+                "summary",
+                "output",
+                "prompt",
+                "harness",
+                "hasTranscript"
+              ],
+              "additionalProperties": false
+            }
           }
         },
         "required": [
@@ -8946,7 +9126,8 @@
           "contextTokens",
           "startedAt",
           "endedAt",
-          "steps"
+          "steps",
+          "verificationAttempts"
         ],
         "additionalProperties": false
       },
