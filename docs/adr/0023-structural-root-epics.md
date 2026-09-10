@@ -33,12 +33,11 @@ an `epic`-labelled Epic) **or** a **structural Epic**: a root ticket
 (`parent == null`) that has ≥1 child. This aligns the enumeration with the
 `isEpic` flag the mirror already sets, so a root container is an Epic everywhere.
 
-A structural root Epic is **not** demoted into `tracker_containers` — it stays a
-mirrored Task (as ADR-0016's `isEpic` root Tasks already did); the Board's
-`isDriver` suppression, not container demotion, keeps its card from doubling up
-with its Epic band. The `epic` label / `wayfinder:map` remain the identifiers for
-**nested** containers (a container that has its own parent): a bare mid-spine
-parent without a label is still not an Epic.
+A structural root Epic is demoted into `tracker_containers`, just like a
+labelled Epic or Map. This keeps the mirror, stored-Epic enumeration, and all
+task views on one container set. The `epic` label / `wayfinder:map` remain the
+identifiers for **nested** containers (a container that has its own parent): a
+bare mid-spine parent without a label is still not an Epic.
 
 ## Consequences
 
@@ -46,9 +45,9 @@ parent without a label is still not an Epic.
   requiring operators to tag every top-level grouping ticket with `epic`.
 - The `epic` label stays load-bearing only for **nested** epic-type containers;
   root containers no longer need it.
-- Structural root Epics remain mirrored Tasks (unlike labelled Epics, which are
-  demoted to containers). The delete/tombstone protection ADR-0016 sought comes
-  from `isDriver` card suppression rather than container demotion.
+- Structural root Epics are demoted to containers, so a stale mirror row cannot
+  appear alongside the derived Epic. The task-list and Graph predicates still
+  suppress matching driver rows as a defensive check.
 
 ## Amends
 

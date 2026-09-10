@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Task } from '../types';
 import { api } from '../api';
+import { excludeEpicDrivers, type Epic } from '../epic-model';
 import { toastError } from '../toast';
 import {
   SIGNAL,
@@ -42,10 +43,12 @@ function initialTransform(w: number, h: number, vw: number, vh: number): Transfo
 
 export function GraphView({
   workspaceId,
+  epics,
   onOpen,
 }: {
   /** Scopes the graph to the active Workspace; no fetch until resolved. */
   workspaceId: number | null;
+  epics: Epic[];
   onOpen: (task: Task) => void;
 }) {
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -57,10 +60,10 @@ export function GraphView({
     setLoading(true);
     api
       .tasks({ workspaceId })
-      .then(({ tasks }) => setTasks(tasks))
+      .then(({ tasks }) => setTasks(excludeEpicDrivers(tasks, epics)))
       .catch(toastError)
       .finally(() => setLoading(false));
-  }, [workspaceId]);
+  }, [workspaceId, epics]);
 
   const visible = useMemo(() => visibleTasks(tasks, showTerminal), [tasks, showTerminal]);
   const edges = useMemo(() => graphEdges(visible), [visible]);

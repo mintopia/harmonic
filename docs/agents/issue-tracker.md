@@ -13,9 +13,9 @@ Issues and specs for this repo live as GitHub issues. Use the `gh` CLI for all o
 
 ## Epics
 
-An **epic** is a parent issue whose children are the implementation tickets. **Every epic MUST carry the `epic` label** — set it at creation (`gh issue create --label epic ...`) or add it after (`gh issue edit <n> --add-label epic`). Children are linked as GitHub sub-issues, with one-line `Blocked by: #<n>, #<n>` dependency edges in each child body.
+An **epic** is a parent issue whose children are the implementation tickets. Add the `epic` label when creating one (`gh issue create --label epic ...`) or immediately after (`gh issue edit <n> --add-label epic`). A root parent with children is also a structural Epic when the label is absent. Children are linked as GitHub sub-issues, with one-line `Blocked by: #<n>, #<n>` dependency edges in each child body.
 
-Label epics even though an epic is also recognised structurally (a parent with children): Harmonic keys mirror **demotion** off the `epic` label. A labelled epic is removed from the task list and dependency graph and shown only as an Epic; an unlabelled parent double-shows — once as its mirrored task, once as the derived epic.
+Label epics even though an epic is also recognised structurally (a parent with children): the label declares intent, while a root parent is also demoted structurally. Both appear only as an Epic.
 
 ## Ownership and human reclaim
 

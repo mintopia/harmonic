@@ -1,7 +1,7 @@
 // Explicit .js extensions: this module is shared with the node-side test
 // project, whose nodenext resolution requires them (Vite maps .js → .ts).
 import type { Task, TaskState } from './types.js';
-import type { Epic, EpicMember } from './epic-model.js';
+import { epicDriverRefs, isEpicDriver, type Epic, type EpicMember } from './epic-model.js';
 import { issueRef, ticketRowId } from './id-format.js';
 
 const PRIORITY_RANK: Record<Task['priority'], number> = { high: 0, normal: 1, low: 2 };
@@ -204,8 +204,8 @@ export function epicPendingColumns(epic: Epic, tasks: Task[]): BlockerColumn[] {
 export function boardSections(tasks: Task[], epics: Epic[]): BoardSections {
   const tasksById = new Map(tasks.map((task) => [task.id, task]));
   const activeEpics = epics.filter(isActiveEpic).sort((a, b) => a.ref - b.ref);
-  const epicRefs = new Set(epics.map((e) => e.ref));
-  const isDriver = (t: Task): boolean => t.trackerRef != null && epicRefs.has(t.trackerRef);
+  const driverRefs = epicDriverRefs(epics);
+  const isDriver = (t: Task): boolean => isEpicDriver(t, driverRefs);
   const activeMemberIds = new Set<number>();
   for (const epic of activeEpics) for (const m of epic.members) if (m.taskId != null) activeMemberIds.add(m.taskId);
 

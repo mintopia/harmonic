@@ -391,14 +391,17 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       const { sortBy, order, limit, offset, epics, ...query } = req.query;
       const taskRows = await tasksToApi(ctx, await ctx.tasks.listWithDeps(query));
       const needle = query.q?.trim().toLowerCase();
+      const epicTickets = query.workspaceId == null ? [] : await ctx.trackerManager.listEpicTickets(query.workspaceId);
+      const epicRefs = new Set(epicTickets.map((ticket) => ticket.number));
+      const nonDriverTaskRows = taskRows.filter((task) => task.trackerRef == null || !epicRefs.has(task.trackerRef));
       const wantEpics =
         epics === 'true' && query.workspaceId != null && filterEmpty(query.state) && filterEmpty(query.harness) && filterEmpty(query.priority);
       const epicRows = wantEpics
-        ? (await ctx.trackerManager.listEpicTickets(query.workspaceId!))
+        ? epicTickets
             .filter((ticket) => !needle || ticket.title.toLowerCase().includes(needle))
             .map((ticket) => epicToListRow(ticket, query.workspaceId!))
         : [];
-      const rows = sortListRows([...taskRows, ...epicRows], sortBy, order);
+      const rows = sortListRows([...nonDriverTaskRows, ...epicRows], sortBy, order);
       const { items, total } = paginate(rows, { limit, offset });
       return { tasks: items, total };
     },

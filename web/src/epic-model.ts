@@ -1,6 +1,7 @@
 // Explicit .js extension: this module is shared with the node-side test
 // project, whose nodenext resolution requires it (Vite maps .js → .ts).
 import type { MergeStepEvent } from './merge-progress-model.js';
+import type { Task } from './types.js';
 
 /** Mirrors `reduceMemberState` server-side. */
 export type MemberMergeStatus = 'completed' | 'blocked' | 'pending';
@@ -72,6 +73,19 @@ export interface Epic {
   foldedCount: number;
   /** members.length */
   memberCount: number;
+}
+
+export function epicDriverRefs(epics: Epic[]): Set<number> {
+  return new Set(epics.map((epic) => epic.ref));
+}
+
+export function isEpicDriver(row: Pick<Task, 'trackerRef'>, refs: ReadonlySet<number>): boolean {
+  return row.trackerRef != null && refs.has(row.trackerRef);
+}
+
+export function excludeEpicDrivers<T extends Pick<Task, 'trackerRef' | 'isEpic'>>(rows: T[], epics: Epic[]): T[] {
+  const refs = epicDriverRefs(epics);
+  return rows.filter((row) => row.isEpic || !isEpicDriver(row, refs));
 }
 
 /**
