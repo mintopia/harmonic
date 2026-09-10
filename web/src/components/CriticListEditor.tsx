@@ -86,10 +86,10 @@ export function TaskCriticListEditor({
         <span className={fieldLabel}>Critics</span>
         <button
           type="button"
-          className="text-small text-accent"
+          className="text-small font-semibold text-accent hover:text-accent-hot"
           onClick={() => onChange([...critics, EMPTY_CRITIC])}
         >
-          Add critic
+          + Add critic
         </button>
       </div>
       {critics.length === 0 ? (
@@ -101,13 +101,13 @@ export function TaskCriticListEditor({
             return (
               <div
                 key={index}
-                className="flex flex-col gap-3 border-l-2 border-edge pl-3"
+                className="flex flex-col gap-3 rounded-md border border-hairline bg-raised p-4"
               >
                 <div className="flex items-center justify-between">
                   <span className={fieldLabel}>Critic {index + 1}</span>
                   <button
                     type="button"
-                    className="text-small text-failed"
+                    className="text-small text-fail hover:opacity-80"
                     onClick={() =>
                       onChange(critics.filter((_, i) => i !== index))
                     }
@@ -186,10 +186,10 @@ export function EpicCriticListEditor({
         <span className={fieldLabel}>Critics</span>
         <button
           type="button"
-          className="text-small text-accent"
+          className="text-small font-semibold text-accent hover:text-accent-hot"
           onClick={() => onChange([...critics, EMPTY_EPIC_CRITIC])}
         >
-          Add critic
+          + Add critic
         </button>
       </div>
       {critics.length === 0 ? (
@@ -199,7 +199,7 @@ export function EpicCriticListEditor({
           {critics.map((critic, index) => (
             <div
               key={index}
-              className="flex flex-col gap-3 border-l-2 border-edge pl-3"
+              className="flex flex-col gap-3 rounded-md border border-hairline bg-raised p-4"
             >
               <div className="flex items-center justify-between">
                 <span className={fieldLabel}>Critic {index + 1}</span>

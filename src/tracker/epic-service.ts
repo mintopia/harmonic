@@ -178,7 +178,7 @@ export class TrackerEpicService implements EpicService {
                 verifiedHeadOid: criticHeadOid,
                 ...(baseOid ? { baseOid } : {}),
                 critic: { prompt: critic.prompt, model: critic.model, ...(critic.harness ? { harness: critic.harness } : {}) },
-                fields: { skill: '/implement', ref: String(epicRef), url: '', title: `Epic #${epicRef}`, body: '' },
+                fields: { taskId: '', skill: '/implement', ref: String(epicRef), url: '', title: `Epic #${epicRef}`, description: '' },
                 harness,
                 harnessId,
                 ...(criticDrive ? { drive: criticDrive } : {}),

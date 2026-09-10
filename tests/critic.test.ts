@@ -56,11 +56,12 @@ const FAKE_HARNESS: HarnessConfig = {
 };
 
 const FIELDS: DriveFields = {
+  taskId: '77',
   skill: '/implement',
   ref: '77',
   url: 'https://tracker.example/issues/77',
   title: 'Sample ticket',
-  body: 'Sample body.',
+  description: 'Sample body.',
 };
 
 describe('runCritic (issue #136)', () => {

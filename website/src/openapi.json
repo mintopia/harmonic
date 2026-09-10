@@ -4036,12 +4036,12 @@
                     "issuePrompt": {
                       "type": "string",
                       "minLength": 1,
-                      "example": "Review issue {ref}: {title}. {body}"
+                      "example": "Review task {taskId} against issue {ref}: {title}. {description}"
                     },
                     "noIssuePrompt": {
                       "type": "string",
                       "minLength": 1,
-                      "example": "Review the Task instructions and candidate change."
+                      "example": "Review task {taskId} — {title}: {description}. Judge the candidate change."
                     }
                   },
                   "required": [
@@ -4140,12 +4140,12 @@
                     "issuePrompt": {
                       "type": "string",
                       "minLength": 1,
-                      "example": "Review issue {ref}: {title}. {body}"
+                      "example": "Review task {taskId} against issue {ref}: {title}. {description}"
                     },
                     "noIssuePrompt": {
                       "type": "string",
                       "minLength": 1,
-                      "example": "Review the Task instructions and candidate change."
+                      "example": "Review task {taskId} — {title}: {description}. Judge the candidate change."
                     }
                   },
                   "required": [
@@ -5005,12 +5005,12 @@
                             "issuePrompt": {
                               "type": "string",
                               "minLength": 1,
-                              "example": "Review issue {ref}: {title}. {body}"
+                              "example": "Review task {taskId} against issue {ref}: {title}. {description}"
                             },
                             "noIssuePrompt": {
                               "type": "string",
                               "minLength": 1,
-                              "example": "Review the Task instructions and candidate change."
+                              "example": "Review task {taskId} — {title}: {description}. Judge the candidate change."
                             }
                           },
                           "required": [
@@ -5102,12 +5102,12 @@
                             "issuePrompt": {
                               "type": "string",
                               "minLength": 1,
-                              "example": "Review issue {ref}: {title}. {body}"
+                              "example": "Review task {taskId} against issue {ref}: {title}. {description}"
                             },
                             "noIssuePrompt": {
                               "type": "string",
                               "minLength": 1,
-                              "example": "Review the Task instructions and candidate change."
+                              "example": "Review task {taskId} — {title}: {description}. Judge the candidate change."
                             }
                           },
                           "required": [
@@ -9413,12 +9413,12 @@
                     "issuePrompt": {
                       "type": "string",
                       "minLength": 1,
-                      "example": "Review issue {ref}: {title}. {body}"
+                      "example": "Review task {taskId} against issue {ref}: {title}. {description}"
                     },
                     "noIssuePrompt": {
                       "type": "string",
                       "minLength": 1,
-                      "example": "Review the Task instructions and candidate change."
+                      "example": "Review task {taskId} — {title}: {description}. Judge the candidate change."
                     }
                   },
                   "required": [
@@ -9522,12 +9522,12 @@
                     "issuePrompt": {
                       "type": "string",
                       "minLength": 1,
-                      "example": "Review issue {ref}: {title}. {body}"
+                      "example": "Review task {taskId} against issue {ref}: {title}. {description}"
                     },
                     "noIssuePrompt": {
                       "type": "string",
                       "minLength": 1,
-                      "example": "Review the Task instructions and candidate change."
+                      "example": "Review task {taskId} — {title}: {description}. Judge the candidate change."
                     }
                   },
                   "required": [
@@ -10415,12 +10415,12 @@
                             "issuePrompt": {
                               "type": "string",
                               "minLength": 1,
-                              "example": "Review issue {ref}: {title}. {body}"
+                              "example": "Review task {taskId} against issue {ref}: {title}. {description}"
                             },
                             "noIssuePrompt": {
                               "type": "string",
                               "minLength": 1,
-                              "example": "Review the Task instructions and candidate change."
+                              "example": "Review task {taskId} — {title}: {description}. Judge the candidate change."
                             }
                           },
                           "required": [
@@ -10518,12 +10518,12 @@
                             "issuePrompt": {
                               "type": "string",
                               "minLength": 1,
-                              "example": "Review issue {ref}: {title}. {body}"
+                              "example": "Review task {taskId} against issue {ref}: {title}. {description}"
                             },
                             "noIssuePrompt": {
                               "type": "string",
                               "minLength": 1,
-                              "example": "Review the Task instructions and candidate change."
+                              "example": "Review task {taskId} — {title}: {description}. Judge the candidate change."
                             }
                           },
                           "required": [
@@ -14323,12 +14323,12 @@
                             "issuePrompt": {
                               "type": "string",
                               "minLength": 1,
-                              "example": "Review issue {ref}: {title}. {body}"
+                              "example": "Review task {taskId} against issue {ref}: {title}. {description}"
                             },
                             "noIssuePrompt": {
                               "type": "string",
                               "minLength": 1,
-                              "example": "Review the Task instructions and candidate change."
+                              "example": "Review task {taskId} — {title}: {description}. Judge the candidate change."
                             }
                           },
                           "required": [
@@ -14425,12 +14425,12 @@
                             "issuePrompt": {
                               "type": "string",
                               "minLength": 1,
-                              "example": "Review issue {ref}: {title}. {body}"
+                              "example": "Review task {taskId} against issue {ref}: {title}. {description}"
                             },
                             "noIssuePrompt": {
                               "type": "string",
                               "minLength": 1,
-                              "example": "Review the Task instructions and candidate change."
+                              "example": "Review task {taskId} — {title}: {description}. Judge the candidate change."
                             }
                           },
                           "required": [
@@ -16394,12 +16394,12 @@
                                       "issuePrompt": {
                                         "type": "string",
                                         "minLength": 1,
-                                        "example": "Review issue {ref}: {title}. {body}"
+                                        "example": "Review task {taskId} against issue {ref}: {title}. {description}"
                                       },
                                       "noIssuePrompt": {
                                         "type": "string",
                                         "minLength": 1,
-                                        "example": "Review the Task instructions and candidate change."
+                                        "example": "Review task {taskId} — {title}: {description}. Judge the candidate change."
                                       }
                                     },
                                     "required": [
@@ -16497,12 +16497,12 @@
                                       "issuePrompt": {
                                         "type": "string",
                                         "minLength": 1,
-                                        "example": "Review issue {ref}: {title}. {body}"
+                                        "example": "Review task {taskId} against issue {ref}: {title}. {description}"
                                       },
                                       "noIssuePrompt": {
                                         "type": "string",
                                         "minLength": 1,
-                                        "example": "Review the Task instructions and candidate change."
+                                        "example": "Review task {taskId} — {title}: {description}. Judge the candidate change."
                                       }
                                     },
                                     "required": [
@@ -17183,12 +17183,12 @@
                                       "issuePrompt": {
                                         "type": "string",
                                         "minLength": 1,
-                                        "example": "Review issue {ref}: {title}. {body}"
+                                        "example": "Review task {taskId} against issue {ref}: {title}. {description}"
                                       },
                                       "noIssuePrompt": {
                                         "type": "string",
                                         "minLength": 1,
-                                        "example": "Review the Task instructions and candidate change."
+                                        "example": "Review task {taskId} — {title}: {description}. Judge the candidate change."
                                       }
                                     },
                                     "required": [
@@ -17286,12 +17286,12 @@
                                       "issuePrompt": {
                                         "type": "string",
                                         "minLength": 1,
-                                        "example": "Review issue {ref}: {title}. {body}"
+                                        "example": "Review task {taskId} against issue {ref}: {title}. {description}"
                                       },
                                       "noIssuePrompt": {
                                         "type": "string",
                                         "minLength": 1,
-                                        "example": "Review the Task instructions and candidate change."
+                                        "example": "Review task {taskId} — {title}: {description}. Judge the candidate change."
                                       }
                                     },
                                     "required": [
@@ -17942,12 +17942,12 @@
                                     "issuePrompt": {
                                       "type": "string",
                                       "minLength": 1,
-                                      "example": "Review issue {ref}: {title}. {body}"
+                                      "example": "Review task {taskId} against issue {ref}: {title}. {description}"
                                     },
                                     "noIssuePrompt": {
                                       "type": "string",
                                       "minLength": 1,
-                                      "example": "Review the Task instructions and candidate change."
+                                      "example": "Review task {taskId} — {title}: {description}. Judge the candidate change."
                                     }
                                   },
                                   "required": [
@@ -18039,12 +18039,12 @@
                                     "issuePrompt": {
                                       "type": "string",
                                       "minLength": 1,
-                                      "example": "Review issue {ref}: {title}. {body}"
+                                      "example": "Review task {taskId} against issue {ref}: {title}. {description}"
                                     },
                                     "noIssuePrompt": {
                                       "type": "string",
                                       "minLength": 1,
-                                      "example": "Review the Task instructions and candidate change."
+                                      "example": "Review task {taskId} — {title}: {description}. Judge the candidate change."
                                     }
                                   },
                                   "required": [
@@ -18687,12 +18687,12 @@
                                       "issuePrompt": {
                                         "type": "string",
                                         "minLength": 1,
-                                        "example": "Review issue {ref}: {title}. {body}"
+                                        "example": "Review task {taskId} against issue {ref}: {title}. {description}"
                                       },
                                       "noIssuePrompt": {
                                         "type": "string",
                                         "minLength": 1,
-                                        "example": "Review the Task instructions and candidate change."
+                                        "example": "Review task {taskId} — {title}: {description}. Judge the candidate change."
                                       }
                                     },
                                     "required": [
@@ -18790,12 +18790,12 @@
                                       "issuePrompt": {
                                         "type": "string",
                                         "minLength": 1,
-                                        "example": "Review issue {ref}: {title}. {body}"
+                                        "example": "Review task {taskId} against issue {ref}: {title}. {description}"
                                       },
                                       "noIssuePrompt": {
                                         "type": "string",
                                         "minLength": 1,
-                                        "example": "Review the Task instructions and candidate change."
+                                        "example": "Review task {taskId} — {title}: {description}. Judge the candidate change."
                                       }
                                     },
                                     "required": [
@@ -19471,12 +19471,12 @@
                                           "issuePrompt": {
                                             "type": "string",
                                             "minLength": 1,
-                                            "example": "Review issue {ref}: {title}. {body}"
+                                            "example": "Review task {taskId} against issue {ref}: {title}. {description}"
                                           },
                                           "noIssuePrompt": {
                                             "type": "string",
                                             "minLength": 1,
-                                            "example": "Review the Task instructions and candidate change."
+                                            "example": "Review task {taskId} — {title}: {description}. Judge the candidate change."
                                           }
                                         },
                                         "required": [
@@ -19574,12 +19574,12 @@
                                           "issuePrompt": {
                                             "type": "string",
                                             "minLength": 1,
-                                            "example": "Review issue {ref}: {title}. {body}"
+                                            "example": "Review task {taskId} against issue {ref}: {title}. {description}"
                                           },
                                           "noIssuePrompt": {
                                             "type": "string",
                                             "minLength": 1,
-                                            "example": "Review the Task instructions and candidate change."
+                                            "example": "Review task {taskId} — {title}: {description}. Judge the candidate change."
                                           }
                                         },
                                         "required": [
@@ -20226,12 +20226,12 @@
                                           "issuePrompt": {
                                             "type": "string",
                                             "minLength": 1,
-                                            "example": "Review issue {ref}: {title}. {body}"
+                                            "example": "Review task {taskId} against issue {ref}: {title}. {description}"
                                           },
                                           "noIssuePrompt": {
                                             "type": "string",
                                             "minLength": 1,
-                                            "example": "Review the Task instructions and candidate change."
+                                            "example": "Review task {taskId} — {title}: {description}. Judge the candidate change."
                                           }
                                         },
                                         "required": [
@@ -20329,12 +20329,12 @@
                                           "issuePrompt": {
                                             "type": "string",
                                             "minLength": 1,
-                                            "example": "Review issue {ref}: {title}. {body}"
+                                            "example": "Review task {taskId} against issue {ref}: {title}. {description}"
                                           },
                                           "noIssuePrompt": {
                                             "type": "string",
                                             "minLength": 1,
-                                            "example": "Review the Task instructions and candidate change."
+                                            "example": "Review task {taskId} — {title}: {description}. Judge the candidate change."
                                           }
                                         },
                                         "required": [
@@ -21014,12 +21014,12 @@
                                       "issuePrompt": {
                                         "type": "string",
                                         "minLength": 1,
-                                        "example": "Review issue {ref}: {title}. {body}"
+                                        "example": "Review task {taskId} against issue {ref}: {title}. {description}"
                                       },
                                       "noIssuePrompt": {
                                         "type": "string",
                                         "minLength": 1,
-                                        "example": "Review the Task instructions and candidate change."
+                                        "example": "Review task {taskId} — {title}: {description}. Judge the candidate change."
                                       }
                                     },
                                     "required": [
@@ -21117,12 +21117,12 @@
                                       "issuePrompt": {
                                         "type": "string",
                                         "minLength": 1,
-                                        "example": "Review issue {ref}: {title}. {body}"
+                                        "example": "Review task {taskId} against issue {ref}: {title}. {description}"
                                       },
                                       "noIssuePrompt": {
                                         "type": "string",
                                         "minLength": 1,
-                                        "example": "Review the Task instructions and candidate change."
+                                        "example": "Review task {taskId} — {title}: {description}. Judge the candidate change."
                                       }
                                     },
                                     "required": [

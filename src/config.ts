@@ -85,8 +85,8 @@ const verificationCriticIdentitySchema = z.object({
 });
 
 export const taskVerificationCriticSchema = verificationCriticIdentitySchema.extend({
-  issuePrompt: z.string().min(1).meta({ example: 'Review issue {ref}: {title}. {body}' }),
-  noIssuePrompt: z.string().min(1).meta({ example: 'Review the Task instructions and candidate change.' }),
+  issuePrompt: z.string().min(1).meta({ example: 'Review task {taskId} against issue {ref}: {title}. {description}' }),
+  noIssuePrompt: z.string().min(1).meta({ example: 'Review task {taskId} — {title}: {description}. Judge the candidate change.' }),
 });
 export type TaskVerificationCritic = z.infer<typeof taskVerificationCriticSchema>;
 

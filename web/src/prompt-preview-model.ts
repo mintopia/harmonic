@@ -2,18 +2,19 @@ import { fillTemplate, type DriveFields } from '../../src/execution/prompt-templ
 import { buildCriticPrompt } from '../../src/verification/critic-prompt.js';
 import type { AppConfig } from './types';
 
-/** Illustrative values for the `{skill}/{ref}/{url}/{title}/{body}` tokens. */
+/** Illustrative values for the `{taskId}/{skill}/{ref}/{url}/{title}/{description}` tokens. */
 export const SAMPLE_DRIVE_FIELDS: DriveFields = {
+  taskId: '172',
   skill: '/implement',
   ref: '123',
   url: 'https://github.com/acme/repo/issues/123',
   title: 'Example issue title',
-  body: 'Example issue body describing the change to make.',
+  description: 'Example issue body describing the change to make.',
 };
 
 /** A native (board-authored) Task has no mirrored issue: `ref`/`url` are empty, so
- * `buildCriticPrompt` compiles its no-ticket variant. `title`/`body` still come
- * from the Task's own prompt (`driveFields`), so they stay populated. */
+ * `buildCriticPrompt` compiles its no-ticket variant. `taskId`/`title`/`description`
+ * still come from the Task itself, so they stay populated. */
 export const SAMPLE_NATIVE_DRIVE_FIELDS: DriveFields = {
   ...SAMPLE_DRIVE_FIELDS,
   ref: '',
@@ -33,33 +34,45 @@ export const SAMPLE_TASK_ID = '123';
 const SAMPLE_VERIFIED_HEAD_OID = 'ec5ed1f1edead000000000000000000000000000';
 const SAMPLE_BASE_OID = 'ba5e0000000000000000000000000000000000000';
 
-/** Placeholder metadata (token, description) shared by the drive prompt and the
- * critic review prompt — they take the same five tokens. */
-const SKILL_PLACEHOLDER: [string, string] = ['{skill}', 'workflow skill — /research or /implement'];
+/** One interpolation token a prompt editor offers. `core` tokens — the Task's own
+ * identity (`{taskId}`, `{title}`, `{description}`) — are always available on a
+ * surface and are grouped first; the rest are context tokens that depend on the
+ * surface (a ticket ref, the running harness). */
+export type Placeholder = { token: string; desc: string; core?: boolean };
 
-export const DRIVE_PLACEHOLDERS: [string, string][] = [
+/** The Task-identity tokens every review surface resolves, ticket or not. */
+const CORE_TASK: Placeholder[] = [
+  { token: '{taskId}', desc: 'Harmonic task id', core: true },
+  { token: '{title}', desc: 'task title', core: true },
+  { token: '{description}', desc: 'task description', core: true },
+];
+
+const SKILL_PLACEHOLDER: Placeholder = { token: '{skill}', desc: 'workflow skill — /research or /implement' };
+
+export const DRIVE_PLACEHOLDERS: Placeholder[] = [
+  ...CORE_TASK,
   SKILL_PLACEHOLDER,
-  ['{ref}', 'issue number'],
-  ['{url}', 'issue URL'],
-  ['{title}', 'issue title'],
-  ['{body}', 'issue body'],
+  { token: '{ref}', desc: 'issue number' },
+  { token: '{url}', desc: 'issue URL' },
 ];
 
-export const CRITIC_NO_ISSUE_PLACEHOLDERS: [string, string][] = [SKILL_PLACEHOLDER];
+export const CRITIC_NO_ISSUE_PLACEHOLDERS: Placeholder[] = [...CORE_TASK, SKILL_PLACEHOLDER];
 
-export const EPIC_RESOLVE_PLACEHOLDERS: [string, string][] = [
-  ['{ref}', 'Epic issue number'],
-  ['{title}', 'Epic issue title'],
+export const EPIC_RESOLVE_PLACEHOLDERS: Placeholder[] = [
+  { token: '{title}', desc: 'Epic title', core: true },
+  { token: '{description}', desc: 'Epic description', core: true },
+  { token: '{ref}', desc: 'Epic issue number' },
+  { token: '{url}', desc: 'Epic issue URL' },
 ];
 
-export const TASK_ID_PLACEHOLDER: [string, string][] = [['{taskId}', 'Harmonic task id']];
+export const TASK_ID_PLACEHOLDER: Placeholder[] = [{ token: '{taskId}', desc: 'Harmonic task id', core: true }];
 
-export const TASK_PLACEHOLDERS: [string, string][] = [
-  ['{prompt}', "the task's own prompt"],
-  ['{id}', 'task id'],
-  ['{workingDir}', 'working directory'],
-  ['{harness}', 'harness id'],
-  ['{model}', 'model id'],
+export const TASK_PLACEHOLDERS: Placeholder[] = [
+  { token: '{prompt}', desc: "the task's own prompt" },
+  { token: '{id}', desc: 'task id', core: true },
+  { token: '{workingDir}', desc: 'working directory' },
+  { token: '{harness}', desc: 'harness id' },
+  { token: '{model}', desc: 'model id' },
 ];
 
 /** Fill the five Drive tokens with the sample values. */
@@ -118,7 +131,9 @@ export function compileEpicCriticPreview(prompt: string): string {
 export function compileEpicResolvePreview(template: string): string {
   const prompt = template
     .replaceAll('{ref}', SAMPLE_DRIVE_FIELDS.ref)
-    .replaceAll('{title}', SAMPLE_DRIVE_FIELDS.title);
+    .replaceAll('{title}', SAMPLE_DRIVE_FIELDS.title)
+    .replaceAll('{description}', SAMPLE_DRIVE_FIELDS.description)
+    .replaceAll('{url}', SAMPLE_DRIVE_FIELDS.url);
   return [
     prompt,
     '',

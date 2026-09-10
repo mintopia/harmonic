@@ -109,7 +109,7 @@ describe('Drive Prompt fill (issue #33)', () => {
   it('AutoDrive.prompt uses the global template, the ticket url, and the workflow skill', async () => {
     const config: AppConfig = {
       ...baselineConfig(),
-      drive: { ...baselineConfig().drive, prompt: '{skill} {ref} {url}\n\n{title}::{body}' },
+      drive: { ...baselineConfig().drive, prompt: '{skill} {ref} {url}\n\n{title}::{description}' },
     };
     const research = worktreeTask({ trackerRef: 9, wayfinderType: 'research', prompt: 'Investigate X\n\nwhy' });
     const drive = new AutoDrive(() => config, (task) => (task.trackerRef === 9 ? 'https://x/9' : null));
@@ -119,7 +119,7 @@ describe('Drive Prompt fill (issue #33)', () => {
   it('drives a Map-Epic child with /wayfinder against the map ref, not its own ticket (issue #440)', async () => {
     const config: AppConfig = {
       ...baselineConfig(),
-      drive: { ...baselineConfig().drive, prompt: '{skill} {ref} {url}\n\n{title}::{body}' },
+      drive: { ...baselineConfig().drive, prompt: '{skill} {ref} {url}\n\n{title}::{description}' },
     };
     const child = worktreeTask({ trackerRef: 7, mapRef: 100, workspaceId: 1, prompt: 'Chart it\n\nwhy' });
     const drive = new AutoDrive(
@@ -145,7 +145,7 @@ describe('Drive Prompt fill (issue #33)', () => {
   it('appends a re-queued mirrored Task’s feedback so the afk retry sees it', async () => {
     const config: AppConfig = {
       ...baselineConfig(),
-      drive: { ...baselineConfig().drive, prompt: '{skill} {ref}\n\n{title}::{body}' },
+      drive: { ...baselineConfig().drive, prompt: '{skill} {ref}\n\n{title}::{description}' },
     };
     const drive = new AutoDrive(() => config, () => null);
     const withFeedback = worktreeTask({ trackerRef: 9, prompt: 'Fix it\n\ndetails', feedback: '  tests are red  ' });
