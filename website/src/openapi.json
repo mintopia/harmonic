@@ -4571,6 +4571,14 @@
             ],
             "example": "active"
           },
+          "permissionMode": {
+            "type": "string",
+            "enum": [
+              "ask",
+              "automatic"
+            ],
+            "example": "ask"
+          },
           "sessionId": {
             "anyOf": [
               {
@@ -4663,6 +4671,7 @@
           "model",
           "workingDir",
           "state",
+          "permissionMode",
           "sessionId",
           "usage",
           "cost",
@@ -10057,6 +10066,14 @@
             ],
             "example": "active"
           },
+          "permissionMode": {
+            "type": "string",
+            "enum": [
+              "ask",
+              "automatic"
+            ],
+            "example": "ask"
+          },
           "sessionId": {
             "anyOf": [
               {
@@ -10149,6 +10166,7 @@
           "model",
           "workingDir",
           "state",
+          "permissionMode",
           "sessionId",
           "usage",
           "cost",
@@ -15117,6 +15135,14 @@
                     "example": "/home/dev/harmonic",
                     "type": "string",
                     "minLength": 1
+                  },
+                  "permissionMode": {
+                    "example": "ask",
+                    "type": "string",
+                    "enum": [
+                      "ask",
+                      "automatic"
+                    ]
                   }
                 }
               }
@@ -15290,7 +15316,7 @@
         "tags": [
           "Conversations"
         ],
-        "description": "Rename a Conversation; pass title null to clear it and fall back to the title derived from the first Turn. Operator only; not reachable with an attempt-scoped key.",
+        "description": "Update a Conversation title or permission mode. Pass title null to clear it and fall back to the title derived from the first Turn. Operator only; not reachable with an attempt-scoped key.",
         "requestBody": {
           "required": true,
           "content": {
@@ -15299,6 +15325,7 @@
                 "type": "object",
                 "properties": {
                   "title": {
+                    "example": "Rate limiting for the tasks API",
                     "anyOf": [
                       {
                         "type": "string"
@@ -15306,13 +15333,17 @@
                       {
                         "type": "null"
                       }
-                    ],
-                    "example": "Rate limiting for the tasks API"
+                    ]
+                  },
+                  "permissionMode": {
+                    "example": "automatic",
+                    "type": "string",
+                    "enum": [
+                      "ask",
+                      "automatic"
+                    ]
                   }
-                },
-                "required": [
-                  "title"
-                ]
+                }
               }
             }
           }
@@ -15340,7 +15371,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The renamed Conversation, carrying its new or derived title.",
+            "description": "The updated Conversation.",
             "content": {
               "application/json": {
                 "schema": {

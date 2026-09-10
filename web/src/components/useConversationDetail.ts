@@ -133,7 +133,7 @@ export function useConversationDetail(
     clearPendingPermission,
   ]);
 
-  const send = async (fields: { harness: string; model: string }, text: string) => {
+  const send = async (fields: { harness: string; model: string; permissionMode: Conversation['permissionMode'] }, text: string) => {
     let id = focusedId;
     if (id === null) {
       const created = await api.createConversation({
@@ -165,6 +165,18 @@ export function useConversationDetail(
     if (id === null) return;
     try {
       const updated = await api.renameConversation(id, title);
+      setConversation(updated);
+      upsertConversationInList(updated);
+    } catch (e) {
+      toastError(e);
+    }
+  };
+
+  const setPermissionMode = async (permissionMode: Conversation['permissionMode']) => {
+    const id = focusedId;
+    if (id === null) return;
+    try {
+      const updated = await api.setConversationPermissionMode(id, permissionMode);
       setConversation(updated);
       upsertConversationInList(updated);
     } catch (e) {
@@ -206,6 +218,6 @@ export function useConversationDetail(
     events,
     pending,
     pendingElicitations,
-    actions: { send, end, rename, deleteConversation, answerPermission, answerElicitation },
+    actions: { send, end, rename, setPermissionMode, deleteConversation, answerPermission, answerElicitation },
   };
 }

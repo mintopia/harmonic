@@ -131,6 +131,7 @@ const conversationRow = (over: Partial<ConversationRow> = {}): ConversationRow =
   workingDir: '/repo',
   workspaceId: 1,
   state: 'active',
+  permissionMode: 'ask',
   sessionId: null,
   usage: null,
   contextTokens: null,

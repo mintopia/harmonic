@@ -587,6 +587,77 @@ describe('conversation-permissions', () => {
       ws.close();
     });
 
+    it('automatically approves permissions without broadcasting them', async () => {
+      const ws = await connectWs(server);
+      const { body: convo } = await server.api('POST', '/api/conversations', { permissionMode: 'automatic' });
+      expect(convo.permissionMode).toBe('automatic');
+
+      await server.api('POST', `/api/conversations/${convo.id}/turns`, {
+        text: JSON.stringify({ requestPermission: { title: 'Write file' }, updates: [] }),
+      });
+
+      const resolved = await waitFor(async () =>
+        (await events(server, convo.id)).find((event) => event.type === 'permission_request'),
+      );
+      expect(resolved.payload.outcome).toMatchObject({ outcome: 'selected' });
+      expect(ws.messages.some((message) => message.type === 'permission_request' && message.conversationId === convo.id)).toBe(false);
+      ws.close();
+    });
+
+    it('uses the harness automatic mode when it is available', async () => {
+      const { body: convo } = await server.api('POST', '/api/conversations', { permissionMode: 'automatic' });
+      await server.api('POST', `/api/conversations/${convo.id}/turns`, {
+        text: JSON.stringify({ echoSetMode: true, updates: [] }),
+      });
+
+      const echoed = await waitFor(async () =>
+        (await events(server, convo.id)).find(
+          (event) => event.type === 'session_update' && String(event.payload?.content?.text ?? '').startsWith('set-mode:'),
+        ),
+      );
+      expect(JSON.parse(String(echoed.payload.content.text).slice('set-mode:'.length))).toMatchObject({ modeId: 'auto' });
+    });
+
+    it('changes permission mode on a warm Conversation', async () => {
+      const { body: convo } = await server.api('POST', '/api/conversations', {});
+      expect(convo.permissionMode).toBe('ask');
+
+      await server.api('POST', `/api/conversations/${convo.id}/turns`, {
+        text: JSON.stringify({ updates: [] }),
+      });
+      const updated = await server.api('PATCH', `/api/conversations/${convo.id}`, { permissionMode: 'automatic' });
+      expect(updated.status).toBe(200);
+      expect(updated.body.permissionMode).toBe('automatic');
+
+      await server.api('POST', `/api/conversations/${convo.id}/turns`, {
+        text: JSON.stringify({ echoSetMode: true, updates: [] }),
+      });
+      const echoed = await waitFor(async () =>
+        (await events(server, convo.id)).find(
+          (event) => event.type === 'session_update' && String(event.payload?.content?.text ?? '').startsWith('set-mode:'),
+        ),
+      );
+      expect(JSON.parse(String(echoed.payload.content.text).slice('set-mode:'.length))).toMatchObject({ modeId: 'auto' });
+    });
+
+    it('restores asking after Automatic is disabled on a warm Conversation', async () => {
+      const ws = await connectWs(server);
+      const { body: convo } = await server.api('POST', '/api/conversations', { permissionMode: 'automatic' });
+      await server.api('POST', `/api/conversations/${convo.id}/turns`, { text: JSON.stringify({ updates: [] }) });
+      await server.api('PATCH', `/api/conversations/${convo.id}`, { permissionMode: 'ask' });
+      await server.api('POST', `/api/conversations/${convo.id}/turns`, {
+        text: JSON.stringify({ requestPermission: { title: 'Write file' }, updates: [] }),
+      });
+
+      const pending = await waitFor(async () =>
+        ws.messages.find((message) => message.type === 'permission_request' && message.conversationId === convo.id),
+      );
+      await server.api('POST', `/api/conversations/${convo.id}/permissions/${pending.reqId}`, {
+        optionId: pending.request.options.find((option: { kind: string }) => option.kind === 'allow_once').optionId,
+      });
+      ws.close();
+    });
+
     it('forwards the native allow_always option for "Allow for this conversation"', async () => {
       const ws = await connectWs(server);
       const { convo, reqId, request } = await askPermission(server, ws);

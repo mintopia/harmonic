@@ -13,6 +13,7 @@ function conv(over: Partial<Conversation> & { id: number }): Conversation {
     harness: 'claude-code',
     model: 'sonnet',
     workingDir: '/repo',
+    permissionMode: 'ask',
     state: 'active',
     sessionId: null,
     usage: null,

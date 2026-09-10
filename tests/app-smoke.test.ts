@@ -97,6 +97,7 @@ function makeConversation(overrides: Partial<Conversation> = {}): Conversation {
     harness: 'claude',
     model: 'claude-sonnet-4-6',
     workingDir: '/tmp/ws1',
+    permissionMode: 'ask',
     state: 'active',
     sessionId: 'session-12',
     createdAt: 0,

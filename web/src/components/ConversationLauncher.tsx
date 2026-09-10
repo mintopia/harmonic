@@ -52,10 +52,12 @@ export function ConversationContextDrawer({
   conversation,
   events,
   onClose,
+  onPermissionModeChange,
 }: {
   conversation: Conversation;
   events: ConversationEvent[];
   onClose: () => void;
+  onPermissionModeChange?: (permissionMode: Conversation['permissionMode']) => void;
 }) {
   const [now, setNow] = useState(() => Date.now());
 
@@ -116,6 +118,19 @@ export function ConversationContextDrawer({
         <section aria-labelledby="conversation-permissions-heading">
           <h3 id="conversation-permissions-heading" className={sectionTitle}>Permission Rules</h3>
           <div className="mt-1.5"><PermissionRules /></div>
+          <label className="mt-3 block text-small text-muted">
+            Permission mode
+            <select
+              aria-label="Permission mode"
+              className={`${field} mt-1 w-full`}
+              value={conversation.permissionMode}
+              disabled={conversation.state === 'ended'}
+              onChange={(event) => onPermissionModeChange?.(event.currentTarget.value === 'automatic' ? 'automatic' : 'ask')}
+            >
+              <option value="ask">Ask each turn</option>
+              <option value="automatic">Automatic</option>
+            </select>
+          </label>
         </section>
       </div>
     </aside>
@@ -348,6 +363,7 @@ function ConversationHeader(props: ConversationHeaderProps) {
           <span className="shrink-0">
             {providerLabel(conversation.harness)} · {conversation.model}
           </span>
+          {conversation.permissionMode === 'automatic' && <span className={toolChip}>Automatic</span>}
           <span aria-hidden="true" className="shrink-0 text-faint">
             ·
           </span>
@@ -748,7 +764,7 @@ export function ConversationsPage({
       </section>
       {view.kind === 'detail' && conversation && (
         contextOpen ? (
-          <ConversationContextDrawer conversation={conversation} events={events} onClose={() => setContextOpen(false)} />
+          <ConversationContextDrawer conversation={conversation} events={events} onClose={() => setContextOpen(false)} onPermissionModeChange={actions.setPermissionMode} />
         ) : (
           <button
             type="button"

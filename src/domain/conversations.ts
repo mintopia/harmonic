@@ -5,6 +5,7 @@ import {
   conversationEvents,
   type ConversationRow,
   type ConversationEventRow,
+  type ConversationPermissionMode,
 } from '../db/schema.js';
 import { DomainError } from './errors.js';
 
@@ -29,6 +30,7 @@ export interface CreateConversationInput {
   harness: string;
   model: string;
   workingDir: string;
+  permissionMode: ConversationPermissionMode;
 }
 
 /**
@@ -53,6 +55,7 @@ export class ConversationStore {
           model: input.model,
           workingDir: input.workingDir,
           state: 'active',
+          permissionMode: input.permissionMode,
           sessionId: null,
           createdAt: now,
           updatedAt: now,

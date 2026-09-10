@@ -15,6 +15,7 @@ const conversation: Conversation = {
   harness: 'opencode',
   model: 'opencode-large',
   workingDir: '/work',
+  permissionMode: 'automatic',
   state: 'active',
   sessionId: null,
   createdAt: 0,
@@ -66,6 +67,7 @@ describe('ConversationsPage (#547)', () => {
     expect(html).toContain('Model');
     expect(html).toContain('Working directory');
     expect(html).toContain('Permission Rules');
+    expect(html).toContain('Automatic');
     expect(html).not.toContain('99,999');
   });
 });

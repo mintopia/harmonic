@@ -24,12 +24,13 @@ export function Composer({
   events: ConversationEvent[];
   expanded: boolean;
   onSend: (
-    fields: { harness: string; model: string },
+    fields: { harness: string; model: string; permissionMode: Conversation['permissionMode'] },
     text: string,
   ) => Promise<{ queued: boolean }>;
 }) {
   const [harness, setHarness] = useState(workspace?.chatHarness ?? config.chat.harness);
   const [model, setModel] = useState(workspace?.chatModel ?? config.chat.model);
+  const [permissionMode, setPermissionMode] = useState<Conversation['permissionMode']>('ask');
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [interrupting, setInterrupting] = useState(false);
@@ -56,7 +57,7 @@ export function Composer({
     if (!trimmed || busy || ended) return;
     setBusy(true);
     try {
-      const result = await onSend({ harness, model }, trimmed);
+      const result = await onSend({ harness, model, permissionMode }, trimmed);
       setText('');
       if (result.queued) {
         setQueued(true);
@@ -118,6 +119,20 @@ export function Composer({
               Model
             </label>
             <DiscoveryModelPicker id="conv-model" harness={harness} value={model} onChange={setModel} options={models} />
+          </div>
+          <div>
+            <label className={fieldLabel} htmlFor="conv-permission-mode">
+              Permission mode
+            </label>
+            <select
+              id="conv-permission-mode"
+              className={`${selectField} w-full`}
+              value={permissionMode}
+              onChange={(event) => setPermissionMode(event.target.value === 'automatic' ? 'automatic' : 'ask')}
+            >
+              <option value="ask">Ask each turn</option>
+              <option value="automatic">Automatic</option>
+            </select>
           </div>
         </div>
       )}
