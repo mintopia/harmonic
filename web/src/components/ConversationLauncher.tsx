@@ -13,7 +13,6 @@ import {
   formatColdCacheMessage,
   formatContextUsage,
   formatTokenBreakdown,
-  formatTokens,
   lastConversationTurnAt,
 } from '../conversation-telemetry-model';
 import {
@@ -30,6 +29,7 @@ import { ConfirmDialog } from './ConfirmDialog';
 import { ConversationList } from './ConversationList';
 import { ElicitationPrompt } from './ElicitationPrompt';
 import { PathTail } from './PathTail';
+import { PermissionRules } from './PermissionRules';
 import { providerLabel } from './TaskIdentity';
 import { Icon } from './Icon';
 import { Composer } from './conversation/Composer';
@@ -42,12 +42,21 @@ import {
   field,
   panelTitle,
   permissionOptionButtonClass,
+  sectionTitle,
   toolChip,
   touchTarget,
   touchTargetInline,
 } from '../ui';
 
-function TelemetryStrip({ conversation, events }: { conversation: Conversation; events: ConversationEvent[] }) {
+export function ConversationContextDrawer({
+  conversation,
+  events,
+  onClose,
+}: {
+  conversation: Conversation;
+  events: ConversationEvent[];
+  onClose: () => void;
+}) {
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -55,7 +64,6 @@ function TelemetryStrip({ conversation, events }: { conversation: Conversation; 
     return () => clearInterval(id);
   }, []);
 
-  const tokens = formatTokens(conversation.usage);
   const tokenBreakdown = formatTokenBreakdown(conversation.usage);
   const cost = formatCost(conversation.cost);
   const context = formatContextUsage(computeContextUsage(conversation));
@@ -64,33 +72,53 @@ function TelemetryStrip({ conversation, events }: { conversation: Conversation; 
     cacheWarmSeconds: conversation.cacheWarmSeconds,
     now,
   });
+  const input = tokenBreakdown?.find(({ label }) => label === 'Input')?.value;
+  const output = tokenBreakdown?.find(({ label }) => label === 'Output')?.value;
 
   return (
-    <div className="border-b border-hairline">
-      <p className="px-4 py-2 text-small text-muted">
-        {tokens === 'no usage yet' ? 'no usage yet' : `${tokens} tokens`}
-        {' · '}
-        {cost ?? '—'}
-        {' · '}
-        {context.value === '—' ? '—' : `${context.value} context`}
-        {context.note ? ` · ${context.note}` : ''}
-      </p>
-      {tokenBreakdown && (
-        <dl className="grid grid-cols-2 gap-x-4 gap-y-1 border-t border-hairline px-4 py-2 text-small sm:grid-cols-4">
+    <aside aria-label="Conversation context" className="flex w-80 shrink-0 flex-col overflow-y-auto border-l border-hairline">
+      <div className="flex items-center justify-between border-b border-hairline px-4 py-3">
+        <h2 className={panelTitle}>Context</h2>
+        <button type="button" className={btnQuiet} onClick={onClose} aria-label="Hide conversation context">
+          Hide
+        </button>
+      </div>
+      <div className="space-y-5 px-4 py-4">
+        <section aria-labelledby="conversation-usage-heading">
+          <h3 id="conversation-usage-heading" className={sectionTitle}>Usage</h3>
+          <p className="mt-1.5 text-small text-muted">
+            {input && output ? `Input ${input} · Output ${output}` : 'No usage yet'}
+          </p>
+          {tokenBreakdown && (
+            <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-small">
           {tokenBreakdown.map(({ label, value }) => (
             <div key={label} className="flex min-w-0 items-baseline justify-between gap-1.5 sm:block">
               <dt className="text-faint">{label}</dt>
-              <dd className="font-data text-ink">{value}</dd>
+              <dd className="tabular-nums text-ink">{value}</dd>
             </div>
           ))}
-        </dl>
-      )}
-      {coldCache && (
-        <p role="status" className="bg-raised px-4 py-1.5 text-small text-muted">
-          {coldCache}
-        </p>
-      )}
-    </div>
+            </dl>
+          )}
+          <dl className="mt-3 space-y-1 text-small">
+            <div className="flex justify-between gap-3"><dt className="text-faint">Cost</dt><dd className="tabular-nums text-ink">{cost ?? '—'}</dd></div>
+            <div className="flex justify-between gap-3"><dt className="text-faint">Context</dt><dd className="tabular-nums text-ink">{context.value}{context.note ? ` · ${context.note}` : ''}</dd></div>
+          </dl>
+          {coldCache && <p role="status" className="mt-3 bg-raised px-2 py-1.5 text-small text-muted">{coldCache}</p>}
+        </section>
+        <section aria-labelledby="conversation-model-heading">
+          <h3 id="conversation-model-heading" className={sectionTitle}>Model</h3>
+          <p className="mt-1.5 text-small text-muted">{providerLabel(conversation.harness)} · {conversation.model}</p>
+        </section>
+        <section aria-labelledby="conversation-directory-heading">
+          <h3 id="conversation-directory-heading" className={sectionTitle}>Working directory</h3>
+          <PathTail path={conversation.workingDir} className="mt-1.5 font-data text-data text-muted" />
+        </section>
+        <section aria-labelledby="conversation-permissions-heading">
+          <h3 id="conversation-permissions-heading" className={sectionTitle}>Permission Rules</h3>
+          <div className="mt-1.5"><PermissionRules /></div>
+        </section>
+      </div>
+    </aside>
   );
 }
 
@@ -532,8 +560,6 @@ export function ConversationLauncher({
             onClose={() => setOpen(false)}
           />
 
-          {conversation && <TelemetryStrip conversation={conversation} events={events} />}
-
           <Transcript events={events} conversation={conversation} />
           <StreamAnnouncer events={events} resetKey={conversation?.id ?? 'new'} />
 
@@ -593,6 +619,7 @@ export function ConversationsPage({
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [attention, setAttention] = useState<AttentionState>(NO_ATTENTION);
   const [openedPendingPermission, setOpenedPendingPermission] = useState<PendingPermission | null>(null);
+  const [contextOpen, setContextOpen] = useState(false);
   const focusedId = view.kind === 'detail' ? view.conversationId : null;
   const focusedRef = useRef<number | null>(focusedId);
 
@@ -684,7 +711,6 @@ export function ConversationsPage({
               onEnd={actions.end}
               onDelete={() => conversation && deleteConversation(conversation.id)}
             />
-            {conversation && <TelemetryStrip conversation={conversation} events={events} />}
             <Transcript events={events} conversation={conversation} />
             <StreamAnnouncer events={events} resetKey={conversation?.id ?? 'new'} />
             {!ended &&
@@ -720,6 +746,21 @@ export function ConversationsPage({
           </>
         )}
       </section>
+      {view.kind === 'detail' && conversation && (
+        contextOpen ? (
+          <ConversationContextDrawer conversation={conversation} events={events} onClose={() => setContextOpen(false)} />
+        ) : (
+          <button
+            type="button"
+            className={`${touchTarget} w-11 shrink-0 border-l border-hairline text-small text-muted hover:bg-raised`}
+            aria-label="Show conversation context"
+            aria-expanded={false}
+            onClick={() => setContextOpen(true)}
+          >
+            Context
+          </button>
+        )
+      )}
     </div>
   );
 }
