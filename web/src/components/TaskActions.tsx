@@ -6,6 +6,7 @@ import { btnAccept, btnGhost, btnQuiet, btnQuietDestructive, btnReject } from '.
 import { toastError, toastSuccess } from '../toast';
 import { overallDecision } from '../verification-attempts-model';
 import { RejectDialog } from './RejectDialog';
+import { ResumeDialog } from './ResumeDialog';
 import { DeleteTaskDialog } from './DeleteTaskDialog';
 import { ConfirmDialog } from './ConfirmDialog';
 import { taskLabel } from '../id-format.js';
@@ -32,7 +33,7 @@ export function TaskActions({
   // immediate pending state the click looks inert until it resolves.
   const [accepting, setAccepting] = useState(false);
   const [pausing, setPausing] = useState(false);
-  const [resuming, setResuming] = useState(false);
+  const [resumeOpen, setResumeOpen] = useState(false);
 
   const actions = taskActions(task.state);
   const escalation = escalationActions(task);
@@ -70,13 +71,6 @@ export function TaskActions({
       toastSuccess(`${taskLabel(task.id)} paused`);
       onChanged();
     }, toastError).finally(() => setPausing(false));
-  };
-  const onResume = () => {
-    setResuming(true);
-    api.resumeTask(task.id).then(() => {
-      toastSuccess(`${taskLabel(task.id)} resumed`);
-      onChanged();
-    }, toastError).finally(() => setResuming(false));
   };
   const onCancelTask = actDone(() => api.cancelTask(task.id), `${taskLabel(task.id)} cancelled`);
   const onCloseTask = actDone(() => api.closeTask(task.id), `${taskLabel(task.id)} closed`);
@@ -171,8 +165,8 @@ export function TaskActions({
         );
       case 'resume':
         return (
-          <button key={action} className={secondary} disabled={resuming} onClick={onResume}>
-            {resuming ? 'Resuming…' : 'Resume'}
+          <button key={action} className={secondary} onClick={() => setResumeOpen(true)}>
+            Resume
           </button>
         );
       case 'cancel':
@@ -216,6 +210,13 @@ export function TaskActions({
           taskId={task.id}
           onClose={() => setRejecting(false)}
           onDone={done(() => setRejecting(false))}
+        />
+      )}
+      {resumeOpen && (
+        <ResumeDialog
+          taskId={task.id}
+          onClose={() => setResumeOpen(false)}
+          onDone={done(() => setResumeOpen(false))}
         />
       )}
       {deleting && (
