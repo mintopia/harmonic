@@ -33,7 +33,7 @@ export function withOperatorMessages(events: TranscriptLogEvent[], operator: Ope
       seq: 0,
       ts: m.ts,
       type: 'session_update' as const,
-      payload: { sessionUpdate: 'operator_message', queued: m.queued, content: { type: 'text', text: m.text } },
+      payload: { sessionUpdate: 'operator_message', queued: m.queued, pending: true, content: { type: 'text', text: m.text } },
     })),
   ]
     .sort((a, b) => a.ts - b.ts);

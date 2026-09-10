@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   computeContextUsage,
+  formatTokenBreakdown,
   formatColdCacheMessage,
   formatContextUsage,
   formatTokens,
@@ -54,6 +55,27 @@ describe('formatTokens', () => {
       source: 'acp',
     };
     expect(formatTokens(usage)).toBe('18.2k');
+  });
+});
+
+describe('formatTokenBreakdown', () => {
+  it('keeps input, output, and both cache counters separate', () => {
+    const usage: Conversation['usage'] = {
+      totals: { inputTokens: 12_300, outputTokens: 4_500, cacheReadTokens: 8_000, cacheWriteTokens: 250, totalTokens: null },
+      models: {},
+      toolCalls: {},
+      source: 'acp',
+    };
+    expect(formatTokenBreakdown(usage)).toEqual([
+      { label: 'Input', value: '12.3k' },
+      { label: 'Output', value: '4.5k' },
+      { label: 'Cache read', value: '8k' },
+      { label: 'Cache write', value: '250' },
+    ]);
+  });
+
+  it('does not invent a breakdown before the first completed Turn', () => {
+    expect(formatTokenBreakdown(null)).toBeNull();
   });
 });
 

@@ -24,6 +24,7 @@ export interface ToolCallView {
   title: string | undefined;
   status: string | undefined;
   subagent: boolean;
+  input: string | null;
   /** The tool's textual output — a command's stdout, a file read — joined from
    * the ACP content blocks, shown beneath the transcript card. Null when the
    * call produced no text (an Edit, a pending call). */
@@ -42,7 +43,7 @@ export interface ToolCallView {
  * else stays one item per event.
  */
 export type StreamItem<E extends StreamEvent = StreamEvent> =
-  | { kind: 'text'; variant: 'message' | 'thought' | 'operator'; text: string; at: number; key: number }
+  | { kind: 'text'; variant: 'message' | 'thought' | 'operator'; text: string; at: number; key: number; pending?: true }
   | { kind: 'tool'; tool: ToolCallView; at: number; key: number }
   | { kind: 'event'; event: E; key: number };
 
@@ -74,6 +75,16 @@ function toolContentOutput(content: unknown): string | null {
   return texts.length ? texts.join('\n') : null;
 }
 
+function toolInput(input: unknown): string | null {
+  if (typeof input === 'string') return input;
+  if (input === null || input === undefined) return null;
+  try {
+    return JSON.stringify(input, null, 2);
+  } catch {
+    return String(input);
+  }
+}
+
 function toolCallView(payload: unknown): ToolCallView {
   const p = payload as
     | {
@@ -82,6 +93,8 @@ function toolCallView(payload: unknown): ToolCallView {
         title?: string;
         status?: string;
         _meta?: { claudeCode?: { parentToolUseId?: unknown } };
+        rawInput?: unknown;
+        input?: unknown;
         content?: unknown;
       }
     | null
@@ -92,6 +105,7 @@ function toolCallView(payload: unknown): ToolCallView {
     title: p?.title,
     status: p?.status,
     subagent: Boolean(p?._meta?.claudeCode?.parentToolUseId),
+    input: toolInput(p?.rawInput ?? p?.input),
     output: toolContentOutput(p?.content),
   };
 }
@@ -103,6 +117,7 @@ function mergeToolView(prev: ToolCallView, next: ToolCallView): ToolCallView {
     title: next.title ?? prev.title,
     status: next.status ?? prev.status,
     subagent: prev.subagent || next.subagent,
+    input: next.input ?? prev.input,
     output: next.output ?? prev.output,
   };
 }
@@ -164,7 +179,7 @@ export function coalesceEvents<E extends StreamEvent>(events: E[]): StreamItem<E
 
   for (const event of events) {
     const payload = event.payload as
-      | { sessionUpdate?: string; content?: { text?: string }; event?: string }
+      | { sessionUpdate?: string; content?: { text?: string }; event?: string; pending?: true }
       | null
       | undefined;
     const sessionUpdate = event.type === 'session_update' ? payload?.sessionUpdate : undefined;
@@ -173,10 +188,10 @@ export function coalesceEvents<E extends StreamEvent>(events: E[]): StreamItem<E
     if (variant) {
       const last = items[items.length - 1];
       const text = payload?.content?.text ?? '';
-      if (last?.kind === 'text' && last.variant === variant) {
+      if (variant !== 'operator' && last?.kind === 'text' && last.variant === variant) {
         last.text += text;
       } else {
-        items.push({ kind: 'text', variant, text, at: event.ts, key: event.id });
+        items.push({ kind: 'text', variant, text, at: event.ts, key: event.id, pending: payload?.pending });
       }
       continue;
     }

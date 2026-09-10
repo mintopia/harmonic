@@ -20,6 +20,7 @@ import {
   computeContextUsage,
   formatColdCacheMessage,
   formatContextUsage,
+  formatTokenBreakdown,
   formatTokens,
   lastConversationTurnAt,
 } from '../conversation-telemetry-model';
@@ -65,6 +66,7 @@ function TelemetryStrip({ conversation, events }: { conversation: Conversation; 
   }, []);
 
   const tokens = formatTokens(conversation.usage);
+  const tokenBreakdown = formatTokenBreakdown(conversation.usage);
   const cost = formatCost(conversation.cost);
   const context = formatContextUsage(computeContextUsage(conversation));
   const coldCache = formatColdCacheMessage({
@@ -83,6 +85,16 @@ function TelemetryStrip({ conversation, events }: { conversation: Conversation; 
         {context.value === '—' ? '—' : `${context.value} context`}
         {context.note ? ` · ${context.note}` : ''}
       </p>
+      {tokenBreakdown && (
+        <dl className="grid grid-cols-2 gap-x-4 gap-y-1 border-t border-hairline px-4 py-2 text-small sm:grid-cols-4">
+          {tokenBreakdown.map(({ label, value }) => (
+            <div key={label} className="flex min-w-0 items-baseline justify-between gap-1.5 sm:block">
+              <dt className="text-faint">{label}</dt>
+              <dd className="font-data text-ink">{value}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
       {coldCache && (
         <p role="status" className="bg-raised px-4 py-1.5 text-small text-muted">
           {coldCache}

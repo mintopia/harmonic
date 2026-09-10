@@ -69,14 +69,14 @@ function CriticSession({ attemptId, label, model, agent }: { attemptId: number; 
   return <ChatTranscript events={events} unavailable={false} model={model} agent={agent} stepLabel={label} />;
 }
 
-export function CriticSessions({ attempts, run }: { attempts: VerificationAttempt[]; run: AttemptSummary }) {
+export function CriticSessions({ attempts, run, model }: { attempts: VerificationAttempt[]; run?: AttemptSummary; model?: string }) {
   const sessions = attempts.filter((a) => a.mechanism === 'critic' && a.hasTranscript);
   if (sessions.length === 0) return null;
-  const model = criticModel(run) ?? 'critic';
+  const criticName = model ?? (run ? criticModel(run) : null) ?? 'critic';
   return (
     <div className="flex flex-col gap-2">
       {sessions.map((c, i) => (
-        <CriticSession key={c.id} attemptId={c.id} model={model} agent={c.harness ? harnessLabel(c.harness) : 'Critic'} label={sessions.length > 1 ? `Critic ${i + 1} of ${sessions.length} · ${c.verdict}` : 'Critic'} />
+        <CriticSession key={c.id} attemptId={c.id} model={criticName} agent={c.harness ? harnessLabel(c.harness) : 'Critic'} label={sessions.length > 1 ? `Critic ${i + 1} of ${sessions.length} · ${c.verdict}` : 'Critic'} />
       ))}
     </div>
   );
@@ -140,6 +140,7 @@ export function Verification({ attempts, statuses, run, only, verifier, steps = 
             <div className="min-w-0 flex-1">
               <div className={`text-[13px] font-semibold ${status.state === 'disabled' ? 'text-muted' : 'text-ink'}`}>{mechanismName(status.mechanism, run)}</div>
               <div className="mt-1 text-[13px] leading-[1.55] text-muted [&_code]:rounded-[5px] [&_code]:bg-raised [&_code]:px-[5px] [&_code]:py-px [&_code]:font-data [&_code]:text-[12px]">{attempt ? attempt.mechanism === 'critic' ? <Markdown source={attempt.summary} className="text-muted" /> : attempt.summary : status.reason}</div>
+              {attempt?.mechanism === 'command' && attempt.output && <pre className="mt-2 max-h-72 overflow-auto rounded-md border border-hairline bg-sunken px-3 py-2 font-data text-[11.5px] leading-[1.55] text-muted">{attempt.output}</pre>}
               {status.commands && status.commands.length > 0 && <ol className="mt-1 flex flex-col gap-0.5">{status.commands.map((cmd, i) => <li key={i} className="text-[12px] text-muted"><span className="mr-1.5 tabular-nums text-edge">{i + 1}.</span><code className="rounded-[5px] bg-raised px-[5px] py-px font-data text-[12px]">{cmd}</code></li>)}</ol>}
               {criticReason && <p className="mt-2 text-[12px] text-muted">{criticReason}</p>}
               {status.state === 'running' && (status.mechanism === 'critic'

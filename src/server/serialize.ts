@@ -1,7 +1,7 @@
 import type { AppContext } from './app.js';
 import type { AppConfig, HarnessConfig } from '../config.js';
 import type { AttemptRow, TaskAttemptRow, VerificationAttemptRow, StepType, ConversationRow } from '../db/schema.js';
-import { attempts, steps, guardrailEvents, attemptEvents, isTaskAttempt, verificationAttempts } from '../db/schema.js';
+import { attempts, steps, guardrailEvents, attemptEvents, isEpicAttempt, isTaskAttempt, verificationAttempts } from '../db/schema.js';
 import { and, desc, eq } from 'drizzle-orm';
 import type { TaskWithDeps } from '../domain/tasks.js';
 import { resolveVerifiers } from '../domain/setting-override.js';
@@ -21,6 +21,7 @@ import {
   toListRow,
   latestVerifiedRef,
   attemptProcessToApi,
+  epicAttemptProcessToApi,
   conversationProcessToApi,
   conversationToApiDto,
   deriveConversationTitle,
@@ -177,13 +178,14 @@ export async function epicAttemptTimelineToApi(
   return {
     attempts: await Promise.all(
       runs.map(async (run) => {
-        const [toolTotals, stepRows] = await Promise.all([
+        const [toolTotals, stepRows, verificationRows] = await Promise.all([
           ctx.attempts.listToolCalls(run.id),
           ctx.attempts.listSteps(run.id),
+          ctx.verificationAttempts.list(run.id),
         ]);
         let toolCalls = 0;
         for (const count of toolTotals.values()) toolCalls += count;
-        return epicAttemptToApi(run, toolCalls, stepRows);
+        return epicAttemptToApi(run, toolCalls, stepRows, verificationRows);
       }),
     ),
   };
@@ -278,7 +280,24 @@ async function runningToolCount(ctx: AppContext, run: TaskAttemptRow): Promise<n
 /** Every live process across Workspaces; `includeChats` is false for a Read Key. */
 export async function activitySnapshot(ctx: AppContext, includeChats: boolean): Promise<ApiActivityProcess[]> {
   const snapshots = new Map((await ctx.runner.activeSnapshots()).map((snapshot) => [snapshot.attemptId, snapshot.snapshot]));
-  const runs: ApiActivityProcess[] = await Promise.all((await ctx.attempts.listRunning()).filter(isTaskAttempt).map(async (run) => {
+  const config = ctx.settingsStore.getGlobal();
+  const runs: ApiActivityProcess[] = await Promise.all((await ctx.attempts.listRunning()).map(async (run) => {
+    if (isEpicAttempt(run)) {
+      const workspaceId = atRestWorkspaceId(run.workspaceId);
+      const epicRef = run.epicRef;
+      if (epicRef === null) throw new DomainError('not_found', `Epic Attempt ${run.id} has no Epic ref`);
+      const harness = config.defaults.harness;
+      return epicAttemptProcessToApi({
+        run,
+        workspaceId,
+        workspaceName: await workspaceNameOf(ctx, workspaceId),
+        epicRef,
+        harness,
+        model: harnessFor(config, harness).defaultModel,
+        trackerUrl: ctx.trackerManager.urlFor(workspaceId, epicRef),
+      });
+    }
+    if (!isTaskAttempt(run)) throw new DomainError('not_found', `Attempt ${run.id} has no owner`);
     const task = await ctx.tasks.get(run.taskId);
     const snapshot = snapshots.get(run.id) ?? null;
     return attemptProcessToApi({

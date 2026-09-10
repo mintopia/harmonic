@@ -21,7 +21,7 @@ import { LifecycleTimeline } from './ticket/LifecycleTimeline';
 import { attemptTone, runFailureBannerLabel, runForAttempt, stateTone, type TimelineTone } from '../attempt-timeline-model';
 import { attemptStepTabs, contentPanel, defaultSelection, defaultStepTab, harnessLabel, taskLifecycle, taskStats, verificationOutputTail, type ContentSelection, type LifecycleStepKey, type LifecycleStepStatus, type StepTab, type TaskStats } from '../task-detail-model';
 import { isAtLiveEdge } from '../follow-tail-model';
-import { ChatTranscript } from './ticket/ChatTranscript';
+import { ChatTranscript, type PendingSteer } from './ticket/ChatTranscript';
 import { btnPrimary, card, labelType, railSectionHead, railSectionCount, railNavButton, railNavSelected, railNavIdle, PHASE_NODE_STYLES, statePill, mergeStatusPill } from '../ui';
 import { toastError } from '../toast';
 import { ticketIdentity } from '../id-format.js';
@@ -282,17 +282,29 @@ function TaskProgressBar({ task, attempts, commandConfigured }: { task: Task; at
 
 
 
-function SteerBox({ taskId }: { taskId: number }) {
+function SteerBox({
+  taskId,
+  onPending,
+  onFailed,
+}: {
+  taskId: number;
+  onPending: (steer: PendingSteer) => void;
+  onFailed: (id: number) => void;
+}) {
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
+  const nextSteerId = useRef(1);
   const send = async () => {
     const message = text.trim();
     if (!message || sending) return;
+    const steer = { id: nextSteerId.current++, text: message, at: Date.now() };
     setSending(true);
+    onPending(steer);
     try {
       await api.steerTask(taskId, message);
       setText('');
     } catch (err) {
+      onFailed(steer.id);
       toastError(err);
     } finally {
       setSending(false);
@@ -688,6 +700,7 @@ function AttemptPanel({
   const steps = attempt?.steps ?? [];
   const tabs = attemptStepTabs(steps, attempt?.verifierStatuses ?? verifierStatuses);
   const [picked, setPicked] = useState<string | null>(null);
+  const [pendingSteers, setPendingSteers] = useState<PendingSteer[]>([]);
   const active = picked && tabs.some((tab) => tab.id === picked) ? picked : defaultStepTab(tabs);
   const activeTab = tabs.find((tab) => tab.id === active);
 
@@ -696,9 +709,16 @@ function AttemptPanel({
     <ChatTranscript
       events={events}
       unavailable={logUnavailable}
+      pendingSteers={pendingSteers}
       following={following}
       onToggleFollow={onToggleFollow}
-      steer={run.state === 'running' ? <SteerBox taskId={run.taskId} /> : undefined}
+      steer={run.state === 'running' ? (
+        <SteerBox
+          taskId={run.taskId}
+          onPending={(steer) => setPendingSteers((current) => [...current, steer])}
+          onFailed={(id) => setPendingSteers((current) => current.filter((steer) => steer.id !== id))}
+        />
+      ) : undefined}
       model={topModel}
       agent={agent}
       stepLabel="Implementation"

@@ -110,6 +110,21 @@ const epicSchema = z
 
 const epicsListResponseSchema = listResponse('epics', epicSchema);
 
+const verificationAttemptSchema = z.object({
+  id: z.number().int(),
+  attemptId: z.number().int(),
+  seq: z.number().int(),
+  ts: z.number().int(),
+  mechanism: z.enum(['critic', 'command']),
+  inputOid: z.string(),
+  verdict: z.enum(['pass', 'fail', 'inconclusive']),
+  summary: z.string(),
+  output: z.string(),
+  prompt: z.string().nullable(),
+  harness: z.string().nullable(),
+  hasTranscript: z.boolean(),
+});
+
 const epicAttemptSchema = z
   .object({
     id: z.number().int(),
@@ -135,6 +150,7 @@ const epicAttemptSchema = z
       startedAt: z.number().int().nullable(),
       endedAt: z.number().int().nullable(),
     })),
+    verificationAttempts: z.array(verificationAttemptSchema),
   })
   .meta({ id: 'EpicAttempt' });
 

@@ -10,6 +10,12 @@ import { FollowTail } from './FollowTail';
 
 const CAPS = 'text-label font-bold uppercase tracking-[0.1em] text-faint';
 
+export interface PendingSteer {
+  id: number;
+  text: string;
+  at: number;
+}
+
 const TOOL_DOT: Record<ChatToolStatus, string> = {
   ok: 'bg-merged-dot',
   failed: 'bg-fail-dot',
@@ -46,6 +52,7 @@ function MessageRow({ row, model, agent }: { row: Extract<ChatRow, { kind: 'mess
           <span className="font-data text-[11px] text-faint">
             {operator ? 'steered' : model} · {clockTime(row.at)}
           </span>
+          {row.pending && <span className="rounded-[4px] bg-running-tint px-1.5 py-px text-[10px] font-bold uppercase tracking-[0.05em] text-running">Pending delivery</span>}
         </div>
         {operator ? (
           <p className="whitespace-pre-wrap break-words text-[13.5px] leading-relaxed text-ink">{row.text}</p>
@@ -146,6 +153,7 @@ export function ChatTranscript({
   model,
   agent,
   stepLabel,
+  pendingSteers = [],
 }: {
   events: AttemptLogEvent[];
   unavailable: boolean;
@@ -157,6 +165,7 @@ export function ChatTranscript({
    * "Claude", "Codex") so a transcript never misattributes a non-Claude run. */
   agent: string;
   stepLabel?: string;
+  pendingSteers?: readonly PendingSteer[];
 }) {
   const { rows, hidden, lanes } = useMemo(() => {
     // Chat the main agent's own turns; each spawned Subagent's turns lane under
@@ -164,8 +173,25 @@ export function ChatTranscript({
     const [main, ...subagents] = transcriptLanes(events);
     const { hidden, items } = coalesceTail(main?.events ?? []);
     const lanes = new Map(subagents.map((lane) => [lane.id, { label: lane.label, rows: chatRows(coalesceEvents(lane.events)) }]));
-    return { rows: chatRows(items), hidden, lanes };
-  }, [events]);
+    const rows = chatRows(items).map((row, index, transcript) => {
+      if (row.kind !== 'message' || !row.pending) return row;
+      const agentActed = transcript.slice(index + 1).some((next) => next.kind !== 'message' || next.author === 'assistant');
+      return agentActed ? { ...row, pending: undefined } : row;
+    });
+    const delivered = rows.flatMap((row) => (row.kind === 'message' && row.author === 'operator' ? [{ at: row.at, text: row.text }] : []));
+    const claimedDeliveries = new Set<number>();
+    const pending = pendingSteers
+      .filter((steer) => {
+        const delivery = delivered.findIndex(
+          (event, index) => !claimedDeliveries.has(index) && event.text === steer.text && event.at >= steer.at,
+        );
+        if (delivery === -1) return true;
+        claimedDeliveries.add(delivery);
+        return false;
+      })
+      .map((steer): ChatRow => ({ kind: 'message', author: 'operator', text: steer.text, at: steer.at, key: `pending-${steer.id}`, pending: true }));
+    return { rows: [...rows, ...pending], hidden, lanes };
+  }, [events, pendingSteers]);
   // A lane whose spawning card fell outside the rendered tail still shows, at the end.
   const anchored = new Set(rows.flatMap((row) => (row.kind === 'tool' && row.toolCallId && lanes.has(row.toolCallId) ? [row.toolCallId] : [])));
 

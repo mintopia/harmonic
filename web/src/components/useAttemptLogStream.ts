@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { api } from '../api';
 import { subscribeAttemptLog } from '../ws';
 import { useLiveEffect } from '../useLiveEffect';
-import { appendAttemptLogEvents, eventsAfterLiveCursor, attemptLogCursor } from '../attempt-log-stream-model';
+import { appendAttemptLogEvents, attemptLogCursor, eventsForAttemptLogHydration } from '../attempt-log-stream-model';
 import { toastError } from '../toast';
 import type { AttemptLogEvent } from '../types';
 
@@ -40,7 +40,7 @@ export function useAttemptLogStream(attemptId: number | null): {
         if (!live()) return;
         const hydratedEvents = appendAttemptLogEvents({
           current: log.status === 'available' ? log.events : [],
-          additions: log.status === 'available' ? eventsAfterLiveCursor({ events: pending, liveCursor: log.liveCursor }) : pending,
+          additions: log.status === 'available' ? eventsForAttemptLogHydration({ events: pending, liveCursor: log.liveCursor }) : pending,
         });
         setLogUnavailable(log.status === 'unavailable' && hydratedEvents.length === 0);
         cursor = Math.max(log.liveCursor, attemptLogCursor({ events: pending }));

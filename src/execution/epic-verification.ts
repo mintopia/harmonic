@@ -1,4 +1,4 @@
-import { runCommandVerifier } from '../verification/command-verifier.js';
+import { runCommandVerifier, type CommandAttempt } from '../verification/command-verifier.js';
 import { combineVerdicts, type VerificationDecision, type VerifierVerdict } from '../verification/combine.js';
 import type { EpicVerificationStage } from '../config.js';
 
@@ -22,6 +22,8 @@ export async function verifyEpicIntegration(args: {
   verifiers: EpicVerificationStage;
   /** Runs a configured critic in the same live Epic worktree as the commands. */
   runCritic: EpicCriticRunner;
+  /** Records each command result for the Epic Attempt timeline. */
+  onCommand?: (attempt: CommandAttempt, command: EpicVerificationStage['commands'][number]) => Promise<void>;
   /** Cancellation, wired to server shutdown; an abort kills the verifier child. */
   signal?: AbortSignal;
 }): Promise<VerificationDecision> {
@@ -34,6 +36,7 @@ export async function verifyEpicIntegration(args: {
       command,
       ...(args.signal ? { signal: args.signal } : {}),
     });
+    await args.onCommand?.(attempt, command);
     verdicts.push({ verifier: attempt.verifier, verdict: attempt.verdict });
     if (attempt.verdict !== 'pass') {
       const decision = combineVerdicts(verdicts);

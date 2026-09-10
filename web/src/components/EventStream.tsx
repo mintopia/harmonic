@@ -43,14 +43,25 @@ function ToolStatus({ status }: { status: string | undefined }) {
 function ToolLine({ tool }: { tool: ToolCallView }) {
   const target = tool.title || 'Tool call';
   return (
-    <div className="flex items-center gap-2">
-      <span className={`${toolChip} shrink-0`}>{toolKindLabel(tool.toolKind)}</span>
-      <span className="min-w-0 flex-1 truncate font-data text-data text-ink" title={target}>
-        {target}
-      </span>
-      {tool.subagent && <span className={`${chip} shrink-0 bg-raised text-muted`}>subagent</span>}
-      <ToolStatus status={tool.status} />
-    </div>
+    <details className="group rounded-md border border-hairline bg-sunken px-2 py-1.5">
+      <summary className="flex cursor-pointer list-none items-center gap-2">
+        <span className={`${toolChip} shrink-0`}>{toolKindLabel(tool.toolKind)}</span>
+        <span className="min-w-0 flex-1 truncate font-data text-data text-ink" title={target}>
+          {target}
+        </span>
+        {tool.subagent && <span className={`${chip} shrink-0 bg-raised text-muted`}>subagent</span>}
+        <ToolStatus status={tool.status} />
+      </summary>
+      <div className="mt-2 border-t border-hairline pt-2">
+        <p className="break-all font-data text-data text-ink">{target}</p>
+        {tool.input && (
+          <pre className="mt-2 max-h-80 overflow-auto rounded-sm bg-field p-2 font-data text-data text-ink">{tool.input}</pre>
+        )}
+        {tool.output && (
+          <pre className="mt-2 max-h-80 overflow-auto rounded-sm bg-field p-2 font-data text-data text-ink">{tool.output}</pre>
+        )}
+      </div>
+    </details>
   );
 }
 

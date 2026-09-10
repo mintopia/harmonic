@@ -30,6 +30,22 @@ export function formatTokens(usage: Conversation['usage']): string {
   return total === null ? 'no usage yet' : compact.format(total);
 }
 
+export interface TokenBreakdownItem {
+  label: 'Input' | 'Output' | 'Cache read' | 'Cache write';
+  value: string;
+}
+
+export function formatTokenBreakdown(usage: Conversation['usage']): TokenBreakdownItem[] | null {
+  const totals = usage?.totals;
+  if (!totals) return null;
+  return [
+    { label: 'Input', value: compact.format(totals.inputTokens) },
+    { label: 'Output', value: compact.format(totals.outputTokens) },
+    { label: 'Cache read', value: compact.format(totals.cacheReadTokens) },
+    { label: 'Cache write', value: compact.format(totals.cacheWriteTokens) },
+  ];
+}
+
 /**
  * Context-window fill, degrading honestly in two independent directions:
  * `contextTokens` unknown (no Turn yet) drops straight to 'unknown'; a

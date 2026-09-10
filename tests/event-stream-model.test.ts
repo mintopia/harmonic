@@ -43,7 +43,7 @@ describe('coalesceEvents', () => {
       { kind: 'text', variant: 'message', text: 'before tool.', at: 1, key: 1 },
       {
         kind: 'tool',
-        tool: { toolCallId: 'toolu_x', toolKind: 'read', title: 'Read', status: 'completed', subagent: false, output: null },
+        tool: { toolCallId: 'toolu_x', toolKind: 'read', title: 'Read', status: 'completed', subagent: false, input: null, output: null },
         at: 3,
         key: 3,
       },
@@ -68,7 +68,7 @@ describe('coalesceEvents', () => {
     expect(items).toEqual([
       {
         kind: 'tool',
-        tool: { toolCallId: 'toolu_01EtAM', toolKind: 'read', title: 'notes.md', status: 'completed', subagent: false, output: null },
+        tool: { toolCallId: 'toolu_01EtAM', toolKind: 'read', title: 'notes.md', status: 'completed', subagent: false, input: null, output: null },
         at: 1,
         key: 1,
       },
@@ -81,7 +81,7 @@ describe('coalesceEvents', () => {
     const [item] = coalesceEvents([call, update]);
     expect(item).toEqual({
       kind: 'tool',
-      tool: { toolCallId: 't1', toolKind: 'execute', title: 'AttemptSummary tests', status: 'completed', subagent: false, output: null },
+      tool: { toolCallId: 't1', toolKind: 'execute', title: 'AttemptSummary tests', status: 'completed', subagent: false, input: null, output: null },
       at: 1,
       key: 1,
     });
@@ -109,6 +109,15 @@ describe('coalesceEvents', () => {
     });
     const [item] = coalesceEvents([call]);
     expect(item && item.kind === 'tool' && item.tool.output).toBe('Tests 12 passed');
+  });
+
+  it('preserves structured command input for the expanded command detail', () => {
+    const [item] = coalesceEvents([evt(1, 'session_update', {
+      sessionUpdate: 'tool_call',
+      toolCallId: 't',
+      rawInput: { command: 'npm test', timeout: 30_000 },
+    })]);
+    expect(item && item.kind === 'tool' && item.tool.input).toBe('{\n  "command": "npm test",\n  "timeout": 30000\n}');
   });
 
   it('passes non-text events through untouched', () => {
@@ -218,7 +227,7 @@ describe('coalesceTail', () => {
     expect(items).toEqual([
       {
         kind: 'tool',
-        tool: { toolCallId: 't', toolKind: undefined, title: undefined, status: 'completed', subagent: false, output: null },
+        tool: { toolCallId: 't', toolKind: undefined, title: undefined, status: 'completed', subagent: false, input: null, output: null },
         at: 2,
         key: 2,
       },

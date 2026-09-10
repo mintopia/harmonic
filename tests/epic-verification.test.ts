@@ -91,6 +91,7 @@ describe('verifyEpicIntegration', () => {
   });
 
   it('retains failed command output for the resolver', async () => {
+    const recorded = vi.fn();
     await expect(verifyEpicIntegration({
       worktreePath: process.cwd(),
       verifiedHeadOid: 'epic-head',
@@ -104,9 +105,15 @@ describe('verifyEpicIntegration', () => {
         critics: [],
       },
       runCritic: vi.fn(),
+      onCommand: recorded,
     })).resolves.toEqual({
       outcome: 'block',
       reason: 'verifier command failed\n\nEpic command (fail): command exited 1\nmissing migration\n',
     });
+    expect(recorded).toHaveBeenCalledWith(expect.objectContaining({
+      verifier: 'command',
+      verdict: 'fail',
+      output: 'missing migration\n',
+    }), expect.objectContaining({ command: process.execPath }));
   });
 });

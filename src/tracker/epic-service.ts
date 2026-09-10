@@ -23,7 +23,7 @@ import {
   type EpicRefreshTarget,
 } from '../execution/epic-coordinator.js';
 import { verifyEpicIntegration } from '../execution/epic-verification.js';
-import { runCommandVerifierDetached } from '../verification/command-verifier.js';
+import { commandAttemptToInput, runCommandVerifierDetached } from '../verification/command-verifier.js';
 import { Git } from '../execution/git.js';
 import { collectUsage } from '../execution/usage.js';
 import { criticAttemptToInput, runCritic, type CriticHarnessDrive } from '../verification/critic.js';
@@ -157,6 +157,21 @@ export class TrackerEpicService implements EpicService {
             worktreePath,
             verifiedHeadOid,
             verifiers: (await resolveWorkspaceVerifiers()).epic.preMerge,
+            onCommand: async (commandAttempt, command) => {
+              if (!attempt || !verificationAttemptStore) return;
+              const persisted = await verificationAttemptStore.append(attempt.id, commandAttemptToInput(commandAttempt));
+              const step = await epicAttempts!.createStep(attempt.id, {
+                type: 'verification',
+                command: [command.command, ...command.args].join(' '),
+                logLocator: `verification_attempt:${persisted.id}`,
+              });
+              await epicAttempts!.updateStep(step.id, {
+                state: commandAttempt.verdict === 'pass' ? 'passed' : 'failed',
+                verdict: commandAttempt.verdict,
+                startedAt: persisted.ts,
+                endedAt: Date.now(),
+              });
+            },
             runCritic: async ({ cwd, verifiedHeadOid: criticHeadOid, critic }) => {
               const config = getConfig();
               const harnessId = critic.harness ?? config.defaults.harness;

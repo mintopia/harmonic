@@ -242,7 +242,17 @@ export type ApiEpicAttempt = {
   startedAt: number;
   endedAt: number | null;
   steps: ApiStep[];
+  verificationAttempts: ApiVerificationAttempt[];
 };
+
+export type ApiVerificationAttempt = Omit<VerificationAttemptRow, 'transcriptPath' | 'usage'> & {
+  hasTranscript: boolean;
+};
+
+export function verificationAttemptToApi(row: VerificationAttemptRow): ApiVerificationAttempt {
+  const { transcriptPath: _transcriptPath, usage: _usage, ...attempt } = row;
+  return { ...attempt, hasTranscript: row.transcriptPath !== null };
+}
 
 function apiAttemptState(state: AttemptState): ApiAttemptSummary['state'] {
   if (state === 'passed') return 'completed';
@@ -281,7 +291,12 @@ export function attemptToApiSummary(run: TaskAttemptRow, toolCalls: number, cont
 }
 
 /** Project the owner-neutral execution facts of an Epic Attempt for its timeline. */
-export function epicAttemptToApi(run: AttemptRow, toolCalls: number, stepRows: readonly StepRow[]): ApiEpicAttempt {
+export function epicAttemptToApi(
+  run: AttemptRow,
+  toolCalls: number,
+  stepRows: readonly StepRow[],
+  verificationAttempts: readonly VerificationAttemptRow[],
+): ApiEpicAttempt {
   return {
     id: run.id,
     number: run.number,
@@ -295,6 +310,7 @@ export function epicAttemptToApi(run: AttemptRow, toolCalls: number, stepRows: r
     startedAt: run.startedAt,
     endedAt: run.endedAt,
     steps: stepRows.map(stepToApi),
+    verificationAttempts: verificationAttempts.map(verificationAttemptToApi),
   };
 }
 
@@ -566,6 +582,42 @@ export function attemptProcessToApi(input: {
     activity: snapshot?.activity ?? null,
     tree: snapshot?.tree ?? null,
     cost: input.cost,
+  };
+}
+
+/** A running whole-Epic verification projected into the shared Activity feed. */
+export function epicAttemptProcessToApi(input: {
+  run: AttemptRow;
+  workspaceId: number;
+  workspaceName: string;
+  epicRef: number;
+  harness: string;
+  model: string;
+  trackerUrl: string | null;
+}): ApiActivityProcess {
+  const { run } = input;
+  return {
+    type: 'attempt',
+    attemptId: run.id,
+    conversationId: null,
+    taskId: null,
+    title: `Epic #${input.epicRef} verification`,
+    workspaceId: input.workspaceId,
+    workspaceName: input.workspaceName,
+    harness: input.harness,
+    model: input.model,
+    state: run.state,
+    isolation: 'worktree',
+    startedAt: run.startedAt,
+    trackerRef: input.epicRef,
+    trackerUrl: input.trackerUrl,
+    escalated: false,
+    usage: parseUsage(run.usage),
+    contextTokens: liveContextTokens(run.liveUsage),
+    contextWindow: null,
+    activity: 'Verifying integration',
+    tree: null,
+    cost: parseCost(run.cost),
   };
 }
 

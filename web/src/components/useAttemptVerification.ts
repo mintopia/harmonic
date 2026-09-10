@@ -6,7 +6,8 @@ import type { VerificationAttempt, VerifierStatus } from '../types';
 
 /** The selected Attempt's verification: the recorded attempts and the per-verifier
  * statuses the Verify/Review tabs and the gate read. Reloads on each
- * `attempt_changed` for the selected Attempt; cleared when nothing is selected. */
+ * `attempt_changed` or a live timeline update for the selected Attempt; cleared
+ * when nothing is selected. */
 export function useAttemptVerification(attemptId: number | null): {
   verificationAttempts: VerificationAttempt[];
   verifierStatuses: VerifierStatus[];
@@ -28,7 +29,12 @@ export function useAttemptVerification(attemptId: number | null): {
       });
     load();
     const unsubscribe = subscribe((msg) => {
-      if (msg.type === 'attempt_changed' && msg.run.id === attemptId) load();
+      if (
+        (msg.type === 'attempt_changed' && msg.run.id === attemptId) ||
+        (msg.type === 'attempt_timeline_changed' && msg.attempts.some((attempt) => attempt.id === attemptId))
+      ) {
+        load();
+      }
     }, load);
     return () => {
       unsubscribe();

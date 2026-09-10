@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { appendAttemptLogEvents, eventsAfterLiveCursor, attemptLogCursor } from '../web/src/attempt-log-stream-model.js';
+import { appendAttemptLogEvents, eventsAfterLiveCursor, attemptLogCursor, eventsForAttemptLogHydration } from '../web/src/attempt-log-stream-model.js';
 
 const event = (id: number) => ({
   id,
@@ -39,6 +39,15 @@ describe('appendAttemptLogEvents', () => {
     expect(eventsAfterLiveCursor({ events: [{ ...event(1), attemptId: 1 }, { ...event(2), attemptId: 1 }, { ...event(3), attemptId: 1 }], liveCursor: 2 })).toEqual([
       { ...event(3), attemptId: 1 },
     ]);
+  });
+
+  it('keeps buffered verifier output because it is never part of the REST transcript', () => {
+    const output = {
+      ...event(2),
+      attemptId: 1,
+      payload: { sessionUpdate: 'verification_output', mechanism: 'command', content: { type: 'text', text: 'running test\n' } },
+    };
+    expect(eventsForAttemptLogHydration({ events: [{ ...event(1), attemptId: 1 }, output], liveCursor: 2 })).toEqual([output]);
   });
 
 });

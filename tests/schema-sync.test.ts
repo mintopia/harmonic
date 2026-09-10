@@ -47,6 +47,47 @@ describe('schema convergence onto the baseline (ADR-0007)', () => {
     rmSync(dataDir, { recursive: true, force: true });
   });
 
+  it('rebuilds a constraint-drifted attempts table without losing its task attempts', async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'harmonic-sync-attempts-'));
+    const first = await openAsyncDb(dataDir);
+    await first.close();
+    const sqlite = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
+    await sqlite.execute('DROP TABLE attempts');
+    await sqlite.execute([
+      'CREATE TABLE attempts (',
+      '`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,',
+      '`task_id` integer NOT NULL,',
+      '`number` integer NOT NULL,',
+      "`state` text DEFAULT 'running' NOT NULL,",
+      '`started_at` integer NOT NULL,',
+      'FOREIGN KEY (`task_id`) REFERENCES `tasks`(`id`) ON UPDATE no action ON DELETE no action',
+      ')',
+    ].join('\n'));
+    await sqlite.execute("INSERT INTO tasks (id, prompt, working_dir, state, created_at, updated_at) VALUES (1, 'keep', '/tmp/keep', 'ready', 1, 1)");
+    await sqlite.execute("INSERT INTO attempts (id, task_id, number, state, started_at) VALUES (1, 1, 1, 'passed', 1)");
+
+    await syncSchema(sqlite, readFileSync(BASELINE, 'utf8'));
+
+    const taskId = (await sqlite.execute('pragma table_info(`attempts`)')).rows.find((row) => row.name === 'task_id');
+    expect(taskId?.notnull).toBe(0);
+    const attemptsSql = String((await sqlite.execute("select sql from sqlite_master where type = 'table' and name = 'attempts'")).rows[0]?.sql);
+    expect(attemptsSql).toContain('FOREIGN KEY (`workspace_id`, `epic_ref`)');
+    expect(attemptsSql).toContain('CHECK ((`task_id` IS NOT NULL');
+    expect((await sqlite.execute('select id, task_id, number, state from attempts')).rows).toEqual([
+      { id: 1, task_id: 1, number: 1, state: 'passed' },
+    ]);
+    const workspaceId = Number((await sqlite.execute('select id from workspaces limit 1')).rows[0]?.id);
+    await sqlite.execute(`INSERT INTO epics (workspace_id, tracker_ref, kind, state) VALUES (${workspaceId}, 538, 'epic', 'ready')`);
+    await expect(sqlite.execute(`INSERT INTO attempts (workspace_id, epic_ref, number, state, started_at) VALUES (${workspaceId}, 538, 1, 'running', 2)`)).resolves.toBeDefined();
+    await expect(sqlite.execute("INSERT INTO attempts (number, state, started_at) VALUES (2, 'running', 2)")).rejects.toThrow();
+    await expect(sqlite.execute(`INSERT INTO attempts (task_id, workspace_id, epic_ref, number, state, started_at) VALUES (1, ${workspaceId}, 538, 2, 'running', 2)`)).rejects.toThrow();
+
+    await syncSchema(sqlite, readFileSync(BASELINE, 'utf8'));
+    expect((await sqlite.execute('select count(*) as count from attempts')).rows[0]?.count).toBe(2);
+    sqlite.close();
+    rmSync(dataDir, { recursive: true, force: true });
+  });
+
   describe('rollback and clean-break fallback', () => {
     afterEach(() => {
       vi.restoreAllMocks();

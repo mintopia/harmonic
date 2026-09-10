@@ -458,6 +458,8 @@ export interface EpicAttempt {
   startedAt: number;
   endedAt: number | null;
   steps: Step[];
+  /** Every command and critic record from this whole-Epic verification. */
+  verificationAttempts: VerificationAttempt[];
 }
 
 /** A Task's continuation preview, as `GET
