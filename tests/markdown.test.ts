@@ -18,6 +18,13 @@ describe('renderMarkdown', () => {
     expect(html).toContain('rel="noopener noreferrer"');
   });
 
+  it('highlights fenced code blocks using their declared language', async () => {
+    const html = await renderMarkdown('```ts\nconst answer: number = 42;\n```');
+
+    expect(html).toContain('hljs language-ts');
+    expect(html).toContain('hljs-keyword');
+  });
+
   it('strips XSS: inline handlers, scripts, and javascript: hrefs', async () => {
     expect(await renderMarkdown('<img src=x onerror=alert(1)>')).not.toContain('onerror');
     expect(await renderMarkdown('<script>alert(1)</script>')).not.toContain('<script');
