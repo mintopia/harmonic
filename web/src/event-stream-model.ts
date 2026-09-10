@@ -24,6 +24,7 @@ export interface ToolCallView {
   title: string | undefined;
   status: string | undefined;
   subagent: boolean;
+  input: string | null;
   /** The tool's textual output — a command's stdout, a file read — joined from
    * the ACP content blocks, shown beneath the transcript card. Null when the
    * call produced no text (an Edit, a pending call). */
@@ -74,6 +75,16 @@ function toolContentOutput(content: unknown): string | null {
   return texts.length ? texts.join('\n') : null;
 }
 
+function toolInput(input: unknown): string | null {
+  if (typeof input === 'string') return input;
+  if (input === null || input === undefined) return null;
+  try {
+    return JSON.stringify(input, null, 2);
+  } catch {
+    return String(input);
+  }
+}
+
 function toolCallView(payload: unknown): ToolCallView {
   const p = payload as
     | {
@@ -82,6 +93,8 @@ function toolCallView(payload: unknown): ToolCallView {
         title?: string;
         status?: string;
         _meta?: { claudeCode?: { parentToolUseId?: unknown } };
+        rawInput?: unknown;
+        input?: unknown;
         content?: unknown;
       }
     | null
@@ -92,6 +105,7 @@ function toolCallView(payload: unknown): ToolCallView {
     title: p?.title,
     status: p?.status,
     subagent: Boolean(p?._meta?.claudeCode?.parentToolUseId),
+    input: toolInput(p?.rawInput ?? p?.input),
     output: toolContentOutput(p?.content),
   };
 }
@@ -103,6 +117,7 @@ function mergeToolView(prev: ToolCallView, next: ToolCallView): ToolCallView {
     title: next.title ?? prev.title,
     status: next.status ?? prev.status,
     subagent: prev.subagent || next.subagent,
+    input: next.input ?? prev.input,
     output: next.output ?? prev.output,
   };
 }
