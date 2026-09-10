@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { TaskIdentity, formatModelLabel } from '../web/src/components/TaskIdentity.js';
+import { TaskIdentity, formatModelLabel, providerLabel } from '../web/src/components/TaskIdentity.js';
 
 const TABLE_VIEW = readFileSync(
   fileURLToPath(new URL('../web/src/components/TableView.tsx', import.meta.url)),
@@ -35,6 +35,14 @@ describe('TaskIdentity', () => {
     expect(html).toContain('aria-label="claude-sonnet-4-6"');
     expect(html).toContain('>sonnet-4-6<');
     expect(html).toContain('>Claude<');
+  });
+});
+
+describe('providerLabel', () => {
+  it('uses product names for supported harnesses', () => {
+    expect(providerLabel('claude')).toBe('Claude');
+    expect(providerLabel('codex')).toBe('Codex');
+    expect(providerLabel('opencode')).toBe('OpenCode');
   });
 });
 

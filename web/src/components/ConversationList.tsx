@@ -8,6 +8,7 @@ import { btnQuiet, btnQuietDestructive, conversationStateChip, panelTitle, touch
 import { ConfirmDialog } from './ConfirmDialog';
 import { EmptyState } from './EmptyState';
 import { Icon } from './Icon';
+import { providerLabel } from './TaskIdentity';
 
 function ConversationRow({
   conversation,
@@ -47,7 +48,7 @@ function ConversationRow({
           <span className={conversationStateChip(conversation.state)}>{conversation.state}</span>
         </div>
         <div className="mt-0.5 truncate text-small text-muted">
-          {conversation.harness} · {conversation.model}
+          {providerLabel(conversation.harness)} · {conversation.model}
           {conversation.workingDir && (
             <>
               {' · '}
@@ -131,9 +132,8 @@ export function ConversationList({
       <div className="flex-1 overflow-y-auto px-2 py-2">
         {conversations.length === 0 ? (
           <EmptyState className="mt-10 px-2" title="No conversations yet">
-            Start an interactive session to explore a repo or drive changes turn by turn — the agent
-            works alongside you, live. <span className="font-semibold text-ink">New conversation</span> is
-            just above.
+            Start a conversation to explore a repo or drive changes turn by turn, live.{' '}
+            <span className="font-semibold text-ink">New conversation</span> is just above.
           </EmptyState>
         ) : (
           <ul className="flex flex-col gap-2">
