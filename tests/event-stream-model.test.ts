@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { coalesceEvents, coalesceTail, MAX_STREAM_EVENTS, movingBaseView } from '../web/src/event-stream-model.js';
+import { coalesceEvents, coalesceTail, latestRunningTool, MAX_STREAM_EVENTS, movingBaseView } from '../web/src/event-stream-model.js';
 import type { AttemptEvent } from '../web/src/types.js';
 
 const evt = (id: number, type: AttemptEvent['type'], payload: any): AttemptEvent => ({
@@ -211,6 +211,34 @@ describe('coalesceEvents', () => {
   it('tolerates chunks with missing text', () => {
     const items = coalesceEvents([chunk(1, 'a'), evt(2, 'session_update', { sessionUpdate: 'agent_message_chunk' })]);
     expect(items).toEqual([{ kind: 'text', variant: 'message', text: 'a', at: 1, key: 1 }]);
+  });
+});
+
+describe('latestRunningTool', () => {
+  const tool = (id: number, toolCallId: string, payload: Record<string, unknown>) =>
+    evt(id, 'session_update', { sessionUpdate: 'tool_call', toolCallId, ...payload });
+
+  it('surfaces the newest in-flight tool independently of completed transcript history', () => {
+    expect(
+      latestRunningTool([
+        tool(1, 'read', { title: 'Read src/app.ts', status: 'completed' }),
+        tool(2, 'test', { title: 'Run npm test', status: 'pending' }),
+      ]),
+    ).toMatchObject({ title: 'Run npm test', status: 'pending' });
+  });
+
+  it('clears a settled tool and falls back to an earlier in-flight tool', () => {
+    expect(
+      latestRunningTool([
+        tool(1, 'read', { title: 'Read src/app.ts', status: 'pending' }),
+        tool(2, 'test', { title: 'Run npm test', status: 'pending' }),
+        evt(3, 'session_update', { sessionUpdate: 'tool_call_update', toolCallId: 'test', status: 'completed' }),
+      ]),
+    ).toMatchObject({ title: 'Read src/app.ts', status: 'pending' });
+  });
+
+  it('returns null when every tool has settled', () => {
+    expect(latestRunningTool([tool(1, 'read', { title: 'Read src/app.ts', status: 'completed' })])).toBeNull();
   });
 });
 

@@ -173,6 +173,16 @@ export function coalesceTail<E extends StreamEvent>(
   return { hidden, items };
 }
 
+export function latestRunningTool<E extends StreamEvent>(events: E[]): ToolCallView | null {
+  const items = coalesceEvents(events);
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const item = items[index];
+    if (item?.kind !== 'tool') continue;
+    if (item.tool.status !== 'completed' && item.tool.status !== 'failed') return item.tool;
+  }
+  return null;
+}
+
 /**
  * The single calm line a folded moving-base row renders as: a
  * base that moves under running work is normal, so the default is a quiet

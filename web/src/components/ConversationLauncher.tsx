@@ -534,9 +534,7 @@ export function ConversationLauncher({
 
           {conversation && <TelemetryStrip conversation={conversation} events={events} />}
 
-          <div className="flex-1 overflow-y-auto p-4">
-            <Transcript events={events} conversation={conversation} />
-          </div>
+          <Transcript events={events} conversation={conversation} />
           <StreamAnnouncer events={events} resetKey={conversation?.id ?? 'new'} />
 
           {!ended &&
@@ -687,9 +685,7 @@ export function ConversationsPage({
               onDelete={() => conversation && deleteConversation(conversation.id)}
             />
             {conversation && <TelemetryStrip conversation={conversation} events={events} />}
-            <div className="flex-1 overflow-y-auto p-4">
-              <Transcript events={events} conversation={conversation} />
-            </div>
+            <Transcript events={events} conversation={conversation} />
             <StreamAnnouncer events={events} resetKey={conversation?.id ?? 'new'} />
             {!ended &&
               Object.values(pending).map((pendingPermission) => (

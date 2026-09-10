@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Conversation, ConversationEvent } from '../../types';
 import { segmentTranscript } from '../../conversation-transcript-model';
-import { coalesceEvents } from '../../event-stream-model';
+import { coalesceEvents, latestRunningTool } from '../../event-stream-model';
+import { isAtLiveEdge } from '../../follow-tail-model';
 import {
   announceTransitions,
   EMPTY_ANNOUNCE_CURSOR,
@@ -55,21 +56,62 @@ function CopyButton({ text, label, className = '' }: { text: string; label: stri
 export function Transcript({ events, conversation }: { events: ConversationEvent[]; conversation: Conversation | null }) {
   const turns = segmentTranscript(events);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [following, setFollowing] = useState(true);
+  const runningTool = latestRunningTool(events);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ block: 'end' });
-  }, [events.length]);
+    const element = scrollRef.current;
+    if (element && following) element.scrollTop = element.scrollHeight;
+  }, [events, following]);
 
-  if (turns.length === 0) {
-    return <p className="text-muted">Send a message to begin.</p>;
-  }
+  useEffect(() => {
+    setFollowing(true);
+  }, [conversation?.id]);
+
+  const jumpToLatest = () => {
+    const element = scrollRef.current;
+    if (element) element.scrollTop = element.scrollHeight;
+    setFollowing(true);
+  };
 
   const agentLabel = providerLabel(conversation?.harness ?? '');
   const model = conversation?.model ?? '';
 
   return (
-    <div className="space-y-4">
-      {turns.map((turn, i) => {
+    <div
+      ref={scrollRef}
+      onScroll={(event) => {
+        const element = event.currentTarget;
+        setFollowing(isAtLiveEdge(element));
+      }}
+      className="flex-1 overflow-y-auto p-4"
+    >
+      {(runningTool || !following) && (
+        <div className="sticky top-0 z-10 -mt-4 mb-3 flex min-h-10 items-center justify-between gap-3 border-b border-hairline bg-surface/95 py-2 backdrop-blur-sm">
+          {runningTool ? (
+            <div role="status" aria-live="polite" className="flex min-w-0 items-center gap-2 text-small text-muted">
+              <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-running-dot motion-safe:animate-dot-pulse" />
+              <span className="text-label font-bold uppercase tracking-[0.1em] text-faint">Now running</span>
+              <span className="truncate font-semibold text-ink">{runningTool.title ?? runningTool.toolKind ?? 'Tool call'}</span>
+              <span className="shrink-0 text-faint">{runningTool.status ?? 'running'}</span>
+            </div>
+          ) : <span />}
+          {!following && (
+            <button
+              type="button"
+              onClick={jumpToLatest}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-edge px-2.5 py-1 text-[11.5px] font-semibold text-muted transition-colors hover:bg-raised hover:text-ink"
+            >
+              <Icon name="chevron-down" className="size-3" />
+              Jump to latest
+            </button>
+          )}
+        </div>
+      )}
+      {turns.length === 0 ? <p className="text-muted">Send a message to begin.</p> : (
+        <div className="space-y-4">
+          {turns.map((turn, i) => {
         const userText = textFromPayload(turn.userTurn?.payload);
         const agentText = agentMessageText(turn.agentEvents);
         const at = turn.agentEvents.at(-1)?.ts ?? turn.userTurn?.ts;
@@ -109,8 +151,10 @@ export function Transcript({ events, conversation }: { events: ConversationEvent
             )}
           </div>
         );
-      })}
-      <div ref={bottomRef} />
+          })}
+          <div ref={bottomRef} />
+        </div>
+      )}
     </div>
   );
 }
