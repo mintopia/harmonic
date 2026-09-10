@@ -4,8 +4,33 @@ import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('dompurify', () => ({ default: { addHook: () => {}, sanitize: (html: string) => html } }));
 
-import { ConversationsPage } from '../web/src/components/ConversationLauncher.js';
+import { ConversationContextDrawer, ConversationsPage } from '../web/src/components/ConversationLauncher.js';
 import { isConversationInWorkspace } from '../web/src/components/useConversationDetail.js';
+import type { Conversation } from '../web/src/types.js';
+
+const conversation: Conversation = {
+  id: 1,
+  title: 'Review the parser',
+  workspaceId: 1,
+  harness: 'opencode',
+  model: 'opencode-large',
+  workingDir: '/work',
+  state: 'active',
+  sessionId: null,
+  createdAt: 0,
+  updatedAt: 0,
+  endedAt: null,
+  usage: {
+    totals: { inputTokens: 12_300, outputTokens: 4_500, cacheReadTokens: 8_000, cacheWriteTokens: 250, totalTokens: 99_999 },
+    models: {},
+    toolCalls: {},
+    source: 'acp',
+  },
+  cost: null,
+  contextTokens: null,
+  contextWindow: null,
+  cacheWarmSeconds: null,
+};
 
 describe('ConversationsPage (#547)', () => {
   it('renders a conversation rail beside the transcript pane', () => {
@@ -27,5 +52,20 @@ describe('ConversationsPage (#547)', () => {
     expect(isConversationInWorkspace({ workspaceId: 4 }, 4)).toBe(true);
     expect(isConversationInWorkspace({ workspaceId: 5 }, 4)).toBe(false);
     expect(isConversationInWorkspace({ workspaceId: 4 }, null)).toBe(false);
+  });
+
+  it('places full usage and conversation settings in the context drawer', () => {
+    const html = renderToStaticMarkup(
+      createElement(ConversationContextDrawer, { conversation, events: [], onClose: () => {} }),
+    );
+
+    expect(html).toContain('aria-label="Conversation context"');
+    expect(html).toContain('Input 12.3k · Output 4.5k');
+    expect(html).toContain('Cache read');
+    expect(html).toContain('Cache write');
+    expect(html).toContain('Model');
+    expect(html).toContain('Working directory');
+    expect(html).toContain('Permission Rules');
+    expect(html).not.toContain('99,999');
   });
 });
