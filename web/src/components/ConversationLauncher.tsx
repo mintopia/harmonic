@@ -182,27 +182,20 @@ function PermissionPrompt({
   );
 }
 
-function ConversationHeader({
-  conversation,
-  composing,
-  expanded,
-  onBack,
-  onToggleExpand,
-  onRename,
-  onEnd,
-  onDelete,
-  onClose,
-}: {
+type ConversationHeaderProps = {
   conversation: Conversation | null;
   composing: boolean;
-  expanded: boolean;
   onBack: () => void;
-  onToggleExpand: () => void;
   onRename: (title: string | null) => Promise<void>;
   onEnd: () => void;
   onDelete: () => void;
-  onClose: () => void;
-}) {
+} & (
+  | { fullPage: true }
+  | { fullPage?: false; expanded: boolean; onToggleExpand: () => void; onClose: () => void }
+);
+
+function ConversationHeader(props: ConversationHeaderProps) {
+  const { conversation, composing, onBack, onRename, onEnd, onDelete } = props;
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
   const [saving, setSaving] = useState(false);
@@ -271,13 +264,15 @@ function ConversationHeader({
             )}
           </>
         )}
-        <button
-          aria-label={expanded ? 'Collapse to panel' : 'Expand to full view'}
-          className={`${touchTarget} ${btnQuiet}`}
-          onClick={onToggleExpand}
-        >
-          <Icon name={expanded ? 'collapse' : 'expand'} />
-        </button>
+        {!props.fullPage && (
+          <button
+            aria-label={props.expanded ? 'Collapse to panel' : 'Expand to full view'}
+            className={`${touchTarget} ${btnQuiet}`}
+            onClick={props.onToggleExpand}
+          >
+            <Icon name={props.expanded ? 'collapse' : 'expand'} />
+          </button>
+        )}
         {conversation?.state === 'active' && (
           <button className={`${touchTargetInline} ${btnQuiet}`} onClick={onEnd}>
             End
@@ -292,9 +287,11 @@ function ConversationHeader({
             Delete
           </button>
         )}
-        <button aria-label="Close conversation panel" className={`${touchTarget} ${btnQuiet}`} onClick={onClose}>
-          <Icon name="close" />
-        </button>
+        {!props.fullPage && (
+          <button aria-label="Close conversation panel" className={`${touchTarget} ${btnQuiet}`} onClick={props.onClose}>
+            <Icon name="close" />
+          </button>
+        )}
       </div>
       {confirmingDelete && (
         <ConfirmDialog
@@ -576,6 +573,157 @@ export function ConversationLauncher({
           )}
         </>
       )}
+    </div>
+  );
+}
+
+export function ConversationsPage({
+  config,
+  workspace,
+  conversationId,
+  onConversationChange,
+}: {
+  config: AppConfig | null;
+  workspace: Workspace | null;
+  conversationId: number | null;
+  onConversationChange: (conversationId: number | null) => void;
+}) {
+  const workspaceId = workspace?.id ?? null;
+  const [view, setView] = useState<LauncherView>(() =>
+    conversationId === null ? { kind: 'list' } : { kind: 'detail', conversationId },
+  );
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [attention, setAttention] = useState<AttentionState>(NO_ATTENTION);
+  const [openedPendingPermission, setOpenedPendingPermission] = useState<PendingPermission | null>(null);
+  const focusedId = view.kind === 'detail' ? view.conversationId : null;
+  const focusedRef = useRef<number | null>(focusedId);
+
+  useEffect(() => {
+    focusedRef.current = focusedId;
+    if (focusedId !== null) setAttention((current) => clearAttention(current, focusedId));
+  }, [focusedId]);
+
+  useEffect(() => {
+    setView(conversationId === null ? { kind: 'list' } : { kind: 'detail', conversationId });
+  }, [conversationId]);
+
+  const upsertConversationInList = useCallback((conversation: Conversation) => {
+    setConversations((current) => upsertConversation(current, conversation));
+  }, []);
+  const removeConversationFromList = useCallback((id: number) => {
+    setConversations((current) => removeConversationById(current, id));
+    setAttention((current) => clearAttention(current, id));
+  }, []);
+
+  useEffect(() => {
+    if (workspaceId === null) return;
+    setConversations([]);
+    const load = () =>
+      api.conversations(workspaceId).then(({ conversations }) => setConversations(conversations), toastError);
+    load();
+    return subscribe((message) => {
+      setAttention((current) => applyAttentionMessage(current, message, focusedRef.current));
+      if (message.type === 'conversation_changed' && message.conversation.workspaceId === workspaceId) {
+        setConversations((current) => upsertConversation(current, message.conversation));
+      }
+    }, load);
+  }, [workspaceId]);
+
+  const openList = () => {
+    setView({ kind: 'list' });
+    onConversationChange(null);
+  };
+  const openConversation = (id: number) => {
+    setView({ kind: 'detail', conversationId: id });
+    onConversationChange(id);
+  };
+  const openCompose = () => {
+    setView({ kind: 'detail', conversationId: null });
+    onConversationChange(null);
+  };
+  const clearPendingPermission = useCallback(() => setOpenedPendingPermission(null), []);
+  const { conversation, events, pending, pendingElicitations, actions } = useConversationDetail(focusedId, {
+    workspaceId,
+    upsertConversationInList,
+    removeConversationFromList,
+    openConversation,
+    openList,
+    pendingPermission: openedPendingPermission,
+    clearPendingPermission,
+  });
+  const composerReady = view.kind === 'detail' && (view.conversationId === null || conversation !== null);
+  const ended = conversation?.state === 'ended';
+  const deleteConversation = (id: number) => {
+    actions.deleteConversation(id);
+    if (id === focusedId) openList();
+  };
+
+  return (
+    <div className="flex h-full min-h-0 overflow-hidden rounded-lg bg-surface shadow-card">
+      <aside aria-label="Conversations" className="flex w-80 shrink-0 border-r border-hairline">
+        <ConversationList
+          conversations={conversations}
+          attention={attention}
+          fullPage
+          onSelect={openConversation}
+          onNew={openCompose}
+          onDelete={deleteConversation}
+        />
+      </aside>
+      <section aria-label="Conversation transcript" className="flex min-w-0 flex-1 flex-col">
+        {view.kind === 'list' ? (
+          <div className="flex flex-1 items-center justify-center px-6 text-muted">
+            Select a conversation or start a new one.
+          </div>
+        ) : (
+          <>
+            <ConversationHeader
+              conversation={conversation}
+              composing={view.conversationId === null}
+              fullPage
+              onBack={openList}
+              onRename={actions.rename}
+              onEnd={actions.end}
+              onDelete={() => conversation && deleteConversation(conversation.id)}
+            />
+            {conversation && <TelemetryStrip conversation={conversation} events={events} />}
+            <div className="flex-1 overflow-y-auto p-4">
+              <Transcript events={events} conversation={conversation} />
+            </div>
+            <StreamAnnouncer events={events} resetKey={conversation?.id ?? 'new'} />
+            {!ended &&
+              Object.values(pending).map((pendingPermission) => (
+                <PermissionPrompt
+                  key={pendingPermission.reqId}
+                  pending={pendingPermission}
+                  workingDir={conversation?.workingDir ?? ''}
+                  onAnswer={actions.answerPermission}
+                />
+              ))}
+            {!ended &&
+              Object.values(pendingElicitations).map((elicitation) => (
+                <ElicitationPrompt key={elicitation.reqId} pending={elicitation} onAnswer={actions.answerElicitation} />
+              ))}
+            {ended ? (
+              <p role="status" className="border-t border-hairline bg-raised px-4 py-2.5 text-muted">
+                This conversation has ended — read-only.
+              </p>
+            ) : (
+              config &&
+              composerReady && (
+                <Composer
+                  config={config}
+                  workspace={workspace}
+                  conversation={conversation}
+                  events={events}
+                  expanded={true}
+                  onSend={actions.send}
+                />
+              )
+            )}
+          </>
+        )}
+      </section>
     </div>
   );
 }

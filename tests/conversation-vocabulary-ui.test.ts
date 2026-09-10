@@ -15,8 +15,8 @@ const handlers = {
   onClose: () => {},
 };
 
-const LAUNCHER = readFileSync(
-  fileURLToPath(new URL('../web/src/components/ConversationLauncher.tsx', import.meta.url)),
+const COMPOSER = readFileSync(
+  fileURLToPath(new URL('../web/src/components/conversation/Composer.tsx', import.meta.url)),
   'utf8',
 );
 
@@ -59,7 +59,7 @@ describe('conversation vocabulary UI (#546)', () => {
   });
 
   it('addresses the selected responder by product name in the composer', () => {
-    expect(LAUNCHER).toContain('Message ${providerLabel(harness)}…');
-    expect(LAUNCHER).not.toContain('Message the agent…');
+    expect(COMPOSER).toContain('Message ${providerLabel(harness)}…');
+    expect(COMPOSER).not.toContain('Message the agent…');
   });
 });

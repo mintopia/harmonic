@@ -23,7 +23,7 @@ import { TableView } from './components/TableView';
 import { ActivityView } from './components/ActivityView';
 import { BrandMark } from './components/BrandMark';
 import { Icon } from './components/Icon';
-import { ConversationLauncher } from './components/ConversationLauncher';
+import { ConversationLauncher, ConversationsPage } from './components/ConversationLauncher';
 import { NewWorkspaceForm, WorkspaceSwitcher } from './components/WorkspaceSwitcher';
 import { WorkspaceSettingsPage } from './components/WorkspaceSettingsPage';
 import { EmptyState } from './components/EmptyState';
@@ -470,7 +470,14 @@ export function App() {
   };
 
   const pickView = (v: View) => {
-    navigate({ ...route, view: v, task: null, epic: null, panel: NO_SELECTION });
+    navigate({
+      ...route,
+      view: v,
+      task: null,
+      epic: null,
+      conversation: view === 'conversations' ? null : route.conversation,
+      panel: NO_SELECTION,
+    });
     setMenuOpen(false);
   };
 
@@ -774,6 +781,16 @@ export function App() {
                       />
                     )}
                   {view === 'activity' && <ActivityView config={config} />}
+                  {view === 'conversations' && (
+                    <ConversationsPage
+                      config={config}
+                      workspace={activeWorkspace}
+                      conversationId={route.conversation ?? null}
+                      onConversationChange={(conversationId) =>
+                        navigate({ ...route, conversation: conversationId })
+                      }
+                    />
+                  )}
                   {view === 'table' && (
                     <TableView
                       workspaceId={activeWorkspaceId}
@@ -814,7 +831,7 @@ export function App() {
             </div>
           )}
 
-          {!noWorkspaces && (
+          {!noWorkspaces && view !== 'conversations' && (
             <ConversationLauncher
               config={config}
               workspace={workspaces.find((w) => w.id === activeWorkspaceId) ?? null}
