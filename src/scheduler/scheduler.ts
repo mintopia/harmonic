@@ -28,6 +28,7 @@ export interface ScheduledJobRegistration {
   workspaceId?: number | undefined;
   run: () => Promise<void>;
   enabled?: () => boolean | Promise<boolean>;
+  runOnStart?: boolean;
 }
 
 interface RegisteredJob extends ScheduledJobRegistration {
@@ -171,7 +172,7 @@ export class Scheduler {
 
   private async runIfDueOnStart(job: RegisteredJob): Promise<void> {
     const row = await this.db.read((d) => d.select().from(scheduledJobs).where(eq(scheduledJobs.jobKey, job.jobKey)).get());
-    if (row?.lastRunAt === undefined || row.lastRunAt === null || row.lastRunAt + job.intervalMs <= this.clock()) await job.tick();
+    if (job.runOnStart || row?.lastRunAt === undefined || row.lastRunAt === null || row.lastRunAt + job.intervalMs <= this.clock()) await job.tick();
   }
 
   private fire(job: RegisteredJob): void {

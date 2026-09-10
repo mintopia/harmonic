@@ -86,6 +86,7 @@ import { Notifier } from '../notifications/notifier.js';
 import { buildMcpServer } from '../mcp/server.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { detectDistributionMode, type DistributionMode } from '../distribution-mode.js';
+import { fetchLatestVersion, SettingsUpdateAvailabilityStore, UpdateCheck } from '../upgrade/update-check.js';
 
 export interface AppOptions {
   dataDir: string;
@@ -102,6 +103,10 @@ export interface AppOptions {
   scheduledJobRegistrations?: ScheduledJobRegistration[] | undefined;
   /** Registers telemetry's metrics-summary flush as a Scheduler Job; undefined when telemetry owns its own timer. */
   metricsSummary?: { intervalMs: number; flush: () => Promise<void> } | undefined;
+  /** Test-only distribution mode override. */
+  distributionMode?: DistributionMode | undefined;
+  /** Test-only npm registry lookup override for the Update Check Job. */
+  updateCheckLatest?: (() => Promise<string>) | undefined;
 }
 
 /** Paths reachable without authentication. */
@@ -150,6 +155,7 @@ async function requestIsOperator(req: FastifyRequest, auth: AuthService): Promis
 
 export interface AppContext {
   distributionMode: DistributionMode;
+  updateCheck: UpdateCheck;
   asyncDb: AsyncDbHandle;
   statsReader: StatsWorkerClient;
   settingsStore: SettingsStore;
@@ -262,12 +268,17 @@ export interface RegisteredRoute {
 export type App = FastifyInstance & { ctx: AppContext; registeredRoutes: RegisteredRoute[] };
 
 export async function buildApp(opts: AppOptions): Promise<App> {
-  const distributionMode = detectDistributionMode();
+  const distributionMode = opts.distributionMode ?? detectDistributionMode();
   const asyncDb = await openAsyncDb(opts.dataDir);
   const statsReader = openStatsReader(opts.dataDir);
   const worktreesDir = join(opts.dataDir, 'worktrees');
   const bus = new EventBus();
   const scheduler = new Scheduler(asyncDb, (jobs) => bus.emit('scheduled_jobs', jobs));
+  const updateCheck = new UpdateCheck({
+    version: readPackageManifest().version,
+    latest: opts.updateCheckLatest ?? fetchLatestVersion,
+    store: new SettingsUpdateAvailabilityStore(asyncDb),
+  });
   scheduler.register({
     name: 'Scheduled Job registry cleanup',
     intervalMs: 24 * 60 * 60 * 1000,
@@ -279,6 +290,14 @@ export async function buildApp(opts: AppOptions): Promise<App> {
       name: 'Metrics summary',
       intervalMs: opts.metricsSummary.intervalMs,
       run: opts.metricsSummary.flush,
+    });
+  }
+  if (distributionMode === 'packaged') {
+    scheduler.register({
+      name: 'Update check',
+      intervalMs: 60 * 60_000,
+      runOnStart: true,
+      run: () => updateCheck.run(),
     });
   }
   operationRegistry.setBus(bus);
@@ -677,7 +696,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     })().catch(() => {});
   });
 
-  const ctx: AppContext = { distributionMode, asyncDb, statsReader, settingsStore, workspaces, tasks, attempts, sessions: sessionStore, runner, conversations, conversationDriver, permissionRules, escalation, autoRunner, globalPause, guardrailEvents, verificationAttempts, trackerManager, epicService, scheduler, auth, channels, notifier, bus, hostLoad, worktreeInventory, forceCleanupWorktree, dirtyWorktreeFiles, reconcileWorktrees, worktreesReconciledAt: () => worktreeReconciler.reconciledAt };
+  const ctx: AppContext = { distributionMode, updateCheck, asyncDb, statsReader, settingsStore, workspaces, tasks, attempts, sessions: sessionStore, runner, conversations, conversationDriver, permissionRules, escalation, autoRunner, globalPause, guardrailEvents, verificationAttempts, trackerManager, epicService, scheduler, auth, channels, notifier, bus, hostLoad, worktreeInventory, forceCleanupWorktree, dirtyWorktreeFiles, reconcileWorktrees, worktreesReconciledAt: () => worktreeReconciler.reconciledAt };
   const contexts = createAppContexts(ctx);
 
   const app = Fastify({ logger: false }) as unknown as App;
