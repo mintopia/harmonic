@@ -43,7 +43,7 @@ describe('coalesceEvents', () => {
       { kind: 'text', variant: 'message', text: 'before tool.', at: 1, key: 1 },
       {
         kind: 'tool',
-        tool: { toolCallId: 'toolu_x', toolKind: 'read', title: 'Read', status: 'completed', subagent: false, input: null, output: null },
+        tool: { toolCallId: 'toolu_x', toolKind: 'read', title: 'Read', status: 'completed', subagent: false, input: null, output: null, diffs: null },
         at: 3,
         key: 3,
       },
@@ -68,7 +68,7 @@ describe('coalesceEvents', () => {
     expect(items).toEqual([
       {
         kind: 'tool',
-        tool: { toolCallId: 'toolu_01EtAM', toolKind: 'read', title: 'notes.md', status: 'completed', subagent: false, input: null, output: null },
+        tool: { toolCallId: 'toolu_01EtAM', toolKind: 'read', title: 'notes.md', status: 'completed', subagent: false, input: null, output: null, diffs: null },
         at: 1,
         key: 1,
       },
@@ -81,7 +81,7 @@ describe('coalesceEvents', () => {
     const [item] = coalesceEvents([call, update]);
     expect(item).toEqual({
       kind: 'tool',
-      tool: { toolCallId: 't1', toolKind: 'execute', title: 'AttemptSummary tests', status: 'completed', subagent: false, input: null, output: null },
+      tool: { toolCallId: 't1', toolKind: 'execute', title: 'AttemptSummary tests', status: 'completed', subagent: false, input: null, output: null, diffs: null },
       at: 1,
       key: 1,
     });
@@ -111,6 +111,24 @@ describe('coalesceEvents', () => {
     expect(item && item.kind === 'tool' && item.tool.output).toBe('Tests 12 passed');
   });
 
+  it('retains an ACP structured diff block alongside textual output', () => {
+    const call = evt(1, 'session_update', {
+      sessionUpdate: 'tool_call',
+      toolCallId: 't',
+      kind: 'edit',
+      content: [
+        { content: { text: 'Updated the file' } },
+        { type: 'diff', path: 'src/app.ts', oldText: 'before\n', newText: 'after\n' },
+      ],
+    });
+
+    const [item] = coalesceEvents([call]);
+    expect(item && item.kind === 'tool' && item.tool).toMatchObject({
+      output: 'Updated the file',
+      diffs: [{ path: 'src/app.ts', oldText: 'before\n', newText: 'after\n' }],
+    });
+  });
+
   it('keeps every streamed output update for one tool call', () => {
     const call = evt(1, 'session_update', {
       sessionUpdate: 'tool_call',
@@ -126,6 +144,53 @@ describe('coalesceEvents', () => {
 
     const [item] = coalesceEvents([call, update]);
     expect(item && item.kind === 'tool' && item.tool.output).toBe('Running tests…\n12 tests passed');
+  });
+
+  it('retains a diff that arrives in a later tool update', () => {
+    const call = evt(1, 'session_update', { sessionUpdate: 'tool_call', toolCallId: 't', kind: 'edit' });
+    const update = evt(2, 'session_update', {
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 't',
+      content: [{ type: 'diff', path: 'src/app.ts', oldText: 'before\n', newText: 'after\n' }],
+    });
+
+    const [item] = coalesceEvents([call, update]);
+    expect(item && item.kind === 'tool' && item.tool.diffs).toEqual([
+      { path: 'src/app.ts', oldText: 'before\n', newText: 'after\n' },
+    ]);
+  });
+
+  it('replaces provisional diffs with every diff block from a later update', () => {
+    const call = evt(1, 'session_update', {
+      sessionUpdate: 'tool_call', toolCallId: 't', kind: 'edit',
+      content: [{ type: 'diff', path: 'provisional.ts', oldText: 'old', newText: 'new' }],
+    });
+    const update = evt(2, 'session_update', {
+      sessionUpdate: 'tool_call_update', toolCallId: 't',
+      content: [
+        { type: 'diff', path: 'first.ts', oldText: null, newText: 'first' },
+        { type: 'diff', path: 'second.ts', oldText: 'second', newText: '' },
+      ],
+    });
+
+    const [item] = coalesceEvents([call, update]);
+    expect(item && item.kind === 'tool' && item.tool.diffs).toEqual([
+      { path: 'first.ts', oldText: null, newText: 'first' },
+      { path: 'second.ts', oldText: 'second', newText: '' },
+    ]);
+  });
+
+  it('normalizes a new-file diff and ignores untyped lookalike blocks', () => {
+    const [item] = coalesceEvents([evt(1, 'session_update', {
+      sessionUpdate: 'tool_call',
+      toolCallId: 't',
+      content: [
+        { path: 'ignored.ts', oldText: 'old', newText: 'new' },
+        { type: 'diff', path: 'created.ts', newText: 'new\n' },
+      ],
+    })]);
+
+    expect(item && item.kind === 'tool' && item.tool.diffs).toEqual([{ path: 'created.ts', oldText: null, newText: 'new\n' }]);
   });
 
   it('preserves structured command input for the expanded command detail', () => {
@@ -244,7 +309,7 @@ describe('coalesceTail', () => {
     expect(items).toEqual([
       {
         kind: 'tool',
-        tool: { toolCallId: 't', toolKind: undefined, title: undefined, status: 'completed', subagent: false, input: null, output: null },
+        tool: { toolCallId: 't', toolKind: undefined, title: undefined, status: 'completed', subagent: false, input: null, output: null, diffs: null },
         at: 2,
         key: 2,
       },
