@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { closedMembers, epicByTaskId, integrateOutcomeBanner, integrationSteps, isEpicIntegrating, memberPipStatus, statusLineParts, epicLifecycleSteps } from '../web/src/epic-model';
+import { closedMembers, epicByTaskId, excludeEpicDrivers, integrateOutcomeBanner, integrationSteps, isEpicIntegrating, memberPipStatus, statusLineParts, epicLifecycleSteps } from '../web/src/epic-model';
 import type { Epic, EpicIntegrateOutcome, EpicMember } from '../web/src/epic-model.js';
 
 const member = (overrides: Partial<EpicMember> & { ref: number }): EpicMember => ({
@@ -35,6 +35,26 @@ const epic = (overrides: Partial<Epic> = {}): Epic => {
     ...overrides,
   };
 };
+
+const driverRow = ({ id, ...overrides }: { id: number; trackerRef?: number | null; isEpic?: boolean }) => ({
+  id,
+  trackerRef: null,
+  isEpic: false,
+  ...overrides,
+});
+
+describe('excludeEpicDrivers', () => {
+  it('removes a mirrored driver while retaining the separate Epic row and ordinary Tasks', () => {
+    const rows = [
+      driverRow({ id: 1, trackerRef: 10 }),
+      driverRow({ id: 2, trackerRef: 10, isEpic: true }),
+      driverRow({ id: 3, trackerRef: 11 }),
+      driverRow({ id: 4 }),
+    ];
+
+    expect(excludeEpicDrivers(rows, [epic({ ref: 10 })]).map((row) => row.id)).toEqual([2, 3, 4]);
+  });
+});
 
 
 describe('statusLineParts', () => {

@@ -183,18 +183,26 @@ describe('mirrorScan upsert', () => {
     expect(child.state).toBe('ready');
   });
 
-  it('an Epic parent is never agent-workable — a container is never auto-run', async () => {
+  it('demotes an unlabelled structural Epic into a container, not a mirrored Task (issue #563)', async () => {
+    const results = await mscan([
+      ticket({ number: 400, labels: ['ready-for-agent'] }),
+      ticket({ number: 401, parent: 400, labels: ['ready-for-agent'] }),
+    ]);
+
+    expect(results.map((t) => t.trackerRef)).toEqual([401]);
+    expect((await tasks.list()).some((t) => t.trackerRef === 400)).toBe(false);
+    expect((await tasks.listTrackerContainers(wsId)).map((c) => c.trackerRef)).toEqual([400]);
+  });
+
+  it('a structural Epic parent is demoted, while its child remains agent-workable', async () => {
     const results = await mscan([
       ticket({ number: 200, labels: ['ready-for-agent'] }),
       ticket({ number: 201, parent: 200, labels: ['ready-for-agent'] }),
     ]);
-    const epic = results.find((t) => t.trackerRef === 200)!;
     const child = results.find((t) => t.trackerRef === 201)!;
-    expect((await tasks.withDeps(epic)).agentWorkable).toBe(false);
+    expect(results.some((t) => t.trackerRef === 200)).toBe(false);
     expect((await tasks.withDeps(child)).agentWorkable).toBe(true);
-    expect((await tasks.listWithDeps({ workspaceId: wsId })).map((t) => [t.trackerRef, t.agentWorkable])).toEqual(
-      expect.arrayContaining([[200, false], [201, true]]),
-    );
+    expect((await tasks.listTrackerContainers(wsId)).map((container) => container.trackerRef)).toContain(200);
   });
 
   it('a nested container (has a parent AND children) is never agent-workable, but only the top-level one is an Epic (ADR-0016)', async () => {

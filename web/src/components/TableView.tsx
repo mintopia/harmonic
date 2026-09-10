@@ -19,6 +19,7 @@ import {
 } from '../ui';
 import { toastError } from '../toast';
 import { fetchTasks, TABLE_PAGE_SIZE } from '../table-model';
+import { excludeEpicDrivers, type Epic } from '../epic-model';
 import { issueRef, ticketRowId } from '../id-format.js';
 import { EmptyState } from './EmptyState';
 import { FilterSelect } from './FilterSelect';
@@ -35,6 +36,7 @@ const fmtTime = (ms: number) =>
 
 export function TableView({
   workspaceId,
+  epics,
   onOpen,
   onOpenEpic,
   filters,
@@ -43,6 +45,7 @@ export function TableView({
 }: {
   /** Scopes the table to the active Workspace; no fetch until resolved. */
   workspaceId: number | null;
+  epics: Epic[];
   onOpen: (task: Task) => void;
   /** Opens the Board focused on an epic's summary panel, keyed by tracker ref. */
   onOpenEpic: (ref: number) => void;
@@ -85,13 +88,13 @@ export function TableView({
       offset: (page - 1) * TABLE_PAGE_SIZE,
     })
       .then(({ tasks, total }) => {
-        setTasks(tasks);
+        setTasks(excludeEpicDrivers(tasks, epics));
         setTotal(total);
       })
       .catch(toastError)
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- filter arrays are tracked via their joined keys so a new reference alone can't refetch
-  }, [workspaceId, stateKey, harnessKey, priorityKey, debouncedSearch, sortBy, order, page]);
+  }, [workspaceId, stateKey, harnessKey, priorityKey, debouncedSearch, sortBy, order, page, epics]);
 
   const pageCount = Math.max(1, Math.ceil(total / TABLE_PAGE_SIZE));
   const currentPage = Math.min(page, pageCount);
