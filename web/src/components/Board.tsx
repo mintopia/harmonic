@@ -134,7 +134,6 @@ function PauseResumeButton({ task }: { task: Task }) {
         disabled={pending}
         onClick={(e) => {
           e.stopPropagation();
-          // Resume offers a continue-vs-fresh choice in a modal; pause is direct.
           if (!pausing) {
             setResuming(true);
             return;

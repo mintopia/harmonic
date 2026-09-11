@@ -15,7 +15,6 @@ function warmthCountdown(estimatedWarmUntil: number, now: number): string {
   return `${minutes}:${String(seconds % 60).padStart(2, '0')}`;
 }
 
-/** The one-line reason the recommendation landed where it did. */
 function recommendReason(preview: Extract<ContinuationPreview, { available: true }>): string | null {
   switch (preview.reason) {
     case 'context-tokens':

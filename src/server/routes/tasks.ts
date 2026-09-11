@@ -524,9 +524,8 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     async (req, reply) => {
       await ctx.upgrade.assertManualLaunchAllowed();
       const continuation = req.body?.continuation;
-      // A fresh-Session request must skip the in-place live resume, which would
-      // otherwise reattach the retained conversation before the choice applies.
-      if (continuation !== 'condensed' && (await ctx.runner.resume(req.params.id))) {
+      const tryLiveResume = continuation !== 'condensed';
+      if (tryLiveResume && (await ctx.runner.resume(req.params.id))) {
         return await withDeps({ id: req.params.id });
       }
       const task = await ctx.tasks.get(req.params.id);

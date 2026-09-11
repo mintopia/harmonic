@@ -139,7 +139,6 @@ export class ConversationDriver {
     return this.active.size;
   }
 
-  /** Whether any Conversation currently has a harness Turn in flight. */
   hasInFlightTurn(): boolean {
     return [...this.active.values()].some((entry) => entry.turning);
   }
