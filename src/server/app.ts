@@ -664,7 +664,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     attempts,
     operations: () => operationRegistry.list(),
     conversations: conversationDriver,
-    onIdle: opts.onUpgradeIdle,
+    ...(opts.onUpgradeIdle === undefined ? {} : { onIdle: opts.onUpgradeIdle }),
   });
   upgradeRef = upgrade;
   await upgrade.reconcile();

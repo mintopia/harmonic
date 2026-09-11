@@ -21729,6 +21729,251 @@
         }
       }
     },
+    "/api/update": {
+      "get": {
+        "tags": [
+          "Update"
+        ],
+        "description": "The offered and armed package update, plus the current drain-to-idle blockers. Operator only.",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The current offered and armed update, with drain-to-idle blockers.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "availableVersion": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "armedVersion": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "idle": {
+                      "type": "object",
+                      "properties": {
+                        "runningAttempts": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "mergingOrIntegrating": {
+                          "type": "boolean"
+                        },
+                        "conversationMidTurn": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "runningAttempts",
+                        "mergingOrIntegrating",
+                        "conversationMidTurn"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "availableVersion",
+                    "armedVersion",
+                    "idle"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The current offered and armed update, with drain-to-idle blockers."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/update/arm": {
+      "post": {
+        "tags": [
+          "Update"
+        ],
+        "description": "Pin the currently offered update and quiesce new work until the instance is idle. Operator only.",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The newly armed update and current drain-to-idle blockers.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "availableVersion": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "armedVersion": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "idle": {
+                      "type": "object",
+                      "properties": {
+                        "runningAttempts": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "mergingOrIntegrating": {
+                          "type": "boolean"
+                        },
+                        "conversationMidTurn": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "runningAttempts",
+                        "mergingOrIntegrating",
+                        "conversationMidTurn"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "availableVersion",
+                    "armedVersion",
+                    "idle"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The newly armed update and current drain-to-idle blockers."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "No update is currently available to arm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Update"
+        ],
+        "description": "Cancel an armed update and restore the Auto-Runner master switch to its pre-arm value. Operator only.",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The unarmed update state and current drain-to-idle blockers.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "availableVersion": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "armedVersion": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "idle": {
+                      "type": "object",
+                      "properties": {
+                        "runningAttempts": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "mergingOrIntegrating": {
+                          "type": "boolean"
+                        },
+                        "conversationMidTurn": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "runningAttempts",
+                        "mergingOrIntegrating",
+                        "conversationMidTurn"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "availableVersion",
+                    "armedVersion",
+                    "idle"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The unarmed update state and current drain-to-idle blockers."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/auth/login": {
       "post": {
         "tags": [
