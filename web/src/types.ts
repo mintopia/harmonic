@@ -4,6 +4,17 @@ import type { Verdict } from '../../src/verification/critic-schema.js';
 export const TASK_STATES = ['draft', 'ready', 'working', 'paused', 'escalated', 'done', 'cancelled'] as const;
 export type TaskState = (typeof TASK_STATES)[number];
 
+export interface UpdateState {
+  availableVersion: string | null;
+  armedVersion: string | null;
+  dismissedVersion: string | null;
+  idle: {
+    runningAttempts: number;
+    mergingOrIntegrating: boolean;
+    conversationMidTurn: boolean;
+  };
+}
+
 export const MERGE_STATUSES = ['merging', 'resolving-conflicts'] as const;
 export type MergeStatus = (typeof MERGE_STATUSES)[number];
 

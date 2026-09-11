@@ -298,6 +298,7 @@ export async function epicRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     },
     async (req) => {
       await ctx.workspaces.assertExists(req.params.workspaceId);
+      await ctx.upgrade.assertManualLaunchAllowed();
       const outcome = await ctx.trackerManager.forceIntegrateEpic(req.params.workspaceId, req.params.epicRef);
       if (!outcome) {
         throw new DomainError(

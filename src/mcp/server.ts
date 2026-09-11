@@ -229,6 +229,7 @@ export function buildMcpServer(ctx: AppContext, opts: { operator?: boolean } = {
     },
     wrapAsync(async ({ workspaceId, epicRef }) => {
       requireOperator();
+      await ctx.upgrade.assertManualLaunchAllowed();
       await ctx.workspaces.get(workspaceId); // 404s an unknown Workspace before touching the tracker
       const outcome = await ctx.trackerManager.forceIntegrateEpic(workspaceId, epicRef);
       if (!outcome) {

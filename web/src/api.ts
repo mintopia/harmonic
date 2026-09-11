@@ -27,6 +27,7 @@ import type {
   EpicVerificationCritic,
   VerifierStatus,
   Workspace,
+  UpdateState,
   HarnessProvider,
   DiscoveredHarnessModel,
 } from './types.js';
@@ -64,6 +65,10 @@ export const api = {
   harnessModels: (harness: string, provider: string) => request<{ models: DiscoveredHarnessModel[] }>('GET', `/api/harnesses/${encodeURIComponent(harness)}/models?provider=${encodeURIComponent(provider)}`),
   config: () => request<AppConfig>('GET', '/api/config'),
   globalPause: () => request<{ paused: boolean }>('GET', '/api/global-pause'),
+  updateState: () => request<UpdateState>('GET', '/api/update'),
+  armUpdate: () => request<UpdateState>('POST', '/api/update/arm'),
+  cancelUpdate: () => request<UpdateState>('DELETE', '/api/update/arm'),
+  dismissUpdate: () => request<UpdateState>('POST', '/api/update/dismiss'),
   pauseGlobal: () => request<{ paused: boolean }>('POST', '/api/global-pause'),
   resumeGlobal: () => request<{ paused: boolean }>('DELETE', '/api/global-pause'),
   configLayers: () => request<ConfigLayers>('GET', '/api/config/layers'),

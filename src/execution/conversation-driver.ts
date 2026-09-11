@@ -90,6 +90,8 @@ export interface ConversationDriverOptions {
     mint: (conversationId: number) => Promise<string>;
     revoke: (conversationId: number) => void | Promise<void>;
   };
+  /** Notifies lifecycle coordinators after a running Turn has fully settled. */
+  onTurnSettled?: () => void;
 }
 
 interface ActiveConversation {
@@ -118,6 +120,7 @@ export class ConversationDriver {
   private readonly events: ConversationDriverEvents;
   private readonly rules: PermissionRuleStore | undefined;
   private readonly keys: ConversationDriverOptions['keys'];
+  private readonly onTurnSettled: (() => void) | undefined;
   /** The MCP endpoint agents call back to; set once the server listens. */
   mcpUrl: string | null = null;
 
@@ -129,10 +132,16 @@ export class ConversationDriver {
     this.events = options.events ?? {};
     this.rules = options.rules;
     this.keys = options.keys;
+    this.onTurnSettled = options.onTurnSettled;
   }
 
   get activeCount(): number {
     return this.active.size;
+  }
+
+  /** Whether any Conversation currently has a harness Turn in flight. */
+  hasInFlightTurn(): boolean {
+    return [...this.active.values()].some((entry) => entry.turning);
   }
 
   /** The ids of every warm (active) Conversation. */
@@ -422,6 +431,7 @@ export class ConversationDriver {
       entry.turning = false;
       await this.drainQueue(entry);
       if (this.active.has(entry.conversationId) && !entry.turning) this.armIdle(entry);
+      this.onTurnSettled?.();
     }
   }
 
