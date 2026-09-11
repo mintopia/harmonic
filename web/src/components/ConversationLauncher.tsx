@@ -377,7 +377,7 @@ function ConversationHeader(props: ConversationHeaderProps) {
   const title = composing ? 'New conversation' : conversationDisplayTitle(conversation?.title ?? null);
 
   return (
-    <div className="border-b border-edge bg-surface px-4 py-3">
+    <div className="border-b border-edge bg-surface px-4 py-2">
       <div className="flex items-center gap-1.5">
         <button aria-label="Back to conversations" className={`${touchTarget} ${btnQuiet}`} onClick={onBack}>
           <Icon name="arrow-left" />
@@ -412,7 +412,7 @@ function ConversationHeader(props: ConversationHeaderProps) {
           </>
         ) : (
           <>
-            <span className={`${panelTitle} min-w-0 flex-1 truncate`}>{title}</span>
+            <span className="min-w-0 flex-1 truncate text-title font-semibold text-ink">{title}</span>
             {conversation && (
               <button aria-label="Rename conversation" className={`${touchTarget} ${btnQuiet}`} onClick={startEdit}>
                 <Icon name="edit" />
