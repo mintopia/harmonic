@@ -34,6 +34,7 @@ const summarize = (event: NotificationEvent, task?: TaskRow): string => {
     'task.escalated': 'ESCALATED — needs you',
     'task.done': 'done',
     'queue.idle': 'queue idle',
+    'update.failed': 'update failed',
   };
   return `Harmonic: task ${task.id} ${label[event]} — "${excerpt}"`;
 };

@@ -93,9 +93,10 @@ export class UpgradeCoordinator {
     this.onIdleStartedFor = armed.armedVersion;
     try {
       await this.options.onIdle?.(armed.armedVersion);
-    } catch (error) {
+    } catch (_error) {
       this.onIdleStartedFor = null;
-      throw error;
+      await this.cancelOnce();
+      return false;
     }
     return true;
   }

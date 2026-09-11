@@ -69,7 +69,7 @@ import { configRoutes } from './routes/config.js';
 import { globalPauseRoutes } from './routes/global-pause.js';
 import { wsRoutes } from './ws.js';
 import { EventBus } from './bus.js';
-import { operationRegistry } from '../telemetry/operations.js';
+import { operationRegistry, startOperation } from '../telemetry/operations.js';
 import { AuthService } from './auth.js';
 import { authRoutes, SESSION_COOKIE } from './routes/auth.js';
 import { statsRoutes } from './routes/stats.js';
@@ -109,7 +109,6 @@ export interface AppOptions {
   distributionMode?: DistributionMode | undefined;
   /** Test-only npm registry lookup override for the Update Check Job. */
   updateCheckLatest?: (() => Promise<string>) | undefined;
-  /** Invoked once an armed instance drains to idle; production restart wiring is supplied by a later capability. */
   onUpgradeIdle?: ((version: string) => Promise<void> | void) | undefined;
 }
 
@@ -658,16 +657,34 @@ export async function buildApp(opts: AppOptions): Promise<App> {
       gitBreaker,
     },
   );
-  const upgrade = new UpgradeCoordinator({
+  let upgrade: UpgradeCoordinator;
+  const onUpgradeIdle = opts.onUpgradeIdle === undefined
+    ? undefined
+    : async (version: string): Promise<void> => {
+      try {
+        await opts.onUpgradeIdle?.(version);
+      } catch (error) {
+        const abort = startOperation({ type: 'upgrade.abort', attributes: { 'upgrade.version': version } });
+        try {
+          logger.error(`upgrade to ${version} aborted: ${String(error)}`, { version });
+          await notifier.notify('update.failed');
+          abort.end();
+        } catch (abortError) {
+          abort.fail(abortError);
+          throw abortError;
+        }
+        throw error;
+      }
+    };
+  upgrade = new UpgradeCoordinator({
     store: new SettingsUpdateAvailabilityStore(asyncDb),
     settings: settingsStore,
     attempts,
     operations: () => operationRegistry.list(),
     conversations: conversationDriver,
-    ...(opts.onUpgradeIdle === undefined ? {} : { onIdle: opts.onUpgradeIdle }),
+    ...(onUpgradeIdle === undefined ? {} : { onIdle: onUpgradeIdle }),
   });
   upgradeRef = upgrade;
-  await upgrade.reconcile();
   const epicService = new TrackerEpicService(
     tasks,
     () => workspaces.list(),
@@ -953,6 +970,7 @@ not resolved yet.`;
     await trackerManager.sync();
     loopMonitor?.start();
     hostLoad.start();
+    await upgrade.reconcile();
   });
   await app.register((fastify) => wsRoutes(fastify, ctx), { prefix: '/api' });
 

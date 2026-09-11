@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import { mkdirSync, openSync, readFileSync } from 'node:fs';
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
+import { promisify } from 'node:util';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildApp } from './server/app.js';
 import { defaultDataDir, verifyChannelsUnconfigured } from './config.js';
@@ -9,6 +11,10 @@ import { initializeTelemetry, resolveTelemetryOptions } from './telemetry.js';
 import { logger } from './logger.js';
 import { installProcessSafetyNet } from './reliability/process-safety-net.js';
 import { dispatchCli } from './cli-dispatch.js';
+import { UpgradeSwap } from './upgrade/upgrade-swap.js';
+import { startOperation } from './telemetry/operations.js';
+
+const execFileAsync = promisify(execFile);
 
 const HELP = `harmonic — queue, run, and review autonomous agent tasks
 
@@ -143,11 +149,63 @@ async function main(): Promise<void> {
   });
   const telemetry = initializeTelemetry(telemetryOptions, { ownsMetricSummaryInterval: false });
   let app: Awaited<ReturnType<typeof buildApp>>;
+  let installedCliPath: string | undefined;
   try {
     app = await buildApp({
       dataDir,
       password,
       metricsSummary: { intervalMs: telemetryOptions.metricExportIntervalMillis, flush: () => telemetry.flushMetricSummary() },
+      onUpgradeIdle: async (version) => {
+        const swap = new UpgradeSwap({
+          install: async (target) => {
+            await execFileAsync('npm', ['i', '-g', `@mintopia/harmonic@${target}`]);
+          },
+          installedVersion: async () => {
+            const { stdout } = await execFileAsync('npm', ['root', '-g']);
+            const packageDir = join(stdout.trim(), '@mintopia', 'harmonic');
+            const pkg = JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8')) as { version?: unknown };
+            installedCliPath = join(packageDir, 'dist', 'cli.js');
+            return typeof pkg.version === 'string' ? pkg.version : 'unknown';
+          },
+          spawnRelauncher: async () => {
+            if (!installedCliPath) throw new Error('installed Harmonic CLI path was not resolved');
+            const relauncher = fileURLToPath(new URL('./upgrade/relauncher.js', import.meta.url));
+            const child = spawn(process.execPath, [relauncher, dataDir, installedCliPath, JSON.stringify(rest)], {
+              detached: true,
+              stdio: 'ignore',
+            });
+            child.unref();
+          },
+          releaseLock: async () => {
+            await app.close();
+            await telemetry.shutdown();
+            releaseLock(dataDir);
+          },
+          exit: () => { process.exit(0); },
+          abort: async () => {},
+          operation: async ({ type, version: target }, work) => {
+            const operation = startOperation({ type, attributes: { 'upgrade.version': target } });
+            try {
+              const result = await operation.run(work);
+              operation.end();
+              return result;
+            } catch (error) {
+              operation.fail(error);
+              throw error;
+            }
+          },
+          log: (event) => {
+            const log = event.outcome === 'failed' ? logger.error : logger.info;
+            log(`upgrade ${event.action} ${event.outcome}`, {
+              action: event.action,
+              version: event.version,
+              ...(event.error ? { error: event.error.message } : {}),
+            });
+          },
+        });
+        const outcome = await swap.execute({ version });
+        if (outcome.kind === 'aborted') throw outcome.error;
+      },
     });
   } catch (error) {
     await telemetry.shutdown();
