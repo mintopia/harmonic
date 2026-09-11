@@ -87,6 +87,8 @@ import { buildMcpServer } from '../mcp/server.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { detectDistributionMode, type DistributionMode } from '../distribution-mode.js';
 import { fetchLatestVersion, SettingsUpdateAvailabilityStore, UpdateCheck } from '../upgrade/update-check.js';
+import { UpgradeCoordinator } from '../upgrade/upgrade-coordinator.js';
+import { updateRoutes } from './routes/update.js';
 
 export interface AppOptions {
   dataDir: string;
@@ -107,6 +109,8 @@ export interface AppOptions {
   distributionMode?: DistributionMode | undefined;
   /** Test-only npm registry lookup override for the Update Check Job. */
   updateCheckLatest?: (() => Promise<string>) | undefined;
+  /** Invoked once an armed instance drains to idle; production restart wiring is supplied by a later capability. */
+  onUpgradeIdle?: ((version: string) => Promise<void> | void) | undefined;
 }
 
 /** Paths reachable without authentication. */
@@ -156,6 +160,7 @@ async function requestIsOperator(req: FastifyRequest, auth: AuthService): Promis
 export interface AppContext {
   distributionMode: DistributionMode;
   updateCheck: UpdateCheck;
+  upgrade: UpgradeCoordinator;
   asyncDb: AsyncDbHandle;
   statsReader: StatsWorkerClient;
   settingsStore: SettingsStore;
@@ -324,6 +329,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     if (opts.password === '') await auth.clearPassword();
     else await auth.setPassword(opts.password);
   }
+  let upgradeRef: UpgradeCoordinator | undefined;
   const conversationDriver = new ConversationDriver(conversations, () => settingsStore.getGlobal(), {
     events: {
       onEvent: (event) => bus.emit('conversation_event', event),
@@ -336,6 +342,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
         (await auth.createKey(`conversation-${conversationId}`, { scope: 'conversation', conversationId })).token,
       revoke: (conversationId) => auth.deleteKeysForConversation(conversationId),
     },
+    onTurnSettled: () => { void upgradeRef?.reconcile().catch((error: unknown) => logger.error(`upgrade reconciliation failed: ${String(error)}`)); },
   });
   const sessionStore = new SessionStore(asyncDb);
   /** Record a lifecycle audit event onto an Attempt and push it live, so a
@@ -651,6 +658,16 @@ export async function buildApp(opts: AppOptions): Promise<App> {
       gitBreaker,
     },
   );
+  const upgrade = new UpgradeCoordinator({
+    store: new SettingsUpdateAvailabilityStore(asyncDb),
+    settings: settingsStore,
+    attempts,
+    operations: () => operationRegistry.list(),
+    conversations: conversationDriver,
+    onIdle: opts.onUpgradeIdle,
+  });
+  upgradeRef = upgrade;
+  await upgrade.reconcile();
   const epicService = new TrackerEpicService(
     tasks,
     () => workspaces.list(),
@@ -678,6 +695,8 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     run: () => trackerManager.reconcileEpics(),
   });
   bus.on('attempt_changed', () => autoRunner.poke());
+  bus.on('attempt_changed', () => { void upgrade.reconcile().catch((error: unknown) => logger.error(`upgrade reconciliation failed: ${String(error)}`)); });
+  bus.on('operations', () => { void upgrade.reconcile().catch((error: unknown) => logger.error(`upgrade reconciliation failed: ${String(error)}`)); });
   bus.on('task_changed', () => {
     void publishWorktrees().catch((error: unknown) => logger.debug(`worktree inventory refresh failed: ${String(error)}`));
   });
@@ -695,7 +714,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     })().catch(() => {});
   });
 
-  const ctx: AppContext = { distributionMode, updateCheck, asyncDb, statsReader, settingsStore, workspaces, tasks, attempts, sessions: sessionStore, runner, conversations, conversationDriver, permissionRules, escalation, autoRunner, globalPause, guardrailEvents, verificationAttempts, trackerManager, epicService, scheduler, auth, channels, notifier, bus, hostLoad, worktreeInventory, forceCleanupWorktree, dirtyWorktreeFiles, reconcileWorktrees, worktreesReconciledAt: () => worktreeReconciler.reconciledAt };
+  const ctx: AppContext = { distributionMode, updateCheck, upgrade, asyncDb, statsReader, settingsStore, workspaces, tasks, attempts, sessions: sessionStore, runner, conversations, conversationDriver, permissionRules, escalation, autoRunner, globalPause, guardrailEvents, verificationAttempts, trackerManager, epicService, scheduler, auth, channels, notifier, bus, hostLoad, worktreeInventory, forceCleanupWorktree, dirtyWorktreeFiles, reconcileWorktrees, worktreesReconciledAt: () => worktreeReconciler.reconciledAt };
   const contexts = createAppContexts(ctx);
 
   const app = Fastify({ logger: false }) as unknown as App;
@@ -893,6 +912,7 @@ not resolved yet.`;
   await app.register((fastify) => permissionRuleRoutes(fastify, contexts.persistence), { prefix: '/api' });
   await app.register((fastify) => configRoutes(fastify, contexts.execution), { prefix: '/api' });
   await app.register((fastify) => globalPauseRoutes(fastify, contexts.execution), { prefix: '/api' });
+  await app.register((fastify) => updateRoutes(fastify, ctx), { prefix: '/api' });
   await app.register((fastify) => authRoutes(fastify, contexts.persistence), { prefix: '/api' });
   await app.register((fastify) => statsRoutes(fastify, contexts.persistence), { prefix: '/api' });
   await app.register((fastify) => activityRoutes(fastify, ctx), { prefix: '/api' });

@@ -54,22 +54,55 @@ export interface UpdateAvailabilityStore {
 }
 
 const UPDATE_AVAILABILITY_KEY = 'update-availability';
-const persistedAvailability = z.object({ version: z.string().nullable() });
+const persistedAvailability = z.object({
+  version: z.string().nullable(),
+  armedVersion: z.string().nullable().optional(),
+  autoRunnerWasEnabled: z.boolean().nullable().optional(),
+});
 
-export class SettingsUpdateAvailabilityStore implements UpdateAvailabilityStore {
+export interface UpdateAvailabilityState {
+  version: string | null;
+  armedVersion: string | null;
+  autoRunnerWasEnabled: boolean | null;
+}
+
+export interface UpdateArmingStore extends UpdateAvailabilityStore {
+  getState(): Promise<UpdateAvailabilityState>;
+  setState(state: UpdateAvailabilityState): Promise<void>;
+}
+
+export class SettingsUpdateAvailabilityStore implements UpdateArmingStore {
   constructor(private readonly db: AsyncDbHandle) {}
 
   async get(): Promise<string | null> {
+    return (await this.getState()).version;
+  }
+
+  async getState(): Promise<UpdateAvailabilityState> {
     const row = await this.db.read((db) =>
       db.select({ value: settings.value }).from(settings).where(eq(settings.key, UPDATE_AVAILABILITY_KEY)).get(),
     );
-    if (row === undefined) return null;
-    const parsed = persistedAvailability.safeParse(JSON.parse(row.value));
-    return parsed.success ? parsed.data.version : null;
+    if (row === undefined) return { version: null, armedVersion: null, autoRunnerWasEnabled: null };
+    try {
+      const parsed = persistedAvailability.safeParse(JSON.parse(row.value));
+      if (!parsed.success) return { version: null, armedVersion: null, autoRunnerWasEnabled: null };
+      return {
+        version: parsed.data.version,
+        armedVersion: parsed.data.armedVersion ?? null,
+        autoRunnerWasEnabled: parsed.data.autoRunnerWasEnabled ?? null,
+      };
+    } catch {
+      return { version: null, armedVersion: null, autoRunnerWasEnabled: null };
+    }
   }
 
   async set(version: string | null): Promise<void> {
-    const value = JSON.stringify({ version } satisfies z.infer<typeof persistedAvailability>);
+    const state = await this.getState();
+    await this.setState({ ...state, version });
+  }
+
+  async setState(state: UpdateAvailabilityState): Promise<void> {
+    const value = JSON.stringify(state satisfies z.infer<typeof persistedAvailability>);
     await this.db.write((db) =>
       db
         .insert(settings)
