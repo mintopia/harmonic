@@ -1,6 +1,8 @@
 /* eslint-disable */
+import { useState } from 'react';
 import ReactDOM from 'react-dom/client';
 import '../index.css';
+import { GlobalVerificationSettings } from '../components/VerificationSettings';
 import { TicketPage } from '../components/TicketPage';
 import { ChatTranscript } from '../components/ticket/ChatTranscript';
 import type { AttemptLogEvent } from '../types';
@@ -37,7 +39,57 @@ const params = new URLSearchParams(window.location.search);
 const which = params.get('story');
 const theme = params.get('theme') === 'light' ? 'light' : 'dark';
 
+function SettingsStory() {
+  const seed = structuredClone(storyConfig) as any;
+  seed.verify.task.preMerge.commands = [
+    { command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 },
+    { command: 'npm', args: ['run', 'typecheck'], env: {}, timeoutSeconds: 120 },
+  ];
+  seed.verify.task.preMerge.critics = [
+    {
+      name: 'Correctness',
+      issuePrompt:
+        "Review the diff for {title}. Flag correctness bugs, missing edge cases, and anything that breaks the issue's stated contract.",
+      noIssuePrompt: 'Review the diff for correctness. There is no issue to check against.',
+      model: 'claude-opus-5',
+      harness: 'claude',
+    },
+    {
+      name: 'Security review',
+      issuePrompt: 'Check the diff for security regressions relevant to {title}.',
+      noIssuePrompt: 'Check the diff for security regressions.',
+      model: 'gpt-5.3-codex',
+      harness: 'codex',
+    },
+    { name: '', issuePrompt: 'Flag narration comments and commented-out code in the diff.', noIssuePrompt: 'Flag narration comments.', model: '' },
+  ];
+  const [config, setConfig] = useState(seed);
+  return (
+    <div style={{ minHeight: '100vh', background: 'var(--hm-canvas)', padding: 24 }}>
+      <div style={{ maxWidth: 760, margin: '0 auto' }}>
+        <section
+          style={{
+            background: 'var(--hm-surface)',
+            borderRadius: 12,
+            boxShadow: 'var(--hm-shadow-card)',
+            padding: 20,
+          }}
+        >
+          <h2 style={{ margin: 0, fontSize: '0.9375rem', fontWeight: 700 }}>Verification</h2>
+          <p style={{ margin: '2px 0 16px', color: 'var(--hm-muted)', fontSize: 13 }}>
+            What runs before work merges, in order.
+          </p>
+          <GlobalVerificationSettings config={config} setConfig={setConfig} fieldErrors={{}} />
+        </section>
+      </div>
+    </div>
+  );
+}
+
 function Story() {
+  if (which === 'settings') {
+    return <SettingsStory />;
+  }
   if (which === 'board') {
     return (
       <div style={{ minHeight: '100vh', background: 'var(--hm-canvas)', padding: 24 }}>

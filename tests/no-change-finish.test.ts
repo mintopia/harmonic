@@ -24,7 +24,7 @@ function makeRepo(): string {
   return dir;
 }
 
-const critic = () => ({ taskPreMergeCritics: [{ issuePrompt: 'Review the issue change for correctness.', noIssuePrompt: 'Review the Task change for correctness.', model: 'stub-model' }] });
+const critic = () => ({ taskPreMergeCritics: [{ name: 'Test critic', issuePrompt: 'Review the issue change for correctness.', noIssuePrompt: 'Review the Task change for correctness.', model: 'stub-model' }] });
 
 describe('a finish_task that changed nothing', () => {
   let server: TestServer;

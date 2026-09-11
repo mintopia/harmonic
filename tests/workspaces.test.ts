@@ -137,11 +137,11 @@ describe('Workspace CRUD (ADR-0008, issue #41)', () => {
 
     const set = await server.api('PATCH', `/api/workspaces/${created.body.id}`, {
       taskPreMergeCommands: [{ command: 'npm', args: ['test'] }],
-      taskPreMergeCritics: [{ issuePrompt: 'review the issue diff', noIssuePrompt: 'review the Task diff', model: 'claude-opus-5' }],
+      taskPreMergeCritics: [{ name: 'Test critic', issuePrompt: 'review the issue diff', noIssuePrompt: 'review the Task diff', model: 'claude-opus-5' }],
     });
     expect(set.status).toBe(200);
     expect(set.body.taskPreMergeCommands).toMatchObject([{ command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }]);
-    expect(set.body.taskPreMergeCritics).toMatchObject([{ issuePrompt: 'review the issue diff', noIssuePrompt: 'review the Task diff', model: 'claude-opus-5' }]);
+    expect(set.body.taskPreMergeCritics).toMatchObject([{ name: 'Test critic', issuePrompt: 'review the issue diff', noIssuePrompt: 'review the Task diff', model: 'claude-opus-5' }]);
 
     const fetched = await server.api('GET', `/api/workspaces/${created.body.id}`);
     expect(fetched.body.taskPreMergeCommands).toMatchObject([{ command: 'npm', args: ['test'] }]);
@@ -164,16 +164,16 @@ describe('Workspace CRUD (ADR-0008, issue #41)', () => {
     const created = await server.api('POST', '/api/workspaces', { name: 'Invalid critic', workingDir: dir });
     expect(created.status).toBe(201);
 
-    const rejected = await server.api('PATCH', `/api/workspaces/${created.body.id}`, { taskPreMergeCritics: [{ issuePrompt: 'review it', model: 'claude-opus-5' }] });
+    const rejected = await server.api('PATCH', `/api/workspaces/${created.body.id}`, { taskPreMergeCritics: [{ name: 'Test critic', issuePrompt: 'review it', model: 'claude-opus-5' }] });
     expect(rejected.status).toBe(400);
     expect(rejected.body.error.message).toContain('noIssuePrompt');
     expect((await server.api('GET', `/api/workspaces/${created.body.id}`)).body.taskPreMergeCritics).toBeNull();
 
     const accepted = await server.api('PATCH', `/api/workspaces/${created.body.id}`, {
-      taskPreMergeCritics: [{ issuePrompt: 'review the issue', noIssuePrompt: 'review the Task', model: 'claude-opus-5' }],
+      taskPreMergeCritics: [{ name: 'Test critic', issuePrompt: 'review the issue', noIssuePrompt: 'review the Task', model: 'claude-opus-5' }],
     });
     expect(accepted.status).toBe(200);
-    expect(accepted.body.taskPreMergeCritics).toMatchObject([{ issuePrompt: 'review the issue', noIssuePrompt: 'review the Task', model: 'claude-opus-5' }]);
+    expect(accepted.body.taskPreMergeCritics).toMatchObject([{ name: 'Test critic', issuePrompt: 'review the issue', noIssuePrompt: 'review the Task', model: 'claude-opus-5' }]);
     rmSync(dir, { recursive: true, force: true });
   });
 

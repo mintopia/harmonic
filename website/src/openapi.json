@@ -4229,6 +4229,11 @@
                 "items": {
                   "type": "object",
                   "properties": {
+                    "name": {
+                      "default": "",
+                      "example": "Correctness",
+                      "type": "string"
+                    },
                     "model": {
                       "type": "string",
                       "minLength": 1,
@@ -4333,6 +4338,11 @@
                 "items": {
                   "type": "object",
                   "properties": {
+                    "name": {
+                      "default": "",
+                      "example": "Correctness",
+                      "type": "string"
+                    },
                     "model": {
                       "type": "string",
                       "minLength": 1,
@@ -4437,6 +4447,11 @@
                 "items": {
                   "type": "object",
                   "properties": {
+                    "name": {
+                      "default": "",
+                      "example": "Correctness",
+                      "type": "string"
+                    },
                     "model": {
                       "type": "string",
                       "minLength": 1,
@@ -5212,6 +5227,11 @@
                         "items": {
                           "type": "object",
                           "properties": {
+                            "name": {
+                              "default": "",
+                              "example": "Correctness",
+                              "type": "string"
+                            },
                             "model": {
                               "type": "string",
                               "minLength": 1,
@@ -5309,6 +5329,11 @@
                         "items": {
                           "type": "object",
                           "properties": {
+                            "name": {
+                              "default": "",
+                              "example": "Correctness",
+                              "type": "string"
+                            },
                             "model": {
                               "type": "string",
                               "minLength": 1,
@@ -5411,6 +5436,11 @@
                         "items": {
                           "type": "object",
                           "properties": {
+                            "name": {
+                              "default": "",
+                              "example": "Correctness",
+                              "type": "string"
+                            },
                             "model": {
                               "type": "string",
                               "minLength": 1,
@@ -9835,6 +9865,11 @@
                 "items": {
                   "type": "object",
                   "properties": {
+                    "name": {
+                      "default": "",
+                      "example": "Correctness",
+                      "type": "string"
+                    },
                     "model": {
                       "type": "string",
                       "minLength": 1,
@@ -9862,6 +9897,7 @@
                     }
                   },
                   "required": [
+                    "name",
                     "model",
                     "issuePrompt",
                     "noIssuePrompt"
@@ -9944,6 +9980,11 @@
                 "items": {
                   "type": "object",
                   "properties": {
+                    "name": {
+                      "default": "",
+                      "example": "Correctness",
+                      "type": "string"
+                    },
                     "model": {
                       "type": "string",
                       "minLength": 1,
@@ -9971,6 +10012,7 @@
                     }
                   },
                   "required": [
+                    "name",
                     "model",
                     "issuePrompt",
                     "noIssuePrompt"
@@ -10053,6 +10095,11 @@
                 "items": {
                   "type": "object",
                   "properties": {
+                    "name": {
+                      "default": "",
+                      "example": "Correctness",
+                      "type": "string"
+                    },
                     "model": {
                       "type": "string",
                       "minLength": 1,
@@ -10075,6 +10122,7 @@
                     }
                   },
                   "required": [
+                    "name",
                     "model",
                     "prompt"
                   ],
@@ -10851,6 +10899,11 @@
                         "items": {
                           "type": "object",
                           "properties": {
+                            "name": {
+                              "default": "",
+                              "example": "Correctness",
+                              "type": "string"
+                            },
                             "model": {
                               "type": "string",
                               "minLength": 1,
@@ -10878,6 +10931,7 @@
                             }
                           },
                           "required": [
+                            "name",
                             "model",
                             "issuePrompt",
                             "noIssuePrompt"
@@ -10954,6 +11008,11 @@
                         "items": {
                           "type": "object",
                           "properties": {
+                            "name": {
+                              "default": "",
+                              "example": "Correctness",
+                              "type": "string"
+                            },
                             "model": {
                               "type": "string",
                               "minLength": 1,
@@ -10981,6 +11040,7 @@
                             }
                           },
                           "required": [
+                            "name",
                             "model",
                             "issuePrompt",
                             "noIssuePrompt"
@@ -11063,6 +11123,11 @@
                         "items": {
                           "type": "object",
                           "properties": {
+                            "name": {
+                              "default": "",
+                              "example": "Correctness",
+                              "type": "string"
+                            },
                             "model": {
                               "type": "string",
                               "minLength": 1,
@@ -11085,6 +11150,7 @@
                             }
                           },
                           "required": [
+                            "name",
                             "model",
                             "prompt"
                           ],
@@ -14787,6 +14853,11 @@
                         "items": {
                           "type": "object",
                           "properties": {
+                            "name": {
+                              "default": "",
+                              "example": "Correctness",
+                              "type": "string"
+                            },
                             "model": {
                               "type": "string",
                               "minLength": 1,
@@ -14889,6 +14960,11 @@
                         "items": {
                           "type": "object",
                           "properties": {
+                            "name": {
+                              "default": "",
+                              "example": "Correctness",
+                              "type": "string"
+                            },
                             "model": {
                               "type": "string",
                               "minLength": 1,
@@ -14991,6 +15067,11 @@
                         "items": {
                           "type": "object",
                           "properties": {
+                            "name": {
+                              "default": "",
+                              "example": "Correctness",
+                              "type": "string"
+                            },
                             "model": {
                               "type": "string",
                               "minLength": 1,
@@ -16871,6 +16952,11 @@
                                   "items": {
                                     "type": "object",
                                     "properties": {
+                                      "name": {
+                                        "default": "",
+                                        "example": "Correctness",
+                                        "type": "string"
+                                      },
                                       "model": {
                                         "type": "string",
                                         "minLength": 1,
@@ -16898,6 +16984,7 @@
                                       }
                                     },
                                     "required": [
+                                      "name",
                                       "model",
                                       "issuePrompt",
                                       "noIssuePrompt"
@@ -16974,6 +17061,11 @@
                                   "items": {
                                     "type": "object",
                                     "properties": {
+                                      "name": {
+                                        "default": "",
+                                        "example": "Correctness",
+                                        "type": "string"
+                                      },
                                       "model": {
                                         "type": "string",
                                         "minLength": 1,
@@ -17001,6 +17093,7 @@
                                       }
                                     },
                                     "required": [
+                                      "name",
                                       "model",
                                       "issuePrompt",
                                       "noIssuePrompt"
@@ -17087,6 +17180,11 @@
                                   "items": {
                                     "type": "object",
                                     "properties": {
+                                      "name": {
+                                        "default": "",
+                                        "example": "Correctness",
+                                        "type": "string"
+                                      },
                                       "model": {
                                         "type": "string",
                                         "minLength": 1,
@@ -17109,6 +17207,7 @@
                                       }
                                     },
                                     "required": [
+                                      "name",
                                       "model",
                                       "prompt"
                                     ],
@@ -17660,6 +17759,11 @@
                                   "items": {
                                     "type": "object",
                                     "properties": {
+                                      "name": {
+                                        "default": "",
+                                        "example": "Correctness",
+                                        "type": "string"
+                                      },
                                       "model": {
                                         "type": "string",
                                         "minLength": 1,
@@ -17687,6 +17791,7 @@
                                       }
                                     },
                                     "required": [
+                                      "name",
                                       "model",
                                       "issuePrompt",
                                       "noIssuePrompt"
@@ -17763,6 +17868,11 @@
                                   "items": {
                                     "type": "object",
                                     "properties": {
+                                      "name": {
+                                        "default": "",
+                                        "example": "Correctness",
+                                        "type": "string"
+                                      },
                                       "model": {
                                         "type": "string",
                                         "minLength": 1,
@@ -17790,6 +17900,7 @@
                                       }
                                     },
                                     "required": [
+                                      "name",
                                       "model",
                                       "issuePrompt",
                                       "noIssuePrompt"
@@ -17876,6 +17987,11 @@
                                   "items": {
                                     "type": "object",
                                     "properties": {
+                                      "name": {
+                                        "default": "",
+                                        "example": "Correctness",
+                                        "type": "string"
+                                      },
                                       "model": {
                                         "type": "string",
                                         "minLength": 1,
@@ -17898,6 +18014,7 @@
                                       }
                                     },
                                     "required": [
+                                      "name",
                                       "model",
                                       "prompt"
                                     ],
@@ -18419,6 +18536,11 @@
                                 "items": {
                                   "type": "object",
                                   "properties": {
+                                    "name": {
+                                      "default": "",
+                                      "example": "Correctness",
+                                      "type": "string"
+                                    },
                                     "model": {
                                       "type": "string",
                                       "minLength": 1,
@@ -18516,6 +18638,11 @@
                                 "items": {
                                   "type": "object",
                                   "properties": {
+                                    "name": {
+                                      "default": "",
+                                      "example": "Correctness",
+                                      "type": "string"
+                                    },
                                     "model": {
                                       "type": "string",
                                       "minLength": 1,
@@ -18622,6 +18749,11 @@
                                 "items": {
                                   "type": "object",
                                   "properties": {
+                                    "name": {
+                                      "default": "",
+                                      "example": "Correctness",
+                                      "type": "string"
+                                    },
                                     "model": {
                                       "type": "string",
                                       "minLength": 1,
@@ -19164,6 +19296,11 @@
                                   "items": {
                                     "type": "object",
                                     "properties": {
+                                      "name": {
+                                        "default": "",
+                                        "example": "Correctness",
+                                        "type": "string"
+                                      },
                                       "model": {
                                         "type": "string",
                                         "minLength": 1,
@@ -19191,6 +19328,7 @@
                                       }
                                     },
                                     "required": [
+                                      "name",
                                       "model",
                                       "issuePrompt",
                                       "noIssuePrompt"
@@ -19267,6 +19405,11 @@
                                   "items": {
                                     "type": "object",
                                     "properties": {
+                                      "name": {
+                                        "default": "",
+                                        "example": "Correctness",
+                                        "type": "string"
+                                      },
                                       "model": {
                                         "type": "string",
                                         "minLength": 1,
@@ -19294,6 +19437,7 @@
                                       }
                                     },
                                     "required": [
+                                      "name",
                                       "model",
                                       "issuePrompt",
                                       "noIssuePrompt"
@@ -19380,6 +19524,11 @@
                                   "items": {
                                     "type": "object",
                                     "properties": {
+                                      "name": {
+                                        "default": "",
+                                        "example": "Correctness",
+                                        "type": "string"
+                                      },
                                       "model": {
                                         "type": "string",
                                         "minLength": 1,
@@ -19402,6 +19551,7 @@
                                       }
                                     },
                                     "required": [
+                                      "name",
                                       "model",
                                       "prompt"
                                     ],
@@ -19948,6 +20098,11 @@
                                       "items": {
                                         "type": "object",
                                         "properties": {
+                                          "name": {
+                                            "default": "",
+                                            "example": "Correctness",
+                                            "type": "string"
+                                          },
                                           "model": {
                                             "type": "string",
                                             "minLength": 1,
@@ -19975,6 +20130,7 @@
                                           }
                                         },
                                         "required": [
+                                          "name",
                                           "model",
                                           "issuePrompt",
                                           "noIssuePrompt"
@@ -20051,6 +20207,11 @@
                                       "items": {
                                         "type": "object",
                                         "properties": {
+                                          "name": {
+                                            "default": "",
+                                            "example": "Correctness",
+                                            "type": "string"
+                                          },
                                           "model": {
                                             "type": "string",
                                             "minLength": 1,
@@ -20078,6 +20239,7 @@
                                           }
                                         },
                                         "required": [
+                                          "name",
                                           "model",
                                           "issuePrompt",
                                           "noIssuePrompt"
@@ -20164,6 +20326,11 @@
                                       "items": {
                                         "type": "object",
                                         "properties": {
+                                          "name": {
+                                            "default": "",
+                                            "example": "Correctness",
+                                            "type": "string"
+                                          },
                                           "model": {
                                             "type": "string",
                                             "minLength": 1,
@@ -20186,6 +20353,7 @@
                                           }
                                         },
                                         "required": [
+                                          "name",
                                           "model",
                                           "prompt"
                                         ],
@@ -20703,6 +20871,11 @@
                                       "items": {
                                         "type": "object",
                                         "properties": {
+                                          "name": {
+                                            "default": "",
+                                            "example": "Correctness",
+                                            "type": "string"
+                                          },
                                           "model": {
                                             "type": "string",
                                             "minLength": 1,
@@ -20730,6 +20903,7 @@
                                           }
                                         },
                                         "required": [
+                                          "name",
                                           "model",
                                           "issuePrompt",
                                           "noIssuePrompt"
@@ -20806,6 +20980,11 @@
                                       "items": {
                                         "type": "object",
                                         "properties": {
+                                          "name": {
+                                            "default": "",
+                                            "example": "Correctness",
+                                            "type": "string"
+                                          },
                                           "model": {
                                             "type": "string",
                                             "minLength": 1,
@@ -20833,6 +21012,7 @@
                                           }
                                         },
                                         "required": [
+                                          "name",
                                           "model",
                                           "issuePrompt",
                                           "noIssuePrompt"
@@ -20919,6 +21099,11 @@
                                       "items": {
                                         "type": "object",
                                         "properties": {
+                                          "name": {
+                                            "default": "",
+                                            "example": "Correctness",
+                                            "type": "string"
+                                          },
                                           "model": {
                                             "type": "string",
                                             "minLength": 1,
@@ -20941,6 +21126,7 @@
                                           }
                                         },
                                         "required": [
+                                          "name",
                                           "model",
                                           "prompt"
                                         ],
@@ -21491,6 +21677,11 @@
                                   "items": {
                                     "type": "object",
                                     "properties": {
+                                      "name": {
+                                        "default": "",
+                                        "example": "Correctness",
+                                        "type": "string"
+                                      },
                                       "model": {
                                         "type": "string",
                                         "minLength": 1,
@@ -21518,6 +21709,7 @@
                                       }
                                     },
                                     "required": [
+                                      "name",
                                       "model",
                                       "issuePrompt",
                                       "noIssuePrompt"
@@ -21594,6 +21786,11 @@
                                   "items": {
                                     "type": "object",
                                     "properties": {
+                                      "name": {
+                                        "default": "",
+                                        "example": "Correctness",
+                                        "type": "string"
+                                      },
                                       "model": {
                                         "type": "string",
                                         "minLength": 1,
@@ -21621,6 +21818,7 @@
                                       }
                                     },
                                     "required": [
+                                      "name",
                                       "model",
                                       "issuePrompt",
                                       "noIssuePrompt"
@@ -21707,6 +21905,11 @@
                                   "items": {
                                     "type": "object",
                                     "properties": {
+                                      "name": {
+                                        "default": "",
+                                        "example": "Correctness",
+                                        "type": "string"
+                                      },
                                       "model": {
                                         "type": "string",
                                         "minLength": 1,
@@ -21729,6 +21932,7 @@
                                       }
                                     },
                                     "required": [
+                                      "name",
                                       "model",
                                       "prompt"
                                     ],

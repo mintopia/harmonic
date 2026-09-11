@@ -79,6 +79,8 @@ export type VerificationCommand = z.infer<typeof verificationCommandSchema>;
  * model that judges the candidate diff.
  */
 const verificationCriticIdentitySchema = z.object({
+  /** Operator-facing label; the critic's row title in settings. Blank reads as "Untitled critic". */
+  name: z.string().default('').meta({ example: 'Correctness' }),
   model: z.string().min(1).meta({ example: 'claude-opus-5' }),
   /** Reviewer harness; omitted = reuse the builder task's harness. */
   harness: z.enum(HARNESS_IDS).optional().meta({ example: 'claude' }),

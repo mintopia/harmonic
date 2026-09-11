@@ -420,7 +420,7 @@ describe('escalation-routes', () => {
     return dir;
   }
 
-  const critic = () => ({ taskPreMergeCritics: [{ issuePrompt: 'Review the issue diff for correctness.', noIssuePrompt: 'Review the Task diff for correctness.', model: 'stub-model' }] });
+  const critic = () => ({ taskPreMergeCritics: [{ name: 'Test critic', issuePrompt: 'Review the issue diff for correctness.', noIssuePrompt: 'Review the Task diff for correctness.', model: 'stub-model' }] });
 
   describe('escalation actions on a worktree ticket', () => {
     let server: TestServer;

@@ -22,6 +22,14 @@ type EditorProps = {
   fieldErrors: Record<string, string>;
 };
 
+/** Harness id → its discovered model ids: the critic Model combo's source, and
+ * the harness options come from its keys. */
+function harnessModelMap(config: AppConfig): Record<string, string[]> {
+  return Object.fromEntries(
+    Object.entries(config.harnesses).map(([id, harness]) => [id, harness.models.map((m) => m.id)]),
+  );
+}
+
 const SCOPE_TABS = [
   { id: "task", label: "Task" },
   { id: "epic", label: "Epic" },
@@ -86,11 +94,11 @@ function TaskStage({
   idPrefix,
   errorPrefix,
   fieldErrors,
-  harnesses,
+  harnessModels,
 }: EditorProps & {
   critics: TaskVerificationCritic[];
   onCritics: (critics: TaskVerificationCritic[]) => void;
-  harnesses: string[];
+  harnessModels: Record<string, string[]>;
 }) {
   return (
     <div className="flex flex-col gap-5">
@@ -108,7 +116,7 @@ function TaskStage({
         idPrefix={idPrefix}
         errorPrefix={`${errorPrefix}.critics`}
         fieldErrors={fieldErrors}
-        harnesses={harnesses}
+        harnessModels={harnessModels}
         emptyText="No critics run after commands pass."
       />
     </div>
@@ -123,11 +131,11 @@ function EpicStage({
   idPrefix,
   errorPrefix,
   fieldErrors,
-  harnesses,
+  harnessModels,
 }: EditorProps & {
   critics: EpicVerificationCritic[];
   onCritics: (critics: EpicVerificationCritic[]) => void;
-  harnesses: string[];
+  harnessModels: Record<string, string[]>;
 }) {
   return (
     <div className="flex flex-col gap-5">
@@ -145,7 +153,7 @@ function EpicStage({
         idPrefix={idPrefix}
         errorPrefix={`${errorPrefix}.critics`}
         fieldErrors={fieldErrors}
-        harnesses={harnesses}
+        harnessModels={harnessModels}
         emptyText="No critics run after commands pass."
       />
     </div>
@@ -162,7 +170,7 @@ export function GlobalVerificationSettings({
   fieldErrors: Record<string, string>;
 }) {
   const [scope, setScope] = useState<"task" | "epic">("task");
-  const harnesses = Object.keys(config.harnesses);
+  const harnessModels = harnessModelMap(config);
   const setTaskStage = (
     stage: "preMerge" | "postMerge",
     next: AppConfig["verify"]["task"]["preMerge"],
@@ -211,7 +219,7 @@ export function GlobalVerificationSettings({
                 idPrefix="settings-task-pre-merge"
                 errorPrefix="verify.task.preMerge"
                 fieldErrors={fieldErrors}
-                harnesses={harnesses}
+                harnessModels={harnessModels}
               />
             </StageBlock>
             <StageBlock
@@ -234,7 +242,7 @@ export function GlobalVerificationSettings({
                 idPrefix="settings-task-post-merge"
                 errorPrefix="verify.task.postMerge"
                 fieldErrors={fieldErrors}
-                harnesses={harnesses}
+                harnessModels={harnessModels}
               />
             </StageBlock>
           </>
@@ -260,7 +268,7 @@ export function GlobalVerificationSettings({
                 idPrefix="settings-epic-pre-merge"
                 errorPrefix="verify.epic.preMerge"
                 fieldErrors={fieldErrors}
-                harnesses={harnesses}
+                harnessModels={harnessModels}
               />
             </StageBlock>
             <StageBlock
@@ -348,7 +356,7 @@ function WorkspaceTaskStage({
             idPrefix={idPrefix}
             errorPrefix={criticsKey}
             fieldErrors={fieldErrors}
-            harnesses={Object.keys(config.harnesses)}
+            harnessModels={harnessModelMap(config)}
             emptyText="No critics run after commands pass."
           />
         )}
@@ -406,7 +414,7 @@ function WorkspaceEpicStage({
             idPrefix="workspace-epic-pre-merge"
             errorPrefix="epicPreMergeCritics"
             fieldErrors={fieldErrors}
-            harnesses={Object.keys(config.harnesses)}
+            harnessModels={harnessModelMap(config)}
             emptyText="No critics run after commands pass."
           />
         )}

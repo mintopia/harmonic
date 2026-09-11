@@ -9,7 +9,7 @@ describe('verifierStatuses', () => {
           { command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 },
           { command: 'npm', args: ['run', 'lint'], env: {}, timeoutSeconds: 600 },
         ],
-        critics: [{ prompt: 'Review.', model: 'stub-model' }, { prompt: 'Check.', model: 'stub-model' }],
+        critics: [{ name: 'Test critic', prompt: 'Review.', model: 'stub-model' }, { name: 'Test critic', prompt: 'Check.', model: 'stub-model' }],
       },
       attempts: [],
     });
@@ -23,7 +23,7 @@ describe('verifierStatuses', () => {
       verifierStatuses({
         verifiers: {
           commands: [{ command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }],
-          critics: [{ prompt: 'Review it.', model: 'stub-model' }],
+          critics: [{ name: 'Test critic', prompt: 'Review it.', model: 'stub-model' }],
         },
         attempts: [
           { mechanism: 'command', seq: 1, verdict: 'fail' },
@@ -43,7 +43,7 @@ describe('verifierStatuses', () => {
         verifierStatuses({
           verifiers: {
             commands: [{ command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }],
-            critics: [{ prompt: 'Review it.', model: 'stub-model' }],
+            critics: [{ name: 'Test critic', prompt: 'Review it.', model: 'stub-model' }],
           },
           attempts: [],
           stepType,
@@ -67,7 +67,7 @@ describe('verifierStatuses', () => {
   it('shows the verifier whose Step is live as running, the one after it as planned', () => {
     const verifiers = {
       commands: [{ command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }],
-      critics: [{ prompt: 'Review it.', model: 'stub-model' }],
+      critics: [{ name: 'Test critic', prompt: 'Review it.', model: 'stub-model' }],
     };
     expect(verifierStatuses({ verifiers, attempts: [], stepType: 'verification' })).toEqual([
       { mechanism: 'command', state: 'running', reason: 'Running the command checks now.', commands: ['npm test'] },
@@ -83,7 +83,7 @@ describe('verifierStatuses', () => {
     const [, critic] = verifierStatuses({
       verifiers: {
         commands: [],
-        critics: [{ prompt: 'Review it.', model: 'stub-model', harness: 'claude' }],
+        critics: [{ name: 'Test critic', prompt: 'Review it.', model: 'stub-model', harness: 'claude' }],
       },
       attempts: [],
       stepType: 'review',
@@ -96,7 +96,7 @@ describe('verifierStatuses', () => {
       verifierStatuses({
         verifiers: {
           commands: [{ command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }],
-          critics: [{ prompt: 'Review it.', model: 'stub-model' }],
+          critics: [{ name: 'Test critic', prompt: 'Review it.', model: 'stub-model' }],
         },
         attempts: [],
         stepType: 'review',
@@ -123,7 +123,7 @@ describe('verifierStatuses', () => {
     ];
     const verifiers = {
       commands: [{ command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }],
-      critics: [{ prompt: 'Review it.', model: 'stub-model' }],
+      critics: [{ name: 'Test critic', prompt: 'Review it.', model: 'stub-model' }],
     };
     expect(verifierStatuses({ verifiers, attempts: [] })).toEqual(expected);
     expect(verifierStatuses({ verifiers, attempts: [], stepType: null })).toEqual(expected);

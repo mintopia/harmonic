@@ -267,6 +267,8 @@ export interface VerificationCommand {
 /** An agent critic verifier: a read-only reviewer with
  * its own prompt and model. Mirrors `verificationCriticSchema`. */
 export interface TaskVerificationCritic {
+  /** Operator-facing label; the critic's row title in settings. */
+  name: string;
   issuePrompt: string;
   noIssuePrompt: string;
   model: string;
@@ -275,6 +277,8 @@ export interface TaskVerificationCritic {
 }
 
 export interface EpicVerificationCritic {
+  /** Operator-facing label; the critic's row title in settings. */
+  name: string;
   prompt: string;
   model: string;
   /** Reviewer harness; omitted = reuse the builder task's harness. */

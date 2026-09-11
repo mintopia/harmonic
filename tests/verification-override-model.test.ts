@@ -12,7 +12,7 @@ import {
 import type { TaskVerificationCritic, VerificationCommand } from '../web/src/types.js';
 
 const baseCommand: VerificationCommand = { command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 };
-const baseCritic: TaskVerificationCritic = { issuePrompt: 'review the issue diff', noIssuePrompt: 'review the Task diff', model: 'claude-opus-5' };
+const baseCritic: TaskVerificationCritic = { name: 'Test critic', issuePrompt: 'review the issue diff', noIssuePrompt: 'review the Task diff', model: 'claude-opus-5' };
 
 describe('setCommandField (issue #165)', () => {
   it('sets the executable from a text input', () => {
