@@ -1,12 +1,12 @@
 import type { AppContext } from './app.js';
 import type { AppConfig, HarnessConfig } from '../config.js';
-import type { AttemptRow, TaskAttemptRow, VerificationAttemptRow, StepType, ConversationRow } from '../db/schema.js';
+import type { AttemptRow, AttemptState, TaskAttemptRow, VerificationAttemptRow, StepType, ConversationRow } from '../db/schema.js';
 import { attempts, steps, guardrailEvents, attemptEvents, isEpicAttempt, isTaskAttempt, verificationAttempts } from '../db/schema.js';
 import { and, desc, eq } from 'drizzle-orm';
 import type { TaskWithDeps } from '../domain/tasks.js';
 import { resolveVerifiers } from '../domain/setting-override.js';
 import { verifierStatuses, type VerifierStatus } from '../domain/verifier-status.js';
-import { costOfUsages, pricesForHarness, resolveContextWindowForHarness, withCriticContribution } from '../domain/pricing.js';
+import { costOfUsages, pricesForHarness, resolveContextWindowForHarness, withCriticContribution, type Cost } from '../domain/pricing.js';
 import { DomainError } from '../domain/errors.js';
 import type { AttemptUsageSnapshot } from '../execution/usage.js';
 import { Git } from '../execution/git.js';
@@ -332,6 +332,74 @@ async function workspaceNameOf(ctx: AppContext, workspaceId: number | null): Pro
 function contextWindowOf(ctx: AppContext, model: string, harness = 'claude'): number | null {
   const config = ctx.settingsStore.getGlobal();
   return resolveContextWindowForHarness(model, harnessFor(config, harness));
+}
+
+/** One Attempt as a fleet-Timeline span — the serialized shape `GET /api/timeline` returns. */
+export interface TimelineAttemptApi {
+  taskId: number;
+  attemptId: number;
+  number: number;
+  title: string;
+  harness: string;
+  model: string;
+  state: AttemptState;
+  trackerRef: number | null;
+  startedAt: number;
+  endedAt: number | null;
+  cost: Cost | null;
+}
+
+/**
+ * Every task Attempt in one Workspace whose run window overlaps [from, to],
+ * ordered by start. Reads persisted attempt history (so it spans finished work
+ * the live Activity snapshot has dropped) and joins each Attempt's owning Task
+ * for its lane (harness), model, and display title. A still-running Attempt
+ * keeps its null `endedAt`; the client extends the bar to now. Epic Attempts are
+ * excluded — the fleet Timeline is a Task-work view.
+ */
+export async function timelineAttempts(
+  ctx: AppContext,
+  workspaceId: number,
+  from: number,
+  to: number,
+): Promise<TimelineAttemptApi[]> {
+  const now = Date.now();
+  const config = ctx.settingsStore.getGlobal();
+  const tasks = await ctx.tasks.list({ workspaceId });
+  if (tasks.length === 0) return [];
+  const byId = new Map(tasks.map((task) => [task.id, task]));
+  const runs = await ctx.attempts.listForTasks(tasks.map((task) => task.id));
+  const spans: TimelineAttemptApi[] = [];
+  for (const run of runs) {
+    const end = run.endedAt ?? now;
+    if (run.startedAt > to || end < from) continue;
+    const task = byId.get(run.taskId);
+    if (!task) continue;
+    const harness = task.harness ?? config.defaults.harness;
+    const model = task.model ?? harnessFor(config, harness).defaultModel;
+    let cost: Cost | null = null;
+    if (run.cost) {
+      try {
+        cost = JSON.parse(run.cost) as Cost;
+      } catch {
+        cost = null;
+      }
+    }
+    spans.push({
+      taskId: run.taskId,
+      attemptId: run.id,
+      number: run.number,
+      title: (task.trackerTitle?.trim() || firstLineTitle(task.prompt)) ?? `Task #${task.id}`,
+      harness,
+      model,
+      state: run.state,
+      trackerRef: task.trackerRef,
+      startedAt: run.startedAt,
+      endedAt: run.endedAt,
+      cost,
+    });
+  }
+  return spans.sort((a, b) => a.startedAt - b.startedAt);
 }
 
 /** A Conversation as the REST API and firehose both serve it. */

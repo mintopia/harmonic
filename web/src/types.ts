@@ -834,6 +834,34 @@ export interface AttemptUsageEvent {
   cost: Cost | null;
 }
 
+/**
+ * One Attempt as a fleet-Timeline span (`GET /api/timeline`): its lane (harness),
+ * outcome, and the window it occupied. Reads persisted history, so it spans
+ * finished work the live Activity snapshot no longer retains. A still-running
+ * Attempt has a null `endedAt`; the Timeline extends its bar to now.
+ */
+export interface TimelineAttempt {
+  taskId: number;
+  attemptId: number;
+  number: number;
+  title: string;
+  harness: string;
+  model: string;
+  /** An AttemptState: 'running' | 'passed' | 'failed' | 'escalated' | 'cancelled'. */
+  state: string;
+  trackerRef: number | null;
+  startedAt: number;
+  endedAt: number | null;
+  /** Frozen Cost for a finished Attempt; null while running or when nothing was priceable. */
+  cost: Cost | null;
+}
+
+export interface TimelineResponse {
+  attempts: TimelineAttempt[];
+  from: number;
+  to: number;
+}
+
 export interface AppConfig {
   /** Operator display name for this instance; empty string means unnamed (UI falls back to "Harmonic"). */
   name: string;

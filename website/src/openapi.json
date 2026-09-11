@@ -668,6 +668,127 @@
           "incomplete"
         ]
       },
+      "TimelineAttemptInput": {
+        "type": "object",
+        "properties": {
+          "taskId": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "example": 4821
+          },
+          "attemptId": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "example": 19
+          },
+          "number": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "example": 1
+          },
+          "title": {
+            "type": "string",
+            "example": "Rate-limit ACP reconnect"
+          },
+          "harness": {
+            "type": "string",
+            "example": "claude"
+          },
+          "model": {
+            "type": "string",
+            "example": "claude-opus-4-8"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "running",
+              "passed",
+              "failed",
+              "escalated",
+              "cancelled"
+            ],
+            "example": "passed"
+          },
+          "trackerRef": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 470
+          },
+          "startedAt": {
+            "type": "number",
+            "example": 1784032020000
+          },
+          "endedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 1784032200000
+          },
+          "cost": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CostInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "taskId",
+          "attemptId",
+          "number",
+          "title",
+          "harness",
+          "model",
+          "state",
+          "trackerRef",
+          "startedAt",
+          "endedAt",
+          "cost"
+        ]
+      },
+      "TimelineResponseInput": {
+        "type": "object",
+        "properties": {
+          "attempts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TimelineAttemptInput"
+            }
+          },
+          "from": {
+            "type": "number",
+            "example": 1784000000000
+          },
+          "to": {
+            "type": "number",
+            "example": 1784086400000
+          }
+        },
+        "required": [
+          "attempts",
+          "from",
+          "to"
+        ]
+      },
       "ProcessNodeInput": {
         "type": "object",
         "properties": {
@@ -6102,6 +6223,129 @@
           "totalUsd",
           "byModel",
           "incomplete"
+        ],
+        "additionalProperties": false
+      },
+      "TimelineAttempt": {
+        "type": "object",
+        "properties": {
+          "taskId": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "example": 4821
+          },
+          "attemptId": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "example": 19
+          },
+          "number": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "example": 1
+          },
+          "title": {
+            "type": "string",
+            "example": "Rate-limit ACP reconnect"
+          },
+          "harness": {
+            "type": "string",
+            "example": "claude"
+          },
+          "model": {
+            "type": "string",
+            "example": "claude-opus-4-8"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "running",
+              "passed",
+              "failed",
+              "escalated",
+              "cancelled"
+            ],
+            "example": "passed"
+          },
+          "trackerRef": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 470
+          },
+          "startedAt": {
+            "type": "number",
+            "example": 1784032020000
+          },
+          "endedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 1784032200000
+          },
+          "cost": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Cost"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "taskId",
+          "attemptId",
+          "number",
+          "title",
+          "harness",
+          "model",
+          "state",
+          "trackerRef",
+          "startedAt",
+          "endedAt",
+          "cost"
+        ],
+        "additionalProperties": false
+      },
+      "TimelineResponse": {
+        "type": "object",
+        "properties": {
+          "attempts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TimelineAttempt"
+            }
+          },
+          "from": {
+            "type": "number",
+            "example": 1784000000000
+          },
+          "to": {
+            "type": "number",
+            "example": 1784086400000
+          }
+        },
+        "required": [
+          "attempts",
+          "from",
+          "to"
         ],
         "additionalProperties": false
       },
@@ -24039,6 +24283,66 @@
                   ],
                   "additionalProperties": false,
                   "description": "Every live process across Workspaces (Attempts then Conversations); an empty array when nothing is running. Unordered beyond that — the Activity view applies its own attention ranking."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/timeline": {
+      "get": {
+        "tags": [
+          "Activity"
+        ],
+        "description": "Every task Attempt in one Workspace whose run window overlaps [from, to], as fleet-timeline spans — lane is the harness, plus the attempt outcome and the window it occupied. Read from persisted attempt history, so it spans finished work the live Activity snapshot no longer retains. A still-running Attempt has a null endedAt; the client extends its bar to now. Powers the scrubbable Timeline view.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "in": "query",
+            "name": "workspaceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "in": "query",
+            "name": "from",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "in": "query",
+            "name": "to",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Every task Attempt in one Workspace whose run window overlaps [from, to] — the fleet Timeline lanes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TimelineResponse"
                 }
               }
             }

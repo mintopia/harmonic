@@ -1,7 +1,8 @@
 import { createElement, useState, type ReactNode } from 'react';
 import { operationForest, visibleOperationForest, type Operation, type OperationForest } from '../operations-model.js';
 import type { WorktreeInventoryEntry } from '../worktree-inventory-model.js';
-import { btnPrimary, card, displayTitle, labelType } from '../ui.js';
+import { btnPrimary, card, labelType } from '../ui.js';
+import { PageHeader } from './PageHeader.js';
 import { subscribe, type OperationEvent } from '../ws.js';
 import { ScheduledJobsView } from './ScheduledJobsView.js';
 import { CleanupDialog, sizeLabel, useWorktreeInventory, WorktreesTable } from './WorktreeInventoryView.js';
@@ -219,15 +220,16 @@ export function OperationsPage({ scheduledJobs, spanTree, tasks, epics, onOpenTa
   return createElement(
     'div',
     { className: 'grid gap-6' },
-    createElement(
-      'header',
-      { className: 'flex flex-wrap items-end justify-between gap-4' },
-      createElement('div', { className: 'grid gap-1.5' },
-        createElement('h1', { className: displayTitle }, 'Operations'),
+    createElement(PageHeader, {
+      title: 'Operations',
+      description: 'Worktrees, scheduled jobs, and reconciliation for this instance',
+      actions: createElement(
+        'div',
+        { className: 'flex flex-wrap items-center gap-3' },
         createElement(WorktreeSummary, { worktrees, reconciledAt }),
+        createElement('button', { type: 'button', className: btnPrimary, disabled: reconciling, onClick: inventory.reconcile }, reconciling ? 'Reconciling…' : 'Reconcile now'),
       ),
-      createElement('button', { type: 'button', className: btnPrimary, disabled: reconciling, onClick: inventory.reconcile }, reconciling ? 'Reconciling…' : 'Reconcile now'),
-    ),
+    }),
     error && createElement('p', { role: 'alert', className: 'text-small text-fail' }, error),
     createElement(
       'section',

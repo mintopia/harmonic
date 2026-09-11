@@ -36,6 +36,7 @@ import {
   toolChip,
   touchTargetInline,
 } from '../ui';
+import { PageHeader } from './PageHeader';
 
 /** The recorded trigger, without the settle fact's `escalated to human:` preamble. */
 export function escalationReasonText(reason: string): string {
@@ -776,7 +777,21 @@ export function Board({
 
   return (
     <div>
-      <h1 className="sr-only">Board</h1>
+      <PageHeader
+        title="Board"
+        description="What's running, what's waiting, and what needs you"
+        actions={
+          <span className="text-small tabular-nums text-muted">
+            {attention.length + running.length + paused.length + pendingCount} open
+            {running.length > 0 && (
+              <>
+                {' · '}
+                <span className="text-running">{running.length} running</span>
+              </>
+            )}
+          </span>
+        }
+      />
 
       {attention.length > 0 && (
         <BoardSection label="Attention" count={String(attention.length)} tone="attn">

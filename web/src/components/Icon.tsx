@@ -8,6 +8,7 @@ export type IconName =
   | 'table'
   | 'graph'
   | 'stats'
+  | 'timeline'
   | 'api'
   | 'settings'
   | 'workspace'
@@ -68,6 +69,7 @@ const PATHS: Record<IconName, JSX.Element> = {
     </>
   ),
   stats: <path d="M4.5 13.5V9M8 13.5V3.5M11.5 13.5V7" />,
+  timeline: <path d="M2.25 4.5h5.5M5 8h7M3.5 11.5h4.5" />,
   api: <path d="M6 4.5 2.5 8l3.5 3.5M10 4.5 13.5 8l-3.5 3.5" />,
   settings: (
     <path d="M9.8 4.2a0.7 0.7 0 0 0 0 0.95l1.05 1.05a0.7 0.7 0 0 0 0.95 0l2.5-2.5a4 4 0 0 1-5.3 5.3l-4.6 4.6a1.4 1.4 0 0 1-2-2l4.6-4.6a4 4 0 0 1 5.3-5.3z" />

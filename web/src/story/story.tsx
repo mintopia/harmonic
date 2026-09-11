@@ -6,6 +6,8 @@ import { ChatTranscript } from '../components/ticket/ChatTranscript';
 import type { AttemptLogEvent } from '../types';
 import { EpicPage } from '../components/EpicPage';
 import { StatsPage } from '../components/StatsPage';
+import { TimelinePage } from '../components/TimelinePage';
+import { Composer } from '../components/conversation/Composer';
 import { ConversationsPage } from '../components/ConversationLauncher';
 import { config as storyConfig, workspaces as storyWorkspaces } from './fixtures';
 import { Board } from '../components/Board';
@@ -93,6 +95,28 @@ function Story() {
         <div style={cardStyle}><MergeProgress steps={mergedSteps} /></div>
         <div style={cardStyle}><MergeProgress steps={revertedSteps} /></div>
         <div style={{ ...cardStyle, padding: 0 }}><EpicIntegrationBar epic={{ ...boardEpic, mergeSteps: mergedSteps } as any} /></div>
+      </div>
+    );
+  }
+  if (which === 'compose') {
+    return (
+      <div style={{ minHeight: '100vh', background: 'var(--hm-canvas)', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+        <div style={{ flex: 1 }} />
+        <Composer
+          config={storyConfig as any}
+          workspace={null}
+          conversation={null}
+          events={[]}
+          expanded
+          onSend={async () => ({ queued: false })}
+        />
+      </div>
+    );
+  }
+  if (which === 'fleet-timeline') {
+    return (
+      <div style={{ minHeight: '100vh', background: 'var(--hm-canvas)', padding: 24 }}>
+        <TimelinePage workspaceId={1} onOpenTask={() => {}} />
       </div>
     );
   }

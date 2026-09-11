@@ -18,6 +18,7 @@ import { Login } from './components/Login';
 import { ApiPage } from './components/ApiPage';
 import { StatsPage } from './components/StatsPage';
 import { OperationsPage } from './components/OperationsPage';
+import { TimelinePage } from './components/TimelinePage';
 import { SettingsPage } from './components/SettingsPage';
 import { TableView } from './components/TableView';
 import { ActivityView } from './components/ActivityView';
@@ -831,6 +832,9 @@ export function App() {
                     </Suspense>
                   )}
                   {view === 'stats' && <StatsPage workspaceId={activeWorkspaceId} />}
+                  {view === 'timeline' && (
+                    <TimelinePage workspaceId={activeWorkspaceId} onOpenTask={openTaskById} />
+                  )}
                   {view === 'operations' && (
                     <OperationsPage tasks={taskList} epics={epics} onOpenTask={openTaskById} onOpenEpic={openEpicByRef} />
                   )}

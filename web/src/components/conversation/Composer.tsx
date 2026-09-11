@@ -149,7 +149,7 @@ export function Composer({
   return (
     <div className="border-t border-edge bg-surface p-3">
       {!locked && (
-        <div className={`mb-2 grid gap-2 ${expanded ? 'sm:grid-cols-2' : ''}`}>
+        <div className={`mb-2 grid items-start gap-2 ${expanded ? 'sm:grid-cols-3' : ''}`}>
           <div>
             <label className={fieldLabel} htmlFor="conv-harness">
               Harness

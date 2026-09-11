@@ -78,7 +78,7 @@ describe('StatsPage smoke (issue #452)', () => {
 
     await renderPage(null);
 
-    expect(host!.textContent).toContain('Usage & statistics');
+    expect(host!.textContent).toContain('Spend, tokens, and reliability');
     expect(host!.textContent).toContain('Loading…');
     expect(host!.textContent).not.toContain('Attempt activity');
   });

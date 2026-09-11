@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { btnPrimary, btnQuiet, btnQuietDestructive, card, chip, displayTitle, field, labelType, selectField, tableHead } from '../ui';
+import { btnPrimary, btnQuiet, btnQuietDestructive, card, chip, field, labelType, selectField, tableHead } from '../ui';
+import { PageHeader } from './PageHeader';
 import { ApiReference } from './ApiReference';
 
 interface ApiKey {
@@ -89,9 +90,10 @@ export function ApiPage() {
 
   return (
     <div>
-      <div className="mb-5 flex flex-wrap items-center gap-2">
-        <h1 className={displayTitle}>API</h1>
-      </div>
+      <PageHeader
+        title="API"
+        description="Keys and connection details for driving Harmonic over REST"
+      />
 
       <div className="flex flex-col gap-4">
       <section className={`${card} p-5`}>

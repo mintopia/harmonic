@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { displayTitle } from '../ui';
+import { PageHeader } from './PageHeader';
 import { Tabs } from './Tabs';
 import { SettingsSection } from './SettingsSection';
 import { FloatingSaveBar } from './FloatingSaveBar';
@@ -49,15 +49,9 @@ export function SettingsForm({
   const label = ctx.surface === 'workspace' ? 'Workspace settings sections' : 'Settings sections';
   return (
     <div>
-      <div className="flex max-w-3xl flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className={displayTitle}>{title}</h1>
-          <p className="mt-1 text-muted">{intro}</p>
-        </div>
-        {headerActions}
-      </div>
+      <PageHeader title={title} description={intro} actions={headerActions} />
 
-      <div className="mt-5">
+      <div>
         <Tabs tabs={tabs} active={tab} onChange={(id) => onTab(id as SettingTab)} label={label} />
       </div>
 

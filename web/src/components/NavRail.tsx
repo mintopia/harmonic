@@ -36,14 +36,16 @@ export function NavRail({ view, needsYouCount, railCollapsed, railDesktop, onPic
   return (
     <>
       <nav aria-label="Views" className="flex flex-col gap-0.5 rail:flex-1">
-        {RAIL_GROUPS.map((group) => {
+        {RAIL_GROUPS.map((group, i) => {
           const groupId = `rail-group-${group.label.toLowerCase()}`;
           return (
-            <div key={group.label} role="group" aria-labelledby={groupId} className="flex flex-col gap-0.5">
-              <div
-                id={groupId}
-                className={`${sectionLabel} px-2.5 pb-1 ${group.label === 'Instance' ? 'sr-only' : ''} ${railCollapsed ? 'rail:hidden' : ''}`}
-              >
+            <div
+              key={group.label}
+              role="group"
+              aria-labelledby={groupId}
+              className={`flex flex-col gap-0.5 ${i > 0 ? 'mt-1.5 border-t border-hairline pt-1.5' : ''}`}
+            >
+              <div id={groupId} className={`${sectionLabel} sr-only`}>
                 {group.label}
               </div>
               {group.views.map((v) => {
