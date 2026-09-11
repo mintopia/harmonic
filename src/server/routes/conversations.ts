@@ -301,6 +301,7 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
       },
     },
     async (req) => {
+      await ctx.upgrade.assertManualLaunchAllowed();
       const { queued } = await ctx.conversationDriver.submitTurn(req.params.id, req.body.text);
       return { ok: true as const, queued };
     },

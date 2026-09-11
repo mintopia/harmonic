@@ -522,6 +522,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       },
     },
     async (req, reply) => {
+      await ctx.upgrade.assertManualLaunchAllowed();
       const continuation = req.body?.continuation;
       // A fresh-Session request must skip the in-place live resume, which would
       // otherwise reattach the retained conversation before the choice applies.
@@ -596,6 +597,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       },
     },
     async (req) => {
+      await ctx.upgrade.assertManualLaunchAllowed();
       await ctx.tasks.assertExists(req.params.id);
       if (!(await ctx.runner.steer(req.params.id, req.body.text)) && !(await ctx.runner.steerSettled(req.params.id, req.body.text))) {
         throw new DomainError('invalid_state', `task ${req.params.id} has no active Attempt to steer and no resumable session to continue`);
@@ -672,7 +674,10 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
         },
       },
     },
-    async (req) => await withDeps(await ctx.escalation.accept(req.params.id, { force: req.body?.force ?? false })),
+    async (req) => {
+      await ctx.upgrade.assertManualLaunchAllowed();
+      return withDeps(await ctx.escalation.accept(req.params.id, { force: req.body?.force ?? false }));
+    },
   );
 
   app.post(
@@ -691,7 +696,10 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
         },
       },
     },
-    async (req) => await withDeps(await ctx.escalation.reject(req.params.id, req.body.guidance, req.body.start ?? false)),
+    async (req) => {
+      if (req.body.start) await ctx.upgrade.assertManualLaunchAllowed();
+      return withDeps(await ctx.escalation.reject(req.params.id, req.body.guidance, req.body.start ?? false));
+    },
   );
 
   app.post(
@@ -776,6 +784,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       },
     },
     async (req, reply) => {
+      await ctx.upgrade.assertManualLaunchAllowed();
       const run = await ctx.runner.start(req.params.id);
       return reply.status(201).send(await attemptToApi(ctx, run));
     },
