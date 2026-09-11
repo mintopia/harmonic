@@ -4,7 +4,7 @@ import { costFloor, formatMetric, metricValue, METRIC_LABEL, type DayCost, type 
 const dateLabel = (ms: number) => new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 const dayLabel = (ms: number) => new Date(ms).toLocaleDateString(undefined, { weekday: 'short' });
 
-export function CostBars({ series, metric = 'usd' }: { series: DayCost[]; metric?: StatMetric }) {
+export function CostBars({ series, metric = 'usd', tone = 'accent' }: { series: DayCost[]; metric?: StatMetric; tone?: 'accent' | 'fail' }) {
   const values = series.map((s) => metricValue(s, metric) ?? 0);
   const max = Math.max(...values, metric === 'usd' ? 0.01 : 1);
   const pow = 10 ** Math.floor(Math.log10(max));
@@ -58,7 +58,7 @@ export function CostBars({ series, metric = 'usd' }: { series: DayCost[]; metric
                     <div className="h-full w-full rounded-sm border border-dashed border-edge" />
                   ) : (
                     <div
-                      className="w-full rounded-sm bg-accent"
+                      className={`bar-3d w-full rounded-sm ${tone === 'fail' ? 'bg-fail' : 'bg-accent'}`}
                       style={{ height: `${(v ?? 0) === 0 ? 0 : Math.max(3, h)}%` }}
                     />
                   )}

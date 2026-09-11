@@ -366,7 +366,7 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
             {filled.length >= 2 && failsTotal > 0 && (
               <div className="mt-6">
                 <StatLabel>Fails per day</StatLabel>
-                <CostBars series={filled} metric="fails" />
+                <CostBars series={filled} metric="fails" tone="fail" />
               </div>
             )}
 
@@ -375,7 +375,7 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
               {reasonBars.length === 0 ? (
                 <p className="text-muted">No failures in range.</p>
               ) : (
-                <BarChart bars={reasonBars} ariaLabel="Failures by reason" />
+                <BarChart bars={reasonBars} ariaLabel="Failures by reason" tone="fail" />
               )}
             </div>
           </section>

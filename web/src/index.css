@@ -32,9 +32,9 @@
   --hm-running: #a74d08;
   --hm-running-dot: #cf6a12;
   --hm-running-tint: #fdeacc;
-  --hm-ready: #077067;
-  --hm-ready-dot: #077067;
-  --hm-ready-tint: #b6ece4;
+  --hm-ready: #1160ae;
+  --hm-ready-dot: #1160ae;
+  --hm-ready-tint: #cee3fa;
   --hm-await: #4740c6;
   --hm-await-dot: #4740c6;
   --hm-await-tint: #d6d2fc;
@@ -105,9 +105,9 @@
   --hm-running: #ffb524;
   --hm-running-dot: #ffb524;
   --hm-running-tint: #51360a;
-  --hm-ready: #2ed3c4;
-  --hm-ready-dot: #2ed3c4;
-  --hm-ready-tint: #0f3e38;
+  --hm-ready: #4ca8f5;
+  --hm-ready-dot: #4ca8f5;
+  --hm-ready-tint: #0b2740;
   --hm-await: #bd9dff;
   --hm-await-dot: #bd9dff;
   --hm-await-tint: #372f97;
@@ -142,7 +142,7 @@
   --hm-token-cache-read: #f0836e;
   --hm-token-cache-write: #e087c0;
 
-  --hm-shadow-card: 0 0 0 1px var(--hm-hairline);
+  --hm-shadow-card: 0 0 0 1px var(--hm-hairline), 0 2px 10px rgb(0 0 0 / 0.4);
   --hm-shadow-float: 0 12px 40px rgb(0 0 0 / 0.55);
   --hm-shadow-bar: 0 0 0 1px var(--hm-edge), 0 14px 40px rgb(0 0 0 / 0.5);
   --hm-shadow-btn: none;
@@ -179,9 +179,9 @@
     --hm-running: #ffb524;
     --hm-running-dot: #ffb524;
     --hm-running-tint: #51360a;
-    --hm-ready: #2ed3c4;
-    --hm-ready-dot: #2ed3c4;
-    --hm-ready-tint: #0f3e38;
+    --hm-ready: #4ca8f5;
+    --hm-ready-dot: #4ca8f5;
+    --hm-ready-tint: #0b2740;
     --hm-await: #bd9dff;
     --hm-await-dot: #bd9dff;
     --hm-await-tint: #372f97;
@@ -216,7 +216,7 @@
     --hm-token-cache-read: #f0836e;
     --hm-token-cache-write: #e087c0;
 
-    --hm-shadow-card: 0 0 0 1px var(--hm-hairline);
+    --hm-shadow-card: 0 0 0 1px var(--hm-hairline), 0 2px 10px rgb(0 0 0 / 0.4);
     --hm-shadow-float: 0 12px 40px rgb(0 0 0 / 0.55);
     --hm-shadow-bar: 0 0 0 1px var(--hm-edge), 0 14px 40px rgb(0 0 0 / 0.5);
     --hm-shadow-btn: none;
@@ -328,6 +328,19 @@
 :is(.node.running, .node.working) .node-fill { fill: var(--hm-running-tint); }
 :is(.node.await, .node.escalated) .node-fill { fill: var(--hm-await-tint); }
 :is(.node.merged, .node.done) .node-fill { fill: var(--hm-merged-tint); }
+
+/* Depth pass: a barely-there lit-surface sheen so washes, filled buttons and
+   chart bars read tactile rather than dead-flat, while holding the Paper
+   register (low-alpha, no gloss). Layers over each element's own fill. */
+.bold-wash {
+  background-image: linear-gradient(180deg, rgb(255 255 255 / 0.05) 0%, rgb(255 255 255 / 0) 46%, rgb(0 0 0 / 0.04) 100%);
+}
+.btn-3d {
+  background-image: linear-gradient(180deg, rgb(255 255 255 / 0.15) 0%, rgb(255 255 255 / 0) 52%, rgb(0 0 0 / 0.09) 100%);
+}
+.bar-3d {
+  background-image: linear-gradient(180deg, rgb(255 255 255 / 0.2) 0%, rgb(255 255 255 / 0) 74%);
+}
 
 /* Kept off the `--font-weight-*` theme namespace so it doesn't collide with the
    `font-display` family utility (`--font-display`). */

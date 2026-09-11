@@ -26,5 +26,5 @@ function stubApiAndWs() {
 export default defineConfig({
   root: fileURLToPath(new URL('.', import.meta.url)),
   plugins: [stubApiAndWs(), react(), tailwindcss()],
-  server: { port: 47455, strictPort: true },
+  server: { port: 47455, strictPort: true, allowedHosts: ['.ws.cloudagent.mintopia.net'] },
 });

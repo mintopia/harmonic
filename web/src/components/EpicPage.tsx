@@ -22,6 +22,8 @@ import {
   railNavButton,
   railNavSelected,
   railNavIdle,
+  btnAccept,
+  btnReject,
   PHASE_NODE_STYLES,
   type PhaseNodeVisual,
 } from '../ui';
@@ -712,22 +714,24 @@ export function EpicPage({
                   onChange={(event) => setGuidance(event.target.value)}
                   placeholder="What should the resolver do differently?"
                 />
-                <button
-                  type="button"
-                  className="mt-3 rounded bg-raised px-3 py-1.5 text-small font-semibold text-ink disabled:opacity-50"
-                  disabled={rejecting || !guidance.trim()}
-                  onClick={() => rejectEpic('fresh')}
-                >
-                  {rejecting ? 'Requeuing…' : 'Reject and start fresh'}
-                </button>
-                <button
-                  type="button"
-                  className="ml-2 mt-3 rounded bg-fail px-3 py-1.5 text-small font-semibold text-white disabled:opacity-50"
-                  disabled={rejecting || !guidance.trim()}
-                  onClick={() => rejectEpic('continue')}
-                >
-                  Continue with guidance
-                </button>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className={btnAccept}
+                    disabled={rejecting || !guidance.trim()}
+                    onClick={() => rejectEpic('continue')}
+                  >
+                    Continue with guidance
+                  </button>
+                  <button
+                    type="button"
+                    className={btnReject}
+                    disabled={rejecting || !guidance.trim()}
+                    onClick={() => rejectEpic('fresh')}
+                  >
+                    {rejecting ? 'Requeuing…' : 'Reject and start fresh'}
+                  </button>
+                </div>
               </section>
             )}
 

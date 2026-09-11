@@ -44,7 +44,26 @@
      Same pass, conversation surface: the header meta line moved into the composer
      footer as a click-to-expand context meter (% + mini bar), and the redundant
      header "Context" button and the live tool "in_progress" status label were
-     dropped (state is carried by colour). -->
+     dropped (state is carried by colour).
+
+     2026-09-11 — Depth + ready-hue pass (Jess): two changes.
+     (1) READY got its own hue — azure #4CA8F5 (dark) / #1160AE (light) — split
+     off the teal action accent. Teal had collapsed into three jobs at once (the
+     action/tooling voice, the ready state, AND the default chart ink), so an
+     idle-ready task, an interactive control and a chart series were
+     indistinguishable at a glance. Teal now means action/tooling only; ready is
+     azure — still NOT green, so it stays clear of merged-emerald, and AA-gated in
+     tests/contrast.test.ts. This supersedes the earlier "ready is welded to the
+     action accent" rule in § 2. Same idea, Stats: the failure series
+     (fails-per-day, failures-by-reason) now render in the fail rose, never the
+     accent — a failure must never wear the "good" colour.
+     (2) A deliberate, restrained step off dead-flat: a barely-there lit-surface
+     sheen on the state washes, real drop-shadow elevation on dark cards (they had
+     only a flat 1px ring), a subtle top-gloss on filled buttons, and a vertical
+     gradient on chart bars. Every effect is low-alpha — this is *depth*, NOT
+     gloss, glass, or skeuomorphism, all of which stay banned (§ 6). Implemented
+     as three reusable classes in web/src/index.css (.bold-wash sheen, .btn-3d,
+     .bar-3d) so the amount is dialled in one place. -->
 
 ---
 name: Harmonic
@@ -83,10 +102,10 @@ colors:
   muted-dark: "#A5A6AB"
   faint-light: "#61676F"
   faint-dark: "#949599"
-  ready-text-light: "#077067"
-  ready-tint-light: "#B6ECE4"
-  ready-text-dark: "#2ED3C4"
-  ready-tint-dark: "#0F3E38"
+  ready-text-light: "#1160AE"
+  ready-tint-light: "#CEE3FA"
+  ready-text-dark: "#4CA8F5"
+  ready-tint-dark: "#0B2740"
   await-text-light: "#4740C6"
   await-tint-light: "#D6D2FC"
   await-text-dark: "#BD9DFF"
@@ -177,7 +196,7 @@ spacing:
 
 **North Star: "Paper."** Harmonic is an operator's console for running and reviewing a fleet of autonomous coding agents. The **Board** is the operator's home — the one surface that reads the whole fleet at a glance, ordered by *the operator's attention*, not by chart type. The register is a serious control-room tool rendered as a **calm, matte paper world**: a low-chroma near-neutral canvas, quiet real elevation, one teal action voice, and a small semantic state palette. It carries a lot of state in little space and never performs excitement (PRODUCT.md: "the tool disappears into the task").
 
-**"Paper" is a register, not a picture.** No paper texture, no skeuomorphism, no costume — the name means *matte, low-chroma, tactile-but-flat, quiet*. This is the correction to any temptation to theme the tool: Paper is restrained and serious (Linear-grade / terminal-adjacent), never whimsical or metaphor-dressed.
+**"Paper" is a register, not a picture.** No paper texture, no costume — the name means *matte, low-chroma, quiet*. Restrained does not mean dead-flat: Paper carries a **subtle lit-surface depth** (a low-alpha sheen on washes, real elevation on cards, a faint gloss on filled buttons and gradient on bars; § 4). That is depth, never gloss, glass, or skeuomorphism. This is the correction to any temptation to theme the tool: Paper is restrained and serious (Linear-grade / terminal-adjacent), never whimsical or metaphor-dressed.
 
 This is a redesign, not a retheme: the UI is organised around the real lifecycle. Tickets flow `draft → ready → working → done` (the Attempt loop merges its own verified work under the one merge policy), can pause while an operator holds them, reach `escalated` when they need a human (ADR-0001/0002), and Epics **merge** as a batch through an integration branch. The old cobalt "Deck" skin, its panelled row-lists, and its kanban ancestry are gone.
 
@@ -218,8 +237,8 @@ Two voices — a **teal action accent** and an **indigo review hue** — over a 
 Each state is a text colour + a dot colour + a tint fill, per theme, rendered as dots, tinted count pills, state pills, run-chip states, and member-status pips:
 - **Working amber** (`#C0722A` / tint `#F6EBDC` · dark `#DE9A45` / tint `#3A2C16`): work in flight — the Attempt loop is executing.
 - **Escalated = indigo** (see the two voices above) — the state that needs you.
-- **Ready = teal** (`#0D7271` / tint `#DDEFEE` · dark `#33BDB4` / tint `#123330`): queued to run, in the ready frontier — the same hue as the action accent, because *ready* is "actionable now."
-- **Done emerald** (`#127A39` / tint `#E2F2E6` · dark `#3ECF7E` / tint `#123420`): verified, merged. **Distinct green from teal on purpose** — never give *ready* its own separate green (two greens confused the operator; ready is teal, merged is emerald). The emerald sits at hue ~143° vs teal's ~179°: the original `#267356` emerald was only ~22° off the teal and Jess read the *ready* and *done* pills as near-identical, so the hue was pushed a further ~15° toward true green (the ~36° gap now separating them) rather than moving *ready* — *ready* stays welded to the action accent.
+- **Ready = azure** (`#1160AE` / tint `#CEE3FA` · dark `#4CA8F5` / tint `#0B2740`): queued to run, in the ready frontier. Ready owns its own hue (split off the teal accent 2026-09-11), sitting in the gap between teal (~179°) and indigo (~245°) so *ready-to-run*, the *action/tooling* voice, and *chart ink* are never the same colour. Azure, not a second green — it stays clear of merged-emerald. AA-gated in `tests/contrast.test.ts`.
+- **Done emerald** (`#127A39` / tint `#E2F2E6` · dark `#3ECF7E` / tint `#123420`): verified, merged. Kept clearly distinct from *ready* — ready is azure, merged is emerald, and neither borrows the teal accent. (History: *ready* was once welded to the teal accent, and the emerald was pushed toward true green to separate the two same-family greens; the 2026-09-11 pass resolved this the other way, by giving *ready* its own azure hue.)
 - **Failed rose** (`#AF3C52` / tint `#F9E4E8` · dark `#F0768A` / tint `#3B1D24`): failed, rejected, blocked member, destructive.
 - **Blocked slate** (`#6A7079` / tint `#ECEDEA` · dark `#8A9099` / tint `#282B31`): waiting on a dependency. (Light slate darkened from `#868C95` in the AA retune.)
 - **Paused neutral**: an operator-held Task uses the Raised fill and Muted/Faint text. It has no state hue because it is not blocked by a dependency or awaiting review.
@@ -259,8 +278,8 @@ Working weights: 400 body / 500–600 UI emphasis / 700–800 headings. `tabular
 
 ## 4. Elevation & grouping
 
-Depth is real but quiet, **declared once per element** (never a border *and* a wide shadow — that ghost-card pairing is banned):
-- **Cards, bands, dialogs — Light:** Surface fill on the canvas with a soft two-layer shadow. **Dark:** shadows fade on a dark field, so an element is a lightness step (canvas → shell → surface → raised) with a 1px hairline ring standing in for the shadow. This is the `border-color:transparent` trick: elevation is declared once — the shadow carries lift in light, the hairline ring in dark.
+Depth is real but quiet — never a hairline under a **wide** soft shadow (that ghost-card pairing is banned); a hairline plus a **tight** low-alpha lift shadow is the sanctioned dark-card lift (§ 1 depth pass):
+- **Cards, bands, dialogs — Light:** Surface fill on the canvas with a soft two-layer shadow. **Dark:** an element is a lightness step (canvas → shell → surface → raised) with a 1px hairline ring defining the edge — a drop shadow alone is near-invisible dark-on-dark — **plus** a tight low-alpha lift shadow (depth pass) so the card lifts off the canvas. The hairline defines the boundary; the tight shadow lifts. This is not the ghost card, whose tell is the *wide* soft shadow that blurs the boundary.
 - **Floating elements** (dialogs): a stronger float shadow in light; in dark, a heavier shadow plus an Edge ring.
 - **Cards carry a colored left accent bar** in their state's colour — a rendered `<span aria-hidden>` at `absolute inset-y-0 left-0 w-[5px]`, tinted per state via `CARD_ACCENT[state]` (Board.tsx), **not** a `::before` pseudo. This is **Jess-directed and deliberately overrides** the craft-floor "no side-stripe borders" default — the bar is the fastest state read on a scannable strip.
 - The focus ring is a 2px teal outline (`outline-accent`), offset 2px, on `:focus-visible`, everywhere; the global `:focus-visible` rule in index.css sets `outline: 2px solid var(--hm-accent); outline-offset: 2px`.
@@ -338,15 +357,15 @@ Landmarks (`<nav>` / `<main>` / `<header>` / `<aside>`); **`aria-live`** regions
 - **Do** keep state colour on the state layer only (dot, count pill, state pill, member-status pip, run-chip state word).
 - **Do** flip glyph ink per theme on the bright await/merged fills (`--on-await` / `--on-done`) to hold AA — never darken the fill.
 - **Do** set everything read as language or a figure in sans with `tabular-nums`; reserve mono for genuine code and code-identity tokens.
-- **Do** declare elevation once (shadow *or* ring); floor informational text at Muted (4.5:1); design every change in both themes **and** both densities; give every control default/hover/focus-visible/disabled and every animation a reduced-motion alternative; give every control a ≥44px hit area.
+- **Do** declare elevation once — one *primary* elevation signal per surface, and never a 1px ring under a **wide** soft shadow (the ghost card). The dark-theme card is the sanctioned exception: it keeps its defining hairline ring for the edge (a drop shadow alone is invisible dark-on-dark) *and* adds a **tight** low-alpha lift shadow from the depth pass (§ 1) — tight, so the boundary stays crisp and it lifts without floating. Floor informational text at Muted (4.5:1); design every change in both themes **and** both densities; give every control default/hover/focus-visible/disabled and every animation a reduced-motion alternative; give every control a ≥44px hit area.
 - **Do** keep the card's colored left accent bar (Jess-directed) and standalone (non-Epic) Tasks first-class everywhere.
 - **Do** say **merged / merging** in all UI copy.
 
 ### Don't
 - **Don't** say "landing" / "landed" anywhere — UI or code (the pre-reset internals were renamed with ADR-0001's vocabulary rule).
 - **Don't** use teal for the review state or indigo for a generic action; there is no third accent and no generic info-blue.
-- **Don't** give *ready* its own green — ready is teal, merged is emerald; two greens confused the operator.
+- **Don't** give *ready* a green — ready is **azure**, its own hue, distinct from both the teal accent and the merged emerald; never collapse it back into teal or into a second green.
 - **Don't** draw connector lines in the frontier-DAG (position + colour + chips carry flow), reintroduce a kanban board with drag-between-columns, or a docked master/detail Task panel.
 - **Don't** set prose, labels, model/harness names, costs, ordinary ids, or telemetry in monospace; a mono metadata line is a regression.
 - **Don't** darken the await/merged fills to chase AA (flip the ink), and **don't** restyle the Bold density (locked).
-- **Don't** pair a border with a wide shadow (ghost-card), tint neutrals toward a hue, use gradient text, glassmorphism, nested cards, or a faux-terminal costume (scanlines, glow, CRT). Paper is matte and quiet; the "terminal" feeling is density and mono code, nothing theatrical.
+- **Don't** pair a border with a **wide** shadow (ghost-card), tint neutrals toward a hue, use gradient **text**, glassmorphism, nested cards, or a faux-terminal costume (scanlines, glow, CRT). Paper carries a subtle lit-surface depth (§ 1), never gloss; the "terminal" feeling is density and mono code, nothing theatrical. The sanctioned depth — the wash sheen, the tight card lift, the button/bar gradients — is low-alpha surface shading, **not** gradient text and **not** glass.

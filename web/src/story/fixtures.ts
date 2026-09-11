@@ -234,16 +234,38 @@ const boardTask = (id: number, state: string, extra: any = {}) => ({
   agentWorkable: state === 'ready',
   humanOnly: false,
   isEpic: false,
-  mapRef: null,
-  runStartedAt: state === 'running' ? Date.now() - min(6) : null,
+  mapRef: 421,
+  branch: `harmonic/task-${id}`,
+  contextWindow: 200_000,
+  contextTokens: null,
+  attemptId: null,
+  currentStep: null,
+  runStartedAt: state === 'running' || state === 'working' ? Date.now() - min(9) - 33_000 : null,
   ...extra,
 });
 export const boardTasks = [
-  boardTask(431, 'ready'),
-  boardTask(432, 'ready', { openBlockerCount: 1, agentWorkable: false }),
-  boardTask(433, 'escalated', { escalationReason: 'attempt 3 of 3 failed' }),
-  boardTask(434, 'ready', { openBlockerCount: 1, blockedOnFailed: true, agentWorkable: false }),
-  boardTask(435, 'working'),
+  boardTask(431, 'ready', { summary: 'Wire the ready frontier into the board band layout' }),
+  boardTask(432, 'ready', {
+    summary: 'Waiting on a sibling task to merge its schema change first',
+    openBlockerCount: 1,
+    agentWorkable: false,
+  }),
+  boardTask(433, 'escalated', {
+    summary: 'Credential panel on owner and admin host views (masked, reveal, copy)',
+    escalationReason: 'attempt 3 of 3 failed — critic rejected the reveal-copy flow',
+  }),
+  boardTask(434, 'ready', {
+    summary: 'Blocked on a failed dependency in the whole-Epic merge pipeline',
+    openBlockerCount: 1,
+    blockedOnFailed: true,
+    agentWorkable: false,
+  }),
+  boardTask(435, 'working', {
+    summary: 'Consolidate guardrail-ceiling defaults across the workspace config surface',
+    currentStep: 'Verification',
+    contextTokens: 28_000,
+    attemptId: 9435,
+  }),
 ] as any;
 
 export const doneEpic = {

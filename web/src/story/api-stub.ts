@@ -33,4 +33,6 @@ export const api = {
   conversationEvents: (_id: number) => ok({ events: conversationEventsFixture }),
   permissionRules: () => ok({ rules: permissionRulesFixture }),
   deletePermissionRule: (_id: number) => ok(undefined),
+  continuationPreview: (_id: number) => ok({ available: false }),
+  epicAttempts: (_workspaceId: number, _epicRef: number) => ok({ attempts: [] }),
 } as any;
