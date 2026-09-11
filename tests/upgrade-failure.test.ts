@@ -8,6 +8,7 @@ describe('failed idle upgrade', () => {
 
   it('unarms the update and restores the Auto-Runner switch', async () => {
     server = await startServer(undefined, {
+      version: '2.0.0',
       onUpgradeIdle: async () => { throw new Error('npm install failed'); },
       updateCheckLatest: async () => '2.6.0',
     });
@@ -20,6 +21,7 @@ describe('failed idle upgrade', () => {
       version: '2.6.0',
       armedVersion: null,
       autoRunnerWasEnabled: null,
+      dismissedVersion: null,
     });
     expect(server.app.ctx.settingsStore.getGlobal().autoRunner.enabled).toBe(initialAutoRunner);
   });

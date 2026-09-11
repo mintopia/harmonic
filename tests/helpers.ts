@@ -318,6 +318,7 @@ export async function startServer(
     metricsSummary?: { intervalMs: number; flush: () => Promise<void> } | undefined;
     distributionMode?: DistributionMode | undefined;
     updateCheckLatest?: (() => Promise<string>) | undefined;
+    version?: string | undefined;
     onUpgradeIdle?: ((version: string) => Promise<void> | void) | undefined;
   } = {},
 ): Promise<TestServer> {
@@ -337,6 +338,7 @@ export async function startServer(
     metricsSummary: opts.metricsSummary,
     distributionMode: opts.distributionMode,
     updateCheckLatest: opts.updateCheckLatest,
+    version: opts.version,
     onUpgradeIdle: opts.onUpgradeIdle,
     // Heavy synchronous test setup can trip the event-loop stall monitor.
     reliabilityTuning: { eventLoop: { enabled: false } },

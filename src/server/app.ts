@@ -109,6 +109,8 @@ export interface AppOptions {
   distributionMode?: DistributionMode | undefined;
   /** Test-only npm registry lookup override for the Update Check Job. */
   updateCheckLatest?: (() => Promise<string>) | undefined;
+  /** Test-only running-version override, so Update Check tests don't track the release version. */
+  version?: string | undefined;
   onUpgradeIdle?: ((version: string) => Promise<void> | void) | undefined;
 }
 
@@ -279,7 +281,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   const bus = new EventBus();
   const scheduler = new Scheduler(asyncDb, (jobs) => bus.emit('scheduled_jobs', jobs));
   const updateCheck = new UpdateCheck({
-    version: readPackageManifest().version,
+    version: opts.version ?? readPackageManifest().version,
     latest: opts.updateCheckLatest ?? fetchLatestVersion,
     store: new SettingsUpdateAvailabilityStore(asyncDb),
   });

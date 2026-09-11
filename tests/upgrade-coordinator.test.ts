@@ -114,6 +114,7 @@ describe('UpgradeCoordinator', () => {
       version: '2.6.0',
       armedVersion: null,
       autoRunnerWasEnabled: null,
+      dismissedVersion: null,
     });
     expect(subject.config().autoRunner.enabled).toBe(true);
   });

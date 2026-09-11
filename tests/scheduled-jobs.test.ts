@@ -106,6 +106,7 @@ describe('Scheduled Job registry', () => {
 
   it('runs the packaged Update check on boot and records a newer stable release', async () => {
     server = await startServer(undefined, {
+      version: '2.0.0',
       distributionMode: 'packaged',
       updateCheckLatest: async () => '2.6.0',
     });
@@ -125,6 +126,7 @@ describe('Scheduled Job registry', () => {
 
   it('runs again on restart and preserves its recorded update when npm is unavailable', async () => {
     server = await startServer(undefined, {
+      version: '2.0.0',
       distributionMode: 'packaged',
       updateCheckLatest: async () => '2.6.0',
     });
@@ -136,6 +138,7 @@ describe('Scheduled Job registry', () => {
 
     server = await startServer(undefined, {
       dataDir,
+      version: '2.0.0',
       distributionMode: 'packaged',
       updateCheckLatest: async () => { throw new Error('npm unavailable'); },
     });
