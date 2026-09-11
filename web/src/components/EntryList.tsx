@@ -68,8 +68,8 @@ type HeaderProps = {
   title: ReactNode;
   meta?: ReactNode;
   itemNoun: string;
-  onToggle: () => void;
-  onRemove: () => void;
+  onToggle?: () => void;
+  onRemove?: () => void;
   gripRef?: (el: HTMLElement | null) => void;
   gripProps?: Record<string, unknown>;
   overlay?: boolean;
@@ -87,23 +87,26 @@ function RowHeader({
   gripProps,
   overlay,
 }: HeaderProps) {
+  const content = (
+    <>
+      <span
+        className={`shrink-0 text-faint transition-transform ${open ? 'rotate-90' : ''}`}
+        aria-hidden="true"
+      >
+        {CARET}
+      </span>
+      <span className="min-w-0 flex-1 truncate">{title}</span>
+      {meta && <span className="flex shrink-0 items-center gap-2.5 text-small text-faint">{meta}</span>}
+    </>
+  );
   return (
     <div
-      className={`flex items-center gap-2.5 px-3 py-2.5 ${
-        overlay ? 'cursor-grabbing' : 'cursor-pointer hover:bg-raised/40'
-      } ${open && !overlay ? 'border-b border-hairline' : ''}`}
-      onClick={
-        overlay
-          ? undefined
-          : (e) => {
-              if ((e.target as HTMLElement).closest('[data-noexpand]')) return;
-              onToggle();
-            }
-      }
+      className={`flex items-center gap-2.5 px-3 py-2.5 ${overlay ? 'cursor-grabbing' : 'hover:bg-raised/30'} ${
+        open && !overlay ? 'border-b border-hairline' : ''
+      }`}
     >
       <button
         type="button"
-        data-noexpand
         ref={gripRef}
         aria-label={`Reorder ${itemNoun} ${index + 1}`}
         className={`flex h-6 w-4 shrink-0 touch-none items-center justify-center text-faint hover:text-muted focus:text-accent focus:outline-none ${
@@ -113,18 +116,21 @@ function RowHeader({
       >
         {GRIP}
       </button>
-      <span
-        className={`shrink-0 text-faint transition-transform ${open ? 'rotate-90' : ''}`}
-        aria-hidden="true"
-      >
-        {CARET}
-      </span>
-      <span className="min-w-0 flex-1 truncate">{title}</span>
-      {meta && <span className="flex shrink-0 items-center gap-2.5 text-small text-faint">{meta}</span>}
+      {overlay ? (
+        <div className="flex min-w-0 flex-1 items-center gap-2.5">{content}</div>
+      ) : (
+        <button
+          type="button"
+          aria-expanded={open}
+          onClick={onToggle}
+          className="flex min-w-0 flex-1 items-center gap-2.5 rounded-sm text-left focus:outline-none focus-visible:text-accent"
+        >
+          {content}
+        </button>
+      )}
       {!overlay && (
         <button
           type="button"
-          data-noexpand
           className="shrink-0 text-small text-faint hover:text-fail"
           onClick={onRemove}
         >
@@ -188,7 +194,7 @@ function SortableRow<T>({
  */
 export function EntryList<T>(props: EntryListProps<T>) {
   const { items, onChange, groupLabel, addLabel, emptyText, makeItem, itemNoun } = props;
-  const [open, setOpen] = useState<number | null>(null);
+  const [openId, setOpenId] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -216,24 +222,24 @@ export function EntryList<T>(props: EntryListProps<T>) {
     const from = rowIds.indexOf(String(e.active.id));
     const to = e.over ? rowIds.indexOf(String(e.over.id)) : from;
     if (from === -1 || to === -1 || from === to) return;
+    // openId is stable across the reorder, so nothing to adjust here.
     onChange(arrayMove(items, from, to));
     setIds((prev) => arrayMove(prev, from, to));
-    setOpen((o) =>
-      o === null ? o : o === from ? to : o === to ? o + (from < to ? -1 : 1) : o,
-    );
   };
 
   const setItem = (index: number, item: T) =>
     onChange(items.map((current, i) => (i === index ? item : current)));
   const remove = (index: number) => {
+    const removedId = rowIds[index];
     onChange(items.filter((_, i) => i !== index));
     setIds((prev) => prev.filter((_, i) => i !== index));
-    setOpen((o) => (o === null ? o : o === index ? null : o > index ? o - 1 : o));
+    setOpenId((o) => (o === removedId ? null : o));
   };
   const add = () => {
+    const newId = `row-${seq.current++}`;
     onChange([...items, makeItem()]);
-    setIds((prev) => [...prev, `row-${seq.current++}`]);
-    setOpen(items.length);
+    setIds((prev) => [...prev, newId]);
+    setOpenId(newId);
   };
 
   return (
@@ -263,16 +269,16 @@ export function EntryList<T>(props: EntryListProps<T>) {
           <SortableContext items={rowIds} strategy={verticalListSortingStrategy}>
             <div className="flex flex-col gap-1.5 rounded-xl border border-hairline bg-sunken p-1.5">
               {items.map((item, index) => {
-                const id = rowIds[index] ?? `pending-${index}`;
+                const id = rowIds[index]!;
                 return (
                   <SortableRow
                     key={id}
                     id={id}
                     index={index}
                     item={item}
-                    open={open === index}
+                    open={openId === id}
                     props={props}
-                    onToggle={() => setOpen(open === index ? null : index)}
+                    onToggle={() => setOpenId(openId === id ? null : id)}
                     onRemove={() => remove(index)}
                     setItem={(next) => setItem(index, next)}
                   />
@@ -289,8 +295,6 @@ export function EntryList<T>(props: EntryListProps<T>) {
                   title={props.renderTitle(activeItem, activeIndex)}
                   meta={props.renderMeta?.(activeItem, activeIndex)}
                   itemNoun={itemNoun}
-                  onToggle={() => {}}
-                  onRemove={() => {}}
                   overlay
                 />
               </div>

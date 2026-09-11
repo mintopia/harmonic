@@ -34,7 +34,7 @@ export function CommandListEditor({
       addLabel="+ Add command"
       emptyText={emptyText}
       itemNoun="command"
-      makeItem={() => EMPTY_COMMAND}
+      makeItem={() => ({ ...EMPTY_COMMAND, args: [], env: {} })}
       renderTitle={(command) => {
         const configured = command.command.trim() !== '';
         return (

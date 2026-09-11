@@ -1,10 +1,16 @@
-import type { TaskVerificationCritic, VerificationCommand } from '../types.js';
+import type {
+  EpicVerificationCritic,
+  TaskVerificationCritic,
+  VerificationCommand,
+} from '../types.js';
 
 /** Seed for a freshly enabled command override when no global default exists. */
 export const EMPTY_COMMAND: VerificationCommand = { command: '', args: [], env: {}, timeoutSeconds: 600 };
 
 /** Seed for a freshly enabled critic override when no global default exists. */
 export const EMPTY_CRITIC: TaskVerificationCritic = { name: '', issuePrompt: '', noIssuePrompt: '', model: '' };
+
+export const EMPTY_EPIC_CRITIC: EpicVerificationCritic = { name: '', prompt: '', model: '' };
 
 export function criticLabel(name: string): string {
   return name.trim() === '' ? 'Untitled critic' : name.trim();
@@ -69,6 +75,22 @@ export type CriticField = 'name' | 'issuePrompt' | 'noIssuePrompt' | 'model' | '
  * blank selection strips the key instead of setting it.
  */
 export function setCriticField(critic: TaskVerificationCritic, field: CriticField, raw: string): TaskVerificationCritic {
+  if (field === 'harness' && raw === '') {
+    const { harness: _harness, ...rest } = critic;
+    return rest;
+  }
+  return { ...critic, [field]: raw };
+}
+
+export type EpicCriticField = 'name' | 'prompt' | 'model' | 'harness';
+
+/** The epic-critic counterpart of {@link setCriticField}: same blank-`harness`
+ * key-strip rule, over the epic critic's single `prompt`. */
+export function setEpicCriticField(
+  critic: EpicVerificationCritic,
+  field: EpicCriticField,
+  raw: string,
+): EpicVerificationCritic {
   if (field === 'harness' && raw === '') {
     const { harness: _harness, ...rest } = critic;
     return rest;

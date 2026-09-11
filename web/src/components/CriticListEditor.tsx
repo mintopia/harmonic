@@ -8,9 +8,13 @@ import {
 import { field } from "../ui";
 import { EntryList } from "./EntryList";
 import { FieldError, PromptField, fieldLabel } from "./SettingsSection";
-import { EMPTY_CRITIC, criticLabel, setCriticField } from "./verification-override-model";
-
-const EMPTY_EPIC_CRITIC: EpicVerificationCritic = { name: "", prompt: "", model: "" };
+import {
+  EMPTY_CRITIC,
+  EMPTY_EPIC_CRITIC,
+  criticLabel,
+  setCriticField,
+  setEpicCriticField,
+} from "./verification-override-model";
 
 type SharedProps = {
   idPrefix: string;
@@ -156,7 +160,7 @@ export function TaskCriticListEditor({
       addLabel="+ Add critic"
       emptyText={emptyText}
       itemNoun="critic"
-      makeItem={() => EMPTY_CRITIC}
+      makeItem={() => ({ ...EMPTY_CRITIC })}
       renderTitle={(critic) => <CriticRowTitle name={critic.name} />}
       renderMeta={(critic) => <CriticRunChip critic={critic} />}
       renderBody={(critic, index, set) => {
@@ -222,7 +226,7 @@ export function EpicCriticListEditor({
       addLabel="+ Add critic"
       emptyText={emptyText}
       itemNoun="critic"
-      makeItem={() => EMPTY_EPIC_CRITIC}
+      makeItem={() => ({ ...EMPTY_EPIC_CRITIC })}
       renderTitle={(critic) => <CriticRowTitle name={critic.name} />}
       renderMeta={(critic) => <CriticRunChip critic={critic} />}
       renderBody={(critic, index, set) => (
@@ -230,7 +234,7 @@ export function EpicCriticListEditor({
           <CriticName
             id={`${idPrefix}-name-${index}`}
             value={critic.name}
-            onChange={(name) => set({ ...critic, name })}
+            onChange={(name) => set(setEpicCriticField(critic, "name", name))}
           />
           <CriticRuntimeFields
             critic={critic}
@@ -243,7 +247,7 @@ export function EpicCriticListEditor({
             id={`${idPrefix}-prompt-${index}`}
             label="Prompt"
             value={critic.prompt}
-            onChange={(prompt) => set({ ...critic, prompt })}
+            onChange={(prompt) => set(setEpicCriticField(critic, "prompt", prompt))}
             placeholders={DRIVE_PLACEHOLDERS}
             preview={compileEpicCriticPreview(critic.prompt)}
             error={fieldErrors[`${errorPrefix}.${index}.prompt`]}
@@ -253,16 +257,4 @@ export function EpicCriticListEditor({
       )}
     />
   );
-}
-
-function setEpicCriticField(
-  critic: EpicVerificationCritic,
-  field: "model" | "harness",
-  value: string,
-): EpicVerificationCritic {
-  if (field === "harness" && value === "") {
-    const { harness: _harness, ...rest } = critic;
-    return rest;
-  }
-  return { ...critic, [field]: value };
 }
