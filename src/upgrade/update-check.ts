@@ -58,12 +58,14 @@ const persistedAvailability = z.object({
   version: z.string().nullable(),
   armedVersion: z.string().nullable().optional(),
   autoRunnerWasEnabled: z.boolean().nullable().optional(),
+  dismissedVersion: z.string().nullable().optional(),
 });
 
 export interface UpdateAvailabilityState {
   version: string | null;
   armedVersion: string | null;
   autoRunnerWasEnabled: boolean | null;
+  dismissedVersion: string | null;
 }
 
 export interface UpdateArmingStore extends UpdateAvailabilityStore {
@@ -82,17 +84,18 @@ export class SettingsUpdateAvailabilityStore implements UpdateArmingStore {
     const row = await this.db.read((db) =>
       db.select({ value: settings.value }).from(settings).where(eq(settings.key, UPDATE_AVAILABILITY_KEY)).get(),
     );
-    if (row === undefined) return { version: null, armedVersion: null, autoRunnerWasEnabled: null };
+    if (row === undefined) return { version: null, armedVersion: null, autoRunnerWasEnabled: null, dismissedVersion: null };
     try {
       const parsed = persistedAvailability.safeParse(JSON.parse(row.value));
-      if (!parsed.success) return { version: null, armedVersion: null, autoRunnerWasEnabled: null };
+      if (!parsed.success) return { version: null, armedVersion: null, autoRunnerWasEnabled: null, dismissedVersion: null };
       return {
         version: parsed.data.version,
         armedVersion: parsed.data.armedVersion ?? null,
         autoRunnerWasEnabled: parsed.data.autoRunnerWasEnabled ?? null,
+        dismissedVersion: parsed.data.dismissedVersion ?? null,
       };
     } catch {
-      return { version: null, armedVersion: null, autoRunnerWasEnabled: null };
+      return { version: null, armedVersion: null, autoRunnerWasEnabled: null, dismissedVersion: null };
     }
   }
 

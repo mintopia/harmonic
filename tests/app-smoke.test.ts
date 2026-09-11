@@ -117,14 +117,29 @@ function stubFetch(opts: {
   passwordConfigured: boolean;
   workspaces?: Workspace[];
   conversation?: Conversation;
+  update?: { availableVersion: string | null; armedVersion: string | null; dismissedVersion: string | null; idle: { runningAttempts: number; mergingOrIntegrating: boolean; conversationMidTurn: boolean } };
 }) {
   const workspaces = opts.workspaces ?? [];
-  vi.stubGlobal('fetch', async (input: string | URL | Request) => {
+  let update = opts.update ?? { availableVersion: null, armedVersion: null, dismissedVersion: null, idle: { runningAttempts: 0, mergingOrIntegrating: false, conversationMidTurn: false } };
+  vi.stubGlobal('fetch', async (input: string | URL | Request, init?: RequestInit) => {
     const path = String(input instanceof Request ? input.url : input);
     if (path === '/api/auth/me') {
       return new Response(JSON.stringify({ authenticated: opts.authenticated, passwordConfigured: opts.passwordConfigured }));
     }
     if (path === '/api/config') return new Response(JSON.stringify(makeConfig()));
+    if (path === '/api/update') return new Response(JSON.stringify(update));
+    if (path === '/api/update/arm' && init?.method === 'DELETE') {
+      update = { ...update, armedVersion: null };
+      return new Response(JSON.stringify(update));
+    }
+    if (path === '/api/update/arm') {
+      update = { ...update, armedVersion: update.availableVersion };
+      return new Response(JSON.stringify(update));
+    }
+    if (path === '/api/update/dismiss') {
+      update = { ...update, dismissedVersion: update.availableVersion };
+      return new Response(JSON.stringify(update));
+    }
     if (path === '/api/workspaces') return new Response(JSON.stringify({ workspaces, total: workspaces.length }));
     if (path.startsWith('/api/conversations?')) {
       const conversations = opts.conversation ? [opts.conversation] : [];
@@ -178,6 +193,7 @@ async function renderApp(opts: {
   passwordConfigured: boolean;
   workspaces?: Workspace[];
   conversation?: Conversation;
+  update?: { availableVersion: string | null; armedVersion: string | null; dismissedVersion: string | null; idle: { runningAttempts: number; mergingOrIntegrating: boolean; conversationMidTurn: boolean } };
 }) {
   stubMatchMedia();
   vi.stubGlobal('WebSocket', IdleWebSocket);
@@ -192,6 +208,63 @@ async function renderApp(opts: {
 }
 
 describe('App smoke (issue #452)', () => {
+  it('shows the available update banner and dismisses that version', async () => {
+    const el = await renderApp({
+      authenticated: true,
+      passwordConfigured: true,
+      workspaces: [makeWorkspace()],
+      update: { availableVersion: '2.7.0', armedVersion: null, dismissedVersion: null, idle: { runningAttempts: 0, mergingOrIntegrating: false, conversationMidTurn: false } },
+    });
+
+    expect(el.textContent).toContain('Version 2.7.0 is available');
+    const dismiss = [...el.querySelectorAll('button')].find((button) => button.textContent === 'Dismiss');
+    expect(dismiss).toBeDefined();
+    await act(async () => dismiss?.click());
+    expect(el.textContent).not.toContain('Version 2.7.0 is available');
+  });
+
+  it('shows the agent-drain notice and cancel action for an armed update', async () => {
+    const el = await renderApp({
+      authenticated: true,
+      passwordConfigured: true,
+      workspaces: [makeWorkspace()],
+      update: { availableVersion: '2.7.0', armedVersion: '2.7.0', dismissedVersion: null, idle: { runningAttempts: 0, mergingOrIntegrating: false, conversationMidTurn: true } },
+    });
+
+    expect(el.textContent).toContain('waiting for agent before updating');
+    expect([...el.querySelectorAll('button')].some((button) => button.textContent === 'Cancel')).toBe(true);
+  });
+
+  it('shows upgrading once the armed instance is idle', async () => {
+    const el = await renderApp({
+      authenticated: true,
+      passwordConfigured: true,
+      workspaces: [makeWorkspace()],
+      update: { availableVersion: '2.7.0', armedVersion: '2.7.0', dismissedVersion: null, idle: { runningAttempts: 0, mergingOrIntegrating: false, conversationMidTurn: false } },
+    });
+
+    expect(el.textContent).toContain('Updating to version 2.7.0');
+  });
+
+  it('arms and cancels an update from the banner', async () => {
+    const el = await renderApp({
+      authenticated: true,
+      passwordConfigured: true,
+      workspaces: [makeWorkspace()],
+      update: { availableVersion: '2.7.0', armedVersion: null, dismissedVersion: null, idle: { runningAttempts: 1, mergingOrIntegrating: false, conversationMidTurn: false } },
+    });
+
+    const upgrade = [...el.querySelectorAll('button')].find((button) => button.textContent === 'Upgrade');
+    await act(async () => upgrade?.click());
+    await flush();
+    expect([...el.querySelectorAll('button')].some((button) => button.textContent === 'Cancel')).toBe(true);
+
+    const cancel = [...el.querySelectorAll('button')].find((button) => button.textContent === 'Cancel');
+    await act(async () => cancel?.click());
+    await flush();
+    expect([...el.querySelectorAll('button')].some((button) => button.textContent === 'Upgrade')).toBe(true);
+  });
+
   it('renders Login, not the app shell, when unauthenticated', async () => {
     const el = await renderApp({ authenticated: false, passwordConfigured: true });
 

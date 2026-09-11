@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { api } from './api';
 import { formatCost } from './cost';
-import type { AppConfig, Conversation, Cost, Task, Workspace } from './types';
+import type { AppConfig, Conversation, Cost, Task, UpdateState, Workspace } from './types';
 import type { Epic } from './epic-model';
 import { Board } from './components/Board';
 import { HeaderStatusBar } from './components/HeaderStatusBar';
@@ -24,6 +24,7 @@ import { ActivityView } from './components/ActivityView';
 import { BrandMark } from './components/BrandMark';
 import { Icon } from './components/Icon';
 import { ConversationLauncher, ConversationsPage } from './components/ConversationLauncher';
+import { UpdateBanner } from './components/UpdateBanner';
 import { NewWorkspaceForm, WorkspaceSwitcher } from './components/WorkspaceSwitcher';
 import { WorkspaceSettingsPage } from './components/WorkspaceSettingsPage';
 import { EmptyState } from './components/EmptyState';
@@ -174,6 +175,9 @@ export function App() {
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [globalPaused, setGlobalPaused] = useState<boolean | null>(null);
   const [globalPausePending, setGlobalPausePending] = useState(false);
+  const [update, setUpdate] = useState<UpdateState | null>(null);
+  const [updatePending, setUpdatePending] = useState(false);
+  const updateRequest = useRef(0);
   const [hostLoad, setHostLoad] = useState<HostLoad | null>(null);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [workspacesLoaded, setWorkspacesLoaded] = useState(false);
@@ -259,6 +263,24 @@ export function App() {
       const active = resolveActiveWorkspace(workspaces, loadActiveWorkspaceId(localStorage));
       if (active) setActiveWorkspaceId(active.id);
     }, (error) => live() && toastError(error));
+  }, [authed]);
+
+  useLiveEffect((live) => {
+    if (!authed) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const load = () => {
+      const request = ++updateRequest.current;
+      api.updateState().then(
+        (next) => {
+          if (!live() || request !== updateRequest.current) return;
+          setUpdate(next);
+          timer = setTimeout(load, 15_000);
+        },
+        () => live() && request === updateRequest.current && setUpdate(null),
+      );
+    };
+    load();
+    return () => timer !== undefined && clearTimeout(timer);
   }, [authed]);
 
   useLiveEffect((live) => {
@@ -510,6 +532,16 @@ export function App() {
       .finally(() => setGlobalPausePending(false));
   };
 
+  const changeUpdate = (action: () => Promise<UpdateState>) => {
+    if (updatePending) return;
+    const request = ++updateRequest.current;
+    setUpdatePending(true);
+    action().then(
+      (next) => request === updateRequest.current && setUpdate(next),
+      toastError,
+    ).finally(() => setUpdatePending(false));
+  };
+
   const refreshTracker = () => {
     if (activeWorkspaceId === null || refreshingTracker) return;
     setRefreshingTracker(true);
@@ -632,6 +664,13 @@ export function App() {
           onLogout={() => fetch('/api/auth/logout', { method: 'POST' }).then(() => setAuthed(false))}
           onNewTask={() => setEditing('new')}
           onHelpClick={() => setHelpOpen(true)}
+        />
+        <UpdateBanner
+          update={update}
+          pending={updatePending}
+          onArm={() => changeUpdate(api.armUpdate)}
+          onCancel={() => changeUpdate(api.cancelUpdate)}
+          onDismiss={() => changeUpdate(api.dismissUpdate)}
         />
         {helpOpen && <HelpModal onClose={() => setHelpOpen(false)} />}
 

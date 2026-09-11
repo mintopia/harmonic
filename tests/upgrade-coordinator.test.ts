@@ -23,7 +23,7 @@ function coordinator(input: {
   onIdle?: (version: string) => void;
 } = {}) {
   let config: AppConfig = { ...baselineConfig(), autoRunner: { ...baselineConfig().autoRunner, enabled: input.autoRunnerEnabled ?? true } };
-  const store = new MemoryStore({ version: input.version ?? '2.6.0', armedVersion: null, autoRunnerWasEnabled: null });
+  const store = new MemoryStore({ version: input.version ?? '2.6.0', armedVersion: null, autoRunnerWasEnabled: null, dismissedVersion: null });
   let runningAttempts = input.runningAttempts ?? 0;
   let conversationMidTurn = input.conversationMidTurn ?? false;
   let operations = input.operations ?? [];
@@ -51,6 +51,13 @@ function coordinator(input: {
 }
 
 describe('UpgradeCoordinator', () => {
+  it('dismisses only the current offered version without changing the master switch', async () => {
+    const subject = coordinator();
+
+    await expect(subject.upgrade.dismiss()).resolves.toMatchObject({ dismissedVersion: '2.6.0' });
+    expect(subject.config().autoRunner.enabled).toBe(true);
+  });
+
   it('pins the offered version, turns off the master switch, and restores its prior value on cancel', async () => {
     const subject = coordinator();
 
