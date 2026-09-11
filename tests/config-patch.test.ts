@@ -17,9 +17,19 @@ describe('baseline model catalog', () => {
     });
     expect(config.harnesses.opencode.models).toEqual([
       {
+        id: 'meta/muse-spark-1.3',
+        price: { input: 1.25, output: 4.25, cacheRead: 0.15, cacheWrite: 0 },
+        contextWindow: 1_048_576,
+      },
+      {
         id: 'meta/muse-spark-1.3-contributor',
         price: { input: 0.1, output: 0.2, cacheRead: 0.002, cacheWrite: 0 },
         contextWindow: 1_048_576,
+      },
+      {
+        id: 'deepseek/deepseek-v4.1-flash',
+        price: { input: 0.15, output: 0.6, cacheRead: 0.003, cacheWrite: 0 },
+        contextWindow: 1_000_000,
       },
       {
         id: 'openrouter/anthropic/claude-sonnet-5',
