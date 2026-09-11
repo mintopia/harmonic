@@ -69,7 +69,7 @@ import { configRoutes } from './routes/config.js';
 import { globalPauseRoutes } from './routes/global-pause.js';
 import { wsRoutes } from './ws.js';
 import { EventBus } from './bus.js';
-import { operationRegistry } from '../telemetry/operations.js';
+import { operationRegistry, startOperation } from '../telemetry/operations.js';
 import { AuthService } from './auth.js';
 import { authRoutes, SESSION_COOKIE } from './routes/auth.js';
 import { statsRoutes } from './routes/stats.js';
@@ -85,6 +85,10 @@ import { ChannelService } from '../notifications/channels.js';
 import { Notifier } from '../notifications/notifier.js';
 import { buildMcpServer } from '../mcp/server.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { detectDistributionMode, type DistributionMode } from '../distribution-mode.js';
+import { fetchLatestVersion, SettingsUpdateAvailabilityStore, UpdateCheck } from '../upgrade/update-check.js';
+import { UpgradeCoordinator } from '../upgrade/upgrade-coordinator.js';
+import { updateRoutes } from './routes/update.js';
 
 export interface AppOptions {
   dataDir: string;
@@ -101,6 +105,13 @@ export interface AppOptions {
   scheduledJobRegistrations?: ScheduledJobRegistration[] | undefined;
   /** Registers telemetry's metrics-summary flush as a Scheduler Job; undefined when telemetry owns its own timer. */
   metricsSummary?: { intervalMs: number; flush: () => Promise<void> } | undefined;
+  /** Test-only distribution mode override. */
+  distributionMode?: DistributionMode | undefined;
+  /** Test-only npm registry lookup override for the Update Check Job. */
+  updateCheckLatest?: (() => Promise<string>) | undefined;
+  /** Test-only running-version override, so Update Check tests don't track the release version. */
+  version?: string | undefined;
+  onUpgradeIdle?: ((version: string) => Promise<void> | void) | undefined;
 }
 
 /** Paths reachable without authentication. */
@@ -148,6 +159,9 @@ async function requestIsOperator(req: FastifyRequest, auth: AuthService): Promis
 }
 
 export interface AppContext {
+  distributionMode: DistributionMode;
+  updateCheck: UpdateCheck;
+  upgrade: UpgradeCoordinator;
   asyncDb: AsyncDbHandle;
   statsReader: StatsWorkerClient;
   settingsStore: SettingsStore;
@@ -260,11 +274,17 @@ export interface RegisteredRoute {
 export type App = FastifyInstance & { ctx: AppContext; registeredRoutes: RegisteredRoute[] };
 
 export async function buildApp(opts: AppOptions): Promise<App> {
+  const distributionMode = opts.distributionMode ?? detectDistributionMode();
   const asyncDb = await openAsyncDb(opts.dataDir);
   const statsReader = openStatsReader(opts.dataDir);
   const worktreesDir = join(opts.dataDir, 'worktrees');
   const bus = new EventBus();
   const scheduler = new Scheduler(asyncDb, (jobs) => bus.emit('scheduled_jobs', jobs));
+  const updateCheck = new UpdateCheck({
+    version: opts.version ?? readPackageManifest().version,
+    latest: opts.updateCheckLatest ?? fetchLatestVersion,
+    store: new SettingsUpdateAvailabilityStore(asyncDb),
+  });
   scheduler.register({
     name: 'Scheduled Job registry cleanup',
     intervalMs: 24 * 60 * 60 * 1000,
@@ -276,6 +296,14 @@ export async function buildApp(opts: AppOptions): Promise<App> {
       name: 'Metrics summary',
       intervalMs: opts.metricsSummary.intervalMs,
       run: opts.metricsSummary.flush,
+    });
+  }
+  if (distributionMode === 'packaged') {
+    scheduler.register({
+      name: 'Update check',
+      intervalMs: 60 * 60_000,
+      runOnStart: true,
+      run: () => updateCheck.run(),
     });
   }
   operationRegistry.setBus(bus);
@@ -302,6 +330,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     if (opts.password === '') await auth.clearPassword();
     else await auth.setPassword(opts.password);
   }
+  let upgradeRef: UpgradeCoordinator | undefined;
   const conversationDriver = new ConversationDriver(conversations, () => settingsStore.getGlobal(), {
     events: {
       onEvent: (event) => bus.emit('conversation_event', event),
@@ -314,6 +343,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
         (await auth.createKey(`conversation-${conversationId}`, { scope: 'conversation', conversationId })).token,
       revoke: (conversationId) => auth.deleteKeysForConversation(conversationId),
     },
+    onTurnSettled: () => { void upgradeRef?.reconcile().catch((error: unknown) => logger.error(`upgrade reconciliation failed: ${String(error)}`)); },
   });
   const sessionStore = new SessionStore(asyncDb);
   /** Record a lifecycle audit event onto an Attempt and push it live, so a
@@ -503,7 +533,6 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   }
   await auth.sweepOrphanedAttemptKeys();
   await auth.sweepOrphanedConversationKeys();
-  await conversations.markActiveEnded();
   const getWorkspaceRow = async (id: number | null) => {
     if (id == null) return undefined;
     try {
@@ -630,6 +659,34 @@ export async function buildApp(opts: AppOptions): Promise<App> {
       gitBreaker,
     },
   );
+  let upgrade: UpgradeCoordinator;
+  const onUpgradeIdle = opts.onUpgradeIdle === undefined
+    ? undefined
+    : async (version: string): Promise<void> => {
+      try {
+        await opts.onUpgradeIdle?.(version);
+      } catch (error) {
+        const abort = startOperation({ type: 'upgrade.abort', attributes: { 'upgrade.version': version } });
+        try {
+          logger.error(`upgrade to ${version} aborted: ${String(error)}`, { version });
+          await notifier.notify('update.failed');
+          abort.end();
+        } catch (abortError) {
+          abort.fail(abortError);
+          throw abortError;
+        }
+        throw error;
+      }
+    };
+  upgrade = new UpgradeCoordinator({
+    store: new SettingsUpdateAvailabilityStore(asyncDb),
+    settings: settingsStore,
+    attempts,
+    operations: () => operationRegistry.list(),
+    conversations: conversationDriver,
+    ...(onUpgradeIdle === undefined ? {} : { onIdle: onUpgradeIdle }),
+  });
+  upgradeRef = upgrade;
   const epicService = new TrackerEpicService(
     tasks,
     () => workspaces.list(),
@@ -657,6 +714,8 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     run: () => trackerManager.reconcileEpics(),
   });
   bus.on('attempt_changed', () => autoRunner.poke());
+  bus.on('attempt_changed', () => { void upgrade.reconcile().catch((error: unknown) => logger.error(`upgrade reconciliation failed: ${String(error)}`)); });
+  bus.on('operations', () => { void upgrade.reconcile().catch((error: unknown) => logger.error(`upgrade reconciliation failed: ${String(error)}`)); });
   bus.on('task_changed', () => {
     void publishWorktrees().catch((error: unknown) => logger.debug(`worktree inventory refresh failed: ${String(error)}`));
   });
@@ -674,7 +733,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     })().catch(() => {});
   });
 
-  const ctx: AppContext = { asyncDb, statsReader, settingsStore, workspaces, tasks, attempts, sessions: sessionStore, runner, conversations, conversationDriver, permissionRules, escalation, autoRunner, globalPause, guardrailEvents, verificationAttempts, trackerManager, epicService, scheduler, auth, channels, notifier, bus, hostLoad, worktreeInventory, forceCleanupWorktree, dirtyWorktreeFiles, reconcileWorktrees, worktreesReconciledAt: () => worktreeReconciler.reconciledAt };
+  const ctx: AppContext = { distributionMode, updateCheck, upgrade, asyncDb, statsReader, settingsStore, workspaces, tasks, attempts, sessions: sessionStore, runner, conversations, conversationDriver, permissionRules, escalation, autoRunner, globalPause, guardrailEvents, verificationAttempts, trackerManager, epicService, scheduler, auth, channels, notifier, bus, hostLoad, worktreeInventory, forceCleanupWorktree, dirtyWorktreeFiles, reconcileWorktrees, worktreesReconciledAt: () => worktreeReconciler.reconciledAt };
   const contexts = createAppContexts(ctx);
 
   const app = Fastify({ logger: false }) as unknown as App;
@@ -872,6 +931,7 @@ not resolved yet.`;
   await app.register((fastify) => permissionRuleRoutes(fastify, contexts.persistence), { prefix: '/api' });
   await app.register((fastify) => configRoutes(fastify, contexts.execution), { prefix: '/api' });
   await app.register((fastify) => globalPauseRoutes(fastify, contexts.execution), { prefix: '/api' });
+  await app.register((fastify) => updateRoutes(fastify, ctx), { prefix: '/api' });
   await app.register((fastify) => authRoutes(fastify, contexts.persistence), { prefix: '/api' });
   await app.register((fastify) => statsRoutes(fastify, contexts.persistence), { prefix: '/api' });
   await app.register((fastify) => activityRoutes(fastify, ctx), { prefix: '/api' });
@@ -912,6 +972,7 @@ not resolved yet.`;
     await trackerManager.sync();
     loopMonitor?.start();
     hostLoad.start();
+    await upgrade.reconcile();
   });
   await app.register((fastify) => wsRoutes(fastify, ctx), { prefix: '/api' });
 

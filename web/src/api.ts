@@ -27,6 +27,7 @@ import type {
   EpicVerificationCritic,
   VerifierStatus,
   Workspace,
+  UpdateState,
   HarnessProvider,
   DiscoveredHarnessModel,
 } from './types.js';
@@ -64,6 +65,10 @@ export const api = {
   harnessModels: (harness: string, provider: string) => request<{ models: DiscoveredHarnessModel[] }>('GET', `/api/harnesses/${encodeURIComponent(harness)}/models?provider=${encodeURIComponent(provider)}`),
   config: () => request<AppConfig>('GET', '/api/config'),
   globalPause: () => request<{ paused: boolean }>('GET', '/api/global-pause'),
+  updateState: () => request<UpdateState>('GET', '/api/update'),
+  armUpdate: () => request<UpdateState>('POST', '/api/update/arm'),
+  cancelUpdate: () => request<UpdateState>('DELETE', '/api/update/arm'),
+  dismissUpdate: () => request<UpdateState>('POST', '/api/update/dismiss'),
   pauseGlobal: () => request<{ paused: boolean }>('POST', '/api/global-pause'),
   resumeGlobal: () => request<{ paused: boolean }>('DELETE', '/api/global-pause'),
   configLayers: () => request<ConfigLayers>('GET', '/api/config/layers'),
@@ -170,7 +175,8 @@ export const api = {
   cancelTask: (id: number, withDependents = false) =>
     request<Task>('POST', `/api/tasks/${id}/cancel`, withDependents ? { withDependents } : {}),
   pauseTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/pause`),
-  resumeTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/resume`),
+  resumeTask: (id: number, continuation?: 'full' | 'condensed') =>
+    request<Task>('POST', `/api/tasks/${id}/resume`, continuation ? { continuation } : undefined),
   /** Operator override: stop a working task's agent and settle it done, skipping verification. */
   completeTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/complete`),
   /** Steer a running task: queue a message for its active run, delivered at the next turn boundary. */
@@ -241,12 +247,14 @@ export const api = {
       workspaceId ? `/api/conversations?workspaceId=${workspaceId}` : '/api/conversations',
     ),
   conversation: (id: number) => request<Conversation>('GET', `/api/conversations/${id}`),
-  createConversation: (input: { workspaceId?: number; harness?: string; model?: string; workingDir?: string }) =>
+  createConversation: (input: { workspaceId?: number; harness?: string; model?: string; workingDir?: string; permissionMode?: 'ask' | 'automatic' }) =>
     request<Conversation>('POST', '/api/conversations', input),
   // title: null clears an operator-set title, falling back to the one
   // derived from the first Turn.
   renameConversation: (id: number, title: string | null) =>
     request<Conversation>('PATCH', `/api/conversations/${id}`, { title }),
+  setConversationPermissionMode: (id: number, permissionMode: 'ask' | 'automatic') =>
+    request<Conversation>('PATCH', `/api/conversations/${id}`, { permissionMode }),
   deleteConversation: (id: number) => request<{ ok: true }>('DELETE', `/api/conversations/${id}`),
   conversationEvents: (id: number) =>
     request<{ events: ConversationEvent[]; total: number }>('GET', `/api/conversations/${id}/events`),

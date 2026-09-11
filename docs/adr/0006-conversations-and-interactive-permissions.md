@@ -3,6 +3,7 @@
 Status: accepted
 Date: 2026-08-28
 Part of the 2026-08-28 ADR reset (see README.md).
+Amended 2026-09-10: adds an opt-in Automatic (full-auto) permission mode — see "Automatic mode" below.
 
 ## Conversations are a first-class sibling to Task
 
@@ -23,6 +24,10 @@ so rendering is shared by shape, not table).
 `ConversationDriver.interrupt` cancels the in-flight turn (`session/cancel`)
 and re-prompts — the deliberate inverse of task steering (ADR-0005), because a
 chat is interactive and a stale half-answer is worthless.
+
+A server restart ends the warm harness process but not the Conversation. Its
+next Turn reloads the prior ACP session as a cold resume; the operator sees a
+token-cost warning, but cache warmth never blocks resuming.
 
 ## Interactive, human-in-the-loop permissions
 
@@ -60,6 +65,36 @@ decision.
   logic must be extracted rather than duplicated as it grows.
 - Chat defaults (harness/model) are their own overridable Workspace pair,
   locked at Conversation creation (ADR-0009).
+
+## Automatic mode: opt-in full-auto approval (amendment 2026-09-10)
+
+The human-in-the-loop default above is not the only posture a Conversation may
+take. A Conversation can be set to **Automatic**, an opt-in mode in which the
+driver approves every `session/request_permission` with no prompt — the agent
+never pauses. This reuses the full-access path unattended Attempts already use:
+where the harness exposes a native full-access session mode (Codex
+`agent-full-access`), the driver calls `setMode` after handshake; otherwise
+`decidePermission` short-circuits to the request's allow option instead of
+holding it open for the operator.
+
+Automatic approves **everything, unfenced** — edits, commands, fetches,
+anywhere. The safety argument is containment, not restraint: a Conversation runs
+in an isolated Workspace, so blanket approval stays inside that sandbox and is
+the operator's informed choice. It is deliberately **not** gated to a Working
+Directory the way a Permission Rule is.
+
+Constraints that keep it consistent with the escalation posture above:
+
+- **Default is Ask each turn.** Automatic is never the default, never implicit.
+- **Always operator-visible** — an active Automatic mode is surfaced in the
+  Conversation header, never buried.
+- **Instantly revocable** — per-Conversation state, settable at creation and
+  toggleable live; switching back restores the hold-open flow for the next
+  request.
+
+This changes nothing about unattended Attempts (ADR-0002 stays their control
+point) and does not touch Permission Rules, which remain per-kind, per-directory
+and persistent.
 
 ## Absorbed at the reset
 

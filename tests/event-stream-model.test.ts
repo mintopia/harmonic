@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { coalesceEvents, coalesceTail, MAX_STREAM_EVENTS, movingBaseView } from '../web/src/event-stream-model.js';
+import { coalesceEvents, coalesceTail, latestRunningTool, MAX_STREAM_EVENTS, movingBaseView } from '../web/src/event-stream-model.js';
 import type { AttemptEvent } from '../web/src/types.js';
 
 const evt = (id: number, type: AttemptEvent['type'], payload: any): AttemptEvent => ({
@@ -43,7 +43,7 @@ describe('coalesceEvents', () => {
       { kind: 'text', variant: 'message', text: 'before tool.', at: 1, key: 1 },
       {
         kind: 'tool',
-        tool: { toolCallId: 'toolu_x', toolKind: 'read', title: 'Read', status: 'completed', subagent: false, input: null, output: null },
+        tool: { toolCallId: 'toolu_x', toolKind: 'read', title: 'Read', status: 'completed', subagent: false, input: null, output: null, diffs: null },
         at: 3,
         key: 3,
       },
@@ -68,7 +68,7 @@ describe('coalesceEvents', () => {
     expect(items).toEqual([
       {
         kind: 'tool',
-        tool: { toolCallId: 'toolu_01EtAM', toolKind: 'read', title: 'notes.md', status: 'completed', subagent: false, input: null, output: null },
+        tool: { toolCallId: 'toolu_01EtAM', toolKind: 'read', title: 'notes.md', status: 'completed', subagent: false, input: null, output: null, diffs: null },
         at: 1,
         key: 1,
       },
@@ -81,7 +81,7 @@ describe('coalesceEvents', () => {
     const [item] = coalesceEvents([call, update]);
     expect(item).toEqual({
       kind: 'tool',
-      tool: { toolCallId: 't1', toolKind: 'execute', title: 'AttemptSummary tests', status: 'completed', subagent: false, input: null, output: null },
+      tool: { toolCallId: 't1', toolKind: 'execute', title: 'AttemptSummary tests', status: 'completed', subagent: false, input: null, output: null, diffs: null },
       at: 1,
       key: 1,
     });
@@ -111,6 +111,88 @@ describe('coalesceEvents', () => {
     expect(item && item.kind === 'tool' && item.tool.output).toBe('Tests 12 passed');
   });
 
+  it('retains an ACP structured diff block alongside textual output', () => {
+    const call = evt(1, 'session_update', {
+      sessionUpdate: 'tool_call',
+      toolCallId: 't',
+      kind: 'edit',
+      content: [
+        { content: { text: 'Updated the file' } },
+        { type: 'diff', path: 'src/app.ts', oldText: 'before\n', newText: 'after\n' },
+      ],
+    });
+
+    const [item] = coalesceEvents([call]);
+    expect(item && item.kind === 'tool' && item.tool).toMatchObject({
+      output: 'Updated the file',
+      diffs: [{ path: 'src/app.ts', oldText: 'before\n', newText: 'after\n' }],
+    });
+  });
+
+  it('keeps every streamed output update for one tool call', () => {
+    const call = evt(1, 'session_update', {
+      sessionUpdate: 'tool_call',
+      toolCallId: 't',
+      kind: 'execute',
+      content: [{ content: { text: 'Running tests…' } }],
+    });
+    const update = evt(2, 'session_update', {
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 't',
+      content: [{ content: { text: '12 tests passed' } }],
+    });
+
+    const [item] = coalesceEvents([call, update]);
+    expect(item && item.kind === 'tool' && item.tool.output).toBe('Running tests…\n12 tests passed');
+  });
+
+  it('retains a diff that arrives in a later tool update', () => {
+    const call = evt(1, 'session_update', { sessionUpdate: 'tool_call', toolCallId: 't', kind: 'edit' });
+    const update = evt(2, 'session_update', {
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 't',
+      content: [{ type: 'diff', path: 'src/app.ts', oldText: 'before\n', newText: 'after\n' }],
+    });
+
+    const [item] = coalesceEvents([call, update]);
+    expect(item && item.kind === 'tool' && item.tool.diffs).toEqual([
+      { path: 'src/app.ts', oldText: 'before\n', newText: 'after\n' },
+    ]);
+  });
+
+  it('replaces provisional diffs with every diff block from a later update', () => {
+    const call = evt(1, 'session_update', {
+      sessionUpdate: 'tool_call', toolCallId: 't', kind: 'edit',
+      content: [{ type: 'diff', path: 'provisional.ts', oldText: 'old', newText: 'new' }],
+    });
+    const update = evt(2, 'session_update', {
+      sessionUpdate: 'tool_call_update', toolCallId: 't',
+      content: [
+        { type: 'diff', path: 'first.ts', oldText: null, newText: 'first' },
+        { type: 'diff', path: 'second.ts', oldText: 'second', newText: '' },
+      ],
+    });
+
+    const [item] = coalesceEvents([call, update]);
+    expect(item && item.kind === 'tool' && item.tool.diffs).toEqual([
+      { path: 'first.ts', oldText: null, newText: 'first' },
+      { path: 'second.ts', oldText: 'second', newText: '' },
+    ]);
+  });
+
+  it('normalizes a new-file diff and ignores untyped lookalike blocks', () => {
+    const [item] = coalesceEvents([evt(1, 'session_update', {
+      sessionUpdate: 'tool_call',
+      toolCallId: 't',
+      content: [
+        { path: 'ignored.ts', oldText: 'old', newText: 'new' },
+        { type: 'diff', path: 'created.ts', newText: 'new\n' },
+      ],
+    })]);
+
+    expect(item && item.kind === 'tool' && item.tool.diffs).toEqual([{ path: 'created.ts', oldText: null, newText: 'new\n' }]);
+  });
+
   it('preserves structured command input for the expanded command detail', () => {
     const [item] = coalesceEvents([evt(1, 'session_update', {
       sessionUpdate: 'tool_call',
@@ -129,6 +211,34 @@ describe('coalesceEvents', () => {
   it('tolerates chunks with missing text', () => {
     const items = coalesceEvents([chunk(1, 'a'), evt(2, 'session_update', { sessionUpdate: 'agent_message_chunk' })]);
     expect(items).toEqual([{ kind: 'text', variant: 'message', text: 'a', at: 1, key: 1 }]);
+  });
+});
+
+describe('latestRunningTool', () => {
+  const tool = (id: number, toolCallId: string, payload: Record<string, unknown>) =>
+    evt(id, 'session_update', { sessionUpdate: 'tool_call', toolCallId, ...payload });
+
+  it('surfaces the newest in-flight tool independently of completed transcript history', () => {
+    expect(
+      latestRunningTool([
+        tool(1, 'read', { title: 'Read src/app.ts', status: 'completed' }),
+        tool(2, 'test', { title: 'Run npm test', status: 'pending' }),
+      ]),
+    ).toMatchObject({ title: 'Run npm test', status: 'pending' });
+  });
+
+  it('clears a settled tool and falls back to an earlier in-flight tool', () => {
+    expect(
+      latestRunningTool([
+        tool(1, 'read', { title: 'Read src/app.ts', status: 'pending' }),
+        tool(2, 'test', { title: 'Run npm test', status: 'pending' }),
+        evt(3, 'session_update', { sessionUpdate: 'tool_call_update', toolCallId: 'test', status: 'completed' }),
+      ]),
+    ).toMatchObject({ title: 'Read src/app.ts', status: 'pending' });
+  });
+
+  it('returns null when every tool has settled', () => {
+    expect(latestRunningTool([tool(1, 'read', { title: 'Read src/app.ts', status: 'completed' })])).toBeNull();
   });
 });
 
@@ -227,7 +337,7 @@ describe('coalesceTail', () => {
     expect(items).toEqual([
       {
         kind: 'tool',
-        tool: { toolCallId: 't', toolKind: undefined, title: undefined, status: 'completed', subagent: false, input: null, output: null },
+        tool: { toolCallId: 't', toolKind: undefined, title: undefined, status: 'completed', subagent: false, input: null, output: null, diffs: null },
         at: 2,
         key: 2,
       },

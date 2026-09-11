@@ -1049,6 +1049,7 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
     tab: 'verification',
     surfaces: BOTH,
     title: 'Verification',
+    wide: true,
     description: {
       global:
         'Task and Epic verification is configured as independent command and critic lists for each stage.',

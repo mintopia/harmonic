@@ -17,7 +17,7 @@ export function storeRailCollapsed(storage: StorageLike, collapsed: boolean): vo
   }
 }
 
-export const VIEWS = ['board', 'activity', 'operations', 'table', 'graph', 'stats', 'api', 'settings', 'workspace'] as const;
+export const VIEWS = ['board', 'activity', 'conversations', 'operations', 'table', 'graph', 'stats', 'api', 'settings', 'workspace'] as const;
 export type View = (typeof VIEWS)[number];
 
 /**
@@ -42,7 +42,7 @@ export interface RailGroup {
  * working views, then the Instance surfaces (the API surface + the per-Workspace
  * Settings page). Global Settings stays a status-strip icon, not a rail item. */
 export const RAIL_GROUPS: readonly RailGroup[] = [
-  { label: 'Workspace', views: ['board', 'activity', 'operations', 'table', 'graph', 'stats'] },
+  { label: 'Workspace', views: ['board', 'activity', 'conversations', 'operations', 'table', 'graph', 'stats'] },
   { label: 'Instance', views: ['api', 'workspace'] },
 ];
 
@@ -55,12 +55,13 @@ export const RAIL_GROUPS: readonly RailGroup[] = [
  */
 export function isWorkspaceScopedView(view: View): boolean {
   return (
-    view === 'board' || view === 'table' || view === 'graph' || view === 'stats' || view === 'workspace'
+    view === 'board' || view === 'conversations' || view === 'table' || view === 'graph' || view === 'stats' || view === 'workspace'
   );
 }
 export const VIEW_LABELS: Record<View, string> = {
   board: 'Board',
   activity: 'Activity',
+  conversations: 'Conversations',
   table: 'Tasks',
   graph: 'Graph',
   stats: 'Stats',

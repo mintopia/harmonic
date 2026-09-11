@@ -75,6 +75,7 @@ const UI_FLOOR = 3;
 const PAPER_TOKENS = ['await', 'await-dot', 'await-tint', 'on-await', 'on-done', 'sunken', 'edge-strong'] as const;
 
 const TOKEN_CLASS_TOKENS = ['token-input', 'token-output', 'token-cache-read', 'token-cache-write'] as const;
+const SYNTAX_TOKENS = ['syntax-comment', 'syntax-keyword', 'syntax-title', 'syntax-string'] as const;
 
 describe('Paper palette meets WCAG AA in both themes (issue #260)', () => {
   it('defines the same dark tokens via data-theme and prefers-color-scheme', () => {
@@ -150,6 +151,12 @@ describe('Paper palette meets WCAG AA in both themes (issue #260)', () => {
       for (const token of TOKEN_CLASS_TOKENS) {
         it(`token class ${token} vs bar track ≥ ${UI_FLOOR}:1`, () => {
           expect(contrast(hex(t, token), hex(t, 'raised'))).toBeGreaterThanOrEqual(UI_FLOOR);
+        });
+      }
+
+      for (const token of SYNTAX_TOKENS) {
+        it(`syntax token ${token} on code background ≥ ${TEXT_FLOOR}:1`, () => {
+          expect(contrast(hex(t, token), hex(t, 'raised'))).toBeGreaterThanOrEqual(TEXT_FLOOR);
         });
       }
 

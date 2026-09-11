@@ -5,6 +5,7 @@ import {
   conversationEvents,
   type ConversationRow,
   type ConversationEventRow,
+  type ConversationPermissionMode,
 } from '../db/schema.js';
 import { DomainError } from './errors.js';
 
@@ -29,6 +30,7 @@ export interface CreateConversationInput {
   harness: string;
   model: string;
   workingDir: string;
+  permissionMode: ConversationPermissionMode;
 }
 
 /**
@@ -53,6 +55,7 @@ export class ConversationStore {
           model: input.model,
           workingDir: input.workingDir,
           state: 'active',
+          permissionMode: input.permissionMode,
           sessionId: null,
           createdAt: now,
           updatedAt: now,
@@ -129,22 +132,6 @@ export class ConversationStore {
       await db.delete(conversationEvents).where(eq(conversationEvents.conversationId, id)).run();
       await db.delete(conversations).where(eq(conversations.id, id)).run();
     });
-  }
-
-  /**
-   * Boot recovery: any Conversation still 'active' was orphaned by a restart —
-   * its warm harness is gone, so it cannot resume. Mark it ended; the
-   * transcript survives read-only.
-   */
-  async markActiveEnded(): Promise<void> {
-    const now = Date.now();
-    await this.db.write((db) =>
-      db
-        .update(conversations)
-        .set({ state: 'ended', endedAt: now, updatedAt: now })
-        .where(eq(conversations.state, 'active'))
-        .run(),
-    );
   }
 
   async appendEvent(conversationId: number, event: ConversationEventInput): Promise<PersistedConversationEvent> {

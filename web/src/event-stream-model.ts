@@ -29,6 +29,13 @@ export interface ToolCallView {
    * the ACP content blocks, shown beneath the transcript card. Null when the
    * call produced no text (an Edit, a pending call). */
   output: string | null;
+  diffs: ToolDiff[] | null;
+}
+
+export interface ToolDiff {
+  path: string;
+  oldText: string | null;
+  newText: string;
 }
 
 /**
@@ -64,15 +71,22 @@ export function isInterrupted(payload: unknown): boolean {
   return p?.event === 'finished' && p.stopReason === 'cancelled';
 }
 
-function toolContentOutput(content: unknown): string | null {
-  if (!Array.isArray(content)) return null;
+function toolContentOutput(content: unknown): { output: string | null; diffs: ToolDiff[] | null } {
+  if (!Array.isArray(content)) return { output: null, diffs: null };
   const texts: string[] = [];
+  const diffs: ToolDiff[] = [];
   for (const block of content) {
     const b = block as { text?: unknown; content?: { text?: unknown } } | null;
     const text = typeof b?.content?.text === 'string' ? b.content.text : typeof b?.text === 'string' ? b.text : null;
     if (text && text.trim()) texts.push(text);
+    if (typeof block !== 'object' || block === null || Array.isArray(block)) continue;
+    if (!('type' in block) || !('path' in block) || !('newText' in block)) continue;
+    if (block.type === 'diff' && typeof block.path === 'string' && typeof block.newText === 'string' &&
+      (!('oldText' in block) || block.oldText === null || typeof block.oldText === 'string')) {
+      diffs.push({ path: block.path, oldText: typeof block.oldText === 'string' || block.oldText === null ? block.oldText : null, newText: block.newText });
+    }
   }
-  return texts.length ? texts.join('\n') : null;
+  return { output: texts.length ? texts.join('\n') : null, diffs };
 }
 
 function toolInput(input: unknown): string | null {
@@ -99,6 +113,7 @@ function toolCallView(payload: unknown): ToolCallView {
       }
     | null
     | undefined;
+  const content = toolContentOutput(p?.content);
   return {
     toolCallId: p?.toolCallId,
     toolKind: p?.kind,
@@ -106,8 +121,16 @@ function toolCallView(payload: unknown): ToolCallView {
     status: p?.status,
     subagent: Boolean(p?._meta?.claudeCode?.parentToolUseId),
     input: toolInput(p?.rawInput ?? p?.input),
-    output: toolContentOutput(p?.content),
+    output: content.output,
+    diffs: content.diffs,
   };
+}
+
+function mergeOutput(prev: string | null, next: string | null): string | null {
+  if (!prev || !next) return next ?? prev;
+  if (next.startsWith(prev)) return next;
+  if (prev.endsWith(next)) return prev;
+  return `${prev}\n${next}`;
 }
 
 function mergeToolView(prev: ToolCallView, next: ToolCallView): ToolCallView {
@@ -118,7 +141,8 @@ function mergeToolView(prev: ToolCallView, next: ToolCallView): ToolCallView {
     status: next.status ?? prev.status,
     subagent: prev.subagent || next.subagent,
     input: next.input ?? prev.input,
-    output: next.output ?? prev.output,
+    output: mergeOutput(prev.output, next.output),
+    diffs: next.diffs ?? prev.diffs,
   };
 }
 
@@ -147,6 +171,16 @@ export function coalesceTail<E extends StreamEvent>(
   const hidden = Math.max(0, events.length - cap);
   const items = coalesceEvents(hidden > 0 ? events.slice(hidden) : events);
   return { hidden, items };
+}
+
+export function latestRunningTool<E extends StreamEvent>(events: E[]): ToolCallView | null {
+  const items = coalesceEvents(events);
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const item = items[index];
+    if (item?.kind !== 'tool') continue;
+    if (item.tool.status !== 'completed' && item.tool.status !== 'failed') return item.tool;
+  }
+  return null;
 }
 
 /**

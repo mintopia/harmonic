@@ -798,6 +798,17 @@ export class TaskService {
     });
   }
 
+  /** Record how the next Attempt should re-attach to its prior Session: `full`
+   * reuses the retained conversation, `condensed` starts a fresh one. */
+  async setContinuationChoice(id: number, choice: 'full' | 'condensed'): Promise<TaskRow> {
+    return withTaskLock(id, async () => {
+      const row = await this.db.write((db) =>
+        db.update(tasks).set({ continuationChoice: choice }).where(eq(tasks.id, id)).returning().get(),
+      );
+      return this.changed(row!);
+    });
+  }
+
   /** Operator override: force a working task straight to done. Unblocks
    * dependents like any completion. Pairs with runner.completeForTask, which
    * stops the still-running agent. */

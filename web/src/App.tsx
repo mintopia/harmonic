@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { api } from './api';
 import { formatCost } from './cost';
-import type { AppConfig, Conversation, Cost, Task, Workspace } from './types';
+import type { AppConfig, Conversation, Cost, Task, UpdateState, Workspace } from './types';
 import type { Epic } from './epic-model';
 import { Board } from './components/Board';
 import { HeaderStatusBar } from './components/HeaderStatusBar';
@@ -23,7 +23,8 @@ import { TableView } from './components/TableView';
 import { ActivityView } from './components/ActivityView';
 import { BrandMark } from './components/BrandMark';
 import { Icon } from './components/Icon';
-import { ConversationLauncher } from './components/ConversationLauncher';
+import { ConversationLauncher, ConversationsPage } from './components/ConversationLauncher';
+import { UpdateBanner } from './components/UpdateBanner';
 import { NewWorkspaceForm, WorkspaceSwitcher } from './components/WorkspaceSwitcher';
 import { WorkspaceSettingsPage } from './components/WorkspaceSettingsPage';
 import { EmptyState } from './components/EmptyState';
@@ -174,6 +175,9 @@ export function App() {
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [globalPaused, setGlobalPaused] = useState<boolean | null>(null);
   const [globalPausePending, setGlobalPausePending] = useState(false);
+  const [update, setUpdate] = useState<UpdateState | null>(null);
+  const [updatePending, setUpdatePending] = useState(false);
+  const updateRequest = useRef(0);
   const [hostLoad, setHostLoad] = useState<HostLoad | null>(null);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [workspacesLoaded, setWorkspacesLoaded] = useState(false);
@@ -259,6 +263,24 @@ export function App() {
       const active = resolveActiveWorkspace(workspaces, loadActiveWorkspaceId(localStorage));
       if (active) setActiveWorkspaceId(active.id);
     }, (error) => live() && toastError(error));
+  }, [authed]);
+
+  useLiveEffect((live) => {
+    if (!authed) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const load = () => {
+      const request = ++updateRequest.current;
+      api.updateState().then(
+        (next) => {
+          if (!live() || request !== updateRequest.current) return;
+          setUpdate(next);
+          timer = setTimeout(load, 15_000);
+        },
+        () => live() && request === updateRequest.current && setUpdate(null),
+      );
+    };
+    load();
+    return () => timer !== undefined && clearTimeout(timer);
   }, [authed]);
 
   useLiveEffect((live) => {
@@ -436,6 +458,10 @@ export function App() {
   // header, and a Ticket's parent-Epic breadcrumb all open the Epic summary page
   // at /epic/:ref, clearing any focused Ticket.
   const openEpicByRef = (ref: number) => navigate({ ...route, epic: ref, task: null, panel: NO_SELECTION });
+  const pickConversation = useCallback(
+    (conversationId: number | null) => navigate({ ...route, conversation: conversationId }),
+    [navigate, route],
+  );
 
   const activeWorkspaceName =
     workspaces.find((w) => w.id === activeWorkspaceId)?.name ?? null;
@@ -470,10 +496,16 @@ export function App() {
   };
 
   const pickView = (v: View) => {
-    navigate({ ...route, view: v, task: null, epic: null, panel: NO_SELECTION });
+    navigate({
+      ...route,
+      view: v,
+      task: null,
+      epic: null,
+      conversation: view === 'conversations' ? null : route.conversation,
+      panel: NO_SELECTION,
+    });
     setMenuOpen(false);
   };
-
 
   const setTableFilters = (table: TableFilters) => navigate({ ...route, table }, { replace: true });
 
@@ -498,6 +530,16 @@ export function App() {
         refresh();
       }, toastError)
       .finally(() => setGlobalPausePending(false));
+  };
+
+  const changeUpdate = (action: () => Promise<UpdateState>) => {
+    if (updatePending) return;
+    const request = ++updateRequest.current;
+    setUpdatePending(true);
+    action().then(
+      (next) => request === updateRequest.current && setUpdate(next),
+      toastError,
+    ).finally(() => setUpdatePending(false));
   };
 
   const refreshTracker = () => {
@@ -622,6 +664,13 @@ export function App() {
           onLogout={() => fetch('/api/auth/logout', { method: 'POST' }).then(() => setAuthed(false))}
           onNewTask={() => setEditing('new')}
           onHelpClick={() => setHelpOpen(true)}
+        />
+        <UpdateBanner
+          update={update}
+          pending={updatePending}
+          onArm={() => changeUpdate(api.armUpdate)}
+          onCancel={() => changeUpdate(api.cancelUpdate)}
+          onDismiss={() => changeUpdate(api.dismissUpdate)}
         />
         {helpOpen && <HelpModal onClose={() => setHelpOpen(false)} />}
 
@@ -774,9 +823,18 @@ export function App() {
                       />
                     )}
                   {view === 'activity' && <ActivityView config={config} />}
+                  {view === 'conversations' && (
+                    <ConversationsPage
+                      config={config}
+                      workspace={activeWorkspace}
+                      conversationId={route.conversation ?? null}
+                      onConversationChange={pickConversation}
+                    />
+                  )}
                   {view === 'table' && (
                     <TableView
                       workspaceId={activeWorkspaceId}
+                      epics={epics}
                       onOpen={openRow}
                       onOpenEpic={openEpicByRef}
                       filters={route.table}
@@ -790,7 +848,7 @@ export function App() {
                         <div className="flex h-full items-center justify-center text-muted">Loading graph…</div>
                       }
                     >
-                      <GraphView workspaceId={activeWorkspaceId} onOpen={openRow} />
+                      <GraphView workspaceId={activeWorkspaceId} epics={epics} onOpen={openRow} />
                     </Suspense>
                   )}
                   {view === 'stats' && <StatsPage workspaceId={activeWorkspaceId} />}
@@ -814,7 +872,7 @@ export function App() {
             </div>
           )}
 
-          {!noWorkspaces && (
+          {!noWorkspaces && view !== 'conversations' && (
             <ConversationLauncher
               config={config}
               workspace={workspaces.find((w) => w.id === activeWorkspaceId) ?? null}

@@ -283,6 +283,8 @@ export const attemptEvents = sqliteTable('attempt_events', {
 
 export const CONVERSATION_STATES = ['active', 'ended'] as const;
 export type ConversationState = (typeof CONVERSATION_STATES)[number];
+export const CONVERSATION_PERMISSION_MODES = ['ask', 'automatic'] as const;
+export type ConversationPermissionMode = (typeof CONVERSATION_PERMISSION_MODES)[number];
 
 /** An interactive, multi-turn exchange the operator drives with a Harness over ACP. Direct mode only; never queued or reviewed. */
 export const conversations = sqliteTable('conversations', {
@@ -294,6 +296,7 @@ export const conversations = sqliteTable('conversations', {
   workingDir: text('working_dir').notNull(),
   workspaceId: integer('workspace_id').references(() => workspaces.id),
   state: text('state').$type<ConversationState>().notNull(),
+  permissionMode: text('permission_mode').$type<ConversationPermissionMode>().notNull().default('ask'),
   /** The warm ACP session id, set once the harness spawns; null before the first Turn. */
   sessionId: text('session_id'),
   /** JSON: running Usage accumulated across Turns; null before any usage. */

@@ -451,7 +451,11 @@ export class TrackerEpicService implements EpicService {
     const live = this.liveEpics(tickets, mirrored); const ticketByRef = new Map(tickets.map((ticket) => [ticket.number, ticket])); const epics: DerivedEpic[] = [];
     for (const row of rows) {
       if (this.isHistorical(row)) { if (includeHistorical) epics.push(this.storedToDerived(row, tickets, mirrored)); }
-      else if (ticketByRef.get(row.trackerRef)?.state === 'open') { const epic = live.get(row.trackerRef); if (epic) epics.push(epic); }
+      else if (row.state === 'open' && ticketByRef.get(row.trackerRef)?.state === 'open') {
+        const epic = live.get(row.trackerRef); if (epic) epics.push(epic);
+      } else if (row.state === 'open' && ticketByRef.get(row.trackerRef)?.state === 'closed') {
+        epics.push(this.storedToDerived(row, tickets, mirrored));
+      }
     }
     return epics.sort((a, b) => a.ref - b.ref);
   }

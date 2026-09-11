@@ -4571,6 +4571,14 @@
             ],
             "example": "active"
           },
+          "permissionMode": {
+            "type": "string",
+            "enum": [
+              "ask",
+              "automatic"
+            ],
+            "example": "ask"
+          },
           "sessionId": {
             "anyOf": [
               {
@@ -4635,6 +4643,10 @@
             ],
             "example": 300
           },
+          "coldResume": {
+            "type": "boolean",
+            "example": false
+          },
           "createdAt": {
             "type": "number",
             "example": 1784030400000
@@ -4663,12 +4675,14 @@
           "model",
           "workingDir",
           "state",
+          "permissionMode",
           "sessionId",
           "usage",
           "cost",
           "contextTokens",
           "contextWindow",
           "cacheWarmSeconds",
+          "coldResume",
           "createdAt",
           "updatedAt",
           "endedAt"
@@ -5359,7 +5373,8 @@
                 "run.started",
                 "task.escalated",
                 "task.done",
-                "queue.idle"
+                "queue.idle",
+                "update.failed"
               ]
             },
             "example": [
@@ -10057,6 +10072,14 @@
             ],
             "example": "active"
           },
+          "permissionMode": {
+            "type": "string",
+            "enum": [
+              "ask",
+              "automatic"
+            ],
+            "example": "ask"
+          },
           "sessionId": {
             "anyOf": [
               {
@@ -10121,6 +10144,10 @@
             ],
             "example": 300
           },
+          "coldResume": {
+            "type": "boolean",
+            "example": false
+          },
           "createdAt": {
             "type": "number",
             "example": 1784030400000
@@ -10149,12 +10176,14 @@
           "model",
           "workingDir",
           "state",
+          "permissionMode",
           "sessionId",
           "usage",
           "cost",
           "contextTokens",
           "contextWindow",
           "cacheWarmSeconds",
+          "coldResume",
           "createdAt",
           "updatedAt",
           "endedAt"
@@ -10878,7 +10907,8 @@
                 "run.started",
                 "task.escalated",
                 "task.done",
-                "queue.idle"
+                "queue.idle",
+                "update.failed"
               ]
             },
             "example": [
@@ -11661,7 +11691,34 @@
         "tags": [
           "Tasks"
         ],
-        "description": "Resume a paused task on its existing Session. Reachable with an attempt-scoped Attempt Key.",
+        "description": "Resume a paused task. `continuation` picks how it re-attaches to its prior Session: `full` reuses the retained conversation, `condensed` starts a fresh one; omitted keeps the recommended default. Reachable with an attempt-scoped Attempt Key.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "continuation": {
+                        "example": "full",
+                        "type": "string",
+                        "enum": [
+                          "full",
+                          "condensed"
+                        ]
+                      }
+                    }
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        },
         "parameters": [
           {
             "schema": {
@@ -15117,6 +15174,14 @@
                     "example": "/home/dev/harmonic",
                     "type": "string",
                     "minLength": 1
+                  },
+                  "permissionMode": {
+                    "example": "ask",
+                    "type": "string",
+                    "enum": [
+                      "ask",
+                      "automatic"
+                    ]
                   }
                 }
               }
@@ -15290,7 +15355,7 @@
         "tags": [
           "Conversations"
         ],
-        "description": "Rename a Conversation; pass title null to clear it and fall back to the title derived from the first Turn. Operator only; not reachable with an attempt-scoped key.",
+        "description": "Update a Conversation title or permission mode. Pass title null to clear it and fall back to the title derived from the first Turn. Operator only; not reachable with an attempt-scoped key.",
         "requestBody": {
           "required": true,
           "content": {
@@ -15299,6 +15364,7 @@
                 "type": "object",
                 "properties": {
                   "title": {
+                    "example": "Rate limiting for the tasks API",
                     "anyOf": [
                       {
                         "type": "string"
@@ -15306,13 +15372,17 @@
                       {
                         "type": "null"
                       }
-                    ],
-                    "example": "Rate limiting for the tasks API"
+                    ]
+                  },
+                  "permissionMode": {
+                    "example": "automatic",
+                    "type": "string",
+                    "enum": [
+                      "ask",
+                      "automatic"
+                    ]
                   }
-                },
-                "required": [
-                  "title"
-                ]
+                }
               }
             }
           }
@@ -15340,7 +15410,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The renamed Conversation, carrying its new or derived title.",
+            "description": "The updated Conversation.",
             "content": {
               "application/json": {
                 "schema": {
@@ -21661,6 +21731,374 @@
         }
       }
     },
+    "/api/update": {
+      "get": {
+        "tags": [
+          "Update"
+        ],
+        "description": "The offered and armed package update, plus the current drain-to-idle blockers. Operator only.",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The current offered and armed update, with drain-to-idle blockers.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "availableVersion": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "armedVersion": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "dismissedVersion": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "idle": {
+                      "type": "object",
+                      "properties": {
+                        "runningAttempts": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "mergingOrIntegrating": {
+                          "type": "boolean"
+                        },
+                        "conversationMidTurn": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "runningAttempts",
+                        "mergingOrIntegrating",
+                        "conversationMidTurn"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "availableVersion",
+                    "armedVersion",
+                    "dismissedVersion",
+                    "idle"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The current offered and armed update, with drain-to-idle blockers."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/update/arm": {
+      "post": {
+        "tags": [
+          "Update"
+        ],
+        "description": "Pin the currently offered update and quiesce new work until the instance is idle. Operator only.",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The newly armed update and current drain-to-idle blockers.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "availableVersion": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "armedVersion": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "dismissedVersion": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "idle": {
+                      "type": "object",
+                      "properties": {
+                        "runningAttempts": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "mergingOrIntegrating": {
+                          "type": "boolean"
+                        },
+                        "conversationMidTurn": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "runningAttempts",
+                        "mergingOrIntegrating",
+                        "conversationMidTurn"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "availableVersion",
+                    "armedVersion",
+                    "dismissedVersion",
+                    "idle"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The newly armed update and current drain-to-idle blockers."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "No update is currently available to arm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Update"
+        ],
+        "description": "Cancel an armed update and restore the Auto-Runner master switch to its pre-arm value. Operator only.",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The unarmed update state and current drain-to-idle blockers.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "availableVersion": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "armedVersion": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "dismissedVersion": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "idle": {
+                      "type": "object",
+                      "properties": {
+                        "runningAttempts": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "mergingOrIntegrating": {
+                          "type": "boolean"
+                        },
+                        "conversationMidTurn": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "runningAttempts",
+                        "mergingOrIntegrating",
+                        "conversationMidTurn"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "availableVersion",
+                    "armedVersion",
+                    "dismissedVersion",
+                    "idle"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The unarmed update state and current drain-to-idle blockers."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/update/dismiss": {
+      "post": {
+        "tags": [
+          "Update"
+        ],
+        "description": "Dismiss the currently offered update until a newer version is published. Operator only.",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The dismissed update and current drain-to-idle blockers.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "availableVersion": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "armedVersion": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "dismissedVersion": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "idle": {
+                      "type": "object",
+                      "properties": {
+                        "runningAttempts": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "mergingOrIntegrating": {
+                          "type": "boolean"
+                        },
+                        "conversationMidTurn": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "runningAttempts",
+                        "mergingOrIntegrating",
+                        "conversationMidTurn"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "availableVersion",
+                    "armedVersion",
+                    "dismissedVersion",
+                    "idle"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The dismissed update and current drain-to-idle blockers."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/auth/login": {
       "post": {
         "tags": [
@@ -24267,7 +24705,8 @@
                         "run.started",
                         "task.escalated",
                         "task.done",
-                        "queue.idle"
+                        "queue.idle",
+                        "update.failed"
                       ]
                     }
                   }
@@ -24472,7 +24911,8 @@
                         "run.started",
                         "task.escalated",
                         "task.done",
-                        "queue.idle"
+                        "queue.idle",
+                        "update.failed"
                       ]
                     }
                   }

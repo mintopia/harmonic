@@ -65,17 +65,19 @@ export async function mirrorScan(
 ): Promise<TaskRow[]> {
   const issues: Ticket[] = [];
   const containers: Array<{ trackerRef: number; facts: TrackerFacts }> = [];
+  const storedEpics = deriveStoredEpics(tickets);
+  const storedEpicRefs = new Set(storedEpics.map((epic) => epic.ref));
   await forEachYielding(tickets, async (ticket) => {
-    if (isEpicTypeContainer(ticket)) {
+    if (isEpicTypeContainer(ticket) || storedEpicRefs.has(ticket.number)) {
       containers.push({ trackerRef: ticket.number, facts: trackerFacts(ticket) });
       await tasks.demoteMirroredToContainer(workspaceId, ticket.number);
     } else if (!(await tasks.isDismissed(workspaceId, ticket.number))) issues.push(ticket);
   });
   await tasks.syncTrackerContainers(workspaceId, containers);
-  await tasks.syncEpics(workspaceId, deriveStoredEpics(tickets));
-  const epicRefs = new Set<number>();
+  await tasks.syncEpics(workspaceId, storedEpics);
+  const parentRefs = new Set<number>();
   await forEachYielding(tickets, (ticket) => {
-    if (ticket.parent !== null) epicRefs.add(ticket.parent);
+    if (ticket.parent !== null) parentRefs.add(ticket.parent);
   });
   const rows: TaskRow[] = [];
   await forEachYielding(issues, async (t) => {
@@ -102,7 +104,7 @@ export async function mirrorScan(
   });
   await forEachYielding(issues, async (issue, i) => {
     const blockerIds = issue.blockedBy
-      .filter((b) => !epicRefs.has(b.number))
+      .filter((b) => !parentRefs.has(b.number))
       .map((b) => idByRef.get(b.number))
       .filter((id): id is number => id !== undefined);
     await tasks.reconcileMirroredDeps(rows[i]!.id, blockerIds);

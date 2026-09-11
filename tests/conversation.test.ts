@@ -216,21 +216,35 @@ describe('conversation-lifecycle', () => {
       expect((body.events as any[]).some((e) => e.type === 'lifecycle' && e.payload.event === 'idle_timeout')).toBe(true);
     });
 
-    it('marks active Conversations ended on a server restart; the transcript survives', async () => {
+    it('cold-resumes an active Conversation after a server restart', async () => {
       server = await startServer(stubHarness());
       const convo = await firstTurn(server, 'survive as history');
-      expect((await server.api('GET', `/api/conversations/${convo.id}`)).body.state).toBe('active');
+      const originalSessionId = (await server.api('GET', `/api/conversations/${convo.id}`)).body.sessionId;
+      expect(originalSessionId).toEqual(expect.any(String));
 
       const dataDir = server.dataDir;
       await server.app.close();
       server = await startServer(stubHarness(), { dataDir });
 
       const restored = await server.api('GET', `/api/conversations/${convo.id}`);
-      expect(restored.body.state).toBe('ended');
+      expect(restored.body).toMatchObject({ state: 'active', sessionId: originalSessionId, coldResume: true });
+
+      const turn = await server.api('POST', `/api/conversations/${convo.id}/turns`, {
+        text: JSON.stringify({ echoSessionLoad: true }),
+      });
+      expect(turn.status).toBe(200);
+      await waitFor(async () => {
+        const { body } = await server.api('GET', `/api/conversations/${convo.id}`);
+        return body.coldResume === false ? body : undefined;
+      });
+      await waitFor(async () => {
+        const { body } = await server.api('GET', `/api/conversations/${convo.id}/events`);
+        return (body.events as any[]).find((event) => event.type === 'session_update' &&
+          JSON.stringify(event.payload).includes(originalSessionId)) ? body.events : undefined;
+      });
+
       const events = await server.api('GET', `/api/conversations/${convo.id}/events`);
-      expect((events.body.events as any[]).some((e) => e.type === 'user_turn')).toBe(true);
-      const turn = await server.api('POST', `/api/conversations/${convo.id}/turns`, { text: 'nope' });
-      expect(turn.status).toBe(409);
+      expect((events.body.events as any[]).filter((event) => event.type === 'user_turn')).toHaveLength(2);
     });
   });
 });
@@ -583,6 +597,77 @@ describe('conversation-permissions', () => {
       // nested under `outcome`; a bare outcome is read as a reject.
       expect(JSON.parse(String(echoed.payload.content.text).slice('permission:'.length))).toEqual({
         outcome: { outcome: 'selected', optionId: allowOnce.optionId },
+      });
+      ws.close();
+    });
+
+    it('automatically approves permissions without broadcasting them', async () => {
+      const ws = await connectWs(server);
+      const { body: convo } = await server.api('POST', '/api/conversations', { permissionMode: 'automatic' });
+      expect(convo.permissionMode).toBe('automatic');
+
+      await server.api('POST', `/api/conversations/${convo.id}/turns`, {
+        text: JSON.stringify({ requestPermission: { title: 'Write file' }, updates: [] }),
+      });
+
+      const resolved = await waitFor(async () =>
+        (await events(server, convo.id)).find((event) => event.type === 'permission_request'),
+      );
+      expect(resolved.payload.outcome).toMatchObject({ outcome: 'selected' });
+      expect(ws.messages.some((message) => message.type === 'permission_request' && message.conversationId === convo.id)).toBe(false);
+      ws.close();
+    });
+
+    it('uses the harness automatic mode when it is available', async () => {
+      const { body: convo } = await server.api('POST', '/api/conversations', { permissionMode: 'automatic' });
+      await server.api('POST', `/api/conversations/${convo.id}/turns`, {
+        text: JSON.stringify({ echoSetMode: true, updates: [] }),
+      });
+
+      const echoed = await waitFor(async () =>
+        (await events(server, convo.id)).find(
+          (event) => event.type === 'session_update' && String(event.payload?.content?.text ?? '').startsWith('set-mode:'),
+        ),
+      );
+      expect(JSON.parse(String(echoed.payload.content.text).slice('set-mode:'.length))).toMatchObject({ modeId: 'auto' });
+    });
+
+    it('changes permission mode on a warm Conversation', async () => {
+      const { body: convo } = await server.api('POST', '/api/conversations', {});
+      expect(convo.permissionMode).toBe('ask');
+
+      await server.api('POST', `/api/conversations/${convo.id}/turns`, {
+        text: JSON.stringify({ updates: [] }),
+      });
+      const updated = await server.api('PATCH', `/api/conversations/${convo.id}`, { permissionMode: 'automatic' });
+      expect(updated.status).toBe(200);
+      expect(updated.body.permissionMode).toBe('automatic');
+
+      await server.api('POST', `/api/conversations/${convo.id}/turns`, {
+        text: JSON.stringify({ echoSetMode: true, updates: [] }),
+      });
+      const echoed = await waitFor(async () =>
+        (await events(server, convo.id)).find(
+          (event) => event.type === 'session_update' && String(event.payload?.content?.text ?? '').startsWith('set-mode:'),
+        ),
+      );
+      expect(JSON.parse(String(echoed.payload.content.text).slice('set-mode:'.length))).toMatchObject({ modeId: 'auto' });
+    });
+
+    it('restores asking after Automatic is disabled on a warm Conversation', async () => {
+      const ws = await connectWs(server);
+      const { body: convo } = await server.api('POST', '/api/conversations', { permissionMode: 'automatic' });
+      await server.api('POST', `/api/conversations/${convo.id}/turns`, { text: JSON.stringify({ updates: [] }) });
+      await server.api('PATCH', `/api/conversations/${convo.id}`, { permissionMode: 'ask' });
+      await server.api('POST', `/api/conversations/${convo.id}/turns`, {
+        text: JSON.stringify({ requestPermission: { title: 'Write file' }, updates: [] }),
+      });
+
+      const pending = await waitFor(async () =>
+        ws.messages.find((message) => message.type === 'permission_request' && message.conversationId === convo.id),
+      );
+      await server.api('POST', `/api/conversations/${convo.id}/permissions/${pending.reqId}`, {
+        optionId: pending.request.options.find((option: { kind: string }) => option.kind === 'allow_once').optionId,
       });
       ws.close();
     });

@@ -29,15 +29,27 @@ describe('Board pause controls', () => {
     expect(fetchMock).toHaveBeenCalledWith(`/api/tasks/${task.id}/pause`, { method: 'POST' });
   });
 
-  it('shows paused state and resumes from its card', async () => {
+  it('shows paused state and resumes through the resume dialog from its card', async () => {
     const task = await renderCard('paused');
-    const fetchMock = vi.fn(async () => new Response(JSON.stringify(task)));
+    const fetchMock = vi.fn(async (url: string) =>
+      new Response(JSON.stringify(url.includes('/continuation') ? { available: false } : task)),
+    );
     vi.stubGlobal('fetch', fetchMock);
 
     expect(host!.textContent).toContain('paused');
-    const button = [...host!.querySelectorAll('button')].find((item) => item.textContent === 'Resume')!;
+    const open = [...host!.querySelectorAll('button')].find((item) => item.textContent === 'Resume')!;
     await act(async () => {
-      button.click();
+      open.click();
+      await flush();
+    });
+
+    // The card's Resume opens the dialog, which loads the continuation preview.
+    expect(fetchMock).toHaveBeenCalledWith(`/api/tasks/${task.id}/continuation`, { method: 'GET' });
+
+    const dialog = host!.querySelector('dialog')!;
+    const confirm = [...dialog.querySelectorAll('button')].find((item) => item.textContent === 'Resume')!;
+    await act(async () => {
+      confirm.click();
       await flush();
     });
 

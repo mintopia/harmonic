@@ -8,6 +8,7 @@ import { btnQuiet, btnQuietDestructive, conversationStateChip, panelTitle, touch
 import { ConfirmDialog } from './ConfirmDialog';
 import { EmptyState } from './EmptyState';
 import { Icon } from './Icon';
+import { providerLabel } from './TaskIdentity';
 
 function ConversationRow({
   conversation,
@@ -47,7 +48,7 @@ function ConversationRow({
           <span className={conversationStateChip(conversation.state)}>{conversation.state}</span>
         </div>
         <div className="mt-0.5 truncate text-small text-muted">
-          {conversation.harness} · {conversation.model}
+          {providerLabel(conversation.harness)} · {conversation.model}
           {conversation.workingDir && (
             <>
               {' · '}
@@ -85,25 +86,19 @@ function ConversationRow({
   );
 }
 
-export function ConversationList({
-  conversations,
-  attention,
-  expanded,
-  onSelect,
-  onNew,
-  onDelete,
-  onToggleExpand,
-  onClose,
-}: {
+type ConversationListProps = {
   conversations: Conversation[];
   attention: AttentionState;
-  expanded: boolean;
   onSelect: (id: number) => void;
   onNew: () => void;
   onDelete: (id: number) => void;
-  onToggleExpand: () => void;
-  onClose: () => void;
-}) {
+} & (
+  | { fullPage: true }
+  | { fullPage?: false; expanded: boolean; onToggleExpand: () => void; onClose: () => void }
+);
+
+export function ConversationList(props: ConversationListProps) {
+  const { conversations, attention, onSelect, onNew, onDelete } = props;
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       <div className="flex items-center gap-2 border-b border-hairline px-4 py-3">
@@ -116,24 +111,27 @@ export function ConversationList({
           <Icon name="plus" />
           New
         </button>
-        <button
-          aria-label={expanded ? 'Collapse to panel' : 'Expand to full view'}
-          className={`${touchTarget} ${btnQuiet}`}
-          onClick={onToggleExpand}
-        >
-          <Icon name={expanded ? 'collapse' : 'expand'} />
-        </button>
-        <button aria-label="Close conversation panel" className={`${touchTarget} ${btnQuiet}`} onClick={onClose}>
-          <Icon name="close" />
-        </button>
+        {!props.fullPage && (
+          <>
+            <button
+              aria-label={props.expanded ? 'Collapse to panel' : 'Expand to full view'}
+              className={`${touchTarget} ${btnQuiet}`}
+              onClick={props.onToggleExpand}
+            >
+              <Icon name={props.expanded ? 'collapse' : 'expand'} />
+            </button>
+            <button aria-label="Close conversation panel" className={`${touchTarget} ${btnQuiet}`} onClick={props.onClose}>
+              <Icon name="close" />
+            </button>
+          </>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto px-2 py-2">
         {conversations.length === 0 ? (
           <EmptyState className="mt-10 px-2" title="No conversations yet">
-            Start an interactive session to explore a repo or drive changes turn by turn — the agent
-            works alongside you, live. <span className="font-semibold text-ink">New conversation</span> is
-            just above.
+            Start a conversation to explore a repo or drive changes turn by turn, live.{' '}
+            <span className="font-semibold text-ink">New conversation</span> is just above.
           </EmptyState>
         ) : (
           <ul className="flex flex-col gap-2">

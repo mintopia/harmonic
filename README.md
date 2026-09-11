@@ -33,6 +33,10 @@ harmonic status         # is it running, and where?
 harmonic stop           # shut it down
 ```
 
+A global install keeps itself up to date. Harmonic checks npm hourly and,
+when a newer release is out, shows a banner in the app, then upgrades in
+place the next time your fleet is idle and relaunches on the new version.
+
 Rather not install? Every command also works through `npx`:
 
 ```sh

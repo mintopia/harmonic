@@ -10,6 +10,7 @@ import type { CriticHarnessDrive } from '../src/verification/critic.js';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { settings, workspaces } from '../src/db/schema.js';
 import type { ScheduledJobRegistration } from '../src/scheduler/scheduler.js';
+import type { DistributionMode } from '../src/distribution-mode.js';
 import { SettingsStore } from '../src/server/settings-store.js';
 import { WorkspaceService } from '../src/domain/workspaces.js';
 
@@ -315,6 +316,10 @@ export async function startServer(
     scheduledJobRegistrations?: ScheduledJobRegistration[] | undefined;
     /** Test-only metrics-summary Scheduler Job wiring, forwarded to `buildApp`. */
     metricsSummary?: { intervalMs: number; flush: () => Promise<void> } | undefined;
+    distributionMode?: DistributionMode | undefined;
+    updateCheckLatest?: (() => Promise<string>) | undefined;
+    version?: string | undefined;
+    onUpgradeIdle?: ((version: string) => Promise<void> | void) | undefined;
   } = {},
 ): Promise<TestServer> {
   const dataDir = opts.dataDir ?? mkdtempSync(join(tmpdir(), 'harmonic-test-'));
@@ -331,6 +336,10 @@ export async function startServer(
     criticDrive: opts.criticDrive,
     scheduledJobRegistrations: opts.scheduledJobRegistrations,
     metricsSummary: opts.metricsSummary,
+    distributionMode: opts.distributionMode,
+    updateCheckLatest: opts.updateCheckLatest,
+    version: opts.version,
+    onUpgradeIdle: opts.onUpgradeIdle,
     // Heavy synchronous test setup can trip the event-loop stall monitor.
     reliabilityTuning: { eventLoop: { enabled: false } },
   });

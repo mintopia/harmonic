@@ -20,6 +20,13 @@ import type { ElicitationAnswer } from '../types';
 import { toastError } from '../toast';
 import { useLiveEffect } from '../useLiveEffect';
 
+export function isConversationInWorkspace(
+  conversation: Pick<Conversation, 'workspaceId'>,
+  workspaceId: number | null,
+) {
+  return workspaceId !== null && conversation.workspaceId === workspaceId;
+}
+
 export function useConversationDetail(
   focusedId: number | null,
   options: {
@@ -66,10 +73,14 @@ export function useConversationDetail(
     const load = () => {
       api.conversation(id).then((c) => {
         if (!live()) return;
+        if (!isConversationInWorkspace(c, workspaceId)) {
+          openList();
+          return;
+        }
         setConversation(c);
         upsertConversationInList(c);
+        api.conversationEvents(id).then(({ events }) => live() && setEvents(events), toastError);
       }, toastError);
-      api.conversationEvents(id).then(({ events }) => live() && setEvents(events), toastError);
     };
     load();
     const unsubscribe = subscribe((msg) => {
@@ -97,6 +108,10 @@ export function useConversationDetail(
         setPendingElicitations((current) => addPendingElicitation(current, msg));
       }
       if (msg.type === 'conversation_changed' && msg.conversation.id === id) {
+        if (!isConversationInWorkspace(msg.conversation, workspaceId)) {
+          openList();
+          return;
+        }
         setConversation(msg.conversation);
         upsertConversationInList(msg.conversation);
         if (msg.conversation.state === 'ended') {
@@ -109,9 +124,16 @@ export function useConversationDetail(
     return () => {
       unsubscribe();
     };
-  }, [focusedId, upsertConversationInList, pendingPermission, clearPendingPermission]);
+  }, [
+    focusedId,
+    workspaceId,
+    upsertConversationInList,
+    openList,
+    pendingPermission,
+    clearPendingPermission,
+  ]);
 
-  const send = async (fields: { harness: string; model: string }, text: string) => {
+  const send = async (fields: { harness: string; model: string; permissionMode: Conversation['permissionMode'] }, text: string) => {
     let id = focusedId;
     if (id === null) {
       const created = await api.createConversation({
@@ -143,6 +165,18 @@ export function useConversationDetail(
     if (id === null) return;
     try {
       const updated = await api.renameConversation(id, title);
+      setConversation(updated);
+      upsertConversationInList(updated);
+    } catch (e) {
+      toastError(e);
+    }
+  };
+
+  const setPermissionMode = async (permissionMode: Conversation['permissionMode']) => {
+    const id = focusedId;
+    if (id === null) return;
+    try {
+      const updated = await api.setConversationPermissionMode(id, permissionMode);
       setConversation(updated);
       upsertConversationInList(updated);
     } catch (e) {
@@ -184,6 +218,6 @@ export function useConversationDetail(
     events,
     pending,
     pendingElicitations,
-    actions: { send, end, rename, deleteConversation, answerPermission, answerElicitation },
+    actions: { send, end, rename, setPermissionMode, deleteConversation, answerPermission, answerElicitation },
   };
 }

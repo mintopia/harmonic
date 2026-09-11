@@ -27,7 +27,7 @@ function allowOptionId(request: PermissionRequest): string | null {
   const pick =
     options.find((o) => o.kind === 'allow_once') ??
     options.find((o) => o.kind === 'allow_always') ??
-    options[0];
+    options.find((o) => o.kind.startsWith('allow'));
   return pick?.optionId ?? null;
 }
 
@@ -90,6 +90,8 @@ export interface ConversationDriverOptions {
     mint: (conversationId: number) => Promise<string>;
     revoke: (conversationId: number) => void | Promise<void>;
   };
+  /** Notifies lifecycle coordinators after a running Turn has fully settled. */
+  onTurnSettled?: () => void;
 }
 
 interface ActiveConversation {
@@ -98,6 +100,7 @@ interface ActiveConversation {
   driver: AcpDriver;
   turning: boolean;
   queue: string[];
+  initialMode: string | null;
   idleTimer?: ReturnType<typeof setTimeout> | undefined;
 }
 
@@ -117,6 +120,7 @@ export class ConversationDriver {
   private readonly events: ConversationDriverEvents;
   private readonly rules: PermissionRuleStore | undefined;
   private readonly keys: ConversationDriverOptions['keys'];
+  private readonly onTurnSettled: (() => void) | undefined;
   /** The MCP endpoint agents call back to; set once the server listens. */
   mcpUrl: string | null = null;
 
@@ -128,10 +132,15 @@ export class ConversationDriver {
     this.events = options.events ?? {};
     this.rules = options.rules;
     this.keys = options.keys;
+    this.onTurnSettled = options.onTurnSettled;
   }
 
   get activeCount(): number {
     return this.active.size;
+  }
+
+  hasInFlightTurn(): boolean {
+    return [...this.active.values()].some((entry) => entry.turning);
   }
 
   /** The ids of every warm (active) Conversation. */
@@ -142,6 +151,14 @@ export class ConversationDriver {
   /** True while a warm harness process is held for this Conversation. */
   isWarm(conversationId: number): boolean {
     return this.active.has(conversationId);
+  }
+
+  /** Apply a persisted permission-mode change to its warm ACP session. */
+  async setPermissionMode(conversation: ConversationRow): Promise<void> {
+    const entry = this.active.get(conversation.id);
+    if (!entry) return;
+    await this.applyPermissionMode(entry, conversation);
+    if (conversation.permissionMode === 'automatic') this.approvePendingPermissions(conversation.id);
   }
 
   /**
@@ -327,7 +344,8 @@ export class ConversationDriver {
     });
 
     const driver = new AcpDriver(child, {
-      onSessionUpdate: (update) => {
+      onSessionUpdate: (update, replay) => {
+        if (replay) return;
         void this.record(convo.id, 'session_update', update).catch(() => {});
       },
       onRequest: async (method, params) => {
@@ -351,23 +369,34 @@ export class ConversationDriver {
       },
     });
 
-    const entry: ActiveConversation = { conversationId: convo.id, child, driver, turning: false, queue: [] };
+    const entry: ActiveConversation = { conversationId: convo.id, child, driver, turning: false, queue: [], initialMode: null };
     this.active.set(convo.id, entry);
     try {
       const modelId = adapterFor(convo.harness).sessionModelId?.(convo.model);
-      await driver.handshake({
-        cwd: convo.workingDir,
-        mcpServers,
-        modelId,
-        // ACP's ElicitationFormCapabilities is an object, not a boolean — an
-        // empty `{}` is how a client advertises form support. `true` fails the
-        // adapter's schema validation and is silently dropped, which leaves
-        // AskUserQuestion disabled.
-        clientCapabilities: { elicitation: { form: {} } },
-        onSessionCreated: async (sessionId) => {
-          await this.store.update(convo.id, { sessionId });
-        },
-      });
+      if (convo.sessionId) {
+        const outcome = await driver.load({
+          sessionId: convo.sessionId,
+          cwd: convo.workingDir,
+          mcpServers,
+          modelId,
+          clientCapabilities: { elicitation: { form: {} } },
+        });
+        if (!outcome.loaded) {
+          throw new DomainError('invalid_state', `conversation ${convo.id} cannot resume: ${outcome.detail}`);
+        }
+      } else {
+        await driver.handshake({
+          cwd: convo.workingDir,
+          mcpServers,
+          modelId,
+          clientCapabilities: { elicitation: { form: {} } },
+          onSessionCreated: async (sessionId) => {
+            await this.store.update(convo.id, { sessionId });
+          },
+        });
+      }
+      entry.initialMode = driver.currentModeId ?? (driver.availableModes.includes('default') ? 'default' : null);
+      await this.applyPermissionMode(entry, convo);
     } catch (err) {
       this.active.delete(convo.id);
       this.kill(entry);
@@ -401,10 +430,18 @@ export class ConversationDriver {
       entry.turning = false;
       await this.drainQueue(entry);
       if (this.active.has(entry.conversationId) && !entry.turning) this.armIdle(entry);
+      this.onTurnSettled?.();
     }
   }
 
   private async decidePermission(conversationId: number, workingDir: string, request: PermissionRequest): Promise<PermissionResponse> {
+    const conversation = await this.store.get(conversationId);
+    if (conversation.permissionMode === 'automatic') {
+      const optionId = allowOptionId(request);
+      const outcome: PermissionOutcome = optionId ? { outcome: 'selected', optionId } : { outcome: 'cancelled' };
+      await this.record(conversationId, 'permission_request', { request, outcome, automatic: true });
+      return { outcome };
+    }
     const kind = permissionKind(request);
     const rule = kind ? ((await this.rules?.findMatch(kind, workingDir)) ?? null) : null;
     if (rule) {
@@ -422,6 +459,25 @@ export class ConversationDriver {
       this.pendingPermissions.set(reqId, { conversationId, workingDir, request, resolve });
       this.events.onPermissionRequest?.({ conversationId, reqId, request });
     });
+  }
+
+  private async applyPermissionMode(entry: ActiveConversation, conversation: ConversationRow): Promise<void> {
+    const automaticMode = adapterFor(conversation.harness).unattendedPermissionMode(entry.driver.availableModes);
+    const mode = conversation.permissionMode === 'automatic'
+      ? entry.initialMode === null ? undefined : automaticMode
+      : entry.initialMode;
+    if (mode && mode !== entry.driver.currentModeId) await entry.driver.setMode(mode);
+  }
+
+  private approvePendingPermissions(conversationId: number): void {
+    for (const [reqId, pending] of this.pendingPermissions) {
+      if (pending.conversationId !== conversationId) continue;
+      this.pendingPermissions.delete(reqId);
+      const optionId = allowOptionId(pending.request);
+      const outcome: PermissionOutcome = optionId ? { outcome: 'selected', optionId } : { outcome: 'cancelled' };
+      pending.resolve({ outcome });
+      void this.record(conversationId, 'permission_request', { request: pending.request, outcome, reqId, automatic: true }).catch(() => {});
+    }
   }
 
   /** Hold an ACP form elicitation open and prompt the operator; the Turn stays

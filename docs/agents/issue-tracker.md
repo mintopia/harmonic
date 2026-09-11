@@ -11,6 +11,12 @@ Issues and specs for this repo live as GitHub issues. Use the `gh` CLI for all o
 - **Apply / remove labels**: `gh issue edit <number> --add-label "..."` / `--remove-label "..."`
 - **Close**: `gh issue close <number> --comment "..."`
 
+## Epics
+
+An **epic** is a parent issue whose children are the implementation tickets. Add the `epic` label when creating one (`gh issue create --label epic ...`) or immediately after (`gh issue edit <n> --add-label epic`). A root parent with children is also a structural Epic when the label is absent. Children are linked as GitHub sub-issues, with one-line `Blocked by: #<n>, #<n>` dependency edges in each child body.
+
+Label epics even though an epic is also recognised structurally (a parent with children): the label declares intent, while a root parent is also demoted structurally. Both appear only as an Epic.
+
 ## Ownership and human reclaim
 
 Harmonic decides whether it owns work from the local Task and Run state. Tracker

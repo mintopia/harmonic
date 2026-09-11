@@ -92,6 +92,7 @@ export interface AcpLoadHandshake {
   modelId?: string | undefined;
   /** The permission mode to re-establish after load; incompatible if the reloaded harness no longer advertises it. */
   permissionMode?: string | undefined;
+  clientCapabilities?: Record<string, unknown>;
   onInitialize?: (result: AcpInitializeResult) => void;
 }
 
@@ -132,6 +133,8 @@ export class AcpDriver {
   sessionId = '';
   /** Session mode ids the harness offers, from session/new — e.g. Claude's permission modes (auto, bypassPermissions, …). */
   availableModes: string[] = [];
+  /** The harness's active permission mode, if it reported one. */
+  currentModeId: string | null = null;
   /**
    * True while a `session/load` request is in flight: ACP streams the reloaded
    * Session's history as `session/update` notifications BEFORE the response
@@ -191,9 +194,10 @@ export class AcpDriver {
         await this.initialize(opts.onInitialize, opts.clientCapabilities);
         const session = (await this.race(
           this.connection.request('session/new', { cwd: opts.cwd, mcpServers: opts.mcpServers ?? [] }),
-        )) as { sessionId: string; modes?: { availableModes?: { id: string }[] } };
+        )) as { sessionId: string; modes?: { availableModes?: { id: string }[]; currentModeId?: string } };
         this.sessionId = session.sessionId;
         this.availableModes = AcpDriver.modeIdsOf(session.modes);
+        this.currentModeId = session.modes?.currentModeId ?? null;
         await opts.onSessionCreated?.(this.sessionId);
         if (opts.modelId !== undefined) {
           await this.race(
@@ -235,7 +239,7 @@ export class AcpDriver {
   }
 
   private async loadSession(opts: AcpLoadHandshake): Promise<AcpLoadOutcome> {
-    const initResult = await this.initialize(opts.onInitialize);
+    const initResult = await this.initialize(opts.onInitialize, opts.clientCapabilities);
 
     if (initResult.agentCapabilities?.loadSession !== true) {
       return {
@@ -255,7 +259,7 @@ export class AcpDriver {
     }
 
     this.loading = true;
-    let loaded: { modes?: { availableModes?: { id: string }[] } };
+    let loaded: { modes?: { availableModes?: { id: string }[]; currentModeId?: string } };
     try {
       loaded = (await this.race(
         this.connection.request('session/load', {
@@ -279,11 +283,13 @@ export class AcpDriver {
     }
     this.sessionId = opts.sessionId;
     this.availableModes = availableModes;
+    this.currentModeId = loaded.modes?.currentModeId ?? null;
 
     if (opts.permissionMode !== undefined) {
       await this.race(
         this.connection.request('session/set_mode', { sessionId: this.sessionId, modeId: opts.permissionMode }),
       );
+      this.currentModeId = opts.permissionMode;
     }
 
     if (opts.modelId !== undefined) {
@@ -298,6 +304,7 @@ export class AcpDriver {
   /** Put the session into a permission mode (ACP session/set_mode) — e.g. Claude's 'auto'. */
   async setMode(modeId: string): Promise<void> {
     await this.race(this.connection.request('session/set_mode', { sessionId: this.sessionId, modeId }));
+    this.currentModeId = modeId;
   }
 
   private observeActivity(update: { sessionUpdate: string; [key: string]: unknown }): void {

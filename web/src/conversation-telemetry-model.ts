@@ -129,5 +129,5 @@ export function formatColdCacheMessage(input: ColdCacheInput): string | null {
   if (input.cacheWarmSeconds === null || !isColdCache(input)) return null;
   const idleMinutes = minutes(input.now - input.lastTurnAt);
   const warmMinutes = Math.round(input.cacheWarmSeconds / 60);
-  return `Cache likely cold — idle ${idleMinutes}m, warm window ${warmMinutes}m (estimate)`;
+  return `Cache likely cold — next message may cost more. Idle ${idleMinutes}m, warm window ${warmMinutes}m (estimate)`;
 }

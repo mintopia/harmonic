@@ -158,7 +158,7 @@ describe('EpicLifecycle.reconcile (issue #159)', () => {
     expect(git.created).toEqual(['epic/10']);
     expect(await baseOf(11)).toBe('epic/10');
     expect(await baseOf(12)).toBe('epic/10');
-    expect(await baseOf(10)).toBeNull();
+    expect((await tasks.list()).some((t) => t.trackerRef === 10)).toBe(false);
   });
 
   it('cuts an epic/<ref> branch for every kind — map, spec, and plain (ADR-0018, #438)', async () => {

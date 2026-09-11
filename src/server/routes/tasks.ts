@@ -42,6 +42,10 @@ const acceptInputSchema = z.object({
   force: z.boolean().optional().meta({ example: false }),
 }).nullish();
 const cancelInputSchema = z.object({ withDependents: z.boolean().optional().meta({ example: true }) }).nullish();
+/** How to re-attempt a paused Task: `full` reuses the retained Session/conversation; `condensed` starts a fresh Session from a summary. Omitted keeps the recommended default (reuse when eligible). */
+const resumeInputSchema = z
+  .object({ continuation: z.enum(['full', 'condensed']).optional().meta({ example: 'full' }) })
+  .nullish();
 /** What the continuation rule will do with this Task's live Session; `available: false` when there is nothing to continue. */
 const continuationPreviewSchema = z.discriminatedUnion('available', [
   z.object({ available: z.literal(false) }),
@@ -387,14 +391,17 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       const { sortBy, order, limit, offset, epics, ...query } = req.query;
       const taskRows = await tasksToApi(ctx, await ctx.tasks.listWithDeps(query));
       const needle = query.q?.trim().toLowerCase();
+      const epicTickets = query.workspaceId == null ? [] : await ctx.trackerManager.listEpicTickets(query.workspaceId);
+      const epicRefs = new Set(epicTickets.map((ticket) => ticket.number));
+      const nonDriverTaskRows = taskRows.filter((task) => task.trackerRef == null || !epicRefs.has(task.trackerRef));
       const wantEpics =
         epics === 'true' && query.workspaceId != null && filterEmpty(query.state) && filterEmpty(query.harness) && filterEmpty(query.priority);
       const epicRows = wantEpics
-        ? (await ctx.trackerManager.listEpicTickets(query.workspaceId!))
+        ? epicTickets
             .filter((ticket) => !needle || ticket.title.toLowerCase().includes(needle))
             .map((ticket) => epicToListRow(ticket, query.workspaceId!))
         : [];
-      const rows = sortListRows([...taskRows, ...epicRows], sortBy, order);
+      const rows = sortListRows([...nonDriverTaskRows, ...epicRows], sortBy, order);
       const { items, total } = paginate(rows, { limit, offset });
       return { tasks: items, total };
     },
@@ -504,8 +511,10 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     {
       schema: {
         tags: ['Tasks'],
-        description: 'Resume a paused task on its existing Session. Reachable with an attempt-scoped Attempt Key.',
+        description:
+          'Resume a paused task. `continuation` picks how it re-attaches to its prior Session: `full` reuses the retained conversation, `condensed` starts a fresh one; omitted keeps the recommended default. Reachable with an attempt-scoped Attempt Key.',
         params: idParamsSchema,
+        body: resumeInputSchema,
         response: {
           200: taskSchema.describe('The working task.'),
           409: errorResponse('The task is not paused.'),
@@ -513,14 +522,17 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       },
     },
     async (req, reply) => {
-      if (await ctx.runner.resume(req.params.id)) {
+      await ctx.upgrade.assertManualLaunchAllowed();
+      const continuation = req.body?.continuation;
+      const tryLiveResume = continuation !== 'condensed';
+      if (tryLiveResume && (await ctx.runner.resume(req.params.id))) {
         return await withDeps({ id: req.params.id });
       }
       const task = await ctx.tasks.get(req.params.id);
       if (task.state !== 'paused') {
         return reply.code(409).send({ error: { code: 'conflict', message: 'The task has no paused Attempt to resume.' } });
       }
-      return await withDeps(await ctx.runner.resumePaused(req.params.id));
+      return await withDeps(await ctx.runner.resumePaused(req.params.id, continuation));
     },
   );
 
@@ -584,6 +596,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       },
     },
     async (req) => {
+      await ctx.upgrade.assertManualLaunchAllowed();
       await ctx.tasks.assertExists(req.params.id);
       if (!(await ctx.runner.steer(req.params.id, req.body.text)) && !(await ctx.runner.steerSettled(req.params.id, req.body.text))) {
         throw new DomainError('invalid_state', `task ${req.params.id} has no active Attempt to steer and no resumable session to continue`);
@@ -660,7 +673,10 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
         },
       },
     },
-    async (req) => await withDeps(await ctx.escalation.accept(req.params.id, { force: req.body?.force ?? false })),
+    async (req) => {
+      await ctx.upgrade.assertManualLaunchAllowed();
+      return withDeps(await ctx.escalation.accept(req.params.id, { force: req.body?.force ?? false }));
+    },
   );
 
   app.post(
@@ -679,7 +695,10 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
         },
       },
     },
-    async (req) => await withDeps(await ctx.escalation.reject(req.params.id, req.body.guidance, req.body.start ?? false)),
+    async (req) => {
+      if (req.body.start) await ctx.upgrade.assertManualLaunchAllowed();
+      return withDeps(await ctx.escalation.reject(req.params.id, req.body.guidance, req.body.start ?? false));
+    },
   );
 
   app.post(
@@ -764,6 +783,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       },
     },
     async (req, reply) => {
+      await ctx.upgrade.assertManualLaunchAllowed();
       const run = await ctx.runner.start(req.params.id);
       return reply.status(201).send(await attemptToApi(ctx, run));
     },

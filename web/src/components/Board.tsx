@@ -17,7 +17,8 @@ import { toastError } from '../toast';
 import { Icon } from './Icon';
 import { EpicIntegrationBar } from './EpicIntegrationBar';
 import { useAppContext } from '../app-context';
-import { ResumeOffer } from './ResumeOffer';
+import { SessionWarmthChip } from './SessionWarmthChip';
+import { ResumeDialog } from './ResumeDialog';
 import { formatModelLabel, providerLabel } from './TaskIdentity';
 import {
   blockerBadge,
@@ -121,22 +122,41 @@ function ResolveButton({ onOpen }: { onOpen: () => void }) {
 function PauseResumeButton({ task }: { task: Task }) {
   const { refresh } = useAppContext();
   const [pending, setPending] = useState(false);
+  const [resuming, setResuming] = useState(false);
   if (task.state !== 'working' && task.state !== 'paused') return null;
   const pausing = task.state === 'working';
   const label = pausing ? 'Pause' : 'Resume';
   return (
-    <button
-      type="button"
-      className={`${btnQuiet} relative z-10 disabled:opacity-60 ${HIT44}`}
-      disabled={pending}
-      onClick={(e) => {
-        e.stopPropagation();
-        setPending(true);
-        (pausing ? api.pauseTask(task.id) : api.resumeTask(task.id)).then(refresh, toastError).finally(() => setPending(false));
-      }}
-    >
-      {pending ? `${pausing ? 'Pausing' : 'Resuming'}…` : label}
-    </button>
+    <>
+      <button
+        type="button"
+        className={`${btnQuiet} relative z-10 disabled:opacity-60 ${HIT44}`}
+        disabled={pending}
+        onClick={(e) => {
+          e.stopPropagation();
+          if (!pausing) {
+            setResuming(true);
+            return;
+          }
+          setPending(true);
+          api.pauseTask(task.id).then(refresh, toastError).finally(() => setPending(false));
+        }}
+      >
+        {pending ? 'Pausing…' : label}
+      </button>
+      {resuming && (
+        <span onClick={(e) => e.stopPropagation()}>
+          <ResumeDialog
+            taskId={task.id}
+            onClose={() => setResuming(false)}
+            onDone={() => {
+              setResuming(false);
+              refresh();
+            }}
+          />
+        </span>
+      )}
+    </>
   );
 }
 
@@ -234,7 +254,7 @@ export function TaskCard({ task, onOpen }: { task: Task; onOpen: () => void }) {
           <WhoLine harness={task.harness} model={task.model} />
         </div>
         <div className="mt-2">
-          <ResumeOffer taskId={task.id} compact />
+          <SessionWarmthChip taskId={task.id} />
         </div>
         {showFoot && (
           <div className="mt-auto flex items-center gap-2.5 pt-3 text-small text-muted">
