@@ -10,6 +10,7 @@ export const NOTIFICATION_EVENTS = [
   'task.escalated',
   'task.done',
   'queue.idle',
+  'update.failed',
 ] as const;
 export type NotificationEvent = (typeof NOTIFICATION_EVENTS)[number];
 

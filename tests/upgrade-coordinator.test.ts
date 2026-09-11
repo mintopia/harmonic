@@ -97,4 +97,17 @@ describe('UpgradeCoordinator', () => {
     await subject.upgrade.reconcile();
     expect(ready).toEqual(['2.6.0']);
   });
+
+  it('unarms and restores the master switch when the idle handoff fails', async () => {
+    const subject = coordinator({ onIdle: () => { throw new Error('install failed'); } });
+
+    await subject.upgrade.arm();
+
+    await expect(subject.upgrade.state()).resolves.toEqual({
+      version: '2.6.0',
+      armedVersion: null,
+      autoRunnerWasEnabled: null,
+    });
+    expect(subject.config().autoRunner.enabled).toBe(true);
+  });
 });
