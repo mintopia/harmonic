@@ -149,43 +149,54 @@ export function Composer({
   return (
     <div className="border-t border-edge bg-surface p-3">
       {!locked && (
-        <div className={`mb-2 grid items-start gap-2 ${expanded ? 'sm:grid-cols-3' : ''}`}>
-          <div>
-            <label className={fieldLabel} htmlFor="conv-harness">
-              Harness
-            </label>
-            <select
-              id="conv-harness"
-              className={`${selectField} w-full`}
-              value={harness}
-              onChange={(e) => pickHarness(e.target.value)}
-            >
-              {Object.keys(config.harnesses).map((h) => (
-                <option key={h} value={h}>
-                  {providerLabel(h)}
-                </option>
-              ))}
-            </select>
+        <div className="mb-2 flex flex-col gap-2.5">
+          <div className={`grid items-start gap-2 ${expanded ? 'sm:grid-cols-2' : ''}`}>
+            <div>
+              <label className={fieldLabel} htmlFor="conv-harness">
+                Harness
+              </label>
+              <select
+                id="conv-harness"
+                className={`${selectField} w-full`}
+                value={harness}
+                onChange={(e) => pickHarness(e.target.value)}
+              >
+                {Object.keys(config.harnesses).map((h) => (
+                  <option key={h} value={h}>
+                    {providerLabel(h)}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className={fieldLabel} htmlFor="conv-model">
+                Model
+              </label>
+              <DiscoveryModelPicker id="conv-model" harness={harness} value={model} onChange={setModel} options={models} />
+            </div>
           </div>
           <div>
-            <label className={fieldLabel} htmlFor="conv-model">
-              Model
-            </label>
-            <DiscoveryModelPicker id="conv-model" harness={harness} value={model} onChange={setModel} options={models} />
-          </div>
-          <div>
-            <label className={fieldLabel} htmlFor="conv-permission-mode">
-              Permission mode
-            </label>
-            <select
+            <span className={fieldLabel}>Permission mode</span>
+            <div
               id="conv-permission-mode"
-              className={`${selectField} w-full`}
-              value={permissionMode}
-              onChange={(event) => setPermissionMode(event.target.value === 'automatic' ? 'automatic' : 'ask')}
+              role="group"
+              aria-label="Permission mode"
+              className="inline-flex rounded-md border border-edge bg-field p-0.5"
             >
-              <option value="ask">Ask each turn</option>
-              <option value="automatic">Automatic</option>
-            </select>
+              {(['ask', 'automatic'] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  aria-pressed={permissionMode === mode}
+                  onClick={() => setPermissionMode(mode)}
+                  className={`min-h-9 rounded px-3 text-small font-medium transition-colors ${
+                    permissionMode === mode ? 'bg-raised text-ink' : 'text-muted hover:text-ink'
+                  }`}
+                >
+                  {mode === 'ask' ? 'Ask each turn' : 'Automatic'}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       )}

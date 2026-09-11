@@ -85,7 +85,7 @@ export function ModelCombobox({
         aria-controls={panelOpen ? listId : undefined}
         aria-autocomplete="list"
         aria-activedescendant={highlight >= 0 ? `${listId}-opt-${highlight}` : undefined}
-        className={`${field} pr-8`}
+        className={`${field} min-h-11 pr-8`}
         value={value}
         onChange={(e) => {
           onChange(e.target.value);
