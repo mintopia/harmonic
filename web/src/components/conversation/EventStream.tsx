@@ -74,8 +74,8 @@ function ExecuteCard({ tool }: { tool: ToolCallView }) {
     <div className="overflow-hidden rounded-md border border-hairline bg-sunken">
       <div className="flex items-center gap-2 border-b border-hairline bg-raised px-3 py-1.5">
         <span className={`${toolChip} shrink-0`}>run</span>
-        <span className="text-small font-medium text-muted">Terminal</span>
-        <span className="ml-auto"><ToolStatus status={tool.status} /></span>
+        <span className="min-w-0 flex-1 truncate font-data text-data text-ink" title={command}>{command}</span>
+        <ToolStatus status={tool.status} />
       </div>
       <pre className="overflow-auto px-3 py-2 font-data text-data text-ink"><span className="select-none text-faint">$ </span>{command}</pre>
       {tool.output && <pre className="max-h-80 overflow-auto border-t border-hairline px-3 py-2 font-data text-data text-muted">{tool.output}</pre>}
@@ -103,14 +103,24 @@ function ReadCard({ tool }: { tool: ToolCallView }) {
 
 function EditCard({ tool }: { tool: ToolCallView }) {
   if (!tool.diffs?.length) return <GenericToolCard tool={tool} />;
+  const files = tool.diffs.map(toolDiffFile);
+  const single = files.length === 1 ? files[0] : null;
+  const additions = files.reduce((sum, file) => sum + file.additions, 0);
+  const deletions = files.reduce((sum, file) => sum + file.deletions, 0);
   return (
     <div className="overflow-hidden rounded-md border border-hairline bg-surface">
-      <div className="flex items-center gap-2 border-b border-hairline bg-sunken px-3 py-1.5">
+      <div className="flex items-center gap-2 border-b border-hairline bg-sunken px-3 py-2">
         <span className={`${toolChip} shrink-0`}>edit</span>
-        <span className="text-small font-medium text-muted">Changed file</span>
-        <span className="ml-auto"><ToolStatus status={tool.status} /></span>
+        <span className="min-w-0 flex-1 truncate font-data text-data text-ink" title={single?.path ?? tool.title}>
+          {single ? single.path : `${files.length} files`}
+        </span>
+        <span className="shrink-0 font-data text-small tabular-nums text-merged">+{additions}</span>
+        <span className="shrink-0 font-data text-small tabular-nums text-fail">−{deletions}</span>
+        <ToolStatus status={tool.status} />
       </div>
-      {tool.diffs.map((diff, index) => <DiffViewer key={`${diff.path}-${index}`} file={toolDiffFile(diff)} />)}
+      {files.map((file, index) => (
+        <DiffViewer key={`${file.path}-${index}`} file={file} headerless={files.length === 1} />
+      ))}
     </div>
   );
 }

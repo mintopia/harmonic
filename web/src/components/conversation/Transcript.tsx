@@ -118,9 +118,17 @@ export function Transcript({ events, conversation }: { events: ConversationEvent
         return (
           <div key={turn.userTurn?.id ?? `pre-${i}`} className="space-y-3">
             {turn.userTurn && (
-              <div className="group flex items-end justify-end gap-1.5">
-                <CopyButton text={userText} label="Copy message" className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100" />
-                <p className="max-w-[85%] whitespace-pre-wrap break-words rounded-lg bg-accent-tint px-3 py-2 text-ink">
+              <div className="group">
+                <div className="mb-1 flex items-center gap-2">
+                  <span className="text-label font-bold uppercase tracking-[0.09em] text-muted">You</span>
+                  {turn.userTurn.ts && <span className="font-data text-[11px] text-faint">{clockTime(turn.userTurn.ts)}</span>}
+                  <CopyButton
+                    text={userText}
+                    label="Copy message"
+                    className="ml-auto opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                  />
+                </div>
+                <p className="whitespace-pre-wrap break-words rounded-r-md border-l-2 border-accent bg-sunken px-3.5 py-2.5 text-ink">
                   {userText}
                 </p>
               </div>

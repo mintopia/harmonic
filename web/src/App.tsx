@@ -793,7 +793,9 @@ export function App() {
               <main
                 id="main-content"
                 tabIndex={-1}
-                className="min-h-0 min-w-0 flex-1 overflow-y-auto px-6 pt-5 pb-16"
+                className={`min-h-0 min-w-0 flex-1 ${
+                  view === 'conversations' ? 'overflow-hidden' : 'overflow-y-auto px-6 pt-5 pb-16'
+                }`}
               >
                 {showWorkspaceEmptyState ? (
                   <EmptyState

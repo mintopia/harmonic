@@ -1,5 +1,6 @@
 /* eslint-disable */
 import * as f from './fixtures';
+import { conversationDetail, conversationEventsFixture, conversationList, permissionRulesFixture } from './conversation-fixtures';
 
 const ok = <T>(v: T) => Promise.resolve(v);
 
@@ -27,4 +28,9 @@ export const api = {
   epicDiffFiles: (_workspaceId: number, _epicRef: number) => ok({ files: f.diffFiles }),
   attemptDiff: (_id: number) => ok({ stat: f.task.stat }),
   steerTask: (_id: number, _msg: string) => ok(undefined),
+  conversations: (_workspaceId: number) => ok({ conversations: conversationList }),
+  conversation: (_id: number) => ok(conversationDetail),
+  conversationEvents: (_id: number) => ok({ events: conversationEventsFixture }),
+  permissionRules: () => ok({ rules: permissionRulesFixture }),
+  deletePermissionRule: (_id: number) => ok(undefined),
 } as any;

@@ -31,6 +31,8 @@ export type IconName =
   | 'alert-triangle'
   | 'user'
   | 'help'
+  | 'search'
+  | 'trash'
   | 'copy';
 
 const PATHS: Record<IconName, JSX.Element> = {
@@ -163,6 +165,20 @@ const PATHS: Record<IconName, JSX.Element> = {
       <circle cx="8" cy="8" r="6.25" />
       <path d="M5.9 6.1a2.1 2.1 0 1 1 3.15 1.82c-.7.42-1.05.86-1.05 1.68" />
       <path d="M8 11.75v.01" />
+    </>
+  ),
+  search: (
+    <>
+      <circle cx="6.75" cy="6.75" r="4.25" />
+      <path d="M13.5 13.5 10 10" />
+    </>
+  ),
+  trash: (
+    <>
+      <path d="M2.75 4.25h10.5" />
+      <path d="M6.25 4.25V2.75h3.5v1.5" />
+      <path d="M3.9 4.25 4.6 13a1 1 0 0 0 1 .92h4.8a1 1 0 0 0 1-.92l.7-8.75" />
+      <path d="M6.75 7v4M9.25 7v4" />
     </>
   ),
 };

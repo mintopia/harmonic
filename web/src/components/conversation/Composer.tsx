@@ -171,6 +171,13 @@ export function Composer({
           <Icon name="send" />
         </button>
       </div>
+      {!ended && (
+        <div className="mt-1.5 flex flex-wrap gap-x-3.5 gap-y-1 text-label text-faint">
+          <span><b className="font-semibold text-muted">Enter</b> {running ? 'queues' : 'to send'}</span>
+          <span><b className="font-semibold text-muted">Shift ↵</b> newline</span>
+          <span><b className="font-semibold text-muted">/</b> commands</span>
+        </div>
+      )}
     </div>
   );
 }

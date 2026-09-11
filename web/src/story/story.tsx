@@ -6,6 +6,8 @@ import { ChatTranscript } from '../components/ticket/ChatTranscript';
 import type { AttemptLogEvent } from '../types';
 import { EpicPage } from '../components/EpicPage';
 import { StatsPage } from '../components/StatsPage';
+import { ConversationsPage } from '../components/ConversationLauncher';
+import { config as storyConfig, workspaces as storyWorkspaces } from './fixtures';
 import { Board } from '../components/Board';
 import { Verification } from '../components/ticket/Verification';
 import { LifecycleTimeline } from '../components/ticket/LifecycleTimeline';
@@ -98,6 +100,18 @@ function Story() {
     return (
       <div style={{ minHeight: '100vh', background: 'var(--hm-canvas)', padding: 24, maxWidth: 1100, margin: '0 auto' }}>
         <StatsPage workspaceId={1} />
+      </div>
+    );
+  }
+  if (which === 'conversations') {
+    return (
+      <div style={{ height: '100vh', background: 'var(--hm-canvas)' }}>
+        <ConversationsPage
+          config={storyConfig as any}
+          workspace={storyWorkspaces[0] as any}
+          conversationId={1}
+          onConversationChange={() => {}}
+        />
       </div>
     );
   }
