@@ -65,6 +65,19 @@ Remove a previously set password (run ungated again):
 harmonic start --password ''
 ```
 
+## Staying up to date
+
+A global install keeps itself current. Harmonic checks npm once an hour
+(and once at startup); when a newer release is out, a banner appears in the
+app. The next time your fleet is idle it installs the new version, swaps to
+it, and relaunches, so nothing is interrupted mid-flight. Dismiss the
+banner to hide a version you're not ready for; the next release brings it
+back.
+
+Running through `npx` fetches the latest published version every time, so
+there's nothing to update. From a source checkout Harmonic doesn't
+self-update; pull and rebuild instead.
+
 ## See also
 
 - [Configuration reference](/harmonic/run/configuration/): the

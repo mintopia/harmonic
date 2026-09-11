@@ -5373,7 +5373,8 @@
                 "run.started",
                 "task.escalated",
                 "task.done",
-                "queue.idle"
+                "queue.idle",
+                "update.failed"
               ]
             },
             "example": [
@@ -10906,7 +10907,8 @@
                 "run.started",
                 "task.escalated",
                 "task.done",
-                "queue.idle"
+                "queue.idle",
+                "update.failed"
               ]
             },
             "example": [
@@ -21771,6 +21773,16 @@
                         }
                       ]
                     },
+                    "dismissedVersion": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "idle": {
                       "type": "object",
                       "properties": {
@@ -21797,6 +21809,7 @@
                   "required": [
                     "availableVersion",
                     "armedVersion",
+                    "dismissedVersion",
                     "idle"
                   ],
                   "additionalProperties": false,
@@ -21850,6 +21863,16 @@
                         }
                       ]
                     },
+                    "dismissedVersion": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "idle": {
                       "type": "object",
                       "properties": {
@@ -21876,6 +21899,7 @@
                   "required": [
                     "availableVersion",
                     "armedVersion",
+                    "dismissedVersion",
                     "idle"
                   ],
                   "additionalProperties": false,
@@ -21937,6 +21961,16 @@
                         }
                       ]
                     },
+                    "dismissedVersion": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "idle": {
                       "type": "object",
                       "properties": {
@@ -21963,10 +21997,101 @@
                   "required": [
                     "availableVersion",
                     "armedVersion",
+                    "dismissedVersion",
                     "idle"
                   ],
                   "additionalProperties": false,
                   "description": "The unarmed update state and current drain-to-idle blockers."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/update/dismiss": {
+      "post": {
+        "tags": [
+          "Update"
+        ],
+        "description": "Dismiss the currently offered update until a newer version is published. Operator only.",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The dismissed update and current drain-to-idle blockers.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "availableVersion": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "armedVersion": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "dismissedVersion": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "idle": {
+                      "type": "object",
+                      "properties": {
+                        "runningAttempts": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "mergingOrIntegrating": {
+                          "type": "boolean"
+                        },
+                        "conversationMidTurn": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "runningAttempts",
+                        "mergingOrIntegrating",
+                        "conversationMidTurn"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "availableVersion",
+                    "armedVersion",
+                    "dismissedVersion",
+                    "idle"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The dismissed update and current drain-to-idle blockers."
                 }
               }
             }
@@ -24580,7 +24705,8 @@
                         "run.started",
                         "task.escalated",
                         "task.done",
-                        "queue.idle"
+                        "queue.idle",
+                        "update.failed"
                       ]
                     }
                   }
@@ -24785,7 +24911,8 @@
                         "run.started",
                         "task.escalated",
                         "task.done",
-                        "queue.idle"
+                        "queue.idle",
+                        "update.failed"
                       ]
                     }
                   }
