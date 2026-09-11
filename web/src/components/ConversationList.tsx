@@ -115,7 +115,7 @@ type ConversationListProps = {
   onDelete: (id: number) => void;
 } & (
   | { fullPage: true }
-  | { fullPage?: false; expanded: boolean; onToggleExpand: () => void; onClose: () => void }
+  | { fullPage?: false; onExpand: () => void; onClose: () => void }
 );
 
 export function ConversationList(props: ConversationListProps) {
@@ -149,11 +149,11 @@ export function ConversationList(props: ConversationListProps) {
         {!props.fullPage && (
           <>
             <button
-              aria-label={props.expanded ? 'Collapse to panel' : 'Expand to full view'}
+              aria-label="Expand to full view"
               className={`${touchTarget} ${btnQuiet}`}
-              onClick={props.onToggleExpand}
+              onClick={props.onExpand}
             >
-              <Icon name={props.expanded ? 'collapse' : 'expand'} />
+              <Icon name="expand" />
             </button>
             <button aria-label="Close conversation panel" className={`${touchTarget} ${btnQuiet}`} onClick={props.onClose}>
               <Icon name="close" />

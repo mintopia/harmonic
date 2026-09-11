@@ -11,7 +11,7 @@ const handlers = {
   onSelect: () => {},
   onNew: () => {},
   onDelete: () => {},
-  onToggleExpand: () => {},
+  onExpand: () => {},
   onClose: () => {},
 };
 
@@ -43,7 +43,7 @@ describe('conversation vocabulary UI (#546)', () => {
     };
 
     const html = renderToStaticMarkup(
-      createElement(ConversationList, { conversations: [conversation], attention: NO_ATTENTION, expanded: false, ...handlers }),
+      createElement(ConversationList, { conversations: [conversation], attention: NO_ATTENTION, ...handlers }),
     );
 
     expect(html).toContain('OpenCode');
@@ -52,7 +52,7 @@ describe('conversation vocabulary UI (#546)', () => {
 
   it('uses conversation language in the empty state', () => {
     const html = renderToStaticMarkup(
-      createElement(ConversationList, { conversations: [], attention: NO_ATTENTION, expanded: false, ...handlers }),
+      createElement(ConversationList, { conversations: [], attention: NO_ATTENTION, ...handlers }),
     );
 
     expect(html).toContain('Start a conversation to explore a repo or drive changes turn by turn, live.');

@@ -8,10 +8,12 @@
 
      Paper keeps everything of Deck's that was workflow truth and replaces the
      visual world and the epic IA:
-       · World: cool matte "Paper" — a low-chroma paper canvas, a teal action
-         accent (not cobalt), a warm-neutral dark. Serious and restrained, never
-         a metaphor or costume: no paper texture, no skeuomorphism. "Paper" names
-         a quiet matte register, not a picture.
+       · World: graphite "Paper" — a neutral graphite dark ground and a warm-
+         neutral paper light, with a higher-chroma accent/state palette that pops
+         against the restrained grounds (amended 2026-09-11; see the note below).
+         A teal action accent (not cobalt). Serious and restrained, never a
+         metaphor or costume: no paper texture, no skeuomorphism. "Paper" names a
+         quiet register, not a picture — chroma lives in the accents, not the grounds.
        · Two voices, deliberately: teal is the interface's action/tooling voice;
          indigo is reserved for the one state that needs the operator —
          escalated / "needs you." Deck's "awaiting-review = the accent" is
@@ -29,77 +31,90 @@
      file are the design reference.
      Accessibility decisions from the 2026-08-21 audit are recorded inline in § 2.
      The running-amber sub-AA exception (formerly ADR-0011) was retired by issue
-     #458: the amber now clears AA in both themes like every other state colour. -->
+     #458: the amber now clears AA in both themes like every other state colour.
+
+     2026-09-11 — Higher-chroma graphite pass (Jess): the original Paper read too
+     matte and flat. The neutral grounds moved from near-neutral grey to a
+     neutral *graphite* (dark) / warm paper (light) — Jess prefers graphite over a
+     blue slate — and every accent/state hue was pushed up in chroma so the palette
+     reads vibrant while the grounds stay quiet. Teal was calmed from a neon peak
+     to a refined #2ED3C4 (dark). The full token set moved; web/src/index.css is
+     the authoritative source and the colors: block above mirrors it. AA still
+     holds in both themes (verified by tests/contrast.test.ts, 4.5:1 text floor).
+     Same pass, conversation surface: the header meta line moved into the composer
+     footer as a click-to-expand context meter (% + mini bar), and the redundant
+     header "Context" button and the live tool "in_progress" status label were
+     dropped (state is carried by colour). -->
 
 ---
 name: Harmonic
-description: Operator console for running and reviewing autonomous coding agents. Matte "Paper" world, teal action voice, indigo review voice, workflow-shaped surfaces, frontier-DAG epics
+description: Operator console for running and reviewing autonomous coding agents. Graphite higher-chroma "Paper" world, teal action voice, indigo review voice, workflow-shaped surfaces, frontier-DAG epics
 designSystem: Paper
 colors:
-  accent: "#0D7271"
-  accent-dark: "#33BDB4"
-  accent-hover: "#0B6360"
-  accent-hover-dark: "#4CD0C7"
-  accent-tint-light: "#E0F0EF"
-  accent-tint-dark: "#123330"
+  accent: "#077067"
+  accent-dark: "#2ED3C4"
+  accent-hover: "#0A6F66"
+  accent-hover-dark: "#5FE6DA"
+  accent-tint-light: "#B6ECE4"
+  accent-tint-dark: "#0F3E38"
   on-accent-light: "#FFFFFF"
-  on-accent-dark: "#0E1413"
-  canvas-light: "#F1F2EF"
-  canvas-dark: "#15161A"
+  on-accent-dark: "#04120F"
+  canvas-light: "#EDEEEB"
+  canvas-dark: "#141416"
   shell-light: "#FFFFFF"
-  shell-dark: "#1B1D22"
+  shell-dark: "#191A1C"
   surface-light: "#FFFFFF"
-  surface-dark: "#202227"
-  raised-light: "#EEEFEB"
-  raised-dark: "#282B31"
-  sunken-light: "#FAFAF8"
-  sunken-dark: "#191B1F"
+  surface-dark: "#1E1F22"
+  raised-light: "#EDEDEA"
+  raised-dark: "#292A2E"
+  sunken-light: "#F5F5F3"
+  sunken-dark: "#141416"
   field-light: "#FFFFFF"
-  field-dark: "#1B1D22"
-  hairline-light: "#E6E7E2"
-  hairline-dark: "#2C2F36"
-  edge-light: "#D5D8D1"
-  edge-dark: "#3B3F47"
-  edge-strong-light: "#D5D8D1"
-  edge-strong-dark: "#454B54"
+  field-dark: "#191A1C"
+  hairline-light: "#E0E0DB"
+  hairline-dark: "#2F3035"
+  edge-light: "#D0D0CA"
+  edge-dark: "#414248"
+  edge-strong-light: "#C3C3BC"
+  edge-strong-dark: "#4E4F55"
   ink-light: "#1B1E24"
-  ink-dark: "#E8E9EC"
+  ink-dark: "#E9E9EC"
   muted-light: "#656B73"
-  muted-dark: "#A3A8B0"
+  muted-dark: "#A5A6AB"
   faint-light: "#61676F"
-  faint-dark: "#979BA2"
-  ready-text-light: "#0D7271"
-  ready-tint-light: "#DDEFEE"
-  ready-text-dark: "#33BDB4"
-  ready-tint-dark: "#123330"
-  await-text-light: "#4B4FA6"
-  await-tint-light: "#ECEDF7"
-  await-text-dark: "#9096E6"
-  await-tint-dark: "#25264C"
+  faint-dark: "#949599"
+  ready-text-light: "#077067"
+  ready-tint-light: "#B6ECE4"
+  ready-text-dark: "#2ED3C4"
+  ready-tint-dark: "#0F3E38"
+  await-text-light: "#4740C6"
+  await-tint-light: "#D6D2FC"
+  await-text-dark: "#BD9DFF"
+  await-tint-dark: "#372F97"
   on-await-light: "#FFFFFF"
-  on-await-dark: "#15161A"
-  running-text-light: "#C0722A"
-  running-tint-light: "#F6EBDC"
-  running-text-dark: "#DE9A45"
-  running-tint-dark: "#3A2C16"
-  done-text-light: "#127A39"
-  done-tint-light: "#E2F2E6"
-  done-text-dark: "#3ECF7E"
-  done-tint-dark: "#123420"
+  on-await-dark: "#0B0B18"
+  running-text-light: "#A74D08"
+  running-tint-light: "#FDEACC"
+  running-text-dark: "#FFB524"
+  running-tint-dark: "#51360A"
+  done-text-light: "#0D7734"
+  done-tint-light: "#C2F2CD"
+  done-text-dark: "#2BF58E"
+  done-tint-dark: "#0D5531"
   on-done-light: "#FFFFFF"
-  on-done-dark: "#0E1413"
-  failed-text-light: "#AF3C52"
-  failed-tint-light: "#F9E4E8"
-  failed-text-dark: "#F0768A"
-  failed-tint-dark: "#3B1D24"
+  on-done-dark: "#04120C"
+  failed-text-light: "#B3253F"
+  failed-tint-light: "#FFCCD6"
+  failed-text-dark: "#FF5570"
+  failed-tint-dark: "#4D121F"
   blocked-slate-light: "#6A7079"
   blocked-tint-light: "#ECEDEA"
   blocked-slate-dark: "#8A9099"
-  blocked-tint-dark: "#282B31"
-  tool-text-light: "#0D7271"
-  tool-tint-light: "#DDEFEE"
-  tool-text-dark: "#33BDB4"
-  tool-tint-dark: "#123330"
+  blocked-tint-dark: "#292A2E"
+  tool-text-light: "#077067"
+  tool-tint-light: "#B6ECE4"
+  tool-text-dark: "#2ED3C4"
+  tool-tint-dark: "#0F3E38"
   btn-go-fill-light: "#4B4FA6"
   btn-go-fill-dark: "#5B60C2"
 typography:

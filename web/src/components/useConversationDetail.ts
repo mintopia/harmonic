@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { api } from '../api';
 import { subscribe } from '../ws';
 import type { Conversation, ConversationEvent } from '../types';
@@ -53,6 +53,12 @@ export function useConversationDetail(
   const [events, setEvents] = useState<ConversationEvent[]>([]);
   const [pending, setPending] = useState<PendingPermissions>({});
   const [pendingElicitations, setPendingElicitations] = useState<PendingElicitations>({});
+  // Steering messages we render immediately, before the server has persisted and
+  // echoed them back as real `user_turn` events. Each carries a negative id so it
+  // never collides with a real one; the earliest is dropped as each real
+  // `user_turn` arrives (turns are strictly sequential, so FIFO stays aligned).
+  const [optimisticTurns, setOptimisticTurns] = useState<ConversationEvent[]>([]);
+  const optimisticSeq = useRef(-1);
 
   useLiveEffect((live) => {
     if (focusedId === null) {
@@ -64,6 +70,7 @@ export function useConversationDetail(
     const id = focusedId;
     setConversation(null);
     setEvents([]);
+    setOptimisticTurns([]);
     setPending(
       pendingPermission?.conversationId === id
         ? { [pendingPermission.reqId]: pendingPermission }
@@ -88,6 +95,9 @@ export function useConversationDetail(
         setEvents((current) =>
           current.some((e) => e.id === msg.event.id) ? current : [...current, msg.event],
         );
+        if (msg.event.type === 'user_turn') {
+          setOptimisticTurns((current) => current.slice(1));
+        }
         setPending((current) => resolvePendingPermissionFromEvent(current, msg.event));
         setPendingElicitations((current) => resolvePendingElicitationFromEvent(current, msg.event));
         const payload = msg.event.payload;
@@ -117,6 +127,7 @@ export function useConversationDetail(
         if (msg.conversation.state === 'ended') {
           setPending({});
           setPendingElicitations({});
+          setOptimisticTurns([]);
           clearPendingPermission();
         }
       }
@@ -134,6 +145,7 @@ export function useConversationDetail(
   ]);
 
   const send = async (fields: { harness: string; model: string; permissionMode: Conversation['permissionMode'] }, text: string) => {
+    const steering = focusedId !== null;
     let id = focusedId;
     if (id === null) {
       const created = await api.createConversation({
@@ -144,6 +156,24 @@ export function useConversationDetail(
       setConversation(created);
       upsertConversationInList(created);
       openConversation(id);
+    }
+    // Show the message in the transcript right away when steering the open
+    // conversation. A brand-new conversation switches focus and reloads events,
+    // which would discard an optimistic turn, so we skip it there.
+    if (steering) {
+      const optimisticId = optimisticSeq.current;
+      optimisticSeq.current -= 1;
+      setOptimisticTurns((current) => [
+        ...current,
+        {
+          id: optimisticId,
+          conversationId: id,
+          seq: Number.MAX_SAFE_INTEGER,
+          ts: Date.now(),
+          type: 'user_turn',
+          payload: { text, pending: true },
+        },
+      ]);
     }
     const { queued } = await api.sendTurn(id, text);
     return { queued };
@@ -213,9 +243,14 @@ export function useConversationDetail(
     }
   };
 
+  const allEvents = useMemo(
+    () => (optimisticTurns.length === 0 ? events : [...events, ...optimisticTurns]),
+    [events, optimisticTurns],
+  );
+
   return {
     conversation,
-    events,
+    events: allEvents,
     pending,
     pendingElicitations,
     actions: { send, end, rename, setPermissionMode, deleteConversation, answerPermission, answerElicitation },

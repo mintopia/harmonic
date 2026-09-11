@@ -79,7 +79,7 @@ describe('EventStream tool cards (#549)', () => {
     })]);
 
     expect(html).toContain('<details');
-    expect(html).toContain('Raw input &amp; output');
+    expect(html).toContain('Edit src/app.ts');
     expect(html).toContain('Updated file');
   });
 

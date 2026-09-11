@@ -462,6 +462,11 @@ export function App() {
     (conversationId: number | null) => navigate({ ...route, conversation: conversationId }),
     [navigate, route],
   );
+  const expandConversation = useCallback(
+    (conversationId: number | null) =>
+      navigate({ ...route, view: 'conversations', conversation: conversationId, task: null, epic: null, panel: NO_SELECTION }),
+    [navigate, route],
+  );
 
   const activeWorkspaceName =
     workspaces.find((w) => w.id === activeWorkspaceId)?.name ?? null;
@@ -726,7 +731,7 @@ export function App() {
             />
           ) : (
             <div className="flex h-full flex-col">
-              {!showWorkspaceEmptyState && view !== 'settings' && (
+              {!showWorkspaceEmptyState && view !== 'settings' && view !== 'conversations' && (
                 <CrumbBar
                   className="shrink-0"
                   crumbs={
@@ -884,6 +889,7 @@ export function App() {
                 pendingPermissionAlerts.find(({ permission }) => permission.conversationId === conversationToOpen)?.permission ?? null
               }
               onConversationOpened={handleConversationOpened}
+              onExpand={expandConversation}
             />
           )}
         </div>

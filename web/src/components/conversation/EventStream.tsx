@@ -2,9 +2,16 @@ import { useMemo, type ReactNode } from 'react';
 import { coalesceTail, isInterrupted, movingBaseView, type StreamEvent, type ToolCallView } from '../../event-stream-model';
 import { guardrailDimensionLabel } from '../../guardrail-trip-model';
 import { chip, labelType, toolChip } from '../../ui';
+import { Icon } from '../Icon';
 import { Markdown } from '../Markdown';
 import { DiffViewer } from '../DiffViewer';
 import { toolDiffFile } from '../../tool-diff';
+
+const READ_MEASURE = 'max-w-[68ch]';
+const OUTPUT_WELL = 'mt-1 max-h-56 overflow-auto rounded-md bg-surface px-3 py-2 font-data text-data text-muted';
+const TOOL_ROW = 'flex items-center gap-2 py-1';
+const TOOL_TARGET = 'min-w-0 flex-1 truncate font-data text-data';
+const DISCLOSURE = 'size-3 shrink-0 text-faint transition-transform duration-150 group-open:rotate-180';
 
 const TOOL_KIND_LABEL: Record<string, string> = {
   read: 'read',
@@ -25,7 +32,7 @@ function toolKindLabel(kind: string | undefined): string {
 function ToolStatus({ status }: { status: string | undefined }) {
   if (status === 'completed')
     return (
-      <span aria-label="completed" className="shrink-0 text-muted">
+      <span aria-label="completed" className="shrink-0 text-merged">
         ✓
       </span>
     );
@@ -36,7 +43,7 @@ function ToolStatus({ status }: { status: string | undefined }) {
       </span>
     );
   return (
-    <span aria-label="running" className="shrink-0 text-faint motion-safe:animate-pulse">
+    <span aria-label="running" className="shrink-0 text-running motion-safe:animate-pulse">
       •
     </span>
   );
@@ -57,28 +64,16 @@ function inputValue(input: string | null, keys: readonly string[]): string | nul
   return null;
 }
 
-function RawToolDetails({ tool }: { tool: ToolCallView }) {
-  if (!tool.input && !tool.output) return null;
-  return (
-    <details className="border-t border-hairline px-3 py-2">
-      <summary className="cursor-pointer text-small font-medium text-muted hover:text-ink">Raw input &amp; output</summary>
-      {tool.input && <pre className="mt-2 max-h-80 overflow-auto rounded-sm bg-field p-2 font-data text-data text-ink">{tool.input}</pre>}
-      {tool.output && <pre className="mt-2 max-h-80 overflow-auto rounded-sm bg-field p-2 font-data text-data text-ink">{tool.output}</pre>}
-    </details>
-  );
-}
-
 function ExecuteCard({ tool }: { tool: ToolCallView }) {
   const command = inputValue(tool.input, ['command', 'cmd']) ?? tool.title ?? 'Command';
   return (
-    <div className="overflow-hidden rounded-md border border-hairline bg-sunken">
-      <div className="flex items-center gap-2 border-b border-hairline bg-raised px-3 py-1.5">
+    <div>
+      <div className={TOOL_ROW}>
         <span className={`${toolChip} shrink-0`}>run</span>
-        <span className="min-w-0 flex-1 truncate font-data text-data text-ink" title={command}>{command}</span>
+        <span className={`${TOOL_TARGET} text-ink`} title={command}>{command}</span>
         <ToolStatus status={tool.status} />
       </div>
-      <pre className="overflow-auto px-3 py-2 font-data text-data text-ink"><span className="select-none text-faint">$ </span>{command}</pre>
-      {tool.output && <pre className="max-h-80 overflow-auto border-t border-hairline px-3 py-2 font-data text-data text-muted">{tool.output}</pre>}
+      {tool.output && <pre className={OUTPUT_WELL}>{tool.output}</pre>}
     </div>
   );
 }
@@ -88,16 +83,23 @@ function ReadCard({ tool }: { tool: ToolCallView }) {
   const start = inputValue(tool.input, ['lineStart', 'startLine', 'start']);
   const end = inputValue(tool.input, ['lineEnd', 'endLine', 'end']);
   const range = start && end ? `lines ${start}–${end}` : start ? `line ${start}` : null;
+  const head = (
+    <>
+      <span className={`${toolChip} shrink-0`}>read</span>
+      <span className={`${TOOL_TARGET} text-muted`} title={path}>{path}</span>
+      {range && <span className="shrink-0 font-data text-[11px] text-faint">{range}</span>}
+      <ToolStatus status={tool.status} />
+    </>
+  );
+  if (!tool.output) return <div className={TOOL_ROW}>{head}</div>;
   return (
-    <div className="overflow-hidden rounded-md border border-hairline bg-surface">
-      <div className="flex items-center gap-2 border-b border-hairline bg-sunken px-3 py-1.5">
-        <span className={`${toolChip} shrink-0`}>read</span>
-        <span className="min-w-0 flex-1 truncate font-data text-data text-ink" title={path}>{path}</span>
-        {range && <span className="shrink-0 font-data text-small text-faint">{range}</span>}
-        <ToolStatus status={tool.status} />
-      </div>
-      {tool.output && <pre className="max-h-80 overflow-auto px-3 py-2 font-data text-data text-muted">{tool.output}</pre>}
-    </div>
+    <details className="group">
+      <summary className={`${TOOL_ROW} cursor-pointer list-none`}>
+        {head}
+        <Icon name="chevron-down" className={DISCLOSURE} />
+      </summary>
+      <pre className={OUTPUT_WELL}>{tool.output}</pre>
+    </details>
   );
 }
 
@@ -108,8 +110,8 @@ function EditCard({ tool }: { tool: ToolCallView }) {
   const additions = files.reduce((sum, file) => sum + file.additions, 0);
   const deletions = files.reduce((sum, file) => sum + file.deletions, 0);
   return (
-    <div className="overflow-hidden rounded-md border border-hairline bg-surface">
-      <div className="flex items-center gap-2 border-b border-hairline bg-sunken px-3 py-2">
+    <div className="overflow-hidden rounded-md bg-surface shadow-card">
+      <div className="flex items-center gap-2 border-b border-hairline bg-sunken px-3 py-1.5">
         <span className={`${toolChip} shrink-0`}>edit</span>
         <span className="min-w-0 flex-1 truncate font-data text-data text-ink" title={single?.path ?? tool.title}>
           {single ? single.path : `${files.length} files`}
@@ -127,16 +129,23 @@ function EditCard({ tool }: { tool: ToolCallView }) {
 
 function GenericToolCard({ tool }: { tool: ToolCallView }) {
   const target = tool.title || 'Tool call';
+  const head = (
+    <>
+      <span className={`${toolChip} shrink-0`}>{toolKindLabel(tool.toolKind)}</span>
+      <span className={`${TOOL_TARGET} text-muted`} title={target}>{target}</span>
+      {tool.subagent && <span className={`${chip} shrink-0 bg-raised text-muted`}>subagent</span>}
+      <ToolStatus status={tool.status} />
+    </>
+  );
+  if (!tool.input && !tool.output) return <div className={TOOL_ROW}>{head}</div>;
   return (
-    <details className="group rounded-md border border-hairline bg-sunken">
-      <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2">
-        <span aria-hidden className="grid size-5 shrink-0 place-items-center rounded-sm bg-tool-tint font-data text-small text-tool">›</span>
-        <span className={`${toolChip} shrink-0`}>{toolKindLabel(tool.toolKind)}</span>
-        <span className="min-w-0 flex-1 truncate font-data text-data text-ink" title={target}>{target}</span>
-        {tool.subagent && <span className={`${chip} shrink-0 bg-raised text-muted`}>subagent</span>}
-        <ToolStatus status={tool.status} />
+    <details className="group">
+      <summary className={`${TOOL_ROW} cursor-pointer list-none`}>
+        {head}
+        <Icon name="chevron-down" className={DISCLOSURE} />
       </summary>
-      <RawToolDetails tool={tool} />
+      {tool.input && <pre className={OUTPUT_WELL}>{tool.input}</pre>}
+      {tool.output && <pre className={OUTPUT_WELL}>{tool.output}</pre>}
     </details>
   );
 }
@@ -153,6 +162,12 @@ function payloadValue(payload: unknown, key: string): unknown {
   return Object.entries(payload).find(([name]) => name === key)?.[1];
 }
 
+function planGlyph(status: unknown): { mark: string; tone: string; text: string } {
+  if (status === 'completed') return { mark: '☑', tone: 'text-merged', text: 'text-muted' };
+  if (status === 'in_progress') return { mark: '◐', tone: 'text-running', text: 'text-ink' };
+  return { mark: '☐', tone: 'text-faint', text: 'text-ink' };
+}
+
 function renderEventLine(event: StreamEvent): ReactNode {
   const sessionUpdate = payloadValue(event.payload, 'sessionUpdate');
   const entries = payloadValue(event.payload, 'entries');
@@ -166,19 +181,20 @@ function renderEventLine(event: StreamEvent): ReactNode {
   if (event.type === 'session_update') {
     if (sessionUpdate === 'plan') {
       return (
-        <ul className="space-y-0.5">
-          {(Array.isArray(entries) ? entries : []).map((entry, i) => {
-            const status = payloadValue(entry, 'status');
-            return (
-              <li key={i} className="flex items-start gap-2 text-ink">
-                <span className="shrink-0 text-muted">
-                  {status === 'completed' ? '☑' : status === 'in_progress' ? '◐' : '☐'}
-                </span>
-                <span>{String(payloadValue(entry, 'content') ?? '')}</span>
-              </li>
-            );
-          })}
-        </ul>
+        <div className="rounded-md bg-surface px-3 py-2.5 shadow-card">
+          <div className={`${labelType} mb-2 text-[10px] tracking-[0.09em] text-faint`}>Plan</div>
+          <ul className="space-y-1">
+            {(Array.isArray(entries) ? entries : []).map((entry, i) => {
+              const glyph = planGlyph(payloadValue(entry, 'status'));
+              return (
+                <li key={i} className="flex items-start gap-2">
+                  <span aria-hidden className={`shrink-0 ${glyph.tone}`}>{glyph.mark}</span>
+                  <span className={glyph.text}>{String(payloadValue(entry, 'content') ?? '')}</span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
       );
     }
     return null;
@@ -243,13 +259,16 @@ export function EventStream<E extends StreamEvent>({ events }: { events: E[] }) 
     () =>
       items.map((item) => {
         if (item.kind === 'text') {
-          return (
-            <Markdown
-              key={item.key}
-              source={item.text}
-              className={item.variant === 'thought' ? 'italic text-muted' : 'text-ink'}
-            />
-          );
+          if (item.variant === 'thought') {
+            return (
+              <Markdown
+                key={item.key}
+                source={item.text}
+                className={`${READ_MEASURE} border-l border-edge pl-3 text-small italic text-muted`}
+              />
+            );
+          }
+          return <Markdown key={item.key} source={item.text} className={`${READ_MEASURE} text-ink`} />;
         }
         if (item.kind === 'tool') return <ToolLine key={item.key} tool={item.tool} />;
         const line = renderEventLine(item.event);
@@ -260,7 +279,7 @@ export function EventStream<E extends StreamEvent>({ events }: { events: E[] }) 
   return (
     <div className="space-y-2">
       {hidden > 0 && (
-        <p className="text-muted">
+        <p className="text-small text-faint">
           <span className="tabular-nums">{hidden.toLocaleString()}</span> earlier{' '}
           {hidden === 1 ? 'event' : 'events'} hidden
         </p>

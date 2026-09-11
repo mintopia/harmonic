@@ -32,7 +32,7 @@ import { PathTail } from './PathTail';
 import { PermissionRules } from './PermissionRules';
 import { providerLabel } from './TaskIdentity';
 import { Icon } from './Icon';
-import { Composer } from './conversation/Composer';
+import { Composer, ContextMeter } from './conversation/Composer';
 import { StreamAnnouncer, Transcript } from './conversation/Transcript';
 import { useConversationDetail } from './useConversationDetail';
 import { toastError } from '../toast';
@@ -118,7 +118,7 @@ export function ConversationContextDrawer({
   const ended = conversation.state === 'ended';
 
   return (
-    <aside aria-label="Conversation context" className="flex w-80 shrink-0 flex-col overflow-hidden border-l border-hairline">
+    <aside aria-label="Conversation context" className="flex w-72 shrink-0 flex-col overflow-hidden border-l border-edge bg-shell">
       <div className="flex items-center justify-between border-b border-hairline px-4 py-3">
         <h2 className={panelTitle}>Context</h2>
         <button type="button" className={btnQuiet} onClick={onClose} aria-label="Hide conversation context">
@@ -346,22 +346,9 @@ type ConversationHeaderProps = {
   onEnd: () => void;
   onDelete: () => void;
 } & (
-  | { fullPage: true; onToggleContext: () => void; contextOpen: boolean }
-  | { fullPage?: false; expanded: boolean; onToggleExpand: () => void; onClose: () => void }
+  | { fullPage: true }
+  | { fullPage?: false; onExpand: () => void; onClose: () => void }
 );
-
-function headerTelemetry(conversation: Conversation): string | null {
-  const totals = conversation.usage?.totals;
-  const io = totals ? totals.inputTokens + totals.outputTokens : null;
-  const cost = formatCost(conversation.cost);
-  const context = formatContextUsage(computeContextUsage(conversation));
-  const parts = [
-    io != null ? `${io.toLocaleString()} I/O` : null,
-    cost,
-    context.value ? `${context.value} context` : null,
-  ].filter((part): part is string => Boolean(part));
-  return parts.length ? parts.join(' · ') : null;
-}
 
 function ConversationHeader(props: ConversationHeaderProps) {
   const { conversation, composing, onBack, onRename, onEnd, onDelete } = props;
@@ -390,7 +377,7 @@ function ConversationHeader(props: ConversationHeaderProps) {
   const title = composing ? 'New conversation' : conversationDisplayTitle(conversation?.title ?? null);
 
   return (
-    <div className="border-b border-hairline px-4 py-3">
+    <div className="border-b border-edge bg-surface px-4 py-3">
       <div className="flex items-center gap-1.5">
         <button aria-label="Back to conversations" className={`${touchTarget} ${btnQuiet}`} onClick={onBack}>
           <Icon name="arrow-left" />
@@ -433,26 +420,14 @@ function ConversationHeader(props: ConversationHeaderProps) {
             )}
           </>
         )}
-        {props.fullPage
-          ? conversation && (
-              <button
-                aria-label="Toggle conversation context"
-                aria-expanded={props.contextOpen}
-                className={`${touchTargetInline} ${btnQuiet} ${props.contextOpen ? 'bg-raised text-ink' : ''}`}
-                onClick={props.onToggleContext}
-              >
-                <Icon name="table" className="mr-1.5 size-3.5" />
-                Context
-              </button>
-            )
-          : (
+        {props.fullPage ? null : (
             <>
               <button
-                aria-label={props.expanded ? 'Collapse to panel' : 'Expand to full view'}
+                aria-label="Expand to full view"
                 className={`${touchTarget} ${btnQuiet}`}
-                onClick={props.onToggleExpand}
+                onClick={props.onExpand}
               >
-                <Icon name={props.expanded ? 'collapse' : 'expand'} />
+                <Icon name="expand" />
               </button>
               {conversation?.state === 'active' && (
                 <button className={`${touchTargetInline} ${btnQuiet}`} onClick={onEnd}>
@@ -489,30 +464,6 @@ function ConversationHeader(props: ConversationHeaderProps) {
           This permanently deletes the conversation and its history. This cannot be undone.
         </ConfirmDialog>
       )}
-      {conversation && (
-        <div className="mt-1 flex items-center gap-1.5 text-small text-muted">
-          <span
-            className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-              conversation.state === 'active' ? 'bg-muted' : 'bg-faint'
-            }`}
-            title={conversation.state}
-          />
-          <span className="sr-only">{conversation.state}</span>
-          <span className="shrink-0">
-            {providerLabel(conversation.harness)} · {conversation.model}
-          </span>
-          {conversation.permissionMode === 'automatic' && <span className={toolChip}>Automatic</span>}
-          <span aria-hidden="true" className="shrink-0 text-faint">
-            ·
-          </span>
-          <PathTail path={conversation.workingDir} className="min-w-0 flex-1 truncate font-data" />
-          {headerTelemetry(conversation) && (
-            <span className="ml-auto shrink-0 whitespace-nowrap pl-3 font-data text-small tabular-nums text-faint">
-              {headerTelemetry(conversation)}
-            </span>
-          )}
-        </div>
-      )}
     </div>
   );
 }
@@ -526,6 +477,7 @@ export function ConversationLauncher({
   openConversationId,
   pendingPermission,
   onConversationOpened,
+  onExpand,
 }: {
   config: AppConfig | null;
   workspace: Workspace | null;
@@ -533,27 +485,10 @@ export function ConversationLauncher({
   openConversationId: number | null;
   pendingPermission: PendingPermission | null;
   onConversationOpened: () => void;
+  onExpand: (conversationId: number | null) => void;
 }) {
   const workspaceId = workspace?.id ?? null;
   const [open, setOpen] = useState(false);
-  const [expanded, setExpanded] = useState(false);
-  // Re-adding the same class later still restarts the CSS animation (it only
-  // replays on a genuine "gained the class" transition), so the flourish never
-  // needs a remount, which would otherwise blow away in-progress Composer text.
-  const [flourish, setFlourish] = useState(false);
-  const flourishTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(
-    () => () => {
-      if (flourishTimer.current) clearTimeout(flourishTimer.current);
-    },
-    [],
-  );
-  const toggleExpanded = () => {
-    setExpanded((e) => !e);
-    setFlourish(true);
-    if (flourishTimer.current) clearTimeout(flourishTimer.current);
-    flourishTimer.current = setTimeout(() => setFlourish(false), 150);
-  };
 
   const [view, setView] = useState<LauncherView>(() => {
     const persisted = loadConversationId(localStorage);
@@ -684,25 +619,18 @@ export function ConversationLauncher({
     <div
       role="dialog"
       aria-label="Conversation"
-      data-dock={expanded ? 'expanded' : 'docked'}
+      data-dock="docked"
       onKeyDown={(e) => e.key === 'Escape' && setOpen(false)}
-      className={`z-40 flex flex-col rounded-lg bg-surface shadow-bar ${
-        flourish ? 'motion-safe:animate-[dialog-in_150ms_var(--ease-out-quint)]' : ''
-      } ${
-        expanded
-          ? 'fixed inset-6'
-          : 'absolute inset-y-4 right-4 w-[26rem] max-w-[calc(100%-2rem)]'
-      }`}
+      className="absolute inset-y-4 right-4 z-40 flex w-[26rem] max-w-[calc(100%-2rem)] flex-col rounded-lg bg-surface shadow-bar"
     >
       {view.kind === 'list' ? (
         <ConversationList
           conversations={conversations}
           attention={attention}
-          expanded={expanded}
           onSelect={openConversation}
           onNew={openCompose}
           onDelete={actions.deleteConversation}
-          onToggleExpand={toggleExpanded}
+          onExpand={() => onExpand(null)}
           onClose={() => setOpen(false)}
         />
       ) : (
@@ -710,9 +638,8 @@ export function ConversationLauncher({
           <ConversationHeader
             conversation={conversation}
             composing={view.conversationId === null}
-            expanded={expanded}
             onBack={openList}
-            onToggleExpand={toggleExpanded}
+            onExpand={() => onExpand(focusedId)}
             onRename={actions.rename}
             onEnd={actions.end}
             onDelete={() => conversation && actions.deleteConversation(conversation.id)}
@@ -751,7 +678,7 @@ export function ConversationLauncher({
                   workspace={workspace}
                   conversation={conversation}
                   events={events}
-                  expanded={expanded}
+                  expanded={false}
                   onSend={actions.send}
                 />
               </>
@@ -846,8 +773,8 @@ export function ConversationsPage({
   };
 
   return (
-    <div className="flex h-full min-h-0 overflow-hidden bg-surface">
-      <aside aria-label="Conversations" className="flex w-80 shrink-0 border-r border-hairline">
+    <div className="flex h-full min-h-0 overflow-hidden bg-canvas">
+      <aside aria-label="Conversations" className="flex w-64 shrink-0 border-r border-edge bg-shell">
         <ConversationList
           conversations={conversations}
           attention={attention}
@@ -869,8 +796,6 @@ export function ConversationsPage({
               conversation={conversation}
               composing={view.conversationId === null}
               fullPage
-              contextOpen={contextOpen}
-              onToggleContext={() => setContextOpen((open) => !open)}
               onBack={openList}
               onRename={actions.rename}
               onEnd={actions.end}
@@ -892,9 +817,14 @@ export function ConversationsPage({
                 <ElicitationPrompt key={elicitation.reqId} pending={elicitation} onAnswer={actions.answerElicitation} />
               ))}
             {ended ? (
-              <p role="status" className="border-t border-hairline bg-raised px-4 py-2.5 text-muted">
-                This conversation has ended — read-only.
-              </p>
+              <div role="status" className="flex items-center gap-3 border-t border-edge bg-surface px-4 py-2.5 text-muted">
+                <span>This conversation has ended — read-only.</span>
+                {conversation && (
+                  <div className="ml-auto text-label normal-case tracking-normal text-faint">
+                    <ContextMeter conversation={conversation} onOpen={() => setContextOpen(true)} />
+                  </div>
+                )}
+              </div>
             ) : (
               config &&
               composerReady && (
@@ -907,6 +837,7 @@ export function ConversationsPage({
                     events={events}
                     expanded={true}
                     onSend={actions.send}
+                    onOpenContext={() => setContextOpen(true)}
                   />
                 </>
               )

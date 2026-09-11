@@ -4,11 +4,62 @@ import { isTurnRunning } from '../../conversation-steering-model';
 import { toastError } from '../../toast';
 import type { AppConfig, Conversation, ConversationEvent, Workspace } from '../../types';
 import { btnPrimary, btnQuietDestructive, field, labelType, selectField } from '../../ui';
+import { computeContextUsage, formatContextUsage, formatTokenBreakdown } from '../../conversation-telemetry-model';
+import { formatCost } from '../../cost';
 import { DiscoveryModelPicker } from '../DiscoveryModelPicker.js';
 import { Icon } from '../Icon';
 import { providerLabel } from '../TaskIdentity';
 
 const fieldLabel = `mb-1 block ${labelType} text-muted`;
+
+export function ContextMeter({ conversation, onOpen }: { conversation: Conversation; onOpen?: () => void }) {
+  const context = formatContextUsage(computeContextUsage(conversation));
+  const fraction =
+    conversation.contextWindow && conversation.contextTokens != null
+      ? Math.min(1, Math.max(0, conversation.contextTokens / conversation.contextWindow))
+      : null;
+  const pct = fraction != null ? Math.round(fraction * 100) : null;
+  const breakdown = formatTokenBreakdown(conversation.usage);
+  const tip = [
+    context.value ? `Context ${context.value}` : null,
+    context.note,
+    ...(breakdown ?? []).map((row) => `${row.label}: ${row.value}`),
+  ]
+    .filter(Boolean)
+    .join('\n');
+  const label = `Context ${pct != null ? `${pct}% used` : context.value || 'unknown'}`;
+  const inner = (
+    <>
+      {fraction != null && (
+        <span aria-hidden className="h-1 w-9 overflow-hidden rounded-full bg-raised">
+          <span
+            className={`block h-full rounded-full ${fraction > 0.85 ? 'bg-running-dot' : 'bg-accent'}`}
+            style={{ width: `${fraction * 100}%` }}
+          />
+        </span>
+      )}
+      <span className="font-data tabular-nums text-muted">{pct != null ? `${pct}%` : context.value || '—'}</span>
+    </>
+  );
+  if (onOpen) {
+    return (
+      <button
+        type="button"
+        onClick={onOpen}
+        title={tip}
+        aria-label={`${label}. Open context details`}
+        className="inline-flex items-center gap-1.5 rounded-sm transition-colors hover:text-ink [&>span:last-child]:hover:text-ink"
+      >
+        {inner}
+      </button>
+    );
+  }
+  return (
+    <span title={tip} aria-label={label} className="inline-flex items-center gap-1.5">
+      {inner}
+    </span>
+  );
+}
 
 export function Composer({
   config,
@@ -17,6 +68,7 @@ export function Composer({
   events,
   expanded,
   onSend,
+  onOpenContext,
 }: {
   config: AppConfig;
   workspace: Workspace | null;
@@ -27,6 +79,7 @@ export function Composer({
     fields: { harness: string; model: string; permissionMode: Conversation['permissionMode'] },
     text: string,
   ) => Promise<{ queued: boolean }>;
+  onOpenContext?: () => void;
 }) {
   const [harness, setHarness] = useState(workspace?.chatHarness ?? config.chat.harness);
   const [model, setModel] = useState(workspace?.chatModel ?? config.chat.model);
@@ -94,7 +147,7 @@ export function Composer({
   };
 
   return (
-    <div className="border-t border-hairline p-3">
+    <div className="border-t border-edge bg-surface p-3">
       {!locked && (
         <div className={`mb-2 grid gap-2 ${expanded ? 'sm:grid-cols-2' : ''}`}>
           <div>
@@ -172,10 +225,26 @@ export function Composer({
         </button>
       </div>
       {!ended && (
-        <div className="mt-1.5 flex flex-wrap gap-x-3.5 gap-y-1 text-label text-faint">
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-3.5 gap-y-1 text-label text-faint">
           <span><b className="font-semibold text-muted">Enter</b> {running ? 'queues' : 'to send'}</span>
           <span><b className="font-semibold text-muted">Shift ↵</b> newline</span>
           <span><b className="font-semibold text-muted">/</b> commands</span>
+          {conversation && (
+            <div className="ml-auto flex items-center gap-2.5 normal-case tracking-normal">
+              <span className="inline-flex items-center gap-1.5">
+                <span
+                  aria-hidden
+                  className={`size-1.5 rounded-full ${conversation.state === 'active' ? 'bg-ready-dot' : 'bg-faint'}`}
+                />
+                <span className="text-muted">{providerLabel(conversation.harness)}</span>
+                <span className="font-data text-faint">{conversation.model}</span>
+              </span>
+              {formatCost(conversation.cost) && (
+                <span className="font-data tabular-nums text-muted">{formatCost(conversation.cost)}</span>
+              )}
+              <ContextMeter conversation={conversation} onOpen={onOpenContext} />
+            </div>
+          )}
         </div>
       )}
     </div>
