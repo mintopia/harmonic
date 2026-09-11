@@ -6,7 +6,6 @@ export const EMPTY_COMMAND: VerificationCommand = { command: '', args: [], env: 
 /** Seed for a freshly enabled critic override when no global default exists. */
 export const EMPTY_CRITIC: TaskVerificationCritic = { name: '', issuePrompt: '', noIssuePrompt: '', model: '' };
 
-/** The critic's row title: its name, or a neutral fallback for one not yet named. */
 export function criticLabel(name: string): string {
   return name.trim() === '' ? 'Untitled critic' : name.trim();
 }

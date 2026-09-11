@@ -22,8 +22,6 @@ type EditorProps = {
   fieldErrors: Record<string, string>;
 };
 
-/** Harness id → its discovered model ids: the critic Model combo's source, and
- * the harness options come from its keys. */
 function harnessModelMap(config: AppConfig): Record<string, string[]> {
   return Object.fromEntries(
     Object.entries(config.harnesses).map(([id, harness]) => [id, harness.models.map((m) => m.id)]),

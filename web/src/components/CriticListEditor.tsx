@@ -16,16 +16,12 @@ type SharedProps = {
   idPrefix: string;
   errorPrefix: string;
   fieldErrors: Record<string, string>;
-  /** Harness id → its discovered model ids, seeding the Model combo. */
   harnessModels: Record<string, string[]>;
   emptyText: string;
 };
 
 const runStepLabel = "mb-1.5 flex items-center gap-1.5 text-label font-semibold uppercase text-faint";
 
-/** The "who runs it" band: reviewer harness first, then its model. The model is
- * a combo seeded from the chosen harness's discovered catalog (still free text
- * for a custom id); with no harness override it inherits the task's model. */
 function CriticRuntimeFields({
   critic,
   idPrefix,

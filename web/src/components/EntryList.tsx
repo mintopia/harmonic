@@ -49,17 +49,12 @@ const CARET = (
 type EntryListProps<T> = {
   items: T[];
   onChange: (items: T[]) => void;
-  /** Section heading above the list ("Critics", "Commands"). */
   groupLabel: string;
-  /** Add-button copy ("+ Add critic"). */
   addLabel: string;
-  /** Shown in place of the list when it is empty. */
   emptyText: string;
   /** Seed a freshly added item; it opens for editing. */
   makeItem: () => T;
-  /** The row's title (collapsed and open). */
   renderTitle: (item: T, index: number) => ReactNode;
-  /** Optional right-aligned meta on the collapsed/open row (a run-target chip, a timeout). */
   renderMeta?: (item: T, index: number) => ReactNode;
   /** The editor revealed when the row is open. `set` replaces this item. */
   renderBody: (item: T, index: number, set: (item: T) => void) => ReactNode;
@@ -77,13 +72,9 @@ type HeaderProps = {
   onRemove: () => void;
   gripRef?: (el: HTMLElement | null) => void;
   gripProps?: Record<string, unknown>;
-  /** The floating drag preview: no toggle/remove, no interaction. */
   overlay?: boolean;
 };
 
-/** The collapsed row header — the drag handle, caret, title, meta and remove.
- * Shared by the live sortable row and the floating {@link DragOverlay} preview so
- * the thing under the cursor is pixel-identical to the row it left. */
 function RowHeader({
   index,
   open,
@@ -192,11 +183,8 @@ function SortableRow<T>({
 /**
  * An ordered list of collapsible entries: click a row to edit it in place, drag
  * the grip (or focus it and use the keyboard) to reorder. Row order is the
- * item's run order. One row is open at a time (accordion); adding opens the new
- * row. Reordering is handled by @dnd-kit — the grip is the only drag handle, a
- * {@link DragOverlay} carries a copy of the row under the cursor, and the
- * keyboard sensor gives a full non-pointer path. Shared by the critic and
- * command editors so the two can't drift.
+ * item's run order; one row is open at a time; adding opens the new row. Shared
+ * by the critic and command editors so the two can't drift.
  */
 export function EntryList<T>(props: EntryListProps<T>) {
   const { items, onChange, groupLabel, addLabel, emptyText, makeItem, itemNoun } = props;

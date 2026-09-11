@@ -6,8 +6,6 @@ import { EMPTY_COMMAND, argsText, setCommandField } from './verification-overrid
 
 const cellUnit = 'font-normal normal-case tracking-normal text-muted';
 
-/** The command's argv as its row label; a blank executable (a freshly added,
- * unconfigured command) reads as "New command". */
 function commandLabel(command: VerificationCommand): string {
   if (command.command.trim() === '') return 'New command';
   return [command.command, ...command.args].join(' ');
