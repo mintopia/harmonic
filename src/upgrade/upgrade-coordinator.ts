@@ -37,6 +37,18 @@ export class UpgradeCoordinator {
     return this.exclusively(() => this.armOnce());
   }
 
+  dismiss(): Promise<UpdateAvailabilityState> {
+    return this.exclusively(() => this.dismissOnce());
+  }
+
+  private async dismissOnce(): Promise<UpdateAvailabilityState> {
+    const current = await this.options.store.getState();
+    if (current.version === null || current.armedVersion !== null) return current;
+    const dismissed = { ...current, dismissedVersion: current.version };
+    await this.options.store.setState(dismissed);
+    return dismissed;
+  }
+
   private async armOnce(): Promise<UpdateAvailabilityState> {
     const current = await this.options.store.getState();
     if (current.armedVersion !== null) return current;

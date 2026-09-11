@@ -8,6 +8,7 @@ import { errorResponse } from '../schemas.js';
 const updateStateSchema = z.object({
   availableVersion: z.string().nullable(),
   armedVersion: z.string().nullable(),
+  dismissedVersion: z.string().nullable(),
   idle: z.object({
     runningAttempts: z.number().int().nonnegative(),
     mergingOrIntegrating: z.boolean(),
@@ -26,7 +27,7 @@ export async function updateRoutes(
   const app = fastify.withTypeProvider<ZodTypeProvider>();
   const response = async () => {
     const [state, idle] = await Promise.all([ctx.upgrade.state(), ctx.upgrade.idleState()]);
-    return { availableVersion: state.version, armedVersion: state.armedVersion, idle };
+    return { availableVersion: state.version, armedVersion: state.armedVersion, dismissedVersion: state.dismissedVersion, idle };
   };
 
   app.get('/update', {
@@ -64,6 +65,19 @@ export async function updateRoutes(
   }, async () => {
     assertPackaged(ctx.distributionMode);
     await ctx.upgrade.cancel();
+    return response();
+  });
+
+  app.post('/update/dismiss', {
+    schema: {
+      tags: ['Update'],
+      description: 'Dismiss the currently offered update until a newer version is published. Operator only.',
+      security: [{ bearerAuth: [] }, { sessionCookie: [] }],
+      response: { 200: updateStateSchema.describe('The dismissed update and current drain-to-idle blockers.') },
+    },
+  }, async () => {
+    assertPackaged(ctx.distributionMode);
+    await ctx.upgrade.dismiss();
     return response();
   });
 }
