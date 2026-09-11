@@ -1,5 +1,39 @@
 # Changelog
 
+## [2.7.0](https://github.com/mintopia/harmonic/compare/v2.6.0...v2.7.0) (2026-09-11)
+
+
+### Features
+
+* add automatic conversation permissions ([2afdd4c](https://github.com/mintopia/harmonic/commit/2afdd4c810eb1cb0b007f938e31742007f759208))
+* add conversations workspace view ([7d2e258](https://github.com/mintopia/harmonic/commit/7d2e258e385a8561fa7f76fb4c55d519777f39cd))
+* add rich transcript tool cards ([413ff89](https://github.com/mintopia/harmonic/commit/413ff890c7ce9d75350c068eb68db8fdb965bd14))
+* add scheduled npm update checks ([0116719](https://github.com/mintopia/harmonic/commit/011671901e0e79e9fe2085079dfbca6d376c871d))
+* add update banner ([a6e1131](https://github.com/mintopia/harmonic/commit/a6e1131dda0dbf323d32b8f6310405011f4efe65))
+* **config:** add Fable 5.1, GPT Astra, Muse Spark, DeepSeek V4.1 Flash ([3a7fcaf](https://github.com/mintopia/harmonic/commit/3a7fcaffa3064f1706d1864c1621a7439279231c))
+* detect distribution mode at boot ([fdbc6f4](https://github.com/mintopia/harmonic/commit/fdbc6f428079b7ad8c5f2bab5ea4c0f095f81eec))
+* perform armed in-place upgrade swap ([8388f5f](https://github.com/mintopia/harmonic/commit/8388f5f554f54207317c8dc5dca2b1df4c7fd0d4))
+* render ACP edit diffs in transcripts ([ad8e400](https://github.com/mintopia/harmonic/commit/ad8e4003143e083d90253382ee72724b970f4c89))
+* **resume:** move the continue-vs-fresh choice into a resume dialog ([957cd41](https://github.com/mintopia/harmonic/commit/957cd41b6ccb24f865829cc533bf1284bdd2f6df))
+* **upgrade:** arm and quiesce updates ([ef6e57c](https://github.com/mintopia/harmonic/commit/ef6e57cbad4d5c851d0b8654d6d12eb16c6f9f11))
+* **web:** add conversation context drawer ([d581e66](https://github.com/mintopia/harmonic/commit/d581e661fafb767a68ebad470e83d1b384ab5795))
+* **web:** add favicon using the Harmonic mark ([0c6282c](https://github.com/mintopia/harmonic/commit/0c6282cd323f2f7b8eee5e70f6d2787548b7b62c))
+* **web:** highlight markdown and diffs ([36ff40e](https://github.com/mintopia/harmonic/commit/36ff40e3979c6716870e21b3692e9af1ddcb8a63))
+
+
+### Bug Fixes
+
+* cold-resume conversations after restart ([3fc2509](https://github.com/mintopia/harmonic/commit/3fc25098463fcfd800ea669c1ccb98b8949403ee))
+* **conversation:** use responder names in copy ([2bd6242](https://github.com/mintopia/harmonic/commit/2bd6242b5c1583954bd36d88b4129042c408684c))
+* make conversation transcripts follow smartly ([660f34d](https://github.com/mintopia/harmonic/commit/660f34d509867aad5b3de3d8890c2042b38c02a8))
+* **resume:** key the preview fetch on the task, not the loader identity ([f7d44a0](https://github.com/mintopia/harmonic/commit/f7d44a08afbaba6b0d4561675badd66b89d699e0))
+* retain closed unintegrated epics on board ([0f18f28](https://github.com/mintopia/harmonic/commit/0f18f285cfee7c596c3b7f5c6880bd028bb89cef))
+* scope conversation deep links to workspace ([25a1fc3](https://github.com/mintopia/harmonic/commit/25a1fc35298957ca5ee222abee1e3ef1c48c65d3))
+* **tracker:** demote structural epic mirrors ([f2acfd1](https://github.com/mintopia/harmonic/commit/f2acfd1ef81a955b2d69c06629d4491b86a83747))
+* **upgrade:** keep Update Check tests independent of the release version ([3c52a84](https://github.com/mintopia/harmonic/commit/3c52a84866adc677c0bd76fb154c1cb3835ab131))
+* **upgrade:** satisfy build and OpenAPI checks ([25a3888](https://github.com/mintopia/harmonic/commit/25a38880cfcb1b91e0e9c0eabcac2ca01fae8e07))
+* widen verification settings ([d50dcf5](https://github.com/mintopia/harmonic/commit/d50dcf546d4dd31931846636aa51807977f1204c))
+
 ## [2.6.0](https://github.com/mintopia/harmonic/compare/v2.5.0...v2.6.0) (2026-09-10)
 
 
