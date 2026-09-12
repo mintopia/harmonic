@@ -3,7 +3,7 @@ import { api } from '../../api';
 import { isTurnRunning } from '../../conversation-steering-model';
 import { toastError } from '../../toast';
 import type { AppConfig, Conversation, ConversationEvent, Workspace } from '../../types';
-import { btnPrimary, btnQuietDestructive, field, labelType, selectField } from '../../ui';
+import { btnPrimary, btnQuietDestructive, field, labelType, selectField, touchTarget } from '../../ui';
 import { computeContextUsage, formatContextUsage, formatTokenBreakdown } from '../../conversation-telemetry-model';
 import { formatCost } from '../../cost';
 import { DiscoveryModelPicker } from '../DiscoveryModelPicker.js';
@@ -224,7 +224,8 @@ export function Composer({
         {running && (
           <button
             type="button"
-            className={`${btnQuietDestructive} px-1 pb-2.5`}
+            aria-label={text.trim() ? 'Interrupt current turn' : 'Stop current turn'}
+            className={`${btnQuietDestructive} ${touchTarget} self-end rounded-md border border-edge bg-surface px-3`}
             disabled={interrupting}
             onClick={interrupt}
           >

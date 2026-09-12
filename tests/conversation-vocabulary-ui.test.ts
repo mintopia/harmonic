@@ -63,4 +63,9 @@ describe('conversation vocabulary UI (#546)', () => {
     expect(COMPOSER).toContain('Message ${providerLabel(harness)}…');
     expect(COMPOSER).not.toContain('Message the agent…');
   });
+
+  it('uses a touch-sized action for stopping a running turn (#572)', () => {
+    expect(COMPOSER).toContain('aria-label={text.trim() ? \'Interrupt current turn\' : \'Stop current turn\'}');
+    expect(COMPOSER).toContain('${touchTarget}');
+  });
 });
