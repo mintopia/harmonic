@@ -87,6 +87,12 @@ function RowHeader({
   gripProps,
   overlay,
 }: HeaderProps) {
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    if (!armed) return;
+    const t = setTimeout(() => setArmed(false), 3000);
+    return () => clearTimeout(t);
+  }, [armed]);
   const content = (
     <>
       <span
@@ -131,10 +137,19 @@ function RowHeader({
       {!overlay && (
         <button
           type="button"
-          className="shrink-0 text-small text-faint hover:text-fail"
-          onClick={onRemove}
+          aria-label={armed ? `Confirm remove ${itemNoun} ${index + 1}` : `Remove ${itemNoun} ${index + 1}`}
+          className={`shrink-0 text-small ${armed ? 'font-semibold text-fail' : 'text-faint hover:text-fail'}`}
+          onClick={() => {
+            if (armed) {
+              onRemove?.();
+              setArmed(false);
+            } else {
+              setArmed(true);
+            }
+          }}
+          onBlur={() => setArmed(false)}
         >
-          Remove
+          {armed ? 'Confirm?' : 'Remove'}
         </button>
       )}
     </div>

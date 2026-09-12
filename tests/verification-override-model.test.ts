@@ -81,7 +81,7 @@ describe('setCriticField (issue #165)', () => {
 
 describe('summarizeCritic (issue #165)', () => {
   it('names the reviewer model for a configured critic', () => {
-    expect(summarizeCritic(baseCritic)).toBe('Critic model: claude-opus-5');
+    expect(summarizeCritic(baseCritic)).toBe('Test critic (claude-opus-5)');
   });
 
   it('reads the empty seed back as "Not configured"', () => {

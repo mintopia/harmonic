@@ -118,7 +118,7 @@ export function ConversationContextDrawer({
   const ended = conversation.state === 'ended';
 
   return (
-    <aside aria-label="Conversation context" className="flex w-72 shrink-0 flex-col overflow-hidden border-l border-edge bg-shell">
+    <aside aria-label="Conversation context" className="absolute inset-y-0 right-0 z-30 flex w-full max-w-xs flex-col overflow-hidden border-l border-edge bg-shell shadow-float md:static md:z-auto md:w-72 md:max-w-none md:shadow-none">
       <div className="flex items-center justify-between border-b border-hairline px-4 py-3">
         <h2 className={panelTitle}>Context</h2>
         <button type="button" className={btnQuiet} onClick={onClose} aria-label="Hide conversation context">
@@ -773,8 +773,11 @@ export function ConversationsPage({
   };
 
   return (
-    <div className="flex h-full min-h-0 overflow-hidden bg-canvas">
-      <aside aria-label="Conversations" className="flex w-64 shrink-0 border-r border-edge bg-shell">
+    <div className="relative flex h-full min-h-0 overflow-hidden bg-canvas">
+      <aside
+        aria-label="Conversations"
+        className={`${view.kind === 'detail' ? 'hidden md:flex' : 'flex'} w-full shrink-0 border-r border-edge bg-shell md:w-64`}
+      >
         <ConversationList
           conversations={conversations}
           attention={attention}
@@ -785,7 +788,10 @@ export function ConversationsPage({
           onDelete={deleteConversation}
         />
       </aside>
-      <section aria-label="Conversation transcript" className="flex min-w-0 flex-1 flex-col">
+      <section
+        aria-label="Conversation transcript"
+        className={`${view.kind === 'list' ? 'hidden md:flex' : 'flex'} min-w-0 flex-1 flex-col`}
+      >
         {view.kind === 'list' ? (
           <div className="flex flex-1 items-center justify-center px-6 text-muted">
             Select a conversation or start a new one.

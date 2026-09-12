@@ -534,32 +534,34 @@ export function EpicBand({
 
   return (
     <div className={panel}>
-      <div className="flex items-center gap-2.5 px-4 py-2.5">
+      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-2 px-4 py-2.5">
         <button
           type="button"
           onClick={() => onOpenEpic?.(epic)}
           title={`Open Epic #${epic.ref}`}
-          className={`${touchTargetInline} min-w-0 flex-1 gap-2.5 text-left`}
+          className={`${touchTargetInline} min-w-0 flex-1 basis-full gap-2.5 text-left sm:basis-0`}
         >
           <EpicKindBadge epic={epic} />
           <span className="shrink-0 font-data text-small text-faint">epic/{epic.ref}</span>
           <span className="truncate text-title font-semibold text-ink">{epic.title}</span>
         </button>
-        {attention.length > 0 && (
-          <span className={`${chip} shrink-0 bg-await-tint text-await`}>{attention.length} in attention</span>
-        )}
-        <StatusPips epic={epic} />
-        {hasColumns && (
-          <button
-            type="button"
-            aria-expanded={open}
-            aria-label={open ? `Collapse Epic #${epic.ref} members` : `Expand Epic #${epic.ref} members`}
-            onClick={() => setOpen((v) => !v)}
-            className={`${touchTargetInline} shrink-0`}
-          >
-            <Chevron open={open} />
-          </button>
-        )}
+        <div className="flex min-w-0 shrink-0 items-center gap-2.5">
+          {attention.length > 0 && (
+            <span className={`${chip} shrink-0 bg-await-tint text-await`}>{attention.length} in attention</span>
+          )}
+          <StatusPips epic={epic} />
+          {hasColumns && (
+            <button
+              type="button"
+              aria-expanded={open}
+              aria-label={open ? `Collapse Epic #${epic.ref} members` : `Expand Epic #${epic.ref} members`}
+              onClick={() => setOpen((v) => !v)}
+              className={`${touchTargetInline} shrink-0`}
+            >
+              <Chevron open={open} />
+            </button>
+          )}
+        </div>
       </div>
 
       {isEpicIntegrating(epic) && <EpicIntegrationBar epic={epic} />}

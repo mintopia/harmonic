@@ -70,6 +70,7 @@ function packLane(harness: string, spans: TimelineAttempt[], now: number): Lane 
 
 const LABEL_W = 128;
 const ROW_H = 30;
+const MIN_TICK_LABEL_PX = 104;
 
 const fmtClock = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 const fmtClockSec = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -105,6 +106,10 @@ export function TimelinePage({
   const [cursor, setCursor] = useState<number | null>(null);
   const [hover, setHover] = useState<Hover>(null);
   const [inspect, setInspect] = useState<Inspect>(null);
+  // Measured track width so tick labels thin out instead of colliding at the
+  // narrow (min-width) floor.
+  const trackRef = useRef<HTMLDivElement>(null);
+  const [trackW, setTrackW] = useState(0);
 
   const windowMs = RANGES.find((r) => r.key === range)!.ms;
   const to = now;
@@ -152,13 +157,29 @@ export function TimelinePage({
       .map(([harness, spans]) => packLane(harness, spans, now));
   }, [attempts, now]);
 
+  useEffect(() => {
+    const el = trackRef.current;
+    if (!el) return;
+    const measure = () => setTrackW(el.clientWidth);
+    measure();
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', measure);
+      return () => window.removeEventListener('resize', measure);
+    }
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [attempts]);
+
   const ticks = useMemo(() => {
-    const count = range === '24h' ? 8 : 7;
+    const base = range === '24h' ? 8 : 7;
+    const fit = Math.max(2, Math.floor(((trackW || 720) - LABEL_W) / MIN_TICK_LABEL_PX));
+    const count = Math.min(base, fit);
     return Array.from({ length: count + 1 }, (_, i) => {
       const t = from + (i * (to - from)) / count;
       return { pct: (i / count) * 100, label: fmtTick(t, range) };
     });
-  }, [from, to, range]);
+  }, [from, to, range, trackW]);
 
   const pctOf = (ms: number) => ((Math.min(to, Math.max(from, ms)) - from) / (to - from)) * 100;
   const cursorPct = pctOf(cursorMs);
@@ -266,7 +287,7 @@ export function TimelinePage({
       ) : (
         <div className="overflow-hidden rounded-lg border border-hairline bg-surface shadow-card">
           <div className="overflow-x-auto">
-          <div className="min-w-[720px]">
+          <div ref={trackRef} className="min-w-[720px]">
           {/* hour ruler */}
           <div className="grid border-b border-hairline bg-shell" style={{ gridTemplateColumns: `${LABEL_W}px 1fr` }}>
             <div className="border-r border-hairline px-3 py-1.5 text-label uppercase tracking-wide text-faint">
