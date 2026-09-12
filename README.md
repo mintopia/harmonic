@@ -4,8 +4,8 @@ Point Harmonic at your issue tracker and it works through your backlog on
 its own. Write a spec, break it into tickets, and Harmonic runs the ready
 ones out to merged code: for each ticket it starts a coding agent,
 implements the change, has the work reviewed, and merges the branch,
-handing a ticket back only when it needs a human. You watch a board — and a
-timeline of everything the fleet has run — and step in only when a ticket
+handing a ticket back only when it needs a human. You watch a board and a
+timeline of everything the fleet has run, and step in only when a ticket
 needs you.
 
 It's built to run alongside **Matt Pocock's Skills**, which turn a spec
