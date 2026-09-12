@@ -166,12 +166,18 @@ export class ConversationDriver {
    * so spawn/handshake errors reach the caller); the reply then streams
    * over the firehose while this returns. A second Turn reuses the warm
    * session. If a Turn is already in flight, the message is queued and sent
-   * as the next Turn on completion — `queued` reports which.
+   * as the next Turn on completion — `queued` reports which. An ended
+   * Conversation that still holds a stored `sessionId` is reactivated and its
+   * ACP session reloaded (a cold resume); one with no session — nothing to
+   * reload — is rejected.
    */
   async submitTurn(conversationId: number, text: string): Promise<{ queued: boolean }> {
-    const convo = await this.store.get(conversationId);
+    let convo = await this.store.get(conversationId);
     if (convo.state !== 'active') {
-      throw new DomainError('invalid_state', `conversation ${conversationId} has ended`);
+      if (convo.sessionId === null) {
+        throw new DomainError('invalid_state', `conversation ${conversationId} has ended`);
+      }
+      convo = await this.store.update(conversationId, { state: 'active', endedAt: null });
     }
     let entry = this.active.get(conversationId);
     if (entry?.turning) {
