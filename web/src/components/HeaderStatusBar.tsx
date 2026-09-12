@@ -180,7 +180,10 @@ export function HeaderStatusBar({
           <Icon name="logout" />
         </button>
       )}
-      <button onClick={onNewTask} className={`${btnPrimary} gap-1.5`}>
+      <button
+        onClick={onNewTask}
+        className={`${btnPrimary} gap-1.5 ${view === 'conversations' ? 'max-md:hidden' : ''}`}
+      >
         <Icon name="plus" className="size-3.5" />
         New task
       </button>

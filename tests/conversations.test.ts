@@ -99,17 +99,36 @@ describe('conversation walking skeleton (issue 10)', () => {
     expect(server.app.ctx.conversationDriver.activeCount).toBe(activeCountAfterFirst);
   });
 
-  it('ends a Conversation: stops the harness and marks it ended; further Turns are rejected', async () => {
+  it('ends a Conversation: stops the harness; a later Turn resumes it from its stored session', async () => {
     const { body: convo } = await server.api('POST', '/api/conversations', {});
     await server.api('POST', `/api/conversations/${convo.id}/turns`, {
       text: JSON.stringify({ updates: [{ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'x' } }] }),
     });
     await waitFor(async () => server.app.ctx.conversationDriver.isWarm(convo.id));
+    const sessionId = (await server.api('GET', `/api/conversations/${convo.id}`)).body.sessionId;
+    expect(sessionId).toBeTruthy();
 
     const ended = await server.api('POST', `/api/conversations/${convo.id}/end`);
     expect(ended.body.state).toBe('ended');
     expect(ended.body.endedAt).toBeTruthy();
     expect(server.app.ctx.conversationDriver.isWarm(convo.id)).toBe(false);
+    expect((await server.api('GET', `/api/conversations/${convo.id}`)).body.coldResume).toBe(true);
+
+    const resumed = await server.api('POST', `/api/conversations/${convo.id}/turns`, {
+      text: JSON.stringify({ updates: [{ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'again' } }] }),
+    });
+    expect(resumed.status).toBe(200);
+    await waitFor(async () => (await server.api('GET', `/api/conversations/${convo.id}`)).body.state === 'active');
+    const after = await server.api('GET', `/api/conversations/${convo.id}`);
+    expect(after.body.sessionId).toBe(sessionId);
+    expect(after.body.endedAt).toBeNull();
+  });
+
+  it('rejects a Turn on an ended Conversation that never opened a session', async () => {
+    const { body: convo } = await server.api('POST', '/api/conversations', {});
+    expect(convo.sessionId).toBeNull();
+    const ended = await server.api('POST', `/api/conversations/${convo.id}/end`);
+    expect(ended.body.state).toBe('ended');
 
     const rejected = await server.api('POST', `/api/conversations/${convo.id}/turns`, {
       text: JSON.stringify({ updates: [] }),

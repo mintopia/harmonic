@@ -244,7 +244,7 @@ export function ConversationContextDrawer({
 function ColdResumeWarning({ conversation }: { conversation: Conversation | null }) {
   if (!conversation?.coldResume) return null;
   return (
-    <p role="status" className="border-t border-hairline bg-running-tint px-4 py-2.5 text-small text-muted">
+    <p role="status" className="border-t border-hairline bg-running-tint px-4 py-2.5 text-small text-running">
       This conversation will resume from a cold session. Your next message may cost more.
     </p>
   );
@@ -345,6 +345,7 @@ type ConversationHeaderProps = {
   onRename: (title: string | null) => Promise<void>;
   onEnd: () => void;
   onDelete: () => void;
+  onOpenContext?: () => void;
 } & (
   | { fullPage: true }
   | { fullPage?: false; onExpand: () => void; onClose: () => void }
@@ -416,6 +417,15 @@ function ConversationHeader(props: ConversationHeaderProps) {
             {conversation && (
               <button aria-label="Rename conversation" className={`${touchTarget} ${btnQuiet}`} onClick={startEdit}>
                 <Icon name="edit" />
+              </button>
+            )}
+            {props.fullPage && conversation && props.onOpenContext && (
+              <button
+                aria-label="Open conversation context"
+                className={`${touchTarget} ${btnQuiet} md:hidden`}
+                onClick={props.onOpenContext}
+              >
+                Context
               </button>
             )}
           </>
@@ -614,6 +624,7 @@ export function ConversationLauncher({
 
   const composerReady = view.kind === 'detail' && (view.conversationId === null || conversation !== null);
   const ended = conversation?.state === 'ended';
+  const resumable = conversation?.sessionId != null;
 
   return (
     <div
@@ -664,7 +675,7 @@ export function ConversationLauncher({
               <ElicitationPrompt key={p.reqId} pending={p} onAnswer={actions.answerElicitation} />
             ))}
 
-          {ended ? (
+          {ended && !resumable ? (
             <p role="status" className="border-t border-hairline bg-raised px-4 py-2.5 text-muted">
               This conversation has ended — read-only.
             </p>
@@ -767,6 +778,7 @@ export function ConversationsPage({
   });
   const composerReady = view.kind === 'detail' && (view.conversationId === null || conversation !== null);
   const ended = conversation?.state === 'ended';
+  const resumable = conversation?.sessionId != null;
   const deleteConversation = (id: number) => {
     actions.deleteConversation(id);
     if (id === focusedId) openList();
@@ -806,6 +818,7 @@ export function ConversationsPage({
               onRename={actions.rename}
               onEnd={actions.end}
               onDelete={() => conversation && deleteConversation(conversation.id)}
+              onOpenContext={() => setContextOpen(true)}
             />
             <Transcript events={events} conversation={conversation} />
             <StreamAnnouncer events={events} resetKey={conversation?.id ?? 'new'} />
@@ -822,7 +835,7 @@ export function ConversationsPage({
               Object.values(pendingElicitations).map((elicitation) => (
                 <ElicitationPrompt key={elicitation.reqId} pending={elicitation} onAnswer={actions.answerElicitation} />
               ))}
-            {ended ? (
+            {ended && !resumable ? (
               <div role="status" className="flex items-center gap-3 border-t border-edge bg-surface px-4 py-2.5 text-muted">
                 <span>This conversation has ended — read-only.</span>
                 {conversation && (
