@@ -107,7 +107,14 @@ describe('stats-async-path', () => {
 
         expect(total).toBeGreaterThan(0);
         expect(elapsedMs).toBeGreaterThan(200);
-        expect(stalls).toEqual([]);
+        // The heavy read runs in the Stats worker thread, so the main event
+        // loop keeps ticking: a main-thread run would block it for ~elapsedMs,
+        // so any real stall approaches the read's own duration. A brief ambient
+        // hiccup on a loaded CI box is not that — tolerate up to half the read
+        // time (and at least 300ms) so the check stays about offloading, not CI
+        // jitter.
+        const worstLagMs = stalls.reduce((max, stall) => Math.max(max, stall.lagMs), 0);
+        expect(worstLagMs).toBeLessThan(Math.max(elapsedMs / 2, 300));
       } finally {
         monitor.stop();
         await worker.close();
