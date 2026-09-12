@@ -100,6 +100,44 @@ describe('conversation vocabulary UI (#546)', () => {
     expect(html).not.toContain('Message the agent…');
   });
 
+  it('keeps the composer open on an ended conversation that can resume', () => {
+    const config = baselineConfig();
+    const conversation: Conversation = {
+      id: 1,
+      title: null,
+      workspaceId: 1,
+      harness: 'opencode',
+      model: config.harnesses.opencode.defaultModel,
+      workingDir: '/work',
+      permissionMode: 'ask',
+      state: 'ended',
+      sessionId: 'sess-1',
+      createdAt: 0,
+      updatedAt: 0,
+      endedAt: 1,
+      usage: null,
+      cost: null,
+      contextTokens: null,
+      contextWindow: null,
+      cacheWarmSeconds: null,
+    };
+
+    const html = renderToStaticMarkup(
+      createElement(Composer, {
+        config,
+        workspace: null,
+        conversation,
+        events: [],
+        expanded: false,
+        onSend: async () => ({ queued: false }),
+      }),
+    );
+
+    expect(html).toContain('placeholder="Message OpenCode… (Enter to send, Shift+Enter for a newline)"');
+    expect(html).not.toContain('Conversation ended.');
+    expect(html).toContain('commands');
+  });
+
   it('uses a touch-sized action for stopping a running turn (#572)', () => {
     expect(COMPOSER).toContain('aria-label={text.trim() ? \'Interrupt current turn\' : \'Stop current turn\'}');
     expect(COMPOSER).toContain('${touchTarget}');

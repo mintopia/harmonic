@@ -13,7 +13,7 @@ export interface UpgradeIdleState {
 }
 
 export interface UpgradeCoordinatorOptions {
-  /** The version this process is running; an armed upgrade to it has landed. */
+  /** The version this process is running; an armed upgrade to it has taken effect. */
   version: string;
   store: UpdateArmingStore;
   settings: Pick<SettingsStore, 'getGlobal' | 'updateGlobal'>;

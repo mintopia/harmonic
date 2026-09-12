@@ -244,7 +244,7 @@ export function ConversationContextDrawer({
 function ColdResumeWarning({ conversation }: { conversation: Conversation | null }) {
   if (!conversation?.coldResume) return null;
   return (
-    <p role="status" className="border-t border-hairline bg-running-tint px-4 py-2.5 text-small text-muted">
+    <p role="status" className="border-t border-hairline bg-running-tint px-4 py-2.5 text-small text-running">
       This conversation will resume from a cold session. Your next message may cost more.
     </p>
   );
