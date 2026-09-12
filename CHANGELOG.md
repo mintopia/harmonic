@@ -1,5 +1,23 @@
 # Changelog
 
+## [2.8.0](https://github.com/mintopia/harmonic/compare/v2.7.0...v2.8.0) (2026-09-12)
+
+
+### Features
+
+* **conversations:** match the Conversation Experience mockups ([13c45b2](https://github.com/mintopia/harmonic/commit/13c45b2c7d1cf6e98c7ff9ab754ffa212090678a))
+* **settings:** ordered, named, drag-reorderable verifier lists ([046aa84](https://github.com/mintopia/harmonic/commit/046aa845aa569ed9dc341f707534a44c83e458ee))
+* **ui:** add fleet Timeline, unify page headers, reorder rail ([849e232](https://github.com/mintopia/harmonic/commit/849e232ec7c8c46ce646ff95d99a58c89a440d29))
+* **ui:** drop breadcrumb bar, slim conversation header ([5400733](https://github.com/mintopia/harmonic/commit/54007334beb8ab50aabf66dcaef573cfd774204e))
+* **ui:** split ready hue to azure, add subtle depth, refine board cards ([437fe27](https://github.com/mintopia/harmonic/commit/437fe27bddd118ba6be3b876e1db3a2fa0824501))
+
+
+### Bug Fixes
+
+* **conversations:** tidy the new-conversation compose form ([2df5eba](https://github.com/mintopia/harmonic/commit/2df5eba3c40d8fcad5869d41339e8fbec7f42560))
+* **settings:** address review of the verifier-list editors ([c24693d](https://github.com/mintopia/harmonic/commit/c24693dd5115f6273d147c3f10ae6c4761618a0e))
+* **ui:** repair mobile layouts, guard verifier removal, fix stale critic test ([40c5534](https://github.com/mintopia/harmonic/commit/40c55341df383e0d0b24a3ae96f2a4979b4d5baa))
+
 ## [2.7.0](https://github.com/mintopia/harmonic/compare/v2.6.0...v2.7.0) (2026-09-11)
 
 
