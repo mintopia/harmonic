@@ -79,7 +79,7 @@ describe('PATCH /api/config verification', () => {
 
   it('accepts an agent critic', async () => {
     const patched = await server.api('PATCH', '/api/config', {
-      verify: { task: { preMerge: { commands: [], critics: [{ issuePrompt: 'Review the diff.', noIssuePrompt: 'Review the diff.',model: 'claude-opus-5' }] } } },
+      verify: { task: { preMerge: { commands: [], critics: [{ name: 'Test critic', issuePrompt: 'Review the diff.', noIssuePrompt: 'Review the diff.',model: 'claude-opus-5' }] } } },
     });
     expect(patched.status).toBe(200);
     expect(patched.body.verify.task.preMerge.critics[0].model).toBe('claude-opus-5');
@@ -87,7 +87,7 @@ describe('PATCH /api/config verification', () => {
 
   it('accepts a critic harness (issue #174) and round-trips it', async () => {
     const withHarness = await server.api('PATCH', '/api/config', {
-      verify: { task: { preMerge: { commands: [], critics: [{ issuePrompt: 'Review the diff.', noIssuePrompt: 'Review the diff.',model: 'claude-opus-5', harness: 'codex' }] } } },
+      verify: { task: { preMerge: { commands: [], critics: [{ name: 'Test critic', issuePrompt: 'Review the diff.', noIssuePrompt: 'Review the diff.',model: 'claude-opus-5', harness: 'codex' }] } } },
     });
     expect(withHarness.status).toBe(200);
     expect(withHarness.body.verify.task.preMerge.critics[0].harness).toBe('codex');
@@ -98,7 +98,7 @@ describe('PATCH /api/config verification', () => {
 
   it('accepts a critic with no harness (issue #174) — the field is optional, "Same as task"', async () => {
     const patched = await server.api('PATCH', '/api/config', {
-      verify: { task: { preMerge: { commands: [], critics: [{ issuePrompt: 'Review the diff.', noIssuePrompt: 'Review the diff.',model: 'claude-opus-5' }] } } },
+      verify: { task: { preMerge: { commands: [], critics: [{ name: 'Test critic', issuePrompt: 'Review the diff.', noIssuePrompt: 'Review the diff.',model: 'claude-opus-5' }] } } },
     });
     expect(patched.status).toBe(200);
     expect(patched.body.verify.task.preMerge.critics[0].harness).toBeUndefined();
@@ -106,7 +106,7 @@ describe('PATCH /api/config verification', () => {
 
   it('rejects an invalid critic harness (issue #174) — not one of the known harness ids', async () => {
     const invalid = await server.api('PATCH', '/api/config', {
-      verify: { task: { preMerge: { commands: [], critics: [{ issuePrompt: 'Review the diff.', noIssuePrompt: 'Review the diff.',model: 'claude-opus-5', harness: 'nonexistent' }] } } },
+      verify: { task: { preMerge: { commands: [], critics: [{ name: 'Test critic', issuePrompt: 'Review the diff.', noIssuePrompt: 'Review the diff.',model: 'claude-opus-5', harness: 'nonexistent' }] } } },
     });
     expect(invalid.status).toBe(400);
   });

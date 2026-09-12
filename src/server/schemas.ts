@@ -156,6 +156,34 @@ export const costSchema = z
   })
   .meta({ id: 'Cost' });
 
+/** One Attempt as a fleet-Timeline span: its lane (harness), outcome, cost, and the window it occupied. */
+export const timelineAttemptSchema = z
+  .object({
+    taskId: z.number().int().meta({ example: 4821 }),
+    attemptId: z.number().int().meta({ example: 19 }),
+    number: z.number().int().positive().meta({ example: 1 }),
+    title: z.string().meta({ example: 'Rate-limit ACP reconnect' }),
+    harness: z.string().meta({ example: 'claude' }),
+    model: z.string().meta({ example: 'claude-opus-4-8' }),
+    state: z.enum(ATTEMPT_STATES).meta({ example: 'passed' }),
+    trackerRef: z.number().int().nullable().meta({ example: 470 }),
+    startedAt: z.number().meta({ example: 1784032020000 }),
+    /** null while the Attempt is still running; the client extends its bar to now. */
+    endedAt: z.number().nullable().meta({ example: 1784032200000 }),
+    /** Frozen Cost for a finished Attempt; null while running or when nothing was priceable. */
+    cost: costSchema.nullable(),
+  })
+  .meta({ id: 'TimelineAttempt' });
+
+export const timelineResponseSchema = z
+  .object({
+    attempts: z.array(timelineAttemptSchema),
+    from: z.number().meta({ example: 1784000000000 }),
+    to: z.number().meta({ example: 1784086400000 }),
+  })
+  .meta({ id: 'TimelineResponse' })
+  .describe('Every task Attempt in one Workspace whose run window overlaps [from, to] — the fleet Timeline lanes.');
+
 /**
  * One node of a Process Tree (execution/usage.ts `ProcessNode`): the root
  * Attempt/Conversation session or a recursive Subagent. Recursive via a Zod-4

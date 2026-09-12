@@ -1,10 +1,20 @@
-import type { TaskVerificationCritic, VerificationCommand } from '../types.js';
+import type {
+  EpicVerificationCritic,
+  TaskVerificationCritic,
+  VerificationCommand,
+} from '../types.js';
 
 /** Seed for a freshly enabled command override when no global default exists. */
 export const EMPTY_COMMAND: VerificationCommand = { command: '', args: [], env: {}, timeoutSeconds: 600 };
 
 /** Seed for a freshly enabled critic override when no global default exists. */
-export const EMPTY_CRITIC: TaskVerificationCritic = { issuePrompt: '', noIssuePrompt: '', model: '' };
+export const EMPTY_CRITIC: TaskVerificationCritic = { name: '', issuePrompt: '', noIssuePrompt: '', model: '' };
+
+export const EMPTY_EPIC_CRITIC: EpicVerificationCritic = { name: '', prompt: '', model: '' };
+
+export function criticLabel(name: string): string {
+  return name.trim() === '' ? 'Untitled critic' : name.trim();
+}
 
 /** An editable dimension of the command verifier. `args` is a whitespace-joined string in the UI. */
 export type CommandField = 'command' | 'args' | 'timeoutSeconds';
@@ -55,7 +65,7 @@ export function summarizeCommands(commands: VerificationCommand[]): string {
 }
 
 /** An editable dimension of the agent critic. `harness` is a select, not free text. */
-export type CriticField = 'issuePrompt' | 'noIssuePrompt' | 'model' | 'harness';
+export type CriticField = 'name' | 'issuePrompt' | 'noIssuePrompt' | 'model' | 'harness';
 
 /**
  * Fold a raw text-input value into the critic object. `prompt`/`model` are free
@@ -72,6 +82,22 @@ export function setCriticField(critic: TaskVerificationCritic, field: CriticFiel
   return { ...critic, [field]: raw };
 }
 
+export type EpicCriticField = 'name' | 'prompt' | 'model' | 'harness';
+
+/** The epic-critic counterpart of {@link setCriticField}: same blank-`harness`
+ * key-strip rule, over the epic critic's single `prompt`. */
+export function setEpicCriticField(
+  critic: EpicVerificationCritic,
+  field: EpicCriticField,
+  raw: string,
+): EpicVerificationCritic {
+  if (field === 'harness' && raw === '') {
+    const { harness: _harness, ...rest } = critic;
+    return rest;
+  }
+  return { ...critic, [field]: raw };
+}
+
 /**
  * One-line summary of an agent critic for the inheriting read-only display: the
  * reviewer harness (when overridden) and model. An empty model (the seed for
@@ -79,5 +105,6 @@ export function setCriticField(critic: TaskVerificationCritic, field: CriticFiel
  */
 export function summarizeCritic(critic: TaskVerificationCritic): string {
   if (critic.model.trim() === '') return 'Not configured';
-  return critic.harness ? `Critic (${critic.harness}): model ${critic.model}` : `Critic model: ${critic.model}`;
+  const runtime = critic.harness ? `${critic.harness} · ${critic.model}` : critic.model;
+  return `${criticLabel(critic.name)} (${runtime})`;
 }

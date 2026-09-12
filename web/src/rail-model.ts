@@ -17,7 +17,7 @@ export function storeRailCollapsed(storage: StorageLike, collapsed: boolean): vo
   }
 }
 
-export const VIEWS = ['board', 'activity', 'conversations', 'operations', 'table', 'graph', 'stats', 'api', 'settings', 'workspace'] as const;
+export const VIEWS = ['board', 'conversations', 'graph', 'activity', 'table', 'timeline', 'stats', 'operations', 'api', 'settings', 'workspace'] as const;
 export type View = (typeof VIEWS)[number];
 
 /**
@@ -38,12 +38,15 @@ export interface RailGroup {
   views: readonly View[];
 }
 
-/** The rail's two labelled groups (DESIGN.md §5, Paper mockup): the Workspace's
- * working views, then the Instance surfaces (the API surface + the per-Workspace
- * Settings page). Global Settings stays a status-strip icon, not a rail item. */
+/** The rail's three divider-separated groups: the live overview surfaces, then
+ * the per-task data surfaces, then the instance surfaces (Operations, the API
+ * surface, and the per-Workspace Settings page). Labels are accessible names
+ * only — the rail renders each group as a divider, not a heading. Global
+ * Settings stays a status-strip icon, not a rail item. */
 export const RAIL_GROUPS: readonly RailGroup[] = [
-  { label: 'Workspace', views: ['board', 'activity', 'conversations', 'operations', 'table', 'graph', 'stats'] },
-  { label: 'Instance', views: ['api', 'workspace'] },
+  { label: 'Overview', views: ['board', 'conversations', 'graph', 'activity'] },
+  { label: 'Data', views: ['table', 'timeline', 'stats'] },
+  { label: 'Instance', views: ['operations', 'api', 'workspace'] },
 ];
 
 /**
@@ -55,12 +58,13 @@ export const RAIL_GROUPS: readonly RailGroup[] = [
  */
 export function isWorkspaceScopedView(view: View): boolean {
   return (
-    view === 'board' || view === 'conversations' || view === 'table' || view === 'graph' || view === 'stats' || view === 'workspace'
+    view === 'board' || view === 'timeline' || view === 'conversations' || view === 'table' || view === 'graph' || view === 'stats' || view === 'workspace'
   );
 }
 export const VIEW_LABELS: Record<View, string> = {
   board: 'Board',
   activity: 'Activity',
+  timeline: 'Timeline',
   conversations: 'Conversations',
   table: 'Tasks',
   graph: 'Graph',

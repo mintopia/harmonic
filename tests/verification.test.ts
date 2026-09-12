@@ -74,7 +74,7 @@ describe('verification-attempts-route', () => {
     it('reconciles recorded attempts with configured verifier statuses', async () => {
       const configured = await startServer({
         ...stubHarness(),
-        verify: { task: { preMerge: { commands: [{ command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }], critics: [{ issuePrompt: 'Review the issue diff.', noIssuePrompt: 'Review the Task diff.', model: 'stub-model' }] } } },
+        verify: { task: { preMerge: { commands: [{ command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }], critics: [{ name: 'Test critic', issuePrompt: 'Review the issue diff.', noIssuePrompt: 'Review the Task diff.', model: 'stub-model' }] } } },
       });
       try {
         const created = await configured.api('POST', '/api/tasks', { prompt: 'verification status target' });
@@ -104,7 +104,7 @@ describe('verification-attempts-route', () => {
     it('reconciles recorded attempts with configured verifier statuses', async () => {
       const configured = await startServer({
         ...stubHarness(),
-        verify: { task: { preMerge: { commands: [{ command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }], critics: [{ issuePrompt: 'Review the issue diff.', noIssuePrompt: 'Review the Task diff.', model: 'stub-model' }] } } },
+        verify: { task: { preMerge: { commands: [{ command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }], critics: [{ name: 'Test critic', issuePrompt: 'Review the issue diff.', noIssuePrompt: 'Review the Task diff.', model: 'stub-model' }] } } },
       });
       try {
         const created = await configured.api('POST', '/api/tasks', { prompt: 'verification status target' });
@@ -403,9 +403,9 @@ describe('verification-critic', () => {
     return dir;
   }
 
-  const critic = () => ({ taskPreMergeCritics: [{ issuePrompt: 'Review the issue diff for correctness.', noIssuePrompt: 'Review the Task diff for correctness.', model: 'stub-model' }] });
+  const critic = () => ({ taskPreMergeCritics: [{ name: 'Test critic', issuePrompt: 'Review the issue diff for correctness.', noIssuePrompt: 'Review the Task diff for correctness.', model: 'stub-model' }] });
 
-  const criticWithHarness = (harness: HarnessId) => ({ taskPreMergeCritics: [{ issuePrompt: 'Review the issue diff for correctness.', noIssuePrompt: 'Review the Task diff for correctness.', model: 'stub-model', harness }] });
+  const criticWithHarness = (harness: HarnessId) => ({ taskPreMergeCritics: [{ name: 'Test critic', issuePrompt: 'Review the issue diff for correctness.', noIssuePrompt: 'Review the Task diff for correctness.', model: 'stub-model', harness }] });
 
   const exitCommand = (code: number): VerificationCommand =>
     verificationCommandSchema.parse({
@@ -581,8 +581,8 @@ describe('verification-critic', () => {
       criticResult = { verdict: 'fail', summary: 'the change matches the ticket' };
       await server.app.ctx.workspaces.update(workspaceId, {
         taskPreMergeCritics: [
-          { issuePrompt: 'Check the API.', noIssuePrompt: 'Check the API.', model: 'stub-model' },
-          { issuePrompt: 'Check the database.', noIssuePrompt: 'Check the database.', model: 'stub-model' },
+          { name: 'Test critic', issuePrompt: 'Check the API.', noIssuePrompt: 'Check the API.', model: 'stub-model' },
+          { name: 'Test critic', issuePrompt: 'Check the database.', noIssuePrompt: 'Check the database.', model: 'stub-model' },
         ],
       });
       const { taskId } = await createAndRun();

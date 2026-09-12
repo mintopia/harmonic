@@ -30,6 +30,7 @@ import type {
   UpdateState,
   HarnessProvider,
   DiscoveredHarnessModel,
+  TimelineResponse,
 } from './types.js';
 import type { Epic, EpicIntegrateOutcome } from './epic-model.js';
 import type { Stats } from './stats-model.js';
@@ -92,6 +93,8 @@ export const api = {
   task: (id: number) => request<Task>('GET', `/api/tasks/${id}`),
   stats: (from: number, to: number, workspaceId: number) =>
     request<Stats>('GET', `/api/stats?from=${from}&to=${to}&workspaceId=${workspaceId}`),
+  timeline: (workspaceId: number, from: number, to: number) =>
+    request<TimelineResponse>('GET', `/api/timeline?workspaceId=${workspaceId}&from=${from}&to=${to}`),
   epicStats: (epicRef: number, workspaceId: number) =>
     request<Stats>('GET', `/api/epics/${epicRef}/stats?workspaceId=${workspaceId}`),
   createTask: (input: Partial<Task> & { prompt: string; state?: 'draft' | 'ready' }) =>

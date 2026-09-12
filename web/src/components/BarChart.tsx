@@ -9,17 +9,20 @@ export function BarChart({
   bars,
   ariaLabel,
   columns,
+  tone = 'accent',
 }: {
   bars: Bar[];
   ariaLabel?: string;
   columns?: { label: string; value: string };
+  tone?: 'accent' | 'fail';
 }) {
   const max = Math.max(...bars.map((b) => b.value), 1);
+  const fill = tone === 'fail' ? 'bg-fail' : 'bg-accent';
   const ROW = 'grid grid-cols-[minmax(4rem,7rem)_1fr_auto] items-center gap-3';
   const track = (b: Bar) => (
     <span className="h-2 overflow-hidden rounded-full bg-raised" aria-hidden="true">
       <span
-        className="block h-full rounded-full bg-accent"
+        className={`bar-3d block h-full rounded-full ${fill}`}
         style={{ width: `${Math.max(3, (b.value / max) * 100)}%` }}
       />
     </span>

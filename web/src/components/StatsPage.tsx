@@ -1,7 +1,8 @@
 import { useState, type ReactNode } from 'react';
 import { formatAvgCostPerRun, formatCost, usd } from '../cost';
 import { api } from '../api';
-import { card, displayTitle, labelType, tableHead, touchTarget } from '../ui';
+import { card, labelType, tableHead, touchTarget } from '../ui';
+import { PageHeader } from './PageHeader';
 import {
   cacheHitRate,
   failureRate,
@@ -213,16 +214,18 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
 
   return (
     <div>
-      <div className="mb-5 flex flex-wrap items-center gap-3">
-        <h1 className={displayTitle}>Usage &amp; statistics</h1>
-        <div className="flex-1" />
-        <SegmentedControl
-          ariaLabel="Time range"
-          options={Object.keys(RANGES).map((r) => ({ label: r, value: r }))}
-          value={range}
-          onChange={setRange}
-        />
-      </div>
+      <PageHeader
+        title="Stats"
+        description="Spend, tokens, and reliability across the fleet"
+        actions={
+          <SegmentedControl
+            ariaLabel="Time range"
+            options={Object.keys(RANGES).map((r) => ({ label: r, value: r }))}
+            value={range}
+            onChange={setRange}
+          />
+        }
+      />
 
       {workspaceId !== null && (
         <AttemptHeatmap
@@ -366,7 +369,7 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
             {filled.length >= 2 && failsTotal > 0 && (
               <div className="mt-6">
                 <StatLabel>Fails per day</StatLabel>
-                <CostBars series={filled} metric="fails" />
+                <CostBars series={filled} metric="fails" tone="fail" />
               </div>
             )}
 
@@ -375,7 +378,7 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
               {reasonBars.length === 0 ? (
                 <p className="text-muted">No failures in range.</p>
               ) : (
-                <BarChart bars={reasonBars} ariaLabel="Failures by reason" />
+                <BarChart bars={reasonBars} ariaLabel="Failures by reason" tone="fail" />
               )}
             </div>
           </section>

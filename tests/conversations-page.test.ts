@@ -61,12 +61,15 @@ describe('ConversationsPage (#547)', () => {
     );
 
     expect(html).toContain('aria-label="Conversation context"');
-    expect(html).toContain('Input 12.3k · Output 4.5k');
+    expect(html).toContain('I/O tokens');
+    expect(html).toContain('16,800');
+    expect(html).toContain('12.3k');
+    expect(html).toContain('4.5k');
     expect(html).toContain('Cache read');
     expect(html).toContain('Cache write');
     expect(html).toContain('Model');
-    expect(html).toContain('Working directory');
-    expect(html).toContain('Permission Rules');
+    expect(html).toContain('Directory');
+    expect(html).toContain('Permissions');
     expect(html).toContain('Automatic');
     expect(html).not.toContain('99,999');
   });

@@ -8,6 +8,7 @@ export type IconName =
   | 'table'
   | 'graph'
   | 'stats'
+  | 'timeline'
   | 'api'
   | 'settings'
   | 'workspace'
@@ -31,6 +32,8 @@ export type IconName =
   | 'alert-triangle'
   | 'user'
   | 'help'
+  | 'search'
+  | 'trash'
   | 'copy';
 
 const PATHS: Record<IconName, JSX.Element> = {
@@ -66,6 +69,7 @@ const PATHS: Record<IconName, JSX.Element> = {
     </>
   ),
   stats: <path d="M4.5 13.5V9M8 13.5V3.5M11.5 13.5V7" />,
+  timeline: <path d="M2.25 4.5h5.5M5 8h7M3.5 11.5h4.5" />,
   api: <path d="M6 4.5 2.5 8l3.5 3.5M10 4.5 13.5 8l-3.5 3.5" />,
   settings: (
     <path d="M9.8 4.2a0.7 0.7 0 0 0 0 0.95l1.05 1.05a0.7 0.7 0 0 0 0.95 0l2.5-2.5a4 4 0 0 1-5.3 5.3l-4.6 4.6a1.4 1.4 0 0 1-2-2l4.6-4.6a4 4 0 0 1 5.3-5.3z" />
@@ -163,6 +167,20 @@ const PATHS: Record<IconName, JSX.Element> = {
       <circle cx="8" cy="8" r="6.25" />
       <path d="M5.9 6.1a2.1 2.1 0 1 1 3.15 1.82c-.7.42-1.05.86-1.05 1.68" />
       <path d="M8 11.75v.01" />
+    </>
+  ),
+  search: (
+    <>
+      <circle cx="6.75" cy="6.75" r="4.25" />
+      <path d="M13.5 13.5 10 10" />
+    </>
+  ),
+  trash: (
+    <>
+      <path d="M2.75 4.25h10.5" />
+      <path d="M6.25 4.25V2.75h3.5v1.5" />
+      <path d="M3.9 4.25 4.6 13a1 1 0 0 0 1 .92h4.8a1 1 0 0 0 1-.92l.7-8.75" />
+      <path d="M6.75 7v4M9.25 7v4" />
     </>
   ),
 };

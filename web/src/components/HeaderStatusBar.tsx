@@ -27,8 +27,11 @@ interface HeaderStatusBarProps {
   passwordSet: boolean;
   globalPaused: boolean | null;
   globalPausePending: boolean;
+  trackerEnabled: boolean;
+  refreshingTracker: boolean;
   onAutoRunnerChange: (enabled: boolean) => void;
   onGlobalPauseChange: (paused: boolean) => void;
+  onRefreshTracker: () => void;
   onThemeCycle: () => void;
   onSettingsClick: () => void;
   onLogout: () => void;
@@ -46,8 +49,11 @@ export function HeaderStatusBar({
   passwordSet,
   globalPaused,
   globalPausePending,
+  trackerEnabled,
+  refreshingTracker,
   onAutoRunnerChange,
   onGlobalPauseChange,
+  onRefreshTracker,
   onThemeCycle,
   onSettingsClick,
   onLogout,
@@ -125,6 +131,18 @@ export function HeaderStatusBar({
         </span>
       )}
       <div className="flex-1" />
+      {view === 'board' && trackerEnabled && (
+        <button
+          type="button"
+          title="Rescan the tracker and mirror ticket changes now"
+          className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[13px] font-medium text-muted transition-colors duration-150 hover:bg-raised hover:text-ink disabled:opacity-60"
+          disabled={refreshingTracker}
+          onClick={onRefreshTracker}
+        >
+          <Icon name="refresh" className={refreshingTracker ? 'motion-safe:animate-spin' : ''} />
+          {refreshingTracker ? 'Refreshing…' : 'Refresh tickets'}
+        </button>
+      )}
       <button
         aria-label="Help"
         title="Help"

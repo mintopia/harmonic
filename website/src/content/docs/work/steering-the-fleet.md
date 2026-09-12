@@ -26,6 +26,15 @@ There's also an instance-wide activity view that shows every agent running
 across all your Workspaces at once, with the same live usage and cost, so
 you can see the whole fleet's load in one place.
 
+## The timeline
+
+The board shows where every ticket stands right now; the **timeline** shows
+what the fleet has been doing. It lays every attempt each harness has run
+onto one clock, so you can see what overlapped, what took a while, and when
+it happened. Scrub the playhead back to any moment to read the fleet's state
+then, or open an attempt to step through its own run. Choose a 24-hour or
+7-day window.
+
 ## When a ticket needs you
 
 A ticket comes back to you in one of two ways, and both are marked clearly

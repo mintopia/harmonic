@@ -22,12 +22,13 @@ import {
   railNavButton,
   railNavSelected,
   railNavIdle,
+  btnAccept,
+  btnReject,
   PHASE_NODE_STYLES,
   type PhaseNodeVisual,
 } from '../ui';
 import { splitPathTail } from '../path';
 import { NO_SELECTION, type RailSelection } from '../router-model';
-import { CrumbBar } from './CrumbBar';
 import { DiffViewer } from './DiffViewer';
 import { EmptyState } from './EmptyState';
 import { Icon } from './Icon';
@@ -679,13 +680,6 @@ export function EpicPage({
 
   return (
     <div className="flex h-full flex-col">
-      <CrumbBar
-        crumbs={[
-          { node: <span className="font-semibold text-ink">Board</span>, onClick: onClose },
-          { node: <span className="font-data text-[12.5px]">epic/{epicRef}</span> },
-        ]}
-      />
-
       {/* two-pane shell, mirroring TicketPage: content left, navigation rail right;
           stacks under the rail breakpoint. */}
       <div className="flex min-h-0 flex-1 overflow-hidden max-rail:flex-col max-rail:overflow-visible">
@@ -693,6 +687,7 @@ export function EpicPage({
           <div className="px-[30px]">
             <div className="flex flex-wrap items-start gap-2.5 pb-1 pt-7">
               <span className={`${chip} shrink-0 bg-accent-tint text-accent`}>Epic</span>
+              <span className="mt-1 shrink-0 font-data text-[12.5px] text-muted">epic/{epicRef}</span>
               <h1 className="max-w-[680px] flex-1 text-[26px] font-extrabold leading-[1.15] tracking-[-0.03em]">{cardTitle(title)}</h1>
               {epic && <span className="mt-1.5"><EpicLifecycleChip epic={epic} /></span>}
             </div>
@@ -712,22 +707,24 @@ export function EpicPage({
                   onChange={(event) => setGuidance(event.target.value)}
                   placeholder="What should the resolver do differently?"
                 />
-                <button
-                  type="button"
-                  className="mt-3 rounded bg-raised px-3 py-1.5 text-small font-semibold text-ink disabled:opacity-50"
-                  disabled={rejecting || !guidance.trim()}
-                  onClick={() => rejectEpic('fresh')}
-                >
-                  {rejecting ? 'Requeuing…' : 'Reject and start fresh'}
-                </button>
-                <button
-                  type="button"
-                  className="ml-2 mt-3 rounded bg-fail px-3 py-1.5 text-small font-semibold text-white disabled:opacity-50"
-                  disabled={rejecting || !guidance.trim()}
-                  onClick={() => rejectEpic('continue')}
-                >
-                  Continue with guidance
-                </button>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className={btnAccept}
+                    disabled={rejecting || !guidance.trim()}
+                    onClick={() => rejectEpic('continue')}
+                  >
+                    Continue with guidance
+                  </button>
+                  <button
+                    type="button"
+                    className={btnReject}
+                    disabled={rejecting || !guidance.trim()}
+                    onClick={() => rejectEpic('fresh')}
+                  >
+                    {rejecting ? 'Requeuing…' : 'Reject and start fresh'}
+                  </button>
+                </div>
               </section>
             )}
 

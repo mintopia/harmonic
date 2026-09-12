@@ -6,7 +6,7 @@ import type { AttemptDot } from './attempt-rail-model.js';
  * ghost the accessible minimum height without any surface needing to remember
  * to add it. */
 export const btnPrimary =
-  'inline-flex min-h-11 items-center justify-center rounded-md bg-accent px-3.5 py-2 font-semibold text-on-accent shadow-btn transition-colors duration-150 hover:bg-accent-hot disabled:opacity-50 disabled:hover:bg-accent';
+  'btn-3d inline-flex min-h-11 items-center justify-center rounded-md bg-accent px-3.5 py-2 font-semibold text-on-accent shadow-btn transition-colors duration-150 hover:bg-accent-hot disabled:opacity-50 disabled:hover:bg-accent';
 
 export const btnGhost =
   'inline-flex min-h-11 items-center justify-center rounded-md border border-edge bg-surface px-3.5 py-2 font-medium text-ink transition-colors duration-150 hover:border-faint disabled:opacity-50 disabled:hover:border-edge';
@@ -44,7 +44,7 @@ export const btnQuietDestructive =
  * everything on its board. Not for casual/quiet destructive links —
  * those stay quiet-destructive so the loud red never becomes ambient. */
 export const btnDestructive =
-  'inline-flex min-h-11 items-center justify-center rounded-md bg-fail px-3.5 py-2 font-semibold text-on-fail shadow-btn transition-colors duration-150 hover:opacity-90 disabled:opacity-50 disabled:hover:opacity-50';
+  'btn-3d inline-flex min-h-11 items-center justify-center rounded-md bg-fail px-3.5 py-2 font-semibold text-on-fail shadow-btn transition-colors duration-150 hover:opacity-90 disabled:opacity-50 disabled:hover:opacity-50';
 
 /** Escalation actions (DESIGN.md § 6 Buttons) — the one human surface, so this
  * is the one place a second cobalt primary is sanctioned alongside the view's
@@ -63,7 +63,7 @@ export const btnReject = btnGhost;
  * a critic-flagged attempt anyway is a deliberate human override, not the
  * ordinary teal Accept. */
 export const btnReview =
-  'inline-flex min-h-11 items-center justify-center rounded-md bg-await px-3.5 py-2 font-semibold text-on-await shadow-btn transition-colors duration-150 hover:opacity-90 disabled:opacity-50 disabled:hover:opacity-90';
+  'btn-3d inline-flex min-h-11 items-center justify-center rounded-md bg-await px-3.5 py-2 font-semibold text-on-await shadow-btn transition-colors duration-150 hover:opacity-90 disabled:opacity-50 disabled:hover:opacity-90';
 
 export const field =
   'w-full rounded-md border border-edge bg-field px-2.5 py-1.5 text-ink placeholder:text-muted focus:border-accent focus:outline-none';

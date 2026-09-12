@@ -45,8 +45,8 @@ describe('Setting Override resolution (ADR-0012, issue #59)', () => {
 
   describe('staged verifier settings', () => {
     const globalCommand = { command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 };
-    const globalCritic = { issuePrompt: 'Review the issue.', noIssuePrompt: 'Review the Task.', model: 'claude-opus-5' };
-    const epicCritic = { prompt: 'Review the epic.', model: 'claude-opus-5' };
+    const globalCritic = { name: 'Test critic', issuePrompt: 'Review the issue.', noIssuePrompt: 'Review the Task.', model: 'claude-opus-5' };
+    const epicCritic = { name: 'Test critic', prompt: 'Review the epic.', model: 'claude-opus-5' };
     const config: Pick<AppConfig, 'verify'> = {
       verify: {
         task: {
@@ -77,7 +77,7 @@ describe('Setting Override resolution (ADR-0012, issue #59)', () => {
 
     it('replaces only the explicitly configured Workspace lists', () => {
       const command = { command: 'pnpm', args: ['lint'], env: {}, timeoutSeconds: 300 };
-      const critic = { prompt: 'Review the epic.', model: 'gpt-5.3-codex' };
+      const critic = { name: 'Test critic', prompt: 'Review the epic.', model: 'gpt-5.3-codex' };
       const resolved = resolveVerifiers(
         {
           ...inherited,
@@ -202,7 +202,7 @@ describe('Setting Override resolution (ADR-0012, issue #59)', () => {
 
   describe('staged verifier overrides (#523)', () => {
     const command = { command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 };
-    const critic = { issuePrompt: 'Review this issue change.', noIssuePrompt: 'Review this Task change.', model: 'claude-opus-5' };
+    const critic = { name: 'Test critic', issuePrompt: 'Review this issue change.', noIssuePrompt: 'Review this Task change.', model: 'claude-opus-5' };
     const config = { verify: { task: { preMerge: { commands: [command], critics: [critic] }, postMerge: { commands: [], critics: [] } }, epic: { preMerge: { commands: [], critics: [] }, resolvePrompt: 'Resolve it.' } } };
     const inherited = { taskPreMergeCommands: null, taskPreMergeCritics: null, taskPostMergeCommands: null, taskPostMergeCritics: null, epicPreMergeCommands: null, epicPreMergeCritics: null };
     it('inherits and replaces every list at its own stage grain', () => {
@@ -231,7 +231,7 @@ describe('Setting Override resolution (ADR-0012, issue #59)', () => {
 
 describe('staged verifier overrides (#523)', () => {
   const command = { command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 };
-  const critic = { issuePrompt: 'Review this issue change.', noIssuePrompt: 'Review this Task change.', model: 'claude-opus-5' };
+  const critic = { name: 'Test critic', issuePrompt: 'Review this issue change.', noIssuePrompt: 'Review this Task change.', model: 'claude-opus-5' };
   const config = {
     verify: {
       task: { preMerge: { commands: [command], critics: [critic] }, postMerge: { commands: [], critics: [] } },

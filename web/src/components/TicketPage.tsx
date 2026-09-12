@@ -16,7 +16,6 @@ import { gateForAttempt } from '../ticket-gate-model';
 import { cardTitle } from '../board-sections-model';
 import { AttemptRail } from './ticket/AttemptRail';
 import { Gate } from './ticket/Gate';
-import { CrumbBar } from './CrumbBar';
 import { LifecycleTimeline } from './ticket/LifecycleTimeline';
 import { attemptTone, runFailureBannerLabel, runForAttempt, stateTone, type TimelineTone } from '../attempt-timeline-model';
 import { attemptStepTabs, contentPanel, defaultSelection, defaultStepTab, harnessLabel, taskLifecycle, taskStats, verificationOutputTail, type ContentSelection, type LifecycleStepKey, type LifecycleStepStatus, type StepTab, type TaskStats } from '../task-detail-model';
@@ -24,7 +23,6 @@ import { isAtLiveEdge } from '../follow-tail-model';
 import { ChatTranscript, type PendingSteer } from './ticket/ChatTranscript';
 import { btnPrimary, card, labelType, railSectionHead, railSectionCount, railNavButton, railNavSelected, railNavIdle, PHASE_NODE_STYLES, statePill, mergeStatusPill } from '../ui';
 import { toastError } from '../toast';
-import { ticketIdentity } from '../id-format.js';
 import { splitPathTail } from '../path';
 import { useLiveEffect } from '../useLiveEffect';
 import { useScrollToPanel } from '../useScrollToPanel';
@@ -782,7 +780,7 @@ export function TicketPage({
   onChanged: () => void;
   onClose: () => void;
   onOpenTask: (taskId: number) => void;
-  /** Open this Ticket's parent Epic's summary page, from the crumb bar. */
+  /** Open this Ticket's parent Epic's summary page, from the title's Epic link. */
   onOpenEpic?: (ref: number) => void;
   /** The Epic this Ticket belongs to, resolved by the caller from the derived
    * Epic model (rolls up nested containers to the top-level Epic); null when it
@@ -941,28 +939,6 @@ export function TicketPage({
 
   return (
     <div className="flex h-full flex-col">
-      <CrumbBar
-        crumbs={[
-          { node: <span className="font-semibold text-ink">{workspaceName ?? '…'}</span>, onClick: onClose },
-          ...((parentEpicRef ?? task.mapRef) !== null
-            ? [
-                {
-                  node: (
-                    <span className="inline-flex items-center gap-[7px] text-tool">
-                      <span className="rounded-[5px] bg-tool-tint px-1.5 py-px text-[10px] font-bold uppercase tracking-[0.06em]">
-                        Epic
-                      </span>
-                      <span className="font-data text-[12.5px]">epic/{parentEpicRef ?? task.mapRef}</span>
-                    </span>
-                  ),
-                  onClick: () => onOpenEpic?.((parentEpicRef ?? task.mapRef)!),
-                },
-              ]
-            : []),
-          { node: <span>{ticketIdentity(task.id, task.trackerRef)}</span> },
-        ]}
-      />
-
       {error && (
         <div role="alert" className="mx-6 mt-4 shrink-0 rounded-lg bg-fail-tint px-4 py-2 text-fail">
           {error}
@@ -981,8 +957,20 @@ export function TicketPage({
           }}
           className="min-w-0 flex-1 overflow-y-auto pb-10 focus:outline-none max-rail:overflow-visible"
         >
-          <div className="px-[30px]">
-            <div className="flex items-start gap-4 pb-1 pt-7">
+          <div className="px-[30px] pt-7">
+            {(parentEpicRef ?? task.mapRef) !== null && (
+              <button
+                type="button"
+                onClick={() => onOpenEpic?.((parentEpicRef ?? task.mapRef)!)}
+                className="mb-2.5 inline-flex items-center gap-[7px] text-tool hover:underline"
+              >
+                <span className="rounded-[5px] bg-tool-tint px-1.5 py-px text-[10px] font-bold uppercase tracking-[0.06em]">
+                  Epic
+                </span>
+                <span className="font-data text-[12.5px]">epic/{parentEpicRef ?? task.mapRef}</span>
+              </button>
+            )}
+            <div className="flex items-start gap-4 pb-1">
               <h1 className="max-w-[680px] text-[26px] font-extrabold leading-[1.15] tracking-[-0.03em]">
                 {cardTitle(task.summary)}
               </h1>

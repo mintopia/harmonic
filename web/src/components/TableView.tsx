@@ -8,8 +8,6 @@ import {
   btnPrimary,
   btnQuiet,
   chip,
-  displayTitle,
-  labelType,
   searchField,
   stateChip,
   stateDot,
@@ -18,6 +16,7 @@ import {
   touchOverlay,
 } from '../ui';
 import { toastError } from '../toast';
+import { PageHeader } from './PageHeader';
 import { fetchTasks, TABLE_PAGE_SIZE } from '../table-model';
 import { excludeEpicDrivers, type Epic } from '../epic-model';
 import { issueRef, ticketRowId } from '../id-format.js';
@@ -242,15 +241,19 @@ export function TableView({
 
   return (
     <div>
-      <h1 className="sr-only">Tasks</h1>
-      <div className="mb-4 flex flex-wrap items-baseline gap-2">
-        <span className="flex items-baseline gap-1.5">
-          <span className={`${displayTitle} tabular-nums ${total > 0 || loading ? '' : 'text-faint'}`}>
-            {loading ? '…' : total}
+      <PageHeader
+        title="Tasks"
+        description="Every task in this workspace, filterable and searchable"
+        actions={
+          <span className="flex items-baseline gap-1.5 text-small">
+            <span className={`tabular-nums ${total > 0 || loading ? 'text-ink' : 'text-faint'}`}>
+              {loading ? '…' : total}
+            </span>
+            <span className="text-muted">tasks</span>
           </span>
-          <span className={`${labelType} text-muted`}>tasks</span>
-        </span>
-        <div className="flex-1" />
+        }
+      />
+      <div className="mb-4 flex flex-wrap items-center gap-2">
         <input
           type="search"
           aria-label="Search prompts"

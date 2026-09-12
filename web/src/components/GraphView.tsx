@@ -23,7 +23,8 @@ import { ticketRowId } from '../id-format.js';
 import { useLiveEffect } from '../useLiveEffect';
 import { Switch } from './Switch';
 import { EmptyState } from './EmptyState';
-import { displayTitle, labelType, touchTarget, touchTargetInline } from '../ui';
+import { touchTarget, touchTargetInline } from '../ui';
+import { PageHeader } from './PageHeader';
 
 const NODE_W = 196;
 const NODE_H = 60;
@@ -162,19 +163,23 @@ export function GraphView({
 
   return (
     <div className="flex h-full flex-col">
-      <h1 className="sr-only">Dependency graph</h1>
-      <div className="mb-4 flex flex-wrap items-baseline gap-3">
-        <span className="flex items-baseline gap-1.5">
-          <span className={`${displayTitle} tabular-nums ${visible.length > 0 || loading ? '' : 'text-faint'}`}>
-            {loading ? '…' : visible.length}
-          </span>
-          <span className={`${labelType} text-muted`}>tasks</span>
-        </span>
-        <div className="flex-1" />
-        <Switch checked={showTerminal} onChange={setShowTerminal} label="Show terminal tasks">
-          <span className="font-medium text-muted">Show terminal</span>
-        </Switch>
-      </div>
+      <PageHeader
+        title="Graph"
+        description="What blocks what across this workspace"
+        actions={
+          <>
+            <span className="flex items-baseline gap-1.5 text-small">
+              <span className={`tabular-nums ${visible.length > 0 || loading ? 'text-ink' : 'text-faint'}`}>
+                {loading ? '…' : visible.length}
+              </span>
+              <span className="text-muted">tasks</span>
+            </span>
+            <Switch checked={showTerminal} onChange={setShowTerminal} label="Show terminal tasks">
+              <span className="font-medium text-muted">Show terminal</span>
+            </Switch>
+          </>
+        }
+      />
 
       <div className="relative min-h-0 flex-1 overflow-hidden rounded-lg bg-canvas ring-1 ring-hairline">
         <div

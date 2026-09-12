@@ -32,7 +32,7 @@ import { PathTail } from './PathTail';
 import { PermissionRules } from './PermissionRules';
 import { providerLabel } from './TaskIdentity';
 import { Icon } from './Icon';
-import { Composer } from './conversation/Composer';
+import { Composer, ContextMeter } from './conversation/Composer';
 import { StreamAnnouncer, Transcript } from './conversation/Transcript';
 import { useConversationDetail } from './useConversationDetail';
 import { toastError } from '../toast';
@@ -48,18 +48,53 @@ import {
   touchTargetInline,
 } from '../ui';
 
+function PermissionModeToggle({
+  mode,
+  disabled,
+  onChange,
+}: {
+  mode: Conversation['permissionMode'];
+  disabled: boolean;
+  onChange?: (mode: Conversation['permissionMode']) => void;
+}) {
+  const option = (value: Conversation['permissionMode'], label: string) => (
+    <button
+      type="button"
+      aria-pressed={mode === value}
+      disabled={disabled}
+      className={`rounded-sm py-1.5 text-small font-semibold transition-colors duration-150 disabled:opacity-50 ${
+        mode === value ? 'bg-accent text-on-accent shadow-btn' : 'text-muted hover:text-ink'
+      }`}
+      onClick={() => onChange?.(value)}
+    >
+      {label}
+    </button>
+  );
+  return (
+    <div role="group" aria-label="Permission mode" className="grid grid-cols-2 gap-1 rounded-md border border-edge bg-sunken p-1">
+      {option('ask', 'Ask each turn')}
+      {option('automatic', 'Automatic')}
+    </div>
+  );
+}
+
 export function ConversationContextDrawer({
   conversation,
   events,
   onClose,
   onPermissionModeChange,
+  onEnd,
+  onDelete,
 }: {
   conversation: Conversation;
   events: ConversationEvent[];
   onClose: () => void;
   onPermissionModeChange?: (permissionMode: Conversation['permissionMode']) => void;
+  onEnd?: () => void;
+  onDelete?: () => void;
 }) {
   const [now, setNow] = useState(() => Date.now());
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 20_000);
@@ -67,72 +102,141 @@ export function ConversationContextDrawer({
   }, []);
 
   const tokenBreakdown = formatTokenBreakdown(conversation.usage);
+  const totals = conversation.usage?.totals;
+  const io = totals ? (totals.inputTokens + totals.outputTokens).toLocaleString() : null;
   const cost = formatCost(conversation.cost);
   const context = formatContextUsage(computeContextUsage(conversation));
+  const contextFraction =
+    conversation.contextWindow && conversation.contextTokens != null
+      ? Math.min(1, Math.max(0, conversation.contextTokens / conversation.contextWindow))
+      : null;
   const coldCache = formatColdCacheMessage({
     lastTurnAt: lastConversationTurnAt(events) ?? conversation.updatedAt,
     cacheWarmSeconds: conversation.cacheWarmSeconds,
     now,
   });
-  const input = tokenBreakdown?.find(({ label }) => label === 'Input')?.value;
-  const output = tokenBreakdown?.find(({ label }) => label === 'Output')?.value;
+  const ended = conversation.state === 'ended';
 
   return (
-    <aside aria-label="Conversation context" className="flex w-80 shrink-0 flex-col overflow-y-auto border-l border-hairline">
+    <aside aria-label="Conversation context" className="absolute inset-y-0 right-0 z-30 flex w-full max-w-xs flex-col overflow-hidden border-l border-edge bg-shell shadow-float md:static md:z-auto md:w-72 md:max-w-none md:shadow-none">
       <div className="flex items-center justify-between border-b border-hairline px-4 py-3">
         <h2 className={panelTitle}>Context</h2>
         <button type="button" className={btnQuiet} onClick={onClose} aria-label="Hide conversation context">
           Hide
         </button>
       </div>
-      <div className="space-y-5 px-4 py-4">
+      <div className="flex-1 space-y-5 overflow-y-auto px-4 py-4">
         <section aria-labelledby="conversation-usage-heading">
-          <h3 id="conversation-usage-heading" className={sectionTitle}>Usage</h3>
-          <p className="mt-1.5 text-small text-muted">
-            {input && output ? `Input ${input} · Output ${output}` : 'No usage yet'}
-          </p>
-          {tokenBreakdown && (
-            <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-small">
-          {tokenBreakdown.map(({ label, value }) => (
-            <div key={label} className="flex min-w-0 items-baseline justify-between gap-1.5 sm:block">
-              <dt className="text-faint">{label}</dt>
-              <dd className="tabular-nums text-ink">{value}</dd>
+          <h3 id="conversation-usage-heading" className={sectionTitle}>Usage · this conversation</h3>
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            <div className="rounded-md border border-hairline bg-sunken px-3 py-2.5">
+              <div className="font-data text-lg font-semibold tabular-nums text-ink">{io ?? '—'}</div>
+              <div className="mt-1 text-label font-bold uppercase tracking-[0.08em] text-faint">I/O tokens</div>
             </div>
-          ))}
+            <div className="rounded-md border border-hairline bg-sunken px-3 py-2.5">
+              <div className="font-data text-lg font-semibold tabular-nums text-ink">{cost ?? '—'}</div>
+              <div className="mt-1 text-label font-bold uppercase tracking-[0.08em] text-faint">Cost</div>
+            </div>
+          </div>
+          {tokenBreakdown && (
+            <dl className="mt-3">
+              {tokenBreakdown.map(({ label, value }, index) => (
+                <div
+                  key={label}
+                  className={`flex items-center justify-between py-1.5 text-small ${
+                    index < tokenBreakdown.length - 1 ? 'border-b border-hairline' : ''
+                  }`}
+                >
+                  <dt className="text-muted">{label}</dt>
+                  <dd className="font-data tabular-nums text-ink">{value}</dd>
+                </div>
+              ))}
             </dl>
           )}
-          <dl className="mt-3 space-y-1 text-small">
-            <div className="flex justify-between gap-3"><dt className="text-faint">Cost</dt><dd className="tabular-nums text-ink">{cost ?? '—'}</dd></div>
-            <div className="flex justify-between gap-3"><dt className="text-faint">Context</dt><dd className="tabular-nums text-ink">{context.value}{context.note ? ` · ${context.note}` : ''}</dd></div>
-          </dl>
-          {coldCache && <p role="status" className="mt-3 bg-raised px-2 py-1.5 text-small text-muted">{coldCache}</p>}
+          <div className="mt-3.5">
+            <div className="flex items-baseline justify-between text-small text-muted">
+              <span>Context window</span>
+              <span className="font-data tabular-nums text-ink">{context.value}</span>
+            </div>
+            {contextFraction != null && (
+              <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-raised">
+                <div className="h-full rounded-full bg-accent" style={{ width: `${contextFraction * 100}%` }} />
+              </div>
+            )}
+            {(coldCache || context.note) && (
+              <p role="status" className="mt-2 text-small text-faint">{coldCache ?? context.note}</p>
+            )}
+          </div>
         </section>
+
         <section aria-labelledby="conversation-model-heading">
           <h3 id="conversation-model-heading" className={sectionTitle}>Model</h3>
-          <p className="mt-1.5 text-small text-muted">{providerLabel(conversation.harness)} · {conversation.model}</p>
+          <dl className="mt-2">
+            <div className="grid grid-cols-[5rem_1fr] items-center gap-3 border-b border-hairline py-2">
+              <dt className="text-small text-faint">Harness</dt>
+              <dd className="text-small text-ink">{providerLabel(conversation.harness)}</dd>
+            </div>
+            <div className="grid grid-cols-[5rem_1fr] items-center gap-3 border-b border-hairline py-2">
+              <dt className="text-small text-faint">Model</dt>
+              <dd className="font-data text-data text-muted">{conversation.model}</dd>
+            </div>
+            <div className="grid grid-cols-[5rem_1fr] items-center gap-3 py-2">
+              <dt className="text-small text-faint">Directory</dt>
+              <PathTail path={conversation.workingDir} className="min-w-0 font-data text-data text-muted" />
+            </div>
+          </dl>
         </section>
-        <section aria-labelledby="conversation-directory-heading">
-          <h3 id="conversation-directory-heading" className={sectionTitle}>Working directory</h3>
-          <PathTail path={conversation.workingDir} className="mt-1.5 font-data text-data text-muted" />
-        </section>
+
         <section aria-labelledby="conversation-permissions-heading">
-          <h3 id="conversation-permissions-heading" className={sectionTitle}>Permission Rules</h3>
-          <div className="mt-1.5"><PermissionRules /></div>
-          <label className="mt-3 block text-small text-muted">
-            Permission mode
-            <select
-              aria-label="Permission mode"
-              className={`${field} mt-1 w-full`}
-              value={conversation.permissionMode}
-              disabled={conversation.state === 'ended'}
-              onChange={(event) => onPermissionModeChange?.(event.currentTarget.value === 'automatic' ? 'automatic' : 'ask')}
-            >
-              <option value="ask">Ask each turn</option>
-              <option value="automatic">Automatic</option>
-            </select>
-          </label>
+          <h3 id="conversation-permissions-heading" className={sectionTitle}>Permissions</h3>
+          <div className="mt-2">
+            <PermissionModeToggle
+              mode={conversation.permissionMode}
+              disabled={ended}
+              onChange={onPermissionModeChange}
+            />
+          </div>
+          <p className="mt-2.5 text-small text-muted">
+            {conversation.permissionMode === 'automatic'
+              ? 'Automatic approves every tool call — edits, commands, everything — with no prompts.'
+              : 'Ask each turn pauses on every tool call so you approve edits and commands as they come.'}
+          </p>
+          <div className="mt-3"><PermissionRules /></div>
         </section>
       </div>
+      {(onEnd || onDelete) && (
+        <div className="flex items-center gap-2 border-t border-hairline px-4 py-3">
+          {onEnd && !ended && (
+            <button type="button" className={btnQuiet} onClick={onEnd}>
+              End conversation
+            </button>
+          )}
+          {onDelete && (
+            <button
+              type="button"
+              className={`ml-auto ${btnQuietDestructive}`}
+              onClick={() => setConfirmingDelete(true)}
+            >
+              Delete
+            </button>
+          )}
+        </div>
+      )}
+      {confirmingDelete && (
+        <ConfirmDialog
+          label="Delete conversation"
+          title="Delete this conversation?"
+          confirmLabel="Delete"
+          tone="danger"
+          onCancel={() => setConfirmingDelete(false)}
+          onConfirm={() => {
+            setConfirmingDelete(false);
+            onDelete?.();
+          }}
+        >
+          This permanently deletes the conversation and its history. This cannot be undone.
+        </ConfirmDialog>
+      )}
     </aside>
   );
 }
@@ -243,7 +347,7 @@ type ConversationHeaderProps = {
   onDelete: () => void;
 } & (
   | { fullPage: true }
-  | { fullPage?: false; expanded: boolean; onToggleExpand: () => void; onClose: () => void }
+  | { fullPage?: false; onExpand: () => void; onClose: () => void }
 );
 
 function ConversationHeader(props: ConversationHeaderProps) {
@@ -273,7 +377,7 @@ function ConversationHeader(props: ConversationHeaderProps) {
   const title = composing ? 'New conversation' : conversationDisplayTitle(conversation?.title ?? null);
 
   return (
-    <div className="border-b border-hairline px-4 py-3">
+    <div className="border-b border-edge bg-surface px-4 py-2">
       <div className="flex items-center gap-1.5">
         <button aria-label="Back to conversations" className={`${touchTarget} ${btnQuiet}`} onClick={onBack}>
           <Icon name="arrow-left" />
@@ -308,7 +412,7 @@ function ConversationHeader(props: ConversationHeaderProps) {
           </>
         ) : (
           <>
-            <span className={`${panelTitle} min-w-0 flex-1 truncate`}>{title}</span>
+            <span className="min-w-0 flex-1 truncate text-title font-semibold text-ink">{title}</span>
             {conversation && (
               <button aria-label="Rename conversation" className={`${touchTarget} ${btnQuiet}`} onClick={startEdit}>
                 <Icon name="edit" />
@@ -316,34 +420,34 @@ function ConversationHeader(props: ConversationHeaderProps) {
             )}
           </>
         )}
-        {!props.fullPage && (
-          <button
-            aria-label={props.expanded ? 'Collapse to panel' : 'Expand to full view'}
-            className={`${touchTarget} ${btnQuiet}`}
-            onClick={props.onToggleExpand}
-          >
-            <Icon name={props.expanded ? 'collapse' : 'expand'} />
-          </button>
-        )}
-        {conversation?.state === 'active' && (
-          <button className={`${touchTargetInline} ${btnQuiet}`} onClick={onEnd}>
-            End
-          </button>
-        )}
-        {conversation && (
-          <button
-            aria-label="Delete conversation"
-            className={`${touchTargetInline} ${btnQuietDestructive}`}
-            onClick={() => setConfirmingDelete(true)}
-          >
-            Delete
-          </button>
-        )}
-        {!props.fullPage && (
-          <button aria-label="Close conversation panel" className={`${touchTarget} ${btnQuiet}`} onClick={props.onClose}>
-            <Icon name="close" />
-          </button>
-        )}
+        {props.fullPage ? null : (
+            <>
+              <button
+                aria-label="Expand to full view"
+                className={`${touchTarget} ${btnQuiet}`}
+                onClick={props.onExpand}
+              >
+                <Icon name="expand" />
+              </button>
+              {conversation?.state === 'active' && (
+                <button className={`${touchTargetInline} ${btnQuiet}`} onClick={onEnd}>
+                  End
+                </button>
+              )}
+              {conversation && (
+                <button
+                  aria-label="Delete conversation"
+                  className={`${touchTargetInline} ${btnQuietDestructive}`}
+                  onClick={() => setConfirmingDelete(true)}
+                >
+                  Delete
+                </button>
+              )}
+              <button aria-label="Close conversation panel" className={`${touchTarget} ${btnQuiet}`} onClick={props.onClose}>
+                <Icon name="close" />
+              </button>
+            </>
+          )}
       </div>
       {confirmingDelete && (
         <ConfirmDialog
@@ -360,25 +464,6 @@ function ConversationHeader(props: ConversationHeaderProps) {
           This permanently deletes the conversation and its history. This cannot be undone.
         </ConfirmDialog>
       )}
-      {conversation && (
-        <div className="mt-1 flex items-center gap-1.5 text-small text-muted">
-          <span
-            className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-              conversation.state === 'active' ? 'bg-muted' : 'bg-faint'
-            }`}
-            title={conversation.state}
-          />
-          <span className="sr-only">{conversation.state}</span>
-          <span className="shrink-0">
-            {providerLabel(conversation.harness)} · {conversation.model}
-          </span>
-          {conversation.permissionMode === 'automatic' && <span className={toolChip}>Automatic</span>}
-          <span aria-hidden="true" className="shrink-0 text-faint">
-            ·
-          </span>
-          <PathTail path={conversation.workingDir} className="flex-1 font-data" />
-        </div>
-      )}
     </div>
   );
 }
@@ -392,6 +477,7 @@ export function ConversationLauncher({
   openConversationId,
   pendingPermission,
   onConversationOpened,
+  onExpand,
 }: {
   config: AppConfig | null;
   workspace: Workspace | null;
@@ -399,27 +485,10 @@ export function ConversationLauncher({
   openConversationId: number | null;
   pendingPermission: PendingPermission | null;
   onConversationOpened: () => void;
+  onExpand: (conversationId: number | null) => void;
 }) {
   const workspaceId = workspace?.id ?? null;
   const [open, setOpen] = useState(false);
-  const [expanded, setExpanded] = useState(false);
-  // Re-adding the same class later still restarts the CSS animation (it only
-  // replays on a genuine "gained the class" transition), so the flourish never
-  // needs a remount, which would otherwise blow away in-progress Composer text.
-  const [flourish, setFlourish] = useState(false);
-  const flourishTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(
-    () => () => {
-      if (flourishTimer.current) clearTimeout(flourishTimer.current);
-    },
-    [],
-  );
-  const toggleExpanded = () => {
-    setExpanded((e) => !e);
-    setFlourish(true);
-    if (flourishTimer.current) clearTimeout(flourishTimer.current);
-    flourishTimer.current = setTimeout(() => setFlourish(false), 150);
-  };
 
   const [view, setView] = useState<LauncherView>(() => {
     const persisted = loadConversationId(localStorage);
@@ -550,25 +619,18 @@ export function ConversationLauncher({
     <div
       role="dialog"
       aria-label="Conversation"
-      data-dock={expanded ? 'expanded' : 'docked'}
+      data-dock="docked"
       onKeyDown={(e) => e.key === 'Escape' && setOpen(false)}
-      className={`z-40 flex flex-col rounded-lg bg-surface shadow-bar ${
-        flourish ? 'motion-safe:animate-[dialog-in_150ms_var(--ease-out-quint)]' : ''
-      } ${
-        expanded
-          ? 'fixed inset-6'
-          : 'absolute inset-y-4 right-4 w-[26rem] max-w-[calc(100%-2rem)]'
-      }`}
+      className="absolute inset-y-4 right-4 z-40 flex w-[26rem] max-w-[calc(100%-2rem)] flex-col rounded-lg bg-surface shadow-bar"
     >
       {view.kind === 'list' ? (
         <ConversationList
           conversations={conversations}
           attention={attention}
-          expanded={expanded}
           onSelect={openConversation}
           onNew={openCompose}
           onDelete={actions.deleteConversation}
-          onToggleExpand={toggleExpanded}
+          onExpand={() => onExpand(null)}
           onClose={() => setOpen(false)}
         />
       ) : (
@@ -576,9 +638,8 @@ export function ConversationLauncher({
           <ConversationHeader
             conversation={conversation}
             composing={view.conversationId === null}
-            expanded={expanded}
             onBack={openList}
-            onToggleExpand={toggleExpanded}
+            onExpand={() => onExpand(focusedId)}
             onRename={actions.rename}
             onEnd={actions.end}
             onDelete={() => conversation && actions.deleteConversation(conversation.id)}
@@ -617,7 +678,7 @@ export function ConversationLauncher({
                   workspace={workspace}
                   conversation={conversation}
                   events={events}
-                  expanded={expanded}
+                  expanded={false}
                   onSend={actions.send}
                 />
               </>
@@ -712,18 +773,25 @@ export function ConversationsPage({
   };
 
   return (
-    <div className="flex h-full min-h-0 overflow-hidden rounded-lg bg-surface shadow-card">
-      <aside aria-label="Conversations" className="flex w-80 shrink-0 border-r border-hairline">
+    <div className="relative flex h-full min-h-0 overflow-hidden bg-canvas">
+      <aside
+        aria-label="Conversations"
+        className={`${view.kind === 'detail' ? 'hidden md:flex' : 'flex'} w-full shrink-0 border-r border-edge bg-shell md:w-64`}
+      >
         <ConversationList
           conversations={conversations}
           attention={attention}
+          selectedId={focusedId}
           fullPage
           onSelect={openConversation}
           onNew={openCompose}
           onDelete={deleteConversation}
         />
       </aside>
-      <section aria-label="Conversation transcript" className="flex min-w-0 flex-1 flex-col">
+      <section
+        aria-label="Conversation transcript"
+        className={`${view.kind === 'list' ? 'hidden md:flex' : 'flex'} min-w-0 flex-1 flex-col`}
+      >
         {view.kind === 'list' ? (
           <div className="flex flex-1 items-center justify-center px-6 text-muted">
             Select a conversation or start a new one.
@@ -755,9 +823,14 @@ export function ConversationsPage({
                 <ElicitationPrompt key={elicitation.reqId} pending={elicitation} onAnswer={actions.answerElicitation} />
               ))}
             {ended ? (
-              <p role="status" className="border-t border-hairline bg-raised px-4 py-2.5 text-muted">
-                This conversation has ended — read-only.
-              </p>
+              <div role="status" className="flex items-center gap-3 border-t border-edge bg-surface px-4 py-2.5 text-muted">
+                <span>This conversation has ended — read-only.</span>
+                {conversation && (
+                  <div className="ml-auto text-label normal-case tracking-normal text-faint">
+                    <ContextMeter conversation={conversation} onOpen={() => setContextOpen(true)} />
+                  </div>
+                )}
+              </div>
             ) : (
               config &&
               composerReady && (
@@ -770,6 +843,7 @@ export function ConversationsPage({
                     events={events}
                     expanded={true}
                     onSend={actions.send}
+                    onOpenContext={() => setContextOpen(true)}
                   />
                 </>
               )
@@ -777,20 +851,15 @@ export function ConversationsPage({
           </>
         )}
       </section>
-      {view.kind === 'detail' && conversation && (
-        contextOpen ? (
-          <ConversationContextDrawer conversation={conversation} events={events} onClose={() => setContextOpen(false)} onPermissionModeChange={actions.setPermissionMode} />
-        ) : (
-          <button
-            type="button"
-            className={`${touchTarget} w-11 shrink-0 border-l border-hairline text-small text-muted hover:bg-raised`}
-            aria-label="Show conversation context"
-            aria-expanded={false}
-            onClick={() => setContextOpen(true)}
-          >
-            Context
-          </button>
-        )
+      {view.kind === 'detail' && conversation && contextOpen && (
+        <ConversationContextDrawer
+          conversation={conversation}
+          events={events}
+          onClose={() => setContextOpen(false)}
+          onPermissionModeChange={actions.setPermissionMode}
+          onEnd={actions.end}
+          onDelete={() => deleteConversation(conversation.id)}
+        />
       )}
     </div>
   );

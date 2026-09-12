@@ -117,8 +117,7 @@ export function WorkspaceSettingsPage({
       title="Workspace"
       intro={
         <>
-          Settings for <span className="font-semibold text-ink">{pristine.name}</span> — its identity and its overrides
-          of the global defaults. Overridable fields inherit the default until you turn an override on.
+          Project, tracker, and verifier overrides for <span className="font-semibold text-ink">{pristine.name}</span>
         </>
       }
       tabs={workspaceTabs()}

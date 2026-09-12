@@ -46,8 +46,8 @@ describe('verifyEpicIntegration', () => {
           timeoutSeconds: 10,
         }],
         critics: [
-          { prompt: 'Review the Epic.', model: 'stub-model' },
-          { prompt: 'Review the integration.', model: 'stub-model' },
+          { name: 'Test critic', prompt: 'Review the Epic.', model: 'stub-model' },
+          { name: 'Test critic', prompt: 'Review the integration.', model: 'stub-model' },
         ],
       },
       runCritic: critic,
@@ -63,8 +63,8 @@ describe('verifyEpicIntegration', () => {
       verifiers: {
         commands: [],
         critics: [
-          { prompt: 'Review the migration.', model: 'stub-model' },
-          { prompt: 'Review the Epic.', model: 'stub-model' },
+          { name: 'Test critic', prompt: 'Review the migration.', model: 'stub-model' },
+          { name: 'Test critic', prompt: 'Review the Epic.', model: 'stub-model' },
         ],
       },
       runCritic: vi.fn()

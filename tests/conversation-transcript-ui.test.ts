@@ -31,9 +31,8 @@ describe('Conversation transcript live activity (#551)', () => {
       }),
     );
 
-    expect(host.textContent).toContain('Now running');
+    expect(host.textContent).toContain('Running');
     expect(host.textContent).toContain('Run npm test');
-    expect(host.textContent).toContain('pending');
   });
 
   it('offers an explicit jump after the reader scrolls away from the live edge', async () => {

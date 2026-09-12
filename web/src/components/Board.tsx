@@ -25,7 +25,6 @@ import {
   blockerCountPip,
   boardSectionTitle,
   btnPrimary,
-  btnQuiet,
   chip,
   displayTitle,
   hitlBadge,
@@ -37,6 +36,7 @@ import {
   toolChip,
   touchTargetInline,
 } from '../ui';
+import { PageHeader } from './PageHeader';
 
 /** The recorded trigger, without the settle fact's `escalated to human:` preamble. */
 export function escalationReasonText(reason: string): string {
@@ -99,7 +99,7 @@ function RunNowButton({ taskId }: { taskId: number }) {
   return (
     <button
       type="button"
-      className={`relative inline-flex items-center rounded-md border border-accent bg-accent px-[13px] py-[7px] text-[13px] font-semibold text-on-accent transition-colors hover:opacity-90 ${HIT44}`}
+      className={`btn-3d relative inline-flex items-center rounded-md border border-accent bg-accent px-[13px] py-[7px] text-[13px] font-semibold text-on-accent transition-colors hover:opacity-90 ${HIT44}`}
       onClick={runTask(taskId, refresh)}
     >
       Run now
@@ -111,7 +111,7 @@ function ResolveButton({ onOpen }: { onOpen: () => void }) {
   return (
     <button
       type="button"
-      className={`relative inline-flex items-center rounded-md border border-await bg-await px-[13px] py-[7px] text-[13px] font-semibold text-on-await transition-colors hover:opacity-90 ${HIT44}`}
+      className={`btn-3d relative inline-flex items-center rounded-md border border-await bg-await px-[13px] py-[7px] text-[13px] font-semibold text-on-await transition-colors hover:opacity-90 ${HIT44}`}
       onClick={onOpen}
     >
       Resolve →
@@ -130,7 +130,7 @@ function PauseResumeButton({ task }: { task: Task }) {
     <>
       <button
         type="button"
-        className={`${btnQuiet} relative z-10 disabled:opacity-60 ${HIT44}`}
+        className={`relative z-10 inline-flex items-center rounded-md border border-edge bg-surface px-[13px] py-[7px] text-[13px] font-semibold text-ink transition-colors hover:border-faint disabled:opacity-60 ${HIT44}`}
         disabled={pending}
         onClick={(e) => {
           e.stopPropagation();
@@ -208,7 +208,7 @@ export function TaskCard({ task, onOpen }: { task: Task; onOpen: () => void }) {
   const showFoot = !!task.branch || hasReadout || !!action;
 
   return (
-    <article data-task-id={task.id} className={`group bold-wash ${task.state} relative flex w-[26.25rem] shrink-0 cursor-pointer flex-col overflow-hidden rounded-lg bg-surface shadow-card transition-shadow duration-150 motion-reduce:transition-none hover:shadow-float`}>
+    <article data-task-id={task.id} className={`group bold-wash ${task.state} relative flex w-[26.25rem] max-w-full shrink-0 cursor-pointer flex-col overflow-hidden rounded-lg bg-surface shadow-card transition-shadow duration-150 motion-reduce:transition-none hover:shadow-float`}>
       <span aria-hidden="true" className={`absolute inset-y-0 left-0 w-[5px] ${stateFill(task.state)}`} />
       <div className="flex flex-1 flex-col px-4 py-4 pl-5">
         <div className="flex items-center gap-2">
@@ -238,21 +238,17 @@ export function TaskCard({ task, onOpen }: { task: Task; onOpen: () => void }) {
         >
           {cardTitle(task.summary)}
         </button>
-        {(task.escalationReason || task.origin === 'mirrored') && (
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-[12.5px] text-muted">
-            {task.origin === 'mirrored' && (
-              <span className="rounded-[3px] bg-raised px-1.5 py-0.5 text-label font-medium text-muted">mirrored</span>
-            )}
-            {task.escalationReason && (
-              <span className="line-clamp-2 text-await" title={task.escalationReason}>
-                {escalationReasonText(task.escalationReason)}
-              </span>
-            )}
-          </div>
-        )}
-        <div className="-mt-1">
+        <div className="mt-2 flex items-center gap-2 text-small text-muted">
+          {task.origin === 'mirrored' && (
+            <span className="shrink-0 rounded-[3px] bg-raised px-1.5 py-0.5 text-label font-medium text-muted">mirrored</span>
+          )}
           <WhoLine harness={task.harness} model={task.model} />
         </div>
+        {task.escalationReason && (
+          <div className="mt-1.5 line-clamp-2 text-[12.5px] text-await" title={task.escalationReason}>
+            {escalationReasonText(task.escalationReason)}
+          </div>
+        )}
         <div className="mt-2">
           <SessionWarmthChip taskId={task.id} />
         </div>
@@ -286,7 +282,7 @@ function EpicKindBadge({ epic }: { epic: Epic }) {
 export function EpicAttentionCard({ epic, onOpenEpic }: { epic: Epic; onOpenEpic?: (epic: Epic) => void }) {
   const open = () => onOpenEpic?.(epic);
   return (
-    <article data-epic-ref={epic.ref} className="group bold-wash escalated relative flex w-[26.25rem] shrink-0 cursor-pointer flex-col overflow-hidden rounded-lg bg-surface shadow-card transition-shadow duration-150 motion-reduce:transition-none hover:shadow-float">
+    <article data-epic-ref={epic.ref} className="group bold-wash escalated relative flex w-[26.25rem] max-w-full shrink-0 cursor-pointer flex-col overflow-hidden rounded-lg bg-surface shadow-card transition-shadow duration-150 motion-reduce:transition-none hover:shadow-float">
       <span aria-hidden="true" className={`absolute inset-y-0 left-0 w-[5px] ${stateFill('escalated')}`} />
       <div className="flex flex-1 flex-col px-4 py-4 pl-5">
         <div className="flex items-center gap-2">
@@ -437,7 +433,7 @@ function PendingCard({
     ? 'cursor-pointer transition duration-150 motion-reduce:transition-none hover:-translate-y-0.5 hover:border-edge hover:shadow-float'
     : '';
   return (
-    <div className={`bold-wash ${wash} relative w-[300px] shrink-0 rounded-lg border bg-surface p-2.5 ${affordance} ${item.runnable ? 'border-ready-dot/40' : 'border-hairline'}`}>
+    <div className={`bold-wash ${wash} relative w-[300px] shrink-0 rounded-lg border bg-surface p-2 ${affordance} ${item.runnable ? 'border-ready-dot/40' : 'border-hairline'}`}>
       <div className="flex items-center gap-2">
         <span aria-hidden="true" className={`size-2 shrink-0 rounded-full ${itemDot(item)}`} />
         <span className="font-data text-small text-faint">{item.label}</span>
@@ -498,14 +494,14 @@ function BlockerColumns({
 }) {
   return (
     <div data-board-layout="blocker-columns" className={`overflow-x-auto [scrollbar-width:thin] ${className}`}>
-      <div className="flex min-w-max items-start gap-4">
+      <div className="flex min-w-max items-start gap-3">
         {columns.map((column) => (
           <section key={column.label} className="w-[300px] shrink-0">
-            <h3 className="mb-2 flex items-center gap-1.5 text-label font-bold uppercase text-faint">
+            <h3 className="mb-1.5 flex items-center gap-1.5 text-label font-bold uppercase text-faint">
               {column.label}
               <span className="font-semibold tabular-nums">· {column.items.length}</span>
             </h3>
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-1.5">
               {column.items.map((item) => (
                 <PendingCard key={item.key} item={item} onOpenTask={onOpenTask} />
               ))}
@@ -538,44 +534,46 @@ export function EpicBand({
 
   return (
     <div className={panel}>
-      <div className="flex items-center gap-2.5 px-4 py-3">
+      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-2 px-4 py-2.5">
         <button
           type="button"
           onClick={() => onOpenEpic?.(epic)}
           title={`Open Epic #${epic.ref}`}
-          className={`${touchTargetInline} min-w-0 flex-1 gap-2.5 text-left`}
+          className={`${touchTargetInline} min-w-0 flex-1 basis-full gap-2.5 text-left sm:basis-0`}
         >
           <EpicKindBadge epic={epic} />
           <span className="shrink-0 font-data text-small text-faint">epic/{epic.ref}</span>
           <span className="truncate text-title font-semibold text-ink">{epic.title}</span>
         </button>
-        {attention.length > 0 && (
-          <span className={`${chip} shrink-0 bg-await-tint text-await`}>{attention.length} in attention</span>
-        )}
-        <StatusPips epic={epic} />
-        {hasColumns && (
-          <button
-            type="button"
-            aria-expanded={open}
-            aria-label={open ? `Collapse Epic #${epic.ref} members` : `Expand Epic #${epic.ref} members`}
-            onClick={() => setOpen((v) => !v)}
-            className={`${touchTargetInline} shrink-0`}
-          >
-            <Chevron open={open} />
-          </button>
-        )}
+        <div className="flex min-w-0 shrink-0 items-center gap-2.5">
+          {attention.length > 0 && (
+            <span className={`${chip} shrink-0 bg-await-tint text-await`}>{attention.length} in attention</span>
+          )}
+          <StatusPips epic={epic} />
+          {hasColumns && (
+            <button
+              type="button"
+              aria-expanded={open}
+              aria-label={open ? `Collapse Epic #${epic.ref} members` : `Expand Epic #${epic.ref} members`}
+              onClick={() => setOpen((v) => !v)}
+              className={`${touchTargetInline} shrink-0`}
+            >
+              <Chevron open={open} />
+            </button>
+          )}
+        </div>
       </div>
 
       {isEpicIntegrating(epic) && <EpicIntegrationBar epic={epic} />}
 
       {open && hasColumns && (
         <div className="border-t border-hairline">
-          <BlockerColumns columns={columns} onOpenTask={onOpenTask} className="p-4" />
+          <BlockerColumns columns={columns} onOpenTask={onOpenTask} className="p-3" />
         </div>
       )}
 
       {closed.length > 0 && (
-        <div className="border-t border-hairline px-4 py-3">
+        <div className="border-t border-hairline px-4 py-2.5">
           <ClosedRail members={closed} onOpenTask={onOpenTask} collapsible />
         </div>
       )}
@@ -781,7 +779,21 @@ export function Board({
 
   return (
     <div>
-      <h1 className="sr-only">Board</h1>
+      <PageHeader
+        title="Board"
+        description="What's running, what's waiting, and what needs you"
+        actions={
+          <span className="text-small tabular-nums text-muted">
+            {attention.length + running.length + paused.length + pendingCount} open
+            {running.length > 0 && (
+              <>
+                {' · '}
+                <span className="text-running">{running.length} running</span>
+              </>
+            )}
+          </span>
+        }
+      />
 
       {attention.length > 0 && (
         <BoardSection label="Attention" count={String(attention.length)} tone="attn">

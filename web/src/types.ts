@@ -267,6 +267,8 @@ export interface VerificationCommand {
 /** An agent critic verifier: a read-only reviewer with
  * its own prompt and model. Mirrors `verificationCriticSchema`. */
 export interface TaskVerificationCritic {
+  /** Operator-facing label; the critic's row title in settings. */
+  name: string;
   issuePrompt: string;
   noIssuePrompt: string;
   model: string;
@@ -275,6 +277,8 @@ export interface TaskVerificationCritic {
 }
 
 export interface EpicVerificationCritic {
+  /** Operator-facing label; the critic's row title in settings. */
+  name: string;
   prompt: string;
   model: string;
   /** Reviewer harness; omitted = reuse the builder task's harness. */
@@ -832,6 +836,34 @@ export interface AttemptUsageEvent {
   activity: string | null;
   tree: ProcessTree;
   cost: Cost | null;
+}
+
+/**
+ * One Attempt as a fleet-Timeline span (`GET /api/timeline`): its lane (harness),
+ * outcome, and the window it occupied. Reads persisted history, so it spans
+ * finished work the live Activity snapshot no longer retains. A still-running
+ * Attempt has a null `endedAt`; the Timeline extends its bar to now.
+ */
+export interface TimelineAttempt {
+  taskId: number;
+  attemptId: number;
+  number: number;
+  title: string;
+  harness: string;
+  model: string;
+  /** An AttemptState: 'running' | 'passed' | 'failed' | 'escalated' | 'cancelled'. */
+  state: string;
+  trackerRef: number | null;
+  startedAt: number;
+  endedAt: number | null;
+  /** Frozen Cost for a finished Attempt; null while running or when nothing was priceable. */
+  cost: Cost | null;
+}
+
+export interface TimelineResponse {
+  attempts: TimelineAttempt[];
+  from: number;
+  to: number;
 }
 
 export interface AppConfig {

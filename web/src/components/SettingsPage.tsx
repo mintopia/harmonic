@@ -114,7 +114,7 @@ export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void
   return (
     <SettingsForm
       title="Settings"
-      intro="Defaults, harnesses, and how the runner behaves. Changes stage until you save; only side-effect actions — password changes, adding or removing a channel — apply immediately."
+      intro="Global defaults for harnesses, verification, and the runner"
       tabs={SETTING_TABS}
       tab={tab}
       onTab={setTab}

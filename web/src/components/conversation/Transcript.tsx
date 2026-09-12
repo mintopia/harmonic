@@ -27,6 +27,17 @@ function textFromPayload(payload: unknown): string {
   return typeof payload.text === 'string' ? payload.text : '';
 }
 
+// A locally-appended user turn we've optimistically shown before the server has
+// echoed it back — see useConversationDetail's optimistic-send handling.
+function isPendingTurn(payload: unknown): boolean {
+  return (
+    typeof payload === 'object' &&
+    payload !== null &&
+    'pending' in payload &&
+    (payload as { pending?: unknown }).pending === true
+  );
+}
+
 function CopyButton({ text, label, className = '' }: { text: string; label: string; className?: string }) {
   const [copied, setCopied] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -76,7 +87,8 @@ export function Transcript({ events, conversation }: { events: ConversationEvent
   };
 
   const agentLabel = providerLabel(conversation?.harness ?? '');
-  const model = conversation?.model ?? '';
+  const userRoleLabel = 'text-label font-bold uppercase tracking-[0.09em] text-muted';
+  const agentRoleLabel = 'text-label font-bold uppercase tracking-[0.09em] text-accent';
 
   return (
     <div
@@ -85,58 +97,81 @@ export function Transcript({ events, conversation }: { events: ConversationEvent
         const element = event.currentTarget;
         setFollowing(isAtLiveEdge(element));
       }}
-      className="flex-1 overflow-y-auto p-4"
+      className="relative flex-1 overflow-y-auto bg-canvas"
     >
-      {(runningTool || !following) && (
-        <div className="sticky top-0 z-10 -mt-4 mb-3 flex min-h-10 items-center justify-between gap-3 border-b border-hairline bg-surface/95 py-2 backdrop-blur-sm">
-          {runningTool ? (
-            <div role="status" aria-live="polite" className="flex min-w-0 items-center gap-2 text-small text-muted">
-              <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-running-dot motion-safe:animate-dot-pulse" />
-              <span className="text-label font-bold uppercase tracking-[0.1em] text-faint">Now running</span>
-              <span className="truncate font-semibold text-ink">{runningTool.title ?? runningTool.toolKind ?? 'Tool call'}</span>
-              <span className="shrink-0 text-faint">{runningTool.status ?? 'running'}</span>
-            </div>
-          ) : <span />}
-          {!following && (
-            <button
-              type="button"
-              onClick={jumpToLatest}
-              className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-edge px-2.5 py-1 text-[11.5px] font-semibold text-muted transition-colors hover:bg-raised hover:text-ink"
-            >
-              <Icon name="chevron-down" className="size-3" />
-              Jump to latest
-            </button>
-          )}
+      {runningTool && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="sticky top-0 z-10 flex min-h-9 min-w-0 items-center gap-2 border-b border-hairline bg-running-tint px-4 py-2 text-small backdrop-blur-sm"
+        >
+          <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-running-dot motion-safe:animate-dot-pulse" />
+          <span className="shrink-0 text-label font-bold uppercase tracking-[0.1em] text-running">Running</span>
+          <span className="min-w-0 flex-1 truncate font-semibold text-ink">{runningTool.title ?? runningTool.toolKind ?? 'Tool call'}</span>
         </div>
       )}
-      {turns.length === 0 ? <p className="text-muted">Send a message to begin.</p> : (
-        <div className="space-y-4">
+      {turns.length === 0 ? <p className="p-4 text-muted">Send a message to begin.</p> : (
+        <div className="mx-auto max-w-4xl px-4 py-5">
           {turns.map((turn, i) => {
         const userText = textFromPayload(turn.userTurn?.payload);
+        const userPending = isPendingTurn(turn.userTurn?.payload);
         const agentText = agentMessageText(turn.agentEvents);
         const at = turn.agentEvents.at(-1)?.ts ?? turn.userTurn?.ts;
         return (
-          <div key={turn.userTurn?.id ?? `pre-${i}`} className="space-y-3">
+          <div
+            key={turn.userTurn?.id ?? `pre-${i}`}
+            className={`space-y-4 ${i > 0 ? 'mt-6 border-t border-hairline pt-6' : ''}`}
+          >
             {turn.userTurn && (
-              <div className="group flex items-end justify-end gap-1.5">
-                <CopyButton text={userText} label="Copy message" className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100" />
-                <p className="max-w-[85%] whitespace-pre-wrap break-words rounded-lg bg-accent-tint px-3 py-2 text-ink">
-                  {userText}
-                </p>
+              <div className="group grid grid-cols-[1.75rem_minmax(0,1fr)] gap-x-3">
+                <div className="flex justify-center pt-0.5">
+                  <span aria-hidden className="grid size-7 place-items-center rounded-md bg-raised text-muted">
+                    <Icon name="user" className="size-3.5" />
+                  </span>
+                </div>
+                <div className="min-w-0">
+                  <div className="mb-1 flex items-center gap-2">
+                    <span className={userRoleLabel}>You</span>
+                    {turn.userTurn.ts && !userPending && (
+                      <span className="font-data text-[11px] text-faint">{clockTime(turn.userTurn.ts)}</span>
+                    )}
+                    {userPending && (
+                      <span role="status" className="inline-flex items-center gap-1 text-[11px] font-medium text-faint">
+                        <span aria-hidden className="size-1.5 rounded-full bg-running-dot motion-safe:animate-dot-pulse" />
+                        Sending…
+                      </span>
+                    )}
+                    <CopyButton
+                      text={userText}
+                      label="Copy message"
+                      className="ml-auto opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                    />
+                  </div>
+                  <p
+                    className={`max-w-[68ch] whitespace-pre-wrap break-words rounded-lg bg-raised px-3.5 py-2.5 text-ink ${
+                      userPending ? 'opacity-60' : ''
+                    }`}
+                  >
+                    {userText}
+                  </p>
+                </div>
               </div>
             )}
             {turn.agentEvents.length > 0 && (
-              <div className="group flex gap-3">
-                <span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-md bg-accent-tint text-[11px] font-bold text-accent">
-                  {agentLabel.charAt(0)}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="mb-1 flex items-baseline gap-2">
-                    <span className="text-[12.5px] font-semibold text-ink">{agentLabel}</span>
-                    <span className="font-data text-[11px] text-faint">
-                      {model}
-                      {at ? ` · ${clockTime(at)}` : ''}
-                    </span>
+              <div className="group grid grid-cols-[1.75rem_minmax(0,1fr)] gap-x-3">
+                <div className="flex flex-col items-center">
+                  <span
+                    aria-hidden
+                    className="grid size-7 shrink-0 place-items-center rounded-md bg-accent text-[11px] font-bold text-on-accent shadow-btn"
+                  >
+                    {agentLabel.charAt(0)}
+                  </span>
+                  <span aria-hidden className="mt-1.5 w-px flex-1 bg-edge" />
+                </div>
+                <div className="min-w-0 pb-1">
+                  <div className="mb-1.5 flex items-center gap-2">
+                    <span className={agentRoleLabel}>{agentLabel}</span>
+                    {at && <span className="font-data text-[11px] text-faint">{clockTime(at)}</span>}
                     {agentText && (
                       <CopyButton
                         text={agentText}
@@ -153,6 +188,18 @@ export function Transcript({ events, conversation }: { events: ConversationEvent
         );
           })}
           <div ref={bottomRef} />
+        </div>
+      )}
+      {!following && (
+        <div className="pointer-events-none sticky inset-x-0 bottom-3 z-10 flex justify-center">
+          <button
+            type="button"
+            onClick={jumpToLatest}
+            className="pointer-events-auto inline-flex items-center gap-1.5 rounded-full border border-edge bg-surface/95 px-3 py-1.5 text-[11.5px] font-semibold text-muted shadow-bar backdrop-blur-sm transition-colors hover:bg-raised hover:text-ink"
+          >
+            <Icon name="chevron-down" className="size-3" />
+            Jump to latest
+          </button>
         </div>
       )}
     </div>

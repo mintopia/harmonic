@@ -5,12 +5,12 @@ import { subscribe } from "../ws";
 import {
   card,
   chip,
-  displayTitle,
   labelType,
   selectField,
   touchTarget,
 } from "../ui";
 import { EmptyState } from "./EmptyState";
+import { PageHeader } from "./PageHeader";
 import {
   activitySummary,
   activityWorkspaces,
@@ -324,7 +324,7 @@ export function ActivityView({ config }: { config: AppConfig | null }) {
   if (processes === null)
     return (
       <div>
-        <h1 className={`${displayTitle} mb-5`}>Activity</h1>
+        <PageHeader title="Activity" description="Every attempt and chat in flight across your workspaces" />
         <div className={`${card} p-4`}>
           <div className="h-14 animate-pulse motion-reduce:animate-none" />
         </div>
@@ -343,12 +343,7 @@ export function ActivityView({ config }: { config: AppConfig | null }) {
   const lanes = fleetLanes(filterActivity(processes, activeFilter));
   return (
     <div>
-      <div className="mb-5 flex items-baseline gap-3">
-        <h1 className={displayTitle}>Activity</h1>
-        <span className={`${labelType} text-muted`}>
-          every live Agent, all Workspaces
-        </span>
-      </div>
+      <PageHeader title="Activity" description="Every attempt and chat in flight across your workspaces" />
       <div className={`${card} mb-5 flex flex-wrap gap-x-10 gap-y-4 p-5`}>
         <Stat label="Agents" value={String(summary.agentCount)} />
         <Stat label="Subagents" value={String(summary.subagentCount)} />

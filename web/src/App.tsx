@@ -18,19 +18,18 @@ import { Login } from './components/Login';
 import { ApiPage } from './components/ApiPage';
 import { StatsPage } from './components/StatsPage';
 import { OperationsPage } from './components/OperationsPage';
+import { TimelinePage } from './components/TimelinePage';
 import { SettingsPage } from './components/SettingsPage';
 import { TableView } from './components/TableView';
 import { ActivityView } from './components/ActivityView';
 import { BrandMark } from './components/BrandMark';
-import { Icon } from './components/Icon';
 import { ConversationLauncher, ConversationsPage } from './components/ConversationLauncher';
 import { UpdateBanner } from './components/UpdateBanner';
 import { NewWorkspaceForm, WorkspaceSwitcher } from './components/WorkspaceSwitcher';
 import { WorkspaceSettingsPage } from './components/WorkspaceSettingsPage';
 import { EmptyState } from './components/EmptyState';
 import { HelpModal } from './components/HelpModal';
-import { VIEW_LABELS, isWorkspaceScopedView, loadRailCollapsed, storeRailCollapsed } from './rail-model';
-import { CrumbBar } from './components/CrumbBar';
+import { isWorkspaceScopedView, loadRailCollapsed, storeRailCollapsed } from './rail-model';
 import type { View } from './rail-model';
 import { NO_SELECTION, parseRoute, serializeRoute, type Route, type TableFilters } from './router-model';
 import {
@@ -455,11 +454,16 @@ export function App() {
   // `onOpen(task)` shares, so a row always opens the same /task/:id route.
   const openRow = (t: Task) => openTaskById(t.id);
   // An Epic's click target (ADR-0017): the Tasks-list Epic row, the Board band
-  // header, and a Ticket's parent-Epic breadcrumb all open the Epic summary page
+  // header, and a Ticket's parent-Epic link all open the Epic summary page
   // at /epic/:ref, clearing any focused Ticket.
   const openEpicByRef = (ref: number) => navigate({ ...route, epic: ref, task: null, panel: NO_SELECTION });
   const pickConversation = useCallback(
     (conversationId: number | null) => navigate({ ...route, conversation: conversationId }),
+    [navigate, route],
+  );
+  const expandConversation = useCallback(
+    (conversationId: number | null) =>
+      navigate({ ...route, view: 'conversations', conversation: conversationId, task: null, epic: null, panel: NO_SELECTION }),
     [navigate, route],
   );
 
@@ -655,10 +659,13 @@ export function App() {
           passwordSet={passwordSet}
           globalPaused={globalPaused}
           globalPausePending={globalPausePending}
+          trackerEnabled={activeWorkspace?.trackerEnabled ?? false}
+          refreshingTracker={refreshingTracker}
           onAutoRunnerChange={(enabled) =>
             api.updateConfig({ autoRunner: { enabled } }).then(setConfig, toastError)
           }
           onGlobalPauseChange={setFleetPaused}
+          onRefreshTracker={refreshTracker}
           onThemeCycle={cycleTheme}
           onSettingsClick={() => pickView('settings')}
           onLogout={() => fetch('/api/auth/logout', { method: 'POST' }).then(() => setAuthed(false))}
@@ -726,35 +733,6 @@ export function App() {
             />
           ) : (
             <div className="flex h-full flex-col">
-              {!showWorkspaceEmptyState && view !== 'settings' && (
-                <CrumbBar
-                  className="shrink-0"
-                  crumbs={
-                    view === 'board'
-                      ? [{ node: <span className="font-semibold text-ink">{activeWorkspaceName ?? instanceName}</span> }]
-                      : [
-                          {
-                            node: <span className="font-semibold text-ink">{activeWorkspaceName ?? instanceName}</span>,
-                            onClick: () => pickView('board'),
-                          },
-                          { node: <span className="text-ink">{VIEW_LABELS[view]}</span> },
-                        ]
-                  }
-                  right={
-                    view === 'board' && activeWorkspace?.trackerEnabled ? (
-                      <button
-                        className={`${btnQuiet} inline-flex items-center gap-1.5 rounded-md border border-hairline px-2.5 py-1.5 text-muted hover:bg-raised hover:text-ink disabled:opacity-60`}
-                        disabled={refreshingTracker}
-                        title="Rescan the tracker and mirror ticket changes now"
-                        onClick={refreshTracker}
-                      >
-                        <Icon name="refresh" className={refreshingTracker ? 'motion-safe:animate-spin' : ''} />
-                        {refreshingTracker ? 'Refreshing…' : 'Refresh tickets'}
-                      </button>
-                    ) : undefined
-                  }
-                />
-              )}
               {error && (
                 <div role="alert" className="mx-6 mt-4 shrink-0 rounded-lg bg-fail-tint px-4 py-2 text-fail">
                   {error}
@@ -793,7 +771,9 @@ export function App() {
               <main
                 id="main-content"
                 tabIndex={-1}
-                className="min-h-0 min-w-0 flex-1 overflow-y-auto px-6 pt-5 pb-16"
+                className={`min-h-0 min-w-0 flex-1 ${
+                  view === 'conversations' ? 'overflow-hidden' : 'overflow-y-auto px-6 pt-5 pb-16'
+                }`}
               >
                 {showWorkspaceEmptyState ? (
                   <EmptyState
@@ -852,6 +832,9 @@ export function App() {
                     </Suspense>
                   )}
                   {view === 'stats' && <StatsPage workspaceId={activeWorkspaceId} />}
+                  {view === 'timeline' && (
+                    <TimelinePage workspaceId={activeWorkspaceId} onOpenTask={openTaskById} />
+                  )}
                   {view === 'operations' && (
                     <OperationsPage tasks={taskList} epics={epics} onOpenTask={openTaskById} onOpenEpic={openEpicByRef} />
                   )}
@@ -882,6 +865,7 @@ export function App() {
                 pendingPermissionAlerts.find(({ permission }) => permission.conversationId === conversationToOpen)?.permission ?? null
               }
               onConversationOpened={handleConversationOpened}
+              onExpand={expandConversation}
             />
           )}
         </div>
