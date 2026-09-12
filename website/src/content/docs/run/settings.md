@@ -16,6 +16,8 @@ whole instance:
 
 - the harnesses and their models (see [Harnesses](/harmonic/run/harnesses/)),
 - model prices (so cost is accurate),
+- the verification checks that run before a merge — an ordered list of
+  commands and named critics (see [Reviewing & merging](/harmonic/work/reviewing-and-merging/)),
 - notification channels,
 - permission rules,
 - security (the operator password),

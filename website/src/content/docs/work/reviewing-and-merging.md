@@ -33,10 +33,10 @@ something to merge.
 ### An optional extra check
 
 If your own `/code-review` isn't enough assurance, Harmonic can run its own
-**verification** before the merge, a command you choose (like your test
-suite), an AI critic that reads the change against the ticket, or both.
-It's off until you configure it, and when on it's an additional gate: the
-change merges only if it passes. Set it up in
+**verification** before the merge: any number of commands (like your test
+suite) and named AI critics that read the change against the ticket, run in
+the order you set. It's off until you configure it, and when on it's an
+additional gate: the change merges only if every check passes. Set it up in
 [Settings & overrides](/harmonic/run/settings/).
 
 ## Tickets you queue by hand
