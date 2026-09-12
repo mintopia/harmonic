@@ -77,12 +77,35 @@ const listeners = new Set<{
   onMessage: (msg: ServerMessage) => void;
   onOpen?: (socket: WebSocket) => void;
 }>();
+const pendingPermissions = new Map<string, Extract<ServerMessage, { type: 'permission_request' }>>();
 let ws: WebSocket | null = null;
 let retry: ReturnType<typeof setTimeout> | null = null;
 
 const INITIAL_RETRY_MS = 1000;
 const MAX_RETRY_MS = 30_000;
 let consecutiveFailedOpens = 0;
+
+function permissionResolutionReqId(payload: unknown): string | null {
+  if (typeof payload !== 'object' || payload === null || !('reqId' in payload)) return null;
+  return typeof payload.reqId === 'string' ? payload.reqId : null;
+}
+
+function updatePendingPermissions(message: ServerMessage): void {
+  if (message.type === 'permission_request') {
+    pendingPermissions.set(message.reqId, message);
+    return;
+  }
+  if (message.type === 'conversation_event' && message.event.type === 'permission_request') {
+    const reqId = permissionResolutionReqId(message.event.payload);
+    if (reqId !== null) pendingPermissions.delete(reqId);
+    return;
+  }
+  if (message.type === 'conversation_changed' && message.conversation.state === 'ended') {
+    for (const [reqId, pending] of pendingPermissions) {
+      if (pending.conversationId === message.conversation.id) pendingPermissions.delete(reqId);
+    }
+  }
+}
 
 function fullJitterBackoffMs(attempt: number): number {
   const ceiling = Math.min(MAX_RETRY_MS, INITIAL_RETRY_MS * 2 ** attempt);
@@ -101,11 +124,13 @@ function connect(): void {
   };
   socket.onmessage = (ev) => {
     const message: ServerMessage = JSON.parse(String(ev.data));
+    updatePendingPermissions(message);
     for (const listener of listeners) listener.onMessage(message);
   };
   socket.onclose = () => {
     if (ws !== socket) return;
     ws = null;
+    pendingPermissions.clear();
     if (listeners.size > 0 && retry === null) {
       const delay = fullJitterBackoffMs(consecutiveFailedOpens);
       consecutiveFailedOpens += 1;
@@ -135,6 +160,7 @@ function subscribeWithOpen(onMessage: (msg: ServerMessage) => void, onOpen?: (so
       retry = null;
     }
     consecutiveFailedOpens = 0;
+    pendingPermissions.clear();
     const socket = ws;
     ws = null;
     socket?.close();
@@ -149,7 +175,7 @@ function subscribeWithOpen(onMessage: (msg: ServerMessage) => void, onOpen?: (so
  */
 export function subscribe(onMessage: (msg: ServerMessage) => void, onReopen?: () => void): () => void {
   let opened = false;
-  return subscribeWithOpen(
+  const unsubscribe = subscribeWithOpen(
     onMessage,
     onReopen
       ? () => {
@@ -158,6 +184,8 @@ export function subscribe(onMessage: (msg: ServerMessage) => void, onReopen?: ()
         }
       : undefined,
   );
+  for (const permission of pendingPermissions.values()) onMessage(permission);
+  return unsubscribe;
 }
 
 function subscribeLog(

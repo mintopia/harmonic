@@ -43,8 +43,9 @@
      holds in both themes (verified by tests/contrast.test.ts, 4.5:1 text floor).
      Same pass, conversation surface: the header meta line moved into the composer
      footer as a click-to-expand context meter (% + mini bar), and the redundant
-     header "Context" button and the live tool "in_progress" status label were
-     dropped (state is carried by colour).
+     desktop header "Context" button and the live tool "in_progress" status label
+     were dropped. On mobile, the conversation header retains a compact Context
+     control because the footer meter can move below the fold (issue #572).
 
      2026-09-11 — Depth + ready-hue pass (Jess): two changes.
      (1) READY got its own hue — azure #4CA8F5 (dark) / #1160AE (light) — split

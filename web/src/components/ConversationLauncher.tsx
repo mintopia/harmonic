@@ -345,6 +345,7 @@ type ConversationHeaderProps = {
   onRename: (title: string | null) => Promise<void>;
   onEnd: () => void;
   onDelete: () => void;
+  onOpenContext?: () => void;
 } & (
   | { fullPage: true }
   | { fullPage?: false; onExpand: () => void; onClose: () => void }
@@ -416,6 +417,15 @@ function ConversationHeader(props: ConversationHeaderProps) {
             {conversation && (
               <button aria-label="Rename conversation" className={`${touchTarget} ${btnQuiet}`} onClick={startEdit}>
                 <Icon name="edit" />
+              </button>
+            )}
+            {props.fullPage && conversation && props.onOpenContext && (
+              <button
+                aria-label="Open conversation context"
+                className={`${touchTarget} ${btnQuiet} md:hidden`}
+                onClick={props.onOpenContext}
+              >
+                Context
               </button>
             )}
           </>
@@ -808,6 +818,7 @@ export function ConversationsPage({
               onRename={actions.rename}
               onEnd={actions.end}
               onDelete={() => conversation && deleteConversation(conversation.id)}
+              onOpenContext={() => setContextOpen(true)}
             />
             <Transcript events={events} conversation={conversation} />
             <StreamAnnouncer events={events} resetKey={conversation?.id ?? 'new'} />

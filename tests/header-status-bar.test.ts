@@ -8,7 +8,12 @@ let host: HTMLDivElement | null = null;
 
 afterEach(cleanup);
 
-async function renderHeader(props: { globalPaused: boolean; globalPausePending?: boolean; onGlobalPauseChange?: (paused: boolean) => void }) {
+async function renderHeader(props: {
+  globalPaused: boolean;
+  globalPausePending?: boolean;
+  onGlobalPauseChange?: (paused: boolean) => void;
+  view?: 'board' | 'conversations';
+}) {
   host = await mountComponent(
     createElement(HeaderStatusBar, {
       config: makeConfig(),
@@ -16,7 +21,7 @@ async function renderHeader(props: { globalPaused: boolean; globalPausePending?:
       cost24h: null,
       hostLoad: null,
       theme: 'system',
-      view: 'board',
+      view: props.view ?? 'board',
       passwordSet: false,
       globalPaused: props.globalPaused,
       globalPausePending: props.globalPausePending ?? false,
@@ -35,6 +40,13 @@ async function renderHeader(props: { globalPaused: boolean; globalPausePending?:
 }
 
 describe('HeaderStatusBar global pause control', () => {
+  it('keeps the task creation control out of the mobile conversation view', async () => {
+    await renderHeader({ globalPaused: false, view: 'conversations' });
+
+    const newTask = [...host!.querySelectorAll('button')].find((item) => item.textContent?.includes('New task'));
+    expect(newTask?.className).toContain('max-md:hidden');
+  });
+
   it('pauses the fleet when it is running', async () => {
     const onGlobalPauseChange = vi.fn();
     await renderHeader({ globalPaused: false, onGlobalPauseChange });
