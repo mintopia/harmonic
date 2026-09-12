@@ -97,6 +97,7 @@ export function Composer({
   const locked = conversation !== null;
   const ended = conversation?.state === 'ended';
   const running = conversation?.state === 'active' && isTurnRunning(events);
+  const displayedHarness = conversation?.harness ?? harness;
   const models = (config.harnesses[harness]?.models ?? []).map((model) => model.id);
 
   const pickHarness = (h: string) => {
@@ -215,8 +216,8 @@ export function Composer({
             ended
               ? 'Conversation ended.'
               : running
-                ? `Message ${providerLabel(harness)}… (Enter queues it for after this turn)`
-                : `Message ${providerLabel(harness)}… (Enter to send, Shift+Enter for a newline)`
+                ? `Message ${providerLabel(displayedHarness)}… (Enter queues it for after this turn)`
+                : `Message ${providerLabel(displayedHarness)}… (Enter to send, Shift+Enter for a newline)`
           }
           onChange={(e) => setText(e.target.value)}
           onKeyDown={onKeyDown}

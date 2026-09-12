@@ -1,10 +1,10 @@
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
+import { baselineConfig } from '../src/config.js';
 import { NO_ATTENTION } from '../web/src/conversation-attention-model.js';
 import { ConversationList } from '../web/src/components/ConversationList.js';
+import { Composer } from '../web/src/components/conversation/Composer.js';
 import type { Conversation } from '../web/src/types.js';
 
 const handlers = {
@@ -14,11 +14,6 @@ const handlers = {
   onExpand: () => {},
   onClose: () => {},
 };
-
-const COMPOSER = readFileSync(
-  fileURLToPath(new URL('../web/src/components/conversation/Composer.tsx', import.meta.url)),
-  'utf8',
-);
 
 describe('conversation vocabulary UI (#546)', () => {
   it('uses product names in conversation metadata', () => {
@@ -59,8 +54,42 @@ describe('conversation vocabulary UI (#546)', () => {
     expect(html).not.toMatch(/agent|chat|session|thread/i);
   });
 
-  it('addresses the selected responder by product name in the composer', () => {
-    expect(COMPOSER).toContain('Message ${providerLabel(harness)}…');
-    expect(COMPOSER).not.toContain('Message the agent…');
+  it('addresses the stored responder by product name in the composer prompt', () => {
+    const config = baselineConfig();
+    config.chat = { harness: 'codex', model: config.harnesses.codex.defaultModel };
+    const conversation: Conversation = {
+      id: 1,
+      title: null,
+      workspaceId: 1,
+      harness: 'opencode',
+      model: config.harnesses.opencode.defaultModel,
+      workingDir: '/work',
+      permissionMode: 'ask',
+      state: 'active',
+      sessionId: null,
+      createdAt: 0,
+      updatedAt: 0,
+      endedAt: null,
+      usage: null,
+      cost: null,
+      contextTokens: null,
+      contextWindow: null,
+      cacheWarmSeconds: null,
+    };
+
+    const html = renderToStaticMarkup(
+      createElement(Composer, {
+        config,
+        workspace: null,
+        conversation,
+        events: [],
+        expanded: false,
+        onSend: async () => ({ queued: false }),
+      }),
+    );
+
+    expect(html).toContain('placeholder="Message OpenCode… (Enter to send, Shift+Enter for a newline)"');
+    expect(html).not.toContain('Message Codex…');
+    expect(html).not.toContain('Message the agent…');
   });
 });
