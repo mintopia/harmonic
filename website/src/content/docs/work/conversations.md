@@ -37,6 +37,7 @@ it stop asking for that kind, in that workspace, and take it back whenever
 you want.
 
 A Conversation stays open while you're using it and ends when you close it
-or leave it idle too long. Once ended it's read-only history, you can read
-it back but not pick the thread up again, so start a fresh one to keep
-going.
+or leave it idle too long. Ending isn't final: send another message and it
+picks the thread back up, resuming right where it left off with its history
+and context intact. That first message back can cost a little more while the
+session warms up again, so Harmonic flags the cold resume before you send.

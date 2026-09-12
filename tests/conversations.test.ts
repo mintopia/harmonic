@@ -112,7 +112,6 @@ describe('conversation walking skeleton (issue 10)', () => {
     expect(ended.body.state).toBe('ended');
     expect(ended.body.endedAt).toBeTruthy();
     expect(server.app.ctx.conversationDriver.isWarm(convo.id)).toBe(false);
-    // A stored session means the ended Conversation reports a cold resume.
     expect((await server.api('GET', `/api/conversations/${convo.id}`)).body.coldResume).toBe(true);
 
     const resumed = await server.api('POST', `/api/conversations/${convo.id}/turns`, {
