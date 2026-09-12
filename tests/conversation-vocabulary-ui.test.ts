@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
@@ -14,6 +16,11 @@ const handlers = {
   onExpand: () => {},
   onClose: () => {},
 };
+
+const COMPOSER = readFileSync(
+  fileURLToPath(new URL('../web/src/components/conversation/Composer.tsx', import.meta.url)),
+  'utf8',
+);
 
 describe('conversation vocabulary UI (#546)', () => {
   it('uses product names in conversation metadata', () => {
