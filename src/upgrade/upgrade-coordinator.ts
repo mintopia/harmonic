@@ -13,6 +13,8 @@ export interface UpgradeIdleState {
 }
 
 export interface UpgradeCoordinatorOptions {
+  /** The version this process is running; an armed upgrade to it has landed. */
+  version: string;
   store: UpdateArmingStore;
   settings: Pick<SettingsStore, 'getGlobal' | 'updateGlobal'>;
   attempts: Pick<AttemptStore, 'countRunning'>;
@@ -80,6 +82,27 @@ export class UpgradeCoordinator {
     try {
       await this.options.settings.updateGlobal({ autoRunner: { enabled: restored } });
       return cancelled;
+    } catch (error) {
+      await this.options.store.setState(current);
+      throw error;
+    }
+  }
+
+  complete(): Promise<UpdateAvailabilityState> {
+    return this.exclusively(() => this.completeOnce());
+  }
+
+  /** A relaunch onto the armed version settles the upgrade: clear the arming so
+   * reconcile stops re-triggering the swap, and restore the Auto-Runner switch. */
+  private async completeOnce(): Promise<UpdateAvailabilityState> {
+    const current = await this.options.store.getState();
+    if (current.armedVersion === null || current.armedVersion !== this.options.version) return current;
+    const restored = current.autoRunnerWasEnabled ?? false;
+    const completed = { ...current, armedVersion: null, autoRunnerWasEnabled: null };
+    await this.options.store.setState(completed);
+    try {
+      await this.options.settings.updateGlobal({ autoRunner: { enabled: restored } });
+      return completed;
     } catch (error) {
       await this.options.store.setState(current);
       throw error;

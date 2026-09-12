@@ -16,6 +16,7 @@ class MemoryStore implements UpdateArmingStore {
 
 function coordinator(input: {
   version?: string | null;
+  runningVersion?: string;
   autoRunnerEnabled?: boolean;
   runningAttempts?: number;
   conversationMidTurn?: boolean;
@@ -28,6 +29,7 @@ function coordinator(input: {
   let conversationMidTurn = input.conversationMidTurn ?? false;
   let operations = input.operations ?? [];
   const upgrade = new UpgradeCoordinator({
+    version: input.runningVersion ?? '2.0.0',
     store,
     settings: {
       getGlobal: () => config,
@@ -117,5 +119,22 @@ describe('UpgradeCoordinator', () => {
       dismissedVersion: null,
     });
     expect(subject.config().autoRunner.enabled).toBe(true);
+  });
+
+  it('clears the arming and restores the master switch once relaunched onto the armed version', async () => {
+    const subject = coordinator({ runningVersion: '2.6.0' });
+    await subject.upgrade.arm();
+    expect(subject.config().autoRunner.enabled).toBe(false);
+
+    await expect(subject.upgrade.complete()).resolves.toMatchObject({ armedVersion: null, autoRunnerWasEnabled: null });
+    expect(subject.config().autoRunner.enabled).toBe(true);
+  });
+
+  it('leaves the arming in place until the process is actually running the armed version', async () => {
+    const subject = coordinator({ runningVersion: '2.0.0' });
+    await subject.upgrade.arm();
+
+    await expect(subject.upgrade.complete()).resolves.toMatchObject({ armedVersion: '2.6.0' });
+    expect(subject.config().autoRunner.enabled).toBe(false);
   });
 });
