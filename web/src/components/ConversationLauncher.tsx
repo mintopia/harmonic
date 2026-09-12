@@ -614,6 +614,7 @@ export function ConversationLauncher({
 
   const composerReady = view.kind === 'detail' && (view.conversationId === null || conversation !== null);
   const ended = conversation?.state === 'ended';
+  const resumable = conversation?.sessionId != null;
 
   return (
     <div
@@ -664,7 +665,7 @@ export function ConversationLauncher({
               <ElicitationPrompt key={p.reqId} pending={p} onAnswer={actions.answerElicitation} />
             ))}
 
-          {ended ? (
+          {ended && !resumable ? (
             <p role="status" className="border-t border-hairline bg-raised px-4 py-2.5 text-muted">
               This conversation has ended — read-only.
             </p>
@@ -767,6 +768,7 @@ export function ConversationsPage({
   });
   const composerReady = view.kind === 'detail' && (view.conversationId === null || conversation !== null);
   const ended = conversation?.state === 'ended';
+  const resumable = conversation?.sessionId != null;
   const deleteConversation = (id: number) => {
     actions.deleteConversation(id);
     if (id === focusedId) openList();
@@ -822,7 +824,7 @@ export function ConversationsPage({
               Object.values(pendingElicitations).map((elicitation) => (
                 <ElicitationPrompt key={elicitation.reqId} pending={elicitation} onAnswer={actions.answerElicitation} />
               ))}
-            {ended ? (
+            {ended && !resumable ? (
               <div role="status" className="flex items-center gap-3 border-t border-edge bg-surface px-4 py-2.5 text-muted">
                 <span>This conversation has ended — read-only.</span>
                 {conversation && (

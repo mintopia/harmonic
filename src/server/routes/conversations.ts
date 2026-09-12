@@ -286,7 +286,7 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
       schema: {
         tags: ['Conversations'],
         description:
-          'Send an operator Turn. Spawns the harness on the first Turn and keeps it warm across Turns; the reply streams over the WebSocket. If a Turn is already running, the message is queued and sent as the next Turn (issue 14). Operator only; not reachable with an attempt-scoped key.',
+          'Send an operator Turn. Spawns the harness on the first Turn and keeps it warm across Turns; the reply streams over the WebSocket. If a Turn is already running, the message is queued and sent as the next Turn (issue 14). An ended Conversation that still holds a stored session is reactivated and its ACP session reloaded (a cold resume). Operator only; not reachable with an attempt-scoped key.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         params: idParamsSchema,
         body: turnInputSchema,
@@ -296,7 +296,7 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
             'The payload failed validation, or the harness could not be spawned — its Working Directory does not exist, or its harness is not configured.',
           ),
           404: errorResponse('No Conversation has that id.'),
-          409: errorResponse('The Conversation has ended, so it can take no further Turns.'),
+          409: errorResponse('The Conversation has ended and holds no session to resume from, so it can take no further Turns.'),
         },
       },
     },
@@ -383,7 +383,7 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
       schema: {
         tags: ['Conversations'],
         description:
-          'End a Conversation: stop the harness and mark it ended (its transcript survives read-only; it cannot resume). Operator only; not reachable with an attempt-scoped key.',
+          'End a Conversation: stop the harness and mark it ended (its transcript survives read-only). If it holds a stored session, a later Turn reactivates it and reloads that session as a cold resume. Operator only; not reachable with an attempt-scoped key.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         params: idParamsSchema,
         response: {
