@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.9.1](https://github.com/mintopia/harmonic/compare/v2.9.0...v2.9.1) (2026-09-13)
+
+
+### Bug Fixes
+
+* **timeline:** keep the scrub surface alive when a window is empty ([ce193f0](https://github.com/mintopia/harmonic/commit/ce193f01e077a62c0aa33253278564bf26ab263c))
+
 ## [2.9.0](https://github.com/mintopia/harmonic/compare/v2.8.0...v2.9.0) (2026-09-13)
 
 
