@@ -27,6 +27,8 @@ async function renderHeader(props: {
       globalPausePending: props.globalPausePending ?? false,
       trackerEnabled: false,
       refreshingTracker: false,
+      menuOpen: false,
+      onMenuToggle: () => {},
       onAutoRunnerChange: () => {},
       onGlobalPauseChange: props.onGlobalPauseChange ?? (() => {}),
       onRefreshTracker: () => {},
