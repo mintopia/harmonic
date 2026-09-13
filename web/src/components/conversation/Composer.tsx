@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
-import { api } from '../../api';
 import { isTurnRunning } from '../../conversation-steering-model';
 import { toastError } from '../../toast';
 import type { AppConfig, Conversation, ConversationEvent, Workspace } from '../../types';
-import { btnPrimary, btnQuietDestructive, field, labelType, selectField } from '../../ui';
+import { btnPrimary, field, labelType, selectField } from '../../ui';
 import { computeContextUsage, formatContextUsage, formatTokenBreakdown } from '../../conversation-telemetry-model';
 import { formatCost } from '../../cost';
 import { DiscoveryModelPicker } from '../DiscoveryModelPicker.js';
@@ -86,7 +85,6 @@ export function Composer({
   const [permissionMode, setPermissionMode] = useState<Conversation['permissionMode']>('ask');
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
-  const [interrupting, setInterrupting] = useState(false);
   const [queued, setQueued] = useState(false);
   const queuedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -95,8 +93,8 @@ export function Composer({
   }, []);
 
   const locked = conversation !== null;
-  const ended = conversation?.state === 'ended';
   const running = conversation?.state === 'active' && isTurnRunning(events);
+  const displayedHarness = conversation?.harness ?? harness;
   const models = (config.harnesses[harness]?.models ?? []).map((model) => model.id);
 
   const pickHarness = (h: string) => {
@@ -107,7 +105,7 @@ export function Composer({
 
   const send = async () => {
     const trimmed = text.trim();
-    if (!trimmed || busy || ended) return;
+    if (!trimmed || busy) return;
     setBusy(true);
     try {
       const result = await onSend({ harness, model, permissionMode }, trimmed);
@@ -124,21 +122,6 @@ export function Composer({
     }
   };
 
-  const interrupt = async () => {
-    if (!conversation || interrupting) return;
-    setInterrupting(true);
-    try {
-      const trimmed = text.trim();
-      await api.interrupt(conversation.id, trimmed || undefined);
-      setText('');
-      setQueued(false);
-    } catch (e) {
-      toastError(e);
-    } finally {
-      setInterrupting(false);
-    }
-  };
-
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -147,7 +130,7 @@ export function Composer({
   };
 
   return (
-    <div className="border-t border-edge bg-surface p-3">
+    <div className="border-t border-edge bg-surface p-3 max-md:p-2.5">
       {!locked && (
         <div className="mb-2 flex flex-col gap-2.5">
           <div className={`grid items-start gap-2 ${expanded ? 'sm:grid-cols-2' : ''}`}>
@@ -189,7 +172,7 @@ export function Composer({
                   type="button"
                   aria-pressed={permissionMode === mode}
                   onClick={() => setPermissionMode(mode)}
-                  className={`min-h-9 rounded px-3 text-small font-medium transition-colors ${
+                  className={`min-h-11 rounded px-3 text-small font-medium transition-colors ${
                     permissionMode === mode ? 'bg-raised text-ink' : 'text-muted hover:text-ink'
                   }`}
                 >
@@ -205,41 +188,32 @@ export function Composer({
           Queued — will send once the current turn finishes.
         </p>
       )}
-      <div className="flex items-end gap-2">
+      <div className="relative flex items-end gap-2">
         <textarea
           aria-label="Message"
-          className={`${field} min-h-16 flex-1 resize-none`}
+          className={`${field} min-h-16 flex-1 resize-none max-md:min-h-14 max-md:pr-14`}
           value={text}
-          disabled={ended}
           placeholder={
-            ended
-              ? 'Conversation ended.'
-              : running
-                ? `Message ${providerLabel(harness)}… (Enter queues it for after this turn)`
-                : `Message ${providerLabel(harness)}… (Enter to send, Shift+Enter for a newline)`
+            running
+              ? `Message ${providerLabel(displayedHarness)}… (Enter queues it for after this turn)`
+              : `Message ${providerLabel(displayedHarness)}… (Enter to send, Shift+Enter for a newline)`
           }
           onChange={(e) => setText(e.target.value)}
           onKeyDown={onKeyDown}
         />
-        {running && (
-          <button
-            type="button"
-            className={`${btnQuietDestructive} px-1 pb-2.5`}
-            disabled={interrupting}
-            onClick={interrupt}
-          >
-            {text.trim() ? 'Interrupt' : 'Stop'}
-          </button>
-        )}
-        <button aria-label="Send" className={btnPrimary} disabled={busy || ended || !text.trim()} onClick={send}>
+        <button
+          aria-label="Send"
+          className={`${btnPrimary} w-11 px-0 max-md:absolute max-md:bottom-2 max-md:right-2`}
+          disabled={busy || !text.trim()}
+          onClick={send}
+        >
           <Icon name="send" />
         </button>
       </div>
-      {!ended && (
         <div className="mt-1.5 flex flex-wrap items-center gap-x-3.5 gap-y-1 text-label text-faint">
-          <span><b className="font-semibold text-muted">Enter</b> {running ? 'queues' : 'to send'}</span>
-          <span><b className="font-semibold text-muted">Shift ↵</b> newline</span>
-          <span><b className="font-semibold text-muted">/</b> commands</span>
+          <span className="max-md:hidden"><b className="font-semibold text-muted">Enter</b> {running ? 'queues' : 'to send'}</span>
+          <span className="max-md:hidden"><b className="font-semibold text-muted">Shift ↵</b> newline</span>
+          <span className="max-md:hidden"><b className="font-semibold text-muted">/</b> commands</span>
           {conversation && (
             <div className="ml-auto flex items-center gap-2.5 normal-case tracking-normal">
               <span className="inline-flex items-center gap-1.5">
@@ -257,7 +231,6 @@ export function Composer({
             </div>
           )}
         </div>
-      )}
     </div>
   );
 }

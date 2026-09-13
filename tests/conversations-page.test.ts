@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
@@ -7,6 +9,11 @@ vi.mock('dompurify', () => ({ default: { addHook: () => {}, sanitize: (html: str
 import { ConversationContextDrawer, ConversationsPage } from '../web/src/components/ConversationLauncher.js';
 import { isConversationInWorkspace } from '../web/src/components/useConversationDetail.js';
 import type { Conversation } from '../web/src/types.js';
+
+const CONVERSATION_LAUNCHER = readFileSync(
+  fileURLToPath(new URL('../web/src/components/ConversationLauncher.tsx', import.meta.url)),
+  'utf8',
+);
 
 const conversation: Conversation = {
   id: 1,
@@ -34,6 +41,11 @@ const conversation: Conversation = {
 };
 
 describe('ConversationsPage (#547)', () => {
+  it('provides a dedicated mobile context control in the conversation header (#572)', () => {
+    expect(CONVERSATION_LAUNCHER).toContain('aria-label="Open conversation context"');
+    expect(CONVERSATION_LAUNCHER).toContain('md:hidden');
+  });
+
   it('renders a conversation rail beside the transcript pane', () => {
     const html = renderToStaticMarkup(
       createElement(ConversationsPage, {

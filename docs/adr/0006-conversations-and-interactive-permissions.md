@@ -4,6 +4,7 @@ Status: accepted
 Date: 2026-08-28
 Part of the 2026-08-28 ADR reset (see README.md).
 Amended 2026-09-10: adds an opt-in Automatic (full-auto) permission mode — see "Automatic mode" below.
+Amended 2026-09-12: `ended` is no longer terminal — any Conversation holding a stored session resumes from it — see "Ended is not terminal when a session survives" below.
 
 ## Conversations are a first-class sibling to Task
 
@@ -28,6 +29,18 @@ chat is interactive and a stale half-answer is worthless.
 A server restart ends the warm harness process but not the Conversation. Its
 next Turn reloads the prior ACP session as a cold resume; the operator sees a
 token-cost warning, but cache warmth never blocks resuming.
+
+## Ended is not terminal when a session survives
+
+`ended` marks that the warm harness is gone and the transcript is at rest — an
+explicit End, an idle timeout, or a turn error all reach it. It is **not** a
+one-way wall. A Conversation that recorded a `sessionId` can always be resumed
+from it: the operator's next Turn reactivates the Conversation (`ended → active`)
+and reloads that ACP session, exactly the cold resume a server restart already
+takes. Cache warmth never blocks it; the composer stays open on an ended
+Conversation and shows the cold-resume cost warning before the first Turn back.
+Only a Conversation that never recorded a session — nothing to reload — stays
+read-only.
 
 ## Interactive, human-in-the-loop permissions
 

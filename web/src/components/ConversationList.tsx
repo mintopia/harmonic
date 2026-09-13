@@ -140,7 +140,7 @@ export function ConversationList(props: ConversationListProps) {
         <span className={panelTitle}>Conversations</span>
         <div className="flex-1" />
         <button
-          className="inline-flex min-h-8 items-center gap-1 whitespace-nowrap rounded-md bg-accent px-2.5 py-1 text-small font-semibold text-on-accent transition-colors duration-150 hover:bg-accent-hot"
+          className="inline-flex min-h-11 items-center gap-1 whitespace-nowrap rounded-md bg-accent px-2.5 py-1 text-small font-semibold text-on-accent transition-colors duration-150 hover:bg-accent-hot"
           onClick={onNew}
         >
           <Icon name="plus" />

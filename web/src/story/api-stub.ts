@@ -9,9 +9,14 @@ const cost = (model: string, usd: number) => ({ totalUsd: usd, byModel: { [model
 /** Fleet-Timeline spans relative to `to` (now): three harness lanes, every
  * outcome, two live runs and an overlap that forces a codex sub-row. Finished
  * runs carry a frozen Cost; running ones have none yet (honest floor). */
-const timelineSpans = (to: number) => {
+const TL_REF = Date.now();
+const timelineSpans = (to: number = TL_REF) => {
   const t = (hoursAgo: number) => Math.round(to - hoursAgo * H);
   const base = [
+    // Deeper history so zooming out / panning back reveals more than the last day.
+    { taskId: 4800, attemptId: 20, number: 1, title: 'Retire .harmonic-live reaper', harness: 'claude', model: 'claude-opus-4-8', state: 'passed', trackerRef: 401, startedAt: t(120), endedAt: t(117.5) },
+    { taskId: 4801, attemptId: 21, number: 2, title: 'Epic follows develop advance', harness: 'codex', model: 'gpt-5.6', state: 'failed', trackerRef: 435, startedAt: t(74), endedAt: t(71) },
+    { taskId: 4802, attemptId: 22, number: 1, title: 'Baseline schema-sync boot repair', harness: 'copilot', model: 'gpt-5.6', state: 'passed', trackerRef: 455, startedAt: t(50), endedAt: t(47.2) },
     { taskId: 4821, attemptId: 1, number: 1, title: 'Worktree inventory API', harness: 'claude', model: 'claude-opus-4-8', state: 'passed', trackerRef: 481, startedAt: t(22), endedAt: t(21.1) },
     { taskId: 4822, attemptId: 2, number: 2, title: 'Rate-limit ACP reconnect', harness: 'claude', model: 'claude-opus-4-8', state: 'escalated', trackerRef: 470, startedAt: t(19.5), endedAt: t(18) },
     { taskId: 4823, attemptId: 3, number: 1, title: 'Post-merge revert-on-red', harness: 'claude', model: 'claude-opus-4-8', state: 'passed', trackerRef: 460, startedAt: t(9.5), endedAt: t(8.1) },
@@ -52,7 +57,8 @@ export const api = {
   epic: (_workspaceId: number, _epicRef: number) => ok(f.epic),
   epicStats: (_epicRef: number, _workspaceId: number) => ok(f.epicStats),
   stats: (_from: number, _to: number, _workspaceId: number) => ok(f.statsFixture),
-  timeline: (_workspaceId: number, from: number, to: number) => ok({ attempts: timelineSpans(to), from, to }),
+  timeline: (_workspaceId: number, from: number, to: number) =>
+    ok({ attempts: timelineSpans().filter((s) => s.startedAt <= to && (s.endedAt ?? Date.now()) >= from), from, to }),
   harnessProviders: (harness: string) =>
     ok({
       providers:
@@ -79,7 +85,7 @@ export const api = {
     ok(f.epicChildUsage[id] ?? { models: {}, agents: {}, toolCalls: {}, totals: null, source: null, cost: null, attemptCount: 0 }),
   taskTimeline: (_id: number) => ok({ events: f.timeline }),
   taskAttemptTimeline: (id: number) => {
-    const s = timelineSpans(Date.now()).find((x) => x.taskId === id);
+    const s = timelineSpans().find((x) => x.taskId === id);
     return s
       ? ok({ attempts: [syntheticAttempt(s)], budgetBase: 0, total: 1 })
       : ok({ attempts: f.attempts });

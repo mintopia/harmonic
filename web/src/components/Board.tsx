@@ -342,13 +342,13 @@ function CardStrip({ count, children }: { count: number; children: React.ReactNo
 
   return (
     <div className="relative">
-      <div ref={stripRef} data-board-layout="card-strip" className="flex gap-3 overflow-x-auto pb-2 pr-20 [scrollbar-width:thin]">
+      <div ref={stripRef} data-board-layout="card-strip" className="flex gap-3 overflow-x-auto pb-2 pr-20 [scrollbar-width:thin] max-md:flex-col max-md:overflow-visible max-md:pr-0">
         {children}
       </div>
       {more > 0 && (
         <>
-          <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 right-0 w-24 bg-gradient-to-l from-canvas" />
-          <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-raised px-2 py-1 text-small font-medium text-muted">
+          <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 right-0 w-24 bg-gradient-to-l from-canvas max-md:hidden" />
+          <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-raised px-2 py-1 text-small font-medium text-muted max-md:hidden">
             → {more} more
           </span>
         </>
@@ -433,7 +433,7 @@ function PendingCard({
     ? 'cursor-pointer transition duration-150 motion-reduce:transition-none hover:-translate-y-0.5 hover:border-edge hover:shadow-float'
     : '';
   return (
-    <div className={`bold-wash ${wash} relative w-[300px] shrink-0 rounded-lg border bg-surface p-2 ${affordance} ${item.runnable ? 'border-ready-dot/40' : 'border-hairline'}`}>
+    <div className={`bold-wash ${wash} relative w-[300px] shrink-0 rounded-lg border bg-surface p-2 max-md:w-full ${affordance} ${item.runnable ? 'border-ready-dot/40' : 'border-hairline'}`}>
       <div className="flex items-center gap-2">
         <span aria-hidden="true" className={`size-2 shrink-0 rounded-full ${itemDot(item)}`} />
         <span className="font-data text-small text-faint">{item.label}</span>
@@ -493,10 +493,10 @@ function BlockerColumns({
   className?: string;
 }) {
   return (
-    <div data-board-layout="blocker-columns" className={`overflow-x-auto [scrollbar-width:thin] ${className}`}>
-      <div className="flex min-w-max items-start gap-3">
+    <div data-board-layout="blocker-columns" className={`overflow-x-auto [scrollbar-width:thin] max-md:overflow-visible ${className}`}>
+      <div className="flex min-w-max items-start gap-3 max-md:min-w-0 max-md:flex-col max-md:gap-4">
         {columns.map((column) => (
-          <section key={column.label} className="w-[300px] shrink-0">
+          <section key={column.label} className="w-[300px] shrink-0 max-md:w-full">
             <h3 className="mb-1.5 flex items-center gap-1.5 text-label font-bold uppercase text-faint">
               {column.label}
               <span className="font-semibold tabular-nums">· {column.items.length}</span>
@@ -721,7 +721,7 @@ export function ClosedRail({
             </>
           );
           return m.taskId == null ? (
-            <div key={m.ref} className="w-[300px] shrink-0 rounded-lg border border-hairline bg-surface p-2.5">
+            <div key={m.ref} className="w-[300px] shrink-0 rounded-lg border border-hairline bg-surface p-2.5 max-md:w-full">
               {inner}
             </div>
           ) : (
@@ -729,7 +729,7 @@ export function ClosedRail({
               key={m.ref}
               type="button"
               onClick={() => onOpenTask(m.taskId!)}
-              className="w-[300px] shrink-0 cursor-pointer rounded-lg border border-hairline bg-surface p-2.5 text-left transition duration-150 motion-reduce:transition-none hover:-translate-y-0.5 hover:border-edge hover:shadow-float focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent"
+              className="w-[300px] shrink-0 cursor-pointer rounded-lg border border-hairline bg-surface p-2.5 text-left transition duration-150 motion-reduce:transition-none hover:-translate-y-0.5 hover:border-edge hover:shadow-float focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent max-md:w-full"
             >
               {inner}
             </button>

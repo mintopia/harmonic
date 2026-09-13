@@ -279,12 +279,14 @@ describe('previewManualResumeContinuation (issue #506)', () => {
     expect(preview?.reason).toBe('context-tokens');
   });
 
-  it('pins the warm window to now while a turn is in progress (active Session)', () => {
-    // lastActiveAt is an hour stale, but an active Session is being kept warm.
+  it('decays warmth from lastActiveAt even for an active-status Session (paused/escalated Task)', () => {
+    // A paused/escalated Task keeps its Session status 'active', but nothing is
+    // keeping the cache warm, so an hour-stale Session reads cold — the window is
+    // not re-anchored to now.
     const store = new Map([[7, session(7, now - HOUR, 'active')]]);
     const preview = previewManualResumeContinuation([run(7)], (id) => store.get(id) ?? null, HOUR / 1000, now, ctx());
-    expect(preview?.plan.continueFull.estimate.band).toBe('warm');
-    expect(preview?.estimatedWarmUntil).toBe(now + HOUR);
+    expect(preview?.plan.continueFull.estimate.band).toBe('cold');
+    expect(preview?.estimatedWarmUntil).toBe(now - HOUR);
   });
 
   it('returns null when no Run ever bound a Session', () => {

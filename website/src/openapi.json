@@ -15950,7 +15950,7 @@
         "tags": [
           "Conversations"
         ],
-        "description": "Send an operator Turn. Spawns the harness on the first Turn and keeps it warm across Turns; the reply streams over the WebSocket. If a Turn is already running, the message is queued and sent as the next Turn (issue 14). Operator only; not reachable with an attempt-scoped key.",
+        "description": "Send an operator Turn. Spawns the harness on the first Turn and keeps it warm across Turns; the reply streams over the WebSocket. If a Turn is already running, the message is queued and sent as the next Turn (issue 14). An ended Conversation that still holds a stored session is reactivated and its ACP session reloaded (a cold resume). Operator only; not reachable with an attempt-scoped key.",
         "requestBody": {
           "required": true,
           "content": {
@@ -16043,7 +16043,7 @@
             }
           },
           "409": {
-            "description": "The Conversation has ended, so it can take no further Turns.",
+            "description": "The Conversation has ended and holds no session to resume from, so it can take no further Turns.",
             "content": {
               "application/json": {
                 "schema": {
@@ -16376,7 +16376,7 @@
         "tags": [
           "Conversations"
         ],
-        "description": "End a Conversation: stop the harness and mark it ended (its transcript survives read-only; it cannot resume). Operator only; not reachable with an attempt-scoped key.",
+        "description": "End a Conversation: stop the harness and mark it ended (its transcript survives read-only). If it holds a stored session, a later Turn reactivates it and reloads that session as a cold resume. Operator only; not reachable with an attempt-scoped key.",
         "parameters": [
           {
             "schema": {

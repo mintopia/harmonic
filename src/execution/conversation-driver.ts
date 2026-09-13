@@ -169,9 +169,12 @@ export class ConversationDriver {
    * as the next Turn on completion — `queued` reports which.
    */
   async submitTurn(conversationId: number, text: string): Promise<{ queued: boolean }> {
-    const convo = await this.store.get(conversationId);
+    let convo = await this.store.get(conversationId);
     if (convo.state !== 'active') {
-      throw new DomainError('invalid_state', `conversation ${conversationId} has ended`);
+      if (convo.sessionId === null) {
+        throw new DomainError('invalid_state', `conversation ${conversationId} has ended`);
+      }
+      convo = await this.store.update(conversationId, { state: 'active', endedAt: null });
     }
     let entry = this.active.get(conversationId);
     if (entry?.turning) {

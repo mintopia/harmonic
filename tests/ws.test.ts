@@ -166,6 +166,109 @@ describe('subscribe', () => {
     unsubscribeB();
   });
 
+  it('replays an outstanding permission request to a late subscriber', async () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket);
+    const subscribe = await loadSubscribe();
+    const first: ServerMessage[] = [];
+    const second: ServerMessage[] = [];
+    const unsubscribeFirst = subscribe((message) => first.push(message));
+    const permission = {
+      type: 'permission_request',
+      conversationId: 7,
+      reqId: 'perm-1',
+      request: { sessionId: 'session-1', toolCall: {}, options: [] },
+    } satisfies ServerMessage;
+
+    FakeWebSocket.instances[0]!.emit(permission);
+    const unsubscribeSecond = subscribe((message) => second.push(message));
+
+    expect(first).toEqual([permission]);
+    expect(second).toEqual([permission]);
+
+    unsubscribeFirst();
+    unsubscribeSecond();
+  });
+
+  it('does not replay permissions that were resolved or whose conversation ended', async () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket);
+    const subscribe = await loadSubscribe();
+    const unsubscribeFirst = subscribe(() => {});
+    const socket = FakeWebSocket.instances[0]!;
+    const permission = (reqId: string, conversationId = 7) =>
+      ({
+        type: 'permission_request',
+        conversationId,
+        reqId,
+        request: { sessionId: 'session-1', toolCall: {}, options: [] },
+      }) satisfies ServerMessage;
+
+    socket.emit(permission('perm-resolved'));
+    socket.emit({
+      type: 'conversation_event',
+      event: {
+        id: 1,
+        conversationId: 7,
+        seq: 1,
+        ts: 1,
+        type: 'permission_request',
+        payload: { reqId: 'perm-resolved' },
+      },
+    } satisfies ServerMessage);
+    socket.emit(permission('perm-ended'));
+    socket.emit({
+      type: 'conversation_changed',
+      conversation: {
+        id: 7,
+        title: null,
+        workspaceId: 1,
+        harness: 'codex',
+        model: 'gpt-5.6-sol',
+        workingDir: '/workspace',
+        permissionMode: 'ask',
+        state: 'ended',
+        sessionId: null,
+        createdAt: 1,
+        updatedAt: 1,
+        endedAt: 1,
+        usage: null,
+        cost: null,
+        contextTokens: null,
+        contextWindow: null,
+        cacheWarmSeconds: null,
+      },
+    } satisfies ServerMessage);
+
+    const replayed: ServerMessage[] = [];
+    const unsubscribeSecond = subscribe((message) => replayed.push(message));
+
+    expect(replayed).toEqual([]);
+
+    unsubscribeFirst();
+    unsubscribeSecond();
+  });
+
+  it('clears cached permissions when the shared socket closes', async () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket);
+    const subscribe = await loadSubscribe();
+    const unsubscribeFirst = subscribe(() => {});
+    const permission = {
+      type: 'permission_request',
+      conversationId: 7,
+      reqId: 'perm-1',
+      request: { sessionId: 'session-1', toolCall: {}, options: [] },
+    } satisfies ServerMessage;
+
+    FakeWebSocket.instances[0]!.emit(permission);
+    FakeWebSocket.instances[0]!.serverClose();
+    const replayed: ServerMessage[] = [];
+    const unsubscribeSecond = subscribe((message) => replayed.push(message));
+
+    expect(replayed).toEqual([]);
+
+    unsubscribeFirst();
+    unsubscribeSecond();
+  });
+
   it('backs off with a full-jitter exponential schedule, caps at 30s, and resets on open', async () => {
     vi.useFakeTimers();
     const r = 0.5;

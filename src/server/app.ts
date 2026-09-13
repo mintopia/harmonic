@@ -281,8 +281,9 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   const worktreesDir = join(opts.dataDir, 'worktrees');
   const bus = new EventBus();
   const scheduler = new Scheduler(asyncDb, (jobs) => bus.emit('scheduled_jobs', jobs));
+  const runningVersion = opts.version ?? readPackageManifest().version;
   const updateCheck = new UpdateCheck({
-    version: opts.version ?? readPackageManifest().version,
+    version: runningVersion,
     latest: opts.updateCheckLatest ?? fetchLatestVersion,
     store: new SettingsUpdateAvailabilityStore(asyncDb),
   });
@@ -680,6 +681,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
       }
     };
   upgrade = new UpgradeCoordinator({
+    version: runningVersion,
     store: new SettingsUpdateAvailabilityStore(asyncDb),
     settings: settingsStore,
     attempts,
@@ -688,6 +690,9 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     ...(onUpgradeIdle === undefined ? {} : { onIdle: onUpgradeIdle }),
   });
   upgradeRef = upgrade;
+  if (distributionMode === 'packaged') {
+    await upgrade.complete();
+  }
   const epicService = new TrackerEpicService(
     tasks,
     () => workspaces.list(),

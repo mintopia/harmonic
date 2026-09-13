@@ -223,14 +223,14 @@ export function planSessionContinuation(
 
 /**
  * A whole {@link SessionRow} projected to the {@link SessionWarmthFacts} the cost
- * estimate reads. While a turn is in progress (`status: 'active'` — a live
- * Attempt owns the Session) the provider cache is being kept warm, so the warm
- * window runs from `now`; only once the Session stops does it decay on
- * wall-clock from `lastActiveAt`.
+ * estimate reads. The provider prompt cache decays on wall-clock from the last
+ * real dispatch, so the warm window always runs from `lastActiveAt`. A paused or
+ * escalated Task keeps its Session `status: 'active'` (only a terminal settle
+ * flips it to `idle`), yet nothing is keeping that cache warm — so status must
+ * not re-anchor the window to the present.
  */
-export function sessionWarmthFacts(row: SessionRow, cacheWarmSeconds: number, now?: number): SessionWarmthFacts {
-  const lastActiveAt = row.status === 'active' && now !== undefined ? now : row.lastActiveAt;
-  return { estimatedWarmUntil: lastActiveAt + cacheWarmSeconds * 1000, lastActiveAt };
+export function sessionWarmthFacts(row: SessionRow, cacheWarmSeconds: number): SessionWarmthFacts {
+  return { estimatedWarmUntil: row.lastActiveAt + cacheWarmSeconds * 1000, lastActiveAt: row.lastActiveAt };
 }
 
 /** The manual-resume preview: both offered paths, the deterministic recommendation
@@ -268,7 +268,7 @@ export function previewManualResumeContinuation(
     if (run.sessionRowId === null) continue;
     const session = getSession(run.sessionRowId);
     if (!session) continue;
-    const facts = sessionWarmthFacts(session, cacheWarmSeconds, now);
+    const facts = sessionWarmthFacts(session, cacheWarmSeconds);
     const plan = planSessionContinuation('manual-resume', facts, now) as Extract<
       SessionContinuationPlan,
       { mode: 'offer-choice' }

@@ -1,13 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
+import { api } from '../../api';
 import type { Conversation, ConversationEvent } from '../../types';
 import { segmentTranscript } from '../../conversation-transcript-model';
+import { isTurnRunning } from '../../conversation-steering-model';
 import { coalesceEvents, latestRunningTool } from '../../event-stream-model';
 import { isAtLiveEdge } from '../../follow-tail-model';
+import { toastError } from '../../toast';
 import {
   announceTransitions,
   EMPTY_ANNOUNCE_CURSOR,
   type AnnounceCursor,
 } from '../../stream-announce-model';
+import { touchOverlay } from '../../ui';
 import { Icon } from '../Icon';
 import { providerLabel } from '../TaskIdentity';
 import { EventStream } from './EventStream';
@@ -69,7 +73,21 @@ export function Transcript({ events, conversation }: { events: ConversationEvent
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [following, setFollowing] = useState(true);
+  const [interrupting, setInterrupting] = useState(false);
   const runningTool = latestRunningTool(events);
+  const running = conversation?.state === 'active' && isTurnRunning(events);
+
+  const interrupt = async () => {
+    if (!conversation || interrupting) return;
+    setInterrupting(true);
+    try {
+      await api.interrupt(conversation.id);
+    } catch (e) {
+      toastError(e);
+    } finally {
+      setInterrupting(false);
+    }
+  };
 
   useEffect(() => {
     const element = scrollRef.current;
@@ -99,7 +117,7 @@ export function Transcript({ events, conversation }: { events: ConversationEvent
       }}
       className="relative flex-1 overflow-y-auto bg-canvas"
     >
-      {runningTool && (
+      {(running || runningTool != null) && (
         <div
           role="status"
           aria-live="polite"
@@ -107,7 +125,20 @@ export function Transcript({ events, conversation }: { events: ConversationEvent
         >
           <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-running-dot motion-safe:animate-dot-pulse" />
           <span className="shrink-0 text-label font-bold uppercase tracking-[0.1em] text-running">Running</span>
-          <span className="min-w-0 flex-1 truncate font-semibold text-ink">{runningTool.title ?? runningTool.toolKind ?? 'Tool call'}</span>
+          <span className="min-w-0 flex-1 truncate font-semibold text-ink">
+            {runningTool ? (runningTool.title ?? runningTool.toolKind ?? 'Tool call') : 'Working…'}
+          </span>
+          <button
+            type="button"
+            onClick={interrupt}
+            disabled={interrupting}
+            aria-label="Stop the running turn"
+            className="relative inline-flex shrink-0 items-center gap-1.5 rounded-md border border-edge bg-surface/80 px-2.5 py-1 text-label font-bold uppercase tracking-[0.08em] text-ink transition-colors hover:border-fail/50 hover:text-fail disabled:opacity-50"
+          >
+            <Icon name="stop" className="size-2.5" />
+            Stop
+            <span aria-hidden className={touchOverlay} />
+          </button>
         </div>
       )}
       {turns.length === 0 ? <p className="p-4 text-muted">Send a message to begin.</p> : (
