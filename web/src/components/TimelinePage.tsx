@@ -153,7 +153,6 @@ export function TimelinePage({
   const to = anchor ?? now;
   const from = to - windowMs;
   const span = Math.max(1, to - from);
-  const hasLanes = !!attempts && attempts.length > 0;
 
   // Latest geometry for the native wheel + pointer handlers, which read this ref
   // rather than closing over stale state.
@@ -271,7 +270,7 @@ export function TimelinePage({
     };
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
-  }, [hasLanes]);
+  }, [attempts === null]);
 
   const ticks = useMemo(() => {
     const fit = clamp(Math.floor((trackW || 720) / MIN_TICK_LABEL_PX), 2, 8);
@@ -406,10 +405,6 @@ export function TimelinePage({
         <div className="flex h-40 items-center justify-center rounded-lg border border-hairline bg-surface text-muted">
           Loading timeline…
         </div>
-      ) : attempts.length === 0 ? (
-        <EmptyState title="No attempts in this window" className="my-10">
-          Nothing ran in the visible {fmtSpan(windowMs)} window. Zoom out or pan back to widen the view.
-        </EmptyState>
       ) : (
         <div className="overflow-hidden rounded-lg border border-hairline bg-surface shadow-card">
           <div
@@ -444,6 +439,17 @@ export function TimelinePage({
 
             {/* lanes */}
             <div className="relative">
+              {lanes.length === 0 && (
+                <div className="grid" style={{ gridTemplateColumns: `${LABEL_W}px 1fr` }}>
+                  <div className="border-r border-hairline bg-shell/40" />
+                  <div className="flex h-40 flex-col items-center justify-center gap-1 bg-sunken/40 px-4 text-center">
+                    <span className="text-small font-medium text-ink">No attempts in this window</span>
+                    <span className="text-small text-muted">
+                      Nothing ran in the visible {fmtSpan(windowMs)} window. Zoom out or pan back to widen the view.
+                    </span>
+                  </div>
+                </div>
+              )}
               {lanes.map((lane) => (
                 <div
                   key={lane.harness}
