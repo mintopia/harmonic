@@ -26,20 +26,22 @@ export function EpicIntegrationBar({ epic }: { epic: Epic }) {
   return (
     <div className="border-t border-hairline px-4 py-3">
       <div className={sectionLabel}>Integration</div>
+      <div className="mt-2.5 max-md:overflow-x-auto">
       <ol
-        className="mt-2.5 flex items-center gap-2"
+        className="flex items-center gap-2 max-md:w-max"
         aria-label={`Integration progress — ${current ? current.label : 'complete'}${epic.integrate.held != null ? ' (escalated)' : ''}`}
       >
         {steps.map((step, i) => (
-          <li key={step.key} className="flex flex-1 items-center gap-2 last:flex-none">
+          <li key={step.key} className="flex flex-1 items-center gap-2 last:flex-none max-md:flex-none">
             <span className="flex items-center gap-1.5 whitespace-nowrap" title={step.disabled ? 'Not configured' : undefined}>
               <span aria-hidden="true" className={`size-2.5 rounded-full ${step.disabled ? STEP_FILL.pending : STEP_FILL[step.state]}`} />
               <span className={`text-small font-medium ${step.disabled ? STEP_TEXT.pending : STEP_TEXT[step.state]}`}>{step.label}</span>
             </span>
-            {i < steps.length - 1 && <span aria-hidden="true" className="h-px flex-1 bg-edge" />}
+            {i < steps.length - 1 && <span aria-hidden="true" className="h-px flex-1 bg-edge max-md:w-5 max-md:flex-none" />}
           </li>
         ))}
       </ol>
+      </div>
       {epic.mergeSteps.length > 0 && (
         <div className="mt-3">
           <MergeProgress steps={epic.mergeSteps} />

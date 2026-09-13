@@ -244,7 +244,10 @@ function TaskProgressBar({ task, attempts, commandConfigured }: { task: Task; at
   return (
     <div className="mb-6 mt-1">
       <div className={`mb-3 ${sectionCaps}`}>Task progress</div>
-      <ol className={`${card} flex items-start px-[22px] py-5`} aria-label="Task progress">
+      <ol
+        className={`${card} flex items-start px-[22px] py-5 max-md:flex-col max-md:items-stretch max-md:gap-3 max-md:px-4`}
+        aria-label="Task progress"
+      >
         {steps.map((step, i) => {
           const leftDone = i > 0 && steps[i - 1]?.status === 'done' && !steps[i - 1]?.disabled;
           const rightDone = step.status === 'done' && !step.disabled;
@@ -253,22 +256,24 @@ function TaskProgressBar({ task, attempts, commandConfigured }: { task: Task; at
             <li
               key={step.key}
               aria-current={step.status === 'current' || step.status === 'awaiting' ? 'step' : undefined}
-              className="flex min-w-0 flex-1 flex-col items-center gap-2 text-center"
+              className="flex min-w-0 flex-1 flex-col items-center gap-2 text-center max-md:w-full max-md:flex-none max-md:flex-row max-md:items-center max-md:gap-3 max-md:text-left"
             >
-              <div className="flex w-full items-center">
-                <span className={`-mx-px h-0.5 flex-1 rounded ${i === 0 ? 'invisible' : leftDone ? 'bg-merged' : 'bg-edge'}`} />
+              <div className="flex w-full items-center max-md:w-auto max-md:flex-none">
+                <span className={`-mx-px h-0.5 flex-1 rounded max-md:hidden ${i === 0 ? 'invisible' : leftDone ? 'bg-merged' : 'bg-edge'}`} />
                 <span
                   className={`flex size-6 shrink-0 items-center justify-center rounded-full border text-[11px] font-bold tabular-nums ${PHASE_NODE_STYLES[step.status]} ${step.disabled ? 'opacity-60' : ''}`}
                 >
                   {stepGlyph(step.status, i)}
                 </span>
-                <span className={`-mx-px h-0.5 flex-1 rounded ${i === steps.length - 1 ? 'invisible' : rightDone ? 'bg-merged' : 'bg-edge'}`} />
+                <span className={`-mx-px h-0.5 flex-1 rounded max-md:hidden ${i === steps.length - 1 ? 'invisible' : rightDone ? 'bg-merged' : 'bg-edge'}`} />
               </div>
-              <span className={`text-[12px] font-semibold leading-tight ${step.disabled ? 'text-faint' : STEP_LABEL_TONE[step.status]}`}>
-                {step.label}
-                <span className="sr-only"> — {step.disabled ? 'not configured' : STEP_STATUS_LABEL[step.status]}</span>
-              </span>
-              {caption && <span className="text-[10.5px] leading-tight text-faint">{caption}</span>}
+              <div className="contents max-md:flex max-md:min-w-0 max-md:flex-col">
+                <span className={`text-[12px] font-semibold leading-tight ${step.disabled ? 'text-faint' : STEP_LABEL_TONE[step.status]}`}>
+                  {step.label}
+                  <span className="sr-only"> — {step.disabled ? 'not configured' : STEP_STATUS_LABEL[step.status]}</span>
+                </span>
+                {caption && <span className="text-[10.5px] leading-tight text-faint">{caption}</span>}
+              </div>
             </li>
           );
         })}

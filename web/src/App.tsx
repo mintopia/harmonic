@@ -5,6 +5,8 @@ import type { AppConfig, Conversation, Cost, Task, UpdateState, Workspace } from
 import type { Epic } from './epic-model';
 import { Board } from './components/Board';
 import { HeaderStatusBar } from './components/HeaderStatusBar';
+import { OperatorControls } from './components/OperatorControls';
+import { Icon } from './components/Icon';
 import { NavRail } from './components/NavRail';
 import { boardSections } from './board-sections-model';
 import { TaskForm } from './components/TaskForm';
@@ -560,6 +562,7 @@ export function App() {
     storeActiveWorkspaceId(localStorage, id);
     setTasks(null);
     setEpics([]);
+    setMenuOpen(false);
   };
 
   const handleWorkspaceCreated = (w: Workspace) => {
@@ -600,10 +603,22 @@ export function App() {
       >
         Skip to content
       </a>
+      {menuOpen && (
+        <button
+          type="button"
+          aria-label="Close menu"
+          tabIndex={-1}
+          className="fixed inset-0 z-40 bg-black/40 rail:hidden"
+          onClick={() => setMenuOpen(false)}
+        />
+      )}
       <aside
-        className={`shrink-0 border-b border-hairline bg-shell rail:flex rail:flex-col rail:overflow-hidden rail:border-b-0 rail:border-r rail:transition-[width] rail:duration-150 rail:ease-out motion-reduce:rail:transition-none ${
-          railCollapsed ? 'rail:w-12' : 'rail:w-[200px]'
-        }`}
+        aria-label="Sidebar"
+        aria-hidden={!menuOpen && !railDesktop}
+        onKeyDown={(e) => e.key === 'Escape' && setMenuOpen(false)}
+        className={`z-50 bg-shell max-rail:fixed max-rail:inset-y-0 max-rail:left-0 max-rail:w-[280px] max-rail:max-w-[85%] max-rail:flex max-rail:flex-col max-rail:overflow-y-auto max-rail:border-r max-rail:border-hairline max-rail:shadow-float max-rail:transition-transform max-rail:duration-200 max-rail:ease-out motion-reduce:transition-none shrink-0 rail:flex rail:flex-col rail:overflow-hidden rail:border-r rail:border-hairline rail:transition-[width] rail:duration-150 rail:ease-out motion-reduce:rail:transition-none ${
+          menuOpen ? 'max-rail:translate-x-0' : 'max-rail:invisible max-rail:-translate-x-full'
+        } ${railCollapsed ? 'rail:w-12' : 'rail:w-[200px]'}`}
       >
         <div
           className={`flex items-center gap-2.5 px-4 py-3 rail:px-3 rail:pb-5 ${railCollapsed ? 'rail:justify-center rail:px-0' : ''}`}
@@ -616,12 +631,11 @@ export function App() {
           </span>
           {railCollapsed && <span className="sr-only">{instanceName}</span>}
           <button
-            aria-expanded={menuOpen}
-            aria-label="Menu"
-            className="ml-auto inline-flex min-h-11 items-center rounded-md px-2.5 font-medium text-muted hover:text-ink rail:hidden"
-            onClick={() => setMenuOpen((open) => !open)}
+            aria-label="Close menu"
+            className="ml-auto inline-flex size-9 items-center justify-center rounded-md text-muted hover:bg-raised hover:text-ink rail:hidden"
+            onClick={() => setMenuOpen(false)}
           >
-            Menu
+            <Icon name="close" />
           </button>
         </div>
         <div className={`px-4 pb-3 rail:px-3 ${railCollapsed ? 'rail:hidden' : ''}`}>
@@ -633,7 +647,7 @@ export function App() {
           />
         </div>
         <div
-          className={`${menuOpen ? 'flex' : 'hidden'} flex-col gap-0.5 overflow-y-auto border-t border-hairline p-2 rail:flex rail:flex-1 rail:border-t-0 rail:pt-0 ${
+          className={`flex flex-col gap-0.5 overflow-y-auto border-t border-hairline p-2 rail:flex-1 rail:border-t-0 rail:pt-0 max-rail:overflow-visible ${
             railCollapsed ? 'rail:px-1.5' : ''
           }`}
         >
@@ -644,6 +658,31 @@ export function App() {
             railDesktop={railDesktop}
             onPickView={pickView}
             onToggleRail={toggleRail}
+          />
+        </div>
+        <div className="mt-auto rail:hidden">
+          <OperatorControls
+            layout="drawer"
+            config={config}
+            runningCount={runningCount}
+            cost24h={cost24h}
+            hostLoad={hostLoad}
+            theme={theme}
+            view={view}
+            passwordSet={passwordSet}
+            globalPaused={globalPaused}
+            globalPausePending={globalPausePending}
+            trackerEnabled={activeWorkspace?.trackerEnabled ?? false}
+            refreshingTracker={refreshingTracker}
+            onAutoRunnerChange={(enabled) =>
+              api.updateConfig({ autoRunner: { enabled } }).then(setConfig, toastError)
+            }
+            onGlobalPauseChange={setFleetPaused}
+            onRefreshTracker={refreshTracker}
+            onThemeCycle={cycleTheme}
+            onSettingsClick={() => pickView('settings')}
+            onLogout={() => fetch('/api/auth/logout', { method: 'POST' }).then(() => setAuthed(false))}
+            onHelpClick={() => setHelpOpen(true)}
           />
         </div>
       </aside>
@@ -661,6 +700,8 @@ export function App() {
           globalPausePending={globalPausePending}
           trackerEnabled={activeWorkspace?.trackerEnabled ?? false}
           refreshingTracker={refreshingTracker}
+          menuOpen={menuOpen}
+          onMenuToggle={() => setMenuOpen((open) => !open)}
           onAutoRunnerChange={(enabled) =>
             api.updateConfig({ autoRunner: { enabled } }).then(setConfig, toastError)
           }

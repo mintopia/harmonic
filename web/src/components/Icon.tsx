@@ -20,8 +20,10 @@ export type IconName =
   | 'circle-half'
   | 'check'
   | 'close'
+  | 'menu'
   | 'chat'
   | 'send'
+  | 'stop'
   | 'arrow-left'
   | 'edit'
   | 'plus'
@@ -109,8 +111,10 @@ const PATHS: Record<IconName, JSX.Element> = {
   ),
   check: <path d="M3.5 8.5 6.5 11.5 12.5 4.5" />,
   close: <path d="M4.5 4.5 11.5 11.5M11.5 4.5 4.5 11.5" />,
+  menu: <path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11" />,
   chat: <path d="M2.5 3.5h11a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H8l-3 2.5v-2.5H2.5a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1Z" />,
   send: <path d="M2.5 8 13.5 2.5 9.5 13.5 7.5 9 2.5 8Z" />,
+  stop: <rect fill="currentColor" height="8" rx="1.5" stroke="none" width="8" x="4" y="4" />,
   'arrow-left': <path d="M12.5 8h-9M7 3.5 2.5 8 7 12.5" />,
   edit: (
     <>

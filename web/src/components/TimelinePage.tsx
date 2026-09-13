@@ -287,7 +287,7 @@ export function TimelinePage({
       ) : (
         <div className="overflow-hidden rounded-lg border border-hairline bg-surface shadow-card">
           <div className="overflow-x-auto">
-          <div ref={trackRef} className="min-w-[720px]">
+          <div ref={trackRef} className="md:min-w-[720px]">
           {/* hour ruler */}
           <div className="grid border-b border-hairline bg-shell" style={{ gridTemplateColumns: `${LABEL_W}px 1fr` }}>
             <div className="border-r border-hairline px-3 py-1.5 text-label uppercase tracking-wide text-faint">

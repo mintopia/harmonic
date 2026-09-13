@@ -369,7 +369,7 @@ function ChangesPanel({
 }
 
 const GRID =
-  'grid grid-cols-[7.5rem_minmax(11rem,1fr)_8rem] md:grid-cols-[7.5rem_minmax(11rem,1fr)_8rem_5rem_5.5rem] lg:grid-cols-[7.5rem_minmax(11rem,1fr)_8rem_6rem_9rem_5rem_5.5rem_8rem_8rem] items-center gap-x-3 px-4';
+  'grid grid-cols-[1fr_auto] gap-y-1 md:grid-cols-[7.5rem_minmax(11rem,1fr)_8rem_5rem_5.5rem] md:gap-y-0 lg:grid-cols-[7.5rem_minmax(11rem,1fr)_8rem_6rem_9rem_5rem_5.5rem_8rem_8rem] items-center gap-x-3 px-4';
 
 function ChildTokenBar({ totals }: { totals: ModelUsage | null | undefined }) {
   const segments = tokenBarSegments(totals);
@@ -396,23 +396,23 @@ function ChildRow({
   return (
     <div
       role="row"
-      className={`${GRID} min-h-11 cursor-pointer py-2 transition-colors duration-150 hover:bg-raised/50`}
+      className={`${GRID} min-h-11 cursor-pointer py-2 transition-colors duration-150 hover:bg-raised/50 max-md:py-3`}
       onClick={() => onOpenTask(child.id)}
     >
-      <div role="cell" className="flex items-center justify-end gap-1.5 whitespace-nowrap tabular-nums text-muted">
+      <div role="cell" className="flex items-center justify-end gap-1.5 whitespace-nowrap tabular-nums text-muted max-md:col-start-1 max-md:row-start-1 max-md:justify-start">
         <span aria-hidden="true" className={stateDot(child.state)} />
         <span className="sr-only">Id: </span>
         {ticketRowId(child.id, child.trackerRef)}
       </div>
-      <div role="cell" className="min-w-0 pr-2">
-        <span title={child.summary} className="block truncate text-ink">
+      <div role="cell" className="min-w-0 pr-2 max-md:col-span-2 max-md:row-start-2 max-md:pr-0">
+        <span title={child.summary} className="block truncate text-ink max-md:whitespace-normal max-md:overflow-visible max-md:font-medium">
           {cardTitle(child.summary)}
         </span>
         <div className="mt-1 lg:hidden">
           <ProviderChip harness={child.harness} compact className="text-small" />
         </div>
       </div>
-      <div role="cell">
+      <div role="cell" className="max-md:col-start-2 max-md:row-start-1 max-md:justify-self-end">
         <span className={`${stateChip(child.state)} capitalize`}>{child.state}</span>
       </div>
       <div role="cell" className="hidden lg:block">
@@ -459,8 +459,8 @@ function ChildTasksTable({
           This Epic has no member Tasks yet.
         </EmptyState>
       ) : (
-        <div className={`${card} overflow-x-auto`} role="table" aria-label="Child tasks">
-          <div role="rowgroup">
+        <div className={card} role="table" aria-label="Child tasks">
+          <div role="rowgroup" className="max-md:hidden">
             <div role="row" className={`${GRID} text-label font-semibold uppercase text-muted py-2.5`}>
               <span role="columnheader" className="text-right">
                 #
@@ -537,7 +537,7 @@ export function EpicStepper({ epic }: { epic: Epic }) {
   const current = steps.find((s) => s.state === 'current' || s.state === 'held');
   return (
     <ol
-      className={`${card} flex items-start px-[22px] py-5`}
+      className={`${card} flex items-start px-[22px] py-5 max-md:flex-col max-md:items-stretch max-md:gap-3 max-md:px-4`}
       aria-label={`Epic lifecycle — ${current ? current.label : 'complete'}${epic.integrate.held != null ? ' (escalated)' : ''}`}
     >
       {steps.map((step, i) => {
@@ -547,21 +547,23 @@ export function EpicStepper({ epic }: { epic: Epic }) {
           <li
             key={step.key}
             aria-current={step.state === 'current' || step.state === 'held' ? 'step' : undefined}
-            className="flex min-w-0 flex-1 flex-col items-center gap-2 text-center"
+            className="flex min-w-0 flex-1 flex-col items-center gap-2 text-center max-md:w-full max-md:flex-none max-md:flex-row max-md:items-center max-md:gap-3 max-md:text-left"
           >
-            <div className="flex w-full items-center">
-              <span className={`-mx-px h-0.5 flex-1 rounded ${i === 0 ? 'invisible' : leftDone ? 'bg-merged' : 'bg-edge'}`} />
+            <div className="flex w-full items-center max-md:w-auto max-md:flex-none">
+              <span className={`-mx-px h-0.5 flex-1 rounded max-md:hidden ${i === 0 ? 'invisible' : leftDone ? 'bg-merged' : 'bg-edge'}`} />
               <span
                 className={`flex size-6 shrink-0 items-center justify-center rounded-full border text-[11px] font-bold tabular-nums ${PHASE_NODE_STYLES[step.disabled ? 'pending' : STEP_NODE[step.state]]}`}
               >
                 {!step.disabled && step.state === 'done' ? <Icon name="check" className="size-3.5" /> : i + 1}
               </span>
-              <span className={`-mx-px h-0.5 flex-1 rounded ${i === steps.length - 1 ? 'invisible' : rightDone ? 'bg-merged' : 'bg-edge'}`} />
+              <span className={`-mx-px h-0.5 flex-1 rounded max-md:hidden ${i === steps.length - 1 ? 'invisible' : rightDone ? 'bg-merged' : 'bg-edge'}`} />
             </div>
-            <span className={`text-[12px] font-semibold leading-tight ${step.disabled ? 'text-faint' : STEP_LABEL_TONE[step.state]}`}>{step.label}</span>
-            <span className="max-w-[10rem] truncate text-[10.5px] leading-tight text-faint" title={step.sublabel}>
-              {step.sublabel}
-            </span>
+            <div className="contents max-md:flex max-md:min-w-0 max-md:flex-col">
+              <span className={`text-[12px] font-semibold leading-tight ${step.disabled ? 'text-faint' : STEP_LABEL_TONE[step.state]}`}>{step.label}</span>
+              <span className="truncate text-[10.5px] leading-tight text-faint max-md:max-w-none md:max-w-[10rem]" title={step.sublabel}>
+                {step.sublabel}
+              </span>
+            </div>
           </li>
         );
       })}
@@ -687,9 +689,9 @@ export function EpicPage({
           <div className="px-[30px]">
             <div className="flex flex-wrap items-start gap-2.5 pb-1 pt-7">
               <span className={`${chip} shrink-0 bg-accent-tint text-accent`}>Epic</span>
-              <span className="mt-1 shrink-0 font-data text-[12.5px] text-muted">epic/{epicRef}</span>
-              <h1 className="max-w-[680px] flex-1 text-[26px] font-extrabold leading-[1.15] tracking-[-0.03em]">{cardTitle(title)}</h1>
-              {epic && <span className="mt-1.5"><EpicLifecycleChip epic={epic} /></span>}
+              <span className="mt-1 shrink-0 font-data text-[12.5px] text-muted max-md:mt-0.5">epic/{epicRef}</span>
+              <h1 className="max-w-[680px] flex-1 text-[26px] font-extrabold leading-[1.15] tracking-[-0.03em] max-md:order-last max-md:basis-full max-md:text-[22px]">{cardTitle(title)}</h1>
+              {epic && <span className="mt-1.5 max-md:mt-0"><EpicLifecycleChip epic={epic} /></span>}
             </div>
 
             {epic?.description && <Description text={epic.description} />}

@@ -17,8 +17,8 @@ const handlers = {
   onClose: () => {},
 };
 
-const COMPOSER = readFileSync(
-  fileURLToPath(new URL('../web/src/components/conversation/Composer.tsx', import.meta.url)),
+const TRANSCRIPT = readFileSync(
+  fileURLToPath(new URL('../web/src/components/conversation/Transcript.tsx', import.meta.url)),
   'utf8',
 );
 
@@ -138,8 +138,8 @@ describe('conversation vocabulary UI (#546)', () => {
     expect(html).toContain('commands');
   });
 
-  it('uses a touch-sized action for stopping a running turn (#572)', () => {
-    expect(COMPOSER).toContain('aria-label={text.trim() ? \'Interrupt current turn\' : \'Stop current turn\'}');
-    expect(COMPOSER).toContain('${touchTarget}');
+  it('stops a running turn from the running bar with a touch-sized action (#572)', () => {
+    expect(TRANSCRIPT).toContain('aria-label="Stop the running turn"');
+    expect(TRANSCRIPT).toContain('className={touchOverlay}');
   });
 });

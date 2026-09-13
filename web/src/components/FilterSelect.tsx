@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react';
-import { selectField } from '../ui';
 import { Icon } from './Icon';
 
 /**
@@ -57,7 +56,7 @@ export function FilterSelect({
         type="button"
         aria-haspopup="listbox"
         aria-expanded={open}
-        className={`${selectField} inline-flex items-center gap-1.5 ${capitalize && selected.length <= 1 ? 'capitalize' : ''}`}
+        className={`inline-flex min-h-11 items-center gap-1.5 rounded-md border border-edge bg-field px-2.5 py-1.5 text-ink focus:border-accent focus:outline-none ${capitalize && selected.length <= 1 ? 'capitalize' : ''}`}
         onClick={() => setOpen((o) => !o)}
       >
         {summary}
