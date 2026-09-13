@@ -1,5 +1,26 @@
 # Changelog
 
+## [2.9.0](https://github.com/mintopia/harmonic/compare/v2.8.0...v2.9.0) (2026-09-13)
+
+
+### Features
+
+* **skills:** add /pre-release prep checklist ([d87f68f](https://github.com/mintopia/harmonic/commit/d87f68f34fb7abb684e81874e92785b923b5e1ea))
+* **timeline:** zoom + pan the fleet timeline instead of fixed ranges ([887d0a8](https://github.com/mintopia/harmonic/commit/887d0a8a36b7f8607bb572de0eb973683ace11a9))
+* **upgrade:** settle an armed upgrade after relaunch onto the new version ([028ccbd](https://github.com/mintopia/harmonic/commit/028ccbde5b67536c42c55a9e0aeba3d2dd2957f8))
+* **web:** make the operator console usable on mobile ([be623ec](https://github.com/mintopia/harmonic/commit/be623ec139377fd75c37225f737a13a03e6c9d98))
+
+
+### Bug Fixes
+
+* **board:** decay session warmth from lastActiveAt, not now ([2a82132](https://github.com/mintopia/harmonic/commit/2a8213204ae96931ff1357b6c298f6dc9cbd4a8a))
+* **conversations:** reach the resumable-ended composer, plus pre-release polish ([0ca193a](https://github.com/mintopia/harmonic/commit/0ca193a1ca227975002d301c0ef23d8a45024fb9))
+* **conversations:** resume an ended conversation from its stored session ([1b28c5f](https://github.com/mintopia/harmonic/commit/1b28c5f101ff7566428ee9a53543dd661cb22fc9))
+* **conversations:** show selected harness in prompt ([3b6ea81](https://github.com/mintopia/harmonic/commit/3b6ea81158ecb4519e21b17979103ead79753446))
+* retain pending permission prompts for late subscribers ([cc9c13c](https://github.com/mintopia/harmonic/commit/cc9c13c966bbdf338764c4279204986cfc8c3377))
+* **test:** restore COMPOSER source read dropped in epic/571 merge ([4a6eb24](https://github.com/mintopia/harmonic/commit/4a6eb248516b9945ecf41079a32f1e7b1a15f30b))
+* **ui:** improve mobile conversations ([7b33b01](https://github.com/mintopia/harmonic/commit/7b33b010b3f082c33a8bfb7c063a85bf9093e319))
+
 ## [2.8.0](https://github.com/mintopia/harmonic/compare/v2.7.0...v2.8.0) (2026-09-12)
 
 
