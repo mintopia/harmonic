@@ -194,6 +194,38 @@ export interface FsListing {
   entries: FsEntry[];
 }
 
+export interface WorkspaceFileEntry {
+  name: string;
+  path: string;
+  type: 'directory' | 'file';
+  size: number;
+  excluded: boolean;
+}
+
+export interface WorkspaceFileListing {
+  path: string;
+  entries: WorkspaceFileEntry[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface WorkspaceFile {
+  text: string | null;
+  mime: string;
+  size: number;
+  isBinary: boolean;
+  isTooLarge: boolean;
+}
+
+export type GitStatusCode = '.' | 'M' | 'T' | 'A' | 'D' | 'R' | 'C' | 'U' | '?';
+
+export interface GitStatusEntry {
+  path: string;
+  indexStatus: GitStatusCode;
+  worktreeStatus: GitStatusCode;
+}
+
 /**
  * A Workspace's Resolved Tracker, as the API flattens it: a display
  * `label` when resolved, else a coded `reason` it can't. A discriminated union so
@@ -210,6 +242,7 @@ export interface Workspace {
   workingDir: string;
   trackerEnabled: boolean;
   trackerPollIntervalSeconds: number;
+  excludedDirectories: string[];
   /** The {@link ResolvedTracker}; `null` when tracking is off. */
   resolvedTracker: ResolvedTracker | null;
   /** Per-workspace setting overrides. `null` inherits the
@@ -911,6 +944,9 @@ export interface AppConfig {
   /** Reuse a warm Session into the next attempt while its context occupancy stays
    * below this many tokens; at or above it, start a condensed new Session. */
   contextReuseTokenLimit: number;
+  editor: {
+    maxFileSizeBytes: number;
+  };
   /** The Task Prompt template for native Attempts, with {prompt}/{id}/{workingDir}/{harness}/{model} placeholders. */
   taskPrompt: string;
 }

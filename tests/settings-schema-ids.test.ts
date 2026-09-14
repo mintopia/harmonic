@@ -22,6 +22,7 @@ function makeConfig(): AppConfig {
     drive: { prompt: '', unattendedReminder: '', continuePrompt: '', mergeFate: 'auto-merge', continueAttempts: 0 },
     maxAttempts: 3,
     contextReuseTokenLimit: 100_000,
+    editor: { maxFileSizeBytes: 2_097_152 },
     taskPrompt: '',
   };
 }
@@ -33,6 +34,7 @@ function makeWorkspace(): Workspace {
     workingDir: '/tmp/ws1',
     trackerEnabled: false,
     trackerPollIntervalSeconds: 60,
+    excludedDirectories: [],
     resolvedTracker: null,
     harness: null,
     model: null,

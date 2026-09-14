@@ -1,7 +1,13 @@
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
+import { Git } from '../../execution/git.js';
 import { browseDirectory, fsListingSchema } from '../../domain/fs-browse.js';
+import { gitStatusSchema, readGitStatus } from '../../domain/git-status.js';
+import { createWorkspaceEntry, deleteWorkspaceEntry, listWorkspaceFiles, moveWorkspaceEntry, readWorkspaceFile, resolveWorkspacePath, streamWorkspaceFile, workspaceFileEntrySchema, workspaceFileListingSchema, workspaceFileSchema, workspaceFileWriteSchema, writeWorkspaceFile } from '../../domain/workspace-files.js';
+import { diffFileSchema, parseUnifiedDiff } from '../../domain/unified-diff.js';
+import { logger } from '../../logger.js';
+import type { TrackingContext } from '../app.js';
 import { errorResponse } from '../schemas.js';
 
 const fsQuerySchema = z.object({
@@ -11,7 +17,39 @@ const fsQuerySchema = z.object({
     .meta({ example: '/home/dev', description: 'Absolute path to browse; defaults to the server user home.' }),
 });
 
-export async function fsRoutes(fastify: FastifyInstance): Promise<void> {
+const workspaceQuerySchema = z.object({
+  workspaceId: z.coerce.number().int().positive(),
+  path: z.string().default(''),
+});
+
+const workspaceTreeQuerySchema = workspaceQuerySchema.extend({
+  limit: z.coerce.number().int().positive().max(200).optional(),
+  offset: z.coerce.number().int().nonnegative().optional(),
+});
+
+const gitPathsBodySchema = z.object({
+  workspaceId: z.number().int().positive(),
+  paths: z.array(z.string().min(1).refine((path) => !path.startsWith('/') && !path.split('/').includes('..'))).min(1),
+});
+
+const gitCommitBodySchema = z.object({
+  workspaceId: z.number().int().positive(),
+  message: z.string().trim().min(1).max(10_000),
+});
+
+const gitMutationResponseSchema = z.object({ ok: z.literal(true) });
+const gitMutationResponse = { ok: true } satisfies { ok: true };
+
+const relativePath = z.string().min(1).refine((path) => !path.startsWith('/') && !path.split(/[\\/]/).includes('..'), 'path must stay within the workspace');
+const createEntryBodySchema = z.object({ workspaceId: z.number().int().positive(), path: relativePath, type: z.enum(['file', 'directory']) });
+const moveEntryBodySchema = z.object({ workspaceId: z.number().int().positive(), from: relativePath, to: relativePath });
+const deleteEntryBodySchema = z.object({ workspaceId: z.number().int().positive(), path: relativePath });
+const inlineMediaTypes = new Set([
+  'audio/aac', 'audio/flac', 'audio/mp4', 'audio/mpeg', 'audio/ogg', 'audio/wav', 'audio/webm',
+  'image/gif', 'image/jpeg', 'image/png', 'image/webp',
+]);
+
+export async function fsRoutes(fastify: FastifyInstance, ctx: Pick<TrackingContext, 'workspaces' | 'settingsStore'>): Promise<void> {
   const app = fastify.withTypeProvider<ZodTypeProvider>();
 
   app.get(
@@ -36,4 +74,193 @@ export async function fsRoutes(fastify: FastifyInstance): Promise<void> {
     },
     async (req) => browseDirectory(req.query.path),
   );
+
+  app.get('/fs/tree', {
+    schema: {
+      tags: ['Filesystem'],
+      description: 'A paginated directory listing confined to one Workspace working directory.',
+      querystring: workspaceTreeQuerySchema,
+      response: { 200: workspaceFileListingSchema.describe('A page of workspace files and directories.'), 400: errorResponse('Invalid path.'), 404: errorResponse('Workspace or path not found.') },
+    },
+  }, async (req) => {
+    const workspace = await ctx.workspaces.get(req.query.workspaceId);
+    const { path, limit, offset } = req.query;
+    return listWorkspaceFiles({
+      root: workspace.workingDir,
+      excludedDirectories: workspace.excludedDirectories,
+      path,
+      ...(limit === undefined ? {} : { limit }),
+      ...(offset === undefined ? {} : { offset }),
+    });
+  });
+
+  app.get('/fs/file', {
+    schema: {
+      tags: ['Filesystem'],
+      description: 'Read one text file confined to a Workspace working directory.',
+      querystring: workspaceQuerySchema,
+      response: { 200: workspaceFileSchema.describe('The requested workspace file and its metadata.'), 400: errorResponse('Invalid path.'), 404: errorResponse('Workspace or path not found.') },
+    },
+  }, async (req) => {
+    const workspace = await ctx.workspaces.get(req.query.workspaceId);
+    return readWorkspaceFile({ root: workspace.workingDir, path: req.query.path, maxBytes: ctx.settingsStore.getGlobal().editor.maxFileSizeBytes });
+  });
+
+  app.get<{ Querystring: z.infer<typeof workspaceQuerySchema> }>('/fs/raw', {
+    schema: {
+      tags: ['Filesystem'],
+      description: 'Stream one file confined to a Workspace working directory.',
+      querystring: workspaceQuerySchema,
+      response: { 400: errorResponse('Invalid path.'), 404: errorResponse('Workspace or path not found.') },
+    },
+  }, async (req, reply) => {
+    const workspace = await ctx.workspaces.get(req.query.workspaceId);
+    const file = await streamWorkspaceFile({ root: workspace.workingDir, path: req.query.path });
+    const inline = inlineMediaTypes.has(file.mime);
+    reply.hijack();
+    reply.raw.statusCode = 200;
+    reply.raw.setHeader('content-type', inline ? file.mime : 'application/octet-stream');
+    reply.raw.setHeader('content-length', file.size);
+    reply.raw.setHeader('content-disposition', inline ? 'inline' : 'attachment');
+    file.stream.pipe(reply.raw);
+  });
+
+  app.put('/fs/file', {
+    schema: {
+      tags: ['Filesystem'],
+      description: 'Operator-only: write one text file confined to a Workspace working directory.',
+      security: [{ bearerAuth: [] }, { sessionCookie: [] }],
+      querystring: workspaceQuerySchema,
+      body: workspaceFileWriteSchema,
+      response: { 200: workspaceFileSchema.describe('The saved workspace file and its metadata.'), 400: errorResponse('Invalid path or body.'), 404: errorResponse('Workspace or path not found.') },
+    },
+  }, async (req) => {
+    const workspace = await ctx.workspaces.get(req.query.workspaceId);
+    const file = await writeWorkspaceFile({ root: workspace.workingDir, path: req.query.path, text: req.body.text });
+    logger.info('workspace file written', { workspaceId: workspace.id, path: req.query.path });
+    return file;
+  });
+
+  app.post('/fs/create', {
+    schema: {
+      tags: ['Filesystem'],
+      description: 'Operator-only: create an empty file or directory confined to a Workspace working directory.',
+      security: [{ bearerAuth: [] }, { sessionCookie: [] }],
+      body: createEntryBodySchema,
+      response: { 200: workspaceFileEntrySchema.describe('The created entry.'), 400: errorResponse('Invalid path, or an entry already exists there.'), 404: errorResponse('Workspace or parent directory not found.') },
+    },
+  }, async (req) => {
+    const workspace = await ctx.workspaces.get(req.body.workspaceId);
+    const entry = await createWorkspaceEntry({ root: workspace.workingDir, path: req.body.path, type: req.body.type });
+    logger.info('workspace entry created', { workspaceId: workspace.id, path: req.body.path, type: req.body.type });
+    return entry;
+  });
+
+  app.post('/fs/move', {
+    schema: {
+      tags: ['Filesystem'],
+      description: 'Operator-only: rename or move a file or directory within a Workspace working directory.',
+      security: [{ bearerAuth: [] }, { sessionCookie: [] }],
+      body: moveEntryBodySchema,
+      response: { 200: workspaceFileEntrySchema.describe('The moved entry at its new path.'), 400: errorResponse('Invalid path, or the destination already exists.'), 404: errorResponse('Workspace or source not found.') },
+    },
+  }, async (req) => {
+    const workspace = await ctx.workspaces.get(req.body.workspaceId);
+    const entry = await moveWorkspaceEntry({ root: workspace.workingDir, from: req.body.from, to: req.body.to });
+    logger.info('workspace entry moved', { workspaceId: workspace.id, from: req.body.from, to: req.body.to });
+    return entry;
+  });
+
+  app.post('/fs/delete', {
+    schema: {
+      tags: ['Filesystem'],
+      description: 'Operator-only: delete a file or directory (recursively) within a Workspace working directory.',
+      security: [{ bearerAuth: [] }, { sessionCookie: [] }],
+      body: deleteEntryBodySchema,
+      response: { 200: gitMutationResponseSchema.describe('The entry is deleted.'), 400: errorResponse('Invalid path.'), 404: errorResponse('Workspace or path not found.') },
+    },
+  }, async (req) => {
+    const workspace = await ctx.workspaces.get(req.body.workspaceId);
+    await deleteWorkspaceEntry({ root: workspace.workingDir, path: req.body.path });
+    logger.info('workspace entry deleted', { workspaceId: workspace.id, path: req.body.path });
+    return gitMutationResponse;
+  });
+
+  app.get('/git/status', {
+    schema: {
+      tags: ['Filesystem'],
+      description: 'Read the Workspace Git status without changing its working directory or index.',
+      querystring: z.object({ workspaceId: z.coerce.number().int().positive() }),
+      response: { 200: gitStatusSchema.describe('Git status entries from porcelain v2 output.') },
+    },
+  }, async (req) => {
+    const workspace = await ctx.workspaces.get(req.query.workspaceId);
+    return readGitStatus(workspace.workingDir);
+  });
+
+  app.get('/git/diff', {
+    schema: {
+      tags: ['Filesystem'],
+      description: 'Unified diff of one working-directory path (staged + unstaged vs HEAD; an untracked file reads as all-added).',
+      querystring: z.object({ workspaceId: z.coerce.number().int().positive(), path: relativePath }),
+      response: { 200: z.object({ file: diffFileSchema.nullable() }).describe('The parsed per-file diff, or null when there is no textual diff.'), 400: errorResponse('Invalid path.'), 404: errorResponse('Workspace or path not found.') },
+    },
+  }, async (req) => {
+    const workspace = await ctx.workspaces.get(req.query.workspaceId);
+    const relPath = await resolveWorkspacePath(workspace.workingDir, req.query.path);
+    const raw = await Git.workspaceDiff(workspace.workingDir, relPath);
+    return { file: parseUnifiedDiff(raw)[0] ?? null };
+  });
+
+  app.post('/git/stage', {
+    schema: {
+      tags: ['Filesystem'],
+      description: 'Stage selected paths in a Workspace Git repository.',
+      body: gitPathsBodySchema,
+      response: { 200: gitMutationResponseSchema.describe('The selected paths are staged.') },
+    },
+  }, async (req) => {
+    const workspace = await ctx.workspaces.get(req.body.workspaceId);
+    await Git.stage(workspace.workingDir, req.body.paths);
+    return gitMutationResponse;
+  });
+
+  app.post('/git/unstage', {
+    schema: {
+      tags: ['Filesystem'],
+      description: 'Unstage selected paths in a Workspace Git repository.',
+      body: gitPathsBodySchema,
+      response: { 200: gitMutationResponseSchema.describe('The selected paths are unstaged.') },
+    },
+  }, async (req) => {
+    const workspace = await ctx.workspaces.get(req.body.workspaceId);
+    await Git.unstage(workspace.workingDir, req.body.paths);
+    return gitMutationResponse;
+  });
+
+  app.post('/git/discard', {
+    schema: {
+      tags: ['Filesystem'],
+      description: 'Discard selected tracked or untracked paths in a Workspace Git repository.',
+      body: gitPathsBodySchema,
+      response: { 200: gitMutationResponseSchema.describe('The selected changes are discarded.') },
+    },
+  }, async (req) => {
+    const workspace = await ctx.workspaces.get(req.body.workspaceId);
+    await Git.discard(workspace.workingDir, req.body.paths);
+    return gitMutationResponse;
+  });
+
+  app.post('/git/commit', {
+    schema: {
+      tags: ['Filesystem'],
+      description: 'Commit the staged changes in a Workspace Git repository.',
+      body: gitCommitBodySchema,
+      response: { 200: gitMutationResponseSchema.describe('The staged changes are committed.') },
+    },
+  }, async (req) => {
+    const workspace = await ctx.workspaces.get(req.body.workspaceId);
+    await Git.commit(workspace.workingDir, req.body.message);
+    return gitMutationResponse;
+  });
 }

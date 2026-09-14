@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
-import { WorkspaceService } from '../src/domain/workspaces.js';
+import { DEFAULT_EXCLUDED_DIRECTORIES, workspaceOverridesSchema, WorkspaceService } from '../src/domain/workspaces.js';
 import { verificationCommandSchema, taskVerificationCriticSchema, budgetGuardrailSchema } from '../src/config.js';
 import { resolveVerifiers, resolveDrive } from '../src/domain/setting-override.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
@@ -28,6 +28,7 @@ describe('WorkspaceService override persistence (issue #64)', () => {
 
   it('a fresh Workspace inherits every overridable setting (all null)', async () => {
     const ws = (await workspaces.list())[0]!;
+    expect(ws.excludedDirectories).toEqual(DEFAULT_EXCLUDED_DIRECTORIES);
     expect(ws.harness).toBeNull();
     expect(ws.model).toBeNull();
     expect(ws.chatHarness).toBeNull();
@@ -51,6 +52,29 @@ describe('WorkspaceService override persistence (issue #64)', () => {
     expect(ws.driveContinueAttempts).toBeNull();
     expect(ws.taskPrompt).toBeNull();
     expect(ws.toolTimeoutMinutes).toBeNull();
+  });
+
+  it('persists its excluded directories independently from the default list', async () => {
+    const ws = (await workspaces.list())[0]!;
+    const updated = await workspaces.update(ws.id, { excludedDirectories: ['generated'] });
+
+    expect(updated.excludedDirectories).toEqual(['generated']);
+    expect(settingsStore.getOverrides(ws.id).excludedDirectories).toEqual(['generated']);
+  });
+
+  it('seeds new Workspaces with a persisted excluded-directory override', async () => {
+    const workingDir = join(dataDir, 'second-workspace');
+    mkdirSync(workingDir);
+    const created = await workspaces.create({ name: 'Second', workingDir });
+
+    expect(created.excludedDirectories).toEqual(DEFAULT_EXCLUDED_DIRECTORIES);
+    expect(settingsStore.getOverrides(created.id).excludedDirectories).toEqual(DEFAULT_EXCLUDED_DIRECTORIES);
+  });
+
+  it('rejects non-canonical excluded directory paths', () => {
+    for (const excludedDirectories of [['src/'], ['./src'], ['src//generated'], ['src\\generated'], ['src/../build']]) {
+      expect(workspaceOverridesSchema.safeParse({ excludedDirectories }).success).toBe(false);
+    }
   });
 
   it('sets explicit overrides', async () => {
@@ -261,6 +285,7 @@ describe('WorkspaceService override persistence (issue #64)', () => {
 
     await workspaces.delete(ws.id);
     expect(settingsStore.getOverrides(ws.id)).toEqual({
+      excludedDirectories: null,
       harness: null,
       model: null,
       chatHarness: null,

@@ -1,6 +1,7 @@
-import { Fragment, type ReactNode } from 'react';
+import { Fragment, useState, type ReactNode } from 'react';
 import type { AppConfig, Channel, Workspace } from '../types';
 import { btnGhost, field } from '../ui';
+import { Icon } from './Icon';
 import { FieldError, PromptField, fieldLabel } from './SettingsSection';
 import {
   DRIVE_PLACEHOLDERS,
@@ -905,6 +906,40 @@ function WorkspaceTracker({ ctx }: { ctx: WorkspaceRenderCtx }) {
   );
 }
 
+function WorkspaceExcludedFolders({ ctx }: { ctx: WorkspaceRenderCtx }) {
+  const { workspace } = ctx;
+  const [value, setValue] = useState('');
+  const list = workspace.excludedDirectories;
+  const setList = (next: string[]) => ctx.setWorkspace({ ...workspace, excludedDirectories: next });
+  const add = () => {
+    const path = value.trim().replace(/^\/+|\/+$/g, '');
+    setValue('');
+    if (path && !list.includes(path)) setList([...list, path]);
+  };
+  return (
+    <div>
+      <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); add(); }}>
+        <input className={`${field} flex-1`} value={value} onChange={(e) => setValue(e.target.value)} placeholder="Relative folder (e.g. dist)" aria-label="Folder to exclude" />
+        <button type="submit" className={`${btnGhost} shrink-0`}>Add</button>
+      </form>
+      {list.length > 0 ? (
+        <ul className="mt-3 flex flex-wrap gap-1.5" aria-label="Excluded folders">
+          {list.map((path) => (
+            <li key={path}>
+              <button type="button" aria-label={`Remove ${path}`} className="inline-flex items-center gap-1 rounded bg-raised px-2 py-1 font-data text-small text-muted hover:text-ink" onClick={() => setList(list.filter((entry) => entry !== path))}>
+                {path}
+                <Icon name="close" className="size-3" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-3 text-small text-muted">No folders excluded.</p>
+      )}
+    </div>
+  );
+}
+
 function WorkspaceDelete({ ctx }: { ctx: WorkspaceRenderCtx }) {
   return (
     <>
@@ -960,6 +995,14 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
     description:
       'Poll this Workspace’s issue tracker and mirror its issues onto the board as Tasks. Needs docs/agents/issue-tracker.md in the repo and gh (GitHub) auth.',
     body: (ctx) => (ctx.surface === 'workspace' ? <WorkspaceTracker ctx={ctx} /> : null),
+  },
+  {
+    tab: 'general',
+    surfaces: ['workspace'],
+    title: 'Excluded folders',
+    description:
+      "Folders shown greyed in the Files view and skipped by the live watcher — seeded with the usual build and dependency directories. Right-click a folder in the Files tree to toggle it, or manage the list here.",
+    body: (ctx) => (ctx.surface === 'workspace' ? <WorkspaceExcludedFolders ctx={ctx} /> : null),
   },
   {
     tab: 'general',

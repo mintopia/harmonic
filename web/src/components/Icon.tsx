@@ -12,6 +12,7 @@ export type IconName =
   | 'api'
   | 'settings'
   | 'workspace'
+  | 'files'
   | 'logout'
   | 'chevrons-left'
   | 'chevron-down'
@@ -36,7 +37,13 @@ export type IconName =
   | 'help'
   | 'search'
   | 'trash'
-  | 'copy';
+  | 'copy'
+  | 'file'
+  | 'file-plus'
+  | 'folder-plus'
+  | 'save'
+  | 'eye'
+  | 'undo';
 
 const PATHS: Record<IconName, JSX.Element> = {
   board: (
@@ -80,6 +87,43 @@ const PATHS: Record<IconName, JSX.Element> = {
     <>
       <path d="M12.59 6.77L14.34 7.11L14.34 8.89L12.59 9.23L12.11 10.38L13.11 11.85L11.85 13.11L10.38 12.11L9.23 12.59L8.89 14.34L7.11 14.34L6.77 12.59L5.63 12.11L4.15 13.11L2.89 11.85L3.89 10.38L3.41 9.23L1.66 8.89L1.66 7.11L3.41 6.77L3.89 5.63L2.89 4.15L4.15 2.89L5.62 3.89L6.77 3.41L7.11 1.66L8.89 1.66L9.23 3.41L10.38 3.89L11.85 2.89L13.11 4.15L12.11 5.62Z" />
       <circle cx="8" cy="8" r="2" />
+    </>
+  ),
+  files: <path d="M2.5 3.25h4l1.2 1.5h5.8v8H2.5zM2.5 6.25h11" />,
+  file: (
+    <>
+      <path d="M4.25 2.75h4.25l3 3v7a.5.5 0 0 1-.5.5H4.25a.5.5 0 0 1-.5-.5V3.25a.5.5 0 0 1 .5-.5z" />
+      <path d="M8.25 2.75V6h3.25" />
+    </>
+  ),
+  'file-plus': (
+    <>
+      <path d="M4.25 2.75h4.25l3 3v7a.5.5 0 0 1-.5.5H4.25a.5.5 0 0 1-.5-.5V3.25a.5.5 0 0 1 .5-.5z" />
+      <path d="M8.25 2.75V6h3.25M7.75 8.25v3.5M6 10h3.5" />
+    </>
+  ),
+  'folder-plus': (
+    <>
+      <path d="M2.5 3.25h4l1.2 1.5h5.8v8H2.5z" />
+      <path d="M8 7.75v3M6.5 9.25h3" />
+    </>
+  ),
+  save: (
+    <>
+      <path d="M3.5 3.25h6.9L12.75 5.6v7.15a.5.5 0 0 1-.5.5H3.75a.5.5 0 0 1-.5-.5V3.75a.5.5 0 0 1 .5-.5z" />
+      <path d="M5.5 3.25v2.5h4.25v-2.5M5 9.25h6v4H5z" />
+    </>
+  ),
+  eye: (
+    <>
+      <path d="M1.75 8s2.25-4 6.25-4 6.25 4 6.25 4-2.25 4-6.25 4-6.25-4-6.25-4z" />
+      <circle cx="8" cy="8" r="1.75" />
+    </>
+  ),
+  undo: (
+    <>
+      <path d="M6.5 3.5 3 7l3.5 3.5" />
+      <path d="M3 7h6.25a3.25 3.25 0 0 1 0 6.5H6" />
     </>
   ),
   logout: (

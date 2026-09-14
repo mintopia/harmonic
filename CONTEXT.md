@@ -884,6 +884,30 @@ toggle; Tasks sharing a Map are positioned together, not boxed. A node
 deep-links to its Task; edits happen in Task detail, never on the graph.
 _Avoid_: DAG view, tree, board graph
 
+**Files**:
+A workspace-scoped view (rail label **Files**) for browsing and editing the
+active Workspace's Working Directory — a directory tree with git status colouring
+on the left, a tabbed CodeMirror editor on the right, image/audio previews, and
+download for binaries. Reads and writes are confined to the Working Directory
+(traversal and symlink escape rejected, operator-only). Carries basic git —
+stage, unstage, discard, commit — through the Source-Control Panel; never push,
+pull, or merge (ADR-0032).
+_Avoid_: IDE, editor, code browser, explorer
+
+**Excluded Directory**:
+A directory the Files tree shows but does not descend into or watch — seeded with
+`node_modules`, `.git`, and build dirs, shown *greyed* rather than hidden, and
+toggled include/exclude per directory. The exclude list is a per-Workspace
+Setting Override (ADR-0032, ADR-0022). Distinct from git-ignore, which the repo
+owns.
+_Avoid_: ignored, hidden, gitignored
+
+**Source-Control Panel**:
+The Files view's git surface — staged and unstaged groups plus a commit-message
+box — driving stage/unstage/discard/commit against the Working Directory's repo.
+The tree shows status colour; the panel drives the actions (ADR-0032).
+_Avoid_: git panel, SCM, changes view
+
 **Notification Channel**:
 A configured destination — Discord webhook, Slack webhook, Generic webhook,
 or Email — subscribed to a set of event types, overridable per Task.

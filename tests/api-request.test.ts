@@ -39,6 +39,18 @@ describe('api request()', () => {
     vi.stubGlobal('fetch', fakeFetch(null, { status: 204 }));
     await expect(api.deletePermissionRule(1)).resolves.toBeNull();
   });
+
+  it('sends an explicit workspace file save', async () => {
+    const fetch = fakeFetch(JSON.stringify({ text: 'saved', mime: 'text/plain', size: 5, isBinary: false }), { status: 200 });
+    vi.stubGlobal('fetch', fetch);
+
+    await api.saveWorkspaceFile(7, 'src/file name.ts', 'saved');
+    expect(fetch).toHaveBeenCalledWith('/api/fs/file?workspaceId=7&path=src%2Ffile%20name.ts', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text: 'saved' }),
+    });
+  });
 });
 
 describe('paginated list clients (epics, maps)', () => {

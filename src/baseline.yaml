@@ -77,6 +77,8 @@ autoRunner:
   maxConcurrentAttempts: 1
 maxAttempts: 2
 contextReuseTokenLimit: 200000
+editor:
+  maxFileSizeBytes: 2097152
 drive:
   prompt: "{skill}\n\nResolve tracker issue #{ref} ({url}) autonomously, end to end — read the issue yourself for the details. Work only on the branch you start on; Harmonic owns branching and closes the ticket once it verifies your work, so don't create branches or close the ticket yourself. When the work is done, comment a summary on the issue and call `finish_task`."
   unattendedReminder: "## Running unattended\n\nYou are Harmonic Task {taskId} — no human is watching this turn. Ending a turn is a checkpoint, not a handoff, and Harmonic re-prompts you only a limited number of times, so don't idle-wait on background work (CI, watchers) or input. Keep working until the task is genuinely done, then call `finish_task` (taskId={taskId}). If you're blocked on a decision only a human can make, call `escalate_task` (taskId={taskId}) with a reason instead of guessing or waiting."
@@ -86,6 +88,7 @@ drive:
 taskPrompt: "{prompt}"
 pauseMessage: "Please finish the current turn, then pause and wait for further instructions."
 conversationIdleTimeoutMinutes: 30
+fileWatcherDebounceMs: 250
 verify:
   task:
     preMerge: { commands: [], critics: [] }

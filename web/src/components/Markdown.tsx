@@ -41,7 +41,9 @@ async function copyFrom(button: HTMLElement): Promise<void> {
  * later on first use; the raw source is shown until the HTML is ready. Each
  * fenced code block gets a hover copy button.
  */
-export function Markdown({ source, className = '' }: { source: string; className?: string }) {
+const isExternalHref = (href: string) => /^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith('//') || href.startsWith('#');
+
+export function Markdown({ source, className = '', onFileLink }: { source: string; className?: string; onFileLink?: (href: string) => void }) {
   const [html, setHtml] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -58,7 +60,15 @@ export function Markdown({ source, className = '' }: { source: string; className
 
   const onClick = (e: MouseEvent<HTMLDivElement>) => {
     const button = (e.target as HTMLElement).closest<HTMLElement>('[data-copy]');
-    if (button) void copyFrom(button);
+    if (button) { void copyFrom(button); return; }
+    if (onFileLink) {
+      const anchor = (e.target as HTMLElement).closest<HTMLAnchorElement>('a[href]');
+      const href = anchor?.getAttribute('href');
+      if (anchor && href && !isExternalHref(href)) {
+        e.preventDefault();
+        onFileLink(href);
+      }
+    }
   };
 
   if (html === null) return <div ref={ref} className={`markdown ${className}`}>{source}</div>;
