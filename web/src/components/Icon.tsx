@@ -12,6 +12,7 @@ export type IconName =
   | 'api'
   | 'settings'
   | 'workspace'
+  | 'files'
   | 'logout'
   | 'chevrons-left'
   | 'chevron-down'
@@ -82,6 +83,7 @@ const PATHS: Record<IconName, JSX.Element> = {
       <circle cx="8" cy="8" r="2" />
     </>
   ),
+  files: <path d="M2.5 3.25h4l1.2 1.5h5.8v8H2.5zM2.5 6.25h11" />,
   logout: (
     <>
       <path d="M6.5 13.5h-3a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1h3" />

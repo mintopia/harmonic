@@ -75,6 +75,7 @@ export interface Route {
   table: TableFilters;
   /** The focused Ticket's or Epic's rail selection; `none` whenever neither is focused. */
   panel: RailSelection;
+  file?: string | null;
 }
 
 export const DEFAULT_ROUTE: Route = {
@@ -85,6 +86,7 @@ export const DEFAULT_ROUTE: Route = {
   peeked: [],
   table: DEFAULT_TABLE_FILTERS,
   panel: NO_SELECTION,
+  file: null,
 };
 
 const PARAM = {
@@ -98,6 +100,7 @@ const PARAM = {
   order: 'order',
   panel: 'panel',
   conversation: 'conversation',
+  file: 'file',
 } as const;
 
 /** `panel` param ⇄ {@link RailSelection}: `timeline`, `changes`, `attempt:<n>`,
@@ -186,7 +189,8 @@ export function parseRoute(pathname: string, search: string): Route {
   // A rail selection only means something on a detail page.
   const panel = task !== null || epic !== null ? parsePanel(params.get(PARAM.panel)) : NO_SELECTION;
 
-  return { view, task, epic, conversation, peeked, table, panel };
+  const file = view === 'files' && task === null && epic === null && params.get(PARAM.file) ? params.get(PARAM.file) : null;
+  return { view, task, epic, conversation, peeked, table, panel, file };
 }
 
 /**
@@ -216,6 +220,7 @@ export function serializeRoute(route: Route): string {
 
   const panel = route.task !== null || route.epic !== null ? serializePanel(route.panel) : null;
   if (panel !== null) params.set(PARAM.panel, panel);
+  if (route.view === 'files' && route.task === null && route.epic === null && route.file) params.set(PARAM.file, route.file);
 
   const query = params.toString();
   const base = route.task !== null ? `/task/${route.task}` : route.epic !== null ? `/epic/${route.epic}` : '/';

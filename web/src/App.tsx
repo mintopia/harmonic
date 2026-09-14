@@ -26,6 +26,7 @@ import { TableView } from './components/TableView';
 import { ActivityView } from './components/ActivityView';
 import { BrandMark } from './components/BrandMark';
 import { ConversationLauncher, ConversationsPage } from './components/ConversationLauncher';
+import { FilesPage } from './components/FilesPage';
 import { UpdateBanner } from './components/UpdateBanner';
 import { NewWorkspaceForm, WorkspaceSwitcher } from './components/WorkspaceSwitcher';
 import { WorkspaceSettingsPage } from './components/WorkspaceSettingsPage';
@@ -509,6 +510,7 @@ export function App() {
       epic: null,
       conversation: view === 'conversations' ? null : route.conversation,
       panel: NO_SELECTION,
+      file: null,
     });
     setMenuOpen(false);
   };
@@ -813,7 +815,7 @@ export function App() {
                 id="main-content"
                 tabIndex={-1}
                 className={`min-h-0 min-w-0 flex-1 ${
-                  view === 'conversations' ? 'overflow-hidden' : 'overflow-y-auto px-6 pt-5 pb-16'
+                  view === 'conversations' || view === 'files' ? 'overflow-hidden' : 'overflow-y-auto px-6 pt-5 pb-16'
                 }`}
               >
                 {showWorkspaceEmptyState ? (
@@ -873,6 +875,9 @@ export function App() {
                     </Suspense>
                   )}
                   {view === 'stats' && <StatsPage workspaceId={activeWorkspaceId} />}
+                  {view === 'files' && activeWorkspaceId !== null && (
+                    <FilesPage workspaceId={activeWorkspaceId} selectedPath={route.file ?? null} onSelectFile={(file) => navigate({ ...route, file })} />
+                  )}
                   {view === 'timeline' && (
                     <TimelinePage workspaceId={activeWorkspaceId} onOpenTask={openTaskById} />
                   )}
