@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { browseDirectory, fsListingSchema } from '../../domain/fs-browse.js';
+import { gitStatusSchema, readGitStatus } from '../../domain/git-status.js';
 import { listWorkspaceFiles, readWorkspaceFile, workspaceFileListingSchema, workspaceFileSchema } from '../../domain/workspace-files.js';
 import type { TrackingContext } from '../app.js';
 import { errorResponse } from '../schemas.js';
@@ -71,5 +72,17 @@ export async function fsRoutes(fastify: FastifyInstance, ctx: Pick<TrackingConte
   }, async (req) => {
     const workspace = await ctx.workspaces.get(req.query.workspaceId);
     return readWorkspaceFile({ root: workspace.workingDir, path: req.query.path });
+  });
+
+  app.get('/git/status', {
+    schema: {
+      tags: ['Filesystem'],
+      description: 'Read the Workspace Git status without changing its working directory or index.',
+      querystring: z.object({ workspaceId: z.coerce.number().int().positive() }),
+      response: { 200: gitStatusSchema.describe('Git status entries from porcelain v2 output.') },
+    },
+  }, async (req) => {
+    const workspace = await ctx.workspaces.get(req.query.workspaceId);
+    return readGitStatus(workspace.workingDir);
   });
 }

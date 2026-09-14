@@ -1,5 +1,6 @@
 import { describe, expect, it, beforeAll, afterAll } from 'vitest';
-import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { workspaces } from '../src/db/schema.js';
@@ -48,6 +49,31 @@ describe('workspace Files API (issue #584)', () => {
     const binary = await server.api('GET', '/api/fs/file?workspaceId=1&path=binary.dat');
     expect(binary.status).toBe(200);
     expect(binary.body).toEqual({ text: null, mime: 'application/octet-stream', size: 1, isBinary: true });
+  });
+
+  it('reports staged, modified, and untracked paths without changing the workspace', async () => {
+    execFileSync('git', ['init', '-b', 'main', root]);
+    execFileSync('git', ['-C', root, 'config', 'user.email', 'test@example.com']);
+    execFileSync('git', ['-C', root, 'config', 'user.name', 'Test User']);
+    execFileSync('git', ['-C', root, 'add', '.']);
+    execFileSync('git', ['-C', root, 'commit', '-m', 'initial']);
+    writeFileSync(join(root, 'README.md'), '# Changed\n');
+    writeFileSync(join(root, 'src', 'staged.ts'), 'export {};\n');
+    writeFileSync(join(root, 'untracked.txt'), 'new\n');
+    execFileSync('git', ['-C', root, 'add', 'src/staged.ts']);
+    const indexBefore = readFileSync(join(root, '.git', 'index'));
+
+    const response = await server.api('GET', '/api/git/status?workspaceId=1');
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      entries: expect.arrayContaining([
+        { path: 'README.md', indexStatus: '.', worktreeStatus: 'M' },
+        { path: 'src/staged.ts', indexStatus: 'A', worktreeStatus: '.' },
+        { path: 'untracked.txt', indexStatus: '?', worktreeStatus: '?' },
+      ]),
+    });
+    expect(readFileSync(join(root, '.git', 'index'))).toEqual(indexBefore);
+    expect(execFileSync('git', ['-C', root, 'status', '--porcelain'], { encoding: 'utf8' })).toContain(' M README.md');
   });
 
   it('confines paths to the workspace, including symlink escapes', async () => {
