@@ -23,6 +23,9 @@ describe('workspace Files API (issue #584)', () => {
     writeFileSync(join(root, 'README.md'), '# Harmonic\n');
     writeFileSync(join(root, 'src', 'index.ts'), 'export const answer = 42;\n');
     writeFileSync(join(root, 'binary.dat'), Buffer.from([0xff]));
+    writeFileSync(join(root, 'photo.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+    writeFileSync(join(root, 'sound.mp3'), Buffer.from([0x49, 0x44, 0x33]));
+    writeFileSync(join(root, 'large.txt'), 'x'.repeat(2_097_153));
     writeFileSync(join(root, '.env'), 'SECRET=nope\n');
     await server.app.ctx.asyncDb.write((db) => db.update(workspaces).set({ workingDir: root }).run());
   });
@@ -35,7 +38,7 @@ describe('workspace Files API (issue #584)', () => {
   it('lists files and directories, pages entries, and expands a directory lazily', async () => {
     const first = await server.api('GET', '/api/fs/tree?workspaceId=1&limit=2');
     expect(first.status).toBe(200);
-    expect(first.body).toMatchObject({ path: '', total: 8, limit: 2, offset: 0 });
+    expect(first.body).toMatchObject({ path: '', total: 11, limit: 2, offset: 0 });
     expect(first.body.entries).toEqual([
       { name: '.git', path: '.git', type: 'directory', size: expect.any(Number), excluded: true },
       { name: 'dist', path: 'dist', type: 'directory', size: expect.any(Number), excluded: true },
@@ -76,18 +79,38 @@ describe('workspace Files API (issue #584)', () => {
   it('reads text files with metadata and identifies binary files', async () => {
     const text = await server.api('GET', '/api/fs/file?workspaceId=1&path=src/index.ts');
     expect(text.status).toBe(200);
-    expect(text.body).toEqual({ text: 'export const answer = 42;\n', mime: 'text/typescript', size: 26, isBinary: false });
+    expect(text.body).toEqual({ text: 'export const answer = 42;\n', mime: 'text/typescript', size: 26, isBinary: false, isTooLarge: false });
 
     const binary = await server.api('GET', '/api/fs/file?workspaceId=1&path=binary.dat');
     expect(binary.status).toBe(200);
-    expect(binary.body).toEqual({ text: null, mime: 'application/octet-stream', size: 1, isBinary: true });
+    expect(binary.body).toEqual({ text: null, mime: 'application/octet-stream', size: 1, isBinary: true, isTooLarge: false });
+  });
+
+  it('streams raw workspace bytes with an inline media type', async () => {
+    const response = await server.app.inject({ method: 'GET', url: '/api/fs/raw?workspaceId=1&path=photo.png', cookies: { harmonic_session: server.sessionToken } });
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['content-type']).toContain('image/png');
+    expect(response.headers['content-disposition']).toContain('inline');
+    expect(response.rawPayload).toEqual(Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+
+    const audio = await server.app.inject({ method: 'GET', url: '/api/fs/raw?workspaceId=1&path=sound.mp3', cookies: { harmonic_session: server.sessionToken } });
+    expect(audio.headers['content-type']).toContain('audio/mpeg');
+
+    const traversal = await server.app.inject({ method: 'GET', url: '/api/fs/raw?workspaceId=1&path=../secret.txt', cookies: { harmonic_session: server.sessionToken } });
+    expect(traversal.statusCode).toBe(400);
+  });
+
+  it('returns metadata without loading files over the configured editor cap', async () => {
+    const response = await server.api('GET', '/api/fs/file?workspaceId=1&path=large.txt');
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ text: null, mime: 'text/plain', size: 2_097_153, isBinary: false, isTooLarge: true });
   });
 
   it('saves text files, records the write, and keeps writes in the workspace', async () => {
     const log = vi.spyOn(logger, 'info');
     const saved = await server.api('PUT', '/api/fs/file?workspaceId=1&path=src/index.ts', { text: 'export const answer = 43;\n' });
     expect(saved.status).toBe(200);
-    expect(saved.body).toEqual({ text: 'export const answer = 43;\n', mime: 'text/typescript', size: 26, isBinary: false });
+    expect(saved.body).toEqual({ text: 'export const answer = 43;\n', mime: 'text/typescript', size: 26, isBinary: false, isTooLarge: false });
     expect(readFileSync(join(root, 'src', 'index.ts'), 'utf8')).toBe('export const answer = 43;\n');
     expect(log).toHaveBeenCalledWith('workspace file written', { workspaceId: 1, path: 'src/index.ts' });
 

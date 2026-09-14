@@ -215,6 +215,7 @@ export interface WorkspaceFile {
   mime: string;
   size: number;
   isBinary: boolean;
+  isTooLarge: boolean;
 }
 
 export type GitStatusCode = '.' | 'M' | 'T' | 'A' | 'D' | 'R' | 'C' | 'U' | '?';
@@ -943,6 +944,9 @@ export interface AppConfig {
   /** Reuse a warm Session into the next attempt while its context occupancy stays
    * below this many tokens; at or above it, start a condensed new Session. */
   contextReuseTokenLimit: number;
+  editor: {
+    maxFileSizeBytes: number;
+  };
   /** The Task Prompt template for native Attempts, with {prompt}/{id}/{workingDir}/{harness}/{model} placeholders. */
   taskPrompt: string;
 }

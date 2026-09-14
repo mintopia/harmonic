@@ -16880,6 +16880,21 @@
                       "maximum": 9007199254740991,
                       "example": 200000
                     },
+                    "editor": {
+                      "type": "object",
+                      "properties": {
+                        "maxFileSizeBytes": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991,
+                          "example": 2097152
+                        }
+                      },
+                      "required": [
+                        "maxFileSizeBytes"
+                      ],
+                      "additionalProperties": false
+                    },
                     "drive": {
                       "type": "object",
                       "properties": {
@@ -17377,6 +17392,7 @@
                     "autoRunner",
                     "maxAttempts",
                     "contextReuseTokenLimit",
+                    "editor",
                     "drive",
                     "taskPrompt",
                     "pauseMessage",
@@ -17687,6 +17703,21 @@
                       "maximum": 9007199254740991,
                       "example": 200000
                     },
+                    "editor": {
+                      "type": "object",
+                      "properties": {
+                        "maxFileSizeBytes": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991,
+                          "example": 2097152
+                        }
+                      },
+                      "required": [
+                        "maxFileSizeBytes"
+                      ],
+                      "additionalProperties": false
+                    },
                     "drive": {
                       "type": "object",
                       "properties": {
@@ -18184,6 +18215,7 @@
                     "autoRunner",
                     "maxAttempts",
                     "contextReuseTokenLimit",
+                    "editor",
                     "drive",
                     "taskPrompt",
                     "pauseMessage",
@@ -18468,6 +18500,20 @@
                     "minimum": 0,
                     "maximum": 9007199254740991,
                     "example": 200000
+                  },
+                  "editor": {
+                    "type": "object",
+                    "properties": {
+                      "maxFileSizeBytes": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "example": 2097152
+                      }
+                    },
+                    "required": [
+                      "maxFileSizeBytes"
+                    ]
                   },
                   "drive": {
                     "type": "object",
@@ -18933,6 +18979,7 @@
                   "autoRunner",
                   "maxAttempts",
                   "contextReuseTokenLimit",
+                  "editor",
                   "drive",
                   "taskPrompt",
                   "pauseMessage",
@@ -19223,6 +19270,21 @@
                       "minimum": 0,
                       "maximum": 9007199254740991,
                       "example": 200000
+                    },
+                    "editor": {
+                      "type": "object",
+                      "properties": {
+                        "maxFileSizeBytes": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991,
+                          "example": 2097152
+                        }
+                      },
+                      "required": [
+                        "maxFileSizeBytes"
+                      ],
+                      "additionalProperties": false
                     },
                     "drive": {
                       "type": "object",
@@ -19721,6 +19783,7 @@
                     "autoRunner",
                     "maxAttempts",
                     "contextReuseTokenLimit",
+                    "editor",
                     "drive",
                     "taskPrompt",
                     "pauseMessage",
@@ -20026,6 +20089,21 @@
                           "maximum": 9007199254740991,
                           "example": 200000
                         },
+                        "editor": {
+                          "type": "object",
+                          "properties": {
+                            "maxFileSizeBytes": {
+                              "type": "integer",
+                              "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991,
+                              "example": 2097152
+                            }
+                          },
+                          "required": [
+                            "maxFileSizeBytes"
+                          ],
+                          "additionalProperties": false
+                        },
                         "drive": {
                           "type": "object",
                           "properties": {
@@ -20523,6 +20601,7 @@
                         "autoRunner",
                         "maxAttempts",
                         "contextReuseTokenLimit",
+                        "editor",
                         "drive",
                         "taskPrompt",
                         "pauseMessage",
@@ -20799,6 +20878,21 @@
                           "maximum": 9007199254740991,
                           "example": 200000
                         },
+                        "editor": {
+                          "type": "object",
+                          "properties": {
+                            "maxFileSizeBytes": {
+                              "type": "integer",
+                              "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991,
+                              "example": 2097152
+                            }
+                          },
+                          "required": [
+                            "maxFileSizeBytes"
+                          ],
+                          "additionalProperties": false
+                        },
                         "drive": {
                           "type": "object",
                           "properties": {
@@ -21296,6 +21390,7 @@
                         "autoRunner",
                         "maxAttempts",
                         "contextReuseTokenLimit",
+                        "editor",
                         "drive",
                         "taskPrompt",
                         "pauseMessage",
@@ -21605,6 +21700,21 @@
                       "maximum": 9007199254740991,
                       "example": 200000
                     },
+                    "editor": {
+                      "type": "object",
+                      "properties": {
+                        "maxFileSizeBytes": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991,
+                          "example": 2097152
+                        }
+                      },
+                      "required": [
+                        "maxFileSizeBytes"
+                      ],
+                      "additionalProperties": false
+                    },
                     "drive": {
                       "type": "object",
                       "properties": {
@@ -22102,6 +22212,7 @@
                     "autoRunner",
                     "maxAttempts",
                     "contextReuseTokenLimit",
+                    "editor",
                     "drive",
                     "taskPrompt",
                     "pauseMessage",
@@ -26072,13 +26183,17 @@
                     },
                     "isBinary": {
                       "type": "boolean"
+                    },
+                    "isTooLarge": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
                     "text",
                     "mime",
                     "size",
-                    "isBinary"
+                    "isBinary",
+                    "isTooLarge"
                   ],
                   "additionalProperties": false,
                   "description": "The requested workspace file and its metadata."
@@ -26188,13 +26303,17 @@
                     },
                     "isBinary": {
                       "type": "boolean"
+                    },
+                    "isTooLarge": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
                     "text",
                     "mime",
                     "size",
-                    "isBinary"
+                    "isBinary",
+                    "isTooLarge"
                   ],
                   "additionalProperties": false,
                   "description": "The saved workspace file and its metadata."
@@ -26204,6 +26323,57 @@
           },
           "400": {
             "description": "Invalid path or body.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Workspace or path not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/fs/raw": {
+      "get": {
+        "tags": [
+          "Filesystem"
+        ],
+        "description": "Stream one file confined to a Workspace working directory.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "in": "query",
+            "name": "workspaceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "default": "",
+              "type": "string"
+            },
+            "in": "query",
+            "name": "path",
+            "required": false
+          }
+        ],
+        "responses": {
+          "400": {
+            "description": "Invalid path.",
             "content": {
               "application/json": {
                 "schema": {
