@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
+import { Git } from '../../execution/git.js';
 import { browseDirectory, fsListingSchema } from '../../domain/fs-browse.js';
 import { gitStatusSchema, readGitStatus } from '../../domain/git-status.js';
 import { listWorkspaceFiles, readWorkspaceFile, workspaceFileListingSchema, workspaceFileSchema } from '../../domain/workspace-files.js';
@@ -23,6 +24,19 @@ const workspaceTreeQuerySchema = workspaceQuerySchema.extend({
   limit: z.coerce.number().int().positive().max(200).optional(),
   offset: z.coerce.number().int().nonnegative().optional(),
 });
+
+const gitPathsBodySchema = z.object({
+  workspaceId: z.number().int().positive(),
+  paths: z.array(z.string().min(1).refine((path) => !path.startsWith('/') && !path.split('/').includes('..'))).min(1),
+});
+
+const gitCommitBodySchema = z.object({
+  workspaceId: z.number().int().positive(),
+  message: z.string().trim().min(1).max(10_000),
+});
+
+const gitMutationResponseSchema = z.object({ ok: z.literal(true) });
+const gitMutationResponse = { ok: true } satisfies { ok: true };
 
 export async function fsRoutes(fastify: FastifyInstance, ctx: Pick<TrackingContext, 'workspaces'>): Promise<void> {
   const app = fastify.withTypeProvider<ZodTypeProvider>();
@@ -91,5 +105,57 @@ export async function fsRoutes(fastify: FastifyInstance, ctx: Pick<TrackingConte
   }, async (req) => {
     const workspace = await ctx.workspaces.get(req.query.workspaceId);
     return readGitStatus(workspace.workingDir);
+  });
+
+  app.post('/git/stage', {
+    schema: {
+      tags: ['Filesystem'],
+      description: 'Stage selected paths in a Workspace Git repository.',
+      body: gitPathsBodySchema,
+      response: { 200: gitMutationResponseSchema.describe('The selected paths are staged.') },
+    },
+  }, async (req) => {
+    const workspace = await ctx.workspaces.get(req.body.workspaceId);
+    await Git.stage(workspace.workingDir, req.body.paths);
+    return gitMutationResponse;
+  });
+
+  app.post('/git/unstage', {
+    schema: {
+      tags: ['Filesystem'],
+      description: 'Unstage selected paths in a Workspace Git repository.',
+      body: gitPathsBodySchema,
+      response: { 200: gitMutationResponseSchema.describe('The selected paths are unstaged.') },
+    },
+  }, async (req) => {
+    const workspace = await ctx.workspaces.get(req.body.workspaceId);
+    await Git.unstage(workspace.workingDir, req.body.paths);
+    return gitMutationResponse;
+  });
+
+  app.post('/git/discard', {
+    schema: {
+      tags: ['Filesystem'],
+      description: 'Discard selected tracked or untracked paths in a Workspace Git repository.',
+      body: gitPathsBodySchema,
+      response: { 200: gitMutationResponseSchema.describe('The selected changes are discarded.') },
+    },
+  }, async (req) => {
+    const workspace = await ctx.workspaces.get(req.body.workspaceId);
+    await Git.discard(workspace.workingDir, req.body.paths);
+    return gitMutationResponse;
+  });
+
+  app.post('/git/commit', {
+    schema: {
+      tags: ['Filesystem'],
+      description: 'Commit the staged changes in a Workspace Git repository.',
+      body: gitCommitBodySchema,
+      response: { 200: gitMutationResponseSchema.describe('The staged changes are committed.') },
+    },
+  }, async (req) => {
+    const workspace = await ctx.workspaces.get(req.body.workspaceId);
+    await Git.commit(workspace.workingDir, req.body.message);
+    return gitMutationResponse;
   });
 }

@@ -107,6 +107,48 @@ describe('workspace Files API (issue #584)', () => {
     expect(execFileSync('git', ['-C', root, 'status', '--porcelain'], { encoding: 'utf8' })).toContain(' M README.md');
   });
 
+  it('stages, unstages, discards, and commits selected workspace paths', async () => {
+    const invalidPath = await server.api('POST', '/api/git/stage', { workspaceId: 1, paths: ['../outside'] });
+    expect(invalidPath.status).toBe(400);
+
+    const literalPath = await server.api('POST', '/api/git/discard', { workspaceId: 1, paths: [':(glob)**'] });
+    expect(literalPath.status).toBe(200);
+    expect((await server.api('GET', '/api/git/status?workspaceId=1')).body.entries).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: 'untracked.txt' }),
+    ]));
+
+    const stage = await server.api('POST', '/api/git/stage', { workspaceId: 1, paths: ['README.md'] });
+    expect(stage.status).toBe(200);
+    expect((await server.api('GET', '/api/git/status?workspaceId=1')).body.entries).toEqual(expect.arrayContaining([
+      { path: 'README.md', indexStatus: 'M', worktreeStatus: '.' },
+    ]));
+
+    const unstage = await server.api('POST', '/api/git/unstage', { workspaceId: 1, paths: ['README.md'] });
+    expect(unstage.status).toBe(200);
+    expect((await server.api('GET', '/api/git/status?workspaceId=1')).body.entries).toEqual(expect.arrayContaining([
+      { path: 'README.md', indexStatus: '.', worktreeStatus: 'M' },
+    ]));
+
+    const discard = await server.api('POST', '/api/git/discard', { workspaceId: 1, paths: ['untracked.txt'] });
+    expect(discard.status).toBe(200);
+    expect((await server.api('GET', '/api/git/status?workspaceId=1')).body.entries).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: 'untracked.txt' }),
+    ]));
+
+    await server.api('POST', '/api/git/stage', { workspaceId: 1, paths: ['README.md'] });
+    writeFileSync(join(root, 'README.md'), '# Changed again\n');
+    await server.api('POST', '/api/git/discard', { workspaceId: 1, paths: ['README.md'] });
+    expect((await server.api('GET', '/api/git/status?workspaceId=1')).body.entries).toEqual(expect.arrayContaining([
+      { path: 'README.md', indexStatus: 'M', worktreeStatus: '.' },
+    ]));
+    const commit = await server.api('POST', '/api/git/commit', { workspaceId: 1, message: 'Update readme' });
+    expect(commit.status).toBe(200);
+    expect((await server.api('GET', '/api/git/status?workspaceId=1')).body.entries).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: 'README.md' }),
+    ]));
+    expect(execFileSync('git', ['-C', root, 'log', '-1', '--format=%s'], { encoding: 'utf8' }).trim()).toBe('Update readme');
+  });
+
   it('confines paths to the workspace, including symlink escapes', async () => {
     const outside = mkdtempSync(join(tmpdir(), 'harmonic-outside-'));
     writeFileSync(join(outside, 'secret.txt'), 'secret');

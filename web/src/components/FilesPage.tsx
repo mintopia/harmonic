@@ -5,6 +5,7 @@ import { useLiveEffect } from '../useLiveEffect';
 import { displayTitle, gitFileStatusClass, type GitFileStatus } from '../ui';
 import { Icon } from './Icon';
 import { CodeViewer } from './CodeViewer';
+import { ConfirmDialog } from './ConfirmDialog';
 
 const errorText = (error: unknown) => error instanceof Error ? error.message : String(error);
 
@@ -19,6 +20,9 @@ export function FilesPage({ workspace, selectedPath, onSelectFile, onWorkspaceSa
   const [fileError, setFileError] = useState<string | null>(null);
   const [excludedDirectories, setExcludedDirectories] = useState(workspaceExcludedDirectories);
   const [newExcludedDirectory, setNewExcludedDirectory] = useState('');
+  const [commitMessage, setCommitMessage] = useState('');
+  const [pendingGitAction, setPendingGitAction] = useState<string | null>(null);
+  const [discardPath, setDiscardPath] = useState<string | null>(null);
 
   useLayoutEffect(() => { workspaceGeneration.current += 1; }, [workspaceId]);
 
@@ -30,6 +34,13 @@ export function FilesPage({ workspace, selectedPath, onSelectFile, onWorkspaceSa
     setErrors((current) => { const { [path]: _, ...rest } = current; return rest; });
     }, (error) => {
       if (workspaceGeneration.current === generation) setErrors((current) => ({ ...current, [path]: errorText(error) }));
+    });
+  };
+
+  const refreshStatus = () => {
+    const generation = workspaceGeneration.current;
+    return api.gitStatus(workspaceId).then(({ entries }) => {
+      if (workspaceGeneration.current === generation) setStatusEntries(entries);
     });
   };
 
@@ -82,6 +93,17 @@ export function FilesPage({ workspace, selectedPath, onSelectFile, onWorkspaceSa
     return null;
   };
 
+  const runGitAction = (action: string, work: () => Promise<unknown>) => {
+    setPendingGitAction(action);
+    work().then(refreshStatus).then(() => {
+      if (action === 'commit') setCommitMessage('');
+    }).catch((error: unknown) => setErrors((current) => ({ ...current, '': errorText(error) }))).finally(() => setPendingGitAction(null));
+  };
+
+  const stagedEntries = statusEntries.filter((entry) => entry.indexStatus !== '.' && entry.indexStatus !== '?');
+  const unstagedEntries = statusEntries.filter((entry) => entry.worktreeStatus !== '.' || entry.indexStatus === '?');
+  const actionPending = pendingGitAction !== null;
+
   return <div className="flex h-full min-h-0 min-w-0 border-t border-hairline">
     <aside className="flex w-72 shrink-0 flex-col border-r border-hairline bg-shell">
       <div className="border-b border-hairline px-4 py-3">
@@ -98,6 +120,20 @@ export function FilesPage({ workspace, selectedPath, onSelectFile, onWorkspaceSa
           {excludedDirectories.map((path) => <li key={path}><button type="button" className="rounded bg-raised px-1.5 py-0.5 font-code text-tiny text-muted hover:text-ink" onClick={() => saveExcludedDirectories(excludedDirectories.filter((entry) => entry !== path))}>{path} ×</button></li>)}
         </ul>}
       </div>
+      <section aria-labelledby="source-control-title" className="border-b border-hairline px-4 py-3">
+        <h2 id="source-control-title" className="text-title font-semibold text-ink">Source control</h2>
+        <GitGroup entries={stagedEntries} label="Staged" actionLabel="Unstage" disabled={actionPending} onAction={(path) => runGitAction(`unstage:${path}`, () => api.unstageGitPaths(workspaceId, [path]))} />
+        <GitGroup entries={unstagedEntries} label="Unstaged" actionLabel="Stage" disabled={actionPending} onAction={(path) => runGitAction(`stage:${path}`, () => api.stageGitPaths(workspaceId, [path]))} onDiscard={(path) => setDiscardPath(path)} />
+        <form className="mt-3" onSubmit={(event) => {
+          event.preventDefault();
+          if (!commitMessage.trim() || stagedEntries.length === 0 || actionPending) return;
+          runGitAction('commit', () => api.commitGitChanges(workspaceId, commitMessage.trim()));
+        }}>
+          <label htmlFor="commit-message" className="text-label font-semibold uppercase tracking-wide text-muted">Commit message</label>
+          <textarea id="commit-message" value={commitMessage} onChange={(event) => setCommitMessage(event.target.value)} rows={2} className="mt-1 w-full resize-y border border-edge bg-field px-2 py-1.5 text-small text-ink focus:outline-none focus:ring-2 focus:ring-accent" />
+          <button type="submit" disabled={!commitMessage.trim() || stagedEntries.length === 0 || actionPending} className="mt-2 min-h-11 w-full bg-accent px-3 text-small font-semibold text-on-accent enabled:hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50">Commit staged changes</button>
+        </form>
+      </section>
       <div role="tree" aria-label="Workspace files" className="min-h-0 flex-1 overflow-auto py-2">
         {errors[''] && <p className="px-4 text-small text-fail">{errors['']}</p>}
         {rows().map(({ entry, depth }) => {
@@ -138,5 +174,41 @@ export function FilesPage({ workspace, selectedPath, onSelectFile, onWorkspaceSa
       {selectedPath && <header className="border-b border-hairline bg-shell px-4 py-3 font-code text-small text-muted">{selectedPath}</header>}
       {fileError ? <p className="p-4 text-small text-fail">{fileError}</p> : file?.isBinary ? <p className="p-4 text-small text-muted">This binary file cannot be displayed.</p> : file && selectedPath ? <CodeViewer path={selectedPath} text={file.text ?? ''} /> : <p className="p-4 text-small text-muted">Select a file to view it.</p>}
     </section>
+    {discardPath && <ConfirmDialog
+      label={`Discard ${discardPath}`}
+      title="Discard changes?"
+      confirmLabel="Discard changes"
+      tone="danger"
+      onCancel={() => setDiscardPath(null)}
+      onConfirm={() => {
+        const path = discardPath;
+        setDiscardPath(null);
+        runGitAction(`discard:${path}`, () => api.discardGitPaths(workspaceId, [path]));
+      }}
+    >
+      This removes uncommitted changes in <code>{discardPath}</code>.
+    </ConfirmDialog>}
+  </div>;
+}
+
+function GitGroup({ entries, label, actionLabel, disabled, onAction, onDiscard }: {
+  entries: GitStatusEntry[];
+  label: string;
+  actionLabel: string;
+  disabled: boolean;
+  onAction: (path: string) => void;
+  onDiscard?: (path: string) => void;
+}) {
+  return <div className="mt-2">
+    <div className="flex items-center justify-between text-label font-semibold uppercase tracking-wide text-muted"><span>{label}</span><span>{entries.length}</span></div>
+    {entries.length === 0 ? <p className="mt-1 text-tiny text-muted">No files</p> : <ul className="mt-1 divide-y divide-hairline">
+      {entries.map((entry) => <li key={`${label}-${entry.path}`} className="py-1.5">
+        <p className="truncate font-code text-tiny text-ink" title={entry.path}>{entry.path}</p>
+        <div className="mt-1 flex gap-1">
+          <button type="button" disabled={disabled} className="min-h-11 flex-1 border border-edge px-2 text-tiny text-accent enabled:hover:bg-accent-tint disabled:opacity-50" onClick={() => onAction(entry.path)}>{actionLabel}</button>
+          {onDiscard && <button type="button" disabled={disabled} className="min-h-11 border border-edge px-2 text-tiny text-fail enabled:hover:bg-fail-tint disabled:opacity-50" onClick={() => onDiscard(entry.path)}>Discard</button>}
+        </div>
+      </li>)}
+    </ul>}
   </div>;
 }
