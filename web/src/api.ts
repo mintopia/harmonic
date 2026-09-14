@@ -12,6 +12,8 @@ import type {
   Cost,
   DiffFile,
   FsListing,
+  WorkspaceFile,
+  WorkspaceFileListing,
   GuardrailEvent,
   MapRollup,
   PermissionRule,
@@ -103,6 +105,12 @@ export const api = {
   // path starts at the server user's home. Operator-only (full-scope session).
   browseFs: (path?: string) =>
     request<FsListing>('GET', path ? `/api/fs?path=${encodeURIComponent(path)}` : '/api/fs'),
+  workspaceFiles: (workspaceId: number, path = '', offset = 0) => {
+    const query = new URLSearchParams({ workspaceId: String(workspaceId), path, offset: String(offset) });
+    return request<WorkspaceFileListing>('GET', `/api/fs/tree?${query}`);
+  },
+  workspaceFile: (workspaceId: number, path: string) =>
+    request<WorkspaceFile>('GET', `/api/fs/file?workspaceId=${workspaceId}&path=${encodeURIComponent(path)}`),
   worktrees: ({ limit, offset }: { limit?: number; offset?: number } = {}) => {
     const params = new URLSearchParams();
     if (limit !== undefined) params.set('limit', String(limit));

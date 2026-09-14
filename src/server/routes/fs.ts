@@ -2,6 +2,8 @@ import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { browseDirectory, fsListingSchema } from '../../domain/fs-browse.js';
+import { listWorkspaceFiles, readWorkspaceFile, workspaceFileListingSchema, workspaceFileSchema } from '../../domain/workspace-files.js';
+import type { TrackingContext } from '../app.js';
 import { errorResponse } from '../schemas.js';
 
 const fsQuerySchema = z.object({
@@ -11,7 +13,17 @@ const fsQuerySchema = z.object({
     .meta({ example: '/home/dev', description: 'Absolute path to browse; defaults to the server user home.' }),
 });
 
-export async function fsRoutes(fastify: FastifyInstance): Promise<void> {
+const workspaceQuerySchema = z.object({
+  workspaceId: z.coerce.number().int().positive(),
+  path: z.string().default(''),
+});
+
+const workspaceTreeQuerySchema = workspaceQuerySchema.extend({
+  limit: z.coerce.number().int().positive().max(200).optional(),
+  offset: z.coerce.number().int().nonnegative().optional(),
+});
+
+export async function fsRoutes(fastify: FastifyInstance, ctx: Pick<TrackingContext, 'workspaces'>): Promise<void> {
   const app = fastify.withTypeProvider<ZodTypeProvider>();
 
   app.get(
@@ -36,4 +48,28 @@ export async function fsRoutes(fastify: FastifyInstance): Promise<void> {
     },
     async (req) => browseDirectory(req.query.path),
   );
+
+  app.get('/fs/tree', {
+    schema: {
+      tags: ['Filesystem'],
+      description: 'A paginated directory listing confined to one Workspace working directory.',
+      querystring: workspaceTreeQuerySchema,
+      response: { 200: workspaceFileListingSchema.describe('A page of workspace files and directories.'), 400: errorResponse('Invalid path.'), 404: errorResponse('Workspace or path not found.') },
+    },
+  }, async (req) => {
+    const workspace = await ctx.workspaces.get(req.query.workspaceId);
+    return listWorkspaceFiles({ root: workspace.workingDir, ...req.query });
+  });
+
+  app.get('/fs/file', {
+    schema: {
+      tags: ['Filesystem'],
+      description: 'Read one text file confined to a Workspace working directory.',
+      querystring: workspaceQuerySchema,
+      response: { 200: workspaceFileSchema.describe('The requested workspace file and its metadata.'), 400: errorResponse('Invalid path.'), 404: errorResponse('Workspace or path not found.') },
+    },
+  }, async (req) => {
+    const workspace = await ctx.workspaces.get(req.query.workspaceId);
+    return readWorkspaceFile({ root: workspace.workingDir, path: req.query.path });
+  });
 }

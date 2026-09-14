@@ -947,7 +947,7 @@ not resolved yet.`;
   await app.register((fastify) => worktreeRoutes(fastify, contexts.execution), { prefix: '/api' });
   await app.register(harnessRoutes, { prefix: '/api' });
   await app.register((fastify) => channelRoutes(fastify, contexts.persistence), { prefix: '/api' });
-  await app.register(fsRoutes, { prefix: '/api' });
+  await app.register((fastify) => fsRoutes(fastify, contexts.tracking), { prefix: '/api' });
   await app.register((fastify) => epicRoutes(fastify, ctx), { prefix: '/api' });
   await app.register(openapiRoutes, { prefix: '/api' });
 

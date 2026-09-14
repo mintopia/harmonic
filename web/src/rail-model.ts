@@ -17,7 +17,7 @@ export function storeRailCollapsed(storage: StorageLike, collapsed: boolean): vo
   }
 }
 
-export const VIEWS = ['board', 'conversations', 'graph', 'activity', 'table', 'timeline', 'stats', 'operations', 'api', 'settings', 'workspace'] as const;
+export const VIEWS = ['board', 'conversations', 'graph', 'activity', 'table', 'timeline', 'stats', 'files', 'operations', 'api', 'settings', 'workspace'] as const;
 export type View = (typeof VIEWS)[number];
 
 /**
@@ -45,7 +45,7 @@ export interface RailGroup {
  * Settings stays a status-strip icon, not a rail item. */
 export const RAIL_GROUPS: readonly RailGroup[] = [
   { label: 'Overview', views: ['board', 'conversations', 'graph', 'activity'] },
-  { label: 'Data', views: ['table', 'timeline', 'stats'] },
+  { label: 'Data', views: ['table', 'timeline', 'stats', 'files'] },
   { label: 'Instance', views: ['operations', 'api', 'workspace'] },
 ];
 
@@ -58,7 +58,7 @@ export const RAIL_GROUPS: readonly RailGroup[] = [
  */
 export function isWorkspaceScopedView(view: View): boolean {
   return (
-    view === 'board' || view === 'timeline' || view === 'conversations' || view === 'table' || view === 'graph' || view === 'stats' || view === 'workspace'
+    view === 'board' || view === 'timeline' || view === 'conversations' || view === 'table' || view === 'graph' || view === 'stats' || view === 'files' || view === 'workspace'
   );
 }
 export const VIEW_LABELS: Record<View, string> = {
@@ -69,6 +69,7 @@ export const VIEW_LABELS: Record<View, string> = {
   table: 'Tasks',
   graph: 'Graph',
   stats: 'Stats',
+  files: 'Files',
   operations: 'Operations',
   api: 'API',
   settings: 'Settings',

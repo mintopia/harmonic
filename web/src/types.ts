@@ -194,6 +194,28 @@ export interface FsListing {
   entries: FsEntry[];
 }
 
+export interface WorkspaceFileEntry {
+  name: string;
+  path: string;
+  type: 'directory' | 'file';
+  size: number;
+}
+
+export interface WorkspaceFileListing {
+  path: string;
+  entries: WorkspaceFileEntry[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface WorkspaceFile {
+  text: string | null;
+  mime: string;
+  size: number;
+  isBinary: boolean;
+}
+
 /**
  * A Workspace's Resolved Tracker, as the API flattens it: a display
  * `label` when resolved, else a coded `reason` it can't. A discriminated union so
