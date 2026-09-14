@@ -153,6 +153,8 @@ export function TimelinePage({
   const to = anchor ?? now;
   const from = to - windowMs;
   const span = Math.max(1, to - from);
+  // The track (and its wheel-zoom host) only mounts once a window has loaded.
+  const trackMounted = attempts !== null;
 
   // Latest geometry for the native wheel + pointer handlers, which read this ref
   // rather than closing over stale state.
@@ -173,9 +175,13 @@ export function TimelinePage({
 
   const zoomBy = (factor: number) => {
     const g = geo.current;
-    const center = (g.from + g.to) / 2;
+    // Anchor on the readout (pointer, else the right edge) so zooming holds the
+    // focus in view instead of drifting toward the window centre — a live view
+    // keeps its now-edge and recent runs stay on screen.
+    const focus = hoverTime ?? g.to;
+    const frac = clamp((focus - g.from) / Math.max(1, g.to - g.from), 0, 1);
     const w = clamp(g.windowMs * factor, MIN_WINDOW, MAX_WINDOW);
-    applyWindow(w, center + w / 2);
+    applyWindow(w, focus + (1 - frac) * w);
   };
   const panBy = (frac: number) => {
     const g = geo.current;
@@ -270,7 +276,7 @@ export function TimelinePage({
     };
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
-  }, [attempts === null]);
+  }, [trackMounted]);
 
   const ticks = useMemo(() => {
     const fit = clamp(Math.floor((trackW || 720) / MIN_TICK_LABEL_PX), 2, 8);
@@ -358,6 +364,48 @@ export function TimelinePage({
   return (
     <div className="flex flex-col gap-4">
       <PageHeader title="Timeline" description="Every attempt the fleet has run, on one clock" />
+
+      {/* zoom + pan controls */}
+      <div className="flex flex-wrap items-center gap-3">
+        <div
+          role="group"
+          aria-label="Zoom"
+          className="flex items-center gap-0.5 rounded-md border border-hairline bg-surface p-0.5"
+        >
+          <button type="button" aria-label="Zoom out" onClick={() => zoomBy(ZOOM_STEP)} disabled={windowMs >= MAX_WINDOW} className={btn}>
+            <span aria-hidden="true">−</span>
+          </button>
+          <span className="min-w-[52px] text-center font-data text-data tabular-nums text-ink">{fmtSpan(windowMs)}</span>
+          <button type="button" aria-label="Zoom in" onClick={() => zoomBy(1 / ZOOM_STEP)} disabled={windowMs <= MIN_WINDOW} className={btn}>
+            <span aria-hidden="true">+</span>
+          </button>
+        </div>
+
+        <div
+          role="group"
+          aria-label="Pan"
+          className="flex items-center gap-0.5 rounded-md border border-hairline bg-surface p-0.5"
+        >
+          <button type="button" aria-label="Pan back" onClick={() => panBy(-0.5)} disabled={windowMs >= MAX_WINDOW} className={btn}>
+            <span aria-hidden="true">←</span>
+          </button>
+          <span className="min-w-[132px] px-1 text-center font-data text-data tabular-nums text-muted">
+            {fmtTick(from, span)} – {anchor === null ? 'now' : fmtTick(to, span)}
+          </span>
+          <button type="button" aria-label="Pan forward" onClick={() => panBy(0.5)} disabled={anchor === null} className={btn}>
+            <span aria-hidden="true">→</span>
+          </button>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setAnchor(null)}
+          disabled={anchor === null}
+          className="ml-auto min-h-8 rounded-md border border-hairline bg-surface px-3 text-small font-medium text-ink transition-colors hover:border-edge hover:bg-raised disabled:cursor-default disabled:opacity-45 disabled:hover:bg-surface"
+        >
+          Jump to now
+        </button>
+      </div>
 
       {/* Readout: fleet state at the pointer (or the live edge) */}
       <div className="flex flex-wrap items-stretch gap-3">
@@ -510,48 +558,6 @@ export function TimelinePage({
           </div>
         </div>
       )}
-
-      {/* zoom + pan controls */}
-      <div className="flex flex-wrap items-center gap-3">
-        <div
-          role="group"
-          aria-label="Zoom"
-          className="flex items-center gap-0.5 rounded-md border border-hairline bg-surface p-0.5"
-        >
-          <button type="button" aria-label="Zoom out" onClick={() => zoomBy(ZOOM_STEP)} disabled={windowMs >= MAX_WINDOW} className={btn}>
-            <span aria-hidden="true">−</span>
-          </button>
-          <span className="min-w-[52px] text-center font-data text-data tabular-nums text-ink">{fmtSpan(windowMs)}</span>
-          <button type="button" aria-label="Zoom in" onClick={() => zoomBy(1 / ZOOM_STEP)} disabled={windowMs <= MIN_WINDOW} className={btn}>
-            <span aria-hidden="true">+</span>
-          </button>
-        </div>
-
-        <div
-          role="group"
-          aria-label="Pan"
-          className="flex items-center gap-0.5 rounded-md border border-hairline bg-surface p-0.5"
-        >
-          <button type="button" aria-label="Pan back" onClick={() => panBy(-0.5)} disabled={windowMs >= MAX_WINDOW} className={btn}>
-            <span aria-hidden="true">←</span>
-          </button>
-          <span className="min-w-[132px] px-1 text-center font-data text-data tabular-nums text-muted">
-            {fmtTick(from, span)} – {anchor === null ? 'now' : fmtTick(to, span)}
-          </span>
-          <button type="button" aria-label="Pan forward" onClick={() => panBy(0.5)} disabled={anchor === null} className={btn}>
-            <span aria-hidden="true">→</span>
-          </button>
-        </div>
-
-        <button
-          type="button"
-          onClick={() => setAnchor(null)}
-          disabled={anchor === null}
-          className="ml-auto min-h-8 rounded-md border border-hairline bg-surface px-3 text-small font-medium text-ink transition-colors hover:border-edge hover:bg-raised disabled:cursor-default disabled:opacity-45 disabled:hover:bg-surface"
-        >
-          Jump to now
-        </button>
-      </div>
 
       {hover && <HoverCard hover={hover} now={now} />}
     </div>
