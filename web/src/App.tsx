@@ -597,7 +597,7 @@ export function App() {
 
   return (
     <AppContextProvider value={{ config, workspace: activeWorkspace, refresh }}>
-    <div className="flex h-screen flex-col overflow-hidden rail:flex-row">
+    <div className="flex min-h-screen flex-col rail:h-screen rail:overflow-hidden rail:flex-row">
       <ReviewLiveRegions polite={politeReviewAnnouncement} assertive={assertiveMergeAnnouncement} />
       <a
         href="#main-content"
