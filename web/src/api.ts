@@ -112,6 +112,8 @@ export const api = {
   },
   workspaceFile: (workspaceId: number, path: string) =>
     request<WorkspaceFile>('GET', `/api/fs/file?workspaceId=${workspaceId}&path=${encodeURIComponent(path)}`),
+  workspaceRawUrl: (workspaceId: number, path: string) =>
+    `/api/fs/raw?workspaceId=${workspaceId}&path=${encodeURIComponent(path)}`,
   saveWorkspaceFile: (workspaceId: number, path: string, text: string) =>
     request<WorkspaceFile>('PUT', `/api/fs/file?workspaceId=${workspaceId}&path=${encodeURIComponent(path)}`, { text }),
   gitStatus: (workspaceId: number) => request<{ entries: GitStatusEntry[] }>('GET', `/api/git/status?workspaceId=${workspaceId}`),

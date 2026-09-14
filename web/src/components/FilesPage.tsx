@@ -7,6 +7,7 @@ import { btnPrimary, displayTitle, gitFileStatusClass, type GitFileStatus } from
 import { Icon } from './Icon';
 import { CodeViewer } from './CodeViewer';
 import { ConfirmDialog } from './ConfirmDialog';
+import { Markdown } from './Markdown';
 
 const errorText = (error: unknown) => error instanceof Error ? error.message : String(error);
 
@@ -34,6 +35,7 @@ export function FilesPage({ workspace, selectedPath, onSelectFile, onWorkspaceSa
   const [openPaths, setOpenPaths] = useState<string[]>([]);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [markdownPreview, setMarkdownPreview] = useState<Record<string, boolean>>({});
 
   useLayoutEffect(() => { workspaceGeneration.current += 1; }, [workspaceId]);
   useEffect(() => { selectedPathRef.current = selectedPath; }, [selectedPath]);
@@ -73,7 +75,7 @@ export function FilesPage({ workspace, selectedPath, onSelectFile, onWorkspaceSa
   }), [workspaceId]);
 
   useLiveEffect((live) => {
-    setListings({}); setExpanded(new Set()); setErrors({}); setStatusEntries([]); setDrafts({}); setOpenPaths([]); setSaveError(null);
+    setListings({}); setExpanded(new Set()); setErrors({}); setStatusEntries([]); setDrafts({}); setOpenPaths([]); setSaveError(null); setMarkdownPreview({});
     api.workspaceFiles(workspaceId).then((listing) => live() && setListings({ '': listing }), (error) => live() && setErrors({ '': errorText(error) }));
     api.gitStatus(workspaceId).then(({ entries }) => live() && setStatusEntries(entries), () => live() && setStatusEntries([]));
     setExcludedDirectories(workspaceExcludedDirectories);
@@ -86,9 +88,9 @@ export function FilesPage({ workspace, selectedPath, onSelectFile, onWorkspaceSa
       if (!live()) return;
       setFile(next);
       const text = next.text;
+      setOpenPaths((current) => current.includes(selectedPath) ? current : [...current, selectedPath]);
       if (text !== null) {
         setDrafts((current) => current[selectedPath] ? current : { ...current, [selectedPath]: { saved: text, text } });
-        setOpenPaths((current) => current.includes(selectedPath) ? current : [...current, selectedPath]);
       }
     }, (error) => live() && setFileError(errorText(error)));
   }, [workspaceId, selectedPath]);
@@ -251,7 +253,10 @@ export function FilesPage({ workspace, selectedPath, onSelectFile, onWorkspaceSa
         {selectedPath && drafts[selectedPath] && <button type="button" disabled={!drafts[selectedPath] || drafts[selectedPath].text === drafts[selectedPath].saved || saving} className={`ml-auto shrink-0 ${btnPrimary}`} onClick={save}>{saving ? 'Saving…' : 'Save'}</button>}
       </header>}
       {saveError && <p className="border-b border-hairline bg-shell px-4 py-2 text-small text-fail">{saveError}</p>}
-      {fileError ? <p className="p-4 text-small text-fail">{fileError}</p> : file?.isBinary ? <p className="p-4 text-small text-muted">This binary file cannot be displayed.</p> : file && selectedPath && drafts[selectedPath] ? <CodeViewer path={selectedPath} text={drafts[selectedPath].text} onChange={(text) => setDrafts((current) => {
+      {fileError ? <p className="p-4 text-small text-fail">{fileError}</p> : file && selectedPath && file.isTooLarge ? <div className="p-4 text-small text-muted"><p>This file is too large to edit.</p><a href={api.workspaceRawUrl(workspaceId, selectedPath)} download={selectedPath.split('/').at(-1)} className="mt-3 inline-block text-accent hover:underline">Download</a></div> : file && selectedPath && ['image/gif', 'image/jpeg', 'image/png', 'image/webp'].includes(file.mime) ? <img src={api.workspaceRawUrl(workspaceId, selectedPath)} alt={`Preview of ${selectedPath}`} className="min-h-0 max-h-full max-w-full object-contain p-4" /> : file && selectedPath && file.mime.startsWith('audio/') ? <audio controls src={api.workspaceRawUrl(workspaceId, selectedPath)} className="m-4" /> : file && selectedPath && file.isBinary ? <div className="p-4 text-small text-muted"><p>This binary file cannot be displayed.</p><a href={api.workspaceRawUrl(workspaceId, selectedPath)} download={selectedPath.split('/').at(-1)} className="mt-3 inline-block text-accent hover:underline">Download</a></div> : file && selectedPath && drafts[selectedPath] && ['.md', '.markdown'].some((extension) => selectedPath.toLowerCase().endsWith(extension)) ? <div className="flex min-h-0 flex-1 flex-col"><div className="border-b border-hairline bg-shell px-4 py-2"><button type="button" className="text-small text-accent hover:underline" onClick={() => setMarkdownPreview((current) => ({ ...current, [selectedPath]: !current[selectedPath] }))}>{markdownPreview[selectedPath] ? 'Edit' : 'Preview'}</button></div>{markdownPreview[selectedPath] ? <Markdown source={drafts[selectedPath].text} className="min-h-0 flex-1 overflow-auto p-4" /> : <CodeViewer path={selectedPath} text={drafts[selectedPath].text} onChange={(text) => setDrafts((current) => {
+        const draft = current[selectedPath];
+        return draft ? { ...current, [selectedPath]: { saved: draft.saved, text } } : current;
+      })} onSave={save} />}</div> : file && selectedPath && drafts[selectedPath] ? <CodeViewer path={selectedPath} text={drafts[selectedPath].text} onChange={(text) => setDrafts((current) => {
         const draft = current[selectedPath];
         return draft ? { ...current, [selectedPath]: { saved: draft.saved, text } } : current;
       })} onSave={save} /> : <p className="p-4 text-small text-muted">Select a file to view it.</p>}

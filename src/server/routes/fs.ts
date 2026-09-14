@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { Git } from '../../execution/git.js';
 import { browseDirectory, fsListingSchema } from '../../domain/fs-browse.js';
 import { gitStatusSchema, readGitStatus } from '../../domain/git-status.js';
-import { listWorkspaceFiles, readWorkspaceFile, workspaceFileListingSchema, workspaceFileSchema, workspaceFileWriteSchema, writeWorkspaceFile } from '../../domain/workspace-files.js';
+import { listWorkspaceFiles, readWorkspaceFile, streamWorkspaceFile, workspaceFileListingSchema, workspaceFileSchema, workspaceFileWriteSchema, writeWorkspaceFile } from '../../domain/workspace-files.js';
 import { logger } from '../../logger.js';
 import type { TrackingContext } from '../app.js';
 import { errorResponse } from '../schemas.js';
@@ -38,8 +38,12 @@ const gitCommitBodySchema = z.object({
 
 const gitMutationResponseSchema = z.object({ ok: z.literal(true) });
 const gitMutationResponse = { ok: true } satisfies { ok: true };
+const inlineMediaTypes = new Set([
+  'audio/aac', 'audio/flac', 'audio/mp4', 'audio/mpeg', 'audio/ogg', 'audio/wav', 'audio/webm',
+  'image/gif', 'image/jpeg', 'image/png', 'image/webp',
+]);
 
-export async function fsRoutes(fastify: FastifyInstance, ctx: Pick<TrackingContext, 'workspaces'>): Promise<void> {
+export async function fsRoutes(fastify: FastifyInstance, ctx: Pick<TrackingContext, 'workspaces' | 'settingsStore'>): Promise<void> {
   const app = fastify.withTypeProvider<ZodTypeProvider>();
 
   app.get(
@@ -93,7 +97,26 @@ export async function fsRoutes(fastify: FastifyInstance, ctx: Pick<TrackingConte
     },
   }, async (req) => {
     const workspace = await ctx.workspaces.get(req.query.workspaceId);
-    return readWorkspaceFile({ root: workspace.workingDir, path: req.query.path });
+    return readWorkspaceFile({ root: workspace.workingDir, path: req.query.path, maxBytes: ctx.settingsStore.getGlobal().editor.maxFileSizeBytes });
+  });
+
+  app.get<{ Querystring: z.infer<typeof workspaceQuerySchema> }>('/fs/raw', {
+    schema: {
+      tags: ['Filesystem'],
+      description: 'Stream one file confined to a Workspace working directory.',
+      querystring: workspaceQuerySchema,
+      response: { 400: errorResponse('Invalid path.'), 404: errorResponse('Workspace or path not found.') },
+    },
+  }, async (req, reply) => {
+    const workspace = await ctx.workspaces.get(req.query.workspaceId);
+    const file = await streamWorkspaceFile({ root: workspace.workingDir, path: req.query.path });
+    const inline = inlineMediaTypes.has(file.mime);
+    reply.hijack();
+    reply.raw.statusCode = 200;
+    reply.raw.setHeader('content-type', inline ? file.mime : 'application/octet-stream');
+    reply.raw.setHeader('content-length', file.size);
+    reply.raw.setHeader('content-disposition', inline ? 'inline' : 'attachment');
+    file.stream.pipe(reply.raw);
   });
 
   app.put('/fs/file', {

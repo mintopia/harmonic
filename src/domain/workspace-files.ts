@@ -1,4 +1,4 @@
-import { constants } from 'node:fs';
+import { constants, createReadStream } from 'node:fs';
 import { open, readdir, readFile, realpath, stat } from 'node:fs/promises';
 import { extname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { z } from 'zod';
@@ -28,6 +28,7 @@ export const workspaceFileSchema = z.object({
   mime: z.string(),
   size: z.number().int().nonnegative(),
   isBinary: z.boolean(),
+  isTooLarge: z.boolean(),
 });
 
 export const workspaceFileWriteSchema = z.object({ text: z.string() });
@@ -64,15 +65,24 @@ function pathFrom(root: string, target: string): string {
   return relative(root, target).split(sep).join('/');
 }
 
-function mimeFor(path: string, binary: boolean): string {
-  if (binary) return 'application/octet-stream';
+function mimeFor(path: string, binary = false): string {
   const extension = extname(path).toLowerCase();
   const mimes: Record<string, string> = {
-    '.css': 'text/css', '.html': 'text/html', '.json': 'application/json', '.md': 'text/markdown',
+    '.aac': 'audio/aac', '.flac': 'audio/flac', '.gif': 'image/gif', '.jpeg': 'image/jpeg', '.jpg': 'image/jpeg',
+    '.m4a': 'audio/mp4', '.mp3': 'audio/mpeg', '.ogg': 'audio/ogg', '.png': 'image/png', '.svg': 'image/svg+xml',
+    '.wav': 'audio/wav', '.webm': 'audio/webm', '.webp': 'image/webp',
+    '.css': 'text/css', '.html': 'text/html', '.json': 'application/json', '.markdown': 'text/markdown', '.md': 'text/markdown',
     '.mjs': 'text/javascript', '.js': 'text/javascript', '.ts': 'text/typescript', '.tsx': 'text/tsx',
     '.yaml': 'text/yaml', '.yml': 'text/yaml', '.xml': 'application/xml', '.sh': 'text/x-shellscript',
   };
-  return mimes[extension] ?? 'text/plain';
+  return mimes[extension] ?? (binary ? 'application/octet-stream' : 'text/plain');
+}
+
+async function workspaceRegularFile(root: string, path: string): Promise<{ target: string; size: number; mime: string }> {
+  const location = await workspacePath(root, path);
+  const info = await stat(location.target);
+  if (!info.isFile()) validation('path is not a file');
+  return { target: location.target, size: info.size, mime: mimeFor(location.target) };
 }
 
 export async function listWorkspaceFiles({ root, path = '', excludedDirectories = [], limit = DEFAULT_PAGE_SIZE, offset = 0 }: {
@@ -113,11 +123,10 @@ export async function listWorkspaceFiles({ root, path = '', excludedDirectories 
   return { path: pathFrom(location.root, location.target), entries: visible.slice(offset, offset + pageSize), total: visible.length, limit: pageSize, offset };
 }
 
-export async function readWorkspaceFile({ root, path }: { root: string; path: string }): Promise<WorkspaceFile> {
-  const location = await workspacePath(root, path);
-  const info = await stat(location.target);
-  if (!info.isFile()) validation('path is not a file');
-  const contents = await readFile(location.target);
+export async function readWorkspaceFile({ root, path, maxBytes = Number.MAX_SAFE_INTEGER }: { root: string; path: string; maxBytes?: number }): Promise<WorkspaceFile> {
+  const file = await workspaceRegularFile(root, path);
+  if (file.size > maxBytes) return { text: null, mime: file.mime, size: file.size, isBinary: false, isTooLarge: true };
+  const contents = await readFile(file.target);
   let text: string | null = null;
   if (!contents.includes(0)) {
     try {
@@ -126,7 +135,12 @@ export async function readWorkspaceFile({ root, path }: { root: string; path: st
     }
   }
   const isBinary = text === null;
-  return { text, mime: mimeFor(location.target, isBinary), size: info.size, isBinary };
+  return { text, mime: mimeFor(file.target, isBinary), size: file.size, isBinary, isTooLarge: false };
+}
+
+export async function streamWorkspaceFile({ root, path }: { root: string; path: string }): Promise<{ stream: ReturnType<typeof createReadStream>; mime: string; size: number }> {
+  const file = await workspaceRegularFile(root, path);
+  return { stream: createReadStream(file.target), mime: file.mime, size: file.size };
 }
 
 export async function writeWorkspaceFile({ root, path, text }: { root: string; path: string; text: string }): Promise<WorkspaceFile> {
