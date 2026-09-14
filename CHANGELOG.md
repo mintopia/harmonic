@@ -1,5 +1,25 @@
 # Changelog
 
+## [2.10.0](https://github.com/mintopia/harmonic/compare/v2.9.2...v2.10.0) (2026-09-14)
+
+
+### Features
+
+* add source control panel actions ([5787faa](https://github.com/mintopia/harmonic/commit/5787faaf51e3ed15bd7597d1f5a25b97bc712303))
+* add workspace files browser ([2a91cc1](https://github.com/mintopia/harmonic/commit/2a91cc189890954a11028d92089e121932fb3549))
+* colour workspace files by git status ([ace3e38](https://github.com/mintopia/harmonic/commit/ace3e38c96d28cbf4395b52fb92db8153e46678d))
+* exclude workspace directories from file tree ([bee4e9c](https://github.com/mintopia/harmonic/commit/bee4e9c8ed7ee8a544aa8c196a468f7cb2e3cf87))
+* make workspace files editable ([9b4c360](https://github.com/mintopia/harmonic/commit/9b4c360da8915d29625b7cdbd4e4e6f057e7d71b))
+* preview workspace media files ([987c3f3](https://github.com/mintopia/harmonic/commit/987c3f38171479b2a7e60264b184ce3e6b80dba1))
+* rework the Files view into a keyboard-navigable in-app IDE ([a1b5a40](https://github.com/mintopia/harmonic/commit/a1b5a40258ad1c6113df2f43a30b88ffdc20a0a1))
+* watch workspace files live ([da92f25](https://github.com/mintopia/harmonic/commit/da92f25c346b59d9d16cd91ee5000b2689dc895e))
+
+
+### Bug Fixes
+
+* allow mobile pages to scroll ([ca99c7a](https://github.com/mintopia/harmonic/commit/ca99c7ac114b42bb053a2f94fe1448de066fcce7))
+* harden workspace file writes ([e5150ea](https://github.com/mintopia/harmonic/commit/e5150ea8f1fd8799819048bbdd7fab5d63b7a3f5))
+
 ## [2.9.2](https://github.com/mintopia/harmonic/compare/v2.9.1...v2.9.2) (2026-09-14)
 
 
