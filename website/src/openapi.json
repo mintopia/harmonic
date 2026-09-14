@@ -26107,6 +26107,122 @@
             }
           }
         }
+      },
+      "put": {
+        "tags": [
+          "Filesystem"
+        ],
+        "description": "Operator-only: write one text file confined to a Workspace working directory.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "text"
+                ]
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "in": "query",
+            "name": "workspaceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "default": "",
+              "type": "string"
+            },
+            "in": "query",
+            "name": "path",
+            "required": false
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The saved workspace file and its metadata.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "text": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "mime": {
+                      "type": "string"
+                    },
+                    "size": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "isBinary": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "text",
+                    "mime",
+                    "size",
+                    "isBinary"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The saved workspace file and its metadata."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path or body.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Workspace or path not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/git/status": {

@@ -4,7 +4,8 @@ import { z } from 'zod';
 import { Git } from '../../execution/git.js';
 import { browseDirectory, fsListingSchema } from '../../domain/fs-browse.js';
 import { gitStatusSchema, readGitStatus } from '../../domain/git-status.js';
-import { listWorkspaceFiles, readWorkspaceFile, workspaceFileListingSchema, workspaceFileSchema } from '../../domain/workspace-files.js';
+import { listWorkspaceFiles, readWorkspaceFile, workspaceFileListingSchema, workspaceFileSchema, workspaceFileWriteSchema, writeWorkspaceFile } from '../../domain/workspace-files.js';
+import { logger } from '../../logger.js';
 import type { TrackingContext } from '../app.js';
 import { errorResponse } from '../schemas.js';
 
@@ -93,6 +94,22 @@ export async function fsRoutes(fastify: FastifyInstance, ctx: Pick<TrackingConte
   }, async (req) => {
     const workspace = await ctx.workspaces.get(req.query.workspaceId);
     return readWorkspaceFile({ root: workspace.workingDir, path: req.query.path });
+  });
+
+  app.put('/fs/file', {
+    schema: {
+      tags: ['Filesystem'],
+      description: 'Operator-only: write one text file confined to a Workspace working directory.',
+      security: [{ bearerAuth: [] }, { sessionCookie: [] }],
+      querystring: workspaceQuerySchema,
+      body: workspaceFileWriteSchema,
+      response: { 200: workspaceFileSchema.describe('The saved workspace file and its metadata.'), 400: errorResponse('Invalid path or body.'), 404: errorResponse('Workspace or path not found.') },
+    },
+  }, async (req) => {
+    const workspace = await ctx.workspaces.get(req.query.workspaceId);
+    const file = await writeWorkspaceFile({ root: workspace.workingDir, path: req.query.path, text: req.body.text });
+    logger.info('workspace file written', { workspaceId: workspace.id, path: req.query.path });
+    return file;
   });
 
   app.get('/git/status', {
