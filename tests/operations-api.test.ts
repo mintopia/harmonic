@@ -116,8 +116,8 @@ describe('Operations API (issue #293)', () => {
       },
     };
     server.app.ctx.bus.emit('operations', operationEvent);
-    const streamed = await waitFor(async () => {
-      const candidate = messages.find(
+    const streamed = await waitFor(async () =>
+      messages.find(
         (message): message is { type: 'operations'; event: { type: string } } =>
           typeof message === 'object' &&
           message !== null &&
@@ -127,10 +127,9 @@ describe('Operations API (issue #293)', () => {
           typeof message.event === 'object' &&
           message.event !== null &&
           'type' in message.event &&
-          typeof message.event.type === 'string',
-      );
-      return candidate?.event.type === 'op-started' ? candidate : undefined;
-    });
+          message.event.type === 'op-started',
+      ),
+    );
     expect(streamed.event.type).toBe('op-started');
     await waitFor(async () =>
       fullMessages.some(

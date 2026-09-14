@@ -31,8 +31,13 @@ describe('worktree inventory API (issue #482)', () => {
       state: 'Active',
     }]);
 
-    await expect(waitFor(async () => messages.find((message): message is { type: 'worktrees'; worktrees: unknown[] } =>
-      typeof message === 'object' && message !== null && 'type' in message && message.type === 'worktrees',
+    // The boot-time worktree reconcile broadcasts an empty snapshot whose timing
+    // races this emit, so wait for the refresh carrying task-1, not the first
+    // 'worktrees' message.
+    await expect(waitFor(async () => messages.find((message): message is { type: 'worktrees'; worktrees: Array<{ path?: string }> } =>
+      typeof message === 'object' && message !== null && 'type' in message && message.type === 'worktrees'
+      && Array.isArray((message as { worktrees?: unknown }).worktrees)
+      && (message as { worktrees: Array<{ path?: string }> }).worktrees.some((entry) => entry.path === '/trees/task-1'),
     ))).resolves.toMatchObject({ worktrees: [{ state: 'Active', path: '/trees/task-1' }] });
     close();
   });

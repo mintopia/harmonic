@@ -115,10 +115,9 @@ describe('live structured run event streaming and replay', () => {
 
     await server.app.ctx.tasks.escalate(blocker.body.id, 'escalated to human: attempt 3 of 3 failed');
 
-    await waitFor(async () =>
-      ws.messages.some((m) => m.type === 'task_changed' && m.task.id === dependant.body.id && m.task.blockedOnFailed),
+    const msg = await waitFor(async () =>
+      ws.messages.find((m) => m.type === 'task_changed' && m.task.id === dependant.body.id && m.task.blockedOnFailed),
     );
-    const msg = ws.messages.find((m) => m.type === 'task_changed' && m.task.id === dependant.body.id);
     expect(msg.task).toMatchObject({ state: 'ready', openBlockerCount: 1, blockedOnFailed: true, agentWorkable: false });
     ws.close();
   });
