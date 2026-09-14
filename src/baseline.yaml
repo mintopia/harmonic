@@ -86,6 +86,7 @@ drive:
 taskPrompt: "{prompt}"
 pauseMessage: "Please finish the current turn, then pause and wait for further instructions."
 conversationIdleTimeoutMinutes: 30
+fileWatcherDebounceMs: 250
 verify:
   task:
     preMerge: { commands: [], critics: [] }

@@ -12,6 +12,7 @@ export const gitStatusEntrySchema = z.object({
   indexStatus: gitStatusCodeSchema,
   worktreeStatus: gitStatusCodeSchema,
 });
+export type GitStatusEntry = z.infer<typeof gitStatusEntrySchema>;
 
 export const gitStatusSchema = z.object({
   entries: z.array(gitStatusEntrySchema),

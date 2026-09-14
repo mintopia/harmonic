@@ -49,6 +49,7 @@
     "@opentelemetry/sdk-metrics": "^2.10.0",
     "@opentelemetry/sdk-trace-node": "^2.10.0",
     "@opentelemetry/semantic-conventions": "^1.43.0",
+    "chokidar": "^4.0.3",
     "codemirror": "^6.0.2",
     "dompurify": "^3.4.13",
     "drizzle-orm": "^0.45.2",

@@ -9,6 +9,7 @@ import type { ScheduledJobSnapshot } from '../scheduler/scheduler.js';
 import type { OperationEvent } from '../telemetry/operations.js';
 import type { WorktreeInventoryEntry } from '../domain/worktree-inventory.js';
 import type { HostLoad } from '../host-load.js';
+import type { GitStatusEntry } from '../domain/git-status.js';
 
 export interface BusEvents {
   operations: (event: OperationEvent) => void;
@@ -42,6 +43,8 @@ export interface BusEvents {
   worktrees: (worktrees: readonly WorktreeInventoryEntry[]) => void;
   /** Host load-average reading, sampled on a fixed tick (see HostLoadSampler). */
   host_load: (load: HostLoad) => void;
+  fs_changed: (payload: { workspaceId: number }) => void;
+  git_status: (payload: { workspaceId: number; entries: GitStatusEntry[] }) => void;
 }
 
 /** In-process pub/sub feeding the WebSocket stream. */

@@ -60,6 +60,8 @@ export type ServerMessage =
   | { type: 'worktrees'; worktrees: WorktreeInventoryEntry[] }
   // Host load-average reading, pushed on a fixed tick and once on connect. Sent to read keys too.
   | { type: 'host_load'; load: HostLoad }
+  | { type: 'fs_changed'; workspaceId: number }
+  | { type: 'git_status'; workspaceId: number; entries: import('./types.js').GitStatusEntry[] }
   | { type: 'conversation_event'; event: ConversationEvent }
   | { type: 'conversation_changed'; conversation: Conversation }
   // The Harness is blocked on this ACP permission request until

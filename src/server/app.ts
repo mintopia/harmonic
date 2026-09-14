@@ -51,6 +51,7 @@ import { GlobalPause } from '../execution/global-pause.js';
 import { GitCircuitBreaker } from '../execution/git-failure.js';
 import { EventLoopMonitor } from '../reliability/event-loop-monitor.js';
 import { HostLoadSampler } from '../host-load.js';
+import { WorkspaceWatcher } from '../domain/workspace-watcher.js';
 import { logger } from '../logger.js';
 import { singleFlight } from '../reliability/single-flight.js';
 import { Scheduler, type ScheduledJobRegistration } from '../scheduler/scheduler.js';
@@ -187,6 +188,7 @@ export interface AppContext {
   notifier: Notifier;
   bus: EventBus;
   hostLoad: HostLoadSampler;
+  workspaceWatcher: WorkspaceWatcher;
   worktreeInventory: WorktreeInventory;
   forceCleanupWorktree: (id: string) => Promise<boolean | null>;
   dirtyWorktreeFiles: (id: string) => Promise<string[] | null>;
@@ -235,7 +237,7 @@ export type ExecutionContext = Pick<
   | 'worktreesReconciledAt'
 >;
 
-export type TrackingContext = Pick<AppContext, 'tasks' | 'workspaces' | 'settingsStore' | 'trackerManager' | 'epicService' | 'scheduler' | 'channels' | 'notifier' | 'bus'>;
+export type TrackingContext = Pick<AppContext, 'tasks' | 'workspaces' | 'settingsStore' | 'trackerManager' | 'epicService' | 'scheduler' | 'channels' | 'notifier' | 'bus' | 'workspaceWatcher'>;
 
 export interface AppContexts {
   persistence: PersistenceContext;
@@ -254,8 +256,8 @@ export function createExecutionContext(ctx: AppContext): ExecutionContext {
 }
 
 export function createTrackingContext(ctx: AppContext): TrackingContext {
-  const { tasks, workspaces, settingsStore, trackerManager, epicService, scheduler, channels, notifier, bus } = ctx;
-  return { tasks, workspaces, settingsStore, trackerManager, epicService, scheduler, channels, notifier, bus };
+  const { tasks, workspaces, settingsStore, trackerManager, epicService, scheduler, channels, notifier, bus, workspaceWatcher } = ctx;
+  return { tasks, workspaces, settingsStore, trackerManager, epicService, scheduler, channels, notifier, bus, workspaceWatcher };
 }
 
 export function createAppContexts(ctx: AppContext): AppContexts {
@@ -644,6 +646,13 @@ export async function buildApp(opts: AppOptions): Promise<App> {
       ? undefined
       : new EventLoopMonitor({ probeMs: eventLoopTuning?.probeMs, stallMs: eventLoopTuning?.stallMs });
   const hostLoad = new HostLoadSampler(bus);
+  const workspaceWatcher = new WorkspaceWatcher(
+    () => settingsStore.getGlobal().fileWatcherDebounceMs,
+    {
+      fsChanged: (workspaceId) => bus.emit('fs_changed', { workspaceId }),
+      gitStatus: (workspaceId, entries) => bus.emit('git_status', { workspaceId, entries }),
+    },
+  );
   const mirror: MirrorClaim = {
     advertiseClaim: async (task) => {
       await trackerManagerRef?.coordinatorFor(task.workspaceId)?.advertiseClaim(task);
@@ -739,7 +748,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     })().catch(() => {});
   });
 
-  const ctx: AppContext = { distributionMode, updateCheck, upgrade, asyncDb, statsReader, settingsStore, workspaces, tasks, attempts, sessions: sessionStore, runner, conversations, conversationDriver, permissionRules, escalation, autoRunner, globalPause, guardrailEvents, verificationAttempts, trackerManager, epicService, scheduler, auth, channels, notifier, bus, hostLoad, worktreeInventory, forceCleanupWorktree, dirtyWorktreeFiles, reconcileWorktrees, worktreesReconciledAt: () => worktreeReconciler.reconciledAt };
+  const ctx: AppContext = { distributionMode, updateCheck, upgrade, asyncDb, statsReader, settingsStore, workspaces, tasks, attempts, sessions: sessionStore, runner, conversations, conversationDriver, permissionRules, escalation, autoRunner, globalPause, guardrailEvents, verificationAttempts, trackerManager, epicService, scheduler, auth, channels, notifier, bus, hostLoad, workspaceWatcher, worktreeInventory, forceCleanupWorktree, dirtyWorktreeFiles, reconcileWorktrees, worktreesReconciledAt: () => worktreeReconciler.reconciledAt };
   const contexts = createAppContexts(ctx);
 
   const app = Fastify({ logger: false }) as unknown as App;
@@ -759,6 +768,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     conversationDriver.shutdown();
     loopMonitor?.stop();
     hostLoad.stop();
+    await workspaceWatcher.stopAll();
     // asyncDb stays open: libsql rejects in-flight background reads with an unhandled CLIENT_CLOSED once closed.
     await statsReader.close();
   });
@@ -977,6 +987,7 @@ not resolved yet.`;
     autoRunner.poke();
     scheduler.start();
     await trackerManager.sync();
+    await workspaceWatcher.sync(await workspaces.list());
     loopMonitor?.start();
     hostLoad.start();
     await upgrade.reconcile();
