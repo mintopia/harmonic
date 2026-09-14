@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.9.2](https://github.com/mintopia/harmonic/compare/v2.9.1...v2.9.2) (2026-09-14)
+
+
+### Bug Fixes
+
+* **timeline:** anchor zoom on the readout so live runs stay in view ([aa38fd2](https://github.com/mintopia/harmonic/commit/aa38fd27479587973dfde9e078507e7e93efa4ec))
+* **timeline:** anchor zoom on the readout so live runs stay in view ([bac037a](https://github.com/mintopia/harmonic/commit/bac037a457473d4fa6d4c9ec1a1cd3427dcd096f))
+
 ## [2.9.1](https://github.com/mintopia/harmonic/compare/v2.9.0...v2.9.1) (2026-09-13)
 
 
