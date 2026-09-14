@@ -86,6 +86,7 @@ function makeWorkspace(overrides: Partial<Workspace> = {}): Workspace {
     createdAt: 0,
     updatedAt: 0,
     ...overrides,
+    excludedDirectories: overrides.excludedDirectories ?? [],
   };
 }
 

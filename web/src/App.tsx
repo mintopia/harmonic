@@ -875,8 +875,8 @@ export function App() {
                     </Suspense>
                   )}
                   {view === 'stats' && <StatsPage workspaceId={activeWorkspaceId} />}
-                  {view === 'files' && activeWorkspaceId !== null && (
-                    <FilesPage workspaceId={activeWorkspaceId} selectedPath={route.file ?? null} onSelectFile={(file) => navigate({ ...route, file })} />
+                  {view === 'files' && activeWorkspace && (
+                    <FilesPage workspace={activeWorkspace} selectedPath={route.file ?? null} onSelectFile={(file) => navigate({ ...route, file })} onWorkspaceSaved={handleWorkspaceSaved} />
                   )}
                   {view === 'timeline' && (
                     <TimelinePage workspaceId={activeWorkspaceId} onOpenTask={openTaskById} />

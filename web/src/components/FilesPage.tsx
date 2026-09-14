@@ -1,18 +1,21 @@
 import { useState } from 'react';
 import { api } from '../api';
-import type { WorkspaceFile, WorkspaceFileListing } from '../types';
+import type { Workspace, WorkspaceFile, WorkspaceFileListing } from '../types';
 import { useLiveEffect } from '../useLiveEffect';
 import { Icon } from './Icon';
 import { CodeViewer } from './CodeViewer';
 
 const errorText = (error: unknown) => error instanceof Error ? error.message : String(error);
 
-export function FilesPage({ workspaceId, selectedPath, onSelectFile }: { workspaceId: number; selectedPath: string | null; onSelectFile: (path: string) => void }) {
+export function FilesPage({ workspace, selectedPath, onSelectFile, onWorkspaceSaved }: { workspace: Workspace; selectedPath: string | null; onSelectFile: (path: string) => void; onWorkspaceSaved: (workspace: Workspace) => void }) {
+  const { id: workspaceId, excludedDirectories: workspaceExcludedDirectories } = workspace;
   const [listings, setListings] = useState<Record<string, WorkspaceFileListing>>({});
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [file, setFile] = useState<WorkspaceFile | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
+  const [excludedDirectories, setExcludedDirectories] = useState(workspaceExcludedDirectories);
+  const [newExcludedDirectory, setNewExcludedDirectory] = useState('');
 
   const load = (path: string, offset = 0) => api.workspaceFiles(workspaceId, path, offset).then((listing) => {
     setListings((current) => ({ ...current, [path]: offset === 0 ? listing : { ...listing, entries: [...(current[path]?.entries ?? []), ...listing.entries] } }));
@@ -22,7 +25,8 @@ export function FilesPage({ workspaceId, selectedPath, onSelectFile }: { workspa
   useLiveEffect((live) => {
     setListings({}); setExpanded(new Set()); setErrors({});
     api.workspaceFiles(workspaceId).then((listing) => live() && setListings({ '': listing }), (error) => live() && setErrors({ '': errorText(error) }));
-  }, [workspaceId]);
+    setExcludedDirectories(workspaceExcludedDirectories);
+  }, [workspaceId, workspaceExcludedDirectories]);
 
   useLiveEffect((live) => {
     if (!selectedPath) { setFile(null); setFileError(null); return; }
@@ -33,20 +37,57 @@ export function FilesPage({ workspaceId, selectedPath, onSelectFile }: { workspa
   const rows = (path = '', depth = 0): Array<{ entry: WorkspaceFileListing['entries'][number]; depth: number }> => {
     const listing = listings[path];
     if (!listing) return [];
-    return listing.entries.flatMap((entry) => [{ entry, depth }, ...(entry.type === 'directory' && expanded.has(entry.path) ? rows(entry.path, depth + 1) : [])]);
+    return listing.entries.flatMap((entry) => [{ entry, depth }, ...(entry.type === 'directory' && !entry.excluded && expanded.has(entry.path) ? rows(entry.path, depth + 1) : [])]);
+  };
+
+  const saveExcludedDirectories = (next: string[]) => {
+    api.updateWorkspace(workspaceId, { excludedDirectories: next }).then((workspace) => {
+      setExcludedDirectories(workspace.excludedDirectories);
+      onWorkspaceSaved(workspace);
+      setExpanded(new Set());
+      void load('');
+    }, (error) => setErrors((current) => ({ ...current, '': errorText(error) })));
+  };
+
+  const toggleExcludedDirectory = (path: string) => {
+    saveExcludedDirectories(excludedDirectories.includes(path)
+      ? excludedDirectories.filter((entry) => entry !== path)
+      : [...excludedDirectories, path]);
+  };
+
+  const addExcludedDirectory = () => {
+    const path = newExcludedDirectory.trim();
+    if (!path || excludedDirectories.includes(path)) return;
+    setNewExcludedDirectory('');
+    saveExcludedDirectories([...excludedDirectories, path]);
   };
 
   return <div className="flex h-full min-h-0 min-w-0 border-t border-hairline">
     <aside className="flex w-72 shrink-0 flex-col border-r border-hairline bg-shell">
-      <div className="border-b border-hairline px-4 py-3"><h1 className="font-semibold text-ink">Files</h1></div>
+      <div className="border-b border-hairline px-4 py-3">
+        <h1 className="font-semibold text-ink">Files</h1>
+        <p className="mt-1 text-tiny text-muted">Right-click a directory to include or exclude it.</p>
+        <form className="mt-2 flex gap-1" onSubmit={(event) => { event.preventDefault(); addExcludedDirectory(); }}>
+          <input value={newExcludedDirectory} onChange={(event) => setNewExcludedDirectory(event.target.value)} placeholder="Relative directory" aria-label="Excluded directory" className="min-w-0 flex-1 border border-hairline bg-sunken px-2 py-1 font-code text-tiny text-ink" />
+          <button type="submit" className="px-2 text-tiny text-accent hover:bg-raised">Exclude</button>
+        </form>
+        {excludedDirectories.length > 0 && <ul className="mt-2 flex flex-wrap gap-1" aria-label="Excluded directories">
+          {excludedDirectories.map((path) => <li key={path}><button type="button" className="rounded bg-raised px-1.5 py-0.5 font-code text-tiny text-muted hover:text-ink" onClick={() => saveExcludedDirectories(excludedDirectories.filter((entry) => entry !== path))}>{path} ×</button></li>)}
+        </ul>}
+      </div>
       <div role="tree" aria-label="Workspace files" className="min-h-0 flex-1 overflow-auto py-2">
         {errors[''] && <p className="px-4 text-small text-fail">{errors['']}</p>}
         {rows().map(({ entry, depth }) => {
           const { path } = entry;
           const directory = entry.type === 'directory';
-          const open = expanded.has(path);
-          return <button key={path} type="button" role="treeitem" aria-level={depth + 1} aria-expanded={directory ? open : undefined} aria-selected={selectedPath === path} className={`flex min-h-8 w-full items-center gap-1.5 pr-3 text-left text-small ${selectedPath === path ? 'bg-accent-tint text-accent' : 'text-ink hover:bg-raised'}`} style={{ paddingLeft: `${0.75 + depth * 1}rem` }} onClick={() => {
+          const open = !entry.excluded && expanded.has(path);
+          return <button key={path} type="button" role="treeitem" aria-level={depth + 1} aria-expanded={directory ? open : undefined} aria-disabled={entry.excluded || undefined} aria-selected={selectedPath === path} className={`flex min-h-8 w-full items-center gap-1.5 pr-3 text-left text-small ${entry.excluded ? 'text-muted' : selectedPath === path ? 'bg-accent-tint text-accent' : 'text-ink hover:bg-raised'}`} style={{ paddingLeft: `${0.75 + depth * 1}rem` }} onContextMenu={(event) => {
+            if (!directory) return;
+            event.preventDefault();
+            toggleExcludedDirectory(path);
+          }} onClick={() => {
             if (!directory) { onSelectFile(path); return; }
+            if (entry.excluded) return;
             setExpanded((current) => {
               const next = new Set(current);
               if (next.has(path)) next.delete(path);

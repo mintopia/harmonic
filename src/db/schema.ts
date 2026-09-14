@@ -47,6 +47,7 @@ export const workspaces = sqliteTable('workspaces', {
 export type WorkspaceIdentityRow = typeof workspaces.$inferSelect;
 /** Identity columns plus the setting overrides `WorkspaceService` composes in on read; `null` on an override field means inherit the global default. */
 export type WorkspaceRow = WorkspaceIdentityRow & {
+  excludedDirectories: string[];
   harness: string | null; model: string | null; chatHarness: string | null; chatModel: string | null;
   isolationMode: string | null; priority: string | null;
   conflictResolveTurns: number | null; maxConcurrentAttempts: number | null; autoRunnerEnabled: boolean | null;

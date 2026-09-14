@@ -133,6 +133,7 @@ export const api = {
       workingDir?: string;
       trackerEnabled?: boolean;
       trackerPollIntervalSeconds?: number;
+      excludedDirectories?: string[] | null;
       harness?: string | null;
       model?: string | null;
       chatHarness?: string | null;

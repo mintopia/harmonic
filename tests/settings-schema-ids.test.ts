@@ -33,6 +33,7 @@ function makeWorkspace(): Workspace {
     workingDir: '/tmp/ws1',
     trackerEnabled: false,
     trackerPollIntervalSeconds: 60,
+    excludedDirectories: [],
     resolvedTracker: null,
     harness: null,
     model: null,

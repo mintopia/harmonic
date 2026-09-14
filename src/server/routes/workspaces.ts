@@ -36,6 +36,7 @@ const workspaceSchema = z
     workingDir: z.string().meta({ example: '/home/dev/harmonic' }),
     trackerEnabled: z.boolean().meta({ example: false }),
     trackerPollIntervalSeconds: z.number().meta({ example: 60 }),
+    excludedDirectories: z.array(z.string()).meta({ example: ['.git', 'node_modules', 'dist', 'build', 'coverage', '.next', '.turbo', 'out', 'target'] }),
     resolvedTracker: resolvedTrackerSchema,
     // Setting overrides: null ⇒ inherit the global default.
     harness: z.string().nullable().meta({ example: null }),

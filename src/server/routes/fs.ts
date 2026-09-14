@@ -58,7 +58,14 @@ export async function fsRoutes(fastify: FastifyInstance, ctx: Pick<TrackingConte
     },
   }, async (req) => {
     const workspace = await ctx.workspaces.get(req.query.workspaceId);
-    return listWorkspaceFiles({ root: workspace.workingDir, ...req.query });
+    const { path, limit, offset } = req.query;
+    return listWorkspaceFiles({
+      root: workspace.workingDir,
+      excludedDirectories: workspace.excludedDirectories,
+      path,
+      ...(limit === undefined ? {} : { limit }),
+      ...(offset === undefined ? {} : { offset }),
+    });
   });
 
   app.get('/fs/file', {

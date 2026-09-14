@@ -26,6 +26,13 @@ import {
   MERGE_FATES,
 } from '../config.js';
 
+export const DEFAULT_EXCLUDED_DIRECTORIES = ['.git', 'node_modules', 'dist', 'build', 'coverage', '.next', '.turbo', 'out', 'target'] as const;
+
+const excludedDirectorySchema = z.string().min(1).refine(
+  (path) => path === path.split('/').filter(Boolean).join('/') && !path.includes('\\') && !path.split('/').includes('.') && !path.split('/').includes('..'),
+  'excluded directory must be a canonical relative path within the workspace',
+);
+
 export const createWorkspaceInputSchema = z.object({
   name: z.string().min(1, 'name is required').meta({ example: 'Harmonic' }),
   workingDir: z.string().min(1, 'workingDir is required').meta({ example: '/home/dev/harmonic' }),
@@ -42,6 +49,7 @@ export type CreateWorkspaceInput = z.infer<typeof createWorkspaceInputSchema>;
  * omitted (`undefined`) field is left untouched.
  */
 export const workspaceOverridesSchema = z.object({
+  excludedDirectories: z.array(excludedDirectorySchema).nullable().optional(),
   harness: z.string().min(1).nullable().optional().meta({ example: 'codex' }),
   model: z.string().min(1).nullable().optional().meta({ example: 'gpt-5' }),
   /** Chat-default Harness override; null inherits `config.chat.harness`. */
@@ -86,6 +94,7 @@ export type WorkspaceOverrides = z.infer<typeof workspaceOverridesSchema>;
 
 /** Every per-Workspace setting override key. */
 export const OVERRIDE_KEYS = [
+  'excludedDirectories',
   'harness',
   'model',
   'chatHarness',
@@ -157,6 +166,7 @@ export class WorkspaceService {
     const o = this.settings.getOverrides(row.id);
     return {
       ...row,
+      excludedDirectories: o.excludedDirectories ?? [...DEFAULT_EXCLUDED_DIRECTORIES],
       harness: o.harness,
       model: o.model,
       chatHarness: o.chatHarness,
@@ -225,6 +235,7 @@ export class WorkspaceService {
         .returning()
         .get(),
     );
+    await this.settings.setOverrides(inserted.id, { excludedDirectories: [...DEFAULT_EXCLUDED_DIRECTORIES] });
     return this.compose(inserted);
   }
 
