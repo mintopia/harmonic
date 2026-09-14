@@ -216,6 +216,14 @@ export interface WorkspaceFile {
   isBinary: boolean;
 }
 
+export type GitStatusCode = '.' | 'M' | 'T' | 'A' | 'D' | 'R' | 'C' | 'U' | '?';
+
+export interface GitStatusEntry {
+  path: string;
+  indexStatus: GitStatusCode;
+  worktreeStatus: GitStatusCode;
+}
+
 /**
  * A Workspace's Resolved Tracker, as the API flattens it: a display
  * `label` when resolved, else a coded `reason` it can't. A discriminated union so

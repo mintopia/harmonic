@@ -49,6 +49,7 @@ const HELPERS: Record<string, () => readonly string[]> = {
   stateCountPill: () => STATES.flatMap((s) => [ui.stateCountPill(s, 0), ui.stateCountPill(s, 3)]),
   conversationStateChip: () => (['active', 'ended'] as const).map(ui.conversationStateChip),
   continuationCostChip: () => (['warm', 'cold', 'unknown'] as const).map(ui.continuationCostChip),
+  gitFileStatusClass: () => (['staged', 'modified', 'untracked'] as const).map(ui.gitFileStatusClass),
   permissionOptionButtonClass: () =>
     (['allow_once', 'allow_always', 'reject_once', 'reject_always'] as const).map(
       ui.permissionOptionButtonClass,

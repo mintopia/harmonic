@@ -12,6 +12,7 @@ import type {
   Cost,
   DiffFile,
   FsListing,
+  GitStatusEntry,
   WorkspaceFile,
   WorkspaceFileListing,
   GuardrailEvent,
@@ -111,6 +112,7 @@ export const api = {
   },
   workspaceFile: (workspaceId: number, path: string) =>
     request<WorkspaceFile>('GET', `/api/fs/file?workspaceId=${workspaceId}&path=${encodeURIComponent(path)}`),
+  gitStatus: (workspaceId: number) => request<{ entries: GitStatusEntry[] }>('GET', `/api/git/status?workspaceId=${workspaceId}`),
   worktrees: ({ limit, offset }: { limit?: number; offset?: number } = {}) => {
     const params = new URLSearchParams();
     if (limit !== undefined) params.set('limit', String(limit));

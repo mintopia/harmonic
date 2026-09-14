@@ -122,6 +122,18 @@ export const chip = 'rounded-full px-2 py-0.5 text-label font-semibold uppercase
  * prompt. */
 export const toolChip = `${chip} bg-tool-tint text-tool`;
 
+export type GitFileStatus = 'staged' | 'modified' | 'untracked';
+
+const GIT_FILE_STATUS_STYLES: Record<GitFileStatus, string> = {
+  staged: 'text-ready',
+  modified: 'text-running',
+  untracked: 'text-tool',
+};
+
+export function gitFileStatusClass(status: GitFileStatus): string {
+  return GIT_FILE_STATUS_STYLES[status];
+}
+
 const CONTINUATION_COST_STYLES: Record<'warm' | 'cold' | 'unknown', string> = {
   cold: 'bg-running-tint text-running',
   warm: 'bg-raised text-muted',
