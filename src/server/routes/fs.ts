@@ -57,6 +57,7 @@ export async function fsRoutes(fastify: FastifyInstance, ctx: Pick<TrackingConte
       description: 'A paginated directory listing confined to one Workspace working directory.',
       querystring: workspaceTreeQuerySchema,
       response: { 200: workspaceFileListingSchema.describe('A page of workspace files and directories.'), 400: errorResponse('Invalid path.'), 404: errorResponse('Workspace or path not found.') },
+    },
   }, async (req) => {
     const workspace = await ctx.workspaces.get(req.query.workspaceId);
     const { path, limit, offset } = req.query;
