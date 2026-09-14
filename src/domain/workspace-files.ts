@@ -1,5 +1,5 @@
 import { constants, createReadStream } from 'node:fs';
-import { open, readdir, readFile, realpath, stat } from 'node:fs/promises';
+import { lstat, mkdir, open, readdir, readFile, realpath, rename, rm, stat } from 'node:fs/promises';
 import { extname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { z } from 'zod';
 import { DomainError } from './errors.js';
@@ -63,6 +63,89 @@ async function workspacePath(root: string, path: string): Promise<{ root: string
 
 function pathFrom(root: string, target: string): string {
   return relative(root, target).split(sep).join('/');
+}
+
+/**
+ * Resolve a write target confined to the workspace root without following the
+ * final path component as a symlink: the parent is realpath-resolved and
+ * confined, then the leaf is joined lexically so a create/rename/delete acts on
+ * the entry itself, never on a symlink's escape target.
+ */
+async function resolveForWrite(root: string, path: string, mustExist: boolean): Promise<{ root: string; target: string; relPath: string; base: string }> {
+  const segments = path.split(/[\\/]/).filter(Boolean);
+  const base = segments.at(-1);
+  if (!base || segments.includes('..') || isAbsolute(path)) validation('path must stay within the workspace');
+  const resolvedRoot = await realpath(root);
+  let resolvedParent: string;
+  try {
+    resolvedParent = await realpath(resolve(resolvedRoot, segments.slice(0, -1).join('/')));
+  } catch (err) {
+    const code = err instanceof Error && 'code' in err ? err.code : undefined;
+    if (code === 'ENOENT') throw new DomainError('not_found', `parent directory does not exist: ${path}`);
+    throw err;
+  }
+  if (!inside(resolvedRoot, resolvedParent)) validation('path must stay within the workspace');
+  const target = resolve(resolvedParent, base);
+  if (!inside(resolvedRoot, target) || target === resolvedRoot) validation('path must stay within the workspace');
+  if (mustExist) {
+    try {
+      await lstat(target);
+    } catch {
+      throw new DomainError('not_found', `path does not exist: ${path}`);
+    }
+  }
+  return { root: resolvedRoot, target, relPath: pathFrom(resolvedRoot, target), base };
+}
+
+async function entryFor(target: string, relPath: string, base: string): Promise<WorkspaceFileEntry> {
+  const info = await stat(target);
+  return { name: base, path: relPath, type: info.isDirectory() ? 'directory' : 'file', size: info.size, excluded: false };
+}
+
+export type WorkspaceFileEntry = z.infer<typeof workspaceFileEntrySchema>;
+
+export async function createWorkspaceEntry({ root, path, type }: { root: string; path: string; type: 'file' | 'directory' }): Promise<WorkspaceFileEntry> {
+  const { target, relPath, base } = await resolveForWrite(root, path, false);
+  try {
+    if (type === 'directory') {
+      await mkdir(target);
+    } else {
+      const handle = await open(target, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY);
+      await handle.close();
+    }
+  } catch (err) {
+    const code = err instanceof Error && 'code' in err ? err.code : undefined;
+    if (code === 'EEXIST') validation('a file or directory already exists at that path');
+    throw err;
+  }
+  return entryFor(target, relPath, base);
+}
+
+export async function moveWorkspaceEntry({ root, from, to }: { root: string; from: string; to: string }): Promise<WorkspaceFileEntry> {
+  const source = await resolveForWrite(root, from, true);
+  const dest = await resolveForWrite(root, to, false);
+  if (dest.target === source.target) return entryFor(source.target, source.relPath, source.base);
+  try {
+    await lstat(dest.target);
+    validation('a file or directory already exists at that path');
+  } catch (err) {
+    if (err instanceof DomainError) throw err;
+  }
+  await rename(source.target, dest.target);
+  return entryFor(dest.target, dest.relPath, dest.base);
+}
+
+export async function deleteWorkspaceEntry({ root, path }: { root: string; path: string }): Promise<void> {
+  const { target } = await resolveForWrite(root, path, true);
+  await rm(target, { recursive: true, force: false });
+}
+
+/** Confined relative path (workspace-root-relative, forward-slashed) for a
+ * read-only git operation — tolerates a leaf that no longer exists on disk (a
+ * deleted-but-tracked path) while still rejecting traversal and symlink escape. */
+export async function resolveWorkspacePath(root: string, path: string): Promise<string> {
+  const { relPath } = await resolveForWrite(root, path, false);
+  return relPath;
 }
 
 function mimeFor(path: string, binary = false): string {

@@ -539,6 +539,125 @@
   padding: 0;
   background: none;
 }
+
+/* Document-scale variant for reading a whole file (the Files preview), with a
+   real heading hierarchy the compact chat markdown deliberately flattens. */
+.markdown-doc {
+  max-width: 80ch;
+  font-size: 0.9375rem;
+  line-height: 1.7;
+  color: var(--hm-ink);
+}
+.markdown-doc h1,
+.markdown-doc h2,
+.markdown-doc h3,
+.markdown-doc h4,
+.markdown-doc h5,
+.markdown-doc h6 {
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -0.015em;
+}
+.markdown-doc h1 {
+  font-size: 1.7rem;
+  margin: 1.5rem 0 0.85rem;
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid var(--hm-hairline);
+}
+.markdown-doc h2 {
+  font-size: 1.3rem;
+  margin: 1.4rem 0 0.6rem;
+  padding-bottom: 0.25rem;
+  border-bottom: 1px solid var(--hm-hairline);
+}
+.markdown-doc h3 {
+  font-size: 1.1rem;
+  margin: 1.2rem 0 0.5rem;
+}
+.markdown-doc h4,
+.markdown-doc h5,
+.markdown-doc h6 {
+  font-size: 1rem;
+  margin: 1rem 0 0.4rem;
+}
+.markdown-doc > :first-child {
+  margin-top: 0;
+}
+.markdown-doc p,
+.markdown-doc ul,
+.markdown-doc ol,
+.markdown-doc pre,
+.markdown-doc blockquote,
+.markdown-doc table {
+  margin: 0.8rem 0;
+}
+.markdown-doc ul,
+.markdown-doc ol {
+  padding-left: 1.6rem;
+}
+.markdown-doc li {
+  margin: 0.28rem 0;
+}
+.markdown-doc blockquote {
+  padding-left: 0.9rem;
+  border-left: 3px solid var(--hm-edge);
+  color: var(--hm-muted);
+}
+.markdown-doc table {
+  border-collapse: collapse;
+  display: block;
+  overflow-x: auto;
+}
+.markdown-doc th,
+.markdown-doc td {
+  padding: 0.35rem 0.65rem;
+  border: 1px solid var(--hm-hairline);
+  text-align: left;
+}
+.markdown-doc th {
+  background: var(--hm-raised);
+  font-weight: 600;
+}
+.markdown-doc hr {
+  margin: 1.4rem 0;
+  border: 0;
+  border-top: 1px solid var(--hm-hairline);
+}
+.markdown-doc img {
+  max-width: 100%;
+  border-radius: 0.375rem;
+}
+.markdown-doc a {
+  color: var(--hm-accent);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.15em;
+}
+.markdown-doc a:hover {
+  color: var(--hm-accent-hot);
+}
+.markdown-doc code {
+  font-size: 0.85em;
+  padding: 0.1rem 0.35rem;
+}
+.markdown-doc pre {
+  padding: 0.85rem 1rem;
+  line-height: 1.55;
+}
+.markdown-doc li::marker {
+  color: var(--hm-faint);
+}
+.markdown-doc li > p {
+  margin: 0.2rem 0;
+}
+.markdown-doc input[type='checkbox'] {
+  margin-right: 0.45rem;
+  accent-color: var(--hm-accent);
+}
+.markdown-doc ul:has(> li > input[type='checkbox']) {
+  list-style: none;
+  padding-left: 0.25rem;
+}
 .hljs-comment,
 .hljs-quote {
   color: var(--hm-syntax-comment);

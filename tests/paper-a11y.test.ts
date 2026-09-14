@@ -63,7 +63,7 @@ describe('Paper accessibility contract (issue #266)', () => {
 
     expect(files).toContain('aria-labelledby="source-control-title"');
     expect(files).toContain('label="Staged"');
-    expect(files).toContain('label="Unstaged"');
+    expect(files).toContain('label="Changes"');
     expect(files).toContain('htmlFor="commit-message"');
     expect(files).toContain('min-h-11');
     expect(files).toContain('<ConfirmDialog');

@@ -26444,6 +26444,315 @@
         }
       }
     },
+    "/api/fs/create": {
+      "post": {
+        "tags": [
+          "Filesystem"
+        ],
+        "description": "Operator-only: create an empty file or directory confined to a Workspace working directory.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "workspaceId": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "path": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "file",
+                      "directory"
+                    ]
+                  }
+                },
+                "required": [
+                  "workspaceId",
+                  "path",
+                  "type"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The created entry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "path": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "directory",
+                        "file"
+                      ]
+                    },
+                    "size": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "excluded": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "path",
+                    "type",
+                    "size",
+                    "excluded"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The created entry."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path, or an entry already exists there.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Workspace or parent directory not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/fs/move": {
+      "post": {
+        "tags": [
+          "Filesystem"
+        ],
+        "description": "Operator-only: rename or move a file or directory within a Workspace working directory.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "workspaceId": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "from": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "to": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "workspaceId",
+                  "from",
+                  "to"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The moved entry at its new path.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "path": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "directory",
+                        "file"
+                      ]
+                    },
+                    "size": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "excluded": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "path",
+                    "type",
+                    "size",
+                    "excluded"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The moved entry at its new path."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path, or the destination already exists.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Workspace or source not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/fs/delete": {
+      "post": {
+        "tags": [
+          "Filesystem"
+        ],
+        "description": "Operator-only: delete a file or directory (recursively) within a Workspace working directory.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "workspaceId": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "path": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "workspaceId",
+                  "path"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The entry is deleted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The entry is deleted."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Workspace or path not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/git/status": {
       "get": {
         "tags": [
@@ -26521,6 +26830,161 @@
                   ],
                   "additionalProperties": false,
                   "description": "Git status entries from porcelain v2 output."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/git/diff": {
+      "get": {
+        "tags": [
+          "Filesystem"
+        ],
+        "description": "Unified diff of one working-directory path (staged + unstaged vs HEAD; an untracked file reads as all-added).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "in": "query",
+            "name": "workspaceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "query",
+            "name": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The parsed per-file diff, or null when there is no textual diff.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "file": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "path": {
+                              "type": "string",
+                              "example": "src/server/rate-limit.ts"
+                            },
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "M",
+                                "A",
+                                "D"
+                              ]
+                            },
+                            "additions": {
+                              "type": "number",
+                              "example": 96
+                            },
+                            "deletions": {
+                              "type": "number",
+                              "example": 4
+                            },
+                            "lines": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "add",
+                                      "del",
+                                      "context",
+                                      "hunk"
+                                    ]
+                                  },
+                                  "oldLn": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "newLn": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "text": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "oldLn",
+                                  "newLn",
+                                  "text"
+                                ],
+                                "additionalProperties": false
+                              }
+                            }
+                          },
+                          "required": [
+                            "path",
+                            "status",
+                            "additions",
+                            "deletions",
+                            "lines"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "file"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The parsed per-file diff, or null when there is no textual diff."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Workspace or path not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }

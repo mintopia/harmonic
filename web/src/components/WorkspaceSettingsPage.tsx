@@ -88,6 +88,7 @@ export function WorkspaceSettingsPage({
         driveMergeFate: local.driveMergeFate,
         driveContinueAttempts: local.driveContinueAttempts,
         taskPrompt: local.taskPrompt,
+        excludedDirectories: local.excludedDirectories,
       });
       setPristine(updated);
       setLocal(updated);

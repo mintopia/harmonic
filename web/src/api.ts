@@ -14,6 +14,7 @@ import type {
   FsListing,
   GitStatusEntry,
   WorkspaceFile,
+  WorkspaceFileEntry,
   WorkspaceFileListing,
   GuardrailEvent,
   MapRollup,
@@ -116,11 +117,18 @@ export const api = {
     `/api/fs/raw?workspaceId=${workspaceId}&path=${encodeURIComponent(path)}`,
   saveWorkspaceFile: (workspaceId: number, path: string, text: string) =>
     request<WorkspaceFile>('PUT', `/api/fs/file?workspaceId=${workspaceId}&path=${encodeURIComponent(path)}`, { text }),
+  createWorkspaceEntry: (workspaceId: number, path: string, type: 'file' | 'directory') =>
+    request<WorkspaceFileEntry>('POST', '/api/fs/create', { workspaceId, path, type }),
+  moveWorkspaceEntry: (workspaceId: number, from: string, to: string) =>
+    request<WorkspaceFileEntry>('POST', '/api/fs/move', { workspaceId, from, to }),
+  deleteWorkspaceEntry: (workspaceId: number, path: string) =>
+    request<{ ok: true }>('POST', '/api/fs/delete', { workspaceId, path }),
   gitStatus: (workspaceId: number) => request<{ entries: GitStatusEntry[] }>('GET', `/api/git/status?workspaceId=${workspaceId}`),
   stageGitPaths: (workspaceId: number, paths: string[]) => request<{ ok: true }>('POST', '/api/git/stage', { workspaceId, paths }),
   unstageGitPaths: (workspaceId: number, paths: string[]) => request<{ ok: true }>('POST', '/api/git/unstage', { workspaceId, paths }),
   discardGitPaths: (workspaceId: number, paths: string[]) => request<{ ok: true }>('POST', '/api/git/discard', { workspaceId, paths }),
   commitGitChanges: (workspaceId: number, message: string) => request<{ ok: true }>('POST', '/api/git/commit', { workspaceId, message }),
+  gitFileDiff: (workspaceId: number, path: string) => request<{ file: DiffFile | null }>('GET', `/api/git/diff?workspaceId=${workspaceId}&path=${encodeURIComponent(path)}`),
   worktrees: ({ limit, offset }: { limit?: number; offset?: number } = {}) => {
     const params = new URLSearchParams();
     if (limit !== undefined) params.set('limit', String(limit));

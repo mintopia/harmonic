@@ -479,6 +479,25 @@ export const Git = {
       logger.info('git: committed workspace changes', { 'git.dir': dir });
     }),
 
+  /** Unified diff for one working-directory path: staged + unstaged changes
+   * against HEAD, falling back to an all-added diff for an untracked file. */
+  async workspaceDiff(dir: string, relPath: string): Promise<string> {
+    let tracked = '';
+    try {
+      tracked = await git(dir, 'diff', 'HEAD', '--', relPath);
+    } catch {
+      tracked = '';
+    }
+    if (tracked) return tracked;
+    try {
+      const { stdout } = await execFileAsync('git', ['-C', dir, 'diff', '--no-index', '--', '/dev/null', relPath], { maxBuffer: 10 * 1024 * 1024, timeout: GIT_TIMEOUT_MS });
+      return stdout;
+    } catch (err) {
+      const e = err as { code?: number; stdout?: string };
+      return e.code === 1 ? e.stdout ?? '' : '';
+    }
+  },
+
   /** Per-file `additions<TAB>deletions<TAB>path` of what the run's branch adds
    * over the merge base. `--numstat` reports exact line counts, unlike `--stat`,
    * whose `+`/`-` graph is a width-capped histogram, not a count. */

@@ -5,13 +5,17 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FilesPage } from '../web/src/components/FilesPage.js';
 import { makeWorkspace } from './component-smoke-harness.js';
 
-const { workspaceFile } = vi.hoisted(() => ({ workspaceFile: vi.fn() }));
+const { workspaceFile, workspaceFiles, gitStatus } = vi.hoisted(() => ({
+  workspaceFile: vi.fn(),
+  workspaceFiles: vi.fn().mockResolvedValue({ path: '', entries: [], total: 0, limit: 100, offset: 0 }),
+  gitStatus: vi.fn().mockResolvedValue({ entries: [] }),
+}));
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 vi.mock('../web/src/api.js', () => ({
   api: {
-    workspaceFiles: vi.fn().mockResolvedValue({ path: '', entries: [], total: 0, limit: 100, offset: 0 }),
-    gitStatus: vi.fn().mockResolvedValue({ entries: [] }),
+    workspaceFiles,
+    gitStatus,
     workspaceFile,
     workspaceRawUrl: (workspaceId: number, path: string) => `/api/fs/raw?workspaceId=${workspaceId}&path=${encodeURIComponent(path)}`,
   },
@@ -64,9 +68,38 @@ describe('FilesPage previews (issue #588)', () => {
   it('renders Markdown preview instead of an editable code view', async () => {
     workspaceFile.mockResolvedValue({ text: '# Notes', mime: 'text/markdown', size: 7, isBinary: false, isTooLarge: false });
     await render('notes.markdown');
-    const preview = Array.from(host?.querySelectorAll('button') ?? []).find((button) => button.textContent === 'Preview');
+    const preview = host?.querySelector('[aria-label="Preview"]');
     await act(async () => preview?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
     expect(host?.querySelector('[data-testid="markdown-preview"]')?.textContent).toBe('# Notes');
     expect(host?.querySelector('[aria-label="Code editor"]')).toBeNull();
+  });
+
+  it('shows files in the tree and swaps the sidebar to Source Control', async () => {
+    workspaceFiles.mockResolvedValue({ path: '', entries: [
+      { name: 'src', path: 'src', type: 'directory', size: 0, excluded: false },
+      { name: 'README.md', path: 'README.md', type: 'file', size: 12, excluded: false },
+    ], total: 2, limit: 100, offset: 0 });
+    gitStatus.mockResolvedValue({ entries: [{ path: 'README.md', indexStatus: '.', worktreeStatus: 'M' }] });
+
+    host ??= document.body.appendChild(document.createElement('div'));
+    root ??= createRoot(host);
+    await act(async () => {
+      root?.render(createElement(FilesPage, { workspace, selectedPath: null, onSelectFile: () => {}, onWorkspaceSaved: () => {} }));
+      await Promise.resolve();
+    });
+
+    const treeNodes = Array.from(host.querySelectorAll('[role="treeitem"]'));
+    const treeItems = treeNodes.map((node) => node.textContent);
+    expect(treeItems).toEqual(expect.arrayContaining([expect.stringContaining('README.md'), expect.stringContaining('src')]));
+    // Roving tabindex: exactly one tree item is tabbable, the rest are -1 (WAI-ARIA tree).
+    expect(treeNodes.filter((node) => node.getAttribute('tabindex') === '0')).toHaveLength(1);
+    expect(treeNodes.every((node) => node.hasAttribute('data-treepath'))).toBe(true);
+    expect(host.querySelector('#commit-message')).toBeNull();
+
+    const scmButton = host.querySelector('[aria-label="Source control"]');
+    await act(async () => scmButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+
+    expect(host.querySelector('#commit-message')).not.toBeNull();
+    expect(host.querySelector('[role="treeitem"]')).toBeNull();
   });
 });

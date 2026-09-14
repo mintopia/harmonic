@@ -210,4 +210,96 @@ describe('workspace Files API (issue #584)', () => {
     expect(response.status).toBe(400);
     expect(response.body.error.code).toBe('validation');
   });
+
+  it('creates files and directories, records the write, and rejects duplicates', async () => {
+    const log = vi.spyOn(logger, 'info');
+    const dir = await server.api('POST', '/api/fs/create', { workspaceId: 1, path: 'created', type: 'directory' });
+    expect(dir.status).toBe(200);
+    expect(dir.body).toMatchObject({ name: 'created', path: 'created', type: 'directory' });
+
+    const file = await server.api('POST', '/api/fs/create', { workspaceId: 1, path: 'created/note.txt', type: 'file' });
+    expect(file.status).toBe(200);
+    expect(file.body).toMatchObject({ name: 'note.txt', path: 'created/note.txt', type: 'file', size: 0 });
+    expect(readFileSync(join(root, 'created', 'note.txt'), 'utf8')).toBe('');
+    expect(log).toHaveBeenCalledWith('workspace entry created', { workspaceId: 1, path: 'created/note.txt', type: 'file' });
+
+    const duplicate = await server.api('POST', '/api/fs/create', { workspaceId: 1, path: 'created/note.txt', type: 'file' });
+    expect(duplicate.status).toBe(400);
+
+    const missingParent = await server.api('POST', '/api/fs/create', { workspaceId: 1, path: 'nope/deep.txt', type: 'file' });
+    expect(missingParent.status).toBe(404);
+
+    const traversal = await server.api('POST', '/api/fs/create', { workspaceId: 1, path: '../escapee.txt', type: 'file' });
+    expect(traversal.status).toBe(400);
+    log.mockRestore();
+  });
+
+  it('renames and moves entries, and refuses to overwrite or leave the workspace', async () => {
+    await server.api('POST', '/api/fs/create', { workspaceId: 1, path: 'movable.txt', type: 'file' });
+    const renamed = await server.api('POST', '/api/fs/move', { workspaceId: 1, from: 'movable.txt', to: 'created/moved.txt' });
+    expect(renamed.status).toBe(200);
+    expect(renamed.body).toMatchObject({ name: 'moved.txt', path: 'created/moved.txt', type: 'file' });
+    expect(readFileSync(join(root, 'created', 'moved.txt'), 'utf8')).toBe('');
+
+    const overwrite = await server.api('POST', '/api/fs/move', { workspaceId: 1, from: 'created/moved.txt', to: 'created/note.txt' });
+    expect(overwrite.status).toBe(400);
+
+    const missing = await server.api('POST', '/api/fs/move', { workspaceId: 1, from: 'created/gone.txt', to: 'created/other.txt' });
+    expect(missing.status).toBe(404);
+
+    const escape = await server.api('POST', '/api/fs/move', { workspaceId: 1, from: 'created/moved.txt', to: '../escapee.txt' });
+    expect(escape.status).toBe(400);
+  });
+
+  it('deletes files and directories recursively and confines the target', async () => {
+    const log = vi.spyOn(logger, 'info');
+    await server.api('POST', '/api/fs/create', { workspaceId: 1, path: 'created/inner', type: 'directory' });
+    await server.api('POST', '/api/fs/create', { workspaceId: 1, path: 'created/inner/leaf.txt', type: 'file' });
+
+    const file = await server.api('POST', '/api/fs/delete', { workspaceId: 1, path: 'created/note.txt' });
+    expect(file.status).toBe(200);
+    expect(log).toHaveBeenCalledWith('workspace entry deleted', { workspaceId: 1, path: 'created/note.txt' });
+
+    const dir = await server.api('POST', '/api/fs/delete', { workspaceId: 1, path: 'created' });
+    expect(dir.status).toBe(200);
+    const listing = await server.api('GET', '/api/fs/tree?workspaceId=1');
+    expect(listing.body.entries).not.toEqual(expect.arrayContaining([expect.objectContaining({ path: 'created' })]));
+
+    const traversal = await server.api('POST', '/api/fs/delete', { workspaceId: 1, path: '../secret.txt' });
+    const missing = await server.api('POST', '/api/fs/delete', { workspaceId: 1, path: 'created' });
+    expect([traversal.status, missing.status]).toEqual([400, 404]);
+    log.mockRestore();
+  });
+
+  it('returns a unified diff for a changed path and an all-added diff for an untracked one', async () => {
+    writeFileSync(join(root, 'src', 'index.ts'), 'export const answer = 100;\n');
+    const changed = await server.api('GET', '/api/git/diff?workspaceId=1&path=src/index.ts');
+    expect(changed.status).toBe(200);
+    expect(changed.body.file).toMatchObject({ path: 'src/index.ts' });
+    expect(changed.body.file.additions).toBeGreaterThan(0);
+
+    writeFileSync(join(root, 'fresh.txt'), 'brand new line\n');
+    const untracked = await server.api('GET', '/api/git/diff?workspaceId=1&path=fresh.txt');
+    expect(untracked.status).toBe(200);
+    expect(untracked.body.file).toMatchObject({ path: 'fresh.txt' });
+    expect(untracked.body.file.additions).toBeGreaterThan(0);
+
+    const traversal = await server.api('GET', '/api/git/diff?workspaceId=1&path=../secret.txt');
+    expect(traversal.status).toBe(400);
+  });
+
+  it('rejects symlink escapes on write operations', async () => {
+    const outside = mkdtempSync(join(tmpdir(), 'harmonic-write-escape-'));
+    writeFileSync(join(outside, 'secret.txt'), 'secret');
+    symlinkSync(outside, join(root, 'link-escape'));
+
+    const create = await server.api('POST', '/api/fs/create', { workspaceId: 1, path: 'link-escape/injected.txt', type: 'file' });
+    const del = await server.api('POST', '/api/fs/delete', { workspaceId: 1, path: 'link-escape/secret.txt' });
+    expect(create.status).toBe(400);
+    expect(del.status).toBe(400);
+    expect(readFileSync(join(outside, 'secret.txt'), 'utf8')).toBe('secret');
+
+    rmSync(join(root, 'link-escape'));
+    rmSync(outside, { recursive: true, force: true });
+  });
 });
