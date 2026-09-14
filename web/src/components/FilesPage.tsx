@@ -186,7 +186,7 @@ export function FilesPage({ workspace, selectedPath, onSelectFile, onWorkspaceSa
           const dirty = drafts[path]?.text !== drafts[path]?.saved;
           return <div key={path} className={`flex shrink-0 items-center rounded-sm ${path === selectedPath ? 'bg-accent-tint text-accent' : 'text-muted hover:bg-raised'}`}>
             <button type="button" className="flex items-center gap-1.5 px-2 py-1.5 font-code text-small" onClick={() => onSelectFile(path)}>
-              {dirty && <span aria-label="Unsaved changes" className="size-1.5 rounded-full bg-running" />}
+              {dirty && <span aria-label="Unsaved changes" className="size-1.5 rounded-full bg-accent" />}
               {path}
             </button>
             <button type="button" aria-label={`Close ${path}`} className="p-1.5" onClick={() => close(path)}><Icon name="close" /></button>

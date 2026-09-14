@@ -133,8 +133,12 @@ export async function writeWorkspaceFile({ root, path, text }: { root: string; p
   const location = await workspacePath(root, path);
   if (!(await stat(location.target)).isFile()) validation('path is not a file');
   try {
-    const handle = await open(location.target, constants.O_WRONLY | constants.O_TRUNC | constants.O_NOFOLLOW);
+    const handle = await open(location.target, constants.O_WRONLY | constants.O_NOFOLLOW);
     try {
+      const openedTarget = await realpath(`/proc/self/fd/${handle.fd}`);
+      if (!inside(location.root, openedTarget)) validation('path must stay within the workspace');
+      if (!(await handle.stat()).isFile()) validation('path is not a file');
+      await handle.truncate();
       await handle.writeFile(text, 'utf8');
     } finally {
       await handle.close();
