@@ -10,10 +10,14 @@ import { PageHeader } from './PageHeader';
 
 const H = 3600_000;
 const DAY = 24 * H;
-const MIN_WINDOW = 5 * 60_000;
-const MAX_WINDOW = 90 * DAY;
+const MINUTE = 60_000;
+/** Fixed zoom stops, widest → tightest. All integer ms, so the visible window's
+ * edges stay whole and never send a fractional timestamp to the API (the
+ * timeline route validates from/to as integers). */
+const ZOOM_LEVELS = [30 * DAY, 7 * DAY, DAY, 12 * H, 6 * H, 4 * H, 2 * H, H, 30 * MINUTE];
+const MAX_WINDOW = ZOOM_LEVELS[0]!;
+const MIN_WINDOW = ZOOM_LEVELS[ZOOM_LEVELS.length - 1]!;
 const DEFAULT_WINDOW = DAY;
-const ZOOM_STEP = 1.5;
 
 /** Tick spacings the ruler snaps to: the coarsest that still yields <= ~8 ticks
  * across the visible window, so labels stay aligned and uncrowded at any zoom. */
@@ -24,6 +28,19 @@ const TICK_STEPS = [
 ];
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+
+/** Snap an epoch-ms edge to the nearest whole second. Continuous drag/zoom maths
+ * yields fractional ms, and the timeline route rejects non-integer from/to. */
+const toSecond = (ms: number) => Math.round(ms / 1000) * 1000;
+
+/** The zoom stop nearest `windowMs`, stepped by `dir` (+1 tighter, -1 wider). */
+const stepZoom = (windowMs: number, dir: 1 | -1) => {
+  let idx = 0;
+  for (let i = 1; i < ZOOM_LEVELS.length; i++) {
+    if (Math.abs(ZOOM_LEVELS[i]! - windowMs) < Math.abs(ZOOM_LEVELS[idx]! - windowMs)) idx = i;
+  }
+  return ZOOM_LEVELS[clamp(idx + dir, 0, ZOOM_LEVELS.length - 1)]!;
+};
 
 /** Attempt state → Paper state vocabulary. A passed Attempt wears merged-emerald,
  * an escalated one the indigo "needs you" voice, a cancelled one slate. */
@@ -170,17 +187,18 @@ export function TimelinePage({
     const w = clamp(nextWindow, MIN_WINDOW, MAX_WINDOW);
     const cappedTo = Math.min(nowMs, nextTo);
     setWindowMs(w);
-    setAnchor(cappedTo >= nowMs - 1000 ? null : cappedTo);
+    // Snap the anchor to a whole second so from/to reach the API as integers.
+    setAnchor(cappedTo >= nowMs - 1000 ? null : toSecond(cappedTo));
   };
 
-  const zoomBy = (factor: number) => {
+  const zoomBy = (dir: 1 | -1) => {
     const g = geo.current;
     // Anchor on the readout (pointer, else the right edge) so zooming holds the
     // focus in view instead of drifting toward the window centre — a live view
     // keeps its now-edge and recent runs stay on screen.
     const focus = hoverTime ?? g.to;
     const frac = clamp((focus - g.from) / Math.max(1, g.to - g.from), 0, 1);
-    const w = clamp(g.windowMs * factor, MIN_WINDOW, MAX_WINDOW);
+    const w = stepZoom(g.windowMs, dir);
     applyWindow(w, focus + (1 - frac) * w);
   };
   const panBy = (frac: number) => {
@@ -270,8 +288,8 @@ export function TimelinePage({
       const g = geo.current;
       const frac = ax ? clamp((e.clientX - ax.left) / Math.max(1, ax.width), 0, 1) : 0.5;
       const pt = g.from + frac * (g.to - g.from);
-      const factor = e.deltaY > 0 ? ZOOM_STEP : 1 / ZOOM_STEP;
-      const w = clamp(g.windowMs * factor, MIN_WINDOW, MAX_WINDOW);
+      // Scroll down zooms out (wider), up zooms in (tighter).
+      const w = stepZoom(g.windowMs, e.deltaY > 0 ? -1 : 1);
       applyWindow(w, pt + (1 - frac) * w);
     };
     el.addEventListener('wheel', onWheel, { passive: false });
@@ -372,11 +390,11 @@ export function TimelinePage({
           aria-label="Zoom"
           className="flex items-center gap-0.5 rounded-md border border-hairline bg-surface p-0.5"
         >
-          <button type="button" aria-label="Zoom out" onClick={() => zoomBy(ZOOM_STEP)} disabled={windowMs >= MAX_WINDOW} className={btn}>
+          <button type="button" aria-label="Zoom out" onClick={() => zoomBy(-1)} disabled={windowMs >= MAX_WINDOW} className={btn}>
             <span aria-hidden="true">−</span>
           </button>
           <span className="min-w-[52px] text-center font-data text-data tabular-nums text-ink">{fmtSpan(windowMs)}</span>
-          <button type="button" aria-label="Zoom in" onClick={() => zoomBy(1 / ZOOM_STEP)} disabled={windowMs <= MIN_WINDOW} className={btn}>
+          <button type="button" aria-label="Zoom in" onClick={() => zoomBy(1)} disabled={windowMs <= MIN_WINDOW} className={btn}>
             <span aria-hidden="true">+</span>
           </button>
         </div>
