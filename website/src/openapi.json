@@ -26145,13 +26145,31 @@
                           },
                           "indexStatus": {
                             "type": "string",
-                            "minLength": 1,
-                            "maxLength": 1
+                            "enum": [
+                              ".",
+                              "M",
+                              "T",
+                              "A",
+                              "D",
+                              "R",
+                              "C",
+                              "U",
+                              "?"
+                            ]
                           },
                           "worktreeStatus": {
                             "type": "string",
-                            "minLength": 1,
-                            "maxLength": 1
+                            "enum": [
+                              ".",
+                              "M",
+                              "T",
+                              "A",
+                              "D",
+                              "R",
+                              "C",
+                              "U",
+                              "?"
+                            ]
                           }
                         },
                         "required": [
@@ -26168,6 +26186,251 @@
                   ],
                   "additionalProperties": false,
                   "description": "Git status entries from porcelain v2 output."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/git/stage": {
+      "post": {
+        "tags": [
+          "Filesystem"
+        ],
+        "description": "Stage selected paths in a Workspace Git repository.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "workspaceId": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "paths": {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                },
+                "required": [
+                  "workspaceId",
+                  "paths"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The selected paths are staged.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The selected paths are staged."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/git/unstage": {
+      "post": {
+        "tags": [
+          "Filesystem"
+        ],
+        "description": "Unstage selected paths in a Workspace Git repository.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "workspaceId": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "paths": {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                },
+                "required": [
+                  "workspaceId",
+                  "paths"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The selected paths are unstaged.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The selected paths are unstaged."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/git/discard": {
+      "post": {
+        "tags": [
+          "Filesystem"
+        ],
+        "description": "Discard selected tracked or untracked paths in a Workspace Git repository.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "workspaceId": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "paths": {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                },
+                "required": [
+                  "workspaceId",
+                  "paths"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The selected changes are discarded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The selected changes are discarded."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/git/commit": {
+      "post": {
+        "tags": [
+          "Filesystem"
+        ],
+        "description": "Commit the staged changes in a Workspace Git repository.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "workspaceId": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "message": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 10000
+                  }
+                },
+                "required": [
+                  "workspaceId",
+                  "message"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The staged changes are committed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The staged changes are committed."
                 }
               }
             }
