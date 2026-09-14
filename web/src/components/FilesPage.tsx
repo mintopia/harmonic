@@ -1,16 +1,19 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import type { GitStatusEntry, Workspace, WorkspaceFile, WorkspaceFileListing } from '../types';
 import { useLiveEffect } from '../useLiveEffect';
-import { displayTitle, gitFileStatusClass, type GitFileStatus } from '../ui';
+import { btnPrimary, displayTitle, gitFileStatusClass, type GitFileStatus } from '../ui';
 import { Icon } from './Icon';
 import { CodeViewer } from './CodeViewer';
 
 const errorText = (error: unknown) => error instanceof Error ? error.message : String(error);
 
-export function FilesPage({ workspace, selectedPath, onSelectFile, onWorkspaceSaved }: { workspace: Workspace; selectedPath: string | null; onSelectFile: (path: string) => void; onWorkspaceSaved: (workspace: Workspace) => void }) {
+type Draft = { saved: string; text: string };
+
+export function FilesPage({ workspace, selectedPath, onSelectFile, onWorkspaceSaved }: { workspace: Workspace; selectedPath: string | null; onSelectFile: (path: string | null) => void; onWorkspaceSaved: (workspace: Workspace) => void }) {
   const { id: workspaceId, excludedDirectories: workspaceExcludedDirectories } = workspace;
   const workspaceGeneration = useRef(0);
+  const selectedPathRef = useRef(selectedPath);
   const [listings, setListings] = useState<Record<string, WorkspaceFileListing>>({});
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -19,8 +22,13 @@ export function FilesPage({ workspace, selectedPath, onSelectFile, onWorkspaceSa
   const [fileError, setFileError] = useState<string | null>(null);
   const [excludedDirectories, setExcludedDirectories] = useState(workspaceExcludedDirectories);
   const [newExcludedDirectory, setNewExcludedDirectory] = useState('');
+  const [drafts, setDrafts] = useState<Record<string, Draft>>({});
+  const [openPaths, setOpenPaths] = useState<string[]>([]);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   useLayoutEffect(() => { workspaceGeneration.current += 1; }, [workspaceId]);
+  useEffect(() => { selectedPathRef.current = selectedPath; }, [selectedPath]);
 
   const load = (path: string, offset = 0) => {
     const generation = workspaceGeneration.current;
@@ -34,7 +42,7 @@ export function FilesPage({ workspace, selectedPath, onSelectFile, onWorkspaceSa
   };
 
   useLiveEffect((live) => {
-    setListings({}); setExpanded(new Set()); setErrors({}); setStatusEntries([]);
+    setListings({}); setExpanded(new Set()); setErrors({}); setStatusEntries([]); setDrafts({}); setOpenPaths([]); setSaveError(null);
     api.workspaceFiles(workspaceId).then((listing) => live() && setListings({ '': listing }), (error) => live() && setErrors({ '': errorText(error) }));
     api.gitStatus(workspaceId).then(({ entries }) => live() && setStatusEntries(entries), () => live() && setStatusEntries([]));
     setExcludedDirectories(workspaceExcludedDirectories);
@@ -43,8 +51,46 @@ export function FilesPage({ workspace, selectedPath, onSelectFile, onWorkspaceSa
   useLiveEffect((live) => {
     if (!selectedPath) { setFile(null); setFileError(null); return; }
     setFile(null); setFileError(null);
-    api.workspaceFile(workspaceId, selectedPath).then((next) => live() && setFile(next), (error) => live() && setFileError(errorText(error)));
+    api.workspaceFile(workspaceId, selectedPath).then((next) => {
+      if (!live()) return;
+      setFile(next);
+      const text = next.text;
+      if (text !== null) {
+        setDrafts((current) => current[selectedPath] ? current : { ...current, [selectedPath]: { saved: text, text } });
+        setOpenPaths((current) => current.includes(selectedPath) ? current : [...current, selectedPath]);
+      }
+    }, (error) => live() && setFileError(errorText(error)));
   }, [workspaceId, selectedPath]);
+
+  const save = () => {
+    const draft = selectedPath ? drafts[selectedPath] : undefined;
+    if (!selectedPath || !draft || saving) return;
+    const path = selectedPath;
+    const generation = workspaceGeneration.current;
+    setSaving(true); setSaveError(null);
+    void api.saveWorkspaceFile(workspaceId, path, draft.text).then(async (saved) => {
+      if (workspaceGeneration.current !== generation) return;
+      const text = saved.text ?? draft.text;
+      setDrafts((current) => {
+        const latest = current[path];
+        return latest ? { ...current, [path]: { saved: text, text: latest.text } } : current;
+      });
+      if (selectedPathRef.current === path) setFile(saved);
+      const { entries } = await api.gitStatus(workspaceId);
+      if (workspaceGeneration.current === generation) setStatusEntries(entries);
+    }).catch((error) => {
+      if (workspaceGeneration.current === generation && selectedPathRef.current === path) setSaveError(errorText(error));
+    }).finally(() => setSaving(false));
+  };
+
+  const close = (path: string) => {
+    const draft = drafts[path];
+    if (draft && draft.text !== draft.saved && !window.confirm(`Discard unsaved changes in ${path}?`)) return;
+    const remaining = openPaths.filter((openPath) => openPath !== path);
+    setOpenPaths(remaining);
+    setDrafts((current) => { const { [path]: _, ...rest } = current; return rest; });
+    if (selectedPath === path) onSelectFile(remaining.at(-1) ?? null);
+  };
 
   const rows = (path = '', depth = 0): Array<{ entry: WorkspaceFileListing['entries'][number]; depth: number }> => {
     const listing = listings[path];
@@ -135,8 +181,24 @@ export function FilesPage({ workspace, selectedPath, onSelectFile, onWorkspaceSa
       </div>
     </aside>
     <section className="flex min-w-0 flex-1 flex-col bg-sunken">
-      {selectedPath && <header className="border-b border-hairline bg-shell px-4 py-3 font-code text-small text-muted">{selectedPath}</header>}
-      {fileError ? <p className="p-4 text-small text-fail">{fileError}</p> : file?.isBinary ? <p className="p-4 text-small text-muted">This binary file cannot be displayed.</p> : file && selectedPath ? <CodeViewer path={selectedPath} text={file.text ?? ''} /> : <p className="p-4 text-small text-muted">Select a file to view it.</p>}
+      {openPaths.length > 0 && <header className="flex min-h-11 items-center gap-1 overflow-x-auto border-b border-hairline bg-shell px-2">
+        {openPaths.map((path) => {
+          const dirty = drafts[path]?.text !== drafts[path]?.saved;
+          return <div key={path} className={`flex shrink-0 items-center rounded-sm ${path === selectedPath ? 'bg-accent-tint text-accent' : 'text-muted hover:bg-raised'}`}>
+            <button type="button" className="flex items-center gap-1.5 px-2 py-1.5 font-code text-small" onClick={() => onSelectFile(path)}>
+              {dirty && <span aria-label="Unsaved changes" className="size-1.5 rounded-full bg-running" />}
+              {path}
+            </button>
+            <button type="button" aria-label={`Close ${path}`} className="p-1.5" onClick={() => close(path)}><Icon name="close" /></button>
+          </div>;
+        })}
+        {selectedPath && drafts[selectedPath] && <button type="button" disabled={!drafts[selectedPath] || drafts[selectedPath].text === drafts[selectedPath].saved || saving} className={`ml-auto shrink-0 ${btnPrimary}`} onClick={save}>{saving ? 'Saving…' : 'Save'}</button>}
+      </header>}
+      {saveError && <p className="border-b border-hairline bg-shell px-4 py-2 text-small text-fail">{saveError}</p>}
+      {fileError ? <p className="p-4 text-small text-fail">{fileError}</p> : file?.isBinary ? <p className="p-4 text-small text-muted">This binary file cannot be displayed.</p> : file && selectedPath && drafts[selectedPath] ? <CodeViewer path={selectedPath} text={drafts[selectedPath].text} onChange={(text) => setDrafts((current) => {
+        const draft = current[selectedPath];
+        return draft ? { ...current, [selectedPath]: { saved: draft.saved, text } } : current;
+      })} onSave={save} /> : <p className="p-4 text-small text-muted">Select a file to view it.</p>}
     </section>
   </div>;
 }

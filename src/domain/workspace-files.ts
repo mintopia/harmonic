@@ -1,4 +1,5 @@
-import { readdir, readFile, realpath, stat } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { open, readdir, readFile, realpath, stat } from 'node:fs/promises';
 import { extname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { z } from 'zod';
 import { DomainError } from './errors.js';
@@ -28,6 +29,8 @@ export const workspaceFileSchema = z.object({
   size: z.number().int().nonnegative(),
   isBinary: z.boolean(),
 });
+
+export const workspaceFileWriteSchema = z.object({ text: z.string() });
 
 export type WorkspaceFileListing = z.infer<typeof workspaceFileListingSchema>;
 export type WorkspaceFile = z.infer<typeof workspaceFileSchema>;
@@ -124,4 +127,22 @@ export async function readWorkspaceFile({ root, path }: { root: string; path: st
   }
   const isBinary = text === null;
   return { text, mime: mimeFor(location.target, isBinary), size: info.size, isBinary };
+}
+
+export async function writeWorkspaceFile({ root, path, text }: { root: string; path: string; text: string }): Promise<WorkspaceFile> {
+  const location = await workspacePath(root, path);
+  if (!(await stat(location.target)).isFile()) validation('path is not a file');
+  try {
+    const handle = await open(location.target, constants.O_WRONLY | constants.O_TRUNC | constants.O_NOFOLLOW);
+    try {
+      await handle.writeFile(text, 'utf8');
+    } finally {
+      await handle.close();
+    }
+  } catch (err) {
+    const code = err instanceof Error && 'code' in err ? err.code : undefined;
+    if (code === 'ELOOP') validation('path must stay within the workspace');
+    throw err;
+  }
+  return readWorkspaceFile({ root, path });
 }

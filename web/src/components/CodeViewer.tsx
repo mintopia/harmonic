@@ -5,23 +5,52 @@ import { basicSetup } from 'codemirror';
 import { LanguageDescription } from '@codemirror/language';
 import { languages } from '@codemirror/language-data';
 
-export function CodeViewer({ path, text }: { path: string; text: string }) {
+export function CodeViewer({ path, text, onChange, onSave }: { path: string; text: string; onChange: (text: string) => void; onSave: () => void }) {
   const host = useRef<HTMLDivElement>(null);
+  const view = useRef<EditorView | null>(null);
+  const textRef = useRef(text);
+  const onChangeRef = useRef(onChange);
+  const onSaveRef = useRef(onSave);
+
+  useEffect(() => { textRef.current = text; }, [text]);
+  useEffect(() => { onChangeRef.current = onChange; }, [onChange]);
+  useEffect(() => { onSaveRef.current = onSave; }, [onSave]);
 
   useEffect(() => {
     if (!host.current) return;
     let disposed = false;
-    let view: EditorView | null = null;
     const language = LanguageDescription.matchFilename(languages, path);
     const make = async () => {
-      const extensions = [basicSetup, EditorState.readOnly.of(true), EditorView.editable.of(false), EditorView.lineWrapping];
+      const extensions = [
+        basicSetup,
+        EditorView.lineWrapping,
+        EditorView.updateListener.of((update) => {
+          if (update.docChanged) onChangeRef.current(update.state.doc.toString());
+        }),
+        EditorView.domEventHandlers({
+          keydown: (event) => {
+            if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
+              event.preventDefault();
+              onSaveRef.current();
+              return true;
+            }
+            return false;
+          },
+        }),
+      ];
       if (language) extensions.push((await language.load()).extension);
       if (disposed || !host.current) return;
-      view = new EditorView({ state: EditorState.create({ doc: text, extensions }), parent: host.current });
+      view.current = new EditorView({ state: EditorState.create({ doc: textRef.current, extensions }), parent: host.current });
     };
     void make();
-    return () => { disposed = true; view?.destroy(); };
-  }, [path, text]);
+    return () => { disposed = true; view.current?.destroy(); view.current = null; };
+  }, [path]);
 
-  return <div aria-label={`Read-only file ${path}`} className="min-h-0 flex-1 overflow-auto font-code text-small [&_.cm-editor]:min-h-full [&_.cm-scroller]:font-code" ref={host} />;
+  useEffect(() => {
+    const current = view.current;
+    if (!current || current.state.doc.toString() === text) return;
+    current.dispatch({ changes: { from: 0, to: current.state.doc.length, insert: text } });
+  }, [text]);
+
+  return <div aria-label={`Editing file ${path}`} className="min-h-0 flex-1 overflow-auto font-code text-small [&_.cm-editor]:min-h-full [&_.cm-scroller]:font-code" ref={host} />;
 }

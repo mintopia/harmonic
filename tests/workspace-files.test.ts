@@ -1,9 +1,10 @@
-import { describe, expect, it, beforeAll, afterAll } from 'vitest';
+import { describe, expect, it, beforeAll, afterAll, vi } from 'vitest';
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { workspaces } from '../src/db/schema.js';
+import { logger } from '../src/logger.js';
 import { startServer, type TestServer } from './helpers.js';
 
 describe('workspace Files API (issue #584)', () => {
@@ -80,6 +81,25 @@ describe('workspace Files API (issue #584)', () => {
     const binary = await server.api('GET', '/api/fs/file?workspaceId=1&path=binary.dat');
     expect(binary.status).toBe(200);
     expect(binary.body).toEqual({ text: null, mime: 'application/octet-stream', size: 1, isBinary: true });
+  });
+
+  it('saves text files, records the write, and keeps writes in the workspace', async () => {
+    const log = vi.spyOn(logger, 'info');
+    const saved = await server.api('PUT', '/api/fs/file?workspaceId=1&path=src/index.ts', { text: 'export const answer = 43;\n' });
+    expect(saved.status).toBe(200);
+    expect(saved.body).toEqual({ text: 'export const answer = 43;\n', mime: 'text/typescript', size: 26, isBinary: false });
+    expect(readFileSync(join(root, 'src', 'index.ts'), 'utf8')).toBe('export const answer = 43;\n');
+    expect(log).toHaveBeenCalledWith('workspace file written', { workspaceId: 1, path: 'src/index.ts' });
+
+    const outside = mkdtempSync(join(tmpdir(), 'harmonic-outside-write-'));
+    writeFileSync(join(outside, 'secret.txt'), 'secret');
+    symlinkSync(outside, join(root, 'write-escape'));
+    const traversal = await server.api('PUT', '/api/fs/file?workspaceId=1&path=../secret.txt', { text: 'nope' });
+    const symlink = await server.api('PUT', '/api/fs/file?workspaceId=1&path=write-escape/secret.txt', { text: 'nope' });
+    expect([traversal.status, symlink.status]).toEqual([400, 400]);
+    expect(readFileSync(join(outside, 'secret.txt'), 'utf8')).toBe('secret');
+    rmSync(outside, { recursive: true, force: true });
+    log.mockRestore();
   });
 
   it('reports staged, modified, and untracked paths without changing the workspace', async () => {
