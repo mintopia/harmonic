@@ -3987,6 +3987,23 @@
             "type": "number",
             "example": 60
           },
+          "excludedDirectories": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              ".git",
+              "node_modules",
+              "dist",
+              "build",
+              "coverage",
+              ".next",
+              ".turbo",
+              "out",
+              "target"
+            ]
+          },
           "resolvedTracker": {
             "anyOf": [
               {
@@ -4634,6 +4651,7 @@
           "workingDir",
           "trackerEnabled",
           "trackerPollIntervalSeconds",
+          "excludedDirectories",
           "resolvedTracker",
           "harness",
           "model",
@@ -9618,6 +9636,23 @@
             "type": "number",
             "example": 60
           },
+          "excludedDirectories": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              ".git",
+              "node_modules",
+              "dist",
+              "build",
+              "coverage",
+              ".next",
+              ".turbo",
+              "out",
+              "target"
+            ]
+          },
           "resolvedTracker": {
             "anyOf": [
               {
@@ -10290,6 +10325,7 @@
           "workingDir",
           "trackerEnabled",
           "trackerPollIntervalSeconds",
+          "excludedDirectories",
           "resolvedTracker",
           "harness",
           "model",
@@ -14647,6 +14683,20 @@
                     "minimum": 5,
                     "maximum": 9007199254740991
                   },
+                  "excludedDirectories": {
+                    "anyOf": [
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "harness": {
                     "example": "codex",
                     "anyOf": [
@@ -16830,6 +16880,21 @@
                       "maximum": 9007199254740991,
                       "example": 200000
                     },
+                    "editor": {
+                      "type": "object",
+                      "properties": {
+                        "maxFileSizeBytes": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991,
+                          "example": 2097152
+                        }
+                      },
+                      "required": [
+                        "maxFileSizeBytes"
+                      ],
+                      "additionalProperties": false
+                    },
                     "drive": {
                       "type": "object",
                       "properties": {
@@ -16883,6 +16948,12 @@
                       "type": "number",
                       "minimum": 0,
                       "example": 30
+                    },
+                    "fileWatcherDebounceMs": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "example": 250
                     },
                     "verify": {
                       "type": "object",
@@ -17327,10 +17398,12 @@
                     "autoRunner",
                     "maxAttempts",
                     "contextReuseTokenLimit",
+                    "editor",
                     "drive",
                     "taskPrompt",
                     "pauseMessage",
                     "conversationIdleTimeoutMinutes",
+                    "fileWatcherDebounceMs",
                     "verify",
                     "merge",
                     "guardrails"
@@ -17637,6 +17710,21 @@
                       "maximum": 9007199254740991,
                       "example": 200000
                     },
+                    "editor": {
+                      "type": "object",
+                      "properties": {
+                        "maxFileSizeBytes": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991,
+                          "example": 2097152
+                        }
+                      },
+                      "required": [
+                        "maxFileSizeBytes"
+                      ],
+                      "additionalProperties": false
+                    },
                     "drive": {
                       "type": "object",
                       "properties": {
@@ -17690,6 +17778,12 @@
                       "type": "number",
                       "minimum": 0,
                       "example": 30
+                    },
+                    "fileWatcherDebounceMs": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "example": 250
                     },
                     "verify": {
                       "type": "object",
@@ -18134,10 +18228,12 @@
                     "autoRunner",
                     "maxAttempts",
                     "contextReuseTokenLimit",
+                    "editor",
                     "drive",
                     "taskPrompt",
                     "pauseMessage",
                     "conversationIdleTimeoutMinutes",
+                    "fileWatcherDebounceMs",
                     "verify",
                     "merge",
                     "guardrails"
@@ -18419,6 +18515,20 @@
                     "maximum": 9007199254740991,
                     "example": 200000
                   },
+                  "editor": {
+                    "type": "object",
+                    "properties": {
+                      "maxFileSizeBytes": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "example": 2097152
+                      }
+                    },
+                    "required": [
+                      "maxFileSizeBytes"
+                    ]
+                  },
                   "drive": {
                     "type": "object",
                     "properties": {
@@ -18471,6 +18581,12 @@
                     "type": "number",
                     "minimum": 0,
                     "example": 30
+                  },
+                  "fileWatcherDebounceMs": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991,
+                    "example": 250
                   },
                   "verify": {
                     "type": "object",
@@ -18883,10 +18999,12 @@
                   "autoRunner",
                   "maxAttempts",
                   "contextReuseTokenLimit",
+                  "editor",
                   "drive",
                   "taskPrompt",
                   "pauseMessage",
                   "conversationIdleTimeoutMinutes",
+                  "fileWatcherDebounceMs",
                   "verify",
                   "merge",
                   "guardrails"
@@ -19174,6 +19292,21 @@
                       "maximum": 9007199254740991,
                       "example": 200000
                     },
+                    "editor": {
+                      "type": "object",
+                      "properties": {
+                        "maxFileSizeBytes": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991,
+                          "example": 2097152
+                        }
+                      },
+                      "required": [
+                        "maxFileSizeBytes"
+                      ],
+                      "additionalProperties": false
+                    },
                     "drive": {
                       "type": "object",
                       "properties": {
@@ -19227,6 +19360,12 @@
                       "type": "number",
                       "minimum": 0,
                       "example": 30
+                    },
+                    "fileWatcherDebounceMs": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "example": 250
                     },
                     "verify": {
                       "type": "object",
@@ -19671,10 +19810,12 @@
                     "autoRunner",
                     "maxAttempts",
                     "contextReuseTokenLimit",
+                    "editor",
                     "drive",
                     "taskPrompt",
                     "pauseMessage",
                     "conversationIdleTimeoutMinutes",
+                    "fileWatcherDebounceMs",
                     "verify",
                     "merge",
                     "guardrails"
@@ -19976,6 +20117,21 @@
                           "maximum": 9007199254740991,
                           "example": 200000
                         },
+                        "editor": {
+                          "type": "object",
+                          "properties": {
+                            "maxFileSizeBytes": {
+                              "type": "integer",
+                              "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991,
+                              "example": 2097152
+                            }
+                          },
+                          "required": [
+                            "maxFileSizeBytes"
+                          ],
+                          "additionalProperties": false
+                        },
                         "drive": {
                           "type": "object",
                           "properties": {
@@ -20029,6 +20185,12 @@
                           "type": "number",
                           "minimum": 0,
                           "example": 30
+                        },
+                        "fileWatcherDebounceMs": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991,
+                          "example": 250
                         },
                         "verify": {
                           "type": "object",
@@ -20473,10 +20635,12 @@
                         "autoRunner",
                         "maxAttempts",
                         "contextReuseTokenLimit",
+                        "editor",
                         "drive",
                         "taskPrompt",
                         "pauseMessage",
                         "conversationIdleTimeoutMinutes",
+                        "fileWatcherDebounceMs",
                         "verify",
                         "merge",
                         "guardrails"
@@ -20749,6 +20913,21 @@
                           "maximum": 9007199254740991,
                           "example": 200000
                         },
+                        "editor": {
+                          "type": "object",
+                          "properties": {
+                            "maxFileSizeBytes": {
+                              "type": "integer",
+                              "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991,
+                              "example": 2097152
+                            }
+                          },
+                          "required": [
+                            "maxFileSizeBytes"
+                          ],
+                          "additionalProperties": false
+                        },
                         "drive": {
                           "type": "object",
                           "properties": {
@@ -20802,6 +20981,12 @@
                           "type": "number",
                           "minimum": 0,
                           "example": 30
+                        },
+                        "fileWatcherDebounceMs": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991,
+                          "example": 250
                         },
                         "verify": {
                           "type": "object",
@@ -21246,10 +21431,12 @@
                         "autoRunner",
                         "maxAttempts",
                         "contextReuseTokenLimit",
+                        "editor",
                         "drive",
                         "taskPrompt",
                         "pauseMessage",
                         "conversationIdleTimeoutMinutes",
+                        "fileWatcherDebounceMs",
                         "verify",
                         "merge",
                         "guardrails"
@@ -21555,6 +21742,21 @@
                       "maximum": 9007199254740991,
                       "example": 200000
                     },
+                    "editor": {
+                      "type": "object",
+                      "properties": {
+                        "maxFileSizeBytes": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991,
+                          "example": 2097152
+                        }
+                      },
+                      "required": [
+                        "maxFileSizeBytes"
+                      ],
+                      "additionalProperties": false
+                    },
                     "drive": {
                       "type": "object",
                       "properties": {
@@ -21608,6 +21810,12 @@
                       "type": "number",
                       "minimum": 0,
                       "example": 30
+                    },
+                    "fileWatcherDebounceMs": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "example": 250
                     },
                     "verify": {
                       "type": "object",
@@ -22052,10 +22260,12 @@
                     "autoRunner",
                     "maxAttempts",
                     "contextReuseTokenLimit",
+                    "editor",
                     "drive",
                     "taskPrompt",
                     "pauseMessage",
                     "conversationIdleTimeoutMinutes",
+                    "fileWatcherDebounceMs",
                     "verify",
                     "merge",
                     "guardrails"
@@ -25813,6 +26023,749 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/fs/tree": {
+      "get": {
+        "tags": [
+          "Filesystem"
+        ],
+        "description": "A paginated directory listing confined to one Workspace working directory.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "in": "query",
+            "name": "workspaceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "default": "",
+              "type": "string"
+            },
+            "in": "query",
+            "name": "path",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 200
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "in": "query",
+            "name": "offset",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of workspace files and directories.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "entries": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "path": {
+                            "type": "string"
+                          },
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "directory",
+                              "file"
+                            ]
+                          },
+                          "size": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "excluded": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "path",
+                          "type",
+                          "size",
+                          "excluded"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "limit": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "offset": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "entries",
+                    "total",
+                    "limit",
+                    "offset"
+                  ],
+                  "additionalProperties": false,
+                  "description": "A page of workspace files and directories."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Workspace or path not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/fs/file": {
+      "get": {
+        "tags": [
+          "Filesystem"
+        ],
+        "description": "Read one text file confined to a Workspace working directory.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "in": "query",
+            "name": "workspaceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "default": "",
+              "type": "string"
+            },
+            "in": "query",
+            "name": "path",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The requested workspace file and its metadata.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "text": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "mime": {
+                      "type": "string"
+                    },
+                    "size": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "isBinary": {
+                      "type": "boolean"
+                    },
+                    "isTooLarge": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "text",
+                    "mime",
+                    "size",
+                    "isBinary",
+                    "isTooLarge"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The requested workspace file and its metadata."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Workspace or path not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Filesystem"
+        ],
+        "description": "Operator-only: write one text file confined to a Workspace working directory.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "text"
+                ]
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "in": "query",
+            "name": "workspaceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "default": "",
+              "type": "string"
+            },
+            "in": "query",
+            "name": "path",
+            "required": false
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The saved workspace file and its metadata.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "text": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "mime": {
+                      "type": "string"
+                    },
+                    "size": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "isBinary": {
+                      "type": "boolean"
+                    },
+                    "isTooLarge": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "text",
+                    "mime",
+                    "size",
+                    "isBinary",
+                    "isTooLarge"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The saved workspace file and its metadata."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path or body.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Workspace or path not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/fs/raw": {
+      "get": {
+        "tags": [
+          "Filesystem"
+        ],
+        "description": "Stream one file confined to a Workspace working directory.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "in": "query",
+            "name": "workspaceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "default": "",
+              "type": "string"
+            },
+            "in": "query",
+            "name": "path",
+            "required": false
+          }
+        ],
+        "responses": {
+          "400": {
+            "description": "Invalid path.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Workspace or path not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/git/status": {
+      "get": {
+        "tags": [
+          "Filesystem"
+        ],
+        "description": "Read the Workspace Git status without changing its working directory or index.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "in": "query",
+            "name": "workspaceId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Git status entries from porcelain v2 output.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "entries": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "type": "string"
+                          },
+                          "indexStatus": {
+                            "type": "string",
+                            "enum": [
+                              ".",
+                              "M",
+                              "T",
+                              "A",
+                              "D",
+                              "R",
+                              "C",
+                              "U",
+                              "?"
+                            ]
+                          },
+                          "worktreeStatus": {
+                            "type": "string",
+                            "enum": [
+                              ".",
+                              "M",
+                              "T",
+                              "A",
+                              "D",
+                              "R",
+                              "C",
+                              "U",
+                              "?"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "indexStatus",
+                          "worktreeStatus"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "entries"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Git status entries from porcelain v2 output."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/git/stage": {
+      "post": {
+        "tags": [
+          "Filesystem"
+        ],
+        "description": "Stage selected paths in a Workspace Git repository.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "workspaceId": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "paths": {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                },
+                "required": [
+                  "workspaceId",
+                  "paths"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The selected paths are staged.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The selected paths are staged."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/git/unstage": {
+      "post": {
+        "tags": [
+          "Filesystem"
+        ],
+        "description": "Unstage selected paths in a Workspace Git repository.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "workspaceId": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "paths": {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                },
+                "required": [
+                  "workspaceId",
+                  "paths"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The selected paths are unstaged.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The selected paths are unstaged."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/git/discard": {
+      "post": {
+        "tags": [
+          "Filesystem"
+        ],
+        "description": "Discard selected tracked or untracked paths in a Workspace Git repository.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "workspaceId": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "paths": {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                },
+                "required": [
+                  "workspaceId",
+                  "paths"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The selected changes are discarded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The selected changes are discarded."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/git/commit": {
+      "post": {
+        "tags": [
+          "Filesystem"
+        ],
+        "description": "Commit the staged changes in a Workspace Git repository.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "workspaceId": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "message": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 10000
+                  }
+                },
+                "required": [
+                  "workspaceId",
+                  "message"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The staged changes are committed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The staged changes are committed."
                 }
               }
             }

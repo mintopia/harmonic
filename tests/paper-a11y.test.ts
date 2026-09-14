@@ -57,4 +57,16 @@ describe('Paper accessibility contract (issue #266)', () => {
     expect(ticket).toContain("import { Fact } from './Fact';");
     expect(epic).toContain("import { Fact } from './Fact';");
   });
+
+  it('keeps source-control actions labelled, touchable, and confirmation-gated', () => {
+    const files = source('web/src/components/FilesPage.tsx');
+
+    expect(files).toContain('aria-labelledby="source-control-title"');
+    expect(files).toContain('label="Staged"');
+    expect(files).toContain('label="Unstaged"');
+    expect(files).toContain('htmlFor="commit-message"');
+    expect(files).toContain('min-h-11');
+    expect(files).toContain('<ConfirmDialog');
+    expect(files).toContain('title="Discard changes?"');
+  });
 });

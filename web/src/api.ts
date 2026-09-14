@@ -12,6 +12,9 @@ import type {
   Cost,
   DiffFile,
   FsListing,
+  GitStatusEntry,
+  WorkspaceFile,
+  WorkspaceFileListing,
   GuardrailEvent,
   MapRollup,
   PermissionRule,
@@ -103,6 +106,21 @@ export const api = {
   // path starts at the server user's home. Operator-only (full-scope session).
   browseFs: (path?: string) =>
     request<FsListing>('GET', path ? `/api/fs?path=${encodeURIComponent(path)}` : '/api/fs'),
+  workspaceFiles: (workspaceId: number, path = '', offset = 0) => {
+    const query = new URLSearchParams({ workspaceId: String(workspaceId), path, offset: String(offset) });
+    return request<WorkspaceFileListing>('GET', `/api/fs/tree?${query}`);
+  },
+  workspaceFile: (workspaceId: number, path: string) =>
+    request<WorkspaceFile>('GET', `/api/fs/file?workspaceId=${workspaceId}&path=${encodeURIComponent(path)}`),
+  workspaceRawUrl: (workspaceId: number, path: string) =>
+    `/api/fs/raw?workspaceId=${workspaceId}&path=${encodeURIComponent(path)}`,
+  saveWorkspaceFile: (workspaceId: number, path: string, text: string) =>
+    request<WorkspaceFile>('PUT', `/api/fs/file?workspaceId=${workspaceId}&path=${encodeURIComponent(path)}`, { text }),
+  gitStatus: (workspaceId: number) => request<{ entries: GitStatusEntry[] }>('GET', `/api/git/status?workspaceId=${workspaceId}`),
+  stageGitPaths: (workspaceId: number, paths: string[]) => request<{ ok: true }>('POST', '/api/git/stage', { workspaceId, paths }),
+  unstageGitPaths: (workspaceId: number, paths: string[]) => request<{ ok: true }>('POST', '/api/git/unstage', { workspaceId, paths }),
+  discardGitPaths: (workspaceId: number, paths: string[]) => request<{ ok: true }>('POST', '/api/git/discard', { workspaceId, paths }),
+  commitGitChanges: (workspaceId: number, message: string) => request<{ ok: true }>('POST', '/api/git/commit', { workspaceId, message }),
   worktrees: ({ limit, offset }: { limit?: number; offset?: number } = {}) => {
     const params = new URLSearchParams();
     if (limit !== undefined) params.set('limit', String(limit));
@@ -125,6 +143,7 @@ export const api = {
       workingDir?: string;
       trackerEnabled?: boolean;
       trackerPollIntervalSeconds?: number;
+      excludedDirectories?: string[] | null;
       harness?: string | null;
       model?: string | null;
       chatHarness?: string | null;

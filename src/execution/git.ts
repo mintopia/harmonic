@@ -74,6 +74,10 @@ async function withGitOperation<T>(
 // git refuses to commit without user.name/user.email configured.
 const IDENTITY = ['-c', 'user.name=Harmonic', '-c', 'user.email=harmonic@localhost'];
 
+function literalPaths(paths: string[]): string[] {
+  return paths.map((path) => `:(literal)${path}`);
+}
+
 // `merge-tree --write-tree` needs git >= 2.38; on an older git the flag is
 // unknown and every call errors, which would look like a merge conflict.
 let warnedMergeTreeUnsupported = false;
@@ -445,6 +449,35 @@ export const Git = {
     }
     await git(dir, ...IDENTITY, 'commit', '-m', message);
   },
+
+  stage: (dir: string, paths: string[]) =>
+    withRepoLock(dir, async () => {
+      await git(dir, 'add', '--', ...literalPaths(paths));
+      logger.info('git: staged workspace paths', { 'git.dir': dir, 'git.path_count': paths.length });
+    }),
+
+  unstage: (dir: string, paths: string[]) =>
+    withRepoLock(dir, async () => {
+      await git(dir, 'restore', '--staged', '--', ...literalPaths(paths));
+      logger.info('git: unstaged workspace paths', { 'git.dir': dir, 'git.path_count': paths.length });
+    }),
+
+  discard: (dir: string, paths: string[]) =>
+    withRepoLock(dir, async () => {
+      const selectedPaths = literalPaths(paths);
+      const trackedPaths = (await git(dir, 'ls-files', '-z', '--', ...selectedPaths)).split('\0').filter(Boolean);
+      if (trackedPaths.length > 0) {
+        await git(dir, 'restore', '--worktree', '--', ...literalPaths(trackedPaths));
+      }
+      await git(dir, 'clean', '-fd', '--', ...selectedPaths);
+      logger.info('git: discarded workspace paths', { 'git.dir': dir, 'git.path_count': paths.length });
+    }),
+
+  commit: (dir: string, message: string) =>
+    withRepoLock(dir, async () => {
+      await git(dir, ...IDENTITY, 'commit', '-m', message);
+      logger.info('git: committed workspace changes', { 'git.dir': dir });
+    }),
 
   /** Per-file `additions<TAB>deletions<TAB>path` of what the run's branch adds
    * over the merge base. `--numstat` reports exact line counts, unlike `--stat`,

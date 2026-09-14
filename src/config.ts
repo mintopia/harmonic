@@ -199,6 +199,7 @@ export const appConfigSchema = z.object({
    * below this many tokens; at or above it, start a condensed new Session. A raw
    * token count (not a fraction), so it is independent of the model's window. */
   contextReuseTokenLimit: z.number().int().min(0).meta({ example: 200_000 }),
+  editor: z.object({ maxFileSizeBytes: z.number().int().positive().meta({ example: 2_097_152 }) }),
   /**
    * `prompt` is the global Drive Prompt template; `unattendedReminder` is appended to every auto-driven turn;
    * `continuePrompt` is the re-prompt nudge; `mergeFate` is the default fate of a completed worktree branch
@@ -217,6 +218,8 @@ export const appConfigSchema = z.object({
   pauseMessage: z.string().min(1).meta({ example: 'Please finish the current turn, then pause and wait for further instructions.' }),
   /** End a Conversation with no Turn for this many minutes; 0 disables. Fractional values are allowed. */
   conversationIdleTimeoutMinutes: z.number().nonnegative().meta({ example: 30 }),
+  /** Trailing debounce for Working Directory watcher events. */
+  fileWatcherDebounceMs: z.number().int().positive().meta({ example: 250 }),
   /** Ordered verifier lists for each Task and Epic verification stage. */
   verify: z.object({
     task: z.object({ preMerge: taskVerificationStageSchema, postMerge: taskVerificationStageSchema }),

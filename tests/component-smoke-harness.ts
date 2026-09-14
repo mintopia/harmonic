@@ -47,6 +47,7 @@ export function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     drive: { prompt: '', unattendedReminder: '', continuePrompt: '', mergeFate: 'auto-merge', continueAttempts: 0 },
     maxAttempts: 3,
     contextReuseTokenLimit: 100_000,
+    editor: { maxFileSizeBytes: 2_097_152 },
     taskPrompt: '',
     ...overrides,
   };
@@ -89,6 +90,7 @@ export function makeWorkspace(overrides: Partial<Workspace> = {}): Workspace {
     createdAt: 0,
     updatedAt: 0,
     ...overrides,
+    excludedDirectories: overrides.excludedDirectories ?? [],
   };
 }
 

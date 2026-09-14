@@ -18,6 +18,7 @@ describe('parseRoute', () => {
     expect(parseRoute('/', '?view=stats').view).toBe('stats');
     expect(parseRoute('/', '?view=operations').view).toBe('operations');
     expect(parseRoute('/', '?view=conversations').view).toBe('conversations');
+    expect(parseRoute('/', '?view=files').view).toBe('files');
   });
 
   it('falls back to the deck for an unknown or missing view', () => {
@@ -189,6 +190,15 @@ describe('search', () => {
     const url = serializeRoute(route);
     const u = new URL(url, 'http://x');
     expect(parseRoute(u.pathname, u.search)).toEqual(route);
+  });
+});
+
+describe('Files view route', () => {
+  it('keeps the selected relative file in the URL and ignores it outside Files', () => {
+    const route = parseRoute('/', '?view=files&file=src%2Fhello%20world.ts');
+    expect(route.file).toBe('src/hello world.ts');
+    expect(serializeRoute(route)).toBe('/?view=files&file=src%2Fhello+world.ts');
+    expect(parseRoute('/', '?view=board&file=src%2Fa.ts').file).toBeNull();
   });
 });
 

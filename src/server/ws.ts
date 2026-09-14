@@ -43,6 +43,8 @@ export async function wsRoutes(fastify: FastifyInstance, ctx: AppContext): Promi
       ctx.bus.on('operations', (event) => send({ type: 'operations', event: operationEventToApi(event) })),
       ctx.bus.on('worktrees', (worktrees) => send({ type: 'worktrees', worktrees: worktreesToApi(worktrees) })),
       ctx.bus.on('host_load', (load) => send({ type: 'host_load', load })),
+      ctx.bus.on('fs_changed', (payload) => send({ type: 'fs_changed', ...payload })),
+      ctx.bus.on('git_status', (payload) => send({ type: 'git_status', ...payload })),
     ];
     send({ type: 'host_load', load: ctx.hostLoad.current() });
     if (!readOnly) {
