@@ -199,6 +199,7 @@ export interface WorkspaceFileEntry {
   path: string;
   type: 'directory' | 'file';
   size: number;
+  excluded: boolean;
 }
 
 export interface WorkspaceFileListing {
@@ -240,6 +241,7 @@ export interface Workspace {
   workingDir: string;
   trackerEnabled: boolean;
   trackerPollIntervalSeconds: number;
+  excludedDirectories: string[];
   /** The {@link ResolvedTracker}; `null` when tracking is off. */
   resolvedTracker: ResolvedTracker | null;
   /** Per-workspace setting overrides. `null` inherits the

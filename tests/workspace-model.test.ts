@@ -22,6 +22,7 @@ const ws = (id: number, name = `ws-${id}`): Workspace => ({
   workingDir: `/repo/${name}`,
   trackerEnabled: false,
   trackerPollIntervalSeconds: 60,
+  excludedDirectories: [],
   maxAttempts: null,
   contextReuseTokenLimit: null,
   resolvedTracker: null,

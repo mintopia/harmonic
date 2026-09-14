@@ -11,6 +11,7 @@ export const workspaceFileEntrySchema = z.object({
   path: z.string(),
   type: z.enum(['directory', 'file']),
   size: z.number().int().nonnegative(),
+  excluded: z.boolean(),
 });
 
 export const workspaceFileListingSchema = z.object({
@@ -71,9 +72,10 @@ function mimeFor(path: string, binary: boolean): string {
   return mimes[extension] ?? 'text/plain';
 }
 
-export async function listWorkspaceFiles({ root, path = '', limit = DEFAULT_PAGE_SIZE, offset = 0 }: {
+export async function listWorkspaceFiles({ root, path = '', excludedDirectories = [], limit = DEFAULT_PAGE_SIZE, offset = 0 }: {
   root: string;
   path?: string;
+  excludedDirectories?: readonly string[];
   limit?: number;
   offset?: number;
 }): Promise<WorkspaceFileListing> {
@@ -81,6 +83,9 @@ export async function listWorkspaceFiles({ root, path = '', limit = DEFAULT_PAGE
   const location = await workspacePath(root, path);
   const targetStat = await stat(location.target);
   if (!targetStat.isDirectory()) validation('path is not a directory');
+  if (excludedDirectories.includes(pathFrom(location.root, location.target))) {
+    return { path: pathFrom(location.root, location.target), entries: [], total: 0, limit: pageSize, offset };
+  }
   const dirents = await readdir(location.target, { withFileTypes: true });
   const entries: Array<z.infer<typeof workspaceFileEntrySchema> | null> = [];
   for (const dirent of dirents) {
@@ -92,8 +97,9 @@ export async function listWorkspaceFiles({ root, path = '', limit = DEFAULT_PAGE
         continue;
       }
       const info = await stat(resolved);
+      const entryPath = pathFrom(location.root, candidate);
       entries.push(info.isDirectory() || info.isFile()
-        ? { name: dirent.name, path: pathFrom(location.root, candidate), type: info.isDirectory() ? 'directory' : 'file', size: info.size }
+        ? { name: dirent.name, path: entryPath, type: info.isDirectory() ? 'directory' : 'file', size: info.size, excluded: info.isDirectory() && excludedDirectories.includes(entryPath) }
         : null);
     } catch {
       entries.push(null);

@@ -3987,6 +3987,23 @@
             "type": "number",
             "example": 60
           },
+          "excludedDirectories": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              ".git",
+              "node_modules",
+              "dist",
+              "build",
+              "coverage",
+              ".next",
+              ".turbo",
+              "out",
+              "target"
+            ]
+          },
           "resolvedTracker": {
             "anyOf": [
               {
@@ -4634,6 +4651,7 @@
           "workingDir",
           "trackerEnabled",
           "trackerPollIntervalSeconds",
+          "excludedDirectories",
           "resolvedTracker",
           "harness",
           "model",
@@ -9618,6 +9636,23 @@
             "type": "number",
             "example": 60
           },
+          "excludedDirectories": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              ".git",
+              "node_modules",
+              "dist",
+              "build",
+              "coverage",
+              ".next",
+              ".turbo",
+              "out",
+              "target"
+            ]
+          },
           "resolvedTracker": {
             "anyOf": [
               {
@@ -10290,6 +10325,7 @@
           "workingDir",
           "trackerEnabled",
           "trackerPollIntervalSeconds",
+          "excludedDirectories",
           "resolvedTracker",
           "harness",
           "model",
@@ -14646,6 +14682,20 @@
                     "type": "integer",
                     "minimum": 5,
                     "maximum": 9007199254740991
+                  },
+                  "excludedDirectories": {
+                    "anyOf": [
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   },
                   "harness": {
                     "example": "codex",
@@ -25900,13 +25950,17 @@
                             "type": "integer",
                             "minimum": 0,
                             "maximum": 9007199254740991
+                          },
+                          "excluded": {
+                            "type": "boolean"
                           }
                         },
                         "required": [
                           "name",
                           "path",
                           "type",
-                          "size"
+                          "size",
+                          "excluded"
                         ],
                         "additionalProperties": false
                       }

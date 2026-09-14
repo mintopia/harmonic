@@ -15,6 +15,10 @@ describe('workspace Files API (issue #584)', () => {
     root = mkdtempSync(join(tmpdir(), 'harmonic-files-'));
     mkdirSync(join(root, 'src'));
     mkdirSync(join(root, 'empty'));
+    mkdirSync(join(root, '.git'));
+    mkdirSync(join(root, 'node_modules'));
+    mkdirSync(join(root, 'node_modules', 'package'));
+    mkdirSync(join(root, 'dist'));
     writeFileSync(join(root, 'README.md'), '# Harmonic\n');
     writeFileSync(join(root, 'src', 'index.ts'), 'export const answer = 42;\n');
     writeFileSync(join(root, 'binary.dat'), Buffer.from([0xff]));
@@ -30,15 +34,42 @@ describe('workspace Files API (issue #584)', () => {
   it('lists files and directories, pages entries, and expands a directory lazily', async () => {
     const first = await server.api('GET', '/api/fs/tree?workspaceId=1&limit=2');
     expect(first.status).toBe(200);
-    expect(first.body).toMatchObject({ path: '', total: 5, limit: 2, offset: 0 });
+    expect(first.body).toMatchObject({ path: '', total: 8, limit: 2, offset: 0 });
     expect(first.body.entries).toEqual([
-      { name: 'empty', path: 'empty', type: 'directory', size: expect.any(Number) },
-      { name: 'src', path: 'src', type: 'directory', size: expect.any(Number) },
+      { name: '.git', path: '.git', type: 'directory', size: expect.any(Number), excluded: true },
+      { name: 'dist', path: 'dist', type: 'directory', size: expect.any(Number), excluded: true },
     ]);
 
     const nested = await server.api('GET', '/api/fs/tree?workspaceId=1&path=src');
     expect(nested.status).toBe(200);
-    expect(nested.body.entries).toEqual([{ name: 'index.ts', path: 'src/index.ts', type: 'file', size: 26 }]);
+    expect(nested.body.entries).toEqual([{ name: 'index.ts', path: 'src/index.ts', type: 'file', size: 26, excluded: false }]);
+  });
+
+  it('shows default excluded directories but does not descend into them', async () => {
+    const listing = await server.api('GET', '/api/fs/tree?workspaceId=1');
+    expect(listing.status).toBe(200);
+    expect(listing.body.entries).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: '.git', path: '.git', type: 'directory', excluded: true }),
+      expect.objectContaining({ name: 'dist', path: 'dist', type: 'directory', excluded: true }),
+      expect.objectContaining({ name: 'node_modules', path: 'node_modules', type: 'directory', excluded: true }),
+      expect.objectContaining({ name: 'src', path: 'src', type: 'directory', excluded: false }),
+    ]));
+
+    const excluded = await server.api('GET', '/api/fs/tree?workspaceId=1&path=node_modules');
+    expect(excluded.status).toBe(200);
+    expect(excluded.body).toMatchObject({ path: 'node_modules', entries: [], total: 0 });
+  });
+
+  it('uses a Workspace exclude override for an arbitrary directory', async () => {
+    const update = await server.api('PATCH', '/api/workspaces/1', { excludedDirectories: ['src'] });
+    expect(update.status).toBe(200);
+    expect(update.body.excludedDirectories).toEqual(['src']);
+
+    const listing = await server.api('GET', '/api/fs/tree?workspaceId=1');
+    expect(listing.body.entries).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'src', path: 'src', excluded: true }),
+      expect.objectContaining({ name: 'node_modules', path: 'node_modules', excluded: false }),
+    ]));
   });
 
   it('reads text files with metadata and identifies binary files', async () => {
