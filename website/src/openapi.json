@@ -16934,6 +16934,12 @@
                       "minimum": 0,
                       "example": 30
                     },
+                    "fileWatcherDebounceMs": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "example": 250
+                    },
                     "verify": {
                       "type": "object",
                       "properties": {
@@ -17381,6 +17387,7 @@
                     "taskPrompt",
                     "pauseMessage",
                     "conversationIdleTimeoutMinutes",
+                    "fileWatcherDebounceMs",
                     "verify",
                     "merge",
                     "guardrails"
@@ -17741,6 +17748,12 @@
                       "minimum": 0,
                       "example": 30
                     },
+                    "fileWatcherDebounceMs": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "example": 250
+                    },
                     "verify": {
                       "type": "object",
                       "properties": {
@@ -18188,6 +18201,7 @@
                     "taskPrompt",
                     "pauseMessage",
                     "conversationIdleTimeoutMinutes",
+                    "fileWatcherDebounceMs",
                     "verify",
                     "merge",
                     "guardrails"
@@ -18521,6 +18535,12 @@
                     "type": "number",
                     "minimum": 0,
                     "example": 30
+                  },
+                  "fileWatcherDebounceMs": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991,
+                    "example": 250
                   },
                   "verify": {
                     "type": "object",
@@ -18937,6 +18957,7 @@
                   "taskPrompt",
                   "pauseMessage",
                   "conversationIdleTimeoutMinutes",
+                  "fileWatcherDebounceMs",
                   "verify",
                   "merge",
                   "guardrails"
@@ -19277,6 +19298,12 @@
                       "type": "number",
                       "minimum": 0,
                       "example": 30
+                    },
+                    "fileWatcherDebounceMs": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "example": 250
                     },
                     "verify": {
                       "type": "object",
@@ -19725,6 +19752,7 @@
                     "taskPrompt",
                     "pauseMessage",
                     "conversationIdleTimeoutMinutes",
+                    "fileWatcherDebounceMs",
                     "verify",
                     "merge",
                     "guardrails"
@@ -20080,6 +20108,12 @@
                           "minimum": 0,
                           "example": 30
                         },
+                        "fileWatcherDebounceMs": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991,
+                          "example": 250
+                        },
                         "verify": {
                           "type": "object",
                           "properties": {
@@ -20527,6 +20561,7 @@
                         "taskPrompt",
                         "pauseMessage",
                         "conversationIdleTimeoutMinutes",
+                        "fileWatcherDebounceMs",
                         "verify",
                         "merge",
                         "guardrails"
@@ -20853,6 +20888,12 @@
                           "minimum": 0,
                           "example": 30
                         },
+                        "fileWatcherDebounceMs": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991,
+                          "example": 250
+                        },
                         "verify": {
                           "type": "object",
                           "properties": {
@@ -21300,6 +21341,7 @@
                         "taskPrompt",
                         "pauseMessage",
                         "conversationIdleTimeoutMinutes",
+                        "fileWatcherDebounceMs",
                         "verify",
                         "merge",
                         "guardrails"
@@ -21659,6 +21701,12 @@
                       "minimum": 0,
                       "example": 30
                     },
+                    "fileWatcherDebounceMs": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "example": 250
+                    },
                     "verify": {
                       "type": "object",
                       "properties": {
@@ -22106,6 +22154,7 @@
                     "taskPrompt",
                     "pauseMessage",
                     "conversationIdleTimeoutMinutes",
+                    "fileWatcherDebounceMs",
                     "verify",
                     "merge",
                     "guardrails"

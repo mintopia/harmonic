@@ -217,6 +217,8 @@ export const appConfigSchema = z.object({
   pauseMessage: z.string().min(1).meta({ example: 'Please finish the current turn, then pause and wait for further instructions.' }),
   /** End a Conversation with no Turn for this many minutes; 0 disables. Fractional values are allowed. */
   conversationIdleTimeoutMinutes: z.number().nonnegative().meta({ example: 30 }),
+  /** Trailing debounce for Working Directory watcher events. */
+  fileWatcherDebounceMs: z.number().int().positive().meta({ example: 250 }),
   /** Ordered verifier lists for each Task and Epic verification stage. */
   verify: z.object({
     task: z.object({ preMerge: taskVerificationStageSchema, postMerge: taskVerificationStageSchema }),

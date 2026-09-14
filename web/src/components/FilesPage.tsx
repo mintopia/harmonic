@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import type { GitStatusEntry, Workspace, WorkspaceFile, WorkspaceFileListing } from '../types';
 import { useLiveEffect } from '../useLiveEffect';
+import { subscribe } from '../ws';
 import { btnPrimary, displayTitle, gitFileStatusClass, type GitFileStatus } from '../ui';
 import { Icon } from './Icon';
 import { CodeViewer } from './CodeViewer';
@@ -15,6 +16,9 @@ export function FilesPage({ workspace, selectedPath, onSelectFile, onWorkspaceSa
   const { id: workspaceId, excludedDirectories: workspaceExcludedDirectories } = workspace;
   const workspaceGeneration = useRef(0);
   const selectedPathRef = useRef(selectedPath);
+  const listingsRef = useRef<Record<string, WorkspaceFileListing>>({});
+  const loadRef = useRef<(path: string, offset?: number) => Promise<void>>(() => Promise.resolve());
+  const refreshStatusRef = useRef<() => Promise<void>>(() => Promise.resolve());
   const [listings, setListings] = useState<Record<string, WorkspaceFileListing>>({});
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -33,6 +37,7 @@ export function FilesPage({ workspace, selectedPath, onSelectFile, onWorkspaceSa
 
   useLayoutEffect(() => { workspaceGeneration.current += 1; }, [workspaceId]);
   useEffect(() => { selectedPathRef.current = selectedPath; }, [selectedPath]);
+  useLayoutEffect(() => { listingsRef.current = listings; }, [listings]);
 
   const load = (path: string, offset = 0) => {
     const generation = workspaceGeneration.current;
@@ -51,6 +56,21 @@ export function FilesPage({ workspace, selectedPath, onSelectFile, onWorkspaceSa
       if (workspaceGeneration.current === generation) setStatusEntries(entries);
     });
   };
+  useLayoutEffect(() => {
+    loadRef.current = load;
+    refreshStatusRef.current = refreshStatus;
+  });
+
+  useLiveEffect((live) => subscribe((message) => {
+    if (!live() || (message.type !== 'fs_changed' && message.type !== 'git_status') || message.workspaceId !== workspaceId) return;
+    if (message.type === 'fs_changed') {
+      for (const path of Object.keys(listingsRef.current)) void loadRef.current(path);
+    }
+    if (message.type === 'git_status') setStatusEntries(message.entries);
+  }, () => {
+    for (const path of Object.keys(listingsRef.current)) void loadRef.current(path);
+    void refreshStatusRef.current();
+  }), [workspaceId]);
 
   useLiveEffect((live) => {
     setListings({}); setExpanded(new Set()); setErrors({}); setStatusEntries([]); setDrafts({}); setOpenPaths([]); setSaveError(null);
