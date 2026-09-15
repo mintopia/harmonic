@@ -2,6 +2,7 @@ import chokidar, { type FSWatcher } from 'chokidar';
 import { readFileSync, statSync } from 'node:fs';
 import { relative, resolve, sep } from 'node:path';
 import type { WorkspaceRow } from '../db/schema.js';
+import { logger } from '../logger.js';
 import { readGitStatus, type GitStatusEntry } from './git-status.js';
 
 export interface WorkspaceWatcherEvents {
@@ -78,7 +79,7 @@ export class WorkspaceWatcher {
       state.fsChanged = false;
       state.gitChanged = false;
       if (fsChanged) this.events.fsChanged(workspaceId);
-      if (gitChanged) void readGitStatus(root).then((status) => this.events.gitStatus(workspaceId, status.entries)).catch(() => {});
+      if (gitChanged) void readGitStatus(root).then((status) => this.events.gitStatus(workspaceId, status.entries)).catch((err) => logger.warn('workspace git status refresh failed', { workspaceId, err }));
     }, this.debounceMs());
   }
 
