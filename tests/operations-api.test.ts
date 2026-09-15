@@ -73,6 +73,7 @@ describe('Operations API (issue #293)', () => {
 
   it('shares the reconciliation flight with the scheduled job', async () => {
     server = await startServer();
+    await server.app.ctx.scheduler.runNow('Worktree reconciliation');
     let active = 0;
     let maxActive = 0;
     let calls = 0;
