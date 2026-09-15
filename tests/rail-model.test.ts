@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  GLOBAL_RAIL_VIEWS,
   RAIL_COLLAPSED_KEY,
-  RAIL_GROUPS,
-  RAIL_VIEWS,
+  WORKSPACE_RAIL_VIEWS,
   VIEW_LABELS,
   VIEWS,
   isWorkspaceScopedView,
@@ -50,14 +50,12 @@ describe('rail collapse persistence', () => {
   });
 });
 
-describe('rail primary views', () => {
-  it('orders the rail: Board/Conversations/Graph/Activity, then Tasks/Timeline/Stats/Files, then Operations/API/Settings; global Settings stays a header icon', () => {
-    expect(VIEWS).toEqual(['board', 'conversations', 'graph', 'activity', 'table', 'timeline', 'stats', 'files', 'operations', 'api', 'settings', 'workspace']);
-  });
-
-  it('omits global Settings from the rail — its entry moved to a header icon (issue #63)', () => {
-    expect(RAIL_VIEWS).toEqual(['board', 'conversations', 'graph', 'activity', 'table', 'timeline', 'stats', 'files', 'operations', 'api', 'workspace']);
-    expect(RAIL_VIEWS).not.toContain('settings');
+describe('scope rails', () => {
+  it('keeps Global and Workspace navigation separate', () => {
+    expect(GLOBAL_RAIL_VIEWS).toEqual(['board', 'table', 'activity', 'timeline', 'stats', 'operations', 'api', 'settings']);
+    expect(WORKSPACE_RAIL_VIEWS).toEqual(['board', 'conversations', 'graph', 'activity', 'table', 'timeline', 'stats', 'files', 'operations', 'workspace']);
+    expect(GLOBAL_RAIL_VIEWS).not.toContain('workspace');
+    expect(WORKSPACE_RAIL_VIEWS).not.toContain('api');
   });
 
   it('labels every view', () => {
@@ -72,30 +70,12 @@ describe('rail primary views', () => {
     expect(VIEW_LABELS.workspace).toBe('Settings');
   });
 
-  it('scopes Board/Table/Graph/Stats/Files and the per-Workspace settings page to a Workspace, so the empty state (#68) spares Activity/API/Settings', () => {
-    expect(VIEWS.filter(isWorkspaceScopedView)).toEqual(['board', 'conversations', 'graph', 'table', 'timeline', 'stats', 'files', 'workspace']);
+  it('scopes only views without a Global form to a Workspace, so the empty state spares shared Timeline and Stats views', () => {
+    expect(VIEWS.filter(isWorkspaceScopedView)).toEqual(['board', 'conversations', 'graph', 'table', 'files', 'workspace']);
     expect(isWorkspaceScopedView('activity')).toBe(false);
+    expect(isWorkspaceScopedView('timeline')).toBe(false);
+    expect(isWorkspaceScopedView('stats')).toBe(false);
     expect(isWorkspaceScopedView('api')).toBe(false);
     expect(isWorkspaceScopedView('settings')).toBe(false);
-  });
-});
-
-describe('rail groups (divider-separated)', () => {
-  it('has three groups — Overview, Data, Instance', () => {
-    expect(RAIL_GROUPS.map((g) => g.label)).toEqual(['Overview', 'Data', 'Instance']);
-  });
-
-  it('groups the live overview surfaces, the per-task data surfaces, then the instance surfaces', () => {
-    expect(RAIL_GROUPS[0]!.views).toEqual(['board', 'conversations', 'graph', 'activity']);
-    expect(RAIL_GROUPS[1]!.views).toEqual(['table', 'timeline', 'stats', 'files']);
-    expect(RAIL_GROUPS[2]!.views).toEqual(['operations', 'api', 'workspace']);
-  });
-
-  it('flattens back to RAIL_VIEWS in the same order — the rail-grouping coherence invariant', () => {
-    expect(RAIL_GROUPS.flatMap((g) => g.views)).toEqual(RAIL_VIEWS);
-  });
-
-  it('excludes settings from every group', () => {
-    for (const group of RAIL_GROUPS) expect(group.views).not.toContain('settings');
   });
 });

@@ -19,7 +19,7 @@ import {
   verdicts,
 } from '../stats-aggregates.js';
 import { logger } from '../../logger.js';
-import { isTaskAttempt, type AttemptState } from '../../db/schema.js';
+import type { AttemptState } from '../../db/schema.js';
 import type { StatsRange, StatsWorkerClient } from '../../db/stats-reader.js';
 
 function statsAttemptState(state: AttemptState): 'running' | 'completed' | 'failed' | 'cancelled' {
@@ -183,9 +183,12 @@ const statsResponseSchema = z.object({
       z.object({
         workspaceId: z.number().meta({ example: 1 }),
         name: z.string().meta({ example: 'harmonic' }),
+        color: z.string().meta({ example: '#2ED3C4' }),
         cost: costSchema.nullable(),
         inputTokens: z.number().meta({ example: 18240 }),
         outputTokens: z.number().meta({ example: 3610 }),
+        cacheReadTokens: z.number().meta({ example: 26400 }),
+        cacheWriteTokens: z.number().meta({ example: 1200 }),
         tasks: z.number().meta({ example: 12 }),
         /** Failed-only rate over non-cancelled Attempts; null when none ran. */
         failureRate: z.number().nullable().meta({ example: 0.08 }),
@@ -196,9 +199,12 @@ const statsResponseSchema = z.object({
         {
           workspaceId: 1,
           name: 'harmonic',
+          color: '#2ED3C4',
           cost: { totalUsd: 41.2, byModel: { 'sonnet-5': 41.2 }, incomplete: false },
           inputTokens: 18240,
           outputTokens: 3610,
+          cacheReadTokens: 26400,
+          cacheWriteTokens: 1200,
           tasks: 12,
           failureRate: 0.08,
         },
@@ -287,7 +293,7 @@ async function computeStats(statsReader: StatsWorkerClient, range: StatsRange) {
     verdicts: verdicts(verifications),
     gateOutcomes: gateOutcomes(settleEvents),
     guardrailTrips: guardrailTripsByDimension(guardrailTrips),
-    byWorkspace: byWorkspace(rows.filter(isTaskAttempt), taskWorkspaces, workspaces),
+    byWorkspace: byWorkspace(rows, taskWorkspaces, workspaces),
   };
 }
 

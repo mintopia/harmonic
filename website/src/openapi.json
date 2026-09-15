@@ -749,6 +749,30 @@
                 "type": "null"
               }
             ]
+          },
+          "workspace": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991,
+                "example": 1
+              },
+              "name": {
+                "type": "string",
+                "example": "Harmonic"
+              },
+              "color": {
+                "type": "string",
+                "example": "#3AA0FA"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "color"
+            ]
           }
         },
         "required": [
@@ -762,7 +786,8 @@
           "trackerRef",
           "startedAt",
           "endedAt",
-          "cost"
+          "cost",
+          "workspace"
         ]
       },
       "TimelineResponseInput": {
@@ -3982,6 +4007,11 @@
             "type": "string",
             "example": "/home/dev/harmonic"
           },
+          "color": {
+            "type": "string",
+            "pattern": "^#[0-9A-F]{6}$",
+            "example": "#FA6152"
+          },
           "trackerEnabled": {
             "type": "boolean",
             "example": false
@@ -4652,6 +4682,7 @@
           "id",
           "name",
           "workingDir",
+          "color",
           "trackerEnabled",
           "trackerPollIntervalSeconds",
           "excludedDirectories",
@@ -6358,6 +6389,31 @@
                 "type": "null"
               }
             ]
+          },
+          "workspace": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991,
+                "example": 1
+              },
+              "name": {
+                "type": "string",
+                "example": "Harmonic"
+              },
+              "color": {
+                "type": "string",
+                "example": "#3AA0FA"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "color"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [
@@ -6371,7 +6427,8 @@
           "trackerRef",
           "startedAt",
           "endedAt",
-          "cost"
+          "cost",
+          "workspace"
         ],
         "additionalProperties": false
       },
@@ -9634,6 +9691,11 @@
             "type": "string",
             "example": "/home/dev/harmonic"
           },
+          "color": {
+            "type": "string",
+            "pattern": "^#[0-9A-F]{6}$",
+            "example": "#FA6152"
+          },
           "trackerEnabled": {
             "type": "boolean",
             "example": false
@@ -10329,6 +10391,7 @@
           "id",
           "name",
           "workingDir",
+          "color",
           "trackerEnabled",
           "trackerPollIntervalSeconds",
           "excludedDirectories",
@@ -15417,6 +15480,10 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "color": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}$"
                   }
                 }
               }
@@ -23973,6 +24040,10 @@
                             "type": "string",
                             "example": "harmonic"
                           },
+                          "color": {
+                            "type": "string",
+                            "example": "#2ED3C4"
+                          },
                           "cost": {
                             "anyOf": [
                               {
@@ -23990,6 +24061,14 @@
                           "outputTokens": {
                             "type": "number",
                             "example": 3610
+                          },
+                          "cacheReadTokens": {
+                            "type": "number",
+                            "example": 26400
+                          },
+                          "cacheWriteTokens": {
+                            "type": "number",
+                            "example": 1200
                           },
                           "tasks": {
                             "type": "number",
@@ -24010,9 +24089,12 @@
                         "required": [
                           "workspaceId",
                           "name",
+                          "color",
                           "cost",
                           "inputTokens",
                           "outputTokens",
+                          "cacheReadTokens",
+                          "cacheWriteTokens",
                           "tasks",
                           "failureRate"
                         ],
@@ -24022,6 +24104,7 @@
                         {
                           "workspaceId": 1,
                           "name": "harmonic",
+                          "color": "#2ED3C4",
                           "cost": {
                             "totalUsd": 41.2,
                             "byModel": {
@@ -24031,6 +24114,8 @@
                           },
                           "inputTokens": 18240,
                           "outputTokens": 3610,
+                          "cacheReadTokens": 26400,
+                          "cacheWriteTokens": 1200,
                           "tasks": 12,
                           "failureRate": 0.08
                         }
@@ -24642,6 +24727,10 @@
                             "type": "string",
                             "example": "harmonic"
                           },
+                          "color": {
+                            "type": "string",
+                            "example": "#2ED3C4"
+                          },
                           "cost": {
                             "anyOf": [
                               {
@@ -24659,6 +24748,14 @@
                           "outputTokens": {
                             "type": "number",
                             "example": 3610
+                          },
+                          "cacheReadTokens": {
+                            "type": "number",
+                            "example": 26400
+                          },
+                          "cacheWriteTokens": {
+                            "type": "number",
+                            "example": 1200
                           },
                           "tasks": {
                             "type": "number",
@@ -24679,9 +24776,12 @@
                         "required": [
                           "workspaceId",
                           "name",
+                          "color",
                           "cost",
                           "inputTokens",
                           "outputTokens",
+                          "cacheReadTokens",
+                          "cacheWriteTokens",
                           "tasks",
                           "failureRate"
                         ],
@@ -24691,6 +24791,7 @@
                         {
                           "workspaceId": 1,
                           "name": "harmonic",
+                          "color": "#2ED3C4",
                           "cost": {
                             "totalUsd": 41.2,
                             "byModel": {
@@ -24700,6 +24801,8 @@
                           },
                           "inputTokens": 18240,
                           "outputTokens": 3610,
+                          "cacheReadTokens": 26400,
+                          "cacheWriteTokens": 1200,
                           "tasks": 12,
                           "failureRate": 0.08
                         }
@@ -24768,6 +24871,16 @@
           },
           {
             "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "in": "query",
+            "name": "workspaceId",
+            "required": false
+          },
+          {
+            "schema": {
               "type": "string"
             },
             "in": "query",
@@ -24822,7 +24935,7 @@
         "tags": [
           "Activity"
         ],
-        "description": "Every task Attempt in one Workspace whose run window overlaps [from, to], as fleet-timeline spans — lane is the harness, plus the attempt outcome and the window it occupied. Read from persisted attempt history, so it spans finished work the live Activity snapshot no longer retains. A still-running Attempt has a null endedAt; the client extends its bar to now. Powers the scrubbable Timeline view.",
+        "description": "Every task Attempt whose run window overlaps [from, to], optionally scoped to one Workspace, as fleet-timeline spans — lane is the harness, plus the attempt outcome and the window it occupied. Read from persisted attempt history, so it spans finished work the live Activity snapshot no longer retains. A still-running Attempt has a null endedAt; the client extends its bar to now. Powers the scrubbable Timeline view.",
         "parameters": [
           {
             "schema": {
@@ -24832,7 +24945,7 @@
             },
             "in": "query",
             "name": "workspaceId",
-            "required": true
+            "required": false
           },
           {
             "schema": {
@@ -24865,7 +24978,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Every task Attempt in one Workspace whose run window overlaps [from, to] — the fleet Timeline lanes.",
+            "description": "Every task Attempt whose run window overlaps [from, to], optionally scoped to one Workspace — the fleet Timeline lanes.",
             "content": {
               "application/json": {
                 "schema": {
@@ -24962,6 +25075,18 @@
           "Operations"
         ],
         "description": "Run worktree reconciliation immediately.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "in": "query",
+            "name": "workspaceId",
+            "required": false
+          }
+        ],
         "security": [
           {
             "bearerAuth": []
@@ -25108,6 +25233,16 @@
             "in": "query",
             "name": "offset",
             "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "in": "query",
+            "name": "workspaceId",
+            "required": false
           }
         ],
         "security": [
@@ -25171,6 +25306,16 @@
         ],
         "description": "Human-only, confirmed removal of a managed worktree and its Harmonic branch. Dirty and unreadable worktrees are never removed automatically; this is the explicit operator disposition path.",
         "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "in": "query",
+            "name": "workspaceId",
+            "required": false
+          },
           {
             "schema": {
               "type": "string",
@@ -25241,6 +25386,16 @@
         ],
         "description": "The uncommitted paths that a forced cleanup would discard.",
         "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "in": "query",
+            "name": "workspaceId",
+            "required": false
+          },
           {
             "schema": {
               "type": "string",

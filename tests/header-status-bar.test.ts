@@ -33,7 +33,6 @@ async function renderHeader(props: {
       onGlobalPauseChange: props.onGlobalPauseChange ?? (() => {}),
       onRefreshTracker: () => {},
       onThemeCycle: () => {},
-      onSettingsClick: () => {},
       onLogout: () => {},
       onNewTask: () => {},
       onHelpClick: () => {},

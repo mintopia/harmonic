@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { WORKSPACE_BADGE_INK, WORKSPACE_COLORS } from '../src/domain/workspaces.js';
 
 const CSS = readFileSync(fileURLToPath(new URL('../web/src/index.css', import.meta.url)), 'utf8');
 
@@ -177,6 +178,16 @@ describe('Paper palette meets WCAG AA in both themes (issue #260)', () => {
           expect(r).toBeGreaterThan(1);
           expect(r).toBeLessThan(UI_FLOOR);
         });
+      }
+    });
+  }
+});
+
+describe('Workspace colours keep their badge initials at WCAG AA (issue #596)', () => {
+  for (const theme of ['light', 'dark'] as const) {
+    it(`${theme} theme: every workspace colour has an AA badge initial`, () => {
+      for (const color of WORKSPACE_COLORS) {
+        expect(contrast(WORKSPACE_BADGE_INK, color), color).toBeGreaterThanOrEqual(TEXT_FLOOR);
       }
     });
   }

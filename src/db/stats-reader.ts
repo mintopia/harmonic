@@ -25,10 +25,11 @@ export interface SettleEventRow {
   gate: GateReason | null;
 }
 
-/** id→name for one Workspace, so the per-Workspace breakdown can label rows. */
+/** Display identity for one Workspace in the per-Workspace breakdown. */
 export interface WorkspaceNameRow {
   id: number;
   name: string;
+  color: string;
 }
 
 /** The owning Workspace of a Task, the join key the per-Workspace breakdown groups by. */
@@ -143,7 +144,9 @@ function isStatsReadResult(value: unknown): value is StatsReadResult {
     && isTotalsDimension(value.toolTotals.byTask)
     && isTotalsDimension(value.toolTotals.byEpic)
     && Array.isArray(value.workspaces)
-    && value.workspaces.every((row) => isRecord(row) && typeof row.id === 'number' && typeof row.name === 'string')
+    && value.workspaces.every(
+      (row) => isRecord(row) && typeof row.id === 'number' && typeof row.name === 'string' && typeof row.color === 'string',
+    )
     && Array.isArray(value.taskWorkspaces)
     && value.taskWorkspaces.every(
       (row) => isRecord(row) && typeof row.taskId === 'number' && (row.workspaceId === null || typeof row.workspaceId === 'number'),

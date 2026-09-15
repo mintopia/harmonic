@@ -264,7 +264,8 @@ function Stat({
   );
 }
 
-export function ActivityView({ config }: { config: AppConfig | null }) {
+export function ActivityView({ config, workspaceId = null }: { config: AppConfig | null; workspaceId?: number | null }) {
+  const description = workspaceId === null ? "Every attempt and chat in flight across your workspaces" : "Every attempt and chat in flight in this Workspace";
   const [processes, setProcesses] = useState<ActivityProcess[] | null>(null);
   const [filter, setFilter] = useState<ActivityFilter>(NO_ACTIVITY_FILTER);
   const [now, setNow] = useState(() => Date.now());
@@ -273,8 +274,9 @@ export function ActivityView({ config }: { config: AppConfig | null }) {
     return () => clearInterval(timer);
   }, []);
   useLiveEffect((live) => {
+    setProcesses(null);
     const load = () =>
-      fetch("/api/activity")
+      fetch(`/api/activity${workspaceId === null ? "" : `?workspaceId=${workspaceId}`}`)
         .then((response) => (response.ok ? response.json() : null))
         .then((body: { processes: ActivityProcess[] } | null) => {
           if (live() && body) setProcesses(body.processes);
@@ -320,11 +322,11 @@ export function ActivityView({ config }: { config: AppConfig | null }) {
       clearInterval(poll);
       unsubscribe();
     };
-  }, []);
+  }, [workspaceId]);
   if (processes === null)
     return (
       <div>
-        <PageHeader title="Activity" description="Every attempt and chat in flight across your workspaces" />
+        <PageHeader title="Activity" description={description} />
         <div className={`${card} p-4`}>
           <div className="h-14 animate-pulse motion-reduce:animate-none" />
         </div>
@@ -343,7 +345,7 @@ export function ActivityView({ config }: { config: AppConfig | null }) {
   const lanes = fleetLanes(filterActivity(processes, activeFilter));
   return (
     <div>
-      <PageHeader title="Activity" description="Every attempt and chat in flight across your workspaces" />
+      <PageHeader title="Activity" description={description} />
       <div className={`${card} mb-5 flex flex-wrap gap-x-10 gap-y-4 p-5`}>
         <Stat label="Agents" value={String(summary.agentCount)} />
         <Stat label="Subagents" value={String(summary.subagentCount)} />
@@ -379,7 +381,7 @@ export function ActivityView({ config }: { config: AppConfig | null }) {
                 setFilter((current) => ({ ...current, type }))
               }
             />
-            {workspaces.length > 1 && (
+            {workspaceId === null && workspaces.length > 1 && (
               <select
                 aria-label="Filter by workspace"
                 className={selectField}

@@ -28,7 +28,13 @@ const timelineSpans = (to: number = TL_REF) => {
     { taskId: 4851, attemptId: 9, number: 2, title: 'Flaky merge-race guard', harness: 'copilot', model: 'gpt-5.6', state: 'failed', trackerRef: 471, startedAt: t(11), endedAt: t(9.3) },
     { taskId: 4852, attemptId: 10, number: 1, title: 'Reconcile-on-demand button', harness: 'copilot', model: 'gpt-5.6', state: 'cancelled', trackerRef: 488, startedAt: t(5), endedAt: t(4.2) },
   ];
-  return base.map((s) => ({ ...s, cost: s.endedAt ? cost(s.model, Math.round((0.18 + (s.attemptId % 5) * 0.27) * 100) / 100) : null }));
+  return base.map((s) => ({
+    ...s,
+    cost: s.endedAt ? cost(s.model, Math.round((0.18 + (s.attemptId % 5) * 0.27) * 100) / 100) : null,
+    workspace: s.taskId % 2 === 0
+      ? { id: 1, name: 'harmonic', color: '#3AA0FA' }
+      : { id: 2, name: 'website', color: '#B06BF5' },
+  }));
 };
 
 /** Synthesize one attempt's Steps across its own window, for the Timeline drill-in. */
@@ -57,7 +63,7 @@ export const api = {
   epic: (_workspaceId: number, _epicRef: number) => ok(f.epic),
   epicStats: (_epicRef: number, _workspaceId: number) => ok(f.epicStats),
   stats: (_from: number, _to: number, _workspaceId: number) => ok(f.statsFixture),
-  timeline: (_workspaceId: number, from: number, to: number) =>
+  timeline: (_workspaceId: number | undefined, from: number, to: number) =>
     ok({ attempts: timelineSpans().filter((s) => s.startedAt <= to && (s.endedAt ?? Date.now()) >= from), from, to }),
   harnessProviders: (harness: string) =>
     ok({

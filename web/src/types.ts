@@ -240,6 +240,7 @@ export interface Workspace {
   id: number;
   name: string;
   workingDir: string;
+  color: string;
   trackerEnabled: boolean;
   trackerPollIntervalSeconds: number;
   excludedDirectories: string[];
@@ -891,6 +892,7 @@ export interface TimelineAttempt {
   endedAt: number | null;
   /** Frozen Cost for a finished Attempt; null while running or when nothing was priceable. */
   cost: Cost | null;
+  workspace: Pick<Workspace, 'id' | 'name' | 'color'>;
 }
 
 export interface TimelineResponse {
