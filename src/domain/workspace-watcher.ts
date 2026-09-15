@@ -39,7 +39,7 @@ export class WorkspaceWatcher {
       const signature = JSON.stringify([resolve(workspace.workingDir), [...workspace.excludedDirectories].sort()]);
       if (this.watched.get(workspace.id)?.signature === signature) return;
       await this.stop(workspace.id);
-      this.start(workspace, signature);
+      await this.start(workspace, signature);
     }));
   }
 
@@ -47,7 +47,7 @@ export class WorkspaceWatcher {
     await Promise.all([...this.watched.keys()].map((id) => this.stop(id)));
   }
 
-  private start(workspace: WorkspaceRow, signature: string): void {
+  private async start(workspace: WorkspaceRow, signature: string): Promise<void> {
     const root = resolve(workspace.workingDir);
     const excluded = new Set(workspace.excludedDirectories.map((path) => resolve(root, path)));
     const isIgnored = (path: string): boolean => {
@@ -67,6 +67,13 @@ export class WorkspaceWatcher {
       else if (!isIgnored(path)) state.fsChanged = true;
       else return;
       this.schedule(workspace.id, workspace.workingDir, state);
+    });
+    await new Promise<void>((ready) => {
+      watcher.once('ready', () => ready());
+      watcher.once('error', (err) => {
+        logger.warn('workspace watcher failed to start', { workspaceId: workspace.id, error: err instanceof Error ? err.message : String(err) });
+        ready();
+      });
     });
   }
 
