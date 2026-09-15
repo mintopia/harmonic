@@ -108,9 +108,8 @@ describe('unified corrective attempts', () => {
     await waitFor(async () => ((await server.api('GET', `/api/tasks/${mirrored.id}`)).body.state === 'escalated' ? true : undefined));
   });
 
-  it('does not expose the deleted reattempt or requeue endpoints', async () => {
+  it('does not expose the deleted reattempt endpoint', async () => {
     const ticket = await startEscalatedTicket();
     expect((await server.api('POST', `/api/tasks/${ticket.id}/reattempt`, { feedback: 'try again' })).status).toBe(404);
-    expect((await server.api('POST', `/api/tasks/${ticket.id}/requeue`, { feedback: 'try again' })).status).toBe(404);
   });
 });

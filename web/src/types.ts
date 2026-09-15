@@ -15,7 +15,7 @@ export interface UpdateState {
   };
 }
 
-export const MERGE_STATUSES = ['merging', 'resolving-conflicts'] as const;
+export const MERGE_STATUSES = ['verifying', 'merging', 'resolving-conflicts'] as const;
 export type MergeStatus = (typeof MERGE_STATUSES)[number];
 
 export type AttemptState = 'running' | 'passed' | 'failed' | 'escalated' | 'cancelled';

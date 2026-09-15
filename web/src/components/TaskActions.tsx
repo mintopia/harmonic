@@ -11,7 +11,7 @@ import { DeleteTaskDialog } from './DeleteTaskDialog';
 import { ConfirmDialog } from './ConfirmDialog';
 import { taskLabel } from '../id-format.js';
 
-type Confirming = 'cancel' | 'complete' | 'accept-flagged' | 'force-accept' | 'close';
+type Confirming = 'cancel' | 'complete' | 'accept-flagged' | 'force-accept' | 'close' | 'requeue';
 
 export function TaskActions({
   task,
@@ -37,11 +37,12 @@ export function TaskActions({
 
   const actions = taskActions(task.state);
   const escalation = escalationActions(task);
-  // A merge in flight (Accept) is persisted on the Task, not just in this
-  // component's `accepting` flag — so the actions stay disabled across a reload
-  // or a leave-and-return, never handing the operator a second Accept/Reject
-  // that would race the merge.
-  const merging = task.mergeStatus === 'merging';
+  // An Accept in flight (verifying the candidate, then merging) is persisted on
+  // the Task, not just in this component's `accepting` flag — so the actions stay
+  // disabled across a reload or a leave-and-return, never handing the operator a
+  // second Accept/Reject that would race it. `resolving-conflicts` is excluded:
+  // that merge stalled on a conflict and the operator may want to bail (Close).
+  const acceptInFlight = task.mergeStatus === 'verifying' || task.mergeStatus === 'merging';
   if (variant === 'footer' && actions.length === 0) return null;
 
   const decision =
@@ -74,6 +75,7 @@ export function TaskActions({
   };
   const onCancelTask = actDone(() => api.cancelTask(task.id), `${taskLabel(task.id)} cancelled`);
   const onCloseTask = actDone(() => api.closeTask(task.id), `${taskLabel(task.id)} closed`);
+  const onRequeue = actDone(() => api.requeueTask(task.id), `${taskLabel(task.id)} requeued`);
 
   const confirmThen = (fn: () => void) => () => {
     setConfirming(null);
@@ -97,29 +99,35 @@ export function TaskActions({
               <button
                 className={btnAccept}
                 onClick={() => setConfirming('accept-flagged')}
-                disabled={accepting || merging}
+                disabled={accepting || acceptInFlight}
               >
-                {accepting || merging ? 'Accepting…' : label}
+                {accepting || acceptInFlight ? 'Accepting…' : label}
               </button>
             ) : (
-              <button className={btnAccept} onClick={onAccept} disabled={accepting || merging}>
-                {accepting || merging ? 'Accepting…' : label}
+              <button className={btnAccept} onClick={onAccept} disabled={accepting || acceptInFlight}>
+                {accepting || acceptInFlight ? 'Accepting…' : label}
               </button>
             )}
             <button
               className={secondary}
               onClick={() => setConfirming('force-accept')}
-              disabled={accepting || merging}
+              disabled={accepting || acceptInFlight}
             >
-              {accepting || merging ? 'Accepting…' : 'Force accept'}
+              {accepting || acceptInFlight ? 'Accepting…' : 'Force accept'}
             </button>
           </Fragment>
         );
       }
       case 'reject':
         return (
-          <button key={action} className={btnReject} disabled={merging} onClick={() => setRejecting(true)}>
+          <button key={action} className={btnReject} disabled={acceptInFlight} onClick={() => setRejecting(true)}>
             {variant === 'footer' ? 'Reject with guidance…' : 'Reject'}
+          </button>
+        );
+      case 'requeue':
+        return (
+          <button key={action} className={secondary} disabled={acceptInFlight} onClick={() => setConfirming('requeue')}>
+            Requeue
           </button>
         );
       case 'close':
@@ -127,7 +135,7 @@ export function TaskActions({
           <button
             key={action}
             className={btnQuietDestructive}
-            disabled={merging}
+            disabled={acceptInFlight}
             onClick={() => setConfirming('close')}
           >
             {variant === 'footer' ? 'Close task' : 'Close'}
@@ -183,7 +191,7 @@ export function TaskActions({
         );
       case 'delete':
         return (
-          <button key={action} className={btnQuietDestructive} disabled={merging} onClick={() => setDeleting(true)}>
+          <button key={action} className={btnQuietDestructive} disabled={acceptInFlight} onClick={() => setDeleting(true)}>
             Delete
           </button>
         );
@@ -281,6 +289,19 @@ export function TaskActions({
           onConfirm={confirmThen(onCloseTask)}
         >
           This ends the task without merging its candidate. This cannot be undone.
+        </ConfirmDialog>
+      )}
+      {confirming === 'requeue' && (
+        <ConfirmDialog
+          label={`Requeue ${taskLabel(task.id)}`}
+          title="Requeue this task?"
+          confirmLabel="Requeue"
+          tone="primary"
+          onCancel={() => setConfirming(null)}
+          onConfirm={confirmThen(onRequeue)}
+        >
+          Sends the task back to the queue with no feedback recorded. It runs again when the Auto-Runner has capacity.
+          Use this when the reason it escalated has already been fixed.
         </ConfirmDialog>
       )}
     </>

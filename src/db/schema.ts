@@ -28,7 +28,7 @@ export const TASK_STATES = ['draft', 'ready', 'working', 'paused', 'escalated', 
 export type TaskState = (typeof TASK_STATES)[number];
 
 /** Transient merge indicator, orthogonal to `state`: `merging` while the candidate is being merged onto its base, `resolving-conflicts` once that merge hit conflicts a human must settle. Null at rest. */
-export const MERGE_STATUSES = ['merging', 'resolving-conflicts'] as const;
+export const MERGE_STATUSES = ['verifying', 'merging', 'resolving-conflicts'] as const;
 export type MergeStatus = (typeof MERGE_STATUSES)[number];
 
 /** A named Working Directory, unique by absolute path. Its setting overrides live in the YAML settings file, not here. */

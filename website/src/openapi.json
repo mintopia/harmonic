@@ -1512,6 +1512,7 @@
               {
                 "type": "string",
                 "enum": [
+                  "verifying",
                   "merging",
                   "resolving-conflicts"
                 ]
@@ -1849,6 +1850,7 @@
               {
                 "type": "string",
                 "enum": [
+                  "verifying",
                   "merging",
                   "resolving-conflicts"
                 ]
@@ -2353,6 +2355,7 @@
               {
                 "type": "string",
                 "enum": [
+                  "verifying",
                   "merging",
                   "resolving-conflicts"
                 ]
@@ -7128,6 +7131,7 @@
               {
                 "type": "string",
                 "enum": [
+                  "verifying",
                   "merging",
                   "resolving-conflicts"
                 ]
@@ -7467,6 +7471,7 @@
               {
                 "type": "string",
                 "enum": [
+                  "verifying",
                   "merging",
                   "resolving-conflicts"
                 ]
@@ -7973,6 +7978,7 @@
               {
                 "type": "string",
                 "enum": [
+                  "verifying",
                   "merging",
                   "resolving-conflicts"
                 ]
@@ -12485,6 +12491,49 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The task is not escalated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tasks/{id}/requeue": {
+      "post": {
+        "tags": [
+          "Tasks"
+        ],
+        "description": "Requeue an escalated ticket with no guidance: return it to `ready` with no feedback recorded, to be picked up again when the Auto-Runner has capacity. For when the escalation cause was fixed outside Harmonic (a missing blocker link, say) and there is nothing to tell the next attempt. Human-only.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991,
+              "example": 4821
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The task, back in the queue as `ready`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Task"
                 }
               }
             }

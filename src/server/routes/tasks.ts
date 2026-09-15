@@ -702,6 +702,23 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
   );
 
   app.post(
+    '/tasks/:id/requeue',
+    {
+      schema: {
+        tags: ['Tasks'],
+        description:
+          'Requeue an escalated ticket with no guidance: return it to `ready` with no feedback recorded, to be picked up again when the Auto-Runner has capacity. For when the escalation cause was fixed outside Harmonic (a missing blocker link, say) and there is nothing to tell the next attempt. Human-only.',
+        params: idParamsSchema,
+        response: {
+          200: taskSchema.describe('The task, back in the queue as `ready`.'),
+          409: errorResponse('The task is not escalated.'),
+        },
+      },
+    },
+    async (req) => await withDeps(await ctx.escalation.requeue(req.params.id)),
+  );
+
+  app.post(
     '/tasks/:id/close',
     {
       schema: {
