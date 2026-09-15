@@ -1,5 +1,6 @@
 import type {
   Attempt,
+  ActivityProcess,
   AppConfig,
   ConfigLayers,
   AttemptUsage,
@@ -100,6 +101,7 @@ export const api = {
     if (workspaceId !== undefined) query.set('workspaceId', String(workspaceId));
     return request<Stats>('GET', `/api/stats?${query}`);
   },
+  activity: () => request<{ processes: ActivityProcess[] }>('GET', '/api/activity'),
   timeline: (workspaceId: number | undefined, from: number, to: number) => {
     const query = new URLSearchParams({ from: String(from), to: String(to) });
     if (workspaceId !== undefined) query.set('workspaceId', String(workspaceId));
