@@ -64,7 +64,7 @@ async function readStats({ from, to, workspaceId, epicRef }: StatsRange): Promis
   };
   const toolTotals = await totalsForRange(db, range);
 
-  const workspaceRows = await db.select({ id: workspaces.id, name: workspaces.name }).from(workspaces).all();
+  const workspaceRows = await db.select({ id: workspaces.id, name: workspaces.name, color: workspaces.color }).from(workspaces).all();
 
   const taskIds = [...new Set(rows.filter(isTaskAttempt).map((r) => r.taskId))];
   const taskWorkspaces =

@@ -14,9 +14,12 @@ export interface ModelUsage {
 export interface WorkspaceStats {
   workspaceId: number;
   name: string;
+  color: string;
   cost: Cost | null;
   inputTokens: number;
   outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
   tasks: number;
   /** Failed-only rate over the Workspace's non-cancelled attempts; null when it ran none. */
   failureRate: number | null;

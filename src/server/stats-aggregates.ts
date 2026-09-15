@@ -149,7 +149,9 @@ export function guardrailTripsByDimension(trips: GuardrailTripRow[]): Record<str
 
 /** The Attempt slice the per-Workspace breakdown needs from each in-range row. */
 export interface WorkspaceAttempt {
-  taskId: number;
+  taskId: number | null;
+  /** Present on Epic-owned Attempts; Task ownership resolves through taskWorkspaces. */
+  workspaceId?: number | null;
   state: string;
   usage: string | null;
   cost: string | null;
@@ -158,21 +160,34 @@ export interface WorkspaceAttempt {
 export interface WorkspaceStats {
   workspaceId: number;
   name: string;
+  color: string;
   cost: Cost | null;
   inputTokens: number;
   outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
   tasks: number;
   /** Failed-only rate over the Workspace's non-cancelled Attempts; null when it ran none. */
   failureRate: number | null;
 }
 
-function inputOutput(usages: AttemptUsage[]): { inputTokens: number; outputTokens: number } {
+function tokenUsage(usages: AttemptUsage[]): {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+} {
   const merged = mergeUsage(usages);
-  if (!merged) return { inputTokens: 0, outputTokens: 0 };
-  if (merged.totals) return { inputTokens: merged.totals.inputTokens, outputTokens: merged.totals.outputTokens };
+  if (!merged) return { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
+  if (merged.totals) return merged.totals;
   return Object.values(merged.models).reduce(
-    (sum, m) => ({ inputTokens: sum.inputTokens + m.inputTokens, outputTokens: sum.outputTokens + m.outputTokens }),
-    { inputTokens: 0, outputTokens: 0 },
+    (sum, m) => ({
+      inputTokens: sum.inputTokens + m.inputTokens,
+      outputTokens: sum.outputTokens + m.outputTokens,
+      cacheReadTokens: sum.cacheReadTokens + m.cacheReadTokens,
+      cacheWriteTokens: sum.cacheWriteTokens + m.cacheWriteTokens,
+    }),
+    { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
   );
 }
 
@@ -183,11 +198,11 @@ export function byWorkspace(
   workspaces: WorkspaceNameRow[],
 ): WorkspaceStats[] {
   const workspaceOfTask = new Map(taskWorkspaces.map((t) => [t.taskId, t.workspaceId]));
-  const nameOf = new Map(workspaces.map((w) => [w.id, w.name]));
+  const workspaceById = new Map(workspaces.map((w) => [w.id, w]));
 
   const grouped = new Map<number, WorkspaceAttempt[]>();
   for (const row of rows) {
-    const workspaceId = workspaceOfTask.get(row.taskId);
+    const workspaceId = row.taskId === null ? row.workspaceId : workspaceOfTask.get(row.taskId);
     if (workspaceId == null) continue;
     const bucket = grouped.get(workspaceId);
     if (bucket) bucket.push(row);
@@ -199,16 +214,17 @@ export function byWorkspace(
     const usages = group
       .map((r) => (r.usage ? (JSON.parse(r.usage) as AttemptUsage) : null))
       .filter((u): u is AttemptUsage => u !== null);
-    const { inputTokens, outputTokens } = inputOutput(usages);
+    const usage = tokenUsage(usages);
+    const workspace = workspaceById.get(workspaceId);
     const nonCancelled = group.filter((r) => r.state !== 'cancelled').length;
     const failed = group.filter((r) => isExecutionFailure({ state: r.state })).length;
     stats.push({
       workspaceId,
-      name: nameOf.get(workspaceId) ?? `workspace ${workspaceId}`,
+      name: workspace?.name ?? `workspace ${workspaceId}`,
+      color: workspace?.color ?? '#FA6152',
       cost: sumCosts(group.map((r) => parseCost(r.cost))),
-      inputTokens,
-      outputTokens,
-      tasks: new Set(group.map((r) => r.taskId)).size,
+      ...usage,
+      tasks: new Set(group.flatMap((row) => (row.taskId === null ? [] : [row.taskId]))).size,
       failureRate: nonCancelled === 0 ? null : failed / nonCancelled,
     });
   }
