@@ -98,7 +98,7 @@ const serviceManager = (): ServiceManager => {
 };
 
 const installedServiceManager = (): ServiceManager | null =>
-  process.platform === 'linux' ? serviceManager() : null;
+  process.env.HARMONIC_INITD_SERVICE === '1' || process.platform !== 'linux' ? null : serviceManager();
 
 const bootCommand = (rest: string[]): string => {
   const safeArgs: string[] = [];
@@ -217,7 +217,22 @@ async function main(): Promise<void> {
     const result = await manager.install({
       startSelfManaged: () => startStandalone(values, rest),
       bootCommand: bootCommand(rest),
+      serve: {
+        port: values.port,
+        host: values.host,
+        dataDir: values['data-dir'] ?? defaultDataDir(),
+        ...(values.password === undefined ? {} : { password: values.password }),
+        ...(values['otel-endpoint'] === undefined ? {} : { otelEndpoint: values['otel-endpoint'] }),
+        ...(values['otel-headers'] === undefined ? {} : { otelHeaders: values['otel-headers'] }),
+        ...(values['otel-export'] === undefined ? {} : { otelExport: values['otel-export'] }),
+        ...(values['otel-metric-export-interval'] === undefined
+          ? {}
+          : { otelMetricExportInterval: values['otel-metric-export-interval'] }),
+        ...(values['otel-stdout-log-level'] === undefined ? {} : { otelStdoutLogLevel: values['otel-stdout-log-level'] }),
+      },
+      ...(values.user === undefined ? {} : { user: values.user }),
     });
+    if (result.status) logger.info(result.status.detail ?? (result.status.running ? 'Running.' : 'Not running.'));
     if (result.bootCommand) logger.info(`Add this to the host boot hook: ${result.bootCommand}`);
     return;
   }
@@ -263,6 +278,7 @@ async function main(): Promise<void> {
       metricsSummary: { intervalMs: telemetryOptions.metricExportIntervalMillis, flush: () => telemetry.flushMetricSummary() },
       onUpgradeIdle: async (version) => {
         const swap = new UpgradeSwap({
+          ...(process.env.HARMONIC_MANAGED_BY === undefined ? {} : { managedBy: process.env.HARMONIC_MANAGED_BY }),
           install: async (target) => {
             await execFileAsync('npm', ['i', '-g', `@mintopia/harmonic@${target}`]);
           },

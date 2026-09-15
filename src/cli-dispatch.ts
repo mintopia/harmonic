@@ -4,6 +4,7 @@ export interface ServeValues {
   port: string;
   host: string;
   'data-dir'?: string;
+  user?: string | undefined;
   password?: string;
   'otel-endpoint'?: string;
   'otel-headers'?: string;
@@ -39,12 +40,15 @@ export function dispatchCli(argv: string[]): CliDispatch {
     return { kind: 'help', exitCode: command === undefined || command === 'help' || command === '--help' ? 0 : 1 };
   }
 
+  if (command === 'install' && rest.includes('--help')) return { kind: 'help', exitCode: 0 };
+
   const { values } = parseArgs({
     args: rest,
     options: {
       port: { type: 'string', default: '4700' },
       host: { type: 'string', default: '0.0.0.0' },
       'data-dir': { type: 'string' },
+      user: { type: 'string' },
       password: { type: 'string' },
       'otel-endpoint': { type: 'string' },
       'otel-headers': { type: 'string' },
@@ -59,6 +63,7 @@ export function dispatchCli(argv: string[]): CliDispatch {
     host: values.host ?? '0.0.0.0',
   };
   if (values['data-dir'] !== undefined) serveValues['data-dir'] = values['data-dir'];
+  if (values.user !== undefined) serveValues.user = values.user;
   if (values.password !== undefined) serveValues.password = values.password;
   if (values['otel-endpoint'] !== undefined) serveValues['otel-endpoint'] = values['otel-endpoint'];
   if (values['otel-headers'] !== undefined) serveValues['otel-headers'] = values['otel-headers'];
