@@ -27,6 +27,14 @@ import {
 } from '../config.js';
 
 export const DEFAULT_EXCLUDED_DIRECTORIES = ['.git', 'node_modules', 'dist', 'build', 'coverage', '.next', '.turbo', 'out', 'target'] as const;
+export const WORKSPACE_COLORS = ['#FA6152', '#FB8A2E', '#F5BE1E', '#A6D62B', '#35CB63', '#26C6D4', '#3AA0FA', '#6E79FB', '#B06BF5', '#F667B4'] as const;
+
+const workspaceColorSchema = z.string().regex(/^#[0-9a-fA-F]{6}$/, 'color must be a six-digit hex colour').refine((color) => {
+  const channels = [1, 3, 5].map((offset) => Number.parseInt(color.slice(offset, offset + 2), 16) / 255);
+  const luminance = channels.map((channel) => channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4)
+    .reduce((sum, channel, index) => sum + channel * [0.2126, 0.7152, 0.0722][index]!, 0);
+  return (luminance + 0.05) / 0.05 >= 4.5;
+}, 'color must provide AA contrast with the badge initial');
 
 const excludedDirectorySchema = z.string().min(1).refine(
   (path) => path === path.split('/').filter(Boolean).join('/') && !path.includes('\\') && !path.split('/').includes('.') && !path.split('/').includes('..'),
@@ -136,7 +144,7 @@ export interface WorkspaceSettingsStore {
 
 export const updateWorkspaceInputSchema = createWorkspaceInputSchema
   .partial()
-  .extend(workspaceOverridesSchema.shape);
+  .extend({ ...workspaceOverridesSchema.shape, color: workspaceColorSchema.optional() });
 export type UpdateWorkspaceInput = z.infer<typeof updateWorkspaceInputSchema>;
 
 /** The given Workspace, or the earliest-created one when `id` is omitted — the default-Workspace fallback. */
@@ -221,12 +229,14 @@ export class WorkspaceService {
     const workingDir = this.assertUsableDir(input.workingDir);
     await this.assertUniquePath(workingDir);
     const now = Date.now();
+    const color = await this.nextColor();
     const inserted = await this.db.write((db) =>
       db
         .insert(workspaces)
         .values({
           name: input.name,
           workingDir,
+          color,
           trackerEnabled: input.trackerEnabled ?? false,
           trackerPollIntervalSeconds: input.trackerPollIntervalSeconds ?? 60,
           createdAt: now,
@@ -249,6 +259,7 @@ export class WorkspaceService {
         .set({
           name: input.name ?? current.name,
           workingDir,
+          color: input.color ?? current.color,
           trackerEnabled: input.trackerEnabled ?? current.trackerEnabled,
           trackerPollIntervalSeconds: input.trackerPollIntervalSeconds ?? current.trackerPollIntervalSeconds,
           updatedAt: Date.now(),
@@ -257,7 +268,7 @@ export class WorkspaceService {
         .returning()
         .get(),
     );
-    const { name: _name, workingDir: _workingDir, trackerEnabled: _trackerEnabled, trackerPollIntervalSeconds: _trackerPollIntervalSeconds, ...overridesPatch } = input;
+    const { name: _name, workingDir: _workingDir, color: _color, trackerEnabled: _trackerEnabled, trackerPollIntervalSeconds: _trackerPollIntervalSeconds, ...overridesPatch } = input;
     await this.settings.setOverrides(id, overridesPatch);
     return this.compose(identityRow!);
   }
@@ -328,5 +339,12 @@ export class WorkspaceService {
         .get(),
     );
     if (clash) throw new DomainError('conflict', `a workspace already uses '${workingDir}'`);
+  }
+
+  private async nextColor(): Promise<(typeof WORKSPACE_COLORS)[number]> {
+    const existing = await this.db.read((db) => db.select({ color: workspaces.color }).from(workspaces).all());
+    const count = new Map(WORKSPACE_COLORS.map((color) => [color, 0]));
+    for (const { color } of existing) count.set(color.toUpperCase() as (typeof WORKSPACE_COLORS)[number], (count.get(color.toUpperCase() as (typeof WORKSPACE_COLORS)[number]) ?? 0) + 1);
+    return WORKSPACE_COLORS.reduce((least, color) => count.get(color)! < count.get(least)! ? color : least);
   }
 }

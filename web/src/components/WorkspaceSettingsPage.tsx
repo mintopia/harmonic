@@ -60,6 +60,7 @@ export function WorkspaceSettingsPage({
     try {
       const updated = await api.updateWorkspace(local.id, {
         name: local.name,
+        color: local.color,
         trackerEnabled: local.trackerEnabled,
         trackerPollIntervalSeconds: local.trackerPollIntervalSeconds,
         harness: local.harness,

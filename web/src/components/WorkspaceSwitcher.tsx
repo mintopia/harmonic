@@ -123,7 +123,7 @@ export function WorkspaceSwitcher({
         onClick={() => setOpen((v) => !v)}
         className="flex w-full items-center justify-between gap-2 rounded-md border border-edge bg-field px-[11px] py-[9px] font-semibold text-ink"
       >
-        <span className="truncate">{active.name}</span>
+        <span className="flex min-w-0 items-center gap-2"><WorkspaceBadge workspace={active} /><span className="truncate">{active.name}</span></span>
         <Icon
           name="chevron-down"
           className={`size-3.5 shrink-0 text-muted transition-transform duration-150 ${open ? 'rotate-0' : '-rotate-90'}`}
@@ -148,7 +148,7 @@ export function WorkspaceSwitcher({
                 setOpen(false);
               }}
             >
-              <span className="truncate">{w.name}</span>
+              <span className="flex min-w-0 items-center gap-2"><WorkspaceBadge workspace={w} /><span className="truncate">{w.name}</span></span>
               {w.id === active.id && <Icon name="check" className="shrink-0 text-accent" />}
             </li>
           ))}
@@ -170,4 +170,8 @@ export function WorkspaceSwitcher({
       {creating && <NewWorkspaceForm onClose={() => setCreating(false)} onCreated={onCreated} />}
     </div>
   );
+}
+
+function WorkspaceBadge({ workspace }: { workspace: Workspace }) {
+  return <span aria-hidden="true" className="flex size-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-[#1b1e24]" style={{ backgroundColor: workspace.color }}>{workspace.name.trim().charAt(0).toUpperCase()}</span>;
 }

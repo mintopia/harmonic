@@ -36,6 +36,7 @@ export const workspaces = sqliteTable('workspaces', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   name: text('name').notNull(),
   workingDir: text('working_dir').notNull(),
+  color: text('color').notNull().default('#FA6152'),
   trackerEnabled: integer('tracker_enabled', { mode: 'boolean' }).notNull().default(false),
   trackerPollIntervalSeconds: integer('tracker_poll_interval_seconds').notNull().default(60),
   createdAt: integer('created_at').notNull(),

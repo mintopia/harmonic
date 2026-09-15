@@ -725,6 +725,15 @@ function GlobalGuardrails({ ctx }: { ctx: GlobalRenderCtx }) {
         </div>
       </div>
       <div>
+        <label className={fieldLabel} htmlFor="workspace-color">Workspace colour</label>
+        <div className="flex items-center gap-2">
+          <input id="workspace-color" aria-label="Workspace colour picker" type="color" className="size-10 cursor-pointer rounded border border-edge bg-field p-1" value={workspace.color} onChange={(e) => ctx.setWorkspace({ ...workspace, color: e.target.value.toUpperCase() })} />
+          <input className={`${field} w-28 font-data uppercase`} value={workspace.color} maxLength={7} onChange={(e) => ctx.setWorkspace({ ...workspace, color: e.target.value.toUpperCase() })} />
+          <span className="text-small text-muted">Initial contrast: AA</span>
+        </div>
+        <FieldError message={errors['color']} />
+      </div>
+      <div>
         <div className="flex items-center justify-between">
           <span className={fieldLabel}>Progress detector</span>
           <Switch checked={g.progress} onChange={(progress) => setGuardrails({ ...g, progress })}>

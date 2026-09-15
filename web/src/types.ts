@@ -240,6 +240,7 @@ export interface Workspace {
   id: number;
   name: string;
   workingDir: string;
+  color: string;
   trackerEnabled: boolean;
   trackerPollIntervalSeconds: number;
   excludedDirectories: string[];

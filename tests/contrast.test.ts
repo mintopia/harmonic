@@ -72,6 +72,8 @@ const TEXT_ON_TINT: ReadonlyArray<readonly [string, string, string]> = [
 
 const TEXT_FLOOR = 4.5;
 const UI_FLOOR = 3;
+const WORKSPACE_COLORS = ['#FA6152', '#FB8A2E', '#F5BE1E', '#A6D62B', '#35CB63', '#26C6D4', '#3AA0FA', '#6E79FB', '#B06BF5', '#F667B4'] as const;
+const WORKSPACE_BADGE_INK = '#1b1e24';
 const PAPER_TOKENS = ['await', 'await-dot', 'await-tint', 'on-await', 'on-done', 'sunken', 'edge-strong'] as const;
 
 const TOKEN_CLASS_TOKENS = ['token-input', 'token-output', 'token-cache-read', 'token-cache-write'] as const;
@@ -177,6 +179,16 @@ describe('Paper palette meets WCAG AA in both themes (issue #260)', () => {
           expect(r).toBeGreaterThan(1);
           expect(r).toBeLessThan(UI_FLOOR);
         });
+      }
+    });
+  }
+});
+
+describe('Workspace colours keep their badge initials at WCAG AA (issue #596)', () => {
+  for (const theme of ['light', 'dark'] as const) {
+    it(`${theme} theme: every workspace colour has an AA badge initial`, () => {
+      for (const color of WORKSPACE_COLORS) {
+        expect(contrast(WORKSPACE_BADGE_INK, color), color).toBeGreaterThanOrEqual(TEXT_FLOOR);
       }
     });
   }

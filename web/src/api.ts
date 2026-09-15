@@ -149,6 +149,7 @@ export const api = {
     patch: {
       name?: string;
       workingDir?: string;
+      color?: string;
       trackerEnabled?: boolean;
       trackerPollIntervalSeconds?: number;
       excludedDirectories?: string[] | null;

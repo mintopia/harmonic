@@ -95,6 +95,7 @@ CREATE TABLE `conversations` (
 	`harness` text NOT NULL,
 	`model` text NOT NULL,
 	`working_dir` text NOT NULL,
+	`color` text DEFAULT '#FA6152' NOT NULL,
 	`workspace_id` integer,
 	`state` text NOT NULL,
 	`permission_mode` text DEFAULT 'ask' NOT NULL,

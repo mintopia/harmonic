@@ -34,6 +34,7 @@ const workspaceSchema = z
     id: z.number().meta({ example: 1 }),
     name: z.string().meta({ example: 'Harmonic' }),
     workingDir: z.string().meta({ example: '/home/dev/harmonic' }),
+    color: z.string().regex(/^#[0-9A-F]{6}$/i).meta({ example: '#FA6152' }),
     trackerEnabled: z.boolean().meta({ example: false }),
     trackerPollIntervalSeconds: z.number().meta({ example: 60 }),
     excludedDirectories: z.array(z.string()).meta({ example: ['.git', 'node_modules', 'dist', 'build', 'coverage', '.next', '.turbo', 'out', 'target'] }),
