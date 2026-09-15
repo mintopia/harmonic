@@ -497,7 +497,7 @@ export function App() {
 
   const taskList = tasks ?? [];
   const noWorkspaces = hasNoWorkspaces(workspaces, workspacesLoaded);
-  const showWorkspaceEmptyState = noWorkspaces && route.scope.kind === 'workspace' && isWorkspaceScopedView(view);
+  const showWorkspaceEmptyState = noWorkspaces && (view === 'board' || (route.scope.kind === 'workspace' && isWorkspaceScopedView(view)));
   const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId) ?? null;
   const runningCount = taskList.filter((t) => t.state === 'working').length;
   const cost24h = formatCost(periodCost);

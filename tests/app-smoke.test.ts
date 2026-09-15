@@ -156,6 +156,7 @@ function stubFetch(opts: {
     if (/^\/api\/conversations\/\d+\/events$/.test(path)) return new Response(JSON.stringify({ events: [] }));
     if (path.startsWith('/api/tasks')) return new Response(JSON.stringify({ tasks: [], total: 0 }));
     if (path.includes('/epics')) return new Response(JSON.stringify({ epics: [], total: 0 }));
+    if (path.startsWith('/api/activity')) return new Response(JSON.stringify({ processes: [], total: 0 }));
     if (path.startsWith('/api/stats')) return new Response(JSON.stringify({ cost: null }));
     return new Response(JSON.stringify({}));
   });
