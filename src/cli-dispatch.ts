@@ -40,6 +40,8 @@ export function dispatchCli(argv: string[]): CliDispatch {
     return { kind: 'help', exitCode: command === undefined || command === 'help' || command === '--help' ? 0 : 1 };
   }
 
+  if (command === 'install' && rest.includes('--help')) return { kind: 'help', exitCode: 0 };
+
   const { values } = parseArgs({
     args: rest,
     options: {

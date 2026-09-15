@@ -14,6 +14,10 @@ describe('dispatchCli', () => {
     expect(dispatchCli(['--help'])).toEqual({ kind: 'help', exitCode: 0 });
   });
 
+  it('routes "install --help" to help with exit code 0', () => {
+    expect(dispatchCli(['install', '--help'])).toEqual({ kind: 'help', exitCode: 0 });
+  });
+
   it('routes an unknown command to help with exit code 1', () => {
     expect(dispatchCli(['bogus'])).toEqual({ kind: 'help', exitCode: 1 });
   });
