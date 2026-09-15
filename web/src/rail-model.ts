@@ -20,34 +20,22 @@ export function storeRailCollapsed(storage: StorageLike, collapsed: boolean): vo
 export const VIEWS = ['board', 'conversations', 'graph', 'activity', 'table', 'timeline', 'stats', 'files', 'operations', 'api', 'settings', 'workspace'] as const;
 export type View = (typeof VIEWS)[number];
 
-/**
- * Views shown as left-rail nav items. Global Settings
- * is deliberately absent: its entry moved to a header icon next to the theme
- * toggle, leaving the rail for the working views plus the per-Workspace
- * settings page. 'settings' stays a real View — reachable, just not from here.
- */
-export const RAIL_VIEWS: readonly View[] = VIEWS.filter((v) => v !== 'settings');
+export const GLOBAL_RAIL_VIEWS: readonly View[] = ['board', 'table', 'activity', 'timeline', 'stats', 'operations', 'api', 'settings'];
+export const WORKSPACE_RAIL_VIEWS: readonly View[] = ['board', 'conversations', 'graph', 'activity', 'table', 'timeline', 'stats', 'files', 'operations', 'workspace'];
+export const RAIL_VIEWS = WORKSPACE_RAIL_VIEWS;
 
-/**
- * Rail grouping: the rail's two labelled groups —
- * Workspace-scoped working views, then instance/global surfaces. 'settings'
- * is deliberately absent — it's a status-strip icon, not a rail item.
- */
 export interface RailGroup {
   label: string;
   views: readonly View[];
 }
 
-/** The rail's three divider-separated groups: the live overview surfaces, then
- * the per-task data surfaces, then the instance surfaces (Operations, the API
- * surface, and the per-Workspace Settings page). Labels are accessible names
- * only — the rail renders each group as a divider, not a heading. Global
- * Settings stays a status-strip icon, not a rail item. */
 export const RAIL_GROUPS: readonly RailGroup[] = [
   { label: 'Overview', views: ['board', 'conversations', 'graph', 'activity'] },
   { label: 'Data', views: ['table', 'timeline', 'stats', 'files'] },
   { label: 'Instance', views: ['operations', 'api', 'workspace'] },
 ];
+export const GLOBAL_RAIL_GROUPS: readonly RailGroup[] = [{ label: 'Global', views: GLOBAL_RAIL_VIEWS }];
+export const WORKSPACE_RAIL_GROUPS: readonly RailGroup[] = [{ label: 'Workspace', views: WORKSPACE_RAIL_VIEWS }];
 
 /**
  * Views scoped to the active Workspace: they read the active

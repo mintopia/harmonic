@@ -81,11 +81,13 @@ export function WorkspaceSwitcher({
   workspaces,
   activeId,
   onSwitch,
+  onGlobal,
   onCreated,
 }: {
   workspaces: Workspace[];
   activeId: number | null;
   onSwitch: (id: number) => void;
+  onGlobal: () => void;
   onCreated: (workspace: Workspace) => void;
 }) {
   const [creating, setCreating] = useState(false);
@@ -108,10 +110,8 @@ export function WorkspaceSwitcher({
     };
   }, [open]);
 
-  if (workspaces.length === 0) return null;
-
   const active = workspaces.find((w) => w.id === activeId) ?? workspaces[0];
-  if (!active) return null;
+  const label = activeId === null ? 'Global' : active?.name ?? 'Global';
 
   return (
     <div className="relative" ref={wrap}>
@@ -123,7 +123,7 @@ export function WorkspaceSwitcher({
         onClick={() => setOpen((v) => !v)}
         className="flex w-full items-center justify-between gap-2 rounded-md border border-edge bg-field px-[11px] py-[9px] font-semibold text-ink"
       >
-        <span className="truncate">{active.name}</span>
+        <span className="truncate">{label}</span>
         <Icon
           name="chevron-down"
           className={`size-3.5 shrink-0 text-muted transition-transform duration-150 ${open ? 'rotate-0' : '-rotate-90'}`}
@@ -135,13 +135,22 @@ export function WorkspaceSwitcher({
           role="listbox"
           className="absolute z-10 mt-1 max-h-72 w-full overflow-auto rounded-md bg-surface py-1 shadow-bar"
         >
+          <li
+            role="option"
+            aria-selected={activeId === null}
+            className={`flex cursor-pointer items-center justify-between gap-2 px-2.5 py-1.5 font-medium ${activeId === null ? 'bg-raised text-ink' : 'text-muted'}`}
+            onPointerDown={() => { onGlobal(); setOpen(false); }}
+          >
+            <span>Global</span>
+            {activeId === null && <Icon name="check" className="shrink-0 text-accent" />}
+          </li>
           {workspaces.map((w) => (
             <li
               key={w.id}
               role="option"
-              aria-selected={w.id === active.id}
+              aria-selected={w.id === activeId}
               className={`flex cursor-pointer items-center justify-between gap-2 px-2.5 py-1.5 font-medium ${
-                w.id === active.id ? 'bg-raised text-ink' : 'text-muted'
+                w.id === activeId ? 'bg-raised text-ink' : 'text-muted'
               }`}
               onPointerDown={() => {
                 onSwitch(w.id);
@@ -149,7 +158,7 @@ export function WorkspaceSwitcher({
               }}
             >
               <span className="truncate">{w.name}</span>
-              {w.id === active.id && <Icon name="check" className="shrink-0 text-accent" />}
+              {w.id === activeId && <Icon name="check" className="shrink-0 text-accent" />}
             </li>
           ))}
           <li role="presentation" className="mx-1 my-1 border-t border-edge" />

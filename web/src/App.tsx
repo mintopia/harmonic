@@ -34,11 +34,10 @@ import { EmptyState } from './components/EmptyState';
 import { HelpModal } from './components/HelpModal';
 import { isWorkspaceScopedView, loadRailCollapsed, storeRailCollapsed } from './rail-model';
 import type { View } from './rail-model';
-import { NO_SELECTION, parseRoute, serializeRoute, type Route, type TableFilters } from './router-model';
+import { loadLastRoute, NO_SELECTION, parseRoute, scopeSwitchRoute, serializeRoute, storeLastRoute, type Route, type TableFilters } from './router-model';
 import {
   hasNoWorkspaces,
   loadActiveWorkspaceId,
-  resolveActiveWorkspace,
   storeActiveWorkspaceId,
 } from './workspace-model';
 import { applyTheme, loadTheme, nextTheme, storeTheme, type ThemePref } from './theme';
@@ -83,15 +82,22 @@ function useRailBreakpoint() {
 }
 
 function useRoute(): [Route, (next: Route, opts?: { replace?: boolean }) => void] {
-  const [route, setRoute] = useState<Route>(() =>
-    parseRoute(window.location.pathname, window.location.search),
-  );
+  const [route, setRoute] = useState<Route>(() => {
+    if (window.location.pathname === '/' && !window.location.search) return loadLastRoute(localStorage);
+    return parseRoute(window.location.pathname, window.location.search);
+  });
+  const initialRoute = useRef(route);
   useEffect(() => {
-    const canonical = serializeRoute(parseRoute(window.location.pathname, window.location.search));
+    const canonical = serializeRoute(initialRoute.current);
     if (canonical !== `${window.location.pathname}${window.location.search}`) {
       window.history.replaceState(null, '', canonical);
     }
-    const onPop = () => setRoute(parseRoute(window.location.pathname, window.location.search));
+    storeLastRoute(localStorage, initialRoute.current);
+    const onPop = () => {
+      const next = parseRoute(window.location.pathname, window.location.search);
+      storeLastRoute(localStorage, next);
+      setRoute(next);
+    };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
   }, []);
@@ -103,6 +109,7 @@ function useRoute(): [Route, (next: Route, opts?: { replace?: boolean }) => void
     }
     if (opts?.replace) window.history.replaceState(null, '', url);
     else window.history.pushState(null, '', url);
+    storeLastRoute(localStorage, next);
     setRoute(next);
   }, []);
   return [route, navigate];
@@ -192,6 +199,14 @@ export function App() {
   const [fetchedTask, setFetchedTask] = useState<Task | null>(null);
   const [epics, setEpics] = useState<Epic[]>([]);
   const [route, navigate] = useRoute();
+  useEffect(() => {
+    if (route.scope.kind === 'workspace') {
+      setActiveWorkspaceId(route.scope.workspaceId);
+      storeActiveWorkspaceId(localStorage, route.scope.workspaceId);
+    } else {
+      setActiveWorkspaceId(null);
+    }
+  }, [route.scope]);
   const view = route.view;
   const routeRef = useRef(route);
   // eslint-disable-next-line react/refs -- latest-route ref, deliberately synced during render so the ws handler reads it without re-subscribing
@@ -262,10 +277,9 @@ export function App() {
       if (!live()) return;
       setWorkspaces(workspaces);
       setWorkspacesLoaded(true);
-      const active = resolveActiveWorkspace(workspaces, loadActiveWorkspaceId(localStorage));
-      if (active) setActiveWorkspaceId(active.id);
+      if (route.scope.kind === 'workspace') setActiveWorkspaceId(route.scope.workspaceId);
     }, (error) => live() && toastError(error));
-  }, [authed]);
+  }, [authed, route.scope]);
 
   useLiveEffect((live) => {
     if (!authed) return;
@@ -560,10 +574,13 @@ export function App() {
   };
 
   const switchWorkspace = (id: number) => {
-    setActiveWorkspaceId(id);
-    storeActiveWorkspaceId(localStorage, id);
+    navigate(scopeSwitchRoute(route, { kind: 'workspace', workspaceId: id }));
     setTasks(null);
     setEpics([]);
+    setMenuOpen(false);
+  };
+  const switchGlobal = () => {
+    navigate(scopeSwitchRoute(route, { kind: 'global' }));
     setMenuOpen(false);
   };
 
@@ -645,6 +662,7 @@ export function App() {
             workspaces={workspaces}
             activeId={activeWorkspaceId}
             onSwitch={switchWorkspace}
+            onGlobal={switchGlobal}
             onCreated={handleWorkspaceCreated}
           />
         </div>
@@ -655,6 +673,7 @@ export function App() {
         >
           <NavRail
             view={view}
+            scope={route.scope}
             needsYouCount={needsYouCount}
             railCollapsed={railCollapsed}
             railDesktop={railDesktop}
@@ -682,7 +701,6 @@ export function App() {
             onGlobalPauseChange={setFleetPaused}
             onRefreshTracker={refreshTracker}
             onThemeCycle={cycleTheme}
-            onSettingsClick={() => pickView('settings')}
             onLogout={() => fetch('/api/auth/logout', { method: 'POST' }).then(() => setAuthed(false))}
             onHelpClick={() => setHelpOpen(true)}
           />
@@ -710,7 +728,6 @@ export function App() {
           onGlobalPauseChange={setFleetPaused}
           onRefreshTracker={refreshTracker}
           onThemeCycle={cycleTheme}
-          onSettingsClick={() => pickView('settings')}
           onLogout={() => fetch('/api/auth/logout', { method: 'POST' }).then(() => setAuthed(false))}
           onNewTask={() => setEditing('new')}
           onHelpClick={() => setHelpOpen(true)}
