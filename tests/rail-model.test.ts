@@ -70,9 +70,11 @@ describe('scope rails', () => {
     expect(VIEW_LABELS.workspace).toBe('Settings');
   });
 
-  it('scopes Board/Table/Graph/Stats/Files and the per-Workspace settings page to a Workspace, so the empty state (#68) spares Activity/API/Settings', () => {
-    expect(VIEWS.filter(isWorkspaceScopedView)).toEqual(['board', 'conversations', 'graph', 'table', 'timeline', 'stats', 'files', 'workspace']);
+  it('scopes only views without a Global form to a Workspace, so the empty state spares shared Timeline and Stats views', () => {
+    expect(VIEWS.filter(isWorkspaceScopedView)).toEqual(['board', 'conversations', 'graph', 'table', 'files', 'workspace']);
     expect(isWorkspaceScopedView('activity')).toBe(false);
+    expect(isWorkspaceScopedView('timeline')).toBe(false);
+    expect(isWorkspaceScopedView('stats')).toBe(false);
     expect(isWorkspaceScopedView('api')).toBe(false);
     expect(isWorkspaceScopedView('settings')).toBe(false);
   });

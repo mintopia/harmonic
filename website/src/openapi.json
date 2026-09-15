@@ -749,6 +749,30 @@
                 "type": "null"
               }
             ]
+          },
+          "workspace": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991,
+                "example": 1
+              },
+              "name": {
+                "type": "string",
+                "example": "Harmonic"
+              },
+              "color": {
+                "type": "string",
+                "example": "#3AA0FA"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "color"
+            ]
           }
         },
         "required": [
@@ -762,7 +786,8 @@
           "trackerRef",
           "startedAt",
           "endedAt",
-          "cost"
+          "cost",
+          "workspace"
         ]
       },
       "TimelineResponseInput": {
@@ -6364,6 +6389,31 @@
                 "type": "null"
               }
             ]
+          },
+          "workspace": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991,
+                "example": 1
+              },
+              "name": {
+                "type": "string",
+                "example": "Harmonic"
+              },
+              "color": {
+                "type": "string",
+                "example": "#3AA0FA"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "color"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [
@@ -6377,7 +6427,8 @@
           "trackerRef",
           "startedAt",
           "endedAt",
-          "cost"
+          "cost",
+          "workspace"
         ],
         "additionalProperties": false
       },
@@ -24820,7 +24871,7 @@
         "tags": [
           "Activity"
         ],
-        "description": "Every task Attempt in one Workspace whose run window overlaps [from, to], as fleet-timeline spans — lane is the harness, plus the attempt outcome and the window it occupied. Read from persisted attempt history, so it spans finished work the live Activity snapshot no longer retains. A still-running Attempt has a null endedAt; the client extends its bar to now. Powers the scrubbable Timeline view.",
+        "description": "Every task Attempt whose run window overlaps [from, to], optionally scoped to one Workspace, as fleet-timeline spans — lane is the harness, plus the attempt outcome and the window it occupied. Read from persisted attempt history, so it spans finished work the live Activity snapshot no longer retains. A still-running Attempt has a null endedAt; the client extends its bar to now. Powers the scrubbable Timeline view.",
         "parameters": [
           {
             "schema": {
@@ -24830,7 +24881,7 @@
             },
             "in": "query",
             "name": "workspaceId",
-            "required": true
+            "required": false
           },
           {
             "schema": {
@@ -24863,7 +24914,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Every task Attempt in one Workspace whose run window overlaps [from, to] — the fleet Timeline lanes.",
+            "description": "Every task Attempt whose run window overlaps [from, to], optionally scoped to one Workspace — the fleet Timeline lanes.",
             "content": {
               "application/json": {
                 "schema": {
