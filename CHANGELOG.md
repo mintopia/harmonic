@@ -1,5 +1,41 @@
 # Changelog
 
+## [2.11.0](https://github.com/mintopia/harmonic/compare/v2.10.0...v2.11.0) (2026-09-15)
+
+
+### Features
+
+* add global dashboard ([c9c2b8b](https://github.com/mintopia/harmonic/commit/c9c2b8ba19af07771f89cbbcaec87c7cdc87ea63))
+* add global stats workspace breakdown ([3f07daa](https://github.com/mintopia/harmonic/commit/3f07daa255724b28acbd030a67c1048eb883e952))
+* add global tickets table ([d39bc1f](https://github.com/mintopia/harmonic/commit/d39bc1f55f3279e0c17fc060eafb3ed0a993e6d7))
+* add global timeline view ([576ab30](https://github.com/mintopia/harmonic/commit/576ab30f9bf32f7539435ed83babcfd46f30af4e))
+* add init.d service backend ([52e7772](https://github.com/mintopia/harmonic/commit/52e7772421d99fb402337ca5b25a583ce52dc596))
+* add no-guidance Requeue and fix escalated-task accept UX ([4be9d22](https://github.com/mintopia/harmonic/commit/4be9d2221f6ed2e35385ecfd62ce5123c8a729e4))
+* add scope path routing foundation ([831cc21](https://github.com/mintopia/harmonic/commit/831cc214ee0f1fd266c3c8e8b52c949ae3e6b9e2))
+* add service manager CLI seam ([356ad04](https://github.com/mintopia/harmonic/commit/356ad04231838a47270ea4759f92c19585761646))
+* add service manager CLI seam ([3a9166c](https://github.com/mintopia/harmonic/commit/3a9166c9483521bf82735e83a308d600757ae60c))
+* add systemd service backend ([f478779](https://github.com/mintopia/harmonic/commit/f478779cecfb4d01dc1199a482686821b82f5e6b))
+* add workspace colors and switcher badges ([0f02f0c](https://github.com/mintopia/harmonic/commit/0f02f0ca02db65e6448815e3b4258af63a953a37))
+* extend the wall-clock guardrail of a running task ([9144d85](https://github.com/mintopia/harmonic/commit/9144d85ad1dfa9a6d201e18151389834f015d932))
+* hand upgrades to systemd ([c66b76a](https://github.com/mintopia/harmonic/commit/c66b76abf9ce3d3e45f30888a2575657d03d3297))
+* reset wall-clock guardrail on resume and allow steering a paused task ([11a9e0e](https://github.com/mintopia/harmonic/commit/11a9e0e71757e053680488073afd1c89ddb21702))
+* scope activity and operations by workspace ([b7a9aa2](https://github.com/mintopia/harmonic/commit/b7a9aa2ca046cc575561a730f89b7be0c291cd0b))
+
+
+### Bug Fixes
+
+* add workspace HSL color picker ([d04fab5](https://github.com/mintopia/harmonic/commit/d04fab5d9078958c328053f32bc733831e471e05))
+* await chokidar ready so the workspace watcher is live before sync returns ([10db38c](https://github.com/mintopia/harmonic/commit/10db38ca16fbc034265fab5d037e870c6ed34093))
+* converge workspace color schema ([8f28cd6](https://github.com/mintopia/harmonic/commit/8f28cd6408935a8958aede7f37b3efd849e2e0a7))
+* log discarded git-status and workspace-diff failures ([665b240](https://github.com/mintopia/harmonic/commit/665b2407dae5898afaee7ab28c66838bc7091c50))
+* nudge dark status color collisions ([af614e3](https://github.com/mintopia/harmonic/commit/af614e383820458500bbf20942fd24ce8923fa8f))
+* regenerate workspace color OpenAPI schema ([af4382e](https://github.com/mintopia/harmonic/commit/af4382e00b995170502d247408d6626b42239c32))
+* serialize logged git error to a string attribute ([6263423](https://github.com/mintopia/harmonic/commit/6263423d9bf208a2293dd417cd149b4c0fa4365b))
+* show onboarding empty state when a fresh instance has no workspaces ([3e2eb79](https://github.com/mintopia/harmonic/commit/3e2eb798174d7e2c0f812a04d68293349925bb4d))
+* show workspace color accessibility feedback ([c6caaa2](https://github.com/mintopia/harmonic/commit/c6caaa2cd2f77b8a14dc9e6a76bfc12d80867f31))
+* stabilize firehose tests against races from earlier same-type messages ([7c9aded](https://github.com/mintopia/harmonic/commit/7c9adedf9650aee99fc61e7cac50c508499a1243))
+* stop UI overflow on Files and guardrail dialog at narrow widths ([da9bf09](https://github.com/mintopia/harmonic/commit/da9bf096d9909ff6360ff4a4f3f94e697d7184e4))
+
 ## [2.10.0](https://github.com/mintopia/harmonic/compare/v2.9.2...v2.10.0) (2026-09-14)
 
 
