@@ -277,6 +277,7 @@ async function main(): Promise<void> {
       metricsSummary: { intervalMs: telemetryOptions.metricExportIntervalMillis, flush: () => telemetry.flushMetricSummary() },
       onUpgradeIdle: async (version) => {
         const swap = new UpgradeSwap({
+          managedBy: process.env.HARMONIC_MANAGED_BY,
           install: async (target) => {
             await execFileAsync('npm', ['i', '-g', `@mintopia/harmonic@${target}`]);
           },
