@@ -179,6 +179,39 @@ describe('task-steering', () => {
       expect(latest.prompt).not.toContain('ticket 90210');
     });
 
+    it('resumes a paused task, continuing its session seeded with the operator message', async () => {
+      const seed = (await server.api('POST', '/api/tasks', { prompt: 'workspace seed' })).body;
+      const workspaceId = (await server.app.ctx.tasks.get(seed.id)).workspaceId ?? undefined;
+      const mirrored = await server.app.ctx.tasks.upsertMirrored(
+        { trackerRef: 90211, prompt: 'ticket 90211\n\nbody', workflow: 'implement', wayfinderType: null, mapRef: null, closed: false },
+        workspaceId,
+      );
+      await server.api('POST', `/api/tasks/${mirrored.id}/run`);
+      await waitFor(async () => {
+        const task = (await server.api('GET', `/api/tasks/${mirrored.id}`)).body;
+        return task.state === 'escalated' ? task : undefined;
+      });
+      // Walk it to a paused task with a retained session (only working → paused
+      // is legal), so the operator can still steer it.
+      await server.app.ctx.tasks.setState(mirrored.id, 'ready');
+      await server.app.ctx.tasks.setState(mirrored.id, 'working');
+      await server.app.ctx.tasks.setState(mirrored.id, 'paused');
+      const runsBefore = await server.app.ctx.attempts.listForTask(mirrored.id);
+      const attemptBefore = runsBefore.at(-1);
+
+      const steered = await server.api('POST', `/api/tasks/${mirrored.id}/steer`, { text: 'pick up where you left off' });
+      expect(steered.status).toBe(200);
+      expect(steered.body).toEqual({ ok: true });
+
+      const latest = await waitFor(async () => {
+        const all = await server.app.ctx.attempts.listForTask(mirrored.id);
+        const last = all.at(-1);
+        return all.length === runsBefore.length && last?.prompt?.includes('pick up where you left off') ? last : undefined;
+      });
+      expect(latest.id).toBe(attemptBefore?.id);
+      expect(latest.prompt).toContain('## Operator message');
+    });
+
     it('409s when the settled task has no warm session (e.g. a plain done native task)', async () => {
       const workingDir = mkdtempSync(join(tmpdir(), 'harmonic-steer-native-'));
       execFileSync('git', ['init', '-b', 'main', workingDir]);

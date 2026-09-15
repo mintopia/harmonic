@@ -12168,7 +12168,7 @@
         "tags": [
           "Tasks"
         ],
-        "description": "Steer a running task: send an operator message to its active Attempt. When the harness supports ACP mid-turn steering, the message is injected into the running turn immediately — pre-empting the current generation without cancelling it. Otherwise, or when the agent is parked between turns, the message is queued and delivered as a fresh prompt turn at the next turn boundary. When no Attempt is active but the task's last Attempt left a resumable session (an escalated task that ended without closure), the message continues that session in a fresh Attempt. A cold cache changes the estimated cost, never eligibility. Use it to redirect an agent that has gone off-track, nudge one that ended its turn and parked, or continue one whose Attempt just ended. Operator only.",
+        "description": "Steer a running task: send an operator message to its active Attempt. When the harness supports ACP mid-turn steering, the message is injected into the running turn immediately — pre-empting the current generation without cancelling it. Otherwise, or when the agent is parked between turns, the message is queued and delivered as a fresh prompt turn at the next turn boundary. When no Attempt is active but the task's last Attempt left a resumable session (an escalated task that ended without closure), the message continues that session in a fresh Attempt. A paused task is resumed to working and the message delivered the same way. A cold cache changes the estimated cost, never eligibility. Use it to redirect an agent that has gone off-track, nudge one that ended its turn and parked, continue one whose Attempt just ended, or resume a paused one. Operator only.",
         "requestBody": {
           "required": true,
           "content": {
@@ -12204,7 +12204,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The message was injected into the running turn or queued at the next boundary of the task's active Attempt, or continued its last Attempt's resumable session in a fresh Attempt.",
+            "description": "The message was injected into the running turn or queued at the next boundary of the task's active Attempt, continued its last Attempt's resumable session in a fresh Attempt, or resumed a paused task and delivered the message.",
             "content": {
               "application/json": {
                 "schema": {

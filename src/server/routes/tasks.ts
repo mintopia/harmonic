@@ -586,11 +586,11 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       schema: {
         tags: ['Tasks'],
         description:
-          "Steer a running task: send an operator message to its active Attempt. When the harness supports ACP mid-turn steering, the message is injected into the running turn immediately — pre-empting the current generation without cancelling it. Otherwise, or when the agent is parked between turns, the message is queued and delivered as a fresh prompt turn at the next turn boundary. When no Attempt is active but the task's last Attempt left a resumable session (an escalated task that ended without closure), the message continues that session in a fresh Attempt. A cold cache changes the estimated cost, never eligibility. Use it to redirect an agent that has gone off-track, nudge one that ended its turn and parked, or continue one whose Attempt just ended. Operator only.",
+          "Steer a running task: send an operator message to its active Attempt. When the harness supports ACP mid-turn steering, the message is injected into the running turn immediately — pre-empting the current generation without cancelling it. Otherwise, or when the agent is parked between turns, the message is queued and delivered as a fresh prompt turn at the next turn boundary. When no Attempt is active but the task's last Attempt left a resumable session (an escalated task that ended without closure), the message continues that session in a fresh Attempt. A paused task is resumed to working and the message delivered the same way. A cold cache changes the estimated cost, never eligibility. Use it to redirect an agent that has gone off-track, nudge one that ended its turn and parked, continue one whose Attempt just ended, or resume a paused one. Operator only.",
         params: idParamsSchema,
         body: steerInputSchema,
         response: {
-          200: okResponseSchema.describe("The message was injected into the running turn or queued at the next boundary of the task's active Attempt, or continued its last Attempt's resumable session in a fresh Attempt."),
+          200: okResponseSchema.describe("The message was injected into the running turn or queued at the next boundary of the task's active Attempt, continued its last Attempt's resumable session in a fresh Attempt, or resumed a paused task and delivered the message."),
           409: errorResponse('The task has no active Attempt to steer and no resumable session to continue.'),
         },
       },
@@ -598,7 +598,11 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     async (req) => {
       await ctx.upgrade.assertManualLaunchAllowed();
       await ctx.tasks.assertExists(req.params.id);
-      if (!(await ctx.runner.steer(req.params.id, req.body.text)) && !(await ctx.runner.steerSettled(req.params.id, req.body.text))) {
+      if (
+        !(await ctx.runner.steer(req.params.id, req.body.text)) &&
+        !(await ctx.runner.steerSettled(req.params.id, req.body.text)) &&
+        !(await ctx.runner.steerPaused(req.params.id, req.body.text))
+      ) {
         throw new DomainError('invalid_state', `task ${req.params.id} has no active Attempt to steer and no resumable session to continue`);
       }
       return { ok: true } as const;
