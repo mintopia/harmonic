@@ -298,6 +298,28 @@ describe('Task/Conversation binding + scoping (issue #41)', () => {
     expect(scoped.body.tasks.every((t: any) => t.workspaceId === workspaceB)).toBe(true);
   });
 
+  it('lists a paginated, filtered task page across Workspaces when workspaceId is absent', async () => {
+    const alpha = await server.api('POST', '/api/tasks', {
+      prompt: 'global table alpha',
+      workspaceId: workspaceA,
+    });
+    const beta = await server.api('POST', '/api/tasks', {
+      prompt: 'global table beta',
+      workspaceId: workspaceB,
+    });
+
+    const global = await server.api('GET', '/api/tasks?q=global%20table&state=open&sortBy=createdAt&order=asc&limit=1&offset=1');
+    expect(global.status).toBe(200);
+    expect(global.body.total).toBe(2);
+    expect(global.body.tasks).toHaveLength(1);
+    expect(global.body.tasks[0]).toMatchObject({ id: beta.body.id, workspaceId: workspaceB });
+
+    const scoped = await server.api('GET', `/api/tasks?workspaceId=${workspaceB}&q=global%20table`);
+    expect(scoped.body.tasks).toHaveLength(1);
+    expect(scoped.body.tasks[0]).toMatchObject({ id: beta.body.id, workspaceId: workspaceB });
+    expect(alpha.body.workspaceId).toBe(workspaceA);
+  });
+
   it('a Conversation created with an explicit workspaceId binds to it and defaults workingDir from it', async () => {
     const { status, body } = await server.api('POST', '/api/conversations', {
       harness: 'claude',

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { formatCost } from '../cost';
-import type { Task } from '../types';
+import type { Task, Workspace } from '../types';
 import { TASK_STATES } from '../types';
 import { TABLE_HARNESSES, TABLE_PRIORITIES, type TableFilters, type SortKey } from '../router-model';
 import {
@@ -23,6 +23,7 @@ import { issueRef, ticketRowId } from '../id-format.js';
 import { EmptyState } from './EmptyState';
 import { FilterSelect } from './FilterSelect';
 import { ModelLabel, ProviderChip, TaskIdentity } from './TaskIdentity';
+import { WorkspaceBadge } from './WorkspaceSwitcher';
 
 /** The dropped header + row cells hide together (`hidden md:*`/`hidden lg:*`) so
  * the DOM cell count always matches the active track count and the ARIA grid
@@ -35,6 +36,7 @@ const fmtTime = (ms: number) =>
 
 export function TableView({
   workspaceId,
+  workspaces,
   epics,
   onOpen,
   onOpenEpic,
@@ -42,8 +44,9 @@ export function TableView({
   onFiltersChange,
   onNewTask,
 }: {
-  /** Scopes the table to the active Workspace; no fetch until resolved. */
+  /** A null Workspace displays tasks from every Workspace. */
   workspaceId: number | null;
+  workspaces: Workspace[];
   epics: Epic[];
   onOpen: (task: Task) => void;
   /** Opens the Board focused on an epic's summary panel, keyed by tracker ref. */
@@ -73,10 +76,9 @@ export function TableView({
   }, [workspaceId, stateKey, harnessKey, priorityKey, sortBy, order, debouncedSearch]);
 
   useEffect(() => {
-    if (workspaceId === null) return;
     setLoading(true);
     fetchTasks({
-      workspaceId,
+      ...(workspaceId === null ? {} : { workspaceId }),
       state,
       harness,
       priority,
@@ -124,8 +126,10 @@ export function TableView({
     </span>
   );
 
-  const renderRow = (task: Task) => (
-    <div
+  const renderRow = (task: Task) => {
+    const workspace = workspaceId === null ? workspaces.find((item) => item.id === task.workspaceId) : undefined;
+    return (
+      <div
       key={task.id}
       role="row"
       className={`${GRID} min-h-11 cursor-pointer py-2 transition-colors duration-150 hover:bg-raised/50 max-md:py-3`}
@@ -133,6 +137,7 @@ export function TableView({
     >
       <div role="cell" className="flex items-center justify-end gap-1.5 whitespace-nowrap tabular-nums text-muted max-md:col-start-1 max-md:row-start-1 max-md:justify-start">
         <span aria-hidden="true" className={stateDot(task.state)} />
+        {workspace && <WorkspaceBadge workspace={workspace} label={`Workspace: ${workspace.name}`} />}
         <span className="sr-only">Id: </span>
         {ticketRowId(task.id, task.trackerRef)}
       </div>
@@ -181,8 +186,9 @@ export function TableView({
         <span className="sr-only">Updated: </span>
         {fmtTime(task.updatedAt)}
       </div>
-    </div>
-  );
+      </div>
+    );
+  };
 
   const renderEpicRow = (task: Task) => (
     <div
@@ -243,7 +249,7 @@ export function TableView({
     <div>
       <PageHeader
         title="Tasks"
-        description="Every task in this workspace, filterable and searchable"
+        description={workspaceId === null ? 'Every task across all workspaces, filterable and searchable' : 'Every task in this workspace, filterable and searchable'}
         actions={
           <span className="flex items-baseline gap-1.5 text-small">
             <span className={`tabular-nums ${total > 0 || loading ? 'text-ink' : 'text-faint'}`}>
