@@ -22,6 +22,7 @@ export interface ServiceInstallOptions {
   startSelfManaged: () => Promise<void>;
   bootCommand?: string;
   serve?: ServiceServeOptions;
+  user?: string;
 }
 
 export interface ServiceServeOptions {
@@ -73,6 +74,8 @@ export interface ServiceManagerDependencies {
   chmod(path: string, mode: number): Promise<void>;
   removeFile(path: string): Promise<void>;
   fileExists(path: string): boolean;
+  sudoUser?: string;
+  warn?(message: string): void;
 }
 
 const defaultDependencies = (): ServiceManagerDependencies => ({
@@ -89,12 +92,59 @@ const defaultDependencies = (): ServiceManagerDependencies => ({
   chmod,
   removeFile: async (path) => { await rm(path, { force: true }); },
   fileExists: existsSync,
+  ...(process.env.SUDO_USER === undefined ? {} : { sudoUser: process.env.SUDO_USER }),
 });
+
+export function resolveServiceUser({ user, sudoUser }: { user?: string | undefined; sudoUser?: string | undefined }): string {
+  return user || sudoUser || 'workspace';
+}
 
 const escapeUnitArgument = (value: string): string =>
   /^[A-Za-z0-9_./:=+@%,-]+$/.test(value) ? value : JSON.stringify(value);
 
 const environmentFileValue = (value: string): string => JSON.stringify(value);
+
+const initdScriptPath = '/etc/init.d/harmonic';
+
+const shellWord = (value: string): string => /^[A-Za-z0-9_./:-]+$/.test(value)
+  ? value
+  : `'${value.replaceAll("'", "'\"'\"'")}'`;
+
+const initdScript = ({ dataDir, user }: { dataDir: string; user: string }): string => `#!/bin/sh
+### BEGIN INIT INFO
+# Provides:          harmonic
+# Required-Start:    $network
+# Required-Stop:     $network
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: Harmonic autonomous task service
+### END INIT INFO
+
+if [ "$(id -u)" -ne 0 ]; then
+  echo "This script must be run as root." >&2
+  exit 1
+fi
+
+case "$1" in
+  start)
+    HARMONIC_INITD_SERVICE=1 runuser -u ${shellWord(user)} -- harmonic start --data-dir ${shellWord(dataDir)}
+    ;;
+  stop)
+    HARMONIC_INITD_SERVICE=1 runuser -u ${shellWord(user)} -- harmonic stop --data-dir ${shellWord(dataDir)}
+    ;;
+  status)
+    HARMONIC_INITD_SERVICE=1 runuser -u ${shellWord(user)} -- harmonic status --data-dir ${shellWord(dataDir)}
+    ;;
+  restart|force-reload)
+    "$0" stop
+    "$0" start
+    ;;
+  *)
+    echo "Usage: $0 {start|stop|restart|force-reload|status}" >&2
+    exit 2
+    ;;
+esac
+`;
 
 class SystemdServiceManager implements ServiceManager {
   readonly backend: 'systemd' | 'user-systemd';
@@ -183,46 +233,54 @@ class SystemdServiceManager implements ServiceManager {
   async isInstalled(): Promise<boolean> { return this.dependencies.fileExists(this.unitPath); }
 }
 
+class InitdServiceManager implements ServiceManager {
+  readonly backend = 'init.d' as const;
+
+  constructor(private readonly dependencies: ServiceManagerDependencies) {}
+
+  async install(options: ServiceInstallOptions): Promise<ServiceInstallResult> {
+    if (!options.serve) throw new Error('init.d installation requires serve options.');
+    const user = resolveServiceUser({ user: options.user, sudoUser: this.dependencies.sudoUser });
+    if (user === 'root') {
+      const warning = 'Harmonic will run as root. Pass --user to run it as a non-root user.';
+      if (this.dependencies.warn) this.dependencies.warn(warning);
+      else process.emitWarning(warning);
+    }
+    await this.dependencies.writeFile(initdScriptPath, initdScript({ dataDir: options.serve.dataDir, user }));
+    await this.dependencies.chmod(initdScriptPath, 0o755);
+    await this.dependencies.run('update-rc.d', ['harmonic', 'defaults']);
+    await this.start();
+    return { backend: this.backend };
+  }
+
+  async uninstall(): Promise<void> {
+    await this.stop();
+    await this.dependencies.run('update-rc.d', ['-f', 'harmonic', 'remove']);
+    await this.dependencies.removeFile(initdScriptPath);
+  }
+
+  async start(): Promise<void> { await this.dependencies.run('service', ['harmonic', 'start']); }
+
+  async stop(): Promise<void> { await this.dependencies.run('service', ['harmonic', 'stop']); }
+
+  async restart(): Promise<void> { await this.dependencies.run('service', ['harmonic', 'restart']); }
+
+  async status(): Promise<ServiceStatus> {
+    try {
+      await this.dependencies.run('service', ['harmonic', 'status']);
+      return { running: true };
+    } catch {
+      return { running: false };
+    }
+  }
+
+  async isInstalled(): Promise<boolean> { return this.dependencies.fileExists(initdScriptPath); }
+}
+
 export class UnsupportedServicePlatformError extends Error {
   constructor(platform: NodeJS.Platform) {
     super(`Service installation is unsupported on ${platform}: only systemd/init.d supported.`);
     this.name = 'UnsupportedServicePlatformError';
-  }
-}
-
-class UnavailableServiceManager implements ServiceManager {
-  constructor(readonly backend: Exclude<ServiceBackend, 'self-managed'>) {}
-
-  private unavailable(): never {
-    throw new Error(`${this.backend} service support is not yet available.`);
-  }
-
-  async install(_options: ServiceInstallOptions): Promise<ServiceInstallResult> {
-    return this.unavailable();
-  }
-
-  async uninstall(): Promise<void> {
-    return this.unavailable();
-  }
-
-  async start(): Promise<void> {
-    return this.unavailable();
-  }
-
-  async stop(): Promise<void> {
-    return this.unavailable();
-  }
-
-  async restart(): Promise<void> {
-    return this.unavailable();
-  }
-
-  async status(): Promise<ServiceStatus> {
-    return this.unavailable();
-  }
-
-  async isInstalled(): Promise<boolean> {
-    return false;
   }
 }
 
@@ -257,7 +315,7 @@ export function createServiceManager(
 ): ServiceManager {
   if (environment.platform !== 'linux') throw new UnsupportedServicePlatformError(environment.platform);
   if (environment.isRoot && environment.systemdRunning) return new SystemdServiceManager('systemd', dependencies);
-  if (environment.isRoot && environment.initdAvailable) return new UnavailableServiceManager('init.d');
+  if (environment.isRoot && environment.initdAvailable) return new InitdServiceManager(dependencies);
   if (environment.userSystemdUsable) return new SystemdServiceManager('user-systemd', dependencies);
   return new SelfManagedServiceManager();
 }

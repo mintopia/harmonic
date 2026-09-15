@@ -77,11 +77,12 @@ describe('dispatchCli', () => {
     expect(dispatch.values['otel-export']).toBe('true');
   });
 
-  it('routes "install" with server options', () => {
-    const dispatch = dispatchCli(['install', '--data-dir', '/d', '--port', '5000']);
+  it('routes "install" with server options and a service user', () => {
+    const dispatch = dispatchCli(['install', '--data-dir', '/d', '--port', '5000', '--user', 'operator']);
     expect(dispatch.kind).toBe('install');
     if (dispatch.kind !== 'install') throw new Error('expected install');
     expect(dispatch.values['data-dir']).toBe('/d');
     expect(dispatch.values.port).toBe('5000');
+    expect(dispatch.values.user).toBe('operator');
   });
 });
