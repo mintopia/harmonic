@@ -7,6 +7,7 @@ import { toastError, toastSuccess } from '../toast';
 import { overallDecision } from '../verification-attempts-model';
 import { RejectDialog } from './RejectDialog';
 import { ResumeDialog } from './ResumeDialog';
+import { ExtendGuardrailDialog } from './ExtendGuardrailDialog';
 import { DeleteTaskDialog } from './DeleteTaskDialog';
 import { ConfirmDialog } from './ConfirmDialog';
 import { taskLabel } from '../id-format.js';
@@ -34,6 +35,7 @@ export function TaskActions({
   const [accepting, setAccepting] = useState(false);
   const [pausing, setPausing] = useState(false);
   const [resumeOpen, setResumeOpen] = useState(false);
+  const [extendOpen, setExtendOpen] = useState(false);
 
   const actions = taskActions(task.state);
   const escalation = escalationActions(task);
@@ -171,6 +173,12 @@ export function TaskActions({
             {pausing ? 'Pausing…' : 'Pause'}
           </button>
         );
+      case 'extend':
+        return (
+          <button key={action} className={secondary} onClick={() => setExtendOpen(true)}>
+            Extend time
+          </button>
+        );
       case 'resume':
         return (
           <button key={action} className={secondary} onClick={() => setResumeOpen(true)}>
@@ -225,6 +233,13 @@ export function TaskActions({
           taskId={task.id}
           onClose={() => setResumeOpen(false)}
           onDone={done(() => setResumeOpen(false))}
+        />
+      )}
+      {extendOpen && (
+        <ExtendGuardrailDialog
+          taskId={task.id}
+          onClose={() => setExtendOpen(false)}
+          onDone={done(() => setExtendOpen(false))}
         />
       )}
       {deleting && (

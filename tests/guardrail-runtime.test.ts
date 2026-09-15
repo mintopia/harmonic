@@ -263,6 +263,21 @@ describe('guardrail-supervisor', () => {
       expect(h.appended).toHaveLength(0);
       expect(h.settles).toHaveLength(0);
     });
+
+    it('extending the cap keeps a run that was over-budget from tripping', async () => {
+      const h = makeSupervisor({
+        config: budgetSnapshot({}),
+        startedAt: Date.now() - 46 * 60_000,
+        stepType: 'implementation' as StepType,
+      });
+      await h.sup.prime();
+
+      expect(h.sup.extendWallClock(60)).toBe(105);
+      await h.sup.evaluateWallClock();
+
+      expect(h.appended).toHaveLength(0);
+      expect(h.settles).toHaveLength(0);
+    });
   });
 
   describe('GuardrailSupervisor tool-timeout (issue #131)', () => {

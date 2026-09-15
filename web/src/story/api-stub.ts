@@ -101,6 +101,7 @@ export const api = {
   epicDiffFiles: (_workspaceId: number, _epicRef: number) => ok({ files: f.diffFiles }),
   attemptDiff: (_id: number) => ok({ stat: f.task.stat }),
   steerTask: (_id: number, _msg: string) => ok(undefined),
+  extendGuardrail: (_id: number, _minutes: number) => ok(f.task),
   conversations: (_workspaceId: number) => ok({ conversations: conversationList }),
   conversation: (_id: number) => ok(conversationDetail),
   conversationEvents: (_id: number) => ok({ events: conversationEventsFixture }),
