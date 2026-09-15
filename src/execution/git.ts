@@ -495,7 +495,7 @@ export const Git = {
     } catch (err) {
       const e = err as { code?: number; stdout?: string };
       if (e.code === 1) return e.stdout ?? '';
-      logger.debug('git: workspace diff failed', { 'git.dir': dir, 'git.path': relPath, err });
+      logger.debug('git: workspace diff failed', { 'git.dir': dir, 'git.path': relPath, error: err instanceof Error ? err.message : String(err) });
       return '';
     }
   },

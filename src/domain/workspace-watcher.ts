@@ -79,7 +79,7 @@ export class WorkspaceWatcher {
       state.fsChanged = false;
       state.gitChanged = false;
       if (fsChanged) this.events.fsChanged(workspaceId);
-      if (gitChanged) void readGitStatus(root).then((status) => this.events.gitStatus(workspaceId, status.entries)).catch((err) => logger.warn('workspace git status refresh failed', { workspaceId, err }));
+      if (gitChanged) void readGitStatus(root).then((status) => this.events.gitStatus(workspaceId, status.entries)).catch((err) => logger.warn('workspace git status refresh failed', { workspaceId, error: err instanceof Error ? err.message : String(err) }));
     }, this.debounceMs());
   }
 
