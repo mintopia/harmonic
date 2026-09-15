@@ -19,6 +19,7 @@ import { AppContextProvider } from './app-context';
 import { Login } from './components/Login';
 import { ApiPage } from './components/ApiPage';
 import { StatsPage } from './components/StatsPage';
+import { GlobalDashboard } from './components/GlobalDashboard';
 import { OperationsPage } from './components/OperationsPage';
 import { TimelinePage } from './components/TimelinePage';
 import { SettingsPage } from './components/SettingsPage';
@@ -34,7 +35,7 @@ import { EmptyState } from './components/EmptyState';
 import { HelpModal } from './components/HelpModal';
 import { isWorkspaceScopedView, loadRailCollapsed, storeRailCollapsed } from './rail-model';
 import type { View } from './rail-model';
-import { loadLastRoute, NO_SELECTION, parseRoute, scopeSwitchRoute, serializeRoute, storeLastRoute, type Route, type TableFilters } from './router-model';
+import { NO_SELECTION, parseRoute, scopeSwitchRoute, serializeRoute, storeLastRoute, type Route, type TableFilters } from './router-model';
 import {
   hasNoWorkspaces,
   loadActiveWorkspaceId,
@@ -82,10 +83,7 @@ function useRailBreakpoint() {
 }
 
 function useRoute(): [Route, (next: Route, opts?: { replace?: boolean }) => void] {
-  const [route, setRoute] = useState<Route>(() => {
-    if (window.location.pathname === '/' && !window.location.search) return loadLastRoute(localStorage);
-    return parseRoute(window.location.pathname, window.location.search);
-  });
+  const [route, setRoute] = useState<Route>(() => parseRoute(window.location.pathname, window.location.search));
   const initialRoute = useRef(route);
   useEffect(() => {
     const canonical = serializeRoute(initialRoute.current);
@@ -499,7 +497,7 @@ export function App() {
 
   const taskList = tasks ?? [];
   const noWorkspaces = hasNoWorkspaces(workspaces, workspacesLoaded);
-  const showWorkspaceEmptyState = noWorkspaces && isWorkspaceScopedView(view);
+  const showWorkspaceEmptyState = noWorkspaces && route.scope.kind === 'workspace' && isWorkspaceScopedView(view);
   const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId) ?? null;
   const runningCount = taskList.filter((t) => t.state === 'working').length;
   const cost24h = formatCost(periodCost);
@@ -850,7 +848,14 @@ export function App() {
                   </EmptyState>
                 ) : (
                   <>
-                    {view === 'board' && (
+                    {view === 'board' && activeWorkspaceId === null && (
+                      <GlobalDashboard
+                        pendingPermissions={pendingPermissionAlerts.length}
+                        hostLoad={hostLoad}
+                        onNavigate={(view) => pickView(view)}
+                      />
+                    )}
+                    {view === 'board' && activeWorkspaceId !== null && (
                       <Board
                         tasks={taskList}
                         loading={tasks === null}

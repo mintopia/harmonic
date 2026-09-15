@@ -1,5 +1,6 @@
 import type {
   Attempt,
+  ActivityProcess,
   AppConfig,
   ConfigLayers,
   AttemptUsage,
@@ -100,6 +101,7 @@ export const api = {
     if (workspaceId !== undefined) query.set('workspaceId', String(workspaceId));
     return request<Stats>('GET', `/api/stats?${query}`);
   },
+  activity: () => request<{ processes: ActivityProcess[] }>('GET', '/api/activity'),
   timeline: (workspaceId: number, from: number, to: number) =>
     request<TimelineResponse>('GET', `/api/timeline?workspaceId=${workspaceId}&from=${from}&to=${to}`),
   epicStats: (epicRef: number, workspaceId: number) =>
