@@ -10,6 +10,7 @@ export interface UpgradeSwapLogEvent {
 export interface UpgradeSwapDependencies {
   install(version: string): Promise<void>;
   installedVersion(): Promise<string>;
+  managedBy?: string;
   spawnRelauncher(): Promise<void>;
   releaseLock(): Promise<void>;
   exit(): void;
@@ -44,7 +45,9 @@ export class UpgradeSwap {
       return { kind: 'aborted', error: failure };
     }
 
-    await this.step({ action: 'relaunch', version, work: () => this.dependencies.spawnRelauncher() });
+    if (this.dependencies.managedBy !== 'systemd') {
+      await this.step({ action: 'relaunch', version, work: () => this.dependencies.spawnRelauncher() });
+    }
     await this.step({ action: 'release-lock', version, work: () => this.dependencies.releaseLock() });
     await this.step({ action: 'exit', version, work: async () => { this.dependencies.exit(); } });
     return { kind: 'swapped' };
