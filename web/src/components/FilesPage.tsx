@@ -435,7 +435,7 @@ export function FilesPage({ workspace, selectedPath, onSelectFile, onWorkspaceSa
       <ActivityButton icon="branch" label="Source control" active={panel === 'scm'} onClick={() => setPanel('scm')} badge={changeCount} />
     </nav>
 
-    <aside className="flex shrink-0 flex-col bg-shell" style={{ width: sidebarWidth }}>
+    <aside className="flex shrink-0 flex-col bg-shell max-md:max-w-[50vw]" style={{ width: sidebarWidth }}>
       {panel === 'explorer' ? <>
         <div className="flex h-9 items-center gap-1 border-b border-hairline pl-3 pr-1.5">
           <span className="text-label font-semibold uppercase tracking-wide text-muted">Explorer</span>
@@ -550,7 +550,7 @@ export function FilesPage({ workspace, selectedPath, onSelectFile, onWorkspaceSa
           const draft = current[selectedPath];
           return draft ? { ...current, [selectedPath]: { saved: draft.saved, text } } : current;
         })} onSave={save} onCursor={setCursor} /> : <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1 text-small text-faint"><Icon name="files" className="size-6 opacity-60" /><p>Select a file to view or edit it.</p></div>}
-        {codeVisible && selectedPath && <footer className="flex min-h-6 shrink-0 items-center gap-4 border-t border-hairline bg-shell pl-3 pr-40 text-tiny text-faint">
+        {codeVisible && selectedPath && <footer className="flex min-h-6 shrink-0 items-center gap-4 border-t border-hairline bg-shell pl-3 pr-3 text-tiny text-faint md:pr-40">
           <span className="tabular-nums">Ln {cursor?.line ?? 1}, Col {cursor?.col ?? 1}</span>
           {cursor && cursor.selection > 0 && <span className="tabular-nums">{cursor.selection} selected</span>}
           <span className="ml-auto text-muted">{languageLabel(selectedPath)}</span>

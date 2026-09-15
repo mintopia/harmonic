@@ -72,7 +72,7 @@ export function ExtendGuardrailDialog({
             type="number"
             min={1}
             max={1440}
-            className={`${field} w-32`}
+            className={`${field} min-w-0 flex-1`}
             placeholder="e.g. 45"
             value={custom}
             onChange={(e) => setCustom(e.target.value)}
@@ -82,7 +82,7 @@ export function ExtendGuardrailDialog({
           />
           <button
             type="button"
-            className={`${btnPrimary} px-3 py-1.5`}
+            className={`${btnPrimary} shrink-0 whitespace-nowrap px-3 py-1.5`}
             disabled={busy || !customValid}
             onClick={() => submit(customMinutes)}
           >
