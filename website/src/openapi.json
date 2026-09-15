@@ -3982,6 +3982,11 @@
             "type": "string",
             "example": "/home/dev/harmonic"
           },
+          "color": {
+            "type": "string",
+            "pattern": "^#[0-9A-F]{6}$",
+            "example": "#FA6152"
+          },
           "trackerEnabled": {
             "type": "boolean",
             "example": false
@@ -4652,6 +4657,7 @@
           "id",
           "name",
           "workingDir",
+          "color",
           "trackerEnabled",
           "trackerPollIntervalSeconds",
           "excludedDirectories",
@@ -9634,6 +9640,11 @@
             "type": "string",
             "example": "/home/dev/harmonic"
           },
+          "color": {
+            "type": "string",
+            "pattern": "^#[0-9A-F]{6}$",
+            "example": "#FA6152"
+          },
           "trackerEnabled": {
             "type": "boolean",
             "example": false
@@ -10329,6 +10340,7 @@
           "id",
           "name",
           "workingDir",
+          "color",
           "trackerEnabled",
           "trackerPollIntervalSeconds",
           "excludedDirectories",
@@ -15353,6 +15365,10 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "color": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}$"
                   }
                 }
               }

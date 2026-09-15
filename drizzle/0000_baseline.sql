@@ -309,6 +309,7 @@ CREATE TABLE `workspaces` (
 	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
 	`name` text NOT NULL,
 	`working_dir` text NOT NULL,
+	`color` text DEFAULT '#FA6152' NOT NULL,
 	`tracker_enabled` integer DEFAULT false NOT NULL,
 	`tracker_poll_interval_seconds` integer DEFAULT 60 NOT NULL,
 	`created_at` integer NOT NULL,

@@ -846,6 +846,8 @@ function ResolvedTrackerValue({ workspace }: { workspace: Workspace }) {
 
 function WorkspaceIdentity({ ctx }: { ctx: WorkspaceRenderCtx }) {
   const { workspace, errors } = ctx;
+  const contrast = workspaceBadgeContrast(workspace.color);
+  const nearStatus = isNearStatusColor(workspace.color);
   return (
     <div className="grid gap-3.5 sm:grid-cols-2">
       <div>
@@ -867,8 +869,95 @@ function WorkspaceIdentity({ ctx }: { ctx: WorkspaceRenderCtx }) {
           Fixed once a Workspace is created — make a new Workspace to point at a different repo.
         </p>
       </div>
+      <div>
+        <label className={fieldLabel} htmlFor="workspace-color">Workspace colour</label>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <HslColorPicker color={workspace.color} onChange={(color) => ctx.setWorkspace({ ...workspace, color })} />
+          <input aria-label="Workspace colour hex value" className={`${field} w-28 font-data uppercase`} value={workspace.color} maxLength={7} onChange={(e) => ctx.setWorkspace({ ...workspace, color: e.target.value.toUpperCase() })} />
+          <span className={`text-small ${contrast !== null && contrast >= 4.5 ? 'text-muted' : 'text-fail'}`}>Initial contrast: {contrast === null ? '—' : `${contrast.toFixed(2)}:1 ${contrast >= 4.5 ? 'AA' : 'below AA'}`}</span>
+        </div>
+        {nearStatus && <p className="mt-1 text-small text-running">Near a status colour. Choose a different hue so workspace identity stays distinct.</p>}
+        <FieldError message={errors['color']} />
+      </div>
     </div>
   );
+}
+
+function HslColorPicker({ color, onChange }: { color: string; onChange: (color: string) => void }) {
+  const [hue, saturation, lightness] = hexToHsl(color) ?? [0, 0, 50];
+  const update = (next: [number, number, number]) => onChange(hslToHex(...next));
+  const controls: Array<{ label: string; value: number; max: number; update: (value: number) => void }> = [
+    { label: 'Hue', value: hue, max: 360, update: (value) => update([value, saturation, lightness]) },
+    { label: 'Saturation', value: saturation, max: 100, update: (value) => update([hue, value, lightness]) },
+    { label: 'Lightness', value: lightness, max: 100, update: (value) => update([hue, saturation, value]) },
+  ];
+  return (
+    <div id="workspace-color" className="flex items-center gap-2" aria-label="Workspace colour HSL picker">
+      <span aria-hidden="true" className="size-10 shrink-0 rounded border border-edge" style={{ backgroundColor: color }} />
+      <div className="grid min-w-44 gap-1">
+        {controls.map((control) => (
+          <label key={control.label} className="flex items-center gap-2 text-small text-muted">
+            <span className="w-16">{control.label}</span>
+            <input
+              aria-label={`${control.label} (${control.value})`}
+              className="h-2 flex-1 accent-accent"
+              type="range"
+              min={0}
+              max={control.max}
+              value={control.value}
+              onChange={(event) => control.update(Number(event.target.value))}
+            />
+            <output className="w-7 text-right tabular-nums">{control.value}</output>
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function hexToHsl(hex: string): [number, number, number] | null {
+  if (!/^#[0-9a-f]{6}$/i.test(hex)) return null;
+  const [red, green, blue] = [1, 3, 5].map((offset) => Number.parseInt(hex.slice(offset, offset + 2), 16) / 255);
+  const maximum = Math.max(red!, green!, blue!);
+  const minimum = Math.min(red!, green!, blue!);
+  const delta = maximum - minimum;
+  const lightness = (maximum + minimum) / 2;
+  if (delta === 0) return [0, 0, Math.round(lightness * 100)];
+  const saturation = delta / (1 - Math.abs(2 * lightness - 1));
+  const hue = maximum === red
+    ? 60 * (((green! - blue!) / delta) % 6)
+    : maximum === green
+      ? 60 * ((blue! - red!) / delta + 2)
+      : 60 * ((red! - green!) / delta + 4);
+  return [Math.round((hue + 360) % 360), Math.round(saturation * 100), Math.round(lightness * 100)];
+}
+
+function hslToHex(hue: number, saturation: number, lightness: number): string {
+  const saturationFraction = saturation / 100;
+  const lightnessFraction = lightness / 100;
+  const chroma = (1 - Math.abs(2 * lightnessFraction - 1)) * saturationFraction;
+  const secondary = chroma * (1 - Math.abs((hue / 60) % 2 - 1));
+  const match = lightnessFraction - chroma / 2;
+  const [red, green, blue] = hue < 60 ? [chroma, secondary, 0] : hue < 120 ? [secondary, chroma, 0] : hue < 180 ? [0, chroma, secondary] : hue < 240 ? [0, secondary, chroma] : hue < 300 ? [secondary, 0, chroma] : [chroma, 0, secondary];
+  const channel = (value: number) => Math.round((value + match) * 255).toString(16).padStart(2, '0');
+  return `#${channel(red)}${channel(green)}${channel(blue)}`.toUpperCase();
+}
+
+const STATUS_COLORS = ['#A74D08', '#1160AE', '#4740C6', '#0D7734', '#B3253F', '#5B616A', '#077067', '#FFB524', '#4CA8F5', '#BD9DFF', '#2BF58E', '#FF5570', '#9AA0A9'];
+
+function workspaceBadgeContrast(hex: string): number | null {
+  if (!/^#[0-9a-f]{6}$/i.test(hex)) return null;
+  const luminance = (value: string) => [1, 3, 5].map((offset) => Number.parseInt(value.slice(offset, offset + 2), 16) / 255).map((channel) => channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4).reduce((sum, channel, index) => sum + channel * [0.2126, 0.7152, 0.0722][index]!, 0);
+  const a = luminance('#1B1E24');
+  const b = luminance(hex);
+  return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+}
+
+function isNearStatusColor(hex: string): boolean {
+  if (!/^#[0-9a-f]{6}$/i.test(hex)) return false;
+  const channels = (value: string) => [1, 3, 5].map((offset) => Number.parseInt(value.slice(offset, offset + 2), 16));
+  const candidate = channels(hex);
+  return STATUS_COLORS.some((status) => Math.hypot(...channels(status).map((channel, index) => channel - candidate[index]!)) < 64);
 }
 
 function WorkspaceTracker({ ctx }: { ctx: WorkspaceRenderCtx }) {

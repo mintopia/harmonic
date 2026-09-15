@@ -58,6 +58,7 @@ export function makeWorkspace(overrides: Partial<Workspace> = {}): Workspace {
     id: 1,
     name: 'Main',
     workingDir: '/tmp/ws1',
+    color: '#FA6152',
     trackerEnabled: false,
     trackerPollIntervalSeconds: 60,
     resolvedTracker: null,

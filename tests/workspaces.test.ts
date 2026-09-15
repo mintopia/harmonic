@@ -30,6 +30,7 @@ describe('Workspace CRUD (ADR-0008, issue #41)', () => {
     const created = await server.api('POST', '/api/workspaces', { name: 'Side project', workingDir: dir });
     expect(created.status).toBe(201);
     expect(created.body).toMatchObject({ name: 'Side project', workingDir: dir });
+    expect(created.body.color).toMatch(/^#[0-9A-F]{6}$/);
 
     const missing = await server.api('POST', '/api/workspaces', {
       name: 'Nowhere',
@@ -37,6 +38,16 @@ describe('Workspace CRUD (ADR-0008, issue #41)', () => {
     });
     expect(missing.status).toBe(400);
     rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('assigns palette colours evenly and lets an AA-safe colour be changed', async () => {
+    const dirs = Array.from({ length: 3 }, () => mkdtempSync(join(tmpdir(), 'harmonic-workspace-color-')));
+    const created = await Promise.all(dirs.map((workingDir, index) => server.api('POST', '/api/workspaces', { name: `Color ${index}`, workingDir })));
+    expect(new Set(created.map((response) => response.body.color)).size).toBe(3);
+    const updated = await server.api('PATCH', `/api/workspaces/${created[0]!.body.id}`, { color: '#FFFFFF' });
+    expect(updated.body.color).toBe('#FFFFFF');
+    expect((await server.api('PATCH', `/api/workspaces/${created[0]!.body.id}`, { color: '#111111' })).status).toBe(400);
+    dirs.forEach((dir) => rmSync(dir, { recursive: true, force: true }));
   });
 
   it('rejects a duplicate absolute path on create and on update', async () => {
