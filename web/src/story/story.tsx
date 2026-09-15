@@ -13,6 +13,10 @@ import { Composer } from '../components/conversation/Composer';
 import { ConversationsPage } from '../components/ConversationLauncher';
 import { config as storyConfig, workspaces as storyWorkspaces } from './fixtures';
 import { Board } from '../components/Board';
+import { FilesPage } from '../components/FilesPage';
+import { CodeViewer } from '../components/CodeViewer';
+import { GlobalDashboard } from '../components/GlobalDashboard';
+import { ExtendGuardrailDialog } from '../components/ExtendGuardrailDialog';
 import { Verification } from '../components/ticket/Verification';
 import { LifecycleTimeline } from '../components/ticket/LifecycleTimeline';
 import { MergeProgress } from '../components/MergeProgress';
@@ -188,6 +192,59 @@ function Story() {
           conversationId={1}
           onConversationChange={() => {}}
         />
+      </div>
+    );
+  }
+  if (which === 'files') {
+    const filesWorkspace = { ...(storyWorkspaces[0] as any), id: 1, name: 'harmonic-core', color: '#3AA0FA', excludedDirectories: ['node_modules'] };
+    return (
+      <div style={{ height: '100vh', background: 'var(--hm-canvas)', display: 'flex', flexDirection: 'column' }}>
+        <FilesPage workspace={filesWorkspace} selectedPath={'src/config.ts'} onSelectFile={() => {}} onWorkspaceSaved={() => {}} />
+      </div>
+    );
+  }
+  if (which === 'code') {
+    const sample = `import { parse } from 'yaml';
+import baselineYaml from './baseline.yaml?raw';
+
+/** Per-workspace guardrail ceilings, resolved fleet-wide then per task. */
+export interface WorkspaceConfig {
+  maxAttempts: number;
+  tokenBudget: number | null;
+  wallClockCapMs: number | null;
+}
+
+export const GUARDRAIL_DEFAULTS = {
+  maxAttempts: 6,
+  tokenBudget: null,
+} as const;
+
+// A task-level override still wins where present.
+export function resolveGuardrails(task: Task, workspace: WorkspaceConfig) {
+  return { ...GUARDRAIL_DEFAULTS, ...workspace, ...task.overrides };
+}
+
+export const config = parse(baselineYaml);
+`;
+    return (
+      <div style={{ height: '100vh', background: 'var(--hm-sunken)', display: 'flex', flexDirection: 'column', padding: 0 }}>
+        <CodeViewer path="config.ts" text={sample} onChange={() => {}} onSave={() => {}} />
+      </div>
+    );
+  }
+  if (which === 'dashboard') {
+    return (
+      <div style={{ minHeight: '100vh', background: 'var(--hm-canvas)', padding: 24 }}>
+        <div style={{ maxWidth: 1100, margin: '0 auto' }}>
+          <GlobalDashboard pendingPermissions={2} hostLoad={{ load1: 3.2, load5: 2.8, load15: 2.1, cores: 8, saturated: false } as any} onNavigate={() => {}} />
+        </div>
+      </div>
+    );
+  }
+  if (which === 'guardrail') {
+    return (
+      <div style={{ minHeight: '100vh', background: 'var(--hm-canvas)' }}>
+        <ExtendGuardrailDialog taskId={172} onClose={() => {}} onDone={() => {}} extend={async () => {}} />
       </div>
     );
   }
