@@ -187,6 +187,15 @@ export function WorkspaceSwitcher({
   );
 }
 
-function WorkspaceBadge({ workspace }: { workspace: Workspace }) {
-  return <span aria-hidden="true" className="flex size-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-[#1b1e24]" style={{ backgroundColor: workspace.color }}>{workspace.name.trim().charAt(0).toUpperCase()}</span>;
+export function WorkspaceBadge({ workspace, label }: { workspace: Workspace; label?: string }) {
+  return (
+    <span
+      aria-hidden={label ? undefined : true}
+      aria-label={label}
+      className="flex size-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-[#1b1e24]"
+      style={{ backgroundColor: workspace.color }}
+    >
+      {workspace.name.trim().charAt(0).toUpperCase()}
+    </span>
+  );
 }

@@ -878,8 +878,9 @@ export function App() {
                   )}
                   {view === 'table' && (
                     <TableView
-                      workspaceId={activeWorkspaceId}
-                      epics={epics}
+                      workspaceId={route.scope.kind === 'global' ? null : activeWorkspaceId}
+                      workspaces={workspaces}
+                      epics={route.scope.kind === 'global' ? [] : epics}
                       onOpen={openRow}
                       onOpenEpic={openEpicByRef}
                       filters={route.table}

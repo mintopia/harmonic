@@ -8,10 +8,10 @@ import { request } from './api.js';
  * without pulling the whole corpus into the browser. */
 export const TABLE_PAGE_SIZE = 50;
 
-/** The table's current filter + search + sort selections, plus the page window,
- * scoped to a Workspace — everything the server needs to return one page. */
+/** The table's current filter, search, sort, and page window. An omitted
+ * Workspace requests the instance-wide table. */
 export type TableQuery = {
-  workspaceId: number;
+  workspaceId?: number;
   /** Multi-select filters (empty ⇒ "all"); sent to the server as one CSV param each. */
   state: string[];
   harness: string[];
@@ -29,7 +29,7 @@ export type TableQuery = {
  * over-constrain the request; a multi-select filter goes as one CSV param. */
 export function tasksQuery(q: TableQuery): string {
   const params = new URLSearchParams();
-  params.set('workspaceId', String(q.workspaceId));
+  if (q.workspaceId !== undefined) params.set('workspaceId', String(q.workspaceId));
   if (q.state.length > 0) params.set('state', q.state.join(','));
   if (q.harness.length > 0) params.set('harness', q.harness.join(','));
   if (q.priority.length > 0) params.set('priority', q.priority.join(','));
@@ -38,7 +38,7 @@ export function tasksQuery(q: TableQuery): string {
   params.set('order', q.order);
   params.set('limit', String(q.limit));
   params.set('offset', String(q.offset));
-  params.set('epics', 'true');
+  if (q.workspaceId !== undefined) params.set('epics', 'true');
   return params.toString();
 }
 
