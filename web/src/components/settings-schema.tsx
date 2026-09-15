@@ -883,7 +883,7 @@ function WorkspaceIdentity({ ctx }: { ctx: WorkspaceRenderCtx }) {
   );
 }
 
-const STATUS_COLORS = ['#A74D08', '#1160AE', '#4740C6', '#0D7734', '#B3253F', '#5B616A', '#077067'];
+const STATUS_COLORS = ['#A74D08', '#1160AE', '#4740C6', '#0D7734', '#B3253F', '#5B616A', '#077067', '#FFB524', '#4CA8F5', '#BD9DFF', '#2BF58E', '#FF5570', '#9AA0A9'];
 
 function workspaceBadgeContrast(hex: string): number | null {
   if (!/^#[0-9a-f]{6}$/i.test(hex)) return null;
