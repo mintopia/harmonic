@@ -203,6 +203,9 @@ interface ActiveRun {
   pauseFactRecorded: boolean;
   globalPauseRequested: boolean;
   verifyAbort: AbortController;
+  /** Assigned once the supervisor is built (see createTurnRuntime), so a resume
+   * can restart its wall-clock guardrail from zero. */
+  guardrails?: GuardrailSupervisor;
 }
 
 interface HealContext {
@@ -961,16 +964,19 @@ export class Runner {
     return paused;
   }
 
-  /** Resume the still-running Attempt and exclude the paused interval from its
-   * elapsed wall-clock budget before reattaching its durable Session. */
+  /** Resume the still-running Attempt, restarting its wall-clock guardrail from
+   * zero before reattaching its durable Session. */
   async resume(taskId: number, reason = 'operator request'): Promise<boolean> {
     const task = await this.taskService.get(taskId);
     if (task.state !== 'paused') return false;
+    const startedAt = Date.now();
     const active = [...this.active.values()].find((candidate) => candidate.taskId === taskId);
     if (active) {
       active.pauseRequested = false;
       active.pauseReason = null;
       active.globalPauseRequested = false;
+      await this.attempts.update(active.attemptId, { startedAt });
+      active.guardrails?.resetWallClock(startedAt);
       await this.taskService.resume(taskId);
       await this.recordLifecycleTransition(taskId, 'resumed', reason);
       logger.info('Task resumed', { taskId, attemptId: active.attemptId, reason });
@@ -978,8 +984,7 @@ export class Runner {
     }
     const run = await this.attempts.getRunningForTask(taskId);
     if (!run) return false;
-    const pausedFor = Math.max(0, Date.now() - task.updatedAt);
-    await this.attempts.update(run.id, { startedAt: run.startedAt + pausedFor });
+    await this.attempts.update(run.id, { startedAt });
     await this.taskService.resume(taskId);
     await this.recordLifecycleTransition(taskId, 'resumed', reason);
     logger.info('Task resumed', { taskId, attemptId: run.id, reason });
@@ -1018,6 +1023,31 @@ export class Runner {
       await this.taskService.requeue(taskId, undefined, 'full');
       this.pendingManualResume.set(taskId, src.prior);
       await this.start(taskId);
+    } catch (err) {
+      this.pendingOperatorSeed.delete(taskId);
+      throw err;
+    }
+    return true;
+  }
+
+  /**
+   * Steer a paused Task: resume it to `working` and deliver the operator message.
+   * A live paused Attempt is reattached (its wall-clock guardrail restarts) and
+   * the message is steered into it; a torn-down one is continued from its
+   * retained Session with the message as the seed of a fresh Attempt. Returns
+   * false when the Task isn't paused or has no Session to continue.
+   */
+  async steerPaused(taskId: number, text: string): Promise<boolean> {
+    const task = await this.taskService.get(taskId);
+    if (task.state !== 'paused') return false;
+    if ([...this.active.values()].some((a) => a.taskId === taskId)) {
+      return (await this.resume(taskId)) && (await this.steer(taskId, text));
+    }
+    const src = await this.resolveContinuationSource(task);
+    if (!src || !this.resumeEligibilityFor(task, src.session).eligible) return false;
+    this.pendingOperatorSeed.set(taskId, text);
+    try {
+      await this.resumePaused(taskId);
     } catch (err) {
       this.pendingOperatorSeed.delete(taskId);
       throw err;
@@ -2343,6 +2373,7 @@ export class Runner {
         pushSteer: (text) => active.steerQueue.push(text),
       },
     );
+    active.guardrails = guardrails;
     listeners.setRuntime({ active, driver, guardrails });
     let finalized = false;
     const finalize = async (): Promise<void> => {
