@@ -222,6 +222,9 @@ export const api = {
   /** Steer a running task: queue a message for its active run, delivered at the next turn boundary. */
   steerTask: (id: number, text: string) =>
     request<{ ok: true }>('POST', `/api/tasks/${id}/steer`, { text }),
+  /** Extend a working task's wall-clock time guardrail by `minutes`. */
+  extendGuardrail: (id: number, minutes: number) =>
+    request<Task>('POST', `/api/tasks/${id}/extend-guardrail`, { minutes }),
   uncancelTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/uncancel`),
   addDependency: (id: number, dependsOnId: number) =>
     request<Task>('POST', `/api/tasks/${id}/dependencies`, { dependsOnId }),

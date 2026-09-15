@@ -36,6 +36,7 @@ import { AttemptSettleCoordinator, type SettleProjection, type DispositionKind }
 import type { SessionRetirementHook } from '../domain/session-retirement-coordinator.js';
 import type { TaskService } from '../domain/tasks.js';
 import { resolveGuardrails, resolvePauseMessage, resolveVerifiers, resolveScoped, resolveTaskPrompt } from '../domain/setting-override.js';
+import type { ResolvedGuardrails } from '../domain/setting-override.js';
 
 function configuredCacheWarmSeconds(config: AppConfig, harness: string): number | undefined {
   return Object.entries(config.harnesses).find(([id]) => id === harness)?.[1].cacheWarmSeconds;
@@ -995,6 +996,34 @@ export class Runner {
       await this.taskService.pause(taskId);
       throw error;
     }
+  }
+
+  /**
+   * Extend the wall-clock guardrail of a working Task's live Attempt by
+   * `addMinutes`. Persists the raised cap onto the Attempt's frozen
+   * `guardrailConfig` (so a re-prime keeps it) and re-arms the live supervisor's
+   * deadline in place. A no-op returning false when the Task is not working, has
+   * no active Attempt, or carries no wall-clock budget to extend.
+   */
+  async extendGuardrail(taskId: number, addMinutes: number): Promise<boolean> {
+    const task = await this.taskService.get(taskId);
+    if (task.state !== 'working') return false;
+    const active = [...this.active.values()].find((candidate) => candidate.taskId === taskId);
+    if (!active) return false;
+    const run = await this.attempts.get(active.attemptId);
+    const config = run.guardrailConfig ? (JSON.parse(run.guardrailConfig) as ResolvedGuardrails) : null;
+    if (!config?.budget) return false;
+    const wallClockMinutes = config.budget.wallClockMinutes + addMinutes;
+    const updated: ResolvedGuardrails = { ...config, budget: { ...config.budget, wallClockMinutes } };
+    await this.attempts.update(active.attemptId, { guardrailConfig: JSON.stringify(updated) });
+    active.guardrails?.extendWallClock(addMinutes);
+    const event = await this.attempts.appendEvent(active.attemptId, {
+      type: 'lifecycle',
+      payload: { event: 'guardrail_extended', dimension: 'wall-clock', addMinutes, wallClockMinutes },
+    });
+    this.events.onAttemptEvent?.(event);
+    logger.info('Wall-clock guardrail extended', { taskId, attemptId: active.attemptId, addMinutes, wallClockMinutes });
+    return true;
   }
 
   private async pauseIfGloballyPaused(taskId: number): Promise<boolean> {

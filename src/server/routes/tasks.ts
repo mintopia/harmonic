@@ -100,6 +100,11 @@ const dependsOnBodySchema = z.object({ dependsOnId: z.number().int().positive().
 const steerInputSchema = z.object({
   text: z.string().min(1).meta({ example: 'Stop — check the existing tests before changing the limiter.' }),
 });
+
+const extendGuardrailInputSchema = z.object({
+  /** Minutes to add to the running Attempt's wall-clock budget. */
+  minutes: z.number().int().positive().max(1440).meta({ example: 60 }),
+});
 const depParamsSchema = z.object({
   id: z.coerce.number().int().meta({ example: 4821 }),
   depId: z.coerce.number().int().meta({ example: 4818 }),
@@ -606,6 +611,31 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
         throw new DomainError('invalid_state', `task ${req.params.id} has no active Attempt to steer and no resumable session to continue`);
       }
       return { ok: true } as const;
+    },
+  );
+
+  app.post(
+    '/tasks/:id/extend-guardrail',
+    {
+      schema: {
+        tags: ['Tasks'],
+        description:
+          "Extend the wall-clock time guardrail of a working task's live Attempt by `minutes`, giving a run that is close to its budget more time without restarting it. The raised cap is persisted onto the Attempt's frozen guardrail config and the live deadline is re-armed immediately. Operator only.",
+        params: idParamsSchema,
+        body: extendGuardrailInputSchema,
+        response: {
+          200: taskSchema.describe('The working task, with the extended budget in effect.'),
+          409: errorResponse('The task is not working or has no active Attempt with a wall-clock budget.'),
+        },
+      },
+    },
+    async (req, reply) => {
+      if (!(await ctx.runner.extendGuardrail(req.params.id, req.body.minutes))) {
+        return reply
+          .code(409)
+          .send({ error: { code: 'conflict', message: 'The task is not actively running with a wall-clock budget.' } });
+      }
+      return await withDeps({ id: req.params.id });
     },
   );
 
