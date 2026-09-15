@@ -4,6 +4,9 @@ Status: accepted
 Date: 2026-09-04
 
 Relates to ADR-0010 (the Activity/Operations split).
+Refined by: 0033-global-scope-and-path-routing.md (Activity is Scope-aware —
+Workspace-filtered in Workspace scope, instance-wide in Global scope — rather than
+always instance-wide; it stays strictly read-only).
 
 ## Context
 

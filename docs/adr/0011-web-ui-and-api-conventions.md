@@ -8,6 +8,9 @@ ADR-0001 epic's UI work.
 Refined by: 0017-epic-summary-page-replaces-board-focus.md (the epic-focus
 "board of open tasks" surface below is retired; the Board shows every Epic as a
 band and Epic clicks open the summary page at `/epic/:ref`).
+Refined by: 0033-global-scope-and-path-routing.md (the `?view=` scheme is retired
+for path-based routing; under Global scope, search is instance-wide and an absent
+`workspaceId` on a list endpoint means all Workspaces).
 
 ## API conventions
 
