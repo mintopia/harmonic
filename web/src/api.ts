@@ -132,16 +132,17 @@ export const api = {
   discardGitPaths: (workspaceId: number, paths: string[]) => request<{ ok: true }>('POST', '/api/git/discard', { workspaceId, paths }),
   commitGitChanges: (workspaceId: number, message: string) => request<{ ok: true }>('POST', '/api/git/commit', { workspaceId, message }),
   gitFileDiff: (workspaceId: number, path: string) => request<{ file: DiffFile | null }>('GET', `/api/git/diff?workspaceId=${workspaceId}&path=${encodeURIComponent(path)}`),
-  worktrees: ({ limit, offset }: { limit?: number; offset?: number } = {}) => {
+  worktrees: ({ workspaceId, limit, offset }: { workspaceId?: number; limit?: number; offset?: number } = {}) => {
     const params = new URLSearchParams();
+    if (workspaceId !== undefined) params.set('workspaceId', String(workspaceId));
     if (limit !== undefined) params.set('limit', String(limit));
     if (offset !== undefined) params.set('offset', String(offset));
     const query = params.toString();
     return request<{ worktrees: WorktreeInventoryEntry[]; total: number; reconciledAt: number | null }>('GET', query ? `/api/worktrees?${query}` : '/api/worktrees');
   },
-  dirtyWorktreeFiles: (id: string) => request<{ files: string[] }>('GET', `/api/worktrees/${encodeURIComponent(id)}/dirty-files`),
-  cleanupWorktree: (id: string) => request<{ removed: boolean }>('POST', `/api/worktrees/${encodeURIComponent(id)}/cleanup`),
-  reconcileWorktrees: () => request<{ removed: number; recreated: number; flagged: number }>('POST', '/api/operations/reconcile'),
+  dirtyWorktreeFiles: (id: string, workspaceId?: number) => request<{ files: string[] }>('GET', `/api/worktrees/${encodeURIComponent(id)}/dirty-files${workspaceId === undefined ? '' : `?workspaceId=${workspaceId}`}`),
+  cleanupWorktree: (id: string, workspaceId?: number) => request<{ removed: boolean }>('POST', `/api/worktrees/${encodeURIComponent(id)}/cleanup${workspaceId === undefined ? '' : `?workspaceId=${workspaceId}`}`),
+  reconcileWorktrees: (workspaceId?: number) => request<{ removed: number; recreated: number; flagged: number }>('POST', `/api/operations/reconcile${workspaceId === undefined ? '' : `?workspaceId=${workspaceId}`}`),
   workspaces: () => request<{ workspaces: Workspace[]; total: number }>('GET', '/api/workspaces'),
   createWorkspace: (input: { name: string; workingDir: string }) =>
     request<Workspace>('POST', '/api/workspaces', input),

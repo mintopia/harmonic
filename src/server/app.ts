@@ -190,9 +190,9 @@ export interface AppContext {
   hostLoad: HostLoadSampler;
   workspaceWatcher: WorkspaceWatcher;
   worktreeInventory: WorktreeInventory;
-  forceCleanupWorktree: (id: string) => Promise<boolean | null>;
-  dirtyWorktreeFiles: (id: string) => Promise<string[] | null>;
-  reconcileWorktrees: () => ReturnType<WorktreeReconciler['reconcile']>;
+  forceCleanupWorktree: (id: string, workspaceId?: number) => Promise<boolean | null>;
+  dirtyWorktreeFiles: (id: string, workspaceId?: number) => Promise<string[] | null>;
+  reconcileWorktrees: (workspaceId?: number) => ReturnType<WorktreeReconciler['reconcile']>;
   worktreesReconciledAt: () => number | null;
 }
 
@@ -395,11 +395,11 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     bus.emit('worktrees', await worktreeInventory.snapshot());
   };
   const managedWorktreesRoot = resolve(worktreesDir);
-  const forceCleanupWorktree = async (id: string): Promise<boolean | null> => {
+  const forceCleanupWorktree = async (id: string, workspaceId?: number): Promise<boolean | null> => {
     const entry = (await worktreeInventory.snapshot()).find(
       (candidate) => worktreeId(candidate) === id,
     );
-    if (!entry) return null;
+    if (!entry || (workspaceId !== undefined && entry.workspaceId !== workspaceId)) return null;
 
     const worktreePath = resolve(entry.path);
     if (!isInside(managedWorktreesRoot, worktreePath)) {
@@ -420,11 +420,11 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     }
     return removed;
   };
-  const dirtyWorktreeFiles = async (id: string): Promise<string[] | null> => {
+  const dirtyWorktreeFiles = async (id: string, workspaceId?: number): Promise<string[] | null> => {
     const entry = (await worktreeInventory.snapshot()).find(
       (candidate) => worktreeId(candidate) === id,
     );
-    if (!entry) return null;
+    if (!entry || (workspaceId !== undefined && entry.workspaceId !== workspaceId)) return null;
 
     const worktreePath = resolve(entry.path);
     if (!isInside(managedWorktreesRoot, worktreePath)) {
@@ -432,11 +432,26 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     }
     return entry.dirty ? Git.dirtyFiles(worktreePath) : [];
   };
-  const reconcileWorktrees = singleFlight(async () => {
-    const result = await worktreeReconciler.reconcile();
-    await publishWorktrees();
-    return result;
-  });
+  type ReconciliationResult = Awaited<ReturnType<WorktreeReconciler['reconcile']>>;
+  const reconciliationFlights = new Map<number | null, Promise<ReconciliationResult>>();
+  let reconciliation = Promise.resolve();
+  const reconcileWorktrees = (workspaceId?: number): Promise<ReconciliationResult> => {
+    const key = workspaceId ?? null;
+    const existing = reconciliationFlights.get(key);
+    if (existing) return existing;
+    const next = reconciliation.then(async () => {
+      const result = await worktreeReconciler.reconcile(workspaceId);
+      await publishWorktrees();
+      return result;
+    });
+    reconciliation = next.then(() => undefined, () => undefined);
+    reconciliationFlights.set(key, next);
+    const clear = () => {
+      if (reconciliationFlights.get(key) === next) reconciliationFlights.delete(key);
+    };
+    next.then(clear, clear);
+    return next;
+  };
   let runnerRef: Runner | undefined;
   let globalPauseRef: GlobalPause | undefined;
   let trackerManagerRef: TrackerPollerManager | undefined;

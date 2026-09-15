@@ -61,6 +61,16 @@ describe('Operations API (issue #293)', () => {
     expect(response.body).toEqual({ removed: 0, recreated: 0, flagged: 0 });
   });
 
+  it('reconciles only the requested Workspace', async () => {
+    server = await startServer();
+    const reconcile = vi.spyOn(WorktreeReconciler.prototype, 'reconcile').mockResolvedValue({ removed: 0, recreated: 0, flagged: 0 });
+
+    const response = await server.api('POST', '/api/operations/reconcile?workspaceId=1');
+
+    expect(response.status).toBe(200);
+    expect(reconcile).toHaveBeenCalledWith(1);
+  });
+
   it('shares the reconciliation flight with the scheduled job', async () => {
     server = await startServer();
     let active = 0;
@@ -89,6 +99,7 @@ describe('Operations API (issue #293)', () => {
     await expect(manual).resolves.toMatchObject({ status: 200, body: { removed: 1, recreated: 2, flagged: 3 } });
     await expect(scheduled).resolves.toBeUndefined();
     expect(maxActive).toBe(1);
+    expect(calls).toBe(1);
   });
 
   it('streams operation events to full and read-scoped firehose clients', async () => {

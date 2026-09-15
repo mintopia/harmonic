@@ -862,7 +862,7 @@ export function App() {
                         onOpenEpic={(epic) => openEpicByRef(epic.ref)}
                       />
                     )}
-                  {view === 'activity' && <ActivityView config={config} />}
+                  {view === 'activity' && <ActivityView config={config} workspaceId={activeWorkspaceId} />}
                   {view === 'conversations' && (
                     <ConversationsPage
                       config={config}
@@ -899,7 +899,7 @@ export function App() {
                     <TimelinePage workspaceId={activeWorkspaceId} onOpenTask={openTaskById} />
                   )}
                   {view === 'operations' && (
-                    <OperationsPage tasks={taskList} epics={epics} onOpenTask={openTaskById} onOpenEpic={openEpicByRef} />
+                    <OperationsPage workspaceId={activeWorkspaceId} tasks={taskList} epics={epics} onOpenTask={openTaskById} onOpenEpic={openEpicByRef} />
                   )}
                   {view === 'api' && <ApiPage />}
                   {view === 'settings' && <SettingsPage onSaved={setConfig} />}

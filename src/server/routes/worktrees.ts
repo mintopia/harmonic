@@ -13,6 +13,7 @@ const worktreesResponseSchema = listResponse('worktrees', worktreeInventorySchem
 const cleanupResponseSchema = z.object({ removed: z.boolean() });
 const dirtyFilesResponseSchema = z.object({ files: z.array(z.string()) });
 const cleanupParamsSchema = z.object({ id: z.string().min(1).meta({ example: 'WzEsIi9kYXRhL3dvcmt0cmVlcy90YXNrLTQyIl0' }) });
+const workspaceQuerySchema = z.object({ workspaceId: z.coerce.number().int().positive().optional() });
 
 export async function worktreeRoutes(fastify: FastifyInstance, ctx: Pick<ExecutionContext, 'worktreeInventory' | 'forceCleanupWorktree' | 'dirtyWorktreeFiles' | 'worktreesReconciledAt'>): Promise<void> {
   const app = fastify.withTypeProvider<ZodTypeProvider>();
@@ -21,12 +22,13 @@ export async function worktreeRoutes(fastify: FastifyInstance, ctx: Pick<Executi
       tags: ['Worktrees'],
       description: 'A read-time inventory of every Git worktree joined to mirrored Tasks and Epics. The state is never persisted.',
       security: [{ bearerAuth: [] }, { sessionCookie: [] }],
-      querystring: paginationQuerySchema,
+      querystring: paginationQuerySchema.merge(workspaceQuerySchema),
       response: { 200: worktreesResponseSchema.describe('The current worktree inventory snapshot.') },
     },
   }, async (req) => {
-    const { limit, offset } = req.query;
-    const { items, total } = paginate([...worktreesToApi(await ctx.worktreeInventory.snapshot())], { limit, offset });
+    const { limit, offset, workspaceId } = req.query;
+    const worktrees = worktreesToApi(await ctx.worktreeInventory.snapshot()).filter((worktree) => workspaceId === undefined || worktree.workspaceId === workspaceId);
+    const { items, total } = paginate([...worktrees], { limit, offset });
     return { worktrees: items, total, reconciledAt: ctx.worktreesReconciledAt() };
   });
 
@@ -36,6 +38,7 @@ export async function worktreeRoutes(fastify: FastifyInstance, ctx: Pick<Executi
       description: 'Human-only, confirmed removal of a managed worktree and its Harmonic branch. Dirty and unreadable worktrees are never removed automatically; this is the explicit operator disposition path.',
       security: [{ bearerAuth: [] }, { sessionCookie: [] }],
       params: cleanupParamsSchema,
+      querystring: workspaceQuerySchema,
       response: {
         200: cleanupResponseSchema.describe('Whether the worktree was removed.'),
         403: errorResponse('The worktree is outside Harmonic’s managed worktree root.'),
@@ -43,7 +46,7 @@ export async function worktreeRoutes(fastify: FastifyInstance, ctx: Pick<Executi
       },
     },
   }, async (req) => {
-    const removed = await ctx.forceCleanupWorktree(req.params.id);
+    const removed = await ctx.forceCleanupWorktree(req.params.id, req.query.workspaceId);
     if (removed === null) throw new DomainError('not_found', 'no worktree exists for this inventory entry');
     return { removed };
   });
@@ -54,6 +57,7 @@ export async function worktreeRoutes(fastify: FastifyInstance, ctx: Pick<Executi
       description: 'The uncommitted paths that a forced cleanup would discard.',
       security: [{ bearerAuth: [] }, { sessionCookie: [] }],
       params: cleanupParamsSchema,
+      querystring: workspaceQuerySchema,
       response: {
         200: dirtyFilesResponseSchema.describe('The uncommitted files that cleanup would discard.'),
         403: errorResponse('The worktree is outside Harmonic’s managed worktree root.'),
@@ -61,7 +65,7 @@ export async function worktreeRoutes(fastify: FastifyInstance, ctx: Pick<Executi
       },
     },
   }, async (req) => {
-    const files = await ctx.dirtyWorktreeFiles(req.params.id);
+    const files = await ctx.dirtyWorktreeFiles(req.params.id, req.query.workspaceId);
     if (files === null) throw new DomainError('not_found', 'no worktree exists for this inventory entry');
     return { files };
   });
