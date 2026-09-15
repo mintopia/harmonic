@@ -38,15 +38,11 @@ export const GLOBAL_RAIL_GROUPS: readonly RailGroup[] = [{ label: 'Global', view
 export const WORKSPACE_RAIL_GROUPS: readonly RailGroup[] = [{ label: 'Workspace', views: WORKSPACE_RAIL_VIEWS }];
 
 /**
- * Views scoped to the active Workspace: they read the active
- * Workspace's Tasks/stats and go blank without one, so with zero Workspaces
- * they yield to the "No workspace open" empty state. Activity is
- * instance-wide (every process across Workspaces), and API/Settings are
- * global, so those still render on a fresh, workspace-less instance.
+ * Views without a Global form yield to the "No workspace open" empty state.
  */
 export function isWorkspaceScopedView(view: View): boolean {
   return (
-    view === 'board' || view === 'timeline' || view === 'conversations' || view === 'table' || view === 'graph' || view === 'stats' || view === 'files' || view === 'workspace'
+    view === 'board' || view === 'conversations' || view === 'table' || view === 'graph' || view === 'files' || view === 'workspace'
   );
 }
 export const VIEW_LABELS: Record<View, string> = {

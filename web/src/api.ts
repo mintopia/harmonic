@@ -100,8 +100,11 @@ export const api = {
     if (workspaceId !== undefined) query.set('workspaceId', String(workspaceId));
     return request<Stats>('GET', `/api/stats?${query}`);
   },
-  timeline: (workspaceId: number, from: number, to: number) =>
-    request<TimelineResponse>('GET', `/api/timeline?workspaceId=${workspaceId}&from=${from}&to=${to}`),
+  timeline: (workspaceId: number | undefined, from: number, to: number) => {
+    const query = new URLSearchParams({ from: String(from), to: String(to) });
+    if (workspaceId !== undefined) query.set('workspaceId', String(workspaceId));
+    return request<TimelineResponse>('GET', `/api/timeline?${query}`);
+  },
   epicStats: (epicRef: number, workspaceId: number) =>
     request<Stats>('GET', `/api/epics/${epicRef}/stats?workspaceId=${workspaceId}`),
   createTask: (input: Partial<Task> & { prompt: string; state?: 'draft' | 'ready' }) =>
