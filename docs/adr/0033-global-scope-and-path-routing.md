@@ -105,6 +105,12 @@ The Global-scope Dashboard route exists as a placeholder in this work; its visua
 design is produced separately (a `/handoff` running `/impeccable` + `/design` to a
 single mockup artifact) and is out of scope here.
 
+> **Update (epic #594).** The Dashboard has since shipped fully-built —
+> `web/src/components/GlobalDashboard.tsx`: attention/in-flight/cost rollups and a
+> cost-ranked Workspace table, following the separately-produced mockup. The
+> "reserved placeholder" and "Deferred" framing below describe the state at the
+> time of this ADR only.
+
 ## Consequences
 
 - **Large routing refactor.** `router-model.ts` (`parseRoute`/`serializeRoute`)

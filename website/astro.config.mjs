@@ -45,7 +45,9 @@ export default defineConfig({
           items: [
             { label: 'Feeding it work', link: '/work/feeding-it-work/' },
             { label: 'Steering the fleet', link: '/work/steering-the-fleet/' },
+            { label: 'The fleet dashboard', link: '/work/fleet-dashboard/' },
             { label: 'Review & merge', link: '/work/reviewing-and-merging/' },
+            { label: 'Browsing & editing files', link: '/work/files/' },
             { label: 'Conversations', link: '/work/conversations/' },
             { label: 'Notifications', link: '/work/notifications/' },
           ],
