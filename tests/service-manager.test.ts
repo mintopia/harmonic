@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   UnsupportedServicePlatformError,
   createServiceManager,
+  resolveServiceUser,
   type ServiceManagerDependencies,
   type ServiceEnvironment,
 } from '../src/service-manager.js';
@@ -14,6 +15,31 @@ const environment = (overrides: Partial<ServiceEnvironment> = {}): ServiceEnviro
   userSystemdUsable: false,
   ...overrides,
 });
+
+const initdDependencies = () => {
+  const calls: string[][] = [];
+  const files = new Map<string, string>();
+  const modes = new Map<string, number>();
+  const warn = vi.fn();
+  const dependencies = {
+    warn,
+    cliPath: '/opt/harmonic/dist/cli.js',
+    nodePath: '/usr/bin/node',
+    homeDir: '/home/agent',
+    userName: 'agent',
+    sudoUser: 'agent',
+    run: async (command: string, args: readonly string[]) => {
+      calls.push([command, ...args]);
+      return { stdout: '' };
+    },
+    mkdir: async () => {},
+    writeFile: async (path: string, contents: string) => { files.set(path, contents); },
+    chmod: async (path: string, mode: number) => { modes.set(path, mode); },
+    removeFile: async (path: string) => { files.delete(path); },
+    fileExists: (path: string) => files.has(path),
+  } satisfies ServiceManagerDependencies;
+  return { dependencies, calls, files, modes, warn };
+};
 
 describe('ServiceManager backend detection', () => {
   it('prefers a root systemd service over init.d', () => {
@@ -37,9 +63,70 @@ describe('ServiceManager backend detection', () => {
     expect(() => createServiceManager(environment({ platform }))).toThrow('only systemd/init.d supported');
   });
 
-  it('reports that init.d installation is not yet available', async () => {
-    await expect(createServiceManager(environment({ isRoot: true, initdAvailable: true })).install({ startSelfManaged: vi.fn() }))
-      .rejects.toThrow('not yet available');
+  it('resolves an explicit user, then SUDO_USER, then workspace', () => {
+    expect(resolveServiceUser({ user: 'operator', sudoUser: 'agent' })).toBe('operator');
+    expect(resolveServiceUser({ sudoUser: 'agent' })).toBe('agent');
+    expect(resolveServiceUser({})).toBe('workspace');
+  });
+
+  it('installs an executable LSB init.d script and registers then starts it', async () => {
+    const initd = initdDependencies();
+    const manager = createServiceManager(environment({ isRoot: true, initdAvailable: true }), initd.dependencies);
+
+    await expect(manager.install({ startSelfManaged: vi.fn(), serve: { port: '4700', host: '0.0.0.0', dataDir: '/srv/harmonic' } }))
+      .resolves.toEqual({ backend: 'init.d' });
+
+    const script = initd.files.get('/etc/init.d/harmonic') ?? '';
+    expect(script).toContain('### BEGIN INIT INFO');
+    expect(script).toContain('if [ "$(id -u)" -ne 0 ]');
+    expect(script).toContain('HARMONIC_INITD_SERVICE=1 runuser -u agent -- harmonic start --data-dir /srv/harmonic');
+    expect(script).toContain('HARMONIC_INITD_SERVICE=1 runuser -u agent -- harmonic stop --data-dir /srv/harmonic');
+    expect(script).toContain('HARMONIC_INITD_SERVICE=1 runuser -u agent -- harmonic status --data-dir /srv/harmonic');
+    expect(script).toContain('restart|force-reload)');
+    expect(initd.modes.get('/etc/init.d/harmonic')).toBe(0o755);
+    expect(initd.calls).toEqual([
+      ['update-rc.d', 'harmonic', 'defaults'],
+      ['service', 'harmonic', 'start'],
+    ]);
+  });
+
+  it('shell-quotes an apostrophe in the data directory', async () => {
+    const initd = initdDependencies();
+    const manager = createServiceManager(environment({ isRoot: true, initdAvailable: true }), initd.dependencies);
+
+    await manager.install({
+      startSelfManaged: vi.fn(),
+      serve: { port: '4700', host: '0.0.0.0', dataDir: "/srv/harmonic's state" },
+    });
+
+    expect(initd.files.get('/etc/init.d/harmonic')).toContain("--data-dir '/srv/harmonic'\"'\"'s state'");
+  });
+
+  it('warns when init.d would run Harmonic as root', async () => {
+    const initd = initdDependencies();
+    const manager = createServiceManager(environment({ isRoot: true, initdAvailable: true }), initd.dependencies);
+
+    await manager.install({
+      startSelfManaged: vi.fn(),
+      serve: { port: '4700', host: '0.0.0.0', dataDir: '/srv/harmonic' },
+      user: 'root',
+    });
+
+    expect(initd.warn).toHaveBeenCalledWith(expect.stringContaining('root'));
+    expect(initd.files.get('/etc/init.d/harmonic')).toContain('runuser -u root -- harmonic start');
+  });
+
+  it('stops, deregisters, and removes the init.d script without touching the data directory', async () => {
+    const initd = initdDependencies();
+    const manager = createServiceManager(environment({ isRoot: true, initdAvailable: true }), initd.dependencies);
+
+    await manager.uninstall();
+
+    expect(initd.calls).toEqual([
+      ['service', 'harmonic', 'stop'],
+      ['update-rc.d', '-f', 'harmonic', 'remove'],
+    ]);
+    expect(initd.files.has('/srv/harmonic')).toBe(false);
   });
 
   it('starts the standalone daemon and returns a boot-hook command on fallback install', async () => {
