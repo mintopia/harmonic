@@ -217,7 +217,21 @@ async function main(): Promise<void> {
     const result = await manager.install({
       startSelfManaged: () => startStandalone(values, rest),
       bootCommand: bootCommand(rest),
+      serve: {
+        port: values.port,
+        host: values.host,
+        dataDir: values['data-dir'] ?? defaultDataDir(),
+        ...(values.password === undefined ? {} : { password: values.password }),
+        ...(values['otel-endpoint'] === undefined ? {} : { otelEndpoint: values['otel-endpoint'] }),
+        ...(values['otel-headers'] === undefined ? {} : { otelHeaders: values['otel-headers'] }),
+        ...(values['otel-export'] === undefined ? {} : { otelExport: values['otel-export'] }),
+        ...(values['otel-metric-export-interval'] === undefined
+          ? {}
+          : { otelMetricExportInterval: values['otel-metric-export-interval'] }),
+        ...(values['otel-stdout-log-level'] === undefined ? {} : { otelStdoutLogLevel: values['otel-stdout-log-level'] }),
+      },
     });
+    if (result.status) logger.info(result.status.detail ?? (result.status.running ? 'Running.' : 'Not running.'));
     if (result.bootCommand) logger.info(`Add this to the host boot hook: ${result.bootCommand}`);
     return;
   }
