@@ -16,6 +16,30 @@ at least one, and the last cannot be deleted. Deleting one is guarded (no
 in-flight work) and cascades to its Tasks, Attempts, and Conversations.
 _Avoid_: project, repo, context
 
+**Scope**:
+Whether a view is bound to one Workspace or to the whole instance. Two values:
+**Workspace scope** (the default — every page reads only the active Workspace)
+and **Global scope** (pages aggregate across all Workspaces at once, for
+monitoring many Workspaces together). Scope is chosen in the Workspace switcher,
+where **Global** sits as a peer to the Workspace rows, and it drives which
+navigation entries and which pages are shown. A page that has no Global form
+falls back to the Dashboard; a Global page with no per-Workspace form falls back
+to the Workspace's Board when scope returns to a Workspace.
+_Avoid_: view mode, level, context
+
+**Global scope**: see **Scope**.
+
+**Dashboard**:
+The Global-scope home — an instance-wide overview shown when the current page has
+no Global form. Exists only in Global scope.
+
+**Workspace Color**:
+A contrast-safe color assigned to each Workspace (auto-picked from a curated
+palette at creation, editable in Workspace Settings), best-effort unique. With
+the Workspace's first initial it forms the **Workspace badge** used to tell
+Workspaces apart wherever they mix — the Workspace switcher and every Global-scope
+list (Tickets column, Timeline event tag).
+
 **Host Ceiling**:
 The global cap on total concurrent Attempts across all Workspaces — the host's
 safety limit that a Workspace's own concurrency cap can never breach.
