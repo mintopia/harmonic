@@ -1,228 +1,93 @@
-// Explicit .js extensions: this module is shared with the node-side test
-// project, whose nodenext resolution requires them (Vite maps .js → .ts).
-import { TERMINAL_STATES } from './task-state-model.js';
-import { VIEWS, type View } from './rail-model.js';
 import { TASK_STATES, type TaskState } from './types.js';
+import { GLOBAL_RAIL_VIEWS, WORKSPACE_RAIL_VIEWS, type View } from './rail-model.js';
 
-/** Table sort keys. TableView imports `SortKey` from here as its single source. */
 export const SORT_KEYS = ['createdAt', 'updatedAt', 'priority', 'cost'] as const;
 export type SortKey = (typeof SORT_KEYS)[number];
-
-/** Harnesses the Table's filter offers — the only values a `harness` param may hold. */
 export const TABLE_HARNESSES = ['claude', 'codex', 'copilot', 'opencode'] as const;
-/** Priorities the Table's filter offers — the only values a `priority` param may hold. */
 export const TABLE_PRIORITIES = ['high', 'normal', 'low'] as const;
-
-/** The Table view's filter + sort selection. Each filter is multi-select
- *: an empty array means "all"; a non-empty array
- * matches any of its values. */
-export interface TableFilters {
-  state: string[];
-  harness: string[];
-  priority: string[];
-  /** Free-text search over prompt text. Empty means "no search". */
-  search: string;
-  sortBy: SortKey;
-  order: 'asc' | 'desc';
-}
-
-export const DEFAULT_TABLE_FILTERS: TableFilters = {
-  state: [],
-  harness: [],
-  priority: [],
-  search: '',
-  sortBy: 'createdAt',
-  order: 'desc',
-};
-
-/**
- * A detail page's rail selection — which content panel the Ticket or Epic page
- * shows. `none` means the operator picked nothing, so the page opens on the
- * panel most relevant to the Task's state (`defaultSelection`); `stats` is the
- * explicit whole-Task Stats pick (the Epic's overview). Lives in the URL so a
- * refresh or a shared link lands on the same panel and Back steps between panels.
- */
-export type RailSelection =
-  | { kind: 'none' }
-  | { kind: 'stats' }
-  | { kind: 'attempt'; attemptNumber: number }
-  | { kind: 'timeline' }
-  | { kind: 'changes' }
-  | { kind: 'file'; path: string };
-
+export interface TableFilters { state: string[]; harness: string[]; priority: string[]; search: string; sortBy: SortKey; order: 'asc' | 'desc'; }
+export const DEFAULT_TABLE_FILTERS: TableFilters = { state: [], harness: [], priority: [], search: '', sortBy: 'createdAt', order: 'desc' };
+export type RailSelection = { kind: 'none' } | { kind: 'stats' } | { kind: 'attempt'; attemptNumber: number } | { kind: 'timeline' } | { kind: 'changes' } | { kind: 'file'; path: string };
 export const NO_SELECTION: RailSelection = { kind: 'none' };
-
-/** A full app location: active view plus every view's persisted state. */
+export type Scope = { kind: 'global' } | { kind: 'workspace'; workspaceId: number };
 export interface Route {
-  view: View;
-  /**
-   * The focused Ticket: `null` when on a view, or the Task id when
-   * the pathname is `/task/:id`. Lives in the pathname, not the query, but the
-   * Route still carries the underlying `view`/`table`/`peeked` so returning
-   * restores exactly where the operator was.
-   */
-  task: number | null;
-  /**
-   * The focused Epic: `null` when on a view, or the Epic ref when the
-   * pathname is `/epic/:ref`. Opens the Epic summary page; mutually exclusive
-   * with `task` (both live in the pathname, one path at a time).
-   */
-  epic: number | null;
-  /** A Conversation opened in the dock from a shareable Activity link. */
-  conversation?: number | null;
-  /** Deck terminal columns the operator has peeked open. */
-  peeked: TaskState[];
-  table: TableFilters;
-  /** The focused Ticket's or Epic's rail selection; `none` whenever neither is focused. */
-  panel: RailSelection;
-  file?: string | null;
+  scope: Scope; view: View; task: number | null; epic: number | null; conversation: number | null;
+  peeked: TaskState[]; table: TableFilters; panel: RailSelection; file: string | null;
 }
+export const DEFAULT_ROUTE: Route = { scope: { kind: 'global' }, view: 'board', task: null, epic: null, conversation: null, peeked: [], table: DEFAULT_TABLE_FILTERS, panel: NO_SELECTION, file: null };
+export const LAST_ROUTE_KEY = 'harmonic.last-route';
+type StorageLike = Pick<Storage, 'getItem' | 'setItem'>;
 
-export const DEFAULT_ROUTE: Route = {
-  view: 'board',
-  task: null,
-  epic: null,
-  conversation: null,
-  peeked: [],
-  table: DEFAULT_TABLE_FILTERS,
-  panel: NO_SELECTION,
-  file: null,
+const GLOBAL_PATHS: Readonly<Record<string, View>> = { '/': 'board', '/tasks': 'table', '/activity': 'activity', '/timeline': 'timeline', '/stats': 'stats', '/operations': 'operations', '/api': 'api', '/settings': 'settings' };
+const WORKSPACE_PATHS: Readonly<Record<string, View>> = { board: 'board', conversations: 'conversations', graph: 'graph', activity: 'activity', tasks: 'table', timeline: 'timeline', stats: 'stats', files: 'files', operations: 'operations', settings: 'workspace' };
+const csvValues = (raw: string, allowed: readonly string[]) => {
+  const values: string[] = [];
+  for (const part of raw.split(',')) { const value = part.trim(); if (value && allowed.includes(value) && !values.includes(value)) values.push(value); }
+  return values;
 };
-
-const PARAM = {
-  view: 'view',
-  peek: 'peek',
-  state: 'state',
-  harness: 'harness',
-  priority: 'priority',
-  q: 'q',
-  sort: 'sort',
-  order: 'order',
-  panel: 'panel',
-  conversation: 'conversation',
-  file: 'file',
-} as const;
-
-/** `panel` param ⇄ {@link RailSelection}: `timeline`, `changes`, `attempt:<n>`,
- * `file:<path>`; anything else (or a bad attempt number) is the default panel. */
-function parsePanel(raw: string | null): RailSelection {
-  if (raw === 'stats' || raw === 'timeline' || raw === 'changes') return { kind: raw };
-  if (raw?.startsWith('attempt:')) {
-    const n = Number(raw.slice('attempt:'.length));
-    return Number.isSafeInteger(n) && n > 0 ? { kind: 'attempt', attemptNumber: n } : NO_SELECTION;
-  }
-  if (raw?.startsWith('file:') && raw.length > 'file:'.length) return { kind: 'file', path: raw.slice('file:'.length) };
-  return NO_SELECTION;
-}
-
-function serializePanel(panel: RailSelection): string | null {
-  switch (panel.kind) {
-    case 'none':
-      return null;
-    case 'attempt':
-      return `attempt:${panel.attemptNumber}`;
-    case 'file':
-      return `file:${panel.path}`;
-    default:
-      return panel.kind;
-  }
-}
-
-const isView = (v: string | null): v is View => v !== null && (VIEWS as readonly string[]).includes(v);
-const csvValues = (raw: string, allowed: readonly string[]): string[] => {
-  const out: string[] = [];
-  for (const part of raw.split(',')) {
-    const v = part.trim();
-    if (v && allowed.includes(v) && !out.includes(v)) out.push(v);
-  }
-  return out;
-};
-const isPeekable = (v: string): v is TaskState => (TERMINAL_STATES as readonly string[]).includes(v);
-const isSortKey = (v: string | null): v is SortKey => v !== null && (SORT_KEYS as readonly string[]).includes(v);
-
-const TASK_PATH = /^\/task\/(\d+)\/?$/;
-const EPIC_PATH = /^\/epic\/(\d+)\/?$/;
-
-function queryOf(input: string): string {
-  const q = input.indexOf('?');
-  return q >= 0 ? input.slice(q + 1) : input;
-}
-
-/**
- * Parse a pathname + query string into a {@link Route}. Every field is validated
- * against its allowed set; anything unrecognized falls back to its default, so a
- * malformed or stale link never produces an invalid view, filter, or Ticket id.
- */
-export function parseRoute(pathname: string, search: string): Route {
+const isSortKey = (value: string | null): value is SortKey => value !== null && (SORT_KEYS as readonly string[]).includes(value);
+const positiveId = (value: string | undefined): number | null => { const id = Number(value); return Number.isSafeInteger(id) && id > 0 ? id : null; };
+const queryOf = (input: string) => input.includes('?') ? input.slice(input.indexOf('?') + 1) : input;
+function filters(search: string): TableFilters {
   const params = new URLSearchParams(queryOf(search));
-
-  const rawView = params.get(PARAM.view);
-  const view: View = isView(rawView) ? rawView : 'board';
-
-  const taskMatch = TASK_PATH.exec(pathname);
-  const taskId = taskMatch ? Number(taskMatch[1]) : NaN;
-  const task = taskMatch && Number.isSafeInteger(taskId) && taskId > 0 ? taskId : null;
-
-  const epicMatch = EPIC_PATH.exec(pathname);
-  const epicRef = epicMatch ? Number(epicMatch[1]) : NaN;
-  const epic = epicMatch && Number.isSafeInteger(epicRef) && epicRef > 0 ? epicRef : null;
-  const rawConversation = Number(params.get(PARAM.conversation));
-  const conversation = Number.isSafeInteger(rawConversation) && rawConversation > 0 ? rawConversation : null;
-
-  const peeked: TaskState[] = [];
-  for (const raw of (params.get(PARAM.peek) ?? '').split(',')) {
-    const s = raw.trim();
-    if (s && isPeekable(s) && !peeked.includes(s)) peeked.push(s);
-  }
-
-  const rawOrder = params.get(PARAM.order);
-
-  const table: TableFilters = {
-    state: csvValues(params.get(PARAM.state) ?? '', TASK_STATES),
-    harness: csvValues(params.get(PARAM.harness) ?? '', TABLE_HARNESSES),
-    priority: csvValues(params.get(PARAM.priority) ?? '', TABLE_PRIORITIES),
-    search: params.get(PARAM.q) ?? '',
-    sortBy: isSortKey(params.get(PARAM.sort)) ? (params.get(PARAM.sort) as SortKey) : 'createdAt',
-    order: rawOrder === 'asc' ? 'asc' : 'desc',
-  };
-
-  // A rail selection only means something on a detail page.
-  const panel = task !== null || epic !== null ? parsePanel(params.get(PARAM.panel)) : NO_SELECTION;
-
-  const file = view === 'files' && task === null && epic === null && params.get(PARAM.file) ? params.get(PARAM.file) : null;
-  return { view, task, epic, conversation, peeked, table, panel, file };
+  const sort = params.get('sort');
+  return { state: csvValues(params.get('state') ?? '', TASK_STATES), harness: csvValues(params.get('harness') ?? '', TABLE_HARNESSES), priority: csvValues(params.get('priority') ?? '', TABLE_PRIORITIES), search: params.get('q') ?? '', sortBy: isSortKey(sort) ? sort : 'createdAt', order: params.get('order') === 'asc' ? 'asc' : 'desc' };
 }
-
-/**
- * Serialize a {@link Route} to a relative URL: `/task/:id` when a Ticket is
- * focused, else `/` — plus a query string carrying the non-default view/peek/table
- * state (omitted entirely for the all-default board route, giving the clean `/`
- * URL). `peek` states are emitted in TASK_STATES order so equal routes serialize
- * identically (stable round-trip / bookmarks).
- */
+function parseDetail(parts: string[]): Pick<Route, 'task' | 'epic' | 'conversation' | 'panel' | 'file'> {
+  const [kind, rawId, panelKind, panelValue] = parts;
+  const id = positiveId(rawId);
+  const panel: RailSelection = panelKind === 'attempt' && positiveId(panelValue) !== null ? { kind: 'attempt', attemptNumber: positiveId(panelValue)! } : panelKind === 'stats' || panelKind === 'timeline' || panelKind === 'changes' ? { kind: panelKind } : NO_SELECTION;
+  if (kind === 'task' && id !== null) return { task: id, epic: null, conversation: null, panel, file: null };
+  if (kind === 'epic' && id !== null) return { task: null, epic: id, conversation: null, panel, file: null };
+  if (kind === 'conversations' && id !== null) return { task: null, epic: null, conversation: id, panel: NO_SELECTION, file: null };
+  return { task: null, epic: null, conversation: null, panel: NO_SELECTION, file: null };
+}
+export function parseRoute(pathname: string, search: string): Route {
+  const normalized = pathname.replace(/\/+$/, '') || '/';
+  const globalView = GLOBAL_PATHS[normalized];
+  if (globalView) return { ...DEFAULT_ROUTE, view: globalView, table: filters(search) };
+  const match = /^\/workspace\/(\d+)(?:\/(.*))?$/.exec(normalized);
+  const workspaceId = positiveId(match?.[1]);
+  if (workspaceId === null) return { ...DEFAULT_ROUTE, table: filters(search) };
+  const parts = (match?.[2] ?? 'board').split('/').filter(Boolean);
+  const detail = parseDetail(parts);
+  const view = detail.task !== null || detail.epic !== null ? 'board' : detail.conversation !== null ? 'conversations' : WORKSPACE_PATHS[parts[0] ?? 'board'] ?? 'board';
+  const file = view === 'files' && parts.length > 1 ? decodeURIComponent(parts.slice(1).join('/')) : null;
+  return { scope: { kind: 'workspace', workspaceId }, view, ...detail, file, peeked: [], table: filters(search) };
+}
+function detailPath(route: Route): string | null {
+  const panel = route.panel.kind === 'none' ? '' : route.panel.kind === 'attempt' ? `/attempt/${route.panel.attemptNumber}` : `/${route.panel.kind}`;
+  if (route.task !== null) return `task/${route.task}${panel}`;
+  if (route.epic !== null) return `epic/${route.epic}${panel}`;
+  if (route.conversation !== null) return `conversations/${route.conversation}`;
+  return null;
+}
 export function serializeRoute(route: Route): string {
   const params = new URLSearchParams();
-
-  if (route.view !== 'board') params.set(PARAM.view, route.view);
-  if (route.conversation) params.set(PARAM.conversation, String(route.conversation));
-
-  const peekSet = new Set(route.peeked);
-  const peek = TASK_STATES.filter((s) => peekSet.has(s));
-  if (peek.length > 0) params.set(PARAM.peek, peek.join(','));
-
-  const t = route.table;
-  if (t.state.length > 0) params.set(PARAM.state, t.state.join(','));
-  if (t.harness.length > 0) params.set(PARAM.harness, t.harness.join(','));
-  if (t.priority.length > 0) params.set(PARAM.priority, t.priority.join(','));
-  if (t.search) params.set(PARAM.q, t.search);
-  if (t.sortBy !== 'createdAt') params.set(PARAM.sort, t.sortBy);
-  if (t.order !== 'desc') params.set(PARAM.order, t.order);
-
-  const panel = route.task !== null || route.epic !== null ? serializePanel(route.panel) : null;
-  if (panel !== null) params.set(PARAM.panel, panel);
-  if (route.view === 'files' && route.task === null && route.epic === null && route.file) params.set(PARAM.file, route.file);
-
+  const table = route.table;
+  if (table.state.length) params.set('state', table.state.join(','));
+  if (table.harness.length) params.set('harness', table.harness.join(','));
+  if (table.priority.length) params.set('priority', table.priority.join(','));
+  if (table.search) params.set('q', table.search);
+  if (table.sortBy !== 'createdAt') params.set('sort', table.sortBy);
+  if (table.order !== 'desc') params.set('order', table.order);
+  let base: string;
+  if (route.scope.kind === 'global') base = Object.entries(GLOBAL_PATHS).find(([, view]) => view === route.view)?.[0] ?? '/';
+  else {
+    const detail = detailPath(route);
+    const segment = detail ?? (route.view === 'workspace' ? 'settings' : route.view === 'table' ? 'tasks' : route.view);
+    const file = !detail && route.view === 'files' && route.file ? `/${route.file.split('/').map(encodeURIComponent).join('/')}` : '';
+    base = `/workspace/${route.scope.workspaceId}/${segment}${file}`;
+  }
   const query = params.toString();
-  const base = route.task !== null ? `/task/${route.task}` : route.epic !== null ? `/epic/${route.epic}` : '/';
   return query ? `${base}?${query}` : base;
+}
+export function storeLastRoute(storage: StorageLike, route: Route): void { try { storage.setItem(LAST_ROUTE_KEY, serializeRoute(route)); } catch {} }
+export function loadLastRoute(storage: StorageLike): Route {
+  try { const value = storage.getItem(LAST_ROUTE_KEY); if (!value?.startsWith('/')) return DEFAULT_ROUTE; const url = new URL(value, 'http://harmonic.local'); return parseRoute(url.pathname, url.search); } catch { return DEFAULT_ROUTE; }
+}
+export function scopeSwitchRoute(route: Route, scope: Scope): Route {
+  if (scope.kind === 'global') return { ...route, scope, view: GLOBAL_RAIL_VIEWS.includes(route.view) ? route.view : 'board', task: null, epic: null, conversation: null, panel: NO_SELECTION, file: null };
+  const view = route.view === 'settings' ? 'workspace' : route.view;
+  return { ...route, scope, view: WORKSPACE_RAIL_VIEWS.includes(view) ? view : 'board', task: null, epic: null, conversation: null, panel: NO_SELECTION, file: null };
 }

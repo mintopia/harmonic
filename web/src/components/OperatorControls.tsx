@@ -34,7 +34,6 @@ export interface OperatorControlsProps {
   onGlobalPauseChange: (paused: boolean) => void;
   onRefreshTracker: () => void;
   onThemeCycle: () => void;
-  onSettingsClick: () => void;
   onLogout: () => void;
   onHelpClick: () => void;
 }
@@ -65,7 +64,7 @@ function RunningReadout({ config, runningCount }: { config: AppConfig; runningCo
 /**
  * The header's secondary operator cluster — auto-runner, fleet pause, tracker
  * refresh, the cost/load/host readouts, and the app-chrome controls (help,
- * theme, settings, logout). Rendered inline in the desktop status bar
+ * theme, logout). Rendered inline in the desktop status bar
  * (`layout="bar"`, the canonical strip) and stacked in the mobile nav drawer
  * (`layout="drawer"`), so both surfaces drive the same controls without drift.
  */
@@ -86,7 +85,6 @@ export function OperatorControls(props: OperatorControlsProps) {
     onGlobalPauseChange,
     onRefreshTracker,
     onThemeCycle,
-    onSettingsClick,
     onLogout,
     onHelpClick,
   } = props;
@@ -175,16 +173,6 @@ export function OperatorControls(props: OperatorControlsProps) {
             onClick={onThemeCycle}
           >
             <Icon name={THEME_ICONS[theme]} />
-          </button>
-          <button
-            aria-label="Settings"
-            aria-current={view === 'settings' ? 'page' : undefined}
-            className={`${touchTarget} rounded-md transition-colors duration-150 ${
-              view === 'settings' ? 'bg-accent-tint text-accent' : 'text-muted hover:bg-raised hover:text-ink'
-            }`}
-            onClick={onSettingsClick}
-          >
-            <Icon name="settings" />
           </button>
           {passwordSet && (
             <button
@@ -275,17 +263,6 @@ export function OperatorControls(props: OperatorControlsProps) {
         onClick={onThemeCycle}
       >
         <Icon name={THEME_ICONS[theme]} />
-      </button>
-      <button
-        aria-label="Settings"
-        aria-current={view === 'settings' ? 'page' : undefined}
-        title="Settings"
-        className={`${touchTarget} rounded-md transition-colors duration-150 ${
-          view === 'settings' ? 'bg-accent-tint text-accent' : 'text-muted hover:bg-raised hover:text-ink'
-        }`}
-        onClick={onSettingsClick}
-      >
-        <Icon name="settings" />
       </button>
       {passwordSet && (
         <button
