@@ -24,6 +24,7 @@ export async function activityRoutes(fastify: FastifyInstance, ctx: AppContext):
           'matching the firehose filter.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         querystring: paginationQuerySchema.extend({
+          workspaceId: z.coerce.number().int().positive().optional(),
           /** A bearer token passed as a query param (e.g. an EventSource that cannot set an Authorization header). */
           token: z.string().optional(),
         }),
@@ -36,11 +37,11 @@ export async function activityRoutes(fastify: FastifyInstance, ctx: AppContext):
       },
     },
     async (req) => {
-      const { limit, offset, token: queryToken } = req.query;
+      const { limit, offset, token: queryToken, workspaceId } = req.query;
       const bearer = req.headers.authorization?.match(/^Bearer (.+)$/)?.[1];
       const token = bearer ?? queryToken;
       const readOnly = (token ? await ctx.auth.verifyKey(token) : null)?.scope === 'read';
-      const { items, total } = paginate(await activitySnapshot(ctx, !readOnly), { limit, offset });
+      const { items, total } = paginate(await activitySnapshot(ctx, !readOnly, workspaceId), { limit, offset });
       return { processes: items, total };
     },
   );

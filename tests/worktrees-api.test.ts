@@ -42,6 +42,30 @@ describe('worktree inventory API (issue #482)', () => {
     close();
   });
 
+  it('filters inventory and cleanup controls to the requested Workspace', async () => {
+    server = await startServer();
+    const first = {
+      workspaceId: 1,
+      path: `${server.dataDir}/worktrees/task-1`,
+      branch: 'harmonic/task-1',
+      subject: { kind: 'task' as const, taskId: 1, title: 'First' },
+      sizeBytes: null,
+      dirty: false,
+      changeCount: 0,
+      state: 'Active' as const,
+    };
+    const second = { ...first, workspaceId: 2, path: `${server.dataDir}/worktrees/task-2`, branch: 'harmonic/task-2', subject: { kind: 'task' as const, taskId: 2, title: 'Second' } };
+    vi.spyOn(server.app.ctx.worktreeInventory, 'snapshot').mockResolvedValue([first, second]);
+
+    const global = await server.api('GET', '/api/worktrees');
+    const scoped = await server.api('GET', '/api/worktrees?workspaceId=1');
+    const cleanup = await server.api('POST', `/api/worktrees/${worktreeId(first)}/cleanup?workspaceId=2`);
+
+    expect(global.body.worktrees).toHaveLength(2);
+    expect(scoped.body).toMatchObject({ total: 1, worktrees: [expect.objectContaining({ workspaceId: 1 })] });
+    expect(cleanup.status).toBe(404);
+  });
+
   it('lets an operator force-clean a managed worktree and its branch', async () => {
     server = await startServer();
     vi.spyOn(server.app.ctx.worktreeInventory, 'snapshot').mockResolvedValue([

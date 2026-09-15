@@ -278,10 +278,11 @@ async function runningToolCount(ctx: AppContext, run: TaskAttemptRow): Promise<n
 }
 
 /** Every live process across Workspaces; `includeChats` is false for a Read Key. */
-export async function activitySnapshot(ctx: AppContext, includeChats: boolean): Promise<ApiActivityProcess[]> {
+export async function activitySnapshot(ctx: AppContext, includeChats: boolean, workspaceId?: number): Promise<ApiActivityProcess[]> {
   const snapshots = new Map((await ctx.runner.activeSnapshots()).map((snapshot) => [snapshot.attemptId, snapshot.snapshot]));
   const config = ctx.settingsStore.getGlobal();
-  const runs: ApiActivityProcess[] = await Promise.all((await ctx.attempts.listRunning()).map(async (run) => {
+  const running = (await ctx.attempts.listRunning()).filter((run) => workspaceId === undefined || atRestWorkspaceId(run.workspaceId) === workspaceId);
+  const runs: ApiActivityProcess[] = await Promise.all(running.map(async (run) => {
     if (isEpicAttempt(run)) {
       const workspaceId = atRestWorkspaceId(run.workspaceId);
       const epicRef = run.epicRef;
@@ -311,8 +312,9 @@ export async function activitySnapshot(ctx: AppContext, includeChats: boolean): 
     });
   }));
   if (!includeChats) return runs;
-  const chats: ApiActivityProcess[] = await Promise.all(ctx.conversationDriver.activeConversationIds().map(async (id) => {
+  const chats = (await Promise.all(ctx.conversationDriver.activeConversationIds().map(async (id) => {
     const convo = await ctx.conversations.get(id);
+    if (workspaceId !== undefined && convo.workspaceId !== workspaceId) return null;
     const usage = parseUsage(convo.usage);
     return conversationProcessToApi({
       conversation: convo,
@@ -321,7 +323,7 @@ export async function activitySnapshot(ctx: AppContext, includeChats: boolean): 
       contextWindow: contextWindowOf(ctx, convo.model, convo.harness),
       cost: costOfUsages([usage], pricesOf(ctx, convo.harness)),
     });
-  }));
+  }))).filter((chat): chat is ApiActivityProcess => chat !== null);
   return [...runs, ...chats];
 }
 

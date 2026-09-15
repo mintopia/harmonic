@@ -443,6 +443,23 @@ describe('worktree-reconciler', () => {
   }
 
   describe('worktree reconciler (issue #386, ADR-0010)', () => {
+    it('reconciles only the requested Workspace', async () => {
+      const listWorktrees = vi.fn(async () => []);
+      const reconciler = new WorktreeReconciler(
+        async () => [],
+        async () => [
+          { id: 1, workingDir: '/first' },
+          { id: 2, workingDir: '/second' },
+        ],
+        fakeGit({ listWorktrees }),
+        '/harmonic/worktrees',
+      );
+
+      await expect(reconciler.reconcile(2)).resolves.toEqual({ removed: 0, recreated: 0, flagged: 0 });
+      expect(listWorktrees).toHaveBeenCalledOnce();
+      expect(listWorktrees).toHaveBeenCalledWith('/second');
+    });
+
     it('leaves a dirty worktree of a terminal task on disk', async () => {
       const managedRoot = '/harmonic/worktrees';
       const path = join(managedRoot, 'task-5');

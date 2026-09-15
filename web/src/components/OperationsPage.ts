@@ -11,6 +11,7 @@ import type { Task } from '../types.js';
 import type { Epic } from '../epic-model.js';
 
 export interface OperationsPageProps {
+  workspaceId?: number | null;
   scheduledJobs?: ReactNode;
   spanTree?: ReactNode;
   tasks?: readonly Task[];
@@ -214,15 +215,15 @@ function OperationsReadout({ tasks, epics, onOpenTask, onOpenEpic }: Pick<Operat
  * inventory read model (snapshot plus firehose) is lifted to the page so the
  * header can total it and own the reconcile action.
  */
-export function OperationsPage({ scheduledJobs, spanTree, tasks, epics, onOpenTask, onOpenEpic }: OperationsPageProps) {
-  const inventory = useWorktreeInventory();
+export function OperationsPage({ workspaceId = null, scheduledJobs, spanTree, tasks, epics, onOpenTask, onOpenEpic }: OperationsPageProps) {
+  const inventory = useWorktreeInventory(workspaceId);
   const { worktrees, reconciledAt, busyId, reconciling, error, confirmation } = inventory;
   return createElement(
     'div',
     { className: 'grid gap-6' },
     createElement(PageHeader, {
       title: 'Operations',
-      description: 'Worktrees, scheduled jobs, and reconciliation for this instance',
+      description: workspaceId === null ? 'Worktrees, scheduled jobs, and reconciliation for this instance' : 'Worktrees and reconciliation for this Workspace',
       actions: createElement(
         'div',
         { className: 'flex flex-wrap items-center gap-3' },
