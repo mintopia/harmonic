@@ -7,6 +7,13 @@ Job (ADR-0010), the Update Banner (ADR-0011), and a self-restart primitive on
 top of the daemon launch path (ADR-0012). Amends ADR-0006 (a restart-killed
 Conversation becomes resumable).
 
+**Amended by ADR-0034**: when Harmonic runs under a systemd supervisor
+(`HARMONIC_MANAGED_BY=systemd`), the swap below hands the restart to the
+supervisor — it installs the new version, verifies it, and exits(0), letting
+`Restart=always` reboot onto the new binary — and the relauncher (steps 3 and 5)
+is skipped. The relauncher described here remains the mechanism for init.d and
+standalone Managed Mode, where nothing else restarts the process.
+
 ## Context
 
 Harmonic ships as the npm package `@mintopia/harmonic` (ADR-0012), released by

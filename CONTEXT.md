@@ -850,6 +850,31 @@ app root. Only *packaged* mode runs the Update Check and shows the Update Banner
 *source* mode suppresses both, since Harmonic cannot cleanly upgrade a checkout.
 _Avoid_: install type, dev mode, environment
 
+**Managed Mode**:
+How Harmonic's *process* is kept alive — **standalone** (a human ran `harmonic
+serve`/`start`; Harmonic owns its own daemon lifecycle and self-restarts on
+upgrade via the relauncher) or **supervised** (an OS service manager owns the
+process). Detected from the `HARMONIC_MANAGED_BY` env the service unit sets.
+Under a **systemd** supervisor an upgrade hands the restart to the supervisor —
+install the new version, exit, and `Restart=always` reboots it — instead of
+spawning the relauncher; under init.d and standalone the relauncher performs the
+restart. Orthogonal to Distribution Mode, which decides *whether* self-upgrade
+can happen at all. (ADR-0034, ADR-0030.)
+_Avoid_: daemon mode, service mode (a Service install is one way to reach
+supervised mode, not the mode itself)
+
+**Service install**:
+Installing Harmonic as an OS-managed service so it starts on boot and is
+controlled through the host's service manager. `harmonic install` auto-detects
+the backend — a **systemd** unit (a system unit when run as root, a user unit
+with linger otherwise) or a **SysV init.d** script registered with `update-rc.d`
+(the mechanism on init.d hosts, run at provision time as root, executing Harmonic
+as a non-root `--user`) — falling back to the self-managed daemon plus a printed
+boot snippet where no service manager fits. `harmonic uninstall` removes the
+service and **never** touches the data dir. Linux only; the seam errors clearly
+elsewhere. (ADR-0034.)
+_Avoid_: daemon install, systemd install (systemd is one backend of several)
+
 **Update Check**:
 A Scheduled Job that asks the npm registry whether a newer Harmonic is published
 — the `@mintopia/harmonic` package's `latest` dist-tag, compared by semver
