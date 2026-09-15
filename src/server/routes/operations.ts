@@ -16,6 +16,7 @@ const reconciliationResponseSchema = z.object({
   recreated: z.number().int().nonnegative(),
   flagged: z.number().int().nonnegative(),
 });
+const workspaceQuerySchema = z.object({ workspaceId: z.coerce.number().int().positive().optional() });
 
 /** Process-local trace operations. History is intentionally bounded and non-durable. */
 export async function operationRoutes(
@@ -46,7 +47,8 @@ export async function operationRoutes(
       tags: ['Operations'],
       description: 'Run worktree reconciliation immediately.',
       security: [{ bearerAuth: [] }, { sessionCookie: [] }],
+      querystring: workspaceQuerySchema,
       response: { 200: reconciliationResponseSchema.describe('The outcome of the worktree reconciliation.') },
     },
-  }, () => ctx.reconcileWorktrees());
+  }, (req) => ctx.reconcileWorktrees(req.query.workspaceId));
 }

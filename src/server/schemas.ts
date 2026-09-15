@@ -172,6 +172,11 @@ export const timelineAttemptSchema = z
     endedAt: z.number().nullable().meta({ example: 1784032200000 }),
     /** Frozen Cost for a finished Attempt; null while running or when nothing was priceable. */
     cost: costSchema.nullable(),
+    workspace: z.object({
+      id: z.number().int().meta({ example: 1 }),
+      name: z.string().meta({ example: 'Harmonic' }),
+      color: z.string().meta({ example: '#3AA0FA' }),
+    }),
   })
   .meta({ id: 'TimelineAttempt' });
 
@@ -182,7 +187,7 @@ export const timelineResponseSchema = z
     to: z.number().meta({ example: 1784086400000 }),
   })
   .meta({ id: 'TimelineResponse' })
-  .describe('Every task Attempt in one Workspace whose run window overlaps [from, to] — the fleet Timeline lanes.');
+  .describe('Every task Attempt whose run window overlaps [from, to], optionally scoped to one Workspace — the fleet Timeline lanes.');
 
 /**
  * One node of a Process Tree (execution/usage.ts `ProcessNode`): the root

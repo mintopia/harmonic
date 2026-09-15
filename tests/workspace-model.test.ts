@@ -20,6 +20,7 @@ const ws = (id: number, name = `ws-${id}`): Workspace => ({
   id,
   name,
   workingDir: `/repo/${name}`,
+  color: '#FA6152',
   trackerEnabled: false,
   trackerPollIntervalSeconds: 60,
   excludedDirectories: [],

@@ -131,6 +131,55 @@ describe('task-steering', () => {
     });
   });
 
+  describe('extending the time guardrail', () => {
+    let server: TestServer;
+
+    beforeAll(async () => {
+      server = await startServer(stubHarness());
+    });
+    afterAll(async () => {
+      await server.close();
+    });
+
+    it('extends a running task and records the raised wall-clock cap', async () => {
+      const created = await server.api('POST', '/api/tasks', { prompt: slowFirstTurn(10, 250) });
+      const taskId = created.body.id;
+      const started = await server.api('POST', `/api/tasks/${taskId}/run`);
+      expect(started.status).toBe(201);
+      const attemptId = started.body.id;
+
+      const extended = await waitFor(async () => {
+        const res = await server.api('POST', `/api/tasks/${taskId}/extend-guardrail`, { minutes: 60 });
+        return res.status === 200 ? res : undefined;
+      });
+      expect(extended.body.state).toBe('working');
+
+      await waitFor(async () => {
+        const { body } = await server.api('GET', `/api/tasks/${taskId}`);
+        return body.state === 'done' ? body : undefined;
+      });
+
+      const { body } = await server.api('GET', `/api/attempts/${attemptId}/events`);
+      const extend = body.events.find(
+        (e: any) => e.type === 'lifecycle' && e.payload.event === 'guardrail_extended',
+      );
+      expect(extend?.payload).toMatchObject({ dimension: 'wall-clock', addMinutes: 60 });
+      expect(extend?.payload.wallClockMinutes).toBeGreaterThan(60);
+    });
+
+    it('409s when the task has no active run to extend', async () => {
+      const draft = await server.api('POST', '/api/tasks', { prompt: 'not running' });
+      const res = await server.api('POST', `/api/tasks/${draft.body.id}/extend-guardrail`, { minutes: 60 });
+      expect(res.status).toBe(409);
+    });
+
+    it('rejects a non-positive extension', async () => {
+      const draft = await server.api('POST', '/api/tasks', { prompt: 'x' });
+      const res = await server.api('POST', `/api/tasks/${draft.body.id}/extend-guardrail`, { minutes: 0 });
+      expect(res.status).toBe(400);
+    });
+  });
+
   describe('steering a settled task continues its session', () => {
     let server: TestServer;
 
@@ -177,6 +226,39 @@ describe('task-steering', () => {
       expect(latest.id).toBe(attemptBefore?.id);
       expect(latest.prompt).toContain('## Operator message');
       expect(latest.prompt).not.toContain('ticket 90210');
+    });
+
+    it('resumes a paused task, continuing its session seeded with the operator message', async () => {
+      const seed = (await server.api('POST', '/api/tasks', { prompt: 'workspace seed' })).body;
+      const workspaceId = (await server.app.ctx.tasks.get(seed.id)).workspaceId ?? undefined;
+      const mirrored = await server.app.ctx.tasks.upsertMirrored(
+        { trackerRef: 90211, prompt: 'ticket 90211\n\nbody', workflow: 'implement', wayfinderType: null, mapRef: null, closed: false },
+        workspaceId,
+      );
+      await server.api('POST', `/api/tasks/${mirrored.id}/run`);
+      await waitFor(async () => {
+        const task = (await server.api('GET', `/api/tasks/${mirrored.id}`)).body;
+        return task.state === 'escalated' ? task : undefined;
+      });
+      // Walk it to a paused task with a retained session (only working → paused
+      // is legal), so the operator can still steer it.
+      await server.app.ctx.tasks.setState(mirrored.id, 'ready');
+      await server.app.ctx.tasks.setState(mirrored.id, 'working');
+      await server.app.ctx.tasks.setState(mirrored.id, 'paused');
+      const runsBefore = await server.app.ctx.attempts.listForTask(mirrored.id);
+      const attemptBefore = runsBefore.at(-1);
+
+      const steered = await server.api('POST', `/api/tasks/${mirrored.id}/steer`, { text: 'pick up where you left off' });
+      expect(steered.status).toBe(200);
+      expect(steered.body).toEqual({ ok: true });
+
+      const latest = await waitFor(async () => {
+        const all = await server.app.ctx.attempts.listForTask(mirrored.id);
+        const last = all.at(-1);
+        return all.length === runsBefore.length && last?.prompt?.includes('pick up where you left off') ? last : undefined;
+      });
+      expect(latest.id).toBe(attemptBefore?.id);
+      expect(latest.prompt).toContain('## Operator message');
     });
 
     it('409s when the settled task has no warm session (e.g. a plain done native task)', async () => {

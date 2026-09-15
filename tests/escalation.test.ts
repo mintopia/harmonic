@@ -20,7 +20,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 describe('escalation', () => {
-  describe('escalation: the three actions (direct mode)', () => {
+  describe('escalation: the disposition actions (direct mode)', () => {
     let server: TestServer;
 
     beforeAll(async () => {
@@ -147,6 +147,22 @@ describe('escalation', () => {
       expect((await server.api('GET', `/api/tasks/${taskId}`)).body.state).toBe('escalated');
     });
 
+    it('Requeue returns the ticket to ready with no operator guidance recorded and no feedback appended', async () => {
+      const taskId = await runToEscalated();
+      const feedbackBefore = (await timeline(taskId)).find((a) => a.number === 1)!.feedback;
+      const requeued = await server.api('POST', `/api/tasks/${taskId}/requeue`, {});
+      expect(requeued.status).toBe(200);
+      expect(requeued.body).toMatchObject({ state: 'ready', escalationReason: null });
+      await new Promise((r) => setTimeout(r, 50));
+      expect((await server.api('GET', `/api/tasks/${taskId}`)).body.state).toBe('ready');
+      const runs = (await server.api('GET', `/api/tasks/${taskId}/attempts`)).body.attempts;
+      expect(runs).toHaveLength(1);
+      // No operator guidance is folded into the prompt, and the escalated attempt's
+      // own feedback is left exactly as it was — requeue teaches the next attempt nothing.
+      expect(runs[0].prompt).not.toContain('Feedback from the previous attempt');
+      expect((await timeline(taskId)).find((a) => a.number === 1)!.feedback).toBe(feedbackBefore);
+    });
+
     it('Close cancels the ticket and clears the escalation reason', async () => {
       const taskId = await runToEscalated();
       const closed = await server.api('POST', `/api/tasks/${taskId}/close`);
@@ -156,12 +172,12 @@ describe('escalation', () => {
       expect((await server.api('POST', `/api/tasks/${taskId}/uncancel`)).body.state).toBe('ready');
     });
 
-    it('the three actions apply to escalated tickets only', async () => {
+    it('the disposition actions apply to escalated tickets only', async () => {
       const created = await server.api('POST', '/api/tasks', { prompt: 'p' });
       expect((await server.api('POST', `/api/tasks/${created.body.id}/accept`)).status).toBe(409);
       expect((await server.api('POST', `/api/tasks/${created.body.id}/reject`, { guidance: 'x' })).status).toBe(409);
+      expect((await server.api('POST', `/api/tasks/${created.body.id}/requeue`, {})).status).toBe(409);
       expect((await server.api('POST', `/api/tasks/${created.body.id}/close`)).status).toBe(409);
-      expect((await server.api('POST', `/api/tasks/${created.body.id}/requeue`, {})).status).toBe(404);
       expect((await server.api('POST', `/api/tasks/${created.body.id}/unescalate`)).status).toBe(404);
       expect((await server.api('POST', `/api/tasks/${created.body.id}/adopt-review`)).status).toBe(404);
       expect((await server.api('POST', `/api/tasks/${created.body.id}/note-to-critic`, { note: 'x' })).status).toBe(404);
@@ -265,6 +281,7 @@ describe('escalation-service', () => {
       for (const call of [
         () => service.accept(ready.id),
         () => service.reject(ready.id, 'guidance'),
+        () => service.requeue(ready.id),
         () => service.close(ready.id),
       ]) {
         const err = await call().catch((e: unknown) => e);
@@ -290,6 +307,21 @@ describe('escalation-service', () => {
         expect(accepted).toMatchObject({ state: 'done', escalationReason: null });
         expect(await attempts.get(run.id)).toMatchObject({ state: 'passed', reason: 'operator-accept', verifiedHeadOid: 'cand-oid' });
         expect(resumed).toEqual([]);
+      });
+
+      it('marks the ticket verifying before verification, then merging — never merging first', async () => {
+        const { task } = await escalated();
+        const statuses: (string | null)[] = [];
+        const original = tasks.setMergeStatus.bind(tasks);
+        tasks.setMergeStatus = async (id: number, status) => {
+          statuses.push(status);
+          return original(id, status);
+        };
+        effects = [{ effect: 'target-ref', idempotencyKey: 'main<-branch', expected: {}, apply: async () => ({ ok: true, observed: {} }) }];
+
+        await service.accept(task.id);
+
+        expect(statuses).toEqual(['verifying', 'merging']);
       });
 
       it('unverified candidate: verify fails (block), hands the reason to the loop as feedback without merging', async () => {
@@ -382,6 +414,16 @@ describe('escalation-service', () => {
         expect((err as DomainError).code).toBe('validation');
         expect(resumed).toEqual([]);
         expect((await tasks.get(task.id)).state).toBe('escalated');
+      });
+    });
+
+    describe('requeue', () => {
+      it('returns the ticket to ready with no feedback, no resume, and no cleanup', async () => {
+        const { task } = await escalated();
+        const requeued = await service.requeue(task.id);
+        expect(requeued).toMatchObject({ state: 'ready', escalationReason: null, mergeStatus: null, feedback: null });
+        expect(resumed).toEqual([]);
+        expect(cleaned).toEqual([]);
       });
     });
 

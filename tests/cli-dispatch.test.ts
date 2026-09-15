@@ -14,6 +14,10 @@ describe('dispatchCli', () => {
     expect(dispatchCli(['--help'])).toEqual({ kind: 'help', exitCode: 0 });
   });
 
+  it('routes "install --help" to help with exit code 0', () => {
+    expect(dispatchCli(['install', '--help'])).toEqual({ kind: 'help', exitCode: 0 });
+  });
+
   it('routes an unknown command to help with exit code 1', () => {
     expect(dispatchCli(['bogus'])).toEqual({ kind: 'help', exitCode: 1 });
   });
@@ -36,6 +40,10 @@ describe('dispatchCli', () => {
 
   it('routes "stop" with --data-dir', () => {
     expect(dispatchCli(['stop', '--data-dir', '/x'])).toEqual({ kind: 'stop', dataDir: '/x' });
+  });
+
+  it.each(['restart', 'uninstall'] as const)('routes "%s" with --data-dir', (command) => {
+    expect(dispatchCli([command, '--data-dir', '/x'])).toEqual({ kind: command, dataDir: '/x' });
   });
 
   it('routes "serve" with default port and host', () => {
@@ -71,5 +79,14 @@ describe('dispatchCli', () => {
     expect(dispatch.kind).toBe('start');
     if (dispatch.kind !== 'start') throw new Error('expected start');
     expect(dispatch.values['otel-export']).toBe('true');
+  });
+
+  it('routes "install" with server options and a service user', () => {
+    const dispatch = dispatchCli(['install', '--data-dir', '/d', '--port', '5000', '--user', 'operator']);
+    expect(dispatch.kind).toBe('install');
+    if (dispatch.kind !== 'install') throw new Error('expected install');
+    expect(dispatch.values['data-dir']).toBe('/d');
+    expect(dispatch.values.port).toBe('5000');
+    expect(dispatch.values.user).toBe('operator');
   });
 });

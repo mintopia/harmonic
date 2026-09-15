@@ -35,6 +35,28 @@ describe('UpgradeSwap', () => {
     ]);
   });
 
+  it('hands the restart to systemd after installation and verification', async () => {
+    const { swap, calls, dependencies } = subject({ managedBy: 'systemd' });
+
+    await expect(swap.execute({ version: '2.6.0' })).resolves.toEqual({ kind: 'swapped' });
+
+    expect(dependencies.spawnRelauncher).not.toHaveBeenCalled();
+    expect(calls).toEqual([
+      'log:install:started', 'operation:upgrade.install', 'install:2.6.0', 'log:install:succeeded',
+      'log:verify:started', 'operation:upgrade.verify', 'log:verify:succeeded',
+      'log:release-lock:started', 'operation:upgrade.release-lock', 'release-lock', 'log:release-lock:succeeded',
+      'log:exit:started', 'operation:upgrade.exit', 'exit', 'log:exit:succeeded',
+    ]);
+  });
+
+  it('keeps the relauncher for init.d', async () => {
+    const { swap, dependencies } = subject({ managedBy: 'init.d' });
+
+    await expect(swap.execute({ version: '2.6.0' })).resolves.toEqual({ kind: 'swapped' });
+
+    expect(dependencies.spawnRelauncher).toHaveBeenCalledOnce();
+  });
+
   it('aborts without releasing the lock or exiting when installation fails', async () => {
     const installError = new Error('npm unavailable');
     const { swap, calls, dependencies } = subject({ install: vi.fn(async () => { throw installError; }) });

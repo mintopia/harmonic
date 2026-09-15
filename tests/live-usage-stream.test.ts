@@ -63,7 +63,9 @@ describe('live attempt_usage firehose (ADR 0010)', () => {
     const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
     const attemptId = started.body.id;
 
-    const msg = await waitFor(async () => messages.find((m) => m.type === 'attempt_usage' && m.attemptId === attemptId));
+    const msg = await waitFor(async () =>
+      messages.find((m) => m.type === 'attempt_usage' && m.attemptId === attemptId && m.usage?.toolCalls?.Read === 1),
+    );
     expect(msg.usage.models['claude-opus-4-8']).toMatchObject({ inputTokens: 100, outputTokens: 10, cacheReadTokens: 5 });
     expect(msg.contextTokens).toBe(105);
     expect(msg.tree).toMatchObject({ id: sessionId, depth: 0, lastTool: 'Read' });

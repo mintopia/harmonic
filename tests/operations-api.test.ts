@@ -61,8 +61,19 @@ describe('Operations API (issue #293)', () => {
     expect(response.body).toEqual({ removed: 0, recreated: 0, flagged: 0 });
   });
 
+  it('reconciles only the requested Workspace', async () => {
+    server = await startServer();
+    const reconcile = vi.spyOn(WorktreeReconciler.prototype, 'reconcile').mockResolvedValue({ removed: 0, recreated: 0, flagged: 0 });
+
+    const response = await server.api('POST', '/api/operations/reconcile?workspaceId=1');
+
+    expect(response.status).toBe(200);
+    expect(reconcile).toHaveBeenCalledWith(1);
+  });
+
   it('shares the reconciliation flight with the scheduled job', async () => {
     server = await startServer();
+    await server.app.ctx.scheduler.runNow('Worktree reconciliation');
     let active = 0;
     let maxActive = 0;
     let calls = 0;
@@ -89,6 +100,7 @@ describe('Operations API (issue #293)', () => {
     await expect(manual).resolves.toMatchObject({ status: 200, body: { removed: 1, recreated: 2, flagged: 3 } });
     await expect(scheduled).resolves.toBeUndefined();
     expect(maxActive).toBe(1);
+    expect(calls).toBe(1);
   });
 
   it('streams operation events to full and read-scoped firehose clients', async () => {
@@ -116,8 +128,8 @@ describe('Operations API (issue #293)', () => {
       },
     };
     server.app.ctx.bus.emit('operations', operationEvent);
-    const streamed = await waitFor(async () => {
-      const candidate = messages.find(
+    const streamed = await waitFor(async () =>
+      messages.find(
         (message): message is { type: 'operations'; event: { type: string } } =>
           typeof message === 'object' &&
           message !== null &&
@@ -127,10 +139,9 @@ describe('Operations API (issue #293)', () => {
           typeof message.event === 'object' &&
           message.event !== null &&
           'type' in message.event &&
-          typeof message.event.type === 'string',
-      );
-      return candidate?.event.type === 'op-started' ? candidate : undefined;
-    });
+          message.event.type === 'op-started',
+      ),
+    );
     expect(streamed.event.type).toBe('op-started');
     await waitFor(async () =>
       fullMessages.some(

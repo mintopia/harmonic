@@ -100,6 +100,11 @@ const dependsOnBodySchema = z.object({ dependsOnId: z.number().int().positive().
 const steerInputSchema = z.object({
   text: z.string().min(1).meta({ example: 'Stop — check the existing tests before changing the limiter.' }),
 });
+
+const extendGuardrailInputSchema = z.object({
+  /** Minutes to add to the running Attempt's wall-clock budget. */
+  minutes: z.number().int().positive().max(1440).meta({ example: 60 }),
+});
 const depParamsSchema = z.object({
   id: z.coerce.number().int().meta({ example: 4821 }),
   depId: z.coerce.number().int().meta({ example: 4818 }),
@@ -586,11 +591,11 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       schema: {
         tags: ['Tasks'],
         description:
-          "Steer a running task: send an operator message to its active Attempt. When the harness supports ACP mid-turn steering, the message is injected into the running turn immediately — pre-empting the current generation without cancelling it. Otherwise, or when the agent is parked between turns, the message is queued and delivered as a fresh prompt turn at the next turn boundary. When no Attempt is active but the task's last Attempt left a resumable session (an escalated task that ended without closure), the message continues that session in a fresh Attempt. A cold cache changes the estimated cost, never eligibility. Use it to redirect an agent that has gone off-track, nudge one that ended its turn and parked, or continue one whose Attempt just ended. Operator only.",
+          "Steer a running task: send an operator message to its active Attempt. When the harness supports ACP mid-turn steering, the message is injected into the running turn immediately — pre-empting the current generation without cancelling it. Otherwise, or when the agent is parked between turns, the message is queued and delivered as a fresh prompt turn at the next turn boundary. When no Attempt is active but the task's last Attempt left a resumable session (an escalated task that ended without closure), the message continues that session in a fresh Attempt. A paused task is resumed to working and the message delivered the same way. A cold cache changes the estimated cost, never eligibility. Use it to redirect an agent that has gone off-track, nudge one that ended its turn and parked, continue one whose Attempt just ended, or resume a paused one. Operator only.",
         params: idParamsSchema,
         body: steerInputSchema,
         response: {
-          200: okResponseSchema.describe("The message was injected into the running turn or queued at the next boundary of the task's active Attempt, or continued its last Attempt's resumable session in a fresh Attempt."),
+          200: okResponseSchema.describe("The message was injected into the running turn or queued at the next boundary of the task's active Attempt, continued its last Attempt's resumable session in a fresh Attempt, or resumed a paused task and delivered the message."),
           409: errorResponse('The task has no active Attempt to steer and no resumable session to continue.'),
         },
       },
@@ -598,10 +603,39 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     async (req) => {
       await ctx.upgrade.assertManualLaunchAllowed();
       await ctx.tasks.assertExists(req.params.id);
-      if (!(await ctx.runner.steer(req.params.id, req.body.text)) && !(await ctx.runner.steerSettled(req.params.id, req.body.text))) {
+      if (
+        !(await ctx.runner.steer(req.params.id, req.body.text)) &&
+        !(await ctx.runner.steerSettled(req.params.id, req.body.text)) &&
+        !(await ctx.runner.steerPaused(req.params.id, req.body.text))
+      ) {
         throw new DomainError('invalid_state', `task ${req.params.id} has no active Attempt to steer and no resumable session to continue`);
       }
       return { ok: true } as const;
+    },
+  );
+
+  app.post(
+    '/tasks/:id/extend-guardrail',
+    {
+      schema: {
+        tags: ['Tasks'],
+        description:
+          "Extend the wall-clock time guardrail of a working task's live Attempt by `minutes`, giving a run that is close to its budget more time without restarting it. The raised cap is persisted onto the Attempt's frozen guardrail config and the live deadline is re-armed immediately. Operator only.",
+        params: idParamsSchema,
+        body: extendGuardrailInputSchema,
+        response: {
+          200: taskSchema.describe('The working task, with the extended budget in effect.'),
+          409: errorResponse('The task is not working or has no active Attempt with a wall-clock budget.'),
+        },
+      },
+    },
+    async (req, reply) => {
+      if (!(await ctx.runner.extendGuardrail(req.params.id, req.body.minutes))) {
+        return reply
+          .code(409)
+          .send({ error: { code: 'conflict', message: 'The task is not actively running with a wall-clock budget.' } });
+      }
+      return await withDeps({ id: req.params.id });
     },
   );
 
@@ -699,6 +733,23 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       if (req.body.start) await ctx.upgrade.assertManualLaunchAllowed();
       return withDeps(await ctx.escalation.reject(req.params.id, req.body.guidance, req.body.start ?? false));
     },
+  );
+
+  app.post(
+    '/tasks/:id/requeue',
+    {
+      schema: {
+        tags: ['Tasks'],
+        description:
+          'Requeue an escalated ticket with no guidance: return it to `ready` with no feedback recorded, to be picked up again when the Auto-Runner has capacity. For when the escalation cause was fixed outside Harmonic (a missing blocker link, say) and there is nothing to tell the next attempt. Human-only.',
+        params: idParamsSchema,
+        response: {
+          200: taskSchema.describe('The task, back in the queue as `ready`.'),
+          409: errorResponse('The task is not escalated.'),
+        },
+      },
+    },
+    async (req) => await withDeps(await ctx.escalation.requeue(req.params.id)),
   );
 
   app.post(

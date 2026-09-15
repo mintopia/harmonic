@@ -1,5 +1,6 @@
 import type {
   Attempt,
+  ActivityProcess,
   AppConfig,
   ConfigLayers,
   AttemptUsage,
@@ -95,10 +96,17 @@ export const api = {
     return request<{ tasks: Task[]; total: number }>('GET', query ? `/api/tasks?${query}` : '/api/tasks');
   },
   task: (id: number) => request<Task>('GET', `/api/tasks/${id}`),
-  stats: (from: number, to: number, workspaceId: number) =>
-    request<Stats>('GET', `/api/stats?from=${from}&to=${to}&workspaceId=${workspaceId}`),
-  timeline: (workspaceId: number, from: number, to: number) =>
-    request<TimelineResponse>('GET', `/api/timeline?workspaceId=${workspaceId}&from=${from}&to=${to}`),
+  stats: (from: number, to: number, workspaceId?: number) => {
+    const query = new URLSearchParams({ from: String(from), to: String(to) });
+    if (workspaceId !== undefined) query.set('workspaceId', String(workspaceId));
+    return request<Stats>('GET', `/api/stats?${query}`);
+  },
+  activity: () => request<{ processes: ActivityProcess[] }>('GET', '/api/activity'),
+  timeline: (workspaceId: number | undefined, from: number, to: number) => {
+    const query = new URLSearchParams({ from: String(from), to: String(to) });
+    if (workspaceId !== undefined) query.set('workspaceId', String(workspaceId));
+    return request<TimelineResponse>('GET', `/api/timeline?${query}`);
+  },
   epicStats: (epicRef: number, workspaceId: number) =>
     request<Stats>('GET', `/api/epics/${epicRef}/stats?workspaceId=${workspaceId}`),
   createTask: (input: Partial<Task> & { prompt: string; state?: 'draft' | 'ready' }) =>
@@ -129,16 +137,17 @@ export const api = {
   discardGitPaths: (workspaceId: number, paths: string[]) => request<{ ok: true }>('POST', '/api/git/discard', { workspaceId, paths }),
   commitGitChanges: (workspaceId: number, message: string) => request<{ ok: true }>('POST', '/api/git/commit', { workspaceId, message }),
   gitFileDiff: (workspaceId: number, path: string) => request<{ file: DiffFile | null }>('GET', `/api/git/diff?workspaceId=${workspaceId}&path=${encodeURIComponent(path)}`),
-  worktrees: ({ limit, offset }: { limit?: number; offset?: number } = {}) => {
+  worktrees: ({ workspaceId, limit, offset }: { workspaceId?: number; limit?: number; offset?: number } = {}) => {
     const params = new URLSearchParams();
+    if (workspaceId !== undefined) params.set('workspaceId', String(workspaceId));
     if (limit !== undefined) params.set('limit', String(limit));
     if (offset !== undefined) params.set('offset', String(offset));
     const query = params.toString();
     return request<{ worktrees: WorktreeInventoryEntry[]; total: number; reconciledAt: number | null }>('GET', query ? `/api/worktrees?${query}` : '/api/worktrees');
   },
-  dirtyWorktreeFiles: (id: string) => request<{ files: string[] }>('GET', `/api/worktrees/${encodeURIComponent(id)}/dirty-files`),
-  cleanupWorktree: (id: string) => request<{ removed: boolean }>('POST', `/api/worktrees/${encodeURIComponent(id)}/cleanup`),
-  reconcileWorktrees: () => request<{ removed: number; recreated: number; flagged: number }>('POST', '/api/operations/reconcile'),
+  dirtyWorktreeFiles: (id: string, workspaceId?: number) => request<{ files: string[] }>('GET', `/api/worktrees/${encodeURIComponent(id)}/dirty-files${workspaceId === undefined ? '' : `?workspaceId=${workspaceId}`}`),
+  cleanupWorktree: (id: string, workspaceId?: number) => request<{ removed: boolean }>('POST', `/api/worktrees/${encodeURIComponent(id)}/cleanup${workspaceId === undefined ? '' : `?workspaceId=${workspaceId}`}`),
+  reconcileWorktrees: (workspaceId?: number) => request<{ removed: number; recreated: number; flagged: number }>('POST', `/api/operations/reconcile${workspaceId === undefined ? '' : `?workspaceId=${workspaceId}`}`),
   workspaces: () => request<{ workspaces: Workspace[]; total: number }>('GET', '/api/workspaces'),
   createWorkspace: (input: { name: string; workingDir: string }) =>
     request<Workspace>('POST', '/api/workspaces', input),
@@ -149,6 +158,7 @@ export const api = {
     patch: {
       name?: string;
       workingDir?: string;
+      color?: string;
       trackerEnabled?: boolean;
       trackerPollIntervalSeconds?: number;
       excludedDirectories?: string[] | null;
@@ -212,6 +222,9 @@ export const api = {
   /** Steer a running task: queue a message for its active run, delivered at the next turn boundary. */
   steerTask: (id: number, text: string) =>
     request<{ ok: true }>('POST', `/api/tasks/${id}/steer`, { text }),
+  /** Extend a working task's wall-clock time guardrail by `minutes`. */
+  extendGuardrail: (id: number, minutes: number) =>
+    request<Task>('POST', `/api/tasks/${id}/extend-guardrail`, { minutes }),
   uncancelTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/uncancel`),
   addDependency: (id: number, dependsOnId: number) =>
     request<Task>('POST', `/api/tasks/${id}/dependencies`, { dependsOnId }),
@@ -228,6 +241,7 @@ export const api = {
     request<Task>('POST', `/api/tasks/${id}/accept`, opts?.force ? { force: true } : {}),
   rejectTask: (id: number, guidance: string, start = false) =>
     request<Task>('POST', `/api/tasks/${id}/reject`, { guidance, start }),
+  requeueTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/requeue`),
   closeTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/close`),
   // Hard-delete: cascades the Task's Attempts/history and
   // vanishes it from the board/graph via the `task_removed` WS broadcast

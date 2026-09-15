@@ -21,13 +21,19 @@ afterEach(() => {
 });
 
 describe('tasksQuery', () => {
-  it('always sets workspaceId, sortBy, order, limit, and offset', () => {
+  it('sets workspaceId, sortBy, order, limit, and offset for a scoped table', () => {
     const params = new URLSearchParams(tasksQuery({ ...baseQuery, limit: 50, offset: 100 }));
     expect(params.get('workspaceId')).toBe('1');
     expect(params.get('sortBy')).toBe('createdAt');
     expect(params.get('order')).toBe('desc');
     expect(params.get('limit')).toBe('50');
     expect(params.get('offset')).toBe('100');
+  });
+
+  it('omits workspaceId and epic rows for the global table', () => {
+    const params = new URLSearchParams(tasksQuery({ ...baseQuery, workspaceId: undefined }));
+    expect(params.has('workspaceId')).toBe(false);
+    expect(params.has('epics')).toBe(false);
   });
 
   it('opts into derived-epic rows (ADR-0016) so the list can merge them server-side', () => {

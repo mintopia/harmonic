@@ -278,10 +278,11 @@ async function runningToolCount(ctx: AppContext, run: TaskAttemptRow): Promise<n
 }
 
 /** Every live process across Workspaces; `includeChats` is false for a Read Key. */
-export async function activitySnapshot(ctx: AppContext, includeChats: boolean): Promise<ApiActivityProcess[]> {
+export async function activitySnapshot(ctx: AppContext, includeChats: boolean, workspaceId?: number): Promise<ApiActivityProcess[]> {
   const snapshots = new Map((await ctx.runner.activeSnapshots()).map((snapshot) => [snapshot.attemptId, snapshot.snapshot]));
   const config = ctx.settingsStore.getGlobal();
-  const runs: ApiActivityProcess[] = await Promise.all((await ctx.attempts.listRunning()).map(async (run) => {
+  const running = (await ctx.attempts.listRunning()).filter((run) => workspaceId === undefined || atRestWorkspaceId(run.workspaceId) === workspaceId);
+  const runs: ApiActivityProcess[] = await Promise.all(running.map(async (run) => {
     if (isEpicAttempt(run)) {
       const workspaceId = atRestWorkspaceId(run.workspaceId);
       const epicRef = run.epicRef;
@@ -311,8 +312,9 @@ export async function activitySnapshot(ctx: AppContext, includeChats: boolean): 
     });
   }));
   if (!includeChats) return runs;
-  const chats: ApiActivityProcess[] = await Promise.all(ctx.conversationDriver.activeConversationIds().map(async (id) => {
+  const chats = (await Promise.all(ctx.conversationDriver.activeConversationIds().map(async (id) => {
     const convo = await ctx.conversations.get(id);
+    if (workspaceId !== undefined && convo.workspaceId !== workspaceId) return null;
     const usage = parseUsage(convo.usage);
     return conversationProcessToApi({
       conversation: convo,
@@ -321,7 +323,7 @@ export async function activitySnapshot(ctx: AppContext, includeChats: boolean): 
       contextWindow: contextWindowOf(ctx, convo.model, convo.harness),
       cost: costOfUsages([usage], pricesOf(ctx, convo.harness)),
     });
-  }));
+  }))).filter((chat): chat is ApiActivityProcess => chat !== null);
   return [...runs, ...chats];
 }
 
@@ -347,11 +349,16 @@ export interface TimelineAttemptApi {
   startedAt: number;
   endedAt: number | null;
   cost: Cost | null;
+  workspace: {
+    id: number;
+    name: string;
+    color: string;
+  };
 }
 
 /**
- * Every task Attempt in one Workspace whose run window overlaps [from, to],
- * ordered by start. Reads persisted attempt history (so it spans finished work
+ * Every task Attempt whose run window overlaps [from, to], optionally scoped to
+ * one Workspace and ordered newest first. Reads persisted attempt history (so it spans finished work
  * the live Activity snapshot has dropped) and joins each Attempt's owning Task
  * for its lane (harness), model, and display title. A still-running Attempt
  * keeps its null `endedAt`; the client extends the bar to now. Epic Attempts are
@@ -359,15 +366,17 @@ export interface TimelineAttemptApi {
  */
 export async function timelineAttempts(
   ctx: AppContext,
-  workspaceId: number,
+  workspaceId: number | undefined,
   from: number,
   to: number,
 ): Promise<TimelineAttemptApi[]> {
   const now = Date.now();
   const config = ctx.settingsStore.getGlobal();
-  const tasks = await ctx.tasks.list({ workspaceId });
+  const tasks = await ctx.tasks.list(workspaceId === undefined ? {} : { workspaceId });
   if (tasks.length === 0) return [];
   const byId = new Map(tasks.map((task) => [task.id, task]));
+  const workspaces = await ctx.workspaces.list();
+  const workspaceById = new Map(workspaces.map((workspace) => [workspace.id, workspace]));
   const runs = await ctx.attempts.listForTasks(tasks.map((task) => task.id));
   const spans: TimelineAttemptApi[] = [];
   for (const run of runs) {
@@ -375,6 +384,9 @@ export async function timelineAttempts(
     if (run.startedAt > to || end < from) continue;
     const task = byId.get(run.taskId);
     if (!task) continue;
+    if (task.workspaceId === null) continue;
+    const workspace = workspaceById.get(task.workspaceId);
+    if (!workspace) continue;
     const harness = task.harness ?? config.defaults.harness;
     const model = task.model ?? harnessFor(config, harness).defaultModel;
     let cost: Cost | null = null;
@@ -397,9 +409,10 @@ export async function timelineAttempts(
       startedAt: run.startedAt,
       endedAt: run.endedAt,
       cost,
+      workspace: { id: workspace.id, name: workspace.name, color: workspace.color },
     });
   }
-  return spans.sort((a, b) => a.startedAt - b.startedAt);
+  return spans.sort((a, b) => b.startedAt - a.startedAt || b.attemptId - a.attemptId);
 }
 
 /** A Conversation as the REST API and firehose both serve it. */

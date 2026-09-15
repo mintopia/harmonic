@@ -133,6 +133,34 @@ export class GuardrailSupervisor {
     this.wallClockTimer.unref?.();
   }
 
+  /** Restart the wall-clock deadline from `startedAt` — the operator resumed the
+   * Attempt, so the paused span (and everything before it) no longer counts
+   * against its execution budget. Re-arms from the new origin; a no-op with no
+   * budget snapshot. */
+  resetWallClock(startedAt: number): void {
+    this.startedAt = startedAt;
+    if (this.wallClockTimer) {
+      clearTimeout(this.wallClockTimer);
+      this.wallClockTimer = null;
+    }
+    this.armWallClock();
+  }
+
+  /** Raise the frozen wall-clock cap by `addMinutes` and re-arm the deadline so a
+   * running Attempt gets the extra budget without waiting for the next turn to
+   * re-prime. A no-op with no budget snapshot. Returns the new cap in minutes,
+   * or null when there is no wall-clock budget to extend. */
+  extendWallClock(addMinutes: number): number | null {
+    if (!this.budget) return null;
+    this.budget = { ...this.budget, wallClockMinutes: this.budget.wallClockMinutes + addMinutes };
+    if (this.wallClockTimer) {
+      clearTimeout(this.wallClockTimer);
+      this.wallClockTimer = null;
+    }
+    this.armWallClock();
+    return this.budget.wallClockMinutes;
+  }
+
   /** Arm the token/cost spend poll; a no-op when neither `tokens` nor `costUsd`
    * is configured on the frozen budget. */
   armSpend(): void {

@@ -249,8 +249,11 @@ function TaskProgressBar({ task, attempts, commandConfigured }: { task: Task; at
         aria-label="Task progress"
       >
         {steps.map((step, i) => {
-          const leftDone = i > 0 && steps[i - 1]?.status === 'done' && !steps[i - 1]?.disabled;
-          const rightDone = step.status === 'done' && !step.disabled;
+          // A disabled node (e.g. an unconfigured post-merge check) is passed
+          // through, not skipped over: its `done` status still means the flow
+          // reached beyond it, so the connectors stay solid rather than greying.
+          const leftDone = i > 0 && steps[i - 1]?.status === 'done';
+          const rightDone = step.status === 'done';
           const caption = stepCaption(step.key, step.status, task, attempts.length, !!step.disabled);
           return (
             <li
@@ -1033,7 +1036,13 @@ export function TicketPage({
               <div className="mb-4 rounded-md bg-await-tint px-3 py-2 text-small">
                 <span className="inline-flex items-center gap-1.5 font-semibold text-await">
                   <Icon name="alert-triangle" className="size-3.5" />
-                  {task.mergeStatus === 'resolving-conflicts' ? 'Resolving merge conflicts' : 'Escalated'}
+                  {task.mergeStatus === 'resolving-conflicts'
+                    ? 'Resolving merge conflicts'
+                    : task.mergeStatus === 'verifying'
+                      ? 'Verifying candidate'
+                      : task.mergeStatus === 'merging'
+                        ? 'Merging'
+                        : 'Escalated'}
                 </span>
                 {escalationReason && (
                   <div className="mt-0.5 whitespace-pre-wrap break-words text-ink">{escalationReason}</div>

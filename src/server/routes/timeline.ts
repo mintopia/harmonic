@@ -14,13 +14,13 @@ export async function timelineRoutes(fastify: FastifyInstance, ctx: AppContext):
       schema: {
         tags: ['Activity'],
         description:
-          'Every task Attempt in one Workspace whose run window overlaps [from, to], as fleet-timeline spans — ' +
+          'Every task Attempt whose run window overlaps [from, to], optionally scoped to one Workspace, as fleet-timeline spans — ' +
           'lane is the harness, plus the attempt outcome and the window it occupied. Read from persisted attempt ' +
           'history, so it spans finished work the live Activity snapshot no longer retains. A still-running Attempt ' +
           'has a null endedAt; the client extends its bar to now. Powers the scrubbable Timeline view.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         querystring: z.object({
-          workspaceId: z.coerce.number().int(),
+          workspaceId: z.coerce.number().int().optional(),
           from: z.coerce.number().int(),
           to: z.coerce.number().int(),
         }),

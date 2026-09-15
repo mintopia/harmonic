@@ -2,6 +2,7 @@ import chokidar, { type FSWatcher } from 'chokidar';
 import { readFileSync, statSync } from 'node:fs';
 import { relative, resolve, sep } from 'node:path';
 import type { WorkspaceRow } from '../db/schema.js';
+import { logger } from '../logger.js';
 import { readGitStatus, type GitStatusEntry } from './git-status.js';
 
 export interface WorkspaceWatcherEvents {
@@ -38,7 +39,7 @@ export class WorkspaceWatcher {
       const signature = JSON.stringify([resolve(workspace.workingDir), [...workspace.excludedDirectories].sort()]);
       if (this.watched.get(workspace.id)?.signature === signature) return;
       await this.stop(workspace.id);
-      this.start(workspace, signature);
+      await this.start(workspace, signature);
     }));
   }
 
@@ -46,7 +47,7 @@ export class WorkspaceWatcher {
     await Promise.all([...this.watched.keys()].map((id) => this.stop(id)));
   }
 
-  private start(workspace: WorkspaceRow, signature: string): void {
+  private async start(workspace: WorkspaceRow, signature: string): Promise<void> {
     const root = resolve(workspace.workingDir);
     const excluded = new Set(workspace.excludedDirectories.map((path) => resolve(root, path)));
     const isIgnored = (path: string): boolean => {
@@ -67,6 +68,13 @@ export class WorkspaceWatcher {
       else return;
       this.schedule(workspace.id, workspace.workingDir, state);
     });
+    await new Promise<void>((ready) => {
+      watcher.once('ready', () => ready());
+      watcher.once('error', (err) => {
+        logger.warn('workspace watcher failed to start', { workspaceId: workspace.id, error: err instanceof Error ? err.message : String(err) });
+        ready();
+      });
+    });
   }
 
   private schedule(workspaceId: number, root: string, state: WatchedWorkspace): void {
@@ -78,7 +86,7 @@ export class WorkspaceWatcher {
       state.fsChanged = false;
       state.gitChanged = false;
       if (fsChanged) this.events.fsChanged(workspaceId);
-      if (gitChanged) void readGitStatus(root).then((status) => this.events.gitStatus(workspaceId, status.entries)).catch(() => {});
+      if (gitChanged) void readGitStatus(root).then((status) => this.events.gitStatus(workspaceId, status.entries)).catch((err) => logger.warn('workspace git status refresh failed', { workspaceId, error: err instanceof Error ? err.message : String(err) }));
     }, this.debounceMs());
   }
 

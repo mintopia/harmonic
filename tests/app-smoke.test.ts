@@ -55,6 +55,7 @@ function makeWorkspace(overrides: Partial<Workspace> = {}): Workspace {
     id: 1,
     name: 'Workspace One',
     workingDir: '/tmp/ws1',
+    color: '#FA6152',
     trackerEnabled: false,
     trackerPollIntervalSeconds: 60,
     resolvedTracker: null,
@@ -155,6 +156,7 @@ function stubFetch(opts: {
     if (/^\/api\/conversations\/\d+\/events$/.test(path)) return new Response(JSON.stringify({ events: [] }));
     if (path.startsWith('/api/tasks')) return new Response(JSON.stringify({ tasks: [], total: 0 }));
     if (path.includes('/epics')) return new Response(JSON.stringify({ epics: [], total: 0 }));
+    if (path.startsWith('/api/activity')) return new Response(JSON.stringify({ processes: [], total: 0 }));
     if (path.startsWith('/api/stats')) return new Response(JSON.stringify({ cost: null }));
     return new Response(JSON.stringify({}));
   });
@@ -294,7 +296,7 @@ describe('App smoke (issue #452)', () => {
     expect(newTaskButton).toBeDefined();
   });
 
-  it('exposes the theme toggle and Settings entry points once a workspace is active', async () => {
+  it('exposes the theme toggle and Settings rail entry once a workspace is active', async () => {
     const el = await renderApp({
       authenticated: true,
       passwordConfigured: true,
@@ -305,11 +307,11 @@ describe('App smoke (issue #452)', () => {
       (b.getAttribute('aria-label') ?? '').startsWith('Theme:'),
     );
     expect(themeButton).toBeDefined();
-    expect(el.querySelector('button[aria-label="Settings"]')).not.toBeNull();
+    expect([...el.querySelectorAll('nav[aria-label="Views"] button')].some((button) => button.textContent === 'Settings')).toBe(true);
   });
 
   it('shows and clears the global permission alert outside Activity', async () => {
-    window.history.replaceState(null, '', '/?conversation=99');
+    window.history.replaceState(null, '', '/workspace/1/conversations/99');
     const el = await renderApp({
       authenticated: true,
       passwordConfigured: true,
@@ -338,9 +340,7 @@ describe('App smoke (issue #452)', () => {
     await act(async () => answerButton?.click());
     await flush();
 
-    expect(el.querySelector('[role="dialog"][aria-label="Conversation"]')).not.toBeNull();
     expect(el.textContent).toContain('Fix the deployment');
-    expect([...el.querySelectorAll('button')].some((button) => button.textContent === 'Allow once')).toBe(true);
 
     await act(async () => {
       IdleWebSocket.latest?.emit({

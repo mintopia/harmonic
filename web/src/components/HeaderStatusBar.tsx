@@ -24,7 +24,6 @@ interface HeaderStatusBarProps {
   onGlobalPauseChange: (paused: boolean) => void;
   onRefreshTracker: () => void;
   onThemeCycle: () => void;
-  onSettingsClick: () => void;
   onLogout: () => void;
   onNewTask: () => void;
   onHelpClick: () => void;
@@ -48,7 +47,6 @@ export function HeaderStatusBar({
   onGlobalPauseChange,
   onRefreshTracker,
   onThemeCycle,
-  onSettingsClick,
   onLogout,
   onNewTask,
   onHelpClick,
@@ -94,7 +92,6 @@ export function HeaderStatusBar({
           onGlobalPauseChange={onGlobalPauseChange}
           onRefreshTracker={onRefreshTracker}
           onThemeCycle={onThemeCycle}
-          onSettingsClick={onSettingsClick}
           onLogout={onLogout}
           onHelpClick={onHelpClick}
         />

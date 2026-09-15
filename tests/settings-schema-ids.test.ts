@@ -32,6 +32,7 @@ function makeWorkspace(): Workspace {
     id: 1,
     name: 'Workspace One',
     workingDir: '/tmp/ws1',
+    color: '#FA6152',
     trackerEnabled: false,
     trackerPollIntervalSeconds: 60,
     excludedDirectories: [],

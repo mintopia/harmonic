@@ -1,5 +1,9 @@
 # Decision: Operations is a worktree control surface — inventory, operator force-cleanup, reconcile-on-demand
 
+Refined by: 0033-global-scope-and-path-routing.md (Operations is Scope-aware —
+Workspace-filtered in Workspace scope, all-Workspaces in Global scope — rather
+than always instance-wide).
+
 Status: accepted
 Date: 2026-09-03
 

@@ -9,12 +9,14 @@ import type { Task, TaskState } from './types.js';
 export type TaskAction =
   | 'accept'
   | 'reject'
+  | 'requeue'
   | 'close'
   | 'run'
   | 'ready'
   | 'edit'
   | 'complete'
   | 'pause'
+  | 'extend'
   | 'resume'
   | 'cancel'
   | 'uncancel'
@@ -23,13 +25,13 @@ export type TaskAction =
 export function taskActions(state: TaskState): TaskAction[] {
   switch (state) {
     case 'escalated':
-      return ['delete', 'close', 'reject', 'accept'];
+      return ['delete', 'close', 'requeue', 'reject', 'accept'];
     case 'ready':
       return ['delete', 'run', 'edit', 'cancel'];
     case 'draft':
       return ['delete', 'ready', 'edit', 'cancel'];
     case 'working':
-      return ['pause', 'complete', 'cancel'];
+      return ['pause', 'extend', 'complete', 'cancel'];
     case 'paused':
       return ['delete', 'resume', 'cancel'];
     case 'cancelled':

@@ -16,6 +16,30 @@ at least one, and the last cannot be deleted. Deleting one is guarded (no
 in-flight work) and cascades to its Tasks, Attempts, and Conversations.
 _Avoid_: project, repo, context
 
+**Scope**:
+Whether a view is bound to one Workspace or to the whole instance. Two values:
+**Workspace scope** (the default — every page reads only the active Workspace)
+and **Global scope** (pages aggregate across all Workspaces at once, for
+monitoring many Workspaces together). Scope is chosen in the Workspace switcher,
+where **Global** sits as a peer to the Workspace rows, and it drives which
+navigation entries and which pages are shown. A page that has no Global form
+falls back to the Dashboard; a Global page with no per-Workspace form falls back
+to the Workspace's Board when scope returns to a Workspace.
+_Avoid_: view mode, level, context
+
+**Global scope**: see **Scope**.
+
+**Dashboard**:
+The Global-scope home — an instance-wide overview shown when the current page has
+no Global form. Exists only in Global scope.
+
+**Workspace Color**:
+A contrast-safe color assigned to each Workspace (auto-picked from a curated
+palette at creation, editable in Workspace Settings), best-effort unique. With
+the Workspace's first initial it forms the **Workspace badge** used to tell
+Workspaces apart wherever they mix — the Workspace switcher and every Global-scope
+list (Tickets column, Timeline event tag).
+
 **Host Ceiling**:
 The global cap on total concurrent Attempts across all Workspaces — the host's
 safety limit that a Workspace's own concurrency cap can never breach.
@@ -825,6 +849,31 @@ Harmonic itself). Detected at boot from whether a `.git` directory sits at the
 app root. Only *packaged* mode runs the Update Check and shows the Update Banner;
 *source* mode suppresses both, since Harmonic cannot cleanly upgrade a checkout.
 _Avoid_: install type, dev mode, environment
+
+**Managed Mode**:
+How Harmonic's *process* is kept alive — **standalone** (a human ran `harmonic
+serve`/`start`; Harmonic owns its own daemon lifecycle and self-restarts on
+upgrade via the relauncher) or **supervised** (an OS service manager owns the
+process). Detected from the `HARMONIC_MANAGED_BY` env the service unit sets.
+Under a **systemd** supervisor an upgrade hands the restart to the supervisor —
+install the new version, exit, and `Restart=always` reboots it — instead of
+spawning the relauncher; under init.d and standalone the relauncher performs the
+restart. Orthogonal to Distribution Mode, which decides *whether* self-upgrade
+can happen at all. (ADR-0034, ADR-0030.)
+_Avoid_: daemon mode, service mode (a Service install is one way to reach
+supervised mode, not the mode itself)
+
+**Service install**:
+Installing Harmonic as an OS-managed service so it starts on boot and is
+controlled through the host's service manager. `harmonic install` auto-detects
+the backend — a **systemd** unit (a system unit when run as root, a user unit
+with linger otherwise) or a **SysV init.d** script registered with `update-rc.d`
+(the mechanism on init.d hosts, run at provision time as root, executing Harmonic
+as a non-root `--user`) — falling back to the self-managed daemon plus a printed
+boot snippet where no service manager fits. `harmonic uninstall` removes the
+service and **never** touches the data dir. Linux only; the seam errors clearly
+elsewhere. (ADR-0034.)
+_Avoid_: daemon install, systemd install (systemd is one backend of several)
 
 **Update Check**:
 A Scheduled Job that asks the npm registry whether a newer Harmonic is published

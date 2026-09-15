@@ -38,7 +38,7 @@ shared-history git client.
   (text + metadata), `GET /api/fs/raw` (bytes for image/audio preview and
   download), `PUT /api/fs/file` (save), and create / rename / delete / move.
   Git: `GET /api/git/status` (`--porcelain=v2`) drives the tree colours;
-  `POST /api/git/{stage,unstage,discard,commit}`. The new git write methods land
+  `POST /api/git/{stage,unstage,discard,commit}`. The new git write methods live
   on `src/execution/git.ts` under `withRepoLock`. **No** push, pull, merge, or
   branch operations.
 - **Live via a filesystem watcher.** chokidar on the root, Excluded Directories

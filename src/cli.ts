@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-import { mkdirSync, openSync, readFileSync } from 'node:fs';
-import { execFile, spawn } from 'node:child_process';
+import { existsSync, mkdirSync, openSync, readFileSync } from 'node:fs';
+import { execFile, execFileSync, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -10,7 +10,8 @@ import { acquireLock, daemonStatus, logFilePath, releaseLock, stopDaemon, writeD
 import { initializeTelemetry, resolveTelemetryOptions } from './telemetry.js';
 import { logger } from './logger.js';
 import { installProcessSafetyNet } from './reliability/process-safety-net.js';
-import { dispatchCli } from './cli-dispatch.js';
+import { dispatchCli, type ServeValues } from './cli-dispatch.js';
+import { createServiceManager, type ServiceManager } from './service-manager.js';
 import { UpgradeSwap } from './upgrade/upgrade-swap.js';
 import { startOperation } from './telemetry/operations.js';
 
@@ -23,12 +24,18 @@ Usage:
   harmonic start [--port <n>] [--host <h>] [--data-dir <dir>] [--password <pw>] [telemetry options]
   harmonic status [--data-dir <dir>]
   harmonic stop [--data-dir <dir>]
+  harmonic restart [--data-dir <dir>]
+  harmonic install [--port <n>] [--host <h>] [--data-dir <dir>] [--password <pw>] [telemetry options]
+  harmonic uninstall [--data-dir <dir>]
 
 Commands:
   serve       Run the server in the foreground
   start       Run the server in the background (logs to <data-dir>/harmonic.log)
   status      Show whether a background server is running
   stop        Stop the background server
+  restart     Restart the installed service or background server
+  install     Install Harmonic as a service, or print a boot-hook command
+  uninstall   Remove the installed Harmonic service
   version     Print the installed Harmonic version (also --version, -v)
 
 Options:
@@ -59,15 +66,125 @@ const readVersion = (): string => {
   return pkg.version ?? 'unknown';
 };
 
+const userSystemdUsable = (): boolean => {
+  const uid = process.getuid?.();
+  if (!process.env.XDG_RUNTIME_DIR || !process.env.DBUS_SESSION_BUS_ADDRESS || uid === undefined) return false;
+  try {
+    const linger = execFileSync('loginctl', ['show-user', String(uid), '--property=Linger', '--value'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 1_000,
+    });
+    if (linger.trim() !== 'yes') return false;
+    execFileSync('systemctl', ['--user', 'show-environment'], {
+      stdio: 'ignore',
+      timeout: 1_000,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const serviceManager = (): ServiceManager => {
+  const isRoot = process.getuid?.() === 0;
+  return createServiceManager({
+    platform: process.platform,
+    isRoot,
+    systemdRunning: existsSync('/run/systemd/system'),
+    initdAvailable: existsSync('/etc/init.d'),
+    userSystemdUsable: !isRoot && userSystemdUsable(),
+  });
+};
+
+const installedServiceManager = (): ServiceManager | null =>
+  process.env.HARMONIC_INITD_SERVICE === '1' || process.platform !== 'linux' ? null : serviceManager();
+
+const bootCommand = (rest: string[]): string => {
+  const safeArgs: string[] = [];
+  for (let index = 0; index < rest.length; index++) {
+    const arg = rest[index]!;
+    if (arg === '--password') {
+      index++;
+      continue;
+    }
+    if (!arg.startsWith('--password=')) safeArgs.push(arg);
+  }
+  return ['harmonic', 'start', ...safeArgs].join(' ');
+};
+
+async function startStandalone(values: ServeValues, rest: string[]): Promise<void> {
+  const dataDir = values['data-dir'] ?? defaultDataDir();
+  const port = Number(values.port);
+  const host = values.host!;
+  const existing = daemonStatus(dataDir);
+  if (existing.running && existing.info) {
+    logger.error(
+      `Already running (pid ${existing.info.pid}) — ${displayUrl(existing.info.host, existing.info.port)}. ` +
+        '`harmonic stop` first.',
+    );
+    process.exit(1);
+  }
+  mkdirSync(dataDir, { recursive: true });
+  const log = openSync(logFilePath(dataDir), 'a');
+  const child = spawn(process.execPath, [fileURLToPath(import.meta.url), 'serve', ...rest], {
+    detached: true,
+    stdio: ['ignore', log, log],
+  });
+  child.unref();
+  writeDaemon(dataDir, { pid: child.pid!, port, host, startedAt: Date.now() });
+  await new Promise((resolve) => setTimeout(resolve, 1500));
+  if (!daemonStatus(dataDir).running) {
+    logger.error(`Failed to start — see ${logFilePath(dataDir)}`);
+    await stopDaemon(dataDir);
+    process.exit(1);
+  }
+  logger.info(
+    `Harmonic running in the background (pid ${child.pid}) — ${displayUrl(host, port)}\n` +
+      `Logs: ${logFilePath(dataDir)}\nStop with: harmonic stop`,
+  );
+}
+
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
   const rest = argv.slice(1);
   const dispatch = dispatchCli(argv);
 
-  if (dispatch.kind === 'status' || dispatch.kind === 'stop') {
+  if (dispatch.kind === 'status' || dispatch.kind === 'stop' || dispatch.kind === 'restart' || dispatch.kind === 'uninstall') {
     const dataDir = dispatch.dataDir ?? defaultDataDir();
+    if (dispatch.kind === 'uninstall') {
+      const manager = serviceManager();
+      await manager.uninstall();
+      logger.info('Service uninstalled.');
+      return;
+    }
+    if (dispatch.kind === 'restart' && process.platform !== 'linux') serviceManager();
+    const manager = installedServiceManager();
+    if (manager && await manager.isInstalled()) {
+      if (dispatch.kind === 'stop') {
+        await manager.stop();
+        logger.info('Stopped.');
+        return;
+      }
+      if (dispatch.kind === 'restart') {
+        await manager.restart();
+        logger.info('Restarted.');
+        return;
+      }
+      const status = await manager.status();
+      logger.info(status.detail ?? (status.running ? 'Running.' : 'Not running.'));
+      if (!status.running) process.exit(1);
+      return;
+    }
     if (dispatch.kind === 'stop') {
       logger.info((await stopDaemon(dataDir)) ? 'Stopped.' : 'Not running.');
+      return;
+    }
+    if (dispatch.kind === 'restart') {
+      await stopDaemon(dataDir);
+      const values = dispatchCli(['start', '--data-dir', dataDir]);
+      if (values.kind !== 'start') throw new Error('Unable to build restart command');
+      await startStandalone(values.values, ['--data-dir', dataDir]);
       return;
     }
     const { running, info } = daemonStatus(dataDir);
@@ -94,36 +211,40 @@ async function main(): Promise<void> {
 
   const { values } = dispatch;
 
-  if (dispatch.kind === 'start') {
-    const dataDir = values['data-dir'] ?? defaultDataDir();
-    const port = Number(values.port);
-    const host = values.host!;
-    const existing = daemonStatus(dataDir);
-    if (existing.running && existing.info) {
-      logger.error(
-        `Already running (pid ${existing.info.pid}) — ${displayUrl(existing.info.host, existing.info.port)}. ` +
-          '`harmonic stop` first.',
-      );
-      process.exit(1);
-    }
-    mkdirSync(dataDir, { recursive: true });
-    const log = openSync(logFilePath(dataDir), 'a');
-    const child = spawn(process.execPath, [fileURLToPath(import.meta.url), 'serve', ...rest], {
-      detached: true,
-      stdio: ['ignore', log, log],
+  if (dispatch.kind === 'install') {
+    const manager = serviceManager();
+    logger.info(`Selected ${manager.backend}.`);
+    const result = await manager.install({
+      startSelfManaged: () => startStandalone(values, rest),
+      bootCommand: bootCommand(rest),
+      serve: {
+        port: values.port,
+        host: values.host,
+        dataDir: values['data-dir'] ?? defaultDataDir(),
+        ...(values.password === undefined ? {} : { password: values.password }),
+        ...(values['otel-endpoint'] === undefined ? {} : { otelEndpoint: values['otel-endpoint'] }),
+        ...(values['otel-headers'] === undefined ? {} : { otelHeaders: values['otel-headers'] }),
+        ...(values['otel-export'] === undefined ? {} : { otelExport: values['otel-export'] }),
+        ...(values['otel-metric-export-interval'] === undefined
+          ? {}
+          : { otelMetricExportInterval: values['otel-metric-export-interval'] }),
+        ...(values['otel-stdout-log-level'] === undefined ? {} : { otelStdoutLogLevel: values['otel-stdout-log-level'] }),
+      },
+      ...(values.user === undefined ? {} : { user: values.user }),
     });
-    child.unref();
-    writeDaemon(dataDir, { pid: child.pid!, port, host, startedAt: Date.now() });
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-    if (!daemonStatus(dataDir).running) {
-      logger.error(`Failed to start — see ${logFilePath(dataDir)}`);
-      await stopDaemon(dataDir);
-      process.exit(1);
+    if (result.status) logger.info(result.status.detail ?? (result.status.running ? 'Running.' : 'Not running.'));
+    if (result.bootCommand) logger.info(`Add this to the host boot hook: ${result.bootCommand}`);
+    return;
+  }
+
+  if (dispatch.kind === 'start') {
+    const manager = installedServiceManager();
+    if (manager && await manager.isInstalled()) {
+      await manager.start();
+      logger.info('Started.');
+      return;
     }
-    logger.info(
-      `Harmonic running in the background (pid ${child.pid}) — ${displayUrl(host, port)}\n` +
-        `Logs: ${logFilePath(dataDir)}\nStop with: harmonic stop`,
-    );
+    await startStandalone(values, rest);
     return;
   }
 
@@ -157,6 +278,7 @@ async function main(): Promise<void> {
       metricsSummary: { intervalMs: telemetryOptions.metricExportIntervalMillis, flush: () => telemetry.flushMetricSummary() },
       onUpgradeIdle: async (version) => {
         const swap = new UpgradeSwap({
+          ...(process.env.HARMONIC_MANAGED_BY === undefined ? {} : { managedBy: process.env.HARMONIC_MANAGED_BY }),
           install: async (target) => {
             await execFileAsync('npm', ['i', '-g', `@mintopia/harmonic@${target}`]);
           },

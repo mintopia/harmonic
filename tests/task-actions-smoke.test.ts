@@ -41,6 +41,7 @@ describe('TaskActions smoke (issue #469)', () => {
 
     const buttons = [...host!.querySelectorAll('button')].map((b) => b.textContent);
     expect(buttons).toContain('Reject with guidance…');
+    expect(buttons).toContain('Requeue');
     expect(buttons).toContain('Close task');
     expect(buttons.some((b) => b?.includes('Accept'))).toBe(true);
     expect(buttons).not.toContain('Delete');
@@ -58,6 +59,17 @@ describe('TaskActions smoke (issue #469)', () => {
 
   it('disables the escalation actions while an Accept is merging', async () => {
     const task = makeTask({ id: 7, prompt: 'Add retry backoff', summary: 'Add retry backoff', state: 'escalated', hasCandidate: true, mergeStatus: 'merging' });
+
+    await renderActions({ task, variant: 'footer' });
+
+    const buttons = [...host!.querySelectorAll('button')];
+    expect(buttons.length).toBeGreaterThan(0);
+    for (const button of buttons) expect(button.disabled).toBe(true);
+    expect(buttons.some((b) => b.textContent === 'Accepting…')).toBe(true);
+  });
+
+  it('disables the escalation actions while an Accept is still verifying (before any merge)', async () => {
+    const task = makeTask({ id: 7, prompt: 'Add retry backoff', summary: 'Add retry backoff', state: 'escalated', hasCandidate: true, mergeStatus: 'verifying' });
 
     await renderActions({ task, variant: 'footer' });
 

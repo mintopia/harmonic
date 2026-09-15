@@ -30,6 +30,7 @@ describe('Workspace CRUD (ADR-0008, issue #41)', () => {
     const created = await server.api('POST', '/api/workspaces', { name: 'Side project', workingDir: dir });
     expect(created.status).toBe(201);
     expect(created.body).toMatchObject({ name: 'Side project', workingDir: dir });
+    expect(created.body.color).toMatch(/^#[0-9A-F]{6}$/);
 
     const missing = await server.api('POST', '/api/workspaces', {
       name: 'Nowhere',
@@ -37,6 +38,16 @@ describe('Workspace CRUD (ADR-0008, issue #41)', () => {
     });
     expect(missing.status).toBe(400);
     rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('assigns palette colours evenly and lets an AA-safe colour be changed', async () => {
+    const dirs = Array.from({ length: 3 }, () => mkdtempSync(join(tmpdir(), 'harmonic-workspace-color-')));
+    const created = await Promise.all(dirs.map((workingDir, index) => server.api('POST', '/api/workspaces', { name: `Color ${index}`, workingDir })));
+    expect(new Set(created.map((response) => response.body.color)).size).toBe(3);
+    const updated = await server.api('PATCH', `/api/workspaces/${created[0]!.body.id}`, { color: '#FFFFFF' });
+    expect(updated.body.color).toBe('#FFFFFF');
+    expect((await server.api('PATCH', `/api/workspaces/${created[0]!.body.id}`, { color: '#111111' })).status).toBe(400);
+    dirs.forEach((dir) => rmSync(dir, { recursive: true, force: true }));
   });
 
   it('rejects a duplicate absolute path on create and on update', async () => {
@@ -285,6 +296,28 @@ describe('Task/Conversation binding + scoping (issue #41)', () => {
     expect(scoped.status).toBe(200);
     expect(scoped.body.tasks.length).toBeGreaterThan(0);
     expect(scoped.body.tasks.every((t: any) => t.workspaceId === workspaceB)).toBe(true);
+  });
+
+  it('lists a paginated, filtered task page across Workspaces when workspaceId is absent', async () => {
+    const alpha = await server.api('POST', '/api/tasks', {
+      prompt: 'global table alpha',
+      workspaceId: workspaceA,
+    });
+    const beta = await server.api('POST', '/api/tasks', {
+      prompt: 'global table beta',
+      workspaceId: workspaceB,
+    });
+
+    const global = await server.api('GET', '/api/tasks?q=global%20table&state=open&sortBy=createdAt&order=asc&limit=1&offset=1');
+    expect(global.status).toBe(200);
+    expect(global.body.total).toBe(2);
+    expect(global.body.tasks).toHaveLength(1);
+    expect(global.body.tasks[0]).toMatchObject({ id: beta.body.id, workspaceId: workspaceB });
+
+    const scoped = await server.api('GET', `/api/tasks?workspaceId=${workspaceB}&q=global%20table`);
+    expect(scoped.body.tasks).toHaveLength(1);
+    expect(scoped.body.tasks[0]).toMatchObject({ id: beta.body.id, workspaceId: workspaceB });
+    expect(alpha.body.workspaceId).toBe(workspaceA);
   });
 
   it('a Conversation created with an explicit workspaceId binds to it and defaults workingDir from it', async () => {

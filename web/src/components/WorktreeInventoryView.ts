@@ -106,7 +106,7 @@ export interface WorktreeInventory {
   dismissConfirmation: () => void;
 }
 
-export function useWorktreeInventory(): WorktreeInventory {
+export function useWorktreeInventory(workspaceId: number | null): WorktreeInventory {
   const [worktrees, setWorktrees] = useState<WorktreeInventoryEntry[] | null>(null);
   const [reconciledAt, setReconciledAt] = useState<number | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -117,33 +117,35 @@ export function useWorktreeInventory(): WorktreeInventory {
     const all: WorktreeInventoryEntry[] = [];
     let reconciled: number | null = null;
     for (let offset = 0; ; offset += PAGE_SIZE) {
-      const page = await api.worktrees({ limit: PAGE_SIZE, offset });
+      const page = await api.worktrees({ workspaceId: workspaceId ?? undefined, limit: PAGE_SIZE, offset });
       all.push(...page.worktrees);
       reconciled = page.reconciledAt;
       if (page.worktrees.length === 0 || all.length >= page.total) return { worktrees: all, reconciledAt: reconciled };
     }
-  }, []);
+  }, [workspaceId]);
   const apply = useCallback(async () => { const snapshot = await load(); setWorktrees(snapshot.worktrees); setReconciledAt(snapshot.reconciledAt); }, [load]);
   useLiveEffect((live) => {
+    setWorktrees(null);
     let snapshotLoaded = false;
     let pending: WorktreeInventoryEntry[][] = [];
     const install = (snapshot: { worktrees: WorktreeInventoryEntry[]; reconciledAt: number | null }) => { if (live()) { snapshotLoaded = true; setWorktrees(pending.reduce(mergeWorktrees, snapshot.worktrees)); setReconciledAt(snapshot.reconciledAt); } };
     const refresh = () => { snapshotLoaded = false; pending = []; load().then(install).catch(() => install({ worktrees: [], reconciledAt: null })); };
-    const unsubscribe = subscribe((message) => { if (message.type === 'worktrees') { if (snapshotLoaded) setWorktrees((current) => mergeWorktrees(current ?? [], message.worktrees)); else pending.push(message.worktrees); } }, refresh);
+    const scoped = (entries: WorktreeInventoryEntry[]) => workspaceId === null ? entries : entries.filter((entry) => entry.workspaceId === workspaceId);
+    const unsubscribe = subscribe((message) => { if (message.type === 'worktrees') { const entries = scoped(message.worktrees); if (snapshotLoaded) setWorktrees((current) => mergeWorktrees(current ?? [], entries)); else pending.push(entries); } }, refresh);
     refresh();
     return unsubscribe;
-  }, [load]);
+  }, [load, workspaceId]);
   const clean = async (worktree: WorktreeInventoryEntry) => {
     setBusyId(worktree.id); setError(null);
-    try { await api.cleanupWorktree(worktree.id); await apply(); } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); } finally { setBusyId(null); }
+    try { await api.cleanupWorktree(worktree.id, workspaceId ?? undefined); await apply(); } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); } finally { setBusyId(null); }
   };
   const forceCleanup = async (worktree: WorktreeInventoryEntry) => {
     setBusyId(worktree.id); setError(null);
-    try { const { files } = await api.dirtyWorktreeFiles(worktree.id); setConfirmation({ worktree, files }); } catch (reason) { setConfirmation({ worktree, files: null }); setError(reason instanceof Error ? reason.message : String(reason)); } finally { setBusyId(null); }
+    try { const { files } = await api.dirtyWorktreeFiles(worktree.id, workspaceId ?? undefined); setConfirmation({ worktree, files }); } catch (reason) { setConfirmation({ worktree, files: null }); setError(reason instanceof Error ? reason.message : String(reason)); } finally { setBusyId(null); }
   };
   const reconcile = async () => {
     setReconciling(true); setError(null);
-    try { await api.reconcileWorktrees(); await apply(); } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); } finally { setReconciling(false); }
+    try { await api.reconcileWorktrees(workspaceId ?? undefined); await apply(); } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); } finally { setReconciling(false); }
   };
   const confirmCleanup = async () => {
     if (!confirmation) return;

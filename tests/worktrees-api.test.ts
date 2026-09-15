@@ -31,10 +31,39 @@ describe('worktree inventory API (issue #482)', () => {
       state: 'Active',
     }]);
 
-    await expect(waitFor(async () => messages.find((message): message is { type: 'worktrees'; worktrees: unknown[] } =>
-      typeof message === 'object' && message !== null && 'type' in message && message.type === 'worktrees',
+    // The boot-time worktree reconcile broadcasts an empty snapshot whose timing
+    // races this emit, so wait for the refresh carrying task-1, not the first
+    // 'worktrees' message.
+    await expect(waitFor(async () => messages.find((message): message is { type: 'worktrees'; worktrees: Array<{ path?: string }> } =>
+      typeof message === 'object' && message !== null && 'type' in message && message.type === 'worktrees'
+      && Array.isArray((message as { worktrees?: unknown }).worktrees)
+      && (message as { worktrees: Array<{ path?: string }> }).worktrees.some((entry) => entry.path === '/trees/task-1'),
     ))).resolves.toMatchObject({ worktrees: [{ state: 'Active', path: '/trees/task-1' }] });
     close();
+  });
+
+  it('filters inventory and cleanup controls to the requested Workspace', async () => {
+    server = await startServer();
+    const first = {
+      workspaceId: 1,
+      path: `${server.dataDir}/worktrees/task-1`,
+      branch: 'harmonic/task-1',
+      subject: { kind: 'task' as const, taskId: 1, title: 'First' },
+      sizeBytes: null,
+      dirty: false,
+      changeCount: 0,
+      state: 'Active' as const,
+    };
+    const second = { ...first, workspaceId: 2, path: `${server.dataDir}/worktrees/task-2`, branch: 'harmonic/task-2', subject: { kind: 'task' as const, taskId: 2, title: 'Second' } };
+    vi.spyOn(server.app.ctx.worktreeInventory, 'snapshot').mockResolvedValue([first, second]);
+
+    const global = await server.api('GET', '/api/worktrees');
+    const scoped = await server.api('GET', '/api/worktrees?workspaceId=1');
+    const cleanup = await server.api('POST', `/api/worktrees/${worktreeId(first)}/cleanup?workspaceId=2`);
+
+    expect(global.body.worktrees).toHaveLength(2);
+    expect(scoped.body).toMatchObject({ total: 1, worktrees: [expect.objectContaining({ workspaceId: 1 })] });
+    expect(cleanup.status).toBe(404);
   });
 
   it('lets an operator force-clean a managed worktree and its branch', async () => {

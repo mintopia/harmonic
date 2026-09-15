@@ -1,6 +1,6 @@
 ---
 title: CLI reference
-description: Every Harmonic command and option — serve, start, status, stop, help, and the flags that configure them.
+description: Every Harmonic command and option — standalone, service, and server-management commands.
 ---
 
 The `harmonic` command manages the server. After a global install
@@ -19,11 +19,20 @@ npx @mintopia/harmonic <command> [options]
 | --- | --- |
 | `serve` | Run the server in the **foreground** (Ctrl-C to stop). Best for a quick one-off. |
 | `start` | Run the server in the **background**; logs to `<data-dir>/harmonic.log`. Returns immediately. |
+| `install` | Install Harmonic as an OS service. Run `harmonic install --help` for the available options and platform-specific details. |
 | `status` | Report whether a background server is running, and where. Exits **non-zero** if it isn't, usable in scripts. |
 | `stop` | Stop the background server started with `start`. |
 | `help` | Show usage. Also `--help`, or running with no command. |
 
-Only one background server runs per data directory. `start` launches it,
+## Standalone or installed service
+
+Run Harmonic standalone when you want to manage its lifetime yourself:
+use `harmonic serve` to keep it in the foreground, or `harmonic start` to
+run its background daemon. Use `harmonic install` when you want your OS to
+manage Harmonic as a service instead. For service setup and options, run
+`harmonic install --help`.
+
+Only one standalone background server runs per data directory. `start` launches it,
 `status` inspects it, and `stop` shuts it down. All three read the same
 `--data-dir` to find each other, so pass a matching `--data-dir` to every
 command when you run off the default.

@@ -28,7 +28,7 @@ export const TASK_STATES = ['draft', 'ready', 'working', 'paused', 'escalated', 
 export type TaskState = (typeof TASK_STATES)[number];
 
 /** Transient merge indicator, orthogonal to `state`: `merging` while the candidate is being merged onto its base, `resolving-conflicts` once that merge hit conflicts a human must settle. Null at rest. */
-export const MERGE_STATUSES = ['merging', 'resolving-conflicts'] as const;
+export const MERGE_STATUSES = ['verifying', 'merging', 'resolving-conflicts'] as const;
 export type MergeStatus = (typeof MERGE_STATUSES)[number];
 
 /** A named Working Directory, unique by absolute path. Its setting overrides live in the YAML settings file, not here. */
@@ -36,6 +36,7 @@ export const workspaces = sqliteTable('workspaces', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   name: text('name').notNull(),
   workingDir: text('working_dir').notNull(),
+  color: text('color').notNull().default('#FA6152'),
   trackerEnabled: integer('tracker_enabled', { mode: 'boolean' }).notNull().default(false),
   trackerPollIntervalSeconds: integer('tracker_poll_interval_seconds').notNull().default(60),
   createdAt: integer('created_at').notNull(),

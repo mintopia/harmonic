@@ -84,10 +84,10 @@ export class WorktreeReconciler {
     return `harmonic/task-${taskId}`;
   }
 
-  async reconcile(): Promise<{ removed: number; recreated: number; flagged: number }> {
-    const operation = startOperation({ type: 'worktree.reconcile', attributes: {} });
+  async reconcile(workspaceId?: number): Promise<{ removed: number; recreated: number; flagged: number }> {
+    const operation = startOperation({ type: 'worktree.reconcile', attributes: workspaceId === undefined ? {} : { 'workspace.id': workspaceId } });
     try {
-      const result = await operation.run(() => this.reconcileAll());
+      const result = await operation.run(() => this.reconcileAll(workspaceId));
       operation.update({
         'worktree.removed': result.removed,
         'worktree.recreated': result.recreated,
@@ -102,7 +102,7 @@ export class WorktreeReconciler {
     }
   }
 
-  private async reconcileAll(): Promise<{ removed: number; recreated: number; flagged: number }> {
+  private async reconcileAll(workspaceId?: number): Promise<{ removed: number; recreated: number; flagged: number }> {
     const activeByWorkspace = new Map<number, ActiveTask[]>();
     await forEachYielding(await this.activeTasks(), async (task) => {
       const list = activeByWorkspace.get(task.workspaceId) ?? [];
@@ -115,7 +115,8 @@ export class WorktreeReconciler {
     let flagged = 0;
     let firstError: unknown;
 
-    await forEachYielding(await this.workspaces(), async (workspace) => {
+    const workspaces = (await this.workspaces()).filter((workspace) => workspaceId === undefined || workspace.id === workspaceId);
+    await forEachYielding(workspaces, async (workspace) => {
       try {
         const active = activeByWorkspace.get(workspace.id) ?? [];
 

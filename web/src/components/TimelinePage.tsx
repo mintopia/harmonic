@@ -69,6 +69,20 @@ const STEP_STYLE: Record<string, { bar: string; dot: string; text: string; label
 };
 const stepStyleFor = (state: string) => STEP_STYLE[state] ?? STEP_STYLE.pending!;
 
+function WorkspaceBadge({ workspace }: { workspace: TimelineAttempt['workspace'] }) {
+  return (
+    <span
+      role="img"
+      aria-label={`${workspace.name} workspace`}
+      title={workspace.name}
+      className="flex size-4 shrink-0 items-center justify-center rounded-full text-[9px] font-bold text-[#1b1e24]"
+      style={{ backgroundColor: workspace.color }}
+    >
+      {workspace.name.trim().charAt(0).toUpperCase()}
+    </span>
+  );
+}
+
 interface Placed extends TimelineAttempt {
   row: number;
 }
@@ -211,14 +225,13 @@ export function TimelinePage({
   // only a fresh workspace clears them back to the loading state.
   const loadRef = useRef(0);
   useEffect(() => {
-    if (workspaceId === null) return;
     let cancelled = false;
     const run = () => {
       const end = anchor ?? Date.now();
       const start = end - windowMs;
       const request = ++loadRef.current;
       api
-        .timeline(workspaceId, start, end)
+        .timeline(workspaceId ?? undefined, start, end)
         .then((res) => {
           if (cancelled || request !== loadRef.current) return;
           setAttempts(res.attempts);
@@ -357,14 +370,6 @@ export function TimelinePage({
     if (!dragRef.current) setHoverTime(null);
   };
 
-  if (workspaceId === null) {
-    return (
-      <EmptyState title="No workspace open" className="mt-24">
-        The Timeline scrubs one workspace's attempt history. Open a workspace to see the fleet's day.
-      </EmptyState>
-    );
-  }
-
   if (inspect) {
     return (
       <AttemptInspector
@@ -381,7 +386,7 @@ export function TimelinePage({
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title="Timeline" description="Every attempt the fleet has run, on one clock" />
+      <PageHeader title="Timeline" description={workspaceId === null ? 'Every workspace, merged on one clock' : 'Every attempt the fleet has run, on one clock'} />
 
       {/* zoom + pan controls */}
       <div className="flex flex-wrap items-center gap-3">
@@ -548,13 +553,14 @@ export function TimelinePage({
                           onMouseLeave={() => setHover((h) => (h?.span.attemptId === s.attemptId ? null : h))}
                           onFocus={(e) => setHover({ span: s, rect: e.currentTarget.getBoundingClientRect() })}
                           onBlur={() => setHover((h) => (h?.span.attemptId === s.attemptId ? null : h))}
-                          aria-label={`${s.trackerRef ? `#${s.trackerRef}` : taskLabel(s.taskId)} ${s.title}, ${st.label}, attempt ${s.number}. Inspect steps.`}
+                          aria-label={`${s.workspace.name}: ${s.trackerRef ? `#${s.trackerRef}` : taskLabel(s.taskId)} ${s.title}, ${st.label}, attempt ${s.number}. Inspect steps.`}
                           className={`absolute flex items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-md border-l-[3px] px-2 text-small font-medium text-ink transition-[filter,transform] hover:z-10 hover:-translate-y-px hover:brightness-110 ${st.bar}`}
                           style={{ left: `${left}%`, width: `${width}%`, top: s.row * ROW_H + 5, height: ROW_H - 8 }}
                         >
                           {s.state === 'running' && (
                             <span className="size-1.5 shrink-0 animate-pulse rounded-full bg-running motion-reduce:animate-none" aria-hidden="true" />
                           )}
+                          <WorkspaceBadge workspace={s.workspace} />
                           <span className="truncate">{s.title}</span>
                         </button>
                       );
@@ -600,6 +606,7 @@ function HoverCard({ hover, now }: { hover: NonNullable<Hover>; now: number }) {
       style={{ width: CARD_W, left, top: openUp ? undefined : below, bottom: openUp ? window.innerHeight - above : undefined }}
     >
       <div className="flex items-center gap-2">
+        <WorkspaceBadge workspace={span.workspace} />
         <span className="font-data text-data text-faint">
           {span.trackerRef ? `#${span.trackerRef}` : taskLabel(span.taskId)}
         </span>
@@ -689,6 +696,8 @@ function AttemptInspector({
             <span className="truncate">{span.title}</span>
           </h1>
           <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-small text-muted">
+            <span className="inline-flex items-center gap-1.5"><WorkspaceBadge workspace={span.workspace} />{span.workspace.name}</span>
+            <span aria-hidden="true">·</span>
             <span className={`inline-flex items-center gap-1.5 font-medium ${st.text}`}>
               <span className={`size-1.5 rounded-full ${st.dot}`} aria-hidden="true" />
               {st.label}

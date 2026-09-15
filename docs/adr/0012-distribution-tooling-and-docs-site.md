@@ -21,6 +21,11 @@ deliberate move to a real package. Consequences of being a package:
   obligation this choice accepts; its mechanics live in the repo's release
   tooling, not this ADR.
 
+A packaged (or source) instance can also be **installed as an OS service** —
+`harmonic install`/`uninstall`, Linux only, with a systemd or SysV init.d
+backend auto-detected per host. That surface is ADR-0034; the self-restart
+primitive it builds on is ADR-0030.
+
 ## Linting is oxlint
 
 oxlint (the oxc linter) is the linter: Rust-based, own parser, no TypeScript-

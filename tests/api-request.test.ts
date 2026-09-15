@@ -27,6 +27,17 @@ describe('api request()', () => {
     expect(fetch).toHaveBeenCalledWith('/api/tasks?workspaceId=7&state=open', { method: 'GET' });
   });
 
+  it('omits workspaceId for the Global timeline and sends it for a Workspace timeline', async () => {
+    const fetch = vi.fn().mockImplementation(() => new Response(JSON.stringify({ attempts: [], from: 1, to: 2 }), { status: 200 }));
+    vi.stubGlobal('fetch', fetch);
+
+    await api.timeline(undefined, 1, 2);
+    expect(fetch).toHaveBeenLastCalledWith('/api/timeline?from=1&to=2', { method: 'GET' });
+
+    await api.timeline(7, 1, 2);
+    expect(fetch).toHaveBeenLastCalledWith('/api/timeline?from=1&to=2&workspaceId=7', { method: 'GET' });
+  });
+
   it('surfaces the server error message on a non-2xx response', async () => {
     vi.stubGlobal(
       'fetch',
