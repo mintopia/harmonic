@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { WORKSPACE_BADGE_INK, WORKSPACE_COLORS } from '../src/domain/workspaces.js';
 
 const CSS = readFileSync(fileURLToPath(new URL('../web/src/index.css', import.meta.url)), 'utf8');
 
@@ -72,8 +73,6 @@ const TEXT_ON_TINT: ReadonlyArray<readonly [string, string, string]> = [
 
 const TEXT_FLOOR = 4.5;
 const UI_FLOOR = 3;
-const WORKSPACE_COLORS = ['#FA6152', '#FB8A2E', '#F5BE1E', '#A6D62B', '#35CB63', '#26C6D4', '#3AA0FA', '#6E79FB', '#B06BF5', '#F667B4'] as const;
-const WORKSPACE_BADGE_INK = '#1b1e24';
 const PAPER_TOKENS = ['await', 'await-dot', 'await-tint', 'on-await', 'on-done', 'sunken', 'edge-strong'] as const;
 
 const TOKEN_CLASS_TOKENS = ['token-input', 'token-output', 'token-cache-read', 'token-cache-write'] as const;

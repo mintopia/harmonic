@@ -846,6 +846,8 @@ function ResolvedTrackerValue({ workspace }: { workspace: Workspace }) {
 
 function WorkspaceIdentity({ ctx }: { ctx: WorkspaceRenderCtx }) {
   const { workspace, errors } = ctx;
+  const contrast = workspaceBadgeContrast(workspace.color);
+  const nearStatus = isNearStatusColor(workspace.color);
   return (
     <div className="grid gap-3.5 sm:grid-cols-2">
       <div>
@@ -872,12 +874,30 @@ function WorkspaceIdentity({ ctx }: { ctx: WorkspaceRenderCtx }) {
         <div className="flex items-center gap-2">
           <input id="workspace-color" aria-label="Workspace colour picker" type="color" className="size-10 cursor-pointer rounded border border-edge bg-field p-1" value={workspace.color} onChange={(e) => ctx.setWorkspace({ ...workspace, color: e.target.value.toUpperCase() })} />
           <input className={`${field} w-28 font-data uppercase`} value={workspace.color} maxLength={7} onChange={(e) => ctx.setWorkspace({ ...workspace, color: e.target.value.toUpperCase() })} />
-          <span className="text-small text-muted">Initial contrast: AA</span>
+          <span className={`text-small ${contrast !== null && contrast >= 4.5 ? 'text-muted' : 'text-fail'}`}>Initial contrast: {contrast === null ? '—' : `${contrast.toFixed(2)}:1 ${contrast >= 4.5 ? 'AA' : 'below AA'}`}</span>
         </div>
+        {nearStatus && <p className="mt-1 text-small text-running">Near a status colour. Choose a different hue so workspace identity stays distinct.</p>}
         <FieldError message={errors['color']} />
       </div>
     </div>
   );
+}
+
+const STATUS_COLORS = ['#A74D08', '#1160AE', '#4740C6', '#0D7734', '#B3253F', '#5B616A', '#077067'];
+
+function workspaceBadgeContrast(hex: string): number | null {
+  if (!/^#[0-9a-f]{6}$/i.test(hex)) return null;
+  const luminance = (value: string) => [1, 3, 5].map((offset) => Number.parseInt(value.slice(offset, offset + 2), 16) / 255).map((channel) => channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4).reduce((sum, channel, index) => sum + channel * [0.2126, 0.7152, 0.0722][index]!, 0);
+  const a = luminance('#1B1E24');
+  const b = luminance(hex);
+  return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+}
+
+function isNearStatusColor(hex: string): boolean {
+  if (!/^#[0-9a-f]{6}$/i.test(hex)) return false;
+  const channels = (value: string) => [1, 3, 5].map((offset) => Number.parseInt(value.slice(offset, offset + 2), 16));
+  const candidate = channels(hex);
+  return STATUS_COLORS.some((status) => Math.hypot(...channels(status).map((channel, index) => channel - candidate[index]!)) < 64);
 }
 
 function WorkspaceTracker({ ctx }: { ctx: WorkspaceRenderCtx }) {

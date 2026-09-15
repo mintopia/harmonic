@@ -28,6 +28,7 @@ import {
 
 export const DEFAULT_EXCLUDED_DIRECTORIES = ['.git', 'node_modules', 'dist', 'build', 'coverage', '.next', '.turbo', 'out', 'target'] as const;
 export const WORKSPACE_COLORS = ['#FA6152', '#FB8A2E', '#F5BE1E', '#A6D62B', '#35CB63', '#26C6D4', '#3AA0FA', '#6E79FB', '#B06BF5', '#F667B4'] as const;
+export const WORKSPACE_BADGE_INK = '#1B1E24';
 
 const workspaceColorSchema = z.string().regex(/^#[0-9a-fA-F]{6}$/, 'color must be a six-digit hex colour').refine((color) => {
   const channels = [1, 3, 5].map((offset) => Number.parseInt(color.slice(offset, offset + 2), 16) / 255);
