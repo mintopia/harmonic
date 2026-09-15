@@ -131,6 +131,55 @@ describe('task-steering', () => {
     });
   });
 
+  describe('extending the time guardrail', () => {
+    let server: TestServer;
+
+    beforeAll(async () => {
+      server = await startServer(stubHarness());
+    });
+    afterAll(async () => {
+      await server.close();
+    });
+
+    it('extends a running task and records the raised wall-clock cap', async () => {
+      const created = await server.api('POST', '/api/tasks', { prompt: slowFirstTurn(10, 250) });
+      const taskId = created.body.id;
+      const started = await server.api('POST', `/api/tasks/${taskId}/run`);
+      expect(started.status).toBe(201);
+      const attemptId = started.body.id;
+
+      const extended = await waitFor(async () => {
+        const res = await server.api('POST', `/api/tasks/${taskId}/extend-guardrail`, { minutes: 60 });
+        return res.status === 200 ? res : undefined;
+      });
+      expect(extended.body.state).toBe('working');
+
+      await waitFor(async () => {
+        const { body } = await server.api('GET', `/api/tasks/${taskId}`);
+        return body.state === 'done' ? body : undefined;
+      });
+
+      const { body } = await server.api('GET', `/api/attempts/${attemptId}/events`);
+      const extend = body.events.find(
+        (e: any) => e.type === 'lifecycle' && e.payload.event === 'guardrail_extended',
+      );
+      expect(extend?.payload).toMatchObject({ dimension: 'wall-clock', addMinutes: 60 });
+      expect(extend?.payload.wallClockMinutes).toBeGreaterThan(60);
+    });
+
+    it('409s when the task has no active run to extend', async () => {
+      const draft = await server.api('POST', '/api/tasks', { prompt: 'not running' });
+      const res = await server.api('POST', `/api/tasks/${draft.body.id}/extend-guardrail`, { minutes: 60 });
+      expect(res.status).toBe(409);
+    });
+
+    it('rejects a non-positive extension', async () => {
+      const draft = await server.api('POST', '/api/tasks', { prompt: 'x' });
+      const res = await server.api('POST', `/api/tasks/${draft.body.id}/extend-guardrail`, { minutes: 0 });
+      expect(res.status).toBe(400);
+    });
+  });
+
   describe('steering a settled task continues its session', () => {
     let server: TestServer;
 

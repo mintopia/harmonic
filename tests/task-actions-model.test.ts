@@ -17,8 +17,8 @@ describe('taskActions', () => {
     expect(taskActions('draft')).toEqual(['delete', 'ready', 'edit', 'cancel']);
   });
 
-  it('offers pause, complete (operator override), and cancel while a task is working, no delete', () => {
-    expect(taskActions('working')).toEqual(['pause', 'complete', 'cancel']);
+  it('offers pause, extend, complete (operator override), and cancel while a task is working, no delete', () => {
+    expect(taskActions('working')).toEqual(['pause', 'extend', 'complete', 'cancel']);
   });
 
   it('offers delete, resume, and cancel while a task is paused', () => {
