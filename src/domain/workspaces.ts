@@ -229,9 +229,15 @@ export class WorkspaceService {
     const workingDir = this.assertUsableDir(input.workingDir);
     await this.assertUniquePath(workingDir);
     const now = Date.now();
-    const color = await this.nextColor();
-    const inserted = await this.db.write((db) =>
-      db
+    const inserted = await this.db.write(async (db) => {
+      const existing = await db.select({ color: workspaces.color }).from(workspaces).all();
+      const count = new Map(WORKSPACE_COLORS.map((color) => [color, 0]));
+      for (const { color } of existing) {
+        const paletteColor = color.toUpperCase() as (typeof WORKSPACE_COLORS)[number];
+        count.set(paletteColor, (count.get(paletteColor) ?? 0) + 1);
+      }
+      const color = WORKSPACE_COLORS.reduce((least, candidate) => count.get(candidate)! < count.get(least)! ? candidate : least);
+      return db
         .insert(workspaces)
         .values({
           name: input.name,
@@ -243,8 +249,8 @@ export class WorkspaceService {
           updatedAt: now,
         })
         .returning()
-        .get(),
-    );
+        .get();
+    });
     await this.settings.setOverrides(inserted.id, { excludedDirectories: [...DEFAULT_EXCLUDED_DIRECTORIES] });
     return this.compose(inserted);
   }
@@ -341,10 +347,4 @@ export class WorkspaceService {
     if (clash) throw new DomainError('conflict', `a workspace already uses '${workingDir}'`);
   }
 
-  private async nextColor(): Promise<(typeof WORKSPACE_COLORS)[number]> {
-    const existing = await this.db.read((db) => db.select({ color: workspaces.color }).from(workspaces).all());
-    const count = new Map(WORKSPACE_COLORS.map((color) => [color, 0]));
-    for (const { color } of existing) count.set(color.toUpperCase() as (typeof WORKSPACE_COLORS)[number], (count.get(color.toUpperCase() as (typeof WORKSPACE_COLORS)[number]) ?? 0) + 1);
-    return WORKSPACE_COLORS.reduce((least, color) => count.get(color)! < count.get(least)! ? color : least);
-  }
 }
