@@ -95,8 +95,11 @@ export const api = {
     return request<{ tasks: Task[]; total: number }>('GET', query ? `/api/tasks?${query}` : '/api/tasks');
   },
   task: (id: number) => request<Task>('GET', `/api/tasks/${id}`),
-  stats: (from: number, to: number, workspaceId: number) =>
-    request<Stats>('GET', `/api/stats?from=${from}&to=${to}&workspaceId=${workspaceId}`),
+  stats: (from: number, to: number, workspaceId?: number) => {
+    const query = new URLSearchParams({ from: String(from), to: String(to) });
+    if (workspaceId !== undefined) query.set('workspaceId', String(workspaceId));
+    return request<Stats>('GET', `/api/stats?${query}`);
+  },
   timeline: (workspaceId: number, from: number, to: number) =>
     request<TimelineResponse>('GET', `/api/timeline?workspaceId=${workspaceId}&from=${from}&to=${to}`),
   epicStats: (epicRef: number, workspaceId: number) =>

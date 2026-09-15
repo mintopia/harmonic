@@ -23925,6 +23925,10 @@
                             "type": "string",
                             "example": "harmonic"
                           },
+                          "color": {
+                            "type": "string",
+                            "example": "#2ED3C4"
+                          },
                           "cost": {
                             "anyOf": [
                               {
@@ -23942,6 +23946,14 @@
                           "outputTokens": {
                             "type": "number",
                             "example": 3610
+                          },
+                          "cacheReadTokens": {
+                            "type": "number",
+                            "example": 26400
+                          },
+                          "cacheWriteTokens": {
+                            "type": "number",
+                            "example": 1200
                           },
                           "tasks": {
                             "type": "number",
@@ -23962,9 +23974,12 @@
                         "required": [
                           "workspaceId",
                           "name",
+                          "color",
                           "cost",
                           "inputTokens",
                           "outputTokens",
+                          "cacheReadTokens",
+                          "cacheWriteTokens",
                           "tasks",
                           "failureRate"
                         ],
@@ -23974,6 +23989,7 @@
                         {
                           "workspaceId": 1,
                           "name": "harmonic",
+                          "color": "#2ED3C4",
                           "cost": {
                             "totalUsd": 41.2,
                             "byModel": {
@@ -23983,6 +23999,8 @@
                           },
                           "inputTokens": 18240,
                           "outputTokens": 3610,
+                          "cacheReadTokens": 26400,
+                          "cacheWriteTokens": 1200,
                           "tasks": 12,
                           "failureRate": 0.08
                         }
@@ -24594,6 +24612,10 @@
                             "type": "string",
                             "example": "harmonic"
                           },
+                          "color": {
+                            "type": "string",
+                            "example": "#2ED3C4"
+                          },
                           "cost": {
                             "anyOf": [
                               {
@@ -24611,6 +24633,14 @@
                           "outputTokens": {
                             "type": "number",
                             "example": 3610
+                          },
+                          "cacheReadTokens": {
+                            "type": "number",
+                            "example": 26400
+                          },
+                          "cacheWriteTokens": {
+                            "type": "number",
+                            "example": 1200
                           },
                           "tasks": {
                             "type": "number",
@@ -24631,9 +24661,12 @@
                         "required": [
                           "workspaceId",
                           "name",
+                          "color",
                           "cost",
                           "inputTokens",
                           "outputTokens",
+                          "cacheReadTokens",
+                          "cacheWriteTokens",
                           "tasks",
                           "failureRate"
                         ],
@@ -24643,6 +24676,7 @@
                         {
                           "workspaceId": 1,
                           "name": "harmonic",
+                          "color": "#2ED3C4",
                           "cost": {
                             "totalUsd": 41.2,
                             "byModel": {
@@ -24652,6 +24686,8 @@
                           },
                           "inputTokens": 18240,
                           "outputTokens": 3610,
+                          "cacheReadTokens": 26400,
+                          "cacheWriteTokens": 1200,
                           "tasks": 12,
                           "failureRate": 0.08
                         }

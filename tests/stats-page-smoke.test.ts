@@ -71,15 +71,20 @@ async function renderPage(workspaceId: number | null): Promise<HTMLDivElement> {
 }
 
 describe('StatsPage smoke (issue #452)', () => {
-  it('renders the header and a loading card with no workspace, and skips the heatmap', async () => {
-    vi.stubGlobal('fetch', async () => {
-      throw new Error('fetch should not be called when workspaceId is null');
+  it('loads global stats without a workspace filter and skips the workspace heatmap', async () => {
+    const requests: string[] = [];
+    vi.stubGlobal('fetch', async (input: string | URL | Request) => {
+      requests.push(String(input));
+      return new Response(JSON.stringify(makeStats({ attemptCount: 0 })));
     });
 
     await renderPage(null);
 
     expect(host!.textContent).toContain('Spend, tokens, and reliability');
-    expect(host!.textContent).toContain('Loading…');
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatch(/^\/api\/stats\?/);
+    expect(requests[0]).not.toContain('workspaceId=');
+    expect(host!.textContent).toContain('No attempts to chart yet');
     expect(host!.textContent).not.toContain('Attempt activity');
   });
 
@@ -119,11 +124,26 @@ describe('StatsPage smoke (issue #452)', () => {
         {
           workspaceId: 1,
           name: 'Main',
+          color: '#123456',
           cost: { totalUsd: 12.34, byModel: {}, incomplete: false },
           inputTokens: 1000,
           outputTokens: 2000,
+          cacheReadTokens: 300,
+          cacheWriteTokens: 100,
           tasks: 5,
           failureRate: 0.2,
+        },
+        {
+          workspaceId: 2,
+          name: 'Other',
+          color: '#654321',
+          cost: { totalUsd: 2, byModel: {}, incomplete: false },
+          inputTokens: 200,
+          outputTokens: 100,
+          cacheReadTokens: 50,
+          cacheWriteTokens: 25,
+          tasks: 2,
+          failureRate: 0,
         },
       ],
     });
@@ -137,6 +157,26 @@ describe('StatsPage smoke (issue #452)', () => {
     expect(headings).toContain('Reliability');
     expect(headings).toContain('Tokens & cost per model');
     expect(headings).toContain('Where the spend goes');
+  });
+
+  it('shows global workspace comparisons and token classes stacked by workspace', async () => {
+    const stats = makeStats({
+      attemptCount: 2,
+      totals: { inputTokens: 30, outputTokens: 15, cacheReadTokens: 9, cacheWriteTokens: 6, totalTokens: 60 },
+      byWorkspace: [
+        { workspaceId: 1, name: 'Main', color: '#123456', cost: null, inputTokens: 20, outputTokens: 10, cacheReadTokens: 6, cacheWriteTokens: 4, tasks: 1, failureRate: 0 },
+        { workspaceId: 2, name: 'Other', color: '#654321', cost: null, inputTokens: 10, outputTokens: 5, cacheReadTokens: 3, cacheWriteTokens: 2, tasks: 1, failureRate: 0 },
+      ],
+    });
+    stubStatsFetch(() => new Response(JSON.stringify(stats)));
+
+    await renderPage(null);
+
+    expect(host!.textContent).toContain('Usage by workspace');
+    expect(host!.querySelector('[aria-label="Tokens by workspace"]')).not.toBeNull();
+    expect(host!.textContent).toContain('Main');
+    expect(host!.textContent).toContain('Other');
+    expect(host!.textContent).not.toContain('Total tokens');
   });
 
   it('renders the time-range segmented control and toggles selection', async () => {
