@@ -1,5 +1,30 @@
 # Changelog
 
+## [2.12.0](https://github.com/mintopia/harmonic/compare/v2.11.0...v2.12.0) (2026-09-16)
+
+
+### Features
+
+* add conversation command picker ([fb7ac2b](https://github.com/mintopia/harmonic/commit/fb7ac2b605d41851d4564224a29cb1aa8e37dde0))
+* add per-harness permission mode settings ([7fd48fc](https://github.com/mintopia/harmonic/commit/7fd48fcde2dfd77ec9f08444dfa44832f3b942a0))
+* audit unattended permission mode selection ([326b090](https://github.com/mintopia/harmonic/commit/326b090b6b302215751a52c402fe9c99b4134d7a))
+* configure harness permission modes ([264a6a4](https://github.com/mintopia/harmonic/commit/264a6a4c4c5cc564e0764a9ea385f76f73363b44))
+* expose advertised conversation commands ([72512d9](https://github.com/mintopia/harmonic/commit/72512d9c559354e66cb60dcb86cc711d4d4e1362))
+* fold requeue into reject ([e59300c](https://github.com/mintopia/harmonic/commit/e59300c6c55252e77fbd44f42a36d8ce257ec5d9))
+* rework workspace colour control, nav groups, and docs link ([97dfe3f](https://github.com/mintopia/harmonic/commit/97dfe3f77f0212bfaffb6cf2be6488c4b393caa7))
+* warm conversation session when composer opens ([f719e20](https://github.com/mintopia/harmonic/commit/f719e203d56fc212cdab4681a13897471b32398a))
+
+
+### Bug Fixes
+
+* correct commandPrefix REST exposure, Copilot mode order, resume query ([2d7512c](https://github.com/mintopia/harmonic/commit/2d7512ca3ad8acb1f8398544f69a2528c17e6d4d))
+* distinguish permission mode fallback in timeline ([656a48e](https://github.com/mintopia/harmonic/commit/656a48e98ed191cf392d17d1af7ab51e0aa506ec))
+* honor install user for systemd ([a3df9ed](https://github.com/mintopia/harmonic/commit/a3df9ed79ddb36f65dd84304b58d9338442e107b))
+* map Copilot ACP permission modes ([90596b9](https://github.com/mintopia/harmonic/commit/90596b97ea7ac120a96f048f51423e369f45f1d6))
+* record default permission mode fallback ([ee4892b](https://github.com/mintopia/harmonic/commit/ee4892b4acaeae963cdf96bc40f5dd4ca7c2864c))
+* scope activity task attempts by workspace ([696ca78](https://github.com/mintopia/harmonic/commit/696ca7834d0d5e24c6c8cef5ed43bd44d718d2e7))
+* share pending conversation creation ([2e07c2f](https://github.com/mintopia/harmonic/commit/2e07c2f9f72579dcb760d32afe2dbcf3c8293a3e))
+
 ## [2.11.0](https://github.com/mintopia/harmonic/compare/v2.10.0...v2.11.0) (2026-09-15)
 
 
