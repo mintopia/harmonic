@@ -398,7 +398,14 @@ rl.on('line', (line) => {
       }
       {
         const modes = stubModes();
-        send({ jsonrpc: '2.0', id: msg.id, result: { sessionId: mintSessionId(), ...(modes ? { modes } : {}) } });
+        const newSessionId = mintSessionId();
+        if (process.env.STUB_AVAILABLE_COMMANDS) {
+          notify('session/update', {
+            sessionId: newSessionId,
+            update: { sessionUpdate: 'available_commands_update', availableCommands: JSON.parse(process.env.STUB_AVAILABLE_COMMANDS) },
+          });
+        }
+        send({ jsonrpc: '2.0', id: msg.id, result: { sessionId: newSessionId, ...(modes ? { modes } : {}) } });
       }
       break;
     case 'session/load':

@@ -59,6 +59,7 @@ export function useConversationDetail(
   // `user_turn` arrives (turns are strictly sequential, so FIFO stays aligned).
   const [optimisticTurns, setOptimisticTurns] = useState<ConversationEvent[]>([]);
   const optimisticSeq = useRef(-1);
+  const creatingConversation = useRef<{ workspaceId: number | null; promise: Promise<Conversation> } | null>(null);
 
   useLiveEffect((live) => {
     if (focusedId === null) {
@@ -67,6 +68,7 @@ export function useConversationDetail(
       setPending({});
       return;
     }
+    creatingConversation.current = null;
     const id = focusedId;
     setConversation(null);
     setEvents([]);
@@ -147,14 +149,34 @@ export function useConversationDetail(
     clearPendingPermission,
   ]);
 
+  const createConversation = (fields: { harness: string; model: string; permissionMode: Conversation['permissionMode'] }) => {
+    if (creatingConversation.current?.workspaceId === workspaceId) return creatingConversation.current.promise;
+    const promise = api.createConversation({
+        ...fields,
+        ...(workspaceId !== null ? { workspaceId } : {}),
+      });
+    const created = { workspaceId, promise };
+    creatingConversation.current = created;
+    void promise.catch(() => {
+      if (creatingConversation.current === created) creatingConversation.current = null;
+    });
+    return promise;
+  };
+
+  const open = async (fields: { harness: string; model: string; permissionMode: Conversation['permissionMode'] }) => {
+    if (focusedId === null) {
+      const created = await createConversation(fields);
+      setConversation(created);
+      upsertConversationInList(created);
+      openConversation(created.id);
+    }
+  };
+
   const send = async (fields: { harness: string; model: string; permissionMode: Conversation['permissionMode'] }, text: string) => {
     const steering = focusedId !== null;
     let id = focusedId;
     if (id === null) {
-      const created = await api.createConversation({
-        ...fields,
-        ...(workspaceId !== null ? { workspaceId } : {}),
-      });
+      const created = await createConversation(fields);
       id = created.id;
       setConversation(created);
       upsertConversationInList(created);
@@ -256,6 +278,6 @@ export function useConversationDetail(
     events: allEvents,
     pending,
     pendingElicitations,
-    actions: { send, end, rename, setPermissionMode, deleteConversation, answerPermission, answerElicitation },
+    actions: { open, send, end, rename, setPermissionMode, deleteConversation, answerPermission, answerElicitation },
   };
 }

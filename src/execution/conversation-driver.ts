@@ -131,7 +131,7 @@ interface ActiveConversation {
 }
 
 /**
- * Drives Conversations: lazily spawns a Harness on the first Turn, keeps it
+ * Drives Conversations: spawns a Harness when the Composer opens, keeps it
  * warm across many Turns on one ACP session (surviving panel/socket close),
  * and tears it down on an explicit End or a harness death. Direct mode only.
  * Permissions are human-in-the-loop: the driver holds each
@@ -183,6 +183,16 @@ export class ConversationDriver {
     return this.active.get(conversationId)?.commands.map((command) => ({ ...command })) ?? [];
   }
 
+  /** Start a warm ACP Session without submitting a Turn. */
+  async open(conversationId: number): Promise<void> {
+    const conversation = await this.store.get(conversationId);
+    if (conversation.state !== 'active') {
+      throw new DomainError('invalid_state', `conversation ${conversationId} has ended`);
+    }
+    const entry = this.active.get(conversationId) ?? await this.spawn(conversation);
+    this.armIdle(entry);
+  }
+
   /** Apply a persisted permission-mode change to its warm ACP session. */
   async setPermissionMode(conversation: ConversationRow): Promise<void> {
     const entry = this.active.get(conversation.id);
@@ -192,8 +202,8 @@ export class ConversationDriver {
   }
 
   /**
-   * Send one operator Turn. Spawns the harness on the first Turn (awaited,
-   * so spawn/handshake errors reach the caller); the reply then streams
+   * Send one operator Turn. Reuses the Composer's warm harness (or opens one
+   * if needed); the reply then streams
    * over the firehose while this returns. A second Turn reuses the warm
    * session. If a Turn is already in flight, the message is queued and sent
    * as the next Turn on completion — `queued` reports which.

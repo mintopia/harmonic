@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { startServer, type TestServer } from './helpers.js';
+import { startServer, stubHarness, type TestServer } from './helpers.js';
 import type { Epic } from '../src/domain/epic-view.js';
 import type { DerivedMap } from '../src/tracker/mirror.js';
 
@@ -7,7 +7,7 @@ describe('list endpoint pagination envelope', () => {
   let server: TestServer;
 
   beforeAll(async () => {
-    server = await startServer();
+    server = await startServer(stubHarness());
   });
   afterAll(async () => {
     await server.close();

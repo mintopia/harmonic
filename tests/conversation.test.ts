@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { type AppConfig, type DeepPartial } from '../src/config.js';
 import { apiKeys, conversationEvents } from '../src/db/schema.js';
 import { accumulateUsage, type AttemptUsage, contextInputTokens } from '../src/execution/usage.js';
-import { startServer, stubHarness, type TestServer, waitFor, connectFirehose } from './helpers.js';
+import { STUB_HARNESS, startServer, stubHarness, type TestServer, waitFor, connectFirehose } from './helpers.js';
 import { eq } from 'drizzle-orm';
 import { tmpdir } from 'node:os';
 
@@ -10,15 +10,15 @@ describe('conversation-chat-defaults', () => {
   const twoHarnessConfig: DeepPartial<AppConfig> = {
     harnesses: {
       claude: {
-        command: 'noop',
-        args: [],
+        command: process.execPath,
+        args: [STUB_HARNESS],
         models: [{ id: 'claude-a' }, { id: 'claude-b' }],
         defaultModel: 'claude-a',
         cacheWarmSeconds: 300,
       },
       codex: {
-        command: 'noop',
-        args: [],
+        command: process.execPath,
+        args: [STUB_HARNESS],
         models: [{ id: 'codex-a' }, { id: 'codex-b' }],
         defaultModel: 'codex-a',
         cacheWarmSeconds: 300,
@@ -333,7 +333,7 @@ describe('conversation-telemetry', () => {
         harnesses: {
           claude: {
             command: process.execPath,
-            args: [],
+            args: [STUB_HARNESS],
             env: {},
             models: [{ id: 'stub-model', contextWindow: 1000 }],
             defaultModel: 'stub-model',

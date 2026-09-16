@@ -20,14 +20,28 @@ describe('conversation walking skeleton (issue 10)', () => {
     await server.close();
   });
 
-  it('creates a Conversation without spawning a harness', async () => {
-    const { body, status } = await server.api('POST', '/api/conversations', {});
-    expect(status).toBe(201);
-    expect(body.state).toBe('active');
-    expect(body.sessionId).toBeNull();
-    expect(body.harness).toBe('claude');
-    expect(body.workingDir).toBeTruthy();
-    expect(server.app.ctx.conversationDriver.isWarm(body.id)).toBe(false);
+  it('opens a Conversation with a warm harness and advertised commands before its first Turn', async () => {
+    const commands = [{ name: 'review', description: 'Review the current changes' }];
+    const config = stubHarness();
+    config.harnesses!.claude!.env = { STUB_AVAILABLE_COMMANDS: JSON.stringify(commands) };
+    const eagerServer = await startServer(config);
+    try {
+      const { body, status } = await eagerServer.api('POST', '/api/conversations', {});
+      expect(status).toBe(201);
+      expect(body.state).toBe('active');
+      expect(body.sessionId).toEqual(expect.any(String));
+      expect(body.harness).toBe('claude');
+      expect(body.workingDir).toBeTruthy();
+      expect(body.commands).toEqual(commands);
+      expect(body.usage).toBeNull();
+      expect(body.cost).toBeNull();
+      expect(eagerServer.app.ctx.conversationDriver.isWarm(body.id)).toBe(true);
+
+      const events = await eagerServer.api('GET', `/api/conversations/${body.id}/events`);
+      expect(events.body.events.filter((event: { type: string }) => event.type === 'user_turn')).toEqual([]);
+    } finally {
+      await eagerServer.close();
+    }
   });
 
   it('spawns on the first Turn, streams the reply, and persists a replayable transcript', async () => {
@@ -186,27 +200,27 @@ describe('conversation walking skeleton (issue 10)', () => {
     expect(after.body.endedAt).toBeNull();
   });
 
-  it('rejects a Turn on an ended Conversation that never opened a session', async () => {
+  it('resumes a Conversation ended before its first Turn', async () => {
     const { body: convo } = await server.api('POST', '/api/conversations', {});
-    expect(convo.sessionId).toBeNull();
+    expect(convo.sessionId).toEqual(expect.any(String));
     const ended = await server.api('POST', `/api/conversations/${convo.id}/end`);
     expect(ended.body.state).toBe('ended');
 
-    const rejected = await server.api('POST', `/api/conversations/${convo.id}/turns`, {
+    const resumed = await server.api('POST', `/api/conversations/${convo.id}/turns`, {
       text: JSON.stringify({ updates: [] }),
     });
-    expect(rejected.status).toBe(409);
+    expect(resumed.status).toBe(200);
   });
 
   it('validates the working directory exists before spawning', async () => {
-    const { body: convo } = await server.api('POST', '/api/conversations', {
+    const created = await server.api('POST', '/api/conversations', {
       workingDir: '/no/such/harmonic/dir',
     });
-    const turn = await server.api('POST', `/api/conversations/${convo.id}/turns`, {
-      text: JSON.stringify({ updates: [] }),
-    });
-    expect(turn.status).toBe(400);
-    expect(turn.body.error.code).toBe('validation');
+    expect(created.status).toBe(400);
+    expect(created.body.error.code).toBe('validation');
+    expect((await server.api('GET', '/api/conversations')).body.conversations).not.toContainEqual(
+      expect.objectContaining({ workingDir: '/no/such/harmonic/dir' }),
+    );
   });
 
   it('never lets an attempt-scoped key reach the operator-only Conversation API', async () => {
