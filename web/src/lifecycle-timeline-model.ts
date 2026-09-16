@@ -122,7 +122,7 @@ function lifecycleRow(payload: Record<string, unknown> | null): RowCore {
     case 'mode_set': {
       const requested = text(payload?.requested);
       const applied = text(payload?.applied) ?? text(payload?.mode);
-      if (text(payload?.fallbackReason) && requested && applied) {
+      if (requested && applied && requested !== applied) {
         return { label: 'Permission mode fallback', detail: `${requested} → ${applied}`, tone: 'awaiting', tag: null };
       }
       return { label: 'Permission mode set', detail: applied, tone: 'neutral', tag: null };
