@@ -58,7 +58,7 @@ export function shouldShowRunHint(
 /**
  * The next thing to teach after the first run: the one human surface
  *. When a ticket first escalates the operator has to take the one
- * decision an agent can't take for itself — Accept, Reject with guidance, or
+ * decision an agent can't take for itself — Accept, Reject, or
  * Close. Point at it while anything is escalated, until the operator has handled
  * their first escalation (App retires the hint when a task leaves the escalated
  * state) or dismisses it — whichever comes first. This hands off cleanly from
