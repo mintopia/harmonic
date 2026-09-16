@@ -756,6 +756,7 @@ export interface HarnessConfig {
   models: ModelCatalogEntry[];
   defaultModel: string;
   cacheWarmSeconds: number;
+  permissionMode?: string;
   sessionLogDir?: string;
 }
 

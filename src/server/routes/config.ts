@@ -40,6 +40,8 @@ const configPatchBodySchema = z
           /** Must be one of `models` when any are listed — enforced by the config schema on write. */
           defaultModel: z.string().meta({ example: 'sonnet-5' }),
           cacheWarmSeconds: z.number().int().positive().meta({ example: 300 }),
+          /** Unattended ACP permission mode; omit to use the adapter default. */
+          permissionMode: z.string().meta({ example: 'bypassPermissions' }),
           /** Root of the harness's native session logs; empty string disables the usage fallback. */
           sessionLogDir: z.string().meta({ example: '/home/dev/.claude/projects' }),
         }).partial(),

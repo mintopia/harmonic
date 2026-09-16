@@ -447,6 +447,27 @@ describe('Runner auto-drive settle (issue #33)', () => {
     expect((modeSet?.payload as any)?.mode).toBe('auto');
   });
 
+  it('an afk Run uses its Harness permission-mode configuration when ACP advertises it', async () => {
+    const cfg = config({ prompt: JSON.stringify({ echoSetMode: true }) });
+    cfg.harnesses.claude.permissionMode = 'bypassPermissions';
+    build(cfg);
+    const task = await tasks.upsertMirrored(mirroredAfk(7));
+    await startMirrored(task.id);
+
+    await vi.waitFor(async () => {
+      const modeSet = (await eventsForTask(task.id)).find(
+        (event) => event.type === 'lifecycle' && (event.payload as any).event === 'mode_set',
+      );
+      if (!modeSet) throw new Error('mode not set');
+      return modeSet;
+    }, { timeout: 10_000 });
+
+    const modeSet = (await eventsForTask(task.id)).find(
+      (event) => event.type === 'lifecycle' && (event.payload as any).event === 'mode_set',
+    );
+    expect((modeSet?.payload as any)?.mode).toBe('bypassPermissions');
+  });
+
   it('an afk Run fails closed when the harness offers no unattended permission mode', async () => {
     const cfg = config({}, 1);
     cfg.harnesses.claude.env = { STUB_MODES: '' };

@@ -2508,7 +2508,7 @@ export class Runner {
     guardrails.armSpend();
     if (autoDriven) {
       const adapter = adapterFor(task.harness);
-      const mode = adapter.unattendedPermissionMode(driver.availableModes);
+      const mode = adapter.unattendedPermissionMode(driver.availableModes, harness.permissionMode);
       if (!mode) {
         if (adapter.requiresUnattendedPermissionMode) {
           throw new Error(

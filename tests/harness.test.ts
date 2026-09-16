@@ -53,9 +53,22 @@ describe('harness-adapter', () => {
     it('OpenCode relies on its ACP permission defaults and generic ACP usage collection', () => {
       const adapter = adapterFor('opencode');
       expect(adapter).toMatchObject({ commandPrefix: '/', transcript: null, requiresUnattendedPermissionMode: false });
+      expect(adapter.permissionModes).toBeUndefined();
       expect(adapter.usage).not.toBeNull();
       expect(adapter.unattendedPermissionMode([])).toBeUndefined();
       expect(adapter.spawnEnv(spawnInput('meta/muse-spark-1.3-contributor'))).toEqual({});
+    });
+
+    it('resolves configurable unattended modes without ever falling back to ask', () => {
+      const adapter = adapterFor('claude');
+      expect(adapter.permissionModes).toEqual({ auto: 'Auto', bypassPermissions: 'Bypass Permissions' });
+      expect(adapter.defaultPermissionMode).toBe('auto');
+      expect(adapter.unattendedPermissionMode(['ask', 'auto', 'bypassPermissions'], 'bypassPermissions')).toBe('bypassPermissions');
+      expect(adapter.unattendedPermissionMode(['ask', 'auto', 'bypassPermissions'], 'unsupported')).toBe('auto');
+      expect(adapter.unattendedPermissionMode(['ask', 'bypassPermissions'])).toBe('bypassPermissions');
+      expect(adapter.unattendedPermissionMode(['ask'])).toBeUndefined();
+      expect(adapterFor('copilot').permissionModes).toEqual(adapter.permissionModes);
+      expect(adapterFor('codex').permissionModes).toBeUndefined();
     });
 
     it('OpenCode discovers credentialed providers and their cached model metadata without ACP', async () => {
