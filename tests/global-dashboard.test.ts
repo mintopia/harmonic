@@ -26,6 +26,7 @@ afterEach(async () => {
 
 it('renders the global roll-up, token bars, workspace totals, and drill-ins', async () => {
   const navigate = vi.fn();
+  const openWorkspace = vi.fn();
   vi.stubGlobal('fetch', async (input: string | URL | Request) => {
     const path = String(input);
     if (path.includes('/api/stats')) return new Response(JSON.stringify(stats(path.includes('604800000') ? 21 : 12)));
@@ -36,7 +37,7 @@ it('renders the global roll-up, token bars, workspace totals, and drill-ins', as
   host = document.body.appendChild(document.createElement('div'));
   root = createRoot(host);
   await act(async () => {
-    root?.render(createElement(GlobalDashboard, { pendingPermissions: 1, hostLoad: null, onNavigate: navigate }));
+    root?.render(createElement(GlobalDashboard, { pendingPermissions: 1, hostLoad: null, onNavigate: navigate, onOpenWorkspace: openWorkspace }));
     await new Promise((resolve) => setTimeout(resolve, 0));
   });
 
@@ -52,4 +53,13 @@ it('renders the global roll-up, token bars, workspace totals, and drill-ins', as
   expect(navigate).toHaveBeenNthCalledWith(3, 'stats');
   expect(host.textContent).toContain('Total');
   expect(host.textContent).toContain('Cache hit');
+
+  const row = host.querySelector('tbody tr');
+  await act(async () => { (row as HTMLTableRowElement).click(); });
+  expect(openWorkspace).toHaveBeenCalledWith(1);
+
+  openWorkspace.mockClear();
+  const legendButton = [...host.querySelectorAll('button')].find((button) => button.textContent?.includes('Main'));
+  await act(async () => legendButton?.click());
+  expect(openWorkspace).toHaveBeenCalledWith(1);
 });

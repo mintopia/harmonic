@@ -18,6 +18,7 @@ const environment = (overrides: Partial<ServiceEnvironment> = {}): ServiceEnviro
 
 const initdDependencies = () => {
   const calls: string[][] = [];
+  const dirs: string[] = [];
   const files = new Map<string, string>();
   const modes = new Map<string, number>();
   const warn = vi.fn();
@@ -32,13 +33,13 @@ const initdDependencies = () => {
       calls.push([command, ...args]);
       return { stdout: '' };
     },
-    mkdir: async () => {},
+    mkdir: async (path: string) => { dirs.push(path); },
     writeFile: async (path: string, contents: string) => { files.set(path, contents); },
     chmod: async (path: string, mode: number) => { modes.set(path, mode); },
     removeFile: async (path: string) => { files.delete(path); },
     fileExists: (path: string) => files.has(path),
   } satisfies ServiceManagerDependencies;
-  return { dependencies, calls, files, modes, warn };
+  return { dependencies, calls, dirs, files, modes, warn };
 };
 
 describe('ServiceManager backend detection', () => {
@@ -84,7 +85,9 @@ describe('ServiceManager backend detection', () => {
     expect(script).toContain('HARMONIC_INITD_SERVICE=1 runuser -u agent -- harmonic status --data-dir /srv/harmonic');
     expect(script).toContain('restart|force-reload)');
     expect(initd.modes.get('/etc/init.d/harmonic')).toBe(0o755);
+    expect(initd.dirs).toContain('/srv/harmonic');
     expect(initd.calls).toEqual([
+      ['chown', 'agent', '/srv/harmonic'],
       ['update-rc.d', 'harmonic', 'defaults'],
       ['service', 'harmonic', 'start'],
     ]);
@@ -143,12 +146,14 @@ describe('ServiceManager backend detection', () => {
 });
 
 describe('systemd ServiceManager', () => {
-  const dependencies = (): ServiceManagerDependencies & { calls: string[][]; files: Map<string, string>; modes: Map<string, number> } => {
+  const dependencies = (): ServiceManagerDependencies & { calls: string[][]; dirs: string[]; files: Map<string, string>; modes: Map<string, number> } => {
     const calls: string[][] = [];
+    const dirs: string[] = [];
     const files = new Map<string, string>();
     const modes = new Map<string, number>();
     return {
       calls,
+      dirs,
       files,
       modes,
       cliPath: '/opt/harmonic/dist/cli.js',
@@ -159,7 +164,7 @@ describe('systemd ServiceManager', () => {
         calls.push([command, ...args]);
         return { stdout: 'active\n' };
       },
-      mkdir: async () => {},
+      mkdir: async (path) => { dirs.push(path); },
       writeFile: async (path, contents) => { files.set(path, contents); },
       chmod: async (path, mode) => { modes.set(path, mode); },
       removeFile: async (path) => { files.delete(path); },
@@ -183,7 +188,9 @@ describe('systemd ServiceManager', () => {
     expect(deps.files.get('/etc/systemd/system/harmonic.service')).toContain('Environment=HARMONIC_MANAGED_BY=systemd');
     expect(deps.files.get('/etc/systemd/system/harmonic.service')).not.toContain('EnvironmentFile=');
     expect(deps.files.has('/etc/systemd/system/harmonic.env')).toBe(false);
+    expect(deps.dirs).toContain('/var/lib/harmonic');
     expect(deps.calls).toEqual([
+      ['chown', 'workspace', '/var/lib/harmonic'],
       ['systemctl', 'daemon-reload'],
       ['systemctl', 'enable', 'harmonic'],
       ['systemctl', 'start', 'harmonic'],
@@ -256,6 +263,7 @@ describe('systemd ServiceManager', () => {
     expect(deps.files.get('/home/ada/.config/systemd/user/harmonic.service')).toContain('EnvironmentFile=/home/ada/.config/systemd/user/harmonic.env');
     expect(deps.files.get('/home/ada/.config/systemd/user/harmonic.env')).toBe('HARMONIC_PASSWORD="secret value"\n');
     expect(deps.modes.get('/home/ada/.config/systemd/user/harmonic.env')).toBe(0o600);
+    expect(deps.dirs).toContain('/home/ada/.harmonic');
     expect(deps.calls).toEqual([
       ['loginctl', 'enable-linger', 'ada'],
       ['systemctl', '--user', 'daemon-reload'],
@@ -263,6 +271,19 @@ describe('systemd ServiceManager', () => {
       ['systemctl', '--user', 'start', 'harmonic'],
       ['systemctl', '--user', 'is-active', 'harmonic'],
     ]);
+  });
+
+  it('creates the data directory without chowning it for a user-level unit, since it already runs as the invoking user', async () => {
+    const deps = dependencies();
+    const manager = createServiceManager(environment({ userSystemdUsable: true }), deps);
+
+    await manager.install({
+      startSelfManaged: vi.fn(),
+      serve: { port: '4700', host: '0.0.0.0', dataDir: '/home/ada/.harmonic' },
+    });
+
+    expect(deps.dirs).toContain('/home/ada/.harmonic');
+    expect(deps.calls.some((call) => call[0] === 'chown')).toBe(false);
   });
 
   it('ignores --user for a user-level systemd unit and warns', async () => {

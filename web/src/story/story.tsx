@@ -236,7 +236,7 @@ export const config = parse(baselineYaml);
     return (
       <div style={{ minHeight: '100vh', background: 'var(--hm-canvas)', padding: 24 }}>
         <div style={{ maxWidth: 1100, margin: '0 auto' }}>
-          <GlobalDashboard pendingPermissions={2} hostLoad={{ load1: 3.2, load5: 2.8, load15: 2.1, cores: 8, saturated: false } as any} onNavigate={() => {}} />
+          <GlobalDashboard pendingPermissions={2} hostLoad={{ load1: 3.2, load5: 2.8, load15: 2.1, cores: 8, saturated: false } as any} onNavigate={() => {}} onOpenWorkspace={() => {}} />
         </div>
       </div>
     );

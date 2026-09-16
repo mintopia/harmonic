@@ -25,7 +25,13 @@ Global scope opens on the **Dashboard** — the one screen built to be read
 first. It leads with what needs you, then what's in flight, then what it's
 costing, and ranks your Workspaces in a table by cost today: alongside cost it
 shows how many tickets need you, how many are in flight, token throughput,
-cache-hit rate, and the 7-day cost. Pick any Workspace to drop into it.
+cache-hit rate, and the 7-day cost. Pick any Workspace — its row, or its badge
+in the token chart above the table — to drop into it.
+
+An instance with a single Workspace skips the Dashboard. The homepage opens
+straight on that Workspace's Board, since there's nothing yet to compare it
+against — add a second Workspace and the Dashboard becomes the homepage
+again.
 
 ## Telling Workspaces apart
 

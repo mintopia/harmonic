@@ -277,6 +277,13 @@ export function App() {
     }, (error) => live() && toastError(error));
   }, [authed, route.scope]);
 
+  useEffect(() => {
+    if (!workspacesLoaded) return;
+    if (workspaces.length === 1 && route.scope.kind === 'global' && route.view === 'board') {
+      navigate(scopeSwitchRoute(route, { kind: 'workspace', workspaceId: workspaces[0]!.id }), { replace: true });
+    }
+  }, [workspacesLoaded, workspaces, route, navigate]);
+
   useLiveEffect((live) => {
     if (!authed) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -848,6 +855,7 @@ export function App() {
                         pendingPermissions={pendingPermissionAlerts.length}
                         hostLoad={hostLoad}
                         onNavigate={(view) => pickView(view)}
+                        onOpenWorkspace={switchWorkspace}
                       />
                     )}
                     {view === 'board' && activeWorkspaceId !== null && (

@@ -116,6 +116,11 @@ const environmentFileValue = (value: string): string => JSON.stringify(value);
 
 const initdScriptPath = '/etc/init.d/harmonic';
 
+const ensureDataDir = async (dependencies: ServiceManagerDependencies, dataDir: string, user?: string): Promise<void> => {
+  await dependencies.mkdir(dataDir);
+  if (user !== undefined) await dependencies.run('chown', [user, dataDir]);
+};
+
 const shellWord = (value: string): string => /^[A-Za-z0-9_./:-]+$/.test(value)
   ? value
   : `'${value.replaceAll("'", "'\"'\"'")}'`;
@@ -206,6 +211,7 @@ class SystemdServiceManager implements ServiceManager {
     if (user === 'root') warn(this.dependencies, 'Harmonic will run as root. Pass --user to run it as a non-root user.');
     if (this.userUnit && options.user !== undefined) warn(this.dependencies, '--user is ignored for user-level systemd.');
     if (this.userUnit) await this.dependencies.run('loginctl', ['enable-linger', this.dependencies.userName]);
+    await ensureDataDir(this.dependencies, options.serve.dataDir, user);
     await this.dependencies.mkdir(this.unitDirectory);
     if (options.serve.password === undefined) {
       await this.dependencies.removeFile(this.environmentPath);
@@ -259,6 +265,7 @@ class InitdServiceManager implements ServiceManager {
     if (user === 'root') {
       warn(this.dependencies, 'Harmonic will run as root. Pass --user to run it as a non-root user.');
     }
+    await ensureDataDir(this.dependencies, options.serve.dataDir, user);
     await this.dependencies.writeFile(initdScriptPath, initdScript({ dataDir: options.serve.dataDir, user }));
     await this.dependencies.chmod(initdScriptPath, 0o755);
     await this.dependencies.run('update-rc.d', ['harmonic', 'defaults']);
