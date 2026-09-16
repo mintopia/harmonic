@@ -107,12 +107,15 @@ describe('conversation walking skeleton (issue 10)', () => {
       { name: 'review', description: 'Review the current changes', argumentHint: 'focus area' },
       { name: 'status', description: 'Show the current status' },
     ]);
-    await waitFor(async () =>
-      ws.messages.find((message) => message.type === 'conversation_commands' && message.conversationId === convo.id),
+    const commandsMsg = await waitFor(async () =>
+      ws.messages.find(
+        (message) =>
+          message.type === 'conversation_commands' &&
+          message.conversationId === convo.id &&
+          message.commands?.length === detail.body.commands.length,
+      ),
     );
-    expect(ws.messages.find((message) => message.type === 'conversation_commands' && message.conversationId === convo.id)).toMatchObject({
-      commands: detail.body.commands,
-    });
+    expect(commandsMsg).toMatchObject({ commands: detail.body.commands });
 
     await server.api('POST', `/api/conversations/${convo.id}/turns`, {
       text: JSON.stringify({ updates: [{ sessionUpdate: 'available_commands_update', availableCommands: [] }] }),

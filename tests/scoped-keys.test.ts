@@ -126,7 +126,9 @@ describe('read-scoped key (issue #35)', () => {
 
     await waitFor(async () => opWs.messages.some((m) => m.type === 'conversation_event'));
     await waitFor(async () => readWs.messages.some((m) => m.type === 'attempt_event'));
-    const usageMsg = await waitFor(async () => readWs.messages.find((m) => m.type === 'attempt_usage'));
+    const usageMsg = await waitFor(async () =>
+      readWs.messages.find((m) => m.type === 'attempt_usage' && m.contextTokens === 1234 && m.cost !== undefined),
+    );
     expect(usageMsg).toMatchObject({ attemptId: 1, contextTokens: 1234, activity: 'Editing src/foo.ts' });
     expect(usageMsg.cost).not.toBeUndefined();
     expect(readWs.messages.some((m) => m.type === 'conversation_event')).toBe(false);
