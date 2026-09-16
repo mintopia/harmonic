@@ -55,6 +55,23 @@ describe('lifecycleTimelineRows', () => {
     ]);
   });
 
+  it('makes an unattended permission-mode fallback visible', () => {
+    const rows = lifecycleTimelineRows([
+      lifecycle(10, {
+        event: 'mode_set',
+        requested: 'bypassPermissions',
+        applied: 'auto',
+        fallbackReason: 'configured-mode-not-advertised',
+      }),
+    ]);
+
+    expect(rows[0]).toMatchObject({
+      label: 'Permission mode fallback',
+      detail: 'bypassPermissions → auto',
+      tone: 'awaiting',
+    });
+  });
+
   it('weaves granular merge sub-steps into the chronology, deduping the terminal step against the high-level outcome', () => {
     const rows = lifecycleTimelineRows([
       lifecycle(10, { event: 'merge-step', step: { step: 'started', baseBranch: 'develop', taskBranch: 'task/498' } }),
