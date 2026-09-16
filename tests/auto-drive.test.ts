@@ -510,6 +510,30 @@ describe('Runner auto-drive settle (issue #33)', () => {
     });
   });
 
+  it('an afk Run visibly falls back when its default permission mode is not advertised', async () => {
+    const cfg = config({ prompt: JSON.stringify({ echoSetMode: true }) });
+    cfg.harnesses.claude.env = { STUB_MODES: 'ask,bypassPermissions' };
+    build(cfg);
+    const task = await tasks.upsertMirrored(mirroredAfk(8));
+    await startMirrored(task.id);
+
+    const modeSet = await vi.waitFor(async () => {
+      const event = (await eventsForTask(task.id)).find(
+        (candidate) => candidate.type === 'lifecycle' && (candidate.payload as any).event === 'mode_set',
+      );
+      if (!event) throw new Error('mode not set');
+      return event;
+    }, { timeout: 10_000 });
+
+    expect(modeSet.payload).toMatchObject({
+      mode: 'bypassPermissions',
+      requested: null,
+      advertised: ['ask', 'bypassPermissions'],
+      applied: 'bypassPermissions',
+      fallbackReason: 'default-mode-not-advertised',
+    });
+  });
+
   it('an afk Run fails closed when the harness offers no unattended permission mode', async () => {
     const cfg = config({}, 1);
     cfg.harnesses.claude.env = { STUB_MODES: '' };
