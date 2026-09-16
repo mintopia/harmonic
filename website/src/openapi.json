@@ -4835,6 +4835,27 @@
             "type": "boolean",
             "example": false
           },
+          "commands": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "argumentHint": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "description"
+              ]
+            }
+          },
           "createdAt": {
             "type": "number",
             "example": 1784030400000
@@ -4871,6 +4892,7 @@
           "contextWindow",
           "cacheWarmSeconds",
           "coldResume",
+          "commands",
           "createdAt",
           "updatedAt",
           "endedAt"
@@ -10545,6 +10567,28 @@
             "type": "boolean",
             "example": false
           },
+          "commands": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "argumentHint": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "description"
+              ],
+              "additionalProperties": false
+            }
+          },
           "createdAt": {
             "type": "number",
             "example": 1784030400000
@@ -10581,6 +10625,7 @@
           "contextWindow",
           "cacheWarmSeconds",
           "coldResume",
+          "commands",
           "createdAt",
           "updatedAt",
           "endedAt"

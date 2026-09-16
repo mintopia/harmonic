@@ -426,5 +426,6 @@ export async function conversationToApi(ctx: AppContext, conversation: Conversat
     contextWindow: resolveContextWindowForHarness(conversation.model, harness),
     cacheWarmSeconds: harness.cacheWarmSeconds,
     coldResume: conversation.sessionId !== null && !ctx.conversationDriver.isWarm(conversation.id),
+    commands: ctx.conversationDriver.availableCommands(conversation.id),
   });
 }

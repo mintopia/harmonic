@@ -89,6 +89,11 @@ const conversationSchema = z
     /** The harness cache's warm duration in seconds. */
     cacheWarmSeconds: z.number().nullable().meta({ example: 300 }),
     coldResume: z.boolean().meta({ example: false }),
+    commands: z.array(z.object({
+      name: z.string(),
+      description: z.string(),
+      argumentHint: z.string().optional(),
+    })),
     createdAt: z.number().meta({ example: 1784030400000 }),
     updatedAt: z.number().meta({ example: 1784032260000 }),
     /** Set when the Conversation ends; null while active. */
