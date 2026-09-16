@@ -3,7 +3,7 @@ import { access, readdir, readFile, realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { dominantModel, foldModels, usageFromModels, type ParsedSession, type ProcessNode, type UsageTurn } from '../usage.js';
-import type { HarnessAdapter, ModelUsage, SessionTailReader } from './adapter.js';
+import { resolveUnattendedPermissionMode, type HarnessAdapter, type ModelUsage, type SessionTailReader } from './adapter.js';
 import { LineCursor, type LineAccumulator } from './incremental-log.js';
 import { asRecord, timestamp, withTarget, type TranscriptLogEvent } from './transcript.js';
 
@@ -385,7 +385,15 @@ export const claudeAdapter: HarnessAdapter = {
       headers: [{ name: 'Authorization', value: `Bearer ${token}` }],
     },
   ],
-  unattendedPermissionMode: (available) => ['auto', 'bypassPermissions'].find((mode) => available.includes(mode)),
+  permissionModes: { auto: 'Auto', bypassPermissions: 'Bypass Permissions' },
+  defaultPermissionMode: 'auto',
+  unattendedPermissionMode: (available, configured) =>
+    resolveUnattendedPermissionMode({
+      available,
+      configured,
+      permissionModes: claudeAdapter.permissionModes ?? {},
+      defaultPermissionMode: claudeAdapter.defaultPermissionMode,
+    }),
   requiresUnattendedPermissionMode: true,
 
   usage: {

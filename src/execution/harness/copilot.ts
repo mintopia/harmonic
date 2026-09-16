@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { dominantModel, foldModels, usageFromModels, type ParsedSession, type ProcessNode, type ProcessStatus } from '../usage.js';
-import type { HarnessAdapter, ModelUsage } from './adapter.js';
+import { resolveUnattendedPermissionMode, type HarnessAdapter, type ModelUsage } from './adapter.js';
 
 const num = (v: unknown): number => (typeof v === 'number' ? v : 0);
 
@@ -118,7 +118,15 @@ export const copilotAdapter: HarnessAdapter = {
   // falsifies session/new's reported currentModelId without changing the
   // session. The CLI also updates itself mid-run unless told not to.
   spawnEnv: () => ({ COPILOT_AUTO_UPDATE: 'false' }),
-  unattendedPermissionMode: (available) => ['auto', 'bypassPermissions'].find((mode) => available.includes(mode)),
+  permissionModes: { auto: 'Auto', bypassPermissions: 'Bypass Permissions' },
+  defaultPermissionMode: 'auto',
+  unattendedPermissionMode: (available, configured) =>
+    resolveUnattendedPermissionMode({
+      available,
+      configured,
+      permissionModes: copilotAdapter.permissionModes ?? {},
+      defaultPermissionMode: copilotAdapter.defaultPermissionMode,
+    }),
   requiresUnattendedPermissionMode: true,
 
   // Sent for every run, 'auto' included: an unpinned Copilot ACP session

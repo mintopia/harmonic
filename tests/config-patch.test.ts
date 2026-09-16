@@ -157,6 +157,16 @@ describe('PATCH /api/config verification', () => {
     expect(patched.body.harnesses.claude.cacheWarmSeconds).toBe(600);
   });
 
+  it('round-trips an optional per-harness unattended permission mode', async () => {
+    const patched = await server.api('PATCH', '/api/config', {
+      harnesses: { claude: { permissionMode: 'bypassPermissions' } },
+    });
+
+    expect(patched.status).toBe(200);
+    expect(patched.body.harnesses.claude.permissionMode).toBe('bypassPermissions');
+    expect((await server.api('GET', '/api/config')).body.harnesses.claude.permissionMode).toBe('bypassPermissions');
+  });
+
   it('accepts an id-keyed model catalog patch without replacing untouched models', async () => {
     const patched = await server.api('PATCH', '/api/config', {
       harnesses: { claude: { models: { 'claude-opus-5': { contextWindow: 123_456 } } } },
