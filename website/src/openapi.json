@@ -4856,6 +4856,10 @@
               ]
             }
           },
+          "commandPrefix": {
+            "type": "string",
+            "example": "/"
+          },
           "createdAt": {
             "type": "number",
             "example": 1784030400000
@@ -4893,6 +4897,7 @@
           "cacheWarmSeconds",
           "coldResume",
           "commands",
+          "commandPrefix",
           "createdAt",
           "updatedAt",
           "endedAt"
@@ -5104,6 +5109,10 @@
                   "exclusiveMinimum": 0,
                   "maximum": 9007199254740991,
                   "example": 300
+                },
+                "permissionMode": {
+                  "type": "string",
+                  "example": "bypassPermissions"
                 },
                 "sessionLogDir": {
                   "type": "string",
@@ -10589,6 +10598,10 @@
               "additionalProperties": false
             }
           },
+          "commandPrefix": {
+            "type": "string",
+            "example": "/"
+          },
           "createdAt": {
             "type": "number",
             "example": 1784030400000
@@ -10626,6 +10639,7 @@
           "cacheWarmSeconds",
           "coldResume",
           "commands",
+          "commandPrefix",
           "createdAt",
           "updatedAt",
           "endedAt"
@@ -10843,6 +10857,10 @@
                   "exclusiveMinimum": 0,
                   "maximum": 9007199254740991,
                   "example": 300
+                },
+                "permissionMode": {
+                  "type": "string",
+                  "example": "bypassPermissions"
                 },
                 "sessionLogDir": {
                   "type": "string",
@@ -12608,7 +12626,7 @@
         "tags": [
           "Tasks"
         ],
-        "description": "Reject an escalated ticket with guidance: the guidance becomes feedback for the next Attempt and the attempt budget resets. The ticket requeues to `ready` — the Auto-Runner starts the next Attempt when capacity frees; it is not force-started here unless `start: true` (the warm-Session \"start now\" override, which bypasses the capacity ceiling). The escalated Attempt's branch is retained as evidence until its Session retires. Human-only.",
+        "description": "Reject an escalated ticket: optional guidance becomes feedback for the next Attempt and the attempt budget resets. The ticket requeues to `ready` — the Auto-Runner starts the next Attempt when capacity frees; it is not force-started here unless `start: true` (the warm-Session \"start now\" override, which bypasses the capacity ceiling). The escalated Attempt's branch is retained as evidence until its Session retires. Human-only.",
         "requestBody": {
           "required": true,
           "content": {
@@ -12618,7 +12636,6 @@
                 "properties": {
                   "guidance": {
                     "type": "string",
-                    "minLength": 1,
                     "example": "The limiter is per-process; it needs to be shared across workers."
                   },
                   "start": {
@@ -12649,59 +12666,6 @@
         "responses": {
           "200": {
             "description": "The task, back in the Attempt loop.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Task"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "The guidance is empty.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "The task is not escalated.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/tasks/{id}/requeue": {
-      "post": {
-        "tags": [
-          "Tasks"
-        ],
-        "description": "Requeue an escalated ticket with no guidance: return it to `ready` with no feedback recorded, to be picked up again when the Auto-Runner has capacity. For when the escalation cause was fixed outside Harmonic (a missing blocker link, say) and there is nothing to tell the next attempt. Human-only.",
-        "parameters": [
-          {
-            "schema": {
-              "type": "integer",
-              "minimum": -9007199254740991,
-              "maximum": 9007199254740991,
-              "example": 4821
-            },
-            "in": "path",
-            "name": "id",
-            "required": true
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The task, back in the queue as `ready`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -16958,6 +16922,10 @@
                             "maximum": 9007199254740991,
                             "example": 300
                           },
+                          "permissionMode": {
+                            "example": "bypassPermissions",
+                            "type": "string"
+                          },
                           "sessionLogDir": {
                             "example": "~/.claude/projects",
                             "type": "string"
@@ -17788,6 +17756,10 @@
                             "maximum": 9007199254740991,
                             "example": 300
                           },
+                          "permissionMode": {
+                            "example": "bypassPermissions",
+                            "type": "string"
+                          },
                           "sessionLogDir": {
                             "example": "~/.claude/projects",
                             "type": "string"
@@ -18597,6 +18569,10 @@
                           "maximum": 9007199254740991,
                           "example": 300
                         },
+                        "permissionMode": {
+                          "example": "bypassPermissions",
+                          "type": "string"
+                        },
                         "sessionLogDir": {
                           "example": "~/.claude/projects",
                           "type": "string"
@@ -19370,6 +19346,10 @@
                             "maximum": 9007199254740991,
                             "example": 300
                           },
+                          "permissionMode": {
+                            "example": "bypassPermissions",
+                            "type": "string"
+                          },
                           "sessionLogDir": {
                             "example": "~/.claude/projects",
                             "type": "string"
@@ -20070,7 +20050,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The distributed baseline config and the effective global config the inheritance controls resolve against.",
+            "description": "The distributed baseline, effective global config, and adapter-declared Harness permission modes for settings controls.",
             "content": {
               "application/json": {
                 "schema": {
@@ -20194,6 +20174,10 @@
                                 "exclusiveMinimum": 0,
                                 "maximum": 9007199254740991,
                                 "example": 300
+                              },
+                              "permissionMode": {
+                                "example": "bypassPermissions",
+                                "type": "string"
                               },
                               "sessionLogDir": {
                                 "example": "~/.claude/projects",
@@ -20991,6 +20975,10 @@
                                 "maximum": 9007199254740991,
                                 "example": 300
                               },
+                              "permissionMode": {
+                                "example": "bypassPermissions",
+                                "type": "string"
+                              },
                               "sessionLogDir": {
                                 "example": "~/.claude/projects",
                                 "type": "string"
@@ -21667,14 +21655,43 @@
                         "guardrails"
                       ],
                       "additionalProperties": false
+                    },
+                    "harnessPermissionModes": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {
+                        "type": "object",
+                        "properties": {
+                          "modes": {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string"
+                            },
+                            "additionalProperties": {
+                              "type": "string"
+                            }
+                          },
+                          "defaultMode": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "modes",
+                          "defaultMode"
+                        ],
+                        "additionalProperties": false
+                      }
                     }
                   },
                   "required": [
                     "baseline",
-                    "global"
+                    "global",
+                    "harnessPermissionModes"
                   ],
                   "additionalProperties": false,
-                  "description": "The distributed baseline config and the effective global config the inheritance controls resolve against."
+                  "description": "The distributed baseline, effective global config, and adapter-declared Harness permission modes for settings controls."
                 }
               }
             }
@@ -21819,6 +21836,10 @@
                             "exclusiveMinimum": 0,
                             "maximum": 9007199254740991,
                             "example": 300
+                          },
+                          "permissionMode": {
+                            "example": "bypassPermissions",
+                            "type": "string"
                           },
                           "sessionLogDir": {
                             "example": "~/.claude/projects",

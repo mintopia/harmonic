@@ -125,8 +125,8 @@ export const copilotAdapter: HarnessAdapter = {
   // session. The CLI also updates itself mid-run unless told not to.
   spawnEnv: () => ({ COPILOT_AUTO_UPDATE: 'false' }),
   permissionModes: {
-    [COPILOT_AGENT_MODE]: 'Agent',
     [COPILOT_PLAN_MODE]: 'Plan',
+    [COPILOT_AGENT_MODE]: 'Agent',
     [COPILOT_AUTOPILOT_MODE]: 'Autopilot',
   },
   defaultPermissionMode: COPILOT_AGENT_MODE,

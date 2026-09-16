@@ -94,6 +94,8 @@ const conversationSchema = z
       description: z.string(),
       argumentHint: z.string().optional(),
     })),
+    /** The prefix this Harness uses to invoke a slash command; drives the Composer picker. */
+    commandPrefix: z.string().meta({ example: '/' }),
     createdAt: z.number().meta({ example: 1784030400000 }),
     updatedAt: z.number().meta({ example: 1784032260000 }),
     /** Set when the Conversation ends; null while active. */

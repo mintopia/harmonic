@@ -594,8 +594,9 @@ export class Runner {
       await this.taskService.requeue(task.id);
       return;
     }
-    const run = (await this.attempts.listForTask(task.id)).at(-1);
-    const escalated = (await this.attempts.listForTask(task.id)).findLast((attempt) => attempt.state === 'escalated');
+    const attempts = await this.attempts.listForTask(task.id);
+    const run = attempts.at(-1);
+    const escalated = attempts.findLast((attempt) => attempt.state === 'escalated');
     if (escalated && trimmed) await this.attempts.setFeedback(escalated.id, trimmed);
     let choice: 'full' | 'condensed' | undefined;
     let continuation: DeterministicContinuation | undefined;
