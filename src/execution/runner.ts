@@ -2511,7 +2511,11 @@ export class Runner {
       const requested = harness.permissionMode;
       const advertised = [...driver.availableModes];
       const mode = adapter.unattendedPermissionMode(advertised, requested);
-      const fallbackReason = requested !== undefined && requested !== mode ? 'configured-mode-not-advertised' : undefined;
+      const fallbackReason = requested !== undefined && requested !== mode
+        ? 'configured-mode-not-advertised'
+        : requested === undefined && adapter.defaultPermissionMode !== undefined && adapter.defaultPermissionMode !== mode
+          ? 'default-mode-not-advertised'
+          : undefined;
       logger.info('Unattended permission mode resolved', {
         taskId: task.id,
         attemptId: run.id,
