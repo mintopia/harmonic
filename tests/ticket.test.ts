@@ -7,7 +7,7 @@ import { type SettingsStore } from '../src/server/settings-store.js';
 import { type Ticket, type TrackerAdapter } from '../src/tracker/adapter.js';
 import { mirrorScan } from '../src/tracker/mirror.js';
 import { TrackerPoller } from '../src/tracker/poller.js';
-import { allWorkspaces, makeSettingsStore, startServer, stubHarness, type TestServer } from './helpers.js';
+import { allWorkspaces, makeSettingsStore, startServer, stubHarness, type TestServer, seedWorkspace } from './helpers.js';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -161,6 +161,7 @@ describe('ticket-closed-while-working', () => {
     beforeEach(async () => {
       dir = mkdtempSync(join(tmpdir(), 'harmonic-closed-working-'));
       asyncDb = await openAsyncDb(dir);
+      await seedWorkspace(asyncDb);
       settingsStore = await makeSettingsStore(dir);
       tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
       runs = new AttemptStore(asyncDb);

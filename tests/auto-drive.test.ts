@@ -16,7 +16,7 @@ import type { TaskRow, AttemptRow } from '../src/db/schema.js';
 import { workspaces } from '../src/db/schema.js';
 import type { Ticket, TrackerAdapter, OpenPRInput } from '../src/tracker/adapter.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
-import { allWorkspaces, makeSettingsStore } from './helpers.js';
+import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
 
 const STUB = join(import.meta.dirname, 'stub-harness.mjs');
 
@@ -378,6 +378,7 @@ describe('Runner auto-drive settle (issue #33)', () => {
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-drive-'));
     asyncDb = await openAsyncDb(dir);
+    await seedWorkspace(asyncDb);
     settingsStore = await makeSettingsStore(dir);
     workDir = mkdtempSync(join(tmpdir(), 'harmonic-drive-wd-'));
     await asyncDb.write((d) => d.update(workspaces).set({ workingDir: workDir }).run());

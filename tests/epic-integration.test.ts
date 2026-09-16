@@ -19,7 +19,7 @@ import {
 import type { MemberMergeState } from '../src/domain/epic-integrate-decision.js';
 import type { EpicRefreshOutcome } from '../src/execution/epic-coordinator.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
-import { allWorkspaces, makeSettingsStore } from './helpers.js';
+import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
 
 const ticket = (over: Partial<Ticket>): Ticket => ({
   number: 100,
@@ -132,6 +132,7 @@ describe('EpicLifecycle.reconcile (issue #159)', () => {
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-epic-'));
     asyncDb = await openAsyncDb(dir);
+    await seedWorkspace(asyncDb);
     settingsStore = await makeSettingsStore(dir);
     tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
     wsId = (await allWorkspaces(asyncDb, settingsStore)())[0]!.id;
@@ -472,6 +473,7 @@ describe('EpicLifecycle whole-Epic integrate trigger (issue #161)', () => {
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-epic-integrate-'));
     asyncDb = await openAsyncDb(dir);
+    await seedWorkspace(asyncDb);
     settingsStore = await makeSettingsStore(dir);
     tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
     wsId = (await allWorkspaces(asyncDb, settingsStore)())[0]!.id;
@@ -587,6 +589,7 @@ describe('EpicLifecycle.retireIntegrationBranch (issue #159)', () => {
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-epic-retire-'));
     asyncDb = await openAsyncDb(dir);
+    await seedWorkspace(asyncDb);
     settingsStore = await makeSettingsStore(dir);
     tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
   });
@@ -630,6 +633,7 @@ describe('TaskService.setBaseBranch (issue #159)', () => {
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-setbase-'));
     asyncDb = await openAsyncDb(dir);
+    await seedWorkspace(asyncDb);
     settingsStore = await makeSettingsStore(dir);
     tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
   });

@@ -16,7 +16,7 @@ import { type Ticket, type TicketRef, type TrackerAdapter } from '../src/tracker
 import { closeIntegratedEpic, recordAndCloseIntegratedEpic } from '../src/tracker/epic-close.js';
 import { TrackerPollerManager } from '../src/tracker/manager.js';
 import { type VerificationDecision } from '../src/verification/combine.js';
-import { allWorkspaces, captureRunEnv, makeSettingsStore, startServer, stubHarness, type TestServer } from './helpers.js';
+import { allWorkspaces, captureRunEnv, makeSettingsStore, startServer, stubHarness, type TestServer, seedWorkspace } from './helpers.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { eq } from 'drizzle-orm';
@@ -142,6 +142,7 @@ describe('epic-routes', () => {
       beforeEach(async () => {
         dir = mkdtempSync(join(tmpdir(), 'harmonic-epic-integrate-'));
         asyncDb = await openAsyncDb(dir);
+        await seedWorkspace(asyncDb);
         settingsStore = await makeSettingsStore(dir);
         tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
         repo = join(dir, 'repo');
@@ -679,6 +680,7 @@ describe('epic-routes', () => {
         dataDir = mkdtempSync(join(tmpdir(), 'harmonic-epic-diff-'));
         repo = makeRepo();
         asyncDb = await openAsyncDb(dataDir);
+        await seedWorkspace(asyncDb);
         settingsStore = await makeSettingsStore(dataDir);
         tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
         workspaces = new WorkspaceService(asyncDb, settingsStore);

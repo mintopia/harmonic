@@ -8,7 +8,7 @@ import { baselineConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { attempts, attemptEvents, sessions, taskDependencies, trackerDismissals, tasks } from '../src/db/schema.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
-import { allWorkspaces, makeSettingsStore } from './helpers.js';
+import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
 
 describe('TaskService.delete (issue #162)', () => {
   let dataDir: string;
@@ -20,6 +20,7 @@ describe('TaskService.delete (issue #162)', () => {
   beforeEach(async () => {
     dataDir = mkdtempSync(join(tmpdir(), 'harmonic-task-del-'));
     asyncDb = await openAsyncDb(dataDir);
+    await seedWorkspace(asyncDb);
     settingsStore = await makeSettingsStore(dataDir);
     removedIds = [];
     tasksSvc = new TaskService(

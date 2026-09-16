@@ -8,7 +8,7 @@ import { baselineConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { AttemptStore } from '../src/domain/attempts.js';
 import { VerificationAttemptStore } from '../src/domain/verification-attempts.js';
-import { allWorkspaces, makeSettingsStore } from './helpers.js';
+import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
 
 describe('VerificationAttemptStore (issue #136)', () => {
   let dir: string;
@@ -20,6 +20,7 @@ describe('VerificationAttemptStore (issue #136)', () => {
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-verification-attempts-'));
     asyncDb = await openAsyncDb(dir);
+    await seedWorkspace(asyncDb);
     const settingsStore = await makeSettingsStore(dir);
     const tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
     const attemptStore = new AttemptStore(asyncDb);

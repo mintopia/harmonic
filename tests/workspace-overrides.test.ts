@@ -7,7 +7,7 @@ import { DEFAULT_EXCLUDED_DIRECTORIES, workspaceOverridesSchema, WorkspaceServic
 import { verificationCommandSchema, taskVerificationCriticSchema, budgetGuardrailSchema } from '../src/config.js';
 import { resolveVerifiers, resolveDrive } from '../src/domain/setting-override.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
-import { makeSettingsStore } from './helpers.js';
+import { makeSettingsStore, seedWorkspace } from './helpers.js';
 
 describe('WorkspaceService override persistence (issue #64)', () => {
   let dataDir: string;
@@ -18,6 +18,7 @@ describe('WorkspaceService override persistence (issue #64)', () => {
   beforeEach(async () => {
     dataDir = mkdtempSync(join(tmpdir(), 'harmonic-ws-over-'));
     asyncDb = await openAsyncDb(dataDir);
+    await seedWorkspace(asyncDb);
     settingsStore = await makeSettingsStore(dataDir);
     workspaces = new WorkspaceService(asyncDb, settingsStore);
   });

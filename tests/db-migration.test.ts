@@ -66,13 +66,12 @@ describe('drizzle single-baseline schema (ADR-0001 #388, ADR-0007)', () => {
     rmSync(dataDir, { recursive: true, force: true });
   });
 
-  it('boot creates exactly one Default Workspace, idempotently across re-opens', async () => {
+  it('boot seeds no Workspace, idempotently across re-opens (first-run onboarding adds the first one)', async () => {
     const dataDir = mkdtempSync(join(tmpdir(), 'harmonic-baseline-backfill-'));
     const first = await openAsyncDb(dataDir);
     const second = await openAsyncDb(dataDir);
     const workspaces = await second.read((d) => d.select().from(schema.workspaces).all());
-    expect(workspaces).toHaveLength(1);
-    expect(workspaces[0]).toMatchObject({ name: 'Default' });
+    expect(workspaces).toHaveLength(0);
     await first.close();
     await second.close();
     rmSync(dataDir, { recursive: true, force: true });

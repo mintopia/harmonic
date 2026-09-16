@@ -11,7 +11,7 @@ import { deriveMaps } from '../src/tracker/mirror.js';
 import type { Ticket, TrackerAdapter } from '../src/tracker/adapter.js';
 import { EPIC_LABEL, TrackerResolutionError } from '../src/tracker/adapter.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
-import { allWorkspaces, makeSettingsStore, waitFor } from './helpers.js';
+import { allWorkspaces, makeSettingsStore, waitFor, seedWorkspace } from './helpers.js';
 import { yieldToEventLoop } from '../src/reliability/yield.js';
 import { integrationSteps } from '../web/src/epic-model.js';
 
@@ -50,6 +50,7 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     repoA = mkdtempSync(join(tmpdir(), 'harmonic-repoA-'));
     repoB = mkdtempSync(join(tmpdir(), 'harmonic-repoB-'));
     asyncDb = await openAsyncDb(dataDir);
+    await seedWorkspace(asyncDb);
     settingsStore = await makeSettingsStore(dataDir);
     tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
     workspaces = new WorkspaceService(asyncDb, settingsStore);
@@ -158,6 +159,7 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     manager.stopAll();
     await asyncDb.close();
     asyncDb = await openAsyncDb(dataDir);
+    await seedWorkspace(asyncDb);
     tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
     workspaces = new WorkspaceService(asyncDb, settingsStore);
     manager = new TrackerPollerManager(tasks, () => workspaces.list(), async () => {
@@ -196,6 +198,7 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     manager.stopAll();
     await asyncDb.close();
     asyncDb = await openAsyncDb(dataDir);
+    await seedWorkspace(asyncDb);
     tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
     workspaces = new WorkspaceService(asyncDb, settingsStore);
     manager = new TrackerPollerManager(tasks, () => workspaces.list(), async () => {
@@ -237,6 +240,7 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     manager.stopAll();
     await asyncDb.close();
     asyncDb = await openAsyncDb(dataDir);
+    await seedWorkspace(asyncDb);
     tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
     workspaces = new WorkspaceService(asyncDb, settingsStore);
     manager = new TrackerPollerManager(tasks, () => workspaces.list(), async () => {

@@ -1,6 +1,6 @@
 import chokidar, { type FSWatcher } from 'chokidar';
 import { readFileSync, statSync } from 'node:fs';
-import { relative, resolve, sep } from 'node:path';
+import { dirname, relative, resolve, sep } from 'node:path';
 import type { WorkspaceRow } from '../db/schema.js';
 import { logger } from '../logger.js';
 import { readGitStatus, type GitStatusEntry } from './git-status.js';
@@ -10,7 +10,7 @@ export interface WorkspaceWatcherEvents {
   gitStatus(workspaceId: number, entries: GitStatusEntry[]): void;
 }
 
-type WatchedWorkspace = { watcher: FSWatcher; signature: string; timer: ReturnType<typeof setTimeout> | null; fsChanged: boolean; gitChanged: boolean };
+type WatchedWorkspace = { watcher: FSWatcher | null; signature: string; timer: ReturnType<typeof setTimeout> | null; fsChanged: boolean; gitChanged: boolean };
 
 function gitMetadataPaths(root: string): string[] {
   const dotGit = resolve(root, '.git');
@@ -49,6 +49,11 @@ export class WorkspaceWatcher {
 
   private async start(workspace: WorkspaceRow, signature: string): Promise<void> {
     const root = resolve(workspace.workingDir);
+    if (dirname(root) === root) {
+      logger.warn('workspace watcher skipped: refusing to watch a filesystem root', { workspaceId: workspace.id, root });
+      this.watched.set(workspace.id, { watcher: null, signature, timer: null, fsChanged: false, gitChanged: false });
+      return;
+    }
     const excluded = new Set(workspace.excludedDirectories.map((path) => resolve(root, path)));
     const isIgnored = (path: string): boolean => {
       const resolved = resolve(path);
@@ -57,10 +62,14 @@ export class WorkspaceWatcher {
     const gitPaths = gitMetadataPaths(root);
     const watcher = chokidar.watch([root, ...gitPaths], {
       ignoreInitial: true,
+      followSymlinks: false,
       ignored: (path) => isIgnored(path) && !path.endsWith(`${sep}.git${sep}index`) && !path.endsWith(`${sep}.git${sep}HEAD`),
     });
     const state: WatchedWorkspace = { watcher, signature, timer: null, fsChanged: false, gitChanged: false };
     this.watched.set(workspace.id, state);
+    watcher.on('error', (err) => {
+      logger.warn('workspace watcher error', { workspaceId: workspace.id, root, error: err instanceof Error ? err.message : String(err) });
+    });
     watcher.on('all', (_event, path) => {
       const relativePath = relative(root, path).split(sep).join('/');
       if (gitPaths.some((gitPath) => resolve(path) === gitPath) || relativePath === '.git/index' || relativePath === '.git/HEAD') state.gitChanged = true;
@@ -70,10 +79,7 @@ export class WorkspaceWatcher {
     });
     await new Promise<void>((ready) => {
       watcher.once('ready', () => ready());
-      watcher.once('error', (err) => {
-        logger.warn('workspace watcher failed to start', { workspaceId: workspace.id, error: err instanceof Error ? err.message : String(err) });
-        ready();
-      });
+      watcher.once('error', () => ready());
     });
   }
 
@@ -95,6 +101,6 @@ export class WorkspaceWatcher {
     if (!state) return;
     this.watched.delete(id);
     if (state.timer !== null) clearTimeout(state.timer);
-    await state.watcher.close();
+    if (state.watcher) await state.watcher.close();
   }
 }

@@ -12,7 +12,7 @@ import { DomainError } from '../src/domain/errors.js';
 import type { MergeEffectExec } from '../src/domain/merge.js';
 import type { TaskState } from '../src/db/schema.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
-import { allWorkspaces, makeSettingsStore } from './helpers.js';
+import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
 
 const STATES: TaskState[] = ['draft', 'ready', 'working', 'paused', 'escalated', 'done', 'cancelled'];
 
@@ -44,6 +44,7 @@ describe('Task lifecycle state machine (ADR-0020)', () => {
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-lifecycle-'));
     asyncDb = await openAsyncDb(dir);
+    await seedWorkspace(asyncDb);
     settingsStore = await makeSettingsStore(dir);
     tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
   });

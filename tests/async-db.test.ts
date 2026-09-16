@@ -17,7 +17,11 @@ const delay = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms
 
 async function seedRunAsync(h: AsyncDbHandle): Promise<number> {
   const now = Date.now();
-  const ws = (await h.db.select().from(workspaces).get())!;
+  const ws = await h.db
+    .insert(workspaces)
+    .values({ name: 'Test', workingDir: '/tmp', createdAt: now, updatedAt: now })
+    .returning()
+    .get();
   const task = await h.db
     .insert(tasks)
     .values({ prompt: 'p', state: 'ready', workingDir: '/tmp', createdAt: now, updatedAt: now, workspaceId: ws.id })
@@ -65,10 +69,9 @@ describe('openAsyncDb boot', () => {
     }
   });
 
-  it('runs migrations and backfills the Default workspace', async () => {
+  it('boots a fresh database with no Workspace (first-run onboarding adds the first one)', async () => {
     const all = await h.db.select().from(workspaces).all();
-    expect(all).toHaveLength(1);
-    expect(all[0]).toMatchObject({ name: 'Default' });
+    expect(all).toHaveLength(0);
   });
 
   it('enforces foreign keys after boot (FK on/off dance leaves them ON)', async () => {
@@ -78,12 +81,12 @@ describe('openAsyncDb boot', () => {
     ).rejects.toThrow();
   });
 
-  it('reopens an existing database cleanly (idempotent boot + backfill)', async () => {
+  it('reopens an existing database cleanly (idempotent boot)', async () => {
     await h.close();
     const again = await openAsyncDb(dir);
     try {
       const all = await again.db.select().from(workspaces).all();
-      expect(all).toHaveLength(1);
+      expect(all).toHaveLength(0);
     } finally {
       await again.close();
     }
@@ -142,7 +145,7 @@ describe('read/write queue facade', () => {
       });
     const rows = await h.read((db) => db.select().from(workspaces).all());
     expect(writeSettled).toBe(false);
-    expect(rows).toHaveLength(1);
+    expect(rows).toHaveLength(0);
     await slowWrite;
   });
 
@@ -232,7 +235,7 @@ describe('per-query wall-clock timeouts (#212)', () => {
 
   it('read() resolves normally when it finishes before the deadline', async () => {
     const rows = await h.read((db) => db.select().from(workspaces).all(), { timeoutMs: 1000 });
-    expect(rows).toHaveLength(1);
+    expect(rows).toHaveLength(0);
   });
 
   it('write() rejects with a QueryTimeoutError once the deadline passes', async () => {

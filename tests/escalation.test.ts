@@ -13,7 +13,7 @@ import { type SettingsStore } from '../src/server/settings-store.js';
 import { type VerificationDecision } from '../src/verification/combine.js';
 import { type Verdict } from '../src/verification/critic-schema.js';
 import { type CriticDriveRequest, type CriticHarnessDrive } from '../src/verification/critic.js';
-import { allWorkspaces, makeSettingsStore, startServer, stubHarness, type TestServer, waitFor } from './helpers.js';
+import { allWorkspaces, makeSettingsStore, startServer, stubHarness, type TestServer, waitFor, seedWorkspace } from './helpers.js';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -224,6 +224,7 @@ describe('escalation-service', () => {
     beforeEach(async () => {
       dir = mkdtempSync(join(tmpdir(), 'harmonic-escalation-service-'));
       asyncDb = await openAsyncDb(dir);
+      await seedWorkspace(asyncDb);
       settingsStore = await makeSettingsStore(dir);
       tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
       attempts = new AttemptStore(asyncDb);

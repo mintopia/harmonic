@@ -14,7 +14,7 @@ import { Runner } from '../src/execution/runner.js';
 import { TrackerEpicService } from '../src/tracker/epic-service.js';
 import type { CriticDriveRequest } from '../src/verification/critic.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
-import { allWorkspaces, makeSettingsStore, waitFor } from './helpers.js';
+import { allWorkspaces, makeSettingsStore, waitFor, seedWorkspace } from './helpers.js';
 
 const fakeGit = { revParse: async () => 'develop-tip' };
 
@@ -165,6 +165,7 @@ describe('epic refresh corrective turn (issue #315)', () => {
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-epic-refresh-'));
     asyncDb = await openAsyncDb(dir);
+    await seedWorkspace(asyncDb);
     settingsStore = await makeSettingsStore(dir);
     tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
     repo = join(dir, 'repo');

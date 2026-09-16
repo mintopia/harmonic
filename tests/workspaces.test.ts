@@ -15,7 +15,7 @@ describe('Workspace CRUD (ADR-0008, issue #41)', () => {
     await server.close();
   });
 
-  it('GET /api/workspaces returns the boot-time default Workspace (issue #39)', async () => {
+  it('GET /api/workspaces returns the seeded default Workspace (issue #39)', async () => {
     const { status, body } = await server.api('GET', '/api/workspaces');
     expect(status).toBe(200);
     expect(body.workspaces).toHaveLength(1);

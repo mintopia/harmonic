@@ -8,7 +8,7 @@ import { eq } from 'drizzle-orm';
 import { baselineConfig } from '../src/config.js';
 import { WorkspaceService } from '../src/domain/workspaces.js';
 import { TaskService } from '../src/domain/tasks.js';
-import { allWorkspaces, makeSettingsStore } from './helpers.js';
+import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
 
 describe('WorkspaceService.delete guards (issue #61)', () => {
   let dataDir: string;
@@ -19,6 +19,7 @@ describe('WorkspaceService.delete guards (issue #61)', () => {
   beforeEach(async () => {
     dataDir = mkdtempSync(join(tmpdir(), 'harmonic-ws-del-'));
     asyncDb = await openAsyncDb(dataDir);
+    await seedWorkspace(asyncDb);
     const settingsStore = await makeSettingsStore(dataDir);
     workspaces = new WorkspaceService(asyncDb, settingsStore);
     tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));

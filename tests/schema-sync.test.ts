@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createClient } from '@libsql/client';
 import { openAsyncDb } from '../src/db/async.js';
+import { seedWorkspace } from './helpers.js';
 import { parseBaseline, syncSchema } from '../src/db/schema-sync.js';
 import { logger } from '../src/logger.js';
 
@@ -50,6 +51,7 @@ describe('schema convergence onto the baseline (ADR-0007)', () => {
   it('rebuilds a constraint-drifted attempts table without losing its task attempts', async () => {
     const dataDir = mkdtempSync(join(tmpdir(), 'harmonic-sync-attempts-'));
     const first = await openAsyncDb(dataDir);
+    await seedWorkspace(first);
     await first.close();
     const sqlite = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
     await sqlite.execute('DROP TABLE attempts');

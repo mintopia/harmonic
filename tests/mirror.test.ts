@@ -11,7 +11,7 @@ import { deriveRole, mirrorScan, deriveMaps, toMirrorInput } from '../src/tracke
 import { mirroredAgentEligible } from '../src/domain/agent-workable.js';
 import type { Ticket } from '../src/tracker/adapter.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
-import { allWorkspaces, makeSettingsStore } from './helpers.js';
+import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
 
 const ticket = (over: Partial<Ticket>): Ticket => ({
   number: 100,
@@ -78,6 +78,7 @@ describe('mirrorScan upsert', () => {
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-mirror-'));
     asyncDb = await openAsyncDb(dir);
+    await seedWorkspace(asyncDb);
     settingsStore = await makeSettingsStore(dir);
     tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
     wsId = (await allWorkspaces(asyncDb, settingsStore)())[0]!.id;
@@ -420,6 +421,7 @@ describe('durable tracker facts (issue #233)', () => {
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-facts-'));
     asyncDb = await openAsyncDb(dir);
+    await seedWorkspace(asyncDb);
     settingsStore = await makeSettingsStore(dir);
     tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
     wsId = (await allWorkspaces(asyncDb, settingsStore)())[0]!.id;
@@ -481,6 +483,7 @@ describe('durable tracker facts (issue #233)', () => {
     await mirrorScan(tasks, [rich], wsId);
     await asyncDb.close();
     asyncDb = await openAsyncDb(dir);
+    await seedWorkspace(asyncDb);
     const row = await rawRow(233);
     expect(row.trackerState).toBe('open');
     expect(row.trackerParent).toBe(229);
@@ -522,6 +525,7 @@ describe('deriveMaps (query-time rollup)', () => {
   it('groups mirrored Tasks under their map by mapRef, with per-state counts', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'harmonic-maps-'));
     const asyncDb = await openAsyncDb(dir);
+    await seedWorkspace(asyncDb);
     const settingsStore = await makeSettingsStore(dir);
     const tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
     const wsId = (await allWorkspaces(asyncDb, settingsStore)())[0]!.id;

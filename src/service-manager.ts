@@ -196,7 +196,8 @@ class SystemdServiceManager implements ServiceManager {
     const environmentFile = serve.password === undefined ? '' : `EnvironmentFile=${escapeUnitArgument(this.environmentPath)}\n`;
     const serviceUser = user === undefined ? '' : `User=${user}\nGroup=${user}\n`;
     const wantedBy = this.userUnit ? 'default.target' : 'multi-user.target';
-    return `[Unit]\nDescription=Harmonic\nAfter=network.target\n\n[Service]\nType=simple\n${serviceUser}ExecStart=${args}\n${environmentFile}Environment=HARMONIC_MANAGED_BY=systemd\nRestart=always\nTimeoutStopSec=60\n\n[Install]\nWantedBy=${wantedBy}\n`;
+    const workingDirectory = `WorkingDirectory=${escapeUnitArgument(serve.dataDir)}\n`;
+    return `[Unit]\nDescription=Harmonic\nAfter=network.target\n\n[Service]\nType=simple\n${serviceUser}${workingDirectory}ExecStart=${args}\n${environmentFile}Environment=HARMONIC_MANAGED_BY=systemd\nRestart=always\nTimeoutStopSec=60\n\n[Install]\nWantedBy=${wantedBy}\n`;
   }
 
   async install(options: ServiceInstallOptions): Promise<ServiceInstallResult> {

@@ -2,6 +2,10 @@
 
 Status: accepted
 Date: 2026-09-15
+Amended 2026-09-16: the systemd unit sets `WorkingDirectory=<data-dir>`, and a
+fresh install seeds no Workspace (first-run onboarding adds the first one) — see
+"The systemd backend hands restart to the supervisor" and "No default Workspace
+on a fresh install" below.
 Amends ADR-0030 (the self-upgrade swap hands the restart to the supervisor
 instead of the relauncher, in systemd Managed Mode) and ADR-0012 (service
 install is a new distribution/tooling surface). Builds on the daemon launch
@@ -71,8 +75,12 @@ process, breaking `stop`/`status` after every upgrade.
 
 The systemd unit runs `ExecStart=<abs-node> <abs-cli.js> serve <non-secret
 args>` (an absolute command, because a unit's PATH is minimal), with
-`Restart=always`, a generous `TimeoutStopSec` (the SIGTERM path waits ~40s for
-the OTLP flush), and `Environment=HARMONIC_MANAGED_BY=systemd`. Non-secret
+`WorkingDirectory=<data-dir>`, `Restart=always`, a generous `TimeoutStopSec`
+(the SIGTERM path waits ~40s for the OTLP flush), and
+`Environment=HARMONIC_MANAGED_BY=systemd`. `WorkingDirectory` is set because a
+systemd service with no `WorkingDirectory=` runs with cwd `/`; the data dir
+always exists and is writable by the service user, so it is the safe anchor.
+Non-secret
 flags (`--port`/`--host`/`--data-dir`/`--otel-*`) bake into `ExecStart`; a
 password is written **only** to a `0600` EnvironmentFile when `--password` is
 passed, otherwise the already-persisted password is used and no secret touches
@@ -85,6 +93,18 @@ spawn the relauncher: it installs the new version, verifies it, and exits(0);
 Mode there is no such supervisor — a SysV service is not restarted on exit, and
 the unprivileged process cannot invoke a root `service restart` — so the
 relauncher stays exactly as ADR-0030 defined it.
+
+## No default Workspace on a fresh install
+
+Boot seeds no Workspace. Earlier, a fresh database auto-created a "Default"
+Workspace whose working directory came from `$CWD` (the serve process's cwd).
+Under a systemd service that resolves to `/`, and the per-Workspace filesystem
+watcher then tried to watch the entire root recursively — flooding the logs with
+`EACCES` as it walked into `/sys`. A fresh install now starts with zero
+Workspaces; the web UI's first-run onboarding prompts the operator to add one,
+its directory picker defaulting to the run-as user's home. The watcher is
+hardened independently: it never follows symlinks and refuses a filesystem root
+as a Workspace working directory.
 
 ## Command routing and uninstall
 

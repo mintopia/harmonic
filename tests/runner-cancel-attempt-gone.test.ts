@@ -10,7 +10,7 @@ import { pricesForHarness } from '../src/domain/pricing.js';
 import { isForeignKeyViolation } from '../src/db/errors.js';
 import { Runner } from '../src/execution/runner.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
-import { allWorkspaces, makeSettingsStore } from './helpers.js';
+import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
 
 describe('isForeignKeyViolation', () => {
   it('detects a drizzle-wrapped FK violation via the cause chain', () => {
@@ -44,6 +44,7 @@ describe('Runner.cancelForTask — run row deleted mid-settle', () => {
     repoDir = join(dir, 'repo');
     mkdirSync(repoDir);
     asyncDb = await openAsyncDb(dir);
+    await seedWorkspace(asyncDb);
     settingsStore = await makeSettingsStore(dir);
     tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
     runs = new AttemptStore(asyncDb);

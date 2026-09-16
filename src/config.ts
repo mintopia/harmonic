@@ -179,7 +179,6 @@ export const appConfigSchema = z.object({
   }),
   defaults: z.object({
     harness: z.enum(HARNESS_IDS).meta({ example: 'claude' }),
-    workingDir: z.string().meta({ example: '/home/dev/harmonic' }),
     isolationMode: z.enum(ISOLATION_MODES).meta({ example: 'worktree' }),
     priority: z.enum(PRIORITIES).meta({ example: 'normal' }),
     /** Agentic resolve-turns a rebase conflict gets before it escalates; 0 escalates on the first conflict. */
@@ -283,13 +282,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function resolveBaselineVariables(value: unknown): unknown {
-  if (value === '$CWD') return process.cwd();
-  if (Array.isArray(value)) return value.map(resolveBaselineVariables);
-  if (!isRecord(value)) return value;
-  return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, resolveBaselineVariables(entry)]));
-}
-
 function missingBaselineFields(raw: unknown, resolved: unknown, path = ''): string[] {
   if (Array.isArray(resolved)) return Array.isArray(raw) ? [] : [path];
   if (!isRecord(resolved)) return [];
@@ -304,7 +296,7 @@ function missingBaselineFields(raw: unknown, resolved: unknown, path = ''): stri
 export function loadBaselineConfig(path: string = baselinePath): AppConfig {
   let raw: unknown;
   try {
-    raw = resolveBaselineVariables(parse(readFileSync(path, 'utf8')));
+    raw = parse(readFileSync(path, 'utf8'));
   } catch (err) {
     throw new Error(`Invalid Harmonic baseline file at ${path}: ${err instanceof Error ? err.message : String(err)}`);
   }

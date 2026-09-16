@@ -11,7 +11,7 @@ import { SessionRetirementCoordinator } from '../src/domain/session-retirement-c
 import type { RetentionConfig } from '../src/domain/session-retirement.js';
 import type { AttemptRow } from '../src/db/schema.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
-import { allWorkspaces, makeSettingsStore } from './helpers.js';
+import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
 
 describe('Session retirement (issue #148)', () => {
   let dir: string;
@@ -47,6 +47,7 @@ describe('Session retirement (issue #148)', () => {
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-retire-'));
     asyncDb = await openAsyncDb(dir);
+    await seedWorkspace(asyncDb);
     settingsStore = await makeSettingsStore(dir);
     sessions = new SessionStore(asyncDb);
     runs = new AttemptStore(asyncDb);

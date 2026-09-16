@@ -65,7 +65,6 @@ harnesses:
     cacheWarmSeconds: 300
 defaults:
   harness: claude
-  workingDir: $CWD
   isolationMode: direct
   priority: normal
   conflictResolveTurns: 2

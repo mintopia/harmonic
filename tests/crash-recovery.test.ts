@@ -14,7 +14,7 @@ import { Git } from '../src/execution/git.js';
 import { readProcStartToken } from '../src/execution/process-reaper.js';
 import type { TaskRow, AttemptRow } from '../src/db/schema.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
-import { allWorkspaces, makeSettingsStore } from './helpers.js';
+import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
 import { yieldToEventLoop } from '../src/reliability/yield.js';
 
 const git = (dir: string, ...args: string[]) => execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
@@ -49,6 +49,7 @@ describe('CrashRecoveryCoordinator (ADR-0001)', () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-crash-recovery-'));
     repo = makeRepo();
     asyncDb = await openAsyncDb(dir);
+    await seedWorkspace(asyncDb);
     settingsStore = await makeSettingsStore(dir);
     tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
     attempts = new AttemptStore(asyncDb);

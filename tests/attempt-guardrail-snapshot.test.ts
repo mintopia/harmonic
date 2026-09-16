@@ -9,7 +9,7 @@ import { AttemptStore } from '../src/domain/attempts.js';
 import { resolveGuardrails } from '../src/domain/setting-override.js';
 import { pricesForHarness } from '../src/domain/pricing.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
-import { allWorkspaces, makeSettingsStore } from './helpers.js';
+import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
 
 describe('AttemptStore.create Guardrail snapshot (issue #126, ADR-0019)', () => {
   let dir: string;
@@ -21,6 +21,7 @@ describe('AttemptStore.create Guardrail snapshot (issue #126, ADR-0019)', () => 
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-grs-'));
     asyncDb = await openAsyncDb(dir);
+    await seedWorkspace(asyncDb);
     settingsStore = await makeSettingsStore(dir);
     tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
     runStore = new AttemptStore(asyncDb);

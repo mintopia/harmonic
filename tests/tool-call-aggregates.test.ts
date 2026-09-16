@@ -9,7 +9,7 @@ import { TaskService } from '../src/domain/tasks.js';
 import { AttemptStore } from '../src/domain/attempts.js';
 import { ToolCallAggregateStore, totalsForRange } from '../src/domain/tool-call-aggregates.js';
 import { baselineConfig } from '../src/config.js';
-import { allWorkspaces, makeSettingsStore } from './helpers.js';
+import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
 
 describe('ToolCallAggregateStore (issue #241)', () => {
   let dir: string;
@@ -26,6 +26,7 @@ describe('ToolCallAggregateStore (issue #241)', () => {
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-tool-call-aggregates-'));
     db = await openAsyncDb(dir);
+    await seedWorkspace(db);
     const settingsStore = await makeSettingsStore(dir);
     const taskService = new TaskService(db, () => baselineConfig(), allWorkspaces(db, settingsStore));
     const attemptStore = new AttemptStore(db);
