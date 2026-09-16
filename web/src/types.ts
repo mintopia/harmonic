@@ -649,6 +649,7 @@ export interface Conversation {
   cacheWarmSeconds: number | null;
   coldResume?: boolean;
   commands?: AdvertisedCommand[];
+  commandPrefix?: string;
 }
 
 export interface AdvertisedCommand {

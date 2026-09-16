@@ -11,6 +11,7 @@ import { DomainError } from '../domain/errors.js';
 import type { AttemptUsageSnapshot } from '../execution/usage.js';
 import { Git } from '../execution/git.js';
 import { forEachYielding } from '../reliability/yield.js';
+import { adapterFor } from '../execution/harness/registry.js';
 import {
   atRestWorkspaceId,
   parseUsage,
@@ -427,5 +428,6 @@ export async function conversationToApi(ctx: AppContext, conversation: Conversat
     cacheWarmSeconds: harness.cacheWarmSeconds,
     coldResume: conversation.sessionId !== null && !ctx.conversationDriver.isWarm(conversation.id),
     commands: ctx.conversationDriver.availableCommands(conversation.id),
+    commandPrefix: adapterFor(conversation.harness).commandPrefix,
   });
 }
