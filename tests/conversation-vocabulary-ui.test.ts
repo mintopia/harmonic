@@ -120,6 +120,7 @@ describe('conversation vocabulary UI (#546)', () => {
       contextTokens: null,
       contextWindow: null,
       cacheWarmSeconds: null,
+      commandPrefix: '/',
     };
 
     const html = renderToStaticMarkup(

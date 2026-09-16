@@ -32,7 +32,14 @@ describe('PUT /api/config', () => {
     expect(layers.body.global.maxAttempts).toBe(7);
     expect(layers.body.harnessPermissionModes).toEqual({
       claude: { modes: { auto: 'Auto', bypassPermissions: 'Bypass Permissions' }, defaultMode: 'auto' },
-      copilot: { modes: { auto: 'Auto', bypassPermissions: 'Bypass Permissions' }, defaultMode: 'auto' },
+      copilot: {
+        modes: {
+          'https://agentclientprotocol.com/protocol/session-modes#plan': 'Plan',
+          'https://agentclientprotocol.com/protocol/session-modes#agent': 'Agent',
+          'https://agentclientprotocol.com/protocol/session-modes#autopilot': 'Autopilot',
+        },
+        defaultMode: 'https://agentclientprotocol.com/protocol/session-modes#agent',
+      },
     });
   });
 
