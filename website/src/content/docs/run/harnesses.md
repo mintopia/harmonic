@@ -44,6 +44,7 @@ the box; the settings you're likely to touch are the models:
 | Environment | Extra values passed to the agent, e.g. an API key instead of a CLI login. |
 | Models | The models you can pick for this harness. |
 | Default model | The one used when a ticket doesn't choose its own. |
+| Permission mode | How an unattended Attempt handles the harness's permission requests. |
 
 Pick a harness and model per ticket, or set them as a workspace default;
 see [Settings & overrides](/harmonic/run/settings/).
@@ -59,3 +60,34 @@ shows as cost-incomplete rather than a misleading zero. See
 A note on Copilot: on an auto-only plan it may accept a model you pick and
 then quietly serve a different one. Harmonic flags that on the ticket so
 you can see the swap rather than being misled about which model ran.
+
+### Unattended permission modes
+
+The **Permission mode** control applies to unattended Attempts only: work
+Harmonic starts from a ticket while no one is there to approve a prompt. It
+does not change a [Conversation](/harmonic/work/conversations/), where a
+person can choose whether to approve actions as they happen.
+
+The modes differ by Harness.
+
+| Harness | Mode and default | What it means |
+| --- | --- | --- |
+| **Claude Code** | **Auto** (default) or **Bypass Permissions** | Auto lets Claude's permission classifier decide which actions need approval. Bypass Permissions disables that classifier and runs without permission prompts. |
+| **Copilot** | **Agent** (default), **Plan**, or **Autopilot** | Harmonic shows the modes Copilot advertises over ACP. The available modes can change with the installed Copilot version. |
+| **Codex** | No setting | Unattended work runs with full access. |
+| **OpenCode** | No setting | Unattended work runs with full access. |
+
+Codex and OpenCode have no control because their unattended runs are already
+configured for full access. For Claude, **Auto** is the default, so existing
+setups keep the classifier unless you deliberately choose **Bypass
+Permissions**.
+
+ACP controls this separately from a harness's command-line flags. In
+particular, Claude's `--dangerously-skip-permissions` CLI flag is ignored
+when Harmonic drives it over ACP. Choose **Bypass Permissions** in the
+Harness settings instead.
+
+Harmonic records the effective permission mode on each Attempt's
+[timeline](/harmonic/work/steering-the-fleet/#the-timeline). If a configured
+mode is unavailable from the installed harness, it selects a suitable
+unattended mode and marks the requested-to-effective fallback there.
