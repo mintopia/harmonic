@@ -296,6 +296,44 @@ describe('App smoke (issue #452)', () => {
     expect(newTaskButton).toBeDefined();
   });
 
+  it('defaults the homepage to the sole workspace board when only one workspace exists', async () => {
+    const el = await renderApp({
+      authenticated: true,
+      passwordConfigured: true,
+      workspaces: [makeWorkspace()],
+    });
+
+    expect(window.location.pathname).toBe('/workspace/1/board');
+    expect(el.textContent).not.toContain('Dashboard');
+  });
+
+  it('shows the dashboard at the homepage when multiple workspaces exist', async () => {
+    const el = await renderApp({
+      authenticated: true,
+      passwordConfigured: true,
+      workspaces: [makeWorkspace({ id: 1, name: 'Workspace One' }), makeWorkspace({ id: 2, name: 'Workspace Two' })],
+    });
+
+    expect(window.location.pathname).toBe('/');
+    expect(el.textContent).toContain('Dashboard');
+  });
+
+  it('bounces back to the sole workspace board if the dashboard is reached with one workspace', async () => {
+    const el = await renderApp({
+      authenticated: true,
+      passwordConfigured: true,
+      workspaces: [makeWorkspace()],
+    });
+    expect(window.location.pathname).toBe('/workspace/1/board');
+
+    await act(async () => window.history.pushState(null, '', '/'));
+    window.dispatchEvent(new PopStateEvent('popstate'));
+    await flush();
+
+    expect(window.location.pathname).toBe('/workspace/1/board');
+    expect(el.textContent).not.toContain('Dashboard');
+  });
+
   it('exposes the theme toggle and Settings rail entry once a workspace is active', async () => {
     const el = await renderApp({
       authenticated: true,
