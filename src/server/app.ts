@@ -340,6 +340,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
       onEvent: (event) => bus.emit('conversation_event', event),
       onPermissionRequest: (pending) => bus.emit('permission_request', pending),
       onElicitationRequest: (pending) => bus.emit('elicitation_request', pending),
+      onCommandsUpdate: (payload) => bus.emit('conversation_commands', payload),
     },
     rules: permissionRules,
     keys: {

@@ -55,6 +55,7 @@ export async function wsRoutes(fastify: FastifyInstance, ctx: AppContext): Promi
             .then((c) => send({ type: 'conversation_changed', conversation: c }))
             .catch(() => {});
         }),
+        ctx.bus.on('conversation_commands', (payload) => send({ type: 'conversation_commands', ...payload })),
         ctx.bus.on('permission_request', (pending) => send({ type: 'permission_request', ...pending })),
         ctx.bus.on('elicitation_request', (pending) => send({ type: 'elicitation_request', ...pending })),
       );
