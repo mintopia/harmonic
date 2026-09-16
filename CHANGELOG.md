@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.12.1](https://github.com/mintopia/harmonic/compare/v2.12.0...v2.12.1) (2026-09-16)
+
+
+### Bug Fixes
+
+* don't watch the filesystem root on a fresh service install ([50538a5](https://github.com/mintopia/harmonic/commit/50538a52c3f976dd239006938e7322ff84d709eb))
+* seed no Workspace on a fresh install, anchor the service cwd ([d68b8cf](https://github.com/mintopia/harmonic/commit/d68b8cf7f5f5eb12a88b1bc2de0845bf96615bad))
+
 ## [2.12.0](https://github.com/mintopia/harmonic/compare/v2.11.0...v2.12.0) (2026-09-16)
 
 
