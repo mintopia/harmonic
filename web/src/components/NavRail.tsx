@@ -1,5 +1,5 @@
 import { Icon } from './Icon';
-import { GLOBAL_RAIL_GROUPS, WORKSPACE_RAIL_GROUPS, VIEW_LABELS, type View } from '../rail-model';
+import { GLOBAL_RAIL_GROUPS, GLOBAL_VIEW_LABELS, WORKSPACE_RAIL_GROUPS, VIEW_LABELS, type View } from '../rail-model';
 import type { Scope } from '../router-model';
 import { railBadge, sectionLabel } from '../ui';
 
@@ -20,6 +20,7 @@ interface NavRailProps {
 
 export function NavRail({ view, scope, needsYouCount, railCollapsed, railDesktop, onPickView, onToggleRail }: NavRailProps) {
   const railGroups = scope.kind === 'global' ? GLOBAL_RAIL_GROUPS : WORKSPACE_RAIL_GROUPS;
+  const viewLabel = (v: View) => (scope.kind === 'global' ? GLOBAL_VIEW_LABELS[v] ?? VIEW_LABELS[v] : VIEW_LABELS[v]);
   // Collapsed items keep their accessible name and gain a native tooltip;
   // when the label is visible neither is needed — below the breakpoint the
   // drawer shows labels, so the attributes must not apply there.
@@ -57,12 +58,12 @@ export function NavRail({ view, scope, needsYouCount, railCollapsed, railDesktop
                   <button
                     key={v}
                     aria-current={view === v ? 'page' : undefined}
-                    {...railItemName(VIEW_LABELS[v], needsYou)}
+                    {...railItemName(viewLabel(v), needsYou)}
                     className={railItem(view === v, railCollapsed)}
                     onClick={() => onPickView(v)}
                   >
                     <Icon name={v} />
-                    <span className={railLabel}>{VIEW_LABELS[v]}</span>
+                    <span className={railLabel}>{viewLabel(v)}</span>
                     {needsYou !== null && (
                       <span
                         aria-label={`${needsYou} needs you`}
