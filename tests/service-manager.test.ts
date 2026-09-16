@@ -177,6 +177,7 @@ describe('systemd ServiceManager', () => {
     })).resolves.toMatchObject({ backend: 'systemd', status: { running: true } });
 
     expect(deps.files.get('/etc/systemd/system/harmonic.service')).toContain('ExecStart=/usr/bin/node /opt/harmonic/dist/cli.js serve --port 4711 --host 127.0.0.1 --data-dir /var/lib/harmonic --otel-endpoint http://otel');
+    expect(deps.files.get('/etc/systemd/system/harmonic.service')).toContain('WorkingDirectory=/var/lib/harmonic');
     expect(deps.files.get('/etc/systemd/system/harmonic.service')).toContain('Restart=always');
     expect(deps.files.get('/etc/systemd/system/harmonic.service')).toContain('TimeoutStopSec=60');
     expect(deps.files.get('/etc/systemd/system/harmonic.service')).toContain('Environment=HARMONIC_MANAGED_BY=systemd');

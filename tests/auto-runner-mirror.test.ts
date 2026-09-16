@@ -13,7 +13,7 @@ import type { Runner } from '../src/execution/runner.js';
 import type { MirrorInput } from '../src/domain/tasks.js';
 import type { TrackerFacts } from '../src/db/schema.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
-import { allWorkspaces, makeSettingsStore } from './helpers.js';
+import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
 
 const agentFacts = (ref: number): TrackerFacts => ({
   state: 'open',
@@ -48,6 +48,7 @@ describe('AutoRunner — mirrored afk pick predicate + flip→claim ordering (is
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-arun-'));
     asyncDb = await openAsyncDb(dir);
+    await seedWorkspace(asyncDb);
     settingsStore = await makeSettingsStore(dir);
     tasks = new TaskService(
       asyncDb,
@@ -120,6 +121,7 @@ describe('AutoRunner — self-scheduling from DB (issue #236)', () => {
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-arun-scheduler-'));
     asyncDb = await openAsyncDb(dir);
+    await seedWorkspace(asyncDb);
     settingsStore = await makeSettingsStore(dir);
     tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
   });
@@ -153,6 +155,7 @@ describe('AutoRunner — self-scheduling from DB (issue #236)', () => {
   it('allows only one independent DB handle to claim a ready task', async () => {
     const task = await tasks.create({ prompt: 'cross-handle claim', isolationMode: 'worktree' });
     const secondDb = await openAsyncDb(dir);
+    await seedWorkspace(secondDb);
     const secondTasks = new TaskService(secondDb, () => baselineConfig(), allWorkspaces(secondDb, settingsStore));
 
     try {
@@ -174,6 +177,7 @@ describe('AutoRunner — parallel-Epic base pick gate (issue #159)', () => {
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-arun-epic-'));
     asyncDb = await openAsyncDb(dir);
+    await seedWorkspace(asyncDb);
     settingsStore = await makeSettingsStore(dir);
     tasks = new TaskService(
       asyncDb,
@@ -234,6 +238,7 @@ describe('AutoRunner — skip reasons and unresolvable integration bases (issue 
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-arun-skips-'));
     asyncDb = await openAsyncDb(dir);
+    await seedWorkspace(asyncDb);
     settingsStore = await makeSettingsStore(dir);
     tasks = new TaskService(
       asyncDb,
@@ -357,6 +362,7 @@ describe('AutoRunner — Work Context House Rule pick predicate (ADR-0001)', () 
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-arun-hr-'));
     asyncDb = await openAsyncDb(dir);
+    await seedWorkspace(asyncDb);
     settingsStore = await makeSettingsStore(dir);
     tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
   });

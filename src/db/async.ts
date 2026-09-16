@@ -7,7 +7,6 @@ import { fileURLToPath } from 'node:url';
 import * as schema from './schema.js';
 import { syncSchema } from './schema-sync.js';
 import { conversations, settings, tasks, workspaces } from './schema.js';
-import { baselineConfig } from '../config.js';
 
 /** The libsql-backed Drizzle database; every `.get/.all/.run` is a Promise. */
 export type AsyncDb = LibSQLDatabase<typeof schema>;
@@ -113,27 +112,20 @@ export class AsyncDbHandle {
 }
 
 type LegacyStoredConfig = {
-  defaults?: { workingDir?: string };
   tracker?: { enabled?: boolean; pollIntervalSeconds?: number };
 };
 
 const TRACKER_BACKFILL_KEY = 'trackerEnabledBackfilled';
 
-async function backfillDefaultWorkspaceAsync(handle: AsyncDbHandle): Promise<void> {
+/**
+ * Upgrade path for installs predating the Workspace model: fold legacy tracker settings and
+ * orphaned Tasks/Conversations onto the oldest Workspace. A fresh install has no Workspace and is
+ * left empty so first-run onboarding can prompt the operator to add one.
+ */
+async function backfillWorkspaceAssociationsAsync(handle: AsyncDbHandle): Promise<void> {
   await handle.write(async (db) => {
-    const stored = await db.select().from(settings).where(eq(settings.key, 'config')).get();
-    const storedConfig = stored ? (JSON.parse(stored.value) as LegacyStoredConfig) : undefined;
-
-    let defaultWorkspace = await db.select().from(workspaces).orderBy(workspaces.id).get();
-    if (!defaultWorkspace) {
-      const workingDir = storedConfig?.defaults?.workingDir ?? baselineConfig().defaults.workingDir;
-      const now = Date.now();
-      defaultWorkspace = await db
-        .insert(workspaces)
-        .values({ name: 'Default', workingDir, createdAt: now, updatedAt: now })
-        .returning()
-        .get();
-    }
+    const workspace = await db.select().from(workspaces).orderBy(workspaces.id).get();
+    if (!workspace) return;
 
     const backfilled = await db
       .select()
@@ -141,6 +133,8 @@ async function backfillDefaultWorkspaceAsync(handle: AsyncDbHandle): Promise<voi
       .where(eq(settings.key, TRACKER_BACKFILL_KEY))
       .get();
     if (!backfilled) {
+      const stored = await db.select().from(settings).where(eq(settings.key, 'config')).get();
+      const storedConfig = stored ? (JSON.parse(stored.value) as LegacyStoredConfig) : undefined;
       if (storedConfig?.tracker?.enabled) {
         await db
           .update(workspaces)
@@ -148,16 +142,16 @@ async function backfillDefaultWorkspaceAsync(handle: AsyncDbHandle): Promise<voi
             trackerEnabled: true,
             trackerPollIntervalSeconds: storedConfig.tracker.pollIntervalSeconds ?? 60,
           })
-          .where(eq(workspaces.id, defaultWorkspace.id))
+          .where(eq(workspaces.id, workspace.id))
           .run();
       }
       await db.insert(settings).values({ key: TRACKER_BACKFILL_KEY, value: 'true' }).run();
     }
 
-    await db.update(tasks).set({ workspaceId: defaultWorkspace.id }).where(isNull(tasks.workspaceId)).run();
+    await db.update(tasks).set({ workspaceId: workspace.id }).where(isNull(tasks.workspaceId)).run();
     await db
       .update(conversations)
-      .set({ workspaceId: defaultWorkspace.id })
+      .set({ workspaceId: workspace.id })
       .where(isNull(conversations.workspaceId))
       .run();
   });
@@ -184,6 +178,6 @@ export async function openAsyncDb(
   }
   await client.execute('PRAGMA foreign_keys = ON');
   const handle = new AsyncDbHandle(db, client, options.queryTimeoutMs ?? DEFAULT_QUERY_TIMEOUT_MS);
-  await backfillDefaultWorkspaceAsync(handle);
+  await backfillWorkspaceAssociationsAsync(handle);
   return handle;
 }

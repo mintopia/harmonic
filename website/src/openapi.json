@@ -16980,10 +16980,6 @@
                           ],
                           "example": "claude"
                         },
-                        "workingDir": {
-                          "type": "string",
-                          "example": "/home/dev/harmonic"
-                        },
                         "isolationMode": {
                           "type": "string",
                           "enum": [
@@ -17010,7 +17006,6 @@
                       },
                       "required": [
                         "harness",
-                        "workingDir",
                         "isolationMode",
                         "priority",
                         "conflictResolveTurns"
@@ -17814,10 +17809,6 @@
                           ],
                           "example": "claude"
                         },
-                        "workingDir": {
-                          "type": "string",
-                          "example": "/home/dev/harmonic"
-                        },
                         "isolationMode": {
                           "type": "string",
                           "enum": [
@@ -17844,7 +17835,6 @@
                       },
                       "required": [
                         "harness",
-                        "workingDir",
                         "isolationMode",
                         "priority",
                         "conflictResolveTurns"
@@ -18626,10 +18616,6 @@
                         ],
                         "example": "claude"
                       },
-                      "workingDir": {
-                        "type": "string",
-                        "example": "/home/dev/harmonic"
-                      },
                       "isolationMode": {
                         "type": "string",
                         "enum": [
@@ -18656,7 +18642,6 @@
                     },
                     "required": [
                       "harness",
-                      "workingDir",
                       "isolationMode",
                       "priority",
                       "conflictResolveTurns"
@@ -19404,10 +19389,6 @@
                           ],
                           "example": "claude"
                         },
-                        "workingDir": {
-                          "type": "string",
-                          "example": "/home/dev/harmonic"
-                        },
                         "isolationMode": {
                           "type": "string",
                           "enum": [
@@ -19434,7 +19415,6 @@
                       },
                       "required": [
                         "harness",
-                        "workingDir",
                         "isolationMode",
                         "priority",
                         "conflictResolveTurns"
@@ -20233,10 +20213,6 @@
                               ],
                               "example": "claude"
                             },
-                            "workingDir": {
-                              "type": "string",
-                              "example": "/home/dev/harmonic"
-                            },
                             "isolationMode": {
                               "type": "string",
                               "enum": [
@@ -20263,7 +20239,6 @@
                           },
                           "required": [
                             "harness",
-                            "workingDir",
                             "isolationMode",
                             "priority",
                             "conflictResolveTurns"
@@ -21033,10 +21008,6 @@
                               ],
                               "example": "claude"
                             },
-                            "workingDir": {
-                              "type": "string",
-                              "example": "/home/dev/harmonic"
-                            },
                             "isolationMode": {
                               "type": "string",
                               "enum": [
@@ -21063,7 +21034,6 @@
                           },
                           "required": [
                             "harness",
-                            "workingDir",
                             "isolationMode",
                             "priority",
                             "conflictResolveTurns"
@@ -21895,10 +21865,6 @@
                           ],
                           "example": "claude"
                         },
-                        "workingDir": {
-                          "type": "string",
-                          "example": "/home/dev/harmonic"
-                        },
                         "isolationMode": {
                           "type": "string",
                           "enum": [
@@ -21925,7 +21891,6 @@
                       },
                       "required": [
                         "harness",
-                        "workingDir",
                         "isolationMode",
                         "priority",
                         "conflictResolveTurns"

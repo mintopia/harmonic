@@ -916,7 +916,6 @@ export interface AppConfig {
   harnesses: Record<string, HarnessConfig>;
   defaults: {
     harness: string;
-    workingDir: string;
     isolationMode: 'direct' | 'worktree';
     priority: 'high' | 'normal' | 'low';
     /** Conflict-resolve bound. */

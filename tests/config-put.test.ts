@@ -13,14 +13,14 @@ describe('PUT /api/config', () => {
 
   it('accepts a complete config and persists it', async () => {
     const current = (await server.api('GET', '/api/config')).body;
-    const next = { ...current, defaults: { ...current.defaults, workingDir: '/tmp/elsewhere' } };
+    const next = { ...current, defaults: { ...current.defaults, conflictResolveTurns: 5 } };
 
     const put = await server.api('PUT', '/api/config', next);
     expect(put.status).toBe(200);
-    expect(put.body.defaults.workingDir).toBe('/tmp/elsewhere');
+    expect(put.body.defaults.conflictResolveTurns).toBe(5);
 
     const after = await server.api('GET', '/api/config');
-    expect(after.body.defaults.workingDir).toBe('/tmp/elsewhere');
+    expect(after.body.defaults.conflictResolveTurns).toBe(5);
   });
 
   it('exposes the distributed baseline separately from the effective global config', async () => {

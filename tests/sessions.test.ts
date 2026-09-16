@@ -12,7 +12,7 @@ import {
   readLoadSessionCapability,
   type DispatchSessionInput,
 } from '../src/domain/sessions.js';
-import { allWorkspaces, makeSettingsStore } from './helpers.js';
+import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
 
 describe('Sessions (issue #141)', () => {
   describe('stripMcpCredentials', () => {
@@ -119,6 +119,7 @@ describe('Sessions (issue #141)', () => {
     beforeEach(async () => {
       dir = mkdtempSync(join(tmpdir(), 'harmonic-sessions-'));
       asyncDb = await openAsyncDb(dir);
+      await seedWorkspace(asyncDb);
       store = new SessionStore(asyncDb);
       const settingsStore = await makeSettingsStore(dir);
       workspaceId = (await allWorkspaces(asyncDb, settingsStore)())[0]!.id;

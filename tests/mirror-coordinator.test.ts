@@ -8,7 +8,7 @@ import { TaskService, type MirrorInput } from '../src/domain/tasks.js';
 import { MirrorCoordinator } from '../src/tracker/coordinator.js';
 import type { Ticket, TrackerAdapter } from '../src/tracker/adapter.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
-import { allWorkspaces, makeSettingsStore } from './helpers.js';
+import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
 
 const ticket = (number: number, assignees: string[] = []): Ticket => ({
   number,
@@ -70,6 +70,7 @@ describe('MirrorCoordinator (issue #32)', () => {
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-coord-'));
     asyncDb = await openAsyncDb(dir);
+    await seedWorkspace(asyncDb);
     settingsStore = await makeSettingsStore(dir);
     tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
     wsId = (await allWorkspaces(asyncDb, settingsStore)())[0]!.id;

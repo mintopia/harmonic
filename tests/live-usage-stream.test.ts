@@ -30,7 +30,7 @@ describe('live attempt_usage firehose (ADR 0010)', () => {
     );
 
     const config: DeepPartial<AppConfig> = {
-      defaults: { workingDir: workDir, isolationMode: 'direct' },
+      defaults: { isolationMode: 'direct' },
       chat: { harness: 'claude', model: 'stub-model' },
       harnesses: {
         claude: {

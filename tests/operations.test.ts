@@ -13,7 +13,7 @@ import { AutoRunner } from '../src/execution/auto-runner.js';
 import { EventBus } from '../src/server/bus.js';
 import { initializeTelemetry, resolveTelemetryOptions } from '../src/telemetry.js';
 import { OperationRegistry, startOperation } from '../src/telemetry/operations.js';
-import { allWorkspaces, makeSettingsStore, seedLocalMarkdownTicket, startServer, stubHarness } from './helpers.js';
+import { allWorkspaces, makeSettingsStore, seedLocalMarkdownTicket, startServer, stubHarness, seedWorkspace } from './helpers.js';
 
 const providers: NodeTracerProvider[] = [];
 
@@ -189,6 +189,7 @@ describe('Auto-Runner operations (issue #289)', () => {
   it('marks a failed task start as an error and returns the Task to ready', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'harmonic-operation-auto-runner-failure-'));
     const db = await openAsyncDb(directory);
+    await seedWorkspace(db);
     const settingsStore = await makeSettingsStore(directory);
     const { exporter, registry } = installOperations();
     const config = { ...baselineConfig(), autoRunner: { enabled: true, maxConcurrentAttempts: 1 } };
@@ -231,6 +232,7 @@ describe('Auto-Runner operations (issue #289)', () => {
   it('starts no tick Operation for an idle pass that attempts no Task', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'harmonic-operation-auto-runner-idle-'));
     const db = await openAsyncDb(directory);
+    await seedWorkspace(db);
     const settingsStore = await makeSettingsStore(directory);
     const { exporter, registry } = installOperations();
     const config = { ...baselineConfig(), autoRunner: { enabled: true, maxConcurrentAttempts: 1 } };

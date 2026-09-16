@@ -6,7 +6,7 @@ import { AttemptSettleCoordinator } from '../src/domain/attempt-settle.js';
 import { AttemptStore } from '../src/domain/attempts.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { type SettingsStore } from '../src/server/settings-store.js';
-import { allWorkspaces, captureRunEnv, makeSettingsStore, startServer, stubHarness, type TestServer, waitFor, connectFirehose } from './helpers.js';
+import { allWorkspaces, captureRunEnv, makeSettingsStore, startServer, stubHarness, type TestServer, waitFor, connectFirehose, seedWorkspace } from './helpers.js';
 import { eq } from 'drizzle-orm';
 import { mkdirSync, mkdtempSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -31,7 +31,7 @@ describe('attempt-log', () => {
         ].join('\n'),
       );
       server = await startServer({
-        defaults: { workingDir: workDir, isolationMode: 'direct' },
+        defaults: { isolationMode: 'direct' },
         chat: { harness: 'claude', model: 'stub-model' },
         harnesses: {
           claude: {
@@ -216,6 +216,7 @@ describe('attempt-settle', () => {
     beforeEach(async () => {
       dir = mkdtempSync(join(tmpdir(), 'harmonic-run-settle-'));
       asyncDb = await openAsyncDb(dir);
+      await seedWorkspace(asyncDb);
       settingsStore = await makeSettingsStore(dir);
       tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
       attempts = new AttemptStore(asyncDb);

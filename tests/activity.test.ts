@@ -28,7 +28,7 @@ describe('GET /api/activity snapshot (issue #51)', () => {
     );
 
     const config: DeepPartial<AppConfig> = {
-      defaults: { workingDir: workDir, isolationMode: 'direct' },
+      defaults: { isolationMode: 'direct' },
       chat: { harness: 'claude', model: 'stub-model' },
       harnesses: {
         claude: {

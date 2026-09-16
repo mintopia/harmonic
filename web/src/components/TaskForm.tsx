@@ -50,7 +50,7 @@ export function TaskForm({
       conflictResolveTurns: null,
     },
   );
-  const [workingDir, setWorkingDir] = useState(task?.workingDir ?? config.defaults.workingDir);
+  const [workingDir, setWorkingDir] = useState(task?.workingDir ?? workspace?.workingDir ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

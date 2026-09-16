@@ -28,14 +28,31 @@ export function makeSettingsStore(dataDir: string, overrides?: DeepPartial<AppCo
 }
 
 /** A `TaskService`/`AutoRunner`-shaped `getWorkspaces` callback over
- * whatever Workspaces already exist in `db` (openAsyncDb's boot-time backfill
- * seeds a default one), composed with `settings`'s per-Workspace overrides
+ * whatever Workspaces already exist in `db` (`startServer` seeds a default one),
+ * composed with `settings`'s per-Workspace overrides
  * — the plumbing every domain test that constructs
  * `TaskService` by hand needs, without repeating the select everywhere. `settings`
  * must be the SAME `SettingsStore` instance any override writer in the test
  * uses — see {@link makeSettingsStore}. */
 export const allWorkspaces = (db: AsyncDbHandle, settings: SettingsStore) => () =>
   new WorkspaceService(db, settings).list();
+
+/**
+ * Seed a single Workspace into a hand-opened async DB, idempotently. Production
+ * boot no longer seeds one (first-run onboarding adds the first Workspace), so
+ * every domain test that builds services directly over `openAsyncDb` and expects
+ * a Workspace to exist calls this after opening. Defaults `workingDir` to the
+ * process CWD — the value the old boot-time backfill used for these tests.
+ */
+export async function seedWorkspace(db: AsyncDbHandle, workingDir: string = process.cwd()): Promise<number> {
+  const existing = await db.read((d) => d.select().from(workspaces).orderBy(workspaces.id).get());
+  if (existing) return existing.id;
+  const now = Date.now();
+  const ws = await db.write((d) =>
+    d.insert(workspaces).values({ name: 'Default', workingDir, createdAt: now, updatedAt: now }).returning().get(),
+  );
+  return ws.id;
+}
 
 export const STUB_HARNESS = join(import.meta.dirname, 'stub-harness.mjs');
 
@@ -343,10 +360,14 @@ export async function startServer(
     // Heavy synchronous test setup can trip the event-loop stall monitor.
     reliabilityTuning: { eventLoop: { enabled: false } },
   });
-  // The Default Workspace seeds workingDir from process.cwd(); never let a test
-  // server operate on the developer's real checkout.
+  // Production boot seeds no Workspace (first-run onboarding adds the first one),
+  // but most API tests assume one exists. Seed a throwaway Default on a temp dir
+  // so no test ever operates on the developer's real checkout.
   const workspaceDir = mkdtempSync(join(tmpdir(), 'harmonic-workdir-'));
-  await app.ctx.asyncDb.write((d) => d.update(workspaces).set({ workingDir: workspaceDir }).run());
+  const now = Date.now();
+  await app.ctx.asyncDb.write((d) =>
+    d.insert(workspaces).values({ name: 'Default', workingDir: workspaceDir, createdAt: now, updatedAt: now }).run(),
+  );
   await app.listen({ port: 0, host: '127.0.0.1' });
   const { port } = app.server.address() as AddressInfo;
   const baseUrl = `http://127.0.0.1:${port}`;

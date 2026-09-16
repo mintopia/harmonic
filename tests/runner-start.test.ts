@@ -9,7 +9,7 @@ import { AttemptStore, type AttemptGuardrailSnapshot } from '../src/domain/attem
 import { pricesForHarness } from '../src/domain/pricing.js';
 import { Runner } from '../src/execution/runner.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
-import { allWorkspaces, makeSettingsStore } from './helpers.js';
+import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
 
 function deferred(): { promise: Promise<void>; resolve: () => void } {
   let resolve!: () => void;
@@ -33,6 +33,7 @@ describe('Runner.start (issue #272)', () => {
     repoDir = join(dir, 'repo');
     mkdirSync(repoDir);
     asyncDb = await openAsyncDb(dir);
+    await seedWorkspace(asyncDb);
     settingsStore = await makeSettingsStore(dir);
     tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
     runs = new AttemptStore(asyncDb);

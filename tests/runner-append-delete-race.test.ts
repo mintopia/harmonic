@@ -10,7 +10,7 @@ import { pricesForHarness } from '../src/domain/pricing.js';
 import { Runner } from '../src/execution/runner.js';
 import type { TaskRow, AttemptRow } from '../src/db/schema.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
-import { allWorkspaces, makeSettingsStore } from './helpers.js';
+import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
 
 describe('Runner.recordRunEvent — task deleted mid-append (issue #371)', () => {
   let dir: string;
@@ -26,6 +26,7 @@ describe('Runner.recordRunEvent — task deleted mid-append (issue #371)', () =>
     repoDir = join(dir, 'repo');
     mkdirSync(repoDir);
     asyncDb = await openAsyncDb(dir);
+    await seedWorkspace(asyncDb);
     settingsStore = await makeSettingsStore(dir);
     tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
     runs = new AttemptStore(asyncDb);

@@ -22,7 +22,7 @@ import { TaskService } from '../src/domain/tasks.js';
 import { AttemptStore } from '../src/domain/attempts.js';
 import { VerificationAttemptStore } from '../src/domain/verification-attempts.js';
 import { OperationRegistry, startOperation } from '../src/telemetry/operations.js';
-import { allWorkspaces, makeSettingsStore } from './helpers.js';
+import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
 
 const providers: NodeTracerProvider[] = [];
 
@@ -369,6 +369,7 @@ describe('runCritic (issue #136)', () => {
     const dbDir = mkdtempSync(join(tmpdir(), 'harmonic-critic-persist-db-'));
     tmpDirs.push(dbDir);
     const asyncDb = await openAsyncDb(dbDir);
+    await seedWorkspace(asyncDb);
     const settingsStore = await makeSettingsStore(dbDir);
     const tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
     const attempts = new AttemptStore(asyncDb);

@@ -10,7 +10,7 @@ import { WorkspaceService } from '../src/domain/workspaces.js';
 import { mirrorScan } from '../src/tracker/mirror.js';
 import { epics, type EpicRow } from '../src/db/schema.js';
 import { EPIC_LABEL, type Ticket } from '../src/tracker/adapter.js';
-import { allWorkspaces, makeSettingsStore } from './helpers.js';
+import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 
 const ticket = (over: Partial<Ticket>): Ticket => ({
@@ -44,6 +44,7 @@ describe('stored Epic spine (ADR-0018, #437)', () => {
     dataDir = mkdtempSync(join(tmpdir(), 'harmonic-epics-'));
     repo = mkdtempSync(join(tmpdir(), 'harmonic-epics-repo-'));
     asyncDb = await openAsyncDb(dataDir);
+    await seedWorkspace(asyncDb);
     settingsStore = await makeSettingsStore(dataDir);
     tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
     workspaces = new WorkspaceService(asyncDb, settingsStore);

@@ -37,7 +37,7 @@ function makeConfig(): AppConfig {
         cacheWarmSeconds: 300,
       },
     },
-    defaults: { harness: 'claude', workingDir: '/tmp', isolationMode: 'direct', priority: 'normal', conflictResolveTurns: 2 },
+    defaults: { harness: 'claude', isolationMode: 'direct', priority: 'normal', conflictResolveTurns: 2 },
     chat: { harness: 'claude', model: 'claude-sonnet-4-6' },
     autoRunner: { enabled: false, maxConcurrentAttempts: 2 },
     verify: { task: { preMerge: { commands: [], critics: [] }, postMerge: { commands: [], critics: [] } }, epic: { preMerge: { commands: [], critics: [] }, resolvePrompt: 'Resolve failures.' } },

@@ -6,7 +6,7 @@ import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { baselineConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
-import { allWorkspaces, makeSettingsStore } from './helpers.js';
+import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
 
 describe('TaskService.orderedEligibleWork', () => {
   let directory: string;
@@ -18,6 +18,7 @@ describe('TaskService.orderedEligibleWork', () => {
   beforeEach(async () => {
     directory = mkdtempSync(join(tmpdir(), 'harmonic-ordered-work-'));
     db = await openAsyncDb(directory);
+    await seedWorkspace(db);
     settingsStore = await makeSettingsStore(directory);
     taskService = new TaskService(db, () => baselineConfig(), allWorkspaces(db, settingsStore));
     workspaceId = (await allWorkspaces(db, settingsStore)())[0]!.id;
