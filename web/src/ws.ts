@@ -1,6 +1,7 @@
 import type {
   Attempt,
   Conversation,
+  AdvertisedCommand,
   ConversationEvent,
   PermissionAcpRequest,
   ElicitationFormRequest,
@@ -64,6 +65,7 @@ export type ServerMessage =
   | { type: 'git_status'; workspaceId: number; entries: import('./types.js').GitStatusEntry[] }
   | { type: 'conversation_event'; event: ConversationEvent }
   | { type: 'conversation_changed'; conversation: Conversation }
+  | { type: 'conversation_commands'; conversationId: number; commands: AdvertisedCommand[] }
   // The Harness is blocked on this ACP permission request until
   // the operator answers (POST .../permissions/:reqId) or the conversation
   // ends/crashes — the panel clears it on a matching resolved

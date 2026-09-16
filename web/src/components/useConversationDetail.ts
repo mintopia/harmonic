@@ -131,6 +131,9 @@ export function useConversationDetail(
           clearPendingPermission();
         }
       }
+      if (msg.type === 'conversation_commands' && msg.conversationId === id) {
+        setConversation((current) => current ? { ...current, commands: msg.commands } : current);
+      }
     }, load);
     return () => {
       unsubscribe();

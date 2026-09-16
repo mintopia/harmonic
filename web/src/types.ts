@@ -648,6 +648,13 @@ export interface Conversation {
   /** The configured harness cache warm period, in seconds. */
   cacheWarmSeconds: number | null;
   coldResume?: boolean;
+  commands?: AdvertisedCommand[];
+}
+
+export interface AdvertisedCommand {
+  name: string;
+  description: string;
+  argumentHint?: string;
 }
 
 /**

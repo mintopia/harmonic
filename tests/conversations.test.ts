@@ -72,6 +72,68 @@ describe('conversation walking skeleton (issue 10)', () => {
     ws.close();
   });
 
+  it('exposes the harness advertised commands through detail and the firehose', async () => {
+    const ws = await connectWs(server);
+    const { body: convo } = await server.api('POST', '/api/conversations', {});
+    const commands = [
+      { name: 'review', description: 'Review the current changes', input: { hint: 'focus area' } },
+      { name: 'status', description: 'Show the current status' },
+    ];
+
+    await server.api('POST', `/api/conversations/${convo.id}/turns`, {
+      text: JSON.stringify({ updates: [{ sessionUpdate: 'available_commands_update', availableCommands: commands }] }),
+    });
+
+    await waitFor(async () => {
+      const { body } = await server.api('GET', `/api/conversations/${convo.id}`);
+      return body.commands?.length === commands.length ? body : undefined;
+    });
+    const detail = await server.api('GET', `/api/conversations/${convo.id}`);
+    expect(detail.body.commands).toEqual([
+      { name: 'review', description: 'Review the current changes', argumentHint: 'focus area' },
+      { name: 'status', description: 'Show the current status' },
+    ]);
+    await waitFor(async () =>
+      ws.messages.find((message) => message.type === 'conversation_commands' && message.conversationId === convo.id),
+    );
+    expect(ws.messages.find((message) => message.type === 'conversation_commands' && message.conversationId === convo.id)).toMatchObject({
+      commands: detail.body.commands,
+    });
+
+    await server.api('POST', `/api/conversations/${convo.id}/turns`, {
+      text: JSON.stringify({ updates: [{ sessionUpdate: 'available_commands_update', availableCommands: [] }] }),
+    });
+    await waitFor(async () => (await server.api('GET', `/api/conversations/${convo.id}`)).body.commands?.length === 0);
+    expect((await server.api('GET', `/api/conversations/${convo.id}`)).body.commands).toEqual([]);
+    ws.close();
+  });
+
+  it('restores commands replayed while resuming a session', async () => {
+    const config = stubHarness();
+    config.harnesses!.claude!.env = {
+      STUB_REPLAY_ON_LOAD: JSON.stringify([
+        {
+          sessionUpdate: 'available_commands_update',
+          availableCommands: [{ name: 'resume', description: 'Resume work', input: { hint: 'task' } }],
+        },
+      ]),
+    };
+    const resumedServer = await startServer(config);
+    try {
+      const { body: convo } = await resumedServer.api('POST', '/api/conversations', {});
+      await resumedServer.api('POST', `/api/conversations/${convo.id}/turns`, { text: 'first turn' });
+      await waitFor(async () => (await resumedServer.api('GET', `/api/conversations/${convo.id}`)).body.sessionId !== null);
+      await resumedServer.api('POST', `/api/conversations/${convo.id}/end`);
+      await resumedServer.api('POST', `/api/conversations/${convo.id}/turns`, { text: 'second turn' });
+      await waitFor(async () => (await resumedServer.api('GET', `/api/conversations/${convo.id}`)).body.commands?.length === 1);
+      expect((await resumedServer.api('GET', `/api/conversations/${convo.id}`)).body.commands).toEqual([
+        { name: 'resume', description: 'Resume work', argumentHint: 'task' },
+      ]);
+    } finally {
+      await resumedServer.close();
+    }
+  });
+
   it('reuses the warm session on a second Turn (no re-spawn)', async () => {
     const { body: convo } = await server.api('POST', '/api/conversations', {});
     await server.api('POST', `/api/conversations/${convo.id}/turns`, {

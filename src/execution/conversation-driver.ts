@@ -18,6 +18,30 @@ import type { ConversationRow } from '../db/schema.js';
 import { startOperation } from '../telemetry/operations.js';
 import { logger } from '../logger.js';
 
+export interface AdvertisedCommand {
+  name: string;
+  description: string;
+  argumentHint?: string;
+}
+
+function availableCommands(update: unknown): AdvertisedCommand[] | null {
+  if (typeof update !== 'object' || update === null) return null;
+  const sessionUpdate = Reflect.get(update, 'sessionUpdate');
+  const commands = Reflect.get(update, 'availableCommands');
+  if (sessionUpdate !== 'available_commands_update' || !Array.isArray(commands)) return null;
+  const parsed: AdvertisedCommand[] = [];
+  for (const command of commands) {
+    if (typeof command !== 'object' || command === null) return null;
+    const name = Reflect.get(command, 'name');
+    const description = Reflect.get(command, 'description');
+    const input = Reflect.get(command, 'input');
+    const hint = input !== null && typeof input === 'object' ? Reflect.get(input, 'hint') : undefined;
+    if (typeof name !== 'string' || typeof description !== 'string' || (hint !== undefined && typeof hint !== 'string')) return null;
+    parsed.push({ name, description, ...(typeof hint === 'string' ? { argumentHint: hint } : {}) });
+  }
+  return parsed;
+}
+
 function permissionKind(request: PermissionRequest): string | null {
   return request.toolCall.kind || null;
 }
@@ -60,6 +84,7 @@ export interface ConversationDriverEvents {
    * Broadcast so the panel can prompt; answered via `answerElicitation`.
    */
   onElicitationRequest?: (pending: PendingElicitationBroadcast) => void;
+  onCommandsUpdate?: (payload: { conversationId: number; commands: AdvertisedCommand[] }) => void;
 }
 
 type PermissionOutcome = { outcome: 'selected'; optionId: string } | { outcome: 'cancelled' };
@@ -101,6 +126,7 @@ interface ActiveConversation {
   turning: boolean;
   queue: string[];
   initialMode: string | null;
+  commands: AdvertisedCommand[];
   idleTimer?: ReturnType<typeof setTimeout> | undefined;
 }
 
@@ -151,6 +177,10 @@ export class ConversationDriver {
   /** True while a warm harness process is held for this Conversation. */
   isWarm(conversationId: number): boolean {
     return this.active.has(conversationId);
+  }
+
+  availableCommands(conversationId: number): AdvertisedCommand[] {
+    return this.active.get(conversationId)?.commands.map((command) => ({ ...command })) ?? [];
   }
 
   /** Apply a persisted permission-mode change to its warm ACP session. */
@@ -348,6 +378,12 @@ export class ConversationDriver {
 
     const driver = new AcpDriver(child, {
       onSessionUpdate: (update, replay) => {
+        const commands = availableCommands(update);
+        const active = this.active.get(convo.id);
+        if (commands && active) {
+          active.commands = commands;
+          this.events.onCommandsUpdate?.({ conversationId: convo.id, commands: this.availableCommands(convo.id) });
+        }
         if (replay) return;
         void this.record(convo.id, 'session_update', update).catch(() => {});
       },
@@ -372,7 +408,7 @@ export class ConversationDriver {
       },
     });
 
-    const entry: ActiveConversation = { conversationId: convo.id, child, driver, turning: false, queue: [], initialMode: null };
+    const entry: ActiveConversation = { conversationId: convo.id, child, driver, turning: false, queue: [], initialMode: null, commands: [] };
     this.active.set(convo.id, entry);
     try {
       const modelId = adapterFor(convo.harness).sessionModelId?.(convo.model);
