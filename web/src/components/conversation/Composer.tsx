@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
 import { isTurnRunning } from '../../conversation-steering-model';
 import { toastError } from '../../toast';
 import type { AppConfig, Conversation, ConversationEvent, Workspace } from '../../types';
@@ -8,6 +8,7 @@ import { formatCost } from '../../cost';
 import { DiscoveryModelPicker } from '../DiscoveryModelPicker.js';
 import { Icon } from '../Icon';
 import { providerLabel } from '../TaskIdentity';
+import { commandPickerState } from './command-picker-model.js';
 
 const fieldLabel = `mb-1 block ${labelType} text-muted`;
 
@@ -86,7 +87,13 @@ export function Composer({
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [queued, setQueued] = useState(false);
+  const [caret, setCaret] = useState(0);
+  const [highlight, setHighlight] = useState(-1);
+  const [dismissedPicker, setDismissedPicker] = useState<string | null>(null);
   const queuedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const composer = useRef<HTMLDivElement>(null);
+  const textarea = useRef<HTMLTextAreaElement>(null);
+  const listId = useId();
 
   useEffect(() => () => {
     if (queuedTimer.current) clearTimeout(queuedTimer.current);
@@ -96,6 +103,23 @@ export function Composer({
   const running = conversation?.state === 'active' && isTurnRunning(events);
   const displayedHarness = conversation?.harness ?? harness;
   const models = (config.harnesses[harness]?.models ?? []).map((model) => model.id);
+  const prefix = conversation?.commandPrefix;
+  const picker = prefix ? commandPickerState(text, caret, prefix, conversation?.commands ?? []) : null;
+  const pickerKey = picker ? `${picker.start}:${picker.end}:${caret}:${text}` : null;
+  const pickerOpen = picker !== null && dismissedPicker !== pickerKey;
+
+  useEffect(() => {
+    if (highlight >= 0) document.getElementById(`${listId}-opt-${highlight}`)?.scrollIntoView({ block: 'nearest' });
+  }, [highlight, listId]);
+
+  useEffect(() => {
+    if (!pickerOpen) return;
+    const onDown = (e: PointerEvent) => {
+      if (composer.current && e.target instanceof Node && !composer.current.contains(e.target)) setDismissedPicker(pickerKey);
+    };
+    document.addEventListener('pointerdown', onDown);
+    return () => document.removeEventListener('pointerdown', onDown);
+  }, [pickerKey, pickerOpen]);
 
   const pickHarness = (h: string) => {
     setHarness(h);
@@ -123,10 +147,46 @@ export function Composer({
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (pickerOpen && picker) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setHighlight((current) => Math.min(current + 1, picker.commands.length - 1));
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setHighlight((current) => Math.max(current - 1, 0));
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setDismissedPicker(pickerKey);
+        return;
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        const command = picker.commands[highlight];
+        if (command) selectCommand(command);
+        return;
+      }
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       send();
     }
+  };
+
+  const selectCommand = (command: NonNullable<typeof picker>['commands'][number]) => {
+    if (!picker || !prefix) return;
+    const next = `${text.slice(0, picker.start)}${prefix}${command.name} ${text.slice(picker.end)}`;
+    const nextCaret = picker.start + prefix.length + command.name.length + 1;
+    setText(next);
+    setCaret(nextCaret);
+    setDismissedPicker(null);
+    requestAnimationFrame(() => {
+      textarea.current?.focus();
+      textarea.current?.setSelectionRange(nextCaret, nextCaret);
+    });
   };
 
   return (
@@ -188,9 +248,40 @@ export function Composer({
           Queued — will send once the current turn finishes.
         </p>
       )}
-      <div className="relative flex items-end gap-2">
+      <div ref={composer} className="relative flex items-end gap-2">
+        {pickerOpen && picker && (
+          <ul
+            id={listId}
+            role="listbox"
+            className="absolute bottom-full left-0 z-10 mb-1 max-h-96 w-full overflow-auto rounded-md bg-surface py-1 shadow-bar"
+          >
+            {picker.commands.map((command, index) => (
+              <li
+                key={command.name}
+                id={`${listId}-opt-${index}`}
+                role="option"
+                aria-selected={index === highlight}
+                className={`cursor-pointer px-2.5 py-1.5 ${index === highlight ? 'bg-raised' : ''}`}
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  selectCommand(command);
+                }}
+                onMouseEnter={() => setHighlight(index)}
+              >
+                <span className="block text-data">{command.name}</span>
+                <span className="block text-label text-muted">{command.description}</span>
+              </li>
+            ))}
+          </ul>
+        )}
         <textarea
+          ref={textarea}
           aria-label="Message"
+          role="combobox"
+          aria-expanded={pickerOpen}
+          aria-controls={pickerOpen ? listId : undefined}
+          aria-autocomplete="list"
+          aria-activedescendant={highlight >= 0 ? `${listId}-opt-${highlight}` : undefined}
           className={`${field} min-h-16 flex-1 resize-none max-md:min-h-14 max-md:pr-14`}
           value={text}
           placeholder={
@@ -198,7 +289,15 @@ export function Composer({
               ? `Message ${providerLabel(displayedHarness)}… (Enter queues it for after this turn)`
               : `Message ${providerLabel(displayedHarness)}… (Enter to send, Shift+Enter for a newline)`
           }
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => {
+            setText(e.target.value);
+            setCaret(e.target.selectionStart);
+            setHighlight(-1);
+            setDismissedPicker(null);
+          }}
+          onSelect={(e) => {
+            setCaret(e.currentTarget.selectionStart);
+          }}
           onKeyDown={onKeyDown}
         />
         <button
@@ -213,7 +312,7 @@ export function Composer({
         <div className="mt-1.5 flex flex-wrap items-center gap-x-3.5 gap-y-1 text-label text-faint">
           <span className="max-md:hidden"><b className="font-semibold text-muted">Enter</b> {running ? 'queues' : 'to send'}</span>
           <span className="max-md:hidden"><b className="font-semibold text-muted">Shift ↵</b> newline</span>
-          <span className="max-md:hidden"><b className="font-semibold text-muted">/</b> commands</span>
+          {prefix && <span className="max-md:hidden"><b className="font-semibold text-muted">{prefix}</b> commands</span>}
           {conversation && (
             <div className="ml-auto flex items-center gap-2.5 normal-case tracking-normal">
               <span className="inline-flex items-center gap-1.5">

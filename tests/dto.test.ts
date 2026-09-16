@@ -447,6 +447,7 @@ describe('conversationToApiDto', () => {
     cost: cost({ totalUsd: 2 }),
     contextWindow: 200_000,
     cacheWarmSeconds: 3600,
+    commandPrefix: '$',
   };
 
   it('parses usage from JSON', () => {
@@ -455,12 +456,13 @@ describe('conversationToApiDto', () => {
     expect(dto.usage).toEqual(usage({ toolCalls: { grep: 1 } }));
   });
 
-  it('takes title/cost/contextWindow/cacheWarmSeconds from resolved', () => {
+  it('takes title/cost/contextWindow/cacheWarmSeconds/commandPrefix from resolved', () => {
     const dto = conversationToApiDto(conversationRow({ title: 'Operator title' }), resolved);
     expect(dto.title).toBe('Resolved title');
     expect(dto.cost).toEqual(resolved.cost);
     expect(dto.contextWindow).toBe(200_000);
     expect(dto.cacheWarmSeconds).toBe(3600);
+    expect(dto.commandPrefix).toBe('$');
   });
 
   it('narrows workspaceId to number', () => {

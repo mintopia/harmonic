@@ -670,6 +670,7 @@ export type ApiConversation = Omit<ConversationRow, 'usage' | 'workspaceId'> & {
   cacheWarmSeconds: number | null;
   coldResume: boolean;
   commands: AdvertisedCommand[];
+  commandPrefix: string;
 };
 
 const DERIVED_TITLE_MAX = 80;
@@ -696,6 +697,7 @@ export function conversationToApiDto(
     cacheWarmSeconds: number | null;
     coldResume?: boolean;
     commands?: AdvertisedCommand[];
+    commandPrefix: string;
   },
 ): ApiConversation {
   const { usage: rawUsage, ...rest } = conversation;
@@ -710,5 +712,6 @@ export function conversationToApiDto(
     cacheWarmSeconds: resolved.cacheWarmSeconds,
     coldResume: resolved.coldResume ?? false,
     commands: resolved.commands ?? [],
+    commandPrefix: resolved.commandPrefix,
   };
 }
