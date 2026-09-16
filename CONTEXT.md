@@ -405,6 +405,20 @@ per-Conversation (native ACP `allow_always`, which dies with the
 Conversation and writes no rule).
 _Avoid_: allowlist, policy
 
+**Slash Command**:
+A command the operator invokes from a Conversation's Composer by typing the
+Harness's command prefix (`commandPrefix`, `/` today) at a whitespace boundary —
+the start of the message or after a space — e.g. `/grill-with-docs`. The set is
+**not** Harmonic's: each Harness advertises its own over ACP
+(`available_commands_update`, name + description), so available commands are
+**per-Harness and session-sourced** — unknown until the Harness's Session is
+live (the Composer eagerly spawns it to learn them), absent for a Harness that
+advertises none. The Composer offers them as **autocomplete**: the prefix token
+opens a picker above the field, filtered as the operator types; selecting one
+inserts `{prefix}{name} ` ready for arguments and never sends on its own. The raw
+text is forwarded to the Harness unchanged; Harmonic parses nothing.
+_Avoid_: command (bare — collides with Verification Command), skill, macro
+
 ### Lifecycle
 
 The stored Ticket states (ADR-0001). Blocked-ness and agent-workability are

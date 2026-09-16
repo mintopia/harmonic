@@ -587,23 +587,24 @@ export class Runner {
     }
   }
 
-  /**
-   * Reject with guidance: the operator's guidance becomes the feedback of the
-   * escalated Attempt and of the next one, the attempt budget restarts, and the
-   * loop resumes on the same ticket. The next Attempt reuses the Task's existing
-   * worktree and branch.
-   */
+  /** Resume an escalated ticket, optionally recording guidance for its next Attempt. */
   async resumeWithGuidance(task: TaskRow, guidance: string, startNow = false): Promise<void> {
-    const run = (await this.attempts.listForTask(task.id)).at(-1);
-    const escalated = (await this.attempts.listForTask(task.id)).findLast((attempt) => attempt.state === 'escalated');
-    if (escalated) await this.attempts.setFeedback(escalated.id, guidance);
+    const trimmed = guidance.trim();
+    if (!trimmed && !startNow) {
+      await this.taskService.requeue(task.id);
+      return;
+    }
+    const attempts = await this.attempts.listForTask(task.id);
+    const run = attempts.at(-1);
+    const escalated = attempts.findLast((attempt) => attempt.state === 'escalated');
+    if (escalated && trimmed) await this.attempts.setFeedback(escalated.id, trimmed);
     let choice: 'full' | 'condensed' | undefined;
     let continuation: DeterministicContinuation | undefined;
     if (run) {
       continuation = await this.decideContinuation(task, run, await this.getWorkspace?.(task.workspaceId));
       choice = continuation.path === 'continued-session' ? 'full' : 'condensed';
     }
-    await this.taskService.requeue(task.id, guidance, choice);
+    await this.taskService.requeue(task.id, trimmed, choice);
     if (run) this.pendingManualResume.set(task.id, run);
     if (startNow) {
       if (continuation) this.pendingContinuation.set(task.id, continuation);
@@ -2508,8 +2509,33 @@ export class Runner {
     guardrails.armSpend();
     if (autoDriven) {
       const adapter = adapterFor(task.harness);
-      const mode = adapter.unattendedPermissionMode(driver.availableModes);
+      const requested = harness.permissionMode;
+      const advertised = [...driver.availableModes];
+      const mode = adapter.unattendedPermissionMode(advertised, requested);
+      const fallbackReason = requested !== undefined && requested !== mode
+        ? 'configured-mode-not-advertised'
+        : requested === undefined && adapter.defaultPermissionMode !== undefined && adapter.defaultPermissionMode !== mode
+          ? 'default-mode-not-advertised'
+          : undefined;
+      logger.info('Unattended permission mode resolved', {
+        taskId: task.id,
+        attemptId: run.id,
+        requested: requested ?? 'none',
+        advertised: advertised.join(',') || 'none',
+        chosen: mode ?? 'none',
+        fallbackReason: fallbackReason ?? 'none',
+      });
+      const recordMode = (applied: string | null) =>
+        record('lifecycle', {
+          event: 'mode_set',
+          mode: applied,
+          requested: requested ?? null,
+          advertised,
+          applied,
+          fallbackReason: fallbackReason ?? null,
+        });
       if (!mode) {
+        recordMode(null);
         if (adapter.requiresUnattendedPermissionMode) {
           throw new Error(
             `harness '${task.harness}' offers no unattended permission mode ` +
@@ -2518,7 +2544,7 @@ export class Runner {
         }
       } else {
         await driver.setMode(mode);
-        record('lifecycle', { event: 'mode_set', mode });
+        recordMode(mode);
         if (turn.sessionRowId !== undefined) {
           try {
             await this.sessionStore.setPermissionMode(turn.sessionRowId, mode, Date.now());

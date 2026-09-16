@@ -22,20 +22,22 @@ export type View = (typeof VIEWS)[number];
 
 export const GLOBAL_RAIL_VIEWS: readonly View[] = ['board', 'table', 'activity', 'timeline', 'stats', 'operations', 'api', 'settings'];
 export const WORKSPACE_RAIL_VIEWS: readonly View[] = ['board', 'conversations', 'graph', 'activity', 'table', 'timeline', 'stats', 'files', 'operations', 'workspace'];
-export const RAIL_VIEWS = WORKSPACE_RAIL_VIEWS;
 
 export interface RailGroup {
   label: string;
   views: readonly View[];
 }
 
-export const RAIL_GROUPS: readonly RailGroup[] = [
-  { label: 'Overview', views: ['board', 'conversations', 'graph', 'activity'] },
-  { label: 'Data', views: ['table', 'timeline', 'stats', 'files'] },
-  { label: 'Instance', views: ['operations', 'api', 'workspace'] },
+export const GLOBAL_RAIL_GROUPS: readonly RailGroup[] = [
+  { label: 'Overview', views: ['board', 'table'] },
+  { label: 'Insights', views: ['activity', 'timeline', 'stats'] },
+  { label: 'Instance', views: ['operations', 'api', 'settings'] },
 ];
-export const GLOBAL_RAIL_GROUPS: readonly RailGroup[] = [{ label: 'Global', views: GLOBAL_RAIL_VIEWS }];
-export const WORKSPACE_RAIL_GROUPS: readonly RailGroup[] = [{ label: 'Workspace', views: WORKSPACE_RAIL_VIEWS }];
+export const WORKSPACE_RAIL_GROUPS: readonly RailGroup[] = [
+  { label: 'Overview', views: ['board', 'conversations', 'table', 'files'] },
+  { label: 'Insights', views: ['activity', 'graph', 'timeline', 'stats'] },
+  { label: 'Instance', views: ['operations', 'workspace'] },
+];
 
 /**
  * Views without a Global form yield to the "No workspace open" empty state.
@@ -52,10 +54,14 @@ export const VIEW_LABELS: Record<View, string> = {
   conversations: 'Conversations',
   table: 'Tasks',
   graph: 'Graph',
-  stats: 'Stats',
+  stats: 'Statistics',
   files: 'Files',
   operations: 'Operations',
   api: 'API',
   settings: 'Settings',
   workspace: 'Settings',
+};
+
+export const GLOBAL_VIEW_LABELS: Partial<Record<View, string>> = {
+  board: 'Dashboard',
 };

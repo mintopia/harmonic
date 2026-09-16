@@ -15,7 +15,7 @@ describe('Scheduled Job registry', () => {
   it('persists an injected exemplar and serves the same snapshot over REST and the firehose', async () => {
     let runs = 0;
     server = await startServer(undefined, {
-      scheduledJobRegistrations: [{ name: 'test exemplar', intervalMs: 200, run: async () => { runs += 1; } }],
+      scheduledJobRegistrations: [{ name: 'test exemplar', intervalMs: 60_000, run: async () => { runs += 1; } }],
     });
     const { messages, close } = await connectFirehose(server);
 

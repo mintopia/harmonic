@@ -38,8 +38,7 @@ history.
 ## Live as it changes
 
 A filesystem watcher keeps the tree and git status current as files change
-on disk, whether you're editing them or an agent is, so the tree always
-reflects what's on disk right now.
+on disk, whether you're editing them or an agent is.
 
 ## What it can reach
 

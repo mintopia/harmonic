@@ -58,6 +58,7 @@ harmonic serve
 | `serve` | Run the server in the foreground (Ctrl-C to stop). |
 | `start` | Run the server in the background; logs to `<data-dir>/harmonic.log`. |
 | `install` | Install Harmonic as an OS service (systemd or SysV init.d) so it starts on boot. `harmonic install --help` for platform options. |
+| `uninstall` | Remove the OS service and stop it. Leaves the data dir untouched. |
 | `status` | Report whether a background server is running (exits non-zero if not). |
 | `stop` | Stop the background server. |
 | `help` | Show usage. Also `--help`, or running with no command. |

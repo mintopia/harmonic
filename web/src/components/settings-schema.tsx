@@ -1,5 +1,5 @@
 import { Fragment, useState, type ReactNode } from 'react';
-import type { AppConfig, Channel, Workspace } from '../types';
+import type { AppConfig, Channel, ConfigLayers, Workspace } from '../types';
 import { btnGhost, field } from '../ui';
 import { Icon } from './Icon';
 import { FieldError, PromptField, fieldLabel } from './SettingsSection';
@@ -25,6 +25,7 @@ import { PermissionRules } from './PermissionRules';
 import { SecuritySection } from './SecuritySection';
 import { GlobalVerificationSettings, WorkspaceVerificationSettings } from './VerificationSettings';
 import { settingsRegistry, type SettingKey, type SettingTab } from '../../../src/domain/settings-registry.js';
+import { WORKSPACE_COLORS } from '../../../src/domain/workspace-colors.js';
 
 export type Surface = 'global' | 'workspace';
 
@@ -36,6 +37,7 @@ export interface GlobalRenderCtx {
   baseline: AppConfig;
   setConfig: (config: AppConfig) => void;
   errors: Record<string, string>;
+  harnessPermissionModes: ConfigLayers['harnessPermissionModes'];
   channels: {
     list: Channel[];
     onToggleEvent: (id: number, event: string) => void;
@@ -846,8 +848,6 @@ function ResolvedTrackerValue({ workspace }: { workspace: Workspace }) {
 
 function WorkspaceIdentity({ ctx }: { ctx: WorkspaceRenderCtx }) {
   const { workspace, errors } = ctx;
-  const contrast = workspaceBadgeContrast(workspace.color);
-  const nearStatus = isNearStatusColor(workspace.color);
   return (
     <div className="grid gap-3.5 sm:grid-cols-2">
       <div>
@@ -869,21 +869,58 @@ function WorkspaceIdentity({ ctx }: { ctx: WorkspaceRenderCtx }) {
           Fixed once a Workspace is created — make a new Workspace to point at a different repo.
         </p>
       </div>
-      <div>
-        <label className={fieldLabel} htmlFor="workspace-color">Workspace colour</label>
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-          <HslColorPicker color={workspace.color} onChange={(color) => ctx.setWorkspace({ ...workspace, color })} />
-          <input aria-label="Workspace colour hex value" className={`${field} w-28 font-data uppercase`} value={workspace.color} maxLength={7} onChange={(e) => ctx.setWorkspace({ ...workspace, color: e.target.value.toUpperCase() })} />
-          <span className={`text-small ${contrast !== null && contrast >= 4.5 ? 'text-muted' : 'text-fail'}`}>Initial contrast: {contrast === null ? '—' : `${contrast.toFixed(2)}:1 ${contrast >= 4.5 ? 'AA' : 'below AA'}`}</span>
+      <div className="sm:col-span-2">
+        <span className={fieldLabel}>Workspace colour</span>
+        <div className="mt-2 flex flex-wrap gap-2" role="group" aria-label="Preferred workspace colours">
+          {WORKSPACE_COLORS.map((swatch) => {
+            const selected = workspace.color.toUpperCase() === swatch;
+            return (
+              <button
+                key={swatch}
+                type="button"
+                aria-label={swatch}
+                aria-pressed={selected}
+                title={swatch}
+                className={`size-7 rounded-full transition-transform duration-150 hover:scale-110 ${selected ? 'ring-2 ring-accent ring-offset-2 ring-offset-surface' : 'border border-edge'}`}
+                style={{ backgroundColor: swatch }}
+                onClick={() => ctx.setWorkspace({ ...workspace, color: swatch })}
+              />
+            );
+          })}
         </div>
-        {nearStatus && <p className="mt-1 text-small text-running">Near a status colour. Choose a different hue so workspace identity stays distinct.</p>}
+        <div className="mt-3 flex flex-wrap items-start gap-5">
+          <HslColorSliders color={workspace.color} onChange={(color) => ctx.setWorkspace({ ...workspace, color })} />
+          <div className="flex flex-col gap-1.5">
+            <label
+              className="relative h-12 w-24 cursor-pointer overflow-hidden rounded-md border border-edge ring-1 ring-inset ring-black/10"
+              style={{ backgroundColor: workspace.color }}
+              title="Open the system colour picker"
+            >
+              <input
+                id="workspace-color"
+                type="color"
+                aria-label="Workspace colour"
+                className="absolute inset-0 size-full cursor-pointer opacity-0"
+                value={/^#[0-9a-f]{6}$/i.test(workspace.color) ? workspace.color : '#000000'}
+                onChange={(e) => ctx.setWorkspace({ ...workspace, color: e.target.value.toUpperCase() })}
+              />
+            </label>
+            <input
+              aria-label="Workspace colour hex value"
+              className="w-24 rounded-md border border-edge bg-field px-2 py-1.5 text-center font-data uppercase text-ink focus:border-accent focus:outline-none"
+              value={workspace.color}
+              maxLength={7}
+              onChange={(e) => ctx.setWorkspace({ ...workspace, color: e.target.value.toUpperCase() })}
+            />
+          </div>
+        </div>
         <FieldError message={errors['color']} />
       </div>
     </div>
   );
 }
 
-function HslColorPicker({ color, onChange }: { color: string; onChange: (color: string) => void }) {
+function HslColorSliders({ color, onChange }: { color: string; onChange: (color: string) => void }) {
   const [hue, saturation, lightness] = hexToHsl(color) ?? [0, 0, 50];
   const update = (next: [number, number, number]) => onChange(hslToHex(...next));
   const controls: Array<{ label: string; value: number; max: number; update: (value: number) => void }> = [
@@ -892,25 +929,22 @@ function HslColorPicker({ color, onChange }: { color: string; onChange: (color: 
     { label: 'Lightness', value: lightness, max: 100, update: (value) => update([hue, saturation, value]) },
   ];
   return (
-    <div id="workspace-color" className="flex items-center gap-2" aria-label="Workspace colour HSL picker">
-      <span aria-hidden="true" className="size-10 shrink-0 rounded border border-edge" style={{ backgroundColor: color }} />
-      <div className="grid min-w-44 gap-1">
-        {controls.map((control) => (
-          <label key={control.label} className="flex items-center gap-2 text-small text-muted">
-            <span className="w-16">{control.label}</span>
-            <input
-              aria-label={`${control.label} (${control.value})`}
-              className="h-2 flex-1 accent-accent"
-              type="range"
-              min={0}
-              max={control.max}
-              value={control.value}
-              onChange={(event) => control.update(Number(event.target.value))}
-            />
-            <output className="w-7 text-right tabular-nums">{control.value}</output>
-          </label>
-        ))}
-      </div>
+    <div className="grid max-w-md flex-1 basis-64 gap-1.5" aria-label="Fine-tune colour (HSL)">
+      {controls.map((control) => (
+        <label key={control.label} className="flex items-center gap-2 text-small text-muted">
+          <span className="w-16">{control.label}</span>
+          <input
+            aria-label={`${control.label} (${control.value})`}
+            className="h-1.5 flex-1 accent-accent"
+            type="range"
+            min={0}
+            max={control.max}
+            value={control.value}
+            onChange={(event) => control.update(Number(event.target.value))}
+          />
+          <output className="w-8 text-right font-data tabular-nums text-faint">{control.value}</output>
+        </label>
+      ))}
     </div>
   );
 }
@@ -941,23 +975,6 @@ function hslToHex(hue: number, saturation: number, lightness: number): string {
   const [red, green, blue] = hue < 60 ? [chroma, secondary, 0] : hue < 120 ? [secondary, chroma, 0] : hue < 180 ? [0, chroma, secondary] : hue < 240 ? [0, secondary, chroma] : hue < 300 ? [secondary, 0, chroma] : [chroma, 0, secondary];
   const channel = (value: number) => Math.round((value + match) * 255).toString(16).padStart(2, '0');
   return `#${channel(red)}${channel(green)}${channel(blue)}`.toUpperCase();
-}
-
-const STATUS_COLORS = ['#A74D08', '#1160AE', '#4740C6', '#0D7734', '#B3253F', '#5B616A', '#077067', '#FFB524', '#4CA8F5', '#BD9DFF', '#2BF58E', '#FF5570', '#9AA0A9'];
-
-function workspaceBadgeContrast(hex: string): number | null {
-  if (!/^#[0-9a-f]{6}$/i.test(hex)) return null;
-  const luminance = (value: string) => [1, 3, 5].map((offset) => Number.parseInt(value.slice(offset, offset + 2), 16) / 255).map((channel) => channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4).reduce((sum, channel, index) => sum + channel * [0.2126, 0.7152, 0.0722][index]!, 0);
-  const a = luminance('#1B1E24');
-  const b = luminance(hex);
-  return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
-}
-
-function isNearStatusColor(hex: string): boolean {
-  if (!/^#[0-9a-f]{6}$/i.test(hex)) return false;
-  const channels = (value: string) => [1, 3, 5].map((offset) => Number.parseInt(value.slice(offset, offset + 2), 16));
-  const candidate = channels(hex);
-  return STATUS_COLORS.some((status) => Math.hypot(...channels(status).map((channel, index) => channel - candidate[index]!)) < 64);
 }
 
 function WorkspaceTracker({ ctx }: { ctx: WorkspaceRenderCtx }) {
@@ -1234,7 +1251,7 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
     wide: true,
     body: (ctx) =>
       ctx.surface === 'global' ? (
-        <HarnessesSection config={ctx.config} baseline={ctx.baseline} fieldErrors={ctx.errors} onChange={(harnesses) => ctx.setConfig({ ...ctx.config, harnesses })} />
+        <HarnessesSection config={ctx.config} baseline={ctx.baseline} fieldErrors={ctx.errors} permissionModes={ctx.harnessPermissionModes} onChange={(harnesses) => ctx.setConfig({ ...ctx.config, harnesses })} />
       ) : null,
   },
   {

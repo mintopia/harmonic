@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  GLOBAL_RAIL_GROUPS,
   GLOBAL_RAIL_VIEWS,
+  GLOBAL_VIEW_LABELS,
   RAIL_COLLAPSED_KEY,
+  WORKSPACE_RAIL_GROUPS,
   WORKSPACE_RAIL_VIEWS,
   VIEW_LABELS,
   VIEWS,
@@ -77,5 +80,35 @@ describe('scope rails', () => {
     expect(isWorkspaceScopedView('stats')).toBe(false);
     expect(isWorkspaceScopedView('api')).toBe(false);
     expect(isWorkspaceScopedView('settings')).toBe(false);
+  });
+});
+
+describe('rail groups drive the divider structure', () => {
+  const groupViews = (groups: typeof GLOBAL_RAIL_GROUPS) => groups.map((g) => g.views);
+
+  it('splits the workspace rail into three divided groups in display order', () => {
+    expect(groupViews(WORKSPACE_RAIL_GROUPS)).toEqual([
+      ['board', 'conversations', 'table', 'files'],
+      ['activity', 'graph', 'timeline', 'stats'],
+      ['operations', 'workspace'],
+    ]);
+  });
+
+  it('splits the global rail into three divided groups in display order', () => {
+    expect(groupViews(GLOBAL_RAIL_GROUPS)).toEqual([
+      ['board', 'table'],
+      ['activity', 'timeline', 'stats'],
+      ['operations', 'api', 'settings'],
+    ]);
+  });
+
+  it('every grouped view stays within its scope validation set', () => {
+    for (const v of WORKSPACE_RAIL_GROUPS.flatMap((g) => g.views)) expect(WORKSPACE_RAIL_VIEWS).toContain(v);
+    for (const v of GLOBAL_RAIL_GROUPS.flatMap((g) => g.views)) expect(GLOBAL_RAIL_VIEWS).toContain(v);
+  });
+
+  it('labels the global board as Dashboard and statistics fully', () => {
+    expect(GLOBAL_VIEW_LABELS.board).toBe('Dashboard');
+    expect(VIEW_LABELS.stats).toBe('Statistics');
   });
 });

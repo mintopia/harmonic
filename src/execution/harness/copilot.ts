@@ -2,10 +2,16 @@ import { DatabaseSync } from 'node:sqlite';
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { logger } from '../../logger.js';
 import { dominantModel, foldModels, usageFromModels, type ParsedSession, type ProcessNode, type ProcessStatus } from '../usage.js';
-import type { HarnessAdapter, ModelUsage } from './adapter.js';
+import { resolveUnattendedPermissionMode, type HarnessAdapter, type ModelUsage } from './adapter.js';
 
 const num = (v: unknown): number => (typeof v === 'number' ? v : 0);
+
+const COPILOT_AGENT_MODE = 'https://agentclientprotocol.com/protocol/session-modes#agent';
+const COPILOT_PLAN_MODE = 'https://agentclientprotocol.com/protocol/session-modes#plan';
+const COPILOT_AUTOPILOT_MODE = 'https://agentclientprotocol.com/protocol/session-modes#autopilot';
+let reportedPermissionModes = false;
 
 /**
  * Copilot's Usage lives in its native store `<home>/session-store.db`: the
@@ -118,7 +124,24 @@ export const copilotAdapter: HarnessAdapter = {
   // falsifies session/new's reported currentModelId without changing the
   // session. The CLI also updates itself mid-run unless told not to.
   spawnEnv: () => ({ COPILOT_AUTO_UPDATE: 'false' }),
-  unattendedPermissionMode: (available) => ['auto', 'bypassPermissions'].find((mode) => available.includes(mode)),
+  permissionModes: {
+    [COPILOT_PLAN_MODE]: 'Plan',
+    [COPILOT_AGENT_MODE]: 'Agent',
+    [COPILOT_AUTOPILOT_MODE]: 'Autopilot',
+  },
+  defaultPermissionMode: COPILOT_AGENT_MODE,
+  unattendedPermissionMode: (available, configured) => {
+    if (!reportedPermissionModes) {
+      reportedPermissionModes = true;
+      logger.info('copilot: advertised ACP permission modes', { modes: available.join(',') || 'none' });
+    }
+    return resolveUnattendedPermissionMode({
+      available,
+      configured,
+      permissionModes: copilotAdapter.permissionModes ?? {},
+      defaultPermissionMode: copilotAdapter.defaultPermissionMode,
+    });
+  },
   requiresUnattendedPermissionMode: true,
 
   // Sent for every run, 'auto' included: an unpinned Copilot ACP session

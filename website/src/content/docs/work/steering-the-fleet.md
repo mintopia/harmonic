@@ -33,7 +33,9 @@ what the fleet has been doing. It lays every attempt each harness has run
 onto one clock, so you can see what overlapped, what took a while, and when
 it happened. Scrub the playhead back to any moment to read the fleet's state
 then, or open an attempt to step through its own run. Choose a 24-hour or
-7-day window.
+7-day window. Each unattended Attempt also records its effective permission
+mode here. If a requested mode was unavailable, the timeline shows the
+requested-to-effective fallback rather than hiding the change.
 
 ## When a ticket needs you
 

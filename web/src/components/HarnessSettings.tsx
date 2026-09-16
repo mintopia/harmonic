@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { AppConfig, HarnessConfig, ModelCatalogEntry } from '../types';
+import type { AppConfig, ConfigLayers, HarnessConfig, ModelCatalogEntry } from '../types';
 import { btnGhost, btnQuiet, field, selectField, tableHead, touchTarget, touchTargetInline } from '../ui';
 import { FieldError, fieldLabel } from './SettingsSection';
 import { Icon } from './Icon';
@@ -167,17 +167,20 @@ function HarnessCard({
   harness,
   baseline,
   fieldErrors,
+  permissionModes,
   onChange,
 }: {
   id: string;
   harness: HarnessConfig;
   baseline: HarnessConfig;
   fieldErrors: Record<string, string>;
+  permissionModes: ConfigLayers['harnessPermissionModes'];
   onChange: (harness: HarnessConfig) => void;
 }) {
   const set = <K extends keyof HarnessConfig>(key: K, value: HarnessConfig[K]) => onChange({ ...harness, [key]: value });
   const prefix = `harnesses.${id}`;
   const hasErrors = Object.keys(fieldErrors).some((k) => k.startsWith(`${prefix}.`));
+  const permissionMode = permissionModes[id];
 
   return (
     <details className="group" open={hasErrors || undefined}>
@@ -258,6 +261,22 @@ function HarnessCard({
             <input id={`harness-${id}-cache-warm-seconds`} type="number" min={1} className={field} value={harness.cacheWarmSeconds} onChange={(e) => set('cacheWarmSeconds', Number(e.target.value))} />
             <FieldError message={fieldErrors[`${prefix}.cacheWarmSeconds`]} />
           </div>
+          {permissionMode && (
+            <div>
+              <label className={fieldLabel} htmlFor={`harness-${id}-permission-mode`}>Permission mode</label>
+              <select
+                id={`harness-${id}-permission-mode`}
+                className={`${selectField} w-full`}
+                value={harness.permissionMode ?? permissionMode.defaultMode}
+                onChange={(e) => set('permissionMode', e.target.value)}
+              >
+                {Object.entries(permissionMode.modes).map(([value, label]) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
+              <FieldError message={fieldErrors[`${prefix}.permissionMode`]} />
+            </div>
+          )}
         </div>
       </div>
     </details>
@@ -268,11 +287,13 @@ export function HarnessesSection({
   config,
   baseline,
   fieldErrors,
+  permissionModes,
   onChange,
 }: {
   config: AppConfig;
   baseline: AppConfig;
   fieldErrors: Record<string, string>;
+  permissionModes: ConfigLayers['harnessPermissionModes'];
   onChange: (harnesses: AppConfig['harnesses']) => void;
 }) {
   return (
@@ -284,6 +305,7 @@ export function HarnessesSection({
           harness={harness}
           baseline={baseline.harnesses[id] ?? harness}
           fieldErrors={fieldErrors}
+          permissionModes={permissionModes}
           onChange={(next) => onChange({ ...config.harnesses, [id]: next })}
         />
       ))}

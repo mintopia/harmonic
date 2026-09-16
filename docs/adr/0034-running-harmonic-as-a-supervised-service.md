@@ -91,8 +91,11 @@ relauncher stays exactly as ADR-0030 defined it.
 When a systemd service is installed, `harmonic start`/`stop`/`restart` delegate
 to `systemctl [--user] … harmonic` and `status` reports the unit's state — one
 mental model whether the operator types the CLI verb or `systemctl`. Under
-init.d the verbs stay **direct** (the init.d script calls them; delegating would
-recurse). With no service installed they behave exactly as before.
+init.d the verbs delegate the same way, to `service harmonic …`, so a supervised
+instance is always driven through its supervisor. The init.d script's own
+invocation of the daemon is marked with `HARMONIC_INITD_SERVICE`, which the CLI
+reads to run the verb directly and avoid recursing back into `service`. With no
+service installed the verbs behave exactly as before.
 
 `harmonic uninstall` stops the service, deregisters it (`systemctl disable` +
 `daemon-reload`, or `update-rc.d -f harmonic remove`), and removes the unit or

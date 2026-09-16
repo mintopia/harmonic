@@ -45,6 +45,14 @@ not-yet-torn-down machinery is marked `legacy until ADR-1 epic`.
 | 0025 | [The OpenCode harness and dynamic harness capabilities](0025-opencode-harness-and-dynamic-capabilities.md) |
 | 0026 | [Activity is strictly a read-only agent glance](0026-activity-strictly-read-only-agent-glance.md) |
 | 0027 | [Pause and resume: an operator execution freeze and one unified warm/cold resume](0027-pause-and-resume.md) |
+| 0028 | [Epic-as-workable and staged Verification](0028-epic-as-workable-and-staged-verification.md) |
+| 0029 | [Conversations as a first-class view with rich transcript rendering](0029-conversations-first-class-view-and-rich-transcript.md) |
+| 0030 | [In-place self-upgrade for packaged instances](0030-in-place-self-upgrade.md) |
+| 0031 | [Reorderable, named verifier lists with @dnd-kit](0031-reorderable-verifier-lists-with-dnd-kit.md) |
+| 0032 | [Files: in-app file browser, editor, and basic git](0032-files-in-app-browser-editor-and-basic-git.md) |
+| 0033 | [Global scope and path-based routing](0033-global-scope-and-path-routing.md) |
+| 0034 | [Running Harmonic as a supervised service](0034-running-harmonic-as-a-supervised-service.md) |
+| 0035 | [Slash-command autocomplete in the Conversation Composer](0035-slash-command-autocomplete-in-the-composer.md) |
 
 ## Where every pre-reset ADR went
 

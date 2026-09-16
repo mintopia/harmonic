@@ -94,6 +94,7 @@ function fieldIdsForSurface(surface: Surface): string[] {
           baseline: config,
           setConfig: () => {},
           errors: {},
+          harnessPermissionModes: {},
           channels: { list: [], onToggleEvent: () => {}, onCreated: () => {}, onDeleted: () => {} },
         }
       : {

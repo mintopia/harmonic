@@ -32,7 +32,6 @@ import { UpdateBanner } from './components/UpdateBanner';
 import { NewWorkspaceForm, WorkspaceSwitcher } from './components/WorkspaceSwitcher';
 import { WorkspaceSettingsPage } from './components/WorkspaceSettingsPage';
 import { EmptyState } from './components/EmptyState';
-import { HelpModal } from './components/HelpModal';
 import { isWorkspaceScopedView, loadRailCollapsed, storeRailCollapsed } from './rail-model';
 import type { View } from './rail-model';
 import { NO_SELECTION, parseRoute, scopeSwitchRoute, serializeRoute, storeLastRoute, type Route, type TableFilters } from './router-model';
@@ -193,7 +192,6 @@ export function App() {
   );
   const [creatingWorkspace, setCreatingWorkspace] = useState(false);
   const [editing, setEditing] = useState<Task | 'new' | null>(null);
-  const [helpOpen, setHelpOpen] = useState(false);
   const [fetchedTask, setFetchedTask] = useState<Task | null>(null);
   const [epics, setEpics] = useState<Epic[]>([]);
   const [route, navigate] = useRoute();
@@ -700,7 +698,6 @@ export function App() {
             onRefreshTracker={refreshTracker}
             onThemeCycle={cycleTheme}
             onLogout={() => fetch('/api/auth/logout', { method: 'POST' }).then(() => setAuthed(false))}
-            onHelpClick={() => setHelpOpen(true)}
           />
         </div>
       </aside>
@@ -728,7 +725,6 @@ export function App() {
           onThemeCycle={cycleTheme}
           onLogout={() => fetch('/api/auth/logout', { method: 'POST' }).then(() => setAuthed(false))}
           onNewTask={() => setEditing('new')}
-          onHelpClick={() => setHelpOpen(true)}
         />
         <UpdateBanner
           update={update}
@@ -737,7 +733,6 @@ export function App() {
           onCancel={() => changeUpdate(api.cancelUpdate)}
           onDismiss={() => changeUpdate(api.dismissUpdate)}
         />
-        {helpOpen && <HelpModal onClose={() => setHelpOpen(false)} />}
 
         <Toaster />
 

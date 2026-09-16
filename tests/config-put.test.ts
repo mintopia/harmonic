@@ -30,6 +30,17 @@ describe('PUT /api/config', () => {
     expect(layers.status).toBe(200);
     expect(layers.body.baseline.maxAttempts).toBe(2);
     expect(layers.body.global.maxAttempts).toBe(7);
+    expect(layers.body.harnessPermissionModes).toEqual({
+      claude: { modes: { auto: 'Auto', bypassPermissions: 'Bypass Permissions' }, defaultMode: 'auto' },
+      copilot: {
+        modes: {
+          'https://agentclientprotocol.com/protocol/session-modes#plan': 'Plan',
+          'https://agentclientprotocol.com/protocol/session-modes#agent': 'Agent',
+          'https://agentclientprotocol.com/protocol/session-modes#autopilot': 'Autopilot',
+        },
+        defaultMode: 'https://agentclientprotocol.com/protocol/session-modes#agent',
+      },
+    });
   });
 
   it('reverts every global override to the distributed baseline', async () => {
