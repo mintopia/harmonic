@@ -756,6 +756,7 @@ export interface HarnessConfig {
   models: ModelCatalogEntry[];
   defaultModel: string;
   cacheWarmSeconds: number;
+  permissionMode?: string;
   sessionLogDir?: string;
 }
 
@@ -964,4 +965,5 @@ export interface AppConfig {
 export interface ConfigLayers {
   baseline: AppConfig;
   global: AppConfig;
+  harnessPermissionModes: Record<string, { modes: Record<string, string>; defaultMode: string }>;
 }

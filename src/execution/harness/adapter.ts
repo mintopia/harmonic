@@ -110,6 +110,29 @@ export interface HarnessCapabilities {
   selectModel(providerId: string): Promise<HarnessModel[]>;
 }
 
+/**
+ * Resolve an unattended ACP permission mode without selecting a stalling
+ * ask-mode. An operator's configured mode wins when advertised; otherwise the
+ * adapter default wins when advertised; otherwise the last declared mode wins.
+ * Declare selectable modes from least to most permissive.
+ */
+export function resolveUnattendedPermissionMode({
+  available,
+  configured,
+  permissionModes,
+  defaultPermissionMode,
+}: {
+  available: readonly string[];
+  configured?: string | undefined;
+  permissionModes: Readonly<Record<string, string>>;
+  defaultPermissionMode?: string | undefined;
+}): string | undefined {
+  const advertised = Object.keys(permissionModes);
+  return [configured, defaultPermissionMode, ...advertised.reverse()].find(
+    (mode): mode is string => mode !== undefined && available.includes(mode),
+  );
+}
+
 /** Per-harness knowledge, keyed by HarnessId. */
 export interface HarnessAdapter {
   /** Prefix used when this harness invokes one of Harmonic's prompt skills. */
@@ -134,8 +157,16 @@ export interface HarnessAdapter {
    * env-var mechanism (HARMONIC_MCP_URL / HARMONIC_API_KEY).
    */
   mcpServers(input: { url: string; token: string }): unknown[];
-  /** Selects this harness's unattended ACP permission mode, if it advertises one. */
-  unattendedPermissionMode(available: readonly string[]): string | undefined;
+  /** ACP mode ids and operator labels, declared from least to most permissive. */
+  permissionModes?: Readonly<Record<string, string>>;
+  /** The mode selected when the operator has not configured one. */
+  defaultPermissionMode?: string;
+  /**
+   * Select an unattended ACP permission mode. The configured mode wins only
+   * when ACP advertises it; otherwise the adapter default wins, then the most
+   * permissive declared mode. Never select an ask-mode.
+   */
+  unattendedPermissionMode(available: readonly string[], configured?: string): string | undefined;
   /** Whether a missing unattended mode must stop an autonomous turn. */
   requiresUnattendedPermissionMode: boolean;
   /**

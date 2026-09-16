@@ -2508,8 +2508,33 @@ export class Runner {
     guardrails.armSpend();
     if (autoDriven) {
       const adapter = adapterFor(task.harness);
-      const mode = adapter.unattendedPermissionMode(driver.availableModes);
+      const requested = harness.permissionMode;
+      const advertised = [...driver.availableModes];
+      const mode = adapter.unattendedPermissionMode(advertised, requested);
+      const fallbackReason = requested !== undefined && requested !== mode
+        ? 'configured-mode-not-advertised'
+        : requested === undefined && adapter.defaultPermissionMode !== undefined && adapter.defaultPermissionMode !== mode
+          ? 'default-mode-not-advertised'
+          : undefined;
+      logger.info('Unattended permission mode resolved', {
+        taskId: task.id,
+        attemptId: run.id,
+        requested: requested ?? 'none',
+        advertised: advertised.join(',') || 'none',
+        chosen: mode ?? 'none',
+        fallbackReason: fallbackReason ?? 'none',
+      });
+      const recordMode = (applied: string | null) =>
+        record('lifecycle', {
+          event: 'mode_set',
+          mode: applied,
+          requested: requested ?? null,
+          advertised,
+          applied,
+          fallbackReason: fallbackReason ?? null,
+        });
       if (!mode) {
+        recordMode(null);
         if (adapter.requiresUnattendedPermissionMode) {
           throw new Error(
             `harness '${task.harness}' offers no unattended permission mode ` +
@@ -2518,7 +2543,7 @@ export class Runner {
         }
       } else {
         await driver.setMode(mode);
-        record('lifecycle', { event: 'mode_set', mode });
+        recordMode(mode);
         if (turn.sessionRowId !== undefined) {
           try {
             await this.sessionStore.setPermissionMode(turn.sessionRowId, mode, Date.now());

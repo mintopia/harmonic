@@ -50,6 +50,8 @@ export const harnessConfigSchema = z.object({
   }).meta({ example: [{ id: 'sonnet-5' }, { id: 'opus-4.8' }] }),
   defaultModel: z.string().meta({ example: 'sonnet-5' }),
   cacheWarmSeconds: z.number().int().positive().meta({ example: 300 }),
+  /** Unattended ACP permission mode. Omit to use the Harness Adapter default. */
+  permissionMode: z.string().optional().meta({ example: 'bypassPermissions' }),
   /**
    * Root of the harness's native session logs, for the per-model usage
    * fallback (Claude Code: ~/.claude/projects). Empty string disables.

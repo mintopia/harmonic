@@ -53,9 +53,35 @@ describe('harness-adapter', () => {
     it('OpenCode relies on its ACP permission defaults and generic ACP usage collection', () => {
       const adapter = adapterFor('opencode');
       expect(adapter).toMatchObject({ commandPrefix: '/', transcript: null, requiresUnattendedPermissionMode: false });
+      expect(adapter.permissionModes).toBeUndefined();
       expect(adapter.usage).not.toBeNull();
       expect(adapter.unattendedPermissionMode([])).toBeUndefined();
       expect(adapter.spawnEnv(spawnInput('meta/muse-spark-1.3-contributor'))).toEqual({});
+    });
+
+    it('resolves Claude unattended modes without ever falling back to ask', () => {
+      const adapter = adapterFor('claude');
+      expect(adapter.permissionModes).toEqual({ auto: 'Auto', bypassPermissions: 'Bypass Permissions' });
+      expect(adapter.defaultPermissionMode).toBe('auto');
+      expect(adapter.unattendedPermissionMode(['ask', 'auto', 'bypassPermissions'], 'bypassPermissions')).toBe('bypassPermissions');
+      expect(adapter.unattendedPermissionMode(['ask', 'auto', 'bypassPermissions'], 'unsupported')).toBe('auto');
+      expect(adapter.unattendedPermissionMode(['ask', 'bypassPermissions'])).toBe('bypassPermissions');
+      expect(adapter.unattendedPermissionMode(['ask'])).toBeUndefined();
+      expect(adapterFor('codex').permissionModes).toBeUndefined();
+    });
+
+    it('resolves Copilot Agent and Autopilot modes advertised over ACP', () => {
+      const agent = 'https://agentclientprotocol.com/protocol/session-modes#agent';
+      const plan = 'https://agentclientprotocol.com/protocol/session-modes#plan';
+      const autopilot = 'https://agentclientprotocol.com/protocol/session-modes#autopilot';
+      const adapter = adapterFor('copilot');
+
+      expect(adapter.permissionModes).toEqual({ [agent]: 'Agent', [plan]: 'Plan', [autopilot]: 'Autopilot' });
+      expect(adapter.defaultPermissionMode).toBe(agent);
+      expect(adapter.unattendedPermissionMode([agent, plan, autopilot], autopilot)).toBe(autopilot);
+      expect(adapter.unattendedPermissionMode([agent, plan, autopilot], 'unsupported')).toBe(agent);
+      expect(adapter.unattendedPermissionMode([plan, autopilot])).toBe(autopilot);
+      expect(adapter.unattendedPermissionMode([plan])).toBe(plan);
     });
 
     it('OpenCode discovers credentialed providers and their cached model metadata without ACP', async () => {

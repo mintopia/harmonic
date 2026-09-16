@@ -138,7 +138,7 @@ export function createAcpCriticDrive(): CriticHarnessDrive {
         }
         if (initialize && sessionId !== req.continueSessionId) await req.onSessionCreated?.(sessionId, initialize);
 
-        const mode = adapterFor(req.harnessId).unattendedPermissionMode(driver.availableModes);
+        const mode = adapterFor(req.harnessId).unattendedPermissionMode(driver.availableModes, req.harness.permissionMode);
         if (mode) {
           await Promise.race([driver.setMode(mode), timeout]);
         }
