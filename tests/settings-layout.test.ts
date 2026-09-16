@@ -22,6 +22,7 @@ describe('settings layout (issue #554)', () => {
           baseline: config,
           setConfig: () => {},
           errors: {},
+          harnessPermissionModes: {},
           channels: { list: [], onToggleEvent: () => {}, onCreated: () => {}, onDeleted: () => {} },
         },
         dirty: false,

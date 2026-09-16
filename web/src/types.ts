@@ -965,4 +965,5 @@ export interface AppConfig {
 export interface ConfigLayers {
   baseline: AppConfig;
   global: AppConfig;
+  harnessPermissionModes: Record<string, { modes: Record<string, string>; defaultMode: string }>;
 }

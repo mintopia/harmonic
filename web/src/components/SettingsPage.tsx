@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
-import type { AppConfig, Channel } from '../types';
+import type { AppConfig, Channel, ConfigLayers } from '../types';
 import { btnGhost } from '../ui';
 import { changedChannelEvents, channelsDirty, toggleChannelEvent } from '../channels-save-model';
 import { parseFieldErrors } from './SettingsSection';
@@ -17,6 +17,7 @@ import { SETTING_TABS, type SettingTab } from '../../../src/domain/settings-regi
 export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void }) {
   const [pristine, setPristine] = useState<AppConfig | null>(null);
   const [baseline, setBaseline] = useState<AppConfig | null>(null);
+  const [harnessPermissionModes, setHarnessPermissionModes] = useState<ConfigLayers['harnessPermissionModes']>({});
   const [local, setLocal] = useState<AppConfig | null>(null);
   const [pristineChannels, setPristineChannels] = useState<Channel[]>([]);
   const [localChannels, setLocalChannels] = useState<Channel[]>([]);
@@ -26,10 +27,11 @@ export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void
   const [tab, setTab] = useState<SettingTab>('general');
 
   useEffect(() => {
-    api.configLayers().then(({ baseline, global }) => {
+    api.configLayers().then(({ baseline, global, harnessPermissionModes }) => {
       setBaseline(baseline);
       setPristine(global);
       setLocal(global);
+      setHarnessPermissionModes(harnessPermissionModes);
     });
     api
       .channels()
@@ -97,6 +99,7 @@ export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void
     baseline,
     setConfig: setLocal,
     errors: fieldErrors,
+    harnessPermissionModes,
     channels: {
       list: localChannels,
       onToggleEvent: (id, event) => setLocalChannels((cs) => toggleChannelEvent(cs, id, event)),
