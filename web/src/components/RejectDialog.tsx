@@ -6,13 +6,6 @@ import { Modal } from './Modal';
 import { btnGhost, btnPrimary, btnQuietDestructive, field, panelTitle, labelType } from '../ui';
 import { taskLabel } from '../id-format.js';
 
-/** Reject with guidance: the guidance becomes the
- * next Attempt's feedback and the attempt budget resets, but the ticket only
- * *requeues* to `ready` — the Auto-Runner starts the next Attempt when capacity
- * frees. Guidance is required — a reject without it teaches nothing. When the
- * ticket still has a warm Session to reuse, the operator is offered "start now"
- * (a force-start that bypasses the capacity ceiling) so perishable Session
- * warmth is not lost waiting in the queue. */
 export function RejectDialog({
   taskId,
   onClose,
@@ -30,7 +23,6 @@ export function RejectDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [warm, setWarm] = useState(false);
-  const trimmed = guidance.trim();
 
   useLiveEffect((live) => {
     loadPreview()
@@ -43,15 +35,16 @@ export function RejectDialog({
   }, [loadPreview]);
 
   const submit = async (start: boolean) => {
-    if (!trimmed) return;
     setBusy(true);
     setError(null);
     try {
-      await reject(trimmed, start);
+      await reject(guidance.trim(), start);
       toastSuccess(
         start
           ? `${taskLabel(taskId)} rejected — reusing the warm session, starting now`
-          : `${taskLabel(taskId)} rejected — guidance sent to the next attempt`,
+          : guidance.trim()
+            ? `${taskLabel(taskId)} rejected — guidance sent to the next attempt`
+            : `${taskLabel(taskId)} rejected`,
       );
       onDone();
     } catch (e) {
@@ -63,14 +56,14 @@ export function RejectDialog({
   return (
     <Modal label={`Reject ${taskLabel(taskId)}`} onClose={onClose} className="max-w-md">
       <div className="p-5">
-        <h2 className={`${panelTitle} mb-1`}>Reject {taskLabel(taskId)} with guidance</h2>
+        <h2 className={`${panelTitle} mb-1`}>Reject {taskLabel(taskId)}</h2>
         <p className="mb-4 text-muted">
-          Your guidance is recorded on the escalated attempt and given to the next one; the attempt budget starts over
-          and the ticket returns to the queue on the same branch. It starts again when there is capacity
+          Sends the ticket back to the queue on the same branch; the attempt budget starts over. Optional guidance is
+          recorded on the escalated attempt and given to the next one
           {warm ? ', or start it now to reuse the still-warm session.' : '.'}
         </p>
         <label className={`${labelType} mb-1 block text-muted`} htmlFor="reject-guidance">
-          Guidance
+          Guidance (optional)
         </label>
         <textarea
           id="reject-guidance"
@@ -89,19 +82,19 @@ export function RejectDialog({
           <button
             type="button"
             onClick={() => submit(false)}
-            disabled={busy || !trimmed}
+            disabled={busy}
             className={`${btnQuietDestructive} px-3 py-1.5`}
           >
-            Reject with guidance
+            Reject
           </button>
           {warm && (
             <button
               type="button"
               onClick={() => submit(true)}
-              disabled={busy || !trimmed}
+              disabled={busy}
               className={`${btnPrimary} px-3 py-1.5`}
             >
-              Reject &amp; start now
+              Reject and Start Now
             </button>
           )}
         </div>

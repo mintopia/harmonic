@@ -32,12 +32,9 @@ export interface EscalationHooks {
  * verifies the ticket's candidate — a pass merges it as-is and settles the
  * Attempt under `operator-accept`; a non-`proceed` verify re-enters the Attempt
  * loop with the verifier's reason as feedback, like Reject; `{ force: true }`
- * skips verification. Reject with guidance records the guidance as feedback,
- * resets the attempt budget, and requeues the ticket to `ready`. Requeue is the
- * no-guidance sibling — for when the escalation cause was fixed outside Harmonic
- * (a missing blocker link, say): it returns the ticket to `ready` recording no
- * feedback. Close cancels the ticket and cleans up. Nothing else moves a ticket
- * out of `escalated`.
+ * skips verification. Reject optionally records guidance as feedback, resets the
+ * attempt budget, and requeues the ticket to `ready`. Close cancels the ticket
+ * and cleans up. Nothing else moves a ticket out of `escalated`.
  */
 export class EscalationService {
   constructor(
@@ -104,21 +101,9 @@ export class EscalationService {
 
   async reject(taskId: number, guidance: string, startNow = false): Promise<TaskRow> {
     const trimmed = guidance.trim();
-    if (!trimmed) throw new DomainError('validation', 'guidance is required to reject an escalated task');
     const { task } = await this.escalated(taskId);
     await this.hooks.resume(task, trimmed, startNow);
     return await this.taskService.get(taskId);
-  }
-
-  /**
-   * Requeue an escalated ticket with no guidance: return it to `ready` to be
-   * picked up again when Auto-Runner capacity frees, recording no feedback. For
-   * when the escalation cause was resolved outside Harmonic and there is nothing
-   * to tell the next attempt differently.
-   */
-  async requeue(taskId: number): Promise<TaskRow> {
-    await this.escalated(taskId);
-    return await this.taskService.requeue(taskId);
   }
 
   async close(taskId: number): Promise<TaskRow> {

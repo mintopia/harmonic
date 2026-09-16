@@ -587,23 +587,23 @@ export class Runner {
     }
   }
 
-  /**
-   * Reject with guidance: the operator's guidance becomes the feedback of the
-   * escalated Attempt and of the next one, the attempt budget restarts, and the
-   * loop resumes on the same ticket. The next Attempt reuses the Task's existing
-   * worktree and branch.
-   */
+  /** Resume an escalated ticket, optionally recording guidance for its next Attempt. */
   async resumeWithGuidance(task: TaskRow, guidance: string, startNow = false): Promise<void> {
+    const trimmed = guidance.trim();
+    if (!trimmed && !startNow) {
+      await this.taskService.requeue(task.id);
+      return;
+    }
     const run = (await this.attempts.listForTask(task.id)).at(-1);
     const escalated = (await this.attempts.listForTask(task.id)).findLast((attempt) => attempt.state === 'escalated');
-    if (escalated) await this.attempts.setFeedback(escalated.id, guidance);
+    if (escalated && trimmed) await this.attempts.setFeedback(escalated.id, trimmed);
     let choice: 'full' | 'condensed' | undefined;
     let continuation: DeterministicContinuation | undefined;
     if (run) {
       continuation = await this.decideContinuation(task, run, await this.getWorkspace?.(task.workspaceId));
       choice = continuation.path === 'continued-session' ? 'full' : 'condensed';
     }
-    await this.taskService.requeue(task.id, guidance, choice);
+    await this.taskService.requeue(task.id, trimmed, choice);
     if (run) this.pendingManualResume.set(task.id, run);
     if (startNow) {
       if (continuation) this.pendingContinuation.set(task.id, continuation);

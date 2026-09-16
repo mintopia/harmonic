@@ -140,27 +140,24 @@ describe('escalation', () => {
       );
     });
 
-    it('Reject without guidance is a validation error and changes nothing', async () => {
+    it('Reject without guidance returns the ticket to ready with no feedback', async () => {
       const taskId = await runToEscalated();
+      const branch = (await server.api('GET', `/api/tasks/${taskId}/attempts/current`)).body.branch;
+      const feedbackBefore = (await timeline(taskId)).find((attempt) => attempt.number === 1)!.feedback;
       const rejected = await server.api('POST', `/api/tasks/${taskId}/reject`, { guidance: '   ' });
-      expect(rejected.status).toBe(400);
-      expect((await server.api('GET', `/api/tasks/${taskId}`)).body.state).toBe('escalated');
-    });
-
-    it('Requeue returns the ticket to ready with no operator guidance recorded and no feedback appended', async () => {
-      const taskId = await runToEscalated();
-      const feedbackBefore = (await timeline(taskId)).find((a) => a.number === 1)!.feedback;
-      const requeued = await server.api('POST', `/api/tasks/${taskId}/requeue`, {});
-      expect(requeued.status).toBe(200);
-      expect(requeued.body).toMatchObject({ state: 'ready', escalationReason: null });
+      expect(rejected.status).toBe(200);
+      expect(rejected.body).toMatchObject({ state: 'ready', escalationReason: null, feedback: null });
       await new Promise((r) => setTimeout(r, 50));
       expect((await server.api('GET', `/api/tasks/${taskId}`)).body.state).toBe('ready');
       const runs = (await server.api('GET', `/api/tasks/${taskId}/attempts`)).body.attempts;
       expect(runs).toHaveLength(1);
-      // No operator guidance is folded into the prompt, and the escalated attempt's
-      // own feedback is left exactly as it was — requeue teaches the next attempt nothing.
+      expect(runs[0]!.branch).toBe(branch);
       expect(runs[0].prompt).not.toContain('Feedback from the previous attempt');
-      expect((await timeline(taskId)).find((a) => a.number === 1)!.feedback).toBe(feedbackBefore);
+      expect((await timeline(taskId)).find((attempt) => attempt.number === 1)!.feedback).toBe(feedbackBefore);
+
+      expect((await server.api('POST', `/api/tasks/${taskId}/run`)).status).toBe(201);
+      await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'escalated');
+      expect(await timeline(taskId)).toHaveLength(2);
     });
 
     it('Close cancels the ticket and clears the escalation reason', async () => {
@@ -176,7 +173,7 @@ describe('escalation', () => {
       const created = await server.api('POST', '/api/tasks', { prompt: 'p' });
       expect((await server.api('POST', `/api/tasks/${created.body.id}/accept`)).status).toBe(409);
       expect((await server.api('POST', `/api/tasks/${created.body.id}/reject`, { guidance: 'x' })).status).toBe(409);
-      expect((await server.api('POST', `/api/tasks/${created.body.id}/requeue`, {})).status).toBe(409);
+      expect((await server.api('POST', `/api/tasks/${created.body.id}/requeue`, {})).status).toBe(404);
       expect((await server.api('POST', `/api/tasks/${created.body.id}/close`)).status).toBe(409);
       expect((await server.api('POST', `/api/tasks/${created.body.id}/unescalate`)).status).toBe(404);
       expect((await server.api('POST', `/api/tasks/${created.body.id}/adopt-review`)).status).toBe(404);
@@ -281,7 +278,6 @@ describe('escalation-service', () => {
       for (const call of [
         () => service.accept(ready.id),
         () => service.reject(ready.id, 'guidance'),
-        () => service.requeue(ready.id),
         () => service.close(ready.id),
       ]) {
         const err = await call().catch((e: unknown) => e);
@@ -407,23 +403,11 @@ describe('escalation-service', () => {
         expect(resumed).toEqual([{ taskId: task.id, guidance: 'use the shared limiter', startNow: true }]);
       });
 
-      it('requires guidance (validation), and does not resume without it', async () => {
+      it('hands empty guidance to the loop', async () => {
         const { task } = await escalated();
-        const err = await service.reject(task.id, '   ').catch((e: unknown) => e);
-        expect(err).toBeInstanceOf(DomainError);
-        expect((err as DomainError).code).toBe('validation');
-        expect(resumed).toEqual([]);
+        await service.reject(task.id, '   ');
+        expect(resumed).toEqual([{ taskId: task.id, guidance: '', startNow: false }]);
         expect((await tasks.get(task.id)).state).toBe('escalated');
-      });
-    });
-
-    describe('requeue', () => {
-      it('returns the ticket to ready with no feedback, no resume, and no cleanup', async () => {
-        const { task } = await escalated();
-        const requeued = await service.requeue(task.id);
-        expect(requeued).toMatchObject({ state: 'ready', escalationReason: null, mergeStatus: null, feedback: null });
-        expect(resumed).toEqual([]);
-        expect(cleaned).toEqual([]);
       });
     });
 
@@ -649,11 +633,11 @@ describe('escalation-routes', () => {
         expect(runs[0].branch).toBe(branch);
       });
 
-      it('400s on empty guidance and leaves the ticket escalated', async () => {
+      it('accepts empty guidance and returns the ticket to ready', async () => {
         const { taskId } = await escalateViaCriticFail();
         const res = await server.api('POST', `/api/tasks/${taskId}/reject`, { guidance: '' });
-        expect(res.status).toBe(400);
-        expect((await server.api('GET', `/api/tasks/${taskId}`)).body.state).toBe('escalated');
+        expect(res.status).toBe(200);
+        expect((await server.api('GET', `/api/tasks/${taskId}`)).body).toMatchObject({ state: 'ready', feedback: null });
       });
     });
 

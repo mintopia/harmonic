@@ -708,9 +708,9 @@ export class TaskService {
   }
 
   /**
-   * Resume an escalated ticket's Attempt loop: back to ready with the guidance
-   * recorded as feedback for the next Attempt. Native Tasks bake it into the
-   * prompt; a mirrored Task's prompt is re-derived from its ticket each poll,
+   * Resume an escalated ticket's Attempt loop: back to ready with optional
+   * guidance recorded as feedback for the next Attempt. Native Tasks bake it
+   * into the prompt; a mirrored Task's prompt is re-derived from its ticket,
    * so its feedback rides the column.
    */
   async requeue(id: number, feedback?: string, continuation?: 'full' | 'condensed'): Promise<TaskRow> {

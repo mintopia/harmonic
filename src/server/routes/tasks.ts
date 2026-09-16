@@ -30,10 +30,10 @@ import { listResponse, paginate, paginationQuerySchema } from '../pagination.js'
 import { diffFilesResponseSchema } from './diff.js';
 import { attemptDiffFiles, attemptDiffStat } from '../../execution/worktree-diff.js';
 
-/** The operator's guidance on an escalated ticket: becomes the next Attempt's feedback. */
+/** Optional operator guidance on an escalated ticket: becomes the next Attempt's feedback. */
 const guidanceExample = 'The limiter is per-process; it needs to be shared across workers.';
 const rejectInputSchema = z.object({
-  guidance: z.string().trim().min(1).meta({ example: guidanceExample }),
+  guidance: z.string().trim().meta({ example: guidanceExample }),
   /** Force-start the next Attempt now, bypassing Auto-Runner capacity; omitted/false requeues to `ready`. */
   start: z.boolean().optional().meta({ example: false }),
 });
@@ -719,12 +719,11 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       schema: {
         tags: ['Tasks'],
         description:
-          'Reject an escalated ticket with guidance: the guidance becomes feedback for the next Attempt and the attempt budget resets. The ticket requeues to `ready` — the Auto-Runner starts the next Attempt when capacity frees; it is not force-started here unless `start: true` (the warm-Session "start now" override, which bypasses the capacity ceiling). The escalated Attempt\'s branch is retained as evidence until its Session retires. Human-only.',
+          'Reject an escalated ticket: optional guidance becomes feedback for the next Attempt and the attempt budget resets. The ticket requeues to `ready` — the Auto-Runner starts the next Attempt when capacity frees; it is not force-started here unless `start: true` (the warm-Session "start now" override, which bypasses the capacity ceiling). The escalated Attempt\'s branch is retained as evidence until its Session retires. Human-only.',
         params: idParamsSchema,
         body: rejectInputSchema,
         response: {
           200: taskSchema.describe('The task, back in the Attempt loop.'),
-          400: errorResponse('The guidance is empty.'),
           409: errorResponse('The task is not escalated.'),
         },
       },
@@ -733,23 +732,6 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       if (req.body.start) await ctx.upgrade.assertManualLaunchAllowed();
       return withDeps(await ctx.escalation.reject(req.params.id, req.body.guidance, req.body.start ?? false));
     },
-  );
-
-  app.post(
-    '/tasks/:id/requeue',
-    {
-      schema: {
-        tags: ['Tasks'],
-        description:
-          'Requeue an escalated ticket with no guidance: return it to `ready` with no feedback recorded, to be picked up again when the Auto-Runner has capacity. For when the escalation cause was fixed outside Harmonic (a missing blocker link, say) and there is nothing to tell the next attempt. Human-only.',
-        params: idParamsSchema,
-        response: {
-          200: taskSchema.describe('The task, back in the queue as `ready`.'),
-          409: errorResponse('The task is not escalated.'),
-        },
-      },
-    },
-    async (req) => await withDeps(await ctx.escalation.requeue(req.params.id)),
   );
 
   app.post(

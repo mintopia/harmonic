@@ -108,7 +108,7 @@ export function buildMcpServer(ctx: AppContext, opts: { operator?: boolean } = {
     'queue_task',
     {
       description:
-        'Queue a Task for execution: promotes a draft to ready. An escalated Task is a human decision (Accept / Reject with guidance / Close), never re-queued from here.',
+        'Queue a Task for execution: promotes a draft to ready. An escalated Task is a human decision (Accept / Reject / Close), never re-queued from here.',
       inputSchema: { ...taskId },
     },
     wrapAsync(async ({ taskId }) => ctx.tasks.withDeps(await ctx.tasks.promote(taskId))),
