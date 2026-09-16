@@ -119,8 +119,14 @@ function lifecycleRow(payload: Record<string, unknown> | null): RowCore {
       return { label: 'Resumed prior session', detail: null, tone: 'neutral', tag: null };
     case 'session-reload-declined':
       return { label: 'Started a fresh session', detail: clip(text(payload?.reason)), tone: 'neutral', tag: null };
-    case 'mode_set':
-      return { label: 'Permission mode set', detail: text(payload?.mode), tone: 'neutral', tag: null };
+    case 'mode_set': {
+      const requested = text(payload?.requested);
+      const applied = text(payload?.applied) ?? text(payload?.mode);
+      if (text(payload?.fallbackReason) && requested && applied) {
+        return { label: 'Permission mode fallback', detail: `${requested} → ${applied}`, tone: 'awaiting', tag: null };
+      }
+      return { label: 'Permission mode set', detail: applied, tone: 'neutral', tag: null };
+    }
     case 'finished':
       return { label: 'Agent turn finished', detail: text(payload?.stopReason), tone: 'neutral', tag: null };
     case 'unresolved':
