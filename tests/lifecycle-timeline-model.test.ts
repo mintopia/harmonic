@@ -72,6 +72,18 @@ describe('lifecycleTimelineRows', () => {
     });
   });
 
+  it('renders the effective permission mode and distinguishes any requested-to-applied change', () => {
+    const rows = lifecycleTimelineRows([
+      lifecycle(10, { event: 'mode_set', requested: 'auto', applied: 'auto' }),
+      lifecycle(20, { event: 'mode_set', requested: 'bypassPermissions', applied: 'auto' }),
+    ]);
+
+    expect(rows.map((row) => [row.label, row.detail, row.tone])).toEqual([
+      ['Permission mode set', 'auto', 'neutral'],
+      ['Permission mode fallback', 'bypassPermissions → auto', 'awaiting'],
+    ]);
+  });
+
   it('weaves granular merge sub-steps into the chronology, deduping the terminal step against the high-level outcome', () => {
     const rows = lifecycleTimelineRows([
       lifecycle(10, { event: 'merge-step', step: { step: 'started', baseBranch: 'develop', taskBranch: 'task/498' } }),
