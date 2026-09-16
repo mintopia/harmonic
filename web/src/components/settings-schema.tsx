@@ -1,5 +1,5 @@
 import { Fragment, useState, type ReactNode } from 'react';
-import type { AppConfig, Channel, Workspace } from '../types';
+import type { AppConfig, Channel, ConfigLayers, Workspace } from '../types';
 import { btnGhost, field } from '../ui';
 import { Icon } from './Icon';
 import { FieldError, PromptField, fieldLabel } from './SettingsSection';
@@ -37,6 +37,7 @@ export interface GlobalRenderCtx {
   baseline: AppConfig;
   setConfig: (config: AppConfig) => void;
   errors: Record<string, string>;
+  harnessPermissionModes: ConfigLayers['harnessPermissionModes'];
   channels: {
     list: Channel[];
     onToggleEvent: (id: number, event: string) => void;
@@ -1250,7 +1251,7 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
     wide: true,
     body: (ctx) =>
       ctx.surface === 'global' ? (
-        <HarnessesSection config={ctx.config} baseline={ctx.baseline} fieldErrors={ctx.errors} onChange={(harnesses) => ctx.setConfig({ ...ctx.config, harnesses })} />
+        <HarnessesSection config={ctx.config} baseline={ctx.baseline} fieldErrors={ctx.errors} permissionModes={ctx.harnessPermissionModes} onChange={(harnesses) => ctx.setConfig({ ...ctx.config, harnesses })} />
       ) : null,
   },
   {

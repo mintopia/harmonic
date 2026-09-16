@@ -30,6 +30,10 @@ describe('PUT /api/config', () => {
     expect(layers.status).toBe(200);
     expect(layers.body.baseline.maxAttempts).toBe(2);
     expect(layers.body.global.maxAttempts).toBe(7);
+    expect(layers.body.harnessPermissionModes).toEqual({
+      claude: { modes: { auto: 'Auto', bypassPermissions: 'Bypass Permissions' }, defaultMode: 'auto' },
+      copilot: { modes: { auto: 'Auto', bypassPermissions: 'Bypass Permissions' }, defaultMode: 'auto' },
+    });
   });
 
   it('reverts every global override to the distributed baseline', async () => {
