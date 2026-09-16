@@ -282,25 +282,26 @@ async function runningToolCount(ctx: AppContext, run: TaskAttemptRow): Promise<n
 export async function activitySnapshot(ctx: AppContext, includeChats: boolean, workspaceId?: number): Promise<ApiActivityProcess[]> {
   const snapshots = new Map((await ctx.runner.activeSnapshots()).map((snapshot) => [snapshot.attemptId, snapshot.snapshot]));
   const config = ctx.settingsStore.getGlobal();
-  const running = (await ctx.attempts.listRunning()).filter((run) => workspaceId === undefined || atRestWorkspaceId(run.workspaceId) === workspaceId);
-  const runs: ApiActivityProcess[] = await Promise.all(running.map(async (run) => {
+  const runs = (await Promise.all((await ctx.attempts.listRunning()).map(async (run) => {
     if (isEpicAttempt(run)) {
-      const workspaceId = atRestWorkspaceId(run.workspaceId);
+      const attemptWorkspaceId = atRestWorkspaceId(run.workspaceId);
+      if (workspaceId !== undefined && attemptWorkspaceId !== workspaceId) return null;
       const epicRef = run.epicRef;
       if (epicRef === null) throw new DomainError('not_found', `Epic Attempt ${run.id} has no Epic ref`);
       const harness = config.defaults.harness;
       return epicAttemptProcessToApi({
         run,
-        workspaceId,
-        workspaceName: await workspaceNameOf(ctx, workspaceId),
+        workspaceId: attemptWorkspaceId,
+        workspaceName: await workspaceNameOf(ctx, attemptWorkspaceId),
         epicRef,
         harness,
         model: harnessFor(config, harness).defaultModel,
-        trackerUrl: ctx.trackerManager.urlFor(workspaceId, epicRef),
+        trackerUrl: ctx.trackerManager.urlFor(attemptWorkspaceId, epicRef),
       });
     }
     if (!isTaskAttempt(run)) throw new DomainError('not_found', `Attempt ${run.id} has no owner`);
     const task = await ctx.tasks.get(run.taskId);
+    if (workspaceId !== undefined && atRestWorkspaceId(task.workspaceId) !== workspaceId) return null;
     const snapshot = snapshots.get(run.id) ?? null;
     return attemptProcessToApi({
       run,
@@ -311,7 +312,7 @@ export async function activitySnapshot(ctx: AppContext, includeChats: boolean, w
       contextWindow: contextWindowOf(ctx, task.model, task.harness),
       cost: snapshot ? costOfUsages([snapshot.usage], pricesOf(ctx, task.harness)) : null,
     });
-  }));
+  }))).filter((run): run is ApiActivityProcess => run !== null);
   if (!includeChats) return runs;
   const chats = (await Promise.all(ctx.conversationDriver.activeConversationIds().map(async (id) => {
     const convo = await ctx.conversations.get(id);
