@@ -26,7 +26,6 @@ interface HeaderStatusBarProps {
   onThemeCycle: () => void;
   onLogout: () => void;
   onNewTask: () => void;
-  onHelpClick: () => void;
 }
 
 export function HeaderStatusBar({
@@ -49,7 +48,6 @@ export function HeaderStatusBar({
   onThemeCycle,
   onLogout,
   onNewTask,
-  onHelpClick,
 }: HeaderStatusBarProps) {
   return (
     <header
@@ -93,7 +91,6 @@ export function HeaderStatusBar({
           onRefreshTracker={onRefreshTracker}
           onThemeCycle={onThemeCycle}
           onLogout={onLogout}
-          onHelpClick={onHelpClick}
         />
       </div>
       <div className="flex-1 rail:hidden" />

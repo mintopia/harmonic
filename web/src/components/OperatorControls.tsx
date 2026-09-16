@@ -6,6 +6,8 @@ import type { View } from '../rail-model';
 import type { ThemePref } from '../theme';
 import { touchTarget } from '../ui';
 
+const DOCS_URL = 'https://mintopia.github.io/harmonic';
+
 const THEME_ICONS: Record<ThemePref, IconName> = {
   system: 'circle-half',
   light: 'sun',
@@ -35,7 +37,6 @@ export interface OperatorControlsProps {
   onRefreshTracker: () => void;
   onThemeCycle: () => void;
   onLogout: () => void;
-  onHelpClick: () => void;
 }
 
 function RunningReadout({ config, runningCount }: { config: AppConfig; runningCount: number }) {
@@ -86,7 +87,6 @@ export function OperatorControls(props: OperatorControlsProps) {
     onRefreshTracker,
     onThemeCycle,
     onLogout,
-    onHelpClick,
   } = props;
   const layout = props.layout;
 
@@ -160,13 +160,15 @@ export function OperatorControls(props: OperatorControlsProps) {
           </dl>
         )}
         <div className="mt-1 flex items-center gap-1 border-t border-hairline px-1 pt-2">
-          <button
-            aria-label="Help"
+          <a
+            aria-label="Documentation"
+            href={DOCS_URL}
+            target="_blank"
+            rel="noopener noreferrer"
             className={`${touchTarget} rounded-md text-muted transition-colors duration-150 hover:bg-raised hover:text-ink`}
-            onClick={onHelpClick}
           >
             <Icon name="help" />
-          </button>
+          </a>
           <button
             aria-label={THEME_LABELS[theme]}
             className={`${touchTarget} rounded-md text-muted transition-colors duration-150 hover:bg-raised hover:text-ink`}
@@ -248,14 +250,16 @@ export function OperatorControls(props: OperatorControlsProps) {
           {refreshingTracker ? 'Refreshing…' : 'Refresh tickets'}
         </button>
       )}
-      <button
-        aria-label="Help"
-        title="Help"
+      <a
+        aria-label="Documentation"
+        title="Documentation"
+        href={DOCS_URL}
+        target="_blank"
+        rel="noopener noreferrer"
         className={`${touchTarget} rounded-md text-muted transition-colors duration-150 hover:bg-raised hover:text-ink`}
-        onClick={onHelpClick}
       >
         <Icon name="help" />
-      </button>
+      </a>
       <button
         aria-label={THEME_LABELS[theme]}
         title={THEME_LABELS[theme]}
