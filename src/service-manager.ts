@@ -99,6 +99,16 @@ export function resolveServiceUser({ user, sudoUser }: { user?: string | undefin
   return user || sudoUser || 'workspace';
 }
 
+const warn = (dependencies: ServiceManagerDependencies, message: string): void => {
+  if (dependencies.warn) dependencies.warn(message);
+  else process.emitWarning(message);
+};
+
+const systemdServiceUser = (user: string): string => {
+  if (!/^[A-Za-z_][A-Za-z0-9_.-]*\$?$/.test(user)) throw new Error(`Invalid systemd service user: ${user}`);
+  return user;
+};
+
 const escapeUnitArgument = (value: string): string =>
   /^[A-Za-z0-9_./:=+@%,-]+$/.test(value) ? value : JSON.stringify(value);
 
@@ -169,7 +179,7 @@ class SystemdServiceManager implements ServiceManager {
     return this.dependencies.run('systemctl', this.systemctlArgs(...args));
   }
 
-  private unit(serve: ServiceServeOptions): string {
+  private unit(serve: ServiceServeOptions, user?: string): string {
     const args = [
       this.dependencies.nodePath,
       this.dependencies.cliPath,
@@ -184,12 +194,16 @@ class SystemdServiceManager implements ServiceManager {
       ...(serve.otelStdoutLogLevel === undefined ? [] : ['--otel-stdout-log-level', serve.otelStdoutLogLevel]),
     ].map(escapeUnitArgument).join(' ');
     const environmentFile = serve.password === undefined ? '' : `EnvironmentFile=${escapeUnitArgument(this.environmentPath)}\n`;
+    const serviceUser = user === undefined ? '' : `User=${user}\nGroup=${user}\n`;
     const wantedBy = this.userUnit ? 'default.target' : 'multi-user.target';
-    return `[Unit]\nDescription=Harmonic\nAfter=network.target\n\n[Service]\nType=simple\nExecStart=${args}\n${environmentFile}Environment=HARMONIC_MANAGED_BY=systemd\nRestart=always\nTimeoutStopSec=60\n\n[Install]\nWantedBy=${wantedBy}\n`;
+    return `[Unit]\nDescription=Harmonic\nAfter=network.target\n\n[Service]\nType=simple\n${serviceUser}ExecStart=${args}\n${environmentFile}Environment=HARMONIC_MANAGED_BY=systemd\nRestart=always\nTimeoutStopSec=60\n\n[Install]\nWantedBy=${wantedBy}\n`;
   }
 
   async install(options: ServiceInstallOptions): Promise<ServiceInstallResult> {
     if (!options.serve) throw new Error('Systemd installation requires serve options.');
+    const user = this.userUnit ? undefined : systemdServiceUser(resolveServiceUser({ user: options.user, sudoUser: this.dependencies.sudoUser }));
+    if (user === 'root') warn(this.dependencies, 'Harmonic will run as root. Pass --user to run it as a non-root user.');
+    if (this.userUnit && options.user !== undefined) warn(this.dependencies, '--user is ignored for user-level systemd.');
     if (this.userUnit) await this.dependencies.run('loginctl', ['enable-linger', this.dependencies.userName]);
     await this.dependencies.mkdir(this.unitDirectory);
     if (options.serve.password === undefined) {
@@ -198,7 +212,7 @@ class SystemdServiceManager implements ServiceManager {
       await this.dependencies.writeFile(this.environmentPath, `HARMONIC_PASSWORD=${environmentFileValue(options.serve.password)}\n`);
       await this.dependencies.chmod(this.environmentPath, 0o600);
     }
-    await this.dependencies.writeFile(this.unitPath, this.unit(options.serve));
+    await this.dependencies.writeFile(this.unitPath, this.unit(options.serve, user));
     await this.dependencies.chmod(this.unitPath, 0o644);
     await this.systemctl('daemon-reload');
     await this.systemctl('enable', 'harmonic');
@@ -242,9 +256,7 @@ class InitdServiceManager implements ServiceManager {
     if (!options.serve) throw new Error('init.d installation requires serve options.');
     const user = resolveServiceUser({ user: options.user, sudoUser: this.dependencies.sudoUser });
     if (user === 'root') {
-      const warning = 'Harmonic will run as root. Pass --user to run it as a non-root user.';
-      if (this.dependencies.warn) this.dependencies.warn(warning);
-      else process.emitWarning(warning);
+      warn(this.dependencies, 'Harmonic will run as root. Pass --user to run it as a non-root user.');
     }
     await this.dependencies.writeFile(initdScriptPath, initdScript({ dataDir: options.serve.dataDir, user }));
     await this.dependencies.chmod(initdScriptPath, 0o755);
