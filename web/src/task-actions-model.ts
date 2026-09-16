@@ -9,7 +9,6 @@ import type { Task, TaskState } from './types.js';
 export type TaskAction =
   | 'accept'
   | 'reject'
-  | 'requeue'
   | 'close'
   | 'run'
   | 'ready'
@@ -25,7 +24,7 @@ export type TaskAction =
 export function taskActions(state: TaskState): TaskAction[] {
   switch (state) {
     case 'escalated':
-      return ['delete', 'close', 'requeue', 'reject', 'accept'];
+      return ['delete', 'close', 'reject', 'accept'];
     case 'ready':
       return ['delete', 'run', 'edit', 'cancel'];
     case 'draft':

@@ -241,7 +241,6 @@ export const api = {
     request<Task>('POST', `/api/tasks/${id}/accept`, opts?.force ? { force: true } : {}),
   rejectTask: (id: number, guidance: string, start = false) =>
     request<Task>('POST', `/api/tasks/${id}/reject`, { guidance, start }),
-  requeueTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/requeue`),
   closeTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/close`),
   // Hard-delete: cascades the Task's Attempts/history and
   // vanishes it from the board/graph via the `task_removed` WS broadcast

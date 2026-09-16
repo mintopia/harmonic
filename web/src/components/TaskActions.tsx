@@ -12,7 +12,7 @@ import { DeleteTaskDialog } from './DeleteTaskDialog';
 import { ConfirmDialog } from './ConfirmDialog';
 import { taskLabel } from '../id-format.js';
 
-type Confirming = 'cancel' | 'complete' | 'accept-flagged' | 'force-accept' | 'close' | 'requeue';
+type Confirming = 'cancel' | 'complete' | 'accept-flagged' | 'force-accept' | 'close';
 
 export function TaskActions({
   task,
@@ -77,8 +77,6 @@ export function TaskActions({
   };
   const onCancelTask = actDone(() => api.cancelTask(task.id), `${taskLabel(task.id)} cancelled`);
   const onCloseTask = actDone(() => api.closeTask(task.id), `${taskLabel(task.id)} closed`);
-  const onRequeue = actDone(() => api.requeueTask(task.id), `${taskLabel(task.id)} requeued`);
-
   const confirmThen = (fn: () => void) => () => {
     setConfirming(null);
     fn();
@@ -123,13 +121,7 @@ export function TaskActions({
       case 'reject':
         return (
           <button key={action} className={btnReject} disabled={acceptInFlight} onClick={() => setRejecting(true)}>
-            {variant === 'footer' ? 'Reject with guidance…' : 'Reject'}
-          </button>
-        );
-      case 'requeue':
-        return (
-          <button key={action} className={secondary} disabled={acceptInFlight} onClick={() => setConfirming('requeue')}>
-            Requeue
+            {variant === 'footer' ? 'Reject…' : 'Reject'}
           </button>
         );
       case 'close':
@@ -304,19 +296,6 @@ export function TaskActions({
           onConfirm={confirmThen(onCloseTask)}
         >
           This ends the task without merging its candidate. This cannot be undone.
-        </ConfirmDialog>
-      )}
-      {confirming === 'requeue' && (
-        <ConfirmDialog
-          label={`Requeue ${taskLabel(task.id)}`}
-          title="Requeue this task?"
-          confirmLabel="Requeue"
-          tone="primary"
-          onCancel={() => setConfirming(null)}
-          onConfirm={confirmThen(onRequeue)}
-        >
-          Sends the task back to the queue with no feedback recorded. It runs again when the Auto-Runner has capacity.
-          Use this when the reason it escalated has already been fixed.
         </ConfirmDialog>
       )}
     </>
