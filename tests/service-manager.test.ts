@@ -190,6 +190,59 @@ describe('systemd ServiceManager', () => {
     ]);
   });
 
+  it('runs a system unit as the explicit install user and group', async () => {
+    const deps = dependencies();
+    const manager = createServiceManager(environment({ isRoot: true, systemdRunning: true }), deps);
+
+    await manager.install({
+      startSelfManaged: vi.fn(),
+      serve: { port: '4700', host: '0.0.0.0', dataDir: '/srv/harmonic' },
+      user: 'operator',
+    });
+
+    const unit = deps.files.get('/etc/systemd/system/harmonic.service') ?? '';
+    expect(unit).toContain('User=operator');
+    expect(unit).toContain('Group=operator');
+  });
+
+  it('uses SUDO_USER for a system unit when no explicit user was passed', async () => {
+    const deps = { ...dependencies(), sudoUser: 'operator' };
+    const manager = createServiceManager(environment({ isRoot: true, systemdRunning: true }), deps);
+
+    await manager.install({
+      startSelfManaged: vi.fn(),
+      serve: { port: '4700', host: '0.0.0.0', dataDir: '/srv/harmonic' },
+    });
+
+    expect(deps.files.get('/etc/systemd/system/harmonic.service')).toContain('User=operator');
+    expect(deps.files.get('/etc/systemd/system/harmonic.service')).toContain('Group=operator');
+  });
+
+  it('warns when a system unit would run Harmonic as root', async () => {
+    const deps = { ...dependencies(), sudoUser: 'root', warn: vi.fn() };
+    const manager = createServiceManager(environment({ isRoot: true, systemdRunning: true }), deps);
+
+    await manager.install({
+      startSelfManaged: vi.fn(),
+      serve: { port: '4700', host: '0.0.0.0', dataDir: '/srv/harmonic' },
+    });
+
+    expect(deps.warn).toHaveBeenCalledWith('Harmonic will run as root. Pass --user to run it as a non-root user.');
+  });
+
+  it('rejects a system service user that could change the unit file', async () => {
+    const deps = dependencies();
+    const manager = createServiceManager(environment({ isRoot: true, systemdRunning: true }), deps);
+
+    await expect(manager.install({
+      startSelfManaged: vi.fn(),
+      serve: { port: '4700', host: '0.0.0.0', dataDir: '/srv/harmonic' },
+      user: 'operator\nExecStart=/malicious',
+    })).rejects.toThrow('Invalid systemd service user');
+
+    expect(deps.files.has('/etc/systemd/system/harmonic.service')).toBe(false);
+  });
+
   it('installs a user unit, enables linger, and persists an explicitly supplied password only', async () => {
     const deps = dependencies();
     const manager = createServiceManager(environment({ userSystemdUsable: true }), deps);
@@ -209,6 +262,21 @@ describe('systemd ServiceManager', () => {
       ['systemctl', '--user', 'start', 'harmonic'],
       ['systemctl', '--user', 'is-active', 'harmonic'],
     ]);
+  });
+
+  it('ignores --user for a user-level systemd unit and warns', async () => {
+    const deps = { ...dependencies(), warn: vi.fn() };
+    const manager = createServiceManager(environment({ userSystemdUsable: true }), deps);
+
+    await manager.install({
+      startSelfManaged: vi.fn(),
+      serve: { port: '4700', host: '0.0.0.0', dataDir: '/home/ada/.harmonic' },
+      user: 'operator',
+    });
+
+    const unit = deps.files.get('/home/ada/.config/systemd/user/harmonic.service') ?? '';
+    expect(unit).not.toContain('User=');
+    expect(deps.warn).toHaveBeenCalledWith(expect.stringContaining('ignored'));
   });
 
   it('removes a stale password file when reinstalling without an explicit password', async () => {

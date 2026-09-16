@@ -25,7 +25,7 @@ Usage:
   harmonic status [--data-dir <dir>]
   harmonic stop [--data-dir <dir>]
   harmonic restart [--data-dir <dir>]
-  harmonic install [--port <n>] [--host <h>] [--data-dir <dir>] [--password <pw>] [telemetry options]
+  harmonic install [--port <n>] [--host <h>] [--data-dir <dir>] [--user <name>] [--password <pw>] [telemetry options]
   harmonic uninstall [--data-dir <dir>]
 
 Commands:
@@ -42,6 +42,7 @@ Options:
   --port, -p  Port to listen on (default 4700)
   --host, -H  Host to bind (default 0.0.0.0)
   --data-dir  State directory (default ~/.harmonic, or $HARMONIC_DATA_DIR)
+  --user      OS user for a system service (ignored by user-level systemd)
   --password  Set/update the operator password (or $HARMONIC_PASSWORD).
               Optional; pass an empty value (--password '') to remove it and
               run ungated
