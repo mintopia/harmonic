@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
 import { isTurnRunning } from '../../conversation-steering-model';
 import { toastError } from '../../toast';
 import type { AppConfig, Conversation, ConversationEvent, Workspace } from '../../types';
@@ -66,6 +66,7 @@ export function Composer({
   conversation,
   events,
   expanded,
+  onOpen,
   onSend,
   onOpenContext,
 }: {
@@ -74,6 +75,7 @@ export function Composer({
   conversation: Conversation | null;
   events: ConversationEvent[];
   expanded: boolean;
+  onOpen?: (fields: { harness: string; model: string; permissionMode: Conversation['permissionMode'] }) => Promise<void>;
   onSend: (
     fields: { harness: string; model: string; permissionMode: Conversation['permissionMode'] },
     text: string,
@@ -86,7 +88,13 @@ export function Composer({
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [queued, setQueued] = useState(false);
+  const [caret, setCaret] = useState(0);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [highlight, setHighlight] = useState(0);
   const queuedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const opened = useRef(false);
+  const textarea = useRef<HTMLTextAreaElement>(null);
+  const commandListId = useId();
 
   useEffect(() => () => {
     if (queuedTimer.current) clearTimeout(queuedTimer.current);
@@ -96,6 +104,33 @@ export function Composer({
   const running = conversation?.state === 'active' && isTurnRunning(events);
   const displayedHarness = conversation?.harness ?? harness;
   const models = (config.harnesses[harness]?.models ?? []).map((model) => model.id);
+  const commandPrefix = displayedHarness === 'opencode' ? '/' : '$';
+  const token = text.slice(0, caret).match(/(?:^|\s)(\S*)$/)?.[1] ?? '';
+  const commandQuery = token.startsWith(commandPrefix) ? token.slice(commandPrefix.length) : null;
+  const commands = conversation?.commands ?? [];
+  const shownCommands = commandQuery === null
+    ? []
+    : commands.filter((command) => command.name.toLocaleLowerCase().startsWith(commandQuery.toLocaleLowerCase())).slice(0, 8);
+  const pickerVisible = pickerOpen && shownCommands.length > 0;
+
+  const selectCommand = (command: NonNullable<Conversation['commands']>[number]) => {
+    const start = caret - token.length;
+    const next = `${text.slice(0, start)}${commandPrefix}${command.name} ${text.slice(caret)}`;
+    const nextCaret = start + commandPrefix.length + command.name.length + 1;
+    setText(next);
+    setCaret(nextCaret);
+    setPickerOpen(false);
+    requestAnimationFrame(() => {
+      textarea.current?.focus();
+      textarea.current?.setSelectionRange(nextCaret, nextCaret);
+    });
+  };
+
+  useEffect(() => {
+    if (locked || opened.current || !onOpen) return;
+    opened.current = true;
+    void onOpen({ harness, model, permissionMode }).catch(toastError);
+  }, [harness, locked, model, onOpen, permissionMode]);
 
   const pickHarness = (h: string) => {
     setHarness(h);
@@ -123,6 +158,28 @@ export function Composer({
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (pickerVisible) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setHighlight((current) => Math.min(current + 1, shownCommands.length - 1));
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setHighlight((current) => Math.max(current - 1, 0));
+        return;
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        selectCommand(shownCommands[highlight] ?? shownCommands[0]!);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setPickerOpen(false);
+        return;
+      }
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       send();
@@ -189,8 +246,40 @@ export function Composer({
         </p>
       )}
       <div className="relative flex items-end gap-2">
+        {pickerVisible && (
+          <ul
+            id={commandListId}
+            role="listbox"
+            aria-label="Commands"
+            className="absolute bottom-full left-0 right-12 z-10 mb-2 max-h-64 overflow-auto rounded-md border border-edge bg-surface py-1 shadow-bar"
+          >
+            {shownCommands.map((command, index) => (
+              <li
+                key={command.name}
+                id={`${commandListId}-${index}`}
+                role="option"
+                aria-selected={index === highlight}
+                className={`cursor-pointer px-3 py-2 ${index === highlight ? 'bg-raised' : ''}`}
+                onMouseEnter={() => setHighlight(index)}
+                onPointerDown={(event) => {
+                  event.preventDefault();
+                  selectCommand(command);
+                }}
+              >
+                <span className="block text-data font-semibold text-ink">{commandPrefix}{command.name}</span>
+                <span className="block text-small text-muted">{command.description}</span>
+              </li>
+            ))}
+          </ul>
+        )}
         <textarea
+          ref={textarea}
+          role="combobox"
           aria-label="Message"
+          aria-autocomplete="list"
+          aria-controls={pickerVisible ? commandListId : undefined}
+          aria-expanded={pickerVisible}
+          aria-activedescendant={pickerVisible ? `${commandListId}-${highlight}` : undefined}
           className={`${field} min-h-16 flex-1 resize-none max-md:min-h-14 max-md:pr-14`}
           value={text}
           placeholder={
@@ -198,7 +287,13 @@ export function Composer({
               ? `Message ${providerLabel(displayedHarness)}… (Enter queues it for after this turn)`
               : `Message ${providerLabel(displayedHarness)}… (Enter to send, Shift+Enter for a newline)`
           }
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => {
+            setText(e.target.value);
+            setCaret(e.target.selectionStart);
+            setPickerOpen(true);
+            setHighlight(0);
+          }}
+          onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
           onKeyDown={onKeyDown}
         />
         <button

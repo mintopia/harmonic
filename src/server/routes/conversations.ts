@@ -76,7 +76,7 @@ const conversationSchema = z
     workingDir: z.string().meta({ example: '/home/dev/harmonic' }),
     state: z.enum(CONVERSATION_STATES).meta({ example: 'active' }),
     permissionMode: z.enum(CONVERSATION_PERMISSION_MODES).meta({ example: 'ask' }),
-    /** The warm ACP session id, set once the harness spawns; null before the first Turn. */
+    /** The warm ACP session id, set when the Composer opens. */
     sessionId: z.string().nullable().meta({ example: 'b7e4d2a1-6c93-4f18-8a52-1d0f3b9e7c46' }),
     /** Running Usage accumulated across Turns; null before any usage. */
     usage: attemptUsageSchema.nullable(),
@@ -132,7 +132,7 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
       schema: {
         tags: ['Conversations'],
         description:
-          'Create a Conversation (an interactive, multi-turn exchange the operator drives with a Harness over ACP). Execution settings default from global config. Operator only; not reachable with an attempt-scoped key. The harness spawns on the first Turn, not here.',
+          'Create a Conversation (an interactive, multi-turn exchange the operator drives with a Harness over ACP). Execution settings default from global config. Operator only; not reachable with an attempt-scoped key. The harness opens its ACP Session without submitting a Turn.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         body: createConversationInputSchema,
         response: {
@@ -156,7 +156,14 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
         workingDir: req.body.workingDir ?? workspace.workingDir,
         permissionMode: req.body.permissionMode ?? 'ask',
       });
-      return reply.status(201).send(await conversationToApi(ctx, conversation));
+      try {
+        await ctx.conversationDriver.open(conversation.id);
+      } catch (error) {
+        await ctx.auth.deleteKeysForConversation(conversation.id);
+        await ctx.conversations.delete(conversation.id);
+        throw error;
+      }
+      return reply.status(201).send(await conversationToApi(ctx, await ctx.conversations.get(conversation.id)));
     },
   );
 
@@ -291,7 +298,7 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
       schema: {
         tags: ['Conversations'],
         description:
-          'Send an operator Turn. Spawns the harness on the first Turn and keeps it warm across Turns; the reply streams over the WebSocket. If a Turn is already running, the message is queued and sent as the next Turn (issue 14). An ended Conversation that still holds a stored session is reactivated and its ACP session reloaded (a cold resume). Operator only; not reachable with an attempt-scoped key.',
+          'Send an operator Turn through its warm harness; the reply streams over the WebSocket. If a Turn is already running, the message is queued and sent as the next Turn (issue 14). An ended Conversation that still holds a stored session is reactivated and its ACP session reloaded (a cold resume). Operator only; not reachable with an attempt-scoped key.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         params: idParamsSchema,
         body: turnInputSchema,
