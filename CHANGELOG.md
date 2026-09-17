@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.14.0](https://github.com/mintopia/harmonic/compare/v2.13.0...v2.14.0) (2026-09-17)
+
+
+### Features
+
+* treble-clef logo and redesigned About dialog ([1b3b5b4](https://github.com/mintopia/harmonic/commit/1b3b5b446943125502e25fc01fde31919d7a155e))
+
+
+### Bug Fixes
+
+* correct conversation start, systemd PATH, and global running count ([d231b0d](https://github.com/mintopia/harmonic/commit/d231b0d3ae25128d5cb5e022bdc80f42d9aad155))
+* operator Accept merges the candidate as-is without re-verifying ([a798997](https://github.com/mintopia/harmonic/commit/a798997d1ca4019c86fefc5d764d537087428b7a))
+
 ## [2.13.0](https://github.com/mintopia/harmonic/compare/v2.12.2...v2.13.0) (2026-09-17)
 
 
