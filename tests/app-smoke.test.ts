@@ -318,7 +318,7 @@ describe('App smoke (issue #452)', () => {
     expect(el.textContent).toContain('Dashboard');
   });
 
-  it('bounces back to the sole workspace board if the dashboard is reached with one workspace', async () => {
+  it('stays on the dashboard once navigated there with one workspace, without bouncing back', async () => {
     const el = await renderApp({
       authenticated: true,
       passwordConfigured: true,
@@ -330,8 +330,26 @@ describe('App smoke (issue #452)', () => {
     window.dispatchEvent(new PopStateEvent('popstate'));
     await flush();
 
+    expect(window.location.pathname).toBe('/');
+    expect(el.textContent).toContain('Dashboard');
+  });
+
+  it('reaches the dashboard from the workspace switcher with one workspace and stays there', async () => {
+    const el = await renderApp({
+      authenticated: true,
+      passwordConfigured: true,
+      workspaces: [makeWorkspace()],
+    });
     expect(window.location.pathname).toBe('/workspace/1/board');
-    expect(el.textContent).not.toContain('Dashboard');
+
+    const switcher = el.querySelector<HTMLButtonElement>('button[aria-label="Active workspace"]');
+    await act(async () => switcher?.click());
+    const globalOption = [...el.querySelectorAll('li[role="option"]')].find((li) => li.textContent === 'Global');
+    await act(async () => globalOption?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })));
+    await flush();
+
+    expect(window.location.pathname).toBe('/');
+    expect(el.textContent).toContain('Dashboard');
   });
 
   it('exposes the theme toggle and Settings rail entry once a workspace is active', async () => {

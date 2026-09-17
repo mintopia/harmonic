@@ -277,12 +277,19 @@ export function App() {
     }, (error) => live() && toastError(error));
   }, [authed, route.scope]);
 
+  // Only the initial landing on the sole Workspace's board is automatic — once
+  // decided, an operator who explicitly navigates back to the global Dashboard
+  // (e.g. via the Workspace switcher's "Global" option) must be able to stay
+  // there, so this must not re-fire on every subsequent `route` change.
+  const initialWorkspaceRedirectDone = useRef(false);
   useEffect(() => {
-    if (!workspacesLoaded) return;
+    if (!workspacesLoaded || initialWorkspaceRedirectDone.current) return;
+    initialWorkspaceRedirectDone.current = true;
     if (workspaces.length === 1 && route.scope.kind === 'global' && route.view === 'board') {
       navigate(scopeSwitchRoute(route, { kind: 'workspace', workspaceId: workspaces[0]!.id }), { replace: true });
     }
-  }, [workspacesLoaded, workspaces, route, navigate]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fires once, guarded by the ref; `route`/`navigate` deliberately excluded so later route changes don't retrigger it
+  }, [workspacesLoaded, workspaces]);
 
   useLiveEffect((live) => {
     if (!authed) return;
