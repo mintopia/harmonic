@@ -5219,7 +5219,7 @@
             "properties": {
               "prompt": {
                 "type": "string",
-                "example": "{skill}\n\nResolve #{ref} ({url}) end to end — read the issue yourself."
+                "example": "{skill} {ref}\n\nResolve #{ref} ({url}) end to end — read the issue yourself."
               },
               "unattendedReminder": {
                 "type": "string",
@@ -10971,7 +10971,7 @@
             "properties": {
               "prompt": {
                 "type": "string",
-                "example": "{skill}\n\nResolve #{ref} ({url}) end to end — read the issue yourself."
+                "example": "{skill} {ref}\n\nResolve #{ref} ({url}) end to end — read the issue yourself."
               },
               "unattendedReminder": {
                 "type": "string",
