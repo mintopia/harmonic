@@ -38,9 +38,6 @@ const rejectInputSchema = z.object({
   start: z.boolean().optional().meta({ example: false }),
 });
 /** Omitted/false verifies the candidate first; `true` skips verification and merges it as-is. */
-const acceptInputSchema = z.object({
-  force: z.boolean().optional().meta({ example: false }),
-}).nullish();
 const cancelInputSchema = z.object({ withDependents: z.boolean().optional().meta({ example: true }) }).nullish();
 /** How to re-attempt a paused Task: `full` reuses the retained Session/conversation; `condensed` starts a fresh Session from a summary. Omitted keeps the recommended default (reuse when eligible). */
 const resumeInputSchema = z
@@ -698,18 +695,17 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       schema: {
         tags: ['Tasks'],
         description:
-          "Accept an escalated ticket: verifies the ticket's candidate first — a pass merges it as-is and continues the success path (merge, close the tracker issue, clean up, moving it to done); a non-pass re-enters the Attempt loop with the verifier's reason as feedback, exactly like Reject, and the ticket stays escalated-turned-working. Force-Accept (`{ force: true }`) skips verification and merges the candidate as-is. Human-only.",
+          "Accept an escalated ticket: the operator has judged the work done, so the candidate is merged as-is — merge, close the tracker issue, clean up, move it to done — with no verification. Human-only.",
         params: idParamsSchema,
-        body: acceptInputSchema,
         response: {
-          200: taskSchema.describe('The task, done (a passing or forced Accept) or back in the Attempt loop (a non-pass verify).'),
+          200: taskSchema.describe('The task, now done and merged.'),
           409: errorResponse('The task is not escalated, has no candidate to accept (the branch has no commits ahead of its base), or the merging failed (the detail says why); it stays escalated.'),
         },
       },
     },
     async (req) => {
       await ctx.upgrade.assertManualLaunchAllowed();
-      return withDeps(await ctx.escalation.accept(req.params.id, { force: req.body?.force ?? false }));
+      return withDeps(await ctx.escalation.accept(req.params.id));
     },
   );
 

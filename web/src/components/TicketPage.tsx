@@ -1118,7 +1118,6 @@ export function TicketPage({
           <Gate
             model={gateModel}
             task={task}
-            verificationAttempts={verificationAttempts}
             onEdit={(t) => {
               onClose();
               onEdit(t);

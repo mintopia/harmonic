@@ -167,7 +167,6 @@ describe('Task lifecycle state machine (ADR-0020)', () => {
         resume: async () => {},
         cleanup: async () => {},
         candidateHead: async () => 'cand-oid',
-        verifyCandidate: async () => ({ outcome: 'proceed', reason: '' }),
       });
 
       const acceptDone = service.accept(created.id);

@@ -644,7 +644,6 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     resume: (task, guidance, startNow) => runner.resumeWithGuidance(task, guidance, startNow),
     cleanup: (task, run) => runner.cleanupClosed(task, run),
     candidateHead: (task, run) => runner.candidateHead(task, run),
-    verifyCandidate: (task, run, head) => runner.verifyCandidateForAccept(task, run, head),
   });
   await drainRetirement();
   scheduler.register({
