@@ -90,12 +90,12 @@ describe('AboutOverlay', () => {
     expect(onArm).toHaveBeenCalled();
   });
 
-  it('does not show an upgrade control once the available version is dismissed', async () => {
+  it('still shows the upgrade control for a version already dismissed on the notice banner', async () => {
     await renderAbout({
       update: makeUpdate({ availableVersion: '3.2.0', dismissedVersion: '3.2.0' }),
     });
 
-    expect(buttonByText('Upgrade to 3.2.0')).toBeUndefined();
+    expect(buttonByText('Upgrade to 3.2.0')).toBeTruthy();
   });
 
   it('does not show a stale upgrade button while an update is armed', async () => {

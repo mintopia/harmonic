@@ -36,11 +36,9 @@ function UpdateSection({ update, pending, onArm, onCheckForUpdates }: Pick<About
     );
   }
 
-  const upgradeOffered = update.availableVersion !== null && update.dismissedVersion !== update.availableVersion;
-
   return (
     <div className="mt-4 flex items-center gap-2">
-      {upgradeOffered && (
+      {update.availableVersion !== null && (
         <button type="button" className={`${btnPrimary} px-3 py-1.5`} disabled={pending} onClick={onArm}>
           Upgrade to {update.availableVersion}
         </button>
