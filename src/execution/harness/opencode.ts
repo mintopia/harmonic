@@ -122,15 +122,20 @@ function rowsToModels(rows: readonly UsageRow[]): Record<string, ModelUsage> {
   return models;
 }
 
+const rowContext = (row: UsageRow): number => row.inputTokens + row.cacheReadTokens + row.cacheWriteTokens;
+
 function processNode(session: UsageSession, depth: number, children: ProcessNode[]): ProcessNode {
   const models = rowsToModels(session.rows);
-  const latest = session.rows.at(-1);
+  // opencode inserts the in-flight assistant message with zero tokens before
+  // the turn's usage lands, so `rows.at(-1)` reads 0 mid-turn. Use the last row
+  // that carries real usage — the last completed turn's context size.
+  const latest = session.rows.findLast((row) => rowContext(row) > 0) ?? null;
   return {
     id: session.session.id,
     name: depth === 0 ? 'root' : stringValue(session.session.agent, 'subagent'),
     model: dominantModel(models) ?? 'unknown',
     usage: foldModels(models),
-    contextTokens: latest ? latest.inputTokens + latest.cacheReadTokens + latest.cacheWriteTokens : null,
+    contextTokens: latest ? rowContext(latest) : null,
     lastTool: null,
     status: 'inactive',
     depth,
