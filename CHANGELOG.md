@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.12.2](https://github.com/mintopia/harmonic/compare/v2.12.1...v2.12.2) (2026-09-16)
+
+
+### Bug Fixes
+
+* create and chown the service data directory before install ([a4fc106](https://github.com/mintopia/harmonic/commit/a4fc1062814d1d9627b4fad0257cdcd1d9085c99))
+* default the homepage to the sole workspace, link dashboard workspaces ([fa9f96e](https://github.com/mintopia/harmonic/commit/fa9f96eaac53404d1b98b20e02247cade6b070c6))
+
 ## [2.12.1](https://github.com/mintopia/harmonic/compare/v2.12.0...v2.12.1) (2026-09-16)
 
 
