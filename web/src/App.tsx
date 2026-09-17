@@ -704,6 +704,7 @@ export function App() {
             onGlobalPauseChange={setFleetPaused}
             onRefreshTracker={refreshTracker}
             onThemeCycle={cycleTheme}
+            onSettingsClick={() => pickView('settings')}
             onLogout={() => fetch('/api/auth/logout', { method: 'POST' }).then(() => setAuthed(false))}
           />
         </div>
@@ -730,6 +731,7 @@ export function App() {
           onGlobalPauseChange={setFleetPaused}
           onRefreshTracker={refreshTracker}
           onThemeCycle={cycleTheme}
+          onSettingsClick={() => pickView('settings')}
           onLogout={() => fetch('/api/auth/logout', { method: 'POST' }).then(() => setAuthed(false))}
           onNewTask={() => setEditing('new')}
         />
