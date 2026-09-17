@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { driveFields, fillTemplate, skillFor, splitTitleBody } from '../src/execution/prompt-template.js';
+import { DEFAULT_DRIVE_PROMPT } from '../src/config.js';
 import type { TaskRow } from '../src/db/schema.js';
 
 const task = (over: Partial<TaskRow> & { epicKind?: string | null }): TaskRow & { epicKind?: string | null } =>
@@ -18,6 +19,12 @@ describe('fillTemplate (prompt-template.ts)', () => {
     });
     expect(out).toBe('/implement 42 http://x/42 T — B');
     expect(out).not.toMatch(/\{/);
+  });
+});
+
+describe('DEFAULT_DRIVE_PROMPT', () => {
+  it('puts the ticket ref on the skill invocation line, so the harness gets it as an argument', () => {
+    expect(DEFAULT_DRIVE_PROMPT.startsWith('{skill} {ref}')).toBe(true);
   });
 });
 
