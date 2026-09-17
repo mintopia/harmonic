@@ -6,6 +6,7 @@ import { DomainError } from '../../domain/errors.js';
 import { errorResponse } from '../schemas.js';
 
 const updateStateSchema = z.object({
+  currentVersion: z.string(),
   availableVersion: z.string().nullable(),
   armedVersion: z.string().nullable(),
   dismissedVersion: z.string().nullable(),
@@ -22,12 +23,18 @@ function assertPackaged(distributionMode: AppContext['distributionMode']): void 
 
 export async function updateRoutes(
   fastify: FastifyInstance,
-  ctx: Pick<AppContext, 'distributionMode' | 'upgrade'>,
+  ctx: Pick<AppContext, 'distributionMode' | 'upgrade' | 'updateCheck' | 'runningVersion'>,
 ): Promise<void> {
   const app = fastify.withTypeProvider<ZodTypeProvider>();
   const response = async () => {
     const [state, idle] = await Promise.all([ctx.upgrade.state(), ctx.upgrade.idleState()]);
-    return { availableVersion: state.version, armedVersion: state.armedVersion, dismissedVersion: state.dismissedVersion, idle };
+    return {
+      currentVersion: ctx.runningVersion,
+      availableVersion: state.version,
+      armedVersion: state.armedVersion,
+      dismissedVersion: state.dismissedVersion,
+      idle,
+    };
   };
 
   app.get('/update', {
@@ -78,6 +85,19 @@ export async function updateRoutes(
   }, async () => {
     assertPackaged(ctx.distributionMode);
     await ctx.upgrade.dismiss();
+    return response();
+  });
+
+  app.post('/update/check', {
+    schema: {
+      tags: ['Update'],
+      description: 'Check now for a newer published version instead of waiting for the hourly check. Operator only.',
+      security: [{ bearerAuth: [] }, { sessionCookie: [] }],
+      response: { 200: updateStateSchema.describe('The current offered and armed update, with drain-to-idle blockers.') },
+    },
+  }, async () => {
+    assertPackaged(ctx.distributionMode);
+    await ctx.updateCheck.run();
     return response();
   });
 }

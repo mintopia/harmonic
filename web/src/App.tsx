@@ -29,6 +29,7 @@ import { BrandMark } from './components/BrandMark';
 import { ConversationLauncher, ConversationsPage } from './components/ConversationLauncher';
 import { FilesPage } from './components/FilesPage';
 import { UpdateBanner } from './components/UpdateBanner';
+import { AboutOverlay } from './components/AboutOverlay';
 import { NewWorkspaceForm, WorkspaceSwitcher } from './components/WorkspaceSwitcher';
 import { WorkspaceSettingsPage } from './components/WorkspaceSettingsPage';
 import { EmptyState } from './components/EmptyState';
@@ -209,6 +210,7 @@ export function App() {
   routeRef.current = route;
   const fetchedTaskIdRef = useRef<number | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [aboutOpen, setAboutOpen] = useState(false);
   const [railCollapsed, setRailCollapsed] = useState(() => loadRailCollapsed(localStorage));
   const [theme, setTheme] = useState<ThemePref>(() => loadTheme(localStorage));
   const railDesktop = useRailBreakpoint();
@@ -277,12 +279,19 @@ export function App() {
     }, (error) => live() && toastError(error));
   }, [authed, route.scope]);
 
+  // Only the initial landing on the sole Workspace's board is automatic — once
+  // decided, an operator who explicitly navigates back to the global Dashboard
+  // (e.g. via the Workspace switcher's "Global" option) must be able to stay
+  // there, so this must not re-fire on every subsequent `route` change.
+  const initialWorkspaceRedirectDone = useRef(false);
   useEffect(() => {
-    if (!workspacesLoaded) return;
+    if (!workspacesLoaded || initialWorkspaceRedirectDone.current) return;
+    initialWorkspaceRedirectDone.current = true;
     if (workspaces.length === 1 && route.scope.kind === 'global' && route.view === 'board') {
       navigate(scopeSwitchRoute(route, { kind: 'workspace', workspaceId: workspaces[0]!.id }), { replace: true });
     }
-  }, [workspacesLoaded, workspaces, route, navigate]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fires once, guarded by the ref; `route`/`navigate` deliberately excluded so later route changes don't retrigger it
+  }, [workspacesLoaded, workspaces]);
 
   useLiveEffect((live) => {
     if (!authed) return;
@@ -704,7 +713,9 @@ export function App() {
             onGlobalPauseChange={setFleetPaused}
             onRefreshTracker={refreshTracker}
             onThemeCycle={cycleTheme}
+            onSettingsClick={() => pickView('settings')}
             onLogout={() => fetch('/api/auth/logout', { method: 'POST' }).then(() => setAuthed(false))}
+            onOpenAbout={() => setAboutOpen(true)}
           />
         </div>
       </aside>
@@ -730,8 +741,10 @@ export function App() {
           onGlobalPauseChange={setFleetPaused}
           onRefreshTracker={refreshTracker}
           onThemeCycle={cycleTheme}
+          onSettingsClick={() => pickView('settings')}
           onLogout={() => fetch('/api/auth/logout', { method: 'POST' }).then(() => setAuthed(false))}
           onNewTask={() => setEditing('new')}
+          onOpenAbout={() => setAboutOpen(true)}
         />
         <UpdateBanner
           update={update}
@@ -740,6 +753,17 @@ export function App() {
           onCancel={() => changeUpdate(api.cancelUpdate)}
           onDismiss={() => changeUpdate(api.dismissUpdate)}
         />
+        {aboutOpen && (
+          <AboutOverlay
+            appName={instanceName}
+            currentVersion={update?.currentVersion ?? null}
+            update={update}
+            pending={updatePending}
+            onArm={() => changeUpdate(api.armUpdate)}
+            onCheckForUpdates={() => changeUpdate(api.checkUpdate)}
+            onClose={() => setAboutOpen(false)}
+          />
+        )}
 
         <Toaster />
 

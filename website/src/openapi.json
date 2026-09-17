@@ -5219,7 +5219,7 @@
             "properties": {
               "prompt": {
                 "type": "string",
-                "example": "{skill}\n\nResolve #{ref} ({url}) end to end — read the issue yourself."
+                "example": "{skill} {ref}\n\nResolve #{ref} ({url}) end to end — read the issue yourself."
               },
               "unattendedReminder": {
                 "type": "string",
@@ -10971,7 +10971,7 @@
             "properties": {
               "prompt": {
                 "type": "string",
-                "example": "{skill}\n\nResolve #{ref} ({url}) end to end — read the issue yourself."
+                "example": "{skill} {ref}\n\nResolve #{ref} ({url}) end to end — read the issue yourself."
               },
               "unattendedReminder": {
                 "type": "string",
@@ -22622,6 +22622,9 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "currentVersion": {
+                      "type": "string"
+                    },
                     "availableVersion": {
                       "anyOf": [
                         {
@@ -22676,6 +22679,7 @@
                     }
                   },
                   "required": [
+                    "currentVersion",
                     "availableVersion",
                     "armedVersion",
                     "dismissedVersion",
@@ -22712,6 +22716,9 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "currentVersion": {
+                      "type": "string"
+                    },
                     "availableVersion": {
                       "anyOf": [
                         {
@@ -22766,6 +22773,7 @@
                     }
                   },
                   "required": [
+                    "currentVersion",
                     "availableVersion",
                     "armedVersion",
                     "dismissedVersion",
@@ -22810,6 +22818,9 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "currentVersion": {
+                      "type": "string"
+                    },
                     "availableVersion": {
                       "anyOf": [
                         {
@@ -22864,6 +22875,7 @@
                     }
                   },
                   "required": [
+                    "currentVersion",
                     "availableVersion",
                     "armedVersion",
                     "dismissedVersion",
@@ -22900,6 +22912,9 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "currentVersion": {
+                      "type": "string"
+                    },
                     "availableVersion": {
                       "anyOf": [
                         {
@@ -22954,6 +22969,7 @@
                     }
                   },
                   "required": [
+                    "currentVersion",
                     "availableVersion",
                     "armedVersion",
                     "dismissedVersion",
@@ -22961,6 +22977,100 @@
                   ],
                   "additionalProperties": false,
                   "description": "The dismissed update and current drain-to-idle blockers."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/update/check": {
+      "post": {
+        "tags": [
+          "Update"
+        ],
+        "description": "Check now for a newer published version instead of waiting for the hourly check. Operator only.",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The current offered and armed update, with drain-to-idle blockers.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "currentVersion": {
+                      "type": "string"
+                    },
+                    "availableVersion": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "armedVersion": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "dismissedVersion": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "idle": {
+                      "type": "object",
+                      "properties": {
+                        "runningAttempts": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "mergingOrIntegrating": {
+                          "type": "boolean"
+                        },
+                        "conversationMidTurn": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "runningAttempts",
+                        "mergingOrIntegrating",
+                        "conversationMidTurn"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "currentVersion",
+                    "availableVersion",
+                    "armedVersion",
+                    "dismissedVersion",
+                    "idle"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The current offered and armed update, with drain-to-idle blockers."
                 }
               }
             }

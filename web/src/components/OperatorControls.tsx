@@ -6,8 +6,6 @@ import type { View } from '../rail-model';
 import type { ThemePref } from '../theme';
 import { touchTarget } from '../ui';
 
-const DOCS_URL = 'https://mintopia.github.io/harmonic';
-
 const THEME_ICONS: Record<ThemePref, IconName> = {
   system: 'circle-half',
   light: 'sun',
@@ -36,7 +34,9 @@ export interface OperatorControlsProps {
   onGlobalPauseChange: (paused: boolean) => void;
   onRefreshTracker: () => void;
   onThemeCycle: () => void;
+  onSettingsClick: () => void;
   onLogout: () => void;
+  onOpenAbout: () => void;
 }
 
 function RunningReadout({ config, runningCount }: { config: AppConfig; runningCount: number }) {
@@ -63,11 +63,9 @@ function RunningReadout({ config, runningCount }: { config: AppConfig; runningCo
 }
 
 /**
- * The header's secondary operator cluster — auto-runner, fleet pause, tracker
- * refresh, the cost/load/host readouts, and the app-chrome controls (help,
- * theme, logout). Rendered inline in the desktop status bar
- * (`layout="bar"`, the canonical strip) and stacked in the mobile nav drawer
- * (`layout="drawer"`), so both surfaces drive the same controls without drift.
+ * Rendered inline in the desktop status bar (`layout="bar"`) and stacked in
+ * the mobile nav drawer (`layout="drawer"`) — keep both branches in sync when
+ * adding or removing controls.
  */
 export function OperatorControls(props: OperatorControlsProps) {
   const {
@@ -86,7 +84,9 @@ export function OperatorControls(props: OperatorControlsProps) {
     onGlobalPauseChange,
     onRefreshTracker,
     onThemeCycle,
+    onSettingsClick,
     onLogout,
+    onOpenAbout,
   } = props;
   const layout = props.layout;
 
@@ -160,21 +160,32 @@ export function OperatorControls(props: OperatorControlsProps) {
           </dl>
         )}
         <div className="mt-1 flex items-center gap-1 border-t border-hairline px-1 pt-2">
-          <a
-            aria-label="Documentation"
-            href={DOCS_URL}
-            target="_blank"
-            rel="noopener noreferrer"
+          <button
+            type="button"
+            aria-label="About"
+            title="About"
             className={`${touchTarget} rounded-md text-muted transition-colors duration-150 hover:bg-raised hover:text-ink`}
+            onClick={onOpenAbout}
           >
             <Icon name="help" />
-          </a>
+          </button>
           <button
             aria-label={THEME_LABELS[theme]}
             className={`${touchTarget} rounded-md text-muted transition-colors duration-150 hover:bg-raised hover:text-ink`}
             onClick={onThemeCycle}
           >
             <Icon name={THEME_ICONS[theme]} />
+          </button>
+          <button
+            aria-label="Settings"
+            aria-current={view === 'settings' ? 'page' : undefined}
+            title="Settings"
+            className={`${touchTarget} rounded-md transition-colors duration-150 ${
+              view === 'settings' ? 'bg-accent-tint text-accent' : 'text-muted hover:bg-raised hover:text-ink'
+            }`}
+            onClick={onSettingsClick}
+          >
+            <Icon name="settings" />
           </button>
           {passwordSet && (
             <button
@@ -250,16 +261,15 @@ export function OperatorControls(props: OperatorControlsProps) {
           {refreshingTracker ? 'Refreshing…' : 'Refresh tickets'}
         </button>
       )}
-      <a
-        aria-label="Documentation"
-        title="Documentation"
-        href={DOCS_URL}
-        target="_blank"
-        rel="noopener noreferrer"
+      <button
+        type="button"
+        aria-label="About"
+        title="About"
         className={`${touchTarget} rounded-md text-muted transition-colors duration-150 hover:bg-raised hover:text-ink`}
+        onClick={onOpenAbout}
       >
         <Icon name="help" />
-      </a>
+      </button>
       <button
         aria-label={THEME_LABELS[theme]}
         title={THEME_LABELS[theme]}
@@ -267,6 +277,17 @@ export function OperatorControls(props: OperatorControlsProps) {
         onClick={onThemeCycle}
       >
         <Icon name={THEME_ICONS[theme]} />
+      </button>
+      <button
+        aria-label="Settings"
+        aria-current={view === 'settings' ? 'page' : undefined}
+        title="Settings"
+        className={`${touchTarget} rounded-md transition-colors duration-150 ${
+          view === 'settings' ? 'bg-accent-tint text-accent' : 'text-muted hover:bg-raised hover:text-ink'
+        }`}
+        onClick={onSettingsClick}
+      >
+        <Icon name="settings" />
       </button>
       {passwordSet && (
         <button

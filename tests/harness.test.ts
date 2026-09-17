@@ -244,6 +244,21 @@ describe('harness-adapter', () => {
       expect(usage.parse!({ sessionLogDir: dir, cwd: '/w', sessionId: 'missing' })).toBeNull();
     });
 
+    it("OpenCode's contextTokens ignores the in-flight zero-token message and uses the last completed turn", () => {
+      const root = 'root-session';
+      const dir = mkdtempSync(join(tmpdir(), 'opencode-inflight-'));
+      const file = join(dir, '.local', 'share', 'opencode', 'opencode.db');
+      mkdirSync(join(dir, '.local', 'share', 'opencode'), { recursive: true });
+      // opencode inserts the streaming assistant message with all-zero tokens
+      // before the turn's usage lands; it is the last row mid-turn.
+      writeOpenCodeUsageDb(file, [{ id: root }], [
+        { session_id: root, providerID: 'openai', modelID: 'gpt-5.6', input: 1000, output: 100, cacheRead: 800, cacheWrite: 50 },
+        { session_id: root, providerID: 'openai', modelID: 'gpt-5.6', input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      ]);
+      const parsed = adapterFor('opencode').usage!.parse!({ sessionLogDir: dir, cwd: '/w', sessionId: root })!;
+      expect(parsed.tree.contextTokens).toBe(1850);
+    });
+
     it("OpenCode's Usage Collector ignores cycles in a corrupt Subagent session tree", () => {
       const root = 'root-session';
       const dir = mkdtempSync(join(tmpdir(), 'opencode-cycle-'));
