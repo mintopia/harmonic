@@ -36,6 +36,7 @@ async function renderHeader(props: {
       onSettingsClick: () => {},
       onLogout: () => {},
       onNewTask: () => {},
+      onOpenAbout: () => {},
     }),
   );
 }
