@@ -35,6 +35,7 @@ async function renderHeader(props: {
       onThemeCycle: () => {},
       onLogout: () => {},
       onNewTask: () => {},
+      onOpenAbout: () => {},
     }),
   );
 }

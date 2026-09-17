@@ -5,6 +5,7 @@ export const TASK_STATES = ['draft', 'ready', 'working', 'paused', 'escalated', 
 export type TaskState = (typeof TASK_STATES)[number];
 
 export interface UpdateState {
+  currentVersion: string;
   availableVersion: string | null;
   armedVersion: string | null;
   dismissedVersion: string | null;

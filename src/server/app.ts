@@ -162,6 +162,7 @@ async function requestIsOperator(req: FastifyRequest, auth: AuthService): Promis
 
 export interface AppContext {
   distributionMode: DistributionMode;
+  runningVersion: string;
   updateCheck: UpdateCheck;
   upgrade: UpgradeCoordinator;
   asyncDb: AsyncDbHandle;
@@ -764,7 +765,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     })().catch(() => {});
   });
 
-  const ctx: AppContext = { distributionMode, updateCheck, upgrade, asyncDb, statsReader, settingsStore, workspaces, tasks, attempts, sessions: sessionStore, runner, conversations, conversationDriver, permissionRules, escalation, autoRunner, globalPause, guardrailEvents, verificationAttempts, trackerManager, epicService, scheduler, auth, channels, notifier, bus, hostLoad, workspaceWatcher, worktreeInventory, forceCleanupWorktree, dirtyWorktreeFiles, reconcileWorktrees, worktreesReconciledAt: () => worktreeReconciler.reconciledAt };
+  const ctx: AppContext = { distributionMode, runningVersion, updateCheck, upgrade, asyncDb, statsReader, settingsStore, workspaces, tasks, attempts, sessions: sessionStore, runner, conversations, conversationDriver, permissionRules, escalation, autoRunner, globalPause, guardrailEvents, verificationAttempts, trackerManager, epicService, scheduler, auth, channels, notifier, bus, hostLoad, workspaceWatcher, worktreeInventory, forceCleanupWorktree, dirtyWorktreeFiles, reconcileWorktrees, worktreesReconciledAt: () => worktreeReconciler.reconciledAt };
   const contexts = createAppContexts(ctx);
 
   const app = Fastify({ logger: false }) as unknown as App;
