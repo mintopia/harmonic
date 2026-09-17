@@ -390,6 +390,20 @@
     }
   }
 
+  /* The About dialog's clef writes itself in on open (pathLength=100 normalises
+     the dash metrics regardless of the glyph's real length). */
+  @keyframes clef-draw {
+    from {
+      stroke-dashoffset: 100;
+    }
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .clef-draw {
+      stroke-dasharray: 100;
+      animation: clef-draw 1s var(--ease-out-quint) 0.15s both;
+    }
+  }
+
   @keyframes indeterminate-progress {
     from {
       transform: translateX(-100%);

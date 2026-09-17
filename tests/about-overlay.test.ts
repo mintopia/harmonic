@@ -79,7 +79,7 @@ describe('AboutOverlay', () => {
       onArm,
     });
 
-    const upgradeButton = buttonByText('Upgrade to 3.2.0')!;
+    const upgradeButton = buttonByText('Update to 3.2.0')!;
     expect(upgradeButton).toBeTruthy();
 
     await act(async () => {
@@ -95,7 +95,7 @@ describe('AboutOverlay', () => {
       update: makeUpdate({ availableVersion: '3.2.0', dismissedVersion: '3.2.0' }),
     });
 
-    expect(buttonByText('Upgrade to 3.2.0')).toBeTruthy();
+    expect(buttonByText('Update to 3.2.0')).toBeTruthy();
   });
 
   it('does not show a stale upgrade button while an update is armed', async () => {
@@ -103,7 +103,7 @@ describe('AboutOverlay', () => {
       update: makeUpdate({ availableVersion: '3.2.0', armedVersion: '3.2.0' }),
     });
 
-    expect(buttonByText('Upgrade to 3.2.0')).toBeUndefined();
+    expect(buttonByText('Update to 3.2.0')).toBeUndefined();
     expect(host!.textContent).toContain('3.2.0');
   });
 
@@ -111,7 +111,7 @@ describe('AboutOverlay', () => {
     const onCheckForUpdates = vi.fn();
     await renderAbout({ onCheckForUpdates, pending: true });
 
-    const checkButton = buttonByText('Check for updates')!;
+    const checkButton = buttonByText('Checking for updates')!;
     expect(checkButton.disabled).toBe(true);
 
     await act(async () => {

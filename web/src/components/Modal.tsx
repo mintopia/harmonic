@@ -11,11 +11,14 @@ export function Modal({
   label,
   onClose,
   className = '',
+  closeClassName = 'text-faint hover:text-ink',
   children,
 }: {
   label: string;
   onClose: () => void;
   className?: string;
+  /** Colour classes for the ✕. Override when the dialog's top is a dark band. */
+  closeClassName?: string;
   children?: ReactNode;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
@@ -46,7 +49,7 @@ export function Modal({
         type="button"
         aria-label="Close"
         onClick={() => ref.current?.close()}
-        className="absolute right-3 top-3 z-10 rounded-md px-1.5 py-0.5 text-faint transition-colors duration-150 hover:text-ink"
+        className={`absolute right-3 top-3 z-10 rounded-md px-1.5 py-0.5 transition-colors duration-150 ${closeClassName}`}
       >
         <span aria-hidden="true" className={touchOverlay} />
         ✕
