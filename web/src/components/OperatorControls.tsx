@@ -37,11 +37,12 @@ export interface OperatorControlsProps {
   onSettingsClick: () => void;
   onLogout: () => void;
   onOpenAbout: () => void;
+  onOpenActivity?: () => void;
 }
 
-function RunningReadout({ config, runningCount }: { config: AppConfig; runningCount: number }) {
-  return (
-    <span className="flex items-center gap-2 text-[13px] text-muted">
+function RunningReadout({ config, runningCount, onOpen }: { config: AppConfig; runningCount: number; onOpen?: () => void }) {
+  const body = (
+    <>
       <span
         aria-hidden="true"
         className={`size-[7px] rounded-full ${runningCount > 0 ? 'bg-running-dot motion-safe:animate-pulse' : 'bg-faint'}`}
@@ -58,8 +59,21 @@ function RunningReadout({ config, runningCount }: { config: AppConfig; runningCo
         </span>{' '}
         host
       </span>
-    </span>
+    </>
   );
+  if (onOpen) {
+    return (
+      <button
+        type="button"
+        onClick={onOpen}
+        aria-label={`${runningCount} running across all workspaces — open Activity`}
+        className="flex items-center gap-2 rounded-md text-[13px] text-muted transition-colors duration-150 hover:text-ink"
+      >
+        {body}
+      </button>
+    );
+  }
+  return <span className="flex items-center gap-2 text-[13px] text-muted">{body}</span>;
 }
 
 /**
@@ -87,6 +101,7 @@ export function OperatorControls(props: OperatorControlsProps) {
     onSettingsClick,
     onLogout,
     onOpenAbout,
+    onOpenActivity,
   } = props;
   const layout = props.layout;
 
@@ -140,7 +155,13 @@ export function OperatorControls(props: OperatorControlsProps) {
             <div>
               <dt className="text-label font-bold uppercase tracking-[0.08em] text-faint">Running</dt>
               <dd className="mt-0.5 tabular-nums text-ink">
-                {runningCount} / {config.autoRunner.maxConcurrentAttempts}
+                {onOpenActivity ? (
+                  <button type="button" onClick={onOpenActivity} className="tabular-nums transition-colors duration-150 hover:text-accent" aria-label={`${runningCount} running across all workspaces — open Activity`}>
+                    {runningCount} / {config.autoRunner.maxConcurrentAttempts}
+                  </button>
+                ) : (
+                  <>{runningCount} / {config.autoRunner.maxConcurrentAttempts}</>
+                )}
               </dd>
             </div>
             {cost24h && (
@@ -230,7 +251,7 @@ export function OperatorControls(props: OperatorControlsProps) {
           {pauseText}
         </button>
       )}
-      {config && <RunningReadout config={config} runningCount={runningCount} />}
+      {config && <RunningReadout config={config} runningCount={runningCount} onOpen={onOpenActivity} />}
       {cost24h && (
         <span className="text-[13px] text-muted" title="Cost over the last 24 hours">
           <span className="text-faint">last 24h</span>{' '}

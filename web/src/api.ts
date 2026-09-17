@@ -235,11 +235,9 @@ export const api = {
   rejectEpic: (workspaceId: number, epicRef: number, guidance: string, continuation: 'continue' | 'fresh') =>
     request<EpicIntegrateOutcome>('POST', `/api/workspaces/${workspaceId}/epics/${epicRef}/reject`, { guidance, continuation }),
   // The three escalation actions, escalated tickets only.
-  // `force: true` is the as-is override (Force-Accept): the server skips
-  // candidate verification and merges the branch head as it stands. Omitted
-  // (or false) is the default Accept, which verifies first.
-  acceptTask: (id: number, opts?: { force?: boolean }) =>
-    request<Task>('POST', `/api/tasks/${id}/accept`, opts?.force ? { force: true } : {}),
+  // Accept merges the candidate as-is — the operator's judgement is the gate,
+  // no verification runs.
+  acceptTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/accept`),
   rejectTask: (id: number, guidance: string, start = false) =>
     request<Task>('POST', `/api/tasks/${id}/reject`, { guidance, start }),
   closeTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/close`),

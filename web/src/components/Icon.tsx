@@ -43,7 +43,12 @@ export type IconName =
   | 'folder-plus'
   | 'save'
   | 'eye'
-  | 'undo';
+  | 'undo'
+  | 'github'
+  | 'book'
+  | 'globe'
+  | 'arrow-up-right'
+  | 'download';
 
 const PATHS: Record<IconName, JSX.Element> = {
   board: (
@@ -132,6 +137,23 @@ const PATHS: Record<IconName, JSX.Element> = {
       <path d="M10.5 5.5 13 8l-2.5 2.5M13 8H6" />
     </>
   ),
+  github: (
+    <path d="M6 13.4c-2.9.85-2.9-1.45-4-1.75m8 3v-2.35a2 2 0 0 0-.55-1.55c1.85-.2 3.8-.9 3.8-4.1a3.2 3.2 0 0 0-.9-2.2 2.95 2.95 0 0 0-.05-2.25s-.75-.2-2.45.9a8.4 8.4 0 0 0-4.3 0c-1.7-1.1-2.45-.9-2.45-.9a2.95 2.95 0 0 0-.05 2.25 3.2 3.2 0 0 0-.9 2.2c0 3.2 1.95 3.9 3.8 4.1a2 2 0 0 0-.55 1.55V15.4" />
+  ),
+  book: (
+    <>
+      <path d="M2.5 3.25h4.25a1.5 1.5 0 0 1 1.25.7 1.5 1.5 0 0 1 1.25-.7h4.25v9h-4.5a1 1 0 0 0-1 .75 1 1 0 0 0-1-.75h-4.5z" />
+      <path d="M8 3.95v8.55" />
+    </>
+  ),
+  globe: (
+    <>
+      <circle cx="8" cy="8" r="5.75" />
+      <path d="M2.4 8h11.2M8 2.25c1.6 1.55 2.5 3.6 2.5 5.75S9.6 12.2 8 13.75c-1.6-1.55-2.5-3.6-2.5-5.75S6.4 3.8 8 2.25z" />
+    </>
+  ),
+  'arrow-up-right': <path d="M5 11l6-6M6 5h5v5" />,
+  download: <path d="M8 2.75v7.5M4.75 7 8 10.25 11.25 7M3.5 13.25h9" />,
   'chevrons-left': <path d="M8 4.5 4.5 8 8 11.5M12 4.5 8.5 8l3.5 3.5" />,
   'chevron-down': <path d="M4.5 6.25 8 9.75l3.5-3.5" />,
   sun: (

@@ -2038,15 +2038,6 @@ export class Runner {
    * Verify a candidate for an operator Accept, recorded onto this Attempt's
    * event log exactly like an automated verify pass.
    */
-  async verifyCandidateForAccept(task: TaskRow, run: AttemptRow, head: string): Promise<VerificationDecision> {
-    const record = (type: 'lifecycle', payload: unknown) => this.recordRunEvent(task, run, type, payload);
-    const operation = startOperation({ type: 'attempt', attributes: { 'task.id': task.id, 'attempt.id': run.id } });
-    const { decision } = await operation
-      .run(async () => this.runVerification(task, run, head, new AbortController().signal, record, operation.spanContext))
-      .finally(() => operation.end());
-    return decision;
-  }
-
   private async recordLifecycleTransition(taskId: number, event: 'paused' | 'resumed', reason: string): Promise<void> {
     const run = await this.attempts.getRunningForTask(taskId);
     if (!run) return;

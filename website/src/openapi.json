@@ -12560,30 +12560,7 @@
         "tags": [
           "Tasks"
         ],
-        "description": "Accept an escalated ticket: verifies the ticket's candidate first — a pass merges it as-is and continues the success path (merge, close the tracker issue, clean up, moving it to done); a non-pass re-enters the Attempt loop with the verifier's reason as feedback, exactly like Reject, and the ticket stays escalated-turned-working. Force-Accept (`{ force: true }`) skips verification and merges the candidate as-is. Human-only.",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "anyOf": [
-                  {
-                    "type": "object",
-                    "properties": {
-                      "force": {
-                        "example": false,
-                        "type": "boolean"
-                      }
-                    }
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              }
-            }
-          }
-        },
+        "description": "Accept an escalated ticket: the operator has judged the work done, so the candidate is merged as-is — merge, close the tracker issue, clean up, move it to done — with no verification. Human-only.",
         "parameters": [
           {
             "schema": {
@@ -12599,7 +12576,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The task, done (a passing or forced Accept) or back in the Attempt loop (a non-pass verify).",
+            "description": "The task, now done and merged.",
             "content": {
               "application/json": {
                 "schema": {

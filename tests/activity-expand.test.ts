@@ -147,8 +147,8 @@ describe("Activity fleet lanes", () => {
     expect(host.textContent).toContain("1M");
     expect(host.textContent).toContain("$2.00");
     expect(host.textContent).not.toContain("Deep Subagent");
-    expect(host.querySelector('a[href="/task/4"]')).not.toBeNull();
-    expect(host.querySelector('a[href="/?conversation=2"]')).not.toBeNull();
+    expect(host.querySelector('a[href="/workspace/1/task/4"]')).not.toBeNull();
+    expect(host.querySelector('a[href="/workspace/1/conversations/2"]')).not.toBeNull();
     expect(host.querySelectorAll('button[aria-label*="Expand"]')).toHaveLength(
       0,
     );

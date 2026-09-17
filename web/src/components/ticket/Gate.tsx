@@ -1,6 +1,6 @@
 import type { AttemptDot } from '../../attempt-rail-model';
 import type { GateModel } from '../../ticket-gate-model';
-import type { Task, VerificationAttempt } from '../../types';
+import type { Task } from '../../types';
 import { btnGhost, dot, runDotFill } from '../../ui';
 import { taskActions } from '../../task-actions-model';
 import { TaskActions } from '../TaskActions';
@@ -17,14 +17,12 @@ const WRAP = 'sticky bottom-0 z-[5] flex flex-col gap-2.5 border-t border-hairli
 export function Gate({
   model,
   task,
-  verificationAttempts,
   onEdit,
   onChanged,
   onGoToCurrent,
 }: {
   model: GateModel;
   task: Task;
-  verificationAttempts: VerificationAttempt[];
   onEdit: (task: Task) => void;
   onChanged: () => void;
   onGoToCurrent: (attemptId: number) => void;
@@ -33,7 +31,7 @@ export function Gate({
     if (taskActions(task.state).length === 0) return null;
     return (
       <div className={WRAP}>
-        <TaskActions task={task} variant="footer" verificationAttempts={verificationAttempts} onEdit={onEdit} onChanged={onChanged} />
+        <TaskActions task={task} variant="footer" onEdit={onEdit} onChanged={onChanged} />
       </div>
     );
   }
@@ -65,7 +63,6 @@ export function Gate({
       <TaskActions
         task={task}
         variant="footer"
-        verificationAttempts={verificationAttempts}
         onEdit={onEdit}
         onChanged={onChanged}
       />

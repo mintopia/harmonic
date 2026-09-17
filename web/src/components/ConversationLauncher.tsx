@@ -690,7 +690,6 @@ export function ConversationLauncher({
                   conversation={conversation}
                   events={events}
                   expanded={false}
-                  onOpen={actions.open}
                   onSend={actions.send}
                 />
               </>
@@ -856,7 +855,6 @@ export function ConversationsPage({
                     conversation={conversation}
                     events={events}
                     expanded={true}
-                    onOpen={actions.open}
                     onSend={actions.send}
                     onOpenContext={() => setContextOpen(true)}
                   />
