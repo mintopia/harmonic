@@ -67,7 +67,6 @@ export function Composer({
   conversation,
   events,
   expanded,
-  onOpen,
   onSend,
   onOpenContext,
 }: {
@@ -76,7 +75,6 @@ export function Composer({
   conversation: Conversation | null;
   events: ConversationEvent[];
   expanded: boolean;
-  onOpen?: (fields: { harness: string; model: string; permissionMode: Conversation['permissionMode'] }) => Promise<void>;
   onSend: (
     fields: { harness: string; model: string; permissionMode: Conversation['permissionMode'] },
     text: string,
@@ -94,7 +92,6 @@ export function Composer({
   const [dismissedPicker, setDismissedPicker] = useState<string | null>(null);
   const queuedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const composer = useRef<HTMLDivElement>(null);
-  const opened = useRef(false);
   const textarea = useRef<HTMLTextAreaElement>(null);
   const listId = useId();
 
@@ -110,12 +107,6 @@ export function Composer({
   const picker = prefix ? commandPickerState(text, caret, prefix, conversation?.commands ?? []) : null;
   const pickerKey = picker ? `${picker.start}:${picker.end}:${caret}:${text}` : null;
   const pickerOpen = picker !== null && dismissedPicker !== pickerKey;
-
-  useEffect(() => {
-    if (locked || opened.current || !onOpen) return;
-    opened.current = true;
-    void onOpen({ harness, model, permissionMode }).catch(toastError);
-  }, [harness, locked, model, onOpen, permissionMode]);
 
   useEffect(() => {
     if (highlight >= 0) document.getElementById(`${listId}-opt-${highlight}`)?.scrollIntoView({ block: 'nearest' });

@@ -66,6 +66,7 @@ interface CommandResult {
 export interface ServiceManagerDependencies {
   nodePath: string;
   cliPath: string;
+  path: string;
   homeDir: string;
   userName: string;
   run(command: string, args: readonly string[]): Promise<CommandResult>;
@@ -81,6 +82,7 @@ export interface ServiceManagerDependencies {
 const defaultDependencies = (): ServiceManagerDependencies => ({
   nodePath: process.execPath,
   cliPath: resolve(process.argv[1] ?? fileURLToPath(new URL('./cli.js', import.meta.url))),
+  path: process.env.PATH ?? '',
   homeDir: homedir(),
   userName: userInfo().username,
   run: async (command, args) => {
@@ -113,6 +115,11 @@ const escapeUnitArgument = (value: string): string =>
   /^[A-Za-z0-9_./:=+@%,-]+$/.test(value) ? value : JSON.stringify(value);
 
 const environmentFileValue = (value: string): string => JSON.stringify(value);
+
+const unitEnvironment = (key: string, value: string): string => {
+  const assignment = `${key}=${value}`;
+  return /^[A-Za-z0-9_./:=+@%,-]+$/.test(assignment) ? assignment : JSON.stringify(assignment);
+};
 
 const initdScriptPath = '/etc/init.d/harmonic';
 
@@ -202,7 +209,12 @@ class SystemdServiceManager implements ServiceManager {
     const serviceUser = user === undefined ? '' : `User=${user}\nGroup=${user}\n`;
     const wantedBy = this.userUnit ? 'default.target' : 'multi-user.target';
     const workingDirectory = `WorkingDirectory=${escapeUnitArgument(serve.dataDir)}\n`;
-    return `[Unit]\nDescription=Harmonic\nAfter=network.target\n\n[Service]\nType=simple\n${serviceUser}${workingDirectory}ExecStart=${args}\n${environmentFile}Environment=HARMONIC_MANAGED_BY=systemd\nRestart=always\nTimeoutStopSec=60\n\n[Install]\nWantedBy=${wantedBy}\n`;
+    // Without an explicit PATH the unit inherits systemd's minimal default, which
+    // omits the operator's shims (npm, opencode, version-manager bins). Carry the
+    // install-time PATH so the harness can spawn its agents and in-place upgrades
+    // can reach npm.
+    const pathEnvironment = this.dependencies.path ? `Environment=${unitEnvironment('PATH', this.dependencies.path)}\n` : '';
+    return `[Unit]\nDescription=Harmonic\nAfter=network.target\n\n[Service]\nType=simple\n${serviceUser}${workingDirectory}ExecStart=${args}\n${environmentFile}${pathEnvironment}Environment=HARMONIC_MANAGED_BY=systemd\nRestart=always\nTimeoutStopSec=60\n\n[Install]\nWantedBy=${wantedBy}\n`;
   }
 
   async install(options: ServiceInstallOptions): Promise<ServiceInstallResult> {

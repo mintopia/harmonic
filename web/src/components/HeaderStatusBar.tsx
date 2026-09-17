@@ -28,6 +28,7 @@ interface HeaderStatusBarProps {
   onLogout: () => void;
   onNewTask: () => void;
   onOpenAbout: () => void;
+  onOpenActivity: () => void;
 }
 
 export function HeaderStatusBar({
@@ -52,6 +53,7 @@ export function HeaderStatusBar({
   onLogout,
   onNewTask,
   onOpenAbout,
+  onOpenActivity,
 }: HeaderStatusBarProps) {
   return (
     <header
@@ -68,13 +70,18 @@ export function HeaderStatusBar({
         <Icon name="menu" />
       </button>
       {config && (
-        <span className="flex items-center gap-2 text-small text-muted rail:hidden">
+        <button
+          type="button"
+          onClick={onOpenActivity}
+          aria-label={`${runningCount} running across all workspaces — open Activity`}
+          className="flex items-center gap-2 rounded-md text-small text-muted transition-colors duration-150 hover:text-ink rail:hidden"
+        >
           <span
             aria-hidden="true"
             className={`size-[7px] rounded-full ${runningCount > 0 ? 'bg-running-dot motion-safe:animate-pulse' : 'bg-faint'}`}
           />
-          <b className={`font-semibold ${runningCount > 0 ? 'text-ink' : 'text-muted'}`}>{runningCount}</b> running
-        </span>
+          <span><b className={`font-semibold ${runningCount > 0 ? 'text-ink' : 'text-muted'}`}>{runningCount}</b> running</span>
+        </button>
       )}
       <div className="hidden rail:contents">
         <OperatorControls
@@ -97,6 +104,7 @@ export function HeaderStatusBar({
           onSettingsClick={onSettingsClick}
           onLogout={onLogout}
           onOpenAbout={onOpenAbout}
+          onOpenActivity={onOpenActivity}
         />
       </div>
       <div className="flex-1 rail:hidden" />

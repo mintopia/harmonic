@@ -186,6 +186,7 @@ export function App() {
   const [updatePending, setUpdatePending] = useState(false);
   const updateRequest = useRef(0);
   const [hostLoad, setHostLoad] = useState<HostLoad | null>(null);
+  const [globalRunningCount, setGlobalRunningCount] = useState(0);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [workspacesLoaded, setWorkspacesLoaded] = useState(false);
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<number | null>(() =>
@@ -278,6 +279,27 @@ export function App() {
       if (route.scope.kind === 'workspace') setActiveWorkspaceId(route.scope.workspaceId);
     }, (error) => live() && toastError(error));
   }, [authed, route.scope]);
+
+  // The header's "running" count is fleet-wide, not scoped to the open Workspace,
+  // so it draws from the global activity feed independently of the per-Workspace
+  // task list.
+  useLiveEffect((live) => {
+    if (!authed) return;
+    const load = () =>
+      api.activity().then(
+        ({ processes }) => live() && setGlobalRunningCount(processes.filter((process) => process.type === 'attempt').length),
+        () => {},
+      );
+    load();
+    const timer = setInterval(load, 10_000);
+    const unsubscribe = subscribe((message) => {
+      if (message.type === 'attempt_changed') load();
+    }, load);
+    return () => {
+      clearInterval(timer);
+      unsubscribe();
+    };
+  }, [authed]);
 
   // Only the initial landing on the sole Workspace's board is automatic — once
   // decided, an operator who explicitly navigates back to the global Dashboard
@@ -595,6 +617,11 @@ export function App() {
     navigate(scopeSwitchRoute(route, { kind: 'global' }));
     setMenuOpen(false);
   };
+  const openGlobalActivity = () => {
+    navigate({ ...scopeSwitchRoute(route, { kind: 'global' }), view: 'activity' });
+    setTasks(null);
+    setMenuOpen(false);
+  };
 
   const handleWorkspaceCreated = (w: Workspace) => {
     setWorkspaces((current) => [...current, w]);
@@ -697,7 +724,7 @@ export function App() {
           <OperatorControls
             layout="drawer"
             config={config}
-            runningCount={runningCount}
+            runningCount={globalRunningCount}
             cost24h={cost24h}
             hostLoad={hostLoad}
             theme={theme}
@@ -716,6 +743,7 @@ export function App() {
             onSettingsClick={() => pickView('settings')}
             onLogout={() => fetch('/api/auth/logout', { method: 'POST' }).then(() => setAuthed(false))}
             onOpenAbout={() => setAboutOpen(true)}
+            onOpenActivity={openGlobalActivity}
           />
         </div>
       </aside>
@@ -723,7 +751,7 @@ export function App() {
       <div className="group/shell flex min-h-0 min-w-0 flex-1 flex-col">
         <HeaderStatusBar
           config={config}
-          runningCount={runningCount}
+          runningCount={globalRunningCount}
           cost24h={cost24h}
           hostLoad={hostLoad}
           theme={theme}
@@ -745,6 +773,7 @@ export function App() {
           onLogout={() => fetch('/api/auth/logout', { method: 'POST' }).then(() => setAuthed(false))}
           onNewTask={() => setEditing('new')}
           onOpenAbout={() => setAboutOpen(true)}
+          onOpenActivity={openGlobalActivity}
         />
         <UpdateBanner
           update={update}

@@ -37,6 +37,7 @@ async function renderHeader(props: {
       onLogout: () => {},
       onNewTask: () => {},
       onOpenAbout: () => {},
+      onOpenActivity: () => {},
     }),
   );
 }

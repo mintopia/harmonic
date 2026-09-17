@@ -26,6 +26,7 @@ const initdDependencies = () => {
     warn,
     cliPath: '/opt/harmonic/dist/cli.js',
     nodePath: '/usr/bin/node',
+    path: '/usr/local/bin:/usr/bin:/bin',
     homeDir: '/home/agent',
     userName: 'agent',
     sudoUser: 'agent',
@@ -158,6 +159,7 @@ describe('systemd ServiceManager', () => {
       modes,
       cliPath: '/opt/harmonic/dist/cli.js',
       nodePath: '/usr/bin/node',
+      path: '/opt/tools/bin:/usr/local/bin:/usr/bin:/bin',
       homeDir: '/home/ada',
       userName: 'ada',
       run: async (command, args) => {
@@ -185,6 +187,7 @@ describe('systemd ServiceManager', () => {
     expect(deps.files.get('/etc/systemd/system/harmonic.service')).toContain('WorkingDirectory=/var/lib/harmonic');
     expect(deps.files.get('/etc/systemd/system/harmonic.service')).toContain('Restart=always');
     expect(deps.files.get('/etc/systemd/system/harmonic.service')).toContain('TimeoutStopSec=60');
+    expect(deps.files.get('/etc/systemd/system/harmonic.service')).toContain('Environment=PATH=/opt/tools/bin:/usr/local/bin:/usr/bin:/bin');
     expect(deps.files.get('/etc/systemd/system/harmonic.service')).toContain('Environment=HARMONIC_MANAGED_BY=systemd');
     expect(deps.files.get('/etc/systemd/system/harmonic.service')).not.toContain('EnvironmentFile=');
     expect(deps.files.has('/etc/systemd/system/harmonic.env')).toBe(false);

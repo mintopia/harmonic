@@ -190,8 +190,8 @@ function Lane({
     : usageTotalTokens(process.usage);
   const href =
     process.type === "attempt"
-      ? `/task/${process.taskId}`
-      : `/?conversation=${process.conversationId}`;
+      ? `/workspace/${process.workspaceId}/task/${process.taskId}`
+      : `/workspace/${process.workspaceId}/conversations/${process.conversationId}`;
   const name = node?.name ?? process.title;
   const model = node?.model ?? process.model;
   const cost = node
