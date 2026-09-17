@@ -1,5 +1,21 @@
 # Changelog
 
+## [2.13.0](https://github.com/mintopia/harmonic/compare/v2.12.2...v2.13.0) (2026-09-17)
+
+
+### Features
+
+* add About overlay behind the top bar's ? icon ([a83b685](https://github.com/mintopia/harmonic/commit/a83b6851106686feec67f6163b592bcbd439e58d))
+
+
+### Bug Fixes
+
+* always offer the About overlay's upgrade regardless of banner dismissal ([bc6a92d](https://github.com/mintopia/harmonic/commit/bc6a92d9fd8c0933f10218ff35e6d50fe148b423))
+* keep the global dashboard reachable with a single workspace ([832a71b](https://github.com/mintopia/harmonic/commit/832a71b0b3b3dfe9efd83f6b3eb2bdcebf030a31)), closes [#635](https://github.com/mintopia/harmonic/issues/635)
+* opencode contextTokens ignores in-flight zero-token message ([da833be](https://github.com/mintopia/harmonic/commit/da833be35d7148c06b46f4476274f5400258b94a))
+* put the ticket ref on the Drive Prompt's skill invocation line ([a5cf9c5](https://github.com/mintopia/harmonic/commit/a5cf9c595974951a8146ca705140d44fd067bc0e))
+* restore global settings icon to the top bar ([f90b888](https://github.com/mintopia/harmonic/commit/f90b888ed2384047464437696af0b208f382f79c)), closes [#636](https://github.com/mintopia/harmonic/issues/636)
+
 ## [2.12.2](https://github.com/mintopia/harmonic/compare/v2.12.1...v2.12.2) (2026-09-16)
 
 
