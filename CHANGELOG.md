@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.14.1](https://github.com/mintopia/harmonic/compare/v2.14.0...v2.14.1) (2026-09-18)
+
+
+### Bug Fixes
+
+* update docs site logo and favicon to treble clef ([4977d05](https://github.com/mintopia/harmonic/commit/4977d0562b0ae837668d7f17d19ca710360f1517))
+
 ## [2.14.0](https://github.com/mintopia/harmonic/compare/v2.13.0...v2.14.0) (2026-09-17)
 
 
