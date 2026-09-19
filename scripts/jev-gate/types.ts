@@ -61,7 +61,11 @@ export interface RoleRule {
   hint?: string;
 }
 
+export type GateMode = 'advisory' | 'enforcing';
+
 export interface GateConfig {
+  /** advisory = always exit 0 (report only); enforcing = exit 1 on a failing verdict. */
+  mode: GateMode;
   thresholds: GateThresholds;
   gatingCategories: CategoryId[];
   advisoryCategories: CategoryId[];
@@ -145,6 +149,7 @@ export interface FileResult {
 }
 
 export interface GateSummary {
+  mode: GateMode;
   base: string;
   mergeBase: string;
   filesChanged: number;

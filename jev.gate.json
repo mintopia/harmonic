@@ -1,36 +1,53 @@
 {
+  "_meta": "Jev code-quality gate policy. Implements /home/workspace/reports/jev-thresholds-proposal.md. Edit this, not scripts/jev-gate/*.ts, to retune. Consumed by scripts/jev-gate/cli.ts.",
   "mode": "advisory",
-  "enforce": { "newFileAbsolutes": true, "modifiedFileAbsolutes": false, "ratchet": false },
-  "gatedCategories": ["complexity_clean_code", "code_smells", "duplication", "testability", "error_handling"],
-  "categoryZones": { "failBelow": 1.5, "passAtOrAbove": 2.5 },
-  "overallZones": { "failBelow": 2.0, "passAtOrAbove": 2.4, "skipWhenExempt": true },
-  "confidence": { "hardFailMin": 0.6 },
-  "ratchetMargins": { "categoryDrop": 0.5, "overallDrop": 0.2 },
-  "exemptions": [
-    { "glob": "**/*.d.ts", "suppress": "all" },
-    { "glob": "**/generated/**", "suppress": "all" },
-    { "glob": "**/*.gen.ts", "suppress": "all" },
-    { "glob": "dist/**", "suppress": "all" },
-    { "glob": "build/**", "suppress": "all" },
-    { "glob": "**/node_modules/**", "suppress": "all" },
-    { "glob": "**/*.stories.@(ts|tsx|js|jsx)", "suppress": ["error_handling", "testability", "duplication"] },
-    { "glob": "**/*.@(test|spec).@(ts|tsx|js|jsx)", "suppress": ["testability", "duplication", "error_handling"] },
-    { "glob": "**/__tests__/**", "suppress": ["testability", "duplication", "error_handling"] },
-    { "glob": "**/__mocks__/**", "suppress": ["testability", "duplication", "error_handling"] },
-    { "glob": "**/test/**", "suppress": ["testability", "duplication", "error_handling"] },
-    { "glob": "**/tests/**", "suppress": ["testability", "duplication", "error_handling"] },
-    { "glob": "**/fixtures/**", "suppress": ["error_handling", "testability", "duplication"] },
-    { "glob": "**/*.fixture.@(ts|tsx)", "suppress": ["error_handling", "testability", "duplication"] },
-    { "glob": "**/mocks/**", "suppress": ["error_handling", "testability", "duplication"] },
-    { "glob": "**/migrations/**", "suppress": ["duplication", "testability"] },
-    { "glob": "**/*.migration.ts", "suppress": ["duplication", "testability"] }
-  ],
-  "scan": {
-    "defaultBase": "develop",
-    "sourceExtensions": [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"],
-    "maxFiles": 100,
-    "maxFileBytes": 400000,
-    "concurrency": 4
+  "thresholds": {
+    "category": { "fail": 1.5, "warn": 2.5 },
+    "overall": { "fail": 2.0, "warn": 2.4 },
+    "confidence": { "blockingMin": 0.6 },
+    "ratchet": { "categoryDrop": 0.5, "overallDrop": 0.2 }
   },
-  "onInfrastructureError": "skip"
+  "gatingCategories": ["complexity_clean_code", "code_smells", "duplication", "testability", "error_handling", "security", "comments"],
+  "advisoryCategories": [],
+  "roles": [
+    { "name": "type-declaration", "glob": ["**/*.d.ts"], "skip": true, "hint": "Ambient type declaration: no runtime behaviour to score." },
+    { "name": "generated", "glob": ["**/generated/**", "**/*.gen.ts"], "skip": true, "hint": "Generated code: not hand-written, not scored." },
+    {
+      "name": "story",
+      "glob": ["**/*.stories.@(ts|tsx|js|jsx)"],
+      "exempt": ["error_handling", "testability", "duplication"],
+      "hint": "Storybook story: illustrative component usage, not production runtime code."
+    },
+    {
+      "name": "test",
+      "glob": ["**/*.@(test|spec).@(ts|tsx|js|jsx)", "**/__tests__/**", "**/test/**", "**/tests/**"],
+      "exempt": ["testability", "duplication", "error_handling"],
+      "hint": "Test code: exercises behaviour; test-shaped duplication and light error handling are expected."
+    },
+    {
+      "name": "mock",
+      "glob": ["**/__mocks__/**", "**/mocks/**"],
+      "exempt": ["error_handling", "testability", "duplication"],
+      "hint": "Mock/stub: stand-in for a real dependency, not production logic."
+    },
+    {
+      "name": "fixture",
+      "glob": ["**/fixtures/**", "**/*.fixture.@(ts|tsx)"],
+      "exempt": ["error_handling", "testability", "duplication"],
+      "hint": "Fixture: static test input, not runtime logic."
+    },
+    {
+      "name": "migration",
+      "glob": ["**/migrations/**", "**/*.migration.ts"],
+      "exempt": ["duplication", "testability"],
+      "hint": "DB migration: sequential and append-only; repetition across migrations is expected and they are verified by running them, not unit tests."
+    }
+  ],
+  "sourceExtensions": [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"],
+  "skipDirs": ["node_modules", "dist", "build", "generated", "coverage", ".git"],
+  "baselinePath": "jev.baseline.json",
+  "maxFileBytes": 400000,
+  "chunkChars": 40000,
+  "diffCharBudget": 20000,
+  "defaultConcurrency": 4
 }

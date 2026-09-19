@@ -5,7 +5,7 @@
  * doc this implements.
  */
 import { readFileSync } from 'node:fs';
-import { ALL_CATEGORIES, type CategoryId, type GateConfig, type RoleRule, type Rubrics } from './types.js';
+import { ALL_CATEGORIES, type CategoryId, type GateConfig, type GateMode, type RoleRule, type Rubrics } from './types.js';
 
 function readJson(path: string): unknown {
   let raw: string;
@@ -74,7 +74,14 @@ export function loadGateConfig(path: string): GateConfig {
   const rolesRaw = data['roles'];
   if (!Array.isArray(rolesRaw)) throw new Error('jev-gate: config field "roles" must be an array');
 
+  const modeRaw = data['mode'] ?? 'enforcing';
+  if (modeRaw !== 'advisory' && modeRaw !== 'enforcing') {
+    throw new Error(`jev-gate: config field "mode" must be "advisory" or "enforcing", got "${String(modeRaw)}"`);
+  }
+  const mode = modeRaw as GateMode;
+
   return {
+    mode,
     thresholds: {
       category: { fail: asNumber(category['fail'], 'thresholds.category.fail'), warn: asNumber(category['warn'], 'thresholds.category.warn') },
       overall: { fail: asNumber(overall['fail'], 'thresholds.overall.fail'), warn: asNumber(overall['warn'], 'thresholds.overall.warn') },
