@@ -1,0 +1,36 @@
+{
+  "mode": "advisory",
+  "enforce": { "newFileAbsolutes": true, "modifiedFileAbsolutes": false, "ratchet": false },
+  "gatedCategories": ["complexity_clean_code", "code_smells", "duplication", "testability", "error_handling"],
+  "categoryZones": { "failBelow": 1.5, "passAtOrAbove": 2.5 },
+  "overallZones": { "failBelow": 2.0, "passAtOrAbove": 2.4, "skipWhenExempt": true },
+  "confidence": { "hardFailMin": 0.6 },
+  "ratchetMargins": { "categoryDrop": 0.5, "overallDrop": 0.2 },
+  "exemptions": [
+    { "glob": "**/*.d.ts", "suppress": "all" },
+    { "glob": "**/generated/**", "suppress": "all" },
+    { "glob": "**/*.gen.ts", "suppress": "all" },
+    { "glob": "dist/**", "suppress": "all" },
+    { "glob": "build/**", "suppress": "all" },
+    { "glob": "**/node_modules/**", "suppress": "all" },
+    { "glob": "**/*.stories.@(ts|tsx|js|jsx)", "suppress": ["error_handling", "testability", "duplication"] },
+    { "glob": "**/*.@(test|spec).@(ts|tsx|js|jsx)", "suppress": ["testability", "duplication", "error_handling"] },
+    { "glob": "**/__tests__/**", "suppress": ["testability", "duplication", "error_handling"] },
+    { "glob": "**/__mocks__/**", "suppress": ["testability", "duplication", "error_handling"] },
+    { "glob": "**/test/**", "suppress": ["testability", "duplication", "error_handling"] },
+    { "glob": "**/tests/**", "suppress": ["testability", "duplication", "error_handling"] },
+    { "glob": "**/fixtures/**", "suppress": ["error_handling", "testability", "duplication"] },
+    { "glob": "**/*.fixture.@(ts|tsx)", "suppress": ["error_handling", "testability", "duplication"] },
+    { "glob": "**/mocks/**", "suppress": ["error_handling", "testability", "duplication"] },
+    { "glob": "**/migrations/**", "suppress": ["duplication", "testability"] },
+    { "glob": "**/*.migration.ts", "suppress": ["duplication", "testability"] }
+  ],
+  "scan": {
+    "defaultBase": "develop",
+    "sourceExtensions": [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"],
+    "maxFiles": 100,
+    "maxFileBytes": 400000,
+    "concurrency": 4
+  },
+  "onInfrastructureError": "skip"
+}
