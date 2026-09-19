@@ -18,19 +18,12 @@ import { codeIndexRepoGuidance, driveFields, promptForTask } from './prompt-temp
 import { indexWorktree, dropIndexForPath } from './code-index.js';
 import type { AutoDrive } from './auto-drive.js';
 import type { AppConfig, HarnessConfig } from '../config.js';
-import { isTaskAttempt, type TaskRow, type AttemptRow, type WorkspaceRow, type SessionRow } from '../db/schema.js';
+import { isTaskAttempt, type TaskRow, type AttemptRow, type WorkspaceRow } from '../db/schema.js';
 import { AcpDriver, AcpPromptTimeoutError, type AcpInitializeResult, type PromptResult } from '../acp/driver.js';
 import { AcpConnectionClosedError } from '../acp/connection.js';
 import { parsePermissionRequest } from '../acp/permission-request.js';
 import { SessionStore } from '../domain/sessions.js';
-import { assessResumeEligibility, sessionFacts, type ResumeEnvironment } from '../domain/session-resume.js';
-import {
-  planSessionContinuation,
-  sessionWarmthFacts,
-  decideAttemptContinuation,
-  type ContinuationTrigger,
-  type DeterministicContinuation,
-} from '../domain/session-continuation.js';
+import { type DeterministicContinuation } from '../domain/session-continuation.js';
 import { repoKey } from './repo-lock.js';
 import { DomainError } from '../domain/errors.js';
 import { AttemptStore, type AttemptGuardrailSnapshot, type PersistedAttemptEvent } from '../domain/attempts.js';
@@ -39,10 +32,7 @@ import type { SessionRetirementHook } from '../domain/session-retirement-coordin
 import type { TaskService } from '../domain/tasks.js';
 import { resolveGuardrails, resolvePauseMessage, resolveVerifiers, resolveScoped, resolveTaskPrompt } from '../domain/setting-override.js';
 import type { ResolvedGuardrails } from '../domain/setting-override.js';
-
-function configuredCacheWarmSeconds(config: AppConfig, harness: string): number | undefined {
-  return Object.entries(config.harnesses).find(([id]) => id === harness)?.[1].cacheWarmSeconds;
-}
+import { SessionContinuation, type PersistSessionContext } from './session-continuation.js';
 import { VerificationAttemptStore } from '../domain/verification-attempts.js';
 import { EpicMergeEventStore } from '../domain/epic-merge-events.js';
 import { GuardrailEventStore } from '../domain/guardrail-events.js';
@@ -177,7 +167,7 @@ export interface RunnerOptions {
   postMerge?: PostMergeHook;
 }
 
-interface Workspace {
+export interface Workspace {
   cwd: string;
   env: Record<string, string>;
   worktree?: { repoDir: string; path: string };
@@ -224,17 +214,6 @@ type TurnOutcome =
   | { kind: 'actionable-fail'; reason: string; output: string };
 
 const EPIC_REFRESH_RESOLVE_TIMEOUT_MS = 10 * 60 * 1000;
-
-interface PersistSessionContext {
-  task: TaskRow;
-  run: AttemptRow;
-  harness: HarnessConfig;
-  workspace: Workspace;
-  mcpServers: unknown[];
-  attemptAtStart: AttemptRow;
-  getSessionInit: () => AcpInitializeResult | undefined;
-  setSessionRowId: (id: number) => void;
-}
 
 type RunEventRecorder = (type: 'permission_request' | 'lifecycle', payload: unknown) => void;
 
@@ -379,6 +358,7 @@ export class Runner {
   private readonly tailer: LiveUsageTailer;
   private readonly usage: UsageSampler;
   private readonly transcripts: TranscriptCapture;
+  private readonly sessionContinuation: SessionContinuation;
   private readonly spendPollMs: number;
   private readonly spendGraceMs: number;
   /** The MCP endpoint agents should call back to; set once the server listens. */
@@ -408,6 +388,15 @@ export class Runner {
     this.guardrailEvents = new GuardrailEventStore(this.asyncDb);
     this.sessionStore = new SessionStore(this.asyncDb);
     this.transcripts = new TranscriptCapture(this.sessionStore, this.verificationAttempts, this.getConfig);
+    this.sessionContinuation = new SessionContinuation(
+      this.attempts,
+      this.sessionStore,
+      this.transcripts,
+      this.getConfig,
+      { latestSnapshot: (attemptId) => this.usage.latestSnapshot(attemptId) },
+      (attemptId) => this.activeRuns.getLastTurnContextTokens(attemptId),
+      (task) => this.dispatchCwd(task),
+    );
     this.usage = new UsageSampler(
       this.attempts,
       (attemptId) => {
@@ -567,7 +556,7 @@ export class Runner {
     let choice: 'full' | 'condensed' | undefined;
     let continuation: DeterministicContinuation | undefined;
     if (run) {
-      continuation = await this.decideContinuation(task, run, await this.getWorkspace?.(task.workspaceId));
+      continuation = await this.sessionContinuation.decideContinuation(task, run, await this.getWorkspace?.(task.workspaceId));
       choice = continuation.path === 'continued-session' ? 'full' : 'condensed';
     }
     await this.taskService.requeue(task.id, trimmed, choice);
@@ -664,7 +653,7 @@ export class Runner {
       await this.attempts.setContinuation(created.id, pendingContinuation);
     }
     const run = created;
-    const bound = await this.bindContinuationIfEligible(task, run);
+    const bound = await this.sessionContinuation.bindContinuationIfEligible(task, run);
     if (await this.pauseIfGloballyPaused(task.id)) return bound;
     const operation = startOperation({
       type: 'attempt',
@@ -711,71 +700,12 @@ export class Runner {
     }
   }
 
-  private async resolveContinuationSource(
-    task: TaskRow,
-  ): Promise<{ prior: AttemptRow; session: SessionRow; trigger: ContinuationTrigger } | null> {
-    const priors = await this.attempts.listForTask(task.id);
-    for (let i = priors.length - 1; i >= 0; i--) {
-      const prior = priors[i]!;
-      if (prior.sessionRowId === null) continue;
-      try {
-        const session = await this.sessionStore.get(prior.sessionRowId);
-        return { prior, session, trigger: 'manual-resume' };
-      } catch {
-        continue;
-      }
-    }
-    return null;
-  }
-
-  private async bindContinuationIfEligible(task: TaskRow, run: AttemptRow): Promise<AttemptRow> {
-    try {
-      const src = await this.resolveContinuationSource(task);
-      if (!src) return run;
-      if (!this.resumeEligibilityFor(task, src.session).eligible) return run;
-
-      const cacheWarmSeconds = configuredCacheWarmSeconds(this.getConfig(), task.harness);
-      if (cacheWarmSeconds === undefined) return run;
-      const plan = planSessionContinuation(src.trigger, sessionWarmthFacts(src.session, cacheWarmSeconds), Date.now());
-
-      if (plan.mode === 'offer-choice' && task.continuationChoice === 'condensed') {
-        return run;
-      }
-
-      const bound = await this.attempts.update(run.id, {
-        sessionRowId: src.session.id,
-        sessionId: src.session.harnessSessionId,
-      });
-      await bestEffort(() => this.sessionStore.reactivate(src.session.id, Date.now()), {
-        op: 'runner.resumeSession.reactivate',
-        level: 'warn',
-        context: { taskId: task.id, attemptId: run.id, sessionRowId: src.session.id },
-      });
-      return bound;
-    } catch (err) {
-      reportFailure(err, { op: 'runner.resumeSession', level: 'warn', context: { taskId: task.id, attemptId: run.id } });
-      return run;
-    }
-  }
-
   private worktreePathForTask(task: TaskRow): string {
     return join(this.worktreesDir, `task-${task.id}`);
   }
 
   private dispatchCwd(task: TaskRow): string {
     return task.isolationMode === 'worktree' ? this.worktreePathForTask(task) : task.workingDir;
-  }
-
-  private resumeEligibilityFor(task: TaskRow, session: SessionRow) {
-    const env: ResumeEnvironment = {
-      harness: session.harness,
-      adapterVersion: adapterVersion(task.harness),
-      model: task.model,
-      availablePermissionModes: session.permissionMode ? [session.permissionMode] : [],
-      cwd: repoKey(this.dispatchCwd(task)),
-    };
-    const stored = { ...sessionFacts(session), cwd: repoKey(session.cwd) };
-    return assessResumeEligibility(stored, env);
   }
 
   private branchForTask(task: TaskRow): string {
@@ -1011,9 +941,9 @@ export class Runner {
     if (this.activeRuns.hasTask(taskId)) return false;
     const task = await this.taskService.get(taskId);
     if (task.state !== 'escalated') return false;
-    const src = await this.resolveContinuationSource(task);
+    const src = await this.sessionContinuation.resolveContinuationSource(task);
     if (!src) return false;
-    if (!this.resumeEligibilityFor(task, src.session).eligible) return false;
+    if (!this.sessionContinuation.resumeEligibilityFor(task, src.session).eligible) return false;
     this.activeRuns.setPendingOperatorSeed(taskId, text);
     try {
       await this.taskService.requeue(taskId, undefined, 'full');
@@ -1039,8 +969,8 @@ export class Runner {
     if (this.activeRuns.hasTask(taskId)) {
       return (await this.resume(taskId)) && (await this.steer(taskId, text));
     }
-    const src = await this.resolveContinuationSource(task);
-    if (!src || !this.resumeEligibilityFor(task, src.session).eligible) return false;
+    const src = await this.sessionContinuation.resolveContinuationSource(task);
+    if (!src || !this.sessionContinuation.resumeEligibilityFor(task, src.session).eligible) return false;
     this.activeRuns.setPendingOperatorSeed(taskId, text);
     try {
       await this.resumePaused(taskId);
@@ -1063,9 +993,9 @@ export class Runner {
     if (task.state !== 'paused') return this.taskService.resume(taskId);
     if (this.activeRuns.hasTask(taskId)) return this.taskService.resume(taskId);
     const chosen = continuation ? await this.taskService.setContinuationChoice(taskId, continuation) : task;
-    const src = await this.resolveContinuationSource(chosen);
+    const src = await this.sessionContinuation.resolveContinuationSource(chosen);
     const resumed = await this.taskService.resume(taskId);
-    if (!src || !this.resumeEligibilityFor(chosen, src.session).eligible) return resumed;
+    if (!src || !this.sessionContinuation.resumeEligibilityFor(chosen, src.session).eligible) return resumed;
     try {
       await this.beginRun(resumed, undefined, src.prior);
     } catch (err) {
@@ -1491,7 +1421,7 @@ export class Runner {
         return;
       }
       await this.attempts.finish(run.id, 'failed', Date.now(), feedback);
-      const continuation = await this.decideContinuation(task, run, workspace);
+      const continuation = await this.sessionContinuation.decideContinuation(task, run, workspace);
       attemptNumber += 1;
       const closedRunId = run.id;
       this.activeRuns.releaseAttempt(closedRunId);
@@ -1509,45 +1439,12 @@ export class Runner {
         output: outcome.output,
         attempt: attemptNumber - 1,
         continuation,
-        condensedContext: continuation.path === 'new-session-condensed' ? await this.condensedContext(run) : null,
+        condensedContext: continuation.path === 'new-session-condensed' ? await this.sessionContinuation.condensedContext(run) : null,
       };
       }
     } finally {
       this.activeRuns.releaseAttempt(run.id);
     }
-  }
-
-  private async decideContinuation(
-    task: TaskRow,
-    run: AttemptRow,
-    workspace: Awaited<ReturnType<NonNullable<RunnerOptions['getWorkspace']>>>,
-  ): Promise<DeterministicContinuation> {
-    const now = Date.now();
-    const session = run.sessionRowId === null ? null : await this.sessionStore.get(run.sessionRowId).catch(() => null);
-    const persisted = run.usage ? (JSON.parse(run.usage) as AttemptUsage).contextTokens ?? null : null;
-    const contextTokens = (await this.usage.latestSnapshot(run.id))?.contextTokens ?? this.activeRuns.getLastTurnContextTokens(run.id) ?? persisted;
-    return decideAttemptContinuation({
-      cacheWarmSeconds: configuredCacheWarmSeconds(this.getConfig(), task.harness) ?? 0,
-      contextTokens,
-      lastActiveAt: session?.lastActiveAt ?? now,
-      contextReuseTokenLimit: resolveScoped('contextReuseTokenLimit', workspace?.contextReuseTokenLimit, this.getConfig().contextReuseTokenLimit),
-      now,
-    });
-  }
-
-  private async condensedContext(run: AttemptRow): Promise<string | null> {
-    if (run.sessionRowId === null) return null;
-    const session = await this.sessionStore.get(run.sessionRowId).catch(() => null);
-    if (!session) return null;
-    const current = await this.attempts.get(run.id);
-    const events = await this.attempts.listEvents(run.id);
-    return [
-      '## Prior session (condensed)',
-      'This attempt starts a fresh Session under the deterministic continuation rule.',
-      `Prior Session: ${session.harness} / ${session.model} / ${session.harnessSessionId}`,
-      `Verified head: ${current.verifiedHeadOid ?? '(none produced)'}`,
-      `Attempt events: ${events.length}.`,
-    ].join('\n');
   }
 
   /** Run the corrective turn for a failed whole-Epic verification in a checked-out integration worktree. */
@@ -2494,7 +2391,7 @@ export class Runner {
       });
       if (outcome.loaded) {
         record('lifecycle', { event: 'session-reloaded', sessionId: continueSessionId });
-        await this.persistSession(continueSessionId, persistCtx);
+        await this.sessionContinuation.persistSession(continueSessionId, persistCtx);
       } else {
         record('lifecycle', { event: 'session-reload-declined', reason: outcome.reason, detail: outcome.detail });
         await driver.handshake({
@@ -2502,7 +2399,7 @@ export class Runner {
           mcpServers,
           modelId,
           onInitialize: listeners.onInitialize,
-          onSessionCreated: (sid) => this.persistSession(sid, persistCtx),
+          onSessionCreated: (sid) => this.sessionContinuation.persistSession(sid, persistCtx),
         });
       }
     } else {
@@ -2511,7 +2408,7 @@ export class Runner {
         mcpServers,
         modelId,
         onInitialize: listeners.onInitialize,
-        onSessionCreated: (sid) => this.persistSession(sid, persistCtx),
+        onSessionCreated: (sid) => this.sessionContinuation.persistSession(sid, persistCtx),
       });
     }
     this.tailer.start(run.id);
@@ -2582,8 +2479,8 @@ export class Runner {
         `Your previous attempt did not pass:\n${healCtx.reason}\n\n${healCtx.output}\n\nFix the cause so the full verification suite passes, then finish.`;
       condensed = healCtx.condensedContext ?? null;
     } else if (task.continuationChoice === 'condensed') {
-      const src = await this.resolveContinuationSource(task);
-      condensed = src ? await this.condensedContext(src.prior) : null;
+      const src = await this.sessionContinuation.resolveContinuationSource(task);
+      condensed = src ? await this.sessionContinuation.condensedContext(src.prior) : null;
     }
     if (rebaseConflict) {
       promptText =
@@ -2862,71 +2759,9 @@ export class Runner {
     }
   }
 
-  private async persistSession(harnessSessionId: string, ctx: PersistSessionContext): Promise<void> {
-    const { task, run, harness, workspace, mcpServers, attemptAtStart } = ctx;
-    fireAndForget(() => this.attempts.update(run.id, { sessionId: harnessSessionId }), {
-      op: 'runner.persistSession.bindSessionId',
-      level: 'warn',
-      context: { attemptId: run.id, harnessSessionId },
-    });
-    try {
-      const transcriptResolver = adapterFor(task.harness).usage?.resolveTranscriptPath;
-      const transcriptPath = await transcriptResolver?.({
-        sessionLogDir: harness.sessionLogDir,
-        sessionId: harnessSessionId,
-      });
-      const session = await this.sessionStore.recordDispatch({
-        harness: task.harness,
-        harnessSessionId,
-        model: task.model,
-        cwd: workspace.cwd,
-        workspaceId: task.workspaceId,
-        ...(transcriptPath !== undefined ? { transcriptPath } : {}),
-        mcpTemplates: mcpServers,
-        capabilities: ctx.getSessionInit(),
-        adapterVersion: adapterVersion(task.harness),
-        now: Date.now(),
-      });
-      ctx.setSessionRowId(session.id);
-      fireAndForget(() => this.attempts.update(run.id, { sessionRowId: session.id }), {
-        op: 'runner.persistSession.bindSessionRow',
-        level: 'error',
-        context: { attemptId: run.id, sessionRowId: session.id },
-      });
-      fireAndForget(
-        async () => {
-          const steps = await this.attempts.listSteps(attemptAtStart.id);
-          const implementation = steps.find((row) => row.type === 'implementation' && row.state === 'running');
-          if (implementation) await this.attempts.updateStep(implementation.id, { logLocator: `session:${session.id}` });
-        },
-        {
-          op: 'runner.persistSession.linkStepLog',
-          level: 'warn',
-          context: { attemptId: attemptAtStart.id, sessionRowId: session.id },
-        },
-      );
-      if (transcriptPath === null && transcriptResolver) {
-        void this.transcripts.captureSessionTranscript({ sessionId: harnessSessionId, sessionRowId: session.id, sessionLogDir: harness.sessionLogDir, transcriptResolver });
-      }
-    } catch (err) {
-      reportFailure(err, {
-        op: 'runner.persistSession',
-        level: 'error',
-        context: {
-          taskId: task.id,
-          attemptId: run.id,
-          harness: task.harness,
-          harnessSessionId,
-          workspaceId: task.workspaceId ?? undefined,
-          cwd: workspace.cwd,
-        },
-      });
-    }
-  }
-
   /** Resolve a Session's native transcript path on demand and persist it. */
   async ensureSessionTranscript(sessionRowId: number): Promise<string | null> {
-    return this.transcripts.ensureSessionTranscript(sessionRowId);
+    return this.sessionContinuation.ensureSessionTranscript(sessionRowId);
   }
 
   private noteModelMismatch(
