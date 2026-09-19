@@ -65,6 +65,7 @@ import {
   type PendingPermission,
 } from './conversation-permissions-model';
 import { conversationDisplayTitle } from './conversation-list-model';
+import { fetchAllPages } from './pagination';
 
 const GraphView = lazy(() => import('./components/GraphView').then((m) => ({ default: m.GraphView })));
 
@@ -119,21 +120,23 @@ interface PendingPermissionAlert {
   conversationTitle: string;
 }
 async function fetchOpenTasks(workspaceId: number): Promise<Task[]> {
-  const all: Task[] = [];
-  for (let offset = 0; ; offset += BOARD_PAGE) {
-    const { tasks, total } = await api.tasks({ workspaceId, state: 'open', limit: BOARD_PAGE, offset });
-    all.push(...tasks);
-    if (tasks.length === 0 || all.length >= total) return all;
-  }
+  return fetchAllPages(
+    async (limit, offset) => {
+      const { tasks, total } = await api.tasks({ workspaceId, state: 'open', limit, offset });
+      return { items: tasks, total };
+    },
+    BOARD_PAGE,
+  );
 }
 
 async function fetchAllEpics(workspaceId: number): Promise<Epic[]> {
-  const all: Epic[] = [];
-  for (let offset = 0; ; offset += BOARD_PAGE) {
-    const { epics, total } = await api.epics(workspaceId, { limit: BOARD_PAGE, offset });
-    all.push(...epics);
-    if (epics.length === 0 || all.length >= total) return all;
-  }
+  return fetchAllPages(
+    async (limit, offset) => {
+      const { epics, total } = await api.epics(workspaceId, { limit, offset });
+      return { items: epics, total };
+    },
+    BOARD_PAGE,
+  );
 }
 
 function usePeriodCost(authed: boolean, tasks: Task[] | null, workspaceId: number | null) {
