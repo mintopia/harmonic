@@ -172,12 +172,113 @@ export function PromptField({
  * map, so a settings form can surface each at its field via {@link FieldError},
  * falling back to the whole string for anything unmapped. Shared by the global
  * and per-Workspace settings pages. */
+/** Rewrite the terse validator messages (mostly Zod's) into plain English. A
+ * message that is already human — a custom schema message, a domain error — has
+ * no pattern to match and passes through unchanged. */
+export function humanizeFieldMessage(message: string): string {
+  const m = message.trim();
+  let g: RegExpMatchArray | null;
+  if (/^too small:.*string.*(>=?\s*1|at least\s*1)\b/i.test(m) || /^required$/i.test(m)) return 'Required';
+  if ((g = m.match(/^too small:.*string.*?(\d+)\s*character/i))) return `Must be at least ${g[1]} characters`;
+  if ((g = m.match(/^too small:.*number.*?(\d+)/i))) return `Must be at least ${g[1]}`;
+  if ((g = m.match(/^too big:.*number.*?(\d+)/i))) return `Must be at most ${g[1]}`;
+  if ((g = m.match(/^too big:.*string.*?(\d+)\s*character/i))) return `Must be at most ${g[1]} characters`;
+  if (/^invalid input:.*expected string/i.test(m)) return 'Must be text';
+  if (/^invalid input:.*expected number/i.test(m)) return 'Must be a number';
+  if (/^invalid input:.*expected boolean/i.test(m)) return 'Must be true or false';
+  if (/^invalid (option|enum|union)/i.test(m)) return 'Not one of the allowed values';
+  if (/^invalid input$/i.test(m)) return 'Invalid value';
+  return m;
+}
+
+/** Server validation errors arrive as one `path: message; path: message`
+ * string (src/server/app.ts's error handler) — split it back into a per-field
+ * map, so a settings form can surface each at its field via {@link FieldError},
+ * falling back to the whole string for anything unmapped. Values are run through
+ * {@link humanizeFieldMessage} so both the inline errors and the save bar read
+ * plainly. Shared by the global and per-Workspace settings pages. */
 export function parseFieldErrors(message: string): Record<string, string> {
   const out: Record<string, string> = {};
   for (const part of message.split('; ')) {
     const i = part.indexOf(': ');
     if (i === -1) continue;
-    out[part.slice(0, i)] = part.slice(i + 2);
+    out[part.slice(0, i)] = humanizeFieldMessage(part.slice(i + 2));
   }
   return out;
+}
+
+/** Human labels for the dotted config-path segments the server error handler
+ * emits, so a validation error names the field an operator recognises instead of
+ * its schema path. Unlisted segments fall back to de-camel-cased Title Case. */
+const FIELD_SEGMENT_LABELS: Record<string, string> = {
+  harnesses: 'Harness',
+  verify: 'Verification',
+  guardrails: 'Guardrails',
+  drive: 'Auto-drive',
+  defaults: 'Defaults',
+  chat: 'Chat',
+  autoRunner: 'Auto-runner',
+  editor: 'Editor',
+  task: 'Task',
+  epic: 'Epic',
+  preMerge: 'Pre-merge',
+  postMerge: 'Post-merge',
+  commands: 'Command',
+  critics: 'Critic',
+  budget: 'Budget',
+  models: 'Model',
+  defaultModel: 'Default model',
+  cacheWarmSeconds: 'Cache warm (s)',
+  permissionMode: 'Permission mode',
+  sessionLogDir: 'Session log dir',
+  timeoutSeconds: 'Timeout (s)',
+  issuePrompt: 'Issue prompt',
+  noIssuePrompt: 'No-issue prompt',
+  maxConcurrentAttempts: 'Concurrency cap',
+  maxAttempts: 'Attempt limit',
+  contextReuseTokenLimit: 'Context reuse limit',
+  wallClockMinutes: 'Wall-clock (min)',
+  costUsd: 'Cost cap (USD)',
+  toolTimeoutMinutes: 'Tool timeout (min)',
+  conflictResolveTurns: 'Conflict-resolve turns',
+  isolationMode: 'Isolation mode',
+  mergeFate: 'Merge fate',
+  continueAttempts: 'Continue attempts',
+  unattendedReminder: 'Unattended reminder',
+  continuePrompt: 'Continue prompt',
+  taskPrompt: 'Task prompt',
+  pauseMessage: 'Pause message',
+};
+
+function humanizeSegment(seg: string): string {
+  if (/^\d+$/.test(seg)) return `#${Number(seg) + 1}`;
+  return (
+    FIELD_SEGMENT_LABELS[seg] ??
+    seg
+      .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+      .replace(/[_-]/g, ' ')
+      .replace(/^./, (c) => c.toUpperCase())
+  );
+}
+
+/** Turn a dotted config path (`verify.task.preMerge.commands.0.command`) into a
+ * readable "Field (context)" label ("Command (Verification · Task · Pre-merge · #1)"). */
+export function humanizeFieldPath(path: string): string {
+  const segs = path.split('.').filter(Boolean);
+  if (segs.length === 0) return path;
+  const leaf = humanizeSegment(segs[segs.length - 1]!);
+  const context = segs.slice(0, -1).map(humanizeSegment);
+  return context.length ? `${leaf} (${context.join(' · ')})` : leaf;
+}
+
+/** Turn a raw save-error message into human-readable text for the save bar. A
+ * field-validation string ("path: msg; path: msg") becomes readable field lines;
+ * any other message (a domain error, "internal server error") is already human
+ * and passes through unchanged. */
+export function humanizeSaveError(message: string): string {
+  const fields = parseFieldErrors(message);
+  const keys = Object.keys(fields);
+  if (keys.length === 0) return message;
+  if (keys.length === 1) return `${humanizeFieldPath(keys[0]!)} — ${fields[keys[0]!]}`;
+  return `${keys.length} settings need fixing:\n` + keys.map((k) => `• ${humanizeFieldPath(k)} — ${fields[k]}`).join('\n');
 }

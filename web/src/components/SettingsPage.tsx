@@ -3,7 +3,7 @@ import { api } from '../api';
 import type { AppConfig, Channel, ConfigLayers } from '../types';
 import { btnGhost } from '../ui';
 import { changedChannelEvents, channelsDirty, toggleChannelEvent } from '../channels-save-model';
-import { parseFieldErrors } from './SettingsSection';
+import { humanizeSaveError, parseFieldErrors } from './SettingsSection';
 import { SettingsForm } from './SettingsForm';
 import type { GlobalRenderCtx } from './settings-schema';
 import { SETTING_TABS, type SettingTab } from '../../../src/domain/settings-registry.js';
@@ -71,7 +71,7 @@ export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void
       onSaved(updated);
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
-      setError(message);
+      setError(humanizeSaveError(message));
       setFieldErrors(parseFieldErrors(message));
     } finally {
       setSaving(false);
@@ -87,7 +87,7 @@ export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void
       setLocal(updated);
       onSaved(updated);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(humanizeSaveError(e instanceof Error ? e.message : String(e)));
     } finally {
       setSaving(false);
     }
