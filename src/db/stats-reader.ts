@@ -82,9 +82,19 @@ export type StatsWorkerResponse =
   | { kind: 'result'; id: number; result: StatsReadResult }
   | { kind: 'probe-result'; id: number; value: number }
   | { kind: 'error'; id: number; message: string; stack?: string }
-  | { kind: 'closed' };
+  | { kind: 'closed' }
+  | { kind: 'invalid'; message: string };
 
 const CLOSE_GRACE_MS = 5_000;
+export const MAX_PROBE_ITERATIONS = 10_000;
+
+/** Shared by the client's pre-flight check and the worker's own enforcement, so the two can't drift apart. */
+export function invalidProbeIterationsReason(iterations: number): string | null {
+  if (!Number.isSafeInteger(iterations) || iterations <= 0 || iterations > MAX_PROBE_ITERATIONS) {
+    return `Stats worker probe iterations must be an integer from 1 to ${MAX_PROBE_ITERATIONS}`;
+  }
+  return null;
+}
 
 type PendingRequest = {
   kind: 'read';
@@ -122,8 +132,7 @@ export function isStatsWorkerRequest(value: unknown): value is StatsWorkerReques
   return value.kind === 'probe'
     && typeof value.iterations === 'number'
     && Number.isSafeInteger(value.iterations)
-    && value.iterations > 0
-    && value.iterations <= 10_000;
+    && value.iterations > 0;
 }
 
 function isTotalsDimension(value: unknown): boolean {
@@ -175,12 +184,22 @@ function isStatsReadResult(value: unknown): value is StatsReadResult {
 function isStatsWorkerResponse(value: unknown): value is StatsWorkerResponse {
   if (!isRecord(value) || typeof value.kind !== 'string') return false;
   if (value.kind === 'closed') return true;
+  if (value.kind === 'invalid') return typeof value.message === 'string';
   if (!isId(value.id)) return false;
   if (value.kind === 'result') return isStatsReadResult(value.result);
   if (value.kind === 'probe-result') return typeof value.value === 'number' && Number.isFinite(value.value);
   return value.kind === 'error'
     && typeof value.message === 'string'
     && (value.stack === undefined || typeof value.stack === 'string');
+}
+
+/** Resolves the Stats worker's entry point (compiled `.js` if built, else the `.ts` source under `tsx`). */
+export function resolveStatsWorkerEntry(): { url: URL; execArgv?: string[] } {
+  const jsEntry = new URL('./stats-worker.js', import.meta.url);
+  const runningFromSource = !existsSync(fileURLToPath(jsEntry));
+  return runningFromSource
+    ? { url: new URL('./stats-worker.ts', import.meta.url), execArgv: ['--import', 'tsx'] }
+    : { url: jsEntry };
 }
 
 /** Typed RPC client for the one heavy read Harmonic currently runs off-loop. */
@@ -195,11 +214,10 @@ export class StatsWorkerClient {
 
   constructor(dataDir: string, defaultTimeoutMs: number = DEFAULT_QUERY_TIMEOUT_MS) {
     this.#defaultTimeoutMs = defaultTimeoutMs;
-    const jsEntry = new URL('./stats-worker.js', import.meta.url);
-    const runningFromSource = !existsSync(fileURLToPath(jsEntry));
-    this.#worker = new Worker(runningFromSource ? new URL('./stats-worker.ts', import.meta.url) : jsEntry, {
+    const { url, execArgv } = resolveStatsWorkerEntry();
+    this.#worker = new Worker(url, {
       workerData: { dataDir },
-      ...(runningFromSource ? { execArgv: ['--import', 'tsx'] } : {}),
+      ...(execArgv ? { execArgv } : {}),
     });
     this.#worker.on('message', (message: unknown) => {
       if (isStatsWorkerResponse(message)) this.#receive(message);
@@ -243,9 +261,8 @@ export class StatsWorkerClient {
   /** Test-only fixed-shape load probe. It never accepts SQL from the caller. */
   probeHeavyRead(iterations: number, opts?: QueryTimeoutOptions): Promise<number> {
     if (this.#closed) return Promise.reject(new Error('Stats worker is closed'));
-    if (!Number.isSafeInteger(iterations) || iterations <= 0 || iterations > 10_000) {
-      return Promise.reject(new Error('Stats worker probe iterations must be an integer from 1 to 10000'));
-    }
+    const invalidReason = invalidProbeIterationsReason(iterations);
+    if (invalidReason) return Promise.reject(new Error(invalidReason));
     const id = this.#nextId++;
     return new Promise<number>((resolve, reject) => {
       const timeoutMs = opts?.timeoutMs ?? this.#defaultTimeoutMs;
@@ -291,6 +308,7 @@ export class StatsWorkerClient {
       this.#finishClose();
       return;
     }
+    if (message.kind === 'invalid') return;
     const pending = this.#pending.get(message.id);
     if (!pending) return;
     this.#pending.delete(message.id);
