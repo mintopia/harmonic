@@ -179,11 +179,8 @@ export interface ConversationDriverOptions {
   onTurnSettled?: () => void;
   /** Roots a Conversation's workingDir must resolve inside (or equal); undefined skips the check (e.g. in tests that don't wire it). */
   allowedRoots?: () => Promise<string[]>;
-  /** Spawns the harness child process; defaults to {@link createHarnessProcessSpawn}. */
   processSpawn?: HarnessSpawn;
-  /** Checks whether a Conversation's workingDir exists; defaults to {@link createFsWorkingDirProbe}. */
   fs?: WorkingDirProbe;
-  /** Schedules/cancels the idle timeout; defaults to {@link createRealTimers}. */
   timers?: ConversationTimers;
 }
 
