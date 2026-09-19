@@ -270,21 +270,32 @@ export function renderBaselineHtml(baseline: Baseline, meta: BaselineMeta | null
   const palette = () => ({ pass: cssVar('--pass'), warn: cssVar('--warn'), fail: cssVar('--fail'), na: cssVar('--muted'), grid: cssVar('--line'), tick: cssVar('--muted'), panel: cssVar('--panel'), passBg: cssVar('--pass-bg'), warnBg: cssVar('--warn-bg'), failBg: cssVar('--fail-bg') });
   const zoneColor = (P, z) => z === 'pass' ? P.pass : z === 'warn' ? P.warn : z === 'fail' ? P.fail : P.na;
 
-  // Horizontal fail/warn/pass bands behind each plot, on the score (y) axis.
+  // fail/warn/pass zones behind each plot, in the SAME confidence×score space the
+  // dots live in: a point's zone is catZone(weight(score, conf)), so the boundaries
+  // are the curves where weight = 1.5 and 2.5 — i.e. score = 2 ± 0.5/confidence.
+  // Low confidence (left) is all neutral/warn; the pass/fail regions only open up
+  // as confidence rises (right). Rasterised in thin vertical strips.
   const zoneBands = {
     id: 'zoneBands',
     beforeDatasetsDraw(chart) {
       const { ctx, chartArea, scales: sc } = chart;
-      if (!chartArea || !sc.y) return;
+      if (!chartArea || !sc.x || !sc.y) return;
       const P = palette();
-      const x = chartArea.left, w = chartArea.right - chartArea.left;
-      const band = (lo, hi, color) => {
-        const top = sc.y.getPixelForValue(hi), bot = sc.y.getPixelForValue(lo);
-        ctx.save(); ctx.globalAlpha = 0.5; ctx.fillStyle = color; ctx.fillRect(x, top, w, bot - top); ctx.restore();
-      };
-      band(0, 1.5, P.failBg);
-      band(1.5, 2.5, P.warnBg);
-      band(2.5, 4, P.passBg);
+      const yTop = sc.y.getPixelForValue(4), yBot = sc.y.getPixelForValue(0);
+      const step = 2;
+      ctx.save();
+      ctx.globalAlpha = 0.5;
+      for (let px = chartArea.left; px < chartArea.right; px += step) {
+        const c = Math.max(0, Math.min(1, sc.x.getValueForPixel(px) / 100));
+        const sHi = c <= 0 ? 4 : Math.min(4, 2 + 0.5 / c);
+        const sLo = c <= 0 ? 0 : Math.max(0, 2 - 0.5 / c);
+        const yHi = sc.y.getPixelForValue(sHi), yLo = sc.y.getPixelForValue(sLo);
+        const w = Math.min(step, chartArea.right - px);
+        ctx.fillStyle = P.passBg; ctx.fillRect(px, yTop, w, yHi - yTop);
+        ctx.fillStyle = P.warnBg; ctx.fillRect(px, yHi, w, yLo - yHi);
+        ctx.fillStyle = P.failBg; ctx.fillRect(px, yLo, w, yBot - yLo);
+      }
+      ctx.restore();
     },
   };
 
