@@ -43,7 +43,7 @@ export class TrackerPollerManager {
     this.resolveAdapter = options.resolveAdapter ?? resolveTrackerAdapter;
     this.onError = options.onError ?? logger.error;
     this.scheduler = options.scheduler;
-    this.epicService = options.epicService ?? new TrackerEpicService(tasks, getWorkspaces, this.resolveAdapter, this.onError);
+    this.epicService = options.epicService ?? new TrackerEpicService(tasks, getWorkspaces, { resolveAdapter: this.resolveAdapter, onError: this.onError });
     this.yieldOptions = options.yieldOptions;
   }
 

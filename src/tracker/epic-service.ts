@@ -1,18 +1,14 @@
 import type { AppConfig } from '../config.js';
-import { mkdirSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { isEpicAttempt, type AttemptRow, type EpicAttemptRow, type EpicRow, type TaskRow, type WorkspaceRow } from '../db/schema.js';
+import { type AttemptRow, type EpicAttemptRow, type EpicRow, type TaskRow, type WorkspaceRow } from '../db/schema.js';
 import { AttemptStore } from '../domain/attempts.js';
 import { VerificationAttemptStore } from '../domain/verification-attempts.js';
-import { pricesForHarness, withCriticContribution } from '../domain/pricing.js';
 import type { TaskService, TaskWithDeps } from '../domain/tasks.js';
 import { deriveLeafEpics, type DerivedEpic } from '../domain/epic-derivation.js';
 import { composeEpicView, type Epic, type EpicFacts, type EpicMeta } from '../domain/epic-view.js';
 import { EpicMergeEventStore } from '../domain/epic-merge-events.js';
 import { resolveVerifiers } from '../domain/setting-override.js';
 import { GitError } from '../domain/errors.js';
-import { bestEffort, orFallback } from '../error-handling.js';
+import { orFallback } from '../error-handling.js';
 import { resolveRepositoryDefaultBranch } from '../execution/branch-merge.js';
 import { EpicOperations } from '../execution/epic-operations.js';
 import {
@@ -23,16 +19,18 @@ import {
   type EpicIntegrateOutcome,
   type EpicRefreshResolveDispatchOutcome,
   type EpicRefreshTarget,
+  type EpicResolve,
 } from '../execution/epic-coordinator.js';
-import { verifyEpicIntegration } from '../execution/epic-verification.js';
-import { commandAttemptToInput, runCommandVerifierDetached } from '../verification/command-verifier.js';
+import { EpicWorktreePool } from '../execution/epic-worktree-pool.js';
 import { Git } from '../execution/git.js';
-import { collectUsage } from '../execution/usage.js';
-import { criticAttemptToInput, runCritic, type CriticHarnessDrive } from '../verification/critic.js';
+import type { CriticHarnessDrive } from '../verification/critic.js';
 import type { MergePolicyOutcome, PostMergeCheckResult } from '../execution/merge-policy.js';
 import { logger } from '../logger.js';
 import type { EpicIntegrationSync } from './poller.js';
 import { recordAndCloseIntegratedEpic } from './epic-close.js';
+import { EpicVerificationRunner } from './epic-verification-runner.js';
+import { EpicResolutionRunner } from './epic-resolution-runner.js';
+import { EpicIntegrationRunner } from './epic-integration-runner.js';
 import type { Ticket, TrackerAdapter } from './adapter.js';
 import { resolveTrackerAdapter } from './adapter.js';
 import type { FeatureIndex } from './local-markdown.js';
@@ -77,282 +75,108 @@ export interface EpicService {
 
 interface WorkspaceEpicEntry { epics: EpicLifecycle; epicIntegrate?: EpicCoordinator }
 
+/** Whole-Epic verification/integration/resolution stay dormant until both `getConfig` and `mergeEpicIntegration` are supplied. */
+export interface TrackerEpicServiceOptions {
+  resolveAdapter?: (repoRoot: string, featureIndex?: FeatureIndex) => Promise<TrackerAdapter>;
+  onError?: (message: string) => void;
+  getConfig?: (() => Pick<AppConfig, 'verify' | 'maxAttempts' | 'defaults' | 'harnesses'>) | undefined;
+  operations?: EpicOperations;
+  mergeEpicIntegration?: MergeEpicIntegration | undefined;
+  dispatchRefreshResolution?: (
+    target: EpicRefreshTarget,
+    detail: string,
+    escalate: (epicRef: number, reason: string) => void,
+    retry: () => Promise<unknown>,
+  ) => Promise<EpicRefreshResolveDispatchOutcome>;
+  epicMergeEvents?: EpicMergeEventStore | undefined;
+  epicAttempts?: AttemptStore | undefined;
+  dispatchEpicResolution?: EpicResolutionDispatch | undefined;
+  worktreesDir?: string | undefined;
+  onEpicAttemptChanged?: ((attempt: EpicAttemptRow) => void) | undefined;
+  verificationAttemptStore?: VerificationAttemptStore | undefined;
+  criticDrive?: CriticHarnessDrive | undefined;
+}
+
 export class TrackerEpicService implements EpicService {
   private readonly entries = new Map<number, WorkspaceEpicEntry>();
+
+  private readonly resolveAdapter: (repoRoot: string, featureIndex?: FeatureIndex) => Promise<TrackerAdapter>;
+  private readonly onError: (message: string) => void;
+  private readonly getConfig: TrackerEpicServiceOptions['getConfig'];
+  private readonly operations: EpicOperations;
+  private readonly mergeEpicIntegration: TrackerEpicServiceOptions['mergeEpicIntegration'];
+  private readonly dispatchRefreshResolution: (
+    target: EpicRefreshTarget,
+    detail: string,
+    escalate: (epicRef: number, reason: string) => void,
+    retry: () => Promise<unknown>,
+  ) => Promise<EpicRefreshResolveDispatchOutcome>;
+  private readonly epicMergeEvents: TrackerEpicServiceOptions['epicMergeEvents'];
+  private readonly epicAttempts: TrackerEpicServiceOptions['epicAttempts'];
+  private readonly dispatchEpicResolution: TrackerEpicServiceOptions['dispatchEpicResolution'];
+  private readonly worktreesDir: TrackerEpicServiceOptions['worktreesDir'];
+  private readonly onEpicAttemptChanged: TrackerEpicServiceOptions['onEpicAttemptChanged'];
+  private readonly verificationAttemptStore: TrackerEpicServiceOptions['verificationAttemptStore'];
+  private readonly criticDrive: TrackerEpicServiceOptions['criticDrive'];
 
   constructor(
     private readonly tasks: TaskService,
     private readonly getWorkspaces: () => Promise<WorkspaceRow[]>,
-    private readonly resolveAdapter: (repoRoot: string, featureIndex?: FeatureIndex) => Promise<TrackerAdapter> = resolveTrackerAdapter,
-    private readonly onError: (message: string) => void = logger.error,
-    private readonly getConfig?: () => Pick<AppConfig, 'verify' | 'maxAttempts' | 'defaults' | 'harnesses'>,
-    private readonly operations: EpicOperations = new EpicOperations(),
-    private readonly mergeEpicIntegration?: MergeEpicIntegration,
-    private readonly dispatchRefreshResolution: (
-      target: EpicRefreshTarget,
-      detail: string,
-      escalate: (epicRef: number, reason: string) => void,
-      retry: () => Promise<unknown>,
-    ) => Promise<EpicRefreshResolveDispatchOutcome> = async () => ({ status: 'dispatched' }),
-    private readonly epicMergeEvents?: EpicMergeEventStore,
-    private readonly epicAttempts?: AttemptStore,
-    private readonly dispatchEpicResolution?: EpicResolutionDispatch,
-    private readonly worktreesDir?: string,
-    private readonly onEpicAttemptChanged?: (attempt: EpicAttemptRow) => void,
-    private readonly verificationAttemptStore?: VerificationAttemptStore,
-    private readonly criticDrive?: CriticHarnessDrive,
-  ) {}
+    options: TrackerEpicServiceOptions = {},
+  ) {
+    this.resolveAdapter = options.resolveAdapter ?? resolveTrackerAdapter;
+    this.onError = options.onError ?? logger.error;
+    this.getConfig = options.getConfig;
+    this.operations = options.operations ?? new EpicOperations();
+    this.mergeEpicIntegration = options.mergeEpicIntegration;
+    this.dispatchRefreshResolution = options.dispatchRefreshResolution ?? (async () => ({ status: 'dispatched' }));
+    this.epicMergeEvents = options.epicMergeEvents;
+    this.epicAttempts = options.epicAttempts;
+    this.dispatchEpicResolution = options.dispatchEpicResolution;
+    this.worktreesDir = options.worktreesDir;
+    this.onEpicAttemptChanged = options.onEpicAttemptChanged;
+    this.verificationAttemptStore = options.verificationAttemptStore;
+    this.criticDrive = options.criticDrive;
+  }
 
   startWorkspace(workspace: WorkspaceRow): EpicIntegrationSync {
     const epics = new EpicLifecycle(this.tasks, workspace.workingDir);
     epics.attachOperations(this.operations);
     const entry: WorkspaceEpicEntry = { epics };
-    const getConfig = this.getConfig;
-    const mergeEpicIntegration = this.mergeEpicIntegration;
-    const epicAttempts = this.epicAttempts;
-    const dispatchEpicResolution = this.dispatchEpicResolution;
-    const verificationAttemptStore = this.verificationAttemptStore;
-    const criticDrive = this.criticDrive;
+    const { getConfig, mergeEpicIntegration } = this;
     if (getConfig && mergeEpicIntegration) {
-      const resolveWorkspaceVerifiers = async () => {
-        const live = (await this.getWorkspaces()).find((candidate) => candidate.id === workspace.id) ?? workspace;
-        return resolveVerifiers(live, getConfig());
-      };
-      const verificationAttempts = new Map<number, EpicAttemptRow>();
-      const publishEpicAttempt = (attempt: AttemptRow): void => {
-        if (isEpicAttempt(attempt)) this.onEpicAttemptChanged?.(attempt);
-      };
-      const epicWorktrees = new Map<number, string>();
-      const releaseEpicWorktree = async (epicRef: number): Promise<void> => {
-        const worktreePath = epicWorktrees.get(epicRef);
-        if (!worktreePath) return;
-        epicWorktrees.delete(epicRef);
-        await bestEffort(() => Git.removeWorktree(workspace.workingDir, worktreePath), {
-          op: 'epicService.releaseEpicWorktree.removeWorktree',
-          level: 'debug',
-          context: { workspaceId: workspace.id ?? undefined, epicRef, worktreePath },
-        });
-      };
-      const epicWorktree = async (repoDir: string, epicRef: number): Promise<string> => {
-        const existing = epicWorktrees.get(epicRef);
-        if (existing) return existing;
-        const parent = this.worktreesDir ?? tmpdir();
-        mkdirSync(parent, { recursive: true });
-        const path = join(parent, `epic-${workspace.id}-${epicRef}`);
-        try {
-          await Git.addWorktreeCheckout(repoDir, path, integrationBranchName(epicRef));
-        } catch {
-          // This path is deterministic and solely owned by the Epic.
-          // A crash can leave either Git's worktree registration or its directory.
-          await Git.removeWorktree(repoDir, path).catch(() => rmSync(path, { recursive: true, force: true }));
-          await Git.addWorktreeCheckout(repoDir, path, integrationBranchName(epicRef));
-        }
-        epicWorktrees.set(epicRef, path);
-        return path;
-      };
-      const verify = async ({ repoDir, epicRef, verifiedHeadOid }: { repoDir: string; epicRef: number; verifiedHeadOid: string }) => {
-        const attempt = epicAttempts ? await epicAttempts.createForEpic({ workspaceId: workspace.id, epicRef }) : undefined;
-        const criticUsages: Parameters<typeof withCriticContribution>[2] = [];
-        if (attempt) {
-          verificationAttempts.set(epicRef, attempt);
-          publishEpicAttempt(attempt);
-        }
-        try {
-          const worktreePath = await epicWorktree(repoDir, epicRef);
-          const decision = await verifyEpicIntegration({
-            worktreePath,
-            verifiedHeadOid,
-            verifiers: (await resolveWorkspaceVerifiers()).epic.preMerge,
-            onCommand: async (commandAttempt, command) => {
-              if (!attempt || !verificationAttemptStore) return;
-              const persisted = await verificationAttemptStore.append(attempt.id, commandAttemptToInput(commandAttempt));
-              const step = await epicAttempts!.createStep(attempt.id, {
-                type: 'verification',
-                command: [command.command, ...command.args].join(' '),
-                logLocator: `verification_attempt:${persisted.id}`,
-              });
-              await epicAttempts!.updateStep(step.id, {
-                state: commandAttempt.verdict === 'pass' ? 'passed' : 'failed',
-                verdict: commandAttempt.verdict,
-                startedAt: persisted.ts,
-                endedAt: Date.now(),
-              });
-            },
-            runCritic: async ({ cwd, verifiedHeadOid: criticHeadOid, critic }) => {
-              const config = getConfig();
-              const harnessId = critic.harness ?? config.defaults.harness;
-              const harness = config.harnesses[harnessId];
-              if (!harness) {
-                return {
-                  verifier: 'critic',
-                  verdict: 'inconclusive',
-                  summary: `critic harness '${harnessId}' is not configured`,
-                  output: '',
-                };
-              }
-              const defaultBranch = await resolveRepositoryDefaultBranch(repoDir);
-              const baseOid = defaultBranch === null
-                ? null
-                : await Git.mergeBase(repoDir, defaultBranch, integrationBranchName(epicRef)).catch(() => null);
-              const criticAttempt = await runCritic({
-                cwd,
-                verifiedHeadOid: criticHeadOid,
-                ...(baseOid ? { baseOid } : {}),
-                critic: { prompt: critic.prompt, model: critic.model, ...(critic.harness ? { harness: critic.harness } : {}) },
-                fields: { taskId: '', skill: '/implement', ref: String(epicRef), url: '', title: `Epic #${epicRef}`, description: '' },
-                harness,
-                harnessId,
-                ...(criticDrive ? { drive: criticDrive } : {}),
-              });
-              const usage = collectUsage({
-                harnessId,
-                harness,
-                cwd,
-                sessionId: criticAttempt.sessionId,
-                ...(criticAttempt.usage ? { promptResult: { usage: criticAttempt.usage } } : {}),
-                prices: pricesForHarness(harness),
-              });
-              if (usage) criticUsages.push({ usage, prices: pricesForHarness(harness) });
-              if (attempt && verificationAttemptStore) {
-                const persisted = await verificationAttemptStore.append(attempt.id, {
-                  ...criticAttemptToInput(criticAttempt),
-                  ...(usage ? { usage: JSON.stringify(usage) } : {}),
-                });
-                const step = await epicAttempts!.createStep(attempt.id, {
-                  type: 'review',
-                  logLocator: `verification_attempt:${persisted.id}`,
-                });
-                await epicAttempts!.updateStep(step.id, {
-                  state: criticAttempt.verdict === 'pass' ? 'passed' : 'failed',
-                  verdict: criticAttempt.verdict,
-                  startedAt: persisted.ts,
-                  endedAt: Date.now(),
-                });
-              }
-              return {
-                verifier: criticAttempt.verifier,
-                verdict: criticAttempt.verdict,
-                summary: criticAttempt.summary,
-                output: criticAttempt.output,
-              };
-            },
-          });
-          if (attempt && criticUsages.length > 0) {
-            const contribution = withCriticContribution(null, null, criticUsages);
-            publishEpicAttempt(await epicAttempts!.updateWithFrozenCost(attempt.id, {
-              usage: contribution.usage ? JSON.stringify(contribution.usage) : null,
-              cost: contribution.cost ? JSON.stringify(contribution.cost) : null,
-            }));
-          }
-          if (attempt && decision.outcome === 'proceed') {
-            publishEpicAttempt(await epicAttempts!.updateWithFrozenCost(attempt.id, { state: 'passed', reason: 'epic-verification', endedAt: Date.now(), verifiedHeadOid }));
-            verificationAttempts.delete(epicRef);
-          }
-          return decision;
-        } catch (error) {
-          if (attempt) {
-            publishEpicAttempt(await epicAttempts!.updateWithFrozenCost(attempt.id, {
-              state: 'failed',
-              reason: 'epic-verification',
-              detail: error instanceof Error ? error.message : String(error),
-              endedAt: Date.now(),
-              verifiedHeadOid,
-            }));
-            verificationAttempts.delete(epicRef);
-          }
-          throw error;
-        }
-      };
+      const worktrees = new EpicWorktreePool({ workspaceId: workspace.id, worktreesDir: this.worktreesDir });
+      const verification = new EpicVerificationRunner({
+        workspace,
+        getWorkspaces: this.getWorkspaces,
+        getConfig,
+        worktrees,
+        epicAttempts: this.epicAttempts,
+        verificationAttemptStore: this.verificationAttemptStore,
+        onEpicAttemptChanged: this.onEpicAttemptChanged,
+        criticDrive: this.criticDrive,
+      });
+      const integration = new EpicIntegrationRunner({
+        workspace,
+        worktreesDir: this.worktreesDir,
+        worktrees,
+        epics,
+        mergeEpicIntegration,
+        resolveWorkspaceVerifiers: () => verification.resolveWorkspaceVerifiers(),
+      });
+      const { epicAttempts, dispatchEpicResolution } = this;
+      const resolution = epicAttempts && dispatchEpicResolution
+        ? new EpicResolutionRunner({ workspace, getConfig, epicAttempts, dispatchEpicResolution, verification, onEpicAttemptChanged: this.onEpicAttemptChanged })
+        : undefined;
       const epicIntegrate = new EpicCoordinator({
         repoDir: workspace.workingDir,
-        verify,
-        ...(epicAttempts && dispatchEpicResolution ? {
-          resolve: async ({ repoDir, epicRef, title, body, url, verifiedHeadOid, verification, guidance, continuationSessionId, continuationSessionRowId }) => {
-            const attempt = verificationAttempts.get(epicRef) ?? await epicAttempts.getRunningForEpic({ workspaceId: workspace.id, epicRef });
-            if (!attempt) throw new Error(`Epic #${epicRef} has no running Attempt to resolve`);
-            const maxAttempts = workspace.maxAttempts ?? getConfig().maxAttempts;
-            if (!attempt.feedback && attempt.number >= maxAttempts) {
-              publishEpicAttempt(await epicAttempts.updateWithFrozenCost(attempt.id, {
-                state: 'escalated',
-                reason: 'epic-verification',
-                detail: `Epic verification failed after ${maxAttempts} Attempt${maxAttempts === 1 ? '' : 's'}: ${verification.reason}`,
-                endedAt: Date.now(),
-                verifiedHeadOid,
-              }));
-              throw new Error(`Epic verification exhausted its ${maxAttempts}-Attempt limit: ${verification.reason}`);
-            }
-            try {
-              const worktreePath = epicWorktrees.get(epicRef);
-              if (!worktreePath) throw new Error(`Epic #${epicRef} has no verification worktree to resolve`);
-              await dispatchEpicResolution({
-                workspaceId: workspace.id,
-                epicRef,
-                ...(title ? { title } : {}),
-                ...(body ? { body } : {}),
-                ...(url ? { url } : {}),
-                repoDir,
-                worktreePath,
-                attempt,
-                verifiedHeadOid,
-                verificationReason: guidance ? `${verification.reason}\n\n## Operator guidance\n${guidance}` : verification.reason,
-                resolvePrompt: getConfig().verify.epic.resolvePrompt,
-                ...(continuationSessionId && continuationSessionRowId !== undefined ? { continuationSessionId, continuationSessionRowId } : {}),
-              });
-              publishEpicAttempt(await epicAttempts.updateWithFrozenCost(attempt.id, {
-                state: 'failed',
-                reason: 'epic-verification',
-                detail: verification.reason,
-                endedAt: Date.now(),
-                verifiedHeadOid,
-              }));
-            } catch (error) {
-              publishEpicAttempt(await epicAttempts.updateWithFrozenCost(attempt.id, {
-                state: 'escalated',
-                reason: 'epic-resolution',
-                detail: error instanceof Error ? error.message : String(error),
-                endedAt: Date.now(),
-                verifiedHeadOid,
-              }));
-              throw error;
-            } finally {
-              verificationAttempts.delete(epicRef);
-            }
-          },
-        } : {}),
-        integrate: async ({ repoDir, epicRef, defaultBranch, integrationBranch }) => {
-          try {
-            return await mergeEpicIntegration({
-              workspaceId: workspace.id, repoDir, epicRef, defaultBranch, integrationBranch,
-              runPostMergeCheck: async (mergeOid, baseDir) => {
-                const stage = (await resolveWorkspaceVerifiers()).epic.preMerge;
-                for (const command of stage.commands) {
-                  const attempt = await runCommandVerifierDetached({
-                    repoDir: baseDir,
-                    worktreePath: join(this.worktreesDir ?? tmpdir(), `epic-post-merge-${workspace.id}-${epicRef}`),
-                    verifiedHeadOid: mergeOid,
-                    command,
-                  });
-                  if (attempt.verdict !== 'pass') return { pass: false, output: `${attempt.summary}\n${attempt.output}`.trim() };
-                }
-                return { pass: true, output: '' };
-              },
-            });
-          } finally {
-            await releaseEpicWorktree(epicRef);
-          }
-        },
-        retire: async (epicRef) => {
-          await releaseEpicWorktree(epicRef);
-          await epics.retireIntegrationBranch(epicRef);
-        },
-        escalate: (epicRef, reason) => this.onError(`epic ${epicRef} whole-Epic integrate escalated: ${reason}`),
+        verify: (input) => verification.verify(input),
+        ...(resolution ? { resolve: (input: Parameters<EpicResolve>[0]) => resolution.resolve(input) } : {}),
+        integrate: (input) => integration.integrate(input),
+        retire: (epicRef) => integration.retire(epicRef),
+        escalate: (epicRef, reason) => this.escalateEpicIntegration(epicRef, reason),
         operations: this.operations,
-        recordIntegration: ({ epicRef, mergeCommit, memberRefs }) => recordAndCloseIntegratedEpic({
-          epicRef,
-          settle: () => this.tasks.markEpicIntegrated(workspace.id, epicRef, { mergeCommit, memberRefs }),
-          resolveAdapter: () => this.resolveAdapter(workspace.workingDir, (slug) => this.tasks.mdFeatureIndex(workspace.id, slug)),
-          onError: this.onError,
-        }),
+        recordIntegration: (input) => this.recordEpicIntegration(workspace, input),
       });
       entry.epicIntegrate = epicIntegrate;
       epics.attachIntegrateTrigger(epicIntegrate);
@@ -368,6 +192,19 @@ export class TrackerEpicService implements EpicService {
     epics.attachRefreshTrigger(refresh);
     this.entries.set(workspace.id, entry);
     return epics;
+  }
+
+  private escalateEpicIntegration(epicRef: number, reason: string): void {
+    this.onError(`epic ${epicRef} whole-Epic integrate escalated: ${reason}`);
+  }
+
+  private recordEpicIntegration(workspace: WorkspaceRow, { epicRef, mergeCommit, memberRefs }: { epicRef: number; mergeCommit: string | null; memberRefs: number[] }): Promise<void> {
+    return recordAndCloseIntegratedEpic({
+      epicRef,
+      settle: () => this.tasks.markEpicIntegrated(workspace.id, epicRef, { mergeCommit, memberRefs }),
+      resolveAdapter: () => this.resolveAdapter(workspace.workingDir, (slug) => this.tasks.mdFeatureIndex(workspace.id, slug)),
+      onError: this.onError,
+    });
   }
 
   stopWorkspace(workspaceId: number): void { this.entries.delete(workspaceId); }
