@@ -1,46 +1,20 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from './api';
 import { formatCost } from './cost';
-import type { AppConfig, Conversation, Cost, Task, UpdateState, Workspace } from './types';
-import type { Epic } from './epic-model';
-import { Board } from './components/Board';
-import { HeaderStatusBar } from './components/HeaderStatusBar';
-import { OperatorControls } from './components/OperatorControls';
-import { Icon } from './components/Icon';
-import { NavRail } from './components/NavRail';
-import { boardSections } from './board-sections-model';
-import { TaskForm } from './components/TaskForm';
-import { TicketPage } from './components/TicketPage';
-import { EpicPage } from './components/EpicPage';
-import { subscribe, type HostLoad } from './ws';
-import { debounce } from './debounce';
-import { useLiveEffect } from './useLiveEffect';
+import type { Task, Workspace } from './types';
+import { AppSidebar } from './components/AppSidebar';
+import { AppContent } from './components/AppContent';
 import { AppContextProvider } from './app-context';
 import { Login } from './components/Login';
-import { ApiPage } from './components/ApiPage';
-import { StatsPage } from './components/StatsPage';
-import { GlobalDashboard } from './components/GlobalDashboard';
-import { OperationsPage } from './components/OperationsPage';
-import { TimelinePage } from './components/TimelinePage';
-import { SettingsPage } from './components/SettingsPage';
-import { TableView } from './components/TableView';
-import { ActivityView } from './components/ActivityView';
-import { BrandMark } from './components/BrandMark';
-import { ConversationLauncher, ConversationsPage } from './components/ConversationLauncher';
-import { FilesPage } from './components/FilesPage';
 import { UpdateBanner } from './components/UpdateBanner';
 import { AboutOverlay } from './components/AboutOverlay';
-import { NewWorkspaceForm, WorkspaceSwitcher } from './components/WorkspaceSwitcher';
-import { WorkspaceSettingsPage } from './components/WorkspaceSettingsPage';
-import { EmptyState } from './components/EmptyState';
+import { HeaderStatusBar } from './components/HeaderStatusBar';
+import { NewWorkspaceForm } from './components/WorkspaceSwitcher';
+import { TaskForm } from './components/TaskForm';
 import { isWorkspaceScopedView, loadRailCollapsed, storeRailCollapsed } from './rail-model';
 import type { View } from './rail-model';
-import { NO_SELECTION, parseRoute, scopeSwitchRoute, serializeRoute, storeLastRoute, type Route, type TableFilters } from './router-model';
-import {
-  hasNoWorkspaces,
-  loadActiveWorkspaceId,
-  storeActiveWorkspaceId,
-} from './workspace-model';
+import { NO_SELECTION, scopeSwitchRoute, type TableFilters } from './router-model';
+import { hasNoWorkspaces } from './workspace-model';
 import { applyTheme, loadTheme, nextTheme, storeTheme, type ThemePref } from './theme';
 import {
   loadDismissed,
@@ -50,180 +24,36 @@ import {
   RUN_HINT_DISMISSED_KEY,
   ESCALATION_HINT_DISMISSED_KEY,
 } from './onboarding-model';
-import { btnPrimary, btnQuiet } from './ui';
-import { Toaster, toastError, toastFail, toastSuccess } from './toast';
-import { taskLabel } from './id-format.js';
+import { btnQuiet } from './ui';
+import { Toaster, toastError } from './toast';
 import { ReviewLiveRegions } from './components/ReviewLiveRegions';
-import {
-  advanceReviewAnnouncements,
-  EMPTY_REVIEW_ANNOUNCEMENT_CURSOR,
-  type ReviewAnnouncementCursor,
-} from './review-announce-model';
-import {
-  removePendingForConversation,
-  resolvePendingPermissionFromEvent,
-  type PendingPermission,
-} from './conversation-permissions-model';
-import { conversationDisplayTitle } from './conversation-list-model';
-
-const GraphView = lazy(() => import('./components/GraphView').then((m) => ({ default: m.GraphView })));
-
-// Mirrors --breakpoint-rail (index.css): collapsed-only a11y attributes
-// must not leak into the mobile drawer, so JS needs the same threshold.
-const RAIL_QUERY = '(min-width: 900px)';
-function useRailBreakpoint() {
-  return useSyncExternalStore(
-    (onChange) => {
-      const mq = matchMedia(RAIL_QUERY);
-      mq.addEventListener('change', onChange);
-      return () => mq.removeEventListener('change', onChange);
-    },
-    () => matchMedia(RAIL_QUERY).matches,
-  );
-}
-
-function useRoute(): [Route, (next: Route, opts?: { replace?: boolean }) => void] {
-  const [route, setRoute] = useState<Route>(() => parseRoute(window.location.pathname, window.location.search));
-  const initialRoute = useRef(route);
-  useEffect(() => {
-    const canonical = serializeRoute(initialRoute.current);
-    if (canonical !== `${window.location.pathname}${window.location.search}`) {
-      window.history.replaceState(null, '', canonical);
-    }
-    storeLastRoute(localStorage, initialRoute.current);
-    const onPop = () => {
-      const next = parseRoute(window.location.pathname, window.location.search);
-      storeLastRoute(localStorage, next);
-      setRoute(next);
-    };
-    window.addEventListener('popstate', onPop);
-    return () => window.removeEventListener('popstate', onPop);
-  }, []);
-  const navigate = useCallback((next: Route, opts?: { replace?: boolean }) => {
-    const url = serializeRoute(next);
-    if (url === `${window.location.pathname}${window.location.search}`) {
-      setRoute(next);
-      return;
-    }
-    if (opts?.replace) window.history.replaceState(null, '', url);
-    else window.history.pushState(null, '', url);
-    storeLastRoute(localStorage, next);
-    setRoute(next);
-  }, []);
-  return [route, navigate];
-}
-
-const BOARD_PAGE = 100;
-interface PendingPermissionAlert {
-  permission: PendingPermission;
-  conversationTitle: string;
-}
-async function fetchOpenTasks(workspaceId: number): Promise<Task[]> {
-  const all: Task[] = [];
-  for (let offset = 0; ; offset += BOARD_PAGE) {
-    const { tasks, total } = await api.tasks({ workspaceId, state: 'open', limit: BOARD_PAGE, offset });
-    all.push(...tasks);
-    if (tasks.length === 0 || all.length >= total) return all;
-  }
-}
-
-async function fetchAllEpics(workspaceId: number): Promise<Epic[]> {
-  const all: Epic[] = [];
-  for (let offset = 0; ; offset += BOARD_PAGE) {
-    const { epics, total } = await api.epics(workspaceId, { limit: BOARD_PAGE, offset });
-    all.push(...epics);
-    if (epics.length === 0 || all.length >= total) return all;
-  }
-}
-
-function usePeriodCost(authed: boolean, tasks: Task[] | null, workspaceId: number | null) {
-  const [cost, setCost] = useState<Cost | null>(null);
-  const taskListSignature = tasks ? `${tasks.length}:${tasks.filter((t) => t.state === 'working').length}` : '';
-  const refresh = useRef<(() => void) | null>(null);
-  const signatureSettled = useRef(false);
-  useLiveEffect((live) => {
-    if (!authed || workspaceId === null) {
-      refresh.current = null;
-      return;
-    }
-    const load = () => {
-      const to = Date.now();
-      fetch(`/api/stats?from=${to - 24 * 3600_000}&to=${to}&workspaceId=${workspaceId}`)
-        .then((r) => (r.ok ? r.json() : null))
-        .then((s: { cost: Cost | null } | null) => live() && s && setCost(s.cost))
-        .catch(() => {});
-    };
-    const debounced = debounce(load, 1000);
-    refresh.current = debounced;
-    signatureSettled.current = false;
-    load();
-    const timer = setInterval(load, 60_000);
-    return () => {
-      clearInterval(timer);
-      debounced.cancel();
-      refresh.current = null;
-    };
-  }, [authed, workspaceId]);
-  useEffect(() => {
-    if (!signatureSettled.current) {
-      signatureSettled.current = true;
-      return;
-    }
-    refresh.current?.();
-  }, [taskListSignature]);
-  return cost;
-}
+import { useAuth } from './useAuth';
+import { useRoute } from './useRoute';
+import { useRailBreakpoint } from './useRailBreakpoint';
+import { useAppSync } from './useAppSync';
+import { usePendingPermissionAlerts } from './usePendingPermissionAlerts';
+import { useHostLoad } from './useHostLoad';
+import { useFleetActivity } from './useFleetActivity';
+import { usePeriodCost } from './usePeriodCost';
 
 export function App() {
-  const [authed, setAuthed] = useState<boolean | null>(null);
-  const [passwordSet, setPasswordSet] = useState(true);
-  const [tasks, setTasks] = useState<Task[] | null>(null);
-  const [hasHistory, setHasHistory] = useState<boolean | null>(null);
-  const [config, setConfig] = useState<AppConfig | null>(null);
-  const [globalPaused, setGlobalPaused] = useState<boolean | null>(null);
-  const [globalPausePending, setGlobalPausePending] = useState(false);
-  const [update, setUpdate] = useState<UpdateState | null>(null);
-  const [updatePending, setUpdatePending] = useState(false);
-  const updateRequest = useRef(0);
-  const [hostLoad, setHostLoad] = useState<HostLoad | null>(null);
-  const [globalRunningCount, setGlobalRunningCount] = useState(0);
-  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
-  const [workspacesLoaded, setWorkspacesLoaded] = useState(false);
-  const [activeWorkspaceId, setActiveWorkspaceId] = useState<number | null>(() =>
-    loadActiveWorkspaceId(localStorage),
-  );
-  const [creatingWorkspace, setCreatingWorkspace] = useState(false);
-  const [editing, setEditing] = useState<Task | 'new' | null>(null);
-  const [fetchedTask, setFetchedTask] = useState<Task | null>(null);
-  const [epics, setEpics] = useState<Epic[]>([]);
+  const { authed, passwordSet, login, logout } = useAuth();
   const [route, navigate] = useRoute();
-  useEffect(() => {
-    if (route.scope.kind === 'workspace') {
-      setActiveWorkspaceId(route.scope.workspaceId);
-      storeActiveWorkspaceId(localStorage, route.scope.workspaceId);
-    } else {
-      setActiveWorkspaceId(null);
-    }
-  }, [route.scope]);
   const view = route.view;
-  const routeRef = useRef(route);
-  // eslint-disable-next-line react/refs -- latest-route ref, deliberately synced during render so the ws handler reads it without re-subscribing
-  routeRef.current = route;
-  const fetchedTaskIdRef = useRef<number | null>(null);
+  const railDesktop = useRailBreakpoint();
+
   const [menuOpen, setMenuOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [railCollapsed, setRailCollapsed] = useState(() => loadRailCollapsed(localStorage));
   const [theme, setTheme] = useState<ThemePref>(() => loadTheme(localStorage));
-  const railDesktop = useRailBreakpoint();
-  const [error, setError] = useState<string | null>(null);
   const [runHintDismissed, setRunHintDismissed] = useState(() =>
     loadDismissed(localStorage, RUN_HINT_DISMISSED_KEY),
   );
   const [escalationHintDismissed, setEscalationHintDismissed] = useState(() =>
     loadDismissed(localStorage, ESCALATION_HINT_DISMISSED_KEY),
   );
-  const [refreshingTracker, setRefreshingTracker] = useState(false);
-  const [pendingPermissionAlerts, setPendingPermissionAlerts] = useState<PendingPermissionAlert[]>([]);
+  const [creatingWorkspace, setCreatingWorkspace] = useState(false);
+  const [editing, setEditing] = useState<Task | 'new' | null>(null);
   const [conversationToOpen, setConversationToOpen] = useState<number | null>(null);
   const handleConversationOpened = useCallback(() => setConversationToOpen(null), []);
 
@@ -231,75 +61,47 @@ export function App() {
     applyTheme(document.documentElement, theme);
   }, [theme]);
 
-  useLiveEffect((live) => {
-    fetch('/api/auth/me')
-      .then((r) => r.json())
-      .then((me: { authenticated: boolean; passwordConfigured: boolean }) => {
-        if (!live()) return;
-        setPasswordSet(me.passwordConfigured);
-        setAuthed(me.authenticated || !me.passwordConfigured);
-      })
-      .catch(() => live() && setAuthed(false));
-  }, []);
+  const {
+    activeWorkspaceId,
+    setActiveWorkspaceId,
+    config,
+    setConfig,
+    globalPaused,
+    globalPausePending,
+    setFleetPaused,
+    workspaces,
+    setWorkspaces,
+    workspacesLoaded,
+    update,
+    updatePending,
+    changeUpdate,
+    tasks,
+    setTasks,
+    hasHistory,
+    error,
+    epics,
+    setEpics,
+    refresh,
+    refreshTracker,
+    refreshingTracker,
+    openTask,
+    needsYouCount,
+    politeReviewAnnouncement,
+    assertiveMergeAnnouncement,
+  } = useAppSync({
+    authed,
+    route,
+    navigate,
+    onEscalationHandled: () => {
+      storeDismissed(localStorage, ESCALATION_HINT_DISMISSED_KEY);
+      setEscalationHintDismissed(true);
+    },
+  });
 
-  const failStreak = useRef(0);
-  const refresh = useCallback(async () => {
-    if (activeWorkspaceId === null) return;
-    try {
-      const tasks = await fetchOpenTasks(activeWorkspaceId);
-      setTasks(tasks);
-      failStreak.current = 0;
-      setError(null);
-    } catch (e) {
-      failStreak.current += 1;
-      if (failStreak.current >= 2) setError(e instanceof Error ? e.message : String(e));
-    }
-  }, [activeWorkspaceId]);
-
-  const refreshGlobalPause = useCallback(() => {
-    api.globalPause().then(({ paused }) => setGlobalPaused(paused)).catch(() => {});
-  }, []);
-
-  const refreshEpics = useCallback(async () => {
-    if (activeWorkspaceId === null) return;
-    try {
-      setEpics(await fetchAllEpics(activeWorkspaceId));
-    } catch {
-    }
-  }, [activeWorkspaceId]);
-
-  useLiveEffect((live) => {
-    if (!authed) return;
-    api.config().then((next) => live() && setConfig(next)).catch(() => {});
-    api.globalPause().then(({ paused }) => live() && setGlobalPaused(paused)).catch(() => {});
-    api.workspaces().then(({ workspaces }) => {
-      if (!live()) return;
-      setWorkspaces(workspaces);
-      setWorkspacesLoaded(true);
-      if (route.scope.kind === 'workspace') setActiveWorkspaceId(route.scope.workspaceId);
-    }, (error) => live() && toastError(error));
-  }, [authed, route.scope]);
-
-  // The header's "running" count is fleet-wide, not scoped to the open Workspace,
-  // so it draws from the global activity feed independently of the per-Workspace
-  // task list.
-  useLiveEffect((live) => {
-    if (!authed) return;
-    const load = () =>
-      api.activity().then(
-        ({ processes }) => live() && setGlobalRunningCount(processes.filter((process) => process.type === 'attempt').length),
-        () => {},
-      );
-    load();
-    const timer = setInterval(load, 10_000);
-    const unsubscribe = subscribe((message) => {
-      if (message.type === 'attempt_changed') load();
-    }, load);
-    return () => {
-      clearInterval(timer);
-      unsubscribe();
-    };
-  }, [authed]);
+  const pendingPermissionAlerts = usePendingPermissionAlerts(authed, activeWorkspaceId);
+  const hostLoad = useHostLoad(authed, activeWorkspaceId);
+  const globalRunningCount = useFleetActivity(authed);
+  const periodCost = usePeriodCost(authed === true, tasks, activeWorkspaceId);
 
   // Only the initial landing on the sole Workspace's board is automatic — once
   // decided, an operator who explicitly navigates back to the global Dashboard
@@ -314,188 +116,6 @@ export function App() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fires once, guarded by the ref; `route`/`navigate` deliberately excluded so later route changes don't retrigger it
   }, [workspacesLoaded, workspaces]);
-
-  useLiveEffect((live) => {
-    if (!authed) return;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const load = () => {
-      const request = ++updateRequest.current;
-      api.updateState().then(
-        (next) => {
-          if (!live() || request !== updateRequest.current) return;
-          setUpdate(next);
-          timer = setTimeout(load, 15_000);
-        },
-        () => live() && request === updateRequest.current && setUpdate(null),
-      );
-    };
-    load();
-    return () => timer !== undefined && clearTimeout(timer);
-  }, [authed]);
-
-  useLiveEffect((live) => {
-    if (!authed || activeWorkspaceId === null) return;
-    setHasHistory(null);
-    api.tasks({ workspaceId: activeWorkspaceId, limit: 1 }).then(
-      ({ total }) => live() && setHasHistory(total > 0),
-      () => {},
-    );
-  }, [authed, activeWorkspaceId]);
-
-  useLiveEffect((live) => {
-    if (!authed || activeWorkspaceId === null) return;
-    refresh();
-    refreshEpics();
-    refreshGlobalPause();
-    const debouncedRefreshEpics = debounce(refreshEpics, 250);
-    const unsubscribe = subscribe((msg) => {
-      if (!live()) return;
-      if (msg.type === 'task_changed' && msg.task.workspaceId === activeWorkspaceId) {
-        const outcomes: (() => void)[] = [];
-        let handledEscalation = false;
-        setTasks((current) => {
-          const prev = (current ?? []).find((t) => t.id === msg.task.id);
-          if (prev?.mergeStatus && !msg.task.mergeStatus && msg.task.state === 'done') {
-            outcomes.push(() => toastSuccess(`${taskLabel(msg.task.id)} merged`, { sticky: true }));
-          } else if (prev && prev.state !== 'escalated' && msg.task.state === 'escalated') {
-            outcomes.push(() => toastFail(`${taskLabel(msg.task.id)} escalated — needs a decision`));
-          }
-          if (prev?.state === 'escalated' && msg.task.state !== 'escalated') handledEscalation = true;
-          const rest = (current ?? []).filter((t) => t.id !== msg.task.id);
-          return [...rest, msg.task];
-        });
-        outcomes[0]?.();
-        if (handledEscalation) {
-          storeDismissed(localStorage, ESCALATION_HINT_DISMISSED_KEY);
-          setEscalationHintDismissed(true);
-        }
-        setFetchedTask((current) =>
-          current?.id === msg.task.id || routeRef.current.task === msg.task.id ? msg.task : current,
-        );
-        debouncedRefreshEpics();
-      }
-      if (msg.type === 'epic_changed' && msg.workspaceId === activeWorkspaceId) {
-        debouncedRefreshEpics();
-      }
-      if (msg.type === 'permission_request') {
-        setPendingPermissionAlerts((current) => {
-          const permission: PendingPermission = {
-            reqId: msg.reqId,
-            conversationId: msg.conversationId,
-            request: msg.request,
-          };
-          const existing = current.findIndex(({ permission }) => permission.reqId === msg.reqId);
-          if (existing === -1) return [...current, { permission, conversationTitle: 'Conversation' }];
-          const next = current.slice();
-          const previous = next[existing];
-          if (!previous) return current;
-          next[existing] = { ...previous, permission };
-          return next;
-        });
-        api.conversation(msg.conversationId).then(
-          (conversation) =>
-            setPendingPermissionAlerts((current) =>
-              current.map((alert) =>
-                alert.permission.conversationId === conversation.id
-                  ? { ...alert, conversationTitle: conversationDisplayTitle(conversation.title) }
-                  : alert,
-              ),
-            ),
-          () => {},
-        );
-      }
-      if (msg.type === 'conversation_event') {
-        setPendingPermissionAlerts((current) => {
-          const pending = Object.fromEntries(current.map(({ permission }) => [permission.reqId, permission]));
-          const resolved = resolvePendingPermissionFromEvent(pending, msg.event);
-          return current.filter(({ permission }) => resolved[permission.reqId] !== undefined);
-        });
-      }
-      if (msg.type === 'conversation_changed') {
-        const conversation: Conversation = msg.conversation;
-        setPendingPermissionAlerts((current) => {
-          if (conversation.state === 'ended') {
-            const pending = Object.fromEntries(current.map(({ permission }) => [permission.reqId, permission]));
-            const remaining = removePendingForConversation(pending, conversation.id);
-            return current.filter(({ permission }) => remaining[permission.reqId] !== undefined);
-          }
-          return current.map((alert) =>
-            alert.permission.conversationId === conversation.id
-              ? { ...alert, conversationTitle: conversationDisplayTitle(conversation.title) }
-              : alert,
-          );
-        });
-      }
-      if (msg.type === 'host_load') {
-        setHostLoad(msg.load);
-      }
-      if (msg.type === 'task_removed') {
-        setTasks((current) => (current ?? []).filter((t) => t.id !== msg.id));
-        setFetchedTask((current) => (current && current.id === msg.id ? null : current));
-        if (routeRef.current.task === msg.id) {
-          navigate({ ...routeRef.current, task: null, panel: NO_SELECTION }, { replace: true });
-        }
-      }
-    }, () => {
-      refresh();
-      refreshEpics();
-      refreshGlobalPause();
-    });
-    const timer = setInterval(() => {
-      refresh();
-      refreshEpics();
-      refreshGlobalPause();
-    }, 10_000);
-    return () => {
-      unsubscribe();
-      clearInterval(timer);
-      debouncedRefreshEpics.cancel();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `view`/`navigate` intentionally excluded; subscribe once per Workspace, routeRef carries the latest route to the handler
-  }, [refresh, refreshEpics, refreshGlobalPause, authed, activeWorkspaceId]);
-
-  const periodCost = usePeriodCost(authed === true, tasks, activeWorkspaceId);
-
-  const openTask = useMemo<Task | null>(() => {
-    if (route.task === null) return null;
-    return (
-      (tasks ?? []).find((t) => t.id === route.task) ??
-      (fetchedTask && fetchedTask.id === route.task ? fetchedTask : null)
-    );
-  }, [route.task, tasks, fetchedTask]);
-
-  useLiveEffect((live) => {
-    if (route.task === null) {
-      setFetchedTask(null);
-      fetchedTaskIdRef.current = null;
-      return;
-    }
-    if ((tasks ?? []).some((t) => t.id === route.task)) return;
-    if (fetchedTaskIdRef.current === route.task) return;
-    fetchedTaskIdRef.current = route.task;
-    api.task(route.task).then((t) => live() && setFetchedTask(t), toastError);
-  }, [route.task, tasks]);
-
-  const needsYouCount = useMemo(
-    () => boardSections(tasks ?? [], epics).attention.length,
-    [tasks, epics],
-  );
-  const reviewAnnouncementCursor = useRef<ReviewAnnouncementCursor>(EMPTY_REVIEW_ANNOUNCEMENT_CURSOR);
-  const [politeReviewAnnouncement, setPoliteReviewAnnouncement] = useState('');
-  const [assertiveMergeAnnouncement, setAssertiveMergeAnnouncement] = useState('');
-
-  useEffect(() => {
-    if (tasks === null) {
-      reviewAnnouncementCursor.current = EMPTY_REVIEW_ANNOUNCEMENT_CURSOR;
-      setPoliteReviewAnnouncement('');
-      setAssertiveMergeAnnouncement('');
-      return;
-    }
-    const next = advanceReviewAnnouncements(tasks, needsYouCount, reviewAnnouncementCursor.current);
-    reviewAnnouncementCursor.current = next.cursor;
-    setPoliteReviewAnnouncement(next.polite);
-    setAssertiveMergeAnnouncement(next.assertive);
-  }, [tasks, needsYouCount]);
 
   // A Ticket deep-link (a Board/Table/Graph row, a child-task link on the Epic
   // page): navigate to /task/:id, clearing any focused Epic so the two pathname
@@ -529,7 +149,7 @@ export function App() {
   }, [config?.name, activeWorkspaceName]);
 
   if (authed === null) return null;
-  if (!authed) return <Login onLoggedIn={() => setAuthed(true)} />;
+  if (!authed) return <Login onLoggedIn={login} />;
 
   const taskList = tasks ?? [];
   const noWorkspaces = hasNoWorkspaces(workspaces, workspacesLoaded);
@@ -577,35 +197,6 @@ export function App() {
     storeTheme(localStorage, next);
   };
 
-  const setFleetPaused = (paused: boolean) => {
-    if (globalPausePending) return;
-    setGlobalPausePending(true);
-    (paused ? api.pauseGlobal() : api.resumeGlobal())
-      .then(({ paused: next }) => {
-        setGlobalPaused(next);
-        refresh();
-      }, toastError)
-      .finally(() => setGlobalPausePending(false));
-  };
-
-  const changeUpdate = (action: () => Promise<UpdateState>) => {
-    if (updatePending) return;
-    const request = ++updateRequest.current;
-    setUpdatePending(true);
-    action().then(
-      (next) => request === updateRequest.current && setUpdate(next),
-      toastError,
-    ).finally(() => setUpdatePending(false));
-  };
-
-  const refreshTracker = () => {
-    if (activeWorkspaceId === null || refreshingTracker) return;
-    setRefreshingTracker(true);
-    api
-      .refreshTracker(activeWorkspaceId)
-      .then(refresh, toastError)
-      .finally(() => setRefreshingTracker(false));
-  };
 
   const switchWorkspace = (id: number) => {
     navigate(scopeSwitchRoute(route, { kind: 'workspace', workspaceId: id }));
@@ -670,83 +261,43 @@ export function App() {
           onClick={() => setMenuOpen(false)}
         />
       )}
-      <aside
-        aria-label="Sidebar"
-        aria-hidden={!menuOpen && !railDesktop}
-        onKeyDown={(e) => e.key === 'Escape' && setMenuOpen(false)}
-        className={`z-50 bg-shell max-rail:fixed max-rail:inset-y-0 max-rail:left-0 max-rail:w-[280px] max-rail:max-w-[85%] max-rail:flex max-rail:flex-col max-rail:overflow-y-auto max-rail:border-r max-rail:border-hairline max-rail:shadow-float max-rail:transition-transform max-rail:duration-200 max-rail:ease-out motion-reduce:transition-none shrink-0 rail:flex rail:flex-col rail:overflow-hidden rail:border-r rail:border-hairline rail:transition-[width] rail:duration-150 rail:ease-out motion-reduce:rail:transition-none ${
-          menuOpen ? 'max-rail:translate-x-0' : 'max-rail:invisible max-rail:-translate-x-full'
-        } ${railCollapsed ? 'rail:w-12' : 'rail:w-[200px]'}`}
-      >
-        <div
-          className={`flex items-center gap-2.5 px-4 py-3 rail:px-3 rail:pb-5 ${railCollapsed ? 'rail:justify-center rail:px-0' : ''}`}
-        >
-          <BrandMark />
-          <span
-            className={`whitespace-nowrap font-display text-title font-display-weight tracking-tight ${railCollapsed ? 'rail:hidden' : ''}`}
-          >
-            {instanceName}
-          </span>
-          {railCollapsed && <span className="sr-only">{instanceName}</span>}
-          <button
-            aria-label="Close menu"
-            className="ml-auto inline-flex size-9 items-center justify-center rounded-md text-muted hover:bg-raised hover:text-ink rail:hidden"
-            onClick={() => setMenuOpen(false)}
-          >
-            <Icon name="close" />
-          </button>
-        </div>
-        <div className={`px-4 pb-3 rail:px-3 ${railCollapsed ? 'rail:hidden' : ''}`}>
-          <WorkspaceSwitcher
-            workspaces={workspaces}
-            activeId={activeWorkspaceId}
-            onSwitch={switchWorkspace}
-            onGlobal={switchGlobal}
-            onCreated={handleWorkspaceCreated}
-          />
-        </div>
-        <div
-          className={`flex flex-col gap-0.5 overflow-y-auto border-t border-hairline p-2 rail:flex-1 rail:border-t-0 rail:pt-0 max-rail:overflow-visible ${
-            railCollapsed ? 'rail:px-1.5' : ''
-          }`}
-        >
-          <NavRail
-            view={view}
-            scope={route.scope}
-            needsYouCount={needsYouCount}
-            railCollapsed={railCollapsed}
-            railDesktop={railDesktop}
-            onPickView={pickView}
-            onToggleRail={toggleRail}
-          />
-        </div>
-        <div className="mt-auto rail:hidden">
-          <OperatorControls
-            layout="drawer"
-            config={config}
-            runningCount={globalRunningCount}
-            cost24h={cost24h}
-            hostLoad={hostLoad}
-            theme={theme}
-            view={view}
-            passwordSet={passwordSet}
-            globalPaused={globalPaused}
-            globalPausePending={globalPausePending}
-            trackerEnabled={activeWorkspace?.trackerEnabled ?? false}
-            refreshingTracker={refreshingTracker}
-            onAutoRunnerChange={(enabled) =>
-              api.updateConfig({ autoRunner: { enabled } }).then(setConfig, toastError)
-            }
-            onGlobalPauseChange={setFleetPaused}
-            onRefreshTracker={refreshTracker}
-            onThemeCycle={cycleTheme}
-            onSettingsClick={() => pickView('settings')}
-            onLogout={() => fetch('/api/auth/logout', { method: 'POST' }).then(() => setAuthed(false))}
-            onOpenAbout={() => setAboutOpen(true)}
-            onOpenActivity={openGlobalActivity}
-          />
-        </div>
-      </aside>
+      <AppSidebar
+        railCollapsed={railCollapsed}
+        railDesktop={railDesktop}
+        menuOpen={menuOpen}
+        onClose={() => setMenuOpen(false)}
+        instanceName={instanceName}
+        workspaces={workspaces}
+        activeWorkspaceId={activeWorkspaceId}
+        onSwitch={switchWorkspace}
+        onGlobal={switchGlobal}
+        onCreated={handleWorkspaceCreated}
+        view={view}
+        scope={route.scope}
+        needsYouCount={needsYouCount}
+        onPickView={pickView}
+        onToggleRail={toggleRail}
+        config={config}
+        globalRunningCount={globalRunningCount}
+        cost24h={cost24h}
+        hostLoad={hostLoad}
+        theme={theme}
+        passwordSet={passwordSet}
+        globalPaused={globalPaused}
+        globalPausePending={globalPausePending}
+        trackerEnabled={activeWorkspace?.trackerEnabled ?? false}
+        refreshingTracker={refreshingTracker}
+        onAutoRunnerChange={(enabled) =>
+          api.updateConfig({ autoRunner: { enabled } }).then(setConfig, toastError)
+        }
+        onGlobalPauseChange={setFleetPaused}
+        onRefreshTracker={refreshTracker}
+        onThemeCycle={cycleTheme}
+        onSettingsClick={() => pickView('settings')}
+        onLogout={logout}
+        onOpenAbout={() => setAboutOpen(true)}
+        onOpenActivity={openGlobalActivity}
+      />
 
       <div className="group/shell flex min-h-0 min-w-0 flex-1 flex-col">
         <HeaderStatusBar
@@ -770,7 +321,7 @@ export function App() {
           onRefreshTracker={refreshTracker}
           onThemeCycle={cycleTheme}
           onSettingsClick={() => pickView('settings')}
-          onLogout={() => fetch('/api/auth/logout', { method: 'POST' }).then(() => setAuthed(false))}
+          onLogout={logout}
           onNewTask={() => setEditing('new')}
           onOpenAbout={() => setAboutOpen(true)}
           onOpenActivity={openGlobalActivity}
@@ -821,179 +372,46 @@ export function App() {
           </div>
         )}
 
-        <div className="relative min-h-0 flex-1">
-          {route.epic !== null && activeWorkspaceId !== null ? (
-            <EpicPage
-              epicRef={route.epic}
-              workspaceId={activeWorkspaceId}
-              onClose={() => navigate({ ...route, epic: null, panel: NO_SELECTION }, { replace: true })}
-              onOpenTask={openTaskById}
-              selection={route.panel}
-              onSelect={(panel) => navigate({ ...route, panel })}
-            />
-          ) : openTask ? (
-            <TicketPage
-              task={openTask}
-              onEdit={setEditing}
-              onChanged={refresh}
-              onClose={() => navigate({ ...route, task: null, panel: NO_SELECTION }, { replace: true })}
-              onOpenTask={openTaskById}
-              selection={route.panel}
-              onSelect={(panel) => navigate({ ...route, panel })}
-              onOpenEpic={openEpicByRef}
-              parentEpicRef={epics.find((e) => e.members.some((m) => m.taskId === openTask.id))?.ref ?? null}
-              error={error}
-            />
-          ) : (
-            <div className="flex h-full flex-col">
-              {error && (
-                <div role="alert" className="mx-6 mt-4 shrink-0 rounded-lg bg-fail-tint px-4 py-2 text-fail">
-                  {error}
-                </div>
-              )}
-              {showRunHint && (
-                <div className="mx-6 mt-4 flex shrink-0 items-start gap-3 rounded-lg border-l-4 border-l-ready bg-ready-tint px-4 py-2.5 text-small">
-                  <span
-                    aria-hidden="true"
-                    className="mt-1 size-2 shrink-0 rounded-full bg-ready-dot"
-                  />
-                  <p className="flex-1 text-ink">
-                    Your first task is ready, but nothing's running it yet. Press{' '}
-                    <span className="font-semibold text-ink">Run now</span> on the card, or turn the{' '}
-                    <span className="font-semibold text-ink">Auto-runner</span> on above.
-                  </p>
-                  <button className={`${btnQuiet} shrink-0`} onClick={dismissRunHint}>
-                    Dismiss
-                  </button>
-                </div>
-              )}
-              {showEscalationHint && (
-                <div className="mx-6 mt-4 flex shrink-0 items-start gap-3 rounded-lg border-l-4 border-l-await bg-await-tint px-4 py-2.5 text-small">
-                  <span aria-hidden="true" className="mt-1 size-2 shrink-0 rounded-full bg-await-dot" />
-                  <p className="flex-1 text-ink">
-                    A ticket is escalated. Open it to read why and the changes so far, then{' '}
-                    <span className="font-semibold text-ink">Accept</span> to merge as-is,{' '}
-                    <span className="font-semibold text-ink">Reject</span> with guidance for the next attempt, or{' '}
-                    <span className="font-semibold text-ink">Close</span> it — the one decision agents don't take for you.
-                  </p>
-                  <button className={`${btnQuiet} shrink-0`} onClick={dismissEscalationHint}>
-                    Dismiss
-                  </button>
-                </div>
-              )}
-              <main
-                id="main-content"
-                tabIndex={-1}
-                className={`min-h-0 min-w-0 flex-1 ${
-                  view === 'conversations' || view === 'files' ? 'overflow-hidden' : 'overflow-y-auto px-6 pt-5 pb-16'
-                }`}
-              >
-                {showWorkspaceEmptyState ? (
-                  <EmptyState
-                    title="No workspace open"
-                    className="mt-24"
-                    action={
-                      <button className={btnPrimary} onClick={() => setCreatingWorkspace(true)}>
-                        Open a workspace
-                      </button>
-                    }
-                  >
-                    A workspace points Harmonic at a project directory — its tasks, attempts, and cost all
-                    scope to it. Open one to get started.
-                  </EmptyState>
-                ) : (
-                  <>
-                    {view === 'board' && activeWorkspaceId === null && (
-                      <GlobalDashboard
-                        pendingPermissions={pendingPermissionAlerts.length}
-                        hostLoad={hostLoad}
-                        onNavigate={(view) => pickView(view)}
-                        onOpenWorkspace={switchWorkspace}
-                      />
-                    )}
-                    {view === 'board' && activeWorkspaceId !== null && (
-                      <Board
-                        tasks={taskList}
-                        loading={tasks === null}
-                        epics={epics}
-                        hasHistory={hasHistory}
-                        onOpen={openRow}
-                        onOpenTask={openTaskById}
-                        onNewTask={() => setEditing('new')}
-                        onOpenEpic={(epic) => openEpicByRef(epic.ref)}
-                      />
-                    )}
-                  {view === 'activity' && <ActivityView config={config} workspaceId={activeWorkspaceId} />}
-                  {view === 'conversations' && (
-                    <ConversationsPage
-                      config={config}
-                      workspace={activeWorkspace}
-                      conversationId={route.conversation ?? null}
-                      onConversationChange={pickConversation}
-                    />
-                  )}
-                  {view === 'table' && (
-                    <TableView
-                      workspaceId={route.scope.kind === 'global' ? null : activeWorkspaceId}
-                      workspaces={workspaces}
-                      epics={route.scope.kind === 'global' ? [] : epics}
-                      onOpen={openRow}
-                      onOpenEpic={openEpicByRef}
-                      filters={route.table}
-                      onFiltersChange={setTableFilters}
-                      onNewTask={() => setEditing('new')}
-                    />
-                  )}
-                  {view === 'graph' && (
-                    <Suspense
-                      fallback={
-                        <div className="flex h-full items-center justify-center text-muted">Loading graph…</div>
-                      }
-                    >
-                      <GraphView workspaceId={activeWorkspaceId} epics={epics} onOpen={openRow} />
-                    </Suspense>
-                  )}
-                  {view === 'stats' && <StatsPage workspaceId={activeWorkspaceId} />}
-                  {view === 'files' && activeWorkspace && (
-                    <FilesPage workspace={activeWorkspace} selectedPath={route.file ?? null} onSelectFile={(file) => navigate({ ...route, file })} onWorkspaceSaved={handleWorkspaceSaved} />
-                  )}
-                  {view === 'timeline' && (
-                    <TimelinePage workspaceId={activeWorkspaceId} onOpenTask={openTaskById} />
-                  )}
-                  {view === 'operations' && (
-                    <OperationsPage workspaceId={activeWorkspaceId} tasks={taskList} epics={epics} onOpenTask={openTaskById} onOpenEpic={openEpicByRef} />
-                  )}
-                  {view === 'api' && <ApiPage />}
-                  {view === 'settings' && <SettingsPage onSaved={setConfig} />}
-                  {view === 'workspace' && config && activeWorkspace && (
-                    <WorkspaceSettingsPage
-                      workspace={activeWorkspace}
-                      config={config}
-                      blockedByRunningTask={runningCount > 0}
-                      onSaved={handleWorkspaceSaved}
-                      onDeleted={handleWorkspaceDeleted}
-                    />
-                  )}
-                  </>
-                )}
-              </main>
-            </div>
-          )}
-
-          {!noWorkspaces && view !== 'conversations' && (
-            <ConversationLauncher
-              config={config}
-              workspace={workspaces.find((w) => w.id === activeWorkspaceId) ?? null}
-              conversationId={route.conversation}
-              openConversationId={conversationToOpen}
-              pendingPermission={
-                pendingPermissionAlerts.find(({ permission }) => permission.conversationId === conversationToOpen)?.permission ?? null
-              }
-              onConversationOpened={handleConversationOpened}
-              onExpand={expandConversation}
-            />
-          )}
-        </div>
+        <AppContent
+          route={route}
+          navigate={navigate}
+          activeWorkspaceId={activeWorkspaceId}
+          activeWorkspace={activeWorkspace}
+          openTask={openTask}
+          epics={epics}
+          error={error}
+          showRunHint={showRunHint}
+          dismissRunHint={dismissRunHint}
+          showEscalationHint={showEscalationHint}
+          dismissEscalationHint={dismissEscalationHint}
+          showWorkspaceEmptyState={showWorkspaceEmptyState}
+          setCreatingWorkspace={setCreatingWorkspace}
+          taskList={taskList}
+          tasks={tasks}
+          hasHistory={hasHistory}
+          config={config}
+          hostLoad={hostLoad}
+          pendingPermissionAlerts={pendingPermissionAlerts}
+          noWorkspaces={noWorkspaces}
+          view={view}
+          workspaces={workspaces}
+          conversationToOpen={conversationToOpen}
+          runningCount={runningCount}
+          onEdit={setEditing}
+          onChanged={refresh}
+          onOpenTask={openTaskById}
+          onOpenRow={openRow}
+          onOpenEpic={openEpicByRef}
+          pickView={pickView}
+          switchWorkspace={switchWorkspace}
+          setTableFilters={setTableFilters}
+          setConfig={setConfig}
+          handleWorkspaceSaved={handleWorkspaceSaved}
+          handleWorkspaceDeleted={handleWorkspaceDeleted}
+          handleConversationOpened={handleConversationOpened}
+          expandConversation={expandConversation}
+          pickConversation={pickConversation}
+        />
       </div>
 
       {creatingWorkspace && (

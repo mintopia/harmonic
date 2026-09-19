@@ -6,11 +6,11 @@ const source = (path: string) => readFileSync(join(process.cwd(), path), 'utf8')
 
 describe('Paper accessibility contract (issue #266)', () => {
   it('announces task state, the needs-you count, and merge outcomes', () => {
-    const app = source('web/src/App.tsx');
+    const appSync = source('web/src/useAppSync.ts');
     const board = source('web/src/components/Board.tsx');
     const toasts = source('web/src/toast.tsx');
 
-    expect(app).toContain('advanceReviewAnnouncements');
+    expect(appSync).toContain('advanceReviewAnnouncements');
     expect(board).toContain("aria-live={attn ? 'polite' : undefined}");
     expect(toasts).toContain("aria-live={success ? 'polite' : 'assertive'}");
   });
