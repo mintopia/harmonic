@@ -183,6 +183,31 @@ export interface HarnessAdapter {
 }
 
 /**
+ * The shared tail-reader shell: one cached parse, and `sample()`s serialized
+ * onto a single promise chain so concurrent callers never fold the same bytes
+ * twice. `doSample` receives the last good parse and returns it unchanged when
+ * there is nothing new to read.
+ */
+export function serializedTailReader(
+  doSample: (previous: ParsedSession | null) => Promise<ParsedSession | null>,
+): SessionTailReader {
+  let cached: ParsedSession | null = null;
+  let inflight: Promise<ParsedSession | null> | null = null;
+  const run = async (): Promise<ParsedSession | null> => {
+    cached = await doSample(cached);
+    return cached;
+  };
+  return {
+    latest: () => cached,
+    sample: () => {
+      const next = (inflight ?? Promise.resolve(null)).then(run, run);
+      inflight = next;
+      return next;
+    },
+  };
+}
+
+/**
  * The fallback tail reader for a collector with no `createTailReader`: re-run
  * the whole-file `parse()` each `sample()` and cache it for `latest()`.
  */

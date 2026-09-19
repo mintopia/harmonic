@@ -1,13 +1,16 @@
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { dominantModel, foldModels, usageFromModels, type ParsedSession, type ProcessNode, type UsageTurn } from '../usage.js';
 import { forEachYielding } from '../../reliability/yield.js';
-import type { HarnessAdapter, ModelUsage, SessionTailReader } from './adapter.js';
+import { serializedTailReader, type HarnessAdapter, type ModelUsage, type SessionTailReader } from './adapter.js';
 import { LineCursor, type LineAccumulator } from './incremental-log.js';
+import { mergeModelUsage, num } from './model-usage.js';
+import { datedLogFiles } from './session-files.js';
 import { asRecord, contentText, oneLine, timestamp, withTarget, type TranscriptLogEvent } from './transcript.js';
 
-const num = (v: unknown): number => (typeof v === 'number' ? v : 0);
+/** Codex rollout log filenames: `rollout-<ts>-<sessionId>.jsonl`. */
+const isRolloutFile = (name: string): boolean => name.startsWith('rollout-') && name.endsWith('.jsonl');
 
 interface RolloutScan {
   models: Record<string, ModelUsage>;
@@ -143,17 +146,7 @@ function scanRollout(file: string, subagent = false): RolloutScan {
 }
 
 function mergeModels(scans: RolloutScan[]): Record<string, ModelUsage> {
-  const models: Record<string, ModelUsage> = {};
-  for (const scan of scans) {
-    for (const [model, usage] of Object.entries(scan.models)) {
-      const bucket = (models[model] ??= { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 });
-      bucket.inputTokens += usage.inputTokens;
-      bucket.outputTokens += usage.outputTokens;
-      bucket.cacheReadTokens += usage.cacheReadTokens;
-      bucket.cacheWriteTokens += usage.cacheWriteTokens;
-    }
-  }
-  return models;
+  return mergeModelUsage(scans.map((scan) => scan.models));
 }
 
 function buildRolloutTree(rootId: string, rollouts: Rollout[]): ParsedSession {
@@ -187,49 +180,22 @@ function buildRolloutTree(rootId: string, rollouts: Rollout[]): ParsedSession {
   } satisfies ParsedSession;
 }
 
-class CodexSessionTailReader implements SessionTailReader {
-  private readonly cursors = new Map<string, LineCursor<RolloutAcc>>();
-  private cached: ParsedSession | null = null;
-  private inflight: Promise<ParsedSession | null> | null = null;
-
-  constructor(private readonly input: { sessionLogDir?: string | undefined; cwd: string; sessionId: string }) {}
-
-  latest(): ParsedSession | null {
-    return this.cached;
-  }
-
-  sample(): Promise<ParsedSession | null> {
-    const run = (this.inflight ?? Promise.resolve(null)).then(
-      () => this.doSample(),
-      () => this.doSample(),
-    );
-    this.inflight = run;
-    return run;
-  }
-
-  private async doSample(): Promise<ParsedSession | null> {
-    const rollouts = await findRolloutsYielding(this.input);
-    if (rollouts.length === 0) return this.cached;
+function codexTailReader(input: { sessionLogDir?: string | undefined; cwd: string; sessionId: string }): SessionTailReader {
+  const cursors = new Map<string, LineCursor<RolloutAcc>>();
+  return serializedTailReader(async (previous) => {
+    const rollouts = await findRolloutsYielding(input);
+    if (rollouts.length === 0) return previous;
     for (const rollout of rollouts) {
-      let cursor = this.cursors.get(rollout.file);
+      let cursor = cursors.get(rollout.file);
       if (!cursor) {
         cursor = new LineCursor(rollout.file, () => new RolloutAcc(rollout.parentId !== null));
-        this.cursors.set(rollout.file, cursor);
+        cursors.set(rollout.file, cursor);
       }
       await cursor.advance();
       rollout.scan = cursor.acc.snapshot();
     }
-    this.cached = buildRolloutTree(this.input.sessionId, rollouts);
-    return this.cached;
-  }
-}
-
-function entriesNewestFirst(dir: string): string[] {
-  try {
-    return readdirSync(dir).sort().reverse();
-  } catch {
-    return [];
-  }
+    return buildRolloutTree(input.sessionId, rollouts);
+  });
 }
 
 function rolloutHeader(file: string): Pick<Rollout, 'id' | 'parentId' | 'name'> | null {
@@ -264,35 +230,6 @@ function sessionsRoot(input: { sessionLogDir?: string | undefined }): string {
   return input.sessionLogDir ?? (codexHome ? join(codexHome, 'sessions') : join(homedir(), '.codex', 'sessions'));
 }
 
-function rolloutFiles(root: string): string[] {
-  const files: string[] = [];
-  for (const year of entriesNewestFirst(root)) {
-    for (const month of entriesNewestFirst(join(root, year))) {
-      for (const day of entriesNewestFirst(join(root, year, month))) {
-        for (const file of entriesNewestFirst(join(root, year, month, day))) {
-          if (file.startsWith('rollout-') && file.endsWith('.jsonl')) files.push(join(root, year, month, day, file));
-        }
-      }
-    }
-  }
-  return files;
-}
-
-async function rolloutFilesYielding(root: string): Promise<string[]> {
-  const files: string[] = [];
-  await forEachYielding(entriesNewestFirst(root), async (year) => {
-    await forEachYielding(entriesNewestFirst(join(root, year)), async (month) => {
-      await forEachYielding(entriesNewestFirst(join(root, year, month)), async (day) => {
-        const dir = join(root, year, month, day);
-        await forEachYielding(entriesNewestFirst(dir), (file) => {
-          if (file.startsWith('rollout-') && file.endsWith('.jsonl')) files.push(join(dir, file));
-        });
-      });
-    });
-  });
-  return files;
-}
-
 function findRollouts(input: { sessionLogDir?: string | undefined; cwd: string; sessionId: string }, scan = true): Rollout[] {
   const rootFile = codexAdapter.usage!.sessionLogFile(input);
   if (!rootFile) return [];
@@ -300,7 +237,7 @@ function findRollouts(input: { sessionLogDir?: string | undefined; cwd: string; 
   const rollouts = new Map<string, Rollout>([
     [input.sessionId, { id: input.sessionId, parentId: null, name: 'root', file: rootFile, scan: scan ? scanRollout(rootFile) : emptyScan() }],
   ]);
-  for (const file of rolloutFiles(root)) {
+  for (const file of datedLogFiles(root, isRolloutFile)) {
     if (file === rootFile) continue;
     const header = rolloutHeader(file);
     if (!header || !header.parentId || rollouts.has(header.id)) continue;
@@ -320,7 +257,10 @@ function findRollouts(input: { sessionLogDir?: string | undefined; cwd: string; 
 }
 
 async function findRolloutsYielding(input: { sessionLogDir?: string | undefined; cwd: string; sessionId: string }): Promise<Rollout[]> {
-  const files = await rolloutFilesYielding(sessionsRoot(input));
+  const files: string[] = [];
+  await forEachYielding(datedLogFiles(sessionsRoot(input), isRolloutFile), (file) => {
+    files.push(file);
+  });
   const rootFile = files.find((file) => file.endsWith(`-${input.sessionId}.jsonl`));
   if (!rootFile) return [];
   const rollouts = new Map<string, Rollout>([[input.sessionId, { id: input.sessionId, parentId: null, name: 'root', file: rootFile, scan: emptyScan() }]]);
@@ -494,9 +434,7 @@ export const codexAdapter: HarnessAdapter = {
       return rollouts.length > 0 ? buildRolloutTree(input.sessionId, rollouts) : null;
     },
 
-    createTailReader(input) {
-      return new CodexSessionTailReader(input);
-    },
+    createTailReader: codexTailReader,
 
     /**
      * Codex attributes usage per model on the prompt result itself,
@@ -532,17 +470,7 @@ export const codexAdapter: HarnessAdapter = {
       if (!sessionId) return null;
       const root = sessionsRoot({ sessionLogDir });
       const suffix = `-${sessionId}.jsonl`;
-      for (const year of entriesNewestFirst(root)) {
-        for (const month of entriesNewestFirst(join(root, year))) {
-          for (const day of entriesNewestFirst(join(root, year, month))) {
-            for (const file of entriesNewestFirst(join(root, year, month, day))) {
-              if (file.startsWith('rollout-') && file.endsWith(suffix)) {
-                return join(root, year, month, day, file);
-              }
-            }
-          }
-        }
-      }
+      for (const file of datedLogFiles(root, (name) => name.startsWith('rollout-') && name.endsWith(suffix))) return file;
       return null;
     },
 

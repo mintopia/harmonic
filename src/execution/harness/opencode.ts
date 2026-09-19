@@ -6,7 +6,8 @@ import { homedir, tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { dominantModel, foldModels, usageFromModels, type ParsedSession, type ProcessNode } from '../usage.js';
 import type { HarnessAdapter, ModelUsage } from './adapter.js';
-import { withTarget, type TranscriptLogEvent } from './transcript.js';
+import { addModelUsage } from './model-usage.js';
+import { isRecord, withTarget, type TranscriptLogEvent } from './transcript.js';
 import type { ModelPrice } from '../../domain/pricing.js';
 
 type JsonRecord = Record<string, unknown>;
@@ -107,18 +108,7 @@ function readUsageSessions(dbPath: string, sessionId: string): UsageSession[] {
 
 function rowsToModels(rows: readonly UsageRow[]): Record<string, ModelUsage> {
   const models: Record<string, ModelUsage> = {};
-  for (const row of rows) {
-    const usage = (models[row.model] ??= {
-      inputTokens: 0,
-      outputTokens: 0,
-      cacheReadTokens: 0,
-      cacheWriteTokens: 0,
-    });
-    usage.inputTokens += row.inputTokens;
-    usage.outputTokens += row.outputTokens;
-    usage.cacheReadTokens += row.cacheReadTokens;
-    usage.cacheWriteTokens += row.cacheWriteTokens;
-  }
+  for (const row of rows) addModelUsage(models, row.model, row);
   return models;
 }
 
@@ -142,10 +132,6 @@ function processNode(session: UsageSession, depth: number, children: ProcessNode
     toolUseId: null,
     children,
   };
-}
-
-function isRecord(value: unknown): value is JsonRecord {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function stringValue(value: unknown, fallback: string): string {

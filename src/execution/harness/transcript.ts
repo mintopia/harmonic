@@ -6,8 +6,11 @@ export interface TranscriptLogEvent {
   payload: Record<string, unknown>;
 }
 
+export const isRecord = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
+
 export const asRecord = (value: unknown): Record<string, unknown> | null =>
-  value !== null && typeof value === 'object' && !Array.isArray(value) ? Object.fromEntries(Object.entries(value)) : null;
+  isRecord(value) ? Object.fromEntries(Object.entries(value)) : null;
 
 export const timestamp = (value: unknown): number =>
   typeof value === 'string' && !Number.isNaN(Date.parse(value)) ? Date.parse(value) : 0;
