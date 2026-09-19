@@ -31,7 +31,6 @@ import {
   evaluateOverall,
   verdictFromReasons,
   warnNotes,
-  weightByConfidence,
 } from './thresholds.js';
 import {
   ALL_CATEGORIES,
@@ -369,8 +368,8 @@ export async function scoreSubject(
       signoffs,
     });
   }
-  const weightedScores = Object.fromEntries(ALL_CATEGORIES.map((c) => [c, categories[c].weighted])) as Record<CategoryId, number>;
-  const overall = evaluateOverall(weightedScores, config, baselineEntry);
+  const scores = Object.fromEntries(ALL_CATEGORIES.map((c) => [c, categories[c].score])) as Record<CategoryId, number>;
+  const overall = evaluateOverall(scores, config, baselineEntry);
 
   const reasons = blockingReasons(categories, overall, config);
   const warns = warnNotes(categories, overall, config);
@@ -418,8 +417,8 @@ export async function scoreForBaseline(
     categories[cat] = typeof answers[cat]?.score === 'number' ? answers[cat]!.score : 0;
     if (typeof answers[cat]?.confidence === 'number') confidences[cat] = answers[cat]!.confidence;
   }
-  // Persisted overall is confidence-weighted to match the live gate (evaluateOverall).
-  const overall = ALL_CATEGORIES.reduce((sum, c) => sum + weightByConfidence(categories[c] ?? 0, confidences[c]), 0) / ALL_CATEGORIES.length;
+  // Persisted overall is the raw-score mean, matching the live gate (evaluateOverall).
+  const overall = ALL_CATEGORIES.reduce((sum, c) => sum + (categories[c] ?? 0), 0) / ALL_CATEGORIES.length;
   return { path: subject.relPath, entry: { categories, confidences, overall }, usage };
 }
 
@@ -428,9 +427,9 @@ function htmlPathFor(baselinePath: string): string {
   return baselinePath.endsWith('.json') ? `${baselinePath.slice(0, -'.json'.length)}.html` : `${baselinePath}.html`;
 }
 
-function writeBaselineHtml(baseline: Baseline, meta: BaselineMeta | null, baselinePath: string, repoRoot: string, focus: readonly string[] | null = null): string {
+function writeBaselineHtml(baseline: Baseline, meta: BaselineMeta | null, baselinePath: string, repoRoot: string, focus: readonly string[] | null, confidenceFloor: number): string {
   const htmlPath = htmlPathFor(baselinePath);
-  writeFileSync(htmlPath, renderBaselineHtml(baseline, meta, focus));
+  writeFileSync(htmlPath, renderBaselineHtml(baseline, meta, focus, confidenceFloor));
   process.stderr.write(`jev-gate: baseline HTML written to ${relative(repoRoot, htmlPath)}\n`);
   return htmlPath;
 }
@@ -463,7 +462,7 @@ function renderBaselineOnly(opts: CliOptions): number {
     process.stderr.write(`jev-gate: no baseline at ${relative(opts.repoRoot, baselinePath)} — run --write-baseline first\n`);
     return 2;
   }
-  writeBaselineHtml(baseline ?? {}, meta, baselinePath, opts.repoRoot);
+  writeBaselineHtml(baseline ?? {}, meta, baselinePath, opts.repoRoot, null, config.thresholds.confidence.blockingMin);
   return 0;
 }
 
@@ -553,7 +552,7 @@ async function runBaseline(opts: CliOptions): Promise<number> {
   process.stderr.write(
     `jev-gate: baseline written to ${relative(opts.repoRoot, baselinePath)} — ${entries.length} file(s) scored, ${tooBig} too big${tooBigSuffix}, ${errored} errored\n`,
   );
-  if (opts.html) writeBaselineHtml(baseline, meta, baselinePath, opts.repoRoot);
+  if (opts.html) writeBaselineHtml(baseline, meta, baselinePath, opts.repoRoot, null, config.thresholds.confidence.blockingMin);
   return errored > 0 ? 1 : 0;
 }
 
@@ -693,7 +692,7 @@ async function main(): Promise<number> {
     }
     const background: Baseline = { ...(baseline ?? {}), ...changedEntries };
     const htmlPath = changeHtmlPathFor(baselinePath);
-    writeFileSync(htmlPath, renderBaselineHtml(background, null, Object.keys(changedEntries)));
+    writeFileSync(htmlPath, renderBaselineHtml(background, null, Object.keys(changedEntries), config.thresholds.confidence.blockingMin));
     process.stderr.write(`jev-gate: change report written to ${relative(opts.repoRoot, htmlPath)}\n`);
   }
 

@@ -6,23 +6,22 @@
  *
  * `baseline` is the whole-project grey backdrop for every chart; `focus` (when
  * given) is the subset of paths drawn in colour — the files "in the change" — with
- * every other project file left grey. A null `focus` colours every file (a plain
- * whole-project render). Each chart is a per-metric scatter (confidence × raw
- * score); the per-file expand renders the same eight charts with only that file
- * coloured. Charts are drawn by Chart.js from a CDN, so they need a browser with
- * network; the cards and table are server-rendered and stay readable without it.
+ * every other project file left grey. A null `focus` colours every file. Each chart
+ * is a per-metric scatter (confidence × raw score); the per-file expand renders the
+ * same charts with only that file coloured. Charts are drawn by Chart.js from a CDN,
+ * so they need a browser with network; the cards and table are server-rendered.
  *
- * Confidence shapes the display: each category cell shows the confidence-weighted
- * score (`score·c + 2·(1-c)` — see thresholds.ts `weightByConfidence`), and a
- * file's overall is the mean of its weighted category values. The persisted
- * baseline stores raw scores plus confidences; the gate and ratchet judge the same
- * weighted value, so this display and the gate agree.
+ * Confidence is a gate, not a weight: a score below `confidenceFloor` confidence is
+ * "unsure" (slate) — the number can't be trusted, so a gating axis needs a human
+ * sign-off (thresholds.ts). At or above the floor the raw score decides
+ * fail/warn/pass. The report shows the raw score and marks the unsure ones, matching
+ * the gate exactly.
  */
 import type { Baseline, BaselineMeta, CategoryId } from './types.js';
 import { ALL_CATEGORIES } from './types.js';
-import { NEUTRAL_SCORE, weightByConfidence } from './thresholds.js';
 
 const CHARTJS_SRC = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js';
+const DEFAULT_CONFIDENCE_FLOOR = 0.6;
 
 const CAT_LABELS: Record<CategoryId, string> = {
   complexity_clean_code: 'Complexity',
@@ -35,21 +34,25 @@ const CAT_LABELS: Record<CategoryId, string> = {
   concurrency_and_idempotency: 'Concurrency',
 };
 
-const catZone = (v: number | undefined): string => (v == null ? 'na' : v < 1.5 ? 'fail' : v < 2.5 ? 'warn' : 'pass');
+const scoreZone = (v: number): string => (v < 1.5 ? 'fail' : v < 2.5 ? 'warn' : 'pass');
 const overallZone = (v: number): string => (v < 2.0 ? 'fail' : v < 2.4 ? 'warn' : 'pass');
 const fmt = (v: number | undefined): string => (v == null ? '–' : v.toFixed(2));
 const pct = (v: number): number => Math.round((v / 4) * 100);
 const esc = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-function weighted(score: number | undefined, confidence: number | undefined): number | undefined {
-  return score == null ? undefined : weightByConfidence(score, confidence);
+/** Display zone for a cell/point: no score → 'na'; confidence below the floor (or
+ * missing) → 'unsure'; otherwise the raw score's zone. */
+function zoneOf(score: number | undefined, confidence: number | undefined, floor: number): string {
+  if (score == null) return 'na';
+  if (confidence == null || confidence < floor) return 'unsure';
+  return scoreZone(score);
 }
 
-function weightedOverall(categories: Partial<Record<CategoryId, number>>, confidences: Partial<Record<CategoryId, number>> | undefined): number {
+function rawOverall(categories: Partial<Record<CategoryId, number>>): number {
   const vals: number[] = [];
   for (const k of ALL_CATEGORIES) {
-    const w = weighted(categories[k], confidences?.[k]);
-    if (w != null) vals.push(w);
+    const s = categories[k];
+    if (s != null) vals.push(s);
   }
   return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
 }
@@ -62,35 +65,39 @@ function fmtDuration(ms: number): string {
   return `${m}m ${s}s`;
 }
 
-const chipCell = (score: number | undefined, confidence: number | undefined): string => {
-  const w = weighted(score, confidence);
+const chipCell = (score: number | undefined, confidence: number | undefined, floor: number): string => {
+  const zone = zoneOf(score, confidence, floor);
   const conf = confidence == null ? '–' : `${Math.round(confidence * 100)}%`;
-  const title = score == null ? 'not scored' : `raw ${score.toFixed(2)} · confidence ${conf}`;
+  const title = score == null ? 'not scored' : zone === 'unsure' ? `unsure — ${score.toFixed(2)}/4, low confidence ${conf}` : `${score.toFixed(2)}/4 · confidence ${conf}`;
   const sub = score == null ? '' : `<span class="conf">${conf}</span>`;
-  return `<td><span class="chip ${catZone(w)}" title="${title}">${fmt(w)}</span>${sub}</td>`;
+  return `<td><span class="chip ${zone}" title="${title}">${fmt(score)}</span>${sub}</td>`;
 };
 
-const scatterCell = (k: CategoryId, idPrefix: string): string =>
-  `<div class="scatter-cell"><div class="scatter-title">${CAT_LABELS[k]}</div><div class="chartbox"><canvas id="${idPrefix}-${k}"></canvas></div></div>`;
+const scatterCell = (k: CategoryId): string =>
+  `<div class="scatter-cell"><div class="scatter-title">${CAT_LABELS[k]}</div><div class="chartbox"><canvas id="sc-${k}"></canvas></div></div>`;
 
-export function renderBaselineHtml(baseline: Baseline, meta: BaselineMeta | null = null, focus: readonly string[] | null = null): string {
+export function renderBaselineHtml(
+  baseline: Baseline,
+  meta: BaselineMeta | null = null,
+  focus: readonly string[] | null = null,
+  confidenceFloor: number = DEFAULT_CONFIDENCE_FLOOR,
+): string {
+  const floor = confidenceFloor;
+  const floorPct = Math.round(floor * 100);
   const rows = Object.entries(baseline).map(([path, e]) => ({
     path,
     categories: e.categories,
     confidences: e.confidences,
-    overall: weightedOverall(e.categories, e.confidences),
+    overall: rawOverall(e.categories),
   }));
   const n = rows.length;
-  // The score table and its rollups show the focus set when there is one (the
-  // change), otherwise the whole project; the charts always keep the full
-  // project as their grey backdrop.
   const focusSet = focus == null ? null : new Set(focus);
   const tableRows = focusSet == null ? rows : rows.filter((r) => focusSet.has(r.path));
   const tn = tableRows.length;
   const meanOverall = tn ? tableRows.reduce((s, r) => s + r.overall, 0) / tn : 0;
   const catAverages = Object.fromEntries(
     ALL_CATEGORIES.map((k) => {
-      const vals = tableRows.map((r) => weighted(r.categories[k], r.confidences?.[k])).filter((v): v is number => v != null);
+      const vals = tableRows.map((r) => r.categories[k]).filter((v): v is number => v != null);
       return [k, vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0];
     }),
   ) as Record<CategoryId, number>;
@@ -98,23 +105,23 @@ export function renderBaselineHtml(baseline: Baseline, meta: BaselineMeta | null
   const meanConfidence = confVals.length ? confVals.reduce((a, b) => a + b, 0) / confVals.length : null;
 
   const stats = {
-    anyCatFail: tableRows.filter((r) => ALL_CATEGORIES.some((k) => catZone(weighted(r.categories[k], r.confidences?.[k])) === 'fail')).length,
+    anyCatFail: tableRows.filter((r) => ALL_CATEGORIES.some((k) => zoneOf(r.categories[k], r.confidences?.[k], floor) === 'fail')).length,
+    unsure: tableRows.filter((r) => ALL_CATEGORIES.some((k) => zoneOf(r.categories[k], r.confidences?.[k], floor) === 'unsure')).length,
     overallFail: tableRows.filter((r) => overallZone(r.overall) === 'fail').length,
-    securityFail: tableRows.filter((r) => catZone(weighted(r.categories.security, r.confidences?.security)) === 'fail').length,
   };
 
-  const data = { rows, cats: ALL_CATEGORIES.map((k) => [k, CAT_LABELS[k]]), n, neutral: NEUTRAL_SCORE, focus: focus == null ? null : [...focus] };
+  const data = { rows, cats: ALL_CATEGORIES.map((k) => [k, CAT_LABELS[k]]), n, floorPct, focus: focus == null ? null : [...focus] };
   const dataJson = JSON.stringify(data).replace(/</g, '\\u003c');
 
-  const scatterCellsHtml = ALL_CATEGORIES.map((k) => scatterCell(k, 'sc')).join('');
+  const scatterCellsHtml = ALL_CATEGORIES.map((k) => scatterCell(k)).join('');
 
   const isChange = focusSet != null;
   const subText = tn
-    ? `${tn}${isChange ? ` changed file${tn === 1 ? '' : 's'} of ${n} in project` : ' files'} scored · mean overall ${pct(meanOverall)}/100 (${meanOverall.toFixed(2)}/4, confidence-weighted)`
+    ? `${tn}${isChange ? ` changed file${tn === 1 ? '' : 's'} of ${n} in project` : ' files'} scored · mean overall ${pct(meanOverall)}/100 (${meanOverall.toFixed(2)}/4)`
     : 'Baseline is empty — run --write-baseline to populate it.';
   const scatterCaption = isChange
-    ? 'Per-category health: x = confidence (0–100%), y = raw score (0–4). Coloured = changed files, grey = the rest of the project.'
-    : 'Per-category health: x = confidence (0–100%), y = raw score (0–4), one point per file.';
+    ? `Per-category health: x = confidence (0–100%), y = raw score (0–4). Coloured = changed files, grey = the rest of the project. Slate = unsure (below ${floorPct}% confidence).`
+    : `Per-category health: x = confidence (0–100%), y = raw score (0–4), one point per file. Slate = unsure (below ${floorPct}% confidence).`;
 
   const cards: [string, string | number, string][] = [];
   if (meta) {
@@ -127,8 +134,8 @@ export function renderBaselineHtml(baseline: Baseline, meta: BaselineMeta | null
   cards.push(['Mean overall', `${pct(meanOverall)}/100`, `${meanOverall.toFixed(2)}/4`]);
   cards.push(['Mean confidence', meanConfidence == null ? 'n/a' : `${Math.round(meanConfidence * 100)}%`, meanConfidence == null ? 'no confidence data' : '']);
   cards.push(['Any category FAIL', stats.anyCatFail, `of ${tn}`]);
+  cards.push(['Unsure (any cat)', stats.unsure, `of ${tn}`]);
   cards.push(['Overall FAIL (<50)', stats.overallFail, `of ${tn}`]);
-  cards.push(['Security FAIL', stats.securityFail, 'advisory']);
   const cardsHtml = cards
     .map(([k, v, s]) => `<div class="card"><div class="k">${k}</div><div class="v">${v}${s ? ` <small>${s}</small>` : ''}</div></div>`)
     .join('');
@@ -145,7 +152,7 @@ export function renderBaselineHtml(baseline: Baseline, meta: BaselineMeta | null
   const sorted = [...tableRows].sort((a, b) => a.overall - b.overall);
   const bodyHtml = sorted
     .map((r) => {
-      const cells = ALL_CATEGORIES.map((k) => chipCell(r.categories[k], r.confidences?.[k])).join('');
+      const cells = ALL_CATEGORIES.map((k) => chipCell(r.categories[k], r.confidences?.[k], floor)).join('');
       const ov = `<td><span class="chip overall ${overallZone(r.overall)}">${pct(r.overall)}</span></td>`;
       return `<tr class="filerow" data-path="${esc(r.path)}"><td><span class="caret">▸</span> ${esc(r.path)}</td>${ov}${cells}</tr>`;
     })
@@ -153,7 +160,7 @@ export function renderBaselineHtml(baseline: Baseline, meta: BaselineMeta | null
 
   const footHtml = tn
     ? `<td>Mean across ${tn} file${tn === 1 ? '' : 's'}</td><td><span class="chip overall ${overallZone(meanOverall)}">${pct(meanOverall)}</span></td>` +
-      ALL_CATEGORIES.map((k) => `<td><span class="chip ${catZone(catAverages[k])}">${fmt(catAverages[k])}</span></td>`).join('')
+      ALL_CATEGORIES.map((k) => `<td><span class="chip ${scoreZone(catAverages[k])}">${fmt(catAverages[k])}</span></td>`).join('')
     : '';
 
   return `<!doctype html>
@@ -165,12 +172,14 @@ export function renderBaselineHtml(baseline: Baseline, meta: BaselineMeta | null
 <style>
   :root {
     --bg:#f7f8fa; --panel:#fff; --ink:#1a1d23; --muted:#6b7280; --line:#e5e7eb;
-    --pass:#128a4d; --pass-bg:#e5f6ec; --warn:#9a6700; --warn-bg:#fdf3d7; --fail:#b3261e; --fail-bg:#fce8e6; --accent:#2f6feb;
+    --pass:#128a4d; --pass-bg:#e5f6ec; --warn:#9a6700; --warn-bg:#fdf3d7; --fail:#b3261e; --fail-bg:#fce8e6;
+    --unsure:#4b5b74; --unsure-bg:#e7ecf3; --accent:#2f6feb;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
       --bg:#0f1216; --panel:#171b21; --ink:#e6e8eb; --muted:#9aa3ae; --line:#2a303a;
-      --pass:#4ec98a; --pass-bg:#122a1e; --warn:#e0b341; --warn-bg:#2c2410; --fail:#f28b82; --fail-bg:#2c1614; --accent:#6ea0ff;
+      --pass:#4ec98a; --pass-bg:#122a1e; --warn:#e0b341; --warn-bg:#2c2410; --fail:#f28b82; --fail-bg:#2c1614;
+      --unsure:#9db2d0; --unsure-bg:#1b2331; --accent:#6ea0ff;
     }
   }
   * { box-sizing:border-box; }
@@ -200,6 +209,7 @@ export function renderBaselineHtml(baseline: Baseline, meta: BaselineMeta | null
   .pass { color:var(--pass); background:var(--pass-bg); }
   .warn { color:var(--warn); background:var(--warn-bg); }
   .fail { color:var(--fail); background:var(--fail-bg); }
+  .unsure { color:var(--unsure); background:var(--unsure-bg); }
   .na { color:var(--muted); }
   .overall { font-weight:700; }
   tfoot td { font-weight:600; color:var(--muted); border-top:2px solid var(--line); }
@@ -237,12 +247,12 @@ export function renderBaselineHtml(baseline: Baseline, meta: BaselineMeta | null
     </table>
   </div>
   <div class="legend">
-    <span>Cells show the confidence-weighted score (raw · confidence on hover):</span>
+    <span>Cells show the raw score (confidence on hover):</span>
     <span class="chip fail">&lt; 1.5 fail</span>
     <span class="chip warn">1.5–&lt;2.5 warn</span>
     <span class="chip pass">≥ 2.5 pass</span>
+    <span class="chip unsure">&lt; ${floorPct}% conf · unsure</span>
     <span style="margin-left:12px">Overall (/100): fail &lt;50, warn &lt;60, pass ≥60</span>
-    <span style="margin-left:12px">Weighting: score·c + ${NEUTRAL_SCORE.toFixed(1)}·(1−c), c = confidence</span>
   </div>
 </div>
 <script src="${CHARTJS_SRC}"></script>
@@ -250,31 +260,29 @@ export function renderBaselineHtml(baseline: Baseline, meta: BaselineMeta | null
 <script>
   const D = JSON.parse(document.getElementById('data').textContent);
   const CATS = D.cats;
-  const NEUTRAL = D.neutral;
+  const FLOOR = D.floorPct / 100;
   const FOCUS = D.focus ? new Set(D.focus) : null;
   const inFocus = (path) => FOCUS == null || FOCUS.has(path);
-  const catZone = (v) => v == null ? 'na' : v < 1.5 ? 'fail' : v < 2.5 ? 'warn' : 'pass';
+  const scoreZone = (v) => v < 1.5 ? 'fail' : v < 2.5 ? 'warn' : 'pass';
   const overallZone = (v) => v < 2.0 ? 'fail' : v < 2.4 ? 'warn' : 'pass';
+  const zoneOf = (score, conf) => score == null ? 'na' : (conf == null || conf < FLOOR) ? 'unsure' : scoreZone(score);
   const fmt = (v) => v == null ? '–' : v.toFixed(2);
   const pct = (v) => Math.round((v / 4) * 100);
   const clamp = (c) => Math.max(0, Math.min(1, c));
-  const weight = (score, conf) => score == null ? null : (conf == null ? score : score * clamp(conf) + NEUTRAL * (1 - clamp(conf)));
   const rowOverall = (r) => {
-    const vs = CATS.map(([k]) => weight(r.categories[k], r.confidences && r.confidences[k])).filter(v => v != null);
+    const vs = CATS.map(([k]) => r.categories[k]).filter(v => v != null);
     return vs.length ? vs.reduce((a,b)=>a+b,0)/vs.length : 0;
   };
   const esc = (s) => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
   const hasChart = typeof Chart !== 'undefined';
   const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
-  const palette = () => ({ pass: cssVar('--pass'), warn: cssVar('--warn'), fail: cssVar('--fail'), na: cssVar('--muted'), grid: cssVar('--line'), tick: cssVar('--muted'), panel: cssVar('--panel'), passBg: cssVar('--pass-bg'), warnBg: cssVar('--warn-bg'), failBg: cssVar('--fail-bg') });
-  const zoneColor = (P, z) => z === 'pass' ? P.pass : z === 'warn' ? P.warn : z === 'fail' ? P.fail : P.na;
+  const palette = () => ({ pass: cssVar('--pass'), warn: cssVar('--warn'), fail: cssVar('--fail'), unsure: cssVar('--unsure'), na: cssVar('--muted'), grid: cssVar('--line'), tick: cssVar('--muted'), panel: cssVar('--panel'), passBg: cssVar('--pass-bg'), warnBg: cssVar('--warn-bg'), failBg: cssVar('--fail-bg'), unsureBg: cssVar('--unsure-bg') });
+  const zoneColor = (P, z) => z === 'pass' ? P.pass : z === 'warn' ? P.warn : z === 'fail' ? P.fail : z === 'unsure' ? P.unsure : P.na;
 
-  // fail/warn/pass zones behind each plot, in the SAME confidence×score space the
-  // dots live in: a point's zone is catZone(weight(score, conf)), so the boundaries
-  // are the curves where weight = 1.5 and 2.5 — i.e. score = 2 ± 0.5/confidence.
-  // Low confidence (left) is all neutral/warn; the pass/fail regions only open up
-  // as confidence rises (right). Rasterised in thin vertical strips.
+  // Zone regions behind each plot, matching the gate: a vertical UNSURE band left of
+  // the confidence floor (the score can't be trusted there), then horizontal
+  // fail/warn/pass score bands on the confident right.
   const zoneBands = {
     id: 'zoneBands',
     beforeDatasetsDraw(chart) {
@@ -282,19 +290,15 @@ export function renderBaselineHtml(baseline: Baseline, meta: BaselineMeta | null
       if (!chartArea || !sc.x || !sc.y) return;
       const P = palette();
       const yTop = sc.y.getPixelForValue(4), yBot = sc.y.getPixelForValue(0);
-      const step = 2;
+      const xFloor = Math.max(chartArea.left, Math.min(chartArea.right, sc.x.getPixelForValue(FLOOR * 100)));
+      const y15 = sc.y.getPixelForValue(1.5), y25 = sc.y.getPixelForValue(2.5);
       ctx.save();
       ctx.globalAlpha = 0.5;
-      for (let px = chartArea.left; px < chartArea.right; px += step) {
-        const c = Math.max(0, Math.min(1, sc.x.getValueForPixel(px) / 100));
-        const sHi = c <= 0 ? 4 : Math.min(4, 2 + 0.5 / c);
-        const sLo = c <= 0 ? 0 : Math.max(0, 2 - 0.5 / c);
-        const yHi = sc.y.getPixelForValue(sHi), yLo = sc.y.getPixelForValue(sLo);
-        const w = Math.min(step, chartArea.right - px);
-        ctx.fillStyle = P.passBg; ctx.fillRect(px, yTop, w, yHi - yTop);
-        ctx.fillStyle = P.warnBg; ctx.fillRect(px, yHi, w, yLo - yHi);
-        ctx.fillStyle = P.failBg; ctx.fillRect(px, yLo, w, yBot - yLo);
-      }
+      ctx.fillStyle = P.unsureBg; ctx.fillRect(chartArea.left, yTop, xFloor - chartArea.left, yBot - yTop);
+      const rx = xFloor, rw = chartArea.right - xFloor;
+      ctx.fillStyle = P.passBg; ctx.fillRect(rx, yTop, rw, y25 - yTop);
+      ctx.fillStyle = P.warnBg; ctx.fillRect(rx, y25, rw, y15 - y25);
+      ctx.fillStyle = P.failBg; ctx.fillRect(rx, y15, rw, yBot - y15);
       ctx.restore();
     },
   };
@@ -304,8 +308,7 @@ export function renderBaselineHtml(baseline: Baseline, meta: BaselineMeta | null
     return D.rows.filter(r => r.categories[k] != null).map(r => {
       const s = r.categories[k];
       const c = r.confidences && r.confidences[k];
-      const known = c != null;
-      return { x: known ? Math.round(clamp(c) * 100) : 100, y: s, zone: known ? catZone(weight(s, c)) : 'na', path: r.path, conf: known ? Math.round(clamp(c) * 100) + '%' : 'n/a' };
+      return { x: c == null ? 0 : Math.round(clamp(c) * 100), y: s, zone: zoneOf(s, c), path: r.path, conf: c == null ? 'n/a' : Math.round(clamp(c) * 100) + '%' };
     });
   }
   function scales(P) {
@@ -374,18 +377,18 @@ export function renderBaselineHtml(baseline: Baseline, meta: BaselineMeta | null
     const rows = tableRows.filter(r => !q || r.path.toLowerCase().includes(q));
     rows.sort((a,b) => {
       if (sortKey === 'path') return sortDir * a.path.localeCompare(b.path);
-      const av = sortKey === 'overall' ? rowOverall(a) : (weight(a.categories[sortKey], a.confidences && a.confidences[sortKey]) ?? -1);
-      const bv = sortKey === 'overall' ? rowOverall(b) : (weight(b.categories[sortKey], b.confidences && b.confidences[sortKey]) ?? -1);
+      const av = sortKey === 'overall' ? rowOverall(a) : (a.categories[sortKey] ?? -1);
+      const bv = sortKey === 'overall' ? rowOverall(b) : (b.categories[sortKey] ?? -1);
       return sortDir * (av - bv);
     });
     return rows;
   }
   const cell = (score, conf) => {
-    const w = weight(score, conf);
+    const zone = zoneOf(score, conf);
     const c = conf == null ? '–' : Math.round(conf * 100) + '%';
-    const title = score == null ? 'not scored' : 'raw ' + score.toFixed(2) + ' · confidence ' + c;
+    const title = score == null ? 'not scored' : zone === 'unsure' ? 'unsure — ' + score.toFixed(2) + '/4, low confidence ' + c : score.toFixed(2) + '/4 · confidence ' + c;
     const sub = score == null ? '' : '<span class="conf">' + c + '</span>';
-    return '<td><span class="chip '+catZone(w)+'" title="'+title+'">'+fmt(w)+'</span>'+sub+'</td>';
+    return '<td><span class="chip '+zone+'" title="'+title+'">'+fmt(score)+'</span>'+sub+'</td>';
   };
   const expanded = new Set();
   const body = document.getElementById('body');
