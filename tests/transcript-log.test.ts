@@ -243,6 +243,36 @@ describe('Claude transcript: Subagent lanes and tool-call detail', () => {
     expect(events[2]!.payload).toMatchObject({ title: 'Grep foo in src' });
   });
 
+  it('caps subagent lanes at MAX_SUBAGENTS(50) even when more subagent transcripts exist', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'harmonic-claude-log-'));
+    const root = join(dir, 'sess.jsonl');
+    writeFileSync(
+      root,
+      [
+        claudeLine('2026-08-21T10:01:00.000Z', [{ type: 'tool_use', id: 'toolu_root', name: 'Agent', input: { description: 'Fan out', subagent_type: 'Explore', prompt: 'long prompt' } }]),
+        claudeLine('2026-08-21T10:01:05.000Z', [{ type: 'text', text: 'done' }]),
+      ].join('\n'),
+    );
+    const subDir = join(dir, 'sess', 'subagents');
+    mkdirSync(subDir, { recursive: true });
+    const SUBAGENT_COUNT = 60;
+    for (let i = 0; i < SUBAGENT_COUNT; i++) {
+      writeFileSync(join(subDir, `agent-${i}.meta.json`), JSON.stringify({ agentType: 'Explore', description: `sub ${i}`, toolUseId: 'toolu_root' }));
+      writeFileSync(
+        join(subDir, `agent-${i}.jsonl`),
+        claudeLine('2026-08-21T10:01:02.000Z', [{ type: 'text', text: `sub-${i}` }], { agentId: `${i}`, isSidechain: true }),
+      );
+    }
+
+    const log = await readTranscriptLog({ harness: 'claude', path: root, startedAt: 0, finishedAt: null });
+    expect(log.status).toBe('available');
+    const events = log.status === 'available' ? log.events : [];
+    const subagentEvents = events.filter(
+      (e) => (e.payload._meta as { claudeCode?: { parentToolUseId?: string } } | undefined)?.claudeCode?.parentToolUseId === 'toolu_root',
+    );
+    expect(subagentEvents).toHaveLength(50);
+  });
+
   it('names what a Skill, Agent, TodoWrite or front-door MCP call actually did', async () => {
     const file = join(mkdtempSync(join(tmpdir(), 'harmonic-claude-log-')), 'sess.jsonl');
     writeFileSync(

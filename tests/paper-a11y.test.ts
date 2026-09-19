@@ -6,23 +6,23 @@ const source = (path: string) => readFileSync(join(process.cwd(), path), 'utf8')
 
 describe('Paper accessibility contract (issue #266)', () => {
   it('announces task state, the needs-you count, and merge outcomes', () => {
-    const app = source('web/src/App.tsx');
+    const appSync = source('web/src/useAppSync.ts');
     const board = source('web/src/components/Board.tsx');
     const toasts = source('web/src/toast.tsx');
 
-    expect(app).toContain('advanceReviewAnnouncements');
+    expect(appSync).toContain('advanceReviewAnnouncements');
     expect(board).toContain("aria-live={attn ? 'polite' : undefined}");
     expect(toasts).toContain("aria-live={success ? 'polite' : 'assertive'}");
   });
 
   it('keeps state dots named and compact controls touchable', () => {
     const board = source('web/src/components/Board.tsx');
-    const ticket = source('web/src/components/TicketPage.tsx');
+    const attemptsNav = source('web/src/components/ticket/AttemptsNav.tsx');
     const gate = source('web/src/components/ticket/Gate.tsx');
     const ui = source('web/src/ui.ts');
 
     expect(board).toContain('role="img" aria-label={task.state.replaceAll');
-    expect(ticket).toContain('role="img" aria-label={attempt.state}');
+    expect(attemptsNav).toContain('role="img" aria-label={attempt.state}');
     expect(ui).toContain("export const railNavButton = 'flex min-h-11 w-full items-center");
     expect(gate).toContain('role="img" aria-label={DOT_LABEL[model.dot]}');
     expect(ui).toContain("export const btnQuiet = 'inline-flex min-h-11");
@@ -48,13 +48,13 @@ describe('Paper accessibility contract (issue #266)', () => {
   it('shares app refresh with Board actions and detail-page facts', () => {
     const app = source('web/src/App.tsx');
     const board = source('web/src/components/Board.tsx');
-    const ticket = source('web/src/components/TicketPage.tsx');
+    const metrics = source('web/src/components/ticket/Metrics.tsx');
     const epic = source('web/src/components/EpicPage.tsx');
 
     expect(app).toContain('<AppContextProvider value={{ config, workspace: activeWorkspace, refresh }}>');
     expect(board).toContain("import { useAppContext } from '../app-context';");
     expect(board).not.toContain('onChanged: () => void;');
-    expect(ticket).toContain("import { Fact } from './Fact';");
+    expect(metrics).toContain("import { Fact } from '../Fact';");
     expect(epic).toContain("import { Fact } from './Fact';");
   });
 

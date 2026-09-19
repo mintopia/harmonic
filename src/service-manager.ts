@@ -128,7 +128,7 @@ const ensureDataDir = async (dependencies: ServiceManagerDependencies, dataDir: 
   if (user !== undefined) await dependencies.run('chown', [user, dataDir]);
 };
 
-const shellWord = (value: string): string => /^[A-Za-z0-9_./:-]+$/.test(value)
+export const shellWord = (value: string): string => /^[A-Za-z0-9_./:-]+$/.test(value)
   ? value
   : `'${value.replaceAll("'", "'\"'\"'")}'`;
 

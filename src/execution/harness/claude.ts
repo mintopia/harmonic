@@ -1,22 +1,16 @@
-import { readFileSync, existsSync, readdirSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { access, readdir, readFile, realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { dominantModel, foldModels, usageFromModels, type ParsedSession, type ProcessNode, type UsageTurn } from '../usage.js';
-import { resolveUnattendedPermissionMode, type HarnessAdapter, type ModelUsage, type SessionTailReader } from './adapter.js';
+import { resolveUnattendedPermissionMode, serializedTailReader, type HarnessAdapter, type ModelUsage, type SessionTailReader } from './adapter.js';
 import { LineCursor, type LineAccumulator } from './incremental-log.js';
+import { num, addTokenCounts } from './model-usage.js';
+import { agentFiles, agentFilesSync, isTraversalSafeSegment } from './session-files.js';
 import { asRecord, timestamp, withTarget, type TranscriptLogEvent } from './transcript.js';
 
-const num = (v: unknown): number => (typeof v === 'number' ? v : 0);
-
 function mergeInto(dest: Record<string, ModelUsage>, src: Record<string, ModelUsage>): void {
-  for (const [model, u] of Object.entries(src)) {
-    const bucket = (dest[model] ??= { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 });
-    bucket.inputTokens += u.inputTokens;
-    bucket.outputTokens += u.outputTokens;
-    bucket.cacheReadTokens += u.cacheReadTokens;
-    bucket.cacheWriteTokens += u.cacheWriteTokens;
-  }
+  for (const [model, usage] of Object.entries(src)) addTokenCounts(dest, model, usage);
 }
 
 interface Transcript {
@@ -115,19 +109,8 @@ interface Subagent {
  * only one of the pair is still returned.
  */
 function readSubagents(subDir: string): Subagent[] {
-  if (!existsSync(subDir)) return [];
-  const found = new Map<string, { dir: string; jsonl?: string; meta?: string }>();
-  for (const rel of readdirSync(subDir, { recursive: true }) as string[]) {
-    const m = /^agent-(.+)\.(jsonl|meta\.json)$/.exec(basename(rel));
-    if (!m) continue;
-    const abs = join(subDir, rel);
-    const entry = found.get(m[1]!) ?? { dir: dirname(abs) };
-    if (m[2] === 'jsonl') entry.jsonl = abs;
-    else entry.meta = abs;
-    found.set(m[1]!, entry);
-  }
   const subs: Subagent[] = [];
-  for (const [id, { jsonl, meta }] of found) {
+  for (const { id, jsonl, meta } of agentFilesSync(subDir).values()) {
     let parsed: SubagentMeta = {};
     if (meta) {
       try {
@@ -135,7 +118,7 @@ function readSubagents(subDir: string): Subagent[] {
       } catch {
       }
     }
-    subs.push({ id, meta: parsed, scan: jsonl ? scanTranscript(jsonl) : { models: {}, contextTokens: null, lastTool: null, completed: new Set(), turns: [] } });
+    subs.push({ id, meta: parsed, scan: jsonl ? scanTranscript(jsonl) : emptyTranscript() });
   }
   return subs;
 }
@@ -198,6 +181,7 @@ function claudeProjectsDir(sessionLogDir: string | undefined): string {
 
 /** Find Claude's actual transcript, avoiding its unstable cwd-slug convention. */
 async function resolveTranscriptPath(sessionLogDir: string | undefined, sessionId: string): Promise<string | null> {
+  if (!isTraversalSafeSegment(sessionId)) return null;
   const root = claudeProjectsDir(sessionLogDir);
   try {
     const projects = await readdir(root, { withFileTypes: true });
@@ -224,87 +208,53 @@ interface SubEntry {
   metaResolved: boolean;
 }
 
-class ClaudeSessionTailReader implements SessionTailReader {
-  private readonly rootFile: string | null;
-  private readonly subDir: string | null;
-  private rootCursor: LineCursor<TranscriptAcc> | null = null;
-  private readonly subs = new Map<string, SubEntry>();
-  private cached: ParsedSession | null = null;
-  private inflight: Promise<ParsedSession | null> | null = null;
+function claudeTailReader(input: { sessionLogDir?: string | undefined; cwd: string; sessionId: string }): SessionTailReader {
+  const rootFile = claudeAdapter.usage!.sessionLogFile(input);
+  const subDir = rootFile ? subagentsDir(rootFile) : null;
+  let rootCursor: LineCursor<TranscriptAcc> | null = null;
+  const subs = new Map<string, SubEntry>();
 
-  constructor(private readonly input: { sessionLogDir?: string | undefined; cwd: string; sessionId: string }) {
-    this.rootFile = claudeAdapter.usage!.sessionLogFile(input);
-    this.subDir = this.rootFile ? subagentsDir(this.rootFile) : null;
-  }
-
-  latest(): ParsedSession | null {
-    return this.cached;
-  }
-
-  sample(): Promise<ParsedSession | null> {
-    const run = (this.inflight ?? Promise.resolve(null)).then(
-      () => this.doSample(),
-      () => this.doSample(),
-    );
-    this.inflight = run;
-    return run;
-  }
-
-  private async doSample(): Promise<ParsedSession | null> {
-    if (!this.rootFile) return null;
-    if (!this.rootCursor) {
-      if (!existsSync(this.rootFile)) return this.cached;
-      this.rootCursor = new LineCursor(this.rootFile, () => new TranscriptAcc());
-    }
-    await this.discoverSubs();
-    await Promise.all([this.rootCursor.advance(), ...[...this.subs.values()].map((s) => this.advanceSub(s))]);
-    const subs: Subagent[] = [...this.subs.values()].map((s) => ({
-      id: s.id,
-      meta: s.meta,
-      scan: s.cursor ? s.cursor.acc.snapshot() : emptyTranscript(),
-    }));
-    this.cached = buildParsed(this.input.sessionId, this.rootCursor.acc.snapshot(), subs);
-    return this.cached;
-  }
-
-  private async discoverSubs(): Promise<void> {
-    if (!this.subDir) return;
-    let entries: string[];
-    try {
-      entries = (await readdir(this.subDir, { recursive: true })) as string[];
-    } catch {
-      return;
-    }
-    for (const rel of entries) {
-      const m = /^agent-(.+)\.(jsonl|meta\.json)$/.exec(basename(rel));
-      if (!m) continue;
-      const id = m[1]!;
-      const abs = join(this.subDir, rel);
-      const entry = this.subs.get(id) ?? { id, meta: {}, metaResolved: false };
-      if (m[2] === 'jsonl') {
-        if (!entry.jsonlPath) {
-          entry.jsonlPath = abs;
-          entry.cursor = new LineCursor(abs, () => new TranscriptAcc());
-        }
-      } else if (!entry.metaPath) {
-        entry.metaPath = abs;
-      }
-      this.subs.set(id, entry);
-    }
-  }
-
-  private async advanceSub(s: SubEntry): Promise<void> {
-    await Promise.all([s.cursor?.advance(), this.resolveMeta(s)]);
-  }
-
-  private async resolveMeta(s: SubEntry): Promise<void> {
+  const resolveMeta = async (s: SubEntry): Promise<void> => {
     if (s.metaResolved || !s.metaPath) return;
     try {
       s.meta = JSON.parse(await readFile(s.metaPath, 'utf8'));
       s.metaResolved = true;
     } catch {
     }
-  }
+  };
+
+  const advanceSub = async (s: SubEntry): Promise<void> => {
+    await Promise.all([s.cursor?.advance(), resolveMeta(s)]);
+  };
+
+  const discoverSubs = async (): Promise<void> => {
+    if (!subDir) return;
+    for (const { id, jsonl, meta } of (await agentFiles(subDir)).values()) {
+      const entry = subs.get(id) ?? { id, meta: {}, metaResolved: false };
+      if (jsonl && !entry.jsonlPath) {
+        entry.jsonlPath = jsonl;
+        entry.cursor = new LineCursor(jsonl, () => new TranscriptAcc());
+      }
+      if (meta && !entry.metaPath) entry.metaPath = meta;
+      subs.set(id, entry);
+    }
+  };
+
+  return serializedTailReader(async (previous) => {
+    if (!rootFile) return null;
+    if (!rootCursor) {
+      if (!existsSync(rootFile)) return previous;
+      rootCursor = new LineCursor(rootFile, () => new TranscriptAcc());
+    }
+    await discoverSubs();
+    await Promise.all([rootCursor.advance(), ...[...subs.values()].map((s) => advanceSub(s))]);
+    const built: Subagent[] = [...subs.values()].map((s) => ({
+      id: s.id,
+      meta: s.meta,
+      scan: s.cursor ? s.cursor.acc.snapshot() : emptyTranscript(),
+    }));
+    return buildParsed(input.sessionId, rootCursor.acc.snapshot(), built);
+  });
 }
 
 function transcriptEvents(entry: unknown, firstId: number, parentToolUseId?: string): TranscriptLogEvent[] {
@@ -332,24 +282,9 @@ function transcriptEvents(entry: unknown, firstId: number, parentToolUseId?: str
 }
 
 async function transcriptSubagents(rootPath: string): Promise<Array<{ path: string; parentToolUseId: string }>> {
-  const dir = join(dirname(rootPath), basename(rootPath, '.jsonl'), 'subagents');
-  let names: string[];
-  try {
-    names = await readdir(dir, { recursive: true });
-  } catch {
-    return [];
-  }
-  const found = new Map<string, { jsonl?: string; meta?: string }>();
-  for (const rel of names) {
-    const match = /^agent-(.+)\.(jsonl|meta\.json)$/.exec(basename(rel));
-    if (!match) continue;
-    const entry = found.get(match[1]!) ?? {};
-    if (match[2] === 'jsonl') entry.jsonl = join(dir, rel);
-    else entry.meta = join(dir, rel);
-    found.set(match[1]!, entry);
-  }
+  const dir = subagentsDir(rootPath);
   const subagents: Array<{ path: string; parentToolUseId: string }> = [];
-  for (const [id, { jsonl, meta }] of found) {
+  for (const { id, jsonl, meta } of (await agentFiles(dir)).values()) {
     if (!jsonl) continue;
     let parentToolUseId = id;
     if (meta) {
@@ -421,9 +356,7 @@ export const claudeAdapter: HarnessAdapter = {
       return buildParsed(input.sessionId ?? rootFile, rootScan, subs);
     },
 
-    createTailReader(input) {
-      return new ClaudeSessionTailReader(input);
-    },
+    createTailReader: claudeTailReader,
 
     /**
      * Claude Code writes `<sessionLogDir>/<slug(cwd)>/<sessionId>.jsonl`
@@ -433,6 +366,7 @@ export const claudeAdapter: HarnessAdapter = {
     sessionLogFile({ sessionLogDir, cwd, sessionId }) {
       const logDir = sessionLogDir ?? join(homedir(), '.claude', 'projects');
       if (!logDir || !sessionId) return null;
+      if (!isTraversalSafeSegment(sessionId)) return null;
       const slug = cwd.replace(/[^a-zA-Z0-9]/g, '-');
       return join(logDir, slug, `${sessionId}.jsonl`);
     },

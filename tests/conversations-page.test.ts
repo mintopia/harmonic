@@ -1,17 +1,22 @@
+// @vitest-environment jsdom
 import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('dompurify', () => ({ default: { addHook: () => {}, sanitize: (html: string) => html } }));
+
+const { conversations } = vi.hoisted(() => ({ conversations: vi.fn() }));
+vi.mock('../web/src/api.js', () => ({ api: { conversations } }));
 
 import { ConversationContextDrawer, ConversationsPage } from '../web/src/components/ConversationLauncher.js';
 import { isConversationInWorkspace } from '../web/src/components/useConversationDetail.js';
 import type { Conversation } from '../web/src/types.js';
+import { cleanup, makeWorkspace, mountComponent } from './component-smoke-harness.js';
 
 const CONVERSATION_LAUNCHER = readFileSync(
-  fileURLToPath(new URL('../web/src/components/ConversationLauncher.tsx', import.meta.url)),
+  join(process.cwd(), 'web/src/components/ConversationLauncher.tsx'),
   'utf8',
 );
 
@@ -41,6 +46,25 @@ const conversation: Conversation = {
 };
 
 describe('ConversationsPage (#547)', () => {
+  afterEach(cleanup);
+
+  it('shows a distinct error state instead of an empty list when conversations fail to load (#654)', async () => {
+    conversations.mockRejectedValue(new Error('workspace offline'));
+    const workspace = makeWorkspace();
+
+    const host = await mountComponent(
+      createElement(ConversationsPage, {
+        config: null,
+        workspace,
+        conversationId: null,
+        onConversationChange: () => {},
+      }),
+    );
+
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain('workspace offline');
+    expect(host.textContent).not.toContain('No conversations yet');
+  });
+
   it('provides a dedicated mobile context control in the conversation header (#572)', () => {
     expect(CONVERSATION_LAUNCHER).toContain('aria-label="Open conversation context"');
     expect(CONVERSATION_LAUNCHER).toContain('md:hidden');

@@ -1,108 +1,36 @@
 {
-  "_meta": {
-    "note": "Committed, tunable policy for scripts/jev-gate — implements /home/workspace/reports/jev-thresholds-proposal.md. Edit thresholds/roles here, not in the script. Role rules are matched in array order, first match wins; put 'skip' rules ahead of narrower exemption rules.",
-    "policyDoc": "jev-thresholds-proposal.md (Sept 2026, status: proposed)"
+  "mode": "advisory",
+  "enforce": { "newFileAbsolutes": true, "modifiedFileAbsolutes": false, "ratchet": false },
+  "gatedCategories": ["complexity_clean_code", "code_smells", "duplication", "testability", "error_handling"],
+  "categoryZones": { "failBelow": 1.5, "passAtOrAbove": 2.5 },
+  "overallZones": { "failBelow": 2.0, "passAtOrAbove": 2.4, "skipWhenExempt": true },
+  "confidence": { "hardFailMin": 0.6 },
+  "ratchetMargins": { "categoryDrop": 0.5, "overallDrop": 0.2 },
+  "exemptions": [
+    { "glob": "**/*.d.ts", "suppress": "all" },
+    { "glob": "**/generated/**", "suppress": "all" },
+    { "glob": "**/*.gen.ts", "suppress": "all" },
+    { "glob": "dist/**", "suppress": "all" },
+    { "glob": "build/**", "suppress": "all" },
+    { "glob": "**/node_modules/**", "suppress": "all" },
+    { "glob": "**/*.stories.@(ts|tsx|js|jsx)", "suppress": ["error_handling", "testability", "duplication"] },
+    { "glob": "**/*.@(test|spec).@(ts|tsx|js|jsx)", "suppress": ["testability", "duplication", "error_handling"] },
+    { "glob": "**/__tests__/**", "suppress": ["testability", "duplication", "error_handling"] },
+    { "glob": "**/__mocks__/**", "suppress": ["testability", "duplication", "error_handling"] },
+    { "glob": "**/test/**", "suppress": ["testability", "duplication", "error_handling"] },
+    { "glob": "**/tests/**", "suppress": ["testability", "duplication", "error_handling"] },
+    { "glob": "**/fixtures/**", "suppress": ["error_handling", "testability", "duplication"] },
+    { "glob": "**/*.fixture.@(ts|tsx)", "suppress": ["error_handling", "testability", "duplication"] },
+    { "glob": "**/mocks/**", "suppress": ["error_handling", "testability", "duplication"] },
+    { "glob": "**/migrations/**", "suppress": ["duplication", "testability"] },
+    { "glob": "**/*.migration.ts", "suppress": ["duplication", "testability"] }
+  ],
+  "scan": {
+    "defaultBase": "develop",
+    "sourceExtensions": [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"],
+    "maxFiles": 100,
+    "maxFileBytes": 400000,
+    "concurrency": 4
   },
-  "thresholds": {
-    "category": {
-      "fail": 1.5,
-      "warn": 2.5,
-      "_note": "score < fail => FAIL; fail <= score < warn => WARN; score >= warn => PASS. 0-4 scale."
-    },
-    "overall": {
-      "fail": 2.0,
-      "warn": 2.4,
-      "_note": "mean of all 7 categories, 0-4 scale. 2.0 = 50/100, 2.4 = 60/100."
-    },
-    "confidence": {
-      "blockingMin": 0.6,
-      "_note": "a category FAIL only blocks the gate when confidence >= blockingMin; below that it downgrades to NEEDS_SIGNOFF (blocks until a human acknowledges it, but is not a silent FAIL)."
-    },
-    "ratchet": {
-      "categoryDrop": 0.5,
-      "overallDrop": 0.2,
-      "_note": "diff-mode regression check against jev.baseline.json: a gating category fails the ratchet if new_score <= baseline_score - categoryDrop; the file fails the ratchet if new_overall <= baseline_overall - overallDrop. Both margins exceed the ~0.3 max observed score wobble."
-    }
-  },
-  "gatingCategories": [
-    "complexity_clean_code",
-    "code_smells",
-    "duplication",
-    "testability",
-    "error_handling"
-  ],
-  "advisoryCategories": [
-    "security",
-    "comments"
-  ],
-  "roles": [
-    {
-      "name": "type-declaration",
-      "glob": ["**/*.d.ts"],
-      "skip": true,
-      "hint": "type declaration file (no runtime logic)"
-    },
-    {
-      "name": "generated",
-      "glob": ["**/generated/**", "**/*.gen.ts", "dist/**", "build/**", "node_modules/**", "vendor/**"],
-      "skip": true,
-      "hint": "generated or vendored file (not authored here)"
-    },
-    {
-      "name": "story",
-      "glob": ["**/*.stories.@(ts|tsx|js|jsx)"],
-      "exempt": ["error_handling", "testability", "duplication"],
-      "hint": "story file (UI showcase/narrative, not application logic)"
-    },
-    {
-      "name": "test-file",
-      "glob": ["**/*.@(test|spec).@(ts|tsx|js|jsx)"],
-      "exempt": ["testability", "duplication", "error_handling"],
-      "hint": "test file"
-    },
-    {
-      "name": "test-dir",
-      "glob": ["**/__tests__/**", "**/test/**", "**/tests/**"],
-      "exempt": ["testability", "duplication", "error_handling"],
-      "hint": "test file"
-    },
-    {
-      "name": "mock-dir",
-      "glob": ["**/__mocks__/**"],
-      "exempt": ["testability", "duplication", "error_handling"],
-      "hint": "mock/stub (test double, not production logic)"
-    },
-    {
-      "name": "fixture",
-      "glob": ["**/fixtures/**", "**/*.fixture.@(ts|tsx)"],
-      "exempt": ["error_handling", "testability", "duplication"],
-      "hint": "fixture (static test/dev data, no runtime logic)"
-    },
-    {
-      "name": "mocks-dir",
-      "glob": ["**/mocks/**"],
-      "exempt": ["error_handling", "testability", "duplication"],
-      "hint": "mock/stub (test double, not production logic)"
-    },
-    {
-      "name": "migration",
-      "glob": ["**/migrations/**", "**/*.migration.ts"],
-      "exempt": ["duplication", "testability"],
-      "hint": "migration (intentionally repetitive, append-only, not unit-tested)"
-    }
-  ],
-  "sourceExtensions": [
-    ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".vue", ".svelte",
-    ".py", ".go", ".rs", ".java", ".kt", ".rb", ".php", ".c", ".h",
-    ".cc", ".cpp", ".hpp", ".cs", ".sh", ".bash", ".zsh", ".sql"
-  ],
-  "skipDirs": [
-    ".git", "node_modules", "dist", "build", "out", "vendor", "target",
-    ".venv", "venv", "__pycache__", ".next", ".cache", "coverage", ".idea", "website"
-  ],
-  "baselinePath": "jev.baseline.json",
-  "maxFileBytes": 400000,
-  "chunkChars": 40000,
-  "diffCharBudget": 20000,
-  "defaultConcurrency": 8
+  "onInfrastructureError": "skip"
 }

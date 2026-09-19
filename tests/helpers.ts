@@ -256,7 +256,7 @@ export interface FirehoseClient {
  * flaky firehose tests; gating on the first message removes it.
  */
 export async function connectFirehose(server: TestServer, token: string = server.sessionToken): Promise<FirehoseClient> {
-  const ws = new WebSocket(`${server.baseUrl.replace('http', 'ws')}/api/ws?token=${token}`);
+  const ws = new WebSocket(`${server.baseUrl.replace('http', 'ws')}/api/ws`, [token]);
   const messages: any[] = [];
   ws.addEventListener('message', (ev) => messages.push(JSON.parse(String(ev.data))));
   await new Promise<void>((resolve, reject) => {
@@ -272,7 +272,7 @@ export interface TestServer {
   baseUrl: string;
   dataDir: string;
   app: App;
-  /** Session token, usable as `?token=` for WebSocket connections. */
+  /** Session token, usable as the WebSocket subprotocol for `/api/ws` connections. */
   sessionToken: string;
   /** Authenticated JSON fetch helper: returns { status, body } without throwing. */
   api: (method: string, path: string, body?: unknown) => Promise<{ status: number; body: any }>;

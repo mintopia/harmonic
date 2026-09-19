@@ -1,13 +1,14 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { api } from '../api';
 import type { AppConfig, Task, Workspace } from '../types';
 import { Modal } from './Modal';
 import { DiscoveryModelPicker } from './DiscoveryModelPicker.js';
 import { InheritField } from './InheritField';
 import { inheritSource } from './inherit-field-model';
+import { LoadError } from './LoadError';
 import { btnGhost, btnPrimary, field, panelTitle, labelType, selectField } from '../ui';
 import { taskLabel } from '../id-format.js';
-import { useLiveEffect } from '../useLiveEffect';
+import { useAsyncResource } from '../useAsyncResource';
 
 const label = `mb-1 block ${labelType} text-muted`;
 
@@ -32,15 +33,10 @@ export function TaskForm({
   onSaved: () => void;
 }) {
   const [prompt, setPrompt] = useState(task?.prompt ?? '');
-  useLiveEffect((live) => {
-    if (!task || task.prompt !== undefined) return;
-    api
-      .task(task.id)
-      .then((full) => {
-        if (live() && full.prompt !== undefined) setPrompt(full.prompt);
-      })
-      .catch(() => {});
-  }, [task]);
+  const full = useAsyncResource(task && task.prompt === undefined ? () => api.task(task.id) : null, [task]);
+  useEffect(() => {
+    if (full.data?.prompt !== undefined) setPrompt(full.data.prompt);
+  }, [full.data]);
   const [ov, setOv] = useState<Overrides>(
     task?.overrides ?? {
       harness: null,
@@ -98,6 +94,7 @@ export function TaskForm({
 
         <div className="mb-3">
           <label className={label} htmlFor="task-prompt">Prompt</label>
+          {full.error && <LoadError message={full.error} onRetry={full.reload} className="mb-2" />}
           <textarea
             id="task-prompt"
             className={`${field} min-h-28`}
@@ -105,6 +102,8 @@ export function TaskForm({
             onChange={(e) => setPrompt(e.target.value)}
             autoFocus
             required
+            disabled={full.loading || full.error !== null}
+            placeholder={full.loading ? 'Loading…' : undefined}
           />
         </div>
 
@@ -215,11 +214,11 @@ export function TaskForm({
 
         <div className="flex justify-end gap-2">
           {!task && (
-            <button type="button" disabled={busy || !prompt} onClick={() => save('draft')} className={btnGhost}>
+            <button type="button" disabled={busy || !prompt || full.loading || full.error !== null} onClick={() => save('draft')} className={btnGhost}>
               Save draft
             </button>
           )}
-          <button type="submit" disabled={busy || !prompt} className={btnPrimary}>
+          <button type="submit" disabled={busy || !prompt || full.loading || full.error !== null} className={btnPrimary}>
             {task ? 'Save' : 'Create ready'}
           </button>
         </div>

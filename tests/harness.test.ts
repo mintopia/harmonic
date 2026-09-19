@@ -629,6 +629,13 @@ describe('harness-adapter', () => {
       expect(usage.sessionLogFile({ sessionLogDir: '/logs', cwd: '/w', sessionId: null })).toBeNull();
     });
 
+    it("claude's Usage Collector rejects a sessionId that attempts path traversal (#649)", () => {
+      const usage = adapterFor('claude').usage!;
+      expect(usage.sessionLogFile({ sessionLogDir: '/logs', cwd: '/w', sessionId: '../../../../etc/passwd' })).toBeNull();
+      expect(usage.sessionLogFile({ sessionLogDir: '/logs', cwd: '/w', sessionId: 'a/b' })).toBeNull();
+      expect(usage.sessionLogFile({ sessionLogDir: '/logs', cwd: '/w', sessionId: '..' })).toBeNull();
+    });
+
     it('discovers Claude transcripts from the actual projects directory, without recreating the cwd slug', async () => {
       const root = mkdtempSync(join(tmpdir(), 'claude-projects-'));
       const actualDir = join(root, 'claude-chose-this-name');
@@ -640,6 +647,17 @@ describe('harness-adapter', () => {
         realpathSync(transcript),
       );
       await expect(adapterFor('claude').usage!.resolveTranscriptPath!({ sessionLogDir: root, sessionId: 'missing' })).resolves.toBeNull();
+    });
+
+    it('rejects a traversal attempt in the sessionId when resolving Claude transcripts (#649)', async () => {
+      const root = mkdtempSync(join(tmpdir(), 'claude-projects-traversal-'));
+      const actualDir = join(root, 'claude-chose-this-name');
+      mkdirSync(actualDir);
+
+      await expect(
+        adapterFor('claude').usage!.resolveTranscriptPath!({ sessionLogDir: root, sessionId: '../../../../etc/passwd' }),
+      ).resolves.toBeNull();
+      await expect(adapterFor('claude').usage!.resolveTranscriptPath!({ sessionLogDir: root, sessionId: 'a/b' })).resolves.toBeNull();
     });
   });
 
@@ -713,6 +731,15 @@ describe('harness-adapter', () => {
       const after = await reader.sample();
       expect(after!.usage.models['claude-haiku-4-5']).toMatchObject({ inputTokens: 5 });
       expect(after!.usage.models['claude-opus-4-8']).toBeUndefined();
+    });
+
+    it('rejects a traversal attempt in the sessionId instead of reading outside the session log dir (#649)', async () => {
+      const home = mkdtempSync(join(tmpdir(), 'claude-tail-traversal-'));
+      const malicious = adapterFor('claude').usage!.createTailReader!({ sessionLogDir: home, cwd: '/w', sessionId: '../../../../etc/passwd' });
+
+      expect(malicious.latest()).toBeNull();
+      await expect(malicious.sample()).resolves.toBeNull();
+      expect(malicious.latest()).toBeNull();
     });
 
     it('picks up a Subagent that appears after the first tick and rolls its tokens up', async () => {

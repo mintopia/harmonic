@@ -1,8 +1,10 @@
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { and, desc, eq, inArray, isNull, notInArray, or } from 'drizzle-orm';
+import type { FastifyRequest } from 'fastify';
 import type { AsyncDbHandle } from '../db/async.js';
 import { apiKeys, attempts, settings, type ApiKeyRow } from '../db/schema.js';
 import { DomainError } from '../domain/errors.js';
+import { SESSION_COOKIE } from './routes/auth.js';
 
 const AUTH_KEY = 'auth';
 const KEY_PREFIX = 'adk_';
@@ -177,6 +179,20 @@ export class AuthService {
   async sweepOrphanedConversationKeys(): Promise<void> {
     await this.db.write((db) => db.delete(apiKeys).where(eq(apiKeys.scope, 'conversation')).run());
   }
+}
+
+async function isOperatorToken(token: string, auth: AuthService): Promise<boolean> {
+  if (auth.validateSession(token)) return true;
+  return (await auth.verifyKey(token))?.scope === 'full';
+}
+
+export async function requestIsOperator(req: FastifyRequest, auth: AuthService, extraToken?: string): Promise<boolean> {
+  if (!(await auth.hasPassword())) return true;
+  const bearer = req.headers.authorization?.match(/^Bearer (.+)$/)?.[1];
+  if (bearer && (await isOperatorToken(bearer, auth))) return true;
+  if (auth.validateSession(req.cookies[SESSION_COOKIE])) return true;
+  if (extraToken && (await isOperatorToken(extraToken, auth))) return true;
+  return false;
 }
 
 export type { StoredAuth };
