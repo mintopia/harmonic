@@ -22,7 +22,7 @@ export type Zone = 'FAIL' | 'WARN' | 'PASS';
 /** A category's blocking status after zone, confidence, exemption, and ratchet are applied. */
 export type CategoryVerdict = 'PASS' | 'WARN' | 'FAIL' | 'NEEDS_SIGNOFF' | 'EXEMPT';
 
-export type FileVerdict = 'PASS' | 'WARN' | 'FAIL' | 'SKIPPED' | 'ERROR';
+export type FileVerdict = 'PASS' | 'WARN' | 'FAIL' | 'SKIPPED' | 'ERROR' | 'TOO_BIG';
 
 export interface CategoryZoneThresholds {
   fail: number;
@@ -156,6 +156,7 @@ export interface GateSummary {
   filesScored: number;
   filesSkipped: number;
   filesErrored: number;
+  filesTooBig: number;
   baselinePath: string;
   baselineExists: boolean;
   verdict: 'PASS' | 'FAIL';

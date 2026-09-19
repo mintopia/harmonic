@@ -22,7 +22,7 @@ import { fileURLToPath } from 'node:url';
 import { loadGateConfig, loadRubrics } from './config.js';
 import { changedFiles, fileDiff, GitError, mergeBase, resolveBaseRef, trackedFiles } from './git.js';
 import { classifyRole, isInSkipDir, isSourceFile } from './glob.js';
-import { callJev, resolveProviderConfig, runPool, type JevState } from './jev-client.js';
+import { callJev, JevFileTooBigError, resolveProviderConfig, runPool, type JevState } from './jev-client.js';
 import { renderBaselineHtml } from './render-html.js';
 import {
   advisoryNotes,
@@ -210,7 +210,7 @@ interface Subject {
 }
 
 /** Resolve the changed, in-scope, non-skipped subjects; report role-skips/size-skips as FileResults directly. */
-function resolveSubjects(
+export function resolveSubjects(
   paths: readonly string[],
   config: GateConfig,
   repoRoot: string,
@@ -255,7 +255,7 @@ function resolveSubjects(
       skipped.push({
         path: relPath,
         role: role.roleName,
-        verdict: 'SKIPPED',
+        verdict: 'TOO_BIG',
         skipReason: `larger than ${config.maxFileBytes} bytes`,
         reasons: [],
         advisories: [],
@@ -284,7 +284,7 @@ function resolveSubjects(
   return { subjects, skipped };
 }
 
-async function scoreSubject(
+export async function scoreSubject(
   subject: Subject,
   ctx: { config: GateConfig; rubrics: ReturnType<typeof loadRubrics>; mergeBaseSha: string; repoRoot: string; jevCfg: ReturnType<typeof resolveProviderConfig>; baseline: Baseline | null; signoffs: ReadonlySet<string>; dryRun: boolean },
 ): Promise<FileResult> {
@@ -320,6 +320,18 @@ async function scoreSubject(
     const result = await callJev(jevCfg, state, rubrics);
     answers = result.answers;
   } catch (err) {
+    if (err instanceof JevFileTooBigError) {
+      return {
+        path: subject.relPath,
+        role: subject.roleName,
+        ...(subject.roleHint !== undefined ? { roleHint: subject.roleHint } : {}),
+        verdict: 'TOO_BIG',
+        skipReason: err.message,
+        reasons: [],
+        advisories: [],
+        hasBaseline: baselineEntry !== undefined,
+      };
+    }
     return {
       path: subject.relPath,
       role: subject.roleName,
@@ -366,10 +378,10 @@ async function scoreSubject(
 }
 
 /** Score one file for the baseline: absolute scores only (no diff, no ratchet, no signoff). */
-async function scoreForBaseline(
+export async function scoreForBaseline(
   subject: Subject,
   ctx: { config: GateConfig; rubrics: ReturnType<typeof loadRubrics>; jevCfg: ReturnType<typeof resolveProviderConfig> },
-): Promise<{ path: string; entry: BaselineEntry } | { path: string; error: string }> {
+): Promise<{ path: string; entry: BaselineEntry } | { path: string; error: string; tooBig: boolean }> {
   const { config, rubrics, jevCfg } = ctx;
   const chunks = chunkText(subject.content, config.chunkChars);
   const state: JevState = {
@@ -383,7 +395,7 @@ async function scoreForBaseline(
   try {
     ({ answers } = await callJev(jevCfg, state, rubrics));
   } catch (err) {
-    return { path: subject.relPath, error: (err as Error).message };
+    return { path: subject.relPath, error: (err as Error).message, tooBig: err instanceof JevFileTooBigError };
   }
 
   const categories: Partial<Record<CategoryId, number>> = {};
@@ -427,6 +439,7 @@ async function runBaseline(opts: CliOptions): Promise<number> {
 
   const tracked = trackedFiles(opts.repoRoot);
   const { subjects, skipped } = resolveSubjects(tracked, config, opts.repoRoot);
+  const preemptiveTooBig = skipped.filter((f) => f.verdict === 'TOO_BIG');
   process.stderr.write(
     `jev-gate: baseline — ${tracked.length} tracked file(s), ${subjects.length} to score, ${skipped.length} skipped by role/size\n`,
   );
@@ -446,13 +459,21 @@ async function runBaseline(opts: CliOptions): Promise<number> {
   const concurrency = opts.concurrency ?? config.defaultConcurrency;
   let done = 0;
   let errored = 0;
+  let tooBig = preemptiveTooBig.length;
+  const tooBigPaths: string[] = preemptiveTooBig.map((f) => f.path);
   const entries: { path: string; entry: BaselineEntry }[] = [];
   await runPool(subjects, concurrency, async (subject) => {
     const r = await scoreForBaseline(subject, { config, rubrics, jevCfg });
     done += 1;
     if ('error' in r) {
-      errored += 1;
-      process.stderr.write(`jev-gate: ${done}/${subjects.length} ERROR ${r.path}: ${r.error}\n`);
+      if (r.tooBig) {
+        tooBig += 1;
+        tooBigPaths.push(r.path);
+        process.stderr.write(`jev-gate: ${done}/${subjects.length} TOO BIG ${r.path}: ${r.error}\n`);
+      } else {
+        errored += 1;
+        process.stderr.write(`jev-gate: ${done}/${subjects.length} ERROR ${r.path}: ${r.error}\n`);
+      }
     } else {
       entries.push(r);
       process.stderr.write(`jev-gate: ${done}/${subjects.length} scored ${r.path} (${Math.round((r.entry.overall / 4) * 100)}/100)\n`);
@@ -464,19 +485,20 @@ async function runBaseline(opts: CliOptions): Promise<number> {
   const baseline: Baseline = {};
   for (const { path, entry } of entries) baseline[path] = entry;
   writeFileSync(baselinePath, `${JSON.stringify(baseline, null, 2)}\n`);
+  const tooBigSuffix = tooBig > 0 ? ` (too big: ${[...tooBigPaths].sort().join(', ')})` : '';
   process.stderr.write(
-    `jev-gate: baseline written to ${relative(opts.repoRoot, baselinePath)} — ${entries.length} file(s) scored, ${errored} errored\n`,
+    `jev-gate: baseline written to ${relative(opts.repoRoot, baselinePath)} — ${entries.length} file(s) scored, ${tooBig} too big${tooBigSuffix}, ${errored} errored\n`,
   );
   if (opts.html) writeBaselineHtml(baseline, baselinePath, opts.repoRoot);
   return errored > 0 ? 1 : 0;
 }
 
-function renderHuman(result: GateResult): string {
+export function renderHuman(result: GateResult): string {
   const lines: string[] = [];
   lines.push(`Jev CI gate [${result.summary.mode}] — base ${result.summary.base} (merge-base ${result.summary.mergeBase.slice(0, 12)})`);
   lines.push(`model ${result.model} via ${result.provider}`);
   lines.push('');
-  const order: FileResult['verdict'][] = ['FAIL', 'ERROR', 'WARN', 'SKIPPED', 'PASS'];
+  const order: FileResult['verdict'][] = ['FAIL', 'ERROR', 'WARN', 'TOO_BIG', 'SKIPPED', 'PASS'];
   for (const wantVerdict of order) {
     const files = result.files.filter((f) => f.verdict === wantVerdict);
     if (files.length === 0) continue;
@@ -492,7 +514,9 @@ function renderHuman(result: GateResult): string {
   }
   for (const note of result.summary.notes) lines.push(`note: ${note}`);
   lines.push('');
-  lines.push(`GATE: ${result.summary.verdict} — ${result.summary.filesScored} scored, ${result.summary.filesSkipped} skipped, ${result.summary.filesErrored} errored`);
+  lines.push(
+    `GATE: ${result.summary.verdict} — ${result.summary.filesScored} scored, ${result.summary.filesSkipped} skipped, ${result.summary.filesTooBig} too big, ${result.summary.filesErrored} errored`,
+  );
   return lines.join('\n');
 }
 
@@ -568,9 +592,10 @@ async function main(): Promise<number> {
     base: baseRef,
     mergeBase: mergeBaseSha,
     filesChanged: changed.length,
-    filesScored: scored.filter((f) => f.verdict !== 'SKIPPED' && f.verdict !== 'ERROR').length,
+    filesScored: scored.filter((f) => f.verdict !== 'SKIPPED' && f.verdict !== 'ERROR' && f.verdict !== 'TOO_BIG').length,
     filesSkipped: files.filter((f) => f.verdict === 'SKIPPED').length,
     filesErrored: files.filter((f) => f.verdict === 'ERROR').length,
+    filesTooBig: files.filter((f) => f.verdict === 'TOO_BIG').length,
     baselinePath: relative(opts.repoRoot, baselinePath),
     baselineExists,
     verdict: failingFiles.length > 0 ? 'FAIL' : 'PASS',
@@ -601,16 +626,19 @@ async function main(): Promise<number> {
   return summary.verdict === 'PASS' ? 0 : 1;
 }
 
-main()
-  .then((code) => {
-    process.exitCode = code;
-  })
-  .catch((err) => {
-    if (err instanceof GitError) {
-      process.stderr.write(`jev-gate: ${err.message}\n`);
+const isMainModule = process.argv[1] !== undefined && fileURLToPath(import.meta.url) === resolve(process.argv[1]);
+if (isMainModule) {
+  main()
+    .then((code) => {
+      process.exitCode = code;
+    })
+    .catch((err) => {
+      if (err instanceof GitError) {
+        process.stderr.write(`jev-gate: ${err.message}\n`);
+        process.exitCode = 2;
+        return;
+      }
+      process.stderr.write(`jev-gate: fatal: ${(err as Error).stack ?? (err as Error).message}\n`);
       process.exitCode = 2;
-      return;
-    }
-    process.stderr.write(`jev-gate: fatal: ${(err as Error).stack ?? (err as Error).message}\n`);
-    process.exitCode = 2;
-  });
+    });
+}

@@ -48,6 +48,13 @@ export interface JevCallResult {
   usage: JevUsage;
 }
 
+export class JevFileTooBigError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'JevFileTooBigError';
+  }
+}
+
 const MAX_RETRIES = 5;
 
 function sleep(ms: number): Promise<void> {
@@ -88,6 +95,13 @@ export async function callJev(cfg: JevProviderConfig, state: JevState, questions
     const detail = await res.text().catch(() => '');
     const retryable = res.status === 429 || (res.status >= 500 && res.status < 600);
     lastError = new Error(`jev-gate: Jev API error ${res.status}: ${detail.slice(0, 300)}`);
+    if (!retryable) {
+      // 413 is unambiguous; 400 is reused for unrelated client errors so it needs body-text confirmation.
+      const looksTooBig = res.status === 413 || (res.status === 400 && /too large|too big|context length|maximum context|payload too large/i.test(detail));
+      if (looksTooBig) {
+        throw new JevFileTooBigError(`jev-gate: Jev API rejected file as too big (status ${res.status}): ${detail.slice(0, 300)}`);
+      }
+    }
     if (retryable && attempt < MAX_RETRIES - 1) {
       const retryAfter = res.headers.get('retry-after');
       const waitMs = retryAfter && /^\d+$/.test(retryAfter) ? Number(retryAfter) * 1000 : 2 ** attempt * 1000;
