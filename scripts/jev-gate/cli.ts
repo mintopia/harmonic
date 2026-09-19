@@ -16,13 +16,14 @@
  * line. Treat "deterministic" as "the policy is deterministic", not "the
  * scores are exact measurements".
  */
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadGateConfig, loadRubrics } from './config.js';
-import { changedFiles, fileDiff, GitError, mergeBase, resolveBaseRef } from './git.js';
+import { changedFiles, fileDiff, GitError, mergeBase, resolveBaseRef, trackedFiles } from './git.js';
 import { classifyRole, isInSkipDir, isSourceFile } from './glob.js';
 import { callJev, resolveProviderConfig, runPool, type JevState } from './jev-client.js';
+import { renderBaselineHtml } from './render-html.js';
 import {
   advisoryNotes,
   blockingReasons,
@@ -34,10 +35,12 @@ import {
 import {
   ALL_CATEGORIES,
   type Baseline,
+  type BaselineEntry,
   type CategoryId,
   type CategoryResult,
   type FileResult,
   type GateConfig,
+  type GateMode,
   type GateResult,
   type GateSummary,
 } from './types.js';
@@ -51,8 +54,11 @@ interface CliOptions {
   rubricsPath: string;
   baselinePath: string | undefined;
   concurrency: number | undefined;
+  mode: GateMode | undefined;
   json: boolean;
   dryRun: boolean;
+  writeBaseline: boolean;
+  html: boolean;
   signoffs: string[];
   help: boolean;
 }
@@ -65,8 +71,11 @@ function parseArgs(argv: readonly string[]): CliOptions {
     rubricsPath: join(SCRIPT_DIR, 'rubrics.json'),
     baselinePath: undefined,
     concurrency: undefined,
+    mode: undefined,
     json: false,
     dryRun: false,
+    writeBaseline: false,
+    html: false,
     signoffs: [],
     help: false,
   };
@@ -98,11 +107,25 @@ function parseArgs(argv: readonly string[]): CliOptions {
         opts.concurrency = n;
         break;
       }
+      case '--mode': {
+        const raw = argv[++i];
+        if (raw !== 'advisory' && raw !== 'enforcing') {
+          throw new Error(`jev-gate: --mode must be "advisory" or "enforcing", got "${raw ?? ''}"`);
+        }
+        opts.mode = raw;
+        break;
+      }
       case '--json':
         opts.json = true;
         break;
       case '--dry-run':
         opts.dryRun = true;
+        break;
+      case '--write-baseline':
+        opts.writeBaseline = true;
+        break;
+      case '--html':
+        opts.html = true;
         break;
       case '--signoff':
         opts.signoffs.push(argv[++i] ?? '');
@@ -122,24 +145,37 @@ function parseArgs(argv: readonly string[]): CliOptions {
 const HELP = `jev-gate — Jev code-quality CI gate for changed files
 
 Usage:
-  tsx scripts/jev-gate/cli.ts [--base <ref>] [--json] [options]
+  jev-gate [--base <ref>] [--json] [options]        # gate changed files
+  jev-gate --write-baseline                         # score the whole project into jev.baseline.json
 
 Options:
   --base <ref>         Base ref to diff against (default: $JEV_GATE_BASE, else
                         "develop" / "origin/develop" / the current branch's
                         upstream — never "main"/"origin/main")
+  --write-baseline     Score every tracked, in-scope source file in the project
+                        and (re)write the baseline at --baseline. This is the
+                        one-way ratchet seed; run it on a known-good commit.
+  --html               Also render the baseline to a self-contained HTML report
+                        next to it (jev.baseline.json -> jev.baseline.html). With
+                        --write-baseline it's emitted after scoring; on its own it
+                        renders the EXISTING baseline (no Jev calls, no API key).
   --repo-root <path>   Repo working tree to diff/read files from (default: cwd)
   --config <path>      Path to jev.gate.json (default: <repo-root>/jev.gate.json)
   --rubrics <path>     Path to rubrics.json (default: vendored copy next to this script)
   --baseline <path>    Path to jev.baseline.json (default: <repo-root>/<config.baselinePath>)
   --concurrency <n>    Parallel Jev calls (default: config.defaultConcurrency, 8)
+  --mode <m>           "advisory" (report only, always exit 0) or "enforcing"
+                        (exit 1 on a failing verdict). Default: config.mode,
+                        overridable by $JEV_GATE_MODE.
   --json               Emit machine-readable JSON to stdout (default: human report)
-  --dry-run            Classify/role-map changed files but skip Jev calls (no API key needed)
+  --dry-run            Resolve files/roles but skip Jev calls (no API key needed).
+                        With --write-baseline, lists what would be scored and
+                        writes nothing.
   --signoff <p::cat>   Acknowledge a low-confidence FAIL as human-reviewed (repeatable);
                         also read from $JEV_GATE_SIGNOFF (comma-separated)
   --help, -h            Show this help
 
-Exit codes: 0 = gate passed, 1 = gate failed, 2 = usage/setup error.
+Exit codes: 0 = gate passed (or baseline written), 1 = gate failed, 2 = usage/setup error.
 `;
 
 function readSignoffs(cli: readonly string[]): Set<string> {
@@ -329,9 +365,115 @@ async function scoreSubject(
   };
 }
 
+/** Score one file for the baseline: absolute scores only (no diff, no ratchet, no signoff). */
+async function scoreForBaseline(
+  subject: Subject,
+  ctx: { config: GateConfig; rubrics: ReturnType<typeof loadRubrics>; jevCfg: ReturnType<typeof resolveProviderConfig> },
+): Promise<{ path: string; entry: BaselineEntry } | { path: string; error: string }> {
+  const { config, rubrics, jevCfg } = ctx;
+  const chunks = chunkText(subject.content, config.chunkChars);
+  const state: JevState = {
+    path: subject.relPath,
+    content: chunks.length === 1 ? (chunks[0] ?? '') : chunks.map((c, i) => ({ part: i + 1, of: chunks.length, content: c })),
+    diff: '',
+  };
+  if (subject.roleHint) state.role_hint = subject.roleHint;
+
+  let answers: Record<string, { score: number; confidence: number }>;
+  try {
+    ({ answers } = await callJev(jevCfg, state, rubrics));
+  } catch (err) {
+    return { path: subject.relPath, error: (err as Error).message };
+  }
+
+  const categories: Partial<Record<CategoryId, number>> = {};
+  for (const cat of ALL_CATEGORIES) {
+    categories[cat] = typeof answers[cat]?.score === 'number' ? answers[cat]!.score : 0;
+  }
+  const overall = ALL_CATEGORIES.reduce((sum, c) => sum + (categories[c] ?? 0), 0) / ALL_CATEGORIES.length;
+  return { path: subject.relPath, entry: { categories, overall } };
+}
+
+/** Sibling `.html` path for a baseline JSON file (foo.json -> foo.html, else foo + .html). */
+function htmlPathFor(baselinePath: string): string {
+  return baselinePath.endsWith('.json') ? `${baselinePath.slice(0, -'.json'.length)}.html` : `${baselinePath}.html`;
+}
+
+function writeBaselineHtml(baseline: Baseline, baselinePath: string, repoRoot: string): string {
+  const htmlPath = htmlPathFor(baselinePath);
+  writeFileSync(htmlPath, renderBaselineHtml(baseline));
+  process.stderr.write(`jev-gate: baseline HTML written to ${relative(repoRoot, htmlPath)}\n`);
+  return htmlPath;
+}
+
+/** `--html` without `--write-baseline`: render the existing baseline file to HTML, no scoring. */
+function renderBaselineOnly(opts: CliOptions): number {
+  const config = loadGateConfig(opts.configPath);
+  const baselinePath = opts.baselinePath ?? join(opts.repoRoot, config.baselinePath);
+  const { baseline, exists } = loadBaseline(baselinePath);
+  if (!exists) {
+    process.stderr.write(`jev-gate: no baseline at ${relative(opts.repoRoot, baselinePath)} — run --write-baseline first\n`);
+    return 2;
+  }
+  writeBaselineHtml(baseline ?? {}, baselinePath, opts.repoRoot);
+  return 0;
+}
+
+/** `--write-baseline`: score the whole tracked, in-scope project and write the ratchet seed. */
+async function runBaseline(opts: CliOptions): Promise<number> {
+  const config = loadGateConfig(opts.configPath);
+  const rubrics = loadRubrics(opts.rubricsPath);
+  const baselinePath = opts.baselinePath ?? join(opts.repoRoot, config.baselinePath);
+
+  const tracked = trackedFiles(opts.repoRoot);
+  const { subjects, skipped } = resolveSubjects(tracked, config, opts.repoRoot);
+  process.stderr.write(
+    `jev-gate: baseline — ${tracked.length} tracked file(s), ${subjects.length} to score, ${skipped.length} skipped by role/size\n`,
+  );
+
+  if (opts.dryRun) {
+    for (const s of subjects) process.stderr.write(`jev-gate: would score ${s.relPath} (role ${s.roleName})\n`);
+    process.stderr.write(`jev-gate: dry-run — ${subjects.length} file(s) would be scored, nothing written\n`);
+    return 0;
+  }
+
+  const jevCfg = resolveProviderConfig();
+  if (!jevCfg.key) {
+    process.stderr.write(`jev-gate: set ${jevCfg.keyEnvVar} (or pass --dry-run)\n`);
+    return 2;
+  }
+
+  const concurrency = opts.concurrency ?? config.defaultConcurrency;
+  let done = 0;
+  let errored = 0;
+  const entries: { path: string; entry: BaselineEntry }[] = [];
+  await runPool(subjects, concurrency, async (subject) => {
+    const r = await scoreForBaseline(subject, { config, rubrics, jevCfg });
+    done += 1;
+    if ('error' in r) {
+      errored += 1;
+      process.stderr.write(`jev-gate: ${done}/${subjects.length} ERROR ${r.path}: ${r.error}\n`);
+    } else {
+      entries.push(r);
+      process.stderr.write(`jev-gate: ${done}/${subjects.length} scored ${r.path} (${Math.round((r.entry.overall / 4) * 100)}/100)\n`);
+    }
+    return r;
+  });
+
+  entries.sort((a, b) => a.path.localeCompare(b.path));
+  const baseline: Baseline = {};
+  for (const { path, entry } of entries) baseline[path] = entry;
+  writeFileSync(baselinePath, `${JSON.stringify(baseline, null, 2)}\n`);
+  process.stderr.write(
+    `jev-gate: baseline written to ${relative(opts.repoRoot, baselinePath)} — ${entries.length} file(s) scored, ${errored} errored\n`,
+  );
+  if (opts.html) writeBaselineHtml(baseline, baselinePath, opts.repoRoot);
+  return errored > 0 ? 1 : 0;
+}
+
 function renderHuman(result: GateResult): string {
   const lines: string[] = [];
-  lines.push(`Jev CI gate — base ${result.summary.base} (merge-base ${result.summary.mergeBase.slice(0, 12)})`);
+  lines.push(`Jev CI gate [${result.summary.mode}] — base ${result.summary.base} (merge-base ${result.summary.mergeBase.slice(0, 12)})`);
   lines.push(`model ${result.model} via ${result.provider}`);
   lines.push('');
   const order: FileResult['verdict'][] = ['FAIL', 'ERROR', 'WARN', 'SKIPPED', 'PASS'];
@@ -361,10 +503,25 @@ async function main(): Promise<number> {
     return 0;
   }
 
+  if (opts.writeBaseline) {
+    return runBaseline(opts);
+  }
+
+  if (opts.html) {
+    return renderBaselineOnly(opts);
+  }
+
   const config = loadGateConfig(opts.configPath);
   const rubrics = loadRubrics(opts.rubricsPath);
   const baselinePath = opts.baselinePath ?? join(opts.repoRoot, config.baselinePath);
   const signoffs = readSignoffs(opts.signoffs);
+
+  const envMode = process.env['JEV_GATE_MODE'];
+  if (envMode !== undefined && envMode !== 'advisory' && envMode !== 'enforcing') {
+    process.stderr.write(`jev-gate: $JEV_GATE_MODE must be "advisory" or "enforcing", got "${envMode}"\n`);
+    return 2;
+  }
+  const mode: GateMode = opts.mode ?? (envMode as GateMode | undefined) ?? config.mode;
 
   const baseRef = resolveBaseRef(opts.base, opts.repoRoot);
   const mergeBaseSha = mergeBase(baseRef, opts.repoRoot);
@@ -407,6 +564,7 @@ async function main(): Promise<number> {
   const warnFiles = files.filter((f) => f.verdict === 'WARN').map((f) => f.path);
 
   const summary: GateSummary = {
+    mode,
     base: baseRef,
     mergeBase: mergeBaseSha,
     filesChanged: changed.length,
@@ -435,8 +593,11 @@ async function main(): Promise<number> {
   } else {
     process.stdout.write(`${renderHuman(result)}\n`);
   }
+  if (mode === 'advisory') {
+    process.stderr.write(`jev-gate: GATE ${summary.verdict} — advisory mode, reporting only, exit 0\n`);
+    return 0;
+  }
   process.stderr.write(`jev-gate: GATE ${summary.verdict}\n`);
-
   return summary.verdict === 'PASS' ? 0 : 1;
 }
 

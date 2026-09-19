@@ -69,6 +69,15 @@ export function changedFiles(mergeBaseSha: string, cwd: string): string[] {
     .filter((l) => l.length > 0);
 }
 
+/** Every git-tracked path in the working tree — the candidate set for a whole-project baseline. */
+export function trackedFiles(cwd: string): string[] {
+  const out = git(['ls-files'], cwd);
+  return out
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0);
+}
+
 export interface FileDiff {
   text: string;
   truncated: boolean;
