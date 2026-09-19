@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { JEV_CATEGORIES, type JevCategory, type JevFileScore, type JevScorer, type JevScoreRequest } from '../scripts/jev/types.js';
 import { parseArgs, runGate, writeBaseline, type ParsedArgs, type RunGateDeps } from '../scripts/jev/gate-run.js';
+import { JevFileTooBigError } from '../scripts/jev/jev-client.js';
 
 const CONFIG_PATH = 'jev.gate.json';
 const BASELINE_PATH = 'jev.baseline.json';
@@ -357,6 +358,68 @@ describe('runGate: one scorer failure does not abort the run', () => {
   });
 });
 
+describe('runGate: scorer JevFileTooBigError marks the file too-big, not errored', () => {
+  it('marks the oversized file too-big and still scores the rest', async () => {
+    const scorer = fakeScorer({
+      scoreFn: async (req) => {
+        if (req.path === 'src/huge.ts') throw new JevFileTooBigError('file too large for context window');
+        return {
+          path: req.path,
+          categories: makeScoreRecord(),
+          confidence: makeConfidenceRecord(),
+          latencyMs: 5,
+          costUsd: 0,
+          inputTokens: 10,
+        };
+      },
+    });
+    const deps = makeDeps({
+      files: { 'src/huge.ts': 'export const huge = 1;\n', 'src/good.ts': 'export const good = 1;\n' },
+      scorer,
+    });
+    const args = makeArgs({ positionals: ['src/huge.ts', 'src/good.ts'] });
+    const { report, summary } = await runGate(args, deps);
+
+    const huge = report.files.find((f) => f.path === 'src/huge.ts');
+    const good = report.files.find((f) => f.path === 'src/good.ts');
+    expect(huge?.status).toBe('too-big');
+    expect(huge?.error).toBe('file too large for context window');
+    expect(good?.status).toBe('scored');
+    expect(good?.verdict).toBe('pass');
+    expect(report.counts.tooBig).toBe(1);
+    expect(report.counts.errored).toBe(0);
+    expect(summary).toContain('too big');
+    expect(summary).toContain('src/huge.ts');
+    expect(summary).toContain(`${report.counts.tooBig} too big`);
+  });
+});
+
+describe('runGate: preemptive file size check', () => {
+  it('marks a file exceeding maxFileBytes as too-big without ever calling the scorer', async () => {
+    const config = makeConfig({ scan: { maxFileBytes: 10 } });
+    const scoreFn = vi.fn(async (req: JevScoreRequest) => ({
+      path: req.path,
+      categories: makeScoreRecord(),
+      confidence: makeConfidenceRecord(),
+      latencyMs: 5,
+      costUsd: 0,
+      inputTokens: 10,
+    }));
+    const scorer = fakeScorer({ scoreFn });
+    const deps = makeDeps({
+      files: { [CONFIG_PATH]: JSON.stringify(config), 'src/huge.ts': 'x'.repeat(1000) },
+      scorer,
+    });
+    const args = makeArgs({ positionals: ['src/huge.ts'] });
+    const { report } = await runGate(args, deps);
+
+    const huge = report.files.find((f) => f.path === 'src/huge.ts');
+    expect(huge?.status).toBe('too-big');
+    expect(scoreFn).toHaveBeenCalledTimes(0);
+    expect(report.counts.tooBig).toBe(1);
+  });
+});
+
 describe('runGate: maxFiles truncation', () => {
   it('scores only maxFiles candidates and sorts the rest into unscored', async () => {
     const paths = ['src/e.ts', 'src/a.ts', 'src/c.ts', 'src/b.ts', 'src/d.ts'];
@@ -515,6 +578,69 @@ describe('writeBaseline', () => {
 
     const written = JSON.parse(files.get(BASELINE_PATH) ?? '{}');
     expect(written.files['src/only.ts'].categories.code_smells).toBe(2);
+  });
+
+  it('names an oversized file in the summary and excludes it from the written baseline instead of silently dropping it', async () => {
+    const scorer = fakeScorer({
+      scoreFn: async (req) => {
+        if (req.path === 'src/huge.ts') throw new JevFileTooBigError('file too large for context window');
+        return {
+          path: req.path,
+          categories: makeScoreRecord({ code_smells: 2 }),
+          confidence: makeConfidenceRecord(),
+          latencyMs: 1,
+          costUsd: 0,
+          inputTokens: 1,
+        };
+      },
+    });
+    const deps = makeDeps({
+      files: {
+        'src/huge.ts': 'export const huge = 1;\n',
+        'src/fine.ts': 'export const fine = 1;\n',
+      },
+      scorer,
+    });
+    const args = makeArgs({ writeBaseline: true, positionals: ['src/huge.ts', 'src/fine.ts'] });
+
+    const summary = await writeBaseline(args, deps);
+    expect(summary).toContain('too big');
+    expect(summary).toContain('src/huge.ts');
+
+    const written = JSON.parse(deps.files.get(BASELINE_PATH) ?? '{}');
+    expect(Object.keys(written.files)).not.toContain('src/huge.ts');
+    expect(Object.keys(written.files)).toContain('src/fine.ts');
+    expect(written.files['src/fine.ts'].categories.code_smells).toBe(2);
+  });
+
+  it('drops a stale existing baseline entry when that same path is too-big this run', async () => {
+    const existing = {
+      generatedAt: null,
+      commit: null,
+      provider: null,
+      model: null,
+      files: {
+        'src/huge.ts': { categories: { code_smells: 3 }, confidence: { code_smells: 0.9 }, overall: 3 },
+      },
+    };
+    const scorer = fakeScorer({
+      scoreFn: async () => {
+        throw new JevFileTooBigError('file too large for context window');
+      },
+    });
+    const deps = makeDeps({
+      files: {
+        [BASELINE_PATH]: JSON.stringify(existing),
+        'src/huge.ts': 'export const huge = 1;\n',
+      },
+      scorer,
+    });
+    const args = makeArgs({ writeBaseline: true, positionals: ['src/huge.ts'] });
+
+    await writeBaseline(args, deps);
+
+    const written = JSON.parse(deps.files.get(BASELINE_PATH) ?? '{}');
+    expect(Object.keys(written.files)).not.toContain('src/huge.ts');
   });
 });
 

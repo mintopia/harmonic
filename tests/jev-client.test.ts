@@ -6,6 +6,7 @@ import {
   chunkText,
   createHttpJevScorer,
   inferRoleHint,
+  JevFileTooBigError,
   loadQuestions,
   resolveProviderConfig,
 } from '../scripts/jev/jev-client.js';
@@ -226,5 +227,46 @@ describe('createHttpJevScorer scoring', () => {
     await expect(scorer.score({ path: 'src/foo.ts', content: 'hello' })).rejects.toThrow(/ECONNRESET/);
     expect(fakeFetch).toHaveBeenCalledTimes(2);
     expect(fakeSleep).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects with JevFileTooBigError on a non-retryable 413, without retrying', async () => {
+    const fakeFetch = vi.fn().mockResolvedValue(jsonResponse({ error: 'payload too large' }, { status: 413 }));
+    const fakeSleep = vi.fn().mockResolvedValue(undefined);
+    const scorer = createHttpJevScorer({
+      env: { OPENROUTER_API_KEY: 'k' } as NodeJS.ProcessEnv,
+      fetch: fakeFetch as unknown as typeof fetch,
+      sleep: fakeSleep,
+    });
+    await expect(scorer.score({ path: 'src/foo.ts', content: 'hello' })).rejects.toBeInstanceOf(JevFileTooBigError);
+    expect(fakeFetch).toHaveBeenCalledTimes(1);
+    expect(fakeSleep).toHaveBeenCalledTimes(0);
+  });
+
+  it('rejects with JevFileTooBigError on a non-retryable 400 whose body mentions context length', async () => {
+    const fakeFetch = vi.fn().mockResolvedValue(jsonResponse({ error: 'context length exceeded' }, { status: 400 }));
+    const fakeSleep = vi.fn().mockResolvedValue(undefined);
+    const scorer = createHttpJevScorer({
+      env: { OPENROUTER_API_KEY: 'k' } as NodeJS.ProcessEnv,
+      fetch: fakeFetch as unknown as typeof fetch,
+      sleep: fakeSleep,
+    });
+    await expect(scorer.score({ path: 'src/foo.ts', content: 'hello' })).rejects.toBeInstanceOf(JevFileTooBigError);
+    expect(fakeFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not reclassify a 403 whose body coincidentally mentions "context length" as too-big', async () => {
+    const fakeFetch = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ error: 'forbidden: context length policy violation' }, { status: 403 }));
+    const fakeSleep = vi.fn().mockResolvedValue(undefined);
+    const scorer = createHttpJevScorer({
+      env: { OPENROUTER_API_KEY: 'k' } as NodeJS.ProcessEnv,
+      fetch: fakeFetch as unknown as typeof fetch,
+      sleep: fakeSleep,
+    });
+    const promise = scorer.score({ path: 'src/foo.ts', content: 'hello' });
+    await expect(promise).rejects.not.toBeInstanceOf(JevFileTooBigError);
+    await expect(promise).rejects.toThrow(/403/);
+    expect(fakeFetch).toHaveBeenCalledTimes(1);
   });
 });

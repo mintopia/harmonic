@@ -228,7 +228,7 @@ export interface OverallJudgement {
 
 export interface FileJudgement {
   path: string;
-  status: 'scored' | 'excluded' | 'error';
+  status: 'scored' | 'excluded' | 'error' | 'too-big';
   baselineStatus: 'new' | 'modified';
   verdict: Zone;
   blocking: boolean;
@@ -441,10 +441,15 @@ export function excludedFileJudgement(
   };
 }
 
-export function erroredFileJudgement(path: string, message: string, baselineEntry: BaselineEntry | undefined): FileJudgement {
+function nonScoredFileJudgement(
+  status: 'error' | 'too-big',
+  path: string,
+  message: string,
+  baselineEntry: BaselineEntry | undefined,
+): FileJudgement {
   return {
     path,
-    status: 'error',
+    status,
     baselineStatus: baselineEntry ? 'modified' : 'new',
     verdict: 'pass',
     blocking: false,
@@ -458,6 +463,14 @@ export function erroredFileJudgement(path: string, message: string, baselineEntr
     error: message,
     latencyMs: null,
   };
+}
+
+export function erroredFileJudgement(path: string, message: string, baselineEntry: BaselineEntry | undefined): FileJudgement {
+  return nonScoredFileJudgement('error', path, message, baselineEntry);
+}
+
+export function tooBigFileJudgement(path: string, message: string, baselineEntry: BaselineEntry | undefined): FileJudgement {
+  return nonScoredFileJudgement('too-big', path, message, baselineEntry);
 }
 
 export interface GateReport {
@@ -478,6 +491,7 @@ export interface GateReport {
     excluded: number;
     scored: number;
     errored: number;
+    tooBig: number;
     pass: number;
     warn: number;
     fail: number;
@@ -535,6 +549,7 @@ export function buildReport(args: {
     excluded: files.filter((file) => file.status === 'excluded').length,
     scored: files.filter((file) => file.status === 'scored').length,
     errored: files.filter((file) => file.status === 'error').length,
+    tooBig: files.filter((file) => file.status === 'too-big').length,
     pass: files.filter((file) => file.status === 'scored' && file.verdict === 'pass').length,
     warn: files.filter((file) => file.status === 'scored' && file.verdict === 'warn').length,
     fail: files.filter((file) => file.status === 'scored' && file.verdict === 'fail').length,

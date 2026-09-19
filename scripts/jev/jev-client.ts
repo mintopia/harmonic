@@ -8,6 +8,13 @@ import {
   type JevScorerInfo,
 } from './types.js';
 
+export class JevFileTooBigError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'JevFileTooBigError';
+  }
+}
+
 export interface ProviderConfig {
   provider: 'openrouter' | 'typesafe';
   url: string;
@@ -180,6 +187,14 @@ export function createHttpJevScorer(options: HttpJevScorerOptions = {}): JevScor
         const waitSeconds = Math.min(retryAfterSeconds ?? 2 ** attempt, 30);
         await sleep(waitSeconds * 1000);
         continue;
+      }
+      // 413 is unambiguous; other providers reuse 400 for context-length rejections, but other
+      // 4xx/5xx bodies can coincidentally contain these phrases and must not be reclassified.
+      const looksTooBig =
+        response.status === 413 ||
+        (response.status === 400 && /too large|too big|context length|maximum context|payload too large/i.test(detail));
+      if (looksTooBig) {
+        throw new JevFileTooBigError(`Jev API rejected file as too big (status ${response.status}): ${detail.slice(0, 300)}`);
       }
       throw new Error(`Jev API error ${response.status}: ${detail.slice(0, 300)}`);
     }

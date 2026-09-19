@@ -11,6 +11,7 @@ import {
   judgeFile,
   parseBaseline,
   parseGateConfig,
+  tooBigFileJudgement,
   type Baseline,
   type BaselineEntry,
   type FileJudgement,
@@ -18,7 +19,7 @@ import {
   type GateReport,
 } from './gate-policy.js';
 import { JEV_CATEGORIES, type JevScorer } from './types.js';
-import { createHttpJevScorer } from './jev-client.js';
+import { createHttpJevScorer, JevFileTooBigError } from './jev-client.js';
 
 export interface ParsedArgs {
   positionals: string[];
@@ -179,7 +180,7 @@ function renderSummary(report: GateReport): string {
     ? `base ${report.base.requested} (merge-base ${shortSha(report.base.mergeBase)})`
     : 'base n/a (explicit file list)';
   lines.push(
-    `jev gate: ${report.mode} | ${baseText} | ${report.counts.changed} changed, ${report.counts.excluded} excluded, ${report.counts.scored} scored`,
+    `jev gate: ${report.mode} | ${baseText} | ${report.counts.changed} changed, ${report.counts.excluded} excluded, ${report.counts.tooBig} too big, ${report.counts.scored} scored`,
   );
 
   if (report.skippedReason) {
@@ -193,6 +194,10 @@ function renderSummary(report: GateReport): string {
     }
     if (file.status === 'error') {
       lines.push(`  SKIP  ${file.path}   ${file.error ?? 'error'}`);
+      continue;
+    }
+    if (file.status === 'too-big') {
+      lines.push(`  SKIP  ${file.path}   too big: ${file.error ?? 'exceeds size limit'}`);
       continue;
     }
     const score100 = file.overall ? String(file.overall.score100) : '?';
@@ -240,6 +245,7 @@ export async function runGate(args: ParsedArgs, deps: RunGateDeps): Promise<RunG
         excluded: 0,
         scored: 0,
         errored: 0,
+        tooBig: 0,
         pass: 0,
         warn: 0,
         fail: 0,
@@ -410,7 +416,7 @@ export async function runGate(args: ParsedArgs, deps: RunGateDeps): Promise<RunG
       return;
     }
     if (Buffer.byteLength(text, 'utf8') > config.scan.maxFileBytes) {
-      scoredJudgements[i] = erroredFileJudgement(p, `skipped: larger than ${config.scan.maxFileBytes} bytes`, baselineEntry);
+      scoredJudgements[i] = tooBigFileJudgement(p, `too big: larger than ${config.scan.maxFileBytes} bytes`, baselineEntry);
       return;
     }
     if (text.trim() === '') {
@@ -426,7 +432,11 @@ export async function runGate(args: ParsedArgs, deps: RunGateDeps): Promise<RunG
       usage.inputTokens += score.inputTokens;
       usage.totalLatencyMs += score.latencyMs;
     } catch (err) {
-      scoredJudgements[i] = erroredFileJudgement(p, err instanceof Error ? err.message : String(err), baselineEntry);
+      if (err instanceof JevFileTooBigError) {
+        scoredJudgements[i] = tooBigFileJudgement(p, err.message, baselineEntry);
+      } else {
+        scoredJudgements[i] = erroredFileJudgement(p, err instanceof Error ? err.message : String(err), baselineEntry);
+      }
     }
   });
 
@@ -454,18 +464,22 @@ export async function runGate(args: ParsedArgs, deps: RunGateDeps): Promise<RunG
 }
 
 const DEFAULT_SCAN_CONCURRENCY = 4;
+const DEFAULT_MAX_FILE_BYTES = 400_000;
 
 export async function writeBaseline(args: ParsedArgs, deps: RunGateDeps): Promise<string> {
   let concurrencyFromConfig: number;
+  let maxFileBytes: number;
   let configFallbackNote: string | null = null;
   try {
     const rawConfig = deps.readTextFile(args.configPath);
     if (rawConfig === undefined) throw new Error(`config file not found: ${args.configPath}`);
     const config = parseGateConfig(JSON.parse(rawConfig));
     concurrencyFromConfig = config.scan.concurrency;
+    maxFileBytes = config.scan.maxFileBytes;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     concurrencyFromConfig = DEFAULT_SCAN_CONCURRENCY;
+    maxFileBytes = DEFAULT_MAX_FILE_BYTES;
     configFallbackNote = `config unavailable (${message}), using default concurrency ${DEFAULT_SCAN_CONCURRENCY}`;
   }
 
@@ -482,6 +496,8 @@ export async function writeBaseline(args: ParsedArgs, deps: RunGateDeps): Promis
   const newEntries: Record<string, BaselineEntry> = {};
   let scored = 0;
   let errored = 0;
+  let tooBig = 0;
+  const tooBigPaths: string[] = [];
 
   await runWithConcurrency(paths.length, concurrency, async (i) => {
     const p = paths[i]!;
@@ -490,17 +506,30 @@ export async function writeBaseline(args: ParsedArgs, deps: RunGateDeps): Promis
       errored += 1;
       return;
     }
+    if (Buffer.byteLength(text, 'utf8') > maxFileBytes) {
+      tooBig += 1;
+      tooBigPaths.push(p);
+      return;
+    }
     try {
       const result = await deps.scorer.score({ path: p, content: text });
       const overall = JEV_CATEGORIES.reduce((sum, c) => sum + result.categories[c], 0) / JEV_CATEGORIES.length;
       newEntries[p] = { categories: result.categories, confidence: result.confidence, overall };
       scored += 1;
-    } catch {
-      errored += 1;
+    } catch (err) {
+      if (err instanceof JevFileTooBigError) {
+        tooBig += 1;
+        tooBigPaths.push(p);
+      } else {
+        errored += 1;
+      }
     }
   });
 
   const merged: Record<string, BaselineEntry> = { ...existing.files, ...newEntries };
+  for (const p of tooBigPaths) {
+    delete merged[p];
+  }
   const files: Record<string, BaselineEntry> = {};
   for (const key of Object.keys(merged).sort()) {
     files[key] = merged[key]!;
@@ -524,5 +553,6 @@ export async function writeBaseline(args: ParsedArgs, deps: RunGateDeps): Promis
   deps.writeTextFile(args.baselinePath, `${JSON.stringify(baseline, null, 2)}\n`);
 
   const prefix = configFallbackNote ? `jev baseline: ${configFallbackNote}; ` : 'jev baseline: ';
-  return `${prefix}scored ${scored} file(s), ${errored} skipped/errored, ${Object.keys(files).length} total entries -> ${args.baselinePath}`;
+  const tooBigSuffix = tooBig > 0 ? ` (too big: ${[...tooBigPaths].sort().join(', ')})` : '';
+  return `${prefix}scored ${scored} file(s), ${errored} skipped/errored, ${tooBig} too big${tooBigSuffix}, ${Object.keys(files).length} total entries -> ${args.baselinePath}`;
 }

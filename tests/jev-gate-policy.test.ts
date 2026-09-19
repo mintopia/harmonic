@@ -11,6 +11,7 @@ import {
   judgeFile,
   excludedFileJudgement,
   erroredFileJudgement,
+  tooBigFileJudgement,
   buildReport,
   decideExitCode,
   type GateConfig,
@@ -597,6 +598,22 @@ describe('excludedFileJudgement / erroredFileJudgement', () => {
     expect(judged.verdict).toBe('pass');
     expect(judged.blocking).toBe(false);
   });
+
+  it('builds a status: too-big judgement that never counts as a fail', () => {
+    const judged = tooBigFileJudgement('src/huge.ts', 'too big: larger than 400000 bytes', undefined);
+    expect(judged.status).toBe('too-big');
+    expect(judged.error).toBe('too big: larger than 400000 bytes');
+    expect(judged.overall).toBeNull();
+    expect(judged.categories).toBeNull();
+    expect(judged.verdict).toBe('pass');
+    expect(judged.blocking).toBe(false);
+    expect(judged.baselineStatus).toBe('new');
+  });
+
+  it('a too-big judgement with a baseline entry reports baselineStatus modified', () => {
+    const judged = tooBigFileJudgement('src/huge.ts', 'too big', { categories: {}, confidence: {}, overall: null });
+    expect(judged.baselineStatus).toBe('modified');
+  });
 });
 
 describe('buildReport shape', () => {
@@ -626,7 +643,8 @@ describe('buildReport shape', () => {
     });
     const excludedFile = excludedFileJudgement('src/c-excluded.d.ts', classifyPath('src/c-excluded.d.ts', config), undefined);
     const erroredFile = erroredFileJudgement('src/e-errored.ts', 'boom', undefined);
-    return [passFile, warnFile, failFile, excludedFile, erroredFile];
+    const tooBigFile = tooBigFileJudgement('src/f-toobig.ts', 'too big: larger than 400000 bytes', undefined);
+    return [passFile, warnFile, failFile, excludedFile, erroredFile, tooBigFile];
   }
 
   it('produces the expected shape and counts', () => {
@@ -651,10 +669,11 @@ describe('buildReport shape', () => {
     expect(report.generatedAt).toBe('2026-01-01T00:00:00.000Z');
     expect(report.config.advisoryCategories.sort()).toEqual(['comments', 'security'].sort());
     expect(report.counts).toEqual({
-      changed: 5,
+      changed: 6,
       excluded: 1,
       scored: 3,
       errored: 1,
+      tooBig: 1,
       pass: 1,
       warn: 1,
       fail: 1,
@@ -668,6 +687,7 @@ describe('buildReport shape', () => {
       'src/c-excluded.d.ts',
       'src/d-fail.ts',
       'src/e-errored.ts',
+      'src/f-toobig.ts',
     ]);
     for (const file of report.files) {
       if (!file.categories) continue;
