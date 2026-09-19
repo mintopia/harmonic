@@ -21,12 +21,6 @@ import { CSS } from '@dnd-kit/utilities';
 import { btnGhost, btnQuiet, field, touchTarget } from '../ui';
 import { fieldLabel } from './SettingsSection';
 
-/**
- * A flat list of plain-text values, each its own input: one row per string, add
- * appends a blank row, remove drops one. Values are stored verbatim — no
- * delimiter joins them, so a value containing a space (or any other character)
- * round-trips exactly as typed.
- */
 export function ListEditor({
   items,
   onChange,

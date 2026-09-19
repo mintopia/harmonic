@@ -20,12 +20,10 @@ export function criticLabel(name: string): string {
 export type CommandField = 'command' | 'timeoutSeconds';
 
 /**
- * Fold a raw text-input value into the command object. `command` keeps the prior
- * value on a blank input (it can never be a whitespace-only executable — the
- * server rejects it, but blanking mid-edit shouldn't silently drop it); a value
- * sets it. `timeoutSeconds` takes a positive integer, keeping the prior value on
- * a blank or non-numeric input rather than dropping the only bound on a runaway
- * verifier.
+ * Fold a raw text-input value into the command object. `command` sets the
+ * executable to `raw` unconditionally, blank included. `timeoutSeconds` takes
+ * a positive integer, keeping the prior value on a blank or non-numeric input
+ * rather than dropping the only bound on a runaway verifier.
  */
 export function setCommandField(cmd: VerificationCommand, field: CommandField, raw: string): VerificationCommand {
   if (field === 'command') return { ...cmd, command: raw };
