@@ -2,8 +2,7 @@ import { readdirSync } from 'node:fs';
 import { readdir } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 
-/** Directory entries sorted newest-first by name; an unreadable dir yields none. */
-function entriesNewestFirst(dir: string): string[] {
+function entriesNewestFirstOrEmpty(dir: string): string[] {
   try {
     return readdirSync(dir).sort().reverse();
   } catch {
@@ -17,10 +16,10 @@ function entriesNewestFirst(dir: string): string[] {
  * caller looking for one file stops the walk on the first hit.
  */
 export function* datedLogFiles(root: string, match: (name: string) => boolean): Generator<string> {
-  for (const year of entriesNewestFirst(root)) {
-    for (const month of entriesNewestFirst(join(root, year))) {
-      for (const day of entriesNewestFirst(join(root, year, month))) {
-        for (const file of entriesNewestFirst(join(root, year, month, day))) {
+  for (const year of entriesNewestFirstOrEmpty(root)) {
+    for (const month of entriesNewestFirstOrEmpty(join(root, year))) {
+      for (const day of entriesNewestFirstOrEmpty(join(root, year, month))) {
+        for (const file of entriesNewestFirstOrEmpty(join(root, year, month, day))) {
           if (match(file)) yield join(root, year, month, day, file);
         }
       }

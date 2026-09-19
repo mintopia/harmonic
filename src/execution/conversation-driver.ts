@@ -113,7 +113,6 @@ type PermissionOutcome = { outcome: 'selected'; optionId: string } | { outcome: 
 // reads result.outcome.outcome. A bare PermissionOutcome is read as a reject.
 type PermissionResponse = { outcome: PermissionOutcome };
 
-/** The auto-approval outcome for `request`: its allow option, or a cancel when it offers none. */
 function autoPermissionOutcome(request: PermissionRequest): PermissionOutcome {
   const optionId = allowOptionId(request);
   return optionId ? { outcome: 'selected', optionId } : { outcome: 'cancelled' };

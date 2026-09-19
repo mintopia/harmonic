@@ -67,7 +67,6 @@ describe('serializedTailReader', () => {
     await expect(reader.sample()).rejects.toThrow('boom');
     expect(reader.latest()).toEqual(parsed('good'));
 
-    // The chain must still progress: a further sample() invokes doSample again.
     await expect(reader.sample()).resolves.toEqual(parsed('good'));
     expect(call).toBe(3);
   });
