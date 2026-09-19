@@ -5,12 +5,12 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { dominantModel, foldModels, usageFromModels, type ParsedSession, type ProcessNode, type UsageTurn } from '../usage.js';
 import { resolveUnattendedPermissionMode, serializedTailReader, type HarnessAdapter, type ModelUsage, type SessionTailReader } from './adapter.js';
 import { LineCursor, type LineAccumulator } from './incremental-log.js';
-import { num, addModelUsage } from './model-usage.js';
+import { num, addTokenCounts } from './model-usage.js';
 import { agentFiles, agentFilesSync, isTraversalSafeSegment } from './session-files.js';
 import { asRecord, timestamp, withTarget, type TranscriptLogEvent } from './transcript.js';
 
 function mergeInto(dest: Record<string, ModelUsage>, src: Record<string, ModelUsage>): void {
-  for (const [model, usage] of Object.entries(src)) addModelUsage(dest, model, usage);
+  for (const [model, usage] of Object.entries(src)) addTokenCounts(dest, model, usage);
 }
 
 interface Transcript {

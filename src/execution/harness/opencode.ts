@@ -6,7 +6,7 @@ import { homedir, tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { dominantModel, foldModels, usageFromModels, type ParsedSession, type ProcessNode } from '../usage.js';
 import type { HarnessAdapter, ModelUsage } from './adapter.js';
-import { addModelUsage } from './model-usage.js';
+import { addTokenCounts } from './model-usage.js';
 import { isRecord, withTarget, type TranscriptLogEvent } from './transcript.js';
 import type { ModelPrice } from '../../domain/pricing.js';
 
@@ -108,7 +108,7 @@ function readUsageSessions(dbPath: string, sessionId: string): UsageSession[] {
 
 function rowsToModels(rows: readonly UsageRow[]): Record<string, ModelUsage> {
   const models: Record<string, ModelUsage> = {};
-  for (const row of rows) addModelUsage(models, row.model, row);
+  for (const row of rows) addTokenCounts(models, row.model, row);
   return models;
 }
 
