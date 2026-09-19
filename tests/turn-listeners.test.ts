@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { TurnListeners, TurnState } from '../src/execution/runner.js';
+import { TurnListeners, TurnState } from '../src/execution/turn-driver.js';
 import type { AttemptRow } from '../src/db/schema.js';
 
 describe('TurnListeners', () => {
