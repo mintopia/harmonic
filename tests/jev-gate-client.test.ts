@@ -41,4 +41,14 @@ describe('callJev', () => {
     await expect(promise).rejects.toBeInstanceOf(Error);
     await expect(promise).rejects.not.toBeInstanceOf(JevFileTooBigError);
   });
+
+  it('does NOT reclassify a 401 as JevFileTooBigError even if its body mentions context length', async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response('unauthorized: context length policy', { status: 401 }));
+    vi.stubGlobal('fetch', fetch);
+
+    const promise = callJev(cfg, state, questions);
+    await expect(promise).rejects.toBeInstanceOf(Error);
+    await expect(promise).rejects.not.toBeInstanceOf(JevFileTooBigError);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
 });

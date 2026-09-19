@@ -12,8 +12,9 @@ vi.mock('../scripts/jev-gate/jev-client.js', async (importOriginal) => {
   return { ...actual, callJev };
 });
 
-import { resolveSubjects, scoreForBaseline, scoreSubject } from '../scripts/jev-gate/cli.js';
+import { renderHuman, resolveSubjects, scoreForBaseline, scoreSubject } from '../scripts/jev-gate/cli.js';
 import { JevFileTooBigError, resolveProviderConfig } from '../scripts/jev-gate/jev-client.js';
+import type { FileResult, GateResult } from '../scripts/jev-gate/types.js';
 
 function makeConfig(overrides: Partial<GateConfig> = {}): GateConfig {
   return {
@@ -123,5 +124,48 @@ describe('scoreForBaseline', () => {
     const result = await scoreForBaseline(subject, { config, rubrics, jevCfg: resolveProviderConfig() });
 
     expect(result).toEqual({ path: subject.relPath, error: 'jev-gate: Jev API error 500: oops', tooBig: false });
+  });
+});
+
+describe('renderHuman', () => {
+  it('surfaces a too-big file in its own section and counts it apart from scored/errored in the GATE line', () => {
+    function makeFile(overrides: Partial<FileResult>): FileResult {
+      return { path: 'x', role: 'production', verdict: 'PASS', reasons: [], advisories: [], hasBaseline: false, ...overrides };
+    }
+    const files: FileResult[] = [
+      makeFile({ path: 'src/execution/runner.ts', verdict: 'TOO_BIG', skipReason: 'jev-gate: Jev API rejected file as too big (status 413): payload too large' }),
+      makeFile({ path: 'src/ok.ts', verdict: 'PASS' }),
+      makeFile({ path: 'src/broken.ts', verdict: 'ERROR', error: 'jev-gate: Jev API unreachable: boom' }),
+    ];
+    const result: GateResult = {
+      generatedAt: new Date(0).toISOString(),
+      model: 'typesafe/jev-1.13',
+      provider: 'openrouter',
+      files,
+      summary: {
+        mode: 'enforcing',
+        base: 'develop',
+        mergeBase: '0123456789abcdef',
+        filesChanged: files.length,
+        filesScored: files.filter((f) => f.verdict !== 'SKIPPED' && f.verdict !== 'ERROR' && f.verdict !== 'TOO_BIG').length,
+        filesSkipped: 0,
+        filesErrored: files.filter((f) => f.verdict === 'ERROR').length,
+        filesTooBig: files.filter((f) => f.verdict === 'TOO_BIG').length,
+        baselinePath: 'jev.baseline.json',
+        baselineExists: true,
+        verdict: 'PASS',
+        failingFiles: [],
+        needsSignoffFiles: [],
+        warnFiles: [],
+        notes: [],
+      },
+    };
+
+    const output = renderHuman(result);
+
+    expect(output).toContain('## TOO_BIG (1)');
+    expect(output).toContain('src/execution/runner.ts');
+    expect(output).toContain('skipped: jev-gate: Jev API rejected file as too big');
+    expect(output).toContain('GATE: PASS — 1 scored, 0 skipped, 1 too big, 1 errored');
   });
 });

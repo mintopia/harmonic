@@ -493,7 +493,7 @@ async function runBaseline(opts: CliOptions): Promise<number> {
   return errored > 0 ? 1 : 0;
 }
 
-function renderHuman(result: GateResult): string {
+export function renderHuman(result: GateResult): string {
   const lines: string[] = [];
   lines.push(`Jev CI gate [${result.summary.mode}] — base ${result.summary.base} (merge-base ${result.summary.mergeBase.slice(0, 12)})`);
   lines.push(`model ${result.model} via ${result.provider}`);
