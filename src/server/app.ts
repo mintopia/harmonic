@@ -1,4 +1,4 @@
-import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
+import Fastify, { type FastifyInstance } from 'fastify';
 import fastifyStatic from '@fastify/static';
 import fastifyWebsocket from '@fastify/websocket';
 import fastifyCookie from '@fastify/cookie';
@@ -71,7 +71,7 @@ import { globalPauseRoutes } from './routes/global-pause.js';
 import { wsRoutes } from './ws.js';
 import { EventBus } from './bus.js';
 import { operationRegistry, startOperation } from '../telemetry/operations.js';
-import { AuthService } from './auth.js';
+import { AuthService, requestIsOperator } from './auth.js';
 import { authRoutes, SESSION_COOKIE } from './routes/auth.js';
 import { statsRoutes } from './routes/stats.js';
 import { activityRoutes } from './routes/activity.js';
@@ -149,14 +149,6 @@ function readScopeAllowed(path: string, method: string): boolean {
   if (path === '/api/activity') return true;
   if (path === '/api/operations') return true;
   if (path === '/api/scheduled-jobs') return true;
-  return false;
-}
-
-async function requestIsOperator(req: FastifyRequest, auth: AuthService): Promise<boolean> {
-  if (!(await auth.hasPassword())) return true;
-  const bearer = req.headers.authorization?.match(/^Bearer (.+)$/)?.[1];
-  if (bearer && (await auth.verifyKey(bearer))?.scope === 'full') return true;
-  if (auth.validateSession(req.cookies[SESSION_COOKIE])) return true;
   return false;
 }
 
@@ -843,9 +835,11 @@ Tree), pushed about once a second while the Attempt tails its native log.
 served by \`GET /api/operations\`.
 \`permission_request\` announces a Harness blocked on an
 operator permission decision in a Conversation (ADR-0007), answered via
-\`POST /conversations/:id/permissions/:reqId\`. Authenticate by passing the
-session token or an API key as \`?token=\` (WebSocket clients cannot set an
-Authorization header). A \`read\`-scoped key gets a filtered firehose — only
+\`POST /conversations/:id/permissions/:reqId\`. Authenticate by offering the
+session token or an API key as the sole WebSocket subprotocol
+(\`new WebSocket(url, [token])\`) — never as a query parameter, which leaks
+into logs and browser history. A browser client authenticated by session
+cookie needs no subprotocol. A \`read\`-scoped key gets a filtered firehose — only
 \`task_changed\`, \`task_removed\`, \`attempt_changed\`, \`attempt_event\`, \`attempt_usage\`, and
 \`operations\` — with the Conversation and permission traffic dropped.
 
@@ -912,10 +906,10 @@ not resolved yet.`;
     }
     if (auth.validateSession(req.cookies[SESSION_COOKIE])) return;
     if (path === '/api/ws') {
-      const queryToken = (req.query as Record<string, string | undefined>)?.token;
-      if (queryToken) {
-        if (auth.validateSession(queryToken)) return;
-        const key = await auth.verifyKey(queryToken);
+      const wsToken = req.headers['sec-websocket-protocol']?.split(',')[0]?.trim();
+      if (wsToken) {
+        if (auth.validateSession(wsToken)) return;
+        const key = await auth.verifyKey(wsToken);
         if (key) {
           if (scopeAllows(key.scope)) return;
           scopedKeyRejected = true;
