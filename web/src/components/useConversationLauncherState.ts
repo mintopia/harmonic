@@ -40,8 +40,6 @@ export function useConversationLauncherState({
 }: {
   workspaceId: number | null;
   initialFocusedId: () => number | null;
-  // Its identity flows into openList/openConversation/openCompose, which useConversationDetail
-  // keys effects on — an unstable onNavigate changes when those effects rerun.
   onNavigate: (conversationId: number | null) => void;
   active?: boolean;
 }): ConversationLauncherState {

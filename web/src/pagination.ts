@@ -1,4 +1,3 @@
-// Stops on whichever comes first — an empty page or `all.length >= total` — so a `total` that overcounts still terminates.
 export async function fetchAllPages<T>(
   fetchPage: (limit: number, offset: number) => Promise<{ total: number; items: T[] }>,
   pageSize = 100,
