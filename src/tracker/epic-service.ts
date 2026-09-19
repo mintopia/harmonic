@@ -12,7 +12,7 @@ import { composeEpicView, type Epic, type EpicFacts, type EpicMeta } from '../do
 import { EpicMergeEventStore } from '../domain/epic-merge-events.js';
 import { resolveVerifiers } from '../domain/setting-override.js';
 import { GitError } from '../domain/errors.js';
-import { orFallback } from '../error-handling.js';
+import { bestEffort, orFallback } from '../error-handling.js';
 import { resolveRepositoryDefaultBranch } from '../execution/branch-merge.js';
 import { EpicOperations } from '../execution/epic-operations.js';
 import {
@@ -127,7 +127,11 @@ export class TrackerEpicService implements EpicService {
         const worktreePath = epicWorktrees.get(epicRef);
         if (!worktreePath) return;
         epicWorktrees.delete(epicRef);
-        await Git.removeWorktree(workspace.workingDir, worktreePath).catch(() => {});
+        await bestEffort(() => Git.removeWorktree(workspace.workingDir, worktreePath), {
+          op: 'epicService.releaseEpicWorktree.removeWorktree',
+          level: 'debug',
+          context: { workspaceId: workspace.id ?? undefined, epicRef, worktreePath },
+        });
       };
       const epicWorktree = async (repoDir: string, epicRef: number): Promise<string> => {
         const existing = epicWorktrees.get(epicRef);

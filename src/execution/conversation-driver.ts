@@ -665,6 +665,13 @@ export class ConversationDriver {
   private kill(entry: ActiveConversation): void {
     try {
       if (entry.child.exitCode === null && !entry.child.killed) entry.child.kill('SIGKILL');
-    } catch {}
+    } catch (err) {
+      reportFailure(err, {
+        op: 'conversationDriver.kill',
+        level: 'warn',
+        notFoundIf: (e) => (e as NodeJS.ErrnoException | null)?.code === 'ESRCH',
+        context: { conversationId: entry.conversationId },
+      });
+    }
   }
 }

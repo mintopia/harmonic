@@ -89,12 +89,12 @@ export async function orFallback<T, F = T>(op: () => T | Promise<T>, report: Fai
   return result.ok ? result.value : fallback;
 }
 
-/** Await `op` for its side effect only, reporting `true` when it landed — the logged replacement for `try { await op(); } catch {}`. */
+/** Await `op` for its side effect only, reporting `true` when it landed — the logged replacement for a bare try/await with a silently-swallowed failure. */
 export async function bestEffort(op: () => unknown | Promise<unknown>, report: FailureReport): Promise<boolean> {
   return (await attempted(op, report)).ok;
 }
 
-/** Start `op` and return immediately, logging any rejection — the logged replacement for `void op().catch(() => {})`. */
+/** Start `op` and return immediately, logging any rejection — the logged replacement for firing a promise and silently discarding its rejection. */
 export function fireAndForget(op: () => unknown | Promise<unknown>, report: FailureReport): void {
   void (async () => {
     try {

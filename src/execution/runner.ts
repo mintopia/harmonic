@@ -1510,7 +1510,11 @@ export class Runner {
       });
     }
     if (!retained) {
-      await Git.removeWorktree(repoDir, path).catch(() => {});
+      await bestEffort(() => Git.removeWorktree(repoDir, path), {
+        op: 'runner.finalizeWorkspace.removeWorktree',
+        level: 'debug',
+        context: { taskId: task.id, attemptId: run.id, attemptNumber, repoDir, worktreePath: path },
+      });
     }
   }
 
@@ -1753,7 +1757,11 @@ export class Runner {
     try {
       reproduced = await Git.mergeLeavingConflict(worktreePath, target.defaultBranch);
     } catch (err) {
-      await Git.removeWorktree(target.repoDir, worktreePath).catch(() => {});
+      await bestEffort(() => Git.removeWorktree(target.repoDir, worktreePath), {
+        op: 'runner.enqueueEpicRefreshResolution.removeWorktree',
+        level: 'debug',
+        context: { epicRef: target.ref, repoDir: target.repoDir, worktreePath },
+      });
       return escalated(`could not reproduce the refresh conflict on ${branch} (${String(err)}); refresh conflict: ${detail}`);
     }
 
@@ -1819,7 +1827,11 @@ export class Runner {
         },
       });
     } finally {
-      await Git.removeWorktree(args.target.repoDir, args.worktreePath).catch(() => {});
+      await bestEffort(() => Git.removeWorktree(args.target.repoDir, args.worktreePath), {
+        op: 'runner.runEpicRefreshResolveTurn.removeWorktree',
+        level: 'debug',
+        context: { epicRef: args.target.ref, repoDir: args.target.repoDir, worktreePath: args.worktreePath },
+      });
     }
   }
 
@@ -3110,7 +3122,13 @@ export class Runner {
           active.child.kill('SIGKILL');
         }
       }
-    } catch {
+    } catch (err) {
+      reportFailure(err, {
+        op: 'runner.kill',
+        level: 'warn',
+        notFoundIf: (e) => (e as NodeJS.ErrnoException | null)?.code === 'ESRCH',
+        context: { attemptId: active.attemptId },
+      });
     }
   }
 }

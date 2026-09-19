@@ -1,6 +1,6 @@
 import { open, type FileHandle } from 'node:fs/promises';
 import { StringDecoder } from 'node:string_decoder';
-import { reportFailure } from '../../error-handling.js';
+import { bestEffort, reportFailure } from '../../error-handling.js';
 
 /**
  * A line-fold an incremental tail drives. The cursor re-folds the trailing
@@ -68,7 +68,11 @@ export class LineCursor<A extends LineAccumulator> {
         context: { file: this.file, offset: this.offset },
       });
     } finally {
-      await handle?.close().catch(() => {});
+      await bestEffort(() => handle?.close(), {
+        op: 'harness.lineCursor.closeHandle',
+        level: 'debug',
+        context: { file: this.file },
+      });
     }
   }
 
