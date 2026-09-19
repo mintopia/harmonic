@@ -119,7 +119,7 @@ function CriticRunningStory() {
   const runningCritic: VerifierStatus[] = [{ mechanism: 'critic', state: 'running', reason: null, harness: 'claude' }];
   return (
     <StoryFrame style={{ padding: 30, maxWidth: 900 }}>
-      <Verification attempts={[]} statuses={runningCritic} run={runs[2]} only="critic" />
+      <Verification attempts={[]} statuses={runningCritic} run={runs[2]!} only="critic" />
     </StoryFrame>
   );
 }
@@ -200,7 +200,7 @@ function ConversationsStory() {
     <StoryFrame style={{ height: '100vh' }}>
       <ConversationsPage
         config={storyConfig}
-        workspace={storyWorkspaces[0]}
+        workspace={storyWorkspaces[0]!}
         conversationId={1}
         onConversationChange={() => {}}
       />
@@ -209,7 +209,7 @@ function ConversationsStory() {
 }
 
 function FilesStory() {
-  const filesWorkspace = { ...storyWorkspaces[0], id: 1, name: 'harmonic-core', color: '#3AA0FA', excludedDirectories: ['node_modules'] };
+  const filesWorkspace = { ...storyWorkspaces[0]!, id: 1, name: 'harmonic-core', color: '#3AA0FA', excludedDirectories: ['node_modules'] };
   return (
     <StoryFrame style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
       <FilesPage workspace={filesWorkspace} selectedPath={'src/config.ts'} onSelectFile={() => {}} onWorkspaceSaved={() => {}} />
