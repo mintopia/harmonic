@@ -6,7 +6,7 @@ import { Git } from './git.js';
 import { GitError } from '../domain/errors.js';
 import { attempted, bestEffort, fireAndForget, reportFailure } from '../error-handling.js';
 import { classifyGitFailure, type GitCircuitBreaker } from './git-failure.js';
-import { adapterFor, adapterVersion } from './harness/registry.js';
+import { adapterFor } from './harness/registry.js';
 import { readProcStartToken } from './process-reaper.js';
 import { collectUsage, observedModelMismatch, activityLine, toolCallName, type AttemptUsage, type AttemptUsageSnapshot } from './usage.js';
 import { LiveUsageTailer, type TailerCadence } from './live-usage-tailer.js';
@@ -14,8 +14,10 @@ import { UsageSampler } from './usage-sampler.js';
 import { TranscriptCapture } from './transcript-capture.js';
 import { GuardrailSupervisor } from './guardrail-supervisor.js';
 import { ActiveRuns, type ActiveRun } from './active-runs.js';
-import { codeIndexRepoGuidance, driveFields, promptForTask } from './prompt-template.js';
+import { codeIndexRepoGuidance, promptForTask } from './prompt-template.js';
 import { indexWorktree, dropIndexForPath } from './code-index.js';
+import { LIVE_RUN_LOG_EVENT_ID_OFFSET, type LiveAttemptEvent } from './live-events.js';
+import { VerificationCoordinator, type EpicVerificationResolutionInput } from './verification-coordinator.js';
 import type { AutoDrive } from './auto-drive.js';
 import type { AppConfig, HarnessConfig } from '../config.js';
 import { isTaskAttempt, type TaskRow, type AttemptRow, type WorkspaceRow } from '../db/schema.js';
@@ -30,7 +32,7 @@ import { AttemptStore, type AttemptGuardrailSnapshot, type PersistedAttemptEvent
 import { AttemptSettleCoordinator, type SettleProjection, type DispositionKind } from '../domain/attempt-settle.js';
 import type { SessionRetirementHook } from '../domain/session-retirement-coordinator.js';
 import type { TaskService } from '../domain/tasks.js';
-import { resolveGuardrails, resolvePauseMessage, resolveVerifiers, resolveScoped, resolveTaskPrompt } from '../domain/setting-override.js';
+import { resolveGuardrails, resolvePauseMessage, resolveScoped, resolveTaskPrompt } from '../domain/setting-override.js';
 import type { ResolvedGuardrails } from '../domain/setting-override.js';
 import { SessionContinuation, type PersistSessionContext } from './session-continuation.js';
 import { VerificationAttemptStore } from '../domain/verification-attempts.js';
@@ -40,9 +42,7 @@ export { BaseBranchUnresolved, EpicBaseNotReady };
 import { GuardrailEventStore } from '../domain/guardrail-events.js';
 import { toProgressEvents } from '../domain/guardrail-progress.js';
 import type { ProgressEvent } from '../domain/stall-detector.js';
-import { runCommandVerifier, commandAttemptToInput } from '../verification/command-verifier.js';
-import { createAcpCriticDrive, runCritic, criticAttemptToInput, type CriticHarnessDrive } from '../verification/critic.js';
-import { combineVerdicts, type VerificationDecision, type VerifierVerdict } from '../verification/combine.js';
+import { createAcpCriticDrive, type CriticHarnessDrive } from '../verification/critic.js';
 import { pricesForHarness } from '../domain/pricing.js';
 import { isForeignKeyViolation } from '../db/errors.js';
 import { logger } from '../logger.js';
@@ -57,27 +57,12 @@ import type { AsyncDbHandle } from '../db/async.js';
 import type { SpanContext } from '@opentelemetry/api';
 import { startOperation } from '../telemetry/operations.js';
 
+export type { LiveAttemptEvent } from './live-events.js';
+export type { EpicVerificationResolutionInput } from './verification-coordinator.js';
+
 const STDERR_TAIL_CAP = 8000;
 
 const LIFECYCLE_SETTLE_GRACE_MS = 15_000;
-
-const LIVE_RUN_LOG_EVENT_ID_OFFSET = 1_000_000_000;
-
-export interface EpicVerificationResolutionInput {
-  workspaceId: number;
-  epicRef: number;
-  title?: string;
-  body?: string;
-  url?: string;
-  repoDir: string;
-  worktreePath: string;
-  attempt: AttemptRow;
-  verifiedHeadOid: string;
-  verificationReason: string;
-  resolvePrompt: string;
-  continuationSessionId?: string;
-  continuationSessionRowId?: number;
-}
 
 export interface RunnerEvents {
   /** Fired after every run event is persisted (live streaming hook). */
@@ -98,16 +83,6 @@ export interface RunnerEvents {
   /** Fired after each Epic integration-merge step is persisted, so the Epic's
    * merge progress can follow live (Epics have no Attempt row to stream). */
   onEpicMergeStep?: (payload: { workspaceId: number; epicRef: number }) => void;
-}
-
-/** A live ACP update, with an Attempt-local monotonic id for reconnect de-duplication. */
-export interface LiveAttemptEvent {
-  id: number;
-  attemptId: number;
-  seq: number;
-  ts: number;
-  type: 'session_update';
-  payload: { sessionUpdate: string; [key: string]: unknown };
 }
 
 export interface RunnerOptions {
@@ -335,6 +310,7 @@ export class Runner {
   private readonly sessionContinuation: SessionContinuation;
   private readonly spendPollMs: number;
   private readonly spendGraceMs: number;
+  private readonly verification: VerificationCoordinator;
   /** The MCP endpoint agents should call back to; set once the server listens. */
   mcpUrl: string | null = null;
 
@@ -419,48 +395,26 @@ export class Runner {
       settleEscalated: (task, run, reason, patch) => this.settleEscalated(task, run, reason, patch),
       onEpicMergeStep: (payload) => this.events.onEpicMergeStep?.(payload),
     });
+    this.verification = new VerificationCoordinator({
+      taskService: this.taskService,
+      attempts: this.attempts,
+      verificationAttempts: this.verificationAttempts,
+      sessionStore: this.sessionStore,
+      transcripts: this.transcripts,
+      activeRuns: this.activeRuns,
+      events: this.events,
+      getConfig: this.getConfig,
+      getWorkspace: this.getWorkspace,
+      criticDrive: this.criticDrive,
+      urlFor: this.urlFor,
+      worktreePathForTask: (task) => this.worktreePathForTask(task),
+      latestAttemptFor: (task) => this.latestAttemptFor(task),
+      updateStep: (taskId, id, patch) => this.updateStep(taskId, id, patch),
+    });
   }
 
   get activeCount(): number {
     return this.activeRuns.activeCount;
-  }
-
-  /**
-   * A verifier's live output, batched onto the Attempt's transient log stream
-   * (the same channel the builder's ACP updates ride) as
-   * `verification_output` updates, so the Verify/Review tab can tail a check
-   * while it runs. Batched per ~400ms or 8 KiB so a chatty test runner doesn't
-   * fan out one WebSocket frame per stdout write.
-   */
-  private verificationOutputRelay(attemptId: number, mechanism: 'command' | 'critic', command: string | null): { push: (chunk: string) => void; flush: () => void } {
-    let pending = '';
-    let timer: NodeJS.Timeout | null = null;
-    const flush = (): void => {
-      if (timer) {
-        clearTimeout(timer);
-        timer = null;
-      }
-      if (!pending) return;
-      const text = pending;
-      pending = '';
-      const seq = this.activeRuns.nextProgressSequence(attemptId);
-      this.events.onAttemptLogEvent?.({
-        id: LIVE_RUN_LOG_EVENT_ID_OFFSET + seq,
-        attemptId,
-        seq,
-        ts: Date.now(),
-        type: 'session_update',
-        payload: { sessionUpdate: 'verification_output', mechanism, command, content: { type: 'text', text } },
-      });
-    };
-    return {
-      push: (chunk) => {
-        pending += chunk;
-        if (pending.length >= 8_192) flush();
-        else if (!timer) timer = setTimeout(flush, 400);
-      },
-      flush,
-    };
   }
 
   private emitSteerLog({ attemptId, text, queued }: { attemptId: number; text: string; queued: boolean }): void {
@@ -1098,15 +1052,6 @@ export class Runner {
     return { cwd: path, env: {}, worktree: { repoDir: task.workingDir, path }, baseRev: baseBranch, startDirty: false };
   }
 
-  private async criticEnabledFor(task: TaskRow): Promise<boolean> {
-    const ws = await this.getWorkspace?.(task.workspaceId);
-    const { task: resolvedTask } = resolveVerifiers(
-      ws ?? { taskPreMergeCommands: null, taskPreMergeCritics: null, taskPostMergeCommands: null, taskPostMergeCritics: null, epicPreMergeCommands: null, epicPreMergeCritics: null },
-      this.getConfig(),
-    );
-    return resolvedTask.preMerge.critics.length > 0;
-  }
-
   /** Patch a Step and announce the transition, so the Task-detail timeline
    * follows the live phase. Wraps every mid-Attempt Step mutation: each Step is
    * created then immediately set `running`, so patching alone covers every
@@ -1119,202 +1064,6 @@ export class Runner {
     const step = await this.attempts.updateStep(id, patch);
     this.events.onStepChanged?.(taskId);
     return step;
-  }
-
-  private async noVerifiedHeadVerdict(
-    task: TaskRow,
-    mechanism: 'command' | 'critic',
-    record: (type: 'lifecycle', payload: unknown) => void,
-  ): Promise<VerifierVerdict> {
-    const attempt = await this.latestAttemptFor(task);
-    const persisted = await this.verificationAttempts.append(attempt.id, {
-      mechanism,
-      inputOid: '',
-      verdict: 'inconclusive',
-      summary: 'no committed branch head to verify',
-      output: '',
-    });
-    const timeline = await this.attempts.createStep(attempt.id, {
-      type: mechanism === 'command' ? 'verification' : 'review',
-      logLocator: `verification_attempt:${persisted.id}`,
-    });
-    await this.updateStep(task.id, timeline.id, {
-      state: 'failed', verdict: 'inconclusive', startedAt: persisted.ts, endedAt: Date.now(),
-    });
-    record('lifecycle', { event: 'verification', mechanism, verdict: 'inconclusive' });
-    return { verifier: mechanism, verdict: 'inconclusive' };
-  }
-
-  private async runVerification(
-    task: TaskRow,
-    run: AttemptRow,
-    head: string | null,
-    signal: AbortSignal,
-    record: (type: 'lifecycle', payload: unknown) => void,
-    parent: SpanContext,
-    criticEnabled = true,
-  ): Promise<{ decision: VerificationDecision; ran: boolean }> {
-    run = await this.attempts.get(run.id);
-    const config = this.getConfig();
-    const ws = await this.getWorkspace?.(task.workspaceId);
-    const { task: resolvedTask } = resolveVerifiers(
-      ws ?? { taskPreMergeCommands: null, taskPreMergeCritics: null, taskPostMergeCommands: null, taskPostMergeCritics: null, epicPreMergeCommands: null, epicPreMergeCritics: null },
-      config,
-    );
-    const { commands, critics } = resolvedTask.preMerge;
-
-    const verdicts: VerifierVerdict[] = [];
-    const oid = head;
-
-    for (const command of commands) {
-      if (!oid) {
-        verdicts.push(await this.noVerifiedHeadVerdict(task, 'command', record));
-      } else {
-        // The Step opens before the command runs so the Board badge, the Verify
-        // tab and the timeline show it live — not only once its verdict arrives.
-        const label = [command.command, ...command.args].join(' ').trim();
-        const timelineAttempt = await this.latestAttemptFor(task);
-        const timelineStep = await this.attempts.createStep(timelineAttempt.id, { type: 'verification', command: command.command });
-        await this.updateStep(task.id, timelineStep.id, { state: 'running', startedAt: Date.now() });
-        record('lifecycle', { event: 'verification-started', mechanism: 'command', command: label });
-        const relay = this.verificationOutputRelay(run.id, 'command', label);
-        const attempt = await runCommandVerifier({
-          cwd: run.branch ? this.worktreePathForTask(task) : task.workingDir,
-          verifiedHeadOid: oid,
-          command,
-          signal,
-          parent,
-          attributes: { 'task.id': task.id, 'attempt.id': run.id },
-          onOutput: relay.push,
-        });
-        relay.flush();
-        const persisted = await this.verificationAttempts.append(timelineAttempt.id, commandAttemptToInput(attempt));
-        await this.updateStep(task.id, timelineStep.id, {
-          state: attempt.verdict === 'pass' ? 'passed' : 'failed',
-          verdict: attempt.verdict,
-          logLocator: `verification_attempt:${persisted.id}`,
-          endedAt: Date.now(),
-        });
-        record('lifecycle', {
-          event: 'verification',
-          mechanism: 'command',
-          verdict: attempt.verdict,
-          summary: attempt.summary,
-        });
-        verdicts.push({ verifier: attempt.verifier, verdict: attempt.verdict });
-        if (attempt.verdict !== 'pass') break;
-      }
-    }
-
-    const criticFeedback: string[] = [];
-    if (criticEnabled && verdicts.every((entry) => entry.verdict === 'pass')) {
-      const criticCwd = run.branch ? this.worktreePathForTask(task) : task.workingDir;
-      if (run.branch && critics.length > 0) await indexWorktree(criticCwd);
-      await Promise.all(critics.map(async (configuredCritic, index) => {
-      const critic = {
-        prompt: task.trackerRef == null ? configuredCritic.noIssuePrompt : configuredCritic.issuePrompt,
-        model: configuredCritic.model,
-        ...(configuredCritic.harness ? { harness: configuredCritic.harness } : {}),
-      };
-      if (!oid) {
-        verdicts.push(await this.noVerifiedHeadVerdict(task, 'critic', record));
-      } else {
-        const criticHarnessId = critic.harness ?? task.harness;
-        const criticHarness = config.harnesses[criticHarnessId as keyof typeof config.harnesses];
-        if (!criticHarness) {
-          throw new DomainError('validation', `critic harness '${criticHarnessId}' is not configured`);
-        }
-        const baseOid =
-          run.branch && run.baseBranch
-            ? await Git.mergeBase(task.workingDir, run.baseBranch, run.branch).catch(() => null)
-            : null;
-        const timelineAttempt = await this.latestAttemptFor(task);
-        const timelineStep = await this.attempts.createStep(timelineAttempt.id, { type: 'review' });
-        await this.updateStep(task.id, timelineStep.id, { state: 'running', startedAt: Date.now() });
-        record('lifecycle', { event: 'verification-started', mechanism: 'critic', model: critic.model });
-        const attempt = await runCritic({
-          cwd: criticCwd,
-          verifiedHeadOid: oid,
-          ...(baseOid ? { baseOid } : {}),
-          critic,
-          fields: driveFields(task, this.urlFor),
-          harness: criticHarness,
-          harnessId: criticHarnessId,
-          parent,
-          attributes: { 'task.id': task.id, 'attempt.id': run.id },
-          // `exactOptionalPropertyTypes` forbids an explicit `undefined`.
-          ...(this.criticDrive ? { drive: this.criticDrive } : {}),
-          onUpdate: this.criticUpdateRelay(run.id),
-        });
-        const persisted = await this.verificationAttempts.append(timelineAttempt.id, criticAttemptToInput(attempt));
-        // The harness rarely has its transcript or usage flushed by the
-        // session-end boundary, so both are resolved off the hot path.
-        if (attempt.sessionId) {
-          if (attempt.transcriptPath === null) {
-            void this.transcripts.captureCriticTranscript({
-              attemptId: persisted.id,
-              sessionId: attempt.sessionId,
-              harnessId: criticHarnessId,
-              sessionLogDir: criticHarness.sessionLogDir,
-            });
-          }
-          void this.transcripts.captureCriticUsage({
-            attemptId: persisted.id,
-            sessionId: attempt.sessionId,
-            harnessId: criticHarnessId,
-            cwd: criticCwd,
-          });
-        }
-        await this.updateStep(task.id, timelineStep.id, {
-          state: attempt.verdict === 'pass' ? 'passed' : 'failed',
-          verdict: attempt.verdict,
-          logLocator: `verification_attempt:${persisted.id}`,
-          endedAt: Date.now(),
-        });
-        record('lifecycle', {
-          event: 'verification',
-          mechanism: 'critic',
-          verdict: attempt.verdict,
-          summary: attempt.summary,
-        });
-        verdicts.push({ verifier: attempt.verifier, verdict: attempt.verdict });
-        if (attempt.verdict !== 'pass') {
-          criticFeedback.push([
-            `Task critic ${index + 1} (${attempt.verdict}): ${attempt.summary}`,
-            attempt.output,
-          ].filter(Boolean).join('\n'));
-        }
-      }
-      }));
-    }
-
-    const decision = combineVerdicts(verdicts);
-    return {
-      decision: criticFeedback.length > 0
-        ? { ...decision, reason: `${decision.reason}\n\n${criticFeedback.join('\n\n')}` }
-        : decision,
-      ran: verdicts.length > 0,
-    };
-  }
-
-  private async verificationFailTurn(
-    task: TaskRow,
-    decision: VerificationDecision,
-    record: (type: 'lifecycle', payload: unknown) => void,
-  ): Promise<TurnOutcome> {
-    const attemptRow = await this.latestAttemptFor(task);
-    const attempts = await this.verificationAttempts.list(attemptRow.id);
-    const criticOutput = attempts
-      .filter((attempt) => attempt.mechanism === 'critic' && attempt.verdict !== 'pass')
-      .map((attempt, index) => [
-        `Task critic ${index + 1} (${attempt.verdict}): ${attempt.summary}`,
-        attempt.output,
-      ].filter(Boolean).join('\n'))
-      .join('\n\n');
-    const output = criticOutput || attempts[attempts.length - 1]?.output || '';
-    record('lifecycle', { event: 'verification-actionable-fail', reason: decision.reason });
-    const reason = decision.outcome === 'block' ? decision.reason : `verification ${decision.outcome}: ${decision.reason}`;
-    return { kind: 'actionable-fail', reason, output };
   }
 
   private async finalizeWorkspace(task: TaskRow, run: AttemptRow, attemptNumber: number, workspace: Workspace): Promise<void> {
@@ -1389,109 +1138,7 @@ export class Runner {
 
   /** Run the corrective turn for a failed whole-Epic verification in a checked-out integration worktree. */
   async resolveEpicVerification(input: EpicVerificationResolutionInput): Promise<void> {
-    const config = this.getConfig();
-    const branch = integrationBranchName(input.epicRef);
-    const host = (await this.taskService.list({ state: 'working' })).find((task) => task.baseBranch === branch);
-    const harnessId = host?.harness ?? config.defaults.harness;
-    const harness = config.harnesses[harnessId as keyof AppConfig['harnesses']];
-    if (!harness) throw new Error(`harness '${harnessId}' is not configured for Epic verification resolution`);
-    const model = host?.model ?? harness.defaultModel;
-    const worktreePath = input.worktreePath;
-
-    const step = await this.attempts.createStep(input.attempt.id, { type: 'implementation' });
-    await this.attempts.updateStep(step.id, { state: 'running', startedAt: Date.now() });
-    const prompt = [
-      input.resolvePrompt
-        .replaceAll('{ref}', String(input.epicRef))
-        .replaceAll('{title}', input.title ?? `Epic #${input.epicRef}`)
-        .replaceAll('{description}', input.body ?? '')
-        .replaceAll('{url}', input.url ?? ''),
-      '',
-      '## Failing Epic verification',
-      input.verificationReason,
-      '',
-      `Work in the checked-out integration branch \`${branch}\`. Fix the failure and commit the result. Do not create or switch branches, and do not push.`,
-    ].join('\n');
-    const toolCalls = this.activeRuns.getToolCallTotals(input.attempt.id) ?? await this.attempts.listToolCalls(input.attempt.id);
-    this.activeRuns.setToolCallTotals(input.attempt.id, toolCalls);
-    const onUpdate = (update: { sessionUpdate: string; [key: string]: unknown }): void => {
-      const seq = this.activeRuns.nextProgressSequence(input.attempt.id);
-      this.events.onAttemptLogEvent?.({
-        id: LIVE_RUN_LOG_EVENT_ID_OFFSET + seq,
-        attemptId: input.attempt.id,
-        seq,
-        ts: Date.now(),
-        type: 'session_update',
-        payload: update,
-      });
-      if (update.sessionUpdate !== 'tool_call') return;
-      const name = toolCallName(update, (payload) => adapterFor(harnessId).usage?.toolName(payload) ?? null);
-      toolCalls.set(name, (toolCalls.get(name) ?? 0) + 1);
-    };
-    await this.attempts.update(input.attempt.id, {
-      priceTable: JSON.stringify(pricesForHarness(harness)),
-      prompt,
-      ...(input.continuationSessionId && input.continuationSessionRowId !== undefined ? { sessionId: input.continuationSessionId, sessionRowId: input.continuationSessionRowId } : {}),
-    });
-    try {
-      const drive = this.criticDrive ?? createAcpCriticDrive();
-      const result = await drive.run({
-        harness,
-        harnessId,
-        model,
-        cwd: worktreePath,
-        prompt,
-        timeoutMs: RESOLVE_TURN_TIMEOUT_MS,
-        onUpdate,
-        ...(input.continuationSessionId ? { continueSessionId: input.continuationSessionId } : {}),
-        onProcessStart: async (pid) => {
-          await this.attempts.update(input.attempt.id, { pid, pgid: pid, procStartToken: readProcStartToken(pid) });
-        },
-        onSessionCreated: async (sessionId, initialize) => {
-          const session = await this.sessionStore.recordDispatch({
-            harness: harnessId,
-            harnessSessionId: sessionId,
-            model,
-            cwd: worktreePath,
-            workspaceId: input.workspaceId,
-            mcpTemplates: [],
-            capabilities: initialize,
-            adapterVersion: adapterVersion(harnessId),
-            now: Date.now(),
-          });
-          await this.attempts.update(input.attempt.id, { sessionId, sessionRowId: session.id });
-          await this.attempts.updateStep(step.id, { logLocator: `session:${session.id}` });
-        },
-      });
-      if (await Git.currentBranch(worktreePath) !== branch) {
-        throw new Error(`Epic verification resolver left '${branch}'`);
-      }
-      if (await Git.isDirty(worktreePath)) {
-        throw new Error('Epic verification resolver left uncommitted changes');
-      }
-      if (await Git.revParse(worktreePath, 'HEAD') === input.verifiedHeadOid) {
-        throw new Error('Epic verification resolver did not commit a change');
-      }
-      await this.attempts.replaceToolCalls(input.attempt.id, toolCalls);
-      const usage = collectUsage({
-        harnessId,
-        harness,
-        cwd: worktreePath,
-        sessionId: result.sessionId ?? null,
-        ...(result.usage ? { promptResult: { usage: result.usage } } : {}),
-        prices: pricesForHarness(harness),
-      });
-      if (usage) await this.attempts.updateWithFrozenCost(input.attempt.id, { usage: JSON.stringify(usage), pid: null, pgid: null, procStartToken: null });
-      else await this.attempts.update(input.attempt.id, { pid: null, pgid: null, procStartToken: null });
-      await this.attempts.updateStep(step.id, { state: 'passed', endedAt: Date.now() });
-    } catch (error) {
-      await this.attempts.replaceToolCalls(input.attempt.id, toolCalls);
-      await this.attempts.update(input.attempt.id, { pid: null, pgid: null, procStartToken: null });
-      await this.attempts.updateStep(step.id, { state: 'failed', endedAt: Date.now() });
-      throw error;
-    } finally {
-      this.activeRuns.deleteToolCallTotals(input.attempt.id);
-    }
+    return this.verification.resolveEpicVerification(input);
   }
 
   /**
@@ -1632,10 +1279,6 @@ export class Runner {
     return this.mergeCoordinator.candidateHead(task, run);
   }
 
-  /**
-   * Verify a candidate for an operator Accept, recorded onto this Attempt's
-   * event log exactly like an automated verify pass.
-   */
   private async recordLifecycleTransition(taskId: number, event: 'paused' | 'resumed', reason: string): Promise<void> {
     const run = await this.attempts.getRunningForTask(taskId);
     if (!run) return;
@@ -2330,7 +1973,7 @@ export class Runner {
     await advanceTask('verifying');
     let noChange = false;
     if (noChangeFinishHead) {
-      if (!(await this.criticEnabledFor(task))) {
+      if (!(await this.verification.criticEnabledFor(task))) {
         const reason = 'the agent finished without changing any files and no critic is configured to judge whether that is correct';
         record('lifecycle', { event: 'escalated', reason });
         await this.settleEscalated(task, run, reason, patch);
@@ -2339,7 +1982,7 @@ export class Runner {
       implementationHead = noChangeFinishHead;
       noChange = true;
     }
-    const { decision, ran: verifierRan } = await this.runVerification(
+    const { decision, ran: verifierRan } = await this.verification.runVerification(
       task,
       run,
       implementationHead,
@@ -2353,7 +1996,7 @@ export class Runner {
       return { kind: 'terminal' };
     }
     if (decision.outcome === 'block') {
-      return await this.verificationFailTurn(task, decision, record);
+      return await this.verification.verificationFailTurn(task, decision, record);
     }
     if (decision.outcome !== 'proceed') {
       if ((await this.attempts.get(run.id)).verifiedHeadOid == null) {
@@ -2362,7 +2005,7 @@ export class Runner {
         await this.settleEscalated(task, run, reason, patch);
         return { kind: 'terminal' };
       }
-      return await this.verificationFailTurn(task, decision, record);
+      return await this.verification.verificationFailTurn(task, decision, record);
     }
     if (afkUnresolved && (!verifierRan || (await this.attempts.get(run.id)).verifiedHeadOid == null)) {
       record('lifecycle', { event: 'unresolved', reason: 'no finish_task signal and no verifier vouched for the work' });
