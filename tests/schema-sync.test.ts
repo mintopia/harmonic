@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createClient } from '@libsql/client';
+import { createClient, LibsqlError, type InStatement } from '@libsql/client';
 import { openAsyncDb } from '../src/db/async.js';
 import { seedWorkspace } from './helpers.js';
 import { parseBaseline, syncSchema } from '../src/db/schema-sync.js';
@@ -141,6 +141,43 @@ describe('schema convergence onto the baseline (ADR-0007)', () => {
       expect(infoCalls.some((call) => JSON.stringify(call).includes('bar'))).toBe(true);
       expect(infoCalls.some((call) => JSON.stringify(call).includes('old_col'))).toBe(true);
       expect(warnSpy).toHaveBeenCalled();
+
+      client.close();
+      rmSync(dataDir, { recursive: true, force: true });
+    });
+
+    it.each([
+      ['an I/O error', new LibsqlError('disk I/O error', 'SQLITE_IOERR')],
+      ['a lock timeout', new LibsqlError('database is locked', 'SQLITE_BUSY')],
+      ['a dropped connection', new Error('WebSocket closed unexpectedly')],
+    ])('propagates %s and leaves the database untouched instead of clean-break recreating', async (_label, transientError) => {
+      const dataDir = mkdtempSync(join(tmpdir(), 'harmonic-sync-transient-'));
+      const dbPath = join(dataDir, 'harmonic.db');
+      const client = createClient({ url: `file:${dbPath}` });
+      await client.execute('CREATE TABLE `foo` (`id` integer, `old_col` text)');
+      await client.execute("INSERT INTO `foo` (`id`, `old_col`) VALUES (1, 'x')");
+
+      const baseline = ['CREATE TABLE `foo` (', '\t`id` integer,', '\t`old_col` text', ');'].join('\n');
+
+      const realExecute = client.execute.bind(client);
+      const warnSpy = vi.spyOn(logger, 'warn');
+      const executeSpy = vi.spyOn(client, 'execute').mockImplementation(async (stmt: InStatement) => {
+        const sql = typeof stmt === 'string' ? stmt : stmt.sql;
+        if (sql.startsWith('pragma table_info')) {
+          throw transientError;
+        }
+        return realExecute(stmt);
+      });
+
+      await expect(syncSchema(client, baseline)).rejects.toThrow(transientError);
+      executeSpy.mockRestore();
+
+      const tables = (await client.execute("select name from sqlite_master where type = 'table'")).rows.map((r) =>
+        String(r.name),
+      );
+      expect(tables).toContain('foo');
+      expect((await client.execute('select id, old_col from `foo`')).rows).toEqual([{ id: 1, old_col: 'x' }]);
+      expect(warnSpy).not.toHaveBeenCalled();
 
       client.close();
       rmSync(dataDir, { recursive: true, force: true });
