@@ -159,7 +159,7 @@ function Story() {
       <div style={{ minHeight: '100vh', background: 'var(--hm-canvas)', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
         <div style={{ flex: 1 }} />
         <Composer
-          config={storyConfig as any}
+          config={storyConfig}
           workspace={null}
           conversation={null}
           events={[]}
@@ -187,8 +187,8 @@ function Story() {
     return (
       <div style={{ height: '100vh', background: 'var(--hm-canvas)' }}>
         <ConversationsPage
-          config={storyConfig as any}
-          workspace={storyWorkspaces[0] as any}
+          config={storyConfig}
+          workspace={storyWorkspaces[0]!}
           conversationId={1}
           onConversationChange={() => {}}
         />
@@ -196,7 +196,7 @@ function Story() {
     );
   }
   if (which === 'files') {
-    const filesWorkspace = { ...(storyWorkspaces[0] as any), id: 1, name: 'harmonic-core', color: '#3AA0FA', excludedDirectories: ['node_modules'] };
+    const filesWorkspace = { ...storyWorkspaces[0]!, id: 1, name: 'harmonic-core', color: '#3AA0FA', excludedDirectories: ['node_modules'] };
     return (
       <div style={{ height: '100vh', background: 'var(--hm-canvas)', display: 'flex', flexDirection: 'column' }}>
         <FilesPage workspace={filesWorkspace} selectedPath={'src/config.ts'} onSelectFile={() => {}} onWorkspaceSaved={() => {}} />
@@ -258,7 +258,7 @@ export const config = parse(baselineYaml);
   return (
     <div style={{ height: '100vh', background: 'var(--hm-canvas)' }}>
       <TicketPage
-        task={task as any}
+        task={task}
         onEdit={() => {}}
         onChanged={() => {}}
         onClose={() => {}}
