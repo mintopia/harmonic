@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { AppContext } from './app.js';
+import { requestIsOperator } from './auth.js';
 import { attemptTimelineToApi, conversationToApi, attemptToApi, attemptUsageToApi, taskToApi } from './serialize.js';
 import { operationEventToApi, scheduledJobsToApi, worktreesToApi } from './dto.js';
 import { forEachYielding } from '../reliability/yield.js';
@@ -17,8 +18,8 @@ export async function wsRoutes(fastify: FastifyInstance, ctx: AppContext): Promi
         .then(({ attempts, budgetBase }) => send({ type: 'attempt_timeline_changed', taskId, attempts, budgetBase }))
         .catch(() => {});
     };
-    const token = (req.query as Record<string, string | undefined>)?.token;
-    const readOnly = (token ? await ctx.auth.verifyKey(token) : null)?.scope === 'read';
+    // ws echoes back the client's first offered subprotocol, so this is the token the client authenticated the upgrade with.
+    const hasWriteScope = await requestIsOperator(req, ctx.auth, socket.protocol || undefined);
     let unsubscribeAttemptLog: (() => void) | undefined;
     let unsubscribeCriticLog: (() => void) | undefined;
     const unsubscribes = [
@@ -47,7 +48,7 @@ export async function wsRoutes(fastify: FastifyInstance, ctx: AppContext): Promi
       ctx.bus.on('git_status', (payload) => send({ type: 'git_status', ...payload })),
     ];
     send({ type: 'host_load', load: ctx.hostLoad.current() });
-    if (!readOnly) {
+    if (hasWriteScope) {
       unsubscribes.push(
         ctx.bus.on('conversation_event', (event) => send({ type: 'conversation_event', event })),
         ctx.bus.on('conversation_changed', (conversation) => {
