@@ -1,7 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { spawn } from 'node:child_process';
-import { closeSync, mkdtempSync, openSync, readFileSync, rmSync, statSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
+import { closeSync, mkdtempSync, openSync, rmSync } from 'node:fs';
+import { readFile, stat } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { dominantModel, foldModels, usageFromModels, type ParsedSession, type ProcessNode } from '../usage.js';
@@ -312,12 +312,14 @@ function runExport(sessionId: string): Promise<unknown> {
     child.on('error', () => finish(null));
     child.on('close', (code) => {
       if (code !== 0) return finish(null);
-      try {
-        if (statSync(out).size > EXPORT_MAX_BYTES) return finish(null);
-        finish(JSON.parse(readFileSync(out, 'utf8')));
-      } catch {
-        finish(null);
-      }
+      (async () => {
+        try {
+          if ((await stat(out)).size > EXPORT_MAX_BYTES) return finish(null);
+          finish(JSON.parse(await readFile(out, 'utf8')));
+        } catch {
+          finish(null);
+        }
+      })();
     });
   });
 }
