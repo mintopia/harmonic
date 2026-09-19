@@ -11,7 +11,7 @@ import { initializeTelemetry, resolveTelemetryOptions } from './telemetry.js';
 import { logger } from './logger.js';
 import { installProcessSafetyNet } from './reliability/process-safety-net.js';
 import { dispatchCli, type ServeValues } from './cli-dispatch.js';
-import { createServiceManager, type ServiceManager } from './service-manager.js';
+import { createServiceManager, shellWord, type ServiceManager } from './service-manager.js';
 import { UpgradeSwap } from './upgrade/upgrade-swap.js';
 import { startOperation } from './telemetry/operations.js';
 
@@ -101,7 +101,7 @@ const serviceManager = (): ServiceManager => {
 const installedServiceManager = (): ServiceManager | null =>
   process.env.HARMONIC_INITD_SERVICE === '1' || process.platform !== 'linux' ? null : serviceManager();
 
-const bootCommand = (rest: string[]): string => {
+export const bootCommand = (rest: string[]): string => {
   const safeArgs: string[] = [];
   for (let index = 0; index < rest.length; index++) {
     const arg = rest[index]!;
@@ -111,7 +111,7 @@ const bootCommand = (rest: string[]): string => {
     }
     if (!arg.startsWith('--password=')) safeArgs.push(arg);
   }
-  return ['harmonic', 'start', ...safeArgs].join(' ');
+  return ['harmonic', 'start', ...safeArgs].map(shellWord).join(' ');
 };
 
 async function startStandalone(values: ServeValues, rest: string[]): Promise<void> {

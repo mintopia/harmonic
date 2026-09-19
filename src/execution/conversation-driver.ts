@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { AcpDriver } from '../acp/driver.js';
 import { parsePermissionRequest, type PermissionRequest } from '../acp/permission-request.js';
 import {
@@ -11,12 +12,30 @@ import { adapterFor } from './harness/registry.js';
 import { accumulateUsage, collectUsageWithRetry, type AttemptUsage } from './usage.js';
 import { pricesForHarness } from '../domain/pricing.js';
 import { DomainError } from '../domain/errors.js';
+import { isInside } from '../domain/worktree-reconciler.js';
 import type { AppConfig } from '../config.js';
 import type { ConversationStore, PersistedConversationEvent } from '../domain/conversations.js';
 import type { PermissionRuleStore } from '../domain/permission-rules.js';
 import type { ConversationRow } from '../db/schema.js';
 import { startOperation } from '../telemetry/operations.js';
 import { logger } from '../logger.js';
+
+const NON_SECRET_CHILD_ENV_ALLOWLIST = ['PATH', 'HOME', 'LANG', 'LC_ALL', 'TERM', 'TMPDIR', 'SHELL'] as const;
+
+function filteredParentEnv(): Record<string, string | undefined> {
+  const filtered: Record<string, string | undefined> = {};
+  for (const key of NON_SECRET_CHILD_ENV_ALLOWLIST) {
+    if (process.env[key] !== undefined) filtered[key] = process.env[key];
+  }
+  return filtered;
+}
+
+function withinAllowedRoots(roots: string[], dir: string): boolean {
+  return roots.some((root) => {
+    const resolvedRoot = resolve(root);
+    return dir === resolvedRoot || isInside(resolvedRoot, dir);
+  });
+}
 
 export interface AdvertisedCommand {
   name: string;
@@ -117,6 +136,8 @@ export interface ConversationDriverOptions {
   };
   /** Notifies lifecycle coordinators after a running Turn has fully settled. */
   onTurnSettled?: () => void;
+  /** Roots a Conversation's workingDir must resolve inside (or equal); undefined skips the check (e.g. in tests that don't wire it). */
+  allowedRoots?: () => Promise<string[]>;
 }
 
 interface ActiveConversation {
@@ -147,6 +168,7 @@ export class ConversationDriver {
   private readonly rules: PermissionRuleStore | undefined;
   private readonly keys: ConversationDriverOptions['keys'];
   private readonly onTurnSettled: (() => void) | undefined;
+  private readonly allowedRoots: ConversationDriverOptions['allowedRoots'];
   /** The MCP endpoint agents call back to; set once the server listens. */
   mcpUrl: string | null = null;
 
@@ -159,6 +181,7 @@ export class ConversationDriver {
     this.rules = options.rules;
     this.keys = options.keys;
     this.onTurnSettled = options.onTurnSettled;
+    this.allowedRoots = options.allowedRoots;
   }
 
   get activeCount(): number {
@@ -359,12 +382,19 @@ export class ConversationDriver {
     if (!existsSync(convo.workingDir)) {
       throw new DomainError('validation', `working directory '${convo.workingDir}' does not exist`);
     }
+    const resolvedWorkingDir = resolve(convo.workingDir);
+    if (this.allowedRoots) {
+      const roots = await this.allowedRoots();
+      if (!withinAllowedRoots(roots, resolvedWorkingDir)) {
+        throw new DomainError('validation', `working directory '${convo.workingDir}' is outside the allowed roots`);
+      }
+    }
     const config = this.getConfig();
     const harness = config.harnesses[convo.harness as keyof typeof config.harnesses];
     if (!harness) throw new DomainError('validation', `harness '${convo.harness}' is not configured`);
 
     const env: Record<string, string | undefined> = {
-      ...process.env,
+      ...filteredParentEnv(),
       ...harness.env,
       HARMONIC_MODEL: convo.model,
       ...adapterFor(convo.harness).spawnEnv({
