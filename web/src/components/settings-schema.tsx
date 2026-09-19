@@ -1203,7 +1203,7 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
       global:
         'Task and Epic verification is configured as independent command and critic lists for each stage.',
       workspace:
-        'Each Task and Epic verification stage can inherit the global list, replace it, or turn it off independently.',
+        'Global verifiers apply to every Workspace. Here you can reorder or disable them for this Workspace and add its own — the global ones stay locked.',
     },
     body: (ctx) =>
       ctx.surface === 'global' ? (
