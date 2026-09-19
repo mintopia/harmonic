@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Git } from './git.js';
 import { GitError } from '../domain/errors.js';
+import { attempted, bestEffort, fireAndForget, reportFailure } from '../error-handling.js';
 import { classifyGitFailure, type GitCircuitBreaker } from './git-failure.js';
 import { adapterFor, adapterVersion } from './harness/registry.js';
 import { readProcStartToken } from './process-reaper.js';
@@ -464,7 +465,11 @@ export class Runner {
         sample: (attemptId) => this.usage.sampleSnapshot(attemptId),
         emit: (attemptId, snapshot) => this.events.onAttemptUsage?.({ attemptId, snapshot }),
         persist: (attemptId, snapshot) => {
-          void this.attempts.update(attemptId, { liveUsage: JSON.stringify(snapshot) }).catch(() => {});
+          fireAndForget(() => this.attempts.update(attemptId, { liveUsage: JSON.stringify(snapshot) }), {
+            op: 'runner.persistLiveUsage',
+            level: 'warn',
+            context: { attemptId },
+          });
         },
       },
       options.tailerCadence,
@@ -782,12 +787,14 @@ export class Runner {
         sessionRowId: src.session.id,
         sessionId: src.session.harnessSessionId,
       });
-      try {
-        await this.sessionStore.reactivate(src.session.id, Date.now());
-      } catch {
-      }
+      await bestEffort(() => this.sessionStore.reactivate(src.session.id, Date.now()), {
+        op: 'runner.resumeSession.reactivate',
+        level: 'warn',
+        context: { taskId: task.id, attemptId: run.id, sessionRowId: src.session.id },
+      });
       return bound;
-    } catch {
+    } catch (err) {
+      reportFailure(err, { op: 'runner.resumeSession', level: 'warn', context: { taskId: task.id, attemptId: run.id } });
       return run;
     }
   }
@@ -1177,10 +1184,22 @@ export class Runner {
   private async prepareWorkspace(task: TaskRow, run: AttemptRow, resume = false): Promise<Workspace> {
     if (task.isolationMode !== 'worktree') {
       const workspace: Workspace = { cwd: task.workingDir, env: {} };
-      try {
-        workspace.baseRev = await Git.revParse(task.workingDir, 'HEAD');
-        workspace.startDirty = resume ? false : await Git.isDirty(task.workingDir);
-      } catch {
+      const resolved = await attempted(
+        async () => ({
+          baseRev: await Git.revParse(task.workingDir, 'HEAD'),
+          startDirty: resume ? false : await Git.isDirty(task.workingDir),
+        }),
+        {
+          op: 'runner.prepareWorkspace.baseRev',
+          level: 'warn',
+          notFoundIf: (err) =>
+            err instanceof GitError && /unknown revision|ambiguous argument 'HEAD'|does not have any commits yet/i.test(err.stderr),
+          context: { taskId: task.id, attemptId: run.id, workingDir: task.workingDir, resume },
+        },
+      );
+      if (resolved.ok) {
+        workspace.baseRev = resolved.value.baseRev;
+        workspace.startDirty = resolved.value.startDirty;
       }
       return workspace;
     }
@@ -1475,19 +1494,27 @@ export class Runner {
   private async finalizeWorkspace(task: TaskRow, run: AttemptRow, attemptNumber: number, workspace: Workspace): Promise<void> {
     if (!workspace.worktree) return;
     const { repoDir, path } = workspace.worktree;
-    await Git.commitAll(path, `harmonic: task ${task.id} attempt ${attemptNumber}`).catch(() => {});
+    await bestEffort(() => Git.commitAll(path, `harmonic: task ${task.id} attempt ${attemptNumber}`), {
+      op: 'runner.finalizeWorkspace.commitAll',
+      level: 'error',
+      context: { taskId: task.id, attemptId: run.id, attemptNumber, path },
+    });
     const sessionRowId = (await this.attempts.get(run.id)).sessionRowId;
     let retained = false;
     if (sessionRowId != null) {
-      try {
-        await this.sessionStore.bindWorktree(sessionRowId, repoDir, path, Date.now());
-        retained = true;
-      } catch {
-        retained = false;
-      }
+      retained = await bestEffort(() => this.sessionStore.bindWorktree(sessionRowId, repoDir, path, Date.now()), {
+        op: 'runner.finalizeWorkspace.bindWorktree',
+        level: 'error',
+        notFoundLevel: 'info',
+        context: { taskId: task.id, attemptId: run.id, attemptNumber, sessionRowId, repoDir, worktreePath: path },
+      });
     }
     if (!retained) {
-      await Git.removeWorktree(repoDir, path).catch(() => {});
+      await bestEffort(() => Git.removeWorktree(repoDir, path), {
+        op: 'runner.finalizeWorkspace.removeWorktree',
+        level: 'debug',
+        context: { taskId: task.id, attemptId: run.id, attemptNumber, repoDir, worktreePath: path },
+      });
     }
   }
 
@@ -1730,7 +1757,11 @@ export class Runner {
     try {
       reproduced = await Git.mergeLeavingConflict(worktreePath, target.defaultBranch);
     } catch (err) {
-      await Git.removeWorktree(target.repoDir, worktreePath).catch(() => {});
+      await bestEffort(() => Git.removeWorktree(target.repoDir, worktreePath), {
+        op: 'runner.enqueueEpicRefreshResolution.removeWorktree',
+        level: 'debug',
+        context: { epicRef: target.ref, repoDir: target.repoDir, worktreePath },
+      });
       return escalated(`could not reproduce the refresh conflict on ${branch} (${String(err)}); refresh conflict: ${detail}`);
     }
 
@@ -1782,9 +1813,25 @@ export class Runner {
           timeoutMs: EPIC_REFRESH_RESOLVE_TIMEOUT_MS,
         });
       }
-    } catch {
+    } catch (err) {
+      reportFailure(err, {
+        op: 'runner.epicRefreshResolveTurn',
+        level: 'warn',
+        context: {
+          branch: args.branch,
+          worktreePath: args.worktreePath,
+          repoDir: args.target.repoDir,
+          harnessId: args.harnessId,
+          model: args.model,
+          conflicted: args.conflicted,
+        },
+      });
     } finally {
-      await Git.removeWorktree(args.target.repoDir, args.worktreePath).catch(() => {});
+      await bestEffort(() => Git.removeWorktree(args.target.repoDir, args.worktreePath), {
+        op: 'runner.runEpicRefreshResolveTurn.removeWorktree',
+        level: 'debug',
+        context: { epicRef: args.target.ref, repoDir: args.target.repoDir, worktreePath: args.worktreePath },
+      });
     }
   }
 
@@ -1828,7 +1875,21 @@ export class Runner {
             prompt,
             timeoutMs: EPIC_REFRESH_RESOLVE_TIMEOUT_MS,
           });
-        } catch {
+        } catch (err) {
+          reportFailure(err, {
+            op: 'runner.mergeEpicIntegration.resolveConflictTurn',
+            level: 'warn',
+            context: {
+              workspaceId: input.workspaceId,
+              epicRef: input.epicRef,
+              turn: ctx.turn,
+              baseBranch: ctx.baseBranch,
+              taskBranch: ctx.taskBranch,
+              unmergedPaths: ctx.unmergedPaths.length,
+              harnessId,
+              model,
+            },
+          });
         }
       },
       runPostMergeCheck: input.runPostMergeCheck,
@@ -1894,7 +1955,21 @@ export class Runner {
             prompt,
             timeoutMs: EPIC_REFRESH_RESOLVE_TIMEOUT_MS,
           });
-        } catch {
+        } catch (err) {
+          reportFailure(err, {
+            op: 'runner.mergeDeps.resolveConflictTurn',
+            level: 'warn',
+            context: {
+              taskId: task.id,
+              attemptId: run.id,
+              turn: ctx.turn,
+              baseBranch: ctx.baseBranch,
+              taskBranch: ctx.taskBranch,
+              unmergedPaths: ctx.unmergedPaths.length,
+              harness: task.harness,
+              model: task.model,
+            },
+          });
         }
       },
       runPostMergeCheck: async (mergeOid, baseDir) => {
@@ -2152,10 +2227,7 @@ export class Runner {
         });
       }
     } catch (err) {
-      try {
-        void Promise.resolve(this.keys?.revoke(run.id)).catch(() => {});
-      } catch {
-      }
+      fireAndForget(() => this.keys?.revoke(run.id), { op: 'runner.revokeKeyOnStartError', level: 'error', context: { attemptId: run.id, taskId: task.id } });
       if (err instanceof EpicBaseNotReady) {
         await this.coordinateSettle(task, run, 'failed', {
           runState: 'failed',
@@ -2362,7 +2434,9 @@ export class Runner {
       verifyAbort: new AbortController(),
     };
     this.active.set(run.id, active);
-    turn.toolCallFlushTimer = setInterval(() => void flushToolCalls().catch(() => {}), 10_000);
+    turn.toolCallFlushTimer = setInterval(() => {
+      fireAndForget(() => flushToolCalls(), { op: 'runner.flushToolCalls.interval', level: 'warn', context: { attemptId: run.id } });
+    }, 10_000);
     turn.toolCallFlushTimer.unref?.();
     const guardrails = new GuardrailSupervisor(
       {
@@ -2401,18 +2475,24 @@ export class Runner {
       if (finalized) return;
       finalized = true;
       if (turn.sessionRowId !== undefined) {
-        await this.sessionStore.touch(turn.sessionRowId, Date.now()).catch(() => {});
+        const sessionRowId = turn.sessionRowId;
+        await bestEffort(() => this.sessionStore.touch(sessionRowId, Date.now()), {
+          op: 'runner.finalize.touchSession',
+          level: 'warn',
+          context: { attemptId: run.id, sessionRowId },
+        });
       }
       await this.tailer.stop(run.id);
       turn.clearTimer();
-      await flushToolCalls().catch(() => {});
+      await bestEffort(() => flushToolCalls(), { op: 'runner.finalize.flushToolCalls', level: 'warn', context: { attemptId: run.id } });
       this.usage.dropReader(run.id);
       this.kill(active);
-      try {
-        void Promise.resolve(this.keys?.revoke(run.id)).catch(() => {});
-      } catch {
-      }
-      await this.finalizeWorkspace(task, run, attemptNumber, workspace).catch(() => {});
+      fireAndForget(() => this.keys?.revoke(run.id), { op: 'runner.revokeKeyOnFinalize', level: 'error', context: { attemptId: run.id, taskId: task.id } });
+      await bestEffort(() => this.finalizeWorkspace(task, run, attemptNumber, workspace), {
+        op: 'runner.finalize.finalizeWorkspace',
+        level: 'error',
+        context: { taskId: task.id, attemptId: run.id, attemptNumber },
+      });
     };
     return { active, driver, guardrails, listeners, finalize };
   }
@@ -2536,11 +2616,13 @@ export class Runner {
       } else {
         await driver.setMode(mode);
         recordMode(mode);
-        if (turn.sessionRowId !== undefined) {
-          try {
-            await this.sessionStore.setPermissionMode(turn.sessionRowId, mode, Date.now());
-          } catch {
-          }
+        const sessionRowId = turn.sessionRowId;
+        if (sessionRowId !== undefined) {
+          await bestEffort(() => this.sessionStore.setPermissionMode(sessionRowId, mode, Date.now()), {
+            op: 'runner.setPermissionMode',
+            level: 'warn',
+            context: { taskId: task.id, sessionRowId, mode },
+          });
         }
       }
     }
@@ -2685,7 +2767,11 @@ export class Runner {
         active.idle = true;
       }
       if (workspace.worktree && !workspace.startDirty && (await Git.isDirty(workspace.cwd).catch(() => false))) {
-        await Git.commitAll(workspace.cwd, `harmonic: task ${task.id} attempt ${attemptNumber}`).catch(() => {});
+        await bestEffort(() => Git.commitAll(workspace.cwd, `harmonic: task ${task.id} attempt ${attemptNumber}`), {
+          op: 'runner.finishDrivenTurn.commitAll',
+          level: 'error',
+          context: { taskId: task.id, attemptId: run.id, attemptNumber },
+        });
       }
       const [head, base] = await Promise.all([
         Git.revParse(workspace.cwd, 'HEAD').catch(() => null),
@@ -2838,7 +2924,11 @@ export class Runner {
 
   private async persistSession(harnessSessionId: string, ctx: PersistSessionContext): Promise<void> {
     const { task, run, harness, workspace, mcpServers, attemptAtStart } = ctx;
-    void this.attempts.update(run.id, { sessionId: harnessSessionId }).catch(() => {});
+    fireAndForget(() => this.attempts.update(run.id, { sessionId: harnessSessionId }), {
+      op: 'runner.persistSession.bindSessionId',
+      level: 'warn',
+      context: { attemptId: run.id, harnessSessionId },
+    });
     try {
       const transcriptResolver = adapterFor(task.harness).usage?.resolveTranscriptPath;
       const transcriptPath = await transcriptResolver?.({
@@ -2858,15 +2948,39 @@ export class Runner {
         now: Date.now(),
       });
       ctx.setSessionRowId(session.id);
-      void this.attempts.update(run.id, { sessionRowId: session.id }).catch(() => {});
-      void this.attempts.listSteps(attemptAtStart.id).then(async (steps) => {
-        const implementation = steps.find((row) => row.type === 'implementation' && row.state === 'running');
-        if (implementation) await this.attempts.updateStep(implementation.id, { logLocator: `session:${session.id}` });
-      }).catch(() => {});
+      fireAndForget(() => this.attempts.update(run.id, { sessionRowId: session.id }), {
+        op: 'runner.persistSession.bindSessionRow',
+        level: 'error',
+        context: { attemptId: run.id, sessionRowId: session.id },
+      });
+      fireAndForget(
+        async () => {
+          const steps = await this.attempts.listSteps(attemptAtStart.id);
+          const implementation = steps.find((row) => row.type === 'implementation' && row.state === 'running');
+          if (implementation) await this.attempts.updateStep(implementation.id, { logLocator: `session:${session.id}` });
+        },
+        {
+          op: 'runner.persistSession.linkStepLog',
+          level: 'warn',
+          context: { attemptId: attemptAtStart.id, sessionRowId: session.id },
+        },
+      );
       if (transcriptPath === null && transcriptResolver) {
         void this.transcripts.captureSessionTranscript({ sessionId: harnessSessionId, sessionRowId: session.id, sessionLogDir: harness.sessionLogDir, transcriptResolver });
       }
-    } catch {
+    } catch (err) {
+      reportFailure(err, {
+        op: 'runner.persistSession',
+        level: 'error',
+        context: {
+          taskId: task.id,
+          attemptId: run.id,
+          harness: task.harness,
+          harnessSessionId,
+          workspaceId: task.workspaceId ?? undefined,
+          cwd: workspace.cwd,
+        },
+      });
     }
   }
 
@@ -2911,7 +3025,12 @@ export class Runner {
           ? { ...fresh, totals: stored.totals, source: 'combined' }
           : fresh;
         await this.attempts.update(run.id, { usage: JSON.stringify(healed) });
-      } catch {
+      } catch (err) {
+        reportFailure(err, {
+          op: 'runner.backfillUsage',
+          level: 'warn',
+          context: { attemptId: run.id, taskId: run.taskId, sessionId: run.sessionId ?? undefined },
+        });
       }
     }
     await this.attempts.backfillCosts(async (attempt) => {
@@ -3003,7 +3122,13 @@ export class Runner {
           active.child.kill('SIGKILL');
         }
       }
-    } catch {
+    } catch (err) {
+      reportFailure(err, {
+        op: 'runner.kill',
+        level: 'warn',
+        notFoundIf: (e) => (e as NodeJS.ErrnoException | null)?.code === 'ESRCH',
+        context: { attemptId: active.attemptId },
+      });
     }
   }
 }

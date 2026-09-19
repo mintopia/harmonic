@@ -18,7 +18,8 @@ import {
   isTaskAttempt,
   type AttemptRow,
 } from '../../db/schema.js';
-import { DomainError } from '../../domain/errors.js';
+import { DomainError, GitError } from '../../domain/errors.js';
+import { attempted, orFallback } from '../../error-handling.js';
 import { mergeUsage, type AttemptUsage } from '../../execution/usage.js';
 import { readTranscriptLog, withOperatorMessages, type OperatorMessage, type TranscriptLog } from '../../execution/transcript-log.js';
 import { adapterFor } from '../../execution/harness/registry.js';
@@ -29,6 +30,10 @@ import { attemptTimelineResponseSchema, errorResponse, idParamsSchema, costSchem
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
 import { diffFilesResponseSchema } from './diff.js';
 import { attemptDiffFiles, attemptDiffStat } from '../../execution/worktree-diff.js';
+
+/** A `GitError` whose stderr says the worktree/branch is simply gone — an expected absence, not a failure. */
+const worktreeGone = (err: unknown): boolean =>
+  err instanceof GitError && /not a git repository|does not exist|No such file or directory|unknown revision/i.test(err.stderr);
 
 /** Optional operator guidance on an escalated ticket: becomes the next Attempt's feedback. */
 const guidanceExample = 'The limiter is per-process; it needs to be shared across workers.';
@@ -770,14 +775,21 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       const sessions = new Map<number, Awaited<ReturnType<typeof ctx.sessions.get>> | null>();
       for (const run of runsForTask) {
         if (run.sessionRowId === null || sessions.has(run.sessionRowId)) continue;
-        try {
-          sessions.set(run.sessionRowId, await ctx.sessions.get(run.sessionRowId));
-        } catch {
-          sessions.set(run.sessionRowId, null);
-        }
+        const sessionRowId = run.sessionRowId;
+        const resolved = await attempted(() => ctx.sessions.get(sessionRowId), {
+          op: 'tasks.continuationPreview.resolveSession',
+          level: 'warn',
+          context: { taskId: task.id, attemptId: run.id, sessionRowId },
+        });
+        sessions.set(sessionRowId, resolved.ok ? resolved.value : null);
       }
       const config = ctx.settingsStore.getGlobal();
-      const workspace = await ctx.workspaces.get(atRestWorkspaceId(task.workspaceId)).catch(() => null);
+      const resolvedWs = await attempted(() => ctx.workspaces.get(atRestWorkspaceId(task.workspaceId)), {
+        op: 'tasks.continuationPreview.resolveWorkspace',
+        level: 'error',
+        context: { taskId: task.id, workspaceId: task.workspaceId ?? undefined },
+      });
+      const workspace = resolvedWs.ok ? resolvedWs.value : undefined;
       const preview = previewManualResumeContinuation(
         runsForTask,
         (sessionRowId) => sessions.get(sessionRowId) ?? null,
@@ -1126,7 +1138,16 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       const run = await ctx.attempts.get(req.params.id);
       if (!isTaskAttempt(run) || !run.branch || !run.baseBranch) return { branch: null, baseBranch: null, stat: null };
       const task = await ctx.tasks.get(run.taskId);
-      const stat = await attemptDiffStat(task.workingDir, run).catch(() => null);
+      const stat = await orFallback(
+        () => attemptDiffStat(task.workingDir, run),
+        {
+          op: 'attempts.diffStat',
+          level: 'warn',
+          notFoundIf: worktreeGone,
+          context: { attemptId: run.id, taskId: run.taskId, workingDir: task.workingDir, branch: run.branch ?? undefined },
+        },
+        null,
+      );
       return { branch: run.branch, baseBranch: run.baseBranch, stat };
     },
   );
@@ -1148,7 +1169,16 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       if (!isTaskAttempt(run)) return { files: [], total: 0 };
       const task = await ctx.tasks.get(run.taskId);
       const { limit, offset } = req.query;
-      const files = await attemptDiffFiles(task.workingDir, run).catch(() => []);
+      const files = await orFallback(
+        () => attemptDiffFiles(task.workingDir, run),
+        {
+          op: 'attempts.diffFiles',
+          level: 'warn',
+          notFoundIf: worktreeGone,
+          context: { attemptId: run.id, taskId: run.taskId, workingDir: task.workingDir, branch: run.branch ?? undefined },
+        },
+        [] as Awaited<ReturnType<typeof attemptDiffFiles>>,
+      );
       const { items, total } = paginate(files, { limit, offset });
       return { files: items, total };
     },

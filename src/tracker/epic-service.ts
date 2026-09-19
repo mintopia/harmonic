@@ -11,6 +11,8 @@ import { deriveLeafEpics, type DerivedEpic } from '../domain/epic-derivation.js'
 import { composeEpicView, type Epic, type EpicFacts, type EpicMeta } from '../domain/epic-view.js';
 import { EpicMergeEventStore } from '../domain/epic-merge-events.js';
 import { resolveVerifiers } from '../domain/setting-override.js';
+import { GitError } from '../domain/errors.js';
+import { bestEffort, orFallback } from '../error-handling.js';
 import { resolveRepositoryDefaultBranch } from '../execution/branch-merge.js';
 import { EpicOperations } from '../execution/epic-operations.js';
 import {
@@ -125,7 +127,11 @@ export class TrackerEpicService implements EpicService {
         const worktreePath = epicWorktrees.get(epicRef);
         if (!worktreePath) return;
         epicWorktrees.delete(epicRef);
-        await Git.removeWorktree(workspace.workingDir, worktreePath).catch(() => {});
+        await bestEffort(() => Git.removeWorktree(workspace.workingDir, worktreePath), {
+          op: 'epicService.releaseEpicWorktree.removeWorktree',
+          level: 'debug',
+          context: { workspaceId: workspace.id ?? undefined, epicRef, worktreePath },
+        });
       };
       const epicWorktree = async (repoDir: string, epicRef: number): Promise<string> => {
         const existing = epicWorktrees.get(epicRef);
@@ -431,11 +437,30 @@ export class TrackerEpicService implements EpicService {
     const workspace = (await this.getWorkspaces()).find((candidate) => candidate.id === workspaceId);
     if (!workspace) return '';
     const row = (await this.tasks.listStoredEpics(workspaceId)).find((candidate) => candidate.trackerRef === epicRef);
-    try {
-      if (row?.state === 'integrated') return row.mergeCommit ? await Git.diffMergeCommit(workspace.workingDir, row.mergeCommit) : '';
-      const base = await resolveRepositoryDefaultBranch(workspace.workingDir).catch(() => null);
-      return base === null ? '' : await Git.diffUnified(workspace.workingDir, base, integrationBranchName(epicRef));
-    } catch { return ''; }
+    return await orFallback(
+      async () => {
+        if (row?.state === 'integrated') return row.mergeCommit ? await Git.diffMergeCommit(workspace.workingDir, row.mergeCommit) : '';
+        const base = await orFallback(
+          () => resolveRepositoryDefaultBranch(workspace.workingDir),
+          { op: 'epicService.epicDiff.defaultBranch', level: 'warn', context: { workspaceId, repoDir: workspace.workingDir } },
+          null,
+        );
+        return base === null ? '' : await Git.diffUnified(workspace.workingDir, base, integrationBranchName(epicRef));
+      },
+      {
+        op: 'epicService.epicDiff',
+        level: 'warn',
+        notFoundIf: (err) => err instanceof GitError && /unknown revision|bad revision|ambiguous argument/i.test(err.stderr),
+        context: {
+          workspaceId,
+          epicRef,
+          repoDir: workspace.workingDir,
+          epicState: row?.state ?? undefined,
+          integrationBranch: integrationBranchName(epicRef),
+        },
+      },
+      '',
+    );
   }
 
   private async epicData(workspaceId: number) {

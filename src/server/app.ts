@@ -91,6 +91,7 @@ import { detectDistributionMode, type DistributionMode } from '../distribution-m
 import { fetchLatestVersion, SettingsUpdateAvailabilityStore, UpdateCheck } from '../upgrade/update-check.js';
 import { UpgradeCoordinator } from '../upgrade/upgrade-coordinator.js';
 import { updateRoutes } from './routes/update.js';
+import { fireAndForget, attempted } from '../error-handling.js';
 
 export interface AppOptions {
   dataDir: string;
@@ -314,7 +315,8 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     () => settingsStore.getGlobal(),
     () => workspaces.list(),
     (task) => bus.emit('task_changed', task),
-    (event, task) => void notifier.notify(event, task).catch(() => {}),
+    (event, task) =>
+      fireAndForget(() => notifier.notify(event, task), { op: 'notifier.notify', level: 'warn', context: { event, taskId: task.id } }),
     (id) => bus.emit('task_removed', { id }),
   );
   const attempts = new AttemptStore(asyncDb);
@@ -485,7 +487,16 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     mergeOid: string;
     baseDir: string;
   }) => {
-    const ws = task.workspaceId == null ? undefined : await workspaces.get(task.workspaceId).catch(() => undefined);
+    const workspaceId = task.workspaceId;
+    const resolvedWs =
+      workspaceId == null
+        ? null
+        : await attempted(() => workspaces.get(workspaceId), {
+            op: 'postMerge.resolveWorkspace',
+            level: 'error',
+            context: { taskId: task.id, attemptId: run.id, workspaceId },
+          });
+    const ws = resolvedWs?.ok === true ? resolvedWs.value : undefined;
     const { task: resolvedTask } = resolveVerifiers(
       ws ?? { taskPreMergeCommands: null, taskPreMergeCritics: null, taskPostMergeCommands: null, taskPostMergeCritics: null, epicPreMergeCommands: null, epicPreMergeCritics: null },
       settingsStore.getGlobal(),
@@ -747,14 +758,17 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     void publishWorktrees().catch((error: unknown) => logger.debug(`worktree inventory refresh failed: ${String(error)}`));
   });
   bus.on('attempt_changed', () => {
-    void drainRetirement().catch(() => {});
+    fireAndForget(() => drainRetirement(), { op: 'sessionRetirement.drain', level: 'warn' });
   });
   bus.on('attempt_changed', (run) => {
     if (run.state === 'running') return;
-    void (async () => {
-      if ((await tasks.list({ state: 'ready' })).length !== 0) return;
-      if ((await attempts.countRunning()) === 0) await notifier.notify('queue.idle');
-    })().catch(() => {});
+    fireAndForget(
+      async () => {
+        if ((await tasks.list({ state: 'ready' })).length !== 0) return;
+        if ((await attempts.countRunning()) === 0) await notifier.notify('queue.idle');
+      },
+      { op: 'notifier.queueIdle', level: 'warn', context: { attemptId: run.id } },
+    );
   });
 
   const ctx: AppContext = { distributionMode, runningVersion, updateCheck, upgrade, asyncDb, statsReader, settingsStore, workspaces, tasks, attempts, sessions: sessionStore, runner, conversations, conversationDriver, permissionRules, escalation, autoRunner, globalPause, guardrailEvents, verificationAttempts, trackerManager, epicService, scheduler, auth, channels, notifier, bus, hostLoad, workspaceWatcher, worktreeInventory, forceCleanupWorktree, dirtyWorktreeFiles, reconcileWorktrees, worktreesReconciledAt: () => worktreeReconciler.reconciledAt };
