@@ -725,19 +725,19 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   const epicService = new TrackerEpicService(
     tasks,
     () => workspaces.list(),
-    undefined,
-    undefined,
-    () => settingsStore.getGlobal(),
-    epicOperations,
-    (input) => runnerRef!.mergeEpicIntegration(input),
-    (target, detail, escalate, retry) => runnerRef!.enqueueEpicRefreshResolution(target, detail, escalate, retry),
-    epicMergeEvents,
-    attempts,
-    (input) => runnerRef!.resolveEpicVerification(input),
-    worktreesDir,
-    (attempt) => bus.emit('attempt_changed', attempt),
-    verificationAttempts,
-    opts.criticDrive,
+    {
+      getConfig: () => settingsStore.getGlobal(),
+      operations: epicOperations,
+      mergeEpicIntegration: (input) => runnerRef!.mergeEpicIntegration(input),
+      dispatchRefreshResolution: (target, detail, escalate, retry) => runnerRef!.enqueueEpicRefreshResolution(target, detail, escalate, retry),
+      epicMergeEvents,
+      epicAttempts: attempts,
+      dispatchEpicResolution: (input) => runnerRef!.resolveEpicVerification(input),
+      worktreesDir,
+      onEpicAttemptChanged: (attempt) => bus.emit('attempt_changed', attempt),
+      verificationAttemptStore: verificationAttempts,
+      criticDrive: opts.criticDrive,
+    },
   );
   epicServiceRef = epicService;
   const trackerManager = new TrackerPollerManager(tasks, () => workspaces.list(), { epicService, scheduler });
