@@ -17,20 +17,6 @@ import type {
 } from './types.js';
 import { ALL_CATEGORIES } from './types.js';
 
-/** The neutral prior a category value regresses toward as confidence drops. */
-export const NEUTRAL_SCORE = 2.0;
-
-/**
- * Shrink a raw 0-4 score toward {@link NEUTRAL_SCORE} in proportion to how
- * *unsure* Jev is: `score·c + neutral·(1-c)`. Full confidence returns the raw
- * score; zero confidence returns the neutral prior; a missing confidence is
- * treated as full confidence (so pre-confidence baselines render unweighted).
- */
-export function weightByConfidence(score: number, confidence: number | undefined): number {
-  const c = confidence == null ? 1 : Math.max(0, Math.min(1, confidence));
-  return score * c + NEUTRAL_SCORE * (1 - c);
-}
-
 export function categoryZone(score: number, t: GateConfig['thresholds']['category']): Zone {
   if (score < t.fail) return 'FAIL';
   if (score < t.warn) return 'WARN';
@@ -44,11 +30,10 @@ export function overallZone(mean: number, t: GateConfig['thresholds']['overall']
 }
 
 /**
- * A signoff acknowledgement token is `path::category`. It exists so the "FAIL
- * with confidence < 0.6" case (proposal §3) — which blocks until a human
- * clears it — has a concrete way to be cleared from CI: an operator re-runs
- * the gate with `--signoff path::category` (or `$JEV_GATE_SIGNOFF`) once
- * they've looked at the flagged file.
+ * A signoff acknowledgement token is `path::category`. An "unsure" gating
+ * category (confidence below the floor) blocks as NEEDS_SIGNOFF until a human
+ * clears it: an operator re-runs the gate with `--signoff path::category` (or
+ * `$JEV_GATE_SIGNOFF`) once they've looked at the flagged file.
  */
 export function signoffKey(path: string, category: CategoryId): string {
   return `${path}::${category}`;
@@ -64,60 +49,55 @@ export interface CategoryEvalInput {
   signoffs: ReadonlySet<string>;
 }
 
-/** Zone/verdict/ratchet judge the confidence-weighted score; raw score and confidence stay on the result for display. */
+/**
+ * Judge one category from its RAW score, gated by confidence. Below the
+ * confidence floor the score is "unsure": a gating axis reads NEEDS_SIGNOFF (a
+ * human must look), because we can't trust the number either way — this
+ * generalises the old "low-confidence FAIL needs sign-off" to any low-confidence
+ * score. At or above the floor the raw score decides PASS/WARN/FAIL.
+ */
 export function evaluateCategory(input: CategoryEvalInput): CategoryResult {
   const { path, category, answer, role, config, baseline, signoffs } = input;
   const score = typeof answer?.score === 'number' ? answer.score : 0;
   const confidence = typeof answer?.confidence === 'number' ? answer.confidence : 0;
-  const weighted = weightByConfidence(score, confidence);
-  const zone = categoryZone(weighted, config.thresholds.category);
+  const unsure = confidence < config.thresholds.confidence.blockingMin;
+  const zone = categoryZone(score, config.thresholds.category);
   const isGatingAxis = config.gatingCategories.includes(category);
   const gated = isGatingAxis && !role.exempt.has(category);
 
-  const result: CategoryResult = { score, confidence, weighted, zone, gated, verdict: 'EXEMPT' };
+  const result: CategoryResult = { score, confidence, unsure, zone, gated, verdict: 'EXEMPT' };
 
   if (!gated) {
-    // Advisory-only axis (security/comments), or a gating axis role-exempted
-    // for this file: the true `zone` stays visible for advisory display, but
-    // the verdict itself can never be FAIL here — see proposal §1 and §4.
+    // Advisory-only axis (security/comments), or a gating axis role-exempted for
+    // this file: the true `zone` stays visible, but the verdict can never FAIL.
     result.verdict = zone === 'PASS' ? 'PASS' : 'WARN';
-  } else if (zone === 'PASS') {
-    result.verdict = 'PASS';
-  } else if (zone === 'WARN') {
-    result.verdict = 'WARN';
+  } else if (unsure) {
+    // Confidence too low to trust the score: a human confirms (or has).
+    const key = signoffKey(path, category);
+    result.verdict = signoffs.has(key) ? 'WARN' : 'NEEDS_SIGNOFF';
+    if (signoffs.has(key)) result.signoffAcknowledged = true;
   } else {
-    // zone === 'FAIL'
-    if (confidence >= config.thresholds.confidence.blockingMin) {
-      result.verdict = 'FAIL';
-    } else {
-      const key = signoffKey(path, category);
-      result.verdict = signoffs.has(key) ? 'WARN' : 'NEEDS_SIGNOFF';
-      if (signoffs.has(key)) result.signoffAcknowledged = true;
-    }
+    result.verdict = zone === 'FAIL' ? 'FAIL' : zone === 'WARN' ? 'WARN' : 'PASS';
   }
 
   if (gated && baseline) {
     const baselineScore = baseline.categories[category];
-    if (typeof baselineScore === 'number') {
-      const baselineWeighted = weightByConfidence(baselineScore, baseline.confidences?.[category]);
-      if (weighted <= baselineWeighted - config.thresholds.ratchet.categoryDrop) {
-        result.ratchetRegression = { baseline: baselineWeighted, drop: baselineWeighted - weighted };
-      }
+    if (typeof baselineScore === 'number' && score <= baselineScore - config.thresholds.ratchet.categoryDrop) {
+      result.ratchetRegression = { baseline: baselineScore, drop: baselineScore - score };
     }
   }
 
   return result;
 }
 
-/** `weightedScores` are the per-category confidence-weighted values; the overall
- * is their mean, and the ratchet compares it against the baseline's stored
- * (weighted) overall. */
+/** The overall is the mean of the raw category scores; the ratchet compares it
+ * against the baseline's stored overall. */
 export function evaluateOverall(
-  weightedScores: Record<CategoryId, number>,
+  scores: Record<CategoryId, number>,
   config: GateConfig,
   baseline: Baseline[string] | undefined,
 ): OverallResult {
-  const values = ALL_CATEGORIES.map((c) => weightedScores[c]);
+  const values = ALL_CATEGORIES.map((c) => scores[c]);
   const mean = values.reduce((a, b) => a + b, 0) / values.length;
   const zone = overallZone(mean, config.thresholds.overall);
   const result: OverallResult = { mean, mean100: Math.round((mean / 4) * 100), zone };
@@ -137,8 +117,8 @@ export function blockingReasons(
   for (const cat of config.gatingCategories) {
     const c = categories[cat];
     if (!c) continue;
-    if (c.verdict === 'FAIL') reasons.push(`${cat}: FAIL (weighted ${c.weighted.toFixed(2)}, raw ${c.score.toFixed(1)}/4, confidence ${c.confidence.toFixed(2)})`);
-    if (c.verdict === 'NEEDS_SIGNOFF') reasons.push(`${cat}: needs human sign-off (weighted ${c.weighted.toFixed(2)}, raw ${c.score.toFixed(1)}/4, low confidence ${c.confidence.toFixed(2)})`);
+    if (c.verdict === 'FAIL') reasons.push(`${cat}: FAIL (${c.score.toFixed(1)}/4, confidence ${c.confidence.toFixed(2)})`);
+    if (c.verdict === 'NEEDS_SIGNOFF') reasons.push(`${cat}: unsure — needs human sign-off (${c.score.toFixed(1)}/4, low confidence ${c.confidence.toFixed(2)})`);
     if (c.ratchetRegression) {
       reasons.push(`${cat}: ratchet regression, dropped ${c.ratchetRegression.drop.toFixed(2)} vs baseline ${c.ratchetRegression.baseline.toFixed(2)}`);
     }

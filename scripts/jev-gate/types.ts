@@ -111,7 +111,7 @@ export interface BaselineEntry {
    * Optional: baselines written before confidence was captured omit it, and the
    * renderer/weighting fall back to raw scores when it is absent. */
   confidences?: Partial<Record<CategoryId, number>>;
-  /** Mean of the confidence-weighted category values (see `weightByConfidence`). */
+  /** Mean of the raw category scores. */
   overall: number;
 }
 
@@ -145,8 +145,11 @@ export interface CategoryResult {
   /** Jev's raw 0-4 score, as reported. */
   score: number;
   confidence: number;
-  /** `score` shrunk toward neutral by confidence ({@link weightByConfidence}); zone, verdict, overall and the ratchet judge this, not the raw score. */
-  weighted: number;
+  /** Confidence is below the gate's confidence floor: the score can't be
+   * trusted, so a gating axis reads NEEDS_SIGNOFF ("unsure — a human must look")
+   * rather than pass/warn/fail. */
+  unsure: boolean;
+  /** Score zone (from the raw score); meaningful for display when not `unsure`. */
   zone: Zone;
   gated: boolean;
   verdict: CategoryVerdict;

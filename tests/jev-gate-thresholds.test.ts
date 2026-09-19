@@ -73,40 +73,39 @@ describe('categoryZone / overallZone', () => {
 });
 
 describe('evaluateCategory — gating axis', () => {
-  it('a high-confidence FAIL blocks (weighting keeps a confident low score in FAIL)', () => {
-    const r = evalCat('code_smells', 1.0, 0.9); // weighted 1.1 -> FAIL
-    expect(r.weighted).toBeCloseTo(1.1, 5);
+  it('a confident FAIL blocks', () => {
+    const r = evalCat('code_smells', 1.0, 0.9); // confidence >= blockingMin, raw 1.0 -> FAIL
+    expect(r.unsure).toBe(false);
     expect(r.zone).toBe('FAIL');
     expect(r.gated).toBe(true);
     expect(r.verdict).toBe('FAIL');
   });
 
-  it('a low-confidence low score that stays in FAIL after weighting needs sign-off', () => {
-    const r = evalCat('code_smells', 0.0, 0.5); // weighted 1.0 -> FAIL, confidence < blockingMin
-    expect(r.weighted).toBeCloseTo(1.0, 5);
-    expect(r.zone).toBe('FAIL');
+  it('a low-confidence score is unsure and needs sign-off, whatever the score', () => {
+    const r = evalCat('code_smells', 1.0, 0.4); // confidence < blockingMin 0.6
+    expect(r.unsure).toBe(true);
     expect(r.verdict).toBe('NEEDS_SIGNOFF');
   });
 
-  it('a signed-off low-confidence FAIL is downgraded to WARN', () => {
-    const r = evalCat('code_smells', 0.0, 0.5, { signoffs: new Set([signoffKey('src/foo.ts', 'code_smells')]) });
+  it('a signed-off unsure category is downgraded to WARN', () => {
+    const r = evalCat('code_smells', 1.0, 0.4, { signoffs: new Set([signoffKey('src/foo.ts', 'code_smells')]) });
     expect(r.verdict).toBe('WARN');
     expect(r.signoffAcknowledged).toBe(true);
   });
 
-  it('weighting softens a low-confidence FAIL out of the FAIL zone entirely', () => {
-    const r = evalCat('code_smells', 1.0, 0.4); // weighted 1.6 -> WARN, so no sign-off needed
-    expect(r.weighted).toBeCloseTo(1.6, 5);
-    expect(r.zone).toBe('WARN');
-    expect(r.verdict).toBe('WARN');
+  it('even a high raw score is unsure when confidence is low', () => {
+    const r = evalCat('code_smells', 4.0, 0.4);
+    expect(r.unsure).toBe(true);
+    expect(r.zone).toBe('PASS'); // the raw zone is still computed for display
+    expect(r.verdict).toBe('NEEDS_SIGNOFF');
   });
 
-  it('WARN and PASS zones map straight through', () => {
+  it('confident WARN and PASS zones map straight through', () => {
     expect(evalCat('code_smells', 2.0, 0.9).verdict).toBe('WARN');
     expect(evalCat('code_smells', 3.5, 0.9).verdict).toBe('PASS');
   });
 
-  it('a missing answer scores 0/0 and weights to the neutral prior (WARN, non-blocking)', () => {
+  it('a missing answer scores 0/0 and is unsure (needs sign-off)', () => {
     const r = evaluateCategory({
       path: 'src/foo.ts',
       category: 'code_smells',
@@ -118,9 +117,8 @@ describe('evaluateCategory — gating axis', () => {
     });
     expect(r.score).toBe(0);
     expect(r.confidence).toBe(0);
-    expect(r.weighted).toBe(2.0); // 0·0 + 2·1
-    expect(r.zone).toBe('WARN');
-    expect(r.verdict).toBe('WARN');
+    expect(r.unsure).toBe(true);
+    expect(r.verdict).toBe('NEEDS_SIGNOFF');
   });
 });
 
@@ -158,10 +156,9 @@ describe('evaluateCategory — non-gating & exemptions', () => {
 describe('evaluateCategory — ratchet regression', () => {
   const baseline: Baseline[string] = { categories: { code_smells: 3.0, duplication: 3.0 }, overall: 3.0 };
 
-  it('flags a drop >= categoryDrop on a gated axis (weighted current vs weighted baseline)', () => {
-    // current weighted 2.4·0.9+2·0.1 = 2.36; baseline has no confidence so weighs to raw 3.0.
-    const r = evalCat('code_smells', 2.4, 0.9, { baseline });
-    expect(r.ratchetRegression).toEqual({ baseline: 3.0, drop: expect.closeTo(0.64, 5) });
+  it('flags a drop >= categoryDrop on a gated axis (raw current vs raw baseline)', () => {
+    const r = evalCat('code_smells', 2.4, 0.9, { baseline }); // raw 2.4 vs baseline 3.0 -> drop 0.6
+    expect(r.ratchetRegression).toEqual({ baseline: 3.0, drop: expect.closeTo(0.6, 5) });
   });
 
   it('does not flag a drop smaller than the margin', () => {
@@ -197,34 +194,34 @@ describe('reason / note builders', () => {
   const config = makeConfig();
   function cats(partial: Partial<Record<CategoryId, CategoryResult>>): Record<CategoryId, CategoryResult> {
     const base = Object.fromEntries(
-      ALL_CATEGORIES.map((c) => [c, { score: 3.0, confidence: 0.9, weighted: 2.9, zone: 'PASS', gated: true, verdict: 'PASS' } as CategoryResult]),
+      ALL_CATEGORIES.map((c) => [c, { score: 3.0, confidence: 0.9, unsure: false, zone: 'PASS', gated: true, verdict: 'PASS' } as CategoryResult]),
     ) as Record<CategoryId, CategoryResult>;
     return { ...base, ...partial };
   }
 
   it('blockingReasons lists FAIL, NEEDS_SIGNOFF and ratchet', () => {
     const c = cats({
-      code_smells: { score: 1.0, confidence: 0.9, weighted: 1.1, zone: 'FAIL', gated: true, verdict: 'FAIL' },
-      duplication: { score: 1.0, confidence: 0.3, weighted: 1.7, zone: 'FAIL', gated: true, verdict: 'NEEDS_SIGNOFF' },
-      testability: { score: 2.4, confidence: 0.9, weighted: 2.36, zone: 'WARN', gated: true, verdict: 'WARN', ratchetRegression: { baseline: 3.0, drop: 0.6 } },
+      code_smells: { score: 1.0, confidence: 0.9, unsure: false, zone: 'FAIL', gated: true, verdict: 'FAIL' },
+      duplication: { score: 1.0, confidence: 0.3, unsure: true, zone: 'FAIL', gated: true, verdict: 'NEEDS_SIGNOFF' },
+      testability: { score: 2.4, confidence: 0.9, unsure: false, zone: 'WARN', gated: true, verdict: 'WARN', ratchetRegression: { baseline: 3.0, drop: 0.6 } },
     });
     const overall = { mean: 1.9, mean100: 48, zone: 'FAIL' as const };
     const reasons = blockingReasons(c, overall, config);
     expect(reasons.some((r) => r.includes('code_smells: FAIL'))).toBe(true);
-    expect(reasons.some((r) => r.includes('duplication: needs human sign-off'))).toBe(true);
+    expect(reasons.some((r) => r.includes('duplication: unsure — needs human sign-off'))).toBe(true);
     expect(reasons.some((r) => r.includes('testability: ratchet regression'))).toBe(true);
     expect(reasons.some((r) => r.includes('overall: FAIL'))).toBe(true);
   });
 
   it('warnNotes lists WARN zones only', () => {
-    const c = cats({ code_smells: { score: 2.0, confidence: 0.9, weighted: 2.0, zone: 'WARN', gated: true, verdict: 'WARN' } });
+    const c = cats({ code_smells: { score: 2.0, confidence: 0.9, unsure: false, zone: 'WARN', gated: true, verdict: 'WARN' } });
     const notes = warnNotes(c, { mean: 3.0, mean100: 75, zone: 'PASS' }, config);
     expect(notes.some((n) => n.includes('code_smells: WARN'))).toBe(true);
   });
 
   it('advisoryNotes flags a low security score with the human-review wording', () => {
     const advisoryConfig = makeConfig({ gatingCategories: ['code_smells'], advisoryCategories: ['security'] });
-    const c = cats({ security: { score: 1.0, confidence: 0.9, weighted: 1.1, zone: 'FAIL', gated: false, verdict: 'WARN' } });
+    const c = cats({ security: { score: 1.0, confidence: 0.9, unsure: false, zone: 'FAIL', gated: false, verdict: 'WARN' } });
     const notes = advisoryNotes(c, advisoryConfig);
     expect(notes.some((n) => n.includes('security') && n.includes('human security review'))).toBe(true);
   });
