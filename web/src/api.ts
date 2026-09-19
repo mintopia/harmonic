@@ -102,7 +102,7 @@ export const api = {
     if (workspaceId !== undefined) query.set('workspaceId', String(workspaceId));
     return request<Stats>('GET', `/api/stats?${query}`);
   },
-  activity: () => request<{ processes: ActivityProcess[] }>('GET', '/api/activity'),
+  activity: (workspaceId?: number) => request<{ processes: ActivityProcess[] }>('GET', workspaceId === undefined ? '/api/activity' : `/api/activity?workspaceId=${workspaceId}`),
   timeline: (workspaceId: number | undefined, from: number, to: number) => {
     const query = new URLSearchParams({ from: String(from), to: String(to) });
     if (workspaceId !== undefined) query.set('workspaceId', String(workspaceId));

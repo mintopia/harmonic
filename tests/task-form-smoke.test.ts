@@ -64,4 +64,29 @@ describe('TaskForm smoke (issue #469)', () => {
     const submit = [...host!.querySelectorAll('button')].find((b) => b.textContent === 'Create ready')!;
     expect(submit.disabled).toBe(false);
   });
+
+  it('disables Save and shows a load error when lazily hydrating the prompt fails (issue #654)', async () => {
+    const task = makeTask({ id: 11, prompt: undefined, summary: 'Investigate memory leak', state: 'ready' });
+    vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ error: { message: 'network unreachable' } }), { status: 500 }));
+
+    host = await mountComponent(
+      createElement(TaskForm, {
+        config: makeConfig({
+          harnesses: { claude: { command: 'claude', args: [], env: {}, models: [{ id: 'claude-sonnet-4-6' }, { id: 'claude-opus-4-1' }], defaultModel: 'claude-sonnet-4-6', cacheWarmSeconds: 300 } },
+        }),
+        task,
+        workspace: makeWorkspace(),
+        workspaceId: null,
+        onClose: () => {},
+        onSaved: () => {},
+      }),
+    );
+
+    expect(host!.querySelector('[role="alert"]')?.textContent).toContain('network unreachable');
+    const prompt = host!.querySelector<HTMLTextAreaElement>('#task-prompt');
+    expect(prompt?.disabled).toBe(true);
+    expect(prompt?.value).toBe('');
+    const submit = [...host!.querySelectorAll('button')].find((b) => b.textContent === 'Save');
+    expect(submit?.disabled).toBe(true);
+  });
 });

@@ -1,6 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { api } from '../api';
-import { subscribe } from '../ws';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { AppConfig, Conversation, ConversationEvent, Workspace } from '../types';
 import {
   chooseAlwaysAllowOptionId,
@@ -23,7 +21,7 @@ import {
   NO_ATTENTION,
   type AttentionState,
 } from '../conversation-attention-model';
-import { conversationDisplayTitle, removeConversationById, upsertConversation } from '../conversation-list-model';
+import { conversationDisplayTitle } from '../conversation-list-model';
 import { formatCost } from '../cost';
 import { ConfirmDialog } from './ConfirmDialog';
 import { ConversationList } from './ConversationList';
@@ -35,7 +33,8 @@ import { Icon } from './Icon';
 import { Composer, ContextMeter } from './conversation/Composer';
 import { StreamAnnouncer, Transcript } from './conversation/Transcript';
 import { useConversationDetail } from './useConversationDetail';
-import { toastError } from '../toast';
+import { useConversationList } from './useConversationList';
+import { LoadError } from './LoadError';
 import {
   btnQuiet,
   btnQuietDestructive,
@@ -532,17 +531,7 @@ export function ConversationLauncher({
     storeConversationId(localStorage, conversationId);
   }, [conversationId, openConversationId, onConversationOpened, pendingPermission]);
 
-  const [conversations, setConversations] = useState<Conversation[]>([]);
-
   const [attention, setAttention] = useState<AttentionState>(NO_ATTENTION);
-
-  const upsertConversationInList = useCallback((c: Conversation) => {
-    setConversations((current) => upsertConversation(current, c));
-  }, []);
-  const removeConversationFromList = useCallback((id: number) => {
-    setConversations((current) => removeConversationById(current, id));
-    setAttention((current) => clearAttention(current, id));
-  }, []);
 
   const focusedRef = useRef<number | null>(null);
   useEffect(() => {
@@ -561,20 +550,15 @@ export function ConversationLauncher({
     }
   }, [open, view]);
 
-  useEffect(() => {
-    if (workspaceId === null) return;
-    setConversations([]);
-    const load = () =>
-      api.conversations(workspaceId).then(({ conversations }) => setConversations(conversations), toastError);
-    load();
-    const unsubscribe = subscribe((msg) => {
-      setAttention((current) => applyAttentionMessage(current, msg, focusedRef.current));
-      if (msg.type === 'conversation_changed' && msg.conversation.workspaceId === workspaceId) {
-        setConversations((current) => upsertConversation(current, msg.conversation));
-      }
-    }, load);
-    return unsubscribe;
-  }, [workspaceId]);
+  const list = useConversationList(workspaceId, (msg) => {
+    setAttention((current) => applyAttentionMessage(current, msg, focusedRef.current));
+  });
+  const listRemoveRef = useRef(list.remove);
+  useLayoutEffect(() => { listRemoveRef.current = list.remove; });
+  const removeConversationFromList = useCallback((id: number) => {
+    listRemoveRef.current(id);
+    setAttention((current) => clearAttention(current, id));
+  }, []);
 
   const openList = useCallback(() => {
     setView({ kind: 'list' });
@@ -589,9 +573,9 @@ export function ConversationLauncher({
     clearConversationId(localStorage);
   };
 
-  const { conversation, events, pending, pendingElicitations, actions } = useConversationDetail(focusedId, {
+  const { conversation, events, pending, pendingElicitations, actions, loadError, reload } = useConversationDetail(focusedId, {
     workspaceId,
-    upsertConversationInList,
+    upsertConversationInList: list.upsert,
     removeConversationFromList,
     openConversation,
     openList,
@@ -635,15 +619,19 @@ export function ConversationLauncher({
       className="absolute inset-y-4 right-4 z-40 flex w-[26rem] max-w-[calc(100%-2rem)] flex-col rounded-lg bg-surface shadow-bar"
     >
       {view.kind === 'list' ? (
-        <ConversationList
-          conversations={conversations}
-          attention={attention}
-          onSelect={openConversation}
-          onNew={openCompose}
-          onDelete={actions.deleteConversation}
-          onExpand={() => onExpand(null)}
-          onClose={() => setOpen(false)}
-        />
+        list.error ? (
+          <LoadError message={list.error} onRetry={list.reload} className="m-2" />
+        ) : (
+          <ConversationList
+            conversations={list.conversations}
+            attention={attention}
+            onSelect={openConversation}
+            onNew={openCompose}
+            onDelete={actions.deleteConversation}
+            onExpand={() => onExpand(null)}
+            onClose={() => setOpen(false)}
+          />
+        )
       ) : (
         <>
           <ConversationHeader
@@ -657,6 +645,7 @@ export function ConversationLauncher({
             onClose={() => setOpen(false)}
           />
 
+          {loadError && <LoadError message={loadError} onRetry={reload} className="m-2" />}
           <Transcript events={events} conversation={conversation} />
           <StreamAnnouncer events={events} resetKey={conversation?.id ?? 'new'} />
 
@@ -716,7 +705,6 @@ export function ConversationsPage({
   const [view, setView] = useState<LauncherView>(() =>
     conversationId === null ? { kind: 'list' } : { kind: 'detail', conversationId },
   );
-  const [conversations, setConversations] = useState<Conversation[]>([]);
   const [attention, setAttention] = useState<AttentionState>(NO_ATTENTION);
   const [openedPendingPermission, setOpenedPendingPermission] = useState<PendingPermission | null>(null);
   const [contextOpen, setContextOpen] = useState(false);
@@ -732,27 +720,15 @@ export function ConversationsPage({
     setView(conversationId === null ? { kind: 'list' } : { kind: 'detail', conversationId });
   }, [conversationId]);
 
-  const upsertConversationInList = useCallback((conversation: Conversation) => {
-    setConversations((current) => upsertConversation(current, conversation));
-  }, []);
+  const list = useConversationList(workspaceId, (message) => {
+    setAttention((current) => applyAttentionMessage(current, message, focusedRef.current));
+  });
+  const listRemoveRef = useRef(list.remove);
+  useLayoutEffect(() => { listRemoveRef.current = list.remove; });
   const removeConversationFromList = useCallback((id: number) => {
-    setConversations((current) => removeConversationById(current, id));
+    listRemoveRef.current(id);
     setAttention((current) => clearAttention(current, id));
   }, []);
-
-  useEffect(() => {
-    if (workspaceId === null) return;
-    setConversations([]);
-    const load = () =>
-      api.conversations(workspaceId).then(({ conversations }) => setConversations(conversations), toastError);
-    load();
-    return subscribe((message) => {
-      setAttention((current) => applyAttentionMessage(current, message, focusedRef.current));
-      if (message.type === 'conversation_changed' && message.conversation.workspaceId === workspaceId) {
-        setConversations((current) => upsertConversation(current, message.conversation));
-      }
-    }, load);
-  }, [workspaceId]);
 
   const openList = useCallback(() => {
     setView({ kind: 'list' });
@@ -767,9 +743,9 @@ export function ConversationsPage({
     onConversationChange(null);
   };
   const clearPendingPermission = useCallback(() => setOpenedPendingPermission(null), []);
-  const { conversation, events, pending, pendingElicitations, actions } = useConversationDetail(focusedId, {
+  const { conversation, events, pending, pendingElicitations, actions, loadError, reload } = useConversationDetail(focusedId, {
     workspaceId,
-    upsertConversationInList,
+    upsertConversationInList: list.upsert,
     removeConversationFromList,
     openConversation,
     openList,
@@ -790,15 +766,19 @@ export function ConversationsPage({
         aria-label="Conversations"
         className={`${view.kind === 'detail' ? 'hidden md:flex' : 'flex'} w-full shrink-0 border-r border-edge bg-shell md:w-64`}
       >
-        <ConversationList
-          conversations={conversations}
-          attention={attention}
-          selectedId={focusedId}
-          fullPage
-          onSelect={openConversation}
-          onNew={openCompose}
-          onDelete={deleteConversation}
-        />
+        {list.error ? (
+          <LoadError message={list.error} onRetry={list.reload} className="m-2" />
+        ) : (
+          <ConversationList
+            conversations={list.conversations}
+            attention={attention}
+            selectedId={focusedId}
+            fullPage
+            onSelect={openConversation}
+            onNew={openCompose}
+            onDelete={deleteConversation}
+          />
+        )}
       </aside>
       <section
         aria-label="Conversation transcript"
@@ -820,6 +800,7 @@ export function ConversationsPage({
               onDelete={() => conversation && deleteConversation(conversation.id)}
               onOpenContext={() => setContextOpen(true)}
             />
+            {loadError && <LoadError message={loadError} onRetry={reload} className="m-2" />}
             <Transcript events={events} conversation={conversation} />
             <StreamAnnouncer events={events} resetKey={conversation?.id ?? 'new'} />
             {!ended &&

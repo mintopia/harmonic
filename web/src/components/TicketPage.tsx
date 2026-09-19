@@ -12,6 +12,7 @@ import { sumCosts } from '../activity-model';
 import { Markdown } from './Markdown';
 import { Icon } from './Icon';
 import { subscribe } from '../ws';
+import { useAsyncResource } from '../useAsyncResource';
 import { gateForAttempt } from '../ticket-gate-model';
 import { cardTitle } from '../board-sections-model';
 import { AttemptRail } from './ticket/AttemptRail';
@@ -809,7 +810,6 @@ export function TicketPage({
   const [allTasks, setAllTasks] = useState<Task[]>([]);
   const [detail, setDetail] = useState<Task | null>(null);
   const [now, setNow] = useState(() => Date.now());
-  const [liveStat, setLiveStat] = useState<string | null>(null);
 
   // The AttemptSummary the selected Attempt owns (its log/verification/guardrail
   // streams key off this). Only an Attempt selection loads run-scoped data; the
@@ -868,22 +868,11 @@ export function TicketPage({
   }, [anyRunning]);
 
   const latestAttemptId = runs[runs.length - 1]?.id ?? null;
-  useLiveEffect((live) => {
-    if (!anyRunning || latestAttemptId === null) {
-      setLiveStat(null);
-      return;
-    }
-    const load = () =>
-      api
-        .attemptDiff(latestAttemptId)
-        .then((d) => live() && setLiveStat(d.stat))
-        .catch(() => {});
-    load();
-    const timer = window.setInterval(load, 2_000);
-    return () => {
-      window.clearInterval(timer);
-    };
-  }, [anyRunning, latestAttemptId]);
+  const liveStat = useAsyncResource(
+    anyRunning && latestAttemptId !== null ? () => api.attemptDiff(latestAttemptId).then((d) => d.stat) : null,
+    [anyRunning, latestAttemptId],
+    { pollMs: 2_000 },
+  );
 
   useLiveEffect((live) => {
     if (selectedRunId === null) {
@@ -1107,13 +1096,16 @@ export function TicketPage({
                 branch: task.branch,
                 baseBranch: task.baseBranch,
                 isolationMode: task.isolationMode,
-                stat: liveStat ?? task.stat,
+                stat: liveStat.data ?? task.stat,
               }}
               selectedFile={selectedFile}
               onSelectFile={(path) => onSelect({ kind: 'file', path })}
               onSelectChanges={() => onSelect({ kind: 'changes' })}
               taskState={task.state}
             />
+            {liveStat.error && liveStat.data === null && (
+              <p className="px-4 pb-2 text-small text-fail">(live figure unavailable)</p>
+            )}
           </div>
           <Gate
             model={gateModel}
