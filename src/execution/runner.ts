@@ -13,6 +13,7 @@ import { LiveUsageTailer, type TailerCadence } from './live-usage-tailer.js';
 import { UsageSampler } from './usage-sampler.js';
 import { TranscriptCapture } from './transcript-capture.js';
 import { GuardrailSupervisor } from './guardrail-supervisor.js';
+import { ActiveRuns, type ActiveRun } from './active-runs.js';
 import { codeIndexRepoGuidance, driveFields, promptForTask } from './prompt-template.js';
 import { indexWorktree, dropIndexForPath } from './code-index.js';
 import type { AutoDrive } from './auto-drive.js';
@@ -62,7 +63,7 @@ import {
 import type { EpicRefreshResolveDispatchOutcome, EpicRefreshTarget } from './epic-coordinator.js';
 import type { AsyncDbHandle } from '../db/async.js';
 import type { SpanContext } from '@opentelemetry/api';
-import { startOperation, type Operation } from '../telemetry/operations.js';
+import { startOperation } from '../telemetry/operations.js';
 
 const STDERR_TAIL_CAP = 8000;
 
@@ -182,32 +183,6 @@ interface Workspace {
   worktree?: { repoDir: string; path: string };
   baseRev?: string;
   startDirty?: boolean;
-}
-
-interface ActiveRun {
-  attemptId: number;
-  taskId: number;
-  child: ChildProcess;
-  driver: AcpDriver;
-  harnessId: string;
-  harness: HarnessConfig;
-  cwd: string;
-  activity: string | null;
-  agentFinished: boolean;
-  escalateReason: string | null;
-  steerQueue: string[];
-  idle: boolean;
-  externallySettled: boolean;
-  steerable: boolean;
-  steerSupported?: boolean;
-  pauseRequested: boolean;
-  pauseReason: string | null;
-  pauseFactRecorded: boolean;
-  globalPauseRequested: boolean;
-  verifyAbort: AbortController;
-  /** Assigned once the supervisor is built (see createTurnRuntime), so a resume
-   * can restart its wall-clock guardrail from zero. */
-  guardrails?: GuardrailSupervisor;
 }
 
 interface HealContext {
@@ -379,8 +354,7 @@ export class TurnListeners {
 }
 
 export class Runner {
-  private readonly runOperations = new Map<number, Operation>();
-  private active = new Map<number, ActiveRun>();
+  private readonly activeRuns = new ActiveRuns();
   private shuttingDown = false;
 
   private readonly gitBreaker: GitCircuitBreaker | undefined;
@@ -405,15 +379,6 @@ export class Runner {
   private readonly tailer: LiveUsageTailer;
   private readonly usage: UsageSampler;
   private readonly transcripts: TranscriptCapture;
-  private readonly toolCallTotals = new Map<number, Map<string, number>>();
-  private readonly lastTurnContextTokens = new Map<number, number>();
-  private readonly pendingOperatorSeed = new Map<number, string>();
-  private readonly pendingContinuation = new Map<number, DeterministicContinuation>();
-  private readonly pendingManualResume = new Map<number, AttemptRow>();
-  private readonly progressEvents = new Map<number, ProgressEvent[]>();
-  private readonly progressSequences = new Map<number, number>();
-  private readonly criticLogSequences = new Map<number, number>();
-  private readonly outstandingProgressActions = new Map<number, ProgressEvent>();
   private readonly spendPollMs: number;
   private readonly spendGraceMs: number;
   /** The MCP endpoint agents should call back to; set once the server listens. */
@@ -446,10 +411,10 @@ export class Runner {
     this.usage = new UsageSampler(
       this.attempts,
       (attemptId) => {
-        const a = this.active.get(attemptId);
+        const a = this.activeRuns.get(attemptId);
         return a ? { harnessId: a.harnessId, harness: a.harness, cwd: a.cwd, activity: a.activity } : undefined;
       },
-      this.toolCallTotals,
+      this.activeRuns.toolCallTotalsView(),
     );
     this.settleCoordinator = new AttemptSettleCoordinator(
       this.taskService,
@@ -477,7 +442,7 @@ export class Runner {
   }
 
   get activeCount(): number {
-    return this.active.size;
+    return this.activeRuns.activeCount;
   }
 
   /**
@@ -498,8 +463,7 @@ export class Runner {
       if (!pending) return;
       const text = pending;
       pending = '';
-      const seq = (this.progressSequences.get(attemptId) ?? 0) + 1;
-      this.progressSequences.set(attemptId, seq);
+      const seq = this.activeRuns.nextProgressSequence(attemptId);
       this.events.onAttemptLogEvent?.({
         id: LIVE_RUN_LOG_EVENT_ID_OFFSET + seq,
         attemptId,
@@ -520,8 +484,7 @@ export class Runner {
   }
 
   private emitSteerLog({ attemptId, text, queued }: { attemptId: number; text: string; queued: boolean }): void {
-    const seq = (this.progressSequences.get(attemptId) ?? 0) + 1;
-    this.progressSequences.set(attemptId, seq);
+    const seq = this.activeRuns.nextProgressSequence(attemptId);
     this.events.onAttemptLogEvent?.({
       id: LIVE_RUN_LOG_EVENT_ID_OFFSET + seq,
       attemptId,
@@ -539,8 +502,7 @@ export class Runner {
    */
   private criticUpdateRelay(attemptId: number): (update: { sessionUpdate: string; [key: string]: unknown }) => void {
     return (update) => {
-      const seq = (this.criticLogSequences.get(attemptId) ?? 0) + 1;
-      this.criticLogSequences.set(attemptId, seq);
+      const seq = this.activeRuns.nextCriticLogSequence(attemptId);
       this.events.onCriticLogEvent?.({
         id: LIVE_RUN_LOG_EVENT_ID_OFFSET + seq,
         attemptId,
@@ -567,7 +529,7 @@ export class Runner {
   /** Every active Attempt's ids plus its freshest live-usage snapshot. */
   async activeSnapshots(): Promise<{ attemptId: number; taskId: number; snapshot: AttemptUsageSnapshot | null }[]> {
     return Promise.all(
-      [...this.active.values()].map(async (a) => ({
+      [...this.activeRuns.values()].map(async (a) => ({
         attemptId: a.attemptId,
         taskId: a.taskId,
         snapshot: await this.usage.latestSnapshot(a.attemptId),
@@ -583,8 +545,7 @@ export class Runner {
       throw new DomainError('invalid_state', `task ${taskId} is ${task.state}; only ready tasks can run`);
     }
     try {
-      const resumedAttempt = this.pendingManualResume.get(taskId);
-      this.pendingManualResume.delete(taskId);
+      const resumedAttempt = this.activeRuns.takePendingManualResume(taskId);
       return await this.beginRun(claimed, undefined, resumedAttempt);
     } catch (err) {
       await this.taskService.setState(taskId, 'ready');
@@ -610,9 +571,9 @@ export class Runner {
       choice = continuation.path === 'continued-session' ? 'full' : 'condensed';
     }
     await this.taskService.requeue(task.id, trimmed, choice);
-    if (run) this.pendingManualResume.set(task.id, run);
+    if (run) this.activeRuns.setPendingManualResume(task.id, run);
     if (startNow) {
-      if (continuation) this.pendingContinuation.set(task.id, continuation);
+      if (continuation) this.activeRuns.setPendingContinuation(task.id, continuation);
       await this.start(task.id);
     }
   }
@@ -666,8 +627,7 @@ export class Runner {
     if (task.state !== 'working') {
       throw new DomainError('invalid_state', `task ${taskId} is ${task.state}; launchClaimed expects a task already flipped to working`);
     }
-    const resumedAttempt = this.pendingManualResume.get(taskId);
-    this.pendingManualResume.delete(taskId);
+    const resumedAttempt = this.activeRuns.takePendingManualResume(taskId);
     return this.beginRun(task, parent, resumedAttempt);
   }
 
@@ -699,9 +659,8 @@ export class Runner {
           ...(task.continuationChoice === 'condensed' ? { sessionRowId: null, sessionId: null } : {}),
         })
       : await this.attempts.create(task.id, snapshot);
-    const pendingContinuation = this.pendingContinuation.get(task.id);
+    const pendingContinuation = this.activeRuns.takePendingContinuation(task.id);
     if (pendingContinuation !== undefined) {
-      this.pendingContinuation.delete(task.id);
       await this.attempts.setContinuation(created.id, pendingContinuation);
     }
     const run = created;
@@ -718,29 +677,29 @@ export class Runner {
         ...(task.workspaceId == null ? {} : { 'workspace.id': task.workspaceId }),
       },
     });
-    this.runOperations.set(bound.id, operation);
+    this.activeRuns.setOperation(bound.id, operation);
     void operation.run(async () => {
       try {
         await this.drive(task, bound, harness, operation.spanContext);
         await this.finishRunOperation(bound.id);
       } catch (error) {
         operation.fail(error instanceof Error ? error.message : String(error));
-        this.runOperations.delete(bound.id);
+        this.activeRuns.deleteOperation(bound.id);
       }
     });
     return bound;
   }
 
   operationParent(attemptId: number): SpanContext | undefined {
-    return this.runOperations.get(attemptId)?.spanContext;
+    return this.activeRuns.getOperation(attemptId)?.spanContext;
   }
 
   async finishRunOperation(attemptId: number): Promise<void> {
-    const operation = this.runOperations.get(attemptId);
+    const operation = this.activeRuns.getOperation(attemptId);
     if (!operation) return;
     const run = await this.attempts.get(attemptId);
     if (run.state === 'running') return;
-    this.runOperations.delete(attemptId);
+    this.activeRuns.deleteOperation(attemptId);
     operation.update({
       'run.state': run.state,
       ...(run.reason ? { 'run.reason': run.reason } : {}),
@@ -845,7 +804,7 @@ export class Runner {
 
   private async settleTaskRun(taskId: number, type: DispositionKind, projection: SettleProjection): Promise<void> {
     let handled = false;
-    for (const active of this.active.values()) {
+    for (const active of this.activeRuns.values()) {
       if (active.taskId !== taskId) continue;
       handled = true;
       await this.settleRunIfPresent(taskId, active.attemptId, type, projection);
@@ -903,7 +862,7 @@ export class Runner {
    * its Attempt is no longer steerable.
    */
   async steer(taskId: number, text: string): Promise<boolean> {
-    const active = [...this.active.values()].find((a) => a.taskId === taskId);
+    const active = this.activeRuns.forTask(taskId);
     if (!active || !active.steerable) return false;
     // ACP `promptRequired`: an idle session must not start an untracked turn.
     if (!active.idle && active.steerSupported !== false) {
@@ -935,7 +894,7 @@ export class Runner {
   async pause(taskId: number): Promise<boolean> {
     const task = await this.taskService.get(taskId);
     if (task.state !== 'working') return false;
-    const active = [...this.active.values()].find((candidate) => candidate.taskId === taskId);
+    const active = this.activeRuns.forTask(taskId);
     if (!active || active.pauseRequested) return false;
     const message = resolvePauseMessage(await this.getWorkspace?.(task.workspaceId), this.getConfig());
     if (!(await this.steer(taskId, message))) return false;
@@ -948,7 +907,7 @@ export class Runner {
   async pauseForGlobal(taskId: number): Promise<boolean> {
     const task = await this.taskService.get(taskId);
     if (task.state !== 'working') return false;
-    const active = [...this.active.values()].find((candidate) => candidate.taskId === taskId);
+    const active = this.activeRuns.forTask(taskId);
     if (!active) {
       await this.taskService.pause(taskId);
       await this.recordLifecycleTransition(taskId, 'paused', 'global pause');
@@ -979,7 +938,7 @@ export class Runner {
     const task = await this.taskService.get(taskId);
     if (task.state !== 'paused') return false;
     const startedAt = Date.now();
-    const active = [...this.active.values()].find((candidate) => candidate.taskId === taskId);
+    const active = this.activeRuns.forTask(taskId);
     if (active) {
       active.pauseRequested = false;
       active.pauseReason = null;
@@ -1016,7 +975,7 @@ export class Runner {
   async extendGuardrail(taskId: number, addMinutes: number): Promise<boolean> {
     const task = await this.taskService.get(taskId);
     if (task.state !== 'working') return false;
-    const active = [...this.active.values()].find((candidate) => candidate.taskId === taskId);
+    const active = this.activeRuns.forTask(taskId);
     if (!active) return false;
     const run = await this.attempts.get(active.attemptId);
     const config = run.guardrailConfig ? (JSON.parse(run.guardrailConfig) as ResolvedGuardrails) : null;
@@ -1049,19 +1008,19 @@ export class Runner {
    * operator can continue it. The settled Attempt is resumed in place.
    */
   async steerSettled(taskId: number, text: string): Promise<boolean> {
-    if ([...this.active.values()].some((a) => a.taskId === taskId)) return false;
+    if (this.activeRuns.hasTask(taskId)) return false;
     const task = await this.taskService.get(taskId);
     if (task.state !== 'escalated') return false;
     const src = await this.resolveContinuationSource(task);
     if (!src) return false;
     if (!this.resumeEligibilityFor(task, src.session).eligible) return false;
-    this.pendingOperatorSeed.set(taskId, text);
+    this.activeRuns.setPendingOperatorSeed(taskId, text);
     try {
       await this.taskService.requeue(taskId, undefined, 'full');
-      this.pendingManualResume.set(taskId, src.prior);
+      this.activeRuns.setPendingManualResume(taskId, src.prior);
       await this.start(taskId);
     } catch (err) {
-      this.pendingOperatorSeed.delete(taskId);
+      this.activeRuns.clearPendingOperatorSeed(taskId);
       throw err;
     }
     return true;
@@ -1077,16 +1036,16 @@ export class Runner {
   async steerPaused(taskId: number, text: string): Promise<boolean> {
     const task = await this.taskService.get(taskId);
     if (task.state !== 'paused') return false;
-    if ([...this.active.values()].some((a) => a.taskId === taskId)) {
+    if (this.activeRuns.hasTask(taskId)) {
       return (await this.resume(taskId)) && (await this.steer(taskId, text));
     }
     const src = await this.resolveContinuationSource(task);
     if (!src || !this.resumeEligibilityFor(task, src.session).eligible) return false;
-    this.pendingOperatorSeed.set(taskId, text);
+    this.activeRuns.setPendingOperatorSeed(taskId, text);
     try {
       await this.resumePaused(taskId);
     } catch (err) {
-      this.pendingOperatorSeed.delete(taskId);
+      this.activeRuns.clearPendingOperatorSeed(taskId);
       throw err;
     }
     return true;
@@ -1102,7 +1061,7 @@ export class Runner {
   async resumePaused(taskId: number, continuation?: 'full' | 'condensed'): Promise<TaskRow> {
     const task = await this.taskService.get(taskId);
     if (task.state !== 'paused') return this.taskService.resume(taskId);
-    if ([...this.active.values()].some((active) => active.taskId === taskId)) return this.taskService.resume(taskId);
+    if (this.activeRuns.hasTask(taskId)) return this.taskService.resume(taskId);
     const chosen = continuation ? await this.taskService.setContinuationChoice(taskId, continuation) : task;
     const src = await this.resolveContinuationSource(chosen);
     const resumed = await this.taskService.resume(taskId);
@@ -1117,24 +1076,21 @@ export class Runner {
   }
 
   private forActiveTask(taskId: number, fn: (active: ActiveRun) => void): boolean {
-    for (const active of this.active.values()) {
-      if (active.taskId === taskId) {
-        fn(active);
-        return true;
-      }
-    }
-    return false;
+    const active = this.activeRuns.forTask(taskId);
+    if (!active) return false;
+    fn(active);
+    return true;
   }
 
   /** Kill every active harness (process shutdown). */
   shutdown(): void {
     this.shuttingDown = true;
-    for (const active of this.active.values()) {
+    for (const active of this.activeRuns.values()) {
       void this.tailer.stop(active.attemptId);
       active.verifyAbort.abort();
       this.kill(active);
     }
-    this.active.clear();
+    this.activeRuns.clear();
     this.usage.clearReaders();
   }
 
@@ -1538,12 +1494,7 @@ export class Runner {
       const continuation = await this.decideContinuation(task, run, workspace);
       attemptNumber += 1;
       const closedRunId = run.id;
-      this.toolCallTotals.delete(closedRunId);
-      this.lastTurnContextTokens.delete(closedRunId);
-      this.progressEvents.delete(closedRunId);
-      this.progressSequences.delete(closedRunId);
-      this.criticLogSequences.delete(closedRunId);
-      this.outstandingProgressActions.delete(closedRunId);
+      this.activeRuns.releaseAttempt(closedRunId);
       const nextAttempt = await this.attempts.ensureForRun(task.id, attemptNumber, Date.now());
       run = await this.attempts.update(nextAttempt.id, {
         branch: run.branch,
@@ -1562,12 +1513,7 @@ export class Runner {
       };
       }
     } finally {
-      this.toolCallTotals.delete(run.id);
-      this.lastTurnContextTokens.delete(run.id);
-      this.progressEvents.delete(run.id);
-      this.progressSequences.delete(run.id);
-      this.criticLogSequences.delete(run.id);
-      this.outstandingProgressActions.delete(run.id);
+      this.activeRuns.releaseAttempt(run.id);
     }
   }
 
@@ -1579,7 +1525,7 @@ export class Runner {
     const now = Date.now();
     const session = run.sessionRowId === null ? null : await this.sessionStore.get(run.sessionRowId).catch(() => null);
     const persisted = run.usage ? (JSON.parse(run.usage) as AttemptUsage).contextTokens ?? null : null;
-    const contextTokens = (await this.usage.latestSnapshot(run.id))?.contextTokens ?? this.lastTurnContextTokens.get(run.id) ?? persisted;
+    const contextTokens = (await this.usage.latestSnapshot(run.id))?.contextTokens ?? this.activeRuns.getLastTurnContextTokens(run.id) ?? persisted;
     return decideAttemptContinuation({
       cacheWarmSeconds: configuredCacheWarmSeconds(this.getConfig(), task.harness) ?? 0,
       contextTokens,
@@ -1629,11 +1575,10 @@ export class Runner {
       '',
       `Work in the checked-out integration branch \`${branch}\`. Fix the failure and commit the result. Do not create or switch branches, and do not push.`,
     ].join('\n');
-    const toolCalls = this.toolCallTotals.get(input.attempt.id) ?? await this.attempts.listToolCalls(input.attempt.id);
-    this.toolCallTotals.set(input.attempt.id, toolCalls);
+    const toolCalls = this.activeRuns.getToolCallTotals(input.attempt.id) ?? await this.attempts.listToolCalls(input.attempt.id);
+    this.activeRuns.setToolCallTotals(input.attempt.id, toolCalls);
     const onUpdate = (update: { sessionUpdate: string; [key: string]: unknown }): void => {
-      const seq = (this.progressSequences.get(input.attempt.id) ?? 0) + 1;
-      this.progressSequences.set(input.attempt.id, seq);
+      const seq = this.activeRuns.nextProgressSequence(input.attempt.id);
       this.events.onAttemptLogEvent?.({
         id: LIVE_RUN_LOG_EVENT_ID_OFFSET + seq,
         attemptId: input.attempt.id,
@@ -1708,7 +1653,7 @@ export class Runner {
       await this.attempts.updateStep(step.id, { state: 'failed', endedAt: Date.now() });
       throw error;
     } finally {
-      this.toolCallTotals.delete(input.attempt.id);
+      this.activeRuns.deleteToolCallTotals(input.attempt.id);
     }
   }
 
@@ -2156,10 +2101,10 @@ export class Runner {
       return { kind: 'terminal' };
     }
     const attemptAtStart = await this.attempts.ensureForRun(task.id, attemptNumber, run.startedAt);
-    const toolCalls = this.toolCallTotals.get(run.id) ?? (await this.attempts.listToolCalls(attemptAtStart.id));
-    this.toolCallTotals.set(run.id, toolCalls);
-    const progressEvents = this.progressEvents.get(run.id) ?? [];
-    this.progressEvents.set(run.id, progressEvents);
+    const toolCalls = this.activeRuns.getToolCallTotals(run.id) ?? (await this.attempts.listToolCalls(attemptAtStart.id));
+    this.activeRuns.setToolCallTotals(run.id, toolCalls);
+    const progressEvents = this.activeRuns.getProgressTrace(run.id) ?? [];
+    this.activeRuns.setProgressTrace(run.id, progressEvents);
     const turn = new TurnState(attemptAtStart, toolCalls, progressEvents);
     const flushToolCalls = async () => {
       await this.attempts.replaceToolCalls(turn.attemptAtStart.id, turn.toolCalls);
@@ -2301,7 +2246,7 @@ export class Runner {
           attemptId: run.id,
           promptResult: driven.result,
         });
-        if (usage?.contextTokens != null) this.lastTurnContextTokens.set(run.id, usage.contextTokens);
+        if (usage?.contextTokens != null) this.activeRuns.setLastTurnContextTokens(run.id, usage.contextTokens);
         this.noteModelMismatch(task, usage, record);
         await this.attempts.update(run.id, { stopReason: driven.result.stopReason ?? null, usage: usage ? JSON.stringify(usage) : null });
         record('lifecycle', { event: 'finished', stopReason: driven.result.stopReason ?? null });
@@ -2358,7 +2303,7 @@ export class Runner {
       guardrails.disarm();
       driver.fail(new Error('run finished'));
       driver.dispose();
-      this.active.delete(run.id);
+      this.activeRuns.delete(run.id);
       await finalize();
     }
   }
@@ -2394,16 +2339,12 @@ export class Runner {
       autoDriven,
       events: this.events,
       record,
-      nextProgressSequence: () => {
-        const seq = (this.progressSequences.get(run.id) ?? 0) + 1;
-        this.progressSequences.set(run.id, seq);
-        return seq;
-      },
-      outstandingAction: (event) => this.outstandingProgressActions.set(run.id, event),
+      nextProgressSequence: () => this.activeRuns.nextProgressSequence(run.id),
+      outstandingAction: (event) => this.activeRuns.setOutstandingProgressAction(run.id, event),
       completeOutstandingAction: (event) => {
-        const outstanding = this.outstandingProgressActions.get(run.id);
+        const outstanding = this.activeRuns.getOutstandingProgressAction(run.id);
         if (outstanding && (event.ref === undefined || outstanding.ref === undefined || event.ref === outstanding.ref)) {
-          this.outstandingProgressActions.delete(run.id);
+          this.activeRuns.clearOutstandingProgressAction(run.id);
         }
       },
     });
@@ -2433,7 +2374,7 @@ export class Runner {
       globalPauseRequested: false,
       verifyAbort: new AbortController(),
     };
-    this.active.set(run.id, active);
+    this.activeRuns.set(run.id, active);
     turn.toolCallFlushTimer = setInterval(() => {
       fireAndForget(() => flushToolCalls(), { op: 'runner.flushToolCalls.interval', level: 'warn', context: { attemptId: run.id } });
     }, 10_000);
@@ -2454,7 +2395,7 @@ export class Runner {
         attemptNumber,
         progressTrace: turn.progressEvents,
         attemptForTrip: () => this.latestAttemptFor(task),
-        outstandingAction: () => this.outstandingProgressActions.get(run.id),
+        outstandingAction: () => this.activeRuns.getOutstandingProgressAction(run.id),
         record: (payload) => record('lifecycle', payload),
         settle: async (now, reason) => {
           active.externallySettled = true;
@@ -2632,8 +2573,7 @@ export class Runner {
           { ...task, workingDir: workspace.cwd },
           resolveTaskPrompt(await this.getWorkspace?.(task.workspaceId), this.getConfig()),
         );
-    const operatorSeed = this.pendingOperatorSeed.get(task.id);
-    if (operatorSeed !== undefined) this.pendingOperatorSeed.delete(task.id);
+    const operatorSeed = this.activeRuns.takePendingOperatorSeed(task.id);
     let condensed: string | null = null;
     if (operatorSeed !== undefined && !healCtx) {
       promptText = `## Operator message\n\n${operatorSeed}`;
@@ -2794,7 +2734,7 @@ export class Runner {
       attemptId: run.id,
       promptResult: result,
     });
-    if (usage?.contextTokens != null) this.lastTurnContextTokens.set(run.id, usage.contextTokens);
+    if (usage?.contextTokens != null) this.activeRuns.setLastTurnContextTokens(run.id, usage.contextTokens);
     this.noteModelMismatch(task, usage, record);
     const patch = {
       stopReason: result.stopReason ?? null,
