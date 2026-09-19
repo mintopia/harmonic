@@ -50,7 +50,7 @@ function CriticRuntimeFields({
   const models = critic.harness ? harnessModels[critic.harness] ?? [] : [];
   const listId = `${idPrefix}-models`;
   return (
-    <div className="grid gap-3 rounded-md border border-hairline bg-sunken p-3 sm:grid-cols-2">
+    <div className="grid gap-3 rounded-md border border-hairline bg-sunken p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_7rem]">
       <div>
         <label className={runStepLabel} htmlFor={`${idPrefix}-harness`}>
           <span className="grid size-3.5 place-items-center rounded-sm bg-raised text-[9px] text-muted">1</span>
@@ -93,7 +93,6 @@ function CriticRuntimeFields({
       </div>
       <div>
         <label className={runStepLabel} htmlFor={`${idPrefix}-timeout`}>
-          <span className="grid size-3.5 place-items-center rounded-sm bg-raised text-[9px] text-muted">3</span>
           Timeout <span className="font-normal normal-case tracking-normal text-muted">s</span>
         </label>
         <input
