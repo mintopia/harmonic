@@ -28,7 +28,6 @@ export interface HarnessSpawnRequest {
   env: NodeJS.ProcessEnv;
 }
 
-/** The injectable seam between {@link ConversationDriver} and a real harness child process. */
 export interface HarnessSpawn {
   spawn(req: HarnessSpawnRequest): ChildProcess;
 }
@@ -45,7 +44,6 @@ export function createHarnessProcessSpawn(): HarnessSpawn {
   };
 }
 
-/** The injectable seam between {@link ConversationDriver} and the filesystem's working-dir check. */
 export interface WorkingDirProbe {
   exists(path: string): boolean;
 }
@@ -54,7 +52,6 @@ export function createFsWorkingDirProbe(): WorkingDirProbe {
   return { exists: (path: string) => existsSync(path) };
 }
 
-/** The injectable seam between {@link ConversationDriver} and the idle timer. */
 export interface ConversationTimers {
   setTimeout(fn: () => void, ms: number): ReturnType<typeof setTimeout>;
   clearTimeout(handle: ReturnType<typeof setTimeout>): void;
