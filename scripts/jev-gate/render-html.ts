@@ -267,8 +267,26 @@ export function renderBaselineHtml(baseline: Baseline, meta: BaselineMeta | null
 
   const hasChart = typeof Chart !== 'undefined';
   const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
-  const palette = () => ({ pass: cssVar('--pass'), warn: cssVar('--warn'), fail: cssVar('--fail'), na: cssVar('--muted'), grid: cssVar('--line'), tick: cssVar('--muted'), panel: cssVar('--panel') });
+  const palette = () => ({ pass: cssVar('--pass'), warn: cssVar('--warn'), fail: cssVar('--fail'), na: cssVar('--muted'), grid: cssVar('--line'), tick: cssVar('--muted'), panel: cssVar('--panel'), passBg: cssVar('--pass-bg'), warnBg: cssVar('--warn-bg'), failBg: cssVar('--fail-bg') });
   const zoneColor = (P, z) => z === 'pass' ? P.pass : z === 'warn' ? P.warn : z === 'fail' ? P.fail : P.na;
+
+  // Horizontal fail/warn/pass bands behind each plot, on the score (y) axis.
+  const zoneBands = {
+    id: 'zoneBands',
+    beforeDatasetsDraw(chart) {
+      const { ctx, chartArea, scales: sc } = chart;
+      if (!chartArea || !sc.y) return;
+      const P = palette();
+      const x = chartArea.left, w = chartArea.right - chartArea.left;
+      const band = (lo, hi, color) => {
+        const top = sc.y.getPixelForValue(hi), bot = sc.y.getPixelForValue(lo);
+        ctx.save(); ctx.globalAlpha = 0.5; ctx.fillStyle = color; ctx.fillRect(x, top, w, bot - top); ctx.restore();
+      };
+      band(0, 1.5, P.failBg);
+      band(1.5, 2.5, P.warnBg);
+      band(2.5, 4, P.passBg);
+    },
+  };
 
   // Every project file's point for one category (the grey backdrop pool).
   function catPoints(k) {
@@ -302,6 +320,7 @@ export function renderBaselineHtml(baseline: Baseline, meta: BaselineMeta | null
         plugins: { legend: { display: false }, tooltip: { displayColors: false, callbacks: { title: () => '', label: (ctx) => { const p = ctx.raw; return p.path + '  ' + p.y.toFixed(2) + '/4 · ' + p.conf; } } } },
         scales: scales(P),
       },
+      plugins: [zoneBands],
     });
   }
 
