@@ -729,7 +729,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     opts.criticDrive,
   );
   epicServiceRef = epicService;
-  const trackerManager = new TrackerPollerManager(tasks, () => workspaces.list(), epicService, undefined, undefined, scheduler);
+  const trackerManager = new TrackerPollerManager(tasks, () => workspaces.list(), { epicService, scheduler });
   trackerManagerRef = trackerManager;
   for (const merged of pendingPostMerge.splice(0)) await postMerge(merged);
   scheduler.register({

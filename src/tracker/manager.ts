@@ -17,6 +17,14 @@ import { persistedTickets } from './persisted.js';
 interface Entry { poller: TrackerPoller; mirror: MirrorCoordinator; sig: string; unregister: () => void }
 const sigOf = (workspace: WorkspaceRow): string => `${workspace.workingDir}|${workspace.trackerPollIntervalSeconds * 1000}`;
 
+export interface TrackerPollerManagerOptions {
+  resolveAdapter?: (repoRoot: string, featureIndex?: FeatureIndex) => Promise<TrackerAdapter>;
+  onError?: (message: string) => void;
+  scheduler?: Scheduler;
+  epicService?: EpicService;
+  yieldOptions?: YieldOptions;
+}
+
 /** Owns tracker polling, mirroring, and tracker resolution for each enabled Workspace. */
 export class TrackerPollerManager {
   private readonly entries = new Map<number, Entry>();
@@ -25,43 +33,30 @@ export class TrackerPollerManager {
   private readonly resolveAdapter: (repoRoot: string, featureIndex?: FeatureIndex) => Promise<TrackerAdapter>;
   private readonly onError: (message: string) => void;
   private readonly scheduler: Scheduler | undefined;
-  private readonly opts: { yieldOptions?: YieldOptions };
+  private readonly yieldOptions: YieldOptions | undefined;
 
   constructor(
     private readonly tasks: TaskService,
     private readonly getWorkspaces: () => Promise<WorkspaceRow[]>,
-    epicServiceOrResolveAdapter: EpicService | ((repoRoot: string, featureIndex?: FeatureIndex) => Promise<TrackerAdapter>) = resolveTrackerAdapter,
-    resolveAdapterOrOnError?: ((repoRoot: string, featureIndex?: FeatureIndex) => Promise<TrackerAdapter>) | ((message: string) => void),
-    onErrorOrLegacy?: ((message: string) => void) | unknown,
-    scheduler?: Scheduler,
-    opts: { yieldOptions?: YieldOptions } = {},
-    ..._legacy: unknown[]
+    options: TrackerPollerManagerOptions = {},
   ) {
-    if (typeof epicServiceOrResolveAdapter === 'function') {
-      this.resolveAdapter = epicServiceOrResolveAdapter;
-      this.onError = typeof resolveAdapterOrOnError === 'function' ? resolveAdapterOrOnError as (message: string) => void : logger.error;
-      this.epicService = new TrackerEpicService(tasks, getWorkspaces, this.resolveAdapter, this.onError);
-      this.scheduler = undefined;
-      this.opts = typeof _legacy[0] === 'object' && _legacy[0] !== null ? _legacy[0] as { yieldOptions?: YieldOptions } : {};
-      return;
-    }
-    this.epicService = epicServiceOrResolveAdapter;
-    this.resolveAdapter = typeof resolveAdapterOrOnError === 'function' ? resolveAdapterOrOnError as (repoRoot: string, featureIndex?: FeatureIndex) => Promise<TrackerAdapter> : resolveTrackerAdapter;
-    this.onError = typeof onErrorOrLegacy === 'function' ? onErrorOrLegacy as (message: string) => void : logger.error;
-    this.scheduler = scheduler;
-    this.opts = opts;
+    this.resolveAdapter = options.resolveAdapter ?? resolveTrackerAdapter;
+    this.onError = options.onError ?? logger.error;
+    this.scheduler = options.scheduler;
+    this.epicService = options.epicService ?? new TrackerEpicService(tasks, getWorkspaces, this.resolveAdapter, this.onError);
+    this.yieldOptions = options.yieldOptions;
   }
 
   async sync(): Promise<void> {
     const workspaces = new Map((await this.getWorkspaces()).map((workspace) => [workspace.id, workspace]));
-    await forEachYielding(this.entries, async ([id, entry]) => { const workspace = workspaces.get(id); if (!workspace || !workspace.trackerEnabled || entry.sig !== sigOf(workspace)) this.stopEntry(id, entry); }, this.opts.yieldOptions);
-    await forEachYielding(this.resolved.keys(), async (id) => { const workspace = workspaces.get(id); if (!workspace || !workspace.trackerEnabled) this.resolved.delete(id); }, this.opts.yieldOptions);
+    await forEachYielding(this.entries, async ([id, entry]) => { const workspace = workspaces.get(id); if (!workspace || !workspace.trackerEnabled || entry.sig !== sigOf(workspace)) this.stopEntry(id, entry); }, this.yieldOptions);
+    await forEachYielding(this.resolved.keys(), async (id) => { const workspace = workspaces.get(id); if (!workspace || !workspace.trackerEnabled) this.resolved.delete(id); }, this.yieldOptions);
     await forEachYielding(workspaces.values(), async (workspace) => {
       if (!workspace.trackerEnabled || this.entries.has(workspace.id)) return;
       const resolved = await resolveTracker(workspace.workingDir, this.resolveAdapter);
       this.resolved.set(workspace.id, resolved);
       if (resolved.ok || this.scheduler) this.startLoop(workspace);
-    }, this.opts.yieldOptions);
+    }, this.yieldOptions);
   }
 
   private startLoop(workspace: WorkspaceRow): void {
@@ -89,11 +84,11 @@ export class TrackerPollerManager {
     const rows = await this.tasks.list(workspaceId === undefined ? {} : { workspaceId });
     const containers = await this.tasks.listTrackerContainers(workspaceId);
     const byWorkspace = new Map<number, typeof rows>();
-    await forEachYielding(rows, (task) => { if (task.origin !== 'mirrored' || task.workspaceId === null) return; const tasks = byWorkspace.get(task.workspaceId); if (tasks) tasks.push(task); else byWorkspace.set(task.workspaceId, [task]); });
+    await forEachYielding(rows, (task) => { if (task.origin !== 'mirrored' || task.workspaceId === null) return; const tasks = byWorkspace.get(task.workspaceId); if (tasks) tasks.push(task); else byWorkspace.set(task.workspaceId, [task]); }, this.yieldOptions);
     const containersByWorkspace = new Map<number, typeof containers>();
-    await forEachYielding(containers, (container) => { const items = containersByWorkspace.get(container.workspaceId); if (items) items.push(container); else containersByWorkspace.set(container.workspaceId, [container]); if (!byWorkspace.has(container.workspaceId)) byWorkspace.set(container.workspaceId, []); });
+    await forEachYielding(containers, (container) => { const items = containersByWorkspace.get(container.workspaceId); if (items) items.push(container); else containersByWorkspace.set(container.workspaceId, [container]); if (!byWorkspace.has(container.workspaceId)) byWorkspace.set(container.workspaceId, []); }, this.yieldOptions);
     const maps: DerivedMap[] = [];
-    await forEachYielding(byWorkspace, async ([id, mirrored]) => { maps.push(...deriveMaps(await persistedTickets(mirrored, containersByWorkspace.get(id) ?? []), mirrored, id)); });
+    await forEachYielding(byWorkspace, async ([id, mirrored]) => { maps.push(...deriveMaps(await persistedTickets(mirrored, containersByWorkspace.get(id) ?? []), mirrored, id)); }, this.yieldOptions);
     return maps;
   }
 
@@ -106,5 +101,5 @@ export class TrackerPollerManager {
     if (entry) await entry.poller.poll(); else this.startLoop(workspace);
   }
   stopAll(): void { for (const [id, entry] of this.entries) this.stopEntry(id, entry); }
-  async reconcileEpics(): Promise<void> { await forEachYielding(this.entries, async ([id, entry]) => { if (this.resolved.get(id)?.ok) await entry.poller.reconcileEpics(); }); }
+  async reconcileEpics(): Promise<void> { await forEachYielding(this.entries, async ([id, entry]) => { if (this.resolved.get(id)?.ok) await entry.poller.reconcileEpics(); }, this.yieldOptions); }
 }
