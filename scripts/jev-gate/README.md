@@ -17,18 +17,28 @@ not a hard guarantee for a score sitting exactly on a threshold line.
 | --- | --- |
 | `scripts/jev-gate/cli.ts` | Entrypoint. |
 | `scripts/jev-gate/{types,config,glob,git,jev-client,thresholds}.ts` | Implementation modules. |
+| `scripts/jev-gate/render-html.ts` | Renders a baseline to a self-contained HTML report (the optional `--html` output). |
 | `scripts/jev-gate/rubrics.json` | Vendored copy of the 7-category Jev rubric (security-by-exploitability + role-awareness). Self-contained — does not depend on `.claude/skills/jev-code-score` existing on the CI runner. |
 | `jev.gate.json` (repo root) | Committed, tunable policy: thresholds, gating vs. advisory categories, path-based role exemptions, source-file filters. Edit this, not the code, to retune the gate. |
-| `jev.baseline.json` (repo root, **not created by this change**) | One-way ratchet baseline: `path -> {categories, overall}`. See "Baseline / ratchet" below — the gate runs fine without it, just with a reduced check. |
+| `jev.baseline.json` (repo root) | One-way ratchet baseline: `path -> {categories, overall}`. Generate/regenerate it with `--write-baseline`. The gate runs fine without it, just with a reduced (absolute-only) check. |
 
 ## Running it
 
 ```bash
-# Local / ad hoc, from the repo root:
-OPENROUTER_API_KEY=... npx tsx scripts/jev-gate/cli.ts --base develop
+# Bash-runnable wrapper (cds to repo root, uses local tsx). From anywhere:
+OPENROUTER_API_KEY=... ./scripts/jev-gate.sh --base develop
+OPENROUTER_API_KEY=... ./scripts/jev-gate.sh --base develop --json   # CI form
 
-# CI machine-readable form:
-OPENROUTER_API_KEY=... npx tsx scripts/jev-gate/cli.ts --base develop --json
+# Or via npm:
+OPENROUTER_API_KEY=... npm run jev:gate -- --base develop
+
+# Seed / regenerate the whole-project baseline (the ratchet floor):
+OPENROUTER_API_KEY=... ./scripts/jev-gate.sh --write-baseline        # or: npm run jev:baseline
+OPENROUTER_API_KEY=... ./scripts/jev-gate.sh --write-baseline --html # also emit jev.baseline.html
+./scripts/jev-gate.sh --write-baseline --dry-run                     # list files, no API key, writes nothing
+
+# Render the EXISTING baseline to HTML (no scoring, no API key):
+./scripts/jev-gate.sh --html                                         # writes jev.baseline.html next to the json
 ```
 
 ### As a Harmonic verify-stage command
@@ -64,8 +74,13 @@ explicitly if an epic's integration branch needs to be named.
 --rubrics <path>     rubrics.json path (default: vendored copy next to this script)
 --baseline <path>    jev.baseline.json path (default: <repo-root>/<config.baselinePath>)
 --concurrency <n>    Parallel Jev calls (default: config.defaultConcurrency, 8)
+--mode <m>           "advisory" (report only, always exit 0) or "enforcing"
+                      (exit 1 on a failing verdict). Default: config.mode,
+                      overridable by $JEV_GATE_MODE.
+--write-baseline     Score the whole tracked project into --baseline (ratchet seed)
 --json               Emit structured JSON to stdout (default: human report)
---dry-run            Classify/role-map changed files, skip Jev calls (no API key needed)
+--dry-run            Resolve files/roles, skip Jev calls (no API key needed);
+                      with --write-baseline, lists files and writes nothing
 --signoff <p::cat>   Acknowledge a low-confidence FAIL (repeatable); or $JEV_GATE_SIGNOFF
                       as a comma-separated list of "path::category" tokens
 --help, -h
@@ -83,6 +98,7 @@ to stderr, so it's safe to redirect stdout to a file in either mode.
 | `JEV_MODEL` / `JEV_URL` | Override the model slug / endpoint. |
 | `TYPESAFE_API_KEY` | Required when `JEV_PROVIDER=typesafe`. |
 | `JEV_GATE_BASE` | Default `--base` when not passed on the CLI. |
+| `JEV_GATE_MODE` | `advisory` or `enforcing`; overrides `config.mode`, below `--mode`. |
 | `JEV_GATE_SIGNOFF` | Comma-separated `path::category` sign-off tokens. |
 
 ### Exit codes
@@ -94,11 +110,15 @@ said no" from "the gate couldn't run".
 
 ## What it implements (policy → code)
 
-- **Per-category gating, not overall-only** (proposal §1): `complexity_clean_code`,
-  `code_smells`, `duplication`, `testability`, `error_handling` gate; `security`
-  and `comments` are advisory-only and can never fail the build (`thresholds.ts`
-  `evaluateCategory`). A low `security` score is surfaced as a "flagged for
-  human security review" advisory note, never a verdict.
+- **Per-category gating, not overall-only** (proposal §1): which axes gate is
+  config-driven via `jev.gate.json`'s `gatingCategories` / `advisoryCategories`
+  (`thresholds.ts` `evaluateCategory` — a category only blocks when it is in
+  `gatingCategories` and not role-exempt). Anything left in `advisoryCategories`
+  keeps its true zone for display but can never produce a FAIL verdict; a low
+  `security` score there is surfaced as a "flagged for human security review"
+  advisory note. **This workspace's `jev.gate.json` gates all 7 axes, including
+  `security` and `comments`** — see `docs/jev-gate.md` for the reliability
+  caveat that comes with gating `security`.
 - **Zones**: FAIL `<1.5`, WARN `1.5–<2.5`, PASS `>=2.5` per category; overall
   FAIL `<2.0` (50/100), WARN `2.0–<2.4` (proposal §2). Both are config-driven
   in `jev.gate.json`.
@@ -134,11 +154,14 @@ said no" from "the gate couldn't run".
 
 ## What is NOT implemented, and why
 
-- **Baseline write-back / generation.** Proposal §5 describes updating
-  `jev.baseline.json` on merge to `develop`, "only if improved or held". That
-  is a separate post-merge job (needs a full-repo scored run), not something a
-  per-PR verify-stage gate should do. This script only *reads* a baseline if
-  one exists.
+- **Baseline generation** is now implemented: `--write-baseline` scores every
+  tracked, in-scope source file (role skips/exemptions and size limits apply)
+  and writes `jev.baseline.json` as `path -> {categories, overall}`. It
+  overwrites (does not merge), so run it on a known-good commit.
+- **Baseline write-back on merge** (proposal §5: update the baseline on merge to
+  `develop`, "only if improved or held") is still not automated — a per-PR
+  verify-stage gate should not rewrite the ratchet floor. Re-run
+  `--write-baseline` deliberately when you want to move the floor.
 - **The PR-label escape hatch** (`jev-gate-override`, proposal §5). This
   script has no PR/label integration — it only knows git and the filesystem.
   `--signoff` is the closest equivalent for the one case the proposal treats
