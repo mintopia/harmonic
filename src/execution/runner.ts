@@ -1,49 +1,41 @@
-import { spawn, type ChildProcess } from 'node:child_process';
-import { existsSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Git } from './git.js';
-import { GitError } from '../domain/errors.js';
-import { attempted, bestEffort, fireAndForget, reportFailure } from '../error-handling.js';
+import { fireAndForget, reportFailure } from '../error-handling.js';
 import type { GitCircuitBreaker } from './git-failure.js';
-import { adapterFor } from './harness/registry.js';
-import { collectUsage, type AttemptUsage, type AttemptUsageSnapshot } from './usage.js';
-import { LiveUsageTailer, type TailerCadence } from './live-usage-tailer.js';
+import type { AttemptUsageSnapshot } from './usage.js';
+import { LiveUsageTailer } from './live-usage-tailer.js';
 import { UsageSampler } from './usage-sampler.js';
 import { TranscriptCapture } from './transcript-capture.js';
 import { ActiveRuns, type ActiveRun } from './active-runs.js';
-import { dropIndexForPath } from './code-index.js';
-import { LIVE_RUN_LOG_EVENT_ID_OFFSET, type LiveAttemptEvent } from './live-events.js';
+import { LIVE_RUN_LOG_EVENT_ID_OFFSET } from './live-events.js';
 import { VerificationCoordinator, type EpicVerificationResolutionInput } from './verification-coordinator.js';
 import { TurnDriver } from './turn-driver.js';
 import { EpicRefreshResolver } from './epic-refresh-resolver.js';
+import { WorkspaceProvisioner } from './workspace-provisioner.js';
+import { RunControl } from './run-control.js';
+import { UsageBackfiller } from './usage-backfiller.js';
 import type { AutoDrive } from './auto-drive.js';
-import type { AppConfig, HarnessConfig } from '../config.js';
-import { isTaskAttempt, type TaskRow, type AttemptRow, type WorkspaceRow } from '../db/schema.js';
+import type { AppConfig } from '../config.js';
+import type { TaskRow, AttemptRow } from '../db/schema.js';
 import { SessionStore } from '../domain/sessions.js';
 import { type DeterministicContinuation } from '../domain/session-continuation.js';
 import { DomainError } from '../domain/errors.js';
-import { AttemptStore, type AttemptGuardrailSnapshot, type PersistedAttemptEvent } from '../domain/attempts.js';
+import { AttemptStore, type AttemptGuardrailSnapshot } from '../domain/attempts.js';
 import { AttemptSettleCoordinator, type SettleProjection, type DispositionKind } from '../domain/attempt-settle.js';
 import type { SessionRetirementHook } from '../domain/session-retirement-coordinator.js';
 import type { TaskService } from '../domain/tasks.js';
-import { resolveGuardrails, resolvePauseMessage } from '../domain/setting-override.js';
-import type { ResolvedGuardrails } from '../domain/setting-override.js';
+import { resolveGuardrails } from '../domain/setting-override.js';
 import { SessionContinuation } from './session-continuation.js';
 import { VerificationAttemptStore } from '../domain/verification-attempts.js';
 import { EpicMergeEventStore } from '../domain/epic-merge-events.js';
 import { MergeCoordinator, BaseBranchUnresolved, EpicBaseNotReady, type EpicIntegrationMergeInput } from './merge-coordinator.js';
 export { BaseBranchUnresolved, EpicBaseNotReady };
 import { GuardrailEventStore } from '../domain/guardrail-events.js';
-import { type CriticHarnessDrive } from '../verification/critic.js';
 import { pricesForHarness } from '../domain/pricing.js';
 import { isForeignKeyViolation } from '../db/errors.js';
 import { logger } from '../logger.js';
-import type { PostMergeHook } from './branch-merge.js';
 import type { MergePolicyOutcome } from './merge-policy.js';
-import {
-  parseIntegrationBranch,
-} from './epic-coordinator.js';
 import type { EpicRefreshResolveDispatchOutcome, EpicRefreshTarget } from './epic-coordinator.js';
 import type { AsyncDbHandle } from '../db/async.js';
 import type { SpanContext } from '@opentelemetry/api';
@@ -51,96 +43,10 @@ import { startOperation } from '../telemetry/operations.js';
 
 export type { LiveAttemptEvent } from './live-events.js';
 export type { EpicVerificationResolutionInput } from './verification-coordinator.js';
+export type { RunnerEvents, RunnerOptions, Workspace } from './runner-options.js';
+import type { RunnerEvents, RunnerOptions } from './runner-options.js';
 
 const LIFECYCLE_SETTLE_GRACE_MS = 15_000;
-
-export interface RunnerEvents {
-  /** Fired after every run event is persisted (live streaming hook). */
-  onAttemptEvent?: (event: PersistedAttemptEvent) => void;
-  /** ACP session updates are transient: streamed to clients, never persisted. */
-  onAttemptLogEvent?: (event: LiveAttemptEvent) => void;
-  /** The critic turn's ACP session updates, on their own channel (same shape as
-   * `onAttemptLogEvent`) so a running critic streams as its own chat. */
-  onCriticLogEvent?: (event: LiveAttemptEvent) => void;
-  /** Fired whenever a run reaches a terminal state. */
-  onAttemptFinished?: (run: AttemptRow) => void;
-  /** Fired ~1s while a run tails its native log. */
-  onAttemptUsage?: (payload: { attemptId: number; snapshot: AttemptUsageSnapshot }) => void;
-  /** Fired when a Step transitions within a still-running Attempt, so the
-   * Task-detail timeline follows the live phase (the Attempt row is unchanged,
-   * so `onAttemptFinished` never covers these). */
-  onStepChanged?: (taskId: number) => void;
-  /** Fired after each Epic integration-merge step is persisted, so the Epic's
-   * merge progress can follow live (Epics have no Attempt row to stream). */
-  onEpicMergeStep?: (payload: { workspaceId: number; epicRef: number }) => void;
-}
-
-export interface RunnerOptions {
-  isGloballyPaused?: () => boolean;
-  onGloballyPaused?: (taskId: number) => Promise<void>;
-  events?: RunnerEvents;
-  /** Where temporary worktrees live; per-run subdirectories. */
-  worktreesDir?: string;
-  /** Mints/revokes the per-Attempt scoped API key injected into the harness. */
-  keys?: {
-    mint: (attemptId: number) => Promise<string>;
-    revoke: (attemptId: number) => void | Promise<void>;
-  };
-  /** Auto-drive collaborator for mirrored Tasks; absent on a native-only server. */
-  autoDrive?: AutoDrive;
-  /** Resolves a Task's ticket URL for the critic's `{url}` interpolation token;
-   * absent → `{url}` resolves to empty. */
-  urlFor?: (task: TaskRow) => string | null;
-  /** Push/persist cadence for the live-usage tailer; defaults to ~1s/~10s. */
-  tailerCadence?: TailerCadence;
-  /** Spend-Guardrail poll + unmeasurable-grace cadence; defaults to ~1s poll / 60s grace. */
-  spendGuardrail?: { pollMs?: number; graceMs?: number } | undefined;
-  /** Resolves a Task's Workspace row for the Guardrail snapshot;
-   * absent → the snapshot resolves against global defaults only. */
-  getWorkspace?: (
-    workspaceId: number | null,
-  ) => Promise<
-    | (Pick<
-        WorkspaceRow,
-        | 'guardrailBudget'
-        | 'guardrailProgress'
-        | 'toolTimeoutMinutes'
-        | 'taskPreMergeCommands'
-        | 'taskPreMergeCritics'
-        | 'taskPostMergeCommands'
-        | 'taskPostMergeCritics'
-        | 'epicPreMergeCommands'
-        | 'epicPreMergeCritics'
-        | 'maxAttempts'
-        | 'contextReuseTokenLimit'
-        | 'taskPrompt'
-        | 'pauseMessage'
-      > &
-        Partial<Pick<WorkspaceRow, 'workingDir'>>)
-    | undefined
-  >;
-  /** Injectable agent-critic drive; absent → the real drive spawns the
-   * builder's configured harness as a contained read-only reviewer. */
-  criticDrive?: CriticHarnessDrive | undefined;
-  /** Session retirement hook; absent → Sessions are never retired. */
-  sessionRetirement?: SessionRetirementHook;
-  /** Per-context git circuit breaker, shared with the Auto-Runner (which must
-   * be given the SAME instance). Absent → no breaker. */
-  gitBreaker?: GitCircuitBreaker;
-  /** Start-funnel gate for parallel-Epic members: true while a Task's
-   * integration base isn't ready to fork from. {@link Runner.beginRun} refuses
-   * to spawn such an Attempt (a `DomainError`). Absent → not gated. */
-  epicBaseNotReady?: (task: TaskRow) => boolean | Promise<boolean>;
-  postMerge?: PostMergeHook;
-}
-
-export interface Workspace {
-  cwd: string;
-  env: Record<string, string>;
-  worktree?: { repoDir: string; path: string };
-  baseRev?: string;
-  startDirty?: boolean;
-}
 
 export class Runner {
   private readonly activeRuns = new ActiveRuns();
@@ -174,6 +80,9 @@ export class Runner {
   private readonly verification: VerificationCoordinator;
   private readonly turnDriver: TurnDriver;
   private readonly epicRefreshResolver: EpicRefreshResolver;
+  private readonly workspaceProvisioner: WorkspaceProvisioner;
+  private readonly runControl: RunControl;
+  private readonly usageBackfiller: UsageBackfiller;
   /** The MCP endpoint agents should call back to; set once the server listens. */
   mcpUrl: string | null = null;
 
@@ -207,7 +116,7 @@ export class Runner {
       this.getConfig,
       { latestSnapshot: (attemptId) => this.usage.latestSnapshot(attemptId) },
       (attemptId) => this.activeRuns.getLastTurnContextTokens(attemptId),
-      (task) => this.dispatchCwd(task),
+      (task) => this.workspaceProvisioner.dispatchCwd(task),
     );
     this.usage = new UsageSampler(
       this.attempts,
@@ -264,6 +173,15 @@ export class Runner {
       worktreesDir: this.worktreesDir,
       criticDrive: this.criticDrive,
     });
+    this.workspaceProvisioner = new WorkspaceProvisioner({
+      attempts: this.attempts,
+      sessionStore: this.sessionStore,
+      mergeCoordinator: this.mergeCoordinator,
+      autoDrive: this.autoDrive,
+      sessionRetirement: this.sessionRetirement,
+      events: this.events,
+      worktreesDir: this.worktreesDir,
+    });
     this.verification = new VerificationCoordinator({
       taskService: this.taskService,
       attempts: this.attempts,
@@ -276,7 +194,7 @@ export class Runner {
       getWorkspace: this.getWorkspace,
       criticDrive: this.criticDrive,
       urlFor: this.urlFor,
-      worktreePathForTask: (task) => this.worktreePathForTask(task),
+      worktreePathForTask: (task) => this.workspaceProvisioner.worktreePathForTask(task),
       latestAttemptFor: (task) => this.latestAttemptFor(task),
       updateStep: (taskId, id, patch) => this.updateStep(taskId, id, patch),
     });
@@ -303,9 +221,9 @@ export class Runner {
       spendGraceMs: this.spendGraceMs,
       mcpUrl: () => this.mcpUrl,
       isShuttingDown: () => this.shuttingDown,
-      prepareWorkspace: (task, run, resume) => this.prepareWorkspace(task, run, resume),
-      finalizeWorkspace: (task, run, attemptNumber, workspace) => this.finalizeWorkspace(task, run, attemptNumber, workspace),
-      spawnHarness: (task, harness, cwd, extraEnv, unattended) => this.spawnHarness(task, harness, cwd, extraEnv, unattended),
+      prepareWorkspace: (task, run, resume) => this.workspaceProvisioner.prepareWorkspace(task, run, resume),
+      finalizeWorkspace: (task, run, attemptNumber, workspace) => this.workspaceProvisioner.finalizeWorkspace(task, run, attemptNumber, workspace),
+      spawnHarness: (task, harness, cwd, extraEnv, unattended) => this.workspaceProvisioner.spawnHarness(task, harness, cwd, extraEnv, unattended),
       updateStep: (taskId, id, patch) => this.updateStep(taskId, id, patch),
       pauseIfGloballyPaused: (taskId) => this.pauseIfGloballyPaused(taskId),
       latestAttemptFor: (task) => this.latestAttemptFor(task),
@@ -315,6 +233,29 @@ export class Runner {
       settleAutoCompleted: (task, run, patch) => this.settleAutoCompleted(task, run, patch),
       diffSnapshotFor: (task, attemptId) => this.diffSnapshotFor(task, attemptId),
       kill: (active) => this.kill(active),
+    });
+    this.runControl = new RunControl({
+      taskService: this.taskService,
+      attempts: this.attempts,
+      activeRuns: this.activeRuns,
+      events: this.events,
+      getWorkspace: this.getWorkspace,
+      getConfig: this.getConfig,
+      isGloballyPaused: this.isGloballyPaused,
+      onGloballyPaused: this.onGloballyPaused,
+      sessionContinuation: this.sessionContinuation,
+      emitSteerLog: (args) => this.emitSteerLog(args),
+      recordLifecycleTransition: (taskId, event, reason) => this.recordLifecycleTransition(taskId, event, reason),
+      start: (taskId) => this.start(taskId),
+      launchClaimed: (taskId) => this.launchClaimed(taskId),
+      beginRun: (task, parent, resumedAttempt) => this.beginRun(task, parent, resumedAttempt),
+    });
+    this.usageBackfiller = new UsageBackfiller({
+      attempts: this.attempts,
+      taskService: this.taskService,
+      getConfig: this.getConfig,
+      usage: this.usage,
+      worktreePathForTask: (task) => this.workspaceProvisioner.worktreePathForTask(task),
     });
   }
 
@@ -429,35 +370,9 @@ export class Runner {
     await this.settleEscalated(task, run, reason, {});
   }
 
-  /**
-   * Close: the ticket is cancelled; remove its branch and worktree and close
-   * the tracker issue. Every step is a best-effort output side-effect.
-   */
+  /** @see {@link WorkspaceProvisioner.cleanupClosed} */
   async cleanupClosed(task: TaskRow, run: AttemptRow | undefined): Promise<void> {
-    if (run) {
-      try {
-        await this.sessionRetirement?.onAttemptSettled(run, 'operator-cancel');
-      } catch (err) {
-        logger.error(`task ${task.id} close: session retirement failed: ${String(err)}`);
-      }
-      // git refuses to delete a branch a worktree still checks out.
-      const session = run.sessionRowId === null ? null : await this.sessionStore.get(run.sessionRowId).catch(() => null);
-      if (session?.worktreePath && session.worktreeRepoDir && existsSync(session.worktreePath)) {
-        const removedPath = session.worktreePath;
-        await Git.removeWorktree(session.worktreeRepoDir, removedPath)
-          .then(() => dropIndexForPath(removedPath))
-          .catch((err) => logger.error(`task ${task.id} close: worktree removal failed: ${String(err)}`));
-      }
-      if (run.branch && (await Git.branchCheckedOutAt(task.workingDir, run.branch).catch(() => null)) === null) {
-        await Git.deleteBranch(task.workingDir, run.branch).catch((err) =>
-          logger.error(`task ${task.id} close: branch '${run.branch}' removal failed: ${String(err)}`),
-        );
-      }
-      this.events.onAttemptFinished?.(await this.attempts.get(run.id));
-    }
-    if (this.autoDrive && !(await this.autoDrive.closeTicket(task, `Closed by a Harmonic operator without merging (task ${task.id}).`))) {
-      logger.error(`task ${task.id} close: tracker issue could not be closed`);
-    }
+    return this.workspaceProvisioner.cleanupClosed(task, run);
   }
 
   /** Spawn a run for a task the caller already flipped to working (the mirrored pick). */
@@ -550,18 +465,6 @@ export class Runner {
     }
   }
 
-  private worktreePathForTask(task: TaskRow): string {
-    return join(this.worktreesDir, `task-${task.id}`);
-  }
-
-  private dispatchCwd(task: TaskRow): string {
-    return task.isolationMode === 'worktree' ? this.worktreePathForTask(task) : task.workingDir;
-  }
-
-  private branchForTask(task: TaskRow): string {
-    return `harmonic/task-${task.id}`;
-  }
-
   /** Kill the harness of a task's active run (task cancellation).
    * operator-cancel outranks every other disposition. */
   async cancelForTask(taskId: number): Promise<void> {
@@ -633,226 +536,48 @@ export class Runner {
     });
   }
 
-  /**
-   * Steer a task's active Attempt. When a turn is in flight and the harness
-   * supports ACP `_session/steering`, the message is injected into the RUNNING
-   * turn; otherwise it is queued and delivered as a fresh prompt turn at the
-   * next turn boundary. Records a `steer_injected` or `steer_queued` lifecycle
-   * event either way. Returns false (⇒ 409) when the task isn't running here or
-   * its Attempt is no longer steerable.
-   */
+  /** @see {@link RunControl.steer} */
   async steer(taskId: number, text: string): Promise<boolean> {
-    const active = this.activeRuns.forTask(taskId);
-    if (!active || !active.steerable) return false;
-    // ACP `promptRequired`: an idle session must not start an untracked turn.
-    if (!active.idle && active.steerSupported !== false) {
-      try {
-        const res = await active.driver.steer([{ type: 'text', text }], { steering: { idleBehavior: 'promptRequired' } });
-        if (res.outcome === 'injected') {
-          active.steerSupported = true;
-          const event = await this.attempts.appendEvent(active.attemptId, { type: 'lifecycle', payload: { event: 'steer_injected', text } });
-          this.events.onAttemptEvent?.(event);
-          this.emitSteerLog({ attemptId: active.attemptId, text, queued: false });
-          return true;
-        }
-        // Outcome 'promptRequired': the turn ended before the RPC; nothing ran.
-        active.steerSupported = true;
-      } catch {
-        // No `_session/steering` on this harness (codex/copilot, older claude-acp).
-        active.steerSupported = false;
-      }
-    }
-    if (!active.steerable) return false;
-    active.steerQueue.push(text);
-    const event = await this.attempts.appendEvent(active.attemptId, { type: 'lifecycle', payload: { event: 'steer_queued', text } });
-    this.events.onAttemptEvent?.(event);
-    this.emitSteerLog({ attemptId: active.attemptId, text, queued: true });
-    return true;
+    return this.runControl.steer(taskId, text);
   }
 
-  /** Deliver the configured pause steer, then pause at the next prompt boundary. */
+  /** @see {@link RunControl.pause} */
   async pause(taskId: number): Promise<boolean> {
-    const task = await this.taskService.get(taskId);
-    if (task.state !== 'working') return false;
-    const active = this.activeRuns.forTask(taskId);
-    if (!active || active.pauseRequested) return false;
-    const message = resolvePauseMessage(await this.getWorkspace?.(task.workspaceId), this.getConfig());
-    if (!(await this.steer(taskId, message))) return false;
-    active.pauseRequested = true;
-    active.pauseReason = 'operator request';
-    logger.info('Task pause requested', { taskId, attemptId: active.attemptId, reason: active.pauseReason });
-    return true;
+    return this.runControl.pause(taskId);
   }
 
+  /** @see {@link RunControl.pauseForGlobal} */
   async pauseForGlobal(taskId: number): Promise<boolean> {
-    const task = await this.taskService.get(taskId);
-    if (task.state !== 'working') return false;
-    const active = this.activeRuns.forTask(taskId);
-    if (!active) {
-      await this.taskService.pause(taskId);
-      await this.recordLifecycleTransition(taskId, 'paused', 'global pause');
-      logger.info('Task paused', { taskId, reason: 'global pause' });
-      return true;
-    }
-    if (!active.steerable) {
-      active.pauseRequested = true;
-      active.pauseReason = 'global pause';
-      active.globalPauseRequested = true;
-      await this.taskService.pause(taskId);
-      await this.recordLifecycleTransition(taskId, 'paused', 'global pause');
-      active.pauseFactRecorded = true;
-      logger.info('Task paused', { taskId, attemptId: active.attemptId, reason: active.pauseReason });
-      return true;
-    }
-    const paused = await this.pause(taskId);
-    if (paused) {
-      active.pauseReason = 'global pause';
-      active.globalPauseRequested = true;
-    }
-    return paused;
+    return this.runControl.pauseForGlobal(taskId);
   }
 
-  /** Resume the still-running Attempt, restarting its wall-clock guardrail from
-   * zero before reattaching its durable Session. */
+  /** @see {@link RunControl.resume} */
   async resume(taskId: number, reason = 'operator request'): Promise<boolean> {
-    const task = await this.taskService.get(taskId);
-    if (task.state !== 'paused') return false;
-    const startedAt = Date.now();
-    const active = this.activeRuns.forTask(taskId);
-    if (active) {
-      active.pauseRequested = false;
-      active.pauseReason = null;
-      active.globalPauseRequested = false;
-      await this.attempts.update(active.attemptId, { startedAt });
-      active.guardrails?.resetWallClock(startedAt);
-      await this.taskService.resume(taskId);
-      await this.recordLifecycleTransition(taskId, 'resumed', reason);
-      logger.info('Task resumed', { taskId, attemptId: active.attemptId, reason });
-      return true;
-    }
-    const run = await this.attempts.getRunningForTask(taskId);
-    if (!run) return false;
-    await this.attempts.update(run.id, { startedAt });
-    await this.taskService.resume(taskId);
-    await this.recordLifecycleTransition(taskId, 'resumed', reason);
-    logger.info('Task resumed', { taskId, attemptId: run.id, reason });
-    try {
-      await this.launchClaimed(taskId);
-      return true;
-    } catch (error) {
-      await this.taskService.pause(taskId);
-      throw error;
-    }
+    return this.runControl.resume(taskId, reason);
   }
 
-  /**
-   * Extend the wall-clock guardrail of a working Task's live Attempt by
-   * `addMinutes`. Persists the raised cap onto the Attempt's frozen
-   * `guardrailConfig` (so a re-prime keeps it) and re-arms the live supervisor's
-   * deadline in place. A no-op returning false when the Task is not working, has
-   * no active Attempt, or carries no wall-clock budget to extend.
-   */
+  /** @see {@link RunControl.extendGuardrail} */
   async extendGuardrail(taskId: number, addMinutes: number): Promise<boolean> {
-    const task = await this.taskService.get(taskId);
-    if (task.state !== 'working') return false;
-    const active = this.activeRuns.forTask(taskId);
-    if (!active) return false;
-    const run = await this.attempts.get(active.attemptId);
-    const config = run.guardrailConfig ? (JSON.parse(run.guardrailConfig) as ResolvedGuardrails) : null;
-    if (!config?.budget) return false;
-    const wallClockMinutes = config.budget.wallClockMinutes + addMinutes;
-    const updated: ResolvedGuardrails = { ...config, budget: { ...config.budget, wallClockMinutes } };
-    await this.attempts.update(active.attemptId, { guardrailConfig: JSON.stringify(updated) });
-    active.guardrails?.extendWallClock(addMinutes);
-    const event = await this.attempts.appendEvent(active.attemptId, {
-      type: 'lifecycle',
-      payload: { event: 'guardrail_extended', dimension: 'wall-clock', addMinutes, wallClockMinutes },
-    });
-    this.events.onAttemptEvent?.(event);
-    logger.info('Wall-clock guardrail extended', { taskId, attemptId: active.attemptId, addMinutes, wallClockMinutes });
-    return true;
+    return this.runControl.extendGuardrail(taskId, addMinutes);
   }
 
   private async pauseIfGloballyPaused(taskId: number): Promise<boolean> {
-    if (!this.isGloballyPaused?.()) return false;
-    if ((await this.taskService.get(taskId)).state === 'working') {
-      await this.taskService.pause(taskId);
-      await this.onGloballyPaused?.(taskId);
-    }
-    return true;
+    return this.runControl.pauseIfGloballyPaused(taskId);
   }
 
-  /**
-   * Continue a settled Task's Session with an operator message. A cold Session
-   * remains eligible: cache warmth changes the cost estimate, never whether the
-   * operator can continue it. The settled Attempt is resumed in place.
-   */
+  /** @see {@link RunControl.steerSettled} */
   async steerSettled(taskId: number, text: string): Promise<boolean> {
-    if (this.activeRuns.hasTask(taskId)) return false;
-    const task = await this.taskService.get(taskId);
-    if (task.state !== 'escalated') return false;
-    const src = await this.sessionContinuation.resolveContinuationSource(task);
-    if (!src) return false;
-    if (!this.sessionContinuation.resumeEligibilityFor(task, src.session).eligible) return false;
-    this.activeRuns.setPendingOperatorSeed(taskId, text);
-    try {
-      await this.taskService.requeue(taskId, undefined, 'full');
-      this.activeRuns.setPendingManualResume(taskId, src.prior);
-      await this.start(taskId);
-    } catch (err) {
-      this.activeRuns.clearPendingOperatorSeed(taskId);
-      throw err;
-    }
-    return true;
+    return this.runControl.steerSettled(taskId, text);
   }
 
-  /**
-   * Steer a paused Task: resume it to `working` and deliver the operator message.
-   * A live paused Attempt is reattached (its wall-clock guardrail restarts) and
-   * the message is steered into it; a torn-down one is continued from its
-   * retained Session with the message as the seed of a fresh Attempt. Returns
-   * false when the Task isn't paused or has no Session to continue.
-   */
+  /** @see {@link RunControl.steerPaused} */
   async steerPaused(taskId: number, text: string): Promise<boolean> {
-    const task = await this.taskService.get(taskId);
-    if (task.state !== 'paused') return false;
-    if (this.activeRuns.hasTask(taskId)) {
-      return (await this.resume(taskId)) && (await this.steer(taskId, text));
-    }
-    const src = await this.sessionContinuation.resolveContinuationSource(task);
-    if (!src || !this.sessionContinuation.resumeEligibilityFor(task, src.session).eligible) return false;
-    this.activeRuns.setPendingOperatorSeed(taskId, text);
-    try {
-      await this.resumePaused(taskId);
-    } catch (err) {
-      this.activeRuns.clearPendingOperatorSeed(taskId);
-      throw err;
-    }
-    return true;
+    return this.runControl.steerPaused(taskId, text);
   }
 
-  /**
-   * Resume a paused Task in its latest compatible Session when one is retained.
-   * `continuation` is the operator's explicit pick: `condensed` starts a fresh
-   * Session from a summary, `full`/undefined reuses the retained one. A Session
-   * that is still live is always continued — a running process can't be forked
-   * into a fresh attempt.
-   */
+  /** @see {@link RunControl.resumePaused} */
   async resumePaused(taskId: number, continuation?: 'full' | 'condensed'): Promise<TaskRow> {
-    const task = await this.taskService.get(taskId);
-    if (task.state !== 'paused') return this.taskService.resume(taskId);
-    if (this.activeRuns.hasTask(taskId)) return this.taskService.resume(taskId);
-    const chosen = continuation ? await this.taskService.setContinuationChoice(taskId, continuation) : task;
-    const src = await this.sessionContinuation.resolveContinuationSource(chosen);
-    const resumed = await this.taskService.resume(taskId);
-    if (!src || !this.sessionContinuation.resumeEligibilityFor(chosen, src.session).eligible) return resumed;
-    try {
-      await this.beginRun(resumed, undefined, src.prior);
-    } catch (err) {
-      await this.taskService.setState(taskId, 'paused');
-      throw err;
-    }
-    return this.taskService.get(taskId);
+    return this.runControl.resumePaused(taskId, continuation);
   }
 
   private forActiveTask(taskId: number, fn: (active: ActiveRun) => void): boolean {
@@ -874,89 +599,6 @@ export class Runner {
     this.usage.clearReaders();
   }
 
-  private spawnHarness(
-    task: TaskRow,
-    harness: HarnessConfig,
-    cwd: string,
-    extraEnv: Record<string, string>,
-    unattended: boolean,
-  ): ChildProcess {
-    const env: Record<string, string | undefined> = {
-      ...process.env,
-      ...harness.env,
-      HARMONIC_MODEL: task.model,
-      ...adapterFor(task.harness).spawnEnv({ model: task.model, cwd, sessionLogDir: harness.sessionLogDir, unattended }),
-      ...extraEnv,
-    };
-    return spawn(harness.command, harness.args, {
-      cwd,
-      env: env as NodeJS.ProcessEnv,
-      stdio: ['pipe', 'pipe', 'pipe'],
-      detached: true,
-    });
-  }
-
-  private async prepareWorkspace(task: TaskRow, run: AttemptRow, resume = false): Promise<Workspace> {
-    if (task.isolationMode !== 'worktree') {
-      const workspace: Workspace = { cwd: task.workingDir, env: {} };
-      const resolved = await attempted(
-        async () => ({
-          baseRev: await Git.revParse(task.workingDir, 'HEAD'),
-          startDirty: resume ? false : await Git.isDirty(task.workingDir),
-        }),
-        {
-          op: 'runner.prepareWorkspace.baseRev',
-          level: 'warn',
-          notFoundIf: (err) =>
-            err instanceof GitError && /unknown revision|ambiguous argument 'HEAD'|does not have any commits yet/i.test(err.stderr),
-          context: { taskId: task.id, attemptId: run.id, workingDir: task.workingDir, resume },
-        },
-      );
-      if (resolved.ok) {
-        workspace.baseRev = resolved.value.baseRev;
-        workspace.startDirty = resolved.value.startDirty;
-      }
-      return workspace;
-    }
-
-    const path = this.worktreePathForTask(task);
-    mkdirSync(this.worktreesDir, { recursive: true });
-
-    if (existsSync(path) && !(await Git.isValidWorktree(task.workingDir, path))) {
-      await Git.discardOrphanWorktree(task.workingDir, path);
-    }
-
-    if (resume) {
-      const persisted = await this.attempts.get(run.id);
-      const branch = persisted.branch ?? this.branchForTask(task);
-      const baseBranch = persisted.baseBranch ?? (await this.mergeCoordinator.resolveBaseBranch(task));
-      if (!existsSync(path)) {
-        await Git.addWorktreeCheckout(task.workingDir, path, branch);
-      }
-      return { cwd: path, env: {}, worktree: { repoDir: task.workingDir, path }, baseRev: baseBranch, startDirty: false };
-    }
-
-    const baseBranch = await this.mergeCoordinator.resolveBaseBranch(task);
-    const branch = this.branchForTask(task);
-    if (existsSync(path)) {
-      await this.attempts.update(run.id, { branch, baseBranch });
-      return { cwd: path, env: {}, worktree: { repoDir: task.workingDir, path }, baseRev: baseBranch, startDirty: false };
-    }
-    if (await Git.branchExists(task.workingDir, branch)) {
-      await Git.addWorktreeCheckout(task.workingDir, path, branch);
-      await this.attempts.update(run.id, { branch, baseBranch });
-      return { cwd: path, env: {}, worktree: { repoDir: task.workingDir, path }, baseRev: baseBranch, startDirty: false };
-    }
-    if (parseIntegrationBranch(baseBranch) !== null && !(await Git.branchExists(task.workingDir, baseBranch))) {
-      throw new EpicBaseNotReady(
-        `Epic integration branch ${baseBranch} does not exist yet; it is cut/re-cut on the next tracker poll`,
-      );
-    }
-    await Git.addWorktree(task.workingDir, path, branch, baseBranch);
-    await this.attempts.update(run.id, { branch, baseBranch });
-    return { cwd: path, env: {}, worktree: { repoDir: task.workingDir, path }, baseRev: baseBranch, startDirty: false };
-  }
-
   /** Patch a Step and announce the transition, so the Task-detail timeline
    * follows the live phase. Wraps every mid-Attempt Step mutation: each Step is
    * created then immediately set `running`, so patching alone covers every
@@ -969,33 +611,6 @@ export class Runner {
     const step = await this.attempts.updateStep(id, patch);
     this.events.onStepChanged?.(taskId);
     return step;
-  }
-
-  private async finalizeWorkspace(task: TaskRow, run: AttemptRow, attemptNumber: number, workspace: Workspace): Promise<void> {
-    if (!workspace.worktree) return;
-    const { repoDir, path } = workspace.worktree;
-    await bestEffort(() => Git.commitAll(path, `harmonic: task ${task.id} attempt ${attemptNumber}`), {
-      op: 'runner.finalizeWorkspace.commitAll',
-      level: 'error',
-      context: { taskId: task.id, attemptId: run.id, attemptNumber, path },
-    });
-    const sessionRowId = (await this.attempts.get(run.id)).sessionRowId;
-    let retained = false;
-    if (sessionRowId != null) {
-      retained = await bestEffort(() => this.sessionStore.bindWorktree(sessionRowId, repoDir, path, Date.now()), {
-        op: 'runner.finalizeWorkspace.bindWorktree',
-        level: 'error',
-        notFoundLevel: 'info',
-        context: { taskId: task.id, attemptId: run.id, attemptNumber, sessionRowId, repoDir, worktreePath: path },
-      });
-    }
-    if (!retained) {
-      await bestEffort(() => Git.removeWorktree(repoDir, path), {
-        op: 'runner.finalizeWorkspace.removeWorktree',
-        level: 'debug',
-        context: { taskId: task.id, attemptId: run.id, attemptNumber, repoDir, worktreePath: path },
-      });
-    }
   }
 
   /** Run the corrective turn for a failed whole-Epic verification in a checked-out integration worktree. */
@@ -1060,46 +675,9 @@ export class Runner {
     return this.sessionContinuation.ensureSessionTranscript(sessionRowId);
   }
 
-  /**
-   * Boot-time healing: finished runs whose stored usage has no per-model split
-   * get one more read of the (now settled) session log. Stored ACP totals win
-   * over re-derived ones.
-   */
+  /** @see {@link UsageBackfiller.backfillUsage} */
   async backfillUsage(): Promise<void> {
-    const config = this.getConfig();
-    for (const run of (await this.attempts.listUsageBackfillCandidates()).filter(isTaskAttempt)) {
-      try {
-        const task = await this.taskService.get(run.taskId);
-        const harness = config.harnesses[task.harness as keyof typeof config.harnesses];
-        if (!harness) continue;
-        // The worktree may be gone, but the harness's log path derives from the cwd string.
-        const cwd = run.branch ? this.worktreePathForTask(task) : task.workingDir;
-        const fresh = collectUsage({
-          harnessId: task.harness,
-          harness,
-          cwd,
-          sessionId: run.sessionId,
-        });
-        if (!fresh || Object.keys(fresh.models).length === 0) continue;
-        fresh.toolCalls = Object.fromEntries(await this.usage.toolCallsFor(run.id));
-        const stored = run.usage ? (JSON.parse(run.usage) as AttemptUsage) : null;
-        const healed: AttemptUsage = stored?.totals
-          ? { ...fresh, totals: stored.totals, source: 'combined' }
-          : fresh;
-        await this.attempts.update(run.id, { usage: JSON.stringify(healed) });
-      } catch (err) {
-        reportFailure(err, {
-          op: 'runner.backfillUsage',
-          level: 'warn',
-          context: { attemptId: run.id, taskId: run.taskId, sessionId: run.sessionId ?? undefined },
-        });
-      }
-    }
-    await this.attempts.backfillCosts(async (attempt) => {
-      if (!isTaskAttempt(attempt)) return pricesForHarness(config.harnesses.claude);
-      const task = await this.taskService.get(attempt.taskId);
-      return pricesForHarness(config.harnesses[task.harness as keyof typeof config.harnesses] ?? config.harnesses.claude);
-    });
+    return this.usageBackfiller.backfillUsage();
   }
 
   private async diffSnapshotFor(
