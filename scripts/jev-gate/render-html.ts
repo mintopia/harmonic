@@ -175,7 +175,7 @@ export function renderBaselineHtml(baseline: Baseline, meta: BaselineMeta | null
   }
   * { box-sizing:border-box; }
   body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
-  .wrap { max-width:1200px; margin:0 auto; padding:24px 16px 64px; }
+  .wrap { margin:0; padding:24px 24px 64px; }
   h1 { font-size:22px; margin:0 0 4px; }
   .sub { color:var(--muted); margin:0 0 4px; }
   .metaline { color:var(--muted); font-size:12px; margin:0 0 20px; }
@@ -206,7 +206,7 @@ export function renderBaselineHtml(baseline: Baseline, meta: BaselineMeta | null
   .legend { display:flex; gap:14px; margin:14px 0 0; flex-wrap:wrap; color:var(--muted); font-size:12px; align-items:center; }
   .legend .chip { min-width:0; }
   .scatter-caption { color:var(--muted); font-size:12px; margin:0 0 8px; }
-  .scatter-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:14px; margin-bottom:24px; }
+  .scatter-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(max(230px, calc((100% - 3 * 14px) / 4)),1fr)); gap:14px; margin-bottom:24px; }
   .scatter-cell { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:10px 12px 12px; }
   .scatter-title { font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; margin-bottom:6px; }
   .chartbox { position:relative; height:150px; }
@@ -214,7 +214,7 @@ export function renderBaselineHtml(baseline: Baseline, meta: BaselineMeta | null
   tr.filerow { cursor:pointer; }
   .caret { display:inline-block; width:10px; color:var(--muted); }
   tr.detail-row td { background:var(--bg); border-bottom:1px solid var(--line); }
-  .detail-charts { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px; padding:12px 4px; white-space:normal; }
+  .detail-charts { display:grid; grid-template-columns:repeat(auto-fit,minmax(max(180px, calc((100% - 3 * 12px) / 4)),1fr)); gap:12px; padding:12px 4px; white-space:normal; }
 </style>
 </head>
 <body>
