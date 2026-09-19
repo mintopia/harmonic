@@ -1,5 +1,6 @@
 import type { Client } from '@libsql/client';
 import { logger } from '../logger.js';
+import { isConstraintViolation } from './errors.js';
 
 /**
  * The declarative schema: `drizzle/0000_baseline.sql` as drizzle-kit emits it —
@@ -148,10 +149,14 @@ async function cleanBreakRecreate(client: Client, baseline: Baseline): Promise<v
  * baseline no longer declares. No migration history is kept — the baseline is
  * edited in place and every data dir converges on boot. Convergence runs in one
  * transaction so a mid-way failure leaves the database untouched (SQLite DDL is
- * transactional); if convergence still fails after rollback, the ADR-0007
- * clean-break path recreates the whole schema from the baseline instead. Uses
- * raw BEGIN/COMMIT rather than `client.transaction()` so every statement (and
- * the caller's surrounding pragmas) stays on the one shared connection.
+ * transactional); if convergence then fails with a {@link isConstraintViolation}
+ * — SQLite rejecting the rebuild because existing data can't satisfy the new
+ * baseline (e.g. a new NOT NULL column with no default) — the ADR-0007
+ * clean-break path recreates the whole schema from the baseline instead. Any
+ * other error — a transient I/O error, a lock timeout, a dropped connection —
+ * propagates after the rollback rather than triggering that destructive reset.
+ * Uses raw BEGIN/COMMIT rather than `client.transaction()` so every statement
+ * (and the caller's surrounding pragmas) stays on the one shared connection.
  */
 export async function syncSchema(client: Client, baselineSql: string): Promise<void> {
   const baseline = parseBaseline(baselineSql);
@@ -161,7 +166,10 @@ export async function syncSchema(client: Client, baselineSql: string): Promise<v
     await client.execute('COMMIT');
   } catch (err) {
     await client.execute('ROLLBACK').catch(() => {});
-    logger.warn('schema-sync: incremental convergence failed, falling back to ADR-0007 clean-break recreate', {
+    if (!isConstraintViolation(err)) {
+      throw err;
+    }
+    logger.warn('schema-sync: incremental convergence hit an unreconcilable schema divergence, falling back to ADR-0007 clean-break recreate', {
       reason: err instanceof Error ? err.message : String(err),
     });
     await cleanBreakRecreate(client, baseline);
