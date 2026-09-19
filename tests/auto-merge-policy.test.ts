@@ -8,6 +8,8 @@ import { verificationCommandSchema } from '../src/config.js';
 import type { MirrorInput } from '../src/domain/tasks.js';
 import { runMergePolicy } from '../src/execution/merge-policy.js';
 
+const local = (command: ReturnType<typeof passingVerifier>) => [{ kind: 'local' as const, enabled: true, command }];
+
 const git = (dir: string, ...args: string[]) => execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
 
 const tmpDirs: string[] = [];
@@ -32,6 +34,7 @@ function makeRepo(): string {
 
 function passingVerifier() {
   return verificationCommandSchema.parse({
+    id: 'cmd-pass',
     command: process.execPath,
     args: ['-e', 'process.exit(0)'],
     timeoutSeconds: 30,
@@ -40,6 +43,7 @@ function passingVerifier() {
 
 function siblingAdvanceVerifier(repo: string, flag: string) {
   return verificationCommandSchema.parse({
+    id: 'cmd-sibling-advance',
     command: process.execPath,
     args: [
       '-e',
@@ -55,6 +59,7 @@ function siblingAdvanceVerifier(repo: string, flag: string) {
 function conflictingSiblingVerifier(repo: string, flag: string) {
   const conflictFile = join(repo, 'conflict.txt');
   return verificationCommandSchema.parse({
+    id: 'cmd-sibling-conflict',
     command: process.execPath,
     args: [
       '-e',
@@ -148,8 +153,8 @@ describe('one merge policy, everywhere (issue #381, ADR-0001)', () => {
       const repo = makeRepo();
       await server.app.ctx.workspaces.update(wsId, {
         workingDir: repo,
-        taskPreMergeCommands: [passingVerifier()],
-        taskPostMergeCommands: [passingVerifier()],
+        taskPreMergeCommands: local(passingVerifier()),
+        taskPostMergeCommands: local(passingVerifier()),
       });
       await server.app.ctx.settingsStore.updateGlobal({
         merge: { postMergeCheck: true },
@@ -175,14 +180,15 @@ describe('one merge policy, everywhere (issue #381, ADR-0001)', () => {
   it('runs task post-merge commands in the live integration checkout, then reverts and escalates on red', async () => {
     const repo = makeRepo();
     const postMergeFail = verificationCommandSchema.parse({
+      id: 'cmd-post-merge-fail',
       command: process.execPath,
       args: ['-e', 'process.exit(1)'],
       timeoutSeconds: 30,
     });
     await server.app.ctx.workspaces.update(wsId, {
       workingDir: repo,
-      taskPreMergeCommands: [passingVerifier()],
-      taskPostMergeCommands: [postMergeFail],
+      taskPreMergeCommands: local(passingVerifier()),
+      taskPostMergeCommands: local(postMergeFail),
     });
     await server.app.ctx.settingsStore.updateGlobal({
       merge: { postMergeCheck: true },
@@ -203,7 +209,7 @@ describe('one merge policy, everywhere (issue #381, ADR-0001)', () => {
   it('(b) a sibling advancing the base mid-verification does not trigger re-verification — the candidate still merges as an ordinary merge commit', async () => {
     const repo = makeRepo();
     const flag = join(tmpPath('harmonic-auto-merge-flag-'), 'advanced');
-    await server.app.ctx.workspaces.update(wsId, { workingDir: repo, taskPreMergeCommands: [siblingAdvanceVerifier(repo, flag)] });
+    await server.app.ctx.workspaces.update(wsId, { workingDir: repo, taskPreMergeCommands: local(siblingAdvanceVerifier(repo, flag)) });
     await server.app.ctx.settingsStore.updateGlobal({
       merge: { postMergeCheck: false },
       drive: { prompt: JSON.stringify({ writeFiles: { 'impl-{ref}.txt': 'implementation {ref}\n' }, mcpFinish: true }) },
@@ -234,7 +240,7 @@ describe('one merge policy, everywhere (issue #381, ADR-0001)', () => {
     const flag = join(tmpPath('harmonic-auto-merge-conflict-flag-'), 'advanced');
     await server.app.ctx.workspaces.update(wsId, {
       workingDir: repo,
-      taskPreMergeCommands: [conflictingSiblingVerifier(repo, flag)],
+      taskPreMergeCommands: local(conflictingSiblingVerifier(repo, flag)),
       conflictResolveTurns: 0,
     });
     await server.app.ctx.settingsStore.updateGlobal({

@@ -17,6 +17,20 @@ import type {
 } from './types.js';
 import { ALL_CATEGORIES } from './types.js';
 
+/** The neutral prior a category value regresses toward as confidence drops. */
+export const NEUTRAL_SCORE = 2.0;
+
+/**
+ * Shrink a raw 0-4 score toward {@link NEUTRAL_SCORE} in proportion to how
+ * *unsure* Jev is: `score·c + neutral·(1-c)`. Full confidence returns the raw
+ * score; zero confidence returns the neutral prior; a missing confidence is
+ * treated as full confidence (so pre-confidence baselines render unweighted).
+ */
+export function weightByConfidence(score: number, confidence: number | undefined): number {
+  const c = confidence == null ? 1 : Math.max(0, Math.min(1, confidence));
+  return score * c + NEUTRAL_SCORE * (1 - c);
+}
+
 export function categoryZone(score: number, t: GateConfig['thresholds']['category']): Zone {
   if (score < t.fail) return 'FAIL';
   if (score < t.warn) return 'WARN';
@@ -50,16 +64,17 @@ export interface CategoryEvalInput {
   signoffs: ReadonlySet<string>;
 }
 
-/** Evaluate one category for one file: zone, confidence gating, exemption, ratchet. */
+/** Zone/verdict/ratchet judge the confidence-weighted score; raw score and confidence stay on the result for display. */
 export function evaluateCategory(input: CategoryEvalInput): CategoryResult {
   const { path, category, answer, role, config, baseline, signoffs } = input;
   const score = typeof answer?.score === 'number' ? answer.score : 0;
   const confidence = typeof answer?.confidence === 'number' ? answer.confidence : 0;
-  const zone = categoryZone(score, config.thresholds.category);
+  const weighted = weightByConfidence(score, confidence);
+  const zone = categoryZone(weighted, config.thresholds.category);
   const isGatingAxis = config.gatingCategories.includes(category);
   const gated = isGatingAxis && !role.exempt.has(category);
 
-  const result: CategoryResult = { score, confidence, zone, gated, verdict: 'EXEMPT' };
+  const result: CategoryResult = { score, confidence, weighted, zone, gated, verdict: 'EXEMPT' };
 
   if (!gated) {
     // Advisory-only axis (security/comments), or a gating axis role-exempted
@@ -83,20 +98,26 @@ export function evaluateCategory(input: CategoryEvalInput): CategoryResult {
 
   if (gated && baseline) {
     const baselineScore = baseline.categories[category];
-    if (typeof baselineScore === 'number' && score <= baselineScore - config.thresholds.ratchet.categoryDrop) {
-      result.ratchetRegression = { baseline: baselineScore, drop: baselineScore - score };
+    if (typeof baselineScore === 'number') {
+      const baselineWeighted = weightByConfidence(baselineScore, baseline.confidences?.[category]);
+      if (weighted <= baselineWeighted - config.thresholds.ratchet.categoryDrop) {
+        result.ratchetRegression = { baseline: baselineWeighted, drop: baselineWeighted - weighted };
+      }
     }
   }
 
   return result;
 }
 
+/** `weightedScores` are the per-category confidence-weighted values; the overall
+ * is their mean, and the ratchet compares it against the baseline's stored
+ * (weighted) overall. */
 export function evaluateOverall(
-  categoryScores: Record<CategoryId, number>,
+  weightedScores: Record<CategoryId, number>,
   config: GateConfig,
   baseline: Baseline[string] | undefined,
 ): OverallResult {
-  const values = ALL_CATEGORIES.map((c) => categoryScores[c]);
+  const values = ALL_CATEGORIES.map((c) => weightedScores[c]);
   const mean = values.reduce((a, b) => a + b, 0) / values.length;
   const zone = overallZone(mean, config.thresholds.overall);
   const result: OverallResult = { mean, mean100: Math.round((mean / 4) * 100), zone };
@@ -116,8 +137,8 @@ export function blockingReasons(
   for (const cat of config.gatingCategories) {
     const c = categories[cat];
     if (!c) continue;
-    if (c.verdict === 'FAIL') reasons.push(`${cat}: FAIL (${c.score.toFixed(1)}/4, confidence ${c.confidence.toFixed(2)})`);
-    if (c.verdict === 'NEEDS_SIGNOFF') reasons.push(`${cat}: needs human sign-off (${c.score.toFixed(1)}/4, low confidence ${c.confidence.toFixed(2)})`);
+    if (c.verdict === 'FAIL') reasons.push(`${cat}: FAIL (weighted ${c.weighted.toFixed(2)}, raw ${c.score.toFixed(1)}/4, confidence ${c.confidence.toFixed(2)})`);
+    if (c.verdict === 'NEEDS_SIGNOFF') reasons.push(`${cat}: needs human sign-off (weighted ${c.weighted.toFixed(2)}, raw ${c.score.toFixed(1)}/4, low confidence ${c.confidence.toFixed(2)})`);
     if (c.ratchetRegression) {
       reasons.push(`${cat}: ratchet regression, dropped ${c.ratchetRegression.drop.toFixed(2)} vs baseline ${c.ratchetRegression.baseline.toFixed(2)}`);
     }

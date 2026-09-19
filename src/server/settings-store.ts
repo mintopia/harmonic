@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
@@ -93,6 +94,70 @@ function isFlattenedGlobal(global: unknown): boolean {
   return appConfigSchema.safeParse(global).success;
 }
 
+/** Backfill a missing `id` (pre-ADR-0037 stored data); a present id is left untouched — idempotent. */
+function ensureId(item: unknown, prefix: string): unknown {
+  if (!isRecord(item) || typeof item.id === 'string') return item;
+  return { ...item, id: `${prefix}-${randomUUID()}` };
+}
+
+const VERIFIER_PHASES = ['preMerge', 'postMerge'] as const;
+
+/**
+ * Backfill ids onto every command/critic in the global verify lists of a
+ * stored (possibly sparse) global patch, in place on a clone. {@link ensureId}
+ */
+function migrateGlobalVerifierIds(global: unknown): unknown {
+  if (!isRecord(global) || !isRecord(global.verify)) return global;
+  const verify = structuredClone(global.verify) as Record<string, unknown>;
+  for (const stageKey of ['task', 'epic']) {
+    const stage = verify[stageKey];
+    if (!isRecord(stage)) continue;
+    for (const phaseKey of VERIFIER_PHASES) {
+      const phase = stage[phaseKey];
+      if (!isRecord(phase)) continue;
+      if (Array.isArray(phase.commands)) phase.commands = phase.commands.map((c) => ensureId(c, 'cmd'));
+      if (Array.isArray(phase.critics)) phase.critics = phase.critics.map((c) => ensureId(c, 'critic'));
+    }
+  }
+  return { ...global, verify };
+}
+
+const COMMAND_OVERLAY_KEYS = ['taskPreMergeCommands', 'taskPostMergeCommands', 'epicPreMergeCommands'] as const;
+const CRITIC_OVERLAY_KEYS = ['taskPreMergeCritics', 'taskPostMergeCritics', 'epicPreMergeCritics'] as const;
+
+/**
+ * Convert one stored Workspace verifier list to the ADR-0037 overlay shape.
+ * A pre-ADR-0037 whole-array replace (each entry has no `kind`) becomes an
+ * overlay of all-`local` entries, id-backfilled — preserving that Workspace's
+ * exact resolved behaviour. An already-overlay array only gets its local
+ * entries' ids backfilled. Idempotent either way; `null`/non-array values
+ * (inherit) pass through untouched.
+ */
+function migrateWorkspaceOverlayList(value: unknown, itemKey: 'command' | 'critic', idPrefix: string): unknown {
+  if (!Array.isArray(value) || value.length === 0) return value;
+  const alreadyOverlay = value.every((entry) => isRecord(entry) && (entry.kind === 'global' || entry.kind === 'local'));
+  if (alreadyOverlay) {
+    return value.map((entry) => {
+      if (!isRecord(entry) || entry.kind !== 'local') return entry;
+      return { ...entry, [itemKey]: ensureId(entry[itemKey], idPrefix) };
+    });
+  }
+  return value.map((item) => ({ kind: 'local', enabled: true, [itemKey]: ensureId(item, idPrefix) }));
+}
+
+/** {@link migrateWorkspaceOverlayList} applied across one stored Workspace override entry's six verifier lists. */
+function migrateWorkspaceOverlays(entry: unknown): unknown {
+  if (!isRecord(entry)) return entry;
+  const migrated: Record<string, unknown> = { ...entry };
+  for (const key of COMMAND_OVERLAY_KEYS) {
+    if (key in migrated) migrated[key] = migrateWorkspaceOverlayList(migrated[key], 'command', 'cmd');
+  }
+  for (const key of CRITIC_OVERLAY_KEYS) {
+    if (key in migrated) migrated[key] = migrateWorkspaceOverlayList(migrated[key], 'critic', 'critic');
+  }
+  return migrated;
+}
+
 function loadFromDisk(path: string, baseline: AppConfig): SettingsFile {
   let raw: RawSettingsFile;
   try {
@@ -101,20 +166,21 @@ function loadFromDisk(path: string, baseline: AppConfig): SettingsFile {
     throw new Error(`Invalid Harmonic settings file at ${path}: ${err instanceof Error ? err.message : String(err)}`);
   }
   try {
-    const storedGlobal = (raw.global ?? {}) as DeepPartial<AppConfig>;
+    const migratedGlobal = migrateGlobalVerifierIds(raw.global ?? {});
+    const storedGlobal = (migratedGlobal ?? {}) as DeepPartial<AppConfig>;
     // A flattened (whole-config) global is converted to a sparse patch in
     // inherit mode: a field it doesn't carry is treated as inherited from the
     // baseline, never as a clear, so a baseline addition the file predates
     // (e.g. model prices) isn't frozen into a catalog-wide tombstone. `global`
     // is then resolved from that patch so it and the patch agree.
-    const flattened = isFlattenedGlobal(raw.global);
+    const flattened = isFlattenedGlobal(migratedGlobal);
     const globalPatch = flattened
       ? ((deepDiff(baseline, mergeConfig(baseline, storedGlobal), [], false) ?? {}) as DeepPartial<AppConfig>)
       : storedGlobal;
     const global = mergeConfig(baseline, globalPatch);
     const workspaces: Record<string, WorkspaceOverrides> = {};
     for (const [id, entry] of Object.entries(raw.workspaces ?? {})) {
-      workspaces[id] = workspaceOverridesSchema.parse(entry);
+      workspaces[id] = workspaceOverridesSchema.parse(migrateWorkspaceOverlays(entry));
     }
     return { globalPatch, global, workspaces };
   } catch (err) {

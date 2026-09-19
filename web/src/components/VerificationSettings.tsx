@@ -7,12 +7,15 @@ import type {
   Workspace,
 } from "../types";
 import { EPIC_RESOLVE_PLACEHOLDERS, compileEpicResolvePreview } from "../prompt-preview-model";
-import { CommandListEditor } from "./CommandListEditor";
-import { EpicCriticListEditor, TaskCriticListEditor } from "./CriticListEditor";
-import { InheritField } from "./InheritField";
+import { CommandListEditor, CommandOverlayEditor } from "./CommandListEditor";
+import {
+  EpicCriticListEditor,
+  EpicCriticOverlayEditor,
+  TaskCriticListEditor,
+  TaskCriticOverlayEditor,
+} from "./CriticListEditor";
 import { PromptField } from "./SettingsSection";
 import { Tabs } from "./Tabs";
-import { summarizeCommands } from "./verification-override-model";
 
 type EditorProps = {
   commands: VerificationCommand[];
@@ -32,12 +35,6 @@ const SCOPE_TABS = [
   { id: "task", label: "Task" },
   { id: "epic", label: "Epic" },
 ] as const;
-
-function criticCount(critics: readonly unknown[]): string {
-  return critics.length === 0
-    ? "No critics"
-    : `${critics.length} critic${critics.length === 1 ? "" : "s"}`;
-}
 
 function CountPill({ n, label }: { n: number; label: string }) {
   return (
@@ -318,47 +315,25 @@ function WorkspaceTaskStage({
   const idPrefix = `workspace-task-${stage === "preMerge" ? "pre" : "post"}-merge`;
   return (
     <div className="flex flex-col gap-5">
-      <InheritField
-        label="Commands"
-        value={workspace[commandsKey]}
-        inherited={config.verify.task[stage].commands}
-        format={summarizeCommands}
-        onChange={(commands) =>
-          setWorkspace({ ...workspace, [commandsKey]: commands })
-        }
-      >
-        {({ value, onChange }) => (
-          <CommandListEditor
-            commands={value}
-            onChange={onChange}
-            idPrefix={idPrefix}
-            errorPrefix={commandsKey}
-            fieldErrors={fieldErrors}
-            emptyText="No commands run at this stage."
-          />
-        )}
-      </InheritField>
-      <InheritField
-        label="Critics"
-        value={workspace[criticsKey]}
-        inherited={config.verify.task[stage].critics}
-        format={criticCount}
-        onChange={(critics) =>
-          setWorkspace({ ...workspace, [criticsKey]: critics })
-        }
-      >
-        {({ value, onChange }) => (
-          <TaskCriticListEditor
-            critics={value}
-            onChange={onChange}
-            idPrefix={idPrefix}
-            errorPrefix={criticsKey}
-            fieldErrors={fieldErrors}
-            harnessModels={harnessModelMap(config)}
-            emptyText="No critics run after commands pass."
-          />
-        )}
-      </InheritField>
+      <CommandOverlayEditor
+        overlay={workspace[commandsKey]}
+        globals={config.verify.task[stage].commands}
+        onChange={(commands) => setWorkspace({ ...workspace, [commandsKey]: commands })}
+        idPrefix={idPrefix}
+        errorPrefix={commandsKey}
+        fieldErrors={fieldErrors}
+        emptyText="No commands run at this stage."
+      />
+      <TaskCriticOverlayEditor
+        overlay={workspace[criticsKey]}
+        globals={config.verify.task[stage].critics}
+        onChange={(critics) => setWorkspace({ ...workspace, [criticsKey]: critics })}
+        idPrefix={idPrefix}
+        errorPrefix={criticsKey}
+        fieldErrors={fieldErrors}
+        harnessModels={harnessModelMap(config)}
+        emptyText="No critics run after commands pass."
+      />
     </div>
   );
 }
@@ -376,47 +351,25 @@ function WorkspaceEpicStage({
 }) {
   return (
     <div className="flex flex-col gap-5">
-      <InheritField
-        label="Commands"
-        value={workspace.epicPreMergeCommands}
-        inherited={config.verify.epic.preMerge.commands}
-        format={summarizeCommands}
-        onChange={(epicPreMergeCommands) =>
-          setWorkspace({ ...workspace, epicPreMergeCommands })
-        }
-      >
-        {({ value, onChange }) => (
-          <CommandListEditor
-            commands={value}
-            onChange={onChange}
-            idPrefix="workspace-epic-pre-merge"
-            errorPrefix="epicPreMergeCommands"
-            fieldErrors={fieldErrors}
-            emptyText="No commands run at this stage."
-          />
-        )}
-      </InheritField>
-      <InheritField
-        label="Critics"
-        value={workspace.epicPreMergeCritics}
-        inherited={config.verify.epic.preMerge.critics}
-        format={criticCount}
-        onChange={(epicPreMergeCritics) =>
-          setWorkspace({ ...workspace, epicPreMergeCritics })
-        }
-      >
-        {({ value, onChange }) => (
-          <EpicCriticListEditor
-            critics={value}
-            onChange={onChange}
-            idPrefix="workspace-epic-pre-merge"
-            errorPrefix="epicPreMergeCritics"
-            fieldErrors={fieldErrors}
-            harnessModels={harnessModelMap(config)}
-            emptyText="No critics run after commands pass."
-          />
-        )}
-      </InheritField>
+      <CommandOverlayEditor
+        overlay={workspace.epicPreMergeCommands}
+        globals={config.verify.epic.preMerge.commands}
+        onChange={(epicPreMergeCommands) => setWorkspace({ ...workspace, epicPreMergeCommands })}
+        idPrefix="workspace-epic-pre-merge"
+        errorPrefix="epicPreMergeCommands"
+        fieldErrors={fieldErrors}
+        emptyText="No commands run at this stage."
+      />
+      <EpicCriticOverlayEditor
+        overlay={workspace.epicPreMergeCritics}
+        globals={config.verify.epic.preMerge.critics}
+        onChange={(epicPreMergeCritics) => setWorkspace({ ...workspace, epicPreMergeCritics })}
+        idPrefix="workspace-epic-pre-merge"
+        errorPrefix="epicPreMergeCritics"
+        fieldErrors={fieldErrors}
+        harnessModels={harnessModelMap(config)}
+        emptyText="No critics run after commands pass."
+      />
     </div>
   );
 }

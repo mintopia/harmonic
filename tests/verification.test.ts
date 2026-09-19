@@ -11,6 +11,11 @@ import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
+const localCommands = (...commands: VerificationCommand[]) =>
+  commands.map((command) => ({ kind: 'local' as const, enabled: true, command }));
+const localCritics = <T>(...critics: T[]) =>
+  critics.map((critic) => ({ kind: 'local' as const, enabled: true, critic }));
+
 describe('verification-attempts-route', () => {
   describe('GET /api/attempts/:id/verification-attempts (issue #169)', () => {
     let server: TestServer;
@@ -74,7 +79,7 @@ describe('verification-attempts-route', () => {
     it('reconciles recorded attempts with configured verifier statuses', async () => {
       const configured = await startServer({
         ...stubHarness(),
-        verify: { task: { preMerge: { commands: [{ command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }], critics: [{ name: 'Test critic', issuePrompt: 'Review the issue diff.', noIssuePrompt: 'Review the Task diff.', model: 'stub-model' }] } } },
+        verify: { task: { preMerge: { commands: [{ id: 'cmd-test', command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }], critics: [{ id: 'critic-test', name: 'Test critic', issuePrompt: 'Review the issue diff.', noIssuePrompt: 'Review the Task diff.', model: 'stub-model', timeoutSeconds: 300 }] } } },
       });
       try {
         const created = await configured.api('POST', '/api/tasks', { prompt: 'verification status target' });
@@ -104,7 +109,7 @@ describe('verification-attempts-route', () => {
     it('reconciles recorded attempts with configured verifier statuses', async () => {
       const configured = await startServer({
         ...stubHarness(),
-        verify: { task: { preMerge: { commands: [{ command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }], critics: [{ name: 'Test critic', issuePrompt: 'Review the issue diff.', noIssuePrompt: 'Review the Task diff.', model: 'stub-model' }] } } },
+        verify: { task: { preMerge: { commands: [{ id: 'cmd-test', command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }], critics: [{ id: 'critic-test', name: 'Test critic', issuePrompt: 'Review the issue diff.', noIssuePrompt: 'Review the Task diff.', model: 'stub-model', timeoutSeconds: 300 }] } } },
       });
       try {
         const created = await configured.api('POST', '/api/tasks', { prompt: 'verification status target' });
@@ -155,6 +160,7 @@ describe('verification-selfheal', () => {
 
   const markerCommand = (want: string): VerificationCommand =>
     verificationCommandSchema.parse({
+      id: `cmd-marker-${want}`,
       command: process.execPath,
       args: [
         '-e',
@@ -164,10 +170,10 @@ describe('verification-selfheal', () => {
     });
 
   const alwaysFail = (): VerificationCommand =>
-    verificationCommandSchema.parse({ command: process.execPath, args: ['-e', 'process.exit(1)'], timeoutSeconds: 30 });
+    verificationCommandSchema.parse({ id: 'cmd-always-fail', command: process.execPath, args: ['-e', 'process.exit(1)'], timeoutSeconds: 30 });
 
   const inconclusiveCommand = (): VerificationCommand =>
-    verificationCommandSchema.parse({ command: join(tmpdir(), 'harmonic-no-such-verify-binary-xyz'), args: [], timeoutSeconds: 30 });
+    verificationCommandSchema.parse({ id: 'cmd-inconclusive', command: join(tmpdir(), 'harmonic-no-such-verify-binary-xyz'), args: [], timeoutSeconds: 30 });
 
   describe('verification Attempt loop end-to-end (issue #310)', () => {
     let server: TestServer;
@@ -216,7 +222,7 @@ describe('verification-selfheal', () => {
 
     it('AC1/AC2: an actionable fail creates Attempt N+1 with feedback and re-verifies', async () => {
       await server.app.ctx.workspaces.update(workspaceId, {
-        taskPreMergeCommands: [markerCommand('ok')],
+        taskPreMergeCommands: localCommands(markerCommand('ok')),
       });
       const baseOidBefore = git(repoDir, 'rev-parse', 'main');
 
@@ -267,7 +273,7 @@ describe('verification-selfheal', () => {
 
     async function runContinuationScenario(inputTokens: number) {
       await server.app.ctx.workspaces.update(workspaceId, {
-        taskPreMergeCommands: [markerCommand('ok')],
+        taskPreMergeCommands: localCommands(markerCommand('ok')),
         contextReuseTokenLimit: 20,
       });
       const { taskId } = await runWorktreeTask({
@@ -314,7 +320,7 @@ describe('verification-selfheal', () => {
     });
 
     it('AC4: an inconclusive verdict consumes an attempt and escalates only at the cap', async () => {
-      await server.app.ctx.workspaces.update(workspaceId, { taskPreMergeCommands: [inconclusiveCommand()] });
+      await server.app.ctx.workspaces.update(workspaceId, { taskPreMergeCommands: localCommands(inconclusiveCommand()) });
 
       const { taskId, attemptId } = await runWorktreeTask({ writeFiles: { 'marker.txt': 'anything\n' } });
 
@@ -336,7 +342,7 @@ describe('verification-selfheal', () => {
     });
 
     it('AC3: an actionable fail exhausts maxAttempts and escalates', async () => {
-      await server.app.ctx.workspaces.update(workspaceId, { taskPreMergeCommands: [alwaysFail()] });
+      await server.app.ctx.workspaces.update(workspaceId, { taskPreMergeCommands: localCommands(alwaysFail()) });
       await server.app.ctx.settingsStore.updateGlobal({ maxAttempts: 2 });
 
       const { taskId, attemptId } = await runWorktreeTask({ writeFiles: { 'marker.txt': 'bad\n' } });
@@ -359,7 +365,7 @@ describe('verification-selfheal', () => {
     });
 
     it('a workspace maxAttempts override escalates after its first failed attempt', async () => {
-      await server.app.ctx.workspaces.update(workspaceId, { taskPreMergeCommands: [alwaysFail()] });
+      await server.app.ctx.workspaces.update(workspaceId, { taskPreMergeCommands: localCommands(alwaysFail()) });
       await server.app.ctx.settingsStore.updateGlobal({ maxAttempts: 3 });
       await server.app.ctx.workspaces.update(workspaceId, { maxAttempts: 1 });
 
@@ -403,12 +409,13 @@ describe('verification-critic', () => {
     return dir;
   }
 
-  const critic = () => ({ taskPreMergeCritics: [{ name: 'Test critic', issuePrompt: 'Review the issue diff for correctness.', noIssuePrompt: 'Review the Task diff for correctness.', model: 'stub-model' }] });
+  const critic = () => ({ taskPreMergeCritics: localCritics({ id: 'critic-test', name: 'Test critic', issuePrompt: 'Review the issue diff for correctness.', noIssuePrompt: 'Review the Task diff for correctness.', model: 'stub-model', timeoutSeconds: 300 }) });
 
-  const criticWithHarness = (harness: HarnessId) => ({ taskPreMergeCritics: [{ name: 'Test critic', issuePrompt: 'Review the issue diff for correctness.', noIssuePrompt: 'Review the Task diff for correctness.', model: 'stub-model', harness }] });
+  const criticWithHarness = (harness: HarnessId) => ({ taskPreMergeCritics: localCritics({ id: 'critic-test', name: 'Test critic', issuePrompt: 'Review the issue diff for correctness.', noIssuePrompt: 'Review the Task diff for correctness.', model: 'stub-model', harness, timeoutSeconds: 300 }) });
 
   const exitCommand = (code: number): VerificationCommand =>
     verificationCommandSchema.parse({
+      id: `cmd-exit-${code}`,
       command: process.execPath,
       args: ['-e', `process.exit(${code})`],
       timeoutSeconds: 30,
@@ -580,10 +587,10 @@ describe('verification-critic', () => {
     it('runs every critic and carries every failing verdict into the next Attempt', async () => {
       criticResult = { verdict: 'fail', summary: 'the change matches the ticket' };
       await server.app.ctx.workspaces.update(workspaceId, {
-        taskPreMergeCritics: [
-          { name: 'Test critic', issuePrompt: 'Check the API.', noIssuePrompt: 'Check the API.', model: 'stub-model' },
-          { name: 'Test critic', issuePrompt: 'Check the database.', noIssuePrompt: 'Check the database.', model: 'stub-model' },
-        ],
+        taskPreMergeCritics: localCritics(
+          { id: 'critic-api', name: 'Test critic', issuePrompt: 'Check the API.', noIssuePrompt: 'Check the API.', model: 'stub-model', timeoutSeconds: 300 },
+          { id: 'critic-database', name: 'Test critic', issuePrompt: 'Check the database.', noIssuePrompt: 'Check the database.', model: 'stub-model', timeoutSeconds: 300 },
+        ),
       });
       const { taskId } = await createAndRun();
 
@@ -618,7 +625,7 @@ describe('verification-critic', () => {
     it('AC1: the critic verdict combines with the command verdict — command pass + critic fail still Escalates', async () => {
       criticResult = { verdict: 'fail', summary: 'logic is wrong despite green tests' };
       await server.app.ctx.workspaces.update(workspaceId, {
-        taskPreMergeCommands: [exitCommand(0)],
+        taskPreMergeCommands: localCommands(exitCommand(0)),
         ...critic(),
       });
       const { taskId } = await createAndRun();
@@ -645,7 +652,7 @@ describe('verification-critic', () => {
     it('AC1: command pass + critic pass together merges the Run (all verifiers passed)', async () => {
       criticResult = { verdict: 'pass', summary: 'correct and complete' };
       await server.app.ctx.workspaces.update(workspaceId, {
-        taskPreMergeCommands: [exitCommand(0)],
+        taskPreMergeCommands: localCommands(exitCommand(0)),
         ...critic(),
       });
       const { taskId } = await createAndRun();
@@ -668,7 +675,7 @@ describe('verification-critic', () => {
       criticResult = { verdict: 'pass', summary: 'correct and complete' };
       const command = exitCommand(0);
       await server.app.ctx.workspaces.update(workspaceId, {
-        taskPreMergeCommands: [command],
+        taskPreMergeCommands: localCommands(command),
         ...critic(),
       });
       const { taskId, attemptId } = await createAndRun();
@@ -816,6 +823,7 @@ describe('verification-command', () => {
 
   const exitCommand = (code: number): VerificationCommand =>
     verificationCommandSchema.parse({
+      id: `cmd-exit-${code}`,
       command: process.execPath,
       args: ['-e', `process.exit(${code})`],
       timeoutSeconds: 30,
@@ -863,7 +871,7 @@ describe('verification-command', () => {
         .map((e: any) => e.payload);
 
     it('AC1/AC3/AC4/AC5: a passing command merges a native Run to done; the attempt records the verified head OID', async () => {
-      await server.app.ctx.workspaces.update(workspaceId, { taskPreMergeCommands: [exitCommand(0)] });
+      await server.app.ctx.workspaces.update(workspaceId, { taskPreMergeCommands: localCommands(exitCommand(0)) });
       const { taskId, attemptId } = await createAndRun();
 
       const task = await waitFor(async () => {
@@ -889,7 +897,7 @@ describe('verification-command', () => {
     it('a direct Run works in place: its verified commit is the base branch tip, with no private ref and no run branch', async () => {
       await server.app.ctx.workspaces.update(workspaceId, {
         isolationMode: 'direct',
-        taskPreMergeCommands: [exitCommand(0)],
+        taskPreMergeCommands: localCommands(exitCommand(0)),
       });
       const baseBefore = git(repoDir, 'rev-parse', 'main');
       const { taskId } = await createAndRun();
@@ -912,7 +920,7 @@ describe('verification-command', () => {
     it('a pre-existing dirty tree does not fail a direct Run; its candidate is the agent\'s own commit', async () => {
       await server.app.ctx.workspaces.update(workspaceId, {
         isolationMode: 'direct',
-        taskPreMergeCommands: [exitCommand(0)],
+        taskPreMergeCommands: localCommands(exitCommand(0)),
       });
       writeFileSync(join(repoDir, 'operator-scratch.txt'), 'not the agent\n');
 
@@ -929,7 +937,7 @@ describe('verification-command', () => {
     });
 
     it('AC2/AC4: a failing command records feedback on attempt 1, then escalates after attempt 2', async () => {
-      await server.app.ctx.workspaces.update(workspaceId, { taskPreMergeCommands: [exitCommand(1)] });
+      await server.app.ctx.workspaces.update(workspaceId, { taskPreMergeCommands: localCommands(exitCommand(1)) });
       const { taskId } = await createAndRun();
 
       const run = await waitFor(async () => {
@@ -960,13 +968,14 @@ describe('verification-command', () => {
 
     it('AC2/AC4: an inconclusive command consumes the same bounded Attempt loop', async () => {
       await server.app.ctx.workspaces.update(workspaceId, {
-        taskPreMergeCommands: [
+        taskPreMergeCommands: localCommands(
           verificationCommandSchema.parse({
+            id: 'cmd-not-real',
             command: 'definitely-not-a-real-command-xyzzy',
             args: [],
             timeoutSeconds: 30,
           }),
-        ],
+        ),
       });
       const { taskId } = await createAndRun();
 
@@ -989,7 +998,7 @@ describe('verification-command', () => {
     it('a configured command with no committed implementation fails closed', async () => {
       await server.app.ctx.workspaces.update(workspaceId, {
         isolationMode: 'direct',
-        taskPreMergeCommands: [exitCommand(0)],
+        taskPreMergeCommands: localCommands(exitCommand(0)),
       });
       writeFileSync(join(repoDir, 'uncommitted.txt'), 'dirty\n');
 
@@ -1036,7 +1045,7 @@ describe('verification-command', () => {
     it('a pass merges the Run onto the base as an ordinary merge commit (ADR-0001)', async () => {
       await server.app.ctx.workspaces.update(workspaceId, {
         isolationMode: 'worktree',
-        taskPreMergeCommands: [exitCommand(0)],
+        taskPreMergeCommands: localCommands(exitCommand(0)),
       });
       const { taskId } = await createAndRun();
       await waitFor(async () => {
@@ -1053,7 +1062,7 @@ describe('verification-command', () => {
     it('opens every Attempt with a recorded Rebase Task, including a clean no-op rebase', async () => {
       await server.app.ctx.workspaces.update(workspaceId, {
         isolationMode: 'worktree',
-        taskPreMergeCommands: [exitCommand(0)],
+        taskPreMergeCommands: localCommands(exitCommand(0)),
       });
       const { taskId } = await createAndRun();
       await waitFor(async () => {
@@ -1072,13 +1081,14 @@ describe('verification-command', () => {
     it('ordered commands run in sequence and fail fast: a red command blocks the rest', async () => {
       const echoExit = (marker: string, code: number) =>
         verificationCommandSchema.parse({
+          id: `cmd-echo-${marker}`,
           command: process.execPath,
           args: ['-e', `console.log('${marker}'); process.exit(${code})`],
           timeoutSeconds: 30,
         });
       await server.app.ctx.workspaces.update(workspaceId, {
         isolationMode: 'worktree',
-        taskPreMergeCommands: [echoExit('CMD1', 0), echoExit('CMD2', 1), echoExit('CMD3', 0)],
+        taskPreMergeCommands: localCommands(echoExit('CMD1', 0), echoExit('CMD2', 1), echoExit('CMD3', 0)),
       });
       const { taskId } = await createAndRun();
       await waitFor(async () => {
@@ -1133,7 +1143,7 @@ describe('verification-command', () => {
 
     it('a passing verification merges directly — there is no review gate to park at', async () => {
       await server.app.ctx.workspaces.update(workspaceId, {
-        taskPreMergeCommands: [exitCommand(0)],
+        taskPreMergeCommands: localCommands(exitCommand(0)),
       });
       const { taskId } = await createAndRun();
 
@@ -1149,7 +1159,7 @@ describe('verification-command', () => {
 
     it('a pass merges under Harmonic\'s own merge fact, never the operator disposition', async () => {
       await server.app.ctx.workspaces.update(workspaceId, {
-        taskPreMergeCommands: [exitCommand(0)],
+        taskPreMergeCommands: localCommands(exitCommand(0)),
       });
       const { taskId } = await createAndRun();
 
@@ -1173,7 +1183,7 @@ describe('verification-command', () => {
 
     it('safety: a fail on every attempt Escalates — merging never rescues a red verdict', async () => {
       await server.app.ctx.workspaces.update(workspaceId, {
-        taskPreMergeCommands: [exitCommand(1)],
+        taskPreMergeCommands: localCommands(exitCommand(1)),
       });
       const { taskId } = await createAndRun();
 
@@ -1210,7 +1220,7 @@ describe('verification-command', () => {
 
     it('a worktree run merges the merge into the base branch (no human gate)', async () => {
       await server.app.ctx.workspaces.update(workspaceId, {
-        taskPreMergeCommands: [exitCommand(0)],
+        taskPreMergeCommands: localCommands(exitCommand(0)),
       });
       const baseOidBefore = git(repoDir, 'rev-parse', 'main');
 

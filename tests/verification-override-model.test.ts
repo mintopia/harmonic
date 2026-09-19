@@ -1,17 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import {
-  EMPTY_COMMAND,
-  EMPTY_CRITIC,
+  newCommand,
+  newCritic,
+  newEpicCritic,
   setCommandField,
   setCriticField,
   summarizeCommand,
   summarizeCommands,
   summarizeCritic,
+  withMissingGlobals,
 } from '../web/src/components/verification-override-model.js';
-import type { TaskVerificationCritic, VerificationCommand } from '../web/src/types.js';
+import type { CommandOverlayEntry, TaskVerificationCritic, VerificationCommand } from '../web/src/types.js';
 
-const baseCommand: VerificationCommand = { command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 };
-const baseCritic: TaskVerificationCritic = { name: 'Test critic', issuePrompt: 'review the issue diff', noIssuePrompt: 'review the Task diff', model: 'claude-opus-5' };
+const baseCommand: VerificationCommand = { id: 'cmd-1', command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 };
+const baseCritic: TaskVerificationCritic = { id: 'critic-1', name: 'Test critic', issuePrompt: 'review the issue diff', noIssuePrompt: 'review the Task diff', model: 'claude-opus-5', timeoutSeconds: 300 };
 
 describe('setCommandField (issue #165)', () => {
   it('sets the executable from a text input', () => {
@@ -35,7 +37,7 @@ describe('summarizeCommand (issue #165)', () => {
   });
 
   it('reads the empty seed back as "Not configured"', () => {
-    expect(summarizeCommand(EMPTY_COMMAND)).toBe('Not configured');
+    expect(summarizeCommand(newCommand())).toBe('Not configured');
   });
 });
 
@@ -45,7 +47,7 @@ describe('summarizeCommands (issue #338)', () => {
   });
 
   it('joins each command summary for a non-empty list', () => {
-    const lint: VerificationCommand = { command: 'npm', args: ['run', 'lint'], env: {}, timeoutSeconds: 120 };
+    const lint: VerificationCommand = { id: 'cmd-lint', command: 'npm', args: ['run', 'lint'], env: {}, timeoutSeconds: 120 };
     expect(summarizeCommands([baseCommand, lint])).toBe(
       'npm test · 600s timeout · npm run lint · 120s timeout',
     );
@@ -69,6 +71,35 @@ describe('summarizeCritic (issue #165)', () => {
   });
 
   it('reads the empty seed back as "Not configured"', () => {
-    expect(summarizeCritic(EMPTY_CRITIC)).toBe('Not configured');
+    expect(summarizeCritic(newCritic())).toBe('Not configured');
+  });
+});
+
+describe('newCommand/newCritic/newEpicCritic (ADR-0037)', () => {
+  it('seeds each with its own id, never the same one twice', () => {
+    expect(newCommand().id).not.toBe(newCommand().id);
+    expect(newCritic().id).not.toBe(newCritic().id);
+    expect(newEpicCritic().id).not.toBe(newEpicCritic().id);
+  });
+});
+
+describe('withMissingGlobals (ADR-0037)', () => {
+  it('renders every global, in order, as an enabled row when the overlay is null', () => {
+    expect(withMissingGlobals<CommandOverlayEntry>(null, ['a', 'b'])).toEqual([
+      { kind: 'global', ref: 'a', enabled: true },
+      { kind: 'global', ref: 'b', enabled: true },
+    ]);
+  });
+
+  it('leaves an overlay that already names every global untouched', () => {
+    const overlay: CommandOverlayEntry[] = [{ kind: 'global', ref: 'a', enabled: false }];
+    expect(withMissingGlobals(overlay, ['a'])).toEqual(overlay);
+  });
+
+  it('appends a global not named by any entry, enabled, at the end', () => {
+    const overlay: CommandOverlayEntry[] = [{ kind: 'local', enabled: true, command: newCommand() }];
+    const rows = withMissingGlobals(overlay, ['a']);
+    expect(rows).toHaveLength(2);
+    expect(rows[1]).toEqual({ kind: 'global', ref: 'a', enabled: true });
   });
 });

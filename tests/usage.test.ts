@@ -655,9 +655,11 @@ describe('usage collection and statistics', () => {
     server = await startServer(stubHarness());
     const ws = (await server.app.ctx.workspaces.list())[0]!;
     await server.app.ctx.workspaces.update(ws.id, {
-      taskPreMergeCommands: [
-        verificationCommandSchema.parse({ command: process.execPath, args: ['-e', 'process.exit(0)'], timeoutSeconds: 30 }),
-      ],
+      taskPreMergeCommands: [{
+        kind: 'local',
+        enabled: true,
+        command: verificationCommandSchema.parse({ id: 'cmd-exit-0', command: process.execPath, args: ['-e', 'process.exit(0)'], timeoutSeconds: 30 }),
+      }],
     });
 
     const usageScenario = JSON.stringify({ usage: { inputTokens: 10, outputTokens: 20, totalTokens: 30 } });

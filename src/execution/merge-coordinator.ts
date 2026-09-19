@@ -349,6 +349,7 @@ export class MergeCoordinator {
             verifiedHeadOid: mergeOid,
             ...(baseOid ? { baseOid } : {}),
             critic,
+            timeoutMs: configuredCritic.timeoutSeconds * 1000,
             fields: driveFields(task, this.deps.urlFor),
             harness: criticHarness,
             harnessId: criticHarnessId,

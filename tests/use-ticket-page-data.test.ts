@@ -61,7 +61,7 @@ describe('useTicketPageData (issue #657)', () => {
               id: 1,
               name: 'Payments',
               maxAttempts: 9,
-              taskPreMergeCommands: [{ command: 'npm', args: ['test'], env: {}, timeoutSeconds: 60 }],
+              taskPreMergeCommands: [{ kind: 'local', enabled: true, command: { id: 'cmd-test', command: 'npm', args: ['test'], env: {}, timeoutSeconds: 60 } }],
             }),
           ],
         }),

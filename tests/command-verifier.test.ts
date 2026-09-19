@@ -43,6 +43,7 @@ function makeRepo(): string {
 
 function nodeCommand(script: string, over: Partial<VerificationCommand> = {}): VerificationCommand {
   return {
+    id: 'cmd-node',
     command: process.execPath,
     args: ['-e', script],
     env: {},
@@ -189,6 +190,7 @@ describe('command verifier (issue #135)', () => {
       cwd: repo,
       verifiedHeadOid: oid,
       command: {
+        id: 'cmd-not-real',
         command: 'definitely-not-a-real-command-xyzzy',
         args: [],
         env: {},

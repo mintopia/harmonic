@@ -7,7 +7,7 @@
     "confidence": { "blockingMin": 0.6 },
     "ratchet": { "categoryDrop": 0.5, "overallDrop": 0.2 }
   },
-  "gatingCategories": ["complexity_clean_code", "code_smells", "duplication", "testability", "error_handling", "security", "comments"],
+  "gatingCategories": ["complexity_clean_code", "code_smells", "duplication", "testability", "error_handling", "security", "comments", "concurrency_and_idempotency"],
   "advisoryCategories": [],
   "roles": [
     { "name": "type-declaration", "glob": ["**/*.d.ts"], "skip": true, "hint": "Ambient type declaration: no runtime behaviour to score." },
