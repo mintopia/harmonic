@@ -4,8 +4,9 @@ import { formatCost } from '../cost';
 import { cacheHitRate, type Stats, type WorkspaceStats } from '../stats-model';
 import type { ActivityProcess, Task } from '../types';
 import type { HostLoad } from '../ws';
-import { useLiveEffect } from '../useLiveEffect';
+import { useAsyncResource } from '../useAsyncResource';
 import { card, labelType, tableHead, touchOverlay } from '../ui';
+import { LoadError } from './LoadError';
 import { PageHeader } from './PageHeader';
 
 const TOKEN_TYPES = [
@@ -63,23 +64,19 @@ function TokenBars({ workspaces, onOpenWorkspace }: { workspaces: WorkspaceStats
 }
 
 export function GlobalDashboard({ pendingPermissions, hostLoad, onNavigate, onOpenWorkspace }: { pendingPermissions: number; hostLoad: HostLoad | null; onNavigate: (view: View) => void; onOpenWorkspace: (workspaceId: number) => void }) {
-  const [today, setToday] = useState<Stats | null>(null);
-  const [week, setWeek] = useState<Stats | null>(null);
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [processes, setProcesses] = useState<ActivityProcess[]>([]);
   const [sort, setSort] = useState<{ key: SortKey; desc: boolean }>({ key: 'cost', desc: true });
 
-  useLiveEffect((live) => {
-    const load = () => {
-      const now = Date.now();
-      Promise.all([api.stats(now - 24 * 3600_000, now), api.stats(now - 7 * 24 * 3600_000, now), allTasks(), api.activity()])
-        .then(([today, week, tasks, activity]) => { if (live()) { setToday(today); setWeek(week); setTasks(tasks); setProcesses(activity.processes); } })
-        .catch(() => {});
-    };
-    load();
-    const timer = setInterval(load, 15_000);
-    return () => clearInterval(timer);
-  }, []);
+  const dashboard = useAsyncResource(async () => {
+    const now = Date.now();
+    const [today, week, tasks, activity] = await Promise.all([
+      api.stats(now - 24 * 3600_000, now), api.stats(now - 7 * 24 * 3600_000, now), allTasks(), api.activity(),
+    ]);
+    return { today, week, tasks, processes: activity.processes };
+  }, [], { pollMs: 15_000 });
+  const today: Stats | null = dashboard.data?.today ?? null;
+  const week: Stats | null = dashboard.data?.week ?? null;
+  const tasks: Task[] = dashboard.data?.tasks ?? [];
+  const processes: ActivityProcess[] = dashboard.data?.processes ?? [];
 
   const rows: Row[] = (today?.byWorkspace ?? []).map((workspace) => ({
     ...workspace,
@@ -102,6 +99,7 @@ export function GlobalDashboard({ pendingPermissions, hostLoad, onNavigate, onOp
 
   return <div>
     <PageHeader title="Dashboard" description="The whole instance, ordered by what needs your attention." />
+    {dashboard.error && <div className="mb-5"><LoadError message={dashboard.error} onRetry={dashboard.reload} /></div>}
     <div className="mb-5 grid gap-3 lg:grid-cols-3">
       <Rollup title="Needs you" value={String(escalated + pendingPermissions)} detail={`${escalated} escalated · ${pendingPermissions} permission${pendingPermissions === 1 ? '' : 's'}`} tone="text-await" onClick={() => onNavigate('table')} />
       <Rollup title="In flight" value={String(processes.length)} detail={`${processes.filter((process) => process.type === 'attempt').length} attempts · ${processes.filter((process) => process.type === 'chat').length} conversations${hostLoad ? ` · load ${hostLoad.load1.toFixed(1)}/${hostLoad.cores}` : ''}`} tone="text-running" onClick={() => onNavigate('activity')} />

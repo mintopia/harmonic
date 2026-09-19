@@ -63,3 +63,17 @@ it('renders the global roll-up, token bars, workspace totals, and drill-ins', as
   await act(async () => legendButton?.click());
   expect(openWorkspace).toHaveBeenCalledWith(1);
 });
+
+it('shows an error banner when the dashboard snapshot fails to load', async () => {
+  vi.stubGlobal('fetch', async () => { throw new Error('network down'); });
+  host = document.body.appendChild(document.createElement('div'));
+  root = createRoot(host);
+  await act(async () => {
+    root?.render(createElement(GlobalDashboard, { pendingPermissions: 0, hostLoad: null, onNavigate: vi.fn(), onOpenWorkspace: vi.fn() }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+
+  const alert = host.querySelector('[role="alert"]');
+  expect(alert).not.toBeNull();
+  expect(alert?.textContent).toContain('network down');
+});

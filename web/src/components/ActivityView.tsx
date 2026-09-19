@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
+import { api } from "../api";
 import { formatCost } from "../cost";
 import type { ActivityProcess, AppConfig, ProcessNode } from "../types";
+import { useAsyncResource } from "../useAsyncResource";
 import { subscribe } from "../ws";
 import {
   card,
@@ -10,6 +12,7 @@ import {
   touchTarget,
 } from "../ui";
 import { EmptyState } from "./EmptyState";
+import { LoadError } from "./LoadError";
 import { PageHeader } from "./PageHeader";
 import {
   activitySummary,
@@ -273,17 +276,19 @@ export function ActivityView({ config, workspaceId = null }: { config: AppConfig
     const timer = setInterval(() => setNow(Date.now()), 1_000);
     return () => clearInterval(timer);
   }, []);
-  useLiveEffect((live) => {
+  const activity = useAsyncResource(
+    () => api.activity(workspaceId ?? undefined),
+    [workspaceId],
+    { pollMs: 5_000 },
+  );
+  useEffect(() => {
+    if (activity.data) setProcesses(activity.data.processes);
+  }, [activity.data]);
+  useEffect(() => {
     setProcesses(null);
-    const load = () =>
-      fetch(`/api/activity${workspaceId === null ? "" : `?workspaceId=${workspaceId}`}`)
-        .then((response) => (response.ok ? response.json() : null))
-        .then((body: { processes: ActivityProcess[] } | null) => {
-          if (live() && body) setProcesses(body.processes);
-        })
-        .catch(() => {});
-    load();
-    const poll = setInterval(load, 5_000);
+  }, [workspaceId]);
+
+  useLiveEffect(() => {
     const unsubscribe = subscribe((message) => {
       if (message.type === "attempt_usage")
         setProcesses((current) =>
@@ -317,19 +322,22 @@ export function ActivityView({ config, workspaceId = null }: { config: AppConfig
                 ),
             ) ?? current,
         );
-    }, load);
+    }, activity.reload);
     return () => {
-      clearInterval(poll);
       unsubscribe();
     };
-  }, [workspaceId]);
+  }, [workspaceId, activity.reload]);
   if (processes === null)
     return (
       <div>
         <PageHeader title="Activity" description={description} />
-        <div className={`${card} p-4`}>
-          <div className="h-14 animate-pulse motion-reduce:animate-none" />
-        </div>
+        {activity.error ? (
+          <LoadError message={activity.error} onRetry={activity.reload} />
+        ) : (
+          <div className={`${card} p-4`}>
+            <div className="h-14 animate-pulse motion-reduce:animate-none" />
+          </div>
+        )}
       </div>
     );
 
@@ -346,6 +354,11 @@ export function ActivityView({ config, workspaceId = null }: { config: AppConfig
   return (
     <div>
       <PageHeader title="Activity" description={description} />
+      {activity.error && (
+        <div className="mb-5">
+          <LoadError message={activity.error} onRetry={activity.reload} />
+        </div>
+      )}
       <div className={`${card} mb-5 flex flex-wrap gap-x-10 gap-y-4 p-5`}>
         <Stat label="Agents" value={String(summary.agentCount)} />
         <Stat label="Subagents" value={String(summary.subagentCount)} />

@@ -2,12 +2,14 @@ import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as Rea
 import { api } from '../api';
 import type { DiffFile, GitStatusEntry, Workspace, WorkspaceFile, WorkspaceFileListing } from '../types';
 import { useLiveEffect } from '../useLiveEffect';
+import { useAsyncResource } from '../useAsyncResource';
 import { subscribe } from '../ws';
 import { btnGhost, btnPrimary, gitFileStatusClass, panelTitle, type GitFileStatus } from '../ui';
 import { Icon, type IconName } from './Icon';
 import { CodeViewer, type CursorInfo } from './CodeViewer';
 import { ConfirmDialog } from './ConfirmDialog';
 import { DiffViewer } from './DiffViewer';
+import { LoadError } from './LoadError';
 import { Modal } from './Modal';
 import { Markdown } from './Markdown';
 import { errorText } from '../error-text';
@@ -51,12 +53,11 @@ export function FilesPage({ workspace, selectedPath, onSelectFile, onWorkspaceSa
   const selectedPathRef = useRef(selectedPath);
   const listingsRef = useRef<Record<string, WorkspaceFileListing>>({});
   const loadRef = useRef<(path: string, offset?: number) => Promise<void>>(() => Promise.resolve());
-  const refreshStatusRef = useRef<() => Promise<void>>(() => Promise.resolve());
+  const refreshStatusRef = useRef<() => void>(() => {});
   const [listings, setListings] = useState<Record<string, WorkspaceFileListing>>({});
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [statusEntries, setStatusEntries] = useState<GitStatusEntry[]>([]);
-  const [statusError, setStatusError] = useState<string | null>(null);
   const [file, setFile] = useState<WorkspaceFile | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
   const [excludedDirectories, setExcludedDirectories] = useState(workspaceExcludedDirectories);
@@ -104,17 +105,11 @@ export function FilesPage({ workspace, selectedPath, onSelectFile, onWorkspaceSa
     });
   };
 
-  const refreshStatus = () => {
-    const generation = workspaceGeneration.current;
-    return api.gitStatus(workspaceId).then(({ entries }) => {
-      if (workspaceGeneration.current === generation) { setStatusEntries(entries); setStatusError(null); }
-    }, (error) => {
-      if (workspaceGeneration.current === generation) setStatusError(errorText(error));
-    });
-  };
+  const status = useAsyncResource(() => api.gitStatus(workspaceId), [workspaceId]);
+  useEffect(() => { setStatusEntries(status.data ? status.data.entries : []); }, [status.data]);
   useLayoutEffect(() => {
     loadRef.current = load;
-    refreshStatusRef.current = refreshStatus;
+    refreshStatusRef.current = status.reload;
   });
 
   useLiveEffect((live) => subscribe((message) => {
@@ -142,9 +137,8 @@ export function FilesPage({ workspace, selectedPath, onSelectFile, onWorkspaceSa
   }), [workspaceId]);
 
   useLiveEffect((live) => {
-    setListings({}); setExpanded(new Set()); setErrors({}); setStatusEntries([]); setStatusError(null); setDrafts({}); setOpenPaths([]); setSaveError(null); setMarkdownPreview({});
+    setListings({}); setExpanded(new Set()); setErrors({}); setDrafts({}); setOpenPaths([]); setSaveError(null); setMarkdownPreview({});
     api.workspaceFiles(workspaceId).then((listing) => live() && setListings({ '': listing }), (error) => live() && setErrors({ '': errorText(error) }));
-    api.gitStatus(workspaceId).then(({ entries }) => { if (live()) { setStatusEntries(entries); setStatusError(null); } }, (error) => live() && setStatusError(errorText(error)));
     setExcludedDirectories(workspaceExcludedDirectories);
   }, [workspaceId, workspaceExcludedDirectories]);
 
@@ -168,7 +162,7 @@ export function FilesPage({ workspace, selectedPath, onSelectFile, onWorkspaceSa
     const path = selectedPath;
     const generation = workspaceGeneration.current;
     setSaving(true); setSaveError(null);
-    void api.saveWorkspaceFile(workspaceId, path, draft.text).then(async (saved) => {
+    void api.saveWorkspaceFile(workspaceId, path, draft.text).then((saved) => {
       if (workspaceGeneration.current !== generation) return;
       const text = saved.text ?? draft.text;
       setDrafts((current) => {
@@ -176,8 +170,7 @@ export function FilesPage({ workspace, selectedPath, onSelectFile, onWorkspaceSa
         return latest ? { ...current, [path]: { saved: text, text: latest.text } } : current;
       });
       if (selectedPathRef.current === path) { setFile(saved); setStaleFile(null); }
-      const { entries } = await api.gitStatus(workspaceId);
-      if (workspaceGeneration.current === generation) setStatusEntries(entries);
+      status.reload();
     }).catch((error) => {
       if (workspaceGeneration.current === generation && selectedPathRef.current === path) setSaveError(errorText(error));
     }).finally(() => setSaving(false));
@@ -347,7 +340,8 @@ export function FilesPage({ workspace, selectedPath, onSelectFile, onWorkspaceSa
   const runGitAction = (action: string, work: () => Promise<unknown>) => {
     setPendingGitAction(action);
     setOpError(null);
-    work().then(refreshStatus).then(() => {
+    work().then(() => {
+      status.reload();
       if (action === 'commit') {
         setCommitMessage('');
         setCommitDone(true);
@@ -358,7 +352,7 @@ export function FilesPage({ workspace, selectedPath, onSelectFile, onWorkspaceSa
 
   const reloadAfterMutation = (...dirs: string[]) => {
     for (const dir of new Set(dirs)) if (listings[dir] !== undefined || dir === '') void load(dir);
-    void refreshStatus();
+    status.reload();
   };
 
   const submitName = (value: string) => {
@@ -482,10 +476,9 @@ export function FilesPage({ workspace, selectedPath, onSelectFile, onWorkspaceSa
         <div className="flex h-9 items-center gap-1 border-b border-hairline pl-3 pr-1.5">
           <h2 id="source-control-title" className="text-label font-semibold uppercase tracking-wide text-muted">Source control</h2>
           <span className={`min-w-0 flex-1 truncate text-tiny ${commitDone ? 'text-merged' : 'text-faint'}`} aria-live="polite">{commitDone ? 'Committed' : changeCount === 0 ? 'No changes' : `${changeCount} changed`}</span>
-          <IconButton icon="refresh" title="Refresh status" onClick={() => void refreshStatus()} />
+          <IconButton icon="refresh" title="Refresh status" onClick={() => status.reload()} />
         </div>
         <section aria-labelledby="source-control-title" className="min-h-0 flex-1 overflow-auto">
-          {statusError && <p className="px-3 py-2 text-small text-fail">{statusError}</p>}
           <form className="border-b border-hairline p-3" onSubmit={(event) => {
             event.preventDefault();
             if (!commitMessage.trim() || stagedEntries.length === 0 || actionPending) return;
@@ -497,7 +490,7 @@ export function FilesPage({ workspace, selectedPath, onSelectFile, onWorkspaceSa
           </form>
           <GitGroup entries={stagedEntries} label="Staged" actionIcon="collapse" actionLabel="Unstage" activePath={diff?.path ?? null} disabled={actionPending} onOpen={openDiff} onAction={(path) => runGitAction(`unstage:${path}`, () => api.unstageGitPaths(workspaceId, [path]))} onActionAll={() => runGitAction('unstage-all', () => api.unstageGitPaths(workspaceId, stagedEntries.map((entry) => entry.path)))} />
           <GitGroup entries={unstagedEntries} label="Changes" actionIcon="plus" actionLabel="Stage" activePath={diff?.path ?? null} disabled={actionPending} onOpen={openDiff} onAction={(path) => runGitAction(`stage:${path}`, () => api.stageGitPaths(workspaceId, [path]))} onActionAll={() => runGitAction('stage-all', () => api.stageGitPaths(workspaceId, unstagedEntries.map((entry) => entry.path)))} onDiscard={(path) => setDiscardPath(path)} onDiscardAll={() => setDiscardAllOpen(true)} />
-          {changeCount === 0 && !statusError && <p className="px-3 py-3 text-small text-muted">The working tree is clean.</p>}
+          {status.error ? <LoadError message={status.error} onRetry={status.reload} className="m-3" /> : changeCount === 0 && <p className="px-3 py-3 text-small text-muted">The working tree is clean.</p>}
         </section>
       </>}
     </aside>
