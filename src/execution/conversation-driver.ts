@@ -551,14 +551,8 @@ export class ConversationDriver {
     await this.applyPermissionMode(entry, convo);
   }
 
-  // Unlike `teardown`, propagates the original spawn error via `driver.fail`
-  // rather than a synthetic 'conversation ended'.
   private abandonSpawn(entry: ActiveConversation, err: unknown): void {
-    this.active.delete(entry.conversationId);
-    this.kill(entry);
-    this.revokeKey(entry.conversationId);
-    entry.driver.fail(err instanceof Error ? err : new Error(String(err)));
-    entry.driver.dispose();
+    this.finalizeConversation(entry, err instanceof Error ? err : new Error(String(err)));
   }
 
   private async spawn(convo: ConversationRow): Promise<ActiveConversation> {
@@ -732,10 +726,14 @@ export class ConversationDriver {
   private teardown(entry: ActiveConversation): void {
     this.clearIdle(entry);
     this.cancelPendingPermissions(entry.conversationId);
+    this.finalizeConversation(entry, new Error('conversation ended'));
+  }
+
+  private finalizeConversation(entry: ActiveConversation, error: Error): void {
     this.active.delete(entry.conversationId);
     this.kill(entry);
     this.revokeKey(entry.conversationId);
-    entry.driver.fail(new Error('conversation ended'));
+    entry.driver.fail(error);
     entry.driver.dispose();
   }
 
