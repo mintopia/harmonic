@@ -176,13 +176,15 @@ export function useConversationDetail(
     // Show the message in the transcript right away when steering the open
     // conversation. A brand-new conversation switches focus and reloads events,
     // which would discard an optimistic turn, so we skip it there.
+    let optimisticId: number | null = null;
     if (steering) {
-      const optimisticId = optimisticSeq.current;
+      const turnId = optimisticSeq.current;
       optimisticSeq.current -= 1;
+      optimisticId = turnId;
       setOptimisticTurns((current) => [
         ...current,
         {
-          id: optimisticId,
+          id: turnId,
           conversationId: id,
           seq: Number.MAX_SAFE_INTEGER,
           ts: Date.now(),
@@ -191,8 +193,15 @@ export function useConversationDetail(
         },
       ]);
     }
-    const { queued } = await api.sendTurn(id, text);
-    return { queued };
+    try {
+      const { queued } = await api.sendTurn(id, text);
+      return { queued };
+    } catch (e) {
+      if (optimisticId !== null) {
+        setOptimisticTurns((current) => current.filter((t) => t.id !== optimisticId));
+      }
+      throw e;
+    }
   };
 
   const end = () => {

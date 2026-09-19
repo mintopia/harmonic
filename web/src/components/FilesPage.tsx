@@ -10,8 +10,8 @@ import { ConfirmDialog } from './ConfirmDialog';
 import { DiffViewer } from './DiffViewer';
 import { Modal } from './Modal';
 import { Markdown } from './Markdown';
+import { errorText } from '../error-text';
 
-const errorText = (error: unknown) => error instanceof Error ? error.message : String(error);
 const parentOf = (path: string) => path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
 const baseName = (path: string) => path.split('/').at(-1) ?? path;
 const isMarkdownPath = (path: string) => ['.md', '.markdown'].some((extension) => path.toLowerCase().endsWith(extension));
@@ -56,6 +56,7 @@ export function FilesPage({ workspace, selectedPath, onSelectFile, onWorkspaceSa
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [statusEntries, setStatusEntries] = useState<GitStatusEntry[]>([]);
+  const [statusError, setStatusError] = useState<string | null>(null);
   const [file, setFile] = useState<WorkspaceFile | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
   const [excludedDirectories, setExcludedDirectories] = useState(workspaceExcludedDirectories);
@@ -106,7 +107,9 @@ export function FilesPage({ workspace, selectedPath, onSelectFile, onWorkspaceSa
   const refreshStatus = () => {
     const generation = workspaceGeneration.current;
     return api.gitStatus(workspaceId).then(({ entries }) => {
-      if (workspaceGeneration.current === generation) setStatusEntries(entries);
+      if (workspaceGeneration.current === generation) { setStatusEntries(entries); setStatusError(null); }
+    }, (error) => {
+      if (workspaceGeneration.current === generation) setStatusError(errorText(error));
     });
   };
   useLayoutEffect(() => {
@@ -139,9 +142,9 @@ export function FilesPage({ workspace, selectedPath, onSelectFile, onWorkspaceSa
   }), [workspaceId]);
 
   useLiveEffect((live) => {
-    setListings({}); setExpanded(new Set()); setErrors({}); setStatusEntries([]); setDrafts({}); setOpenPaths([]); setSaveError(null); setMarkdownPreview({});
+    setListings({}); setExpanded(new Set()); setErrors({}); setStatusEntries([]); setStatusError(null); setDrafts({}); setOpenPaths([]); setSaveError(null); setMarkdownPreview({});
     api.workspaceFiles(workspaceId).then((listing) => live() && setListings({ '': listing }), (error) => live() && setErrors({ '': errorText(error) }));
-    api.gitStatus(workspaceId).then(({ entries }) => live() && setStatusEntries(entries), () => live() && setStatusEntries([]));
+    api.gitStatus(workspaceId).then(({ entries }) => { if (live()) { setStatusEntries(entries); setStatusError(null); } }, (error) => live() && setStatusError(errorText(error)));
     setExcludedDirectories(workspaceExcludedDirectories);
   }, [workspaceId, workspaceExcludedDirectories]);
 
@@ -482,7 +485,7 @@ export function FilesPage({ workspace, selectedPath, onSelectFile, onWorkspaceSa
           <IconButton icon="refresh" title="Refresh status" onClick={() => void refreshStatus()} />
         </div>
         <section aria-labelledby="source-control-title" className="min-h-0 flex-1 overflow-auto">
-          {errors[''] && <p className="px-3 py-2 text-small text-fail">{errors['']}</p>}
+          {statusError && <p className="px-3 py-2 text-small text-fail">{statusError}</p>}
           <form className="border-b border-hairline p-3" onSubmit={(event) => {
             event.preventDefault();
             if (!commitMessage.trim() || stagedEntries.length === 0 || actionPending) return;
@@ -494,7 +497,7 @@ export function FilesPage({ workspace, selectedPath, onSelectFile, onWorkspaceSa
           </form>
           <GitGroup entries={stagedEntries} label="Staged" actionIcon="collapse" actionLabel="Unstage" activePath={diff?.path ?? null} disabled={actionPending} onOpen={openDiff} onAction={(path) => runGitAction(`unstage:${path}`, () => api.unstageGitPaths(workspaceId, [path]))} onActionAll={() => runGitAction('unstage-all', () => api.unstageGitPaths(workspaceId, stagedEntries.map((entry) => entry.path)))} />
           <GitGroup entries={unstagedEntries} label="Changes" actionIcon="plus" actionLabel="Stage" activePath={diff?.path ?? null} disabled={actionPending} onOpen={openDiff} onAction={(path) => runGitAction(`stage:${path}`, () => api.stageGitPaths(workspaceId, [path]))} onActionAll={() => runGitAction('stage-all', () => api.stageGitPaths(workspaceId, unstagedEntries.map((entry) => entry.path)))} onDiscard={(path) => setDiscardPath(path)} onDiscardAll={() => setDiscardAllOpen(true)} />
-          {changeCount === 0 && !errors[''] && <p className="px-3 py-3 text-small text-muted">The working tree is clean.</p>}
+          {changeCount === 0 && !statusError && <p className="px-3 py-3 text-small text-muted">The working tree is clean.</p>}
         </section>
       </>}
     </aside>
