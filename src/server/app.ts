@@ -282,6 +282,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   const asyncDb = await openAsyncDb(opts.dataDir);
   const statsReader = openStatsReader(opts.dataDir);
   const worktreesDir = join(opts.dataDir, 'worktrees');
+  const managedWorktreesRoot = resolve(worktreesDir);
   const bus = new EventBus();
   const scheduler = new Scheduler(asyncDb, (jobs) => bus.emit('scheduled_jobs', jobs));
   const runningVersion = opts.version ?? readPackageManifest().version;
@@ -350,6 +351,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
       revoke: (conversationId) => auth.deleteKeysForConversation(conversationId),
     },
     onTurnSettled: () => { void upgradeRef?.reconcile().catch((error: unknown) => logger.error(`upgrade reconciliation failed: ${String(error)}`)); },
+    allowedRoots: async () => [...(await workspaces.list()).map((w) => w.workingDir), managedWorktreesRoot],
   });
   const sessionStore = new SessionStore(asyncDb);
   /** Record a lifecycle audit event onto an Attempt and push it live, so a
@@ -396,7 +398,6 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   const publishWorktrees = async (): Promise<void> => {
     bus.emit('worktrees', await worktreeInventory.snapshot());
   };
-  const managedWorktreesRoot = resolve(worktreesDir);
   const forceCleanupWorktree = async (id: string, workspaceId?: number): Promise<boolean | null> => {
     const entry = (await worktreeInventory.snapshot()).find(
       (candidate) => worktreeId(candidate) === id,

@@ -191,6 +191,10 @@ function buildParsed(rootId: string, rootScan: Transcript, subs: Subagent[]): Pa
 
 const emptyTranscript = (): Transcript => ({ models: {}, contextTokens: null, lastTool: null, completed: new Set<string>(), turns: [] });
 
+function isTraversalSafeSegment(value: string): boolean {
+  return value.length > 0 && value !== '.' && value !== '..' && !value.includes('/') && !value.includes('\\') && !value.includes('\0');
+}
+
 function claudeProjectsDir(sessionLogDir: string | undefined): string {
   if (!sessionLogDir) return join(homedir(), '.claude', 'projects');
   return resolve(sessionLogDir === '~' ? homedir() : sessionLogDir.replace(/^~\//, `${homedir()}/`));
@@ -198,6 +202,7 @@ function claudeProjectsDir(sessionLogDir: string | undefined): string {
 
 /** Find Claude's actual transcript, avoiding its unstable cwd-slug convention. */
 async function resolveTranscriptPath(sessionLogDir: string | undefined, sessionId: string): Promise<string | null> {
+  if (!isTraversalSafeSegment(sessionId)) return null;
   const root = claudeProjectsDir(sessionLogDir);
   try {
     const projects = await readdir(root, { withFileTypes: true });
@@ -433,6 +438,7 @@ export const claudeAdapter: HarnessAdapter = {
     sessionLogFile({ sessionLogDir, cwd, sessionId }) {
       const logDir = sessionLogDir ?? join(homedir(), '.claude', 'projects');
       if (!logDir || !sessionId) return null;
+      if (!isTraversalSafeSegment(sessionId)) return null;
       const slug = cwd.replace(/[^a-zA-Z0-9]/g, '-');
       return join(logDir, slug, `${sessionId}.jsonl`);
     },
